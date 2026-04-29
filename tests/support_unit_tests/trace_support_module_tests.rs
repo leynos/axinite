@@ -203,6 +203,40 @@ fn trace_llm_diagnostics_start_at_zero() {
     assert_eq!(llm.hint_mismatches(), 0);
 }
 
+#[test]
+fn increment_hint_mismatches_panics_on_overflow() {
+    use std::panic;
+    use std::sync::atomic::{AtomicUsize, Ordering};
+
+    let counter = AtomicUsize::new(usize::MAX);
+    let result = panic::catch_unwind(|| {
+        counter
+            .fetch_update(Ordering::Relaxed, Ordering::Relaxed, |current| {
+                current.checked_add(1)
+            })
+            .unwrap_or_else(|_| panic!("hint_mismatches overflowed"));
+    });
+
+    assert!(result.is_err(), "expected panic on overflow");
+}
+
+#[test]
+fn calls_returns_count_after_lock_poison() {
+    use std::sync::{Arc, Mutex};
+    use std::thread;
+
+    let m = Arc::new(Mutex::new(42usize));
+    let m2 = Arc::clone(&m);
+    let _ = thread::spawn(move || {
+        let _guard = m2.lock().expect("lock should open before poisoning");
+        panic!("poison the lock");
+    })
+    .join();
+
+    let value = m.lock().unwrap_or_else(|p| p.into_inner());
+    assert_eq!(*value, 42);
+}
+
 #[rstest]
 #[tokio::test]
 async fn trace_llm_from_file_async_loads_fixture(minimal_trace_fixture: tempfile::NamedTempFile) {

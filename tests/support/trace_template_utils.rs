@@ -3,10 +3,34 @@
 use std::borrow::Cow;
 use std::collections::{HashMap, HashSet};
 
-use anyhow::Context;
 use ironclaw::llm::{ChatMessage, Role};
 
 const MAX_TEMPLATE_EXPANSIONS: usize = 128;
+
+/// Returned when a tool-result message contains content that cannot be parsed
+/// as JSON. Carries the `tool_call_id` of the offending message and the
+/// underlying parse error.
+#[derive(Debug)]
+pub(super) struct ToolResultParseError {
+    pub(super) call_id: String,
+    pub(super) source: serde_json::Error,
+}
+
+impl std::fmt::Display for ToolResultParseError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "failed to parse tool-result content for call_id '{}': {}",
+            self.call_id, self.source
+        )
+    }
+}
+
+impl std::error::Error for ToolResultParseError {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        Some(&self.source)
+    }
+}
 
 #[inline]
 fn json_scalar_to_value(value: &serde_json::Value) -> Option<serde_json::Value> {
@@ -32,48 +56,22 @@ fn flatten_json_root_into_vars(
     }
 }
 
-/// Extract template variables from tool-result messages.
+/// Extracts template variables from tool-result [`ChatMessage`]s.
 ///
-/// Flattens scalar values from JSON tool outputs into dot-separated variable
-/// names keyed by tool call id. Object roots are flattened below the call id
-/// (for example, `call_1.result.id`), while array and scalar roots are
-/// flattened directly under the call id (for example, `call_1.0`).
+/// Iterates `messages`, skipping non-`Tool` messages and messages without a
+/// `tool_call_id`. For each qualifying message the content is unwrapped from
+/// an optional `<tool_output>...</tool_output>` envelope and parsed as JSON.
 ///
-/// # Arguments
+/// Object roots are flattened with `call_id.key` dot-path keys; non-object
+/// roots (arrays, scalars) are keyed directly by `call_id` (arrays receive
+/// indexed sub-keys, e.g. `call_id.0`).
 ///
-/// - `messages`: Chat messages emitted so far in a trace replay. Only messages
-///   with `Role::Tool` and a `tool_call_id` contribute variables.
-///
-/// # Returns
-///
-/// A map of template variable names to JSON scalar values. String, number, and
-/// boolean values are preserved as `serde_json::Value` so full-template
-/// substitutions can keep JSON types intact.
-///
-/// # Errors
-///
-/// Returns an error when a tool-result message has a `tool_call_id` but its
-/// content cannot be parsed as JSON. The error context includes the tool call
-/// id so malformed recorded output is diagnosable.
-///
-/// # Panics
-///
-/// This function does not panic.
-///
-/// # Examples
-///
-/// A tool result with call id `call_lookup` and content
-/// `{"id": 3, "ok": true}` produces `call_lookup.id = 3` and
-/// `call_lookup.ok = true`.
-///
-/// # Usage Notes
-///
-/// Tool output wrapped in `<tool_output>...</tool_output>` is unwrapped before
-/// parsing so recorded traces can use the same helper for raw and wrapped
-/// tool-result content.
+/// Returns a map of dot-delimited path keys to their [`serde_json::Value`]
+/// scalar leaves. Malformed JSON returns [`ToolResultParseError`] with the
+/// offending call id.
 pub(super) fn extract_tool_result_vars(
     messages: &[ChatMessage],
-) -> anyhow::Result<HashMap<String, serde_json::Value>> {
+) -> Result<HashMap<String, serde_json::Value>, ToolResultParseError> {
     let mut vars = HashMap::new();
     for message in messages {
         if message.role != Role::Tool {
@@ -83,8 +81,11 @@ pub(super) fn extract_tool_result_vars(
             continue;
         };
         let content = unwrap_tool_output(&message.content);
-        let json = serde_json::from_str::<serde_json::Value>(&content).with_context(|| {
-            format!("failed to parse JSON tool output for tool call id `{call_id}`")
+        let json = serde_json::from_str::<serde_json::Value>(&content).map_err(|source| {
+            ToolResultParseError {
+                call_id: call_id.to_owned(),
+                source,
+            }
         })?;
         flatten_json_root_into_vars(call_id, &json, &mut vars);
     }
@@ -130,46 +131,19 @@ fn unwrap_tool_output(content: &str) -> Cow<'_, str> {
     Cow::Borrowed(content)
 }
 
-/// Substitute trace-template variables into a JSON value in place.
+/// Performs in-place `{{key}}` template substitution over a JSON value tree.
 ///
-/// Replaces string placeholders of the form `{{variable.path}}` using values
-/// produced by `extract_tool_result_vars`. When the whole string is a single
-/// placeholder, the replacement keeps the original JSON scalar type. When a
-/// placeholder appears inside surrounding text, the replacement is interpolated
-/// as text.
+/// Recurses through objects and arrays. For each string node:
+/// - If the entire string is a single `{{key}}` template and the key resolves,
+///   the node is replaced with the resolved [`serde_json::Value`] (preserving
+///   numeric and boolean types).
+/// - Otherwise, embedded `{{key}}` placeholders are expanded iteratively up to
+///   [`MAX_TEMPLATE_EXPANSIONS`] times. Expansion stops early when no `{{` is
+///   found, the key is missing from `vars`, or a cycle is detected via
+///   previously-visited intermediate strings.
 ///
-/// # Arguments
-///
-/// - `value`: JSON value to mutate. Strings are checked for placeholders;
-///   objects and arrays are traversed recursively.
-/// - `vars`: Template variables keyed by dot-separated paths. Values should be
-///   JSON scalars extracted from previous tool-result messages.
-///
-/// # Returns
-///
-/// This function returns `()`. The supplied `value` is updated in place.
-///
-/// # Errors
-///
-/// This function does not return errors. Missing variables leave the current
-/// string unchanged from the first unresolved placeholder onward.
-///
-/// # Panics
-///
-/// This function does not panic.
-///
-/// # Examples
-///
-/// Given `vars["call.limit"] = 3`, the JSON string `"{{call.limit}}"` becomes
-/// the JSON number `3`, while `"limit={{call.limit}}"` becomes the string
-/// `"limit=3"`.
-///
-/// # Usage Notes
-///
-/// Expansion is capped by `MAX_TEMPLATE_EXPANSIONS` and also tracks previously
-/// seen intermediate strings, preventing cyclic templates from looping
-/// indefinitely.
-pub(super) fn substitute_templates(
+/// Non-string scalar nodes (numbers, booleans, null) are left unchanged.
+pub(crate) fn substitute_templates(
     value: &mut serde_json::Value,
     vars: &HashMap<String, serde_json::Value>,
 ) {
@@ -314,30 +288,27 @@ mod tests {
             tool_calls: None,
         }];
 
-        let vars = extract_tool_result_vars(&messages)
-            .expect("array-root tool output should parse into template vars");
+        let vars = extract_tool_result_vars(&messages).expect("valid JSON should parse");
 
         assert_eq!(vars.get("call_array.0"), Some(&serde_json::json!("alpha")));
         assert_eq!(vars.get("call_array.1"), Some(&serde_json::json!(true)));
     }
 
     #[test]
-    fn extract_tool_result_vars_reports_malformed_tool_json() {
+    fn extract_tool_result_vars_errors_on_invalid_json() {
         let messages = [ChatMessage {
             role: Role::Tool,
-            content: "{not json".to_string(),
+            content: "not json {{{".to_string(),
             content_parts: Vec::new(),
-            tool_call_id: Some("call_bad_json".to_string()),
+            tool_call_id: Some("call_bad".to_string()),
             name: None,
             tool_calls: None,
         }];
 
-        let err = extract_tool_result_vars(&messages)
-            .expect_err("malformed tool output should fail template extraction");
+        let result = extract_tool_result_vars(&messages);
 
-        assert!(
-            err.to_string().contains("call_bad_json"),
-            "error should identify the malformed tool call: {err:#}"
-        );
+        assert!(result.is_err());
+        let err = result.expect_err("invalid JSON should return parse error");
+        assert_eq!(err.call_id, "call_bad");
     }
 }

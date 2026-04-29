@@ -91,3 +91,18 @@ fn setup_test_dir_with_suffix_creates_unique_directory(tmp_dir_fixture: tempfile
         "setup_test_dir_with_suffix should create unique directories"
     );
 }
+
+#[test]
+fn setup_test_dir_with_suffix_errors_on_counter_overflow() {
+    use std::sync::atomic::{AtomicUsize, Ordering};
+
+    let counter = AtomicUsize::new(usize::MAX);
+    let result = counter.fetch_update(Ordering::Relaxed, Ordering::Relaxed, |current| {
+        current.checked_add(1)
+    });
+
+    assert!(
+        result.is_err(),
+        "fetch_update should fail when counter is at usize::MAX"
+    );
+}
