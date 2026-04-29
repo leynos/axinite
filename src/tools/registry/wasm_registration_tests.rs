@@ -73,8 +73,10 @@ async fn register_wasm_persists_credentials_only_after_successful_registration()
             "http",
             &wasm_binary,
             &runtime,
-            "rejected_token",
-            "rejected.example.com",
+            CredentialSpec {
+                secret_name: "rejected_token",
+                host_pattern: "rejected.example.com",
+            },
         ))
         .await;
     assert!(
@@ -93,8 +95,10 @@ async fn register_wasm_persists_credentials_only_after_successful_registration()
             "github",
             &wasm_binary,
             &runtime,
-            "accepted_token",
-            "api.example.com",
+            CredentialSpec {
+                secret_name: "accepted_token",
+                host_pattern: "api.example.com",
+            },
         ))
         .await
         .expect("successful registration should persist credentials");
@@ -115,18 +119,22 @@ fn github_wasm_bytes() -> Vec<u8> {
     std::fs::read(wasm_path).expect("read github wasm artifact")
 }
 
+struct CredentialSpec<'a> {
+    secret_name: &'a str,
+    host_pattern: &'a str,
+}
+
 fn registration_with_credential<'a>(
     name: &'a str,
     wasm_bytes: &'a [u8],
     runtime: &'a Arc<crate::tools::wasm::WasmToolRuntime>,
-    secret_name: &str,
-    host_pattern: &str,
+    credential: CredentialSpec<'_>,
 ) -> WasmToolRegistration<'a> {
     WasmToolRegistration {
         name,
         wasm_bytes,
         runtime,
-        capabilities: capabilities_with_credential(secret_name, host_pattern),
+        capabilities: capabilities_with_credential(credential.secret_name, credential.host_pattern),
         limits: None,
         description: Some("Credential persistence test tool"),
         schema: Some(serde_json::json!({
