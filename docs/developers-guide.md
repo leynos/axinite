@@ -212,6 +212,7 @@ Follow these rules when wiring fixtures into integration tests:
   is non-obvious, especially when the module could otherwise be mistaken
   for a candidate for the shared `support` facade.
 
+
 ### CleanupGuard restructuring
 
 `CleanupGuard` now lives in its own `tests/support/cleanup_guard.rs`
@@ -517,6 +518,7 @@ Table: `AppBuilderFlags` fields and effects.
 | `no_db` | `bool` | Skip database initialization |
 | `workspace_import_dir` | `Option<PathBuf>` | Directory to import into the workspace on activation; captured at construction so `RuntimeSideEffects::start()` does not re-read the environment |
 
+
 ## 19. Fast local validation loop
 
 For quick host-side iteration on Linux or WSL with the current branch
@@ -664,6 +666,7 @@ is now applied once inside `LibSqlDatabase::connect()`, so it is no longer
 necessary — and must not be duplicated — in individual store
 `connect()` methods.
 
+
 ## 22. Dispatcher architecture
 
 The dispatcher orchestrates interactive chat turns by preparing an LLM
@@ -791,6 +794,7 @@ Migration guidance:
 - add rollback regression coverage for both supported backends before
   releasing new terminal transitions
 
+
 ## 23. End-to-end (E2E) prerequisites
 
 For browser-based tests:
@@ -886,6 +890,7 @@ Returns a snapshot of all captured `StatusUpdate` values using an
 awaited mutex lock. Use this when contention on the status-event lock
 would cause `captured_status_events` to panic.
 
+
 ## 25. WASM-specific notes
 
 The repository contains standalone WASM tool and channel crates. Normal
@@ -979,6 +984,7 @@ Modify `build_fallback_guidance` when the fallback-guidance format,
 labels, truncation rules, or input set needs to change. Do not use it as
 a primary schema-transport mechanism: the canonical schema remains the
 advertised `ToolDefinition.parameters` value.
+
 
 ## 26. When to use cargo test versus cargo-nextest
 
@@ -1296,6 +1302,18 @@ assert_eq!(
 );
 ```
 
+
+## 32. Expected follow-up changes
+
+This guide documents the environment as of the current branch. The
+compile-time reduction plan is still expected to change some of the
+standard commands further, especially around shared extension build
+artifacts and CI duplication.
+
+When those changes land, this guide must be updated in the same branch
+so local setup instructions stay truthful.
+
+## 33. Phased startup pipeline
 
 ## 32. Expected follow-up changes
 
@@ -1729,6 +1747,38 @@ let (addr, _state) = TestGatewayBuilder::new()
 ```
 
 
+## 34. Borrowed newtypes for schema helper arguments
+
+Three lightweight newtype wrappers in `src/tools/tool/schema_helpers.rs` make
+schema and parameter helper signatures explicit without changing the string
+values used in validation error messages.
+
+Caption: Schema helper newtypes.
+
+| Type | Purpose |
+| --- | --- |
+| `ParamName<'a>` | A JSON parameter key expected in tool input |
+| `SchemaPath` | A dot-separated location in a JSON schema |
+| `ToolName<'a>` | A registered tool identifier used as the root strict-schema path |
+
+`ParamName<'a>` and `ToolName<'a>` are zero-cost wrappers over `&'a str`.
+`SchemaPath` owns its path string so nested paths can be constructed while
+descending through schema nodes. All three types implement `From<&str>` and
+`From<&String>` so existing `&str` and `String` call sites continue to compile
+unchanged. `ToolName` additionally converts into `SchemaPath` because the
+strict-schema validator roots its path at the tool name.
+
+Use these types in function signatures that previously accepted a bare `&str`
+or `String` for a parameter name, schema path, or tool name. The types prevent
+accidental argument transposition and make the intent of each parameter clear
+at the call site.
+
+`SchemaPath::child(segment)` returns an owned schema path representing the child
+path `"<parent>.<segment>"`. Use this instead of manual string concatenation
+when descending into nested schema nodes.
+
+These types are re-exported from `src/tools/mod.rs` and are publicly available
+as `crate::tools::{ParamName, SchemaPath, ToolName}`.
 ## 34. Borrowed newtypes for schema helper arguments
 
 Three lightweight newtype wrappers in `src/tools/tool/schema_helpers.rs` make
