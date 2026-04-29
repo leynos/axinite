@@ -231,7 +231,7 @@ a module-level suppression.
 
 `setup_test_dir_with_suffix` in `tests/support/cleanup.rs` still accepts
 a `&Path` and returns a `String` because the trace fixtures that call it
-serialise the resulting directory into JSON tool arguments. Prefer
+serialize the resulting directory into JSON tool arguments. Prefer
 `PathBuf` for new filesystem-facing helpers unless the caller needs a
 UTF-8 string boundary for fixture data or protocol payloads.
 
@@ -1188,8 +1188,8 @@ where
     F: FnOnce(&mut serde_json::Value),
 ```
 
-Reads a JSON trace fixture, deserialises it into a `serde_json::Value`,
-applies the caller-supplied `mutate` closure, then re-deserialises the
+Reads a JSON trace fixture, deserializes it into a `serde_json::Value`,
+applies the caller-supplied `mutate` closure, then re-deserializes the
 result into `LlmTrace`. Use this instead of `LlmTrace::from_file_async`
 whenever a fixture field must be patched at test time, for example,
 rewriting a hard-coded temp path to the actual test directory:

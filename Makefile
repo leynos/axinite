@@ -41,12 +41,7 @@ lint:
 	$(CARGO) clippy --manifest-path $(GITHUB_TOOL_MANIFEST) --tests -- -D warnings
 
 markdownlint:
-	@files="$$(git diff --name-only --diff-filter=ACMR $(MARKDOWNLINT_BASE)...HEAD -- '*.md')"; \
-	if [ -n "$$files" ]; then \
-		$(BUNX) markdownlint-cli2 $$files; \
-	else \
-		echo "No Markdown files changed since $(MARKDOWNLINT_BASE)"; \
-	fi
+	./scripts/lint-changed-markdown.sh "$(BUNX)"
 
 test:
 	$(MAKE) build-github-tool-wasm
