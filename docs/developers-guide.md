@@ -212,33 +212,34 @@ Follow these rules when wiring fixtures into integration tests:
   is non-obvious, especially when the module could otherwise be mistaken
   for a candidate for the shared `support` facade.
 
-Maintenance note: if multiple integration harnesses genuinely need the
-same fixture helper, first confirm that the helper is shared in real
-use, then move it into `tests/support/mod.rs`. Do not promote
-harness-local fixture modules into the shared facade merely to make the
-import path look more uniform.
-
-
 ### CleanupGuard restructuring
 
 `CleanupGuard` now lives in its own `tests/support/cleanup_guard.rs`
-module instead of being defined inside `tests/support/cleanup.rs`.
-Harness-specific support roots include it only when they exercise
-filesystem cleanup; for example, `tests/support/e2e_traces.rs` compiles
-the full cleanup helpers, while `tests/support/support_unit.rs` wires
-`cleanup_guard.rs` directly as its crate-local `cleanup` module.
+module instead of being defined inside `tests/support/cleanup.rs`, so
+its implementation can be compiled independently of the directory-setup
+helpers. Harness-specific support roots include it only when they
+exercise filesystem cleanup; currently, `tests/support/e2e_traces.rs`
+compiles the full cleanup helpers, while `tests/support/support_unit.rs`
+wires `cleanup_guard.rs` directly as its crate-local `cleanup` module.
 
-This keeps cleanup symbols out of harnesses that never register
-temporary files or directories for removal. The narrower wiring
-eliminated the five per-item `#[allow(dead_code)]` attributes that were
-previously needed because the shared facade compiled cleanup helpers
-into every integration-test binary.
+Harnesses that do not perform filesystem cleanup no longer compile
+`cleanup_guard.rs` at all. That narrower wiring eliminated the five
+per-item `#[allow(dead_code)]` attributes that were previously required
+on `PathKind`, `CleanupGuard`, `CleanupGuard::file`,
+`CleanupGuard::dir`, and `setup_test_dir`, without replacing them with
+a module-level suppression.
 
 `setup_test_dir_with_suffix` in `tests/support/cleanup.rs` still accepts
 a `&Path` and returns a `String` because the trace fixtures that call it
 serialise the resulting directory into JSON tool arguments. Prefer
 `PathBuf` for new filesystem-facing helpers unless the caller needs a
 UTF-8 string boundary for fixture data or protocol payloads.
+
+Maintenance note: if multiple integration harnesses genuinely need the
+same fixture helper, first confirm that the helper is shared in real
+use, then move it into `tests/support/mod.rs`. Do not promote
+harness-local fixture modules into the shared facade merely to make the
+import path look more uniform.
 
 ## 11. Tools-and-config harness support
 
@@ -249,7 +250,7 @@ compiles the helpers it requires, which keeps the support surface
 honest and avoids dead-code lint suppression.
 
 The `trace_llm` facade in that module provides a narrowed one-import
-surface for language model (LLM) trace helpers. It exports
+surface for large language model (LLM) trace helpers. It exports
 `trace_types::{LlmTrace, TraceExpects}` publicly for test consumers,
 while `trace_json_patch::patch_json_value` is exposed as crate-local
 `pub(crate)` for integration-test fixture helpers. The patch helper is
@@ -273,16 +274,17 @@ submodules that actually use them.
 ## 12. Support-unit harness support
 
 `tests/support/support_unit.rs` is a harness-specific support root for
-the `support_unit_tests` integration binary. It exists so support-module
-contract tests can compile the helpers they inspect exactly once,
-without routing fixture-only modules through the shared
-`tests/support/mod.rs` facade.
+`tests/support_unit_tests.rs`. It exists so support-module unit tests
+run exactly once, against the same compiled symbols used by other
+harnesses, without duplicating the test code across every `e2e_*.rs`
+binary.
 
-The root wires these modules publicly for test consumers:
+The root wires these public modules via `#[path]`:
 `assertions`, `cleanup`, `instrumented_llm`, `metrics`, `test_channel`,
 `test_rig`, `trace_llm`, `trace_test_files`, and `trace_types`.
-It also wires `trace_json_patch` and `trace_provider` privately because
-they are implementation details consumed by the public trace helpers.
+It also wires `trace_json_patch` and `trace_provider` privately for
+harness-internal use because they are implementation details consumed by
+the public trace helpers.
 
 The `cleanup` module is deliberately backed by
 `tests/support/cleanup_guard.rs` rather than the broader
@@ -291,15 +293,20 @@ the guard contract directly, so compiling only the guard keeps the
 harness focused and avoids dead-code suppressions for directory setup
 helpers it does not use.
 
+When the `libsql` feature is enabled, the root also defines
+boxed-future type aliases and private wrapper functions for `TestRig`
+and `TraceLlm` async APIs. The `const _:` assertions at the bottom of
+the module compile those signatures without exporting the wrappers as
+test helpers.
 
 ## 13. E2E-traces harness support
 
 `tests/support/e2e_traces.rs` is a harness-specific support root for
-the `e2e_traces` integration binary. The binary also wires
-`tests/support/fixtures.rs` directly at its top level because fixture
-path constants are local to this harness.
+`tests/e2e_traces.rs`. The binary also wires `tests/support/fixtures.rs`
+directly at its top level because fixture path constants are local to
+this harness.
 
-The support root wires these modules publicly for trace test consumers:
+The support root wires these public modules via `#[path]`:
 `assertions`, `cleanup`, `instrumented_llm`, `metrics`, `test_channel`,
 `test_rig`, `trace_llm`, and `trace_types`. It exposes `routines`
 publicly only when the `libsql` feature is enabled, matching the
@@ -308,6 +315,11 @@ remain private implementation modules behind the trace facade. With the
 `libsql` feature enabled, the root also re-exports
 `test_rig::helpers::run_recorded_trace`.
 
+Under the same feature gate, the root defines boxed-future type aliases
+and private adapter functions that back `const _:` compile-time
+assertions on selected `TestRig`, `TraceLlm`, and `LlmTrace` API
+signatures.
+
 This root stays separate from `tests/support/mod.rs` because the E2E
 trace binary is the broad replay harness: it needs cleanup, recorded
 trace loading, instrumented LLMs, metrics, routines, and channel
@@ -315,13 +327,13 @@ capture, while many other integration binaries need none of that graph.
 Keeping the graph harness-local prevents unrelated test binaries from
 compiling replay helpers just to share an import path.
 
-
 ## 14. Channels harness support
 
 `tests/support/channels.rs` is a harness-specific support root for the
-`channels` integration binary. It wires `tests/support/telegram.rs` as a
-public `telegram` module for channel tests that cover Telegram
-authentication behaviour.
+`tests/channels.rs` integration binary. It wires
+`tests/support/telegram.rs` as a single public `telegram` module via
+`#[path]` for channel tests that cover Telegram authentication
+behaviour.
 
 The root remains separate from `tests/support/mod.rs` because the
 Telegram fixtures are channel-harness details, not general test support.
@@ -329,14 +341,14 @@ Keeping them behind the `channels` binary boundary avoids compiling
 Telegram-specific helper code into unrelated integration binaries.
 
 
-## 15. Infrastructure and webhook harness support
+## 15. Infrastructure harness support
 
 `tests/support/infrastructure.rs` is a harness-specific support root for
-the `infrastructure` integration binary. It wires
+`tests/infrastructure.rs`. It wires
 `tests/support/webhook_common.rs` as a public `webhook_helpers` module
-so infrastructure tests can reuse the common health-route and HTTP
-client helpers without depending on the full webhook-server harness
-helper graph.
+via `#[path]`, so infrastructure tests can reuse common webhook
+primitives without depending on the full webhook-server harness helper
+graph.
 
 `tests/support/webhook.rs` is the harness-specific support root for the
 `webhook_server` integration binary. It wires
@@ -345,8 +357,11 @@ keeps `tests/support/webhook_common.rs` private for the shared route and
 client primitives used by those helpers.
 
 `tests/support/webhook_common.rs` intentionally remains a small shared
-helper module rather than a root. The `webhook_server` harness consumes
-it through `webhook.rs`, while the `infrastructure` harness consumes it
+helper module rather than a root. It provides `health_routes()`, which
+builds an Axum router with a `GET /health` endpoint, and
+`test_http_client()`, which constructs a `reqwest::Client` with a
+2-second timeout. The `webhook_server` harness consumes those helpers
+through `webhook.rs`, while the `infrastructure` harness consumes them
 through `infrastructure.rs` under the local `webhook_helpers` name.
 
 This root exists separately from `tests/support/mod.rs` because the
@@ -358,21 +373,23 @@ route. The `webhook_server` root is also harness-local because its
 startup helpers belong to that binary's listener lifecycle tests, not to
 general integration-test setup.
 
-
 ## 16. Trace-LLM harness support
 
-`tests/support/trace_llm_harness.rs` is the harness-specific support
-root for the `trace_llm_tests` integration binary shape. It wires
-`trace_llm` and `trace_types` publicly for trace contract tests, while
-keeping `trace_json_patch` and `trace_provider` private behind the
-trace facade.
+`tests/support/trace_llm_harness.rs` is an unused legacy support root
+kept in case the standalone `tests/trace_llm_tests.rs` harness is
+restored. The current trace LLM tests run through
+`tests/support_unit_tests.rs` via `tests/support/support_unit.rs`, so no
+active test binary wires this root today. If restored, it wires
+`trace_llm` and `trace_types` publicly via `#[path]`, mapped to
+`trace_llm.rs` and `trace_types.rs`, for trace contract tests. It keeps
+`trace_json_patch` and `trace_provider` private behind the trace facade.
 
 The root exists separately from `tests/support/mod.rs` because trace LLM
 contract tests need the trace parser and provider internals without the
 broader E2E test rig, channel capture, cleanup helpers, or metrics
-graph. The same boundary keeps trace JSON patching crate-local to the
-tests that exercise the trace facade.
-
+graph. The same boundary keeps trace JSON patching and LLM trace
+recording types such as `TraceResponse`, `TraceStep`, and
+`TraceToolCall` crate-local to the tests that exercise the trace facade.
 
 ## 17. Configuration snapshots with EnvContext
 
