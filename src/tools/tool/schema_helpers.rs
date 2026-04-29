@@ -131,7 +131,19 @@ impl<'a> From<ToolName<'a>> for SchemaPath {
 
 /// Extract a required string parameter from a JSON object.
 ///
-/// Returns `ToolError::InvalidParameters` if the key is missing or not a string.
+/// Looks up `name` in `params` and returns a reference to the underlying
+/// `str` if the value exists and is a JSON string.
+///
+/// # Arguments
+///
+/// * `params` — the JSON object representing the tool's input parameters.
+/// * `name`   — the key to look up; accepts `&str`, `String`, or
+///   [`ParamName`].
+///
+/// # Errors
+///
+/// Returns [`ToolError::InvalidParameters`] when `name` is absent from
+/// `params` or its value is not a JSON string.
 pub fn require_str(params: &serde_json::Value, name: impl AsRef<str>) -> Result<&str, ToolError> {
     let name = name.as_ref();
     params
@@ -142,7 +154,19 @@ pub fn require_str(params: &serde_json::Value, name: impl AsRef<str>) -> Result<
 
 /// Extract a required parameter of any type from a JSON object.
 ///
-/// Returns `ToolError::InvalidParameters` if the key is missing.
+/// Looks up `name` in `params` and returns a reference to the raw
+/// [`serde_json::Value`] if the key exists.
+///
+/// # Arguments
+///
+/// * `params` — the JSON object representing the tool's input parameters.
+/// * `name`   — the key to look up; accepts `&str`, `String`, or
+///   [`ParamName`].
+///
+/// # Errors
+///
+/// Returns [`ToolError::InvalidParameters`] when `name` is absent from
+/// `params`.
 pub fn require_param(
     params: &serde_json::Value,
     name: impl AsRef<str>,
