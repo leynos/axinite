@@ -23,6 +23,7 @@ mod builtin_tool_coverage;
 mod heartbeat;
 #[path = "e2e_traces/metrics.rs"]
 mod metrics;
+#[cfg(feature = "libsql")]
 #[path = "e2e_traces/recorded_trace.rs"]
 mod recorded_trace;
 #[path = "e2e_traces/routine_cooldown.rs"]

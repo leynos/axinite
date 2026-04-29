@@ -14,7 +14,7 @@ if [ -z "$base_ref" ]; then
 	exit 1
 fi
 
-files=$(git diff --name-only --diff-filter=d "$base_ref"...HEAD -- '*.md')
+files=$(git diff --name-only --diff-filter=d "$base_ref"...HEAD -- '*.md' | sed 's#^#./#')
 
 if [ -z "$files" ]; then
 	echo "No changed Markdown files to lint."

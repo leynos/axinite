@@ -25,7 +25,7 @@ mod trace_provider;
 pub mod trace_types;
 
 #[cfg(feature = "libsql")]
-pub use test_rig::helpers::run_recorded_trace;
+pub use test_rig::run_recorded_trace;
 
 #[cfg(feature = "libsql")]
 type AsyncUnit<'a> = std::pin::Pin<Box<dyn std::future::Future<Output = ()> + 'a>>;

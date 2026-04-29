@@ -114,7 +114,7 @@ fn _build_sig(builder: test_rig::TestRigBuilder) -> AsyncBuildRig {
 
 #[cfg(feature = "libsql")]
 fn _run_recorded_trace_sig<'a>(filename: &'a str) -> AsyncUnit<'a> {
-    Box::pin(test_rig::helpers::run_recorded_trace(filename))
+    Box::pin(test_rig::run_recorded_trace(filename))
 }
 
 #[cfg(feature = "libsql")]

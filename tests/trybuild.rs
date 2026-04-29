@@ -25,6 +25,7 @@ fn startup_compile_contracts() {
 }
 
 #[rstest]
+#[cfg_attr(feature = "libsql", case("tests/trybuild/e2e_traces.rs"))]
 #[case("tests/trybuild/infrastructure.rs")]
 #[case("tests/trybuild/support_unit.rs")]
 fn harness_compile_contracts(#[case] fixture: &str) {

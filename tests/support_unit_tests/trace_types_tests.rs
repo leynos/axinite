@@ -3,34 +3,48 @@
 use crate::support::trace_test_files::write_tmp_trace;
 use crate::support::trace_types::load_trace_with_mutation;
 
-#[tokio::test]
-async fn mutation_is_applied() -> anyhow::Result<()> {
-    let json = serde_json::json!({"model_name": "test-model", "steps": []}).to_string();
-    let tmp = write_tmp_trace(&json)?;
-    let mut was_called = false;
+use rstest::rstest;
 
-    let trace = load_trace_with_mutation(tmp.path(), |_value| {
-        was_called = true;
-    })
-    .await?;
-
-    assert!(was_called, "mutation closure must be invoked");
-    assert_eq!(trace.model_name, "test-model");
-    assert!(trace.steps.is_empty());
-    Ok(())
+#[derive(Clone, Copy)]
+enum MutationBehavior {
+    SetsFlag,
+    MutatesModelName,
 }
 
+#[rstest]
+#[case::sets_flag(
+    r#"{"model_name":"test-model","steps":[]}"#,
+    MutationBehavior::SetsFlag
+)]
+#[case::mutates_model_name(
+    r#"{"model_name":"original","steps":[]}"#,
+    MutationBehavior::MutatesModelName
+)]
 #[tokio::test]
-async fn mutation_modifies_value() -> anyhow::Result<()> {
-    let json = serde_json::json!({"model_name": "original", "steps": []}).to_string();
-    let tmp = write_tmp_trace(&json)?;
+async fn mutation_happy_paths(
+    #[case] initial_json: &str,
+    #[case] behavior: MutationBehavior,
+) -> anyhow::Result<()> {
+    let tmp = write_tmp_trace(initial_json)?;
+    let mut was_called = false;
 
-    let trace = load_trace_with_mutation(tmp.path(), |value| {
-        value["model_name"] = serde_json::json!("mutated");
+    let trace = load_trace_with_mutation(tmp.path(), |value| match behavior {
+        MutationBehavior::SetsFlag => was_called = true,
+        MutationBehavior::MutatesModelName => value["model_name"] = serde_json::json!("mutated"),
     })
     .await?;
 
-    assert_eq!(trace.model_name, "mutated");
+    match behavior {
+        MutationBehavior::SetsFlag => {
+            assert!(was_called, "mutation closure must be invoked");
+            assert_eq!(trace.model_name, "test-model");
+            assert!(trace.steps.is_empty());
+        }
+        MutationBehavior::MutatesModelName => {
+            assert_eq!(trace.model_name, "mutated");
+        }
+    }
+
     Ok(())
 }
 
