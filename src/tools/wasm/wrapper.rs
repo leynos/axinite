@@ -584,6 +584,16 @@ impl WasmToolWrapper {
         self
     }
 
+    #[cfg(test)]
+    pub(crate) fn secrets_store(&self) -> Option<&Arc<dyn SecretsStore + Send + Sync>> {
+        self.secrets_store.as_ref()
+    }
+
+    #[cfg(test)]
+    pub(crate) fn oauth_refresh(&self) -> Option<&OAuthRefreshConfig> {
+        self.oauth_refresh.as_ref()
+    }
+
     /// Get the resource limits for this tool.
     pub fn limits(&self) -> &ResourceLimits {
         &self.prepared.limits
