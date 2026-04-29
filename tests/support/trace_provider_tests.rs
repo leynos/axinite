@@ -136,10 +136,6 @@ fn next_step_returns_error_when_inner_lock_is_poisoned() {
     // captured_requests() goes through lock_inner() and must return an error,
     // not panic, when the lock is poisoned.
     let result = llm.captured_requests();
-    assert!(
-        result.is_err(),
-        "expected LlmError when inner lock is poisoned"
-    );
     let err = result.expect_err("expected LlmError when inner lock is poisoned");
     assert!(
         err.to_string().contains("TraceLlm state lock poisoned"),
