@@ -16,6 +16,7 @@ use super::super::*;
 enum RenameSetup {
     ExistingFile,
     MissingFile,
+    #[cfg(unix)]
     ReadOnlyDirectory,
 }
 
@@ -31,6 +32,7 @@ impl RenameFixture {
         match setup {
             RenameSetup::ExistingFile => self.write_legacy_file(),
             RenameSetup::MissingFile => {}
+            #[cfg(unix)]
             RenameSetup::ReadOnlyDirectory => {
                 self.write_legacy_file();
                 self.make_dir_read_only();
