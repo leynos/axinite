@@ -41,7 +41,7 @@ lint:
 	$(CARGO) clippy --manifest-path $(GITHUB_TOOL_MANIFEST) --tests -- -D warnings
 
 markdownlint:
-	./scripts/lint-changed-markdown.sh "$(BUNX)"
+	MARKDOWNLINT_BASE="$(MARKDOWNLINT_BASE)" ./scripts/lint-changed-markdown.sh "$(BUNX)"
 
 test:
 	$(MAKE) build-github-tool-wasm

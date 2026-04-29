@@ -7,10 +7,11 @@ if [ "$#" -ne 1 ]; then
 fi
 
 bunx_cmd=$1
-base_ref=$(git merge-base origin/main HEAD || true)
+markdownlint_base=${MARKDOWNLINT_BASE:-origin/main}
+base_ref=$(git merge-base "$markdownlint_base" HEAD || true)
 
 if [ -z "$base_ref" ]; then
-	echo "origin/main is unavailable; fetch it before running markdownlint." >&2
+	echo "$markdownlint_base is unavailable; fetch it before running markdownlint." >&2
 	exit 1
 fi
 
@@ -23,6 +24,8 @@ fi
 
 set -f
 old_ifs=$IFS
+# Split `set -- $files` on git's newline delimiter, not spaces or tabs, so
+# Markdown filenames containing spaces remain single arguments.
 IFS='
 '
 set -- $files
