@@ -174,6 +174,11 @@ The current `Makefile` also includes:
 - `make clean` to remove Cargo build outputs for the root crate and the
   GitHub tool crate.
 
+The Makefile resolves `CARGO` to `~/.cargo/bin/cargo` when that path exists,
+falling back to `cargo` on `$PATH`. `NEXTEST` is derived as `$(CARGO) nextest`
+so both variables consistently use the same Cargo binary. Override them by
+setting `CARGO` or `NEXTEST` in the environment before invoking `make`.
+
 ## 10. Integration test fixture wiring
 
 Integration test harnesses should load fixture-only helpers at the
@@ -211,6 +216,7 @@ Follow these rules when wiring fixtures into integration tests:
 - Leave a short comment near the `#[path]` declaration when the reason
   is non-obvious, especially when the module could otherwise be mistaken
   for a candidate for the shared `support` facade.
+
 
 ### CleanupGuard restructuring
 
@@ -517,6 +523,7 @@ Table: `AppBuilderFlags` fields and effects.
 | `no_db` | `bool` | Skip database initialization |
 | `workspace_import_dir` | `Option<PathBuf>` | Directory to import into the workspace on activation; captured at construction so `RuntimeSideEffects::start()` does not re-read the environment |
 
+
 ## 19. Fast local validation loop
 
 For quick host-side iteration on Linux or WSL with the current branch
@@ -565,6 +572,22 @@ dual-trait pattern already used elsewhere in the repository:
 - `types.rs` holds the shared value types such as `StuckJob`, `BrokenTool`,
   `RepairResult`, and `RepairNotification`.
 
+
+### DefaultSelfRepair helper methods
+
+Three private associated functions on `DefaultSelfRepair` implement the
+tool-repair flow in `src/agent/self_repair/default.rs`:
+
+| Method | Signature summary | Purpose |
+| --- | --- | --- |
+| `build_repair_requirement` | `(tool: &BrokenTool) -> Result<BuildRequirement, RepairError>` | Validates the tool name via `ProjectName::new`, then constructs the `BuildRequirement` carrying the tool name, last error, failure count, WASM tool type, Rust language, and the `http`/`workspace` capability set. Returns `RepairError::Failed` for invalid names. |
+| `handle_build_result` | `(result: BuildResult, tool: &BrokenTool, store: &dyn Database) -> Result<RepairResult, RepairError>` | Inspects the build outcome. On success it logs, calls `store.mark_tool_repaired`, and returns `RepairResult::Success`; on failure it logs and returns `RepairResult::Retry` with an attempt-number message. |
+| `attempt_repair_build` | `(tool: &BrokenTool, store: &dyn Database, builder: &dyn SoftwareBuilder, requirement: &BuildRequirement) -> Result<RepairResult, RepairError>` | Invokes `builder.build(requirement)` and delegates the result to `handle_build_result`. Builder-level errors are caught here and converted into `RepairResult::Retry` with a `"Repair build error: …"` message. |
+
+None of these methods access instance state; they are static associated
+functions and must remain so. Their unit tests live in
+`src/agent/self_repair/default_tests/`.
+
 When modifying this path, keep three invariants in mind:
 
 - `RepairTask` shutdown must remain cooperative, including during active repair
@@ -574,6 +597,7 @@ When modifying this path, keep three invariants in mind:
 - User-facing behaviour changes in self-repair should update both
   [Jobs and Routines](./jobs-and-routines.md) and the
   [User's Guide](./users-guide.md).
+
 
 ## 21. Database-backed work
 
@@ -663,6 +687,7 @@ The `busy_timeout` PRAGMA that each store previously ran after connecting
 is now applied once inside `LibSqlDatabase::connect()`, so it is no longer
 necessary — and must not be duplicated — in individual store
 `connect()` methods.
+
 
 ## 22. Dispatcher architecture
 
@@ -791,6 +816,7 @@ Migration guidance:
 - add rollback regression coverage for both supported backends before
   releasing new terminal transitions
 
+
 ## 23. End-to-end (E2E) prerequisites
 
 For browser-based tests:
@@ -886,6 +912,7 @@ Returns a snapshot of all captured `StatusUpdate` values using an
 awaited mutex lock. Use this when contention on the status-event lock
 would cause `captured_status_events` to panic.
 
+
 ## 25. WASM-specific notes
 
 The repository contains standalone WASM tool and channel crates. Normal
@@ -979,6 +1006,7 @@ Modify `build_fallback_guidance` when the fallback-guidance format,
 labels, truncation rules, or input set needs to change. Do not use it as
 a primary schema-transport mechanism: the canonical schema remains the
 advertised `ToolDefinition.parameters` value.
+
 
 ## 26. When to use cargo test versus cargo-nextest
 
@@ -1120,6 +1148,7 @@ testing:
 Use these in unit tests to verify manager behaviour without real I/O.
 Example usage is in `src/reload/manager/tests.rs`.
 
+
 ## 29. WASM tool schema normalization
 
 WASM tools carry a parameter schema that describes their inputs to the
@@ -1157,6 +1186,7 @@ its own exported metadata.
 The storage path is the one that exercises schema normalization, because
 backends may persist placeholder or null schemas that must be stripped
 before the guest-export recovery logic can run.
+
 
 ## 30. End-to-end WASM schema regression tests
 
@@ -1268,6 +1298,7 @@ assert_eq!(
 );
 ```
 
+
 ## 31. Expected follow-up changes
 
 This guide documents the environment as of the current branch. The
@@ -1277,6 +1308,13 @@ artifacts and CI duplication.
 
 When those changes land, this guide must be updated in the same branch
 so local setup instructions stay truthful.
+
+- Issue `#35` (PR `#168`): `DefaultSelfRepair::repair_broken_tool` was
+  refactored to ≤ 35 lines by extracting `build_repair_requirement`,
+  `handle_build_result`, and `attempt_repair_build` as private static
+  helpers. No functional changes were made. See
+  `src/agent/self_repair/default.rs` and
+  `src/agent/self_repair/default_tests/`.
 
 ## 32. Phased startup pipeline
 
