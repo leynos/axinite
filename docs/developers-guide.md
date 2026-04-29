@@ -1368,7 +1368,6 @@ commit_install()             cleanup_prepared_install()
 On commit failure, callers must call `cleanup_prepared_install` as a
 best-effort cleanup and log any cleanup errors with `tracing::warn!` before
 returning the original commit error.
-
 #### Web skill install handler
 
 `skills_install_handler` accepts an Axum `Request` rather than a pre-extracted
@@ -1416,3 +1415,36 @@ let (addr, _state) = TestGatewayBuilder::new()
     .start("test-token")
     .await?;
 ```
+
+## 27. Borrowed newtypes for schema helper arguments
+
+Three lightweight newtype wrappers in `src/tools/tool/schema_helpers.rs` make
+schema and parameter helper signatures explicit without changing the string
+values used in validation error messages.
+
+Caption: Schema helper newtypes.
+
+| Type | Purpose |
+| --- | --- |
+| `ParamName<'a>` | A JSON parameter key expected in tool input |
+| `SchemaPath` | A dot-separated location in a JSON schema |
+| `ToolName<'a>` | A registered tool identifier used as the root strict-schema path |
+
+`ParamName<'a>` and `ToolName<'a>` are zero-cost wrappers over `&'a str`.
+`SchemaPath` owns its path string so nested paths can be constructed while
+descending through schema nodes. All three types implement `From<&str>` and
+`From<&String>` so existing `&str` and `String` call sites continue to compile
+unchanged. `ToolName` additionally converts into `SchemaPath` because the
+strict-schema validator roots its path at the tool name.
+
+Use these types in function signatures that previously accepted a bare `&str`
+or `String` for a parameter name, schema path, or tool name. The types prevent
+accidental argument transposition and make the intent of each parameter clear
+at the call site.
+
+`SchemaPath::child(segment)` returns an owned schema path representing the child
+path `"<parent>.<segment>"`. Use this instead of manual string concatenation
+when descending into nested schema nodes.
+
+These types are re-exported from `src/tools/mod.rs` and are publicly available
+as `crate::tools::{ParamName, SchemaPath, ToolName}`.

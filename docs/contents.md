@@ -238,3 +238,6 @@
 - [ADR 008: Mutation testing with cargo-mutants](adr-008-mutation-testing-with-cargo-mutants.md)
   records the adoption of `cargo-mutants` for nightly mutation testing, scoped
   to files changed in the past 24 hours, with manual dispatch support.
+- [ADR 009: Borrowed newtypes for schema helper arguments](adr-009-borrowed-newtypes-for-schema-helper-arguments.md)
+  records the schema-helper newtypes that make parameter names, schema paths,
+  and tool names explicit at helper call sites.
