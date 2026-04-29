@@ -250,7 +250,7 @@ compiles the helpers it requires, which keeps the support surface
 honest and avoids dead-code lint suppression.
 
 The `trace_llm` facade in that module provides a narrowed one-import
-surface for large language model (LLM) trace helpers. It exports
+surface for language model (LLM) trace helpers. It exports
 `trace_types::{LlmTrace, TraceExpects}` publicly for test consumers,
 while `trace_json_patch::patch_json_value` is exposed as crate-local
 `pub(crate)` for integration-test fixture helpers. The patch helper is
