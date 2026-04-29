@@ -9,6 +9,8 @@ mod schema;
 mod tests;
 mod wasm_preparation;
 #[cfg(test)]
+mod wasm_preparation_tests;
+#[cfg(test)]
 mod wasm_registration_tests;
 
 pub use builtins::{ImageToolsRegistration, RegisterJobToolsOptions, VisionToolsRegistration};
