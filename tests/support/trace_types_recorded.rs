@@ -79,14 +79,17 @@ impl LlmTrace {
     /// ));
     /// ```
     pub fn playable_steps(&self) -> Vec<&TraceStep> {
-        let steps: Box<dyn Iterator<Item = &TraceStep> + '_> = if self.turns.is_empty() {
-            Box::new(self.steps.iter())
+        if self.turns.is_empty() {
+            self.steps
+                .iter()
+                .filter(|step| !matches!(step.response, TraceResponse::UserInput { .. }))
+                .collect()
         } else {
-            Box::new(self.turns.iter().flat_map(|turn| turn.steps.iter()))
-        };
-
-        steps
-            .filter(|step| !matches!(step.response, TraceResponse::UserInput { .. }))
-            .collect()
+            self.turns
+                .iter()
+                .flat_map(|turn| turn.steps.iter())
+                .filter(|step| !matches!(step.response, TraceResponse::UserInput { .. }))
+                .collect()
+        }
     }
 }

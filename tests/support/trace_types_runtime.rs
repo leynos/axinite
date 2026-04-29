@@ -2,7 +2,7 @@
 
 use std::path::Path;
 
-use anyhow::Result;
+use anyhow::{Context, Result};
 use ironclaw::llm::recording::TraceStep;
 
 use super::trace_types::{LlmTrace, TraceExpects, TraceTurn};
@@ -30,8 +30,12 @@ impl LlmTrace {
 
     /// Load a trace from a JSON file asynchronously.
     pub async fn from_file_async(path: impl AsRef<Path>) -> Result<Self> {
-        let contents = tokio::fs::read_to_string(path).await?;
-        let trace: Self = serde_json::from_str(&contents)?;
+        let path = path.as_ref();
+        let contents = tokio::fs::read_to_string(path)
+            .await
+            .with_context(|| format!("reading trace file: {}", path.display()))?;
+        let trace: Self = serde_json::from_str(&contents)
+            .with_context(|| format!("parsing trace file: {}", path.display()))?;
         Ok(trace)
     }
 }

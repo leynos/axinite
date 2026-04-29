@@ -45,6 +45,9 @@ mod trace_provider_tests
 pub mod trace_template_utils
 ;
 
+mod trace_template_utils_tests
+;
+
 #[path = "trace_test_files.rs"]
 pub mod trace_test_files
 ;

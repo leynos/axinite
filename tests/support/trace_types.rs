@@ -3,6 +3,7 @@
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
+use anyhow::Context;
 use ironclaw::llm::recording::{HttpExchange, MemorySnapshotEntry, TraceResponse, TraceStep};
 
 /// A single turn in a trace: one user message and the LLM response steps that follow.
@@ -175,9 +176,13 @@ pub async fn load_trace_with_mutation<F>(
 where
     F: FnOnce(&mut serde_json::Value),
 {
-    let contents = tokio::fs::read_to_string(path).await?;
-    let mut value: serde_json::Value = serde_json::from_str(&contents)?;
+    let path = path.as_ref();
+    let contents = tokio::fs::read_to_string(path)
+        .await
+        .with_context(|| format!("reading trace file: {}", path.display()))?;
+    let mut value: serde_json::Value =
+        serde_json::from_str(&contents).context("parsing JSON from file contents")?;
     mutate(&mut value);
-    let trace = serde_json::from_value(value)?;
+    let trace = serde_json::from_value(value).context("deserializing trace value to LlmTrace")?;
     Ok(trace)
 }

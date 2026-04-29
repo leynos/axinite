@@ -124,8 +124,6 @@ async fn next_step_errors_on_cursor_overflow() {
 
 #[test]
 fn next_step_returns_error_when_inner_lock_is_poisoned() {
-    use std::sync::Arc;
-
     let llm = Arc::new(trace_llm_from_single_turn(
         "poison-model",
         "hello",
@@ -142,7 +140,7 @@ fn next_step_returns_error_when_inner_lock_is_poisoned() {
         result.is_err(),
         "expected LlmError when inner lock is poisoned"
     );
-    let err = result.unwrap_err();
+    let err = result.expect_err("expected LlmError when inner lock is poisoned");
     assert!(
         err.to_string().contains("TraceLlm state lock poisoned"),
         "expected poison diagnostic, got {err}"
