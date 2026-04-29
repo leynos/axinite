@@ -29,6 +29,13 @@ ${source.slice(helperStart, helperEnd)}
 });
 `).runInNewContext({ FormData: FakeFormData });
 
+const formHandlerStart = source.indexOf('function installSkillBundleFromForm');
+const formHandlerEnd = source.indexOf('\n// Wire up Enter key', formHandlerStart + 1);
+const formHandlerSrc = source.slice(
+  formHandlerStart,
+  formHandlerEnd === -1 ? undefined : formHandlerEnd,
+);
+
 test('selectedSkillBundleFile returns the first selected file', () => {
   const first = { name: 'deploy-docs.skill' };
   const second = { name: 'other.skill' };
@@ -57,4 +64,80 @@ test('buildSkillBundleInstallRequest creates a multipart install request', () =>
   assert.equal(request.body.entries.length, 1);
   assert.equal(request.body.entries[0][0], 'bundle');
   assert.equal(request.body.entries[0][1], file);
+});
+
+test('installSkillBundleFromForm shows toast and returns early when no file is selected', () => {
+  const calls = { showToast: [] };
+  const ctx = {
+    document: { getElementById: () => ({ files: [] }) },
+    confirm: () => true,
+    apiFetch: async () => ({}),
+    showToast: (msg, type) => calls.showToast.push({ msg, type }),
+    loadSkills: () => {},
+    FormData: FakeFormData,
+    selectedSkillBundleFile: helpers.selectedSkillBundleFile,
+    isSkillBundleFilename: helpers.isSkillBundleFilename,
+    buildSkillBundleInstallRequest: helpers.buildSkillBundleInstallRequest,
+  };
+  new vm.Script(formHandlerSrc + '\n installSkillBundleFromForm();').runInNewContext(ctx);
+  assert.equal(calls.showToast.length, 1);
+  assert.equal(calls.showToast[0].type, 'error');
+});
+
+test('installSkillBundleFromForm shows toast and returns early for non-.skill filename', () => {
+  const calls = { showToast: [] };
+  const ctx = {
+    document: { getElementById: () => ({ files: [{ name: 'bundle.zip' }], value: '' }) },
+    confirm: () => true,
+    apiFetch: async () => ({}),
+    showToast: (msg, type) => calls.showToast.push({ msg, type }),
+    loadSkills: () => {},
+    FormData: FakeFormData,
+    selectedSkillBundleFile: helpers.selectedSkillBundleFile,
+    isSkillBundleFilename: helpers.isSkillBundleFilename,
+    buildSkillBundleInstallRequest: helpers.buildSkillBundleInstallRequest,
+  };
+  new vm.Script(formHandlerSrc + '\n installSkillBundleFromForm();').runInNewContext(ctx);
+  assert.equal(calls.showToast.length, 1);
+  assert.equal(calls.showToast[0].type, 'error');
+});
+
+test('installSkillBundleFromForm returns early when user cancels confirm', () => {
+  let fetchCalled = false;
+  const ctx = {
+    document: { getElementById: () => ({ files: [{ name: 'deploy-docs.skill' }], value: '' }) },
+    confirm: () => false,
+    apiFetch: async () => { fetchCalled = true; return {}; },
+    showToast: () => {},
+    loadSkills: () => {},
+    FormData: FakeFormData,
+    selectedSkillBundleFile: helpers.selectedSkillBundleFile,
+    isSkillBundleFilename: helpers.isSkillBundleFilename,
+    buildSkillBundleInstallRequest: helpers.buildSkillBundleInstallRequest,
+  };
+  new vm.Script(formHandlerSrc + '\n installSkillBundleFromForm();').runInNewContext(ctx);
+  assert.equal(fetchCalled, false);
+});
+
+test('installSkillBundleFromForm calls apiFetch and shows success toast on install', async () => {
+  const calls = { showToast: [], loadSkills: 0 };
+  const input = { files: [{ name: 'deploy-docs.skill' }], value: 'initial' };
+  const ctx = {
+    document: { getElementById: () => input },
+    confirm: () => true,
+    apiFetch: async (_url, _req) => ({ success: true }),
+    showToast: (msg, type) => calls.showToast.push({ msg, type }),
+    loadSkills: () => { calls.loadSkills += 1; },
+    FormData: FakeFormData,
+    selectedSkillBundleFile: helpers.selectedSkillBundleFile,
+    isSkillBundleFilename: helpers.isSkillBundleFilename,
+    buildSkillBundleInstallRequest: helpers.buildSkillBundleInstallRequest,
+  };
+  const script = new vm.Script(formHandlerSrc + '\n installSkillBundleFromForm();');
+  script.runInNewContext(ctx);
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(calls.showToast.length, 1);
+  assert.equal(calls.showToast[0].type, 'success');
+  assert.equal(calls.loadSkills, 1);
+  assert.equal(input.value, '');
 });
