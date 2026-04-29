@@ -66,41 +66,28 @@ test('buildSkillBundleInstallRequest creates a multipart install request', () =>
   assert.equal(request.body.entries[0][1], file);
 });
 
-test('installSkillBundleFromForm shows toast and returns early when no file is selected', () => {
-  const calls = { showToast: [] };
-  const ctx = {
-    document: { getElementById: () => ({ files: [] }) },
-    confirm: () => true,
-    apiFetch: async () => ({}),
-    showToast: (msg, type) => calls.showToast.push({ msg, type }),
-    loadSkills: () => {},
-    FormData: FakeFormData,
-    selectedSkillBundleFile: helpers.selectedSkillBundleFile,
-    isSkillBundleFilename: helpers.isSkillBundleFilename,
-    buildSkillBundleInstallRequest: helpers.buildSkillBundleInstallRequest,
-  };
-  new vm.Script(formHandlerSrc + '\n installSkillBundleFromForm();').runInNewContext(ctx);
-  assert.equal(calls.showToast.length, 1);
-  assert.equal(calls.showToast[0].type, 'error');
-});
-
-test('installSkillBundleFromForm shows toast and returns early for non-.skill filename', () => {
-  const calls = { showToast: [] };
-  const ctx = {
-    document: { getElementById: () => ({ files: [{ name: 'bundle.zip' }], value: '' }) },
-    confirm: () => true,
-    apiFetch: async () => ({}),
-    showToast: (msg, type) => calls.showToast.push({ msg, type }),
-    loadSkills: () => {},
-    FormData: FakeFormData,
-    selectedSkillBundleFile: helpers.selectedSkillBundleFile,
-    isSkillBundleFilename: helpers.isSkillBundleFilename,
-    buildSkillBundleInstallRequest: helpers.buildSkillBundleInstallRequest,
-  };
-  new vm.Script(formHandlerSrc + '\n installSkillBundleFromForm();').runInNewContext(ctx);
-  assert.equal(calls.showToast.length, 1);
-  assert.equal(calls.showToast[0].type, 'error');
-});
+for (const [label, fileInput] of [
+  ['no file is selected', { files: [] }],
+  ['non-.skill filename', { files: [{ name: 'bundle.zip' }], value: '' }],
+]) {
+  test(`installSkillBundleFromForm shows toast and returns early when ${label}`, () => {
+    const calls = { showToast: [] };
+    const ctx = {
+      document: { getElementById: () => fileInput },
+      confirm: () => true,
+      apiFetch: async () => ({}),
+      showToast: (msg, type) => calls.showToast.push({ msg, type }),
+      loadSkills: () => {},
+      FormData: FakeFormData,
+      selectedSkillBundleFile: helpers.selectedSkillBundleFile,
+      isSkillBundleFilename: helpers.isSkillBundleFilename,
+      buildSkillBundleInstallRequest: helpers.buildSkillBundleInstallRequest,
+    };
+    new vm.Script(formHandlerSrc + '\n installSkillBundleFromForm();').runInNewContext(ctx);
+    assert.equal(calls.showToast.length, 1);
+    assert.equal(calls.showToast[0].type, 'error');
+  });
+}
 
 test('installSkillBundleFromForm returns early when user cancels confirm', () => {
   let fetchCalled = false;
