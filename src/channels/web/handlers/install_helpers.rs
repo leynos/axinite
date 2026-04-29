@@ -118,6 +118,36 @@ fn map_body_read_error(error: axum::Error) -> (StatusCode, String) {
     }
 }
 
+/// Validate a `bundle` multipart field and return its bytes.
+///
+/// Returns an error if a bundle has already been seen, the field carries no
+/// filename, or the filename does not end with `.skill`.
+fn validate_bundle_field(
+    file_name: Option<String>,
+    upload: &Option<Vec<u8>>,
+    contents: Bytes,
+) -> Result<Vec<u8>, (StatusCode, String)> {
+    if upload.is_some() {
+        return Err((
+            StatusCode::BAD_REQUEST,
+            "Provide exactly one .skill upload".to_string(),
+        ));
+    }
+    let Some(file_name) = file_name else {
+        return Err((
+            StatusCode::BAD_REQUEST,
+            "Uploaded skill bundle must include a filename ending with .skill".to_string(),
+        ));
+    };
+    if !file_name.ends_with(".skill") {
+        return Err((
+            StatusCode::BAD_REQUEST,
+            "Uploaded skill bundle filename must end with .skill".to_string(),
+        ));
+    }
+    Ok(contents.to_vec())
+}
+
 pub(crate) async fn payload_from_multipart(
     request: Request,
     state: &Arc<GatewayState>,
@@ -140,25 +170,7 @@ pub(crate) async fn payload_from_multipart(
             .map_err(|error| (StatusCode::BAD_REQUEST, error.to_string()))?;
 
         if name == "bundle" {
-            if upload.is_some() {
-                return Err((
-                    StatusCode::BAD_REQUEST,
-                    "Provide exactly one .skill upload".to_string(),
-                ));
-            }
-            let Some(file_name) = file_name else {
-                return Err((
-                    StatusCode::BAD_REQUEST,
-                    "Uploaded skill bundle must include a filename ending with .skill".to_string(),
-                ));
-            };
-            if !file_name.ends_with(".skill") {
-                return Err((
-                    StatusCode::BAD_REQUEST,
-                    "Uploaded skill bundle filename must end with .skill".to_string(),
-                ));
-            }
-            upload = Some(contents.to_vec());
+            upload = Some(validate_bundle_field(file_name, &upload, contents)?);
         } else if multipart_source_field_has_value(&name, &contents) {
             return Err(exactly_one_install_source_error());
         }
