@@ -21,5 +21,12 @@ if [ -z "$files" ]; then
 	exit 0
 fi
 
-# shellcheck disable=SC2086
-"$bunx_cmd" markdownlint-cli2 $files
+set -f
+old_ifs=$IFS
+IFS='
+'
+set -- $files
+IFS=$old_ifs
+set +f
+
+"$bunx_cmd" markdownlint-cli2 "$@"
