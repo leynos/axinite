@@ -1,5 +1,4 @@
 # Architectural decision record (ADR) 010: Consolidate bootstrap rename helpers in `src/bootstrap/migration.rs`
-
 ## Status
 
 Accepted.
@@ -42,6 +41,9 @@ Remove `rename_bootstrap_to_migrated` and `mark_legacy_migrated`.
 
 Retain a single helper:
 
+The following Rust signature names the retained helper and shows that callers
+receive an `io::Result<()>` from the rename operation.
+
 ```rust
 pub(super) fn rename_to_migrated(path: &Path) -> io::Result<()>
 ```
@@ -81,5 +83,7 @@ All other non-fatal migration paths also use explicit `let _ = ...` discards:
   [`src/bootstrap/migration.rs`](../src/bootstrap/migration.rs), which defines
   `rename_legacy_bootstrap`.
 - See also: [`docs/contents.md`](contents.md).
+
+# Architectural decision record (ADR) 010: Consolidate bootstrap rename helpers in `src/bootstrap/migration.rs`
 
 # Architectural decision record (ADR) 010: Consolidate bootstrap rename helpers in `src/bootstrap/migration.rs`
