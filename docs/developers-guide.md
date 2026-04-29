@@ -1168,7 +1168,7 @@ guest metadata when needed, applies overrides, and returns a
 - `persist_credential_mappings` stores HTTP credential mappings after
   registration succeeds.
 
-See [ADR 011](adr-011-extract-register-wasm-helpers-to-reduce-cyclomatic-complexity.md)
+See [ADR 011](adr-011-extract-register-wasm-helpers.md)
 for the helper extraction rationale.
 
 1. **`register_wasm`** — the lower-level entry point. Accepts raw WASM
