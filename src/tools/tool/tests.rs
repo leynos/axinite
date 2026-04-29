@@ -106,7 +106,8 @@ fn test_require_str_present() {
 fn test_require_str_accepts_param_name() {
     let params = serde_json::json!({"name": "alice"});
     assert_eq!(
-        require_str(&params, ParamName::from("name")).unwrap(),
+        require_str(&params, ParamName::from("name"))
+            .expect("expected 'name' parameter to be a string and present"),
         "alice"
     );
 }
