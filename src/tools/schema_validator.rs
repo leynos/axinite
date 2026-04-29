@@ -57,13 +57,92 @@ pub fn validate_strict_schema(
     }
 }
 
+fn additional_properties_error(schema: &serde_json::Value, path: &str) -> Option<String> {
+    let additional = schema.get("additionalProperties")?;
+    if additional != &serde_json::Value::Bool(false) && additional.get("type").is_none() {
+        Some(format!(
+            "{path}: \"additionalProperties\" should be false or a type schema"
+        ))
+    } else {
+        None
+    }
+}
+
+fn check_enum_values(prop: &serde_json::Value, prop_type: &str, prop_path: &str) -> Vec<String> {
+    let Some(enum_values) = prop.get("enum").and_then(|e| e.as_array()) else {
+        return Vec::new();
+    };
+
+    let mut errors = Vec::new();
+    for (i, val) in enum_values.iter().enumerate() {
+        let type_matches = match prop_type {
+            "string" => val.is_string(),
+            "integer" | "number" => val.is_number(),
+            "boolean" => val.is_boolean(),
+            _ => true, // unknown types: skip check
+        };
+        if !type_matches {
+            errors.push(format!(
+                "{prop_path}: enum[{i}] value {val} does not match declared type \"{prop_type}\""
+            ));
+        }
+    }
+    errors
+}
+
+fn check_strict_property(key: &str, prop: &serde_json::Value, path: SchemaPath) -> Vec<String> {
+    let mut errors = Vec::new();
+    let prop_path = path.child(key);
+
+    if prop.get("type").is_none() {
+        // Freeform properties (no type) are intentionally allowed in some tools
+        // (json "data", http "body") for OpenAI compatibility with union types.
+        // We flag them as warnings but don't treat them as hard errors.
+        // Uncomment the next line to enforce strict typing:
+        // errors.push(format!("{prop_path}: property missing \"type\" field"));
+        return errors;
+    }
+
+    let prop_type = prop.get("type").and_then(|t| t.as_str()).unwrap_or("");
+
+    // Rule 5: additionalProperties must be false if present
+    if let Some(error) = additional_properties_error(prop, prop_path.as_str()) {
+        errors.push(error);
+    }
+
+    // Rule 7: enum values must match the declared type
+    errors.extend(check_enum_values(prop, prop_type, prop_path.as_str()));
+
+    // Rule 6: nested objects follow the same rules
+    if prop_type == "object" {
+        // Objects with additionalProperties as a type schema (e.g. credentials map)
+        // are valid JSON Schema patterns, not strict-mode objects with fixed properties.
+        if prop.get("additionalProperties").is_some() && prop.get("properties").is_none() {
+            // This is a map type (e.g. {"type": "object", "additionalProperties": {"type": "string"}})
+            // Valid pattern, skip recursive object validation.
+        } else {
+            errors.extend(check_object_schema(prop, prop_path.clone()));
+        }
+    }
+
+    // Rule 8: arrays must have "items"
+    if prop_type == "array" {
+        if prop.get("items").is_none() {
+            errors.push(format!("{prop_path}: array property missing \"items\""));
+        } else if let Some(items) = prop.get("items") {
+            // Recurse into items if they are objects
+            if items.get("type").and_then(|t| t.as_str()) == Some("object") {
+                let items_path = SchemaPath::from(prop_path.as_str()).child("items");
+                errors.extend(check_object_schema(items, items_path));
+            }
+        }
+    }
+
+    errors
+}
 /// Recursively validate an object-typed schema node.
 fn check_object_schema(schema: &serde_json::Value, path: impl Into<SchemaPath>) -> Vec<String> {
     let path = path.into();
-    check_object_schema_at(schema, &path)
-}
-
-fn check_object_schema_at(schema: &serde_json::Value, path: &SchemaPath) -> Vec<String> {
     let mut errors = Vec::new();
 
     // Rule 1: must have "type": "object"
@@ -103,86 +182,14 @@ fn check_object_schema_at(schema: &serde_json::Value, path: &SchemaPath) -> Vec<
 
     // Rule 4: every property should have a "type" field
     for (key, prop) in properties {
-        let prop_path = path.child(key);
-
-        if prop.get("type").is_none() {
-            // Freeform properties (no type) are intentionally allowed in some tools
-            // (json "data", http "body") for OpenAI compatibility with union types.
-            // We flag them as warnings but don't treat them as hard errors.
-            // Uncomment the next line to enforce strict typing:
-            // errors.push(format!("{prop_path}: property missing \"type\" field"));
-            continue;
-        }
-
-        let prop_type = prop.get("type").and_then(|t| t.as_str()).unwrap_or("");
-
-        // Rule 5: additionalProperties must be false if present
-        if let Some(additional) = prop.get("additionalProperties")
-            && additional != &serde_json::Value::Bool(false)
-            // Allow additionalProperties with a type schema (e.g. {"type": "string"})
-            // which is valid in JSON Schema and used by tools like create_job's credentials.
-            && additional.get("type").is_none()
-        {
-            errors.push(format!(
-                "{prop_path}: \"additionalProperties\" should be false or a type schema"
-            ));
-        }
-
-        // Rule 7: enum values must match the declared type
-        if let Some(enum_values) = prop.get("enum").and_then(|e| e.as_array()) {
-            for (i, val) in enum_values.iter().enumerate() {
-                let type_matches = match prop_type {
-                    "string" => val.is_string(),
-                    "integer" | "number" => val.is_number(),
-                    "boolean" => val.is_boolean(),
-                    _ => true, // unknown types: skip check
-                };
-                if !type_matches {
-                    errors.push(format!(
-                        "{prop_path}: enum[{i}] value {val} does not match declared type \"{prop_type}\""
-                    ));
-                }
-            }
-        }
-
-        // Rule 6: nested objects follow the same rules
-        if prop_type == "object" {
-            // Objects with additionalProperties as a type schema (e.g. credentials map)
-            // are valid JSON Schema patterns, not strict-mode objects with fixed properties.
-            if prop.get("additionalProperties").is_some() && prop.get("properties").is_none() {
-                // This is a map type (e.g. {"type": "object", "additionalProperties": {"type": "string"}})
-                // Valid pattern, skip recursive object validation.
-            } else {
-                errors.extend(check_object_schema_at(prop, &prop_path));
-            }
-        }
-
-        // Rule 8: arrays must have "items"
-        if prop_type == "array" {
-            if prop.get("items").is_none() {
-                errors.push(format!("{prop_path}: array property missing \"items\""));
-            } else if let Some(items) = prop.get("items") {
-                // Recurse into items if they are objects
-                if items.get("type").and_then(|t| t.as_str()) == Some("object") {
-                    let items_path = prop_path.child("items");
-                    errors.extend(check_object_schema_at(items, &items_path));
-                }
-            }
-        }
+        errors.extend(check_strict_property(key, prop, path.clone()));
     }
 
     // Also check top-level additionalProperties (rule 5)
-    if let Some(additional) = schema.get("additionalProperties")
-        && additional != &serde_json::Value::Bool(false)
-        && additional.get("type").is_none()
-    {
-        errors.push(format!(
-            "{path}: top-level \"additionalProperties\" should be false or a type schema"
-        ));
+    if let Some(error) = additional_properties_error(schema, path.as_str()) {
+        errors.push(error);
     }
 
     errors
 }
-
-#[cfg(test)]
 mod tests;
