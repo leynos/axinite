@@ -57,18 +57,47 @@ pub fn validate_strict_schema(
     }
 }
 
-fn additional_properties_error(schema: &serde_json::Value, path: &str) -> Option<String> {
+fn check_required_keys(
+    schema: &serde_json::Value,
+    properties: &serde_json::Map<String, serde_json::Value>,
+    path: &SchemaPath,
+) -> Vec<String> {
+    let Some(required) = schema.get("required").and_then(|r| r.as_array()) else {
+        return Vec::new();
+    };
+
+    let mut errors = Vec::new();
+    for req in required {
+        if let Some(key) = req.as_str()
+            && !properties.contains_key(key)
+        {
+            errors.push(format!(
+                "{path}: required key \"{key}\" not found in properties"
+            ));
+        }
+    }
+    errors
+}
+fn additional_properties_error(
+    schema: &serde_json::Value,
+    path: &str,
+    label: &str,
+) -> Option<String> {
     let additional = schema.get("additionalProperties")?;
     if additional != &serde_json::Value::Bool(false) && additional.get("type").is_none() {
         Some(format!(
-            "{path}: \"additionalProperties\" should be false or a type schema"
+            "{path}: {label}\"additionalProperties\" should be false or a type schema"
         ))
     } else {
         None
     }
 }
 
-fn check_enum_values(prop: &serde_json::Value, prop_type: &str, prop_path: &str) -> Vec<String> {
+fn check_enum_type_match(
+    prop: &serde_json::Value,
+    prop_type: &str,
+    prop_path: &SchemaPath,
+) -> Vec<String> {
     let Some(enum_values) = prop.get("enum").and_then(|e| e.as_array()) else {
         return Vec::new();
     };
@@ -90,7 +119,7 @@ fn check_enum_values(prop: &serde_json::Value, prop_type: &str, prop_path: &str)
     errors
 }
 
-fn check_strict_property(key: &str, prop: &serde_json::Value, path: SchemaPath) -> Vec<String> {
+fn check_single_property(key: &str, prop: &serde_json::Value, path: &SchemaPath) -> Vec<String> {
     let mut errors = Vec::new();
     let prop_path = path.child(key);
 
@@ -106,12 +135,12 @@ fn check_strict_property(key: &str, prop: &serde_json::Value, path: SchemaPath) 
     let prop_type = prop.get("type").and_then(|t| t.as_str()).unwrap_or("");
 
     // Rule 5: additionalProperties must be false if present
-    if let Some(error) = additional_properties_error(prop, prop_path.as_str()) {
+    if let Some(error) = additional_properties_error(prop, prop_path.as_str(), "") {
         errors.push(error);
     }
 
     // Rule 7: enum values must match the declared type
-    errors.extend(check_enum_values(prop, prop_type, prop_path.as_str()));
+    errors.extend(check_enum_type_match(prop, prop_type, &prop_path));
 
     // Rule 6: nested objects follow the same rules
     if prop_type == "object" {
@@ -121,7 +150,7 @@ fn check_strict_property(key: &str, prop: &serde_json::Value, path: SchemaPath) 
             // This is a map type (e.g. {"type": "object", "additionalProperties": {"type": "string"}})
             // Valid pattern, skip recursive object validation.
         } else {
-            errors.extend(check_object_schema(prop, prop_path.clone()));
+            errors.extend(check_object_schema_at(prop, &prop_path));
         }
     }
 
@@ -132,8 +161,8 @@ fn check_strict_property(key: &str, prop: &serde_json::Value, path: SchemaPath) 
         } else if let Some(items) = prop.get("items") {
             // Recurse into items if they are objects
             if items.get("type").and_then(|t| t.as_str()) == Some("object") {
-                let items_path = SchemaPath::from(prop_path.as_str()).child("items");
-                errors.extend(check_object_schema(items, items_path));
+                let items_path = prop_path.child("items");
+                errors.extend(check_object_schema_at(items, &items_path));
             }
         }
     }
@@ -143,6 +172,10 @@ fn check_strict_property(key: &str, prop: &serde_json::Value, path: SchemaPath) 
 /// Recursively validate an object-typed schema node.
 fn check_object_schema(schema: &serde_json::Value, path: impl Into<SchemaPath>) -> Vec<String> {
     let path = path.into();
+    check_object_schema_at(schema, &path)
+}
+
+fn check_object_schema_at(schema: &serde_json::Value, path: &SchemaPath) -> Vec<String> {
     let mut errors = Vec::new();
 
     // Rule 1: must have "type": "object"
@@ -168,25 +201,15 @@ fn check_object_schema(schema: &serde_json::Value, path: impl Into<SchemaPath>) 
     };
 
     // Rule 3: every key in "required" must exist in "properties"
-    if let Some(required) = schema.get("required").and_then(|r| r.as_array()) {
-        for req in required {
-            if let Some(key) = req.as_str()
-                && !properties.contains_key(key)
-            {
-                errors.push(format!(
-                    "{path}: required key \"{key}\" not found in properties"
-                ));
-            }
-        }
-    }
+    errors.extend(check_required_keys(schema, properties, path));
 
     // Rule 4: every property should have a "type" field
     for (key, prop) in properties {
-        errors.extend(check_strict_property(key, prop, path.clone()));
+        errors.extend(check_single_property(key, prop, path));
     }
 
     // Also check top-level additionalProperties (rule 5)
-    if let Some(error) = additional_properties_error(schema, path.as_str()) {
+    if let Some(error) = additional_properties_error(schema, path.as_str(), "top-level ") {
         errors.push(error);
     }
 
