@@ -18,7 +18,7 @@ fn test_valid_schema_passes() {
 }
 
 #[test]
-fn test_strict_schema_accepts_tool_name_newtype() {
+fn test_strict_schema_accepts_valid_schema_with_tool_name_newtype() {
     let schema = serde_json::json!({
         "type": "object",
         "properties": {
@@ -27,6 +27,17 @@ fn test_strict_schema_accepts_tool_name_newtype() {
     });
 
     assert!(validate_strict_schema(&schema, ToolName::from("test")).is_ok());
+}
+
+#[test]
+fn test_strict_schema_error_contains_tool_name_from_newtype() {
+    // Invalid: missing "properties".
+    let schema = serde_json::json!({ "type": "object" });
+    let err = validate_strict_schema(&schema, ToolName::from("my_tool")).unwrap_err();
+    assert!(
+        err.iter().any(|e| e.starts_with("my_tool:")),
+        "error must begin with the tool name 'my_tool', got: {err:?}"
+    );
 }
 
 fn nested_headers_schema(extra_required: &str) -> serde_json::Value {

@@ -114,6 +114,17 @@ fn test_require_str_accepts_param_name() {
 }
 
 #[test]
+fn test_require_str_param_name_error_contains_key() {
+    let params = serde_json::json!({});
+    let err = require_str(&params, ParamName::from("token")).unwrap_err();
+    assert_eq!(
+        err.to_string(),
+        "Invalid parameters: missing 'token' parameter",
+        "ParamName must feed into the error message verbatim"
+    );
+}
+
+#[test]
 fn test_param_name_preserves_display_value() {
     let name = ParamName::from("name");
     assert_eq!(name.as_ref(), "name");
