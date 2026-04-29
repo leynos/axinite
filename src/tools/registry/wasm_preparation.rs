@@ -1,4 +1,30 @@
 //! WASM tool preparation before registry insertion.
+//!
+//! This module owns the transformation from [`WasmToolRegistration`] to a
+//! runtime-ready [`WasmToolWrapper`]. It sits between
+//! [`loader::WasmToolRegistration`](super::loader::WasmToolRegistration), which
+//! carries caller-supplied registration inputs, and
+//! [`ToolRegistry`](super::loader::ToolRegistry) insertion, which publishes the
+//! prepared wrapper only after this module has validated and normalised the
+//! registration data.
+//!
+//! Inputs include the raw WASM bytes, runtime, [`Capabilities`], optional
+//! description and schema overrides, optional [`SecretsStore`] access, and
+//! optional [`OAuthRefreshConfig`]. The main output is a [`PreparedWasmTool`]
+//! containing the [`WasmToolWrapper`] plus any [`CredentialMapping`] values that
+//! the registry must persist after successful insertion.
+//!
+//! Preparation compiles and validates the component through the runtime,
+//! recovers guest-exported metadata when overrides are absent, applies explicit
+//! overrides, and attaches runtime concerns such as secret resolution and OAuth
+//! refresh configuration. It returns [`WasmError`] for compile, validation, and
+//! configuration failures surfaced by the runtime.
+//!
+//! The module does not insert tools into the registry or persist credential
+//! mappings. It guarantees that credential mappings are kept separate until
+//! insertion succeeds, that explicit metadata overrides take precedence over
+//! guest exports, and that secret material is not read during preparation; only
+//! the store handle is attached for later execution-time lookup.
 
 use std::sync::Arc;
 
