@@ -249,7 +249,7 @@ compiles the helpers it requires, which keeps the support surface
 honest and avoids dead-code lint suppression.
 
 The `trace_llm` facade in that module provides a narrowed one-import
-surface for LLM trace helpers. It exports
+surface for language model (LLM) trace helpers. It exports
 `trace_types::{LlmTrace, TraceExpects}` publicly for test consumers,
 while `trace_json_patch::patch_json_value` is exposed as crate-local
 `pub(crate)` for integration-test fixture helpers. The patch helper is
@@ -269,7 +269,6 @@ restricted `pub(crate)` visibility for harness-internal use:
 These helpers are not exported for external crates. Their narrow
 visibility keeps integration-test fixture helpers limited to the harness
 submodules that actually use them.
-
 
 ## 12. Support-unit harness support
 
@@ -408,7 +407,6 @@ them to do the capture work:
 For tests, prefer the helpers in `src/testing/test_utils.rs` or
 `Config::for_testing(...)` instead of mutating `std::env`. That keeps
 tests independent of host machine secrets, keychains, and shell state.
-
 
 ## 18. AppBuilder
 
@@ -609,7 +607,6 @@ cargo nextest run --workspace --no-default-features --features libsql \
 To compare behaviour against the legacy harness, use `make test-cargo`
 or `make test-matrix-cargo`.
 
-
 ## 20. Self-repair internals
 
 The agent loop starts the self-repair subsystem in
@@ -644,7 +641,6 @@ When modifying this path, keep three invariants in mind:
 - User-facing behaviour changes in self-repair should update both
   [Jobs and Routines](./jobs-and-routines.md) and the
   [User's Guide](./users-guide.md).
-
 
 ## 21. Database-backed work
 
@@ -1112,7 +1108,6 @@ fans test slices out from that artifact. That is the closest existing
 example of the faster compile-once, fan-out pattern the compile-time
 reduction effort should reuse elsewhere.
 
-
 ## 24. Trace and channel test helpers
 
 Three test-support helpers were added in PR `#161` to make replay-based
@@ -1451,7 +1446,6 @@ For the compile-time reduction effort:
 - do not assume standalone WASM crates or every focused test path has
   migrated away from `cargo test`.
 
-
 ## 27. Troubleshooting
 
 - If `cargo` says `wasm32-wasip2` is missing, rerun
@@ -1466,7 +1460,6 @@ For the compile-time reduction effort:
   ready.
 - If Playwright is missing browsers, rerun
   `playwright install --with-deps chromium`.
-
 
 ## 28. Hot-reload architecture
 
