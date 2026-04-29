@@ -37,7 +37,8 @@ fn json_scalar_to_value(value: &serde_json::Value) -> Option<serde_json::Value> 
     match value {
         serde_json::Value::String(_)
         | serde_json::Value::Number(_)
-        | serde_json::Value::Bool(_) => Some(value.clone()),
+        | serde_json::Value::Bool(_)
+        | serde_json::Value::Null => Some(value.clone()),
         _ => None,
     }
 }
@@ -264,6 +265,24 @@ mod tests {
                 "summary": "limit=3, enabled=true",
             })
         );
+    }
+
+    #[test]
+    fn substitute_templates_preserves_extracted_null_values() {
+        let messages = [ChatMessage {
+            role: Role::Tool,
+            content: serde_json::json!({"optional": null}).to_string(),
+            content_parts: Vec::new(),
+            tool_call_id: Some("call".to_string()),
+            name: None,
+            tool_calls: None,
+        }];
+        let vars = extract_tool_result_vars(&messages).expect("valid JSON should parse");
+        let mut value = serde_json::json!({"optional": "{{call.optional}}"});
+
+        substitute_templates(&mut value, &vars);
+
+        assert_eq!(value, serde_json::json!({"optional": null}));
     }
 
     #[test]

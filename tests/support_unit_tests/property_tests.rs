@@ -29,13 +29,26 @@ proptest! {
         let vars: HashMap<String, serde_json::Value> = (0..n_vars)
             .map(|i| {
                 let key = format!("k{i}");
-                let val = serde_json::json!(format!("{{{{k{}}}}}", i + 1));
+                let val = serde_json::json!(format!("{{{{k{}}}}}~", (i + 1) % n_vars));
                 (key, val)
             })
             .collect();
-        let mut v = serde_json::json!("{{k0}}");
+        let mut v = serde_json::json!("prefix {{k0}} suffix");
 
         substitute_templates(&mut v, &vars);
+
+        prop_assert!(
+            v.as_str()
+                .is_some_and(|value| value.contains("{{k") && value.contains("}}")),
+            "cyclic expansion should stop with an unresolved template marker: {v:?}"
+        );
+        prop_assert_eq!(
+            v.as_str()
+                .expect("expanded template should remain a string")
+                .matches('~')
+                .count(),
+            128
+        );
     }
 
     /// Repeated calls to `setup_test_dir_with_suffix` never produce the same

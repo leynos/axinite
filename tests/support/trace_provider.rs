@@ -198,7 +198,7 @@ impl TraceLlm {
     /// Panics if the counter would overflow `usize::MAX`. Test-scale usage
     /// should never approach this limit; overflow indicates runaway
     /// hint-mismatch accumulation.
-    fn increment_hint_mismatches(&self) {
+    pub(super) fn increment_hint_mismatches(&self) {
         self.hint_mismatches
             .fetch_update(Ordering::Relaxed, Ordering::Relaxed, |current| {
                 current.checked_add(1)
@@ -207,11 +207,9 @@ impl TraceLlm {
     }
 }
 
-// The `hint_mismatches` overflow panic and `inner` lock-poison recovery path
-// are intentionally documented but not directly unit-tested here. Reaching the
-// overflow requires `usize::MAX` mismatches, and poisoning `inner` would require
-// a test-only mutation hook for `TraceLlm` internals that normal replay code
-// never needs.
+// The `inner` lock-poison recovery path is intentionally documented but not
+// directly unit-tested here. Poisoning `inner` would require a test-only
+// mutation hook for `TraceLlm` internals that normal replay code never needs.
 
 fn tool_calls_have_templates(tool_calls: &[TraceToolCall]) -> bool {
     tool_calls
@@ -308,101 +306,5 @@ impl ironclaw::llm::NativeLlmProvider for TraceLlm {
                     .to_string(),
             }),
         }
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use std::sync::Arc;
-    use std::sync::atomic::Ordering;
-
-    use ironclaw::llm::recording::{TraceResponse, TraceStep};
-    use ironclaw::llm::{ChatMessage, LlmProvider, ToolCompletionRequest};
-
-    use super::*;
-    use crate::support::trace_types::LlmTrace;
-
-    fn text_step(content: &str) -> TraceStep {
-        TraceStep {
-            request_hint: None,
-            response: TraceResponse::Text {
-                content: content.to_string(),
-                input_tokens: 1,
-                output_tokens: 1,
-            },
-            expected_tool_results: Vec::new(),
-        }
-    }
-
-    #[tokio::test]
-    async fn next_step_errors_on_cursor_overflow() {
-        let llm = TraceLlm::from_trace(LlmTrace::single_turn(
-            "overflow-model",
-            "hello",
-            vec![text_step("hi")],
-        ));
-        {
-            let mut inner = llm.inner.lock().expect("TraceLlm state lock should open");
-            inner.index = usize::MAX;
-        }
-
-        let err = llm
-            .complete_with_tools(ToolCompletionRequest::new(
-                vec![ChatMessage::user("hello")],
-                vec![],
-            ))
-            .await
-            .expect_err("cursor overflow should fail replay");
-
-        assert!(
-            matches!(err, LlmError::RequestFailed { .. }),
-            "expected request failure, got {err:?}"
-        );
-        assert!(
-            err.to_string().contains("overflowed"),
-            "expected overflow diagnostic, got {err}"
-        );
-    }
-
-    #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
-    async fn concurrent_calls_advance_cursor_monotonically() {
-        let steps = (0..64)
-            .map(|index| text_step(&format!("response {index}")))
-            .collect();
-        let llm = Arc::new(TraceLlm::from_trace(LlmTrace::single_turn(
-            "concurrent-model",
-            "hello",
-            steps,
-        )));
-
-        let handles: Vec<_> = (0..8)
-            .map(|index| {
-                let llm = Arc::clone(&llm);
-                tokio::spawn(async move {
-                    llm.complete_with_tools(ToolCompletionRequest::new(
-                        vec![ChatMessage::user(format!("hello {index}"))],
-                        vec![],
-                    ))
-                    .await
-                })
-            })
-            .collect();
-
-        let mut successes = 0;
-        for handle in handles {
-            let response = handle.await.expect("task should not panic");
-            if response.is_ok() {
-                successes += 1;
-            }
-        }
-
-        assert_eq!(successes, 8);
-        let final_cursor = llm
-            .inner
-            .lock()
-            .expect("TraceLlm state lock should open")
-            .index;
-        assert_eq!(final_cursor, successes);
-        assert_eq!(llm.hint_mismatches.load(Ordering::SeqCst), 0);
     }
 }

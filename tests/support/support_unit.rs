@@ -39,6 +39,9 @@ pub mod trace_provider
 mod trace_provider_diagnostics
 ;
 
+mod trace_provider_tests
+;
+
 pub mod trace_template_utils
 ;
 
