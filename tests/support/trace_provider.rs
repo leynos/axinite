@@ -13,7 +13,7 @@ use ironclaw::llm::{
 };
 
 use super::trace_template_utils::{
-    extract_tool_result_vars, substitute_templates, value_contains_template,
+    extract_tool_result_vars, has_template_marker, substitute_templates,
 };
 use super::trace_types::LlmTrace;
 
@@ -222,7 +222,7 @@ impl TraceLlm {
 fn tool_calls_have_templates(tool_calls: &[TraceToolCall]) -> bool {
     tool_calls
         .iter()
-        .any(|tool_call| value_contains_template(&tool_call.arguments))
+        .any(|tool_call| has_template_marker(&tool_call.arguments))
 }
 
 impl ironclaw::llm::NativeLlmProvider for TraceLlm {

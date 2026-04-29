@@ -389,9 +389,7 @@ mod tests {
     }
 
     #[rstest]
-    fn substitute_templates_preserves_extracted_null_values(
-        mut tool_message_fixture: ChatMessage,
-    ) {
+    fn substitute_templates_preserves_extracted_null_values(mut tool_message_fixture: ChatMessage) {
         tool_message_fixture.content = serde_json::json!({"optional": null}).to_string();
         let messages = [tool_message_fixture];
         let vars = extract_tool_result_vars(&messages).expect("valid JSON should parse");
@@ -421,9 +419,7 @@ mod tests {
     }
 
     #[rstest]
-    fn extract_tool_result_vars_flattens_non_object_roots(
-        mut tool_message_fixture: ChatMessage,
-    ) {
+    fn extract_tool_result_vars_flattens_non_object_roots(mut tool_message_fixture: ChatMessage) {
         tool_message_fixture.content = serde_json::json!(["alpha", true]).to_string();
         tool_message_fixture.tool_call_id = Some("call_array".to_string());
         let messages = [tool_message_fixture];
