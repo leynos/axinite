@@ -1,5 +1,6 @@
 //! Tests for DefaultSelfRepair.
 
+use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -9,6 +10,10 @@ use rstest::rstest;
 use crate::agent::self_repair::default::{DefaultSelfRepair, duration_since};
 use crate::agent::self_repair::{BrokenTool, NativeSelfRepair, RepairResult, StuckJob};
 use crate::context::{ContextManager, JobState};
+use crate::error::{RepairError, ToolError};
+use crate::testing::null_db::NullDatabase;
+use crate::tools::builder::ProjectName;
+use crate::tools::{BuildRequirement, BuildResult, Language, NativeSoftwareBuilder, SoftwareType};
 use uuid::Uuid;
 
 // === QA Plan - Self-repair stuck job tests ===
@@ -329,4 +334,334 @@ fn duration_since_millisecond_precision() {
         "Expected < 1s, got {:?}",
         elapsed
     );
+}
+
+/// Constructs a minimal [`BrokenTool`] for use in helper unit tests.
+fn stub_broken_tool(name: &str, last_error: Option<&str>, repair_attempts: u32) -> BrokenTool {
+    BrokenTool {
+        name: name.to_string(),
+        failure_count: 3,
+        last_error: last_error.map(str::to_string),
+        first_failure: Utc::now(),
+        last_failure: Utc::now(),
+        last_build_result: None,
+        repair_attempts,
+    }
+}
+
+/// Constructs a minimal [`BuildRequirement`] for use in helper unit tests.
+fn stub_build_requirement() -> BuildRequirement {
+    BuildRequirement {
+        name: ProjectName::new("test-tool").expect("valid project name"),
+        description: "test".to_string(),
+        software_type: SoftwareType::WasmTool,
+        language: Language::Rust,
+        input_spec: None,
+        output_spec: None,
+        dependencies: vec![],
+        capabilities: vec![],
+    }
+}
+
+/// Constructs a [`BuildResult`] with the given outcome fields.
+fn stub_build_result(
+    success: bool,
+    error: Option<&str>,
+    iterations: u32,
+    registered: bool,
+) -> BuildResult {
+    BuildResult {
+        build_id: Uuid::nil(),
+        requirement: stub_build_requirement(),
+        artifact_path: PathBuf::from("/tmp/test"),
+        logs: vec![],
+        success,
+        error: error.map(str::to_string),
+        started_at: Utc::now(),
+        completed_at: Utc::now(),
+        iterations,
+        validation_warnings: vec![],
+        tests_passed: 0,
+        tests_failed: 0,
+        registered,
+    }
+}
+
+/// Configures the outcome of a single `build()` call.
+enum StubBuilderOutcome {
+    BuildSucceeded {
+        success: bool,
+        error: Option<&'static str>,
+        iterations: u32,
+        registered: bool,
+    },
+    Builderrored(&'static str),
+}
+
+/// Hand-rolled stub implementing [`NativeSoftwareBuilder`].
+struct StubSoftwareBuilder(StubBuilderOutcome);
+
+impl NativeSoftwareBuilder for StubSoftwareBuilder {
+    async fn analyze(&self, _description: &str) -> Result<BuildRequirement, ToolError> {
+        unimplemented!("not exercised in these unit tests")
+    }
+
+    async fn build(&self, _requirement: &BuildRequirement) -> Result<BuildResult, ToolError> {
+        match &self.0 {
+            StubBuilderOutcome::BuildSucceeded {
+                success,
+                error,
+                iterations,
+                registered,
+            } => Ok(stub_build_result(
+                *success,
+                *error,
+                *iterations,
+                *registered,
+            )),
+            StubBuilderOutcome::Builderrored(msg) => Err(ToolError::BuilderFailed(msg.to_string())),
+        }
+    }
+
+    async fn repair(&self, _result: &BuildResult, _error: &str) -> Result<BuildResult, ToolError> {
+        unimplemented!("not exercised in these unit tests")
+    }
+}
+
+// === build_repair_requirement ===
+
+#[test]
+fn build_repair_requirement_valid_name_produces_correct_fields() {
+    let tool = stub_broken_tool("my-tool", None, 0);
+    let req =
+        DefaultSelfRepair::build_repair_requirement(&tool).expect("valid name should succeed");
+
+    assert_eq!(req.name.as_str(), "my-tool");
+    assert_eq!(req.software_type, SoftwareType::WasmTool);
+    assert_eq!(req.language, Language::Rust);
+    assert!(req.capabilities.contains(&"http".to_string()));
+    assert!(req.capabilities.contains(&"workspace".to_string()));
+    assert!(req.dependencies.is_empty());
+}
+
+#[test]
+fn build_repair_requirement_includes_last_error_in_description() {
+    let tool = stub_broken_tool("my-tool", Some("segfault"), 0);
+    let req =
+        DefaultSelfRepair::build_repair_requirement(&tool).expect("valid name should succeed");
+
+    assert!(
+        req.description.contains("segfault"),
+        "description should contain last_error text"
+    );
+}
+
+#[test]
+fn build_repair_requirement_uses_unknown_error_placeholder_when_no_last_error() {
+    let tool = stub_broken_tool("my-tool", None, 0);
+    let req =
+        DefaultSelfRepair::build_repair_requirement(&tool).expect("valid name should succeed");
+
+    assert!(
+        req.description.contains("Unknown error"),
+        "description should contain 'Unknown error' when last_error is None"
+    );
+}
+
+#[test]
+fn build_repair_requirement_includes_failure_count_in_description() {
+    let mut tool = stub_broken_tool("my-tool", None, 0);
+    tool.failure_count = 7;
+    let req =
+        DefaultSelfRepair::build_repair_requirement(&tool).expect("valid name should succeed");
+
+    assert!(
+        req.description.contains('7'),
+        "description should include failure_count"
+    );
+}
+
+#[test]
+fn build_repair_requirement_rejects_empty_name() {
+    let tool = stub_broken_tool("", None, 0);
+    let err = DefaultSelfRepair::build_repair_requirement(&tool)
+        .expect_err("empty name should be rejected");
+
+    assert!(
+        matches!(err, RepairError::Failed { .. }),
+        "expected RepairError::Failed, got: {:?}",
+        err
+    );
+}
+
+#[test]
+fn build_repair_requirement_rejects_name_with_spaces() {
+    let tool = stub_broken_tool("bad name", None, 0);
+    let err = DefaultSelfRepair::build_repair_requirement(&tool)
+        .expect_err("name with spaces should be rejected");
+
+    assert!(
+        matches!(err, RepairError::Failed { .. }),
+        "expected RepairError::Failed, got: {:?}",
+        err
+    );
+}
+
+// === handle_build_result ===
+
+#[tokio::test]
+async fn handle_build_result_returns_success_when_build_succeeded() {
+    let tool = stub_broken_tool("my-tool", None, 0);
+    let result = stub_build_result(true, None, 3, false);
+    let store = NullDatabase::new();
+
+    let repair = DefaultSelfRepair::handle_build_result(result, &tool, &store)
+        .await
+        .expect("handle_build_result should not error");
+
+    assert!(
+        matches!(repair, RepairResult::Success { .. }),
+        "expected RepairResult::Success, got: {:?}",
+        repair
+    );
+    if let RepairResult::Success { message } = repair {
+        assert!(
+            message.contains("my-tool"),
+            "message should mention tool name"
+        );
+        assert!(
+            message.contains('3'),
+            "message should include iteration count"
+        );
+    }
+}
+
+#[tokio::test]
+async fn handle_build_result_returns_retry_when_build_failed_with_error() {
+    let tool = stub_broken_tool("my-tool", None, 1);
+    let result = stub_build_result(false, Some("compile error"), 2, false);
+    let store = NullDatabase::new();
+
+    let repair = DefaultSelfRepair::handle_build_result(result, &tool, &store)
+        .await
+        .expect("handle_build_result should not error");
+
+    assert!(
+        matches!(repair, RepairResult::Retry { .. }),
+        "expected RepairResult::Retry, got: {:?}",
+        repair
+    );
+    if let RepairResult::Retry { message } = repair {
+        assert!(
+            message.contains("compile error"),
+            "message should include the build error"
+        );
+        assert!(
+            message.contains("my-tool"),
+            "message should mention tool name"
+        );
+        assert!(
+            message.contains('2'),
+            "message should include attempt number"
+        );
+    }
+}
+
+#[tokio::test]
+async fn handle_build_result_uses_unknown_error_when_no_error_string() {
+    let tool = stub_broken_tool("my-tool", None, 0);
+    let result = stub_build_result(false, None, 1, false);
+    let store = NullDatabase::new();
+
+    let repair = DefaultSelfRepair::handle_build_result(result, &tool, &store)
+        .await
+        .expect("handle_build_result should not error");
+
+    assert!(
+        matches!(repair, RepairResult::Retry { .. }),
+        "expected RepairResult::Retry, got: {:?}",
+        repair
+    );
+    if let RepairResult::Retry { message } = repair {
+        assert!(
+            message.contains("Unknown error"),
+            "message should say 'Unknown error' when error field is None"
+        );
+    }
+}
+
+// === attempt_repair_build ===
+
+#[tokio::test]
+async fn attempt_repair_build_returns_success_when_builder_succeeds() {
+    let tool = stub_broken_tool("my-tool", None, 0);
+    let store = NullDatabase::new();
+    let builder = StubSoftwareBuilder(StubBuilderOutcome::BuildSucceeded {
+        success: true,
+        error: None,
+        iterations: 2,
+        registered: false,
+    });
+    let requirement = stub_build_requirement();
+
+    let repair = DefaultSelfRepair::attempt_repair_build(&tool, &store, &builder, &requirement)
+        .await
+        .expect("attempt_repair_build should not error");
+
+    assert!(
+        matches!(repair, RepairResult::Success { .. }),
+        "expected RepairResult::Success, got: {:?}",
+        repair
+    );
+}
+
+#[tokio::test]
+async fn attempt_repair_build_returns_retry_when_build_reports_failure() {
+    let tool = stub_broken_tool("my-tool", None, 0);
+    let store = NullDatabase::new();
+    let builder = StubSoftwareBuilder(StubBuilderOutcome::BuildSucceeded {
+        success: false,
+        error: Some("linker error"),
+        iterations: 4,
+        registered: false,
+    });
+    let requirement = stub_build_requirement();
+
+    let repair = DefaultSelfRepair::attempt_repair_build(&tool, &store, &builder, &requirement)
+        .await
+        .expect("attempt_repair_build should not error");
+
+    assert!(
+        matches!(repair, RepairResult::Retry { .. }),
+        "expected RepairResult::Retry, got: {:?}",
+        repair
+    );
+}
+
+#[tokio::test]
+async fn attempt_repair_build_returns_retry_when_builder_itself_errors() {
+    let tool = stub_broken_tool("my-tool", None, 0);
+    let store = NullDatabase::new();
+    let builder = StubSoftwareBuilder(StubBuilderOutcome::Builderrored("out of memory"));
+    let requirement = stub_build_requirement();
+
+    let repair = DefaultSelfRepair::attempt_repair_build(&tool, &store, &builder, &requirement)
+        .await
+        .expect("attempt_repair_build should propagate builder errors as Retry");
+
+    assert!(
+        matches!(repair, RepairResult::Retry { .. }),
+        "expected RepairResult::Retry, got: {:?}",
+        repair
+    );
+    if let RepairResult::Retry { message } = repair {
+        assert!(
+            message.contains("Repair build error"),
+            "message should mention repair build error"
+        );
+        assert!(
+            message.contains("out of memory"),
+            "message should include the error text"
+        );
+    }
 }
