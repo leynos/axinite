@@ -17,6 +17,7 @@ fn test_valid_schema_passes() {
     assert!(validate_strict_schema(&schema, "test").is_ok());
 }
 
+#[test]
 fn test_strict_schema_accepts_tool_name_newtype() {
     let schema = serde_json::json!({
         "type": "object",
@@ -28,8 +29,8 @@ fn test_strict_schema_accepts_tool_name_newtype() {
     assert!(validate_strict_schema(&schema, ToolName::from("test")).is_ok());
 }
 
-fn test_object_schema_accepts_schema_path_newtype() {
-    let schema = serde_json::json!({
+fn nested_headers_schema(extra_required: &str) -> serde_json::Value {
+    serde_json::json!({
         "type": "object",
         "properties": {
             "headers": {
@@ -39,18 +40,23 @@ fn test_object_schema_accepts_schema_path_newtype() {
                     "properties": {
                         "name": { "type": "string" }
                     },
-                    "required": ["name", "missing"]
+                    "required": ["name", extra_required]
                 }
             }
         }
-    });
+    })
+}
 
-    let err = check_object_schema(&schema, SchemaPath::from("test"));
+#[test]
+fn test_object_schema_accepts_schema_path_newtype() {
+    let err = check_object_schema(&nested_headers_schema("missing"), SchemaPath::from("test"));
     assert!(
         err.iter()
             .any(|e| e.contains("test.headers.items") && e.contains("\"missing\""))
     );
 }
+
+#[test]
 fn test_missing_type_fails() {
     let schema = serde_json::json!({
         "properties": {
@@ -255,22 +261,7 @@ fn test_enum_matching_type_passes() {
 
 #[test]
 fn test_nested_array_items_object_validated() {
-    let schema = serde_json::json!({
-        "type": "object",
-        "properties": {
-            "headers": {
-                "type": "array",
-                "items": {
-                    "type": "object",
-                    "properties": {
-                        "name": { "type": "string" }
-                    },
-                    "required": ["name", "ghost"]
-                }
-            }
-        }
-    });
-    let err = validate_strict_schema(&schema, "test").unwrap_err();
+    let err = validate_strict_schema(&nested_headers_schema("ghost"), "test").unwrap_err();
     assert!(
         err.iter()
             .any(|e| e.contains("headers.items") && e.contains("\"ghost\""))
