@@ -58,22 +58,11 @@ async fn upload_skill_bundle_accepts_case_insensitive_content_type(
     let (content_type, body) = multipart_file_body("bundle", "deploy-docs.skill", &archive);
     let content_type = content_type.replacen("multipart/form-data", "Multipart/Form-Data", 1);
 
-    let response = skills_router(Arc::clone(&skills_api_fixture.state))
-        .oneshot(
-            Request::builder()
-                .method("POST")
-                .uri("/api/skills/install")
-                .header("x-confirm-action", "true")
-                .header("content-type", content_type)
-                .body(Body::from(body))
-                .expect("request should build"),
-        )
-        .await
-        .expect("request should complete");
+    let (status, body) =
+        post_skill_bundle_install(Arc::clone(&skills_api_fixture.state), content_type, body).await;
 
-    assert_eq!(response.status(), StatusCode::OK);
-    let body: serde_json::Value =
-        serde_json::from_str(&response_text(response).await).expect("JSON response expected");
+    assert_eq!(status, StatusCode::OK);
+    let body: serde_json::Value = serde_json::from_str(&body).expect("JSON response expected");
     assert_eq!(body["success"], true);
 }
 
@@ -89,21 +78,10 @@ async fn upload_skill_bundle_rejects_missing_filename(skills_api_fixture: Skills
         bytes: &archive,
     }]);
 
-    let response = skills_router(Arc::clone(&skills_api_fixture.state))
-        .oneshot(
-            Request::builder()
-                .method("POST")
-                .uri("/api/skills/install")
-                .header("x-confirm-action", "true")
-                .header("content-type", content_type)
-                .body(Body::from(body))
-                .expect("request should build"),
-        )
-        .await
-        .expect("request should complete");
+    let (status, body) =
+        post_skill_bundle_install(Arc::clone(&skills_api_fixture.state), content_type, body).await;
 
-    assert_eq!(response.status(), StatusCode::BAD_REQUEST);
-    let body = response_text(response).await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
     assert!(
         body.contains("Uploaded skill bundle must include a filename ending with .skill"),
         "body was: {body}"
@@ -173,21 +151,10 @@ async fn upload_skill_bundle_rejects_multiple_bundle_fields(skills_api_fixture: 
         },
     ]);
 
-    let response = skills_router(Arc::clone(&skills_api_fixture.state))
-        .oneshot(
-            Request::builder()
-                .method("POST")
-                .uri("/api/skills/install")
-                .header("x-confirm-action", "true")
-                .header("content-type", content_type)
-                .body(Body::from(body))
-                .expect("request should build"),
-        )
-        .await
-        .expect("request should complete");
+    let (status, body) =
+        post_skill_bundle_install(Arc::clone(&skills_api_fixture.state), content_type, body).await;
 
-    assert_eq!(response.status(), StatusCode::BAD_REQUEST);
-    let body = response_text(response).await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
     assert!(
         body.contains("Provide exactly one .skill upload"),
         "body was: {body}"
