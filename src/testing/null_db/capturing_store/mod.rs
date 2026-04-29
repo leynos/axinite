@@ -152,6 +152,7 @@ impl Calls {
 pub struct CapturingStore {
     pub(crate) inner: NullDatabase,
     calls: Arc<Calls>,
+    mark_repaired_error: Option<String>,
 }
 
 impl CapturingStore {
@@ -160,12 +161,26 @@ impl CapturingStore {
         Self {
             inner: NullDatabase::new(),
             calls: Arc::new(Calls::new()),
+            mark_repaired_error: None,
+        }
+    }
+
+    /// Create a capturing store that fails `mark_tool_repaired`.
+    pub fn failing_mark_tool_repaired(message: impl Into<String>) -> Self {
+        Self {
+            inner: NullDatabase::new(),
+            calls: Arc::new(Calls::new()),
+            mark_repaired_error: Some(message.into()),
         }
     }
 
     /// Access the captured calls for assertions.
     pub fn calls(&self) -> &Arc<Calls> {
         &self.calls
+    }
+
+    pub(crate) fn mark_repaired_error(&self) -> Option<&str> {
+        self.mark_repaired_error.as_deref()
     }
 }
 
