@@ -78,25 +78,8 @@ const _: fn() -> anyhow::Result<std::sync::Arc<ironclaw::tools::wasm::WasmToolRu
     metadata_test_runtime;
 const _: fn() -> std::path::PathBuf = github_tool_source_dir;
 const _: fn() -> anyhow::Result<std::path::PathBuf> = github_wasm_artifact;
-const _: fn() -> cleanup::CleanupGuard = cleanup::CleanupGuard::new;
-const _: fn(cleanup::CleanupGuard, String) -> cleanup::CleanupGuard = cleanup::CleanupGuard::file;
-const _: fn(cleanup::CleanupGuard, String) -> cleanup::CleanupGuard = cleanup::CleanupGuard::dir;
-const _: fn(&str) -> std::io::Result<()> = cleanup::setup_test_dir;
-const _: fn(&std::path::Path, &str) -> std::io::Result<String> =
-    cleanup::setup_test_dir_with_suffix;
 const _: fn(String, String, Vec<trace_llm::TraceStep>) -> trace_llm::LlmTrace =
     trace_llm::LlmTrace::single_turn;
-
-fn touch_cleanup_symbols() {
-    use crate::support::cleanup;
-
-    touch!(
-        cleanup::CleanupGuard::new as fn() -> cleanup::CleanupGuard,
-        cleanup::setup_test_dir as fn(&str) -> std::io::Result<()>,
-        cleanup::setup_test_dir_with_suffix
-            as fn(&std::path::Path, &str) -> std::io::Result<String>,
-    );
-}
 
 fn touch_trace_symbols() {
     use crate::support::{trace_llm, trace_types};
@@ -376,7 +359,6 @@ fn touch_test_rig_symbols() {
 }
 
 fn test_rig_symbol_refs() {
-    touch_cleanup_symbols();
     touch_trace_symbols();
     #[cfg(feature = "libsql")]
     touch_test_rig_symbols();

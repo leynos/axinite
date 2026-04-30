@@ -5,7 +5,13 @@
 // binaries do not compile them through the shared `support` facade.
 #[path = "support/fixtures.rs"]
 mod fixtures;
+#[path = "support/e2e_traces.rs"]
 mod support;
+
+const _: &str = fixtures::FIXTURE_ROOT;
+const _: std::time::Duration = fixtures::DEFAULT_TIMEOUT;
+const _: std::time::Duration = fixtures::LONG_TIMEOUT;
+const _: fn(&str, &str) -> String = fixtures::fixture_path;
 
 #[path = "e2e_traces/advanced_traces.rs"]
 mod advanced_traces;
@@ -17,6 +23,7 @@ mod builtin_tool_coverage;
 mod heartbeat;
 #[path = "e2e_traces/metrics.rs"]
 mod metrics;
+#[cfg(feature = "libsql")]
 #[path = "e2e_traces/recorded_trace.rs"]
 mod recorded_trace;
 #[path = "e2e_traces/routine_cooldown.rs"]

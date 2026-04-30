@@ -6,7 +6,7 @@
 
 mod builder;
 mod channel_handle;
-mod helpers;
+pub(crate) mod helpers;
 mod rig;
 
 pub use builder::TestRigBuilder;

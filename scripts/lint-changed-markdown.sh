@@ -1,0 +1,35 @@
+#!/usr/bin/env sh
+set -eu
+
+if [ "$#" -ne 1 ]; then
+	echo "usage: $0 <bunx_cmd>" >&2
+	exit 2
+fi
+
+bunx_cmd=$1
+markdownlint_base=${MARKDOWNLINT_BASE:-origin/main}
+base_ref=$(git merge-base "$markdownlint_base" HEAD || true)
+
+if [ -z "$base_ref" ]; then
+	echo "$markdownlint_base is unavailable; fetch it before running markdownlint." >&2
+	exit 1
+fi
+
+files=$(git diff --name-only --diff-filter=d "$base_ref"...HEAD -- '*.md' | sed 's#^#./#')
+
+if [ -z "$files" ]; then
+	echo "No changed Markdown files to lint."
+	exit 0
+fi
+
+set -f
+old_ifs=$IFS
+# Split `set -- $files` on git's newline delimiter, not spaces or tabs, so
+# Markdown filenames containing spaces remain single arguments.
+IFS='
+'
+set -- $files
+IFS=$old_ifs
+set +f
+
+"$bunx_cmd" markdownlint-cli2 "$@"

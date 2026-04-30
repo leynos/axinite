@@ -1,36 +1,21 @@
 //! Shared helpers for WebhookServer integration tests.
 //!
-//! Provides reusable server setup and client construction so that
-//! `tests/webhook_server.rs` and `tests/infrastructure/sighup_reload.rs`
-//! share the same configuration.
+//! Provides reusable server setup and client construction for
+//! `tests/webhook_server.rs`.
+//!
+//! Shared webhook primitives now live in `webhook_common`.
 
 use std::net::SocketAddr;
-use std::time::Duration;
-
-use axum::Json;
-use axum::Router;
-use axum::routing::get;
-use serde_json::json;
 
 use ironclaw::channels::{WebhookServer, WebhookServerConfig};
+
+use super::webhook_common::{health_routes, test_http_client};
 
 /// A started webhook server with a `/health` route and a pre-built client.
 pub struct StartedWebhookServer {
     pub server: WebhookServer,
     pub addr: SocketAddr,
     pub client: reqwest::Client,
-}
-
-/// Return the standard `/health` check route used by webhook tests.
-pub fn health_routes() -> Router {
-    Router::new().route("/health", get(|| async { Json(json!({"status": "ok"})) }))
-}
-
-/// Build a reqwest client with the standard 2-second test timeout.
-pub fn test_http_client() -> Result<reqwest::Client, reqwest::Error> {
-    reqwest::Client::builder()
-        .timeout(Duration::from_secs(2))
-        .build()
 }
 
 /// Bind an ephemeral listener, build a WebhookServer with a `/health`

@@ -1,9 +1,10 @@
 //! Unit tests for E2E test support modules.
 //!
 //! These tests live here (instead of inside `support/*.rs`) so they compile
-//! and run exactly once, rather than being duplicated across every `e2e_*.rs`
-//! test binary that declares `mod support;`.
+//! and run exactly once, rather than being duplicated across every harness
+//! that imports the support modules under test.
 
+#[path = "support/support_unit.rs"]
 mod support;
 
 #[path = "support_unit_tests/assertions_tests.rs"]
@@ -19,3 +20,5 @@ mod test_rig_tests;
 mod trace_llm_contract_tests;
 #[path = "support_unit_tests/trace_llm_tests.rs"]
 mod trace_llm_tests;
+#[path = "support_unit_tests/trace_types_tests.rs"]
+mod trace_types_tests;

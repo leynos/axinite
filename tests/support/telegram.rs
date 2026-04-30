@@ -1,5 +1,4 @@
 //! Shared Telegram channel test helpers for integration tests.
-#![allow(dead_code)] // Shared support is imported by many integration crates.
 
 use std::error::Error;
 use std::path::PathBuf;
