@@ -217,7 +217,6 @@ Follow these rules when wiring fixtures into integration tests:
   is non-obvious, especially when the module could otherwise be mistaken
   for a candidate for the shared `support` facade.
 
-
 ### CleanupGuard restructuring
 
 `CleanupGuard` now lives in its own `tests/support/cleanup_guard.rs`
@@ -523,7 +522,6 @@ Table: `AppBuilderFlags` fields and effects.
 | `no_db` | `bool` | Skip database initialization |
 | `workspace_import_dir` | `Option<PathBuf>` | Directory to import into the workspace on activation; captured at construction so `RuntimeSideEffects::start()` does not re-read the environment |
 
-
 ## 19. Fast local validation loop
 
 For quick host-side iteration on Linux or WSL with the current branch
@@ -572,7 +570,6 @@ dual-trait pattern already used elsewhere in the repository:
 - `types.rs` holds the shared value types such as `StuckJob`, `BrokenTool`,
   `RepairResult`, and `RepairNotification`.
 
-
 ### DefaultSelfRepair helper methods
 
 Three private associated functions on `DefaultSelfRepair` implement the
@@ -597,7 +594,6 @@ When modifying this path, keep three invariants in mind:
 - User-facing behaviour changes in self-repair should update both
   [Jobs and Routines](./jobs-and-routines.md) and the
   [User's Guide](./users-guide.md).
-
 
 ## 21. Database-backed work
 
@@ -687,7 +683,6 @@ The `busy_timeout` PRAGMA that each store previously ran after connecting
 is now applied once inside `LibSqlDatabase::connect()`, so it is no longer
 necessary — and must not be duplicated — in individual store
 `connect()` methods.
-
 
 ## 22. Dispatcher architecture
 
@@ -816,7 +811,6 @@ Migration guidance:
 - add rollback regression coverage for both supported backends before
   releasing new terminal transitions
 
-
 ## 23. End-to-end (E2E) prerequisites
 
 For browser-based tests:
@@ -912,7 +906,6 @@ Returns a snapshot of all captured `StatusUpdate` values using an
 awaited mutex lock. Use this when contention on the status-event lock
 would cause `captured_status_events` to panic.
 
-
 ## 25. WASM-specific notes
 
 The repository contains standalone WASM tool and channel crates. Normal
@@ -1006,7 +999,6 @@ Modify `build_fallback_guidance` when the fallback-guidance format,
 labels, truncation rules, or input set needs to change. Do not use it as
 a primary schema-transport mechanism: the canonical schema remains the
 advertised `ToolDefinition.parameters` value.
-
 
 ## 26. When to use cargo test versus cargo-nextest
 
@@ -1148,7 +1140,6 @@ testing:
 Use these in unit tests to verify manager behaviour without real I/O.
 Example usage is in `src/reload/manager/tests.rs`.
 
-
 ## 29. WASM tool schema normalization
 
 WASM tools carry a parameter schema that describes their inputs to the
@@ -1186,7 +1177,6 @@ its own exported metadata.
 The storage path is the one that exercises schema normalization, because
 backends may persist placeholder or null schemas that must be stripped
 before the guest-export recovery logic can run.
-
 
 ## 30. End-to-end WASM schema regression tests
 
@@ -1297,7 +1287,6 @@ assert_eq!(
     "the first LLM request must carry the schema advertised at registration time"
 );
 ```
-
 
 ## 31. Expected follow-up changes
 
