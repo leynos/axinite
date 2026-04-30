@@ -34,100 +34,92 @@ fn test_base64_encode() {
     assert_eq!(base64_encode(b"user:pass"), "dXNlcjpwYXNz");
 }
 
-#[tokio::test]
-async fn test_inject_bearer() {
+struct InjectionSpec<'a> {
+    secret_name: &'a str,
+    secret_value: &'a str,
+    mapping_key: &'a str,
+    location: CredentialLocation,
+    host_pattern: &'a str,
+    target_host: &'a str,
+}
+
+async fn run_single_mapping_injection(spec: InjectionSpec<'_>) -> HashMap<String, String> {
     let store = test_store();
     store
         .create(
             "user1",
-            CreateSecretParams::new("openai_key", TEST_OPENAI_API_KEY),
+            CreateSecretParams::new(spec.secret_name, spec.secret_value),
         )
         .await
         .unwrap();
 
     let mut mappings = HashMap::new();
     mappings.insert(
-        "openai".to_string(),
+        spec.mapping_key.to_string(),
         CredentialMapping {
-            secret_name: "openai_key".to_string(),
-            location: CredentialLocation::AuthorizationBearer,
-            host_patterns: vec!["api.openai.com".to_string()],
+            secret_name: spec.secret_name.to_string(),
+            location: spec.location,
+            host_patterns: vec![spec.host_pattern.to_string()],
         },
     );
 
-    let injector = CredentialInjector::new(mappings, vec!["openai_key".to_string()]);
-    let result = injector
-        .inject("user1", "api.openai.com", &store)
+    let injector = CredentialInjector::new(mappings, vec![spec.secret_name.to_string()]);
+    injector
+        .inject("user1", spec.target_host, &store)
         .await
-        .unwrap();
+        .unwrap()
+        .headers
+}
 
+#[tokio::test]
+async fn test_inject_bearer() {
+    let headers = run_single_mapping_injection(InjectionSpec {
+        secret_name: "openai_key",
+        secret_value: TEST_OPENAI_API_KEY,
+        mapping_key: "openai",
+        location: CredentialLocation::AuthorizationBearer,
+        host_pattern: "api.openai.com",
+        target_host: "api.openai.com",
+    })
+    .await;
     assert_eq!(
-        result.headers.get("Authorization"),
+        headers.get("Authorization"),
         Some(&format!("Bearer {TEST_OPENAI_API_KEY}"))
     );
 }
 
 #[tokio::test]
 async fn test_inject_custom_header() {
-    let store = test_store();
-    store
-        .create("user1", CreateSecretParams::new("api_key", "secret123"))
-        .await
-        .unwrap();
-
-    let mut mappings = HashMap::new();
-    mappings.insert(
-        "custom".to_string(),
-        CredentialMapping {
-            secret_name: "api_key".to_string(),
-            location: CredentialLocation::Header {
-                name: "X-API-Key".to_string(),
-                prefix: None,
-            },
-            host_patterns: vec!["*.example.com".to_string()],
+    let headers = run_single_mapping_injection(InjectionSpec {
+        secret_name: "api_key",
+        secret_value: "secret123",
+        mapping_key: "custom",
+        location: CredentialLocation::Header {
+            name: "X-API-Key".to_string(),
+            prefix: None,
         },
-    );
-
-    let injector = CredentialInjector::new(mappings, vec!["api_key".to_string()]);
-    let result = injector
-        .inject("user1", "api.example.com", &store)
-        .await
-        .unwrap();
-
-    assert_eq!(
-        result.headers.get("X-API-Key"),
-        Some(&"secret123".to_string())
-    );
+        host_pattern: "*.example.com",
+        target_host: "api.example.com",
+    })
+    .await;
+    assert_eq!(headers.get("X-API-Key"), Some(&"secret123".to_string()));
 }
 
 #[tokio::test]
 async fn test_inject_basic_auth() {
-    let store = test_store();
-    store
-        .create("user1", CreateSecretParams::new("password", "mypassword"))
-        .await
-        .unwrap();
-
-    let mut mappings = HashMap::new();
-    mappings.insert(
-        "basic".to_string(),
-        CredentialMapping {
-            secret_name: "password".to_string(),
-            location: CredentialLocation::AuthorizationBasic {
-                username: "myuser".to_string(),
-            },
-            host_patterns: vec!["api.service.com".to_string()],
+    let headers = run_single_mapping_injection(InjectionSpec {
+        secret_name: "password",
+        secret_value: "mypassword",
+        mapping_key: "basic",
+        location: CredentialLocation::AuthorizationBasic {
+            username: "myuser".to_string(),
         },
-    );
-
-    let injector = CredentialInjector::new(mappings, vec!["password".to_string()]);
-    let result = injector
-        .inject("user1", "api.service.com", &store)
-        .await
-        .unwrap();
-
+        host_pattern: "api.service.com",
+        target_host: "api.service.com",
+    })
+    .await;
     let expected = format!("Basic {}", base64_encode(b"myuser:mypassword"));
-    assert_eq!(result.headers.get("Authorization"), Some(&expected));
+    assert_eq!(headers.get("Authorization"), Some(&expected));
 }
 
 #[tokio::test]
