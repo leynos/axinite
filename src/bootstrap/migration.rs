@@ -308,6 +308,14 @@ pub async fn migrate_disk_to_db(
     user_id: &str,
 ) -> Result<(), MigrationError> {
     let ironclaw_dir = ironclaw_base_dir();
+    migrate_disk_to_db_from_dir(store, user_id, &ironclaw_dir).await
+}
+
+pub(super) async fn migrate_disk_to_db_from_dir(
+    store: &dyn crate::db::Database,
+    user_id: &str,
+    ironclaw_dir: &Path,
+) -> Result<(), MigrationError> {
     let legacy_settings_path = ironclaw_dir.join("settings.json");
     let Some(legacy) = read_legacy_state(&legacy_settings_path)? else {
         tracing::debug!("No legacy settings.json found, skipping disk-to-DB migration");

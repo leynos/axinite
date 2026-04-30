@@ -8,6 +8,7 @@ use rstest::{fixture, rstest};
 use tempfile::{TempDir, tempdir};
 use tracing_test::traced_test;
 
+use crate::testing::NullDatabase;
 use crate::testing::test_utils::EnvVarsGuard;
 
 use super::super::*;
@@ -311,13 +312,16 @@ fn migrate_bootstrap_json_to_env_rename_failure_leaves_env_written() {
 
 #[tokio::test]
 async fn migrate_disk_to_db_skips_when_no_legacy_file() {
-    // No legacy settings.json present - this test records the no-legacy
-    // branch shape without touching a real database. Functional coverage for
-    // the private sidecar path is provided through the integration path.
     let dir = tempdir().expect("temp dir");
     let legacy = dir.path().join("settings.json");
+    let store = NullDatabase::new();
+
+    super::super::migration::migrate_disk_to_db_from_dir(&store, "default", dir.path())
+        .await
+        .expect("missing legacy settings should be a no-op");
 
     assert!(!legacy.exists());
+    assert!(!dir.path().join("settings.json.migrated").exists());
 }
 
 #[tokio::test]
@@ -325,27 +329,16 @@ async fn migrate_disk_to_db_renames_settings_on_success() {
     let dir = tempdir().expect("temp dir for disk-to-db migration");
     let settings_path = dir.path().join("settings.json");
     std::fs::write(&settings_path, "{}").expect("write legacy settings");
+    let migrated_path = dir.path().join("settings.json.migrated");
+    let store = NullDatabase::new();
 
     // Verify that once migration completes the file is renamed.
     assert!(settings_path.exists());
 
-    // Functional verification that rename_to_migrated is invoked is
-    // covered by the rename_to_migrated_cases tests; record that the
-    // migrated path would be produced.
-    let migrated_path = dir.path().join("settings.json.migrated");
-    std::fs::rename(&settings_path, &migrated_path)
-        .expect("manual rename as proxy for migrate_disk_to_db effect");
+    super::super::migration::migrate_disk_to_db_from_dir(&store, "default", dir.path())
+        .await
+        .expect("migrate disk settings");
 
     assert!(!settings_path.exists());
     assert!(migrated_path.exists());
-}
-
-#[traced_test]
-#[rstest]
-fn rename_to_migrated_missing_source_returns_not_found(rename_fixture: RenameFixture) {
-    // File does not exist - must return NotFound and log WARN.
-    let result = super::super::migration::rename_to_migrated(&rename_fixture.path);
-    let error = result.expect_err("missing source must return an error");
-    assert_eq!(error.kind(), std::io::ErrorKind::NotFound);
-    assert!(logs_contain("Failed to rename"));
 }
