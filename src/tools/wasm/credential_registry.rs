@@ -92,22 +92,7 @@ impl SharedCredentialRegistry {
 
     /// Check if any credential mapping matches this host.
     pub fn has_credentials_for_host(&self, host: &str) -> bool {
-        let guard = match self.mappings.read() {
-            Ok(guard) => guard,
-            Err(poisoned) => {
-                tracing::warn!(
-                    "SharedCredentialRegistry RwLock poisoned during has_credentials_for_host; recovering"
-                );
-                poisoned.into_inner()
-            }
-        };
-        guard.iter().any(|mapping| {
-            mapping
-                .mapping
-                .host_patterns
-                .iter()
-                .any(|pattern| host_matches_pattern(host, pattern))
-        })
+        !self.find_for_host(host).is_empty()
     }
 
     /// Get all credential mappings matching a host.
