@@ -3,19 +3,19 @@
 //! Provides small utilities around `TestRigBuilder`, `LlmTrace`, and common
 //! recorded-trace execution patterns used by multiple test binaries.
 
-use std::time::Duration;
-
-use anyhow::Context;
-
-use crate::support::trace_types::LlmTrace;
-
-use super::TestRigBuilder;
-
 /// Load a recorded trace fixture, build a rig, run and verify expects, then shut down.
 ///
 /// `filename` is relative to `tests/fixtures/llm_traces/recorded/`.
 #[cfg(feature = "libsql")]
 pub async fn run_recorded_trace(filename: &str) -> anyhow::Result<()> {
+    use std::time::Duration;
+
+    use anyhow::Context;
+
+    use crate::support::trace_types::LlmTrace;
+
+    use super::TestRigBuilder;
+
     let path = format!(
         "{}/tests/fixtures/llm_traces/recorded/{filename}",
         env!("CARGO_MANIFEST_DIR")
