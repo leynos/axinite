@@ -117,7 +117,7 @@ pub(super) type FailingRepairStore = CapturingStore;
 
 /// Constructs a store that fails when marking a tool as repaired.
 pub(super) fn failing_repair_store() -> FailingRepairStore {
-    CapturingStore::failing_mark_tool_repaired(crate::error::DatabaseError::NotFound {
+    CapturingStore::failing_mark_tool_repaired_once(crate::error::DatabaseError::NotFound {
         entity: "tool_failure".to_string(),
         id: "simulated mark_tool_repaired failure".to_string(),
     })
