@@ -3,7 +3,7 @@
 #[path = "assertions.rs"]
 pub mod assertions;
 
-#[path = "cleanup_guard.rs"]
+#[path = "cleanup.rs"]
 pub mod cleanup;
 
 #[path = "instrumented_llm.rs"]
@@ -17,9 +17,6 @@ pub mod test_channel;
 
 #[path = "test_rig/mod.rs"]
 pub mod test_rig;
-
-#[path = "trace_json_patch.rs"]
-mod trace_json_patch;
 
 #[path = "trace_llm.rs"]
 pub mod trace_llm;
@@ -55,6 +52,10 @@ pub mod webhook_server_helpers;
 
 #[cfg(feature = "libsql")]
 type AsyncUnit<'a> = std::pin::Pin<Box<dyn std::future::Future<Output = ()> + 'a>>;
+
+#[cfg(feature = "libsql")]
+type AsyncResultUnit<'a> =
+    std::pin::Pin<Box<dyn std::future::Future<Output = anyhow::Result<()>> + 'a>>;
 
 #[cfg(feature = "libsql")]
 type AsyncOutgoingResponses<'a> = std::pin::Pin<
@@ -149,7 +150,7 @@ fn _build_sig(builder: test_rig::TestRigBuilder) -> AsyncBuildRig {
 }
 
 #[cfg(feature = "libsql")]
-fn _run_recorded_trace_sig<'a>(filename: &'a str) -> AsyncUnit<'a> {
+fn _run_recorded_trace_sig<'a>(filename: &'a str) -> AsyncResultUnit<'a> {
     Box::pin(test_rig::run_recorded_trace(filename))
 }
 
@@ -272,7 +273,7 @@ const _: fn(&test_rig::TestRig) -> Option<&std::sync::Arc<trace_llm::TraceLlm>> 
 #[cfg(feature = "libsql")]
 const _: fn(test_rig::TestRigBuilder) -> AsyncBuildRig = _build_sig;
 #[cfg(feature = "libsql")]
-const _: for<'a> fn(&'a str) -> AsyncUnit<'a> = _run_recorded_trace_sig;
+const _: for<'a> fn(&'a str) -> AsyncResultUnit<'a> = _run_recorded_trace_sig;
 
 const _: fn(&mut trace_types::LlmTrace, &str, &str) -> usize = trace_types::LlmTrace::patch_path;
 

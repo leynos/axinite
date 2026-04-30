@@ -15,14 +15,18 @@ pub mod routines;
 pub mod test_channel;
 #[path = "test_rig/mod.rs"]
 pub mod test_rig;
-#[path = "trace_json_patch.rs"]
-mod trace_json_patch;
 #[path = "trace_llm.rs"]
 pub mod trace_llm;
 #[path = "trace_provider.rs"]
-mod trace_provider;
+pub mod trace_provider;
+mod trace_provider_diagnostics;
+pub mod trace_template_utils;
 #[path = "trace_types.rs"]
 pub mod trace_types;
+mod trace_types_builders;
+mod trace_types_patch;
+mod trace_types_recorded;
+mod trace_types_runtime;
 
 #[cfg(feature = "libsql")]
 pub use test_rig::run_recorded_trace;
@@ -34,10 +38,7 @@ type AsyncStatusEvents<'a> = std::pin::Pin<
     Box<dyn std::future::Future<Output = Vec<ironclaw::channels::StatusUpdate>> + 'a>,
 >;
 type AsyncTraceLlmFromFile = std::pin::Pin<
-    Box<
-        dyn std::future::Future<Output = Result<trace_llm::TraceLlm, Box<dyn std::error::Error>>>
-            + Send,
-    >,
+    Box<dyn std::future::Future<Output = anyhow::Result<trace_llm::TraceLlm>> + Send>,
 >;
 
 #[cfg(feature = "libsql")]

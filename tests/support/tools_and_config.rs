@@ -1,16 +1,16 @@
 //! Support modules compiled only for the `tools_and_config` harness.
 
-#[path = "trace_json_patch.rs"]
-mod trace_json_patch;
 #[path = "trace_test_files.rs"]
 pub mod trace_test_files;
 #[path = "trace_types.rs"]
 pub mod trace_types;
+mod trace_types_builders;
+mod trace_types_patch;
 mod trace_types_recorded;
+mod trace_types_runtime;
 
 /// Narrowed trace-test facade for trace-format tests.
 pub mod trace_llm {
-    pub(crate) use super::trace_json_patch::patch_json_value;
     pub use super::trace_types::{LlmTrace, TraceExpects};
 }
 

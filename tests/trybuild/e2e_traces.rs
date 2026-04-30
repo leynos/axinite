@@ -11,11 +11,7 @@ type AsyncStatusEvents<'a> = std::pin::Pin<
     Box<dyn std::future::Future<Output = Vec<ironclaw::channels::StatusUpdate>> + 'a>,
 >;
 type AsyncTraceLlmFromFile = std::pin::Pin<
-    Box<
-        dyn std::future::Future<
-                Output = Result<support::trace_llm::TraceLlm, Box<dyn std::error::Error>>,
-            > + Send,
-    >,
+    Box<dyn std::future::Future<Output = anyhow::Result<support::trace_llm::TraceLlm>> + Send>,
 >;
 
 fn clear_sig<'a>(rig: &'a support::test_rig::TestRig) -> AsyncUnit<'a> {

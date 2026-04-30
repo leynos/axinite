@@ -14,8 +14,6 @@ use ironclaw::context::JobContext;
 use ironclaw::tools::{NativeTool, Tool, ToolError, ToolOutput};
 
 use crate::support::test_rig::{TestRig, TestRigBuilder};
-use crate::support::trace_llm::LlmTrace;
-use crate::support::trace_types::load_trace_with_mutation;
 use crate::support::trace_types::{LlmTrace, load_trace_with_mutation};
 
 // -- Stub tools for rate-limit and timeout tests --------------------------
