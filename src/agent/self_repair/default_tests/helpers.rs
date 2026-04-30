@@ -88,6 +88,7 @@ impl NativeSoftwareBuilder for StubSoftwareBuilder {
     }
 
     async fn build(&self, _requirement: &BuildRequirement) -> Result<BuildResult, ToolError> {
+        tokio::task::yield_now().await;
         match &self.0 {
             StubBuilderOutcome::BuildSucceeded {
                 is_success,
