@@ -1189,7 +1189,7 @@ rationale and the maintenance rule behind this helper split.
    bytes, a pre-compiled runtime, and optional description/schema
    overrides. It calls `prepare_wasm_tool`, registers the prepared
    wrapper, and persists credential mappings only after successful
-   registration. Behaviour is unchanged from the monolithic path except
+   registration. Behaviour is unchanged from the monolithic path, except
    that preparation now returns credential mappings separately.
 
 2. **`register_wasm_from_storage`** — the database-driven entry point.
