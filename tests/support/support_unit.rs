@@ -1,125 +1,92 @@
 //! Support modules compiled only for the `support_unit_tests` harness.
 
 #[path = "assertions.rs"]
-pub mod assertions
-;
+pub mod assertions;
 
 #[path = "cleanup_guard.rs"]
-pub mod cleanup
-;
+pub mod cleanup;
 
 #[path = "instrumented_llm.rs"]
-pub mod instrumented_llm
-;
+pub mod instrumented_llm;
 
 #[path = "metrics.rs"]
-pub mod metrics
-;
+pub mod metrics;
 
 #[path = "test_channel.rs"]
-pub mod test_channel
-;
+pub mod test_channel;
 
 #[path = "test_rig/mod.rs"]
-pub mod test_rig
-;
+pub mod test_rig;
 
 #[path = "trace_json_patch.rs"]
-mod trace_json_patch
-;
+mod trace_json_patch;
 
 #[path = "trace_llm.rs"]
-pub mod trace_llm
-;
+pub mod trace_llm;
 
 #[path = "trace_provider.rs"]
-pub mod trace_provider
-;
+pub mod trace_provider;
 
-mod trace_provider_diagnostics
-;
+mod trace_provider_diagnostics;
 
-mod trace_provider_tests
-;
+mod trace_provider_tests;
 
-pub mod trace_template_utils
-;
+pub mod trace_template_utils;
 
-mod trace_template_utils_tests
-;
+mod trace_template_utils_tests;
 
 #[path = "trace_test_files.rs"]
-pub mod trace_test_files
-;
+pub mod trace_test_files;
 
 #[path = "trace_types.rs"]
-pub mod trace_types
-;
+pub mod trace_types;
 
-mod trace_types_builders
-;
+mod trace_types_builders;
 
-mod trace_types_patch
-;
+mod trace_types_patch;
 
-mod trace_types_recorded
-;
+mod trace_types_recorded;
 
-mod trace_types_runtime
-;
+mod trace_types_runtime;
 
-mod webhook_helpers
-;
+mod webhook_helpers;
 
-pub mod webhook_server_helpers
-;
-
+pub mod webhook_server_helpers;
 
 #[cfg(feature = "libsql")]
-type AsyncUnit<'a> = std::pin::Pin<Box<dyn std::future::Future<Output = ()> + 'a>>
-;
+type AsyncUnit<'a> = std::pin::Pin<Box<dyn std::future::Future<Output = ()> + 'a>>;
 
 #[cfg(feature = "libsql")]
 type AsyncOutgoingResponses<'a> = std::pin::Pin<
     Box<dyn std::future::Future<Output = Vec<ironclaw::channels::OutgoingResponse>> + 'a>,
->
-;
+>;
 
 #[cfg(feature = "libsql")]
 type AsyncTraceMetrics<'a> =
-    std::pin::Pin<Box<dyn std::future::Future<Output = metrics::TraceMetrics> + 'a>>
-;
+    std::pin::Pin<Box<dyn std::future::Future<Output = metrics::TraceMetrics> + 'a>>;
 
 #[cfg(feature = "libsql")]
 type AsyncCompletedToolCalls<'a> =
-    std::pin::Pin<Box<dyn std::future::Future<Output = Vec<(String, bool)>> + 'a>>
-;
+    std::pin::Pin<Box<dyn std::future::Future<Output = Vec<(String, bool)>> + 'a>>;
 
 #[cfg(feature = "libsql")]
 type AsyncStatusEvents<'a> = std::pin::Pin<
     Box<dyn std::future::Future<Output = Vec<ironclaw::channels::StatusUpdate>> + 'a>,
->
-;
+>;
 
 #[cfg(feature = "libsql")]
 type AsyncTraceRun<'a> = std::pin::Pin<
     Box<dyn std::future::Future<Output = Vec<Vec<ironclaw::channels::OutgoingResponse>>> + 'a>,
->
-;
+>;
 
 #[cfg(feature = "libsql")]
 type AsyncBuildRig =
-    std::pin::Pin<Box<dyn std::future::Future<Output = anyhow::Result<test_rig::TestRig>>>>
-;
-
+    std::pin::Pin<Box<dyn std::future::Future<Output = anyhow::Result<test_rig::TestRig>>>>;
 
 #[cfg(feature = "libsql")]
-fn _send_message_sig<'a>(rig: &'a test_rig::TestRig, content: &'a str) -> AsyncUnit<'a> 
-{
-
+fn _send_message_sig<'a>(rig: &'a test_rig::TestRig, content: &'a str) -> AsyncUnit<'a> {
     Box::pin(test_rig::TestRig::send_message(rig, content))
 }
-
 
 #[cfg(feature = "libsql")]
 fn _send_incoming_sig<'a>(
@@ -134,12 +101,9 @@ fn _wait_for_responses_sig<'a>(
     rig: &'a test_rig::TestRig,
     count: usize,
     timeout: std::time::Duration,
-) -> AsyncOutgoingResponses<'a> 
-{
-
+) -> AsyncOutgoingResponses<'a> {
     Box::pin(test_rig::TestRig::wait_for_responses(rig, count, timeout))
 }
-
 
 #[cfg(feature = "libsql")]
 fn _clear_sig<'a>(rig: &'a test_rig::TestRig) -> AsyncUnit<'a> {
@@ -147,12 +111,9 @@ fn _clear_sig<'a>(rig: &'a test_rig::TestRig) -> AsyncUnit<'a> {
 }
 
 #[cfg(feature = "libsql")]
-fn _collect_metrics_sig<'a>(rig: &'a test_rig::TestRig) -> AsyncTraceMetrics<'a> 
-{
-
+fn _collect_metrics_sig<'a>(rig: &'a test_rig::TestRig) -> AsyncTraceMetrics<'a> {
     Box::pin(test_rig::TestRig::collect_metrics(rig))
 }
-
 
 #[cfg(feature = "libsql")]
 fn _tool_calls_completed_async_sig<'a>(rig: &'a test_rig::TestRig) -> AsyncCompletedToolCalls<'a> {
@@ -160,44 +121,32 @@ fn _tool_calls_completed_async_sig<'a>(rig: &'a test_rig::TestRig) -> AsyncCompl
 }
 
 #[cfg(feature = "libsql")]
-fn _captured_status_events_async_sig<'a>(rig: &'a test_rig::TestRig) -> AsyncStatusEvents<'a> 
-{
-
+fn _captured_status_events_async_sig<'a>(rig: &'a test_rig::TestRig) -> AsyncStatusEvents<'a> {
     Box::pin(test_rig::TestRig::captured_status_events_async(rig))
 }
-
 
 #[cfg(feature = "libsql")]
 fn _run_trace_sig<'a>(
     rig: &'a test_rig::TestRig,
     trace: &'a trace_llm::LlmTrace,
     timeout: std::time::Duration,
-) -> AsyncTraceRun<'a> 
-{
-
+) -> AsyncTraceRun<'a> {
     Box::pin(test_rig::TestRig::run_trace(rig, trace, timeout))
 }
-
 
 #[cfg(feature = "libsql")]
 fn _run_and_verify_trace_sig<'a>(
     rig: &'a test_rig::TestRig,
     trace: &'a trace_llm::LlmTrace,
     timeout: std::time::Duration,
-) -> AsyncTraceRun<'a> 
-{
-
+) -> AsyncTraceRun<'a> {
     Box::pin(test_rig::TestRig::run_and_verify_trace(rig, trace, timeout))
 }
 
-
 #[cfg(feature = "libsql")]
-fn _build_sig(builder: test_rig::TestRigBuilder) -> AsyncBuildRig 
-{
-
+fn _build_sig(builder: test_rig::TestRigBuilder) -> AsyncBuildRig {
     Box::pin(test_rig::TestRigBuilder::build(builder))
 }
-
 
 #[cfg(feature = "libsql")]
 fn _run_recorded_trace_sig<'a>(filename: &'a str) -> AsyncUnit<'a> {
@@ -279,8 +228,7 @@ const _: fn(&test_rig::TestRig) -> bool = test_rig::TestRig::has_safety_warnings
 const _: for<'a> fn(&'a test_rig::TestRig, &'a str) -> AsyncUnit<'a> = _send_message_sig;
 #[cfg(feature = "libsql")]
 const _: for<'a> fn(&'a test_rig::TestRig, ironclaw::channels::IncomingMessage) -> AsyncUnit<'a> =
-    _send_incoming_sig
-;
+    _send_incoming_sig;
 
 #[cfg(feature = "libsql")]
 const _: for<'a> fn(
@@ -289,15 +237,13 @@ const _: for<'a> fn(
     std::time::Duration,
 ) -> AsyncOutgoingResponses<'a> = _wait_for_responses_sig;
 #[cfg(feature = "libsql")]
-const _: for<'a> fn(&'a test_rig::TestRig) -> AsyncUnit<'a> = _clear_sig
-;
+const _: for<'a> fn(&'a test_rig::TestRig) -> AsyncUnit<'a> = _clear_sig;
 
 #[cfg(feature = "libsql")]
 const _: for<'a> fn(&'a test_rig::TestRig) -> AsyncTraceMetrics<'a> = _collect_metrics_sig;
 #[cfg(feature = "libsql")]
 const _: for<'a> fn(&'a test_rig::TestRig) -> AsyncCompletedToolCalls<'a> =
-    _tool_calls_completed_async_sig
-;
+    _tool_calls_completed_async_sig;
 
 #[cfg(feature = "libsql")]
 const _: for<'a> fn(&'a test_rig::TestRig) -> AsyncStatusEvents<'a> =
@@ -326,11 +272,9 @@ const _: fn(&test_rig::TestRig) -> Option<&std::sync::Arc<trace_llm::TraceLlm>> 
 #[cfg(feature = "libsql")]
 const _: fn(test_rig::TestRigBuilder) -> AsyncBuildRig = _build_sig;
 #[cfg(feature = "libsql")]
-const _: for<'a> fn(&'a str) -> AsyncUnit<'a> = _run_recorded_trace_sig
-;
+const _: for<'a> fn(&'a str) -> AsyncUnit<'a> = _run_recorded_trace_sig;
 
-const _: fn(&mut trace_types::LlmTrace, &str, &str) -> usize = trace_types::LlmTrace::patch_path
-;
+const _: fn(&mut trace_types::LlmTrace, &str, &str) -> usize = trace_types::LlmTrace::patch_path;
 
 const _: for<'a> fn(&'a trace_types::LlmTrace) -> Vec<&'a ironclaw::llm::recording::TraceStep> =
     trace_types::LlmTrace::playable_steps;
