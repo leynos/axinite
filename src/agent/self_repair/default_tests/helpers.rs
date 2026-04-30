@@ -82,7 +82,9 @@ pub(super) struct StubSoftwareBuilder(pub(super) StubBuilderOutcome);
 
 impl NativeSoftwareBuilder for StubSoftwareBuilder {
     async fn analyze(&self, _description: &str) -> Result<BuildRequirement, ToolError> {
-        unimplemented!("not exercised in these unit tests")
+        Err(ToolError::BuilderFailed(
+            "unexpected StubSoftwareBuilder::analyze call".to_string(),
+        ))
     }
 
     async fn build(&self, _requirement: &BuildRequirement) -> Result<BuildResult, ToolError> {
@@ -105,7 +107,9 @@ impl NativeSoftwareBuilder for StubSoftwareBuilder {
     }
 
     async fn repair(&self, _result: &BuildResult, _error: &str) -> Result<BuildResult, ToolError> {
-        unimplemented!("not exercised in these unit tests")
+        Err(ToolError::BuilderFailed(
+            "unexpected StubSoftwareBuilder::repair call".to_string(),
+        ))
     }
 }
 
@@ -113,5 +117,8 @@ pub(super) type FailingRepairStore = CapturingStore;
 
 /// Constructs a store that fails when marking a tool as repaired.
 pub(super) fn failing_repair_store() -> FailingRepairStore {
-    CapturingStore::failing_mark_tool_repaired("simulated mark_tool_repaired failure")
+    CapturingStore::failing_mark_tool_repaired(crate::error::DatabaseError::NotFound {
+        entity: "tool_failure".to_string(),
+        id: "simulated mark_tool_repaired failure".to_string(),
+    })
 }

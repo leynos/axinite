@@ -585,6 +585,28 @@ None of these methods access instance state; they are static associated
 functions and must remain so. Their unit tests live in
 `src/agent/self_repair/default_tests/`.
 
+### Tool-repair concurrency model
+
+The three private helpers invoked by `repair_broken_tool`
+(`build_repair_requirement`, `attempt_repair_build`, `handle_build_result`) are
+static associated functions with no shared mutable state. Concurrent calls for
+different tools are therefore safe: each call operates on its own `BrokenTool`
+and `BuildResult` values.
+
+`repair_broken_tool` claims an in-process repair slot for the same
+`tool.name` before calling `store.increment_repair_attempts`. Concurrent calls
+for the same tool through the same `DefaultSelfRepair` instance return
+`RepairResult::Retry` until the active claim is released, so only the claimed
+call increments attempts and may later call `store.mark_tool_repaired`.
+
+The claim is process-local. Distributed callers still need database-level
+idempotency or scheduler-level at-most-once repair semantics if multiple
+processes can repair the same tool concurrently.
+
+Cancellation at any `.await` point inside the helper chain is safe: the
+helpers hold no locks across awaits and make no in-memory writes beyond the
+process-local repair claim, which is released when the future is dropped.
+
 When modifying this path, keep three invariants in mind:
 
 - `RepairTask` shutdown must remain cooperative, including during active repair
@@ -1616,7 +1638,7 @@ let (addr, _state) = TestGatewayBuilder::new()
     .await?;
 ```
 
-## 27. Borrowed newtypes for schema helper arguments
+## 33. Borrowed newtypes for schema helper arguments
 
 Three lightweight newtype wrappers in `src/tools/tool/schema_helpers.rs` make
 schema and parameter helper signatures explicit without changing the string

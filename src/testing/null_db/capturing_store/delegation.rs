@@ -283,11 +283,8 @@ impl crate::db::NativeRoutineStore for CapturingStore {
 impl crate::db::NativeToolFailureStore for CapturingStore {
     async fn mark_tool_repaired(&self, tool_name: &str) -> Result<(), DatabaseError> {
         self.calls.record_repaired_tool(tool_name).await;
-        if let Some(message) = self.mark_repaired_error() {
-            return Err(DatabaseError::NotFound {
-                entity: "tool_failure".to_string(),
-                id: message.to_string(),
-            });
+        if let Some(error) = self.take_mark_repaired_error() {
+            return Err(error);
         }
         crate::db::NativeToolFailureStore::mark_tool_repaired(&self.inner, tool_name).await
     }

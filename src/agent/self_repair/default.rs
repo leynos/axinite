@@ -13,6 +13,7 @@ use crate::tools::ToolRegistry;
 use crate::tools::builder::{BuildResult, ProjectName};
 use crate::tools::{BuildRequirement, Language, SoftwareBuilder, SoftwareType};
 
+use super::repair_claim::RepairClaims;
 use super::traits::NativeSelfRepair;
 use super::types::{BrokenTool, RepairResult, StuckJob};
 
@@ -29,6 +30,7 @@ pub struct DefaultSelfRepair {
     max_repair_attempts: u32,
     store: Option<Arc<dyn Database>>,
     builder: Option<Arc<dyn SoftwareBuilder>>,
+    repair_claims: RepairClaims,
     #[cfg(any(test, feature = "self_repair_extras"))]
     tools: Option<Arc<ToolRegistry>>,
 }
@@ -46,6 +48,7 @@ impl DefaultSelfRepair {
             max_repair_attempts,
             store: None,
             builder: None,
+            repair_claims: RepairClaims::default(),
             #[cfg(any(test, feature = "self_repair_extras"))]
             tools: None,
         }
@@ -165,7 +168,6 @@ impl DefaultSelfRepair {
                 }
             }
 
-            // Log if the tool was auto-registered
             if result.registered {
                 tracing::info!("Repaired tool '{}' auto-registered", tool.name);
             }
@@ -337,36 +339,29 @@ impl NativeSelfRepair for DefaultSelfRepair {
 
     /// Attempts to repair a broken tool by building a new version.
     ///
-    /// # Concurrency model
-    ///
-    /// The three private helpers invoked by this method
-    /// (`build_repair_requirement`, `attempt_repair_build`,
-    /// `handle_build_result`) are static associated functions with no shared
-    /// mutable state. Concurrent calls for *different* tools are therefore
-    /// safe: each call operates on its own `BrokenTool` and `BuildResult`
-    /// values.
-    ///
-    /// Concurrent calls for the *same* tool are not deduplicated: if two
-    /// callers race, both may invoke `store.mark_tool_repaired` and
-    /// `store.increment_repair_attempts` for the same tool name. The
-    /// database layer is responsible for handling such duplicates (e.g. via
-    /// idempotent upsert semantics). Callers that require at-most-once
-    /// repair semantics must enforce that at the scheduling layer.
-    ///
-    /// Cancellation at any `.await` point inside the helper chain is safe:
-    /// the helpers hold no locks and make no in-memory writes.
+    /// See `docs/developers-guide.md` for the helper concurrency model.
     async fn repair_broken_tool<'a>(
         &'a self,
         tool: &'a BrokenTool,
     ) -> Result<RepairResult, RepairError> {
-        // Validate preconditions (builder/store availability, attempt limits)
         let (builder, store) = match self.validate_repair_preconditions(tool) {
             Ok(tuple) => tuple,
             Err(result) => return Ok(result),
         };
 
-        // Create build requirement (validates tool name)
         let requirement = Self::build_repair_requirement(tool)?;
+        let _claim = match self.repair_claims.claim_tool(tool)? {
+            Some(claim) => claim,
+            None => {
+                tracing::warn!(
+                    tool_name = %tool.name,
+                    "repair precondition failed: tool repair already claimed"
+                );
+                return Ok(RepairResult::Retry {
+                    message: format!("Repair already in progress for '{}'", tool.name),
+                });
+            }
+        };
 
         tracing::info!(
             "Attempting to repair tool '{}' (attempt {})",
@@ -374,7 +369,6 @@ impl NativeSelfRepair for DefaultSelfRepair {
             tool.repair_attempts + 1
         );
 
-        // Increment repair attempts
         store
             .increment_repair_attempts(&tool.name)
             .await
