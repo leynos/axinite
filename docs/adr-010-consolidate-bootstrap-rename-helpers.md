@@ -45,7 +45,7 @@ Retain a single helper:
 The following Rust signature names the retained helper and shows that callers
 receive an `io::Result<()>` from the rename operation.
 
-```rust
+```rust,no_run
 pub(super) fn rename_to_migrated(path: &Path) -> io::Result<()>
 ```
 
