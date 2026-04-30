@@ -4,11 +4,76 @@
 //! result-shape invariants without invoking the full LLM-driven build loop.
 
 use super::*;
+use rstest::rstest;
 use std::path::Path;
 
 mod assertions {
     use super::*;
+    use pretty_assertions::assert_eq;
 
+    #[track_caller]
+    pub(super) fn assert_build_requirement_roundtrip(req: &BuildRequirement) {
+        let json = serde_json::to_string(req).expect("serialize BuildRequirement");
+        let deserialized: BuildRequirement =
+            serde_json::from_str(&json).expect("deserialize BuildRequirement");
+        assert_eq!(
+            (
+                deserialized.name,
+                deserialized.description,
+                deserialized.software_type,
+                deserialized.language,
+                deserialized.input_spec,
+                deserialized.output_spec,
+                deserialized.dependencies,
+                deserialized.capabilities,
+            ),
+            (
+                req.name.clone(),
+                req.description.clone(),
+                req.software_type.clone(),
+                req.language.clone(),
+                req.input_spec.clone(),
+                req.output_spec.clone(),
+                req.dependencies.clone(),
+                req.capabilities.clone(),
+            )
+        );
+    }
+
+    #[track_caller]
+    pub(super) fn assert_optional_fields_none(req: &BuildRequirement) {
+        assert_eq!(
+            (
+                req.input_spec.as_ref(),
+                req.output_spec.as_ref(),
+                req.dependencies.as_slice(),
+                req.capabilities.as_slice(),
+            ),
+            (None, None, [].as_slice(), [].as_slice())
+        );
+    }
+
+    #[track_caller]
+    pub(super) fn assert_builder_config_defaults(config: &BuilderConfig) {
+        assert_eq!(
+            (
+                config.max_iterations > 0,
+                !config.timeout.is_zero() && config.timeout.as_secs() >= 60,
+                config.validate_wasm,
+                config.run_tests,
+                config.auto_register,
+                config.cleanup_on_failure,
+                config.wasm_output_dir.as_ref(),
+                config
+                    .build_dir
+                    .to_string_lossy()
+                    .contains("ironclaw-builds"),
+            ),
+            (true, true, true, true, true, false, None, true)
+        );
+    }
+
+    #[track_caller]
     pub(super) fn assert_build_success(res: &BuildResult) {
         assert!(res.success, "expected build to succeed");
         assert!(
@@ -18,6 +83,7 @@ mod assertions {
         );
     }
 
+    #[track_caller]
     pub(super) fn assert_build_failure_contains(res: &BuildResult, needle: &str) {
         assert!(!res.success, "expected build to fail");
         assert!(
@@ -30,6 +96,55 @@ mod assertions {
         );
     }
 
+    #[track_caller]
+    pub(super) fn assert_build_result_success(res: &BuildResult) {
+        assert_build_success(res);
+        assert_eq!(
+            (
+                res.iterations,
+                res.tests_passed,
+                res.tests_failed,
+                res.registered
+            ),
+            (3, 5, 0, true)
+        );
+    }
+
+    #[track_caller]
+    pub(super) fn assert_build_result_failure(
+        res: &BuildResult,
+        expected_error: &str,
+        expected_warnings: usize,
+        tests_passed: u32,
+        tests_failed: u32,
+    ) {
+        assert_build_failure_contains(res, expected_error);
+        assert_eq!(
+            (
+                res.iterations,
+                res.validation_warnings.len(),
+                res.tests_passed,
+                res.tests_failed,
+                res.registered,
+            ),
+            (10, expected_warnings, tests_passed, tests_failed, false)
+        );
+    }
+
+    #[track_caller]
+    pub(super) fn assert_build_result_defaults(result: &BuildResult) {
+        assert_eq!(
+            (
+                result.validation_warnings.as_slice(),
+                result.tests_passed,
+                result.tests_failed,
+                result.registered,
+            ),
+            ([].as_slice(), 0, 0, false)
+        );
+    }
+
+    #[track_caller]
     pub(super) fn assert_logs_contain_phase(logs: &[BuildLog], phase: BuildPhase) {
         assert!(
             logs.iter().any(|log| log.phase == phase),
@@ -39,6 +154,7 @@ mod assertions {
         );
     }
 
+    #[track_caller]
     pub(super) fn assert_logs_message_contains(logs: &[BuildLog], needle: &str) {
         assert!(
             logs.iter().any(|log| log.message.contains(needle)
@@ -55,36 +171,62 @@ mod assertions {
     }
 }
 
-#[test]
-fn test_language_extension_all_variants() {
-    assert_eq!(Language::Rust.extension(), "rs");
-    assert_eq!(Language::Python.extension(), "py");
-    assert_eq!(Language::TypeScript.extension(), "ts");
-    assert_eq!(Language::JavaScript.extension(), "js");
-    assert_eq!(Language::Go.extension(), "go");
-    assert_eq!(Language::Bash.extension(), "sh");
+enum CommandExpectation<'a> {
+    Program(&'a str),
+    Args(&'a [&'a str]),
 }
 
-#[test]
-fn test_language_build_command_compiled_returns_some() {
+#[track_caller]
+fn assert_command_program_and_args(
+    command: ExecutionCommand,
+    expected_program: &str,
+    expected_args: &[&str],
+) {
+    let actual_args = command.args.iter().map(String::as_str).collect::<Vec<_>>();
+    assert_eq!(
+        (command.program.as_str(), actual_args.as_slice()),
+        (expected_program, expected_args)
+    );
+}
+
+#[track_caller]
+fn assert_command_matches(command: ExecutionCommand, expectation: CommandExpectation<'_>) {
+    match expectation {
+        CommandExpectation::Program(expected) => {
+            assert_eq!(command.program, expected);
+        }
+        CommandExpectation::Args(expected) => {
+            let actual_args = command.args.iter().map(String::as_str).collect::<Vec<_>>();
+            assert_eq!(actual_args.as_slice(), expected);
+        }
+    }
+}
+
+#[rstest]
+#[case(Language::Rust, "rs")]
+#[case(Language::Python, "py")]
+#[case(Language::TypeScript, "ts")]
+#[case(Language::JavaScript, "js")]
+#[case(Language::Go, "go")]
+#[case(Language::Bash, "sh")]
+fn test_language_extension_all_variants(#[case] lang: Language, #[case] expected_ext: &str) {
+    assert_eq!(lang.extension(), expected_ext);
+}
+
+#[rstest]
+#[case(Language::Rust, "cargo", &["build", "--release"])]
+#[case(Language::TypeScript, "npm", &["run", "build"])]
+#[case(Language::Go, "go", &["build", "./..."])]
+fn test_language_build_command_compiled_returns_some(
+    #[case] lang: Language,
+    #[case] expected_program: &str,
+    #[case] expected_args: &[&str],
+) {
     let dir = Path::new("/tmp/project");
-    let rust_cmd = Language::Rust.build_command(dir);
-    assert!(rust_cmd.is_some());
-    let rust_cmd = rust_cmd.expect("rust build command");
-    assert_eq!(rust_cmd.program, "cargo");
-    assert_eq!(rust_cmd.args, vec!["build", "--release"]);
-
-    let ts_cmd = Language::TypeScript.build_command(dir);
-    assert!(ts_cmd.is_some());
-    let ts_cmd = ts_cmd.expect("typescript build command");
-    assert_eq!(ts_cmd.program, "npm");
-    assert_eq!(ts_cmd.args, vec!["run", "build"]);
-
-    let go_cmd = Language::Go.build_command(dir);
-    assert!(go_cmd.is_some());
-    let go_cmd = go_cmd.expect("go build command");
-    assert_eq!(go_cmd.program, "go");
-    assert_eq!(go_cmd.args, vec!["build", "./..."]);
+    let command = lang.build_command(dir);
+    assert!(command.is_some());
+    let command = command.expect("compiled language build command");
+    assert_command_program_and_args(command, expected_program, expected_args);
 }
 
 #[test]
@@ -138,18 +280,19 @@ fn test_language_test_command_all_variants_non_empty() {
     }
 }
 
-#[test]
-fn test_language_test_command_specific_tools() {
+#[rstest]
+#[case(Language::Rust, CommandExpectation::Program("cargo"))]
+#[case(Language::Python, CommandExpectation::Args(&["-m", "pytest"]))]
+#[case(Language::TypeScript, CommandExpectation::Program("npm"))]
+#[case(Language::JavaScript, CommandExpectation::Program("npm"))]
+#[case(Language::Go, CommandExpectation::Args(&["test", "./..."]))]
+#[case(Language::Bash, CommandExpectation::Program("sh"))]
+fn test_language_test_command_specific_tools(
+    #[case] lang: Language,
+    #[case] expectation: CommandExpectation<'_>,
+) {
     let dir = Path::new("/tmp/p");
-    assert_eq!(Language::Rust.test_command(dir).program, "cargo");
-    assert_eq!(
-        Language::Python.test_command(dir).args,
-        vec!["-m", "pytest"]
-    );
-    assert_eq!(Language::TypeScript.test_command(dir).program, "npm");
-    assert_eq!(Language::JavaScript.test_command(dir).program, "npm");
-    assert_eq!(Language::Go.test_command(dir).args, vec!["test", "./..."]);
-    assert_eq!(Language::Bash.test_command(dir).program, "sh");
+    assert_command_matches(lang.test_command(dir), expectation);
 }
 
 #[test]
@@ -213,6 +356,8 @@ fn test_language_serde_roundtrip() {
 
 #[test]
 fn test_build_requirement_serde_roundtrip() {
+    use assertions::*;
+
     let req = BuildRequirement {
         name: ProjectName::new("my_tool").expect("valid project name"),
         description: "A tool that does stuff".into(),
@@ -223,35 +368,13 @@ fn test_build_requirement_serde_roundtrip() {
         dependencies: vec!["serde".into(), "reqwest".into()],
         capabilities: vec!["http".into(), "workspace".into()],
     };
-    let json = serde_json::to_string(&req).expect("serialize BuildRequirement");
-    let deserialized: BuildRequirement =
-        serde_json::from_str(&json).expect("deserialize BuildRequirement");
-    assert_eq!(
-        (
-            deserialized.name,
-            deserialized.description,
-            deserialized.software_type,
-            deserialized.language,
-            deserialized.input_spec,
-            deserialized.output_spec,
-            deserialized.dependencies,
-            deserialized.capabilities,
-        ),
-        (
-            req.name,
-            req.description,
-            req.software_type,
-            req.language,
-            req.input_spec,
-            req.output_spec,
-            req.dependencies,
-            req.capabilities,
-        )
-    );
+    assert_build_requirement_roundtrip(&req);
 }
 
 #[test]
 fn test_build_requirement_serde_optional_fields_none() {
+    use assertions::*;
+
     let req = BuildRequirement {
         name: ProjectName::new("minimal").expect("valid project name"),
         description: "Bare minimum".into(),
@@ -265,32 +388,15 @@ fn test_build_requirement_serde_optional_fields_none() {
     let json = serde_json::to_string(&req).expect("serialize BuildRequirement");
     let deserialized: BuildRequirement =
         serde_json::from_str(&json).expect("deserialize BuildRequirement");
-    assert!(deserialized.input_spec.is_none() && deserialized.output_spec.is_none());
-    assert!(deserialized.dependencies.is_empty() && deserialized.capabilities.is_empty());
+    assert_optional_fields_none(&deserialized);
 }
 
 #[test]
 fn test_builder_config_default_sensible_values() {
+    use assertions::*;
+
     let config = BuilderConfig::default();
-    assert!(
-        config.max_iterations > 0 && !config.timeout.is_zero() && config.timeout.as_secs() >= 60,
-        "defaults should provide a positive iteration cap and non-trivial timeout"
-    );
-    assert!(
-        config.validate_wasm && config.run_tests && config.auto_register,
-        "validation, tests, and registration should default to enabled"
-    );
-    assert!(
-        !config.cleanup_on_failure && config.wasm_output_dir.is_none(),
-        "cleanup should stay disabled and wasm_output_dir should default to None"
-    );
-    assert!(
-        config
-            .build_dir
-            .to_string_lossy()
-            .contains("ironclaw-builds"),
-        "build_dir should contain 'ironclaw-builds'"
-    );
+    assert_builder_config_defaults(&config);
 }
 
 #[test]
@@ -349,13 +455,7 @@ fn test_build_result_serde_success() {
     };
     let json = serde_json::to_string(&result).expect("serialize BuildResult");
     let deserialized: BuildResult = serde_json::from_str(&json).expect("deserialize BuildResult");
-    assert_build_success(&deserialized);
-    assert_eq!(deserialized.iterations, 3);
-    assert_eq!(
-        (deserialized.tests_passed, deserialized.tests_failed),
-        (5, 0)
-    );
-    assert!(deserialized.registered);
+    assert_build_result_success(&deserialized);
 }
 
 #[test]
@@ -388,21 +488,19 @@ fn test_build_result_serde_failure() {
     };
     let json = serde_json::to_string(&result).expect("serialize BuildResult");
     let deserialized: BuildResult = serde_json::from_str(&json).expect("deserialize BuildResult");
-    assert_build_failure_contains(&deserialized, "compilation error: undefined reference");
-    assert_eq!(deserialized.iterations, 10);
-    assert_eq!(
-        (
-            deserialized.validation_warnings.len(),
-            deserialized.tests_passed,
-            deserialized.tests_failed,
-        ),
-        (1, 2, 3)
+    assert_build_result_failure(
+        &deserialized,
+        "compilation error: undefined reference",
+        1,
+        2,
+        3,
     );
-    assert!(!deserialized.registered);
 }
 
 #[test]
 fn test_build_result_default_fields_from_json() {
+    use assertions::*;
+
     // Verify #[serde(default)] fields can be omitted in JSON
     let json = serde_json::json!({
         "build_id": "00000000-0000-0000-0000-000000000000",
@@ -426,10 +524,7 @@ fn test_build_result_default_fields_from_json() {
     });
     let result: BuildResult =
         serde_json::from_value(json).expect("deserialize BuildResult from value");
-    assert_eq!(result.validation_warnings, Vec::<String>::new());
-    assert_eq!(result.tests_passed, 0);
-    assert_eq!(result.tests_failed, 0);
-    assert!(!result.registered);
+    assert_build_result_defaults(&result);
 }
 
 #[test]
