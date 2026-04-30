@@ -8,6 +8,7 @@ use std::thread;
 use ironclaw::error::LlmError;
 use ironclaw::llm::recording::{TraceResponse, TraceStep};
 use ironclaw::llm::{ChatMessage, LlmProvider, ToolCompletionRequest};
+use rstest::rstest;
 
 use super::trace_provider::TraceLlm;
 use super::trace_types::LlmTrace;
@@ -60,8 +61,11 @@ fn increment_hint_mismatches_panics_on_overflow() {
     assert_eq!(message, "hint_mismatches overflowed");
 }
 
+#[rstest]
+#[case("captured_requests")]
+#[case("complete_with_tools")]
 #[tokio::test]
-async fn poisoned_inner_lock_returns_request_failed() {
+async fn poisoned_inner_lock_returns_request_failed(#[case] method: &str) {
     let llm = Arc::new(trace_llm_from_single_turn(
         "poison-model",
         "hello",
@@ -69,33 +73,21 @@ async fn poisoned_inner_lock_returns_request_failed() {
     ));
     poison_inner_lock(Arc::clone(&llm));
 
-    let captured_err = llm
-        .captured_requests()
-        .expect_err("poisoned lock should reject diagnostics");
+    let err = if method == "captured_requests" {
+        llm.captured_requests()
+            .expect_err("poisoned lock should reject diagnostics")
+    } else {
+        llm.complete_with_tools(make_tool_completion_request("hello"))
+            .await
+            .expect_err("poisoned lock should reject replay")
+    };
     assert!(
-        matches!(captured_err, LlmError::RequestFailed { .. }),
-        "expected request failure, got {captured_err:?}"
+        matches!(err, LlmError::RequestFailed { .. }),
+        "expected request failure, got {err:?}"
     );
     assert!(
-        captured_err
-            .to_string()
-            .contains("TraceLlm state lock poisoned"),
-        "expected poisoned-lock diagnostic, got {captured_err}"
-    );
-
-    let completion_err = llm
-        .complete_with_tools(make_tool_completion_request("hello"))
-        .await
-        .expect_err("poisoned lock should reject replay");
-    assert!(
-        matches!(completion_err, LlmError::RequestFailed { .. }),
-        "expected request failure, got {completion_err:?}"
-    );
-    assert!(
-        completion_err
-            .to_string()
-            .contains("TraceLlm state lock poisoned"),
-        "expected poisoned-lock diagnostic, got {completion_err}"
+        err.to_string().contains("TraceLlm state lock poisoned"),
+        "expected poisoned-lock diagnostic, got {err}"
     );
 }
 
@@ -119,27 +111,6 @@ async fn next_step_errors_on_cursor_overflow() {
     assert!(
         err.to_string().contains("overflowed"),
         "expected overflow diagnostic, got {err}"
-    );
-}
-
-#[test]
-fn next_step_returns_error_when_inner_lock_is_poisoned() {
-    let llm = Arc::new(trace_llm_from_single_turn(
-        "poison-model",
-        "hello",
-        vec![text_step("hi")],
-    ));
-
-    // Poison the mutex by panicking while holding it.
-    poison_inner_lock(Arc::clone(&llm));
-
-    // captured_requests() goes through lock_inner() and must return an error,
-    // not panic, when the lock is poisoned.
-    let result = llm.captured_requests();
-    let err = result.expect_err("expected LlmError when inner lock is poisoned");
-    assert!(
-        err.to_string().contains("TraceLlm state lock poisoned"),
-        "expected poison diagnostic, got {err}"
     );
 }
 
