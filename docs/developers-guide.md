@@ -1202,6 +1202,51 @@ the preparation phase. `register_wasm()` invokes it only after the
 registry accepts the prepared wrapper, and `register_wasm_from_storage()`
 reaches it by delegating through the same lower-level flow.
 
+Figure 1. WASM registration sequence showing how `ToolRegistry` delegates to
+the preparation pipeline, receives a prepared wrapper plus credential mappings,
+registers the wrapper, and persists credential mappings only after successful
+registry insertion.
+
+```mermaid
+sequenceDiagram
+    participant ToolRegistry
+    participant WasmToolRegistration as WasmToolRegistration
+    participant Runtime
+    participant WasmToolPreparation as WasmToolPreparation
+    participant CredentialRegistry
+
+    ToolRegistry->>ToolRegistry: register_wasm(reg)
+    activate ToolRegistry
+
+    ToolRegistry->>WasmToolPreparation: prepare_wasm_tool(reg)
+    activate WasmToolPreparation
+
+    WasmToolPreparation->>Runtime: prepare(reg.name, reg.wasm_bytes, reg.limits)
+    activate Runtime
+    Runtime-->>WasmToolPreparation: prepared_instance
+    deactivate Runtime
+
+    WasmToolPreparation->>WasmToolPreparation: credential_mappings_from_capabilities(&reg.capabilities)
+    WasmToolPreparation->>WasmToolPreparation: build WasmMetadataHints
+    WasmToolPreparation->>WasmToolPreparation: build WasmRuntimeConfig
+    WasmToolPreparation->>WasmToolPreparation: WasmToolWrapper::new(reg.runtime, prepared_instance, reg.capabilities)
+    WasmToolPreparation->>WasmToolPreparation: recover_guest_metadata(wrapper, &hints)
+    WasmToolPreparation->>WasmToolPreparation: apply_wasm_overrides(wrapper, hints, runtime_config)
+
+    WasmToolPreparation-->>ToolRegistry: PreparedWasmTool { wrapper, credential_mappings }
+    deactivate WasmToolPreparation
+
+    ToolRegistry->>ToolRegistry: register(Arc::new(prepared.wrapper))
+    alt registration_rejected
+        ToolRegistry-->>ToolRegistry: Err(WasmError::ConfigError)
+    else registration_accepted
+        ToolRegistry->>CredentialRegistry: persist_credential_mappings(name, prepared.credential_mappings)
+        ToolRegistry->>ToolRegistry: tracing::debug!("Registered WASM tool")
+        ToolRegistry-->>ToolRegistry: Ok(())
+    end
+    deactivate ToolRegistry
+```
+
 The storage path is the one that exercises schema normalization, because
 backends may persist placeholder or null schemas that must be stripped
 before the guest-export recovery logic can run.
