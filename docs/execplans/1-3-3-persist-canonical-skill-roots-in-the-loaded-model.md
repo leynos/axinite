@@ -84,14 +84,16 @@ checked and updated where the shipped or documented behaviour changes.
 - Use typed Rust fields or small value types for root and entrypoint metadata;
   avoid adding unstructured parallel strings when a named type or struct can
   make the invariant clearer.
-- Avoid new external dependencies. The current standard library, `camino` if it
+- Avoid new runtime dependencies. The current standard library, `camino` if it
   is already available in the crate, and existing workspace crates are enough
-  for path metadata.
+  for path metadata. Adding `rstest-bdd` and `rstest-bdd-macros` as
+  development dependencies is explicitly in scope if they are not already
+  present.
 - Use `rstest` fixtures for shared test setup and parameterized cases.
-- Add behavioural coverage with `rstest-bdd` only where it is already practical
-  in this repository. If adding the first BDD harness for this narrow internal
-  prompt-contract change would be disproportionate, document the reason in the
-  plan and cover the behaviour with focused `rstest` tests instead.
+- Add an `rstest-bdd` harness for this slice. The harness may be small, but it
+  must establish the pattern for behavioural skill tests with a `.feature`
+  file, step definitions, and at least one scenario that fails before the
+  runtime metadata change and passes after it.
 - Do not update `docs/roadmap.md` to mark `1.3.3` done until the approved
   implementation and gates have passed.
 
@@ -152,9 +154,10 @@ conflict in `Decision Log`, and ask for direction.
 - Risk: `rstest-bdd` is documented but not currently wired into source tests.
   Severity: low.
   Likelihood: medium.
-  Mitigation: inspect existing dependencies before implementation. If no
-  proportional harness exists, record that behavioural proof is implemented as
-  `rstest` dispatcher and web-gateway tests instead.
+  Mitigation: make the first harness part of this work rather than deferring it.
+  Keep it narrow: one feature file for active skill context, local step
+  definitions that reuse existing dispatcher or registry fixtures, and no broad
+  behaviour-testing framework beyond the documented `rstest-bdd` macros.
 
 ## Progress
 
@@ -169,6 +172,8 @@ conflict in `Decision Log`, and ask for direction.
 - [x] (2026-04-30 19:17Z) Reviewed `docs/roadmap.md`, RFC 0003,
   `docs/agent-skills-support.md`, the current skills registry, staged install,
   bundle validator, and dispatcher injection code.
+- [x] (2026-04-30 20:03Z) Revised the draft plan to make an `rstest-bdd`
+  harness mandatory for this feature rather than a proportionality exception.
 - [ ] Obtain explicit approval for this ExecPlan.
 - [ ] Implement the loaded model and propagation changes.
 - [ ] Add targeted unit and behavioural tests.
@@ -207,9 +212,8 @@ conflict in `Decision Log`, and ask for direction.
   or `.feature` files.
   Evidence: `find . -path '*rstest*bdd*' -o -name '*.feature'` found only
   `docs/rstest-bdd-users-guide.md`.
-  Impact: implementation should still assess proportionality, but it may be
-  correct to document why focused `rstest` behaviour tests are the appropriate
-  layer for this internal prompt-contract change.
+  Impact: this feature should add the first narrow harness, using the existing
+  guide as the local pattern, so behavioural tests are not deferred again.
 
 ## Decision log
 
@@ -238,6 +242,12 @@ conflict in `Decision Log`, and ask for direction.
   Rationale: the repository documentation index names the overview as the
   current top-level runtime shape.
   Date/Author: 2026-04-30, planning agent.
+
+- Decision: require an `rstest-bdd` harness in the implementation of `1.3.3`.
+  Rationale: deferring BDD as disproportionate would leave this area with no
+  behavioural-test pattern. A small harness can prove the externally relevant
+  prompt contract without expanding the runtime feature scope.
+  Date/Author: 2026-04-30, user preference captured by planning agent.
 
 ## Outcomes & retrospective
 
@@ -398,13 +408,43 @@ and any helper constructors affected by the new fields. Cover:
 - tool attenuation behaviour is unchanged for trusted, installed, and mixed
   active skills.
 
-Then evaluate BDD applicability using `docs/rstest-bdd-users-guide.md`. If the
-crate already has a practical BDD harness by the time this plan is implemented,
-add one focused scenario for "a bundled skill installed and selected exposes
-stable bundle-relative entrypoint metadata in active-skill context". If not,
-record in `Decision Log` that this internal prompt-contract change is covered
-by `rstest` behavioural tests because adding a first BDD harness would exceed
-the proportionality tolerance.
+Add the first `rstest-bdd` behavioural harness for this feature if none exists.
+Add the development dependencies in `Cargo.toml` if they are absent:
+
+```toml
+rstest-bdd = "0.5.0"
+rstest-bdd-macros = { version = "0.5.0", features = [
+    "compile-time-validation",
+] }
+```
+
+Create a focused feature file, for example
+`src/agent/dispatcher/tests/features/active_skill_context.feature`, with one
+scenario named "Selected bundle skill exposes stable bundle-relative metadata".
+The scenario should be business-readable and should describe the observable
+contract:
+
+```gherkin
+Feature: Active skill bundle metadata
+
+  Scenario: Selected bundle skill exposes stable bundle-relative metadata
+    Given an installed bundled skill with supporting files
+    When the skill is selected for an agent turn
+    Then the active skill context names the skill identifier
+    And the active skill context names SKILL.md as the entrypoint
+    And the active skill context does not expose the filesystem root
+```
+
+Add matching step definitions in a small test module, for example
+`src/agent/dispatcher/tests/skill_bundle_context_bdd.rs`, using
+`rstest_bdd_macros::{given, when, then, scenario}` and any `rstest` fixtures
+that keep setup readable. It is acceptable for the BDD harness to drive the
+dispatcher context-rendering seam directly rather than starting the whole
+server, because roadmap item `1.3.3` changes the active-skill prompt contract,
+not an HTTP endpoint. The step assertions must fail against the old
+`<skill name="..." version="..." trust="...">` rendering and pass only when
+`skill`, bundle-relative `entry`, and non-sensitive `root` metadata are
+present without leaking the absolute filesystem root.
 
 Stage F is documentation. Update `docs/users-guide.md` so users know that
 bundle installs now retain stable runtime identity and entrypoint metadata, but
@@ -440,7 +480,7 @@ git status --short
 Expected branch:
 
 ```plaintext
-feat/skill-roots-execplan
+1-3-3-persist-canonical-skill-roots-in-the-loaded-model
 ```
 
 Run targeted baseline tests:
@@ -462,6 +502,8 @@ cargo test skills::registry::tests::install --lib 2>&1 \
   | tee /tmp/test-install-skill-roots-axinite-${BRANCH_SLUG}.out
 cargo test agent::dispatcher::tests::skills --lib 2>&1 \
   | tee /tmp/test-dispatcher-skill-roots-axinite-${BRANCH_SLUG}.out
+cargo test agent::dispatcher::tests::skill_bundle_context_bdd --lib 2>&1 \
+  | tee /tmp/test-bdd-skill-roots-axinite-${BRANCH_SLUG}.out
 cargo test skills::attenuation --lib 2>&1 \
   | tee /tmp/test-attenuation-skill-roots-axinite-${BRANCH_SLUG}.out
 ```
@@ -509,6 +551,9 @@ The feature is accepted only when the following behaviour is true:
 - `Agent::build_skill_context_block()` includes model-facing stable metadata
   for the skill identifier and bundle-relative entrypoint while preserving the
   existing prompt-body escaping and installed-skill disclaimer.
+- An `rstest-bdd` feature and test module describe and verify the active-skill
+  prompt contract for a selected bundled skill, including the absence of an
+  absolute filesystem root in model-facing context.
 - Existing trust attenuation is unchanged: installed skills still restrict the
   tool list to the read-only allowlist, and trusted skills do not.
 - User-facing and maintainer-facing documentation describe the same current
@@ -520,7 +565,7 @@ The feature is accepted only when the following behaviour is true:
 Quality gates:
 
 - Targeted `cargo test` commands for skills registry, dispatcher skills tests,
-  and attenuation pass.
+  `rstest-bdd` active-skill context, and attenuation pass.
 - `make all` passes.
 - `bunx markdownlint-cli2` passes for changed Markdown files.
 - `git diff --check` passes.
