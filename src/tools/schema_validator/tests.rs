@@ -1,6 +1,7 @@
 //! Tests for `validate_strict_schema`, including complex fixture-backed tool schemas.
 
 use super::*;
+use crate::tools::tool::{SchemaPath, ToolName};
 
 mod fixture_groups;
 
@@ -14,6 +15,56 @@ fn test_valid_schema_passes() {
         "required": ["name"]
     });
     assert!(validate_strict_schema(&schema, "test").is_ok());
+}
+
+#[test]
+fn test_strict_schema_accepts_valid_schema_with_tool_name_newtype() {
+    let schema = serde_json::json!({
+        "type": "object",
+        "properties": {
+            "name": { "type": "string" }
+        }
+    });
+
+    assert!(validate_strict_schema(&schema, ToolName::from("test")).is_ok());
+}
+
+#[test]
+fn test_strict_schema_error_contains_tool_name_from_newtype() {
+    // Invalid: missing "properties".
+    let schema = serde_json::json!({ "type": "object" });
+    let err = validate_strict_schema(&schema, ToolName::from("my_tool")).unwrap_err();
+    assert!(
+        err.iter().any(|e| e.starts_with("my_tool:")),
+        "error must begin with the tool name 'my_tool', got: {err:?}"
+    );
+}
+
+fn nested_headers_schema(extra_required: &str) -> serde_json::Value {
+    serde_json::json!({
+        "type": "object",
+        "properties": {
+            "headers": {
+                "type": "array",
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "name": { "type": "string" }
+                    },
+                    "required": ["name", extra_required]
+                }
+            }
+        }
+    })
+}
+
+#[test]
+fn test_object_schema_accepts_schema_path_newtype() {
+    let err = check_object_schema(&nested_headers_schema("missing"), SchemaPath::from("test"));
+    assert!(
+        err.iter()
+            .any(|e| e.contains("test.headers.items") && e.contains("\"missing\""))
+    );
 }
 
 #[test]
@@ -221,22 +272,7 @@ fn test_enum_matching_type_passes() {
 
 #[test]
 fn test_nested_array_items_object_validated() {
-    let schema = serde_json::json!({
-        "type": "object",
-        "properties": {
-            "headers": {
-                "type": "array",
-                "items": {
-                    "type": "object",
-                    "properties": {
-                        "name": { "type": "string" }
-                    },
-                    "required": ["name", "ghost"]
-                }
-            }
-        }
-    });
-    let err = validate_strict_schema(&schema, "test").unwrap_err();
+    let err = validate_strict_schema(&nested_headers_schema("ghost"), "test").unwrap_err();
     assert!(
         err.iter()
             .any(|e| e.contains("headers.items") && e.contains("\"ghost\""))

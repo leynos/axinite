@@ -1,0 +1,5 @@
+---
+source: src/tools/tool/tests.rs
+expression: err
+---
+Invalid parameters: missing 'token' parameter

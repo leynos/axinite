@@ -31,6 +31,7 @@ pub use registry::{
 };
 pub use tool::{
     ApprovalContext, ApprovalRequirement, HostedToolCatalogSource, HostedToolEligibility,
-    NativeTool, Tool, ToolDomain, ToolError, ToolFuture, ToolOutput, ToolRateLimitConfig,
-    redact_params, validate_tool_schema,
+    NativeTool, ParamName, SchemaPath, Tool, ToolDomain, ToolError, ToolFuture, ToolName,
+    ToolOutput, ToolRateLimitConfig, redact_params, require_param, require_str,
+    validate_tool_schema,
 };

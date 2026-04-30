@@ -1,5 +1,6 @@
 use std::time::Duration;
 
+use insta::assert_snapshot;
 use rstest::rstest;
 
 use super::*;
@@ -103,10 +104,41 @@ fn test_require_str_present() {
 }
 
 #[test]
+fn test_require_str_accepts_param_name() {
+    let params = serde_json::json!({"name": "alice"});
+    assert_eq!(
+        require_str(&params, ParamName::from("name"))
+            .expect("expected 'name' parameter to be a string and present"),
+        "alice"
+    );
+}
+
+#[test]
+fn test_require_str_param_name_error_contains_key() {
+    let params = serde_json::json!({});
+    let err = require_str(&params, ParamName::from("token")).unwrap_err();
+    assert_eq!(
+        err.to_string(),
+        "Invalid parameters: missing 'token' parameter",
+        "ParamName must feed into the error message verbatim"
+    );
+}
+
+#[test]
+fn test_param_name_preserves_display_value() {
+    let name = ParamName::from("name");
+    assert_eq!(name.as_ref(), "name");
+    assert_eq!(name.to_string(), "name");
+}
+
+#[test]
 fn test_require_str_missing() {
     let params = serde_json::json!({});
     let err = require_str(&params, "name").unwrap_err();
-    assert!(err.to_string().contains("missing 'name'"));
+    assert_eq!(
+        err.to_string(),
+        "Invalid parameters: missing 'name' parameter"
+    );
 }
 
 #[test]
@@ -129,7 +161,98 @@ fn test_require_param_present() {
 fn test_require_param_missing() {
     let params = serde_json::json!({});
     let err = require_param(&params, "data").unwrap_err();
-    assert!(err.to_string().contains("missing 'data'"));
+    assert_eq!(
+        err.to_string(),
+        "Invalid parameters: missing 'data' parameter"
+    );
+}
+
+#[test]
+fn test_require_param_accepts_param_name_with_unchanged_error() {
+    let params = serde_json::json!({});
+    let err = require_param(&params, ParamName::from("data")).unwrap_err();
+    assert_eq!(
+        err.to_string(),
+        "Invalid parameters: missing 'data' parameter"
+    );
+}
+
+#[test]
+fn test_schema_path_preserves_display_value() {
+    let path = SchemaPath::from("test.headers.items");
+    assert_eq!(path.as_ref(), "test.headers.items");
+    assert_eq!(path.to_string(), "test.headers.items");
+}
+
+#[test]
+fn test_schema_path_child_preserves_dot_path_format() {
+    let path = SchemaPath::from("test.headers").child("items");
+    assert_eq!(path.as_ref(), "test.headers.items");
+    assert_eq!(path.to_string(), "test.headers.items");
+}
+
+#[test]
+fn test_tool_name_preserves_display_value() {
+    let tool_name = ToolName::from("github");
+    assert_eq!(tool_name.as_ref(), "github");
+    assert_eq!(tool_name.to_string(), "github");
+}
+
+#[test]
+fn test_param_name_from_string_ref_preserves_value() {
+    let s = String::from("body");
+    let name = ParamName::from(&s);
+    assert_eq!(name.as_ref(), "body");
+    assert_eq!(name.to_string(), "body");
+}
+
+#[test]
+fn test_schema_path_from_string_ref_preserves_value() {
+    let s = String::from("tool.params");
+    let path = SchemaPath::from(&s);
+    assert_eq!(path.as_ref(), "tool.params");
+    assert_eq!(path.to_string(), "tool.params");
+}
+
+#[test]
+fn test_tool_name_from_string_ref_preserves_value() {
+    let s = String::from("my_tool");
+    let name = ToolName::from(&s);
+    assert_eq!(name.as_ref(), "my_tool");
+    assert_eq!(name.to_string(), "my_tool");
+}
+
+#[test]
+fn test_tool_name_converts_to_schema_path() {
+    let tool = ToolName::from("converter");
+    let path = SchemaPath::from(tool);
+    assert_eq!(path.as_ref(), "converter");
+    assert_eq!(path.to_string(), "converter");
+}
+
+#[test]
+fn test_validate_tool_schema_nested_path_uses_child() {
+    // validate_tool_schema calls SchemaPath::child() when it descends into
+    // nested objects; verify the resulting error path is correctly formed.
+    let schema = serde_json::json!({
+        "type": "object",
+        "properties": {
+            "config": {
+                "type": "object",
+                "properties": {
+                    "key": { "type": "string" }
+                },
+                "required": ["key", "absent"]
+            }
+        }
+    });
+    let errors = validate_tool_schema(&schema, "root");
+    assert!(
+        errors
+            .iter()
+            .any(|e| e.contains("root.config") && e.contains("\"absent\"")),
+        "child path must be root.config, got: {errors:?}"
+    );
 }
 
 #[test]
@@ -357,4 +480,67 @@ fn test_is_blocked_or_default_with_some_delegates() {
         "any",
         ApprovalRequirement::UnlessAutoApproved
     ));
+}
+
+#[test]
+fn test_require_str_missing_error_snapshot() {
+    let params = serde_json::json!({});
+    let err = require_str(&params, "token").unwrap_err().to_string();
+    assert_snapshot!(err);
+}
+
+#[test]
+fn test_require_param_missing_error_snapshot() {
+    let params = serde_json::json!({});
+    let err = require_param(&params, "data").unwrap_err().to_string();
+    assert_snapshot!(err);
+}
+
+mod property_tests {
+    use proptest::prelude::*;
+
+    use super::super::*;
+
+    proptest! {
+        /// SchemaPath::child always produces "<parent>.<segment>".
+        #[test]
+        fn prop_schema_path_child_dot_joins(
+            root in "[a-z][a-z0-9_]{0,15}",
+            seg  in "[a-z][a-z0-9_]{0,15}",
+        ) {
+            let path = SchemaPath::from(root.as_str()).child(&seg);
+            let expected = format!("{root}.{seg}");
+            prop_assert_eq!(path.as_str(), expected.as_str());
+        }
+
+        /// ParamName round-trips through as_ref and to_string.
+        #[test]
+        fn prop_param_name_round_trips(s in "[a-z][a-z0-9_]{0,31}") {
+            let name = ParamName::from(s.as_str());
+            prop_assert_eq!(name.as_ref(), s.as_str());
+            prop_assert_eq!(name.to_string(), s);
+        }
+
+        /// ToolName round-trips through as_ref and to_string.
+        #[test]
+        fn prop_tool_name_round_trips(s in "[a-z][a-z0-9_]{0,31}") {
+            let name = ToolName::from(s.as_str());
+            prop_assert_eq!(name.as_ref(), s.as_str());
+            prop_assert_eq!(name.to_string(), s);
+        }
+
+        /// validate_tool_schema on a minimal valid schema never panics
+        /// and returns no errors regardless of the path string used.
+        #[test]
+        fn prop_validate_tool_schema_minimal_valid_never_panics(
+            path in "[a-z][a-z0-9_.]{0,31}",
+        ) {
+            let schema = serde_json::json!({
+                "type": "object",
+                "properties": {}
+            });
+            let errors = validate_tool_schema(&schema, path.as_str());
+            prop_assert!(errors.is_empty());
+        }
+    }
 }

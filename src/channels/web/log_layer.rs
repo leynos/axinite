@@ -211,7 +211,8 @@ pub fn init_tracing(log_broadcaster: Arc<LogBroadcaster>) -> Arc<LogLevelHandle>
                 .with_writer(crate::tracing_fmt::TruncatingStderr::default()),
         )
         .with(WebLogLayer::new(log_broadcaster))
-        .init();
+        .try_init()
+        .ok();
 
     handle
 }
