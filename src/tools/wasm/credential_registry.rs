@@ -135,49 +135,67 @@ fn dedupe_mappings_by_secret_name(
     deduped
 }
 
+fn merge_host_patterns_from_existing(
+    guard: &[OwnedCredentialMapping],
+    mapping: &mut CredentialMapping,
+) {
+    let mut seen = mapping
+        .host_patterns
+        .iter()
+        .cloned()
+        .collect::<HashSet<_>>();
+    for existing in guard
+        .iter()
+        .filter(|e| e.owner.is_none() && e.mapping.secret_name == mapping.secret_name)
+    {
+        for host_pattern in &existing.mapping.host_patterns {
+            if seen.insert(host_pattern.clone()) {
+                mapping.host_patterns.push(host_pattern.clone());
+            }
+        }
+    }
+}
+
+fn replace_ownerless_mappings(
+    guard: &mut Vec<OwnedCredentialMapping>,
+    secret_names: &HashSet<String>,
+    mut mappings: Vec<CredentialMapping>,
+) {
+    for mapping in &mut mappings {
+        merge_host_patterns_from_existing(guard, mapping);
+    }
+    guard.retain(|m| m.owner.is_some() || !secret_names.contains(&m.mapping.secret_name));
+    guard.extend(mappings.into_iter().map(|mapping| OwnedCredentialMapping {
+        owner: None,
+        mapping,
+    }));
+}
+
+fn replace_owned_mappings(
+    guard: &mut Vec<OwnedCredentialMapping>,
+    owner: String,
+    mappings: Vec<CredentialMapping>,
+) {
+    guard.retain(|m| m.owner.as_deref() != Some(owner.as_str()));
+    guard.extend(mappings.into_iter().map(|mapping| OwnedCredentialMapping {
+        owner: Some(owner.clone()),
+        mapping,
+    }));
+}
+
 fn replace_mappings_by_secret_name(
     guard: &mut Vec<OwnedCredentialMapping>,
     owner: Option<String>,
-    mut mappings: Vec<CredentialMapping>,
+    mappings: Vec<CredentialMapping>,
 ) {
     let secret_names = mappings
         .iter()
-        .map(|mapping| mapping.secret_name.clone())
+        .map(|m| m.secret_name.clone())
         .collect::<HashSet<_>>();
 
     match owner {
-        Some(owner) => {
-            guard.retain(|mapping| mapping.owner.as_deref() != Some(owner.as_str()));
-            guard.extend(mappings.into_iter().map(|mapping| OwnedCredentialMapping {
-                owner: Some(owner.clone()),
-                mapping,
-            }));
-        }
-        None => {
-            for mapping in &mut mappings {
-                let mut host_patterns = mapping
-                    .host_patterns
-                    .iter()
-                    .cloned()
-                    .collect::<HashSet<_>>();
-                for existing in guard.iter().filter(|existing| {
-                    existing.owner.is_none() && existing.mapping.secret_name == mapping.secret_name
-                }) {
-                    for host_pattern in &existing.mapping.host_patterns {
-                        if host_patterns.insert(host_pattern.clone()) {
-                            mapping.host_patterns.push(host_pattern.clone());
-                        }
-                    }
-                }
-            }
-            guard.retain(|mapping| {
-                mapping.owner.is_some() || !secret_names.contains(&mapping.mapping.secret_name)
-            });
-            guard.extend(mappings.into_iter().map(|mapping| OwnedCredentialMapping {
-                owner: None,
-                mapping,
-            }));
-        }
+        Some(owner) => replace_owned_mappings(guard, owner, mappings),
+        None => replace_ownerless_mappings(guard, &secret_names, mappings),
     }
 }
 
