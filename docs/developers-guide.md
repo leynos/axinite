@@ -585,6 +585,28 @@ None of these methods access instance state; they are static associated
 functions and must remain so. Their unit tests live in
 `src/agent/self_repair/default_tests/`.
 
+### Tool-repair concurrency model
+
+The three private helpers invoked by `repair_broken_tool`
+(`build_repair_requirement`, `attempt_repair_build`, `handle_build_result`) are
+static associated functions with no shared mutable state. Concurrent calls for
+different tools are therefore safe: each call operates on its own `BrokenTool`
+and `BuildResult` values.
+
+`repair_broken_tool` claims an in-process repair slot for the same
+`tool.name` before calling `store.increment_repair_attempts`. Concurrent calls
+for the same tool through the same `DefaultSelfRepair` instance return
+`RepairResult::Retry` until the active claim is released, so only the claimed
+call increments attempts and may later call `store.mark_tool_repaired`.
+
+The claim is process-local. Distributed callers still need database-level
+idempotency or scheduler-level at-most-once repair semantics if multiple
+processes can repair the same tool concurrently.
+
+Cancellation at any `.await` point inside the helper chain is safe: the
+helpers hold no locks across awaits and make no in-memory writes beyond the
+process-local repair claim, which is released when the future is dropped.
+
 When modifying this path, keep three invariants in mind:
 
 - `RepairTask` shutdown must remain cooperative, including during active repair
@@ -1772,104 +1794,7 @@ let (addr, _state) = TestGatewayBuilder::new()
     .await?;
 ```
 
-
-## 34. Borrowed newtypes for schema helper arguments
-
-Three lightweight newtype wrappers in `src/tools/tool/schema_helpers.rs` make
-schema and parameter helper signatures explicit without changing the string
-values used in validation error messages.
-
-Caption: Schema helper newtypes.
-
-| Type | Purpose |
-| --- | --- |
-| `ParamName<'a>` | A JSON parameter key expected in tool input |
-| `SchemaPath` | A dot-separated location in a JSON schema |
-| `ToolName<'a>` | A registered tool identifier used as the root strict-schema path |
-
-`ParamName<'a>` and `ToolName<'a>` are zero-cost wrappers over `&'a str`.
-`SchemaPath` owns its path string so nested paths can be constructed while
-descending through schema nodes. All three types implement `From<&str>` and
-`From<&String>` so existing `&str` and `String` call sites continue to compile
-unchanged. `ToolName` additionally converts into `SchemaPath` because the
-strict-schema validator roots its path at the tool name.
-
-Use these types in function signatures that previously accepted a bare `&str`
-or `String` for a parameter name, schema path, or tool name. The types prevent
-accidental argument transposition and make the intent of each parameter clear
-at the call site.
-
-`SchemaPath::child(segment)` returns an owned schema path representing the child
-path `"<parent>.<segment>"`. Use this instead of manual string concatenation
-when descending into nested schema nodes.
-
-These types are re-exported from `src/tools/mod.rs` and are publicly available
-as `crate::tools::{ParamName, SchemaPath, ToolName}`.
-## 34. Borrowed newtypes for schema helper arguments
-
-Three lightweight newtype wrappers in `src/tools/tool/schema_helpers.rs` make
-schema and parameter helper signatures explicit without changing the string
-values used in validation error messages.
-
-Caption: Schema helper newtypes.
-
-| Type | Purpose |
-| --- | --- |
-| `ParamName<'a>` | A JSON parameter key expected in tool input |
-| `SchemaPath` | A dot-separated location in a JSON schema |
-| `ToolName<'a>` | A registered tool identifier used as the root strict-schema path |
-
-`ParamName<'a>` and `ToolName<'a>` are zero-cost wrappers over `&'a str`.
-`SchemaPath` owns its path string so nested paths can be constructed while
-descending through schema nodes. All three types implement `From<&str>` and
-`From<&String>` so existing `&str` and `String` call sites continue to compile
-unchanged. `ToolName` additionally converts into `SchemaPath` because the
-strict-schema validator roots its path at the tool name.
-
-Use these types in function signatures that previously accepted a bare `&str`
-or `String` for a parameter name, schema path, or tool name. The types prevent
-accidental argument transposition and make the intent of each parameter clear
-at the call site.
-
-`SchemaPath::child(segment)` returns an owned schema path representing the child
-path `"<parent>.<segment>"`. Use this instead of manual string concatenation
-when descending into nested schema nodes.
-
-These types are re-exported from `src/tools/mod.rs` and are publicly available
-as `crate::tools::{ParamName, SchemaPath, ToolName}`.
-## 34. Borrowed newtypes for schema helper arguments
-
-Three lightweight newtype wrappers in `src/tools/tool/schema_helpers.rs` make
-schema and parameter helper signatures explicit without changing the string
-values used in validation error messages.
-
-Caption: Schema helper newtypes.
-
-| Type | Purpose |
-| --- | --- |
-| `ParamName<'a>` | A JSON parameter key expected in tool input |
-| `SchemaPath` | A dot-separated location in a JSON schema |
-| `ToolName<'a>` | A registered tool identifier used as the root strict-schema path |
-
-`ParamName<'a>` and `ToolName<'a>` are zero-cost wrappers over `&'a str`.
-`SchemaPath` owns its path string so nested paths can be constructed while
-descending through schema nodes. All three types implement `From<&str>` and
-`From<&String>` so existing `&str` and `String` call sites continue to compile
-unchanged. `ToolName` additionally converts into `SchemaPath` because the
-strict-schema validator roots its path at the tool name.
-
-Use these types in function signatures that previously accepted a bare `&str`
-or `String` for a parameter name, schema path, or tool name. The types prevent
-accidental argument transposition and make the intent of each parameter clear
-at the call site.
-
-`SchemaPath::child(segment)` returns an owned schema path representing the child
-path `"<parent>.<segment>"`. Use this instead of manual string concatenation
-when descending into nested schema nodes.
-
-These types are re-exported from `src/tools/mod.rs` and are publicly available
-as `crate::tools::{ParamName, SchemaPath, ToolName}`.
-## 34. Borrowed newtypes for schema helper arguments
+## 33. Borrowed newtypes for schema helper arguments
 
 Three lightweight newtype wrappers in `src/tools/tool/schema_helpers.rs` make
 schema and parameter helper signatures explicit without changing the string

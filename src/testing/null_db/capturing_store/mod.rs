@@ -9,12 +9,14 @@
 //! `last_event`.
 
 use std::sync::Arc;
+use std::sync::Mutex as SyncMutex;
 
 use tokio::sync::Mutex;
 use uuid::Uuid;
 
 use crate::context::JobState;
 use crate::db::SandboxEventType;
+use crate::error::DatabaseError;
 
 use super::NullDatabase;
 
@@ -153,7 +155,7 @@ impl Calls {
 pub struct CapturingStore {
     pub(crate) inner: NullDatabase,
     calls: Arc<Calls>,
-    mark_repaired_error: Option<String>,
+    mark_repaired_error: SyncMutex<Option<DatabaseError>>,
 }
 
 impl CapturingStore {
@@ -162,16 +164,16 @@ impl CapturingStore {
         Self {
             inner: NullDatabase::new(),
             calls: Arc::new(Calls::new()),
-            mark_repaired_error: None,
+            mark_repaired_error: SyncMutex::new(None),
         }
     }
 
     /// Create a capturing store that fails `mark_tool_repaired`.
-    pub fn failing_mark_tool_repaired(message: impl Into<String>) -> Self {
+    pub fn failing_mark_tool_repaired(error: DatabaseError) -> Self {
         Self {
             inner: NullDatabase::new(),
             calls: Arc::new(Calls::new()),
-            mark_repaired_error: Some(message.into()),
+            mark_repaired_error: SyncMutex::new(Some(error)),
         }
     }
 
@@ -180,8 +182,11 @@ impl CapturingStore {
         &self.calls
     }
 
-    pub(crate) fn mark_repaired_error(&self) -> Option<&str> {
-        self.mark_repaired_error.as_deref()
+    pub(crate) fn take_mark_repaired_error(&self) -> Option<DatabaseError> {
+        self.mark_repaired_error
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .take()
     }
 }
 
