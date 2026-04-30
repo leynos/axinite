@@ -33,11 +33,31 @@ use crate::tools::wasm::{Capabilities, OAuthRefreshConfig, WasmError, WasmToolWr
 
 use super::loader::WasmToolRegistration;
 
+/// Output of the WASM preparation pipeline, ready for registry insertion.
+///
+/// Carries the compiled and configured [`WasmToolWrapper`] together with any
+/// [`CredentialMapping`] values that the registry must persist only after the
+/// wrapper has been successfully inserted.
 pub(super) struct PreparedWasmTool {
     pub(super) wrapper: WasmToolWrapper,
     pub(super) credential_mappings: Vec<CredentialMapping>,
 }
 
+/// Compile, validate, and configure a WASM tool for registry insertion.
+///
+/// Drives the full preparation pipeline:
+///
+/// 1. Compiles the component via the runtime.
+/// 2. Derives [`CredentialMapping`] values from HTTP capabilities.
+/// 3. Builds [`WasmMetadataHints`] and [`WasmRuntimeConfig`] from the registration inputs.
+/// 4. Constructs a [`WasmToolWrapper`].
+/// 5. Calls [`recover_guest_metadata`] to fill in absent description or schema.
+/// 6. Calls [`apply_wasm_overrides`] to enforce explicit overrides and attach runtime
+///    concerns.
+///
+/// Returns a [`PreparedWasmTool`] on success or a [`WasmError`] if compilation,
+/// validation, or configuration fails. Does not insert the tool into the registry
+/// or persist credential mappings.
 pub(super) async fn prepare_wasm_tool(
     reg: WasmToolRegistration<'_>,
 ) -> Result<PreparedWasmTool, WasmError> {
@@ -67,6 +87,10 @@ pub(super) async fn prepare_wasm_tool(
     })
 }
 
+/// Extract HTTP credential mappings from a set of [`Capabilities`].
+///
+/// Returns the values from `capabilities.http.credentials` as a flat `Vec`, or an
+/// empty `Vec` when no HTTP capability is present.
 pub(super) fn credential_mappings_from_capabilities(
     capabilities: &Capabilities,
 ) -> Vec<CredentialMapping> {
@@ -90,6 +114,12 @@ pub(super) struct WasmRuntimeConfig {
     pub(super) oauth_refresh: Option<OAuthRefreshConfig>,
 }
 
+/// Populate absent description or schema from the wrapper's guest-exported metadata.
+///
+/// Returns early without calling `exported_metadata` when both `hints.description`
+/// and `hints.schema` are `Some`. On export failure, emits [`tracing::warn`] when
+/// the schema is also absent and [`tracing::debug`] when only the description is
+/// missing. The wrapper is returned unchanged when recovery is impossible.
 pub(super) fn recover_guest_metadata(
     mut wrapper: WasmToolWrapper,
     hints: &WasmMetadataHints<'_>,
@@ -126,6 +156,10 @@ pub(super) fn recover_guest_metadata(
     wrapper
 }
 
+/// Apply explicit metadata overrides and attach runtime concerns to a wrapper.
+///
+/// Each field in `hints` and `runtime_config` is applied only when it is `Some`,
+/// leaving the wrapper's existing value intact otherwise.
 pub(super) fn apply_wasm_overrides(
     mut wrapper: WasmToolWrapper,
     hints: WasmMetadataHints<'_>,
