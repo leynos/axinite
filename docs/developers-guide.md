@@ -1268,7 +1268,53 @@ assert_eq!(
 );
 ```
 
-## 31. Expected follow-up changes
+## 31. Bootstrap migration module
+
+`src/bootstrap/migration.rs` provides all helpers for the one-time
+migrations that move legacy on-disk configuration into the database and
+the environment file.
+
+### Rename-to-.migrated helper
+
+A single `pub(super)` function handles all "mark as processed" renames:
+
+```rust,no_run
+pub(super) fn rename_to_migrated(path: &Path) -> io::Result<()>
+```
+
+The function appends `.migrated` to the path, logs rename failures at
+`WARN` level, and propagates the `io::Error` to the caller. Call sites
+that treat the rename as non-fatal discard the result explicitly:
+
+```rust,no_run
+let _ = rename_to_migrated(&path);
+```
+
+`rename_legacy_bootstrap` is the only call site that additionally emits
+an `INFO` log on success; it does so conditionally:
+
+```rust,no_run
+if rename_to_migrated(&old_bootstrap).is_ok() {
+    tracing::info!("Renamed old bootstrap.json to .migrated");
+}
+```
+
+This design keeps non-fatal intent visible at every call site rather than
+silently swallowing errors inside the helper.
+
+### Migration entry points
+
+| Function | Visibility | Purpose |
+| --- | --- | --- |
+| `migrate_bootstrap_json_to_env` | `pub(crate)` | Reads `bootstrap.json`, writes `DATABASE_URL` to `.env`, then renames the source file. |
+| `migrate_disk_to_db` | `pub async` | One-time migration of `settings.json` and sidecar JSON files into the database. |
+| `rename_legacy_bootstrap` | `pub(super)` | Renames `bootstrap.json` to `.migrated`; logs success at `INFO`. |
+| `rename_to_migrated` | `pub(super)` | Low-level rename helper used by all migration paths. |
+
+For the rationale behind consolidating the rename helpers, see
+[ADR-010](adr-010-consolidate-bootstrap-rename-helpers.md).
+
+## 32. Expected follow-up changes
 
 This guide documents the environment as of the current branch. The
 compile-time reduction plan is still expected to change some of the
@@ -1278,7 +1324,7 @@ artifacts and CI duplication.
 When those changes land, this guide must be updated in the same branch
 so local setup instructions stay truthful.
 
-## 32. Phased startup pipeline
+## 33. Phased startup pipeline
 
 ### WebhookServer test helpers
 
@@ -1589,7 +1635,7 @@ let (addr, _state) = TestGatewayBuilder::new()
     .await?;
 ```
 
-## 27. Borrowed newtypes for schema helper arguments
+## 34. Borrowed newtypes for schema helper arguments
 
 Three lightweight newtype wrappers in `src/tools/tool/schema_helpers.rs` make
 schema and parameter helper signatures explicit without changing the string
