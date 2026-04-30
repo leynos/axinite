@@ -1,3 +1,10 @@
+//! Tests for the WASM preparation stage of tool registration.
+//!
+//! These cases cover `prepare_wasm_tool`, `apply_wasm_overrides`,
+//! `recover_guest_metadata`, `WasmToolRegistration`, `PreparedWasmTool`, and
+//! the related capability-to-credential mapping behaviour that feeds registry
+//! insertion.
+
 use std::sync::Arc;
 
 use anyhow::Result;
