@@ -9,6 +9,38 @@ impl BuildSoftwareTool {
     pub fn new(builder: Arc<dyn SoftwareBuilder>) -> Self {
         Self { builder }
     }
+
+    fn resolve_software_type(
+        override_str: Option<&str>,
+        fallback: SoftwareType,
+    ) -> Result<SoftwareType, ToolError> {
+        match override_str {
+            None => Ok(fallback),
+            Some("wasm_tool") => Ok(SoftwareType::WasmTool),
+            Some("cli_binary") => Ok(SoftwareType::CliBinary),
+            Some("library") => Ok(SoftwareType::Library),
+            Some("script") => Ok(SoftwareType::Script),
+            Some(other) => Err(ToolError::InvalidParameters(format!(
+                "unknown type: {other}"
+            ))),
+        }
+    }
+
+    fn resolve_language(
+        override_str: Option<&str>,
+        fallback: Language,
+    ) -> Result<Language, ToolError> {
+        match override_str {
+            None => Ok(fallback),
+            Some("rust") => Ok(Language::Rust),
+            Some("python") => Ok(Language::Python),
+            Some("typescript") => Ok(Language::TypeScript),
+            Some("bash") => Ok(Language::Bash),
+            Some(other) => Err(ToolError::InvalidParameters(format!(
+                "unknown language: {other}"
+            ))),
+        }
+    }
 }
 
 impl NativeTool for BuildSoftwareTool {
@@ -66,33 +98,15 @@ impl NativeTool for BuildSoftwareTool {
             .map_err(|e| ToolError::ExecutionFailed(format!("Analysis failed: {}", e)))?;
 
         // Override type/language if specified
-        if let Some(type_str) = params.get("type").and_then(|v| v.as_str()) {
-            requirement.software_type = match type_str {
-                "wasm_tool" => SoftwareType::WasmTool,
-                "cli_binary" => SoftwareType::CliBinary,
-                "library" => SoftwareType::Library,
-                "script" => SoftwareType::Script,
-                other => {
-                    return Err(ToolError::InvalidParameters(format!(
-                        "unknown type: {other}"
-                    )));
-                }
-            };
-        }
+        requirement.software_type = Self::resolve_software_type(
+            params.get("type").and_then(|v| v.as_str()),
+            requirement.software_type,
+        )?;
 
-        if let Some(lang_str) = params.get("language").and_then(|v| v.as_str()) {
-            requirement.language = match lang_str {
-                "rust" => Language::Rust,
-                "python" => Language::Python,
-                "typescript" => Language::TypeScript,
-                "bash" => Language::Bash,
-                other => {
-                    return Err(ToolError::InvalidParameters(format!(
-                        "unknown language: {other}"
-                    )));
-                }
-            };
-        }
+        requirement.language = Self::resolve_language(
+            params.get("language").and_then(|v| v.as_str()),
+            requirement.language,
+        )?;
 
         // Build
         let result = self
