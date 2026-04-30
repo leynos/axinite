@@ -1,4 +1,8 @@
-CARGO ?= $(shell command -v cargo 2>/dev/null || printf '%s' "$$HOME/.cargo/bin/cargo")
+CARGO_RESOLVED := $(shell command -v cargo 2>/dev/null || printf '%s' "$$HOME/.cargo/bin/cargo")
+# Some CI environments export CARGO as an empty string; treat that as unset.
+ifeq ($(strip $(CARGO)),)
+override CARGO := $(CARGO_RESOLVED)
+endif
 NEXTEST ?= $(CARGO) nextest
 BUNX ?= $(shell command -v bunx 2>/dev/null || printf '%s' "$$HOME/.bun/bin/bunx")
 TEST_FEATURES ?= --features test-helpers
