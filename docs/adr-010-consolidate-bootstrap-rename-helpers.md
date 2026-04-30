@@ -7,13 +7,14 @@ Accepted.
 
 2026-04-29
 
-## Context and problem statement
+
+## Context and Problem Statement
 
 Bootstrap migration code had two functions for renaming files to the
 `.migrated` suffix:
 
-- `rename_bootstrap_to_migrated`, which returned `io::Result<()>`.
-- `rename_to_migrated`, which returned `()`.
+- `rename_bootstrap_to_migrated`, which returned `io::Result<()>`
+- `rename_to_migrated`, which returned `()`
 
 Both functions performed the same filesystem operation. The difference was in
 how they exposed errors to callers, not in what they did to the filesystem.
@@ -31,7 +32,7 @@ legacy bootstrap migrations all rely on the same non-fatal rename semantics.
   continue should make that choice locally rather than inheriting it from a
   helper that silently swallows errors.
 - **Preserve operator diagnostics.** Rename failures should still be logged at
-  warning level so operators can diagnose partially migrated bootstrap files.
+  warning level, so operators can diagnose partially migrated bootstrap files.
 - **Avoid misleading success logs.** Success-level information should only be
   emitted after the underlying rename operation has actually succeeded.
 
@@ -84,6 +85,7 @@ All other non-fatal migration paths also use explicit `let _ = ...` discards:
   `rename_legacy_bootstrap`.
 - See also: [`docs/contents.md`](contents.md).
 
+# Architectural decision record (ADR) 010: Consolidate bootstrap rename helpers in `src/bootstrap/migration.rs`
 # Architectural decision record (ADR) 010: Consolidate bootstrap rename helpers in `src/bootstrap/migration.rs`
 # Architectural decision record (ADR) 010: Consolidate bootstrap rename helpers in `src/bootstrap/migration.rs`
 
