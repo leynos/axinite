@@ -1,6 +1,6 @@
 //! Delegate implementations for CapturingStore.
 //!
-//! This module contains all the `delegate!` macro invocations that forward
+//! This module contains most `delegate!` macro invocations that forward
 //! trait implementations to the inner NullDatabase. The CapturingStore
 //! overrides `persist_terminal_result_and_status`, `update_job_status`,
 //! `save_job_event`, and `mark_tool_repaired` to capture calls; all other
@@ -13,16 +13,14 @@ use uuid::Uuid;
 use crate::agent::{Routine, routine::RoutineRun};
 use crate::context::JobState;
 use crate::db::{
-    EnsureConversationParams, EstimationActualsParams, EstimationSnapshotParams,
-    HybridSearchParams, InsertChunkParams, SandboxEventType, SandboxJobStatusUpdate, SandboxMode,
-    SettingKey, UserId,
+    EnsureConversationParams, EstimationActualsParams, EstimationSnapshotParams, SandboxEventType,
+    SandboxJobStatusUpdate, SandboxMode, SettingKey, UserId,
 };
-use crate::error::{DatabaseError, WorkspaceError};
+use crate::error::DatabaseError;
 use crate::history::{
     AgentJobRecord, AgentJobSummary, ConversationMessage, ConversationSummary, JobEventRecord,
     LlmCallRecord, SandboxJobRecord, SandboxJobSummary, SettingRow,
 };
-use crate::workspace::{MemoryChunk, MemoryDocument, SearchResult, WorkspaceEntry};
 
 use super::CapturingStore;
 
@@ -348,66 +346,6 @@ impl crate::db::NativeSettingsStore for CapturingStore {
                 settings: &std::collections::HashMap<String, serde_json::Value>
             ) -> Result<(), DatabaseError>;
             async fn has_settings(&self, user_id: UserId) -> Result<bool, DatabaseError>;
-        }
-    }
-}
-
-impl crate::db::NativeWorkspaceStore for CapturingStore {
-    delegate! {
-        to self.inner {
-            async fn get_document_by_path(
-                &self,
-                user_id: &str,
-                agent_id: Option<Uuid>,
-                path: &str
-            ) -> Result<MemoryDocument, WorkspaceError>;
-            async fn get_document_by_id(&self, id: Uuid) -> Result<MemoryDocument, WorkspaceError>;
-            async fn get_or_create_document_by_path(
-                &self,
-                user_id: &str,
-                agent_id: Option<Uuid>,
-                path: &str
-            ) -> Result<MemoryDocument, WorkspaceError>;
-            async fn update_document(&self, id: Uuid, content: &str) -> Result<(), WorkspaceError>;
-            async fn delete_document_by_path(
-                &self,
-                user_id: &str,
-                agent_id: Option<Uuid>,
-                path: &str
-            ) -> Result<(), WorkspaceError>;
-            async fn list_directory(
-                &self,
-                user_id: &str,
-                agent_id: Option<Uuid>,
-                directory: &str
-            ) -> Result<Vec<WorkspaceEntry>, WorkspaceError>;
-            async fn list_all_paths(
-                &self,
-                user_id: &str,
-                agent_id: Option<Uuid>
-            ) -> Result<Vec<String>, WorkspaceError>;
-            async fn list_documents(
-                &self,
-                user_id: &str,
-                agent_id: Option<Uuid>
-            ) -> Result<Vec<MemoryDocument>, WorkspaceError>;
-            async fn delete_chunks(&self, document_id: Uuid) -> Result<(), WorkspaceError>;
-            async fn insert_chunk(&self, params: InsertChunkParams<'_>) -> Result<Uuid, WorkspaceError>;
-            async fn update_chunk_embedding(
-                &self,
-                chunk_id: Uuid,
-                embedding: &[f32]
-            ) -> Result<(), WorkspaceError>;
-            async fn get_chunks_without_embeddings(
-                &self,
-                user_id: &str,
-                agent_id: Option<Uuid>,
-                limit: usize
-            ) -> Result<Vec<MemoryChunk>, WorkspaceError>;
-            async fn hybrid_search(
-                &self,
-                params: HybridSearchParams<'_>
-            ) -> Result<Vec<SearchResult>, WorkspaceError>;
         }
     }
 }

@@ -172,8 +172,10 @@ impl DefaultSelfRepair {
 
             Ok(RepairResult::Success {
                 message: format!(
-                    "Tool '{}' repaired successfully after {} iterations",
-                    tool.name, result.iterations
+                    "Tool '{}' repaired successfully after {} {}",
+                    tool.name,
+                    result.iterations,
+                    Self::iteration_word(result.iterations)
                 ),
             })
         } else {
@@ -208,6 +210,14 @@ impl DefaultSelfRepair {
                     message: format!("Repair build error: {}", e),
                 })
             }
+        }
+    }
+
+    fn iteration_word(iterations: u32) -> &'static str {
+        if iterations == 1 {
+            "iteration"
+        } else {
+            "iterations"
         }
     }
 }

@@ -581,7 +581,7 @@ tool-repair flow in `src/agent/self_repair/default.rs`:
 | Method | Signature summary | Purpose |
 | --- | --- | --- |
 | `build_repair_requirement` | `(tool: &BrokenTool) -> Result<BuildRequirement, RepairError>` | Validates the tool name via `ProjectName::new`, then constructs the `BuildRequirement` carrying the tool name, last error, failure count, WASM tool type, Rust language, and the `http`/`workspace` capability set. Returns `RepairError::Failed` for invalid names. |
-| `handle_build_result` | `(result: BuildResult, tool: &BrokenTool, store: &dyn Database) -> Result<RepairResult, RepairError>` | Inspects the build outcome. On success it logs, calls `store.mark_tool_repaired`, and returns `RepairResult::Success`; on failure it logs and returns `RepairResult::Retry` with an attempt-number message. |
+| `handle_build_result` | `(result: BuildResult, tool: &BrokenTool, store: &dyn Database) -> Result<RepairResult, RepairError>` | Inspects the build outcome. On success, it logs, calls `store.mark_tool_repaired`, and returns `RepairResult::Success`; on failure it logs and returns `RepairResult::Retry` with an attempt-number message. |
 | `attempt_repair_build` | `(tool: &BrokenTool, store: &dyn Database, builder: &dyn SoftwareBuilder, requirement: &BuildRequirement) -> Result<RepairResult, RepairError>` | Invokes `builder.build(requirement)` and delegates the result to `handle_build_result`. Builder-level errors are caught here and converted into `RepairResult::Retry` with a `"Repair build error: …"` message. |
 
 None of these methods access instance state; they are static associated
