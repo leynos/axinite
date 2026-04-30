@@ -1,4 +1,4 @@
-CARGO ?= $(shell \
+CARGO_RESOLVED := $(shell \
 	if command -v cargo >/dev/null 2>&1; then \
 		command -v cargo; \
 	elif [ -x "$(HOME)/.cargo/bin/cargo" ]; then \
@@ -7,6 +7,9 @@ CARGO ?= $(shell \
 		echo cargo; \
 	fi \
 )
+ifeq ($(strip $(CARGO)),)
+override CARGO := $(CARGO_RESOLVED)
+endif
 NEXTEST ?= $(CARGO) nextest
 BUNX ?= $(shell command -v bunx 2>/dev/null || printf '%s' "$$HOME/.bun/bin/bunx")
 TEST_FEATURES ?= --features test-helpers

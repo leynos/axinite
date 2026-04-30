@@ -249,16 +249,16 @@ impl ToolRegistry {
     }
 
     fn persist_credential_mappings(&self, name: &str, credential_mappings: Vec<CredentialMapping>) {
-        if let Some(cr) = &self.credential_registry
-            && !credential_mappings.is_empty()
-        {
+        if let Some(cr) = &self.credential_registry {
             let count = credential_mappings.len();
-            cr.add_mappings(credential_mappings);
-            tracing::debug!(
-                name,
-                credential_count = count,
-                "Added credential mappings from WASM tool"
-            );
+            cr.add_mappings_for_tool(name, credential_mappings);
+            if count > 0 {
+                tracing::debug!(
+                    name,
+                    credential_count = count,
+                    "Added credential mappings from WASM tool"
+                );
+            }
         }
     }
 

@@ -106,6 +106,27 @@ async fn register_wasm_persists_credentials_only_after_successful_registration()
     let mappings = credential_registry.find_for_host("api.example.com");
     assert_eq!(mappings.len(), 1);
     assert_eq!(mappings[0].secret_name, "accepted_token");
+    registry
+        .register_wasm(registration_with_credential(
+            "github",
+            &wasm_binary,
+            &runtime,
+            CredentialSpec {
+                secret_name: "rotated_token",
+                host_pattern: "api-v2.example.com",
+            },
+        ))
+        .await
+        .expect("re-registration should replace credentials for the same tool");
+    assert!(
+        credential_registry
+            .find_for_host("api.example.com")
+            .is_empty(),
+        "re-registration should remove stale credential mappings for the tool"
+    );
+    let mappings = credential_registry.find_for_host("api-v2.example.com");
+    assert_eq!(mappings.len(), 1);
+    assert_eq!(mappings[0].secret_name, "rotated_token");
     assert!(
         credential_registry
             .find_for_host("rejected.example.com")

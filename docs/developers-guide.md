@@ -1179,9 +1179,6 @@ needed, applies overrides, and returns a `PreparedWasmTool`. It can return
 - `apply_wasm_overrides` applies explicit description and schema overrides,
   then attaches runtime-scoped secrets and OAuth configuration. `None` values
   leave the wrapper state unchanged.
-- `persist_credential_mappings` stores HTTP credential mappings after
-  registration succeeds. This is deliberately outside preparation so rejected
-  registrations do not persist credential metadata.
 
 See [ADR 010](adr-010-extract-register-wasm-helpers.md) for the refactoring
 rationale and the maintenance rule behind this helper split.
@@ -1199,6 +1196,11 @@ rationale and the maintenance rule behind this helper split.
    Loads the stored tool record and binary with integrity verification,
    normalizes description and schema via `normalized_schema` and
    `normalized_description`, then delegates to `register_wasm`.
+
+`persist_credential_mappings` belongs to this registration phase, not
+the preparation phase. `register_wasm()` invokes it only after the
+registry accepts the prepared wrapper, and `register_wasm_from_storage()`
+reaches it by delegating through the same lower-level flow.
 
 The storage path is the one that exercises schema normalization, because
 backends may persist placeholder or null schemas that must be stripped
