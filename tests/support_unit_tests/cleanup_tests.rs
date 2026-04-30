@@ -31,8 +31,9 @@ where
 
 #[test]
 fn cleanup_guard_removes_file() {
-    let file = tempfile::NamedTempFile::new().expect("should create temp file");
-    let path = file.path().to_string_lossy().into_owned();
+    let dir = tempfile::tempdir().expect("should create temp dir");
+    let path = dir.path().join("guarded-file.txt");
+    let path = path.to_string_lossy().into_owned();
     std::fs::write(&path, "test").expect("should write test file");
     assert_guard_removes_at_path(&path, |g| g.file(path.clone()));
 }

@@ -7,7 +7,7 @@ use std::time::Duration;
 
 use anyhow::Context;
 
-use crate::support::trace_llm::LlmTrace;
+use crate::support::trace_types::LlmTrace;
 
 use super::TestRigBuilder;
 

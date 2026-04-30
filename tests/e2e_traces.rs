@@ -9,9 +9,6 @@ mod fixtures;
 mod support;
 
 const _: fn(&str, &str) -> String = fixtures::fixture_path;
-const _: fn(&str, &str) -> String = fixtures::fixture_path;
-const _: fn(&str, &str) -> String = fixtures::fixture_path;
-const _: fn(&str, &str) -> String = fixtures::fixture_path;
 
 #[path = "e2e_traces/advanced_traces.rs"]
 mod advanced_traces;

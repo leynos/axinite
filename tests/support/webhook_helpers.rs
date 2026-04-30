@@ -1,8 +1,12 @@
-//! Shared HTTP-route and client helpers for webhook-related integration tests.
+//! Shared HTTP-route and client helpers for webhook-server integration tests.
 //!
-//! These helpers are used by both the webhook-server and infrastructure test
-//! harnesses. Server-lifecycle helpers live in `webhook_server_helpers.rs` so
-//! infrastructure-only binaries do not compile unused server wrappers.
+//! These helpers are used by the webhook-server harness. Server-lifecycle
+//! helpers live in `webhook_server_helpers.rs` so infrastructure-only binaries
+//! do not compile unused server wrappers.
+//!
+//! The infrastructure harness wires `tests/support/webhook_common.rs` into its
+//! own `webhook_helpers` module through `#[path]` in
+//! `tests/support/infrastructure.rs`.
 
 use std::time::Duration;
 

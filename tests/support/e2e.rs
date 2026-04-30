@@ -5,8 +5,6 @@ pub mod cleanup;
 pub mod instrumented_llm;
 pub mod metrics;
 #[cfg(feature = "libsql")]
-mod recorded_trace_runner;
-#[cfg(feature = "libsql")]
 pub mod routines;
 pub mod test_channel;
 pub mod test_rig;
@@ -17,4 +15,4 @@ mod trace_types_patch;
 mod trace_types_runtime;
 
 #[cfg(feature = "libsql")]
-pub use recorded_trace_runner::run_recorded_trace;
+pub use test_rig::run_recorded_trace;

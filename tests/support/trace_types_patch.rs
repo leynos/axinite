@@ -11,7 +11,7 @@ impl LlmTrace {
     /// arguments that contain the `from` path. Useful for adapting recorded traces
     /// to use test-specific temporary directories.
     ///
-    /// ```rust
+    /// ```rust,ignore
     /// # fn load_trace_fixture() -> crate::support::trace_types::LlmTrace {
     /// #     use ironclaw::llm::recording::{TraceResponse, TraceStep, TraceToolCall};
     /// #     crate::support::trace_types::LlmTrace::single_turn(
@@ -48,7 +48,9 @@ impl LlmTrace {
         for turn in &mut self.turns {
             patched += patch_steps(&mut turn.steps, from, to);
         }
-        patched += patch_steps(&mut self.steps, from, to);
+        if self.turns.is_empty() {
+            patched += patch_steps(&mut self.steps, from, to);
+        }
         patched
     }
 }

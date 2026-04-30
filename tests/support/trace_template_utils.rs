@@ -226,7 +226,7 @@ fn expand_one_template(
 /// assert_eq!(value["limit"], serde_json::json!(3));
 /// assert_eq!(value["message"], serde_json::json!("hello Ada"));
 /// ```
-pub(crate) fn substitute_templates(
+pub(super) fn substitute_templates(
     value: &mut serde_json::Value,
     vars: &HashMap<String, serde_json::Value>,
 ) {

@@ -57,15 +57,19 @@ proptest! {
     fn setup_test_dir_with_suffix_produces_unique_paths(n in 2usize..=16) {
         use std::collections::HashSet;
 
+        use crate::support::cleanup::CleanupGuard;
         use crate::support::cleanup::setup_test_dir_with_suffix;
 
         let base = tempfile::tempdir().expect("should create temp dir");
-        let paths: HashSet<_> = (0..n)
-            .map(|_| {
-                setup_test_dir_with_suffix(base.path(), "prop-test")
-                    .expect("should create unique dir")
-            })
-            .collect();
+        let mut guards = Vec::new();
+        let mut paths = HashSet::new();
+
+        for _ in 0..n {
+            let path =
+                setup_test_dir_with_suffix(base.path(), "prop-test").expect("should create unique dir");
+            guards.push(CleanupGuard::new().dir(path.clone()));
+            paths.insert(path);
+        }
 
         prop_assert_eq!(paths.len(), n);
     }

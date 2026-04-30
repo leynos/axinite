@@ -18,15 +18,15 @@ pub mod test_channel;
 #[path = "test_rig/mod.rs"]
 pub mod test_rig;
 
-#[path = "trace_llm.rs"]
-pub mod trace_llm;
-
 #[path = "trace_provider.rs"]
 pub mod trace_provider;
 
 mod trace_provider_diagnostics;
 
 mod trace_provider_tests;
+
+#[path = "../support_unit_tests/property_tests.rs"]
+mod property_tests;
 
 pub mod trace_template_utils;
 
@@ -129,7 +129,7 @@ fn _captured_status_events_async_sig<'a>(rig: &'a test_rig::TestRig) -> AsyncSta
 #[cfg(feature = "libsql")]
 fn _run_trace_sig<'a>(
     rig: &'a test_rig::TestRig,
-    trace: &'a trace_llm::LlmTrace,
+    trace: &'a trace_types::LlmTrace,
     timeout: std::time::Duration,
 ) -> AsyncTraceRun<'a> {
     Box::pin(test_rig::TestRig::run_trace(rig, trace, timeout))
@@ -138,7 +138,7 @@ fn _run_trace_sig<'a>(
 #[cfg(feature = "libsql")]
 fn _run_and_verify_trace_sig<'a>(
     rig: &'a test_rig::TestRig,
-    trace: &'a trace_llm::LlmTrace,
+    trace: &'a trace_types::LlmTrace,
     timeout: std::time::Duration,
 ) -> AsyncTraceRun<'a> {
     Box::pin(test_rig::TestRig::run_and_verify_trace(rig, trace, timeout))
@@ -160,7 +160,7 @@ const _: fn(std::sync::Arc<test_channel::TestChannel>) -> test_rig::TestChannelH
 #[cfg(feature = "libsql")]
 const _: fn() -> test_rig::TestRigBuilder = test_rig::TestRigBuilder::new;
 #[cfg(feature = "libsql")]
-const _: fn(test_rig::TestRigBuilder, trace_llm::LlmTrace) -> test_rig::TestRigBuilder =
+const _: fn(test_rig::TestRigBuilder, trace_types::LlmTrace) -> test_rig::TestRigBuilder =
     test_rig::TestRigBuilder::with_trace;
 #[cfg(feature = "libsql")]
 const _: fn(
@@ -219,7 +219,7 @@ const _: fn(&test_rig::TestRig) -> f64 = test_rig::TestRig::estimated_cost_usd;
 #[cfg(feature = "libsql")]
 const _: fn(&test_rig::TestRig) -> u64 = test_rig::TestRig::elapsed_ms;
 #[cfg(feature = "libsql")]
-const _: fn(&test_rig::TestRig, &trace_llm::LlmTrace, &[ironclaw::channels::OutgoingResponse]) =
+const _: fn(&test_rig::TestRig, &trace_types::LlmTrace, &[ironclaw::channels::OutgoingResponse]) =
     test_rig::TestRig::verify_trace_expects;
 #[cfg(feature = "libsql")]
 const _: fn(test_rig::TestRig) = test_rig::TestRig::shutdown;
@@ -252,13 +252,13 @@ const _: for<'a> fn(&'a test_rig::TestRig) -> AsyncStatusEvents<'a> =
 #[cfg(feature = "libsql")]
 const _: for<'a> fn(
     &'a test_rig::TestRig,
-    &'a trace_llm::LlmTrace,
+    &'a trace_types::LlmTrace,
     std::time::Duration,
 ) -> AsyncTraceRun<'a> = _run_trace_sig;
 #[cfg(feature = "libsql")]
 const _: for<'a> fn(
     &'a test_rig::TestRig,
-    &'a trace_llm::LlmTrace,
+    &'a trace_types::LlmTrace,
     std::time::Duration,
 ) -> AsyncTraceRun<'a> = _run_and_verify_trace_sig;
 #[cfg(feature = "libsql")]
@@ -268,7 +268,7 @@ const _: fn(&test_rig::TestRig) -> &std::sync::Arc<dyn ironclaw::db::Database> =
 const _: fn(&test_rig::TestRig) -> Option<&std::sync::Arc<ironclaw::workspace::Workspace>> =
     test_rig::TestRig::workspace;
 #[cfg(feature = "libsql")]
-const _: fn(&test_rig::TestRig) -> Option<&std::sync::Arc<trace_llm::TraceLlm>> =
+const _: fn(&test_rig::TestRig) -> Option<&std::sync::Arc<trace_provider::TraceLlm>> =
     test_rig::TestRig::trace_llm;
 #[cfg(feature = "libsql")]
 const _: fn(test_rig::TestRigBuilder) -> AsyncBuildRig = _build_sig;
