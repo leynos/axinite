@@ -2,7 +2,7 @@
 
 use std::path::{Path, PathBuf};
 
-use super::{LoadedSkill, MAX_DISCOVERED_SKILLS, SkillSource, SkillTrust};
+use super::{LoadedSkill, MAX_DISCOVERED_SKILLS, SkillPackageKind, SkillSource, SkillTrust};
 use crate::skills::registry::loading::load_and_validate_skill;
 
 enum EntryLoadResult {
@@ -113,7 +113,11 @@ where
     }
 
     if let Some(file_name) = flat_skill_md_name(&meta, &path) {
-        return try_load_flat_skill(&path, file_name, trust, make_source(path.clone())).await;
+        let root = path
+            .parent()
+            .map_or_else(|| PathBuf::from("."), Path::to_path_buf);
+        return try_load_flat_skill(&path, &root, file_name, trust, make_source(path.clone()))
+            .await;
     }
 
     EntryLoadResult::NotASkill
@@ -129,7 +133,8 @@ where
     }
 
     let source = make_source(path.to_path_buf());
-    match load_and_validate_skill(&skill_md, trust, source).await {
+    let package_kind = detect_package_kind(path).await;
+    match load_and_validate_skill(&skill_md, trust, source, path, package_kind).await {
         Ok((name, skill)) => {
             tracing::debug!("Loaded skill: {}", name);
             EntryLoadResult::Loaded(name, Box::new(skill))
@@ -147,11 +152,12 @@ where
 
 async fn try_load_flat_skill(
     path: &Path,
+    root: &Path,
     file_name: &str,
     trust: SkillTrust,
     source: SkillSource,
 ) -> EntryLoadResult {
-    match load_and_validate_skill(path, trust, source).await {
+    match load_and_validate_skill(path, trust, source, root, SkillPackageKind::SingleFile).await {
         Ok((name, skill)) => {
             tracing::info!("Loaded skill: {}", name);
             EntryLoadResult::Loaded(name, Box::new(skill))
@@ -161,4 +167,18 @@ async fn try_load_flat_skill(
             EntryLoadResult::LoadFailed
         }
     }
+}
+
+async fn detect_package_kind(root: &Path) -> SkillPackageKind {
+    let references_dir = root.join("references");
+    let assets_dir = root.join("assets");
+    if tokio::fs::try_exists(&references_dir)
+        .await
+        .unwrap_or(false)
+        || tokio::fs::try_exists(&assets_dir).await.unwrap_or(false)
+    {
+        return SkillPackageKind::Bundle;
+    }
+
+    SkillPackageKind::SingleFile
 }

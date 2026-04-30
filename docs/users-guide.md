@@ -35,7 +35,12 @@ that describe the archive-shape problem.
 
 This slice does not yet add runtime file reads from bundled references and
 assets. When a bundled skill is active, the runtime still injects only the
-selected `SKILL.md` body into the prompt.
+selected `SKILL.md` body into the prompt. The runtime now records the
+installed skill root and `SKILL.md` entrypoint internally, and the model-facing
+active-skill block names only stable bundle-relative metadata such as
+`root="."` and `entry="SKILL.md"`. Host-local filesystem paths are not exposed
+as model instructions. A dedicated `skill_read_file` tool is still planned for
+a later release.
 
 ## Hosted workers and remote tools
 

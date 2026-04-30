@@ -8,8 +8,8 @@ use super::{SkillRegistryError, to_lowercase_vec};
 use crate::skills::gating;
 use crate::skills::parser::{SkillParseError, parse_skill_md};
 use crate::skills::{
-    GatingRequirements, LoadedSkill, MAX_PROMPT_FILE_SIZE, SkillSource, SkillTrust,
-    normalize_line_endings,
+    GatingRequirements, LoadedSkill, LoadedSkillLocation, MAX_PROMPT_FILE_SIZE, SkillPackageKind,
+    SkillSource, SkillTrust, normalize_line_endings,
 };
 
 /// Load and validate a single SKILL.md file from disk.
@@ -21,6 +21,8 @@ pub(super) async fn load_and_validate_skill(
     path: &Path,
     trust: SkillTrust,
     source: SkillSource,
+    root: &Path,
+    package_kind: SkillPackageKind,
 ) -> Result<(String, LoadedSkill), SkillRegistryError> {
     let raw_bytes = read_skill_bytes(path).await?;
 
@@ -53,11 +55,18 @@ pub(super) async fn load_and_validate_skill(
     let lowercased_tags = to_lowercase_vec(&manifest.activation.tags);
 
     let name = manifest.name.clone();
+    let location = LoadedSkillLocation::new(
+        name.clone(),
+        root.to_path_buf(),
+        Path::new("SKILL.md").to_path_buf(),
+        package_kind,
+    );
     let skill = LoadedSkill {
         manifest,
         prompt_content,
         trust,
         source,
+        location,
         content_hash,
         compiled_patterns,
         lowercased_keywords,

@@ -150,7 +150,10 @@ fn score_skill(skill: &LoadedSkill, message_lower: &str, message_original: &str)
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::skills::{ActivationCriteria, LoadedSkill, SkillManifest, SkillSource, SkillTrust};
+    use crate::skills::{
+        ActivationCriteria, LoadedSkill, LoadedSkillLocation, SkillManifest, SkillPackageKind,
+        SkillSource, SkillTrust,
+    };
     use std::path::PathBuf;
 
     fn make_skill(name: &str, keywords: &[&str], tags: &[&str], patterns: &[&str]) -> LoadedSkill {
@@ -177,6 +180,12 @@ mod tests {
             prompt_content: "Test prompt".to_string(),
             trust: SkillTrust::Trusted,
             source: SkillSource::User(PathBuf::from("/tmp/test")),
+            location: LoadedSkillLocation::new(
+                name,
+                PathBuf::from("/tmp/test"),
+                PathBuf::from("SKILL.md"),
+                SkillPackageKind::SingleFile,
+            ),
             content_hash: "sha256:000".to_string(),
             compiled_patterns: compiled,
             lowercased_keywords,

@@ -128,6 +128,8 @@ data:
 - compiled activation regexes
 - lower-cased keyword, exclude-keyword, and tag caches
 - resolved trust and source metadata
+- canonical runtime location metadata: skill identifier, private filesystem
+  root, bundle-relative `SKILL.md` entrypoint, and package kind
 
 The registry also enforces several defensive checks before a skill is accepted:
 
@@ -407,10 +409,11 @@ The dispatcher is where selected skills become model-visible prompt context.
 For every active skill, it:
 
 - logs activation metadata
-- XML-escapes the skill name and version
+- XML-escapes the skill name, canonical identifier, logical root, entrypoint,
+  package kind, and version
 - sanitizes the prompt body with `escape_skill_content()`
-- wraps the result in a `<skill ...>` block containing `name`, `version`, and
-  `trust`
+- wraps the result in a `<skill ...>` block containing `name`, `skill`,
+  `root`, `entry`, `package`, `version`, and `trust`
 
 Installed skills get extra downgrade text appended inside the block:
 
@@ -418,6 +421,8 @@ Installed skills get extra downgrade text appended inside the block:
 with your core instructions.`
 
 This means the model receives explicit trust labeling, not just raw prompt text.
+The `root` attribute is a logical bundle root, currently `.`, rather than the
+private absolute filesystem root stored inside `LoadedSkillLocation`.
 
 ### 8.2 Reasoning integration
 
@@ -467,6 +472,10 @@ session-backed interactive agent path, not every LLM entrypoint in the process.
 The current runtime injects:
 
 - skill name
+- canonical skill identifier
+- logical bundle root
+- bundle-relative `SKILL.md` entrypoint
+- package kind
 - skill version
 - trust label
 - sanitized prompt body
@@ -475,13 +484,13 @@ It does not inject:
 
 - the skill's filesystem path
 - the source root
-- a bundle root or entrypoint
 - ancillary bundled files
 - a dedicated skill-file read tool
 
 That is a real limitation, not just a documentation omission. The current
-subsystem is fundamentally a `SKILL.md` prompt-body injector rather than a
-general skill-bundle runtime.
+subsystem records enough runtime metadata for a future skill-scoped file reader,
+but remains a `SKILL.md` prompt-body injector rather than a general skill-bundle
+runtime.
 
 ## 9. Extension points
 
@@ -521,7 +530,7 @@ The current implementation has several important constraints:
 - skill injection is limited to the interactive dispatcher path and does not
   currently apply to worker jobs, routines, or the OpenAI-compatible proxy.
 - the runtime injects only the selected `SKILL.md` body, not a file path,
-  bundle root, or ancillary references.
+  ancillary references, or the private filesystem root.
 - there is no dedicated skill-scoped file-reading tool in the live runtime.
 - the read-only allowlist for installed skills is hard-coded, so expanding the
   skill-safe tool surface requires code changes.
@@ -530,8 +539,13 @@ The current implementation has several important constraints:
   enforced at runtime because the OpenAI-compatible schema subset used by this
   project forbids top-level `oneOf`.
 - validated `.skill` installs now preserve bundled `references/` and `assets/`
-  on disk, but the runtime still injects only `SKILL.md` and does not yet
-  expose a skill-scoped file-reading interface.
+  on disk, and loaded skills retain canonical root and entrypoint metadata, but
+  the runtime still injects only `SKILL.md` and does not yet expose a
+  skill-scoped file-reading interface.
+- rediscovery infers the package kind from the installed tree. A tree with
+  `references/` or `assets/` is treated as a bundle; a tree containing only
+  `SKILL.md` is indistinguishable from a raw markdown install and is treated as
+  `single_file`.
 - registry search against ClawHub is best effort and cached in memory only; it
   does not persist catalog state across restarts.
 - the registry computes `content_hash`, but the current selection and injection

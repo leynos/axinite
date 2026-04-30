@@ -8,7 +8,10 @@ use rstest::{fixture, rstest};
 use crate::context::JobContext;
 use crate::skills::catalog::SkillCatalog;
 use crate::skills::registry::SkillRegistry;
-use crate::skills::{ActivationCriteria, LoadedSkill, SkillManifest, SkillSource, SkillTrust};
+use crate::skills::{
+    ActivationCriteria, LoadedSkill, LoadedSkillLocation, SkillManifest, SkillPackageKind,
+    SkillSource, SkillTrust,
+};
 use crate::tools::tool::{ApprovalRequirement, NativeTool, Tool};
 
 use super::{SkillInstallTool, SkillListTool, SkillRemoveTool, SkillSearchTool};
@@ -192,6 +195,12 @@ fn skill_search_matches_query_checks_name_description_and_keywords(
         prompt_content: String::new(),
         trust: SkillTrust::Trusted,
         source: SkillSource::Bundled(std::path::PathBuf::from("skills/search-helper")),
+        location: LoadedSkillLocation::new(
+            "search-helper",
+            std::path::PathBuf::from("skills/search-helper"),
+            std::path::PathBuf::from("SKILL.md"),
+            SkillPackageKind::SingleFile,
+        ),
         content_hash: "hash".to_string(),
         compiled_patterns: Vec::new(),
         lowercased_keywords: Vec::new(),

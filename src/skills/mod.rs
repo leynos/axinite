@@ -94,6 +94,82 @@ pub enum SkillSource {
     Bundled(PathBuf),
 }
 
+/// How a skill's installed files are laid out on disk.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum SkillPackageKind {
+    /// A lone `SKILL.md` file with no bundle-only support files.
+    SingleFile,
+    /// A bundle tree containing `SKILL.md` plus bundle-relative support files.
+    Bundle,
+}
+
+impl SkillPackageKind {
+    /// Stable prompt-facing label for the package kind.
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::SingleFile => "single_file",
+            Self::Bundle => "bundle",
+        }
+    }
+}
+
+/// Canonical runtime location metadata for a loaded skill.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct LoadedSkillLocation {
+    skill: String,
+    root: PathBuf,
+    entrypoint: PathBuf,
+    package_kind: SkillPackageKind,
+}
+
+impl LoadedSkillLocation {
+    /// Create location metadata for a loaded skill.
+    ///
+    /// `root` is the private runtime filesystem root used by future scoped
+    /// skill-file reads. `entrypoint` is bundle-relative and must not be an
+    /// absolute host path.
+    pub fn new(
+        skill: impl Into<String>,
+        root: impl Into<PathBuf>,
+        entrypoint: impl Into<PathBuf>,
+        package_kind: SkillPackageKind,
+    ) -> Self {
+        let entrypoint = entrypoint.into();
+        assert!(
+            entrypoint.is_relative(),
+            "skill entrypoint must be bundle-relative"
+        );
+
+        Self {
+            skill: skill.into(),
+            root: root.into(),
+            entrypoint,
+            package_kind,
+        }
+    }
+
+    /// Canonical skill identifier exposed to model-facing skill context.
+    pub fn skill(&self) -> &str {
+        &self.skill
+    }
+
+    /// Private canonical filesystem root for runtime file resolution.
+    pub fn root(&self) -> &std::path::Path {
+        &self.root
+    }
+
+    /// Bundle-relative entrypoint, normally `SKILL.md`.
+    pub fn entrypoint(&self) -> &std::path::Path {
+        &self.entrypoint
+    }
+
+    /// Package mode used to distinguish single-file skills from bundles.
+    pub fn package_kind(&self) -> SkillPackageKind {
+        self.package_kind
+    }
+}
+
 /// Activation criteria parsed from SKILL.md frontmatter `activation` section.
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct ActivationCriteria {
@@ -202,6 +278,8 @@ pub struct LoadedSkill {
     pub trust: SkillTrust,
     /// Where this skill was loaded from.
     pub source: SkillSource,
+    /// Canonical runtime location and bundle layout metadata.
+    pub location: LoadedSkillLocation,
     /// SHA-256 hash of the prompt content (computed at load time).
     pub content_hash: String,
     /// Pre-compiled regex patterns from activation criteria (compiled at load time).
@@ -226,6 +304,26 @@ impl LoadedSkill {
     /// Get the skill version.
     pub fn version(&self) -> &str {
         &self.manifest.version
+    }
+
+    /// Get the canonical skill identifier stored in runtime location metadata.
+    pub fn skill_identifier(&self) -> &str {
+        self.location.skill()
+    }
+
+    /// Get the private runtime root for scoped skill-file resolution.
+    pub fn skill_root(&self) -> &std::path::Path {
+        self.location.root()
+    }
+
+    /// Get the bundle-relative skill entrypoint.
+    pub fn skill_entrypoint(&self) -> &std::path::Path {
+        self.location.entrypoint()
+    }
+
+    /// Get whether this skill was loaded as a single file or bundle tree.
+    pub fn package_kind(&self) -> SkillPackageKind {
+        self.location.package_kind()
     }
 
     /// Compile regex patterns from activation criteria. Invalid or oversized patterns
@@ -523,6 +621,12 @@ metadata:
             prompt_content: "test prompt".to_string(),
             trust: SkillTrust::Trusted,
             source: SkillSource::User(PathBuf::from("/tmp/test")),
+            location: LoadedSkillLocation::new(
+                "test",
+                PathBuf::from("/tmp/test"),
+                PathBuf::from("SKILL.md"),
+                SkillPackageKind::SingleFile,
+            ),
             content_hash: "sha256:000".to_string(),
             compiled_patterns: vec![],
             lowercased_keywords: vec![],

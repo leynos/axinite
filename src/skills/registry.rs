@@ -23,7 +23,7 @@ pub use loading::{check_gating, compute_hash};
 pub use staged_install::{CommitPreparedInstallError, PreparedSkillInstall, SkillInstallPayload};
 
 use crate::skills::bundle::SkillBundleError;
-use crate::skills::{LoadedSkill, SkillSource, SkillTrust};
+use crate::skills::{LoadedSkill, SkillPackageKind, SkillSource, SkillTrust};
 
 /// Maximum number of skills that can be discovered from a single directory.
 /// Prevents resource exhaustion from a directory with thousands of entries.

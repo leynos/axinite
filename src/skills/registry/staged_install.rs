@@ -152,14 +152,21 @@ pub(super) async fn prepare_install_to_disk(
 
     let skill_path = staged_dir.join("SKILL.md");
     let source = SkillSource::User(final_dir.clone());
-    let (name, loaded_skill) =
-        match load_and_validate_skill(&skill_path, SkillTrust::Installed, source).await {
-            Ok(result) => result,
-            Err(error) => {
-                cleanup_staged_dir(&staged_dir).await;
-                return Err(error);
-            }
-        };
+    let (name, loaded_skill) = match load_and_validate_skill(
+        &skill_path,
+        SkillTrust::Installed,
+        source,
+        &final_dir,
+        install_artifact.package_kind,
+    )
+    .await
+    {
+        Ok(result) => result,
+        Err(error) => {
+            cleanup_staged_dir(&staged_dir).await;
+            return Err(error);
+        }
+    };
 
     Ok(PreparedSkillInstall {
         name,

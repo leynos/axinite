@@ -1,5 +1,7 @@
 # IronClaw ↔ OpenClaw Feature Parity Matrix
 
+<!-- markdownlint-disable MD013 MD022 MD024 MD032 MD060 -->
+
 This document tracks feature parity between IronClaw (Rust implementation) and OpenClaw (TypeScript reference implementation). Use this to coordinate work across developers.
 
 **Legend:**
@@ -201,7 +203,7 @@ This document tracks feature parity between IronClaw (Rust implementation) and O
 | Post-compaction read audit | ✅ | ❌ | Layer 3: workspace rules appended to summaries |
 | Post-compaction context injection | ✅ | ❌ | Workspace context as system event |
 | Custom system prompts | ✅ | ✅ | Template variables, safety guardrails |
-| Skills (modular capabilities) | ✅ | ✅ | Prompt-based skills with trust gating, attenuation, activation criteria, catalog, selector |
+| Skills (modular capabilities) | ✅ | ✅ | Prompt-based skills with trust gating, attenuation, activation criteria, catalog, selector, and loaded bundle-root metadata |
 | Skill routing blocks | ✅ | 🚧 | ActivationCriteria (keywords, patterns, tags) but no "Use when / Don't use when" blocks |
 | Skill path compaction | ✅ | ❌ | ~ prefix to reduce prompt tokens |
 | Thinking modes (off/minimal/low/medium/high/xhigh/adaptive) | ✅ | ❌ | Configurable reasoning depth |
@@ -540,7 +542,7 @@ This document tracks feature parity between IronClaw (Rust implementation) and O
 - ✅ Cron job scheduling (routines)
 - ✅ CLI subcommands (onboard, config, status, memory)
 - ✅ Gateway token auth
-- ✅ Skills system (prompt-based with trust gating, attenuation, activation criteria)
+- ✅ Skills system (prompt-based with trust gating, attenuation, activation criteria, and loaded bundle-root metadata)
 - ✅ Session file permissions (0o600)
 - ✅ Memory CLI commands (search, read, write, tree, status)
 - ✅ Shell env scrubbing + command injection detection

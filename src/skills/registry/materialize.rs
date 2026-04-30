@@ -3,6 +3,7 @@
 use std::path::{Path, PathBuf};
 
 use super::{SkillInstallPayload, SkillRegistryError};
+use crate::skills::SkillPackageKind;
 use crate::skills::bundle::{
     ValidatedSkillBundle, looks_like_skill_archive, validate_skill_archive,
 };
@@ -11,6 +12,7 @@ use crate::skills::parser::{SkillParseError, parse_skill_md};
 
 pub(super) struct InstallArtifact {
     pub(super) install_dir_name: String,
+    pub(super) package_kind: SkillPackageKind,
     pub(super) files: Vec<(PathBuf, Vec<u8>)>,
 }
 
@@ -52,6 +54,7 @@ fn build_markdown_artifact(content: String) -> Result<InstallArtifact, SkillRegi
 
     Ok(InstallArtifact {
         install_dir_name: parsed.manifest.name,
+        package_kind: SkillPackageKind::SingleFile,
         files: vec![(PathBuf::from("SKILL.md"), normalized_content.into_bytes())],
     })
 }
@@ -70,6 +73,7 @@ fn build_bundle_artifact(bundle: ValidatedSkillBundle) -> InstallArtifact {
 
     InstallArtifact {
         install_dir_name: bundle.skill_name().to_string(),
+        package_kind: SkillPackageKind::Bundle,
         files,
     }
 }

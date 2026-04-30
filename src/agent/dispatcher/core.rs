@@ -199,12 +199,25 @@ impl Agent {
             );
 
             let safe_name = crate::skills::escape_xml_attr(skill.name());
+            let safe_skill = crate::skills::escape_xml_attr(skill.skill_identifier());
+            let safe_root = crate::skills::escape_xml_attr(".");
+            let safe_entry =
+                crate::skills::escape_xml_attr(&skill.skill_entrypoint().to_string_lossy());
+            let safe_package = crate::skills::escape_xml_attr(skill.package_kind().as_str());
             let safe_version = crate::skills::escape_xml_attr(skill.version());
             let safe_content = crate::skills::escape_skill_content(&skill.prompt_content);
 
             context_parts.push(format!(
-                "<skill name=\"{}\" version=\"{}\" trust=\"{}\">\n{}{}\n</skill>",
-                safe_name, safe_version, trust_label, safe_content, suffix,
+                "<skill name=\"{}\" skill=\"{}\" root=\"{}\" entry=\"{}\" package=\"{}\" version=\"{}\" trust=\"{}\">\n{}{}\n</skill>",
+                safe_name,
+                safe_skill,
+                safe_root,
+                safe_entry,
+                safe_package,
+                safe_version,
+                trust_label,
+                safe_content,
+                suffix,
             ));
         }
 

@@ -117,6 +117,7 @@ pub fn attenuate_tools(
 mod tests {
     use super::*;
     use crate::skills::{ActivationCriteria, SkillManifest, SkillSource};
+    use crate::skills::{LoadedSkillLocation, SkillPackageKind};
     use std::path::PathBuf;
 
     fn make_tool(name: &str) -> ToolDefinition {
@@ -139,6 +140,12 @@ mod tests {
             prompt_content: "test".to_string(),
             trust,
             source: SkillSource::User(PathBuf::from("/tmp")),
+            location: LoadedSkillLocation::new(
+                name,
+                PathBuf::from("/tmp"),
+                PathBuf::from("SKILL.md"),
+                SkillPackageKind::SingleFile,
+            ),
             content_hash: "sha256:000".to_string(),
             compiled_patterns: vec![],
             lowercased_keywords: vec![],

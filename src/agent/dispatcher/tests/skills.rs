@@ -7,7 +7,10 @@ use insta::assert_snapshot;
 
 use super::super::types::select_active_skills;
 use super::*;
-use crate::skills::{ActivationCriteria, LoadedSkill, SkillManifest, SkillSource, SkillTrust};
+use crate::skills::{
+    ActivationCriteria, LoadedSkill, LoadedSkillLocation, SkillManifest, SkillPackageKind,
+    SkillSource, SkillTrust,
+};
 
 /// Build a [`LoadedSkill`] with the given name, version, description, and
 /// keyword list, using sensible defaults for the remaining fields.
@@ -36,6 +39,12 @@ fn make_test_skill(
         prompt_content: format!("Prompt for {name}"),
         trust: SkillTrust::Trusted,
         source: SkillSource::User(PathBuf::from(".")),
+        location: LoadedSkillLocation::new(
+            name,
+            PathBuf::from("."),
+            PathBuf::from("SKILL.md"),
+            SkillPackageKind::SingleFile,
+        ),
         content_hash: format!("{name}-hash"),
         compiled_patterns: vec![],
         lowercased_keywords,
@@ -169,6 +178,31 @@ fn test_build_skill_context_block_installed() {
         "installed skill context should include the disclaimer"
     );
     assert_snapshot!(result);
+}
+
+#[test]
+fn test_build_skill_context_block_includes_bundle_relative_metadata() {
+    let agent = make_test_agent();
+    let mut skill = make_context_skill(SkillTrust::Installed);
+    skill.location = LoadedSkillLocation::new(
+        "my-skill",
+        PathBuf::from("/tmp/private-skill-root"),
+        PathBuf::from("SKILL.md"),
+        SkillPackageKind::Bundle,
+    );
+
+    let result = agent
+        .build_skill_context_block(&[skill])
+        .expect("installed bundle skill should produce context");
+
+    assert!(result.contains("skill=\"my-skill\""));
+    assert!(result.contains("root=\".\""));
+    assert!(result.contains("entry=\"SKILL.md\""));
+    assert!(result.contains("package=\"bundle\""));
+    assert!(
+        !result.contains("/tmp/private-skill-root"),
+        "prompt context must not leak the runtime filesystem root"
+    );
 }
 
 #[test]
