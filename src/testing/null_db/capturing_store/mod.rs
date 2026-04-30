@@ -19,6 +19,7 @@ use crate::db::SandboxEventType;
 use super::NullDatabase;
 
 mod delegation;
+mod delegation_workspace;
 
 /// Captured status update call.
 #[derive(Debug, Clone)]

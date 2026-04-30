@@ -124,7 +124,7 @@ async fn attempt_repair_build_two_tools_run_concurrently_without_interference() 
 
     assert_eq!(
         msg_a,
-        "Tool 'tool-alpha' repaired successfully after 1 iterations"
+        "Tool 'tool-alpha' repaired successfully after 1 iteration"
     );
     assert_eq!(
         msg_b,

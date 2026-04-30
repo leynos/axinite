@@ -581,7 +581,7 @@ tool-repair flow in `src/agent/self_repair/default.rs`:
 | Method | Signature summary | Purpose |
 | --- | --- | --- |
 | `build_repair_requirement` | `(tool: &BrokenTool) -> Result<BuildRequirement, RepairError>` | Validates the tool name via `ProjectName::new`, then constructs the `BuildRequirement` carrying the tool name, last error, failure count, WASM tool type, Rust language, and the `http`/`workspace` capability set. Returns `RepairError::Failed` for invalid names. |
-| `handle_build_result` | `(result: BuildResult, tool: &BrokenTool, store: &dyn Database) -> Result<RepairResult, RepairError>` | Inspects the build outcome. On success it logs, calls `store.mark_tool_repaired`, and returns `RepairResult::Success`; on failure it logs and returns `RepairResult::Retry` with an attempt-number message. |
+| `handle_build_result` | `(result: BuildResult, tool: &BrokenTool, store: &dyn Database) -> Result<RepairResult, RepairError>` | Inspects the build outcome. On success, it logs, calls `store.mark_tool_repaired`, and returns `RepairResult::Success`; on failure it logs and returns `RepairResult::Retry` with an attempt-number message. |
 | `attempt_repair_build` | `(tool: &BrokenTool, store: &dyn Database, builder: &dyn SoftwareBuilder, requirement: &BuildRequirement) -> Result<RepairResult, RepairError>` | Invokes `builder.build(requirement)` and delegates the result to `handle_build_result`. Builder-level errors are caught here and converted into `RepairResult::Retry` with a `"Repair build error: …"` message. |
 
 None of these methods access instance state; they are static associated
@@ -1318,6 +1318,25 @@ so local setup instructions stay truthful.
 
 ## 33. Phased startup pipeline
 
+## 32. Expected follow-up changes
+
+This guide documents the environment as of the current branch. The
+compile-time reduction plan is still expected to change some of the
+standard commands further, especially around shared extension build
+artifacts and CI duplication.
+
+When those changes land, this guide must be updated in the same branch
+so local setup instructions stay truthful.
+
+- Issue `#35` (PR `#168`): `DefaultSelfRepair::repair_broken_tool` was
+  refactored to ≤ 35 lines by extracting `build_repair_requirement`,
+  `handle_build_result`, and `attempt_repair_build` as private static
+  helpers. No functional changes were made. See
+  `src/agent/self_repair/default.rs` and
+  `src/agent/self_repair/default_tests/`.
+
+## 33. Phased startup pipeline
+
 ## 31. Bootstrap migration module
 
 `src/bootstrap/migration.rs` provides all helpers for the one-time
@@ -1745,6 +1764,38 @@ let (addr, _state) = TestGatewayBuilder::new()
 ```
 
 
+## 34. Borrowed newtypes for schema helper arguments
+
+Three lightweight newtype wrappers in `src/tools/tool/schema_helpers.rs` make
+schema and parameter helper signatures explicit without changing the string
+values used in validation error messages.
+
+Caption: Schema helper newtypes.
+
+| Type | Purpose |
+| --- | --- |
+| `ParamName<'a>` | A JSON parameter key expected in tool input |
+| `SchemaPath` | A dot-separated location in a JSON schema |
+| `ToolName<'a>` | A registered tool identifier used as the root strict-schema path |
+
+`ParamName<'a>` and `ToolName<'a>` are zero-cost wrappers over `&'a str`.
+`SchemaPath` owns its path string so nested paths can be constructed while
+descending through schema nodes. All three types implement `From<&str>` and
+`From<&String>` so existing `&str` and `String` call sites continue to compile
+unchanged. `ToolName` additionally converts into `SchemaPath` because the
+strict-schema validator roots its path at the tool name.
+
+Use these types in function signatures that previously accepted a bare `&str`
+or `String` for a parameter name, schema path, or tool name. The types prevent
+accidental argument transposition and make the intent of each parameter clear
+at the call site.
+
+`SchemaPath::child(segment)` returns an owned schema path representing the child
+path `"<parent>.<segment>"`. Use this instead of manual string concatenation
+when descending into nested schema nodes.
+
+These types are re-exported from `src/tools/mod.rs` and are publicly available
+as `crate::tools::{ParamName, SchemaPath, ToolName}`.
 ## 34. Borrowed newtypes for schema helper arguments
 
 Three lightweight newtype wrappers in `src/tools/tool/schema_helpers.rs` make
