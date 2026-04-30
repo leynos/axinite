@@ -60,7 +60,7 @@ impl From<SecretError> for InjectionError {
     }
 }
 
-/// Thread-safe, append-only registry of credential mappings from all installed tools.
+/// Thread-safe registry of credential mappings from all installed tools.
 ///
 /// Aggregates credential mappings from WASM tools so the built-in HTTP tool can
 /// auto-inject credentials for matching hosts. Uses `std::sync::RwLock` so
@@ -77,18 +77,23 @@ impl SharedCredentialRegistry {
         }
     }
 
-    /// Add credential mappings tagged with an extension name (called when WASM tools register).
+    /// Add or replace credential mappings by secret name.
     pub fn add_mappings(&self, mappings: impl IntoIterator<Item = CredentialMapping>) {
+        let mappings = dedupe_mappings_by_secret_name(mappings);
+        if mappings.is_empty() {
+            return;
+        }
+
         match self.mappings.write() {
             Ok(mut guard) => {
-                guard.extend(mappings);
+                replace_mappings_by_secret_name(&mut guard, mappings);
             }
             Err(poisoned) => {
                 tracing::warn!(
                     "SharedCredentialRegistry RwLock poisoned during add_mappings; recovering"
                 );
                 let mut guard = poisoned.into_inner();
-                guard.extend(mappings);
+                replace_mappings_by_secret_name(&mut guard, mappings);
             }
         }
     }
@@ -151,6 +156,35 @@ impl SharedCredentialRegistry {
             .cloned()
             .collect()
     }
+}
+
+fn dedupe_mappings_by_secret_name(
+    mappings: impl IntoIterator<Item = CredentialMapping>,
+) -> Vec<CredentialMapping> {
+    let mappings = mappings.into_iter().collect::<Vec<_>>();
+    let mut deduped = Vec::new();
+    for mapping in mappings.into_iter().rev() {
+        if !deduped
+            .iter()
+            .any(|existing: &CredentialMapping| existing.secret_name == mapping.secret_name)
+        {
+            deduped.push(mapping);
+        }
+    }
+    deduped.reverse();
+    deduped
+}
+
+fn replace_mappings_by_secret_name(
+    guard: &mut Vec<CredentialMapping>,
+    mappings: Vec<CredentialMapping>,
+) {
+    let secret_names = mappings
+        .iter()
+        .map(|mapping| mapping.secret_name.as_str())
+        .collect::<Vec<_>>();
+    guard.retain(|mapping| !secret_names.contains(&mapping.secret_name.as_str()));
+    guard.extend(mappings);
 }
 
 impl Default for SharedCredentialRegistry {
@@ -578,6 +612,18 @@ mod tests {
 
         let found = registry.find_for_host("api.example.com");
         assert_eq!(found.len(), 2);
+    }
+
+    #[test]
+    fn test_shared_registry_replaces_mappings_with_same_secret_name() {
+        let registry = SharedCredentialRegistry::new();
+        registry.add_mappings(vec![CredentialMapping::bearer("key1", "old.example.com")]);
+        registry.add_mappings(vec![CredentialMapping::bearer("key1", "api.example.com")]);
+
+        assert!(registry.find_for_host("old.example.com").is_empty());
+        let found = registry.find_for_host("api.example.com");
+        assert_eq!(found.len(), 1);
+        assert_eq!(found[0].secret_name, "key1");
     }
 
     #[test]
