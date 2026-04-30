@@ -5,7 +5,7 @@ Accepted.
 
 ## Date
 
-2026-04-29.
+2026-04-29
 
 ## Context and problem statement
 
@@ -84,6 +84,7 @@ All other non-fatal migration paths also use explicit `let _ = ...` discards:
   `rename_legacy_bootstrap`.
 - See also: [`docs/contents.md`](contents.md).
 
+# Architectural decision record (ADR) 010: Consolidate bootstrap rename helpers in `src/bootstrap/migration.rs`
 # Architectural decision record (ADR) 010: Consolidate bootstrap rename helpers in `src/bootstrap/migration.rs`
 
 # Architectural decision record (ADR) 010: Consolidate bootstrap rename helpers in `src/bootstrap/migration.rs`
