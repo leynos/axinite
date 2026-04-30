@@ -1,9 +1,15 @@
-//! Tests for the WASM preparation stage of tool registration.
+//! Unit and async integration tests for the WASM tool preparation pipeline.
 //!
-//! These cases cover `prepare_wasm_tool`, `apply_wasm_overrides`,
-//! `recover_guest_metadata`, `WasmToolRegistration`, `PreparedWasmTool`, and
-//! the related capability-to-credential mapping behaviour that feeds registry
-//! insertion.
+//! Exercises the helpers in [`super::wasm_preparation`]:
+//!
+//! - [`credential_mappings_from_capabilities`] — empty and populated capability sets.
+//! - [`prepare_wasm_tool`] — end-to-end preparation, wrapper identity, and credential
+//!   mapping extraction.
+//! - [`recover_guest_metadata`] — early-return when both overrides are present,
+//!   population from guest exports when description is absent, and placeholder
+//!   retention when guest export fails.
+//! - [`apply_wasm_overrides`] — conditional application of description, schema,
+//!   secrets store, and OAuth refresh configuration.
 
 use std::sync::Arc;
 

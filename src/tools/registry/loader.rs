@@ -231,17 +231,20 @@ impl ToolRegistry {
     /// ```
     pub async fn register_wasm(&self, reg: WasmToolRegistration<'_>) -> Result<(), WasmError> {
         let name = reg.name;
+        tracing::debug!(name, "Preparing WASM tool for registration");
         let prepared = prepare_wasm_tool(reg).await?;
 
+        let credential_count = prepared.credential_mappings.len();
         let registered = self.register(Arc::new(prepared.wrapper)).await;
         if !registered {
+            tracing::warn!(name, "WASM tool registration rejected");
             return Err(WasmError::ConfigError(
                 "tool registration rejected".to_string(),
             ));
         }
 
         self.persist_credential_mappings(name, prepared.credential_mappings);
-        tracing::debug!(name, "Registered WASM tool");
+        tracing::debug!(name, credential_count, "Registered WASM tool");
         Ok(())
     }
 
