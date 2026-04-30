@@ -55,9 +55,6 @@ impl RenameFixture {
             .expect("make directory read-only");
     }
 
-    #[cfg(not(unix))]
-    fn make_dir_read_only(&mut self) {}
-
     fn migrated_path(&self) -> std::path::PathBuf {
         self.dir.path().join("settings.json.migrated")
     }
