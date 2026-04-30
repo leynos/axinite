@@ -575,6 +575,8 @@ dual-trait pattern already used elsewhere in the repository:
 Three private associated functions on `DefaultSelfRepair` implement the
 tool-repair flow in `src/agent/self_repair/default.rs`:
 
+Table: Repair subsystem method summaries — signatures and purposes.
+
 | Method | Signature summary | Purpose |
 | --- | --- | --- |
 | `build_repair_requirement` | `(tool: &BrokenTool) -> Result<BuildRequirement, RepairError>` | Validates the tool name via `ProjectName::new`, then constructs the `BuildRequirement` carrying the tool name, last error, failure count, WASM tool type, Rust language, and the `http`/`workspace` capability set. Returns `RepairError::Failed` for invalid names. |
@@ -603,9 +605,10 @@ The claim is process-local. Distributed callers still need database-level
 idempotency or scheduler-level at-most-once repair semantics if multiple
 processes can repair the same tool concurrently.
 
-Cancellation at any `.await` point inside the helper chain is safe: the
-helpers hold no locks across awaits and make no in-memory writes beyond the
-process-local repair claim, which is released when the future is dropped.
+The helper chain holds no locks across `.await` points. If the future is
+dropped, the process-local repair claim is released; external mutations that
+already completed, such as `store.increment_repair_attempts`, `builder.build`,
+or `store.mark_tool_repaired`, are not rolled back.
 
 When modifying this path, keep three invariants in mind:
 

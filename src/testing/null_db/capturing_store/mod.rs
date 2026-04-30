@@ -168,8 +168,8 @@ impl CapturingStore {
         }
     }
 
-    /// Create a capturing store that fails `mark_tool_repaired`.
-    pub fn failing_mark_tool_repaired(error: DatabaseError) -> Self {
+    /// Create a capturing store that fails the next `mark_tool_repaired` call.
+    pub fn failing_mark_tool_repaired_once(error: DatabaseError) -> Self {
         Self {
             inner: NullDatabase::new(),
             calls: Arc::new(Calls::new()),
