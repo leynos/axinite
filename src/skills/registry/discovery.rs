@@ -112,12 +112,11 @@ where
         return try_load_from_subdir(&path, trust, make_source).await;
     }
 
-    if let Some(file_name) = flat_skill_md_name(&meta, &path) {
+    if flat_skill_md_name(&meta, &path).is_some() {
         let root = path
             .parent()
             .map_or_else(|| PathBuf::from("."), Path::to_path_buf);
-        return try_load_flat_skill(&path, &root, file_name, trust, make_source(path.clone()))
-            .await;
+        return try_load_flat_skill(&path, &root, trust, make_source(path.clone())).await;
     }
 
     EntryLoadResult::NotASkill
@@ -163,7 +162,6 @@ where
 async fn try_load_flat_skill(
     path: &Path,
     root: &Path,
-    file_name: &str,
     trust: SkillTrust,
     source: SkillSource,
 ) -> EntryLoadResult {
@@ -183,7 +181,11 @@ async fn try_load_flat_skill(
             EntryLoadResult::Loaded(name, Box::new(skill))
         }
         Err(error) => {
-            tracing::warn!("Failed to load skill from {:?}: {}", file_name, error);
+            tracing::warn!(
+                "Failed to load skill from {:?}: {}",
+                path.file_name().unwrap_or_default(),
+                error
+            );
             EntryLoadResult::LoadFailed
         }
     }
