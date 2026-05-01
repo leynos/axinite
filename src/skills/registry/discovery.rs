@@ -3,7 +3,7 @@
 use std::path::{Path, PathBuf};
 
 use super::{LoadedSkill, MAX_DISCOVERED_SKILLS, SkillPackageKind, SkillSource, SkillTrust};
-use crate::skills::registry::loading::load_and_validate_skill;
+use crate::skills::registry::loading::{SkillLocationContext, load_and_validate_skill};
 
 enum EntryLoadResult {
     /// Not a skill candidate; do not increment the load counter.
@@ -134,7 +134,17 @@ where
 
     let source = make_source(path.to_path_buf());
     let package_kind = detect_package_kind(path).await;
-    match load_and_validate_skill(&skill_md, trust, source, path, package_kind).await {
+    match load_and_validate_skill(
+        &skill_md,
+        trust,
+        source,
+        SkillLocationContext {
+            root: path,
+            package_kind,
+        },
+    )
+    .await
+    {
         Ok((name, skill)) => {
             tracing::debug!("Loaded skill: {}", name);
             EntryLoadResult::Loaded(name, Box::new(skill))
@@ -157,7 +167,17 @@ async fn try_load_flat_skill(
     trust: SkillTrust,
     source: SkillSource,
 ) -> EntryLoadResult {
-    match load_and_validate_skill(path, trust, source, root, SkillPackageKind::SingleFile).await {
+    match load_and_validate_skill(
+        path,
+        trust,
+        source,
+        SkillLocationContext {
+            root,
+            package_kind: SkillPackageKind::SingleFile,
+        },
+    )
+    .await
+    {
         Ok((name, skill)) => {
             tracing::info!("Loaded skill: {}", name);
             EntryLoadResult::Loaded(name, Box::new(skill))

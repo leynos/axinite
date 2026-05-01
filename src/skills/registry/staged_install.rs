@@ -2,7 +2,7 @@
 
 use std::path::{Path, PathBuf};
 
-use super::loading::load_and_validate_skill;
+use super::loading::{SkillLocationContext, load_and_validate_skill};
 use super::materialize::{materialize_install_artifact, write_install_artifact};
 use super::{LoadedSkill, SkillRegistry, SkillRegistryError, SkillSource, SkillTrust};
 use uuid::Uuid;
@@ -156,8 +156,10 @@ pub(super) async fn prepare_install_to_disk(
         &skill_path,
         SkillTrust::Installed,
         source,
-        &final_dir,
-        install_artifact.package_kind,
+        SkillLocationContext {
+            root: &final_dir,
+            package_kind: install_artifact.package_kind,
+        },
     )
     .await
     {

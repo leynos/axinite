@@ -17,12 +17,17 @@ use crate::skills::{
 /// Shared implementation used by both `SkillRegistry::load_skill_md` (discovery)
 /// and `SkillRegistry::prepare_install_to_disk` (installation). This avoids
 /// duplicating the read/parse/validate/hash pipeline.
+#[derive(Debug)]
+pub(super) struct SkillLocationContext<'a> {
+    pub root: &'a Path,
+    pub package_kind: SkillPackageKind,
+}
+
 pub(super) async fn load_and_validate_skill(
     path: &Path,
     trust: SkillTrust,
     source: SkillSource,
-    root: &Path,
-    package_kind: SkillPackageKind,
+    location_ctx: SkillLocationContext<'_>,
 ) -> Result<(String, LoadedSkill), SkillRegistryError> {
     let raw_bytes = read_skill_bytes(path).await?;
 
@@ -57,9 +62,9 @@ pub(super) async fn load_and_validate_skill(
     let name = manifest.name.clone();
     let location = LoadedSkillLocation::new(
         name.clone(),
-        root.to_path_buf(),
+        location_ctx.root.to_path_buf(),
         Path::new("SKILL.md").to_path_buf(),
-        package_kind,
+        location_ctx.package_kind,
     );
     let skill = LoadedSkill {
         manifest,
