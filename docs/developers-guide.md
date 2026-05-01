@@ -237,9 +237,9 @@ UTF-8 string boundary for fixture data or protocol payloads.
 
 Maintenance note: if multiple integration harnesses genuinely need the
 same fixture helper, first confirm that the helper is shared in real
-use, then move it into `tests/support/mod.rs`. Do not promote
-harness-local fixture modules into the shared facade merely to make the
-import path look more uniform.
+use, then place it in a dedicated shared support root and wire it
+through harness-local `#[path = "support/<domain>.rs"] mod support;`.
+Do not recreate `tests/support/mod.rs` as a global facade.
 
 ## 11. Tools-and-config harness support
 

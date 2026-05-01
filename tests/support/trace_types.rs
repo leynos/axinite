@@ -1,13 +1,10 @@
 //! Trace data types and JSON loading helpers for replay-based LLM tests.
 
-use std::{collections::HashMap, path::Path};
-
-use anyhow::Result;
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 
+use anyhow::Context;
 use ironclaw::llm::recording::{HttpExchange, MemorySnapshotEntry, TraceResponse, TraceStep};
-
-use super::trace_llm::patch_json_value;
 
 /// A single turn in a trace: one user message and the LLM response steps that follow.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -171,104 +168,41 @@ impl<'de> Deserialize<'de> for LlmTrace {
         })
     }
 }
-
-impl LlmTrace {
-    /// Create a trace from turns.
-    pub fn new(model_name: impl Into<String>, turns: Vec<TraceTurn>) -> Self {
-        Self {
-            model_name: model_name.into(),
-            turns,
-            memory_snapshot: Vec::new(),
-            http_exchanges: Vec::new(),
-            expects: TraceExpects::default(),
-            steps: Vec::new(),
-        }
-    }
-
-    /// Convenience: create a single-turn trace (for simple tests).
-    pub fn single_turn(
-        model_name: impl Into<String>,
-        user_input: impl Into<String>,
-        steps: Vec<TraceStep>,
-    ) -> Self {
-        Self {
-            model_name: model_name.into(),
-            turns: vec![TraceTurn {
-                user_input: user_input.into(),
-                steps,
-                expects: TraceExpects::default(),
-            }],
-            memory_snapshot: Vec::new(),
-            http_exchanges: Vec::new(),
-            expects: TraceExpects::default(),
-            steps: Vec::new(),
-        }
-    }
-
-    /// Load a trace from a JSON file asynchronously.
-    pub async fn from_file_async(path: impl AsRef<Path>) -> Result<Self> {
-        let contents = tokio::fs::read_to_string(path).await?;
-        let trace: Self = serde_json::from_str(&contents)?;
-        Ok(trace)
-    }
-
-    /// Replace all occurrences of `from` with `to` in tool call arguments.
-    ///
-    /// Walks through all turns and steps, patching any string values in tool call
-    /// arguments that contain the `from` path. Useful for adapting recorded traces
-    /// to use test-specific temporary directories.
-    pub fn patch_path(&mut self, from: &str, to: &str) -> usize {
-        let mut patched = 0;
-        for turn in &mut self.turns {
-            patched += Self::patch_steps(&mut turn.steps, from, to);
-        }
-        patched += Self::patch_steps(&mut self.steps, from, to);
-        patched
-    }
-
-    /// Return only the playable steps from the raw steps (text + tool_calls),
-    /// skipping `user_input` markers. Only meaningful for recorded traces that
-    /// were deserialized from a flat `steps` array.
-    pub fn playable_steps(&self) -> Vec<&TraceStep> {
-        self.steps
-            .iter()
-            .filter(|step| !matches!(step.response, TraceResponse::UserInput { .. }))
-            .collect()
-    }
-
-    fn patch_tool_calls_in_step(step: &mut TraceStep, from: &str, to: &str) -> usize {
-        let TraceResponse::ToolCalls { tool_calls, .. } = &mut step.response else {
-            return 0;
-        };
-
-        let mut patched = 0;
-        for call in tool_calls {
-            let before = call.arguments.clone();
-            patch_json_value(&mut call.arguments, from, to);
-            if call.arguments != before {
-                patched += 1;
-            }
-        }
-        patched
-    }
-
-    fn patch_steps(steps: &mut [TraceStep], from: &str, to: &str) -> usize {
-        let mut patched = 0;
-        for step in steps {
-            patched += Self::patch_tool_calls_in_step(step, from, to);
-        }
-        patched
-    }
-}
-
 /// Load a trace from JSON, applying a structured mutation before deserializing.
-pub async fn load_trace_with_mutation<F>(path: impl AsRef<Path>, mutate: F) -> Result<LlmTrace>
+///
+/// The `mutate` closure receives the parsed JSON value before it is converted
+/// into an [`LlmTrace`], letting tests tweak fixture fields without maintaining
+/// near-duplicate trace files.
+///
+/// # Examples
+///
+/// ```rust,ignore
+/// # use crate::support::trace_types::{LlmTrace, load_trace_with_mutation};
+/// # async fn example() -> anyhow::Result<()> {
+/// let trace: LlmTrace = load_trace_with_mutation("fixtures/trace.json", |value| {
+///     value["timestamp"] = serde_json::json!("2026-04-29T00:00:00Z");
+/// })
+/// .await?;
+///
+/// assert!(!trace.model_name.is_empty());
+/// # Ok(())
+/// # }
+/// ```
+pub async fn load_trace_with_mutation<F>(
+    path: impl AsRef<std::path::Path>,
+    mutate: F,
+) -> anyhow::Result<LlmTrace>
 where
     F: FnOnce(&mut serde_json::Value),
 {
-    let contents = tokio::fs::read_to_string(path).await?;
-    let mut value: serde_json::Value = serde_json::from_str(&contents)?;
+    let path = path.as_ref();
+    let contents = tokio::fs::read_to_string(path)
+        .await
+        .with_context(|| format!("reading trace file: {}", path.display()))?;
+    let mut value: serde_json::Value = serde_json::from_str(&contents)
+        .with_context(|| format!("parsing JSON from file contents: {}", path.display()))?;
     mutate(&mut value);
-    let trace = serde_json::from_value(value)?;
+    let trace = serde_json::from_value(value)
+        .with_context(|| format!("deserializing trace value to LlmTrace: {}", path.display()))?;
     Ok(trace)
 }

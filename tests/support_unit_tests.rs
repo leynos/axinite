@@ -13,12 +13,13 @@ mod assertions_tests;
 mod cleanup_tests;
 #[path = "support_unit_tests/test_channel_tests.rs"]
 mod test_channel_tests;
-#[cfg(feature = "libsql")]
-#[path = "support_unit_tests/test_rig_tests.rs"]
-mod test_rig_tests;
 #[path = "support_unit_tests/trace_llm_contract_tests.rs"]
 mod trace_llm_contract_tests;
+#[path = "support_unit_tests/trace_llm_test_fixtures.rs"]
+mod trace_llm_test_fixtures;
 #[path = "support_unit_tests/trace_llm_tests.rs"]
 mod trace_llm_tests;
+#[path = "support_unit_tests/trace_support_module_tests.rs"]
+mod trace_support_module_tests;
 #[path = "support_unit_tests/trace_types_tests.rs"]
 mod trace_types_tests;

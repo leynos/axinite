@@ -9,7 +9,10 @@ use ironclaw::agent::{HeartbeatConfig, HeartbeatRunner};
 use ironclaw::workspace::hygiene::HygieneConfig;
 
 use crate::support::routines::{create_test_db, create_workspace};
-use crate::support::trace_llm::{LlmTrace, TraceLlm, TraceResponse, TraceStep};
+use ironclaw::llm::recording::{TraceResponse, TraceStep};
+
+use crate::support::trace_provider::TraceLlm;
+use crate::support::trace_types::LlmTrace;
 
 #[tokio::test]
 async fn heartbeat_findings() {

@@ -1,19 +1,38 @@
 //! Replay-based LLM provider for E2E traces.
 
-use std::path::Path;
 use std::sync::Mutex;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
 use rust_decimal::Decimal;
 
 use ironclaw::error::LlmError;
-use ironclaw::llm::recording::{RequestHint, TraceResponse, TraceStep};
+use ironclaw::llm::recording::{RequestHint, TraceResponse, TraceStep, TraceToolCall};
 use ironclaw::llm::{
     ChatMessage, CompletionRequest, CompletionResponse, FinishReason, Role, ToolCall,
     ToolCompletionRequest, ToolCompletionResponse,
 };
 
+use super::trace_template_utils::{
+    extract_tool_result_vars, has_template_marker, substitute_templates,
+};
 use super::trace_types::LlmTrace;
+
+pub(super) struct TraceLlmState {
+    /// Current replay cursor, visible only to sibling support modules that
+    /// assert replay diagnostics.
+    ///
+    /// The value is a `usize` replay cursor. It is monotonic, must not wrap,
+    /// and should be mutated only while holding `TraceLlm::inner`. In normal
+    /// operation it stays in `0..=steps.len()`. After exhaustion, repeated
+    /// calls continue incrementing the cursor beyond `steps.len()` until
+    /// overflow protection rejects further advancement.
+    /// Test-scale traces should never approach `usize::MAX`; treat overflow as
+    /// invalid trace data rather than recovering with saturation or wraparound.
+    pub(super) index: usize,
+    /// Captured request messages, owned with the cursor so request recording
+    /// and replay advancement remain one critical section.
+    captured_requests: Vec<Vec<ChatMessage>>,
+}
 
 /// An `LlmProvider` that replays canned responses from a trace.
 ///
@@ -24,16 +43,27 @@ use super::trace_types::LlmTrace;
 /// Mutable replay state is held behind one mutex so request capture and step
 /// advancement stay in lockstep even if a test drives the provider from more
 /// than one task.
-struct TraceLlmState {
-    index: usize,
-    captured_requests: Vec<Vec<ChatMessage>>,
-}
-
 pub struct TraceLlm {
     model_name: String,
     steps: Vec<TraceStep>,
-    inner: Mutex<TraceLlmState>,
-    hint_mismatches: AtomicUsize,
+    /// Protects `TraceLlmState::index` and `captured_requests`.
+    ///
+    /// Sibling modules may read this for diagnostics, but replay code should
+    /// use `next_step` for read-modify-write access so cursor advancement,
+    /// request capture, and exhaustion errors stay consistent. See
+    /// `tests/support_unit_tests/trace_llm_tests.rs` for replay behaviour
+    /// examples and `tests/support_unit_tests/trace_llm_contract_tests.rs` for
+    /// the diagnostics contract.
+    pub(super) inner: Mutex<TraceLlmState>,
+    /// Count of request-hint mismatches observed during replay.
+    ///
+    /// This counter is separate from `inner` because hint validation only needs
+    /// lock-free increments. Writers should use checked increments via
+    /// `fetch_update`; readers should use the
+    /// diagnostics helper in `trace_provider_diagnostics.rs`. The count is
+    /// expected to stay small in tests, so overflow indicates runaway replay or
+    /// invalid trace data rather than a recoverable condition.
+    pub(super) hint_mismatches: AtomicUsize,
 }
 
 impl TraceLlm {
@@ -55,27 +85,6 @@ impl TraceLlm {
         }
     }
 
-    /// Load from a JSON file and create the provider.
-    pub async fn from_file_async(
-        path: impl AsRef<Path>,
-    ) -> Result<Self, Box<dyn std::error::Error>> {
-        let trace = LlmTrace::from_file_async(path).await?;
-        Ok(Self::from_trace(trace))
-    }
-
-    /// Number of calls made so far.
-    pub fn calls(&self) -> usize {
-        self.inner
-            .lock()
-            .map(|inner| inner.index)
-            .unwrap_or_else(|poisoned| poisoned.into_inner().index)
-    }
-
-    /// Number of request-hint mismatches observed (warnings only).
-    pub fn hint_mismatches(&self) -> usize {
-        self.hint_mismatches.load(Ordering::Relaxed)
-    }
-
     /// Clone of all captured request message lists.
     pub fn captured_requests(&self) -> Result<Vec<Vec<ChatMessage>>, LlmError> {
         self.lock_inner()
@@ -93,9 +102,13 @@ impl TraceLlm {
     fn next_step(&self, messages: &[ChatMessage]) -> Result<TraceStep, LlmError> {
         let idx = {
             let mut inner = self.lock_inner()?;
-            inner.captured_requests.push(messages.to_vec());
             let idx = inner.index;
-            inner.index += 1;
+            let next_index = idx.checked_add(1).ok_or_else(|| LlmError::RequestFailed {
+                provider: self.model_name.clone(),
+                reason: "TraceLlm replay cursor overflowed".to_string(),
+            })?;
+            inner.captured_requests.push(messages.to_vec());
+            inner.index = next_index;
             idx
         };
 
@@ -120,10 +133,17 @@ impl TraceLlm {
             ref mut tool_calls, ..
         } = step.response
         {
-            let vars = Self::extract_tool_result_vars(messages);
+            if !tool_calls_have_templates(tool_calls) {
+                return Ok(step);
+            }
+            let vars =
+                extract_tool_result_vars(messages).map_err(|err| LlmError::RequestFailed {
+                    provider: self.model_name.clone(),
+                    reason: err.to_string(),
+                })?;
             if !vars.is_empty() {
                 for tool_call in tool_calls.iter_mut() {
-                    Self::substitute_templates(&mut tool_call.arguments, &vars);
+                    substitute_templates(&mut tool_call.arguments, &vars);
                 }
             }
         }
@@ -131,7 +151,16 @@ impl TraceLlm {
         Ok(step)
     }
 
-    fn lock_inner(&self) -> Result<std::sync::MutexGuard<'_, TraceLlmState>, LlmError> {
+    /// Locks the mutable replay state shared by request capture and cursor advancement.
+    ///
+    /// This `pub(super)` helper returns the `MutexGuard` for [`TraceLlmState`]
+    /// so sibling support modules can inspect or seed replay internals in
+    /// focused tests. If the mutex has been poisoned, the poison error is
+    /// mapped to [`LlmError::RequestFailed`] with `provider` set to
+    /// `self.model_name.clone()` and reason `"TraceLlm state lock poisoned"`.
+    /// Callers must handle that mapped error rather than assuming the lock can
+    /// always be acquired.
+    pub(super) fn lock_inner(&self) -> Result<std::sync::MutexGuard<'_, TraceLlmState>, LlmError> {
         self.inner.lock().map_err(|_| LlmError::RequestFailed {
             provider: self.model_name.clone(),
             reason: "TraceLlm state lock poisoned".to_string(),
@@ -149,7 +178,7 @@ impl TraceLlm {
                 .map(|message| message.content.to_lowercase().contains(&expected_substr_lc))
                 .unwrap_or(false);
             if !matched {
-                self.hint_mismatches.fetch_add(1, Ordering::Relaxed);
+                self.increment_hint_mismatches();
                 eprintln!(
                     "[TraceLlm WARN] Request hint mismatch: expected last user message to contain {:?}, \
                      got {:?}",
@@ -162,7 +191,7 @@ impl TraceLlm {
         if let Some(min_count) = hint.min_message_count
             && messages.len() < min_count
         {
-            self.hint_mismatches.fetch_add(1, Ordering::Relaxed);
+            self.increment_hint_mismatches();
             eprintln!(
                 "[TraceLlm WARN] Request hint mismatch: expected >= {} messages, got {}",
                 min_count,
@@ -171,124 +200,29 @@ impl TraceLlm {
         }
     }
 
-    #[inline]
-    fn json_scalar_to_string(value: &serde_json::Value) -> Option<String> {
-        match value {
-            serde_json::Value::String(s) => Some(s.clone()),
-            serde_json::Value::Number(n) => Some(n.to_string()),
-            serde_json::Value::Bool(b) => Some(b.to_string()),
-            _ => None,
-        }
+    /// Increments the hint-mismatch counter.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the counter would overflow `usize::MAX`. Test-scale usage
+    /// should never approach this limit; overflow indicates runaway
+    /// hint-mismatch accumulation.
+    pub(super) fn increment_hint_mismatches(&self) {
+        self.hint_mismatches
+            .fetch_update(Ordering::Relaxed, Ordering::Relaxed, |current| {
+                current.checked_add(1)
+            })
+            .unwrap_or_else(|_| panic!("hint_mismatches overflowed"));
     }
+}
 
-    fn extract_tool_result_vars(
-        messages: &[ChatMessage],
-    ) -> std::collections::HashMap<String, String> {
-        let mut vars = std::collections::HashMap::new();
-        for message in messages {
-            if message.role != Role::Tool {
-                continue;
-            }
-            let Some(call_id) = message.tool_call_id.as_deref() else {
-                continue;
-            };
-            let content = Self::unwrap_tool_output(&message.content);
-            let Ok(json) = serde_json::from_str::<serde_json::Value>(&content) else {
-                continue;
-            };
-            let Some(obj) = json.as_object() else {
-                continue;
-            };
-            for (key, value) in obj {
-                Self::flatten_json_vars(&format!("{call_id}.{key}"), value, &mut vars);
-            }
-        }
-        vars
-    }
+// The poisoned-`inner` path is covered in `trace_provider_tests` through both
+// `captured_requests()` and `complete_with_tools()`.
 
-    fn flatten_json_vars(
-        path: &str,
-        value: &serde_json::Value,
-        vars: &mut std::collections::HashMap<String, String>,
-    ) {
-        if let Some(string_value) = Self::json_scalar_to_string(value) {
-            vars.insert(path.to_string(), string_value);
-            return;
-        }
-
-        match value {
-            serde_json::Value::Object(map) => {
-                for (key, child) in map {
-                    Self::flatten_json_vars(&format!("{path}.{key}"), child, vars);
-                }
-            }
-            serde_json::Value::Array(items) => {
-                for (index, child) in items.iter().enumerate() {
-                    Self::flatten_json_vars(&format!("{path}.{index}"), child, vars);
-                }
-            }
-            _ => {}
-        }
-    }
-
-    fn unwrap_tool_output(content: &str) -> std::borrow::Cow<'_, str> {
-        let trimmed = content.trim();
-        if let Some(rest) = trimmed.strip_prefix("<tool_output")
-            && let Some(tag_end) = rest.find('>')
-        {
-            let inner = &rest[tag_end + 1..];
-            if let Some(close) = inner.rfind("</tool_output>") {
-                let body = inner[..close].trim();
-                return std::borrow::Cow::Borrowed(body);
-            }
-        }
-        std::borrow::Cow::Borrowed(content)
-    }
-
-    fn substitute_templates(
-        value: &mut serde_json::Value,
-        vars: &std::collections::HashMap<String, String>,
-    ) {
-        match value {
-            serde_json::Value::String(s) => {
-                if s.starts_with("{{") && s.ends_with("}}") && s.matches("{{").count() == 1 {
-                    let key = s[2..s.len() - 2].trim();
-                    if let Some(resolved) = vars.get(key) {
-                        *s = resolved.clone();
-                        return;
-                    }
-                }
-
-                let mut result = s.clone();
-                while let Some(start) = result.find("{{") {
-                    if let Some(end) = result[start..].find("}}") {
-                        let end = start + end + 2;
-                        let key = result[start + 2..end - 2].trim();
-
-                        if let Some(resolved) = vars.get(key) {
-                            result = format!("{}{}{}", &result[..start], resolved, &result[end..]);
-                        } else {
-                            break;
-                        }
-                    } else {
-                        break;
-                    }
-                }
-                *s = result;
-            }
-            serde_json::Value::Object(map) => {
-                for value in map.values_mut() {
-                    Self::substitute_templates(value, vars);
-                }
-            }
-            serde_json::Value::Array(array) => {
-                for value in array.iter_mut() {
-                    Self::substitute_templates(value, vars);
-                }
-            }
-            _ => {}
-        }
-    }
+fn tool_calls_have_templates(tool_calls: &[TraceToolCall]) -> bool {
+    tool_calls
+        .iter()
+        .any(|tool_call| has_template_marker(&tool_call.arguments))
 }
 
 impl ironclaw::llm::NativeLlmProvider for TraceLlm {
