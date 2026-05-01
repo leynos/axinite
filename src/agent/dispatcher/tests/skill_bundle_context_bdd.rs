@@ -23,13 +23,10 @@ fn skill_context_world() -> SkillContextWorld {
     SkillContextWorld::default()
 }
 
-#[given("an installed bundled skill with supporting files")]
-fn installed_bundled_skill(skill_context_world: &mut SkillContextWorld) {
-    let filesystem_root = PathBuf::from("/tmp/axinite-test-installed/deploy-docs");
-    skill_context_world.filesystem_root = Some(filesystem_root.clone());
-    skill_context_world.active_skill = Some(LoadedSkill {
+fn make_loaded_bundle_skill(skill: &str, filesystem_root: PathBuf) -> LoadedSkill {
+    LoadedSkill {
         manifest: SkillManifest {
-            name: "deploy-docs".to_string(),
+            name: skill.to_string(),
             version: "1.0.0".to_string(),
             description: "Deploy documentation workflow".to_string(),
             activation: ActivationCriteria {
@@ -43,17 +40,25 @@ fn installed_bundled_skill(skill_context_world: &mut SkillContextWorld) {
         trust: SkillTrust::Installed,
         source: SkillSource::User(filesystem_root.clone()),
         location: LoadedSkillLocation::new(
-            "deploy-docs",
+            skill,
             filesystem_root,
             PathBuf::from("SKILL.md"),
             SkillPackageKind::Bundle,
         ),
-        content_hash: "sha256:deploy-docs".to_string(),
+        content_hash: format!("sha256:{skill}"),
         compiled_patterns: Vec::new(),
         lowercased_keywords: vec!["deploy".to_string(), "docs".to_string()],
         lowercased_exclude_keywords: Vec::new(),
         lowercased_tags: Vec::new(),
-    });
+    }
+}
+
+#[given("an installed bundled skill with supporting files")]
+fn installed_bundled_skill(skill_context_world: &mut SkillContextWorld) {
+    let filesystem_root = PathBuf::from("/tmp/axinite-test-installed/deploy-docs");
+    skill_context_world.filesystem_root = Some(filesystem_root.clone());
+    skill_context_world.active_skill =
+        Some(make_loaded_bundle_skill("deploy-docs", filesystem_root));
 }
 
 #[when("the skill is selected for an agent turn")]
@@ -63,7 +68,10 @@ fn selected_for_agent_turn(skill_context_world: &mut SkillContextWorld) {
         .active_skill
         .clone()
         .expect("Given step should install an active skill");
-    skill_context_world.rendered_context = agent.build_skill_context_block(&[skill]);
+    let rendered = agent
+        .build_skill_context_block(&[skill])
+        .expect("installed bundle skill should produce context");
+    skill_context_world.rendered_context = Some(rendered);
 }
 
 #[then("the active skill context names the skill identifier")]

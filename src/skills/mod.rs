@@ -136,7 +136,7 @@ impl LoadedSkillLocation {
         package_kind: SkillPackageKind,
     ) -> Self {
         let entrypoint = entrypoint.into();
-        assert!(
+        debug_assert!(
             entrypoint.is_relative(),
             "skill entrypoint must be bundle-relative"
         );
@@ -157,6 +157,11 @@ impl LoadedSkillLocation {
     /// Private canonical filesystem root for runtime file resolution.
     pub fn root(&self) -> &std::path::Path {
         &self.root
+    }
+
+    /// Stable bundle-relative root exposed in model-facing metadata.
+    pub fn bundle_relative_root(&self) -> &std::path::Path {
+        std::path::Path::new(".")
     }
 
     /// Bundle-relative entrypoint, normally `SKILL.md`.

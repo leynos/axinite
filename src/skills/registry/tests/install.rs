@@ -140,6 +140,10 @@ async fn test_downloaded_bytes_accept_plain_markdown(bundle_install_fixture: Bun
         prepared.loaded_skill.skill_root(),
         installed_dir.path().join("deploy-docs").as_path()
     );
+    assert_eq!(
+        prepared.loaded_skill.skill_entrypoint(),
+        std::path::Path::new("SKILL.md")
+    );
 
     registry
         .commit_install(prepared)

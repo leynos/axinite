@@ -263,6 +263,38 @@ async fn test_bundle_layout_records_bundle_package_kind(
     assert_eq!(skill.skill_entrypoint(), std::path::Path::new("SKILL.md"));
 }
 
+#[rstest]
+#[tokio::test]
+async fn test_bundle_layout_records_bundle_package_kind_via_assets_dir(
+    fresh_registry_fixture: FreshRegistryFixture,
+) {
+    let FreshRegistryFixture { dir, mut registry } = fresh_registry_fixture;
+    write_skill_subdir(
+        dir.path(),
+        "bundle-skill",
+        "---\nname: bundle-skill\n---\n\nBundle prompt.\n",
+    );
+    std::fs::create_dir_all(dir.path().join("bundle-skill/assets/images"))
+        .expect("assets dir should be created for test");
+    std::fs::write(
+        dir.path().join("bundle-skill/assets/images/logo.png"),
+        b"\x89PNG\r\n\x1a\n",
+    )
+    .expect("asset file should be written for test");
+
+    registry.discover_all().await;
+
+    let skill = registry
+        .find_by_name("bundle-skill")
+        .expect("bundle-skill should be loaded");
+    assert_eq!(skill.package_kind(), SkillPackageKind::Bundle);
+    assert_eq!(
+        skill.skill_root(),
+        dir.path().join("bundle-skill").as_path()
+    );
+    assert_eq!(skill.skill_entrypoint(), std::path::Path::new("SKILL.md"));
+}
+
 #[tokio::test]
 async fn test_mixed_flat_and_subdirectory_layout() {
     let dir = tempfile::tempdir().expect("temp dir should be created for test");
