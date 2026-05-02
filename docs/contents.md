@@ -157,9 +157,9 @@
     install behaviour, shared staged installation, test coverage, and
     synchronized documentation.
   - [Persist canonical skill roots in the loaded skill model](execplans/1-3-3-persist-canonical-skill-roots-in-the-loaded-model.md)
-    plans roadmap item `1.3.3` for stable loaded-skill root and entrypoint
-    metadata, active-skill injection updates, proportional test coverage, and
-    synchronized documentation.
+    completed roadmap item `1.3.3` with stable loaded-skill root and
+    entrypoint metadata, active-skill injection updates, proportional test
+    coverage, and synchronized documentation.
 
 ## RFCs
 

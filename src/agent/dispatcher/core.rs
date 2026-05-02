@@ -201,7 +201,7 @@ impl Agent {
             let safe_name = crate::skills::escape_xml_attr(skill.name());
             let safe_skill = crate::skills::escape_xml_attr(skill.skill_identifier());
             let safe_root = crate::skills::escape_xml_attr(
-                &skill.location.bundle_relative_root().to_string_lossy(),
+                &skill.location().bundle_relative_root().to_string_lossy(),
             );
             let safe_entry =
                 crate::skills::escape_xml_attr(&skill.skill_entrypoint().to_string_lossy());

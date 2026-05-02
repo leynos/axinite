@@ -66,7 +66,7 @@ pub(super) async fn load_and_validate_skill(
         Path::new("SKILL.md").to_path_buf(),
         location_ctx.package_kind,
     );
-    let skill = LoadedSkill {
+    let skill = LoadedSkill::new(crate::skills::LoadedSkillParts {
         manifest,
         prompt_content,
         trust,
@@ -77,7 +77,10 @@ pub(super) async fn load_and_validate_skill(
         lowercased_keywords,
         lowercased_exclude_keywords,
         lowercased_tags,
-    };
+    })
+    .map_err(|error| SkillRegistryError::InvalidContent {
+        reason: error.to_string(),
+    })?;
 
     Ok((name, skill))
 }

@@ -413,8 +413,11 @@ regressions:
 
 ```bash
 BRANCH_SLUG=$(git branch --show-current | tr '/' '_')
-cargo test skills::registry::tests skills::attenuation \
-  agent::dispatcher::tests::skills --lib 2>&1 \
+cargo test skills::registry::tests --lib 2>&1 \
+  | tee /tmp/baseline-skill-roots-axinite-${BRANCH_SLUG}.out
+cargo test skills::attenuation --lib 2>&1 \
+  | tee /tmp/baseline-skill-roots-axinite-${BRANCH_SLUG}.out
+cargo test agent::dispatcher::tests::skills --lib 2>&1 \
   | tee /tmp/baseline-skill-roots-axinite-${BRANCH_SLUG}.out
 ```
 
@@ -550,11 +553,7 @@ rerun the relevant gates.
 
 ## Concrete steps
 
-All commands run from the repository root:
-
-```bash
-cd /home/leynos/.lody/repos/github---leynos---axinite/worktrees/ce3e0442-2b84-4d59-865a-8c49cca63415
-```
+All commands run from the repository root.
 
 Before implementation, confirm branch and status:
 
@@ -771,5 +770,4 @@ Initial draft created on 2026-04-30. The plan captures roadmap item `1.3.3`
 and incorporates Wyvern read-only reconnaissance across roadmap/RFC
 requirements, current skill code paths, and documentation/testing guidance.
 Implementation remains blocked until the plan is explicitly approved.
-The user approved implementation on 2026-05-01, so this plan is now in
-progress.
+The user approved implementation on 2026-05-01, so this plan is now complete.

@@ -1,20 +1,24 @@
 # IronClaw ↔ OpenClaw Feature Parity Matrix
 
-<!-- markdownlint-disable MD013 MD022 MD024 MD032 MD060 -->
-
+<!-- markdownlint-disable-next-line MD013 -->
 This document tracks feature parity between IronClaw (Rust implementation) and OpenClaw (TypeScript reference implementation). Use this to coordinate work across developers.
 
 **Legend:**
+
+<!-- markdownlint-disable MD032 -->
 - ✅ Implemented
 - 🚧 Partial (in progress or incomplete)
 - ❌ Not implemented
 - 🔮 Planned (in scope but not started)
 - 🚫 Out of scope (intentionally skipped)
 - ➖ N/A (not applicable to Rust implementation)
+<!-- markdownlint-enable MD032 -->
 
 **Last reviewed against OpenClaw PRs:** 2026-03-10 (merged 2026-02-24 through 2026-03-10)
 
 ---
+
+<!-- markdownlint-disable MD013 MD024 MD060 -->
 
 ## 1. Architecture
 
@@ -522,6 +526,10 @@ This document tracks feature parity between IronClaw (Rust implementation) and O
 
 ## Implementation Priorities
 
+<!-- markdownlint-enable MD013 MD024 MD060 -->
+
+<!-- markdownlint-disable MD013 MD022 MD032 -->
+
 ### P0 - Core (Already Done)
 - ✅ TUI channel with approval overlays
 - ✅ HTTP webhook channel
@@ -577,7 +585,11 @@ This document tracks feature parity between IronClaw (Rust implementation) and O
 - ❌ Control UI i18n
 - ❌ Stuck loop detection
 
+<!-- markdownlint-enable MD013 MD022 MD032 -->
+
 ---
+
+<!-- markdownlint-disable MD013 -->
 
 ## How to Contribute
 
@@ -585,6 +597,8 @@ This document tracks feature parity between IronClaw (Rust implementation) and O
 2. **Create a tracking issue**: Link to GitHub issue for the feature area
 3. **Update status**: Change ❌ to 🚧 when starting, ✅ when complete
 4. **Add notes**: Document any design decisions or deviations
+
+<!-- markdownlint-enable MD013 -->
 
 ### Coordination
 
@@ -595,6 +609,8 @@ This document tracks feature parity between IronClaw (Rust implementation) and O
 ---
 
 ## Deviations from OpenClaw
+
+<!-- markdownlint-disable MD013 -->
 
 IronClaw intentionally differs from OpenClaw in these ways:
 
@@ -609,3 +625,5 @@ IronClaw intentionally differs from OpenClaw in these ways:
 9. **Prompt-based skills**: Different approach than OpenClaw capability bundles (trust gating, attenuation)
 
 These are intentional architectural choices, not gaps to be filled.
+
+<!-- markdownlint-enable MD013 -->

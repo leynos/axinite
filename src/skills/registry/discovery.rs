@@ -194,13 +194,16 @@ async fn try_load_flat_skill(
 async fn detect_package_kind(root: &Path) -> SkillPackageKind {
     let references_dir = root.join("references");
     let assets_dir = root.join("assets");
-    if tokio::fs::try_exists(&references_dir)
-        .await
-        .unwrap_or(false)
-        || tokio::fs::try_exists(&assets_dir).await.unwrap_or(false)
-    {
+    if is_existing_dir(&references_dir).await || is_existing_dir(&assets_dir).await {
         return SkillPackageKind::Bundle;
     }
 
     SkillPackageKind::SingleFile
+}
+
+async fn is_existing_dir(path: &Path) -> bool {
+    tokio::fs::metadata(path)
+        .await
+        .map(|metadata| metadata.is_dir())
+        .unwrap_or(false)
 }

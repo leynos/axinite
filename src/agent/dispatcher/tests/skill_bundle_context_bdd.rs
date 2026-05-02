@@ -7,8 +7,8 @@ use rstest_bdd_macros::{given, scenario, then, when};
 
 use super::*;
 use crate::skills::{
-    ActivationCriteria, LoadedSkill, LoadedSkillLocation, SkillManifest, SkillPackageKind,
-    SkillSource, SkillTrust,
+    ActivationCriteria, LoadedSkill, LoadedSkillLocation, LoadedSkillParts, SkillManifest,
+    SkillPackageKind, SkillSource, SkillTrust,
 };
 
 #[derive(Default)]
@@ -24,7 +24,7 @@ fn skill_context_world() -> SkillContextWorld {
 }
 
 fn make_loaded_bundle_skill(skill: &str, filesystem_root: PathBuf) -> LoadedSkill {
-    LoadedSkill {
+    LoadedSkill::new(LoadedSkillParts {
         manifest: SkillManifest {
             name: skill.to_string(),
             version: "1.0.0".to_string(),
@@ -50,7 +50,8 @@ fn make_loaded_bundle_skill(skill: &str, filesystem_root: PathBuf) -> LoadedSkil
         lowercased_keywords: vec!["deploy".to_string(), "docs".to_string()],
         lowercased_exclude_keywords: Vec::new(),
         lowercased_tags: Vec::new(),
-    }
+    })
+    .expect("BDD skill location should match manifest")
 }
 
 #[given("an installed bundled skill with supporting files")]

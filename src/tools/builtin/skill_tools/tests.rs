@@ -9,8 +9,8 @@ use crate::context::JobContext;
 use crate::skills::catalog::SkillCatalog;
 use crate::skills::registry::SkillRegistry;
 use crate::skills::{
-    ActivationCriteria, LoadedSkill, LoadedSkillLocation, SkillManifest, SkillPackageKind,
-    SkillSource, SkillTrust,
+    ActivationCriteria, LoadedSkill, LoadedSkillLocation, LoadedSkillParts, SkillManifest,
+    SkillPackageKind, SkillSource, SkillTrust,
 };
 use crate::tools::tool::{ApprovalRequirement, NativeTool, Tool};
 
@@ -181,7 +181,7 @@ fn skill_search_matches_query_checks_name_description_and_keywords(
     #[case] query: &str,
     #[case] expected: bool,
 ) {
-    let skill = LoadedSkill {
+    let skill = LoadedSkill::new(LoadedSkillParts {
         manifest: SkillManifest {
             name: "search-helper".to_string(),
             version: "1.0.0".to_string(),
@@ -206,7 +206,8 @@ fn skill_search_matches_query_checks_name_description_and_keywords(
         lowercased_keywords: Vec::new(),
         lowercased_exclude_keywords: Vec::new(),
         lowercased_tags: Vec::new(),
-    };
+    })
+    .expect("test skill location should match manifest");
 
     assert_eq!(SkillSearchTool::matches_query(&skill, query), expected);
 }

@@ -151,8 +151,8 @@ fn score_skill(skill: &LoadedSkill, message_lower: &str, message_original: &str)
 mod tests {
     use super::*;
     use crate::skills::{
-        ActivationCriteria, LoadedSkill, LoadedSkillLocation, SkillManifest, SkillPackageKind,
-        SkillSource, SkillTrust,
+        ActivationCriteria, LoadedSkill, LoadedSkillLocation, LoadedSkillParts, SkillManifest,
+        SkillPackageKind, SkillSource, SkillTrust,
     };
     use std::path::PathBuf;
 
@@ -163,7 +163,7 @@ mod tests {
         let tag_vec: Vec<String> = tags.iter().map(|s| s.to_string()).collect();
         let lowercased_keywords = kw_vec.iter().map(|k| k.to_lowercase()).collect();
         let lowercased_tags = tag_vec.iter().map(|t| t.to_lowercase()).collect();
-        LoadedSkill {
+        LoadedSkill::new(LoadedSkillParts {
             manifest: SkillManifest {
                 name: name.to_string(),
                 version: "1.0.0".to_string(),
@@ -191,7 +191,8 @@ mod tests {
             lowercased_keywords,
             lowercased_exclude_keywords: vec![],
             lowercased_tags,
-        }
+        })
+        .expect("test skill location should match manifest")
     }
 
     #[test]

@@ -129,7 +129,7 @@ mod tests {
     }
 
     fn make_skill_with_trust(name: &str, trust: SkillTrust) -> LoadedSkill {
-        LoadedSkill {
+        LoadedSkill::new(crate::skills::LoadedSkillParts {
             manifest: SkillManifest {
                 name: name.to_string(),
                 version: "1.0.0".to_string(),
@@ -151,7 +151,8 @@ mod tests {
             lowercased_keywords: vec![],
             lowercased_exclude_keywords: vec![],
             lowercased_tags: vec![],
-        }
+        })
+        .expect("test skill location should match manifest")
     }
 
     fn all_tools() -> Vec<ToolDefinition> {
