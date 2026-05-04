@@ -1149,7 +1149,7 @@ insertion. The preparation helpers live in
 `src/tools/registry/wasm_preparation.rs`, and the public registration
 entry points live in `src/tools/registry/loader.rs`.
 
-### Preparation pipeline
+#### Preparation pipeline
 
 `prepare_wasm_tool` is the preparation entry point. It accepts a
 `WasmToolRegistration` from the loader, compiles `wasm_bytes` through the
@@ -1183,7 +1183,7 @@ needed, applies overrides, and returns a `PreparedWasmTool`. It can return
 See [ADR 010](adr-010-extract-register-wasm-helpers.md) for the refactoring
 rationale and the maintenance rule behind this helper split.
 
-### Registration flow
+#### Registration flow
 
 1. **`register_wasm`** — the lower-level entry point. Accepts raw WASM
    bytes, a pre-compiled runtime, and optional description/schema
