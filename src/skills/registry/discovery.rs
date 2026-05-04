@@ -132,7 +132,17 @@ where
     }
 
     let source = make_source(path.to_path_buf());
-    let package_kind = detect_package_kind(path).await;
+    let package_kind = match detect_package_kind(path).await {
+        Ok(kind) => kind,
+        Err(e) => {
+            tracing::warn!(
+                "Failed to detect package kind for {:?}: {}",
+                path.file_name().unwrap_or_default(),
+                e
+            );
+            return EntryLoadResult::LoadFailed;
+        }
+    };
     match load_and_validate_skill(
         &skill_md,
         trust,
@@ -191,19 +201,30 @@ async fn try_load_flat_skill(
     }
 }
 
-async fn detect_package_kind(root: &Path) -> SkillPackageKind {
+async fn detect_package_kind(root: &Path) -> std::io::Result<SkillPackageKind> {
     let references_dir = root.join("references");
     let assets_dir = root.join("assets");
-    if is_existing_dir(&references_dir).await || is_existing_dir(&assets_dir).await {
-        return SkillPackageKind::Bundle;
+    if is_existing_dir(&references_dir).await? || is_existing_dir(&assets_dir).await? {
+        tracing::debug!(
+            skill_root = ?root.file_name().unwrap_or_default(),
+            package_kind = SkillPackageKind::Bundle.as_str(),
+            "Detected skill package kind"
+        );
+        return Ok(SkillPackageKind::Bundle);
     }
 
-    SkillPackageKind::SingleFile
+    tracing::debug!(
+        skill_root = ?root.file_name().unwrap_or_default(),
+        package_kind = SkillPackageKind::SingleFile.as_str(),
+        "Detected skill package kind"
+    );
+    Ok(SkillPackageKind::SingleFile)
 }
 
-async fn is_existing_dir(path: &Path) -> bool {
-    tokio::fs::metadata(path)
-        .await
-        .map(|metadata| metadata.is_dir())
-        .unwrap_or(false)
+async fn is_existing_dir(path: &Path) -> std::io::Result<bool> {
+    match tokio::fs::metadata(path).await {
+        Ok(metadata) => Ok(metadata.is_dir()),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(false),
+        Err(e) => Err(e),
+    }
 }

@@ -78,8 +78,15 @@ pub(super) async fn load_and_validate_skill(
         lowercased_exclude_keywords,
         lowercased_tags,
     })
-    .map_err(|error| SkillRegistryError::InvalidContent {
-        reason: error.to_string(),
+    .map_err(|error| {
+        tracing::warn!(
+            skill_path = ?path.file_name().unwrap_or_default(),
+            reason = %error,
+            "Skill location metadata failed validation"
+        );
+        SkillRegistryError::InvalidContent {
+            reason: error.to_string(),
+        }
     })?;
 
     Ok((name, skill))

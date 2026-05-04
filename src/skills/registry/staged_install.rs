@@ -163,7 +163,14 @@ pub(super) async fn prepare_install_to_disk(
     )
     .await
     {
-        Ok(result) => result,
+        Ok(result) => {
+            tracing::debug!(
+                skill_name = %result.0,
+                package_kind = result.1.package_kind().as_str(),
+                "Skill install validated with location metadata"
+            );
+            result
+        }
         Err(error) => {
             cleanup_staged_dir(&staged_dir).await;
             return Err(error);

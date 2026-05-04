@@ -434,7 +434,7 @@ impl LoadedSkill {
     }
 }
 
-fn validate_location_matches_manifest(
+pub(crate) fn validate_location_matches_manifest(
     manifest: &SkillManifest,
     location: &LoadedSkillLocation,
 ) -> Result<(), LoadedSkillLocationError> {
@@ -743,5 +743,96 @@ metadata:
         .expect("test skill location should match manifest");
         assert_eq!(skill.name(), "test");
         assert_eq!(skill.version(), "1.0.0");
+    }
+
+    #[test]
+    fn test_loaded_skill_new_rejects_mismatched_location_identifier() {
+        let result = LoadedSkill::new(LoadedSkillParts {
+            manifest: SkillManifest {
+                name: "correct-name".to_string(),
+                version: "1.0.0".to_string(),
+                description: String::new(),
+                activation: ActivationCriteria::default(),
+                metadata: None,
+            },
+            prompt_content: String::new(),
+            trust: SkillTrust::Trusted,
+            source: SkillSource::User(PathBuf::from("/tmp")),
+            location: LoadedSkillLocation::new(
+                "wrong-name",
+                PathBuf::from("/tmp"),
+                PathBuf::from("SKILL.md"),
+                SkillPackageKind::SingleFile,
+            ),
+            content_hash: String::new(),
+            compiled_patterns: vec![],
+            lowercased_keywords: vec![],
+            lowercased_exclude_keywords: vec![],
+            lowercased_tags: vec![],
+        });
+        assert!(result.is_err());
+        let msg = result.unwrap_err().to_string();
+        assert!(
+            msg.contains("wrong-name"),
+            "error message should name the mismatched identifier"
+        );
+        assert!(
+            msg.contains("correct-name"),
+            "error message should name the manifest name"
+        );
+    }
+
+    #[test]
+    fn test_set_location_rejects_mismatched_identifier() {
+        let mut skill = LoadedSkill::new(LoadedSkillParts {
+            manifest: SkillManifest {
+                name: "my-skill".to_string(),
+                version: "1.0.0".to_string(),
+                description: String::new(),
+                activation: ActivationCriteria::default(),
+                metadata: None,
+            },
+            prompt_content: String::new(),
+            trust: SkillTrust::Trusted,
+            source: SkillSource::User(PathBuf::from("/tmp")),
+            location: LoadedSkillLocation::new(
+                "my-skill",
+                PathBuf::from("/tmp"),
+                PathBuf::from("SKILL.md"),
+                SkillPackageKind::SingleFile,
+            ),
+            content_hash: String::new(),
+            compiled_patterns: vec![],
+            lowercased_keywords: vec![],
+            lowercased_exclude_keywords: vec![],
+            lowercased_tags: vec![],
+        })
+        .expect("initial skill should be valid");
+
+        let result = skill.set_location(LoadedSkillLocation::new(
+            "other-skill",
+            PathBuf::from("/tmp"),
+            PathBuf::from("SKILL.md"),
+            SkillPackageKind::SingleFile,
+        ));
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_validate_location_matches_manifest_relative_entrypoint() {
+        let manifest = SkillManifest {
+            name: "my-skill".to_string(),
+            version: "1.0.0".to_string(),
+            description: String::new(),
+            activation: ActivationCriteria::default(),
+            metadata: None,
+        };
+        let location = LoadedSkillLocation::new(
+            "my-skill",
+            PathBuf::from("/tmp"),
+            PathBuf::from("SKILL.md"),
+            SkillPackageKind::SingleFile,
+        );
+        assert!(validate_location_matches_manifest(&manifest, &location).is_ok());
     }
 }

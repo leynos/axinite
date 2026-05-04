@@ -1500,6 +1500,57 @@ subsequent phases can assume a fully valid environment.
 | `staged_install.rs` | `prepare_install_to_disk` — creates a hidden staging directory, writes and validates the artifact, returns `PreparedSkillInstall`; `commit_install` — duplicate check then atomic rename; `cleanup_prepared_install` — removes the staging directory |
 | `removal.rs` | `validate_remove`, `delete_skill_files`, `commit_remove` |
 
+##### Skill location metadata (roadmap 1.3.3)
+
+Two new types capture where a skill lives on disk and how its files are laid
+out:
+
+| Type | File | Purpose |
+| --- | --- | --- |
+| `SkillPackageKind` | `src/skills/mod.rs` | `SingleFile` — lone `SKILL.md`; `Bundle` — directory tree with support files |
+| `LoadedSkillLocation` | `src/skills/mod.rs` | Canonical identifier, private runtime root, bundle-relative `SKILL.md` entrypoint, and package kind |
+| `LoadedSkillLocationError` | `src/skills/mod.rs` | Returned by `LoadedSkill::new` and `set_location` when the location identifier does not match the manifest name |
+
+`LoadedSkill::new(LoadedSkillParts)` validates that the location identifier
+matches the manifest name and that the entrypoint is bundle-relative before
+constructing the skill. `set_location` enforces the same invariants when
+location metadata is updated after construction (for example, during staged
+install commit).
+
+##### TestSkillBuilder and test_support module
+
+`src/skills/test_support.rs` (compiled only under `#[cfg(test)]`) provides a
+fluent `TestSkillBuilder` to reduce boilerplate in unit tests that construct
+`LoadedSkill` instances. Use it whenever a test varies only a small number of
+fields:
+
+```rust
+use crate::skills::test_support::TestSkillBuilder;
+
+let skill = TestSkillBuilder::new("my-skill")
+    .trust(SkillTrust::Installed)
+    .keywords(&["deploy"])
+    .build();
+```
+
+The builder defaults: version `1.0.0`, trust `Trusted`, source `/tmp`,
+`max_context_tokens` `1000`, prompt `"Test prompt"`, hash `sha256:000`. A
+`location` override is accepted via `.location(LoadedSkillLocation::new(...))`;
+if omitted the builder derives `SingleFile` from `/tmp/SKILL.md`.
+
+##### rstest-bdd
+
+`rstest-bdd = "0.5.0"` and `rstest-bdd-macros = "0.5.0"` (with
+`compile-time-validation`) are `[dev-dependencies]` added for behavioural tests
+introduced in 1.3.3. They are used in
+`src/agent/dispatcher/tests/skill_bundle_context_bdd.rs` to validate the
+model-facing active-skill prompt contract. The `compile-time-validation` feature
+causes the macro to verify that every step referenced in a `.feature` file has a
+matching Rust step function at compile time.
+
+See `execplans/1-3-3-persist-canonical-skill-roots-in-the-loaded-model.md` for
+the full implementation history.
+
 `SkillInstallPayload` is the staged-install input contract:
 
 - `Markdown(String)` is for already decoded inline `SKILL.md` text.
