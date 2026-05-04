@@ -8,10 +8,7 @@ use rstest::{fixture, rstest};
 use crate::context::JobContext;
 use crate::skills::catalog::SkillCatalog;
 use crate::skills::registry::SkillRegistry;
-use crate::skills::{
-    ActivationCriteria, LoadedSkill, LoadedSkillLocation, LoadedSkillParts, SkillManifest,
-    SkillPackageKind, SkillSource, SkillTrust,
-};
+use crate::skills::{LoadedSkillLocation, SkillPackageKind, SkillSource};
 use crate::tools::tool::{ApprovalRequirement, NativeTool, Tool};
 
 use super::{SkillInstallTool, SkillListTool, SkillRemoveTool, SkillSearchTool};
@@ -181,33 +178,21 @@ fn skill_search_matches_query_checks_name_description_and_keywords(
     #[case] query: &str,
     #[case] expected: bool,
 ) {
-    let skill = LoadedSkill::new(LoadedSkillParts {
-        manifest: SkillManifest {
-            name: "search-helper".to_string(),
-            version: "1.0.0".to_string(),
-            description: "Discover skills for Rust workflows".to_string(),
-            activation: ActivationCriteria {
-                keywords: vec!["skill-search".to_string(), "rust".to_string()],
-                ..ActivationCriteria::default()
-            },
-            metadata: None,
-        },
-        prompt_content: String::new(),
-        trust: SkillTrust::Trusted,
-        source: SkillSource::Bundled(std::path::PathBuf::from("skills/search-helper")),
-        location: LoadedSkillLocation::new(
+    let skill = crate::skills::test_support::TestSkillBuilder::new("search-helper")
+        .description("Discover skills for Rust workflows")
+        .source(SkillSource::Bundled(std::path::PathBuf::from(
+            "skills/search-helper",
+        )))
+        .location(LoadedSkillLocation::new(
             "search-helper",
             std::path::PathBuf::from("skills/search-helper"),
             std::path::PathBuf::from("SKILL.md"),
             SkillPackageKind::SingleFile,
-        ),
-        content_hash: "hash".to_string(),
-        compiled_patterns: Vec::new(),
-        lowercased_keywords: Vec::new(),
-        lowercased_exclude_keywords: Vec::new(),
-        lowercased_tags: Vec::new(),
-    })
-    .expect("test skill location should match manifest");
+        ))
+        .keywords(&["skill-search", "rust"])
+        .prompt_content("")
+        .content_hash("hash")
+        .build();
 
     assert_eq!(SkillSearchTool::matches_query(&skill, query), expected);
 }

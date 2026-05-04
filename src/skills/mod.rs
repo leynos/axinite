@@ -23,6 +23,8 @@ pub(crate) mod install_source;
 pub mod parser;
 pub mod registry;
 pub mod selector;
+#[cfg(test)]
+pub(crate) mod test_support;
 
 pub use attenuation::{AttenuationResult, attenuate_tools};
 pub use registry::SkillRegistry;

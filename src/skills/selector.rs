@@ -150,49 +150,23 @@ fn score_skill(skill: &LoadedSkill, message_lower: &str, message_original: &str)
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::skills::{
-        ActivationCriteria, LoadedSkill, LoadedSkillLocation, LoadedSkillParts, SkillManifest,
-        SkillPackageKind, SkillSource, SkillTrust,
-    };
+    use crate::skills::{LoadedSkill, LoadedSkillLocation, SkillPackageKind, SkillSource};
     use std::path::PathBuf;
 
     fn make_skill(name: &str, keywords: &[&str], tags: &[&str], patterns: &[&str]) -> LoadedSkill {
-        let pattern_strings: Vec<String> = patterns.iter().map(|s| s.to_string()).collect();
-        let compiled = LoadedSkill::compile_patterns(&pattern_strings);
-        let kw_vec: Vec<String> = keywords.iter().map(|s| s.to_string()).collect();
-        let tag_vec: Vec<String> = tags.iter().map(|s| s.to_string()).collect();
-        let lowercased_keywords = kw_vec.iter().map(|k| k.to_lowercase()).collect();
-        let lowercased_tags = tag_vec.iter().map(|t| t.to_lowercase()).collect();
-        LoadedSkill::new(LoadedSkillParts {
-            manifest: SkillManifest {
-                name: name.to_string(),
-                version: "1.0.0".to_string(),
-                description: format!("{} skill", name),
-                activation: ActivationCriteria {
-                    keywords: kw_vec,
-                    exclude_keywords: vec![],
-                    patterns: pattern_strings,
-                    tags: tag_vec,
-                    max_context_tokens: 1000,
-                },
-                metadata: None,
-            },
-            prompt_content: "Test prompt".to_string(),
-            trust: SkillTrust::Trusted,
-            source: SkillSource::User(PathBuf::from("/tmp/test")),
-            location: LoadedSkillLocation::new(
+        crate::skills::test_support::TestSkillBuilder::new(name)
+            .description(format!("{name} skill"))
+            .source(SkillSource::User(PathBuf::from("/tmp/test")))
+            .location(LoadedSkillLocation::new(
                 name,
                 PathBuf::from("/tmp/test"),
                 PathBuf::from("SKILL.md"),
                 SkillPackageKind::SingleFile,
-            ),
-            content_hash: "sha256:000".to_string(),
-            compiled_patterns: compiled,
-            lowercased_keywords,
-            lowercased_exclude_keywords: vec![],
-            lowercased_tags,
-        })
-        .expect("test skill location should match manifest")
+            ))
+            .keywords(keywords)
+            .tags(tags)
+            .patterns(patterns)
+            .build()
     }
 
     #[test]
