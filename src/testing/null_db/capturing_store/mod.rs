@@ -9,16 +9,19 @@
 //! `last_event`.
 
 use std::sync::Arc;
+use std::sync::Mutex as SyncMutex;
 
 use tokio::sync::Mutex;
 use uuid::Uuid;
 
 use crate::context::JobState;
 use crate::db::SandboxEventType;
+use crate::error::DatabaseError;
 
 use super::NullDatabase;
 
 mod delegation;
+mod delegation_workspace;
 
 /// Captured status update call.
 #[derive(Debug, Clone)]
@@ -71,6 +74,8 @@ pub struct Calls {
     pub status_history: Mutex<Vec<StatusCallWithId>>,
     /// Full history of all event calls with job IDs.
     pub event_history: Mutex<Vec<EventCallWithId>>,
+    /// Tool names passed to `mark_tool_repaired`.
+    pub repaired_tools: Mutex<Vec<String>>,
 }
 
 impl Calls {
@@ -122,12 +127,18 @@ impl Calls {
         self.event_history.lock().await.push(history_call);
     }
 
+    /// Record a repaired-tool marker call.
+    pub async fn record_repaired_tool(&self, tool_name: &str) {
+        self.repaired_tools.lock().await.push(tool_name.to_string());
+    }
+
     /// Clear all captured call history.
     pub async fn clear(&self) {
         *self.last_status.lock().await = None;
         *self.last_event.lock().await = None;
         self.status_history.lock().await.clear();
         self.event_history.lock().await.clear();
+        self.repaired_tools.lock().await.clear();
     }
 }
 
@@ -144,6 +155,9 @@ impl Calls {
 pub struct CapturingStore {
     pub(crate) inner: NullDatabase,
     calls: Arc<Calls>,
+    /// Optional error to return from the next `mark_tool_repaired` call.
+    /// Consumed on first use; subsequent calls delegate to `self.inner`.
+    mark_repaired_error: SyncMutex<Option<DatabaseError>>,
 }
 
 impl CapturingStore {
@@ -152,12 +166,34 @@ impl CapturingStore {
         Self {
             inner: NullDatabase::new(),
             calls: Arc::new(Calls::new()),
+            mark_repaired_error: SyncMutex::new(None),
+        }
+    }
+
+    /// Create a capturing store that fails the next `mark_tool_repaired` call.
+    pub fn failing_mark_tool_repaired_once(error: DatabaseError) -> Self {
+        Self {
+            inner: NullDatabase::new(),
+            calls: Arc::new(Calls::new()),
+            mark_repaired_error: SyncMutex::new(Some(error)),
         }
     }
 
     /// Access the captured calls for assertions.
     pub fn calls(&self) -> &Arc<Calls> {
         &self.calls
+    }
+
+    /// Takes and returns the stored `mark_tool_repaired` error, if any.
+    ///
+    /// Returns `None` after the first call, making subsequent
+    /// `mark_tool_repaired` invocations delegate to `self.inner`.
+    /// Recovers a poisoned mutex via [`std::sync::PoisonError::into_inner`].
+    pub(crate) fn take_mark_repaired_error(&self) -> Option<DatabaseError> {
+        self.mark_repaired_error
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .take()
     }
 }
 
