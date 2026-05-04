@@ -232,8 +232,11 @@ async fn test_token_budget_rejection(fresh_registry_fixture: FreshRegistryFixtur
 }
 
 #[rstest]
+#[case::references_dir("references/usage.md")]
+#[case::assets_dir("assets/images/logo.png")]
 #[tokio::test]
 async fn test_bundle_layout_records_bundle_package_kind(
+    #[case] marker_file: &str,
     fresh_registry_fixture: FreshRegistryFixture,
 ) {
     let FreshRegistryFixture { dir, mut registry } = fresh_registry_fixture;
@@ -242,45 +245,15 @@ async fn test_bundle_layout_records_bundle_package_kind(
         "bundle-skill",
         "---\nname: bundle-skill\n---\n\nBundle prompt.\n",
     );
-    std::fs::create_dir_all(dir.path().join("bundle-skill/references"))
-        .expect("references dir should be created for test");
-    std::fs::write(
-        dir.path().join("bundle-skill/references/usage.md"),
-        "# Usage\n",
+    let marker_path = dir.path().join("bundle-skill").join(marker_file);
+    std::fs::create_dir_all(
+        marker_path
+            .parent()
+            .expect("marker path should have a parent dir"),
     )
-    .expect("reference file should be written for test");
-
-    registry.discover_all().await;
-
-    let skill = registry
-        .find_by_name("bundle-skill")
-        .expect("bundle-skill should be loaded");
-    assert_eq!(skill.package_kind(), SkillPackageKind::Bundle);
-    assert_eq!(
-        skill.skill_root(),
-        dir.path().join("bundle-skill").as_path()
-    );
-    assert_eq!(skill.skill_entrypoint(), std::path::Path::new("SKILL.md"));
-}
-
-#[rstest]
-#[tokio::test]
-async fn test_bundle_layout_records_bundle_package_kind_via_assets_dir(
-    fresh_registry_fixture: FreshRegistryFixture,
-) {
-    let FreshRegistryFixture { dir, mut registry } = fresh_registry_fixture;
-    write_skill_subdir(
-        dir.path(),
-        "bundle-skill",
-        "---\nname: bundle-skill\n---\n\nBundle prompt.\n",
-    );
-    std::fs::create_dir_all(dir.path().join("bundle-skill/assets/images"))
-        .expect("assets dir should be created for test");
-    std::fs::write(
-        dir.path().join("bundle-skill/assets/images/logo.png"),
-        b"\x89PNG\r\n\x1a\n",
-    )
-    .expect("asset file should be written for test");
+    .expect("marker directory should be created for test");
+    std::fs::write(&marker_path, b"marker content")
+        .expect("marker file should be written for test");
 
     registry.discover_all().await;
 
