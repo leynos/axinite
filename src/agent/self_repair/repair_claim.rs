@@ -40,6 +40,11 @@ impl RepairClaims {
     }
 }
 
+/// RAII guard that releases the in-process repair claim on drop.
+///
+/// Constructed by [`RepairClaims::claim_tool`] when a slot is
+/// successfully claimed. Dropping this value removes the tool name from
+/// the active-repairs set, making it available for subsequent callers.
 pub(super) struct ToolRepairClaim<'a> {
     active_repairs: &'a Mutex<HashSet<String>>,
     tool_name: String,
