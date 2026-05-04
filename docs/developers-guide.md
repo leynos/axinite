@@ -1144,15 +1144,108 @@ its own exported metadata.
 
 ### Two-phase registration flow
 
+WASM tool registration is split between preparation and registry
+insertion. The preparation helpers live in
+`src/tools/registry/wasm_preparation.rs`, and the public registration
+entry points live in `src/tools/registry/loader.rs`.
+
+#### Preparation pipeline
+
+`prepare_wasm_tool` is the preparation entry point. It accepts a
+`WasmToolRegistration` from the loader, compiles `wasm_bytes` through the
+runtime, gathers credential mappings from the supplied `Capabilities`, builds
+metadata and runtime configuration values, recovers guest metadata when
+needed, applies overrides, and returns a `PreparedWasmTool`. It can return
+`WasmError` from runtime preparation or component validation failures.
+
+- `PreparedWasmTool` is the hand-off object from preparation to registry
+  insertion. It contains the runtime-ready `WasmToolWrapper` plus the
+  `CredentialMapping` values that must be persisted only after insertion
+  succeeds.
+- `WasmMetadataHints` carries the tool name and optional caller-supplied
+  description and schema overrides. These hints preserve override precedence:
+  explicit registration metadata wins over guest-exported metadata.
+- `WasmRuntimeConfig` carries optional execution-time configuration: a
+  `SecretsStore` handle and an optional `OAuthRefreshConfig`. Preparation
+  attaches the store handle to the wrapper, but it does not read secret
+  material.
+- `credential_mappings_from_capabilities` extracts HTTP credential mappings
+  from `Capabilities` and returns them separately from the wrapper. This keeps
+  credential persistence out of the preparation step.
+- `recover_guest_metadata` asks the compiled wrapper for exported metadata when
+  either description or schema is missing. It returns the original wrapper
+  unchanged when both overrides are present, applies guest values only for
+  missing fields, and logs a warning or debug event if export fails.
+- `apply_wasm_overrides` applies explicit description and schema overrides,
+  then attaches runtime-scoped secrets and OAuth configuration. `None` values
+  leave the wrapper state unchanged.
+
+See [ADR 010](adr-010-extract-register-wasm-helpers.md) for the refactoring
+rationale and the maintenance rule behind this helper split.
+
+#### Registration flow
+
 1. **`register_wasm`** — the lower-level entry point. Accepts raw WASM
    bytes, a pre-compiled runtime, and optional description/schema
-   overrides. Compiles the component, recovers guest metadata when
-   overrides are absent, and registers the tool.
+   overrides. It calls `prepare_wasm_tool`, registers the prepared
+   wrapper, and persists credential mappings only after successful
+   registration. Behaviour is unchanged from the monolithic path, except
+   that preparation now returns credential mappings separately.
 
 2. **`register_wasm_from_storage`** — the database-driven entry point.
    Loads the stored tool record and binary with integrity verification,
    normalizes description and schema via `normalized_schema` and
    `normalized_description`, then delegates to `register_wasm`.
+
+`persist_credential_mappings` belongs to this registration phase, not
+the preparation phase. `register_wasm()` invokes it only after the
+registry accepts the prepared wrapper, and `register_wasm_from_storage()`
+reaches it by delegating through the same lower-level flow.
+
+Figure 1. WASM registration sequence showing how `ToolRegistry` delegates to
+the preparation pipeline, receives a prepared wrapper plus credential mappings,
+registers the wrapper, and persists credential mappings only after successful
+registry insertion.
+
+```mermaid
+sequenceDiagram
+    participant ToolRegistry
+    participant WasmToolRegistration as WasmToolRegistration
+    participant Runtime
+    participant WasmToolPreparation as WasmToolPreparation
+    participant CredentialRegistry
+
+    ToolRegistry->>ToolRegistry: register_wasm(reg)
+    activate ToolRegistry
+
+    ToolRegistry->>WasmToolPreparation: prepare_wasm_tool(reg)
+    activate WasmToolPreparation
+
+    WasmToolPreparation->>Runtime: prepare(reg.name, reg.wasm_bytes, reg.limits)
+    activate Runtime
+    Runtime-->>WasmToolPreparation: prepared_instance
+    deactivate Runtime
+
+    WasmToolPreparation->>WasmToolPreparation: credential_mappings_from_capabilities(&reg.capabilities)
+    WasmToolPreparation->>WasmToolPreparation: build WasmMetadataHints
+    WasmToolPreparation->>WasmToolPreparation: build WasmRuntimeConfig
+    WasmToolPreparation->>WasmToolPreparation: WasmToolWrapper::new(reg.runtime, prepared_instance, reg.capabilities)
+    WasmToolPreparation->>WasmToolPreparation: recover_guest_metadata(wrapper, &hints)
+    WasmToolPreparation->>WasmToolPreparation: apply_wasm_overrides(wrapper, hints, runtime_config)
+
+    WasmToolPreparation-->>ToolRegistry: PreparedWasmTool { wrapper, credential_mappings }
+    deactivate WasmToolPreparation
+
+    ToolRegistry->>ToolRegistry: register(Arc::new(prepared.wrapper))
+    alt registration_rejected
+        ToolRegistry-->>ToolRegistry: Err(WasmError::ConfigError)
+    else registration_accepted
+        ToolRegistry->>CredentialRegistry: persist_credential_mappings(name, prepared.credential_mappings)
+        ToolRegistry->>ToolRegistry: tracing::debug!("Registered WASM tool")
+        ToolRegistry-->>ToolRegistry: Ok(())
+    end
+    deactivate ToolRegistry
+```
 
 The storage path is the one that exercises schema normalization, because
 backends may persist placeholder or null schemas that must be stripped
