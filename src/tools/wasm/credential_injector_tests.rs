@@ -2,6 +2,9 @@
 
 use std::collections::HashMap;
 
+use rstest::fixture;
+use rstest::rstest;
+
 use crate::secrets::{
     CreateSecretParams, CredentialLocation, CredentialMapping, InMemorySecretsStore, SecretsStore,
 };
@@ -15,17 +18,14 @@ fn test_store() -> InMemorySecretsStore {
     test_secrets_store()
 }
 
-#[test]
-fn test_host_matches_exact() {
-    assert!(host_matches_pattern("api.openai.com", "api.openai.com"));
-    assert!(!host_matches_pattern("api.openai.com", "other.com"));
-}
-
-#[test]
-fn test_host_matches_wildcard() {
-    assert!(host_matches_pattern("api.example.com", "*.example.com"));
-    assert!(host_matches_pattern("sub.api.example.com", "*.example.com"));
-    assert!(!host_matches_pattern("example.com", "*.example.com"));
+#[rstest]
+#[case("api.openai.com", "api.openai.com", true)]
+#[case("api.openai.com", "other.com", false)]
+#[case("api.example.com", "*.example.com", true)]
+#[case("sub.api.example.com", "*.example.com", true)]
+#[case("example.com", "*.example.com", false)]
+fn test_host_matches_cases(#[case] host: &str, #[case] pattern: &str, #[case] expected: bool) {
+    assert_eq!(host_matches_pattern(host, pattern), expected);
 }
 
 #[test]
@@ -159,16 +159,19 @@ async fn test_access_denied_for_secret() {
     assert!(result.is_err());
 }
 
-#[test]
-fn test_shared_registry_empty() {
-    let registry = SharedCredentialRegistry::new();
+#[fixture]
+fn registry() -> SharedCredentialRegistry {
+    SharedCredentialRegistry::new()
+}
+
+#[rstest]
+fn test_shared_registry_empty(registry: SharedCredentialRegistry) {
     assert!(!registry.has_credentials_for_host("api.example.com"));
     assert!(registry.find_for_host("api.example.com").is_empty());
 }
 
-#[test]
-fn test_shared_registry_add_and_find() {
-    let registry = SharedCredentialRegistry::new();
+#[rstest]
+fn test_shared_registry_add_and_find(registry: SharedCredentialRegistry) {
     registry.add_mappings(vec![
         CredentialMapping::bearer("openai_key", "api.openai.com"),
         CredentialMapping::header("github_token", "X-GitHub-Token", "*.github.com"),
@@ -182,9 +185,8 @@ fn test_shared_registry_add_and_find() {
     assert_eq!(found[0].secret_name, "openai_key");
 }
 
-#[test]
-fn test_shared_registry_wildcard_host() {
-    let registry = SharedCredentialRegistry::new();
+#[rstest]
+fn test_shared_registry_wildcard_host(registry: SharedCredentialRegistry) {
     registry.add_mappings(vec![CredentialMapping::bearer("gh_token", "*.github.com")]);
 
     assert!(registry.has_credentials_for_host("api.github.com"));
@@ -192,9 +194,8 @@ fn test_shared_registry_wildcard_host() {
     assert!(!registry.has_credentials_for_host("github.com"));
 }
 
-#[test]
-fn test_shared_registry_multiple_adds() {
-    let registry = SharedCredentialRegistry::new();
+#[rstest]
+fn test_shared_registry_multiple_adds(registry: SharedCredentialRegistry) {
     registry.add_mappings(vec![CredentialMapping::bearer("key1", "api.example.com")]);
     registry.add_mappings(vec![CredentialMapping::bearer("key2", "api.example.com")]);
 
@@ -202,9 +203,10 @@ fn test_shared_registry_multiple_adds() {
     assert_eq!(found.len(), 2);
 }
 
-#[test]
-fn test_shared_registry_merges_anonymous_mappings_with_same_secret_name() {
-    let registry = SharedCredentialRegistry::new();
+#[rstest]
+fn test_shared_registry_merges_anonymous_mappings_with_same_secret_name(
+    registry: SharedCredentialRegistry,
+) {
     registry.add_mappings(vec![CredentialMapping::bearer("key1", "old.example.com")]);
     registry.add_mappings(vec![CredentialMapping::bearer("key1", "api.example.com")]);
 
@@ -214,9 +216,8 @@ fn test_shared_registry_merges_anonymous_mappings_with_same_secret_name() {
     assert_eq!(found[0].secret_name, "key1");
 }
 
-#[test]
-fn test_shared_registry_replaces_mappings_for_same_tool_only() {
-    let registry = SharedCredentialRegistry::new();
+#[rstest]
+fn test_shared_registry_replaces_mappings_for_same_tool_only(registry: SharedCredentialRegistry) {
     registry.add_mappings_for_tool(
         "tool_a",
         vec![CredentialMapping::bearer("key1", "old.example.com")],
@@ -235,9 +236,8 @@ fn test_shared_registry_replaces_mappings_for_same_tool_only() {
     assert_eq!(registry.find_for_host("other.example.com").len(), 1);
 }
 
-#[test]
-fn test_shared_registry_remove_mappings_for_secrets() {
-    let registry = SharedCredentialRegistry::new();
+#[rstest]
+fn test_shared_registry_remove_mappings_for_secrets(registry: SharedCredentialRegistry) {
     registry.add_mappings_for_tool(
         "test_tool",
         vec![
@@ -259,9 +259,8 @@ fn test_shared_registry_remove_mappings_for_secrets() {
     assert!(registry.has_credentials_for_host("api.github.com"));
 }
 
-#[test]
-fn test_shared_registry_remove_nonexistent_is_noop() {
-    let registry = SharedCredentialRegistry::new();
+#[rstest]
+fn test_shared_registry_remove_nonexistent_is_noop(registry: SharedCredentialRegistry) {
     registry.add_mappings_for_tool(
         "test_tool",
         vec![CredentialMapping::bearer("key1", "api.example.com")],
