@@ -238,16 +238,22 @@ fn test_shared_registry_replaces_mappings_for_same_tool_only() {
 #[test]
 fn test_shared_registry_remove_mappings_for_secrets() {
     let registry = SharedCredentialRegistry::new();
-    registry.add_mappings(vec![
-        CredentialMapping::bearer("openai_key", "api.openai.com"),
-        CredentialMapping::bearer("gh_token", "*.github.com"),
-        CredentialMapping::header("openai_org", "OpenAI-Organization", "api.openai.com"),
-    ]);
+    registry.add_mappings_for_tool(
+        "test_tool",
+        vec![
+            CredentialMapping::bearer("openai_key", "api.openai.com"),
+            CredentialMapping::bearer("gh_token", "*.github.com"),
+            CredentialMapping::header("openai_org", "OpenAI-Organization", "api.openai.com"),
+        ],
+    );
 
     assert_eq!(registry.find_for_host("api.openai.com").len(), 2);
     assert!(registry.has_credentials_for_host("api.github.com"));
 
-    registry.remove_mappings_for_secrets(&["openai_key".to_string(), "openai_org".to_string()]);
+    registry.remove_mappings_for_secrets(
+        "test_tool",
+        &["openai_key".to_string(), "openai_org".to_string()],
+    );
 
     assert!(registry.find_for_host("api.openai.com").is_empty());
     assert!(registry.has_credentials_for_host("api.github.com"));
@@ -256,9 +262,12 @@ fn test_shared_registry_remove_mappings_for_secrets() {
 #[test]
 fn test_shared_registry_remove_nonexistent_is_noop() {
     let registry = SharedCredentialRegistry::new();
-    registry.add_mappings(vec![CredentialMapping::bearer("key1", "api.example.com")]);
+    registry.add_mappings_for_tool(
+        "test_tool",
+        vec![CredentialMapping::bearer("key1", "api.example.com")],
+    );
 
-    registry.remove_mappings_for_secrets(&["nonexistent".to_string()]);
+    registry.remove_mappings_for_secrets("test_tool", &["nonexistent".to_string()]);
     assert_eq!(registry.find_for_host("api.example.com").len(), 1);
 }
 
