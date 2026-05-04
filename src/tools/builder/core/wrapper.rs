@@ -10,36 +10,43 @@ impl BuildSoftwareTool {
         Self { builder }
     }
 
+    fn resolve_override<T>(
+        override_str: Option<&str>,
+        fallback: T,
+        label: &str,
+        parse: impl Fn(&str) -> Option<T>,
+    ) -> Result<T, ToolError> {
+        match override_str {
+            None => Ok(fallback),
+            Some(s) => parse(s)
+                .ok_or_else(|| ToolError::InvalidParameters(format!("unknown {label}: {s}"))),
+        }
+    }
+
     fn resolve_software_type(
         override_str: Option<&str>,
         fallback: SoftwareType,
     ) -> Result<SoftwareType, ToolError> {
-        match override_str {
-            None => Ok(fallback),
-            Some("wasm_tool") => Ok(SoftwareType::WasmTool),
-            Some("cli_binary") => Ok(SoftwareType::CliBinary),
-            Some("library") => Ok(SoftwareType::Library),
-            Some("script") => Ok(SoftwareType::Script),
-            Some(other) => Err(ToolError::InvalidParameters(format!(
-                "unknown type: {other}"
-            ))),
-        }
+        Self::resolve_override(override_str, fallback, "type", |s| match s {
+            "wasm_tool" => Some(SoftwareType::WasmTool),
+            "cli_binary" => Some(SoftwareType::CliBinary),
+            "library" => Some(SoftwareType::Library),
+            "script" => Some(SoftwareType::Script),
+            _ => None,
+        })
     }
 
     fn resolve_language(
         override_str: Option<&str>,
         fallback: Language,
     ) -> Result<Language, ToolError> {
-        match override_str {
-            None => Ok(fallback),
-            Some("rust") => Ok(Language::Rust),
-            Some("python") => Ok(Language::Python),
-            Some("typescript") => Ok(Language::TypeScript),
-            Some("bash") => Ok(Language::Bash),
-            Some(other) => Err(ToolError::InvalidParameters(format!(
-                "unknown language: {other}"
-            ))),
-        }
+        Self::resolve_override(override_str, fallback, "language", |s| match s {
+            "rust" => Some(Language::Rust),
+            "python" => Some(Language::Python),
+            "typescript" => Some(Language::TypeScript),
+            "bash" => Some(Language::Bash),
+            _ => None,
+        })
     }
 }
 
