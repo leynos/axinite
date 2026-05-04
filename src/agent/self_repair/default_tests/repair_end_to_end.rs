@@ -4,6 +4,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use chrono::Utc;
+use tokio::sync::Barrier;
 
 use crate::agent::self_repair::default::DefaultSelfRepair;
 use crate::agent::self_repair::{BrokenTool, NativeSelfRepair, RepairResult};
@@ -19,12 +20,15 @@ async fn repair_broken_tool_end_to_end_returns_success() {
     let store = Arc::new(CapturingStore::new());
     let store_for_repair: Arc<dyn crate::db::Database> = store.clone();
 
-    let builder = Arc::new(StubSoftwareBuilder(StubBuilderOutcome::BuildSucceeded {
-        is_success: true,
-        error: None,
-        iterations: 1,
-        is_registered: false,
-    }));
+    let builder = Arc::new(
+        StubSoftwareBuilder::new(StubBuilderOutcome::BuildSucceeded {
+            is_success: true,
+            error: None,
+            iterations: 1,
+            is_registered: false,
+        })
+        .with_build_barrier(Arc::new(Barrier::new(1))),
+    );
     let builder_for_repair: Arc<dyn crate::tools::SoftwareBuilder> = builder;
     let tools = Arc::new(crate::tools::ToolRegistry::new());
 
@@ -64,19 +68,23 @@ async fn repair_broken_tool_allows_one_concurrent_repair_for_same_tool() {
     let store = Arc::new(CapturingStore::new());
     let store_for_repair: Arc<dyn crate::db::Database> = store.clone();
 
-    let builder = Arc::new(StubSoftwareBuilder(StubBuilderOutcome::BuildSucceeded {
-        is_success: true,
-        error: None,
-        iterations: 1,
-        is_registered: false,
-    }));
+    let claim_overlap = Arc::new(Barrier::new(2));
+    let builder = Arc::new(StubSoftwareBuilder::new(
+        StubBuilderOutcome::BuildSucceeded {
+            is_success: true,
+            error: None,
+            iterations: 1,
+            is_registered: false,
+        },
+    ));
     let builder_for_repair: Arc<dyn crate::tools::SoftwareBuilder> = builder;
     let tools = Arc::new(crate::tools::ToolRegistry::new());
 
     let repair = Arc::new(
         DefaultSelfRepair::new(cm, Duration::from_secs(60), 3)
             .with_store(store_for_repair)
-            .with_builder(builder_for_repair, tools),
+            .with_builder(builder_for_repair, tools)
+            .with_claim_overlap_barrier(claim_overlap),
     );
 
     let broken = Arc::new(BrokenTool {

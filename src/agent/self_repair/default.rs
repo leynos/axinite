@@ -33,6 +33,10 @@ pub struct DefaultSelfRepair {
     repair_claims: RepairClaims,
     #[cfg(any(test, feature = "self_repair_extras"))]
     tools: Option<Arc<ToolRegistry>>,
+    /// When set, repair tasks await this barrier immediately before
+    /// `claim_tool` so concurrent callers overlap on the claim window.
+    #[cfg(test)]
+    claim_overlap_barrier: Option<Arc<tokio::sync::Barrier>>,
 }
 
 impl DefaultSelfRepair {
@@ -51,6 +55,8 @@ impl DefaultSelfRepair {
             repair_claims: RepairClaims::default(),
             #[cfg(any(test, feature = "self_repair_extras"))]
             tools: None,
+            #[cfg(test)]
+            claim_overlap_barrier: None,
         }
     }
 
@@ -224,6 +230,14 @@ impl DefaultSelfRepair {
     }
 }
 
+#[cfg(test)]
+impl DefaultSelfRepair {
+    pub(crate) fn with_claim_overlap_barrier(mut self, barrier: Arc<tokio::sync::Barrier>) -> Self {
+        self.claim_overlap_barrier = Some(barrier);
+        self
+    }
+}
+
 /// Extras module for self-repair functionality that is feature-gated.
 #[cfg(any(test, feature = "self_repair_extras"))]
 mod extras {
@@ -350,6 +364,10 @@ impl NativeSelfRepair for DefaultSelfRepair {
         };
 
         let requirement = Self::build_repair_requirement(tool)?;
+        #[cfg(test)]
+        if let Some(barrier) = self.claim_overlap_barrier.as_ref() {
+            barrier.wait().await;
+        }
         let _claim = match self.repair_claims.claim_tool(tool)? {
             Some(claim) => claim,
             None => {
