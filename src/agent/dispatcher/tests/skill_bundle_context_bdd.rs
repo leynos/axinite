@@ -44,7 +44,8 @@ fn make_loaded_bundle_skill(skill: &str, filesystem_root: PathBuf) -> LoadedSkil
             filesystem_root,
             PathBuf::from("SKILL.md"),
             SkillPackageKind::Bundle,
-        ),
+        )
+        .expect("test entrypoint is bundle-relative"),
         content_hash: format!("sha256:{skill}"),
         compiled_patterns: Vec::new(),
         lowercased_keywords: vec!["deploy".to_string(), "docs".to_string()],

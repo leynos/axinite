@@ -111,6 +111,7 @@ impl TestSkillBuilder {
                 PathBuf::from("SKILL.md"),
                 SkillPackageKind::SingleFile,
             )
+            .expect("test skill builder produces bundle-relative entrypoint")
         });
         let compiled = LoadedSkill::compile_patterns(&self.patterns);
         let lowercased_keywords = self.keywords.iter().map(|k| k.to_lowercase()).collect();

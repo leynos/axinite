@@ -183,12 +183,15 @@ fn skill_search_matches_query_checks_name_description_and_keywords(
         .source(SkillSource::Bundled(std::path::PathBuf::from(
             "skills/search-helper",
         )))
-        .location(LoadedSkillLocation::new(
-            "search-helper",
-            std::path::PathBuf::from("skills/search-helper"),
-            std::path::PathBuf::from("SKILL.md"),
-            SkillPackageKind::SingleFile,
-        ))
+        .location(
+            LoadedSkillLocation::new(
+                "search-helper",
+                std::path::PathBuf::from("skills/search-helper"),
+                std::path::PathBuf::from("SKILL.md"),
+                SkillPackageKind::SingleFile,
+            )
+            .expect("test entrypoint is bundle-relative"),
+        )
         .keywords(&["skill-search", "rust"])
         .prompt_content("")
         .content_hash("hash")

@@ -79,6 +79,14 @@ pub enum SkillRegistryError {
     InvalidContent { reason: String },
 }
 
+impl From<crate::skills::LoadedSkillLocationError> for SkillRegistryError {
+    fn from(error: crate::skills::LoadedSkillLocationError) -> Self {
+        SkillRegistryError::InvalidContent {
+            reason: error.to_string(),
+        }
+    }
+}
+
 /// Registry of available skills.
 pub struct SkillRegistry {
     /// All loaded skills.

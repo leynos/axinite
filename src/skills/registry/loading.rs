@@ -65,7 +65,7 @@ pub(super) async fn load_and_validate_skill(
         location_ctx.root.to_path_buf(),
         Path::new("SKILL.md").to_path_buf(),
         location_ctx.package_kind,
-    );
+    )?;
     let skill = LoadedSkill::new(crate::skills::LoadedSkillParts {
         manifest,
         prompt_content,

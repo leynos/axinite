@@ -1536,7 +1536,7 @@ let skill = TestSkillBuilder::new("my-skill")
 The builder defaults: version `1.0.0`, trust `Trusted`, source `/tmp`,
 `max_context_tokens` `1000`, prompt `"Test prompt"`, hash `sha256:000`. A
 `location` override is accepted via `.location(LoadedSkillLocation::new(...))`;
-if omitted the builder derives `SingleFile` from `/tmp/SKILL.md`.
+if omitted, the builder derives `SingleFile` from `/tmp/SKILL.md`.
 
 ##### rstest-bdd
 

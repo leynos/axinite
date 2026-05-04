@@ -153,24 +153,30 @@ impl LoadedSkillLocation {
     /// `root` is the private runtime filesystem root used by future scoped
     /// skill-file reads. `entrypoint` is bundle-relative and must not be an
     /// absolute host path.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`LoadedSkillLocationError`] if `entrypoint` is an absolute
+    /// host path rather than a bundle-relative path.
     pub fn new(
         skill: impl Into<String>,
         root: impl Into<PathBuf>,
         entrypoint: impl Into<PathBuf>,
         package_kind: SkillPackageKind,
-    ) -> Self {
+    ) -> Result<Self, LoadedSkillLocationError> {
         let entrypoint = entrypoint.into();
-        debug_assert!(
-            entrypoint.is_relative(),
-            "skill entrypoint must be bundle-relative"
-        );
+        if !entrypoint.is_relative() {
+            return Err(LoadedSkillLocationError::new(
+                "skill entrypoint must be bundle-relative",
+            ));
+        }
 
-        Self {
+        Ok(Self {
             skill: skill.into(),
             root: root.into(),
             entrypoint,
             package_kind,
-        }
+        })
     }
 
     /// Canonical skill identifier exposed to model-facing skill context.
@@ -733,7 +739,8 @@ metadata:
                 PathBuf::from("/tmp/test"),
                 PathBuf::from("SKILL.md"),
                 SkillPackageKind::SingleFile,
-            ),
+            )
+            .expect("test entrypoint is bundle-relative"),
             content_hash: "sha256:000".to_string(),
             compiled_patterns: vec![],
             lowercased_keywords: vec![],
@@ -763,7 +770,8 @@ metadata:
                 PathBuf::from("/tmp"),
                 PathBuf::from("SKILL.md"),
                 SkillPackageKind::SingleFile,
-            ),
+            )
+            .expect("test entrypoint is bundle-relative"),
             content_hash: String::new(),
             compiled_patterns: vec![],
             lowercased_keywords: vec![],
@@ -800,7 +808,8 @@ metadata:
                 PathBuf::from("/tmp"),
                 PathBuf::from("SKILL.md"),
                 SkillPackageKind::SingleFile,
-            ),
+            )
+            .expect("test entrypoint is bundle-relative"),
             content_hash: String::new(),
             compiled_patterns: vec![],
             lowercased_keywords: vec![],
@@ -809,12 +818,15 @@ metadata:
         })
         .expect("initial skill should be valid");
 
-        let result = skill.set_location(LoadedSkillLocation::new(
-            "other-skill",
-            PathBuf::from("/tmp"),
-            PathBuf::from("SKILL.md"),
-            SkillPackageKind::SingleFile,
-        ));
+        let result = skill.set_location(
+            LoadedSkillLocation::new(
+                "other-skill",
+                PathBuf::from("/tmp"),
+                PathBuf::from("SKILL.md"),
+                SkillPackageKind::SingleFile,
+            )
+            .expect("test entrypoint is bundle-relative"),
+        );
         assert!(result.is_err());
     }
 
@@ -832,7 +844,8 @@ metadata:
             PathBuf::from("/tmp"),
             PathBuf::from("SKILL.md"),
             SkillPackageKind::SingleFile,
-        );
+        )
+        .expect("test entrypoint is bundle-relative");
         assert!(validate_location_matches_manifest(&manifest, &location).is_ok());
     }
 }

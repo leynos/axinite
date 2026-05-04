@@ -157,12 +157,15 @@ mod tests {
         crate::skills::test_support::TestSkillBuilder::new(name)
             .description(format!("{name} skill"))
             .source(SkillSource::User(PathBuf::from("/tmp/test")))
-            .location(LoadedSkillLocation::new(
-                name,
-                PathBuf::from("/tmp/test"),
-                PathBuf::from("SKILL.md"),
-                SkillPackageKind::SingleFile,
-            ))
+            .location(
+                LoadedSkillLocation::new(
+                    name,
+                    PathBuf::from("/tmp/test"),
+                    PathBuf::from("SKILL.md"),
+                    SkillPackageKind::SingleFile,
+                )
+                .expect("test location should always be bundle-relative"),
+            )
             .keywords(keywords)
             .tags(tags)
             .patterns(patterns)

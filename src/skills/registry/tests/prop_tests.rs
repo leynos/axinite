@@ -11,7 +11,7 @@ use crate::skills::{
 
 /// Arbitrary valid skill name matching `^[a-zA-Z0-9][a-zA-Z0-9._-]{0,63}$`.
 fn arb_skill_name() -> impl Strategy<Value = String> {
-    "[a-zA-Z0-9][a-zA-Z0-9._-]{0,20}".prop_map(|s| s)
+    "[a-zA-Z0-9][a-zA-Z0-9._-]{0,20}"
 }
 
 /// Arbitrary relative path (no leading `/`).
@@ -29,7 +29,8 @@ proptest! {
             PathBuf::from("/tmp"),
             PathBuf::from("SKILL.md"),
             SkillPackageKind::SingleFile,
-        );
+        )
+        .expect("test entrypoint is bundle-relative");
         let skill = LoadedSkill::new(LoadedSkillParts {
             manifest: SkillManifest {
                 name: name.clone(),
@@ -64,7 +65,8 @@ proptest! {
             PathBuf::from("/tmp"),
             PathBuf::from("SKILL.md"),
             SkillPackageKind::SingleFile,
-        );
+        )
+        .expect("test entrypoint is bundle-relative");
         let result = LoadedSkill::new(LoadedSkillParts {
             manifest: SkillManifest {
                 name: manifest_name,
@@ -97,7 +99,8 @@ proptest! {
             PathBuf::from("/some/arbitrary/private/path"),
             entry,
             SkillPackageKind::Bundle,
-        );
+        )
+        .expect("test entrypoint is bundle-relative");
         prop_assert_eq!(location.bundle_relative_root(), std::path::Path::new("."));
     }
 }
