@@ -1,8 +1,10 @@
 //! Shared helpers for default self-repair unit tests.
 
 use std::path::PathBuf;
+use std::sync::Arc;
 
 use chrono::Utc;
+use tokio::sync::Barrier;
 use uuid::Uuid;
 
 use crate::agent::self_repair::BrokenTool;
@@ -66,19 +68,46 @@ pub(super) fn stub_build_result(
     }
 }
 
-/// Configures the outcome of a single `build()` call.
+/// Configures the outcome of a single [`NativeSoftwareBuilder::build`] call.
 pub(super) enum StubBuilderOutcome {
+    /// The builder returns a [`BuildResult`] with the given fields.
     BuildSucceeded {
         is_success: bool,
         error: Option<&'static str>,
         iterations: u32,
         is_registered: bool,
     },
+    /// The builder returns [`ToolError::BuilderFailed`] with the given message.
     BuilderErrored(&'static str),
 }
 
 /// Hand-rolled stub implementing [`NativeSoftwareBuilder`].
-pub(super) struct StubSoftwareBuilder(pub(super) StubBuilderOutcome);
+///
+/// `analyze` and `repair` always return [`ToolError::BuilderFailed`].
+/// `build` returns a result or error as configured by [`StubBuilderOutcome`].
+///
+/// Repair claims the tool before calling `build`; use
+/// `DefaultSelfRepair::with_claim_overlap_barrier` in tests that must overlap
+/// `claim_tool`. When `build_barrier` is set, `build` awaits it before
+/// yielding and resolving the stub outcome.
+pub(super) struct StubSoftwareBuilder {
+    outcome: StubBuilderOutcome,
+    pub(super) build_barrier: Option<Arc<Barrier>>,
+}
+
+impl StubSoftwareBuilder {
+    pub(super) fn new(outcome: StubBuilderOutcome) -> Self {
+        Self {
+            outcome,
+            build_barrier: None,
+        }
+    }
+
+    pub(super) fn with_build_barrier(mut self, barrier: Arc<Barrier>) -> Self {
+        self.build_barrier = Some(barrier);
+        self
+    }
+}
 
 impl NativeSoftwareBuilder for StubSoftwareBuilder {
     async fn analyze(&self, _description: &str) -> Result<BuildRequirement, ToolError> {
@@ -88,8 +117,11 @@ impl NativeSoftwareBuilder for StubSoftwareBuilder {
     }
 
     async fn build(&self, _requirement: &BuildRequirement) -> Result<BuildResult, ToolError> {
+        if let Some(barrier) = self.build_barrier.as_ref() {
+            barrier.wait().await;
+        }
         tokio::task::yield_now().await;
-        match &self.0 {
+        match &self.outcome {
             StubBuilderOutcome::BuildSucceeded {
                 is_success,
                 error,
@@ -114,9 +146,11 @@ impl NativeSoftwareBuilder for StubSoftwareBuilder {
     }
 }
 
+/// A [`CapturingStore`] configured to fail on `mark_tool_repaired`.
 pub(super) type FailingRepairStore = CapturingStore;
 
-/// Constructs a store that fails when marking a tool as repaired.
+/// Constructs a [`FailingRepairStore`] that fails its first
+/// `mark_tool_repaired` call with a `DatabaseError::NotFound`.
 pub(super) fn failing_repair_store() -> FailingRepairStore {
     CapturingStore::failing_mark_tool_repaired_once(crate::error::DatabaseError::NotFound {
         entity: "tool_failure".to_string(),

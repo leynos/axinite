@@ -24,7 +24,7 @@ async fn attempt_repair_build_propagates_build_outcome(
 ) {
     let tool = stub_broken_tool("my-tool", None, 0);
     let store = CapturingStore::new();
-    let builder = StubSoftwareBuilder(StubBuilderOutcome::BuildSucceeded {
+    let builder = StubSoftwareBuilder::new(StubBuilderOutcome::BuildSucceeded {
         is_success,
         error,
         iterations,
@@ -68,7 +68,7 @@ async fn attempt_repair_build_propagates_build_outcome(
 async fn attempt_repair_build_returns_retry_when_builder_itself_errors() {
     let tool = stub_broken_tool("my-tool", None, 0);
     let store = NullDatabase::new();
-    let builder = StubSoftwareBuilder(StubBuilderOutcome::BuilderErrored("out of memory"));
+    let builder = StubSoftwareBuilder::new(StubBuilderOutcome::BuilderErrored("out of memory"));
     let requirement = stub_build_requirement();
 
     let repair = DefaultSelfRepair::attempt_repair_build(&tool, &store, &builder, &requirement)
@@ -90,7 +90,7 @@ async fn attempt_repair_build_two_tools_run_concurrently_without_interference() 
     // invocations for different tools must not interfere with each other.
     let tool_a = stub_broken_tool("tool-alpha", None, 0);
     let store_a = CapturingStore::new();
-    let builder_a = StubSoftwareBuilder(StubBuilderOutcome::BuildSucceeded {
+    let builder_a = StubSoftwareBuilder::new(StubBuilderOutcome::BuildSucceeded {
         is_success: true,
         error: None,
         iterations: 1,
@@ -100,7 +100,7 @@ async fn attempt_repair_build_two_tools_run_concurrently_without_interference() 
 
     let tool_b = stub_broken_tool("tool-beta", None, 0);
     let store_b = CapturingStore::new();
-    let builder_b = StubSoftwareBuilder(StubBuilderOutcome::BuildSucceeded {
+    let builder_b = StubSoftwareBuilder::new(StubBuilderOutcome::BuildSucceeded {
         is_success: true,
         error: None,
         iterations: 3,
