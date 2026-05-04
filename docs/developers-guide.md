@@ -610,6 +610,70 @@ dropped, the process-local repair claim is released; external mutations that
 already completed, such as `store.increment_repair_attempts`, `builder.build`,
 or `store.mark_tool_repaired`, are not rolled back.
 
+### In-process repair claim tracking
+
+`RepairClaims` (in `src/agent/self_repair/repair_claim.rs`) maintains a
+`Mutex<HashSet<String>>` of tool names whose repair is currently active
+within one `DefaultSelfRepair` instance.
+
+`RepairClaims::claim_tool(tool)` locks the set and:
+
+- Returns `Ok(Some(ToolRepairClaim))` when the tool name is not already
+  present, inserting it into the set.
+- Returns `Ok(None)` when the tool name is already in the set
+  (another repair is in progress for the same tool).
+- Returns `Err(RepairError::Failed)` when the mutex is poisoned.
+
+`ToolRepairClaim` is a RAII guard whose `Drop` implementation removes
+the tool name from the set, releasing the claim for subsequent callers.
+Claims are process-local; no distributed locking is performed.
+
+### CapturingStore test infrastructure
+
+`CapturingStore` (in `src/testing/null_db/capturing_store/`) is the
+primary test double for `DefaultSelfRepair` integration tests. PR `#168`
+added the following members:
+
+Table: CapturingStore self-repair test additions.
+
+| Member | Kind | Purpose |
+| --- | --- | --- |
+| `Calls::repaired_tools` | `Mutex<Vec<String>>` | Records each tool name passed to `mark_tool_repaired` in call order |
+| `Calls::record_repaired_tool` | async method | Appends a tool name to `repaired_tools`; called by the `NativeToolFailureStore` impl |
+| `CapturingStore::mark_repaired_error` | `SyncMutex<Option<DatabaseError>>` | Holds an optional one-shot error for the next `mark_tool_repaired` call |
+| `CapturingStore::failing_mark_tool_repaired_once` | constructor | Creates a store that fails the first `mark_tool_repaired` call with the given `DatabaseError` |
+| `CapturingStore::take_mark_repaired_error` | private method | Takes and clears the stored error; subsequent calls delegate to `self.inner` |
+
+The `NativeToolFailureStore` impl for `CapturingStore` in
+`src/testing/null_db/capturing_store/delegation.rs` now handles
+`mark_tool_repaired` directly: it records the call, checks for a
+pending error via `take_mark_repaired_error()`, and either returns the
+error or delegates to `self.inner`.
+
+Unit tests for `handle_build_result` use `failing_mark_tool_repaired_once`
+to verify that database errors during repair marking are propagated as
+`RepairError::Failed`.
+
+### Self-repair test helper module
+
+`src/agent/self_repair/default_tests/helpers.rs` provides shared
+constructors for default self-repair unit tests. Exported items:
+
+Table: Default self-repair shared test helpers.
+
+| Item | Kind | Purpose |
+| --- | --- | --- |
+| `stub_broken_tool(name, last_error, repair_attempts)` | function | Constructs a minimal `BrokenTool` with `failure_count = 3` and `Utc::now()` timestamps |
+| `stub_build_requirement()` | function | Returns a `BuildRequirement` for `"test-tool"`, `SoftwareType::WasmTool`, `Language::Rust` |
+| `stub_build_result(is_success, error, iterations, is_registered)` | function | Returns a `BuildResult` with `build_id = Uuid::nil()` and the given outcome fields |
+| `StubBuilderOutcome` | enum | Configures `StubSoftwareBuilder::build` to either return a `BuildResult` or a `ToolError::BuilderFailed` |
+| `StubSoftwareBuilder` | struct | Implements `NativeSoftwareBuilder`; `analyze` and `repair` always error |
+| `FailingRepairStore` | type alias | Alias for `CapturingStore` configured to fail `mark_tool_repaired` |
+| `failing_repair_store()` | function | Constructs a `FailingRepairStore` via `CapturingStore::failing_mark_tool_repaired_once` |
+
+These helpers are `pub(super)` and available only to the sibling test
+submodules declared in `default_tests.rs`.
+
 When modifying this path, keep three invariants in mind:
 
 - `RepairTask` shutdown must remain cooperative, including during active repair

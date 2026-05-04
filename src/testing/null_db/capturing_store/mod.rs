@@ -155,6 +155,8 @@ impl Calls {
 pub struct CapturingStore {
     pub(crate) inner: NullDatabase,
     calls: Arc<Calls>,
+    /// Optional error to return from the next `mark_tool_repaired` call.
+    /// Consumed on first use; subsequent calls delegate to `self.inner`.
     mark_repaired_error: SyncMutex<Option<DatabaseError>>,
 }
 
@@ -182,6 +184,11 @@ impl CapturingStore {
         &self.calls
     }
 
+    /// Takes and returns the stored `mark_tool_repaired` error, if any.
+    ///
+    /// Returns `None` after the first call, making subsequent
+    /// `mark_tool_repaired` invocations delegate to `self.inner`.
+    /// Recovers a poisoned mutex via [`std::sync::PoisonError::into_inner`].
     pub(crate) fn take_mark_repaired_error(&self) -> Option<DatabaseError> {
         self.mark_repaired_error
             .lock()
