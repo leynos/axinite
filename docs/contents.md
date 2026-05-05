@@ -241,3 +241,6 @@
 - [ADR 009: Borrowed newtypes for schema helper arguments](adr-009-borrowed-newtypes-for-schema-helper-arguments.md)
   records the schema-helper newtypes that make parameter names, schema paths,
   and tool names explicit at helper call sites.
+- [ADR 010: Consolidate bootstrap rename helpers in `src/bootstrap/migration.rs`](adr-010-consolidate-bootstrap-rename-helpers.md)
+  records the single-helper migration decision for `.migrated` rename
+  behaviour and explicit non-fatal call-site handling.

@@ -49,7 +49,31 @@ const _: [KnownEnvKey; 5] = [
     KnownEnvKey::EmbeddingEnabled,
 ];
 
-/// If `bootstrap.json` exists, pull `database_url` out of it and write `.env`.
+/// Reads `bootstrap.json` in the same directory as `env_path` and, if a
+/// `database_url` field is present, writes it as `DATABASE_URL` into the
+/// `.env` file at `env_path`.
+///
+/// The function is idempotent: running it a second time after
+/// `bootstrap.json` has already been renamed to `.migrated` is a no-op.
+///
+/// # Arguments
+///
+/// * `env_path` — Absolute path to the `.env` file that should receive the
+///   migrated key. The parent directory is used to locate `bootstrap.json`.
+///
+/// # Returns
+///
+/// Returns `()` in all cases. Individual failure modes (missing source file,
+/// missing `database_url` field, write errors) are handled internally with
+/// warning-level output and early returns rather than propagated to the
+/// caller.
+///
+/// # Errors
+///
+/// This function does not return an error. Non-fatal failures — including
+/// the inability to rename `bootstrap.json` to `.migrated` after the env
+/// write succeeds — are logged and silently discarded so that the
+/// application can continue to start up.
 pub(crate) fn migrate_bootstrap_json_to_env(env_path: &Path) {
     let ironclaw_dir = env_path.parent().unwrap_or_else(|| Path::new("."));
     let bootstrap_path = ironclaw_dir.join("bootstrap.json");
@@ -64,7 +88,7 @@ pub(crate) fn migrate_bootstrap_json_to_env(env_path: &Path) {
     if upsert_env_pairs(env_path, &pairs).is_err() {
         return;
     }
-    let _ = rename_bootstrap_to_migrated(&bootstrap_path);
+    let _ = rename_to_migrated(&bootstrap_path);
     eprintln!(
         "Migrated DATABASE_URL from bootstrap.json to {}",
         env_path.display()
@@ -150,19 +174,6 @@ fn upsert_env_pairs(env_path: &Path, pairs: &[EnvPair<'_>]) -> io::Result<()> {
     Ok(())
 }
 
-fn rename_bootstrap_to_migrated(path: &Path) -> io::Result<()> {
-    let mut migrated = path.as_os_str().to_owned();
-    migrated.push(".migrated");
-    std::fs::rename(path, &migrated).map_err(|error| {
-        tracing::warn!(
-            "Failed to rename {} to .migrated: {}",
-            path.display(),
-            error
-        );
-        error
-    })
-}
-
 /// Errors that can occur during disk-to-DB migration.
 #[derive(Debug, thiserror::Error)]
 pub enum MigrationError {
@@ -212,15 +223,21 @@ async fn migrate_json_sidecar(
         .map_err(|error| MigrationError::Database(format!("{}: {}", spec.db_error_msg, error)))?;
 
     tracing::info!("{}", spec.success_msg);
-    rename_to_migrated(spec.path);
+    let _ = rename_to_migrated(spec.path);
 
     Ok(())
 }
 
-fn rename_legacy_bootstrap(ironclaw_dir: &Path) {
+/// Renames `bootstrap.json` inside `ironclaw_dir` to `bootstrap.json.migrated`
+/// if it exists.
+///
+/// Logs an `INFO` message when the rename succeeds. On failure,
+/// [`rename_to_migrated`] emits a `WARN` log and the error is silently
+/// discarded, preserving the existing warn-and-continue behaviour at all
+/// bootstrap rename call sites.
+pub(super) fn rename_legacy_bootstrap(ironclaw_dir: &Path) {
     let old_bootstrap = ironclaw_dir.join("bootstrap.json");
-    if old_bootstrap.exists() {
-        rename_to_migrated(&old_bootstrap);
+    if old_bootstrap.exists() && rename_to_migrated(&old_bootstrap).is_ok() {
         tracing::info!("Renamed old bootstrap.json to .migrated");
     }
 }
@@ -303,11 +320,6 @@ async fn apply_migration_to_db(
     Ok(())
 }
 
-fn mark_legacy_migrated(path: &Path) -> Result<(), MigrationError> {
-    rename_to_migrated(path);
-    Ok(())
-}
-
 /// One-time migration of legacy `~/.ironclaw/settings.json` into the database.
 ///
 /// Only runs when a `settings.json` exists on disk AND the DB has no settings
@@ -320,25 +332,50 @@ pub async fn migrate_disk_to_db(
     user_id: &str,
 ) -> Result<(), MigrationError> {
     let ironclaw_dir = ironclaw_base_dir();
+    migrate_disk_to_db_from_dir(store, user_id, &ironclaw_dir).await
+}
+
+/// Path-injected disk-to-database migration entrypoint.
+///
+/// Migrates legacy disk data from `ironclaw_dir` into `store` for `user_id`.
+/// Higher-level migration orchestration calls this with a concrete
+/// [`crate::db::Database`] implementor, the current user identifier, and the
+/// Ironclaw base directory whose legacy files should be inspected.
+///
+/// Rename operations that mark legacy files as `.migrated` are best-effort:
+/// failures are logged by the lower-level rename helper and do not cause this
+/// migration to fail. Database and read/write failures that should stop the
+/// migration are returned as [`MigrationError`].
+pub(super) async fn migrate_disk_to_db_from_dir(
+    store: &dyn crate::db::Database,
+    user_id: &str,
+    ironclaw_dir: &Path,
+) -> Result<(), MigrationError> {
     let legacy_settings_path = ironclaw_dir.join("settings.json");
     let Some(legacy) = read_legacy_state(&legacy_settings_path)? else {
         tracing::debug!("No legacy settings.json found, skipping disk-to-DB migration");
         return Ok(());
     };
     apply_migration_to_db(store, user_id, &legacy, &legacy_settings_path).await?;
-    mark_legacy_migrated(&legacy_settings_path)?;
+    let _ = rename_to_migrated(&legacy_settings_path);
     Ok(())
 }
 
-/// Rename a file to `<name>.migrated` as a safety net.
-fn rename_to_migrated(path: &Path) {
+/// Renames `path` to `<path>.migrated` as a safety-net marker indicating
+/// the file has been processed by a migration pass.
+///
+/// Returns `Ok(())` on success. On failure the filesystem error is logged
+/// at `WARN` level and returned to the caller; call sites that treat the
+/// rename as non-fatal should discard the result with `let _ = …`.
+pub(super) fn rename_to_migrated(path: &Path) -> io::Result<()> {
     let mut migrated = path.as_os_str().to_owned();
     migrated.push(".migrated");
-    if let Err(error) = std::fs::rename(path, &migrated) {
+    std::fs::rename(path, &migrated).map_err(|error| {
         tracing::warn!(
             "Failed to rename {} to .migrated: {}",
             path.display(),
             error
         );
-    }
+        error
+    })
 }
