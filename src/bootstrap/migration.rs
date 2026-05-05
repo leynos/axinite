@@ -335,6 +335,17 @@ pub async fn migrate_disk_to_db(
     migrate_disk_to_db_from_dir(store, user_id, &ironclaw_dir).await
 }
 
+/// Path-injected disk-to-database migration entrypoint.
+///
+/// Migrates legacy disk data from `ironclaw_dir` into `store` for `user_id`.
+/// Higher-level migration orchestration calls this with a concrete
+/// [`crate::db::Database`] implementor, the current user identifier, and the
+/// Ironclaw base directory whose legacy files should be inspected.
+///
+/// Rename operations that mark legacy files as `.migrated` are best-effort:
+/// failures are logged by the lower-level rename helper and do not cause this
+/// migration to fail. Database and read/write failures that should stop the
+/// migration are returned as [`MigrationError`].
 pub(super) async fn migrate_disk_to_db_from_dir(
     store: &dyn crate::db::Database,
     user_id: &str,
