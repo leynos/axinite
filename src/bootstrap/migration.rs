@@ -49,7 +49,31 @@ const _: [KnownEnvKey; 5] = [
     KnownEnvKey::EmbeddingEnabled,
 ];
 
-/// If `bootstrap.json` exists, pull `database_url` out of it and write `.env`.
+/// Reads `bootstrap.json` in the same directory as `env_path` and, if a
+/// `database_url` field is present, writes it as `DATABASE_URL` into the
+/// `.env` file at `env_path`.
+///
+/// The function is idempotent: running it a second time after
+/// `bootstrap.json` has already been renamed to `.migrated` is a no-op.
+///
+/// # Arguments
+///
+/// * `env_path` — Absolute path to the `.env` file that should receive the
+///   migrated key. The parent directory is used to locate `bootstrap.json`.
+///
+/// # Returns
+///
+/// Returns `()` in all cases. Individual failure modes (missing source file,
+/// missing `database_url` field, write errors) are handled internally with
+/// warning-level output and early returns rather than propagated to the
+/// caller.
+///
+/// # Errors
+///
+/// This function does not return an error. Non-fatal failures — including
+/// the inability to rename `bootstrap.json` to `.migrated` after the env
+/// write succeeds — are logged and silently discarded so that the
+/// application can continue to start up.
 pub(crate) fn migrate_bootstrap_json_to_env(env_path: &Path) {
     let ironclaw_dir = env_path.parent().unwrap_or_else(|| Path::new("."));
     let bootstrap_path = ironclaw_dir.join("bootstrap.json");
