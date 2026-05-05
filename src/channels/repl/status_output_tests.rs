@@ -9,9 +9,7 @@ fn status_output_stdout_snapshot() {
     let stdout = ["stream-one", "stream-two"].join("");
     let separator = render_stream_chunk_separator(80);
 
-    assert_snapshot!(&stdout, @r###"
-    stream-onestream-two
-    "###);
+    assert_snapshot!(&stdout, @"stream-onestream-two");
     assert_snapshot!(&separator);
 }
 

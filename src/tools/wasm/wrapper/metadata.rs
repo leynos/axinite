@@ -328,11 +328,11 @@ mod tests {
 
         assert_snapshot!(
             guidance,
-            @r###"
-Retry using the advertised tool schema for `github`.
-Guest description: GitHub integration
-Advertised schema excerpt: {"type":"object","required":["action"],"properties":{"action":{"type":"string"}}}
-"###
+            @r#"
+        Retry using the advertised tool schema for `github`.
+        Guest description: GitHub integration
+        Advertised schema excerpt: {"type":"object","required":["action"],"properties":{"action":{"type":"string"}}}
+        "#
         );
     }
 
