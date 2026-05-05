@@ -1,6 +1,5 @@
 ---
 source: tests/support_unit_tests/assertions_tests.rs
-assertion_line: 207
 expression: message
 ---
 [turn 0] tool_results_contain: tool "memory_tree" result does not contain "alpha", got: "Gamma/Delta"

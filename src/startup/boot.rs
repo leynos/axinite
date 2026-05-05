@@ -181,13 +181,8 @@ mod tests {
             active_tunnel: &active_tunnel,
         };
 
-        let capture = BufferRedirect::stdout().expect("stdout capture should be available");
-        print_startup_info(&config, &cli, &data);
-        let mut output = String::new();
-        capture
-            .into_inner()
-            .read_to_string(&mut output)
-            .expect("captured stdout should be readable");
+        let boot_info = super::build_boot_info(&config, &cli, &data).expect("boot info");
+        let output = ironclaw::boot_screen::render_boot_screen(&boot_info);
         assert_snapshot!("startup_info_boot_screen", output);
     }
 
