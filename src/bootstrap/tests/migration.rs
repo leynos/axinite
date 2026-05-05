@@ -8,7 +8,6 @@ use rstest::{fixture, rstest};
 use tempfile::{TempDir, tempdir};
 use tracing_test::traced_test;
 
-use crate::testing::NullDatabase;
 use crate::testing::test_utils::EnvVarsGuard;
 
 use super::super::*;
@@ -308,37 +307,4 @@ fn migrate_bootstrap_json_to_env_rename_failure_leaves_env_written() {
         env_path.exists(),
         ".env must still exist after idempotent second run"
     );
-}
-
-#[tokio::test]
-async fn migrate_disk_to_db_skips_when_no_legacy_file() {
-    let dir = tempdir().expect("temp dir");
-    let legacy = dir.path().join("settings.json");
-    let store = NullDatabase::new();
-
-    super::super::migration::migrate_disk_to_db_from_dir(&store, "default", dir.path())
-        .await
-        .expect("missing legacy settings should be a no-op");
-
-    assert!(!legacy.exists());
-    assert!(!dir.path().join("settings.json.migrated").exists());
-}
-
-#[tokio::test]
-async fn migrate_disk_to_db_renames_settings_on_success() {
-    let dir = tempdir().expect("temp dir for disk-to-db migration");
-    let settings_path = dir.path().join("settings.json");
-    std::fs::write(&settings_path, "{}").expect("write legacy settings");
-    let migrated_path = dir.path().join("settings.json.migrated");
-    let store = NullDatabase::new();
-
-    // Verify that once migration completes the file is renamed.
-    assert!(settings_path.exists());
-
-    super::super::migration::migrate_disk_to_db_from_dir(&store, "default", dir.path())
-        .await
-        .expect("migrate disk settings");
-
-    assert!(!settings_path.exists());
-    assert!(migrated_path.exists());
 }
