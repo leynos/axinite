@@ -14,9 +14,13 @@ fn arb_skill_name() -> impl Strategy<Value = String> {
     "[a-zA-Z0-9][a-zA-Z0-9._-]{0,20}"
 }
 
-/// Arbitrary relative path (no leading `/`).
+/// Arbitrary relative path (no leading `/`).  Produces both flat
+/// filenames and single-level nested paths such as `subdir/SKILL.md`.
 fn arb_relative_path() -> impl Strategy<Value = PathBuf> {
-    "[a-zA-Z0-9_-]{1,10}(\\.[a-zA-Z]{1,4})?".prop_map(PathBuf::from)
+    let flat = "[a-zA-Z0-9_-]{1,10}(\\.[a-zA-Z]{1,4})?".prop_map(PathBuf::from);
+    let nested = ("[a-zA-Z0-9_-]{1,8}", "/SKILL\\.md")
+        .prop_map(|(dir, file): (String, String)| PathBuf::from(format!("{dir}{file}")));
+    prop_oneof![flat, nested]
 }
 
 proptest! {

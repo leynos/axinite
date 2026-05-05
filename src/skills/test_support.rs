@@ -13,6 +13,7 @@ pub struct TestSkillBuilder {
     description: String,
     trust: SkillTrust,
     source: SkillSource,
+    root: PathBuf,
     location: Option<LoadedSkillLocation>,
     keywords: Vec<String>,
     exclude_keywords: Vec<String>,
@@ -32,6 +33,7 @@ impl TestSkillBuilder {
             description: String::new(),
             trust: SkillTrust::Trusted,
             source: SkillSource::User(PathBuf::from("/tmp")),
+            root: PathBuf::from("/tmp"),
             location: None,
             keywords: vec![],
             exclude_keywords: vec![],
@@ -60,6 +62,13 @@ impl TestSkillBuilder {
 
     pub fn source(mut self, source: SkillSource) -> Self {
         self.source = source;
+        self
+    }
+
+    /// Override the default runtime root used when no explicit
+    /// [`Self::location`] is supplied.  Defaults to `/tmp`.
+    pub fn root(mut self, root: impl Into<PathBuf>) -> Self {
+        self.root = root.into();
         self
     }
 
@@ -104,10 +113,11 @@ impl TestSkillBuilder {
     }
 
     pub fn build(self) -> LoadedSkill {
+        let root = self.root;
         let location = self.location.unwrap_or_else(|| {
             LoadedSkillLocation::new(
                 &self.name,
-                PathBuf::from("/tmp"),
+                root,
                 PathBuf::from("SKILL.md"),
                 SkillPackageKind::SingleFile,
             )

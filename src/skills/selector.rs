@@ -150,22 +150,14 @@ fn score_skill(skill: &LoadedSkill, message_lower: &str, message_original: &str)
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::skills::{LoadedSkill, LoadedSkillLocation, SkillPackageKind, SkillSource};
+    use crate::skills::{LoadedSkill, SkillSource};
     use std::path::PathBuf;
 
     fn make_skill(name: &str, keywords: &[&str], tags: &[&str], patterns: &[&str]) -> LoadedSkill {
         crate::skills::test_support::TestSkillBuilder::new(name)
             .description(format!("{name} skill"))
             .source(SkillSource::User(PathBuf::from("/tmp/test")))
-            .location(
-                LoadedSkillLocation::new(
-                    name,
-                    PathBuf::from("/tmp/test"),
-                    PathBuf::from("SKILL.md"),
-                    SkillPackageKind::SingleFile,
-                )
-                .expect("test location should always be bundle-relative"),
-            )
+            .root("/tmp/test")
             .keywords(keywords)
             .tags(tags)
             .patterns(patterns)
