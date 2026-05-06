@@ -148,9 +148,10 @@ fn test_enforce_limits_patterns(limits_enforced_criteria: ActivationCriteria) {
         "patterns should be capped at {}",
         MAX_PATTERNS_PER_SKILL
     );
-    for i in 0..MAX_PATTERNS_PER_SKILL {
-        assert_eq!(criteria.patterns[i], format!("pattern{}", i));
-    }
+    let expected: Vec<String> = (0..MAX_PATTERNS_PER_SKILL)
+        .map(|i| format!("pattern{}", i))
+        .collect();
+    assert_eq!(criteria.patterns, expected);
 }
 
 #[rstest]
@@ -337,7 +338,7 @@ fn test_loaded_skill_location_rejects_absolute_entrypoint() {
     let result = LoadedSkillLocation::new(
         "my-skill",
         PathBuf::from("/tmp"),
-        PathBuf::from("/tmp/SKILL.md"),
+        std::env::temp_dir().join("SKILL.md"),
         SkillPackageKind::SingleFile,
     );
     assert!(result.is_err());
