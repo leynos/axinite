@@ -5,6 +5,7 @@
 //! factored out alongside this module.
 
 use super::*;
+use rstest::{fixture, rstest};
 
 #[test]
 fn test_skill_trust_ordering() {
@@ -110,18 +111,14 @@ fn test_enforce_limits_filters_short_keywords() {
     assert_eq!(criteria.tags, vec!["foo", "bar"]);
 }
 
-#[test]
-fn test_activation_criteria_enforce_limits() {
-    // Build criteria that exceed all limits:
-    // - 25 keywords (5 over the 20 cap), including some short ones
-    // - 8 patterns (3 over the 5 cap)
-    // - 15 tags (5 over the 10 cap), including some short ones
-    let mut keywords: Vec<String> = vec!["a".into(), "bb".into()]; // short, should be filtered
+#[fixture]
+fn limits_enforced_criteria() -> ActivationCriteria {
+    let mut keywords: Vec<String> = vec!["a".into(), "bb".into()];
     keywords.extend((0..25).map(|i| format!("keyword{}", i)));
 
     let patterns: Vec<String> = (0..8).map(|i| format!("pattern{}", i)).collect();
 
-    let mut tags: Vec<String> = vec!["x".into(), "ab".into()]; // short, should be filtered
+    let mut tags: Vec<String> = vec!["x".into(), "ab".into()];
     tags.extend((0..15).map(|i| format!("tag{}", i)));
 
     let mut criteria = ActivationCriteria {
@@ -132,8 +129,12 @@ fn test_activation_criteria_enforce_limits() {
     };
 
     criteria.enforce_limits();
+    criteria
+}
 
-    // Short keywords (<3 chars) filtered, then truncated to 20
+#[rstest]
+fn test_enforce_limits_keywords(limits_enforced_criteria: ActivationCriteria) {
+    let criteria = limits_enforced_criteria;
     assert!(
         !criteria
             .keywords
@@ -148,20 +149,25 @@ fn test_activation_criteria_enforce_limits() {
         "keywords should be capped at {}",
         MAX_KEYWORDS_PER_SKILL
     );
+}
 
-    // Patterns truncated to 5 (no length filter on patterns)
+#[rstest]
+fn test_enforce_limits_patterns(limits_enforced_criteria: ActivationCriteria) {
+    let criteria = limits_enforced_criteria;
     assert_eq!(
         criteria.patterns.len(),
         MAX_PATTERNS_PER_SKILL,
         "patterns should be capped at {}",
         MAX_PATTERNS_PER_SKILL
     );
-    // Verify the retained patterns are the first 5
     for i in 0..MAX_PATTERNS_PER_SKILL {
         assert_eq!(criteria.patterns[i], format!("pattern{}", i));
     }
+}
 
-    // Short tags (<3 chars) filtered, then truncated to 10
+#[rstest]
+fn test_enforce_limits_tags(limits_enforced_criteria: ActivationCriteria) {
+    let criteria = limits_enforced_criteria;
     assert!(
         !criteria
             .tags
@@ -336,4 +342,22 @@ fn test_validate_location_matches_manifest_relative_entrypoint() {
     )
     .expect("test entrypoint is bundle-relative");
     assert!(validate_location_matches_manifest(&manifest, &location).is_ok());
+}
+
+#[test]
+fn test_loaded_skill_location_rejects_absolute_entrypoint() {
+    let result = LoadedSkillLocation::new(
+        "my-skill",
+        PathBuf::from("/tmp"),
+        PathBuf::from("/tmp/SKILL.md"),
+        SkillPackageKind::SingleFile,
+    );
+    assert!(result.is_err());
+    let msg = result
+        .expect_err("absolute entrypoint should be rejected")
+        .to_string();
+    assert!(
+        msg.contains("bundle-relative"),
+        "error should mention that the entrypoint must be bundle-relative"
+    );
 }
