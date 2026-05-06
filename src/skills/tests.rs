@@ -217,8 +217,12 @@ metadata:
       config: ["/etc/vale.ini"]
 "#;
     let manifest: SkillManifest = serde_yml::from_str(yaml).expect("parse failed");
-    let meta = manifest.metadata.unwrap();
-    let openclaw = meta.openclaw.unwrap();
+    let meta = manifest
+        .metadata
+        .expect("metadata should be present in test fixture");
+    let openclaw = meta
+        .openclaw
+        .expect("openclaw metadata should be present in test fixture");
     assert_eq!(openclaw.requires.bins, vec!["vale"]);
     assert_eq!(openclaw.requires.env, vec!["VALE_CONFIG"]);
     assert_eq!(openclaw.requires.config, vec!["/etc/vale.ini"]);
@@ -286,7 +290,9 @@ fn make_skill_parts(manifest_name: &str, location_name: &str) -> LoadedSkillPart
 fn test_loaded_skill_new_rejects_mismatched_location_identifier() {
     let result = LoadedSkill::new(make_skill_parts("correct-name", "wrong-name"));
     assert!(result.is_err());
-    let msg = result.unwrap_err().to_string();
+    let msg = result
+        .expect_err("mismatched location identifier should fail")
+        .to_string();
     assert!(
         msg.contains("wrong-name"),
         "error message should name the mismatched identifier"
