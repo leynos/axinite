@@ -23,7 +23,7 @@ pub use loading::{check_gating, compute_hash};
 pub use staged_install::{CommitPreparedInstallError, PreparedSkillInstall, SkillInstallPayload};
 
 use crate::skills::bundle::SkillBundleError;
-use crate::skills::{LoadedSkill, SkillSource, SkillTrust};
+use crate::skills::{LoadedSkill, SkillPackageKind, SkillSource, SkillTrust};
 
 /// Maximum number of skills that can be discovered from a single directory.
 /// Prevents resource exhaustion from a directory with thousands of entries.
@@ -77,6 +77,14 @@ pub enum SkillRegistryError {
 
     #[error("Invalid skill content: {reason}")]
     InvalidContent { reason: String },
+}
+
+impl From<crate::skills::LoadedSkillLocationError> for SkillRegistryError {
+    fn from(error: crate::skills::LoadedSkillLocationError) -> Self {
+        SkillRegistryError::InvalidContent {
+            reason: error.to_string(),
+        }
+    }
 }
 
 /// Registry of available skills.

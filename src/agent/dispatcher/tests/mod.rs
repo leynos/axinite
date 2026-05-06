@@ -258,4 +258,5 @@ mod loop_guard;
 mod pending_approval;
 mod pipeline;
 mod preview;
+mod skill_bundle_context_bdd;
 mod skills;

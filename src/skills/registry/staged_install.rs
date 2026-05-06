@@ -2,7 +2,7 @@
 
 use std::path::{Path, PathBuf};
 
-use super::loading::load_and_validate_skill;
+use super::loading::{SkillLocationContext, load_and_validate_skill};
 use super::materialize::{materialize_install_artifact, write_install_artifact};
 use super::{LoadedSkill, SkillRegistry, SkillRegistryError, SkillSource, SkillTrust};
 use uuid::Uuid;
@@ -152,14 +152,30 @@ pub(super) async fn prepare_install_to_disk(
 
     let skill_path = staged_dir.join("SKILL.md");
     let source = SkillSource::User(final_dir.clone());
-    let (name, loaded_skill) =
-        match load_and_validate_skill(&skill_path, SkillTrust::Installed, source).await {
-            Ok(result) => result,
-            Err(error) => {
-                cleanup_staged_dir(&staged_dir).await;
-                return Err(error);
-            }
-        };
+    let (name, loaded_skill) = match load_and_validate_skill(
+        &skill_path,
+        SkillTrust::Installed,
+        source,
+        SkillLocationContext {
+            root: &final_dir,
+            package_kind: install_artifact.package_kind,
+        },
+    )
+    .await
+    {
+        Ok(result) => {
+            tracing::debug!(
+                skill_name = %result.0,
+                package_kind = result.1.package_kind().as_str(),
+                "Skill install validated with location metadata"
+            );
+            result
+        }
+        Err(error) => {
+            cleanup_staged_dir(&staged_dir).await;
+            return Err(error);
+        }
+    };
 
     Ok(PreparedSkillInstall {
         name,

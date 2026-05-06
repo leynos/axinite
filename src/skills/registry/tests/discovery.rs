@@ -7,6 +7,7 @@ use super::super::*;
 use super::fixtures::{
     FreshRegistryFixture, fresh_registry_fixture, write_skill_flat, write_skill_subdir,
 };
+use crate::skills::SkillPackageKind;
 
 async fn assert_single_skill_loaded(
     registry: &mut SkillRegistry,
@@ -67,16 +68,50 @@ async fn test_discover_unreadable_dir_returns_empty() {
     );
 }
 
+#[derive(Debug)]
+enum LayoutKind {
+    Flat,
+    Subdirectory,
+}
+
 #[rstest]
+#[case::flat(
+    LayoutKind::Flat,
+    "flat-skill",
+    "---\nname: flat-skill\ndescription: A flat layout skill\nactivation:\n  keywords: [\"flat\"]\n---\n\nYou are a flat layout test skill.\n",
+    "flat layout test skill"
+)]
+#[case::subdirectory(
+    LayoutKind::Subdirectory,
+    "test-skill",
+    "---\nname: test-skill\ndescription: A test skill\nactivation:\n  keywords: [\"test\"]\n---\n\nYou are a helpful test assistant.\n",
+    "helpful test assistant"
+)]
 #[tokio::test]
-async fn test_load_subdirectory_layout(fresh_registry_fixture: FreshRegistryFixture) {
+async fn test_load_skill_layout(
+    #[case] layout: LayoutKind,
+    #[case] skill_name: &str,
+    #[case] content: &str,
+    #[case] content_fragment: &str,
+    fresh_registry_fixture: FreshRegistryFixture,
+) {
     let FreshRegistryFixture { dir, mut registry } = fresh_registry_fixture;
-    write_skill_subdir(
-        dir.path(),
-        "test-skill",
-        "---\nname: test-skill\ndescription: A test skill\nactivation:\n  keywords: [\"test\"]\n---\n\nYou are a helpful test assistant.\n",
-    );
-    assert_single_skill_loaded(&mut registry, "test-skill", "helpful test assistant").await;
+    let expected_root = match layout {
+        LayoutKind::Flat => dir.path().to_path_buf(),
+        LayoutKind::Subdirectory => dir.path().join(skill_name),
+    };
+    match layout {
+        LayoutKind::Flat => write_skill_flat(dir.path(), content),
+        LayoutKind::Subdirectory => write_skill_subdir(dir.path(), skill_name, content),
+    }
+    assert_single_skill_loaded(&mut registry, skill_name, content_fragment).await;
+    let skill = registry
+        .find_by_name(skill_name)
+        .unwrap_or_else(|| panic!("{skill_name} should remain loaded"));
+    assert_eq!(skill.skill_identifier(), skill_name);
+    assert_eq!(skill.skill_root(), expected_root.as_path());
+    assert_eq!(skill.skill_entrypoint(), std::path::Path::new("SKILL.md"));
+    assert_eq!(skill.package_kind(), SkillPackageKind::SingleFile);
 }
 
 #[tokio::test]
@@ -197,14 +232,70 @@ async fn test_token_budget_rejection(fresh_registry_fixture: FreshRegistryFixtur
 }
 
 #[rstest]
+#[case::references_dir("references/usage.md")]
+#[case::assets_dir("assets/images/logo.png")]
 #[tokio::test]
-async fn test_load_flat_layout(fresh_registry_fixture: FreshRegistryFixture) {
+async fn test_bundle_layout_records_bundle_package_kind(
+    #[case] marker_file: &str,
+    fresh_registry_fixture: FreshRegistryFixture,
+) {
     let FreshRegistryFixture { dir, mut registry } = fresh_registry_fixture;
-    write_skill_flat(
+    write_skill_subdir(
         dir.path(),
-        "---\nname: flat-skill\ndescription: A flat layout skill\nactivation:\n  keywords: [\"flat\"]\n---\n\nYou are a flat layout test skill.\n",
+        "bundle-skill",
+        "---\nname: bundle-skill\n---\n\nBundle prompt.\n",
     );
-    assert_single_skill_loaded(&mut registry, "flat-skill", "flat layout test skill").await;
+    let marker_path = dir.path().join("bundle-skill").join(marker_file);
+    std::fs::create_dir_all(
+        marker_path
+            .parent()
+            .expect("marker path should have a parent dir"),
+    )
+    .expect("marker directory should be created for test");
+    std::fs::write(&marker_path, b"marker content")
+        .expect("marker file should be written for test");
+
+    registry.discover_all().await;
+
+    let skill = registry
+        .find_by_name("bundle-skill")
+        .expect("bundle-skill should be loaded");
+    assert_eq!(skill.package_kind(), SkillPackageKind::Bundle);
+    assert_eq!(
+        skill.skill_root(),
+        dir.path().join("bundle-skill").as_path()
+    );
+    assert_eq!(skill.skill_entrypoint(), std::path::Path::new("SKILL.md"));
+}
+
+#[rstest]
+#[case::references_file("references")]
+#[case::assets_file("assets")]
+#[tokio::test]
+async fn test_bundle_marker_files_do_not_change_package_kind(
+    #[case] marker_name: &str,
+    fresh_registry_fixture: FreshRegistryFixture,
+) {
+    let FreshRegistryFixture { dir, mut registry } = fresh_registry_fixture;
+    write_skill_subdir(
+        dir.path(),
+        "plain-skill",
+        "---\nname: plain-skill\n---\n\nPlain prompt.\n",
+    );
+    std::fs::write(
+        dir.path().join("plain-skill").join(marker_name),
+        "not a directory\n",
+    )
+    .expect("marker file should be written for test");
+
+    registry.discover_all().await;
+
+    let skill = registry
+        .find_by_name("plain-skill")
+        .expect("plain-skill should be loaded");
+    assert_eq!(skill.package_kind(), SkillPackageKind::SingleFile);
+    assert_eq!(skill.skill_root(), dir.path().join("plain-skill").as_path());
+    assert_eq!(skill.skill_entrypoint(), std::path::Path::new("SKILL.md"));
 }
 
 #[tokio::test]
@@ -266,4 +357,13 @@ async fn test_reload_clears_and_rediscovers(fresh_registry_fixture: FreshRegistr
     let loaded = registry.reload().await;
     assert_eq!(loaded, vec!["persist-skill"]);
     assert_eq!(registry.count(), 1);
+    let skill = registry
+        .find_by_name("persist-skill")
+        .expect("persist-skill should be rediscovered");
+    assert_eq!(
+        skill.skill_root(),
+        dir.path().join("persist-skill").as_path()
+    );
+    assert_eq!(skill.skill_entrypoint(), std::path::Path::new("SKILL.md"));
+    assert_eq!(skill.package_kind(), SkillPackageKind::SingleFile);
 }

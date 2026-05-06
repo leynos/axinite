@@ -156,6 +156,10 @@
     plans roadmap item `1.3.2` for browser upload support, `.skill` URL
     install behaviour, shared staged installation, test coverage, and
     synchronized documentation.
+  - [Persist canonical skill roots in the loaded skill model](execplans/1-3-3-persist-canonical-skill-roots-in-the-loaded-model.md)
+    completed roadmap item `1.3.3` with stable loaded-skill root and
+    entrypoint metadata, active-skill injection updates, proportional test
+    coverage, and synchronized documentation.
 
 ## RFCs
 

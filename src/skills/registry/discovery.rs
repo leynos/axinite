@@ -2,8 +2,8 @@
 
 use std::path::{Path, PathBuf};
 
-use super::{LoadedSkill, MAX_DISCOVERED_SKILLS, SkillSource, SkillTrust};
-use crate::skills::registry::loading::load_and_validate_skill;
+use super::{LoadedSkill, MAX_DISCOVERED_SKILLS, SkillPackageKind, SkillSource, SkillTrust};
+use crate::skills::registry::loading::{SkillLocationContext, load_and_validate_skill};
 
 enum EntryLoadResult {
     /// Not a skill candidate; do not increment the load counter.
@@ -112,8 +112,11 @@ where
         return try_load_from_subdir(&path, trust, make_source).await;
     }
 
-    if let Some(file_name) = flat_skill_md_name(&meta, &path) {
-        return try_load_flat_skill(&path, file_name, trust, make_source(path.clone())).await;
+    if flat_skill_md_name(&meta, &path).is_some() {
+        let root = path
+            .parent()
+            .map_or_else(|| PathBuf::from("."), Path::to_path_buf);
+        return try_load_flat_skill(&path, &root, trust, make_source(path.clone())).await;
     }
 
     EntryLoadResult::NotASkill
@@ -129,7 +132,28 @@ where
     }
 
     let source = make_source(path.to_path_buf());
-    match load_and_validate_skill(&skill_md, trust, source).await {
+    let package_kind = match detect_package_kind(path).await {
+        Ok(kind) => kind,
+        Err(e) => {
+            tracing::warn!(
+                "Failed to detect package kind for {:?}: {}",
+                path.file_name().unwrap_or_default(),
+                e
+            );
+            return EntryLoadResult::LoadFailed;
+        }
+    };
+    match load_and_validate_skill(
+        &skill_md,
+        trust,
+        source,
+        SkillLocationContext {
+            root: path,
+            package_kind,
+        },
+    )
+    .await
+    {
         Ok((name, skill)) => {
             tracing::debug!("Loaded skill: {}", name);
             EntryLoadResult::Loaded(name, Box::new(skill))
@@ -147,18 +171,60 @@ where
 
 async fn try_load_flat_skill(
     path: &Path,
-    file_name: &str,
+    root: &Path,
     trust: SkillTrust,
     source: SkillSource,
 ) -> EntryLoadResult {
-    match load_and_validate_skill(path, trust, source).await {
+    match load_and_validate_skill(
+        path,
+        trust,
+        source,
+        SkillLocationContext {
+            root,
+            package_kind: SkillPackageKind::SingleFile,
+        },
+    )
+    .await
+    {
         Ok((name, skill)) => {
             tracing::info!("Loaded skill: {}", name);
             EntryLoadResult::Loaded(name, Box::new(skill))
         }
         Err(error) => {
-            tracing::warn!("Failed to load skill from {:?}: {}", file_name, error);
+            tracing::warn!(
+                "Failed to load skill from {:?}: {}",
+                path.file_name().unwrap_or_default(),
+                error
+            );
             EntryLoadResult::LoadFailed
         }
+    }
+}
+
+async fn detect_package_kind(root: &Path) -> std::io::Result<SkillPackageKind> {
+    let references_dir = root.join("references");
+    let assets_dir = root.join("assets");
+    if is_existing_dir(&references_dir).await? || is_existing_dir(&assets_dir).await? {
+        tracing::debug!(
+            skill_root = ?root.file_name().unwrap_or_default(),
+            package_kind = SkillPackageKind::Bundle.as_str(),
+            "Detected skill package kind"
+        );
+        return Ok(SkillPackageKind::Bundle);
+    }
+
+    tracing::debug!(
+        skill_root = ?root.file_name().unwrap_or_default(),
+        package_kind = SkillPackageKind::SingleFile.as_str(),
+        "Detected skill package kind"
+    );
+    Ok(SkillPackageKind::SingleFile)
+}
+
+async fn is_existing_dir(path: &Path) -> std::io::Result<bool> {
+    match tokio::fs::metadata(path).await {
+        Ok(metadata) => Ok(metadata.is_dir()),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(false),
+        Err(e) => Err(e),
     }
 }

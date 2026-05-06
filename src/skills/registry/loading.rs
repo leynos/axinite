@@ -8,8 +8,8 @@ use super::{SkillRegistryError, to_lowercase_vec};
 use crate::skills::gating;
 use crate::skills::parser::{SkillParseError, parse_skill_md};
 use crate::skills::{
-    GatingRequirements, LoadedSkill, MAX_PROMPT_FILE_SIZE, SkillSource, SkillTrust,
-    normalize_line_endings,
+    GatingRequirements, LoadedSkill, LoadedSkillLocation, MAX_PROMPT_FILE_SIZE, SkillPackageKind,
+    SkillSource, SkillTrust, normalize_line_endings,
 };
 
 /// Load and validate a single SKILL.md file from disk.
@@ -17,10 +17,17 @@ use crate::skills::{
 /// Shared implementation used by both `SkillRegistry::load_skill_md` (discovery)
 /// and `SkillRegistry::prepare_install_to_disk` (installation). This avoids
 /// duplicating the read/parse/validate/hash pipeline.
+#[derive(Debug)]
+pub(super) struct SkillLocationContext<'a> {
+    pub root: &'a Path,
+    pub package_kind: SkillPackageKind,
+}
+
 pub(super) async fn load_and_validate_skill(
     path: &Path,
     trust: SkillTrust,
     source: SkillSource,
+    location_ctx: SkillLocationContext<'_>,
 ) -> Result<(String, LoadedSkill), SkillRegistryError> {
     let raw_bytes = read_skill_bytes(path).await?;
 
@@ -53,17 +60,34 @@ pub(super) async fn load_and_validate_skill(
     let lowercased_tags = to_lowercase_vec(&manifest.activation.tags);
 
     let name = manifest.name.clone();
-    let skill = LoadedSkill {
+    let location = LoadedSkillLocation::new(
+        name.clone(),
+        location_ctx.root.to_path_buf(),
+        Path::new("SKILL.md").to_path_buf(),
+        location_ctx.package_kind,
+    )?;
+    let skill = LoadedSkill::new(crate::skills::LoadedSkillParts {
         manifest,
         prompt_content,
         trust,
         source,
+        location,
         content_hash,
         compiled_patterns,
         lowercased_keywords,
         lowercased_exclude_keywords,
         lowercased_tags,
-    };
+    })
+    .map_err(|error| {
+        tracing::warn!(
+            skill_path = ?path.file_name().unwrap_or_default(),
+            reason = %error,
+            "Skill location metadata failed validation"
+        );
+        SkillRegistryError::InvalidContent {
+            reason: error.to_string(),
+        }
+    })?;
 
     Ok((name, skill))
 }

@@ -116,8 +116,7 @@ pub fn attenuate_tools(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::skills::{ActivationCriteria, SkillManifest, SkillSource};
-    use std::path::PathBuf;
+    use crate::skills::SkillTrust;
 
     fn make_tool(name: &str) -> ToolDefinition {
         ToolDefinition {
@@ -128,23 +127,12 @@ mod tests {
     }
 
     fn make_skill_with_trust(name: &str, trust: SkillTrust) -> LoadedSkill {
-        LoadedSkill {
-            manifest: SkillManifest {
-                name: name.to_string(),
-                version: "1.0.0".to_string(),
-                description: String::new(),
-                activation: ActivationCriteria::default(),
-                metadata: None,
-            },
-            prompt_content: "test".to_string(),
-            trust,
-            source: SkillSource::User(PathBuf::from("/tmp")),
-            content_hash: "sha256:000".to_string(),
-            compiled_patterns: vec![],
-            lowercased_keywords: vec![],
-            lowercased_exclude_keywords: vec![],
-            lowercased_tags: vec![],
-        }
+        crate::skills::test_support::TestSkillBuilder::new(name)
+            .version("1.0.0")
+            .trust(trust)
+            .exclude_keywords(&[])
+            .max_context_tokens(1000)
+            .build()
     }
 
     fn all_tools() -> Vec<ToolDefinition> {
