@@ -120,22 +120,20 @@ fn limits_enforced_criteria() -> ActivationCriteria {
     criteria
 }
 
+fn assert_field_limits(items: &[String], max: usize, field_name: &str) {
+    assert!(
+        !items.iter().any(|s| s.len() < MIN_KEYWORD_TAG_LENGTH),
+        "{field_name} shorter than {MIN_KEYWORD_TAG_LENGTH} chars should be filtered out",
+    );
+    assert_eq!(items.len(), max, "{field_name} should be capped at {max}",);
+}
+
 #[rstest]
 fn test_enforce_limits_keywords(limits_enforced_criteria: ActivationCriteria) {
-    let criteria = limits_enforced_criteria;
-    assert!(
-        !criteria
-            .keywords
-            .iter()
-            .any(|k| k.len() < MIN_KEYWORD_TAG_LENGTH),
-        "keywords shorter than {} chars should be filtered out",
-        MIN_KEYWORD_TAG_LENGTH
-    );
-    assert_eq!(
-        criteria.keywords.len(),
+    assert_field_limits(
+        &limits_enforced_criteria.keywords,
         MAX_KEYWORDS_PER_SKILL,
-        "keywords should be capped at {}",
-        MAX_KEYWORDS_PER_SKILL
+        "keywords",
     );
 }
 
@@ -156,21 +154,7 @@ fn test_enforce_limits_patterns(limits_enforced_criteria: ActivationCriteria) {
 
 #[rstest]
 fn test_enforce_limits_tags(limits_enforced_criteria: ActivationCriteria) {
-    let criteria = limits_enforced_criteria;
-    assert!(
-        !criteria
-            .tags
-            .iter()
-            .any(|t| t.len() < MIN_KEYWORD_TAG_LENGTH),
-        "tags shorter than {} chars should be filtered out",
-        MIN_KEYWORD_TAG_LENGTH
-    );
-    assert_eq!(
-        criteria.tags.len(),
-        MAX_TAGS_PER_SKILL,
-        "tags should be capped at {}",
-        MAX_TAGS_PER_SKILL
-    );
+    assert_field_limits(&limits_enforced_criteria.tags, MAX_TAGS_PER_SKILL, "tags");
 }
 
 #[test]
