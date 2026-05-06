@@ -5,7 +5,6 @@
 //! factored out alongside this module.
 
 use super::*;
-use rstest::rstest;
 
 #[test]
 fn test_skill_trust_ordering() {
@@ -256,7 +255,7 @@ fn test_loaded_skill_name_version() {
     assert_eq!(skill.version(), "1.0.0");
 }
 
-fn make_mismatched_parts(manifest_name: &str, location_name: &str) -> LoadedSkillParts {
+fn make_skill_parts(manifest_name: &str, location_name: &str) -> LoadedSkillParts {
     LoadedSkillParts {
         manifest: SkillManifest {
             name: manifest_name.to_string(),
@@ -283,38 +282,35 @@ fn make_mismatched_parts(manifest_name: &str, location_name: &str) -> LoadedSkil
     }
 }
 
-#[rstest]
-#[case::new_rejects("correct-name", "wrong-name")] // `new` path
-#[case::set_location_rejects("my-skill", "other-skill")] // `set_location` path
-fn test_mismatched_identifier_rejected(#[case] manifest_name: &str, #[case] location_name: &str) {
-    // Test `new` rejection when manifest_name == case 0 manifest
-    if manifest_name == "correct-name" {
-        let result = LoadedSkill::new(make_mismatched_parts(manifest_name, location_name));
-        assert!(result.is_err());
-        let msg = result.unwrap_err().to_string();
-        assert!(
-            msg.contains(location_name),
-            "error message should name the mismatched identifier '{location_name}'"
-        );
-        assert!(
-            msg.contains(manifest_name),
-            "error message should name the manifest name '{manifest_name}'"
-        );
-    } else {
-        // Test `set_location` rejection after valid construction
-        let mut skill = LoadedSkill::new(make_mismatched_parts(manifest_name, manifest_name))
-            .expect("same-named parts should succeed");
-        let result = skill.set_location(
-            LoadedSkillLocation::new(
-                location_name,
-                PathBuf::from("/tmp"),
-                PathBuf::from("SKILL.md"),
-                SkillPackageKind::SingleFile,
-            )
-            .expect("test entrypoint is bundle-relative"),
-        );
-        assert!(result.is_err());
-    }
+#[test]
+fn test_loaded_skill_new_rejects_mismatched_location_identifier() {
+    let result = LoadedSkill::new(make_skill_parts("correct-name", "wrong-name"));
+    assert!(result.is_err());
+    let msg = result.unwrap_err().to_string();
+    assert!(
+        msg.contains("wrong-name"),
+        "error message should name the mismatched identifier"
+    );
+    assert!(
+        msg.contains("correct-name"),
+        "error message should name the manifest name"
+    );
+}
+
+#[test]
+fn test_set_location_rejects_mismatched_identifier() {
+    let mut skill = LoadedSkill::new(make_skill_parts("my-skill", "my-skill"))
+        .expect("initial skill should be valid");
+    let result = skill.set_location(
+        LoadedSkillLocation::new(
+            "other-skill",
+            PathBuf::from("/tmp"),
+            PathBuf::from("SKILL.md"),
+            SkillPackageKind::SingleFile,
+        )
+        .expect("test entrypoint is bundle-relative"),
+    );
+    assert!(result.is_err());
 }
 
 #[test]
