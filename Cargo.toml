@@ -201,6 +201,8 @@ testcontainers-modules = { version = "0.11", features = ["postgres"] }
 pretty_assertions = "1"
 insta = { version = "1.46.3", features = ["json"] }
 rstest = "0.26.1"
+rstest-bdd = "0.5.0"
+rstest-bdd-macros = { version = "0.5.0", features = ["compile-time-validation"] }
 tempfile = "3"
 mockall = "0.13"
 trybuild = "1"

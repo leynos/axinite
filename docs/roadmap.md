@@ -168,7 +168,7 @@ packaging.
     [RFC 0003 §Rollout Plan](./rfcs/0003-skill-bundle-installation.md#rollout-plan).
   - Success: install paths preserve `references/` and `assets/` when present,
     and installation failures report archive-shape errors explicitly.
-- [ ] 1.3.3. Persist canonical skill roots in the loaded skill model. Requires
+- [x] 1.3.3. Persist canonical skill roots in the loaded skill model. Requires
       1.3.1.
   - See
     [RFC 0003 §Reference Model](./rfcs/0003-skill-bundle-installation.md#reference-model)

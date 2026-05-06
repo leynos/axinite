@@ -14,4 +14,5 @@ mod discovery;
 mod fixtures;
 mod install;
 mod lookup;
+mod prop_tests;
 mod removal;

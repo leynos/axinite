@@ -6,6 +6,7 @@ use super::super::*;
 use super::fixtures::{
     BundleInstallFixture, build_bundle_archive, bundle_install_fixture, skill_markdown,
 };
+use crate::skills::SkillPackageKind;
 
 fn assert_deploy_docs_bundle_files_present(path: &Path) {
     assert!(path.join("SKILL.md").exists());
@@ -70,11 +71,29 @@ async fn test_archive_payload_preserves_files(
     .await
     .expect(prepare_msg);
 
+    assert_eq!(
+        prepared.loaded_skill.package_kind(),
+        SkillPackageKind::Bundle
+    );
+    assert_eq!(
+        prepared.loaded_skill.skill_root(),
+        installed_dir.path().join("deploy-docs").as_path()
+    );
+    assert_eq!(
+        prepared.loaded_skill.skill_entrypoint(),
+        std::path::Path::new("SKILL.md")
+    );
+
     registry.commit_install(prepared).expect(commit_msg);
 
     let installed_root = installed_dir.path().join("deploy-docs");
     assert_deploy_docs_bundle_files_present(&installed_root);
     assert!(registry.has("deploy-docs"));
+    let skill = registry
+        .find_by_name("deploy-docs")
+        .expect("committed bundle skill should be loaded");
+    assert_eq!(skill.package_kind(), SkillPackageKind::Bundle);
+    assert_eq!(skill.skill_root(), installed_root.as_path());
 }
 
 #[rstest]
@@ -113,12 +132,29 @@ async fn test_downloaded_bytes_accept_plain_markdown(bundle_install_fixture: Bun
     .await
     .expect("downloaded markdown should prepare successfully");
 
+    assert_eq!(
+        prepared.loaded_skill.package_kind(),
+        SkillPackageKind::SingleFile
+    );
+    assert_eq!(
+        prepared.loaded_skill.skill_root(),
+        installed_dir.path().join("deploy-docs").as_path()
+    );
+    assert_eq!(
+        prepared.loaded_skill.skill_entrypoint(),
+        std::path::Path::new("SKILL.md")
+    );
+
     registry
         .commit_install(prepared)
         .expect("downloaded markdown should commit successfully");
 
     assert!(installed_dir.path().join("deploy-docs/SKILL.md").exists());
     assert!(registry.has("deploy-docs"));
+    let skill = registry
+        .find_by_name("deploy-docs")
+        .expect("committed markdown skill should be loaded");
+    assert_eq!(skill.package_kind(), SkillPackageKind::SingleFile);
 }
 
 #[tokio::test]
