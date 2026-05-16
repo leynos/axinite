@@ -63,17 +63,18 @@ const _: [KnownEnvKey; 5] = [
 ///
 /// # Returns
 ///
-/// Returns `()` in all cases. Individual failure modes (missing source file,
-/// missing `database_url` field, write errors) are handled internally with
-/// warning-level output and early returns rather than propagated to the
-/// caller.
+/// Returns `()` in all cases. Missing `bootstrap.json`, a missing
+/// `database_url` field, and `.env` write errors are handled internally with
+/// early returns rather than propagated to the caller. Missing
+/// `bootstrap.json` and a missing `database_url` field are silent and do not
+/// emit warning-level diagnostics.
 ///
 /// # Errors
 ///
-/// This function does not return an error. Non-fatal failures — including
-/// the inability to rename `bootstrap.json` to `.migrated` after the env
-/// write succeeds — are logged and silently discarded so that the
-/// application can continue to start up.
+/// This function does not return an error. The inability to rename
+/// `bootstrap.json` to `.migrated` after the env write succeeds is logged by
+/// [`rename_to_migrated`] and discarded so that the application can continue
+/// to start up.
 pub(crate) fn migrate_bootstrap_json_to_env(env_path: &Path) {
     let ironclaw_dir = env_path.parent().unwrap_or_else(|| Path::new("."));
     let bootstrap_path = ironclaw_dir.join("bootstrap.json");
@@ -237,8 +238,19 @@ async fn migrate_json_sidecar(
 /// bootstrap rename call sites.
 pub(super) fn rename_legacy_bootstrap(ironclaw_dir: &Path) {
     let old_bootstrap = ironclaw_dir.join("bootstrap.json");
-    if old_bootstrap.exists() && rename_to_migrated(&old_bootstrap).is_ok() {
-        tracing::info!("Renamed old bootstrap.json to .migrated");
+    match old_bootstrap.try_exists() {
+        Ok(true) => {
+            if rename_to_migrated(&old_bootstrap).is_ok() {
+                tracing::info!("Renamed old bootstrap.json to .migrated");
+            }
+        }
+        Ok(false) => {}
+        Err(error) => {
+            tracing::warn!(
+                "Failed to inspect old bootstrap.json before migration rename: {}",
+                error
+            );
+        }
     }
 }
 
