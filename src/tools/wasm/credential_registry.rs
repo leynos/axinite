@@ -69,18 +69,17 @@ impl SharedCredentialRegistry {
         }
     }
 
-    /// Remove credential mappings whose `secret_name` matches any of the given names
-    /// and whose owner matches `owner_id`.
+    /// Remove credential mappings whose owner matches `owner_id`.
+    ///
+    /// When `secret_names` is empty, all mappings owned by `owner_id` are
+    /// removed. Otherwise, only mappings whose `secret_name` matches one of the
+    /// given names are removed.
     ///
     /// Called when an extension is unregistered/deactivated so its credential
     /// injection authority does not outlive the extension. Only removes mappings
     /// owned by the specified owner, leaving other tools' mappings for the same
     /// secret intact.
     pub fn remove_mappings_for_secrets(&self, owner_id: &str, secret_names: &[String]) {
-        let secret_names = secret_names
-            .iter()
-            .map(String::as_str)
-            .collect::<HashSet<_>>();
         let mut guard = match self.mappings.write() {
             Ok(guard) => guard,
             Err(poisoned) => {
@@ -90,10 +89,18 @@ impl SharedCredentialRegistry {
                 poisoned.into_inner()
             }
         };
-        guard.retain(|m| {
-            !(secret_names.contains(m.mapping.secret_name.as_str())
-                && m.owner.as_deref() == Some(owner_id))
-        });
+        if secret_names.is_empty() {
+            guard.retain(|m| m.owner.as_deref() != Some(owner_id));
+        } else {
+            let secret_names = secret_names
+                .iter()
+                .map(String::as_str)
+                .collect::<HashSet<_>>();
+            guard.retain(|m| {
+                !(secret_names.contains(m.mapping.secret_name.as_str())
+                    && m.owner.as_deref() == Some(owner_id))
+            });
+        }
     }
 
     /// Remove credential mappings owned by a specific tool whose

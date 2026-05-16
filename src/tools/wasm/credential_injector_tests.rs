@@ -51,7 +51,7 @@ async fn run_single_mapping_injection(spec: InjectionSpec<'_>) -> HashMap<String
             CreateSecretParams::new(spec.secret_name, spec.secret_value),
         )
         .await
-        .unwrap();
+        .expect("create secret failed for spec.secret_name");
 
     let mut mappings = HashMap::new();
     mappings.insert(
@@ -67,7 +67,7 @@ async fn run_single_mapping_injection(spec: InjectionSpec<'_>) -> HashMap<String
     injector
         .inject("user1", spec.target_host, &store)
         .await
-        .unwrap()
+        .expect("inject failed for target host")
         .headers
 }
 
@@ -130,7 +130,7 @@ async fn test_no_credentials_for_host() {
     let result = injector
         .inject("user1", "unknown.com", &store)
         .await
-        .unwrap();
+        .expect("inject without credentials failed for unknown.com");
 
     assert!(result.is_empty());
 }
@@ -141,7 +141,7 @@ async fn test_access_denied_for_secret() {
     store
         .create("user1", CreateSecretParams::new("secret_key", "value"))
         .await
-        .unwrap();
+        .expect("create secret failed for secret_key");
 
     let mut mappings = HashMap::new();
     mappings.insert(
@@ -246,8 +246,12 @@ fn test_shared_registry_remove_mappings_for_secrets(registry: SharedCredentialRe
             CredentialMapping::header("openai_org", "OpenAI-Organization", "api.openai.com"),
         ],
     );
+    registry.add_mappings_for_tool(
+        "other_tool",
+        vec![CredentialMapping::bearer("openai_key", "api.openai.com")],
+    );
 
-    assert_eq!(registry.find_for_host("api.openai.com").len(), 2);
+    assert_eq!(registry.find_for_host("api.openai.com").len(), 3);
     assert!(registry.has_credentials_for_host("api.github.com"));
 
     registry.remove_mappings_for_secrets(
@@ -255,8 +259,31 @@ fn test_shared_registry_remove_mappings_for_secrets(registry: SharedCredentialRe
         &["openai_key".to_string(), "openai_org".to_string()],
     );
 
-    assert!(registry.find_for_host("api.openai.com").is_empty());
+    assert_eq!(registry.find_for_host("api.openai.com").len(), 1);
     assert!(registry.has_credentials_for_host("api.github.com"));
+}
+
+#[rstest]
+fn test_shared_registry_remove_mappings_for_secrets_empty_removes_owner(
+    registry: SharedCredentialRegistry,
+) {
+    registry.add_mappings_for_tool(
+        "test_tool",
+        vec![
+            CredentialMapping::bearer("openai_key", "api.openai.com"),
+            CredentialMapping::bearer("gh_token", "api.github.com"),
+        ],
+    );
+    registry.add_mappings_for_tool(
+        "other_tool",
+        vec![CredentialMapping::bearer("openai_key", "other.openai.com")],
+    );
+
+    registry.remove_mappings_for_secrets("test_tool", &[]);
+
+    assert!(registry.find_for_host("api.openai.com").is_empty());
+    assert!(!registry.has_credentials_for_host("api.github.com"));
+    assert_eq!(registry.find_for_host("other.openai.com").len(), 1);
 }
 
 #[rstest]
@@ -315,7 +342,7 @@ fn test_shared_registry_thread_safety() {
         .collect();
 
     for h in handles {
-        h.join().unwrap();
+        h.join().expect("registry writer thread panicked");
     }
 
     let found = registry.find_for_host("api.example.com");
