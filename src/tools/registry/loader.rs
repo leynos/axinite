@@ -237,7 +237,7 @@ impl ToolRegistry {
         let credential_count = prepared.credential_mappings.len();
         let registered = self.register(Arc::new(prepared.wrapper)).await;
         if !registered {
-            tracing::warn!(name, "WASM tool registration rejected");
+            tracing::warn!(name, credential_count, "WASM tool registration rejected");
             return Err(WasmError::ConfigError(
                 "tool registration rejected".to_string(),
             ));

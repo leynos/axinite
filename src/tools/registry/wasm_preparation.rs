@@ -39,7 +39,10 @@ use super::loader::WasmToolRegistration;
 /// [`CredentialMapping`] values that the registry must persist only after the
 /// wrapper has been successfully inserted.
 pub(super) struct PreparedWasmTool {
+    /// The compiled and configured wrapper ready for registry insertion.
     pub(super) wrapper: WasmToolWrapper,
+    /// HTTP credential mappings to be persisted only after the wrapper
+    /// has been successfully inserted into the registry.
     pub(super) credential_mappings: Vec<CredentialMapping>,
 }
 
@@ -103,14 +106,24 @@ pub(super) fn credential_mappings_from_capabilities(
 
 /// Descriptive metadata hints for WASM tool registration.
 pub(super) struct WasmMetadataHints<'a> {
+    /// Unique name under which the tool will be registered.
     pub(super) name: &'a str,
+    /// Caller-supplied description override, or `None` to recover from
+    /// the guest's exported metadata.
     pub(super) description: Option<&'a str>,
+    /// Caller-supplied parameter schema override, or `None` to recover
+    /// from the guest's exported metadata.
     pub(super) schema: Option<serde_json::Value>,
 }
 
 /// Runtime configuration for WASM tool registration.
 pub(super) struct WasmRuntimeConfig {
+    /// Secrets store attached to the wrapper for execution-time
+    /// credential resolution. Secret material is not read during
+    /// preparation.
     pub(super) secrets_store: Option<Arc<dyn SecretsStore + Send + Sync>>,
+    /// OAuth refresh configuration for automatic token renewal, or
+    /// `None` if the tool does not use OAuth.
     pub(super) oauth_refresh: Option<OAuthRefreshConfig>,
 }
 

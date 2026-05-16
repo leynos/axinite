@@ -271,6 +271,31 @@ fn test_shared_registry_remove_nonexistent_is_noop(registry: SharedCredentialReg
 }
 
 #[test]
+fn test_shared_registry_remove_tool_secrets_respects_ownership() {
+    let registry = SharedCredentialRegistry::new();
+    registry.add_mappings_for_tool(
+        "tool_a",
+        vec![CredentialMapping::bearer("shared_key", "api.tool-a.com")],
+    );
+    registry.add_mappings_for_tool(
+        "tool_b",
+        vec![CredentialMapping::bearer("shared_key", "api.tool-b.com")],
+    );
+
+    registry.remove_mappings_for_tool_secrets("tool_a", &["shared_key".to_string()]);
+
+    assert!(
+        registry.find_for_host("api.tool-a.com").is_empty(),
+        "tool_a mapping should be removed"
+    );
+    assert_eq!(
+        registry.find_for_host("api.tool-b.com").len(),
+        1,
+        "tool_b mapping must not be affected"
+    );
+}
+
+#[test]
 fn test_shared_registry_thread_safety() {
     use std::sync::Arc;
     use std::thread;

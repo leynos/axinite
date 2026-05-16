@@ -116,6 +116,50 @@ async fn prepare_wasm_tool_prepares_wrapper_and_collects_credentials() -> Result
 }
 
 #[tokio::test]
+async fn prepare_wasm_tool_returns_error_for_invalid_wasm_bytes() {
+    let runtime = metadata_test_runtime().expect("create metadata test runtime");
+    let result = prepare_wasm_tool(WasmToolRegistration {
+        name: "invalid_tool",
+        wasm_bytes: b"this is not valid wasm",
+        runtime: &runtime,
+        capabilities: Capabilities::default(),
+        limits: None,
+        description: None,
+        schema: None,
+        secrets_store: None,
+        oauth_refresh: None,
+    })
+    .await;
+
+    assert!(
+        result.is_err(),
+        "prepare_wasm_tool must return Err for invalid WASM bytes"
+    );
+}
+
+#[tokio::test]
+async fn prepare_wasm_tool_returns_error_for_empty_wasm_bytes() {
+    let runtime = metadata_test_runtime().expect("create metadata test runtime");
+    let result = prepare_wasm_tool(WasmToolRegistration {
+        name: "empty_tool",
+        wasm_bytes: b"",
+        runtime: &runtime,
+        capabilities: Capabilities::default(),
+        limits: None,
+        description: None,
+        schema: None,
+        secrets_store: None,
+        oauth_refresh: None,
+    })
+    .await;
+
+    assert!(
+        result.is_err(),
+        "prepare_wasm_tool must return Err for empty WASM bytes"
+    );
+}
+
+#[tokio::test]
 async fn recover_guest_metadata_returns_early_when_both_overrides_are_present() -> Result<()> {
     let wrapper = wasm_wrapper("metadata_overrides")
         .await?

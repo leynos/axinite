@@ -96,6 +96,34 @@ impl SharedCredentialRegistry {
         });
     }
 
+    /// Remove credential mappings owned by a specific tool whose
+    /// `secret_name` also matches any of the given names.
+    ///
+    /// Unlike [`remove_mappings_for_secrets`], this method only removes
+    /// mappings that are both owned by `tool_name` and listed in
+    /// `secret_names`, preserving mappings owned by other tools or
+    /// ownerless mappings.
+    pub fn remove_mappings_for_tool_secrets(&self, tool_name: &str, secret_names: &[String]) {
+        let secret_names = secret_names
+            .iter()
+            .map(String::as_str)
+            .collect::<HashSet<_>>();
+        let mut guard = match self.mappings.write() {
+            Ok(guard) => guard,
+            Err(poisoned) => {
+                tracing::warn!(
+                    "SharedCredentialRegistry RwLock poisoned during \
+                     remove_mappings_for_tool_secrets; recovering"
+                );
+                poisoned.into_inner()
+            }
+        };
+        guard.retain(|m| {
+            !(m.owner.as_deref() == Some(tool_name)
+                && secret_names.contains(m.mapping.secret_name.as_str()))
+        });
+    }
+
     /// Check if any credential mapping matches this host.
     pub fn has_credentials_for_host(&self, host: &str) -> bool {
         let guard = match self.mappings.read() {
@@ -107,7 +135,7 @@ impl SharedCredentialRegistry {
                 poisoned.into_inner()
             }
         };
-        guard.iter().any(|m| mapping_matches_host(m, host))
+        guard.iter().any(|owned| matches_host_patterns(owned, host))
     }
 
     /// Get all credential mappings matching a host.
@@ -123,14 +151,14 @@ impl SharedCredentialRegistry {
         };
         guard
             .iter()
-            .filter(|mapping| mapping_matches_host(mapping, host))
+            .filter(|owned| matches_host_patterns(owned, host))
             .map(|owned| owned.mapping.clone())
             .collect()
     }
 }
 
-fn mapping_matches_host(mapping: &OwnedCredentialMapping, host: &str) -> bool {
-    mapping
+fn matches_host_patterns(owned: &OwnedCredentialMapping, host: &str) -> bool {
+    owned
         .mapping
         .host_patterns
         .iter()
