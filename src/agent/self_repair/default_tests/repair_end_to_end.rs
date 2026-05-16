@@ -61,9 +61,9 @@ async fn repair_broken_tool_end_to_end_returns_success() {
     );
 }
 
-#[cfg(any(test, feature = "self_repair_extras"))]
-#[tokio::test]
-async fn repair_broken_tool_allows_one_concurrent_repair_for_same_tool() {
+/// Constructs a [`DefaultSelfRepair`] instance wired with a [`CapturingStore`]
+/// and a [`Barrier`]-gated claim-overlap barrier, ready for concurrency tests.
+fn build_concurrent_repair_fixture() -> (Arc<DefaultSelfRepair>, Arc<CapturingStore>) {
     let cm = Arc::new(ContextManager::new(10));
     let store = Arc::new(CapturingStore::new());
     let store_for_repair: Arc<dyn crate::db::Database> = store.clone();
@@ -87,16 +87,15 @@ async fn repair_broken_tool_allows_one_concurrent_repair_for_same_tool() {
             .with_claim_overlap_barrier(claim_overlap),
     );
 
-    let broken = Arc::new(BrokenTool {
-        name: "my-tool".to_string(),
-        failure_count: 2,
-        last_error: Some("test error".to_string()),
-        first_failure: Utc::now(),
-        last_failure: Utc::now(),
-        last_build_result: None,
-        repair_attempts: 0,
-    });
+    (repair, store)
+}
 
+/// Spawns two concurrent [`NativeSelfRepair::repair_broken_tool`] calls for
+/// the same `broken` tool and returns both results once both tasks complete.
+async fn run_concurrent_repairs(
+    repair: Arc<DefaultSelfRepair>,
+    broken: Arc<BrokenTool>,
+) -> [RepairResult; 2] {
     let first_repair = Arc::clone(&repair);
     let first_broken = Arc::clone(&broken);
     let first = tokio::spawn(async move {
@@ -112,10 +111,28 @@ async fn repair_broken_tool_allows_one_concurrent_repair_for_same_tool() {
         async { first.await.expect("first repair task should complete") },
         async { second.await.expect("second repair task should complete") },
     );
-    let results = [
+    [
         first.expect("first repair_broken_tool call should not error"),
         second.expect("second repair_broken_tool call should not error"),
-    ];
+    ]
+}
+
+#[cfg(any(test, feature = "self_repair_extras"))]
+#[tokio::test]
+async fn repair_broken_tool_allows_one_concurrent_repair_for_same_tool() {
+    let (repair, store) = build_concurrent_repair_fixture();
+
+    let broken = Arc::new(BrokenTool {
+        name: "my-tool".to_string(),
+        failure_count: 2,
+        last_error: Some("test error".to_string()),
+        first_failure: Utc::now(),
+        last_failure: Utc::now(),
+        last_build_result: None,
+        repair_attempts: 0,
+    });
+
+    let results = run_concurrent_repairs(repair, broken).await;
 
     assert_eq!(
         results
