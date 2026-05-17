@@ -5,7 +5,7 @@ use tempfile::tempdir;
 use crate::bootstrap::MigrationError;
 
 use super::migration_support::{
-    MigrationStore, assert_legacy_file_not_renamed, assert_legacy_file_renamed, assert_store_calls,
+    MigrationStore, assert_legacy_file_not_renamed, assert_legacy_file_renamed, assert_store_state,
     write_legacy_settings,
 };
 
@@ -18,7 +18,7 @@ async fn migrate_disk_to_db_from_dir_missing_legacy_file_is_noop() {
         .await
         .expect("missing settings migration should succeed");
 
-    assert_store_calls(&store, 0, 0);
+    assert_store_state(&store, 0, 0);
     assert!(!dir.path().join("settings.json.migrated").exists());
 }
 
@@ -32,7 +32,7 @@ async fn migrate_disk_to_db_from_dir_renames_when_db_already_has_settings() {
         .await
         .expect("stale settings migration should succeed");
 
-    assert_store_calls(&store, 1, 0);
+    assert_store_state(&store, 1, 0);
     assert_legacy_file_renamed(&dir);
 }
 
@@ -46,7 +46,7 @@ async fn migrate_disk_to_db_from_dir_writes_settings_and_renames_legacy_file() {
         .await
         .expect("settings migration should succeed");
 
-    assert_store_calls(&store, 1, 1);
+    assert_store_state(&store, 1, 1);
     assert_eq!(
         store.state().captured_settings.get("onboard_completed"),
         Some(&serde_json::Value::Bool(true))
@@ -68,7 +68,7 @@ async fn migrate_disk_to_db_from_dir_db_failure_leaves_legacy_file_unmigrated() 
     assert!(
         matches!(error, MigrationError::Database(ref message) if message.contains("Failed to write settings to DB"))
     );
-    assert_store_calls(&store, 1, 1);
+    assert_store_state(&store, 1, 1);
     assert_legacy_file_not_renamed(&dir);
 }
 
@@ -85,6 +85,6 @@ async fn migrate_disk_to_db_from_dir_is_ok_after_best_effort_rename_removed_sour
         .await
         .expect("second settings migration should succeed after source was renamed");
 
-    assert_store_calls(&store, 1, 1);
+    assert_store_state(&store, 1, 1);
     assert_legacy_file_renamed(&dir);
 }

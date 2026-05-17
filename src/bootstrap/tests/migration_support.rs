@@ -209,24 +209,21 @@ pub(super) fn write_legacy_settings(dir: &TempDir) -> std::path::PathBuf {
     settings_path
 }
 
-pub(super) fn assert_store_calls(
+pub(super) fn assert_store_state(
     store: &MigrationStore,
-    has_settings: usize,
-    set_all_settings: usize,
+    expected_has_settings: usize,
+    expected_set_all_settings: usize,
 ) {
     let state = store.state();
     assert_eq!(
-        state.has_settings_calls, has_settings,
-        "has_settings call count"
+        state.has_settings_calls, expected_has_settings,
+        "unexpected has_settings call count"
     );
     assert_eq!(
-        state.set_all_settings_calls, set_all_settings,
-        "set_all_settings call count"
+        state.set_all_settings_calls, expected_set_all_settings,
+        "unexpected set_all_settings call count"
     );
-    assert_eq!(
-        state.set_setting_calls, 0,
-        "set_setting must never be called"
-    );
+    assert_eq!(state.set_setting_calls, 0, "set_setting must not be called");
 }
 
 pub(super) fn assert_legacy_file_renamed(dir: &TempDir) {
