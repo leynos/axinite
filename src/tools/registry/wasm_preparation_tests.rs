@@ -119,12 +119,18 @@ async fn prepare_wasm_tool_prepares_wrapper_and_collects_credentials() -> Result
     Ok(())
 }
 
+#[rstest]
+#[case::invalid_bytes("invalid_tool", b"this is not valid wasm")]
+#[case::empty_bytes("empty_tool", b"")]
 #[tokio::test]
-async fn prepare_wasm_tool_returns_error_for_invalid_wasm_bytes() {
+async fn prepare_wasm_tool_returns_error_for_bad_wasm_bytes(
+    #[case] name: &str,
+    #[case] wasm_bytes: &[u8],
+) {
     let runtime = metadata_test_runtime().expect("create metadata test runtime");
     let result = prepare_wasm_tool(WasmToolRegistration {
-        name: "invalid_tool",
-        wasm_bytes: b"this is not valid wasm",
+        name,
+        wasm_bytes,
         runtime: &runtime,
         capabilities: Capabilities::default(),
         limits: None,
@@ -137,29 +143,7 @@ async fn prepare_wasm_tool_returns_error_for_invalid_wasm_bytes() {
 
     assert!(
         result.is_err(),
-        "prepare_wasm_tool must return Err for invalid WASM bytes"
-    );
-}
-
-#[tokio::test]
-async fn prepare_wasm_tool_returns_error_for_empty_wasm_bytes() {
-    let runtime = metadata_test_runtime().expect("create metadata test runtime");
-    let result = prepare_wasm_tool(WasmToolRegistration {
-        name: "empty_tool",
-        wasm_bytes: b"",
-        runtime: &runtime,
-        capabilities: Capabilities::default(),
-        limits: None,
-        description: None,
-        schema: None,
-        secrets_store: None,
-        oauth_refresh: None,
-    })
-    .await;
-
-    assert!(
-        result.is_err(),
-        "prepare_wasm_tool must return Err for empty WASM bytes"
+        "prepare_wasm_tool must return Err for bad WASM bytes"
     );
 }
 
