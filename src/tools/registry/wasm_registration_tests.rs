@@ -58,6 +58,41 @@ async fn register_wasm_from_storage_recovers_guest_schema_for_absent_or_placehol
     assert_real_github_schema(definition);
 }
 
+async fn assert_reregistration_rotates_credentials(
+    registry: &ToolRegistry,
+    credential_registry: &SharedCredentialRegistry,
+    runtime: &Arc<crate::tools::wasm::WasmToolRuntime>,
+    wasm_binary: &[u8],
+) {
+    registry
+        .register_wasm(registration_with_credential(
+            "github",
+            wasm_binary,
+            runtime,
+            CredentialSpec {
+                secret_name: "rotated_token",
+                host_pattern: "api-v2.example.com",
+            },
+        ))
+        .await
+        .expect("re-registration should replace credentials for the same tool");
+    assert!(
+        credential_registry
+            .find_for_host("api.example.com")
+            .is_empty(),
+        "re-registration should remove stale credential mappings for the tool"
+    );
+    let mappings = credential_registry.find_for_host("api-v2.example.com");
+    assert_eq!(mappings.len(), 1);
+    assert_eq!(mappings[0].secret_name, "rotated_token");
+    assert!(
+        credential_registry
+            .find_for_host("rejected.example.com")
+            .is_empty(),
+        "failed registrations should leave the credential registry unchanged"
+    );
+}
+
 #[tokio::test]
 async fn register_wasm_persists_credentials_only_after_successful_registration() {
     let credential_registry = Arc::new(SharedCredentialRegistry::new());
@@ -106,33 +141,13 @@ async fn register_wasm_persists_credentials_only_after_successful_registration()
     let mappings = credential_registry.find_for_host("api.example.com");
     assert_eq!(mappings.len(), 1);
     assert_eq!(mappings[0].secret_name, "accepted_token");
-    registry
-        .register_wasm(registration_with_credential(
-            "github",
-            &wasm_binary,
-            &runtime,
-            CredentialSpec {
-                secret_name: "rotated_token",
-                host_pattern: "api-v2.example.com",
-            },
-        ))
-        .await
-        .expect("re-registration should replace credentials for the same tool");
-    assert!(
-        credential_registry
-            .find_for_host("api.example.com")
-            .is_empty(),
-        "re-registration should remove stale credential mappings for the tool"
-    );
-    let mappings = credential_registry.find_for_host("api-v2.example.com");
-    assert_eq!(mappings.len(), 1);
-    assert_eq!(mappings[0].secret_name, "rotated_token");
-    assert!(
-        credential_registry
-            .find_for_host("rejected.example.com")
-            .is_empty(),
-        "failed registrations should leave the credential registry unchanged"
-    );
+    assert_reregistration_rotates_credentials(
+        &registry,
+        &credential_registry,
+        &runtime,
+        &wasm_binary,
+    )
+    .await;
 }
 
 fn github_wasm_bytes() -> Vec<u8> {
