@@ -320,5 +320,7 @@ mod duration_precision;
 mod handle_build_result;
 #[path = "default_tests/helpers.rs"]
 mod helpers;
+#[path = "default_tests/repair_claims.rs"]
+mod repair_claims;
 #[path = "default_tests/repair_end_to_end.rs"]
 mod repair_end_to_end;
