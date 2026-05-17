@@ -3,9 +3,9 @@
 //! This module contains most `delegate!` macro invocations that forward
 //! trait implementations to the inner NullDatabase. The CapturingStore
 //! overrides `persist_terminal_result_and_status`, `update_job_status`,
-//! `save_job_event`, and `mark_tool_repaired` to capture calls; all other
-//! methods are delegated unchanged through the `delegate!` macro invocations
-//! below.
+//! `save_job_event`, `increment_repair_attempts`, and `mark_tool_repaired`
+//! to capture calls or inject errors; all other methods are delegated
+//! unchanged through the `delegate!` macro invocations below.
 
 use delegate::delegate;
 use uuid::Uuid;
@@ -300,8 +300,14 @@ impl crate::db::NativeToolFailureStore for CapturingStore {
                 &self,
                 threshold: i32
             ) -> Result<Vec<crate::agent::BrokenTool>, DatabaseError>;
-            async fn increment_repair_attempts(&self, tool_name: &str) -> Result<(), DatabaseError>;
         }
+    }
+
+    async fn increment_repair_attempts(&self, tool_name: &str) -> Result<(), DatabaseError> {
+        if let Some(error) = self.take_increment_repair_attempts_error() {
+            return Err(error);
+        }
+        crate::db::NativeToolFailureStore::increment_repair_attempts(&self.inner, tool_name).await
     }
 }
 

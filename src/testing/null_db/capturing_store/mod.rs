@@ -155,6 +155,9 @@ impl Calls {
 pub struct CapturingStore {
     pub(crate) inner: NullDatabase,
     calls: Arc<Calls>,
+    /// Optional error to return from the next `increment_repair_attempts` call.
+    /// Consumed on first use; subsequent calls delegate to `self.inner`.
+    increment_repair_attempts_error: SyncMutex<Option<DatabaseError>>,
     /// Optional error to return from the next `mark_tool_repaired` call.
     /// Consumed on first use; subsequent calls delegate to `self.inner`.
     mark_repaired_error: SyncMutex<Option<DatabaseError>>,
@@ -166,6 +169,18 @@ impl CapturingStore {
         Self {
             inner: NullDatabase::new(),
             calls: Arc::new(Calls::new()),
+            increment_repair_attempts_error: SyncMutex::new(None),
+            mark_repaired_error: SyncMutex::new(None),
+        }
+    }
+
+    /// Constructs a [`CapturingStore`] that fails its first
+    /// `increment_repair_attempts` call with the given error.
+    pub fn failing_increment_repair_attempts_once(error: DatabaseError) -> Self {
+        Self {
+            inner: NullDatabase::new(),
+            calls: Arc::new(Calls::new()),
+            increment_repair_attempts_error: SyncMutex::new(Some(error)),
             mark_repaired_error: SyncMutex::new(None),
         }
     }
@@ -175,6 +190,7 @@ impl CapturingStore {
         Self {
             inner: NullDatabase::new(),
             calls: Arc::new(Calls::new()),
+            increment_repair_attempts_error: SyncMutex::new(None),
             mark_repaired_error: SyncMutex::new(Some(error)),
         }
     }
@@ -182,6 +198,18 @@ impl CapturingStore {
     /// Access the captured calls for assertions.
     pub fn calls(&self) -> &Arc<Calls> {
         &self.calls
+    }
+
+    /// Takes and returns the stored `increment_repair_attempts` error, if any.
+    ///
+    /// Returns `None` after the first call, making subsequent
+    /// `increment_repair_attempts` invocations delegate to `self.inner`.
+    /// Recovers a poisoned mutex via [`std::sync::PoisonError::into_inner`].
+    pub(crate) fn take_increment_repair_attempts_error(&self) -> Option<DatabaseError> {
+        self.increment_repair_attempts_error
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .take()
     }
 
     /// Takes and returns the stored `mark_tool_repaired` error, if any.
