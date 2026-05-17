@@ -5,7 +5,7 @@
 //! delegates analysis and compilation to a [`SoftwareBuilder`], and
 //! returns a structured JSON [`ToolOutput`].  Optional `type` and
 //! `language` parameters are resolved through private helpers that
-//! centralise fallback and error-message logic.
+//! centralize fallback and error-message logic.
 
 use super::*;
 
@@ -188,33 +188,43 @@ mod tests {
     use super::*;
     use insta::assert_snapshot;
 
+    type AnalyzeResult = dyn Fn() -> Result<BuildRequirement, AgentToolError> + Send + Sync;
+    type BuildResultFn =
+        dyn Fn(&BuildRequirement) -> Result<BuildResult, AgentToolError> + Send + Sync;
+
     fn assert_invalid_parameters<T: std::fmt::Debug>(
         result: Result<T, ToolError>,
         expected_msg: &str,
     ) {
-        match result.unwrap_err() {
+        match result.expect_err("expected invalid parameters error") {
             ToolError::InvalidParameters(msg) => assert_eq!(msg, expected_msg),
             other => panic!("unexpected error: {:?}", other),
         }
     }
 
     struct FakeSoftwareBuilder {
-        analyze_result: Arc<dyn Fn() -> Result<BuildRequirement, AgentToolError> + Send + Sync>,
-        build_result: Arc<dyn Fn() -> Result<BuildResult, AgentToolError> + Send + Sync>,
+        analyze_result: Arc<AnalyzeResult>,
+        build_result: Arc<BuildResultFn>,
     }
 
     impl FakeSoftwareBuilder {
         fn always_analyze(req: BuildRequirement) -> Self {
             Self {
                 analyze_result: Arc::new(move || Ok(req.clone())),
-                build_result: Arc::new(|| panic!("build not expected")),
+                build_result: Arc::new(|_| panic!("build not expected")),
             }
         }
 
         fn success(req: BuildRequirement, result: BuildResult) -> Self {
             Self {
                 analyze_result: Arc::new(move || Ok(req.clone())),
-                build_result: Arc::new(move || Ok(result.clone())),
+                build_result: Arc::new(move |requirement| {
+                    assert_eq!(requirement.name, result.requirement.name);
+                    assert_eq!(requirement.description, result.requirement.description);
+                    assert_eq!(requirement.software_type, result.requirement.software_type);
+                    assert_eq!(requirement.language, result.requirement.language);
+                    Ok(result.clone())
+                }),
             }
         }
     }
@@ -230,9 +240,9 @@ mod tests {
 
         fn build<'a>(
             &'a self,
-            _requirement: &'a BuildRequirement,
+            requirement: &'a BuildRequirement,
         ) -> SoftwareBuilderFuture<'a, Result<BuildResult, AgentToolError>> {
-            let res = (self.build_result)();
+            let res = (self.build_result)(requirement);
             Box::pin(async move { res })
         }
 
