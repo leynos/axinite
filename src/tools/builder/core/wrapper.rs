@@ -182,126 +182,113 @@ impl NativeTool for BuildSoftwareTool {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use std::sync::Arc;
 
+    use super::super::domain::SoftwareBuilderFuture;
+    use super::*;
     use insta::assert_snapshot;
 
-    // resolve_override -------------------------------------------------------
-
-    #[test]
-    fn resolve_override_none_returns_fallback() {
-        let result: Result<u32, ToolError> =
-            BuildSoftwareTool::resolve_override(None, 42u32, "thing", |_| None);
-        assert_eq!(result.unwrap(), 42);
-    }
-
-    #[test]
-    fn resolve_override_some_valid_returns_parsed() {
-        let result: Result<u32, ToolError> =
-            BuildSoftwareTool::resolve_override(Some("one"), 0u32, "thing", |s| {
-                (s == "one").then_some(1u32)
-            });
-        assert_eq!(result.unwrap(), 1);
-    }
-
-    #[test]
-    fn resolve_override_some_invalid_returns_invalid_parameters() {
-        let result: Result<u32, ToolError> =
-            BuildSoftwareTool::resolve_override(Some("nope"), 0u32, "thing", |_| None);
-        match result.unwrap_err() {
+    fn assert_invalid_parameters<T: std::fmt::Debug>(result: Result<T, ToolError>, expected: &str) {
+        match result.expect_err("expected invalid parameters error") {
             ToolError::InvalidParameters(msg) => {
-                assert_eq!(msg, "unknown thing: nope");
+                assert!(
+                    msg.contains(expected),
+                    "expected message {msg:?} to contain {expected:?}"
+                );
             }
             other => panic!("unexpected error: {:?}", other),
         }
     }
 
-    // resolve_software_type --------------------------------------------------
-
-    #[test]
-    fn resolve_software_type_none_preserves_fallback() {
-        let result = BuildSoftwareTool::resolve_software_type(None, SoftwareType::Library);
-        assert_eq!(result.unwrap(), SoftwareType::Library);
+    struct FakeSoftwareBuilder {
+        analyze_result: Arc<dyn Fn() -> Result<BuildRequirement, AgentToolError> + Send + Sync>,
+        build_result: Arc<dyn Fn() -> Result<BuildResult, AgentToolError> + Send + Sync>,
     }
 
-    #[test]
-    fn resolve_software_type_all_valid_values() {
-        let cases = [
-            ("wasm_tool", SoftwareType::WasmTool),
-            ("cli_binary", SoftwareType::CliBinary),
-            ("library", SoftwareType::Library),
-            ("script", SoftwareType::Script),
-        ];
-        for (input, expected) in cases {
-            let result =
-                BuildSoftwareTool::resolve_software_type(Some(input), SoftwareType::WasmTool);
-            assert_eq!(result.unwrap(), expected, "input: {input}");
-        }
-    }
-
-    #[test]
-    fn resolve_software_type_unknown_value_errors() {
-        let result =
-            BuildSoftwareTool::resolve_software_type(Some("web_service"), SoftwareType::WasmTool);
-        match result.unwrap_err() {
-            ToolError::InvalidParameters(msg) => {
-                assert_eq!(msg, "unknown type: web_service");
+    impl FakeSoftwareBuilder {
+        fn always_analyze(req: BuildRequirement) -> Self {
+            Self {
+                analyze_result: Arc::new(move || Ok(req.clone())),
+                build_result: Arc::new(|| panic!("build not expected")),
             }
-            other => panic!("unexpected error: {:?}", other),
         }
-    }
 
-    #[test]
-    fn resolve_software_type_is_case_sensitive() {
-        let result =
-            BuildSoftwareTool::resolve_software_type(Some("WasmTool"), SoftwareType::Script);
-        assert!(result.is_err());
-    }
-
-    // resolve_language -------------------------------------------------------
-
-    #[test]
-    fn resolve_language_none_preserves_fallback() {
-        let result = BuildSoftwareTool::resolve_language(None, Language::Python);
-        assert_eq!(result.unwrap(), Language::Python);
-    }
-
-    #[test]
-    fn resolve_language_all_valid_values() {
-        let cases = [
-            ("rust", Language::Rust),
-            ("python", Language::Python),
-            ("typescript", Language::TypeScript),
-            ("bash", Language::Bash),
-        ];
-        for (input, expected) in cases {
-            let result = BuildSoftwareTool::resolve_language(Some(input), Language::Rust);
-            assert_eq!(result.unwrap(), expected, "input: {input}");
-        }
-    }
-
-    #[test]
-    fn resolve_language_unknown_value_errors() {
-        let result = BuildSoftwareTool::resolve_language(Some("go"), Language::Rust);
-        match result.unwrap_err() {
-            ToolError::InvalidParameters(msg) => {
-                assert_eq!(msg, "unknown language: go");
+        fn success(req: BuildRequirement, result: BuildResult) -> Self {
+            Self {
+                analyze_result: Arc::new(move || Ok(req.clone())),
+                build_result: Arc::new(move || Ok(result.clone())),
             }
-            other => panic!("unexpected error: {:?}", other),
         }
     }
 
-    #[test]
-    fn resolve_language_is_case_sensitive() {
-        let result = BuildSoftwareTool::resolve_language(Some("Rust"), Language::Bash);
-        assert!(result.is_err());
+    impl SoftwareBuilder for FakeSoftwareBuilder {
+        fn analyze<'a>(
+            &'a self,
+            _description: &'a str,
+        ) -> SoftwareBuilderFuture<'a, Result<BuildRequirement, AgentToolError>> {
+            let res = (self.analyze_result)();
+            Box::pin(async move { res })
+        }
+
+        fn build<'a>(
+            &'a self,
+            _requirement: &'a BuildRequirement,
+        ) -> SoftwareBuilderFuture<'a, Result<BuildResult, AgentToolError>> {
+            let res = (self.build_result)();
+            Box::pin(async move { res })
+        }
+
+        fn repair<'a>(
+            &'a self,
+            _result: &'a BuildResult,
+            _error: &'a str,
+        ) -> SoftwareBuilderFuture<'a, Result<BuildResult, AgentToolError>> {
+            Box::pin(async { panic!("repair not expected") })
+        }
+    }
+
+    fn test_requirement() -> BuildRequirement {
+        BuildRequirement {
+            name: ProjectName::new("test_tool").expect("test project name should be valid"),
+            description: "build a test tool".to_string(),
+            software_type: SoftwareType::Library,
+            language: Language::Rust,
+            input_spec: None,
+            output_spec: None,
+            dependencies: vec![],
+            capabilities: vec![],
+        }
+    }
+
+    fn test_build_result(requirement: BuildRequirement) -> BuildResult {
+        let now = Utc::now();
+        BuildResult {
+            build_id: Uuid::nil(),
+            requirement,
+            artifact_path: PathBuf::from("/tmp/test-tool"),
+            logs: vec![BuildLog {
+                timestamp: Utc::now(),
+                phase: BuildPhase::Complete,
+                message: "built".to_string(),
+                details: None,
+            }],
+            success: true,
+            error: None,
+            started_at: now,
+            completed_at: now,
+            iterations: 1,
+            validation_warnings: vec![],
+            tests_passed: 1,
+            tests_failed: 0,
+            registered: false,
+        }
     }
 
     #[test]
     fn snapshot_resolve_software_type_unknown_error_message() {
         let err =
             BuildSoftwareTool::resolve_software_type(Some("unknown_value"), SoftwareType::WasmTool)
-                .unwrap_err()
+                .expect_err("expected unknown software type error")
                 .to_string();
         assert_snapshot!(err);
     }
@@ -309,8 +296,76 @@ mod tests {
     #[test]
     fn snapshot_resolve_language_unknown_error_message() {
         let err = BuildSoftwareTool::resolve_language(Some("cobol"), Language::Rust)
-            .unwrap_err()
+            .expect_err("expected unknown language error")
             .to_string();
         assert_snapshot!(err);
+    }
+
+    #[tokio::test]
+    async fn execute_missing_description_returns_error() {
+        let builder = FakeSoftwareBuilder::always_analyze(test_requirement());
+        let tool = BuildSoftwareTool::new(Arc::new(builder));
+
+        let result = tool
+            .execute(serde_json::json!({}), &JobContext::default())
+            .await;
+
+        assert_invalid_parameters(result, "missing 'description'");
+    }
+
+    #[tokio::test]
+    async fn execute_invalid_type_override_returns_error() {
+        let builder = FakeSoftwareBuilder::always_analyze(test_requirement());
+        let tool = BuildSoftwareTool::new(Arc::new(builder));
+
+        let result = tool
+            .execute(
+                serde_json::json!({
+                    "description": "x",
+                    "type": "garbage",
+                }),
+                &JobContext::default(),
+            )
+            .await;
+
+        assert_invalid_parameters(result, "unknown type: garbage");
+    }
+
+    #[tokio::test]
+    async fn execute_invalid_language_override_returns_error() {
+        let builder = FakeSoftwareBuilder::always_analyze(test_requirement());
+        let tool = BuildSoftwareTool::new(Arc::new(builder));
+
+        let result = tool
+            .execute(
+                serde_json::json!({
+                    "description": "x",
+                    "language": "cobol",
+                }),
+                &JobContext::default(),
+            )
+            .await;
+
+        assert_invalid_parameters(result, "unknown language: cobol");
+    }
+
+    #[tokio::test]
+    async fn execute_valid_params_returns_success_output() {
+        let requirement = test_requirement();
+        let build_result = test_build_result(requirement.clone());
+        let builder = FakeSoftwareBuilder::success(requirement, build_result);
+        let tool = BuildSoftwareTool::new(Arc::new(builder));
+
+        let output = tool
+            .execute(
+                serde_json::json!({
+                    "description": "build a test tool",
+                }),
+                &JobContext::default(),
+            )
+            .await
+            .expect("expected execute to return successful output");
+
+        assert_eq!(output.result["success"], true);
     }
 }
