@@ -194,7 +194,7 @@ mod tests {
     ) {
         match result.unwrap_err() {
             ToolError::InvalidParameters(msg) => assert_eq!(msg, expected_msg),
-            other => panic!("unexpected error variant: {other:?}"),
+            other => panic!("unexpected error: {:?}", other),
         }
     }
 
