@@ -188,15 +188,13 @@ mod tests {
     use super::*;
     use insta::assert_snapshot;
 
-    fn assert_invalid_parameters<T: std::fmt::Debug>(result: Result<T, ToolError>, expected: &str) {
-        match result.expect_err("expected invalid parameters error") {
-            ToolError::InvalidParameters(msg) => {
-                assert!(
-                    msg.contains(expected),
-                    "expected message {msg:?} to contain {expected:?}"
-                );
-            }
-            other => panic!("unexpected error: {:?}", other),
+    fn assert_invalid_parameters<T: std::fmt::Debug>(
+        result: Result<T, ToolError>,
+        expected_msg: &str,
+    ) {
+        match result.unwrap_err() {
+            ToolError::InvalidParameters(msg) => assert_eq!(msg, expected_msg),
+            other => panic!("unexpected error variant: {other:?}"),
         }
     }
 
@@ -282,6 +280,26 @@ mod tests {
             tests_failed: 0,
             registered: false,
         }
+    }
+
+    #[test]
+    fn resolve_override_some_invalid_returns_invalid_parameters() {
+        let result: Result<u32, ToolError> =
+            BuildSoftwareTool::resolve_override(Some("nope"), 0u32, "thing", |_| None);
+        assert_invalid_parameters(result, "unknown thing: nope");
+    }
+
+    #[test]
+    fn resolve_software_type_unknown_value_errors() {
+        let result =
+            BuildSoftwareTool::resolve_software_type(Some("web_service"), SoftwareType::WasmTool);
+        assert_invalid_parameters(result, "unknown type: web_service");
+    }
+
+    #[test]
+    fn resolve_language_unknown_value_errors() {
+        let result = BuildSoftwareTool::resolve_language(Some("go"), Language::Rust);
+        assert_invalid_parameters(result, "unknown language: go");
     }
 
     #[test]
