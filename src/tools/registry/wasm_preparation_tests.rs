@@ -21,7 +21,7 @@ use super::wasm_preparation::{
     PreparedWasmTool, WasmMetadataHints, WasmRuntimeConfig, apply_wasm_overrides,
     credential_mappings_from_capabilities, prepare_wasm_tool, recover_guest_metadata,
 };
-use crate::secrets::CredentialMapping;
+use crate::secrets::{CredentialLocation, CredentialMapping};
 use crate::testing::{github_wasm_artifact, metadata_test_runtime};
 use crate::tools::tool::NativeTool;
 use crate::tools::wasm::{Capabilities, HttpCapability, OAuthRefreshConfig, WasmToolWrapper};
@@ -62,7 +62,11 @@ async fn prepare_wasm_tool_prepares_wrapper_and_collects_credentials() -> Result
             "github",
             CredentialMapping::bearer("github_token", "api.github.com"),
         ));
-    let expected_credential_mappings = credential_mappings_from_capabilities(&capabilities);
+    let expected_credential_mappings = [CredentialMapping {
+        secret_name: "github_token".to_string(),
+        location: CredentialLocation::AuthorizationBearer,
+        host_patterns: vec!["api.github.com".to_string()],
+    }];
     let schema_override = serde_json::json!({
         "type": "object",
         "properties": {
