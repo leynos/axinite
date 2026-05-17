@@ -209,23 +209,44 @@ pub(super) fn write_legacy_settings(dir: &TempDir) -> std::path::PathBuf {
     settings_path
 }
 
-pub(super) fn assert_migration_counts(
-    state: &MigrationStoreState,
-    has: usize,
-    all: usize,
-    set: usize,
+pub(super) fn assert_store_calls(
+    store: &MigrationStore,
+    has_settings: usize,
+    set_all_settings: usize,
 ) {
-    assert_eq!(state.has_settings_calls, has);
-    assert_eq!(state.set_all_settings_calls, all);
-    assert_eq!(state.set_setting_calls, set);
+    let state = store.state();
+    assert_eq!(
+        state.has_settings_calls, has_settings,
+        "has_settings call count"
+    );
+    assert_eq!(
+        state.set_all_settings_calls, set_all_settings,
+        "set_all_settings call count"
+    );
+    assert_eq!(
+        state.set_setting_calls, 0,
+        "set_setting must never be called"
+    );
 }
 
-pub(super) fn assert_legacy_file_state(
-    settings_path: &std::path::Path,
-    should_exist: bool,
-    migrated_exists: bool,
-) {
-    assert_eq!(settings_path.exists(), should_exist);
-    let migrated_path = settings_path.with_file_name("settings.json.migrated");
-    assert_eq!(migrated_path.exists(), migrated_exists);
+pub(super) fn assert_legacy_file_renamed(dir: &TempDir) {
+    assert!(
+        !dir.path().join("settings.json").exists(),
+        "settings.json must have been renamed away"
+    );
+    assert!(
+        dir.path().join("settings.json.migrated").exists(),
+        "settings.json.migrated must exist"
+    );
+}
+
+pub(super) fn assert_legacy_file_not_renamed(dir: &TempDir) {
+    assert!(
+        dir.path().join("settings.json").exists(),
+        "settings.json must still be present after a failed migration"
+    );
+    assert!(
+        !dir.path().join("settings.json.migrated").exists(),
+        "settings.json.migrated must not exist after a failed migration"
+    );
 }

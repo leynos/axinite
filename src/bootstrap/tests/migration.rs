@@ -5,6 +5,31 @@ use tempfile::tempdir;
 
 use super::super::*;
 
+fn would_autodetect_libsql(db_path: &std::path::Path) -> bool {
+    std::env::var("DATABASE_BACKEND").is_err() && db_path.exists()
+}
+
+fn assert_bootstrap_env_written(env_path: &std::path::Path, expected_url: &str) {
+    assert!(env_path.exists(), ".env must exist after migration");
+    let content = std::fs::read_to_string(env_path).expect("read migrated .env");
+    assert_eq!(
+        content,
+        format!("DATABASE_URL=\"{expected_url}\"\n"),
+        ".env content must contain the migrated DATABASE_URL"
+    );
+}
+
+fn assert_bootstrap_file_renamed(dir_path: &std::path::Path) {
+    assert!(
+        !dir_path.join("bootstrap.json").exists(),
+        "bootstrap.json must have been renamed away"
+    );
+    assert!(
+        dir_path.join("bootstrap.json.migrated").exists(),
+        "bootstrap.json.migrated must exist"
+    );
+}
+
 #[test]
 fn test_migrate_bootstrap_json_to_env() {
     let dir = tempdir().expect("create temp dir for bootstrap migration");
@@ -28,14 +53,8 @@ fn test_migrate_bootstrap_json_to_env() {
 
     migrate_bootstrap_json_to_env(&env_path);
 
-    assert!(env_path.exists());
-    let content = std::fs::read_to_string(&env_path).expect("read migrated .env");
-    assert_eq!(
-        content,
-        "DATABASE_URL=\"postgres://localhost/ironclaw_upgrade\"\n"
-    );
-    assert!(!bootstrap_path.exists());
-    assert!(dir.path().join("bootstrap.json.migrated").exists());
+    assert_bootstrap_env_written(&env_path, "postgres://localhost/ironclaw_upgrade");
+    assert_bootstrap_file_renamed(dir.path());
 }
 
 #[test]
@@ -76,18 +95,14 @@ fn test_libsql_autodetect_sets_backend_when_db_exists() {
     let db_path = dir.path().join("ironclaw.db");
 
     assert!(!db_path.exists());
-    let would_trigger = std::env::var("DATABASE_BACKEND").is_err() && db_path.exists();
     assert!(
-        !would_trigger,
+        !would_autodetect_libsql(&db_path),
         "should not auto-detect when db file is absent"
     );
 
     std::fs::write(&db_path, "").expect("create libsql marker file");
-    assert!(db_path.exists());
-
-    let detected = std::env::var("DATABASE_BACKEND").is_err() && db_path.exists();
     assert!(
-        detected,
+        would_autodetect_libsql(&db_path),
         "should detect libsql when db file is present and backend unset"
     );
 }
