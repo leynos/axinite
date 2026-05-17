@@ -207,7 +207,7 @@ fn read_optional_json_file(path: &Path, file_name: &str) -> Option<serde_json::V
 }
 
 async fn migrate_json_sidecar(
-    store: &dyn crate::db::Database,
+    store: &(impl crate::db::SettingsStore + ?Sized),
     spec: &SidecarSpec<'_>,
 ) -> Result<(), MigrationError> {
     let Some(value) = read_optional_json_file(spec.path, spec.file_name) else {
@@ -264,7 +264,7 @@ fn read_legacy_state(path: &Path) -> Result<Option<serde_json::Value>, Migration
 }
 
 async fn apply_migration_to_db(
-    store: &dyn crate::db::Database,
+    store: &(impl crate::db::SettingsStore + ?Sized),
     user_id: &str,
     legacy: &serde_json::Value,
     legacy_settings_path: &Path,
@@ -359,7 +359,7 @@ pub async fn migrate_disk_to_db(
 /// migration to fail. Database and read/write failures that should stop the
 /// migration are returned as [`MigrationError`].
 pub(super) async fn migrate_disk_to_db_from_dir(
-    store: &dyn crate::db::Database,
+    store: &(impl crate::db::SettingsStore + ?Sized),
     user_id: &str,
     ironclaw_dir: &Path,
 ) -> Result<(), MigrationError> {

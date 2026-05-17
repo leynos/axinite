@@ -1,13 +1,18 @@
 //! Tests for bootstrap migration and upsert helpers.
 
+use std::collections::HashMap;
 use std::io::ErrorKind;
 #[cfg(unix)]
 use std::os::unix::fs::PermissionsExt;
+use std::sync::Mutex;
 
 use rstest::{fixture, rstest};
 use tempfile::{TempDir, tempdir};
 use tracing_test::traced_test;
 
+use crate::db::{DbFuture, SettingKey, SettingsStore, UserId};
+use crate::error::DatabaseError;
+use crate::history::SettingRow;
 use crate::testing::test_utils::EnvVarsGuard;
 
 use super::super::*;
@@ -25,6 +30,119 @@ struct RenameFixture {
     path: std::path::PathBuf,
     #[cfg(unix)]
     original_dir_permissions: Option<std::fs::Permissions>,
+}
+
+#[derive(Debug, Default)]
+struct MigrationStoreState {
+    has_settings_calls: usize,
+    set_all_settings_calls: usize,
+    set_setting_calls: usize,
+    captured_settings: HashMap<String, serde_json::Value>,
+}
+
+#[derive(Debug)]
+struct MigrationStore {
+    has_settings_result: Result<bool, &'static str>,
+    set_all_settings_result: Result<(), &'static str>,
+    state: Mutex<MigrationStoreState>,
+}
+
+impl MigrationStore {
+    fn new(has_settings_result: Result<bool, &'static str>) -> Self {
+        Self {
+            has_settings_result,
+            set_all_settings_result: Ok(()),
+            state: Mutex::new(MigrationStoreState::default()),
+        }
+    }
+
+    fn with_set_all_error() -> Self {
+        Self {
+            has_settings_result: Ok(false),
+            set_all_settings_result: Err("forced set_all_settings failure"),
+            state: Mutex::new(MigrationStoreState::default()),
+        }
+    }
+
+    fn state(&self) -> std::sync::MutexGuard<'_, MigrationStoreState> {
+        self.state.lock().expect("migration store state lock")
+    }
+}
+
+impl SettingsStore for MigrationStore {
+    fn get_setting<'a>(
+        &'a self,
+        _user_id: UserId,
+        _key: SettingKey,
+    ) -> DbFuture<'a, Result<Option<serde_json::Value>, DatabaseError>> {
+        Box::pin(async { Ok(None) })
+    }
+
+    fn get_setting_full<'a>(
+        &'a self,
+        _user_id: UserId,
+        _key: SettingKey,
+    ) -> DbFuture<'a, Result<Option<SettingRow>, DatabaseError>> {
+        Box::pin(async { Ok(None) })
+    }
+
+    fn set_setting<'a>(
+        &'a self,
+        _user_id: UserId,
+        _key: SettingKey,
+        _value: &'a serde_json::Value,
+    ) -> DbFuture<'a, Result<(), DatabaseError>> {
+        Box::pin(async {
+            self.state().set_setting_calls += 1;
+            Ok(())
+        })
+    }
+
+    fn delete_setting<'a>(
+        &'a self,
+        _user_id: UserId,
+        _key: SettingKey,
+    ) -> DbFuture<'a, Result<bool, DatabaseError>> {
+        Box::pin(async { Ok(false) })
+    }
+
+    fn list_settings<'a>(
+        &'a self,
+        _user_id: UserId,
+    ) -> DbFuture<'a, Result<Vec<SettingRow>, DatabaseError>> {
+        Box::pin(async { Ok(Vec::new()) })
+    }
+
+    fn get_all_settings<'a>(
+        &'a self,
+        _user_id: UserId,
+    ) -> DbFuture<'a, Result<HashMap<String, serde_json::Value>, DatabaseError>> {
+        Box::pin(async { Ok(HashMap::new()) })
+    }
+
+    fn set_all_settings<'a>(
+        &'a self,
+        _user_id: UserId,
+        settings: &'a HashMap<String, serde_json::Value>,
+    ) -> DbFuture<'a, Result<(), DatabaseError>> {
+        Box::pin(async move {
+            let mut state = self.state();
+            state.set_all_settings_calls += 1;
+            state.captured_settings = settings.clone();
+            drop(state);
+
+            self.set_all_settings_result
+                .map_err(|message| DatabaseError::Query(message.to_string()))
+        })
+    }
+
+    fn has_settings<'a>(&'a self, _user_id: UserId) -> DbFuture<'a, Result<bool, DatabaseError>> {
+        Box::pin(async {
+            self.state().has_settings_calls += 1;
+            self.has_settings_result
+                .map_err(|message| DatabaseError::Query(message.to_string()))
+        })
+    }
 }
 
 impl RenameFixture {
@@ -183,6 +301,119 @@ fn test_libsql_autodetect_does_not_override_explicit_backend() {
         !would_override,
         "must not override an explicitly set DATABASE_BACKEND"
     );
+}
+
+fn write_legacy_settings(dir: &TempDir) -> std::path::PathBuf {
+    let settings_path = dir.path().join("settings.json");
+    std::fs::write(
+        &settings_path,
+        serde_json::json!({
+            "onboard_completed": true,
+            "database_backend": "libsql"
+        })
+        .to_string(),
+    )
+    .expect("write legacy settings.json");
+    settings_path
+}
+
+#[tokio::test]
+async fn migrate_disk_to_db_from_dir_missing_legacy_file_is_noop() {
+    let dir = tempdir().expect("create temp dir for missing settings migration");
+    let store = MigrationStore::new(Ok(false));
+
+    super::super::migration::migrate_disk_to_db_from_dir(&store, "test-user", dir.path())
+        .await
+        .expect("missing settings migration should succeed");
+
+    let state = store.state();
+    assert_eq!(state.has_settings_calls, 0);
+    assert_eq!(state.set_all_settings_calls, 0);
+    assert_eq!(state.set_setting_calls, 0);
+    assert!(!dir.path().join("settings.json.migrated").exists());
+}
+
+#[tokio::test]
+async fn migrate_disk_to_db_from_dir_renames_when_db_already_has_settings() {
+    let dir = tempdir().expect("create temp dir for stale settings migration");
+    let settings_path = write_legacy_settings(&dir);
+    let store = MigrationStore::new(Ok(true));
+
+    super::super::migration::migrate_disk_to_db_from_dir(&store, "test-user", dir.path())
+        .await
+        .expect("stale settings migration should succeed");
+
+    let state = store.state();
+    assert_eq!(state.has_settings_calls, 1);
+    assert_eq!(state.set_all_settings_calls, 0);
+    assert_eq!(state.set_setting_calls, 0);
+    assert!(!settings_path.exists());
+    assert!(dir.path().join("settings.json.migrated").exists());
+}
+
+#[tokio::test]
+async fn migrate_disk_to_db_from_dir_writes_settings_and_renames_legacy_file() {
+    let dir = tempdir().expect("create temp dir for settings migration");
+    let settings_path = write_legacy_settings(&dir);
+    let store = MigrationStore::new(Ok(false));
+
+    super::super::migration::migrate_disk_to_db_from_dir(&store, "test-user", dir.path())
+        .await
+        .expect("settings migration should succeed");
+
+    let state = store.state();
+    assert_eq!(state.has_settings_calls, 1);
+    assert_eq!(state.set_all_settings_calls, 1);
+    assert_eq!(state.set_setting_calls, 0);
+    assert_eq!(
+        state.captured_settings.get("onboard_completed"),
+        Some(&serde_json::Value::Bool(true))
+    );
+    assert!(!settings_path.exists());
+    assert!(dir.path().join("settings.json.migrated").exists());
+}
+
+#[tokio::test]
+async fn migrate_disk_to_db_from_dir_db_failure_leaves_legacy_file_unmigrated() {
+    let dir = tempdir().expect("create temp dir for failed settings migration");
+    let settings_path = write_legacy_settings(&dir);
+    let store = MigrationStore::with_set_all_error();
+
+    let error =
+        super::super::migration::migrate_disk_to_db_from_dir(&store, "test-user", dir.path())
+            .await
+            .expect_err("database write failure should abort migration");
+
+    assert!(
+        matches!(error, MigrationError::Database(message) if message.contains("Failed to write settings to DB"))
+    );
+    let state = store.state();
+    assert_eq!(state.has_settings_calls, 1);
+    assert_eq!(state.set_all_settings_calls, 1);
+    assert_eq!(state.set_setting_calls, 0);
+    assert!(settings_path.exists());
+    assert!(!dir.path().join("settings.json.migrated").exists());
+}
+
+#[tokio::test]
+async fn migrate_disk_to_db_from_dir_is_ok_after_best_effort_rename_removed_source() {
+    let dir = tempdir().expect("create temp dir for repeated settings migration");
+    let settings_path = write_legacy_settings(&dir);
+    let store = MigrationStore::new(Ok(false));
+
+    super::super::migration::migrate_disk_to_db_from_dir(&store, "test-user", dir.path())
+        .await
+        .expect("first settings migration should succeed");
+    super::super::migration::migrate_disk_to_db_from_dir(&store, "test-user", dir.path())
+        .await
+        .expect("second settings migration should succeed after source was renamed");
+
+    let state = store.state();
+    assert_eq!(state.has_settings_calls, 1);
+    assert_eq!(state.set_all_settings_calls, 1);
+    assert_eq!(state.set_setting_calls, 0);
+    assert!(!settings_path.exists());
+    assert!(dir.path().join("settings.json.migrated").exists());
 }
 
 #[test]
