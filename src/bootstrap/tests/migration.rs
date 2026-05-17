@@ -539,3 +539,109 @@ fn migrate_bootstrap_json_to_env_rename_failure_leaves_env_written() {
         ".env must still exist after idempotent second run"
     );
 }
+
+mod migrate_disk_to_db_from_dir_tests {
+    use tempfile::tempdir;
+
+    use crate::error::DatabaseError;
+
+    use super::super::super::migration;
+    use super::MigrationStore;
+
+    fn write_legacy_settings(dir: &std::path::Path) {
+        let settings = serde_json::json!({
+            "database_url": "postgres://localhost/ironclaw_test"
+        });
+        std::fs::write(
+            dir.join("settings.json"),
+            serde_json::to_string_pretty(&settings).expect("serialise"),
+        )
+        .expect("write legacy settings.json");
+    }
+
+    #[tokio::test]
+    async fn returns_ok_when_no_legacy_file() {
+        let dir = tempdir().expect("temp dir");
+        let store = MigrationStore::new(Ok(false));
+
+        let result = migration::migrate_disk_to_db_from_dir(&store, "user-1", dir.path()).await;
+
+        assert!(result.is_ok());
+        assert_eq!(store.state().has_settings_calls, 0);
+        assert!(!dir.path().join("settings.json.migrated").exists());
+    }
+
+    #[tokio::test]
+    async fn skips_write_when_db_already_has_settings_and_renames() {
+        let dir = tempdir().expect("temp dir");
+        write_legacy_settings(dir.path());
+
+        let store = MigrationStore::new(Ok(true));
+
+        let result = migration::migrate_disk_to_db_from_dir(&store, "user-1", dir.path()).await;
+
+        assert!(result.is_ok());
+        assert_eq!(store.state().set_all_settings_calls, 0);
+        assert!(!dir.path().join("settings.json").exists());
+        assert!(dir.path().join("settings.json.migrated").exists());
+    }
+
+    #[tokio::test]
+    async fn migrates_and_renames_on_success() {
+        let dir = tempdir().expect("temp dir");
+        write_legacy_settings(dir.path());
+
+        let store = MigrationStore::new(Ok(false));
+
+        let result = migration::migrate_disk_to_db_from_dir(&store, "user-1", dir.path()).await;
+
+        assert!(result.is_ok());
+        assert_eq!(store.state().set_all_settings_calls, 1);
+        assert!(!dir.path().join("settings.json").exists());
+        assert!(dir.path().join("settings.json.migrated").exists());
+    }
+
+    #[tokio::test]
+    async fn returns_migration_error_on_db_failure_and_does_not_rename() {
+        let dir = tempdir().expect("temp dir");
+        write_legacy_settings(dir.path());
+
+        let store = MigrationStore {
+            has_settings_result: Ok(false),
+            set_all_settings_result: Err("injected DB failure"),
+            state: std::sync::Mutex::new(Default::default()),
+        };
+
+        let result = migration::migrate_disk_to_db_from_dir(&store, "user-1", dir.path()).await;
+
+        assert!(result.is_err(), "must propagate DB error");
+        assert!(matches!(
+            store.set_all_settings_result.map_err(|message| DatabaseError::Query(message.to_string())),
+            Err(DatabaseError::Query(message)) if message == "injected DB failure"
+        ));
+        assert!(dir.path().join("settings.json").exists());
+    }
+
+    #[tokio::test]
+    async fn best_effort_rename_on_second_run_returns_ok() {
+        let dir = tempdir().expect("temp dir");
+        write_legacy_settings(dir.path());
+
+        let store = MigrationStore::new(Ok(false));
+
+        migration::migrate_disk_to_db_from_dir(&store, "user-1", dir.path())
+            .await
+            .expect("first run must succeed");
+
+        assert!(!dir.path().join("settings.json").exists());
+
+        let store2 = MigrationStore::new(Ok(false));
+        let result = migration::migrate_disk_to_db_from_dir(&store2, "user-1", dir.path()).await;
+
+        assert!(
+            result.is_ok(),
+            "second run with no settings.json must return Ok"
+        );
+        assert_eq!(store2.state().has_settings_calls, 0);
+    }
+}
