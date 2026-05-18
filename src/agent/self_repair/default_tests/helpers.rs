@@ -5,28 +5,9 @@ use std::path::PathBuf;
 use chrono::Utc;
 use uuid::Uuid;
 
-use crate::agent::self_repair::BrokenTool;
 use crate::error::ToolError;
-use crate::testing::null_db::CapturingStore;
 use crate::tools::builder::ProjectName;
 use crate::tools::{BuildRequirement, BuildResult, Language, NativeSoftwareBuilder, SoftwareType};
-
-/// Constructs a minimal [`BrokenTool`] for use in helper unit tests.
-pub(super) fn stub_broken_tool(
-    name: &str,
-    last_error: Option<&str>,
-    repair_attempts: u32,
-) -> BrokenTool {
-    BrokenTool {
-        name: name.to_string(),
-        failure_count: 3,
-        last_error: last_error.map(str::to_string),
-        first_failure: Utc::now(),
-        last_failure: Utc::now(),
-        last_build_result: None,
-        repair_attempts,
-    }
-}
 
 /// Constructs a minimal [`BuildRequirement`] for use in helper unit tests.
 pub(super) fn stub_build_requirement() -> Result<BuildRequirement, ToolError> {
@@ -129,16 +110,4 @@ impl NativeSoftwareBuilder for StubSoftwareBuilder {
             "unexpected StubSoftwareBuilder::repair call".to_string(),
         ))
     }
-}
-
-/// A [`CapturingStore`] configured to fail on `mark_tool_repaired`.
-pub(super) type FailingRepairStore = CapturingStore;
-
-/// Constructs a [`FailingRepairStore`] that fails its first
-/// `mark_tool_repaired` call with a `DatabaseError::NotFound`.
-pub(super) fn failing_repair_store() -> FailingRepairStore {
-    CapturingStore::failing_mark_tool_repaired_once(crate::error::DatabaseError::NotFound {
-        entity: "tool_failure".to_string(),
-        id: "simulated mark_tool_repaired failure".to_string(),
-    })
 }

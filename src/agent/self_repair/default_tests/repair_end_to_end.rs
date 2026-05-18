@@ -242,3 +242,132 @@ async fn repair_broken_tool_propagates_db_operation_failure(
         "{operation} error must surface as RepairError::Failed",
     );
 }
+
+#[cfg(any(test, feature = "self_repair_extras"))]
+#[rstest]
+#[case("")]
+#[case("bad name")]
+#[tokio::test]
+async fn repair_broken_tool_fails_on_invalid_tool_name(#[case] name: &str) {
+    let store = Arc::new(CapturingStore::new());
+    let repair = build_repair_fixture(
+        store.clone(),
+        StubBuilderOutcome::BuildSucceeded {
+            is_success: true,
+            error: None,
+            iterations: 1,
+            is_registered: false,
+        },
+    );
+    let broken = BrokenTool {
+        name: name.to_string(),
+        failure_count: 2,
+        last_error: None,
+        first_failure: Utc::now(),
+        last_failure: Utc::now(),
+        last_build_result: None,
+        repair_attempts: 0,
+    };
+
+    let result = NativeSelfRepair::repair_broken_tool(&repair, &broken).await;
+
+    assert!(
+        result.is_err(),
+        "repair_broken_tool must return Err for invalid tool name {name:?}, got: {result:?}",
+    );
+    assert!(
+        matches!(
+            result.expect_err("expected RepairError::Failed for invalid tool name"),
+            crate::error::RepairError::Failed { .. }
+        ),
+        "invalid tool name must surface as RepairError::Failed",
+    );
+    assert!(
+        store.calls().repaired_tools.lock().await.is_empty(),
+        "tool must not be marked repaired when name is invalid",
+    );
+}
+
+#[cfg(any(test, feature = "self_repair_extras"))]
+#[tokio::test]
+async fn repair_broken_tool_returns_retry_when_builder_itself_errors() {
+    let store = Arc::new(CapturingStore::new());
+    let repair = build_repair_fixture(
+        store.clone(),
+        StubBuilderOutcome::BuilderErrored("out of memory"),
+    );
+    let broken = e2e_broken_tool(None);
+
+    let result = NativeSelfRepair::repair_broken_tool(&repair, &broken)
+        .await
+        .expect("repair_broken_tool should not error on builder failure");
+
+    let RepairResult::Retry { message } = result else {
+        panic!("expected RepairResult::Retry when builder errors, got: {result:?}");
+    };
+    assert_eq!(
+        message, "Repair build error: Tool builder failed: out of memory",
+        "builder error message must propagate verbatim",
+    );
+    assert!(
+        store.calls().repaired_tools.lock().await.is_empty(),
+        "tool must not be marked repaired when builder errors",
+    );
+}
+
+#[cfg(any(test, feature = "self_repair_extras"))]
+#[tokio::test]
+async fn repair_broken_tool_records_mark_repaired_on_each_successful_call() {
+    let store = Arc::new(CapturingStore::new());
+    let repair = build_repair_fixture(
+        store.clone(),
+        StubBuilderOutcome::BuildSucceeded {
+            is_success: true,
+            error: None,
+            iterations: 1,
+            is_registered: false,
+        },
+    );
+    let broken = e2e_broken_tool(None);
+
+    NativeSelfRepair::repair_broken_tool(&repair, &broken)
+        .await
+        .expect("first call should succeed");
+    NativeSelfRepair::repair_broken_tool(&repair, &broken)
+        .await
+        .expect("second call should succeed");
+
+    assert_eq!(
+        *store.calls().repaired_tools.lock().await,
+        vec!["my-tool".to_string(), "my-tool".to_string()],
+        "each successful repair call must record mark_tool_repaired independently",
+    );
+}
+
+#[cfg(any(test, feature = "self_repair_extras"))]
+#[tokio::test]
+async fn repair_broken_tool_retry_message_uses_unknown_error_when_no_build_error() {
+    let store = Arc::new(CapturingStore::new());
+    let repair = build_repair_fixture(
+        store.clone(),
+        StubBuilderOutcome::BuildSucceeded {
+            is_success: false,
+            error: None,
+            iterations: 1,
+            is_registered: false,
+        },
+    );
+    let broken = e2e_broken_tool(None);
+
+    let result = NativeSelfRepair::repair_broken_tool(&repair, &broken)
+        .await
+        .expect("repair_broken_tool should not error");
+
+    let RepairResult::Retry { message } = result else {
+        panic!("expected RepairResult::Retry, got: {result:?}");
+    };
+    assert_eq!(
+        message, "Repair attempt 1 for 'my-tool' failed: Unknown error",
+        "Retry message must use 'Unknown error' when build result has no error string",
+    );
+}

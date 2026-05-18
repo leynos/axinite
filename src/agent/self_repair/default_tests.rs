@@ -310,14 +310,8 @@ async fn repair_broken_tool_returns_manual_without_builder() {
     );
 }
 
-#[path = "default_tests/attempt_repair_build.rs"]
-mod attempt_repair_build;
-#[path = "default_tests/build_repair_requirement.rs"]
-mod build_repair_requirement;
 #[path = "default_tests/duration_precision.rs"]
 mod duration_precision;
-#[path = "default_tests/handle_build_result.rs"]
-mod handle_build_result;
 #[path = "default_tests/helpers.rs"]
 mod helpers;
 #[path = "default_tests/repair_claims.rs"]
