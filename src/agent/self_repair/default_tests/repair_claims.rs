@@ -139,28 +139,8 @@ fn sequential_repair_succeeds_after_concurrent_claim_is_released() {
 #[test]
 #[ignore = "RepairClaims does not expose a way to poison its private mutex from this module"]
 fn claim_tool_returns_error_when_mutex_is_poisoned() {
-    use std::sync::Arc;
-
-    let claims = Arc::new(RepairClaims::default());
-    let claims_for_thread = Arc::clone(&claims);
-    let tool = broken_tool("my-tool");
-
-    // This demonstrates the attempted public-API route: `claim_tool` releases
-    // the mutex before returning `ToolRepairClaim`, so this panic does not
-    // poison the mutex. Keep the ignored test as a marker for the unreachable
-    // branch without adding unsafe layout access or changing production code.
-    let _ = std::thread::spawn(move || {
-        let tool = broken_tool("my-tool");
-        let _claim = claims_for_thread
-            .claim_tool(&tool)
-            .expect("pre-poison claim should succeed");
-        panic!("intentional panic after claiming the tool");
-    })
-    .join();
-
-    match claims.claim_tool(&tool) {
-        Err(crate::error::RepairError::Failed { .. }) => {}
-        Err(error) => panic!("poisoned-mutex error must be RepairError::Failed, got: {error:?}"),
-        Ok(_) => panic!("claim_tool must return Err when the mutex is poisoned"),
-    }
+    // `RepairClaims::claim_tool` releases its internal mutex before returning
+    // `ToolRepairClaim`. A spawned thread that panics after `claim_tool`
+    // returns therefore panics after the lock guard has been dropped, so it
+    // cannot poison the mutex through the public API.
 }

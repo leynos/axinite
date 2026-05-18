@@ -118,6 +118,26 @@ async fn run_concurrent_repairs(
     ]
 }
 
+/// Builds a default self-repair fixture for public-boundary tests.
+fn build_repair_fixture(
+    store: CapturingStore,
+    builder_outcome: StubBuilderOutcome,
+) -> (DefaultSelfRepair, Arc<CapturingStore>) {
+    let cm = Arc::new(ContextManager::new(10));
+    let store = Arc::new(store);
+    let store_for_repair: Arc<dyn crate::db::Database> = store.clone();
+
+    let builder = Arc::new(StubSoftwareBuilder::new(builder_outcome));
+    let builder_for_repair: Arc<dyn crate::tools::SoftwareBuilder> = builder;
+    let tools = Arc::new(crate::tools::ToolRegistry::new());
+
+    let repair = DefaultSelfRepair::new(cm, Duration::from_secs(60), 3)
+        .with_store(store_for_repair)
+        .with_builder(builder_for_repair, tools);
+
+    (repair, store)
+}
+
 #[cfg(any(test, feature = "self_repair_extras"))]
 #[tokio::test]
 async fn repair_broken_tool_allows_one_concurrent_repair_for_same_tool() {
@@ -161,24 +181,15 @@ async fn repair_broken_tool_allows_one_concurrent_repair_for_same_tool() {
 #[cfg(any(test, feature = "self_repair_extras"))]
 #[tokio::test]
 async fn repair_broken_tool_returns_retry_when_build_fails() {
-    let cm = Arc::new(ContextManager::new(10));
-    let store = Arc::new(CapturingStore::new());
-    let store_for_repair: Arc<dyn crate::db::Database> = store.clone();
-
-    let builder = Arc::new(StubSoftwareBuilder::new(
+    let (repair, store) = build_repair_fixture(
+        CapturingStore::new(),
         StubBuilderOutcome::BuildSucceeded {
             is_success: false,
             error: Some("compilation failed"),
             iterations: 2,
             is_registered: false,
         },
-    ));
-    let builder_for_repair: Arc<dyn crate::tools::SoftwareBuilder> = builder;
-    let tools = Arc::new(crate::tools::ToolRegistry::new());
-
-    let repair = DefaultSelfRepair::new(cm, Duration::from_secs(60), 3)
-        .with_store(store_for_repair)
-        .with_builder(builder_for_repair, tools);
+    );
 
     let broken = BrokenTool {
         name: "my-tool".to_string(),
@@ -208,30 +219,18 @@ async fn repair_broken_tool_returns_retry_when_build_fails() {
 #[cfg(any(test, feature = "self_repair_extras"))]
 #[tokio::test]
 async fn repair_broken_tool_propagates_increment_repair_attempts_failure() {
-    let cm = Arc::new(ContextManager::new(10));
-    // Configure the store to fail `increment_repair_attempts` on the first call.
-    let store = Arc::new(CapturingStore::failing_increment_repair_attempts_once(
-        DatabaseError::NotFound {
+    let (repair, _store) = build_repair_fixture(
+        CapturingStore::failing_increment_repair_attempts_once(DatabaseError::NotFound {
             entity: "tool_failure".to_string(),
             id: "simulated increment failure".to_string(),
-        },
-    ));
-    let store_for_repair: Arc<dyn crate::db::Database> = store.clone();
-
-    let builder = Arc::new(StubSoftwareBuilder::new(
+        }),
         StubBuilderOutcome::BuildSucceeded {
             is_success: true,
             error: None,
             iterations: 1,
             is_registered: false,
         },
-    ));
-    let builder_for_repair: Arc<dyn crate::tools::SoftwareBuilder> = builder;
-    let tools = Arc::new(crate::tools::ToolRegistry::new());
-
-    let repair = DefaultSelfRepair::new(cm, Duration::from_secs(60), 3)
-        .with_store(store_for_repair)
-        .with_builder(builder_for_repair, tools);
+    );
 
     let broken = BrokenTool {
         name: "my-tool".to_string(),
@@ -261,29 +260,18 @@ async fn repair_broken_tool_propagates_increment_repair_attempts_failure() {
 #[cfg(any(test, feature = "self_repair_extras"))]
 #[tokio::test]
 async fn repair_broken_tool_propagates_mark_repaired_failure() {
-    let cm = Arc::new(ContextManager::new(10));
-    let store = Arc::new(CapturingStore::failing_mark_tool_repaired_once(
-        DatabaseError::NotFound {
+    let (repair, _store) = build_repair_fixture(
+        CapturingStore::failing_mark_tool_repaired_once(DatabaseError::NotFound {
             entity: "tool_failure".to_string(),
             id: "simulated mark failure".to_string(),
-        },
-    ));
-    let store_for_repair: Arc<dyn crate::db::Database> = store.clone();
-
-    let builder = Arc::new(StubSoftwareBuilder::new(
+        }),
         StubBuilderOutcome::BuildSucceeded {
             is_success: true,
             error: None,
             iterations: 1,
             is_registered: false,
         },
-    ));
-    let builder_for_repair: Arc<dyn crate::tools::SoftwareBuilder> = builder;
-    let tools = Arc::new(crate::tools::ToolRegistry::new());
-
-    let repair = DefaultSelfRepair::new(cm, Duration::from_secs(60), 3)
-        .with_store(store_for_repair)
-        .with_builder(builder_for_repair, tools);
+    );
 
     let broken = BrokenTool {
         name: "my-tool".to_string(),
