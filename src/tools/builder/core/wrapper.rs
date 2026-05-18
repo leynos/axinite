@@ -268,6 +268,14 @@ mod tests {
         }
     }
 
+    fn expected_requirement(software_type: SoftwareType, language: Language) -> BuildRequirement {
+        BuildRequirement {
+            software_type,
+            language,
+            ..test_requirement()
+        }
+    }
+
     fn test_build_result(requirement: BuildRequirement) -> BuildResult {
         let now = Utc::now();
         BuildResult {
@@ -293,6 +301,19 @@ mod tests {
     }
 
     #[test]
+    fn resolve_override_none_returns_fallback() {
+        let result = BuildSoftwareTool::resolve_override(None, 7u32, "thing", |_| None);
+        assert_eq!(result.expect("expected fallback value"), 7);
+    }
+
+    #[test]
+    fn resolve_override_some_valid_returns_parsed() {
+        let result =
+            BuildSoftwareTool::resolve_override(Some("42"), 7u32, "thing", |s| s.parse().ok());
+        assert_eq!(result.expect("expected parsed override value"), 42);
+    }
+
+    #[test]
     fn resolve_override_some_invalid_returns_invalid_parameters() {
         let result: Result<u32, ToolError> =
             BuildSoftwareTool::resolve_override(Some("nope"), 0u32, "thing", |_| None);
@@ -300,10 +321,52 @@ mod tests {
     }
 
     #[test]
+    fn resolve_software_type_none_preserves_fallback() {
+        let result = BuildSoftwareTool::resolve_software_type(None, SoftwareType::Library);
+        assert_eq!(
+            result.expect("expected fallback software type"),
+            SoftwareType::Library
+        );
+    }
+
+    #[test]
+    fn resolve_software_type_all_valid_values() {
+        for (value, expected) in [
+            ("wasm_tool", SoftwareType::WasmTool),
+            ("cli_binary", SoftwareType::CliBinary),
+            ("library", SoftwareType::Library),
+            ("script", SoftwareType::Script),
+        ] {
+            let result =
+                BuildSoftwareTool::resolve_software_type(Some(value), SoftwareType::Library);
+            assert_eq!(result.expect("expected valid software type"), expected);
+        }
+    }
+
+    #[test]
     fn resolve_software_type_unknown_value_errors() {
         let result =
             BuildSoftwareTool::resolve_software_type(Some("web_service"), SoftwareType::WasmTool);
         assert_invalid_parameters(result, "unknown type: web_service");
+    }
+
+    #[test]
+    fn resolve_language_none_preserves_fallback() {
+        let result = BuildSoftwareTool::resolve_language(None, Language::Rust);
+        assert_eq!(result.expect("expected fallback language"), Language::Rust);
+    }
+
+    #[test]
+    fn resolve_language_all_valid_values() {
+        for (value, expected) in [
+            ("rust", Language::Rust),
+            ("python", Language::Python),
+            ("typescript", Language::TypeScript),
+            ("bash", Language::Bash),
+        ] {
+            let result = BuildSoftwareTool::resolve_language(Some(value), Language::Rust);
+            assert_eq!(result.expect("expected valid language"), expected);
+        }
     }
 
     #[test]
@@ -395,5 +458,28 @@ mod tests {
             .expect("expected execute to return successful output");
 
         assert_eq!(output.result["success"], true);
+    }
+
+    #[tokio::test]
+    async fn execute_valid_overrides_are_applied_before_build() {
+        let analyzed = test_requirement();
+        let expected = expected_requirement(SoftwareType::WasmTool, Language::TypeScript);
+        let builder = FakeSoftwareBuilder::success(analyzed, test_build_result(expected));
+        let tool = BuildSoftwareTool::new(Arc::new(builder));
+
+        let output = tool
+            .execute(
+                serde_json::json!({
+                    "description": "build a test tool",
+                    "type": "wasm_tool",
+                    "language": "typescript",
+                }),
+                &JobContext::default(),
+            )
+            .await
+            .expect("expected execute to apply valid overrides");
+
+        assert_eq!(output.result["success"], true);
+        assert_eq!(output.result["name"], "test_tool");
     }
 }
