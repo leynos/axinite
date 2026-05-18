@@ -226,23 +226,25 @@ pub(super) fn assert_store_state(
 }
 
 pub(super) fn assert_legacy_file_renamed(dir: &TempDir) {
-    assert!(
-        !dir.path().join("settings.json").exists(),
-        "settings.json must have been renamed away"
-    );
-    assert!(
-        dir.path().join("settings.json.migrated").exists(),
-        "settings.json.migrated must exist"
-    );
+    assert_legacy_file_state(dir, false, true, "renamed migration");
 }
 
 pub(super) fn assert_legacy_file_not_renamed(dir: &TempDir) {
+    assert_legacy_file_state(dir, true, false, "failed migration");
+}
+
+fn assert_legacy_file_state(
+    dir: &TempDir,
+    settings_exists: bool,
+    migrated_exists: bool,
+    context: &str,
+) {
     assert!(
-        dir.path().join("settings.json").exists(),
-        "settings.json must still be present after a failed migration"
+        dir.path().join("settings.json").exists() == settings_exists,
+        "settings.json state mismatch after {context}"
     );
     assert!(
-        !dir.path().join("settings.json.migrated").exists(),
-        "settings.json.migrated must not exist after a failed migration"
+        dir.path().join("settings.json.migrated").exists() == migrated_exists,
+        "settings.json.migrated state mismatch after {context}"
     );
 }
