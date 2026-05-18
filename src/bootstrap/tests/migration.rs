@@ -1,5 +1,7 @@
 //! Tests for bootstrap JSON migration and upsert helpers.
 
+use std::process::Command;
+
 use crate::testing::test_utils::EnvVarsGuard;
 use tempfile::tempdir;
 
@@ -55,6 +57,50 @@ fn test_migrate_bootstrap_json_to_env() {
 
     assert_bootstrap_env_written(&env_path, "postgres://localhost/ironclaw_upgrade");
     assert_bootstrap_file_renamed(dir.path());
+}
+
+#[test]
+fn load_ironclaw_env_migrates_bootstrap_json_to_env() {
+    if std::env::var("IRONCLAW_LOAD_ENV_CHILD").ok().as_deref() == Some("1") {
+        let base_dir = std::path::PathBuf::from(
+            std::env::var("IRONCLAW_BASE_DIR").expect("IRONCLAW_BASE_DIR missing"),
+        );
+        let env_path = base_dir.join(".env");
+
+        load_ironclaw_env();
+
+        assert_bootstrap_env_written(&env_path, "postgres://localhost/ironclaw_public_boundary");
+        assert_bootstrap_file_renamed(&base_dir);
+        return;
+    }
+
+    let dir = tempdir().expect("create temp dir for load_ironclaw_env migration");
+    let bootstrap_path = dir.path().join("bootstrap.json");
+    let bootstrap_json = serde_json::json!({
+        "database_url": "postgres://localhost/ironclaw_public_boundary"
+    });
+    std::fs::write(
+        &bootstrap_path,
+        serde_json::to_string_pretty(&bootstrap_json).expect("serialize bootstrap.json"),
+    )
+    .expect("write bootstrap.json");
+
+    let current_exe = std::env::current_exe().expect("locate current test binary");
+    let status = Command::new(current_exe)
+        .args([
+            "--exact",
+            "bootstrap::tests::migration::load_ironclaw_env_migrates_bootstrap_json_to_env",
+            "--nocapture",
+            "--test-threads=1",
+        ])
+        .env("IRONCLAW_LOAD_ENV_CHILD", "1")
+        .env("IRONCLAW_BASE_DIR", dir.path())
+        .env_remove("DATABASE_URL")
+        .env_remove("DATABASE_BACKEND")
+        .status()
+        .expect("spawn load_ironclaw_env boundary test");
+
+    assert!(status.success(), "child boundary test failed: {status}");
 }
 
 #[test]

@@ -1308,6 +1308,7 @@ silently swallowing errors inside the helper.
 | --- | --- | --- |
 | `migrate_bootstrap_json_to_env` | `pub(crate)` | Reads `bootstrap.json`, writes `DATABASE_URL` to `.env`, then renames the source file. |
 | `migrate_disk_to_db` | `pub async` | One-time migration of `settings.json` and sidecar JSON files into the database. |
+| `migrate_disk_to_db_from_dir` | `pub(super) async` | Path-injected helper that migrates legacy disk settings from a supplied Ironclaw base directory into the database, then best-effort renames the source file to `.migrated`. |
 | `rename_legacy_bootstrap` | `pub(super)` | Renames `bootstrap.json` to `.migrated`; logs success at `INFO`. |
 | `rename_to_migrated` | `pub(super)` | Low-level rename helper used by all migration paths. |
 
