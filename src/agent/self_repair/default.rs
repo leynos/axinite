@@ -387,17 +387,24 @@ impl NativeSelfRepair for DefaultSelfRepair {
             tool.repair_attempts + 1
         );
 
-        store
-            .increment_repair_attempts(&tool.name)
-            .await
-            .map_err(|e| RepairError::Failed {
-                target_type: "tool".to_string(),
-                target_id: Uuid::nil(),
-                reason: format!(
-                    "failed to increment repair attempts for {}: {}",
-                    tool.name, e
-                ),
-            })?;
+        match store.increment_repair_attempts(&tool.name).await {
+            Ok(()) => {}
+            Err(e) => {
+                tracing::error!(
+                    tool_name = %tool.name,
+                    error = %e,
+                    "failed to increment repair attempts in database"
+                );
+                return Err(RepairError::Failed {
+                    target_type: "tool".to_string(),
+                    target_id: Uuid::nil(),
+                    reason: format!(
+                        "failed to increment repair attempts for {}: {}",
+                        tool.name, e
+                    ),
+                });
+            }
+        }
 
         Self::attempt_repair_build(tool, store.as_ref(), builder.as_ref(), &requirement).await
     }

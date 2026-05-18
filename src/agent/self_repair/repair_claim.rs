@@ -20,14 +20,21 @@ impl RepairClaims {
         &self,
         tool: &BrokenTool,
     ) -> Result<Option<ToolRepairClaim<'_>>, RepairError> {
-        let mut active_repairs =
-            self.active_tool_repairs
-                .lock()
-                .map_err(|error| RepairError::Failed {
+        let mut active_repairs = match self.active_tool_repairs.lock() {
+            Ok(guard) => guard,
+            Err(e) => {
+                tracing::error!(
+                    tool_name = %tool.name,
+                    error = %e,
+                    "repair-claims mutex is poisoned; cannot acquire claim"
+                );
+                return Err(RepairError::Failed {
                     target_type: "tool".to_string(),
                     target_id: Uuid::nil(),
-                    reason: format!("failed to claim repair for {}: {}", tool.name, error),
-                })?;
+                    reason: format!("failed to claim repair for {}: {}", tool.name, e),
+                });
+            }
+        };
 
         if !active_repairs.insert(tool.name.clone()) {
             return Ok(None);
@@ -54,6 +61,10 @@ impl Drop for ToolRepairClaim<'_> {
     fn drop(&mut self) {
         if let Ok(mut active_repairs) = self.active_repairs.lock() {
             active_repairs.remove(&self.tool_name);
+            tracing::debug!(
+                tool_name = %self.tool_name,
+                "repair claim released"
+            );
         }
     }
 }
