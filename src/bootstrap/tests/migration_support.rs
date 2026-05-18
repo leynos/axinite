@@ -1,4 +1,51 @@
-//! Shared fixtures for bootstrap migration tests.
+//! Shared test fixtures and assertion helpers for bootstrap migration tests.
+//!
+//! This module is consumed by [`migration`], [`migration_rename`], and
+//! [`migration_disk_to_db`].
+//!
+//! ## Filesystem fixtures
+//!
+//! [`RenameSetup`] is an enum that parameterises the filesystem state before
+//! a rename operation: [`ExistingFile`](RenameSetup::ExistingFile) writes the
+//! source file, [`MissingFile`](RenameSetup::MissingFile) leaves it absent,
+//! and the Unix-only [`ReadOnlyDirectory`](RenameSetup::ReadOnlyDirectory)
+//! variant makes the parent directory non-writable to exercise permission
+//! errors.
+//!
+//! [`RenameFixture`] holds a [`TempDir`] and the path of the file under test.
+//! Call [`RenameFixture::prepare`] with a [`RenameSetup`] variant to
+//! configure the desired filesystem state. On Unix, `prepare` with
+//! `ReadOnlyDirectory` records the original directory permissions and restores
+//! them on [`Drop`] without panicking.
+//!
+//! [`rename_fixture`] constructs a default [`RenameFixture`] pointed at
+//! `settings.json` inside a fresh temporary directory.
+//!
+//! [`write_legacy_settings`] writes a minimal `settings.json` fixture
+//! (containing `onboard_completed` and `database_backend` keys) into the
+//! provided [`TempDir`] and returns the path to the written file.
+//!
+//! ## In-memory `SettingsStore` mock
+//!
+//! [`MigrationStore`] implements [`SettingsStore`] entirely in memory,
+//! allowing migration tests to run without a real database. It records every
+//! call to [`has_settings`](SettingsStore::has_settings),
+//! [`set_all_settings`](SettingsStore::set_all_settings), and
+//! [`set_setting`](SettingsStore::set_setting) in a [`Mutex`]-protected
+//! [`MigrationStoreState`].
+//!
+//! Construct a store with [`MigrationStore::new`], passing the desired
+//! `has_settings` return value, or with [`MigrationStore::with_set_all_error`]
+//! to inject a forced `set_all_settings` failure.
+//!
+//! ## Assertion helpers
+//!
+//! [`assert_store_state`] asserts expected call counts for `has_settings` and
+//! `set_all_settings` and that `set_setting` was never invoked.
+//!
+//! [`assert_legacy_file_renamed`] and [`assert_legacy_file_not_renamed`]
+//! assert the post-migration filesystem state: whether `settings.json` has
+//! been replaced by `settings.json.migrated`.
 
 use std::collections::HashMap;
 use std::sync::Mutex;
