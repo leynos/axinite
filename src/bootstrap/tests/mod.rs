@@ -1,8 +1,5 @@
-//! Aggregates bootstrap unit and integration-style test submodules.
-//!
-//! Focused modules cover environment formatting, migration workflows such as
-//! `migration_disk_to_db` and `migration_rename`, and shared fixtures exposed
-//! through `migration_support` so bootstrap coverage stays consolidated.
+//! Registers test sub-modules for the bootstrap subsystem and exposes
+//! shared migration test fixtures via the `migration_support` module.
 
 mod base_dir;
 mod env_format;
