@@ -182,7 +182,7 @@ impl NativeTool for BuildSoftwareTool {
 
 #[cfg(test)]
 mod tests {
-    use std::sync::Arc;
+    use std::sync::{Arc, Mutex};
 
     use super::super::domain::SoftwareBuilderFuture;
     use super::*;
@@ -226,6 +226,25 @@ mod tests {
                     Ok(result.clone())
                 }),
             }
+        }
+
+        fn success_with_capture(
+            req: BuildRequirement,
+            result: BuildResult,
+        ) -> (Self, Arc<Mutex<Option<BuildRequirement>>>) {
+            let captured = Arc::new(Mutex::new(None));
+            let build_capture = Arc::clone(&captured);
+            let builder = Self {
+                analyze_result: Arc::new(move || Ok(req.clone())),
+                build_result: Arc::new(move |requirement| {
+                    *build_capture
+                        .lock()
+                        .expect("captured requirement mutex should not be poisoned") =
+                        Some(requirement.clone());
+                    Ok(result.clone())
+                }),
+            };
+            (builder, captured)
         }
     }
 
@@ -477,7 +496,8 @@ mod tests {
     async fn execute_valid_overrides_are_applied_before_build() {
         let analyzed = test_requirement();
         let expected = expected_requirement(SoftwareType::WasmTool, Language::TypeScript);
-        let builder = FakeSoftwareBuilder::success(analyzed, test_build_result(expected));
+        let (builder, captured_requirement) =
+            FakeSoftwareBuilder::success_with_capture(analyzed, test_build_result(expected));
         let tool = BuildSoftwareTool::new(Arc::new(builder));
 
         let output = tool
@@ -494,5 +514,12 @@ mod tests {
 
         assert_eq!(output.result["success"], true);
         assert_eq!(output.result["name"], "test_tool");
+        let captured = captured_requirement
+            .lock()
+            .expect("captured requirement mutex should not be poisoned")
+            .clone()
+            .expect("expected build to capture requirement");
+        assert_eq!(captured.software_type, SoftwareType::WasmTool);
+        assert_eq!(captured.language, Language::TypeScript);
     }
 }
