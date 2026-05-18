@@ -1,4 +1,4 @@
-//! Regression tests for proactive WASM schema publication during registration.
+//! Regression tests for WASM schema publication, credential persistence, and rotation.
 
 use std::sync::Arc;
 
