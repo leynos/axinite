@@ -29,9 +29,9 @@ pub(super) fn stub_broken_tool(
 }
 
 /// Constructs a minimal [`BuildRequirement`] for use in helper unit tests.
-pub(super) fn stub_build_requirement() -> BuildRequirement {
-    BuildRequirement {
-        name: ProjectName::new("test-tool").expect("valid project name"),
+pub(super) fn stub_build_requirement() -> Result<BuildRequirement, ToolError> {
+    Ok(BuildRequirement {
+        name: ProjectName::new("test-tool").map_err(ToolError::BuilderFailed)?,
         description: "test".to_string(),
         software_type: SoftwareType::WasmTool,
         language: Language::Rust,
@@ -39,7 +39,7 @@ pub(super) fn stub_build_requirement() -> BuildRequirement {
         output_spec: None,
         dependencies: vec![],
         capabilities: vec![],
-    }
+    })
 }
 
 /// Constructs a [`BuildResult`] with the given outcome fields.
@@ -48,10 +48,10 @@ pub(super) fn stub_build_result(
     error: Option<&str>,
     iterations: u32,
     is_registered: bool,
-) -> BuildResult {
-    BuildResult {
+) -> Result<BuildResult, ToolError> {
+    Ok(BuildResult {
         build_id: Uuid::nil(),
-        requirement: stub_build_requirement(),
+        requirement: stub_build_requirement()?,
         artifact_path: PathBuf::from("/tmp/test"),
         logs: vec![],
         success: is_success,
@@ -63,7 +63,7 @@ pub(super) fn stub_build_result(
         tests_passed: 0,
         tests_failed: 0,
         registered: is_registered,
-    }
+    })
 }
 
 /// Configures the outcome of a single [`NativeSoftwareBuilder::build`] call.
@@ -117,7 +117,7 @@ impl NativeSoftwareBuilder for StubSoftwareBuilder {
                 *error,
                 *iterations,
                 *is_registered,
-            )),
+            )?),
             StubBuilderOutcome::BuilderErrored(msg) => {
                 Err(ToolError::BuilderFailed(msg.to_string()))
             }

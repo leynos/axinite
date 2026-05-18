@@ -236,7 +236,7 @@ async fn repair_broken_tool_propagates_db_operation_failure(
     );
     assert!(
         matches!(
-            result.unwrap_err(),
+            result.expect_err("expected RepairError::Failed but got Ok or different error"),
             crate::error::RepairError::Failed { .. }
         ),
         "{operation} error must surface as RepairError::Failed",

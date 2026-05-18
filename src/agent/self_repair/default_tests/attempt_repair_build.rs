@@ -4,6 +4,7 @@ use rstest::rstest;
 
 use crate::agent::self_repair::RepairResult;
 use crate::agent::self_repair::default::DefaultSelfRepair;
+use crate::error::ToolError;
 use crate::testing::null_db::{CapturingStore, NullDatabase};
 
 use super::helpers::stub_build_requirement;
@@ -21,7 +22,7 @@ async fn attempt_repair_build_propagates_build_outcome(
     #[case] iterations: u32,
     #[case] is_registered: bool,
     #[case] expect_success: bool,
-) {
+) -> Result<(), ToolError> {
     let tool = stub_broken_tool("my-tool", None, 0);
     let store = CapturingStore::new();
     let builder = StubSoftwareBuilder::new(StubBuilderOutcome::BuildSucceeded {
@@ -30,7 +31,7 @@ async fn attempt_repair_build_propagates_build_outcome(
         iterations,
         is_registered,
     });
-    let requirement = stub_build_requirement();
+    let requirement = stub_build_requirement()?;
 
     let repair = DefaultSelfRepair::attempt_repair_build(&tool, &store, &builder, &requirement)
         .await
@@ -62,14 +63,15 @@ async fn attempt_repair_build_propagates_build_outcome(
             "failed build should not mark the tool as repaired"
         );
     }
+    Ok(())
 }
 
 #[tokio::test]
-async fn attempt_repair_build_returns_retry_when_builder_itself_errors() {
+async fn attempt_repair_build_returns_retry_when_builder_itself_errors() -> Result<(), ToolError> {
     let tool = stub_broken_tool("my-tool", None, 0);
     let store = NullDatabase::new();
     let builder = StubSoftwareBuilder::new(StubBuilderOutcome::BuilderErrored("out of memory"));
-    let requirement = stub_build_requirement();
+    let requirement = stub_build_requirement()?;
 
     let repair = DefaultSelfRepair::attempt_repair_build(&tool, &store, &builder, &requirement)
         .await
@@ -82,10 +84,12 @@ async fn attempt_repair_build_returns_retry_when_builder_itself_errors() {
         message,
         "Repair build error: Tool builder failed: out of memory"
     );
+    Ok(())
 }
 
 #[tokio::test]
-async fn attempt_repair_build_two_tools_run_concurrently_without_interference() {
+async fn attempt_repair_build_two_tools_run_concurrently_without_interference()
+-> Result<(), ToolError> {
     // The static helpers hold no shared mutable state, so concurrent
     // invocations for different tools must not interfere with each other.
     let tool_a = stub_broken_tool("tool-alpha", None, 0);
@@ -96,7 +100,7 @@ async fn attempt_repair_build_two_tools_run_concurrently_without_interference() 
         iterations: 1,
         is_registered: false,
     });
-    let requirement_a = stub_build_requirement();
+    let requirement_a = stub_build_requirement()?;
 
     let tool_b = stub_broken_tool("tool-beta", None, 0);
     let store_b = CapturingStore::new();
@@ -106,7 +110,7 @@ async fn attempt_repair_build_two_tools_run_concurrently_without_interference() 
         iterations: 3,
         is_registered: false,
     });
-    let requirement_b = stub_build_requirement();
+    let requirement_b = stub_build_requirement()?;
 
     let (result_a, result_b) = tokio::join!(
         DefaultSelfRepair::attempt_repair_build(&tool_a, &store_a, &builder_a, &requirement_a),
@@ -141,4 +145,5 @@ async fn attempt_repair_build_two_tools_run_concurrently_without_interference() 
         vec!["tool-beta".to_string()],
         "store_b must record only tool-beta"
     );
+    Ok(())
 }

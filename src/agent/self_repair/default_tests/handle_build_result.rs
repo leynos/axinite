@@ -2,6 +2,7 @@
 
 use crate::agent::self_repair::RepairResult;
 use crate::agent::self_repair::default::DefaultSelfRepair;
+use crate::error::ToolError;
 use crate::testing::null_db::CapturingStore;
 
 use super::helpers::{
@@ -11,9 +12,9 @@ use super::helpers::{
 // === handle_build_result ===
 
 #[tokio::test]
-async fn handle_build_result_returns_success_when_build_succeeded() {
+async fn handle_build_result_returns_success_when_build_succeeded() -> Result<(), ToolError> {
     let tool = stub_broken_tool("my-tool", None, 0);
-    let result = stub_build_result(true, None, 3, false);
+    let result = stub_build_result(true, None, 3, false)?;
     let store = CapturingStore::new();
 
     let repair = DefaultSelfRepair::handle_build_result(result, &tool, &store)
@@ -33,12 +34,13 @@ async fn handle_build_result_returns_success_when_build_succeeded() {
         vec!["my-tool".to_string()],
         "successful repair should mark the tool as repaired"
     );
+    Ok(())
 }
 
 #[tokio::test]
-async fn handle_build_result_returns_retry_when_build_failed_with_error() {
+async fn handle_build_result_returns_retry_when_build_failed_with_error() -> Result<(), ToolError> {
     let tool = stub_broken_tool("my-tool", None, 1);
-    let result = stub_build_result(false, Some("compile error"), 2, false);
+    let result = stub_build_result(false, Some("compile error"), 2, false)?;
     let store = CapturingStore::new();
 
     let repair = DefaultSelfRepair::handle_build_result(result, &tool, &store)
@@ -56,12 +58,13 @@ async fn handle_build_result_returns_retry_when_build_failed_with_error() {
         store.calls().repaired_tools.lock().await.is_empty(),
         "failed build should not mark the tool as repaired"
     );
+    Ok(())
 }
 
 #[tokio::test]
-async fn handle_build_result_uses_unknown_error_when_no_error_string() {
+async fn handle_build_result_uses_unknown_error_when_no_error_string() -> Result<(), ToolError> {
     let tool = stub_broken_tool("my-tool", None, 0);
-    let result = stub_build_result(false, None, 1, false);
+    let result = stub_build_result(false, None, 1, false)?;
     let store = CapturingStore::new();
 
     let repair = DefaultSelfRepair::handle_build_result(result, &tool, &store)
@@ -79,12 +82,13 @@ async fn handle_build_result_uses_unknown_error_when_no_error_string() {
         store.calls().repaired_tools.lock().await.is_empty(),
         "failed build should not mark the tool as repaired"
     );
+    Ok(())
 }
 
 #[tokio::test]
-async fn handle_build_result_returns_error_when_mark_repaired_fails() {
+async fn handle_build_result_returns_error_when_mark_repaired_fails() -> Result<(), ToolError> {
     let tool = stub_broken_tool("my-tool", None, 0);
-    let result = stub_build_result(true, None, 1, false);
+    let result = stub_build_result(true, None, 1, false)?;
     let store: FailingRepairStore = failing_repair_store();
 
     let err = DefaultSelfRepair::handle_build_result(result, &tool, &store)
@@ -95,22 +99,23 @@ async fn handle_build_result_returns_error_when_mark_repaired_fails() {
         matches!(err, crate::error::RepairError::Failed { .. }),
         "expected RepairError::Failed when mark_tool_repaired errors, got: {err:?}",
     );
+    Ok(())
 }
 
 #[tokio::test]
-async fn handle_build_result_records_each_call_independently() {
+async fn handle_build_result_records_each_call_independently() -> Result<(), ToolError> {
     // Calling handle_build_result twice for the same tool records two
     // mark_tool_repaired entries: there is no deduplication in the helper.
     // Deduplication is the responsibility of the database or the scheduler.
     let tool = stub_broken_tool("my-tool", None, 0);
     let store = CapturingStore::new();
 
-    let result_a = stub_build_result(true, None, 1, false);
+    let result_a = stub_build_result(true, None, 1, false)?;
     DefaultSelfRepair::handle_build_result(result_a, &tool, &store)
         .await
         .expect("first call should succeed");
 
-    let result_b = stub_build_result(true, None, 2, false);
+    let result_b = stub_build_result(true, None, 2, false)?;
     DefaultSelfRepair::handle_build_result(result_b, &tool, &store)
         .await
         .expect("second call should succeed");
@@ -120,4 +125,5 @@ async fn handle_build_result_records_each_call_independently() {
         vec!["my-tool".to_string(), "my-tool".to_string()],
         "each successful build call records mark_tool_repaired independently"
     );
+    Ok(())
 }
