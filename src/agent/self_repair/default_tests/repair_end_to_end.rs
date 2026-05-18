@@ -4,6 +4,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use chrono::Utc;
+use rstest::rstest;
 use tokio::sync::Barrier;
 
 use crate::agent::self_repair::default::DefaultSelfRepair;
@@ -196,15 +197,28 @@ async fn repair_broken_tool_returns_retry_when_build_fails() {
     );
 }
 
+#[rstest]
+#[case(
+    CapturingStore::failing_increment_repair_attempts_once(DatabaseError::NotFound {
+        entity: "tool_failure".to_string(),
+        id: "simulated increment failure".to_string(),
+    }),
+    "increment_repair_attempts"
+)]
+#[case(
+    CapturingStore::failing_mark_tool_repaired_once(DatabaseError::NotFound {
+        entity: "tool_failure".to_string(),
+        id: "simulated mark failure".to_string(),
+    }),
+    "mark_tool_repaired"
+)]
 #[cfg(any(test, feature = "self_repair_extras"))]
 #[tokio::test]
-async fn repair_broken_tool_propagates_increment_repair_attempts_failure() {
-    let store = Arc::new(CapturingStore::failing_increment_repair_attempts_once(
-        DatabaseError::NotFound {
-            entity: "tool_failure".to_string(),
-            id: "simulated increment failure".to_string(),
-        },
-    ));
+async fn repair_broken_tool_propagates_db_operation_failure(
+    #[case] store: CapturingStore,
+    #[case] operation: &str,
+) {
+    let store = Arc::new(store);
     let repair = build_repair_fixture(
         store.clone(),
         StubBuilderOutcome::BuildSucceeded {
@@ -218,46 +232,13 @@ async fn repair_broken_tool_propagates_increment_repair_attempts_failure() {
     let result = NativeSelfRepair::repair_broken_tool(&repair, &broken).await;
     assert!(
         result.is_err(),
-        "repair_broken_tool must propagate increment_repair_attempts failure as Err, got: {result:?}",
+        "repair_broken_tool must propagate {operation} failure as Err, got: {result:?}",
     );
     assert!(
         matches!(
             result.unwrap_err(),
             crate::error::RepairError::Failed { .. }
         ),
-        "increment_repair_attempts error must surface as RepairError::Failed",
-    );
-}
-
-#[cfg(any(test, feature = "self_repair_extras"))]
-#[tokio::test]
-async fn repair_broken_tool_propagates_mark_repaired_failure() {
-    let store = Arc::new(CapturingStore::failing_mark_tool_repaired_once(
-        DatabaseError::NotFound {
-            entity: "tool_failure".to_string(),
-            id: "simulated mark failure".to_string(),
-        },
-    ));
-    let repair = build_repair_fixture(
-        store.clone(),
-        StubBuilderOutcome::BuildSucceeded {
-            is_success: true,
-            error: None,
-            iterations: 1,
-            is_registered: false,
-        },
-    );
-    let broken = e2e_broken_tool(None);
-    let result = NativeSelfRepair::repair_broken_tool(&repair, &broken).await;
-    assert!(
-        result.is_err(),
-        "repair_broken_tool must propagate mark_tool_repaired failure as Err, got: {result:?}",
-    );
-    assert!(
-        matches!(
-            result.unwrap_err(),
-            crate::error::RepairError::Failed { .. }
-        ),
-        "mark_tool_repaired error must surface as RepairError::Failed",
+        "{operation} error must surface as RepairError::Failed",
     );
 }
