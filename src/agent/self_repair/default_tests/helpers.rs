@@ -1,10 +1,8 @@
 //! Shared helpers for default self-repair unit tests.
 
 use std::path::PathBuf;
-use std::sync::Arc;
 
 use chrono::Utc;
-use tokio::sync::Barrier;
 use uuid::Uuid;
 
 use crate::agent::self_repair::BrokenTool;
@@ -88,24 +86,14 @@ pub(super) enum StubBuilderOutcome {
 ///
 /// Repair claims the tool before calling `build`; use
 /// `DefaultSelfRepair::with_claim_overlap_barrier` in tests that must overlap
-/// `claim_tool`. When `build_barrier` is set, `build` awaits it before
-/// yielding and resolving the stub outcome.
+/// `claim_tool`.
 pub(super) struct StubSoftwareBuilder {
     outcome: StubBuilderOutcome,
-    pub(super) build_barrier: Option<Arc<Barrier>>,
 }
 
 impl StubSoftwareBuilder {
     pub(super) fn new(outcome: StubBuilderOutcome) -> Self {
-        Self {
-            outcome,
-            build_barrier: None,
-        }
-    }
-
-    pub(super) fn with_build_barrier(mut self, barrier: Arc<Barrier>) -> Self {
-        self.build_barrier = Some(barrier);
-        self
+        Self { outcome }
     }
 }
 
@@ -117,9 +105,6 @@ impl NativeSoftwareBuilder for StubSoftwareBuilder {
     }
 
     async fn build(&self, _requirement: &BuildRequirement) -> Result<BuildResult, ToolError> {
-        if let Some(barrier) = self.build_barrier.as_ref() {
-            barrier.wait().await;
-        }
         tokio::task::yield_now().await;
         match &self.outcome {
             StubBuilderOutcome::BuildSucceeded {

@@ -14,43 +14,54 @@ use crate::testing::null_db::CapturingStore;
 
 use super::helpers::{StubBuilderOutcome, StubSoftwareBuilder};
 
-#[cfg(any(test, feature = "self_repair_extras"))]
-#[tokio::test]
-async fn repair_broken_tool_end_to_end_returns_success() {
+/// Constructs a [`DefaultSelfRepair`] wired with the given store and builder
+/// outcome. Used by the end-to-end repair tests to eliminate fixture
+/// boilerplate.
+fn build_repair_fixture(
+    store: Arc<CapturingStore>,
+    outcome: StubBuilderOutcome,
+) -> DefaultSelfRepair {
     let cm = Arc::new(ContextManager::new(10));
-    let store = Arc::new(CapturingStore::new());
     let store_for_repair: Arc<dyn crate::db::Database> = store.clone();
-
-    let builder = Arc::new(
-        StubSoftwareBuilder::new(StubBuilderOutcome::BuildSucceeded {
-            is_success: true,
-            error: None,
-            iterations: 1,
-            is_registered: false,
-        })
-        .with_build_barrier(Arc::new(Barrier::new(1))),
-    );
+    let builder = Arc::new(StubSoftwareBuilder::new(outcome));
     let builder_for_repair: Arc<dyn crate::tools::SoftwareBuilder> = builder;
     let tools = Arc::new(crate::tools::ToolRegistry::new());
-
-    let repair = DefaultSelfRepair::new(cm, Duration::from_secs(60), 3)
+    DefaultSelfRepair::new(cm, Duration::from_secs(60), 3)
         .with_store(store_for_repair)
-        .with_builder(builder_for_repair, tools);
+        .with_builder(builder_for_repair, tools)
+}
 
-    let broken = BrokenTool {
+/// Constructs a standard [`BrokenTool`] for end-to-end repair tests
+/// (`failure_count = 2`, `repair_attempts = 0`, name `"my-tool"`).
+fn e2e_broken_tool(last_error: Option<&str>) -> BrokenTool {
+    BrokenTool {
         name: "my-tool".to_string(),
         failure_count: 2,
-        last_error: Some("test error".to_string()),
+        last_error: last_error.map(str::to_string),
         first_failure: Utc::now(),
         last_failure: Utc::now(),
         last_build_result: None,
         repair_attempts: 0,
-    };
+    }
+}
 
+#[cfg(any(test, feature = "self_repair_extras"))]
+#[tokio::test]
+async fn repair_broken_tool_end_to_end_returns_success() {
+    let store = Arc::new(CapturingStore::new());
+    let repair = build_repair_fixture(
+        store.clone(),
+        StubBuilderOutcome::BuildSucceeded {
+            is_success: true,
+            error: None,
+            iterations: 1,
+            is_registered: false,
+        },
+    );
+    let broken = e2e_broken_tool(Some("test error"));
     let result = NativeSelfRepair::repair_broken_tool(&repair, &broken)
         .await
         .expect("repair_broken_tool should not error");
-
     assert!(
         matches!(result, RepairResult::Success { .. }),
         "expected RepairResult::Success end-to-end, got: {result:?}",
@@ -118,26 +129,6 @@ async fn run_concurrent_repairs(
     ]
 }
 
-/// Builds a default self-repair fixture for public-boundary tests.
-fn build_repair_fixture(
-    store: CapturingStore,
-    builder_outcome: StubBuilderOutcome,
-) -> (DefaultSelfRepair, Arc<CapturingStore>) {
-    let cm = Arc::new(ContextManager::new(10));
-    let store = Arc::new(store);
-    let store_for_repair: Arc<dyn crate::db::Database> = store.clone();
-
-    let builder = Arc::new(StubSoftwareBuilder::new(builder_outcome));
-    let builder_for_repair: Arc<dyn crate::tools::SoftwareBuilder> = builder;
-    let tools = Arc::new(crate::tools::ToolRegistry::new());
-
-    let repair = DefaultSelfRepair::new(cm, Duration::from_secs(60), 3)
-        .with_store(store_for_repair)
-        .with_builder(builder_for_repair, tools);
-
-    (repair, store)
-}
-
 #[cfg(any(test, feature = "self_repair_extras"))]
 #[tokio::test]
 async fn repair_broken_tool_allows_one_concurrent_repair_for_same_tool() {
@@ -181,8 +172,9 @@ async fn repair_broken_tool_allows_one_concurrent_repair_for_same_tool() {
 #[cfg(any(test, feature = "self_repair_extras"))]
 #[tokio::test]
 async fn repair_broken_tool_returns_retry_when_build_fails() {
-    let (repair, store) = build_repair_fixture(
-        CapturingStore::new(),
+    let store = Arc::new(CapturingStore::new());
+    let repair = build_repair_fixture(
+        store.clone(),
         StubBuilderOutcome::BuildSucceeded {
             is_success: false,
             error: Some("compilation failed"),
@@ -190,26 +182,14 @@ async fn repair_broken_tool_returns_retry_when_build_fails() {
             is_registered: false,
         },
     );
-
-    let broken = BrokenTool {
-        name: "my-tool".to_string(),
-        failure_count: 2,
-        last_error: Some("old error".to_string()),
-        first_failure: Utc::now(),
-        last_failure: Utc::now(),
-        last_build_result: None,
-        repair_attempts: 0,
-    };
-
+    let broken = e2e_broken_tool(Some("old error"));
     let result = NativeSelfRepair::repair_broken_tool(&repair, &broken)
         .await
         .expect("repair_broken_tool should not error on build failure");
-
     assert!(
         matches!(result, RepairResult::Retry { .. }),
         "expected RepairResult::Retry when build fails, got: {result:?}",
     );
-    // Tool must NOT be marked repaired when the build fails.
     assert!(
         store.calls().repaired_tools.lock().await.is_empty(),
         "failed build must not mark the tool as repaired",
@@ -219,11 +199,14 @@ async fn repair_broken_tool_returns_retry_when_build_fails() {
 #[cfg(any(test, feature = "self_repair_extras"))]
 #[tokio::test]
 async fn repair_broken_tool_propagates_increment_repair_attempts_failure() {
-    let (repair, _store) = build_repair_fixture(
-        CapturingStore::failing_increment_repair_attempts_once(DatabaseError::NotFound {
+    let store = Arc::new(CapturingStore::failing_increment_repair_attempts_once(
+        DatabaseError::NotFound {
             entity: "tool_failure".to_string(),
             id: "simulated increment failure".to_string(),
-        }),
+        },
+    ));
+    let repair = build_repair_fixture(
+        store.clone(),
         StubBuilderOutcome::BuildSucceeded {
             is_success: true,
             error: None,
@@ -231,19 +214,8 @@ async fn repair_broken_tool_propagates_increment_repair_attempts_failure() {
             is_registered: false,
         },
     );
-
-    let broken = BrokenTool {
-        name: "my-tool".to_string(),
-        failure_count: 2,
-        last_error: None,
-        first_failure: Utc::now(),
-        last_failure: Utc::now(),
-        last_build_result: None,
-        repair_attempts: 0,
-    };
-
+    let broken = e2e_broken_tool(None);
     let result = NativeSelfRepair::repair_broken_tool(&repair, &broken).await;
-
     assert!(
         result.is_err(),
         "repair_broken_tool must propagate increment_repair_attempts failure as Err, got: {result:?}",
@@ -260,11 +232,14 @@ async fn repair_broken_tool_propagates_increment_repair_attempts_failure() {
 #[cfg(any(test, feature = "self_repair_extras"))]
 #[tokio::test]
 async fn repair_broken_tool_propagates_mark_repaired_failure() {
-    let (repair, _store) = build_repair_fixture(
-        CapturingStore::failing_mark_tool_repaired_once(DatabaseError::NotFound {
+    let store = Arc::new(CapturingStore::failing_mark_tool_repaired_once(
+        DatabaseError::NotFound {
             entity: "tool_failure".to_string(),
             id: "simulated mark failure".to_string(),
-        }),
+        },
+    ));
+    let repair = build_repair_fixture(
+        store.clone(),
         StubBuilderOutcome::BuildSucceeded {
             is_success: true,
             error: None,
@@ -272,19 +247,8 @@ async fn repair_broken_tool_propagates_mark_repaired_failure() {
             is_registered: false,
         },
     );
-
-    let broken = BrokenTool {
-        name: "my-tool".to_string(),
-        failure_count: 2,
-        last_error: None,
-        first_failure: Utc::now(),
-        last_failure: Utc::now(),
-        last_build_result: None,
-        repair_attempts: 0,
-    };
-
+    let broken = e2e_broken_tool(None);
     let result = NativeSelfRepair::repair_broken_tool(&repair, &broken).await;
-
     assert!(
         result.is_err(),
         "repair_broken_tool must propagate mark_tool_repaired failure as Err, got: {result:?}",
