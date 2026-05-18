@@ -222,14 +222,15 @@ fn replace_mappings_by_secret_name(
     owner: Option<String>,
     mappings: Vec<CredentialMapping>,
 ) {
-    let secret_names = mappings
-        .iter()
-        .map(|m| m.secret_name.clone())
-        .collect::<HashSet<_>>();
-
     match owner {
         Some(owner) => replace_owned_mappings(guard, owner, mappings),
-        None => replace_ownerless_mappings(guard, &secret_names, mappings),
+        None => {
+            let secret_names = mappings
+                .iter()
+                .map(|m| m.secret_name.clone())
+                .collect::<HashSet<_>>();
+            replace_ownerless_mappings(guard, &secret_names, mappings);
+        }
     }
 }
 

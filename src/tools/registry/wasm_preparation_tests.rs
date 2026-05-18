@@ -56,7 +56,7 @@ fn credential_mappings_from_capabilities_collects_http_credentials() {
 async fn prepare_wasm_tool_prepares_wrapper_and_collects_credentials() -> Result<()> {
     let runtime = metadata_test_runtime()?;
     let wasm_path = github_wasm_artifact()?;
-    let wasm_bytes = std::fs::read(wasm_path)?;
+    let wasm_bytes = tokio::fs::read(wasm_path).await?;
     let capabilities =
         Capabilities::default().with_http(HttpCapability::default().with_credential(
             "github",
@@ -112,8 +112,8 @@ async fn prepare_wasm_tool_prepares_wrapper_and_collects_credentials() -> Result
         expected_credential_mappings[0].host_patterns
     );
     assert_eq!(
-        format!("{:?}", prepared.credential_mappings[0].location),
-        format!("{:?}", expected_credential_mappings[0].location)
+        prepared.credential_mappings[0].location,
+        expected_credential_mappings[0].location
     );
 
     Ok(())
@@ -307,7 +307,7 @@ async fn apply_wasm_overrides_applies_each_optional_field(
 async fn wasm_wrapper(name: &str) -> Result<WasmToolWrapper> {
     let runtime = metadata_test_runtime()?;
     let wasm_path = github_wasm_artifact()?;
-    let wasm_bytes = std::fs::read(wasm_path)?;
+    let wasm_bytes = tokio::fs::read(wasm_path).await?;
     let prepared = runtime.prepare(name, &wasm_bytes, None).await?;
 
     Ok(WasmToolWrapper::new(
