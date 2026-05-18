@@ -351,6 +351,13 @@ mod tests {
     }
 
     #[test]
+    fn resolve_software_type_is_case_sensitive() {
+        let result =
+            BuildSoftwareTool::resolve_software_type(Some("WasmTool"), SoftwareType::Library);
+        assert_invalid_parameters(result, "unknown type: WasmTool");
+    }
+
+    #[test]
     fn resolve_language_none_preserves_fallback() {
         let result = BuildSoftwareTool::resolve_language(None, Language::Rust);
         assert_eq!(result.expect("expected fallback language"), Language::Rust);
@@ -373,6 +380,12 @@ mod tests {
     fn resolve_language_unknown_value_errors() {
         let result = BuildSoftwareTool::resolve_language(Some("go"), Language::Rust);
         assert_invalid_parameters(result, "unknown language: go");
+    }
+
+    #[test]
+    fn resolve_language_is_case_sensitive() {
+        let result = BuildSoftwareTool::resolve_language(Some("Rust"), Language::Python);
+        assert_invalid_parameters(result, "unknown language: Rust");
     }
 
     #[test]
