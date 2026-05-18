@@ -747,13 +747,14 @@ mod tests {
     use super::*;
     use std::{
         path::{Path, PathBuf},
+        process::Command,
         sync::Arc,
     };
 
     use crate::{
         channels::web::log_layer::LogBroadcaster,
         config::Config,
-        db::Database,
+        db::{Database, SettingKey, UserId},
         llm::{LlmProvider, SessionConfig, SessionManager},
         testing::StubLlm,
     };
@@ -834,6 +835,94 @@ mod tests {
         builder.with_llm(llm);
 
         Ok((builder, workspace_import_dir, temp_dir))
+    }
+
+    #[cfg(feature = "libsql")]
+    #[tokio::test]
+    async fn init_database_migrates_legacy_disk_settings() -> anyhow::Result<()> {
+        if std::env::var("IRONCLAW_APP_MIGRATION_CHILD")
+            .ok()
+            .as_deref()
+            == Some("1")
+        {
+            run_init_database_migration_child().await?;
+            return Ok(());
+        }
+
+        let temp_dir = tempfile::tempdir()?;
+        let ironclaw_dir = temp_dir.path().join("ironclaw");
+        let db_path = temp_dir.path().join("app-migration.db");
+        let skills_dir = temp_dir.path().join("skills");
+        let installed_skills_dir = temp_dir.path().join("installed_skills");
+        std::fs::create_dir_all(&ironclaw_dir)?;
+        std::fs::create_dir_all(&skills_dir)?;
+        std::fs::create_dir_all(&installed_skills_dir)?;
+        std::fs::write(
+            ironclaw_dir.join("settings.json"),
+            serde_json::to_string_pretty(&serde_json::json!({
+                "onboard_completed": true,
+                "database_backend": "libsql"
+            }))?,
+        )?;
+
+        let current_exe = std::env::current_exe()?;
+        let status = Command::new(current_exe)
+            .args([
+                "--exact",
+                "app::tests::init_database_migrates_legacy_disk_settings",
+                "--nocapture",
+                "--test-threads=1",
+            ])
+            .env("IRONCLAW_APP_MIGRATION_CHILD", "1")
+            .env("IRONCLAW_BASE_DIR", &ironclaw_dir)
+            .env("IRONCLAW_APP_MIGRATION_DB_PATH", &db_path)
+            .env("IRONCLAW_APP_MIGRATION_SKILLS_DIR", &skills_dir)
+            .env(
+                "IRONCLAW_APP_MIGRATION_INSTALLED_SKILLS_DIR",
+                &installed_skills_dir,
+            )
+            .env_remove("DATABASE_URL")
+            .env("DATABASE_BACKEND", "libsql")
+            .env("LIBSQL_PATH", &db_path)
+            .status()?;
+
+        assert!(status.success(), "child boundary test failed: {status}");
+        Ok(())
+    }
+
+    #[cfg(feature = "libsql")]
+    async fn run_init_database_migration_child() -> anyhow::Result<()> {
+        let ironclaw_dir = PathBuf::from(std::env::var("IRONCLAW_BASE_DIR")?);
+        let db_path = PathBuf::from(std::env::var("IRONCLAW_APP_MIGRATION_DB_PATH")?);
+        let skills_dir = PathBuf::from(std::env::var("IRONCLAW_APP_MIGRATION_SKILLS_DIR")?);
+        let installed_skills_dir = PathBuf::from(std::env::var(
+            "IRONCLAW_APP_MIGRATION_INSTALLED_SKILLS_DIR",
+        )?);
+
+        let config = Config::for_testing(db_path, skills_dir, installed_skills_dir).await?;
+        let session = Arc::new(SessionManager::new(SessionConfig::default()));
+        let log_broadcaster = Arc::new(LogBroadcaster::new());
+        let mut builder = AppBuilder::new(
+            config,
+            AppBuilderFlags::default(),
+            None,
+            session,
+            log_broadcaster,
+        );
+
+        builder.init_database().await?;
+
+        let db = builder.db.as_ref().expect("init_database should store db");
+        let migrated = db
+            .get_setting(
+                UserId::from("default"),
+                SettingKey::from("onboard_completed"),
+            )
+            .await?;
+        assert_eq!(migrated, Some(serde_json::Value::Bool(true)));
+        assert!(!ironclaw_dir.join("settings.json").exists());
+        assert!(ironclaw_dir.join("settings.json.migrated").exists());
+        Ok(())
     }
 
     #[cfg(feature = "libsql")]
