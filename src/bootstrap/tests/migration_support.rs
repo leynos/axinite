@@ -178,8 +178,7 @@ impl RenameFixture {
 impl Drop for RenameFixture {
     fn drop(&mut self) {
         if let Some(permissions) = self.original_dir_permissions.take() {
-            std::fs::set_permissions(self.dir.path(), permissions)
-                .expect("restore temp directory permissions");
+            let _ = std::fs::set_permissions(self.dir.path(), permissions);
         }
     }
 }

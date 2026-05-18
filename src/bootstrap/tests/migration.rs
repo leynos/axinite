@@ -172,6 +172,10 @@ fn migrate_bootstrap_json_to_env_rename_failure_leaves_env_written() {
         !bootstrap_path.exists(),
         "bootstrap.json must have been renamed away"
     );
+    assert!(
+        dir.path().join("bootstrap.json.migrated").exists(),
+        "bootstrap.json.migrated must exist after the first run"
+    );
 
     // Run again with bootstrap.json absent - the rename is a no-op (file
     // not found) but .env must still exist.

@@ -1,3 +1,6 @@
+//! Registers test sub-modules for the bootstrap subsystem and exposes
+//! shared migration test fixtures via the `migration_support` module.
+
 mod base_dir;
 mod env_format;
 mod migration;
