@@ -202,6 +202,15 @@ mod tests {
         }
     }
 
+    async fn execute_override_error(override_key: &str, override_value: &str, expected_msg: &str) {
+        let builder = FakeSoftwareBuilder::always_analyze(test_requirement());
+        let tool = BuildSoftwareTool::new(Arc::new(builder));
+        let mut params = serde_json::json!({"description": "x"});
+        params[override_key] = override_value.into();
+        let result = tool.execute(params, &JobContext::default()).await;
+        assert_invalid_parameters(result, expected_msg);
+    }
+
     struct FakeSoftwareBuilder {
         analyze_result: Arc<AnalyzeResult>,
         build_result: Arc<BuildResultFn>,
@@ -438,38 +447,12 @@ mod tests {
 
     #[tokio::test]
     async fn execute_invalid_type_override_returns_error() {
-        let builder = FakeSoftwareBuilder::always_analyze(test_requirement());
-        let tool = BuildSoftwareTool::new(Arc::new(builder));
-
-        let result = tool
-            .execute(
-                serde_json::json!({
-                    "description": "x",
-                    "type": "garbage",
-                }),
-                &JobContext::default(),
-            )
-            .await;
-
-        assert_invalid_parameters(result, "unknown type: garbage");
+        execute_override_error("type", "garbage", "unknown type: garbage").await;
     }
 
     #[tokio::test]
     async fn execute_invalid_language_override_returns_error() {
-        let builder = FakeSoftwareBuilder::always_analyze(test_requirement());
-        let tool = BuildSoftwareTool::new(Arc::new(builder));
-
-        let result = tool
-            .execute(
-                serde_json::json!({
-                    "description": "x",
-                    "language": "cobol",
-                }),
-                &JobContext::default(),
-            )
-            .await;
-
-        assert_invalid_parameters(result, "unknown language: cobol");
+        execute_override_error("language", "cobol", "unknown language: cobol").await;
     }
 
     #[tokio::test]
