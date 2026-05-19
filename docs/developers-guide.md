@@ -610,7 +610,6 @@ dropped, the process-local repair claim is released; external mutations that
 already completed, such as `store.increment_repair_attempts`, `builder.build`,
 or `store.mark_tool_repaired`, are not rolled back.
 
-
 ### In-process repair claim tracking
 
 `RepairClaims` (in `src/agent/self_repair/repair_claim.rs`) maintains a
@@ -655,7 +654,6 @@ error or delegates to `self.inner`.
 Unit tests for `handle_build_result` use `failing_mark_tool_repaired_once`
 to verify that database errors during repair marking are propagated as
 `RepairError::Failed`.
-
 
 ### Self-repair test helper module
 
@@ -1380,140 +1378,6 @@ assert_eq!(
 );
 ```
 
-
-## 32. Expected follow-up changes
-
-This guide documents the environment as of the current branch. The
-compile-time reduction plan is still expected to change some of the
-standard commands further, especially around shared extension build
-artifacts and CI duplication.
-
-When those changes land, this guide must be updated in the same branch
-so local setup instructions stay truthful.
-
-- Issue `#35` (PR `#168`): `DefaultSelfRepair::repair_broken_tool` was
-  refactored to ≤ 35 lines by extracting `build_repair_requirement`,
-  `handle_build_result`, and `attempt_repair_build` as private static
-  helpers. No functional changes were made. See
-  `src/agent/self_repair/default.rs` and
-  `src/agent/self_repair/default_tests/`.
-
-## 33. Phased startup pipeline
-
-## 32. Expected follow-up changes
-
-This guide documents the environment as of the current branch. The
-compile-time reduction plan is still expected to change some of the
-standard commands further, especially around shared extension build
-artifacts and CI duplication.
-
-When those changes land, this guide must be updated in the same branch
-so local setup instructions stay truthful.
-
-- Issue `#35` (PR `#168`): `DefaultSelfRepair::repair_broken_tool` was
-  refactored to ≤ 35 lines by extracting `build_repair_requirement`,
-  `handle_build_result`, and `attempt_repair_build` as private static
-  helpers. No functional changes were made. See
-  `src/agent/self_repair/default.rs` and
-  `src/agent/self_repair/default_tests/`.
-
-## 33. Phased startup pipeline
-
-## 32. Expected follow-up changes
-
-This guide documents the environment as of the current branch. The
-compile-time reduction plan is still expected to change some of the
-standard commands further, especially around shared extension build
-artifacts and CI duplication.
-
-When those changes land, this guide must be updated in the same branch
-so local setup instructions stay truthful.
-
-- Issue `#35` (PR `#168`): `DefaultSelfRepair::repair_broken_tool` was
-  refactored to ≤ 35 lines by extracting `build_repair_requirement`,
-  `handle_build_result`, and `attempt_repair_build` as private static
-  helpers. No functional changes were made. See
-  `src/agent/self_repair/default.rs` and
-  `src/agent/self_repair/default_tests/`.
-
-## 33. Phased startup pipeline
-
-## 32. Expected follow-up changes
-
-This guide documents the environment as of the current branch. The
-compile-time reduction plan is still expected to change some of the
-standard commands further, especially around shared extension build
-artifacts and CI duplication.
-
-When those changes land, this guide must be updated in the same branch
-so local setup instructions stay truthful.
-
-- Issue `#35` (PR `#168`): `DefaultSelfRepair::repair_broken_tool` was
-  refactored to ≤ 35 lines by extracting `build_repair_requirement`,
-  `handle_build_result`, and `attempt_repair_build` as private static
-  helpers. No functional changes were made. See
-  `src/agent/self_repair/default.rs` and
-  `src/agent/self_repair/default_tests/`.
-
-## 33. Phased startup pipeline
-
-## 32. Expected follow-up changes
-
-This guide documents the environment as of the current branch. The
-compile-time reduction plan is still expected to change some of the
-standard commands further, especially around shared extension build
-artifacts and CI duplication.
-
-When those changes land, this guide must be updated in the same branch
-so local setup instructions stay truthful.
-
-- Issue `#35` (PR `#168`): `DefaultSelfRepair::repair_broken_tool` was
-  refactored to ≤ 35 lines by extracting `build_repair_requirement`,
-  `handle_build_result`, and `attempt_repair_build` as private static
-  helpers. No functional changes were made. See
-  `src/agent/self_repair/default.rs` and
-  `src/agent/self_repair/default_tests/`.
-
-## 33. Phased startup pipeline
-
-## 32. Expected follow-up changes
-
-This guide documents the environment as of the current branch. The
-compile-time reduction plan is still expected to change some of the
-standard commands further, especially around shared extension build
-artifacts and CI duplication.
-
-When those changes land, this guide must be updated in the same branch
-so local setup instructions stay truthful.
-
-- Issue `#35` (PR `#168`): `DefaultSelfRepair::repair_broken_tool` was
-  refactored to ≤ 35 lines by extracting `build_repair_requirement`,
-  `handle_build_result`, and `attempt_repair_build` as private static
-  helpers. No functional changes were made. See
-  `src/agent/self_repair/default.rs` and
-  `src/agent/self_repair/default_tests/`.
-
-## 33. Phased startup pipeline
-
-## 32. Expected follow-up changes
-
-This guide documents the environment as of the current branch. The
-compile-time reduction plan is still expected to change some of the
-standard commands further, especially around shared extension build
-artifacts and CI duplication.
-
-When those changes land, this guide must be updated in the same branch
-so local setup instructions stay truthful.
-
-- Issue `#35` (PR `#168`): `DefaultSelfRepair::repair_broken_tool` was
-  refactored to ≤ 35 lines by extracting `build_repair_requirement`,
-  `handle_build_result`, and `attempt_repair_build` as private static
-  helpers. No functional changes were made. See
-  `src/agent/self_repair/default.rs` and
-  `src/agent/self_repair/default_tests/`.
-
-## 33. Phased startup pipeline
-
 ## 31. Bootstrap migration module
 
 `src/bootstrap/migration.rs` provides all helpers for the one-time
@@ -1940,7 +1804,7 @@ let (addr, _state) = TestGatewayBuilder::new()
     .await?;
 ```
 
-## 33. Borrowed newtypes for schema helper arguments
+## 34. Borrowed newtypes for schema helper arguments
 
 Three lightweight newtype wrappers in `src/tools/tool/schema_helpers.rs` make
 schema and parameter helper signatures explicit without changing the string

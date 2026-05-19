@@ -66,7 +66,7 @@ impl DefaultSelfRepair {
         self
     }
 
-    /// Validates preconditions for tool repair: builder/store availability and attempt limits.
+    /// Validates preconditions for tool repair: builder/store availability.
     /// Returns the builder and store references on success, or a terminal RepairResult on failure.
     fn validate_repair_preconditions(
         &self,
@@ -91,21 +91,6 @@ impl DefaultSelfRepair {
                 message: "Store not available for tracking repair".to_string(),
             });
         };
-
-        if tool.repair_attempts >= self.max_repair_attempts {
-            tracing::warn!(
-                tool_name = %tool.name,
-                repair_attempts = tool.repair_attempts,
-                max_repair_attempts = self.max_repair_attempts,
-                "repair precondition failed: max repair attempts exceeded"
-            );
-            return Err(RepairResult::ManualRequired {
-                message: format!(
-                    "Tool '{}' exceeded max repair attempts ({})",
-                    tool.name, self.max_repair_attempts
-                ),
-            });
-        }
 
         Ok((builder, store))
     }
@@ -227,6 +212,24 @@ impl DefaultSelfRepair {
         } else {
             "iterations"
         }
+    }
+
+    async fn load_persisted_broken_tool(
+        store: &dyn Database,
+        tool: &BrokenTool,
+    ) -> Result<Option<BrokenTool>, RepairError> {
+        let broken_tools = store
+            .get_broken_tools(0)
+            .await
+            .map_err(|e| RepairError::Failed {
+                target_type: "tool".to_string(),
+                target_id: Uuid::nil(),
+                reason: format!("failed to reload repair attempts for {}: {}", tool.name, e),
+            })?;
+
+        Ok(broken_tools
+            .into_iter()
+            .find(|candidate| candidate.name == tool.name))
     }
 }
 
@@ -363,7 +366,6 @@ impl NativeSelfRepair for DefaultSelfRepair {
             Err(result) => return Ok(result),
         };
 
-        let requirement = Self::build_repair_requirement(tool)?;
         #[cfg(test)]
         if let Some(barrier) = self.claim_overlap_barrier.as_ref() {
             barrier.wait().await;
@@ -381,17 +383,35 @@ impl NativeSelfRepair for DefaultSelfRepair {
             }
         };
 
+        let persisted_tool = Self::load_persisted_broken_tool(store.as_ref(), tool).await?;
+        let tool_for_repair = persisted_tool.as_ref().unwrap_or(tool);
+        if tool_for_repair.repair_attempts >= self.max_repair_attempts {
+            tracing::warn!(
+                tool_name = %tool_for_repair.name,
+                repair_attempts = tool_for_repair.repair_attempts,
+                max_repair_attempts = self.max_repair_attempts,
+                "repair precondition failed: max repair attempts exceeded"
+            );
+            return Ok(RepairResult::ManualRequired {
+                message: format!(
+                    "Tool '{}' exceeded max repair attempts ({})",
+                    tool_for_repair.name, self.max_repair_attempts
+                ),
+            });
+        }
+
+        let requirement = Self::build_repair_requirement(tool_for_repair)?;
         tracing::info!(
             "Attempting to repair tool '{}' (attempt {})",
-            tool.name,
-            tool.repair_attempts + 1
+            tool_for_repair.name,
+            tool_for_repair.repair_attempts + 1
         );
 
-        match store.increment_repair_attempts(&tool.name).await {
+        match store.increment_repair_attempts(&tool_for_repair.name).await {
             Ok(()) => {}
             Err(e) => {
                 tracing::error!(
-                    tool_name = %tool.name,
+                    tool_name = %tool_for_repair.name,
                     error = %e,
                     "failed to increment repair attempts in database"
                 );
@@ -400,13 +420,19 @@ impl NativeSelfRepair for DefaultSelfRepair {
                     target_id: Uuid::nil(),
                     reason: format!(
                         "failed to increment repair attempts for {}: {}",
-                        tool.name, e
+                        tool_for_repair.name, e
                     ),
                 });
             }
         }
 
-        Self::attempt_repair_build(tool, store.as_ref(), builder.as_ref(), &requirement).await
+        Self::attempt_repair_build(
+            tool_for_repair,
+            store.as_ref(),
+            builder.as_ref(),
+            &requirement,
+        )
+        .await
     }
 }
 

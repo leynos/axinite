@@ -59,12 +59,21 @@ pub(super) struct ToolRepairClaim<'a> {
 
 impl Drop for ToolRepairClaim<'_> {
     fn drop(&mut self) {
-        if let Ok(mut active_repairs) = self.active_repairs.lock() {
-            active_repairs.remove(&self.tool_name);
-            tracing::debug!(
-                tool_name = %self.tool_name,
-                "repair claim released"
-            );
+        match self.active_repairs.lock() {
+            Ok(mut active_repairs) => {
+                active_repairs.remove(&self.tool_name);
+                tracing::debug!(
+                    tool_name = %self.tool_name,
+                    "repair claim released"
+                );
+            }
+            Err(e) => {
+                tracing::error!(
+                    tool_name = %self.tool_name,
+                    error = %e,
+                    "repair-claims mutex is poisoned; cannot release claim"
+                );
+            }
         }
     }
 }
