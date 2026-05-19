@@ -65,6 +65,36 @@ impl Store {
             .collect())
     }
 
+    /// Get one unrepaired broken tool by name.
+    pub async fn get_broken_tool_by_name(
+        &self,
+        tool_name: &str,
+    ) -> Result<Option<BrokenTool>, DatabaseError> {
+        let conn = self.conn().await?;
+
+        let row = conn
+            .query_opt(
+                r#"
+                SELECT tool_name, error_message, error_count, first_failure, last_failure,
+                       last_build_result, repair_attempts
+                FROM tool_failures
+                WHERE tool_name = $1 AND repaired_at IS NULL
+                "#,
+                &[&tool_name],
+            )
+            .await?;
+
+        Ok(row.map(|row| BrokenTool {
+            name: row.get("tool_name"),
+            last_error: row.get("error_message"),
+            failure_count: row.get::<_, i32>("error_count") as u32,
+            first_failure: row.get("first_failure"),
+            last_failure: row.get("last_failure"),
+            last_build_result: row.get("last_build_result"),
+            repair_attempts: row.get::<_, i32>("repair_attempts") as u32,
+        }))
+    }
+
     /// Mark a tool as repaired.
     pub async fn mark_tool_repaired(&self, tool_name: &str) -> Result<(), DatabaseError> {
         let conn = self.conn().await?;

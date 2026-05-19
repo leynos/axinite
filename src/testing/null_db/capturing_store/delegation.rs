@@ -300,6 +300,10 @@ impl crate::db::NativeToolFailureStore for CapturingStore {
                 &self,
                 threshold: i32
             ) -> Result<Vec<crate::agent::BrokenTool>, DatabaseError>;
+            async fn get_broken_tool_by_name(
+                &self,
+                tool_name: &str
+            ) -> Result<Option<crate::agent::BrokenTool>, DatabaseError>;
         }
     }
 

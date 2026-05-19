@@ -21,6 +21,13 @@ impl NativeToolFailureStore for PgBackend {
         self.store.get_broken_tools(threshold).await
     }
 
+    async fn get_broken_tool_by_name(
+        &self,
+        tool_name: &str,
+    ) -> Result<Option<BrokenTool>, DatabaseError> {
+        self.store.get_broken_tool_by_name(tool_name).await
+    }
+
     async fn mark_tool_repaired(&self, tool_name: &str) -> Result<(), DatabaseError> {
         self.store.mark_tool_repaired(tool_name).await
     }

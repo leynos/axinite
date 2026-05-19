@@ -71,6 +71,43 @@ impl NativeToolFailureStore for LibSqlBackend {
         Ok(tools)
     }
 
+    async fn get_broken_tool_by_name(
+        &self,
+        tool_name: &str,
+    ) -> Result<Option<BrokenTool>, DatabaseError> {
+        let conn = self.connect().await?;
+        let mut rows = conn
+            .query(
+                r#"
+                SELECT tool_name, error_message, error_count, first_failure, last_failure,
+                       last_build_result, repair_attempts
+                FROM tool_failures
+                WHERE tool_name = ?1 AND repaired_at IS NULL
+                "#,
+                params![tool_name],
+            )
+            .await
+            .map_err(|e| DatabaseError::Query(e.to_string()))?;
+
+        let Some(row) = rows
+            .next()
+            .await
+            .map_err(|e| DatabaseError::Query(e.to_string()))?
+        else {
+            return Ok(None);
+        };
+
+        Ok(Some(BrokenTool {
+            name: get_text(&row, 0),
+            last_error: get_opt_text(&row, 1),
+            failure_count: get_i64(&row, 2) as u32,
+            first_failure: get_ts(&row, 3),
+            last_failure: get_ts(&row, 4),
+            last_build_result: get_opt_text(&row, 5).and_then(|s| serde_json::from_str(&s).ok()),
+            repair_attempts: get_i64(&row, 6) as u32,
+        }))
+    }
+
     async fn mark_tool_repaired(&self, tool_name: &str) -> Result<(), DatabaseError> {
         let conn = self.connect().await?;
         let now = fmt_ts(&Utc::now());
