@@ -242,6 +242,59 @@ async fn recover_guest_metadata_keeps_placeholders_when_export_fails() -> Result
     Ok(())
 }
 
+#[tokio::test]
+async fn recover_guest_metadata_keeps_placeholder_until_schema_override_after_export_fails()
+-> Result<()> {
+    let runtime = metadata_test_runtime()?;
+    let prepared = runtime
+        .prepare("broken_metadata", b"\0asm\r\0\x01\0", None)
+        .await?;
+    let wrapper = WasmToolWrapper::new(runtime, prepared, Capabilities::default());
+    let schema_override = serde_json::json!({
+        "type": "object",
+        "properties": {
+            "query": {"type": "string"}
+        }
+    });
+
+    let recovered = recover_guest_metadata(
+        wrapper,
+        &WasmMetadataHints {
+            name: "broken_metadata",
+            description: None,
+            schema: Some(schema_override.clone()),
+        },
+    );
+
+    assert_eq!(recovered.description(), "WASM sandboxed tool");
+    assert_eq!(
+        recovered.parameters_schema(),
+        serde_json::json!({
+            "type": "object",
+            "properties": {},
+            "additionalProperties": true
+        })
+    );
+
+    let overridden = apply_wasm_overrides(
+        recovered,
+        WasmMetadataHints {
+            name: "broken_metadata",
+            description: None,
+            schema: Some(schema_override.clone()),
+        },
+        WasmRuntimeConfig {
+            secrets_store: None,
+            oauth_refresh: None,
+        },
+    );
+
+    assert_eq!(overridden.description(), "WASM sandboxed tool");
+    assert_eq!(overridden.parameters_schema(), schema_override);
+
+    Ok(())
+}
+
 #[rstest]
 #[case::none(None, None, false, false)]
 #[case::description(Some("override description"), None, false, false)]
