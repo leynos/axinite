@@ -10,11 +10,10 @@ use std::time::Instant;
 
 use super::{ContainerOutput, ContainerRunner, append_with_limit};
 
-use bollard::container::{
-    Config, CreateContainerOptions, LogOutput, LogsOptions, WaitContainerOptions,
-};
+use bollard::container::LogOutput;
 use bollard::exec::StartExecResults;
-use bollard::models::HostConfig;
+use bollard::models::{ContainerCreateBody, HostConfig};
+use bollard::query_parameters::{CreateContainerOptions, LogsOptions, WaitContainerOptions};
 use futures::StreamExt;
 
 use crate::sandbox::config::{ResourceLimits, SandboxPolicy};
@@ -131,7 +130,7 @@ impl ContainerRunner {
             ..Default::default()
         };
 
-        let config = Config {
+        let config = ContainerCreateBody {
             image: Some(self.image.clone()),
             cmd: Some(vec![
                 "sh".to_string(),
@@ -146,7 +145,7 @@ impl ContainerRunner {
         };
 
         let options = CreateContainerOptions {
-            name: format!("sandbox-{}", uuid::Uuid::new_v4()),
+            name: Some(format!("sandbox-{}", uuid::Uuid::new_v4())),
             ..Default::default()
         };
 
@@ -171,7 +170,7 @@ impl ContainerRunner {
         let mut wait_stream = self.docker.wait_container(
             container_id,
             Some(WaitContainerOptions {
-                condition: "not-running",
+                condition: "not-running".to_string(),
             }),
         );
 
@@ -244,7 +243,7 @@ impl ContainerRunner {
         container_id: &str,
         max_output: usize,
     ) -> Result<(String, String, bool)> {
-        let options = LogsOptions::<String> {
+        let options = LogsOptions {
             stdout: true,
             stderr: true,
             follow: false,

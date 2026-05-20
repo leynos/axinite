@@ -5,7 +5,10 @@
 
 use std::path::PathBuf;
 
-use bollard::container::{Config, CreateContainerOptions, RemoveContainerOptions};
+use bollard::models::ContainerCreateBody;
+use bollard::query_parameters::{
+    CreateContainerOptions, RemoveContainerOptions, StartContainerOptions,
+};
 use chrono::Utc;
 use uuid::Uuid;
 
@@ -147,7 +150,7 @@ pub(super) struct ContainerConfigParams {
 /// Build the Docker container configuration and options for a job.
 pub(super) fn build_container_config(
     params: ContainerConfigParams,
-) -> (Config<String>, CreateContainerOptions<String>) {
+) -> (ContainerCreateBody, CreateContainerOptions) {
     let ContainerConfigParams {
         image,
         cmd,
@@ -161,7 +164,7 @@ pub(super) fn build_container_config(
     labels.insert("ironclaw.job_id".to_string(), job_id.to_string());
     labels.insert("ironclaw.created_at".to_string(), Utc::now().to_rfc3339());
 
-    let config = Config {
+    let config = ContainerCreateBody {
         image: Some(image),
         cmd: Some(cmd),
         env: Some(env_vec),
@@ -173,7 +176,7 @@ pub(super) fn build_container_config(
     };
 
     let options = CreateContainerOptions {
-        name: container_name(mode, job_id),
+        name: Some(container_name(mode, job_id)),
         ..Default::default()
     };
 
@@ -183,8 +186,8 @@ pub(super) fn build_container_config(
 /// Create and start a Docker container, cleaning up if start fails.
 pub(super) async fn create_and_start_container(
     docker: &DockerConnection,
-    options: CreateContainerOptions<String>,
-    config: Config<String>,
+    options: CreateContainerOptions,
+    config: ContainerCreateBody,
     job_id: Uuid,
 ) -> Result<String, OrchestratorError> {
     let response = docker
@@ -197,7 +200,10 @@ pub(super) async fn create_and_start_container(
 
     let container_id = response.id;
 
-    if let Err(e) = docker.start_container::<String>(&container_id, None).await {
+    if let Err(e) = docker
+        .start_container(&container_id, None::<StartContainerOptions>)
+        .await
+    {
         if let Err(remove_error) = docker
             .remove_container(
                 &container_id,

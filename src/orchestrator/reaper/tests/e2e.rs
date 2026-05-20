@@ -26,18 +26,18 @@ async fn create_labeled_container(
 ) -> Result<String> {
     let job_id_str = job_id.to_string();
     let created_at_str = (Utc::now() - age_offset).to_rfc3339();
-    let mut labels: std::collections::HashMap<&str, &str> = std::collections::HashMap::new();
-    labels.insert(LABEL_JOB_ID, &job_id_str);
-    labels.insert(LABEL_CREATED_AT, &created_at_str);
+    let mut labels: std::collections::HashMap<String, String> = std::collections::HashMap::new();
+    labels.insert(LABEL_JOB_ID.to_string(), job_id_str);
+    labels.insert(LABEL_CREATED_AT.to_string(), created_at_str);
 
     match docker
         .create_container(
-            Some(bollard::container::CreateContainerOptions {
-                name,
-                platform: None,
+            Some(bollard::query_parameters::CreateContainerOptions {
+                name: Some(name.to_string()),
+                ..Default::default()
             }),
-            bollard::container::Config {
-                image: Some("alpine:latest"),
+            bollard::models::ContainerCreateBody {
+                image: Some("alpine:latest".to_string()),
                 labels: Some(labels),
                 ..Default::default()
             },
@@ -89,7 +89,12 @@ async fn e2e_reaper_lists_ironclaw_containers() {
         "expected reaper to discover the labelled test container"
     );
 
-    let _ = docker.remove_container(&container_id, None).await;
+    let _ = docker
+        .remove_container(
+            &container_id,
+            None::<bollard::query_parameters::RemoveContainerOptions>,
+        )
+        .await;
 }
 
 #[tokio::test]
@@ -114,7 +119,15 @@ async fn e2e_reaper_removes_orphaned_containers() {
     .await
     .expect("e2e requires labelled container creation to succeed");
 
-    assert!(docker.inspect_container(&container_id, None).await.is_ok());
+    assert!(
+        docker
+            .inspect_container(
+                &container_id,
+                None::<bollard::query_parameters::InspectContainerOptions>,
+            )
+            .await
+            .is_ok()
+    );
 
     let reaper = SandboxReaper::new(
         Arc::new(ContainerJobManager::new(
@@ -128,7 +141,15 @@ async fn e2e_reaper_removes_orphaned_containers() {
     .expect("e2e requires SandboxReaper setup to succeed");
 
     reaper.scan_and_reap().await;
-    assert!(docker.inspect_container(&container_id, None).await.is_err());
+    assert!(
+        docker
+            .inspect_container(
+                &container_id,
+                None::<bollard::query_parameters::InspectContainerOptions>,
+            )
+            .await
+            .is_err()
+    );
 }
 
 #[tokio::test]
@@ -175,16 +196,27 @@ async fn e2e_reaper_respects_age_threshold() {
     reaper.scan_and_reap().await;
     assert!(
         docker
-            .inspect_container(&recent_container_id, None)
+            .inspect_container(
+                &recent_container_id,
+                None::<bollard::query_parameters::InspectContainerOptions>,
+            )
             .await
             .is_ok()
     );
     assert!(
         docker
-            .inspect_container(&old_container_id, None)
+            .inspect_container(
+                &old_container_id,
+                None::<bollard::query_parameters::InspectContainerOptions>,
+            )
             .await
             .is_err()
     );
 
-    let _ = docker.remove_container(&recent_container_id, None).await;
+    let _ = docker
+        .remove_container(
+            &recent_container_id,
+            None::<bollard::query_parameters::RemoveContainerOptions>,
+        )
+        .await;
 }

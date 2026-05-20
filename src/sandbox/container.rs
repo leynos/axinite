@@ -30,9 +30,9 @@ use std::path::Path;
 use std::time::Duration;
 
 #[cfg(feature = "docker")]
-use bollard::container::{RemoveContainerOptions, StartContainerOptions};
-#[cfg(feature = "docker")]
 use bollard::exec::CreateExecOptions;
+#[cfg(feature = "docker")]
+use bollard::query_parameters::{RemoveContainerOptions, StartContainerOptions};
 #[cfg(feature = "docker")]
 use futures::StreamExt;
 
@@ -141,12 +141,12 @@ impl ContainerRunner {
     pub async fn pull_image(&self) -> Result<()> {
         #[cfg(feature = "docker")]
         {
-            use bollard::image::CreateImageOptions;
+            use bollard::query_parameters::CreateImageOptions;
 
             tracing::info!("Pulling sandbox image: {}", self.image);
 
             let options = CreateImageOptions {
-                from_image: self.image.clone(),
+                from_image: Some(self.image.clone()),
                 ..Default::default()
             };
 
@@ -197,7 +197,7 @@ impl ContainerRunner {
 
             if let Err(e) = self
                 .docker
-                .start_container(&container_id, None::<StartContainerOptions<String>>)
+                .start_container(&container_id, None::<StartContainerOptions>)
                 .await
             {
                 let _ = self
