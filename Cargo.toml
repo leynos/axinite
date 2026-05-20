@@ -66,6 +66,7 @@ anyhow = "1"
 # Logging
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
+metrics = { version = "0.22", optional = true }
 
 # Configuration
 dotenvy = "0.15"
@@ -227,6 +228,7 @@ postgres = [
 ]
 libsql = ["dep:libsql"]
 libsql-test-helpers = ["libsql", "test-helpers"]
+metrics = ["dep:metrics"]
 integration = []
 html-to-markdown = ["dep:html-to-markdown-rs", "dep:readabilityrs"]
 bedrock = ["dep:aws-config", "dep:aws-sdk-bedrockruntime", "dep:aws-smithy-types"]

@@ -615,6 +615,36 @@ dropped, the process-local repair claim is released; external mutations that
 already completed, such as `store.increment_repair_attempts`, `builder.build`,
 or `store.mark_tool_repaired`, are not rolled back.
 
+### Metrics
+
+Self-repair metrics are compiled only when the `metrics` feature is enabled:
+
+```bash
+cargo test --features metrics
+```
+
+The feature enables the `metrics` crate and emits these measurements from the
+tool-repair path:
+
+Table: Self-repair metrics.
+
+| Metric | Type | Labels | Emitted when |
+| --- | --- | --- | --- |
+| `axinite.repair.outcome` | counter | `result="success"` | `handle_build_result` marks a repaired tool successfully |
+| `axinite.repair.outcome` | counter | `result="retry"` | `handle_build_result` receives a failed build result, or `repair_broken_tool` rejects a same-tool repair because a claim is already held |
+| `axinite.repair.outcome` | counter | `result="manual"` | `repair_broken_tool` stops at a precondition path such as missing builder or store |
+| `axinite.repair.error` | counter | `category="claim_poisoned"` | `RepairClaims::claim_tool` cannot lock the process-local claim set because the mutex is poisoned |
+| `axinite.repair.error` | counter | `category="load_persisted"` | `repair_broken_tool` cannot reload persisted broken-tool state |
+| `axinite.repair.error` | counter | `category="requirement_build"` | `execute_repair` cannot build a repair requirement, usually because the tool name is invalid |
+| `axinite.repair.error` | counter | `category="increment_repair_attempts"` | `execute_repair` cannot persist the repair-attempt increment |
+| `axinite.repair.error` | counter | `category="mark_tool_repaired"` | `handle_build_result` cannot mark a successfully rebuilt tool as repaired |
+| `axinite.repair.latency_ms` | histogram | none | `repair_broken_tool` has acquired a claim and is about to return |
+
+Latency starts immediately after the in-process repair claim is acquired, so
+manual precondition exits and duplicate-claim retries do not emit latency.
+Export pipeline wiring, such as Prometheus or OpenTelemetry integration, is out
+of scope for this feature flag.
+
 ### In-process repair claim tracking
 
 `RepairClaims` (in `src/agent/self_repair/repair_claim.rs`) maintains a

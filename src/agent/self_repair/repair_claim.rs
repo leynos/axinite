@@ -28,6 +28,12 @@ impl RepairClaims {
                     error = %e,
                     "repair-claims mutex is poisoned; cannot acquire claim"
                 );
+                #[cfg(feature = "metrics")]
+                metrics::counter!(
+                    "axinite.repair.error",
+                    "category" => "claim_poisoned"
+                )
+                .increment(1);
                 return Err(RepairError::Failed {
                     target_type: "tool".to_string(),
                     target_id: Uuid::nil(),

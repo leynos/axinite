@@ -198,7 +198,11 @@ impl NativeSelfRepair for DefaultSelfRepair {
     ) -> Result<RepairResult, RepairError> {
         let (builder, store) = match self.validate_repair_preconditions(tool) {
             Ok(tuple) => tuple,
-            Err(result) => return Ok(result),
+            Err(result) => {
+                #[cfg(feature = "metrics")]
+                metrics::counter!("axinite.repair.outcome", "result" => "manual").increment(1);
+                return Ok(result);
+            }
         };
 
         #[cfg(test)]
@@ -212,11 +216,15 @@ impl NativeSelfRepair for DefaultSelfRepair {
                     tool_name = %tool.name,
                     "repair precondition failed: tool repair already claimed"
                 );
+                #[cfg(feature = "metrics")]
+                metrics::counter!("axinite.repair.outcome", "result" => "retry").increment(1);
                 return Ok(RepairResult::Retry {
                     message: format!("Repair already in progress for '{}'", tool.name),
                 });
             }
         };
+        #[cfg(feature = "metrics")]
+        let repair_started = std::time::Instant::now();
 
         let persisted_tool = match Self::load_persisted_broken_tool(store.as_ref(), tool).await {
             Ok(persisted_tool) => persisted_tool,
@@ -226,6 +234,16 @@ impl NativeSelfRepair for DefaultSelfRepair {
                     error = %e,
                     "failed to load persisted broken tool state"
                 );
+                #[cfg(feature = "metrics")]
+                {
+                    metrics::counter!(
+                        "axinite.repair.error",
+                        "category" => "load_persisted"
+                    )
+                    .increment(1);
+                    metrics::histogram!("axinite.repair.latency_ms")
+                        .record(repair_started.elapsed().as_secs_f64() * 1000.0);
+                }
                 return Err(e);
             }
         };
@@ -244,8 +262,13 @@ impl NativeSelfRepair for DefaultSelfRepair {
             );
         }
 
-        self.execute_repair(tool_for_repair, builder.as_ref(), store.as_ref())
-            .await
+        let result = self
+            .execute_repair(tool_for_repair, builder.as_ref(), store.as_ref())
+            .await;
+        #[cfg(feature = "metrics")]
+        metrics::histogram!("axinite.repair.latency_ms")
+            .record(repair_started.elapsed().as_secs_f64() * 1000.0);
+        result
     }
 }
 

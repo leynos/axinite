@@ -97,6 +97,12 @@ impl DefaultSelfRepair {
                         error = %e,
                         "failed to mark tool as repaired in database after successful build"
                     );
+                    #[cfg(feature = "metrics")]
+                    metrics::counter!(
+                        "axinite.repair.error",
+                        "category" => "mark_tool_repaired"
+                    )
+                    .increment(1);
                     return Err(RepairError::Failed {
                         target_type: "tool".to_string(),
                         target_id: Uuid::nil(),
@@ -109,6 +115,8 @@ impl DefaultSelfRepair {
                 tracing::info!("Repaired tool '{}' auto-registered", tool.name);
             }
 
+            #[cfg(feature = "metrics")]
+            metrics::counter!("axinite.repair.outcome", "result" => "success").increment(1);
             Ok(RepairResult::Success {
                 message: format!(
                     "Tool '{}' repaired successfully after {} {}",
@@ -124,6 +132,8 @@ impl DefaultSelfRepair {
                 tool.name,
                 result.error
             );
+            #[cfg(feature = "metrics")]
+            metrics::counter!("axinite.repair.outcome", "result" => "retry").increment(1);
             Ok(RepairResult::Retry {
                 message: format!(
                     "Repair attempt {} for '{}' failed: {}",
@@ -208,6 +218,12 @@ impl DefaultSelfRepair {
                     error = %e,
                     "failed to build repair requirement"
                 );
+                #[cfg(feature = "metrics")]
+                metrics::counter!(
+                    "axinite.repair.error",
+                    "category" => "requirement_build"
+                )
+                .increment(1);
                 return Err(e);
             }
         };
@@ -225,6 +241,12 @@ impl DefaultSelfRepair {
                     error = %e,
                     "failed to increment repair attempts in database"
                 );
+                #[cfg(feature = "metrics")]
+                metrics::counter!(
+                    "axinite.repair.error",
+                    "category" => "increment_repair_attempts"
+                )
+                .increment(1);
                 return Err(RepairError::Failed {
                     target_type: "tool".to_string(),
                     target_id: Uuid::nil(),
