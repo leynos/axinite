@@ -312,6 +312,8 @@ async fn repair_broken_tool_returns_manual_without_builder() {
 
 #[path = "default_tests/duration_precision.rs"]
 mod duration_precision;
+#[path = "default_tests/helper_methods.rs"]
+mod helper_methods;
 #[path = "default_tests/helpers.rs"]
 mod helpers;
 #[path = "default_tests/repair_claims.rs"]

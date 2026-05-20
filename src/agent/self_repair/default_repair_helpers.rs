@@ -40,7 +40,9 @@ impl DefaultSelfRepair {
     }
 
     /// Creates a BuildRequirement from a BrokenTool, validating the tool name.
-    fn build_repair_requirement(tool: &BrokenTool) -> Result<BuildRequirement, RepairError> {
+    pub(super) fn build_repair_requirement(
+        tool: &BrokenTool,
+    ) -> Result<BuildRequirement, RepairError> {
         let project_name = ProjectName::new(&tool.name).map_err(|error| RepairError::Failed {
             target_type: "tool".to_string(),
             target_id: Uuid::nil(),
@@ -74,7 +76,7 @@ impl DefaultSelfRepair {
     }
 
     /// Handles the build result, marking the tool as repaired if successful.
-    async fn handle_build_result(
+    pub(super) async fn handle_build_result(
         result: BuildResult,
         tool: &BrokenTool,
         store: &dyn Database,
@@ -133,7 +135,7 @@ impl DefaultSelfRepair {
         }
     }
 
-    async fn attempt_repair_build(
+    pub(super) async fn attempt_repair_build(
         tool: &BrokenTool,
         store: &dyn Database,
         builder: &dyn SoftwareBuilder,
