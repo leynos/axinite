@@ -264,8 +264,16 @@ impl ToolRegistry {
             return false;
         }
 
-        let wrapper: Arc<dyn Tool> = Arc::new(prepared.wrapper);
         let mut tools = self.tools.write().await;
+        if self.builtin_names.read().await.contains(name) {
+            tracing::warn!(
+                tool = %name,
+                "Rejected tool registration: would shadow a built-in tool"
+            );
+            return false;
+        }
+
+        let wrapper: Arc<dyn Tool> = Arc::new(prepared.wrapper);
         self.persist_credential_mappings(name, prepared.credential_mappings);
         tools.insert(name.to_string(), wrapper);
         tracing::trace!("Registered tool: {}", name);

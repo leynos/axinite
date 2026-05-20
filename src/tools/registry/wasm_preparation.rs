@@ -162,14 +162,13 @@ pub(super) fn recover_guest_metadata(
                 tracing::warn!(
                     name = hints.name,
                     %error,
-                    "Failed to recover exported WASM metadata; tool will be advertised \
-                     with placeholder schema until a valid override is provided"
+                    "Failed to recover exported WASM metadata; rejecting registration"
                 );
             } else {
                 tracing::debug!(
                     name = hints.name,
                     %error,
-                    "Failed to recover exported WASM description; using placeholder or override"
+                    "Failed to recover exported WASM description; rejecting registration"
                 );
             }
             return Err(error);
