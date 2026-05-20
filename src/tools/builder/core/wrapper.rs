@@ -9,15 +9,42 @@
 
 use super::*;
 
+trait Clock: Send + Sync {
+    fn now(&self) -> std::time::Instant;
+
+    fn elapsed_since(&self, start: std::time::Instant) -> std::time::Duration;
+}
+
+struct SystemClock;
+
+impl Clock for SystemClock {
+    fn now(&self) -> std::time::Instant {
+        std::time::Instant::now()
+    }
+
+    fn elapsed_since(&self, start: std::time::Instant) -> std::time::Duration {
+        start.elapsed()
+    }
+}
+
 /// Tool that allows the agent to build software on demand.
 pub struct BuildSoftwareTool {
     builder: Arc<dyn SoftwareBuilder>,
+    clock: Arc<dyn Clock>,
 }
 
 impl BuildSoftwareTool {
     /// Wraps a [`SoftwareBuilder`] for use as a [`NativeTool`].
     pub fn new(builder: Arc<dyn SoftwareBuilder>) -> Self {
-        Self { builder }
+        Self {
+            builder,
+            clock: Arc::new(SystemClock),
+        }
+    }
+
+    #[cfg(test)]
+    fn new_with_clock(builder: Arc<dyn SoftwareBuilder>, clock: Arc<dyn Clock>) -> Self {
+        Self { builder, clock }
     }
 
     /// Resolves an optional string override against a parse closure.
@@ -129,7 +156,7 @@ impl NativeTool for BuildSoftwareTool {
             .and_then(|v| v.as_str())
             .ok_or_else(|| ToolError::InvalidParameters("missing 'description'".into()))?;
 
-        let start = std::time::Instant::now();
+        let start = self.clock.now();
 
         // Analyze the requirement
         let mut requirement = self
@@ -166,7 +193,7 @@ impl NativeTool for BuildSoftwareTool {
             "phases": result.logs.iter().map(|l| format!("{:?}: {}", l.phase, l.message)).collect::<Vec<_>>()
         });
 
-        Ok(ToolOutput::success(output, start.elapsed()))
+        Ok(ToolOutput::success(output, self.clock.elapsed_since(start)))
     }
 
     /// Approval is required unless the surrounding job auto-approves tools.
@@ -191,6 +218,20 @@ mod tests {
     type AnalyzeResult = dyn Fn() -> Result<BuildRequirement, AgentToolError> + Send + Sync;
     type BuildResultFn =
         dyn Fn(&BuildRequirement) -> Result<BuildResult, AgentToolError> + Send + Sync;
+
+    struct FixedClock {
+        elapsed: std::time::Duration,
+    }
+
+    impl Clock for FixedClock {
+        fn now(&self) -> std::time::Instant {
+            std::time::Instant::now()
+        }
+
+        fn elapsed_since(&self, _start: std::time::Instant) -> std::time::Duration {
+            self.elapsed
+        }
+    }
 
     fn assert_invalid_parameters<T: std::fmt::Debug>(
         result: Result<T, ToolError>,
@@ -473,6 +514,29 @@ mod tests {
             .expect("expected execute to return successful output");
 
         assert_eq!(output.result["success"], true);
+    }
+
+    #[tokio::test]
+    async fn execute_uses_injected_clock_duration() {
+        let requirement = test_requirement();
+        let build_result = test_build_result(requirement.clone());
+        let builder = FakeSoftwareBuilder::success(requirement, build_result);
+        let clock = Arc::new(FixedClock {
+            elapsed: std::time::Duration::from_millis(42),
+        });
+        let tool = BuildSoftwareTool::new_with_clock(Arc::new(builder), clock);
+
+        let output = tool
+            .execute(
+                serde_json::json!({
+                    "description": "build a test tool",
+                }),
+                &JobContext::default(),
+            )
+            .await
+            .expect("expected execute to return successful output");
+
+        assert_eq!(output.duration, std::time::Duration::from_millis(42));
     }
 
     #[tokio::test]

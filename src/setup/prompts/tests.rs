@@ -1,3 +1,5 @@
+//! Tests for prompt rendering helpers and secret-input behaviour in the setup prompts module.
+
 use std::io;
 
 use crossterm::event::{KeyCode, KeyModifiers};
