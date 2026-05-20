@@ -177,7 +177,7 @@ packaging.
   - Success: runtime state records the installed skill root and `SKILL.md`
     entrypoint, and active-skill injection can refer to a stable bundle-relative
     file layout.
-- [ ] 1.3.4. Add a read-only `skill_read_file` interface for bundled resources.
+- [x] 1.3.4. Add a read-only `skill_read_file` interface for bundled resources.
       Requires 1.3.2 and 1.3.3.
   - See [RFC 0003 §Problem](./rfcs/0003-skill-bundle-installation.md#problem)
     and

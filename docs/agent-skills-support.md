@@ -387,16 +387,18 @@ hard-coded read-only allowlist. The current allowlist is intentionally small:
 - `json`
 - `skill_list`
 - `skill_search`
+- `skill_read_file`
 
 This is stronger than post-hoc approval checking because the filtered-out tools
 do not appear in the model prompt at all.
 
 ### 7.2 Practical effect on skill management
 
-The attenuation list includes `skill_list` and `skill_search`, but not
-`skill_install` or `skill_remove`. In practice, that means an installed skill
-can remain discoverable and inspectable, but it cannot grant the model the
-ability to install or remove skills through its own prompt.
+The attenuation list includes `skill_list`, `skill_search`, and
+`skill_read_file`, but not `skill_install` or `skill_remove`. In practice, that
+means an installed skill can remain discoverable, searchable, and able to read
+its own bundled reference material, but it cannot grant the model the ability
+to install or remove skills through its own prompt.
 
 That is one of the main security properties of the current subsystem.
 
@@ -484,13 +486,15 @@ It does not inject:
 
 - the skill's filesystem path
 - the source root
-- ancillary bundled files
-- a dedicated skill-file read tool
+- ancillary bundled files inline
 
-That is a real limitation, not just a documentation omission. The current
-subsystem records enough runtime metadata for a future skill-scoped file reader,
-but remains a `SKILL.md` prompt-body injector rather than a general skill-bundle
-runtime.
+Ancillary bundled files are deliberately accessed lazily through the
+`skill_read_file` tool. The tool accepts a canonical skill identifier and a
+bundle-relative path, then delegates to `src/skills/file_read.rs` for path
+policy and filesystem checks. The adapter in
+`src/tools/builtin/skill_tools.rs` only translates JSON parameters and
+responses; it must not duplicate path policy or call the generic `read_file`
+tool.
 
 ## 9. Extension points
 
@@ -504,6 +508,7 @@ Table 5. Main extension points in the current design.
 | New activation logic | Change `prefilter_skills()` scoring or add more deterministic inputs. |
 | New management surface | Add tool, command, or web handlers that call the registry. |
 | Richer context injection | Extend dispatcher wrapping or `Reasoning::with_skill_context()`. |
+| Bundled file read policy | Change `src/skills/file_read.rs` and keep adapters thin. |
 | Stronger operator validation | Extend `doctor` or add settings checks around the registry and catalog. |
 
 The current design keeps these seams fairly local. The parser, registry,
@@ -529,19 +534,20 @@ The current implementation has several important constraints:
   or channel metadata.
 - skill injection is limited to the interactive dispatcher path and does not
   currently apply to worker jobs, routines, or the OpenAI-compatible proxy.
-- the runtime injects only the selected `SKILL.md` body, not a file path,
-  ancillary references, or the private filesystem root.
-- there is no dedicated skill-scoped file-reading tool in the live runtime.
+- the runtime injects only the selected `SKILL.md` body, not ancillary
+  references or the private filesystem root.
+- `skill_read_file` is read-only and inline-text-only. It does not list
+  directories, glob files, expose absolute paths, return base64 assets, or
+  fetch binary content.
 - the read-only allowlist for installed skills is hard-coded, so expanding the
   skill-safe tool surface requires code changes.
 - `skill_install` supports exactly one of `content`, `url`, or `name`, and its
   tool schema no longer always requires `name`. The exact-one-source rule is
   enforced at runtime because the OpenAI-compatible schema subset used by this
   project forbids top-level `oneOf`.
-- validated `.skill` installs now preserve bundled `references/` and `assets/`
-  on disk, and loaded skills retain canonical root and entrypoint metadata, but
-  the runtime still injects only `SKILL.md` and does not yet expose a
-  skill-scoped file-reading interface.
+- validated `.skill` installs preserve bundled `references/` and `assets/` on
+  disk, loaded skills retain canonical root and entrypoint metadata, and
+  `skill_read_file` can read allowed bundle-relative text files on demand.
 - rediscovery infers the package kind from the installed tree. A tree with
   `references/` or `assets/` is treated as a bundle; a tree containing only
   `SKILL.md` is indistinguishable from a raw markdown install and is treated as

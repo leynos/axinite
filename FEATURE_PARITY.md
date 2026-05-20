@@ -207,7 +207,7 @@ This document tracks feature parity between IronClaw (Rust implementation) and O
 | Post-compaction read audit | ✅ | ❌ | Layer 3: workspace rules appended to summaries |
 | Post-compaction context injection | ✅ | ❌ | Workspace context as system event |
 | Custom system prompts | ✅ | ✅ | Template variables, safety guardrails |
-| Skills (modular capabilities) | ✅ | ✅ | Prompt-based skills with trust gating, attenuation, activation criteria, catalog, selector, and loaded bundle-root metadata |
+| Skills (modular capabilities) | ✅ | ✅ | Prompt-based skills with trust gating, attenuation, activation criteria, catalog, selector, loaded bundle-root metadata, and scoped bundled-file reads |
 | Skill routing blocks | ✅ | 🚧 | ActivationCriteria (keywords, patterns, tags) but no "Use when / Don't use when" blocks |
 | Skill path compaction | ✅ | ❌ | ~ prefix to reduce prompt tokens |
 | Thinking modes (off/minimal/low/medium/high/xhigh/adaptive) | ✅ | ❌ | Configurable reasoning depth |
@@ -550,7 +550,7 @@ This document tracks feature parity between IronClaw (Rust implementation) and O
 - ✅ Cron job scheduling (routines)
 - ✅ CLI subcommands (onboard, config, status, memory)
 - ✅ Gateway token auth
-- ✅ Skills system (prompt-based with trust gating, attenuation, activation criteria, and loaded bundle-root metadata)
+- ✅ Skills system (prompt-based with trust gating, attenuation, activation criteria, loaded bundle-root metadata, and scoped bundled-file reads)
 - ✅ Session file permissions (0o600)
 - ✅ Memory CLI commands (search, read, write, tree, status)
 - ✅ Shell env scrubbing + command injection detection

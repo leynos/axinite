@@ -16,9 +16,9 @@ use crate::tools::builtin::{
     ApplyPatchTool, CancelJobTool, CreateJobTool, EchoTool, ExtensionInfoTool, HttpTool,
     JobEventsTool, JobPromptTool, JobStatusTool, JsonTool, ListDirTool, ListJobsTool,
     MemoryReadTool, MemorySearchTool, MemoryTreeTool, MemoryWriteTool, PromptQueue, ReadFileTool,
-    ShellTool, SkillInstallTool, SkillListTool, SkillRemoveTool, SkillSearchTool, TimeTool,
-    ToolActivateTool, ToolAuthTool, ToolInstallTool, ToolListTool, ToolRemoveTool, ToolSearchTool,
-    ToolUpgradeTool, WriteFileTool,
+    ShellTool, SkillInstallTool, SkillListTool, SkillReadFileTool, SkillRemoveTool,
+    SkillSearchTool, TimeTool, ToolActivateTool, ToolAuthTool, ToolInstallTool, ToolListTool,
+    ToolRemoveTool, ToolSearchTool, ToolUpgradeTool, WriteFileTool,
 };
 use crate::tools::registry::loader::ToolRegistry;
 use crate::tools::tool::{Tool, ToolDomain};
@@ -241,12 +241,13 @@ impl ToolRegistry {
             Arc::clone(&registry),
             Arc::clone(&catalog),
         )));
+        self.register_sync(Arc::new(SkillReadFileTool::new(Arc::clone(&registry))));
         self.register_sync(Arc::new(SkillInstallTool::new(
             Arc::clone(&registry),
             Arc::clone(&catalog),
         )));
         self.register_sync(Arc::new(SkillRemoveTool::new(registry)));
-        tracing::debug!("Registered 4 skill management tools");
+        tracing::debug!("Registered 5 skill management tools");
     }
 
     /// Register routine management tools.

@@ -5,7 +5,7 @@ This ExecPlan (execution plan) is a living document. The sections
 `Surprises & Discoveries`, `Decision Log`, and
 `Outcomes & Retrospective` must be kept up to date as work proceeds.
 
-Status: DRAFT
+Status: IN PROGRESS
 
 ## Purpose / big picture
 
@@ -284,14 +284,30 @@ conflict in `Decision Log`, and ask for direction.
   `pytest-bdd`; the implementation should use Rust `rstest-bdd` for
   behavioural coverage and existing Python `pytest` e2e patterns only where
   system-level behaviour changes.
-- [ ] Receive explicit approval for this ExecPlan before implementation.
-- [ ] Implement domain path policy and typed response model.
-- [ ] Implement and register `skill_read_file`.
-- [ ] Add unit, property, behavioural, snapshot, and e2e coverage.
-- [ ] Update documentation and mark roadmap item `1.3.4` done.
-- [ ] Run `coderabbit review --agent` after each major implementation
+- [x] (2026-05-20 21:46+02:00) Received explicit user instruction to proceed
+  with implementation under this ExecPlan.
+- [x] (2026-05-20 21:46+02:00) Confirmed the working branch is
+  `1-3-4-skill-read-file-interface`, clean, and tracking
+  `origin/1-3-4-skill-read-file-interface`.
+- [x] (2026-05-20 21:57+02:00) Implemented the first Rust slice:
+  domain-owned `src/skills/file_read.rs`, `SkillReadFileTool`, built-in tool
+  registration, attenuation allow-listing, `rstest` unit coverage,
+  `proptest` path-policy coverage, and `rstest-bdd` behavioural scenarios.
+- [x] (2026-05-20 21:57+02:00) Ran targeted validation:
+  `cargo test --features test-helpers skills::file_read -- --nocapture`
+  passed 11 tests; `cargo test --features test-helpers
+  skill_read_file_tool -- --nocapture` passed 2 tests; `cargo test --features
+  test-helpers skill_read_file_schema -- --nocapture` passed 1 test; and
+  `cargo test --features test-helpers bdd_model -- --nocapture` passed 2
+  `rstest-bdd` scenario tests.
+- [x] Implement domain path policy and typed response model.
+- [x] Implement and register `skill_read_file`.
+- [x] Add unit, property, and behavioural coverage.
+- [x] Update documentation and mark roadmap item `1.3.4` done.
+- [x] Run `coderabbit review --agent` after each major implementation
   milestone and resolve concerns.
-- [ ] Run final gates and commit the approved implementation.
+- [x] Run final gates.
+- [ ] Commit the approved implementation.
 
 ## Surprises & discoveries
 
@@ -301,6 +317,15 @@ conflict in `Decision Log`, and ask for direction.
   start and suggested `rustup component add rust-analyzer`.
   Impact: install the component and restart the `leta` daemon before relying
   on semantic Rust navigation.
+
+- Observation: after resuming implementation on 2026-05-20, `leta workspace
+  add` reported the workspace was already present, but `leta show` and
+  `leta refs` failed with `EOF while parsing a value at line 1 column 0`.
+  Evidence: direct calls for `LoadedSkillLocation`,
+  `register_skill_tools`, and `READ_ONLY_TOOLS` all failed with the same
+  parser error.
+  Impact: continue with direct source inspection and `rg` for this milestone,
+  and keep the failure documented so navigation assumptions are not hidden.
 
 - Observation: `pytest` is used for Python/Playwright e2e tests, but
   `pytest-bdd` is not currently in `tests/e2e/pyproject.toml`.
@@ -324,6 +349,120 @@ conflict in `Decision Log`, and ask for direction.
   Evidence: `Cargo.toml` contains `mime_guess = "2.0.5"`.
   Impact: media type inference for non-inline asset metadata does not require
   a new Rust dependency.
+
+- Observation: the initial filtered test command
+  `cargo test --features test-helpers skill_read_file -- --nocapture` matched
+  no tests because the new tests live under module and scenario names rather
+  than a single shared test name.
+  Evidence: the command passed while reporting zero executed tests; the later
+  module-specific commands executed the intended domain, adapter, schema, and
+  BDD tests.
+  Impact: use explicit module filters such as `skills::file_read`,
+  `skill_read_file_tool`, `skill_read_file_schema`, and `bdd_model` when
+  rerunning the targeted suite.
+
+- Observation: CodeRabbit caught four useful implementation concerns during
+  the first milestone review: incomplete Rustdoc, excessive function
+  complexity, an over-large inline test module, and a size-cast comment that
+  needed to match the bounded comparison.
+  Evidence: `/tmp/coderabbit-skill-read-file-slice-axinite-1-3-4-skill-read-file-interface.out`.
+  Impact: split policy I/O and validation into submodules, moved tests into
+  `src/skills/file_read/tests.rs`, completed public docs, and simplified the
+  size conversion explanation before continuing.
+
+- Observation: a second CodeRabbit pass identified a replacement race between
+  lexical validation and file reads.
+  Evidence:
+  `/tmp/coderabbit-skill-read-file-slice-rerun-axinite-1-3-4-skill-read-file-interface.out`.
+  Impact: revalidate the opened file metadata after opening so symlinks,
+  non-regular files, and oversized files still fail through the
+  skill-scoped error path even if a bundle file changes between checks.
+
+- Observation: the CodeRabbit review after the split reported one valid
+  cleanup finding: an opened file descriptor's metadata cannot report the
+  path as a symlink, so the post-open symlink check was dead code.
+  Evidence:
+  `/tmp/coderabbit-skill-read-file-docs-final-axinite-1-3-4-skill-read-file-interface.out`.
+  Impact: remove the ineffective `is_symlink()` branch while retaining the
+  pre-open symlink rejection, post-open regular-file check, and size
+  revalidation.
+
+- Observation: the final CodeRabbit pass asked for explicit symlink
+  regression coverage.
+  Evidence:
+  `/tmp/coderabbit-skill-read-file-clean-final-axinite-1-3-4-skill-read-file-interface.out`.
+  Impact: add a Unix unit test that creates a bundle-relative symlink under
+  `references/` and verifies `read_skill_file` returns `path_not_readable`.
+
+- Observation: the follow-up CodeRabbit pass identified missing positive path
+  policy property coverage, bare-directory cases, unclear PNG fixture bytes,
+  and a remaining symlink time-of-check/time-of-use gap.
+  Evidence:
+  `/tmp/coderabbit-skill-read-file-final-clear-axinite-1-3-4-skill-read-file-interface.out`.
+  Impact: add positive generated cases for `references/**` and `assets/**`,
+  assert `SKILL.md` validates, cover bare `references/` and `assets/`, use a
+  real PNG signature for the binary fixture, and open files with
+  `O_NOFOLLOW` on Unix before post-open metadata validation.
+
+- Observation: the next CodeRabbit retry hit a recoverable rate limit.
+  Evidence:
+  `/tmp/coderabbit-skill-read-file-final-after-fixes-axinite-1-3-4-skill-read-file-interface.out`
+  reported `rate_limit` with a suggested wait time of 55 seconds.
+  Impact: continue with local gates and retry CodeRabbit before committing.
+
+- Observation: the post-gate CodeRabbit review asked for a clearer audit
+  trail on the non-Unix fallback, which cannot use Unix `O_NOFOLLOW`.
+  Evidence:
+  `/tmp/coderabbit-skill-read-file-after-gates-axinite-1-3-4-skill-read-file-interface.out`.
+  Impact: document that non-Unix currently relies on the earlier
+  `symlink_metadata` rejection plus the later opened-file size revalidation,
+  and leave a TODO for platform-specific atomic no-follow semantics.
+
+- Observation: the immediate CodeRabbit retry after the non-Unix fallback
+  comment hit another recoverable rate limit.
+  Evidence:
+  `/tmp/coderabbit-skill-read-file-final-reviewed-axinite-1-3-4-skill-read-file-interface.out`
+  reported `rate_limit` with a suggested wait time of 2 minutes and
+  28 seconds.
+  Impact: wait and retry before committing so the latest CodeRabbit concern
+  has a clean follow-up result if the service quota permits it.
+
+- Observation: the waited CodeRabbit retry still hit a recoverable rate
+  limit, with a longer suggested delay.
+  Evidence:
+  `/tmp/coderabbit-skill-read-file-final-retry-axinite-1-3-4-skill-read-file-interface.out`
+  reported `rate_limit` with a suggested wait time of 5 minutes and
+  34 seconds.
+  Impact: treat CodeRabbit availability as the only remaining external review
+  constraint; local gates continue to run, and one more retry will be made
+  before commit.
+
+- Observation: a final CodeRabbit retry after the clean aggregate gate still
+  hit the same service-side rate limit.
+  Evidence:
+  `/tmp/coderabbit-skill-read-file-final-last-axinite-1-3-4-skill-read-file-interface.out`
+  reported `rate_limit` with a suggested wait time of 5 minutes and
+  36 seconds.
+  Impact: all previously reported CodeRabbit concerns are fixed, but the
+  final clean-review confirmation is blocked by CodeRabbit service quota. Do
+  not treat this as a code concern; include it in the handoff and PR context.
+
+- Observation: final local validation passed after the last source and
+  ExecPlan changes.
+  Evidence: `/tmp/markdownlint-final-axinite-1-3-4-skill-read-file-interface.out`
+  reported zero Markdown errors; `/tmp/diff-check-final-axinite-1-3-4-skill-read-file-interface.out`
+  was clean; `/tmp/all-final-axinite-1-3-4-skill-read-file-interface.out`
+  passed `make all`, including 4091 nextest tests and 5 GitHub tool tests.
+  Impact: the implementation is locally gated and ready to commit.
+
+- Observation: no Python e2e test was added for this slice.
+  Evidence: the implementation changes a model-facing built-in tool contract
+  but does not add a new HTTP route, CLI command, persistence workflow, UI
+  flow, or network boundary. Rust `rstest-bdd` scenarios exercise the
+  externally visible tool contract through the built-in tool adapter.
+  Impact: keep system-level coverage focused on the Rust tool contract and
+  avoid adding a Python e2e path that would duplicate lower-level assertions
+  without covering a distinct server workflow.
 
 - Observation: the requested branch already existed locally and remotely.
   Evidence: `git branch --list --verbose --verbose
@@ -378,12 +517,33 @@ conflict in `Decision Log`, and ask for direction.
   unless the design introduces a formal business axiom or unsafe code.
   Date/Author: 2026-05-19 / Codex.
 
+- Decision: begin implementation after the 2026-05-20 user approval message
+  and keep this ExecPlan as the live delivery log.
+  Rationale: the approval gate is satisfied by the explicit request to
+  proceed with implementation of this plan.
+  Date/Author: 2026-05-20 / Codex.
+
+- Decision: do not add snapshot tests for this change.
+  Rationale: the stable model-facing JSON shape is asserted directly in unit
+  and behavioural tests, including success, policy-denial, and unknown-skill
+  responses. Snapshot files would add review churn without making the
+  contract more precise for this small response vocabulary.
+  Date/Author: 2026-05-20 / Codex.
+
+- Decision: mark roadmap item `1.3.4` done as part of the implementation
+  branch, before the final commit.
+  Rationale: the code, user documentation, internal documentation, and feature
+  parity notes now describe the implemented behaviour; final gates remain as
+  the commit condition rather than a separate roadmap semantics change.
+  Date/Author: 2026-05-20 / Codex.
+
 ## Outcomes & retrospective
 
-This plan is not yet implemented. The expected outcome after approval is a
-single read-only `skill_read_file` tool that reads only loaded skill bundle
-resources through stable bundle-relative paths, plus tests and documentation
-that prove the feature works without exposing raw filesystem access.
+Implementation is complete and awaiting final repository gates and commit.
+The branch now contains a single read-only `skill_read_file` tool that reads
+only loaded skill bundle resources through stable bundle-relative paths, plus
+tests and documentation proving the feature works without exposing raw
+filesystem access.
 
 ## Plan of work
 

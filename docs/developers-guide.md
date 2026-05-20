@@ -481,6 +481,7 @@ The skills sub-system is split into two top-level modules:
 | Module | Purpose |
 | --- | --- |
 | `src/skills/bundle/` | ZIP archive sniffing, path parsing, and passive bundle validation |
+| `src/skills/file_read.rs` and `src/skills/file_read/` | Runtime `skill_read_file` response types, bundle-relative path policy, and scoped file I/O |
 | `src/skills/install_source.rs` | Shared blankness and trimming helpers used by install adapters before they choose a source mode |
 | `src/skills/registry/` | In-memory registry; discovery, loading, staged install, removal |
 
@@ -1585,15 +1586,41 @@ The builder defaults: version `1.0.0`, trust `Trusted`, source `/tmp`,
 `location` override is accepted via `.location(LoadedSkillLocation::new(...))`;
 if omitted, the builder derives `SingleFile` from `/tmp/SKILL.md`.
 
+##### Scoped skill file reads (roadmap 1.3.4)
+
+`src/skills/file_read.rs` owns the domain contract for `skill_read_file`.
+Adapters must pass a loaded `LoadedSkill` and the requested bundle-relative
+path into `read_skill_file(...)` rather than resolving filesystem paths
+themselves.
+
+The policy accepts only `SKILL.md`, files under `references/`, and files under
+`assets/`. It rejects absolute paths, traversal, backslashes, nested
+`SKILL.md`, unsupported roots, symlinks, non-regular files, and targets whose
+canonical path does not remain under the loaded skill root. It also rechecks
+metadata after opening the file to avoid replacement races.
+
+The response model returns inline UTF-8 text for readable files. Unknown
+skills, disallowed paths, missing files, invalid UTF-8, I/O failures, oversized
+files, and binary assets use typed JSON payloads. Binary assets and oversized
+files include non-inline metadata; they do not return base64 content in this
+phase.
+
+The built-in adapter is `SkillReadFileTool` in
+`src/tools/builtin/skill_tools.rs`. It looks up the skill in `SkillRegistry`,
+drops the registry lock before async file I/O, and serializes the domain
+response into `ToolOutput::success(...)`.
+
 ##### rstest-bdd
 
 `rstest-bdd = "0.5.0"` and `rstest-bdd-macros = "0.5.0"` (with
 `compile-time-validation`) are `[dev-dependencies]` added for behavioural tests
-introduced in 1.3.3. They are used in
+introduced in 1.3.3 and extended in 1.3.4. They are used in
 `src/agent/dispatcher/tests/skill_bundle_context_bdd.rs` to validate the
-model-facing active-skill prompt contract. The `compile-time-validation` feature
-causes the macro to verify that every step referenced in a `.feature` file has a
-matching Rust step function at compile time.
+model-facing active-skill prompt contract and in
+`src/tools/builtin/skill_tools/features/skill_read_file.feature` to validate
+the model-facing bundled-file read behaviour. The `compile-time-validation`
+feature causes the macro to verify that every step referenced in a `.feature`
+file has a matching Rust step function at compile time.
 
 See `execplans/1-3-3-persist-canonical-skill-roots-in-the-loaded-model.md` for
 the full implementation history.
