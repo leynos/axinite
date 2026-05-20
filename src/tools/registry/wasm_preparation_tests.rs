@@ -268,8 +268,9 @@ async fn recover_guest_metadata_keeps_description_placeholder_when_export_fails_
         },
     );
 
-    // Schema was provided as a hint so it must not be overwritten.
-    // Description is None, but export failed, so the placeholder must remain.
+    // recover_guest_metadata does not apply schema hints; apply_wasm_overrides
+    // applies them later, so the wrapper still exposes DEFAULT here.
+    // Description hint is absent and export failed, so placeholder remains.
     assert_eq!(recovered.description(), "WASM sandboxed tool");
     assert_eq!(
         recovered.parameters_schema(),
