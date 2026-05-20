@@ -1202,6 +1202,36 @@ the preparation phase. `register_wasm()` invokes it only after the
 registry accepts the prepared wrapper, and `register_wasm_from_storage()`
 reaches it by delegating through the same lower-level flow.
 
+#### `SharedCredentialRegistry`
+
+`SharedCredentialRegistry` in `src/tools/wasm/credential_registry.rs`
+is the thread-safe store that aggregates credential mappings from all
+installed WASM tools. The built-in HTTP tool queries it to resolve
+credentials for outgoing requests.
+
+Key public methods:
+
+- `add_mappings(&self, mappings)` — adds ownerless mappings (no tool
+  owner assigned; used by callers without a specific tool identity).
+- `add_mappings_for_tool(&self, tool_name, mappings)` — replaces the
+  named tool's prior mappings with the new set, without touching
+  mappings owned by other tools.
+- `remove_mappings_for_secrets(&self, owner_id, secret_names)` —
+  removes mappings owned by `owner_id` whose `secret_name` matches any
+  of the given names. When `secret_names` is empty all mappings owned
+  by `owner_id` are removed.
+- `remove_mappings_for_tool_secrets(&self, tool_name, secret_names)` —
+  thin alias for `remove_mappings_for_secrets` with explicit
+  owner-scoped semantics.
+- `has_credentials_for_host(&self, host)` — returns `true` if any
+  mapping covers the given host, using the `host_matches_pattern`
+  predicate from `credential_injector`.
+- `find_for_host(&self, host)` — returns all `CredentialMapping` values
+  whose host patterns match the given host.
+
+All write operations recover from a poisoned `RwLock` by logging a
+`tracing::warn!` event and calling `into_inner()`.
+
 Figure 1. WASM registration sequence showing how `ToolRegistry` delegates to
 the preparation pipeline, receives a prepared wrapper plus credential mappings,
 registers the wrapper, and persists credential mappings only after successful

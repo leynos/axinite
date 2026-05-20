@@ -243,6 +243,41 @@ async fn recover_guest_metadata_keeps_placeholders_when_export_fails() -> Result
 }
 
 #[tokio::test]
+async fn recover_guest_metadata_keeps_description_placeholder_when_export_fails_with_schema_override()
+-> Result<()> {
+    let runtime = metadata_test_runtime()?;
+    // Broken WASM: exported_metadata() will return Err.
+    let prepared = runtime
+        .prepare("broken_with_schema", b"\0asm\r\0\x01\0", None)
+        .await?;
+    let wrapper = WasmToolWrapper::new(runtime, prepared, Capabilities::default());
+    let schema_override = serde_json::json!({"type": "string"});
+
+    let recovered = recover_guest_metadata(
+        wrapper,
+        &WasmMetadataHints {
+            name: "broken_with_schema",
+            description: None,
+            schema: Some(schema_override.clone()),
+        },
+    );
+
+    // Schema was provided as a hint so it must not be overwritten.
+    // Description is None, but export failed, so the placeholder must remain.
+    assert_eq!(recovered.description(), "WASM sandboxed tool");
+    assert_eq!(
+        recovered.parameters_schema(),
+        serde_json::json!({
+            "type": "object",
+            "properties": {},
+            "additionalProperties": true
+        })
+    );
+
+    Ok(())
+}
+
+#[tokio::test]
 async fn recover_guest_metadata_keeps_placeholder_until_schema_override_after_export_fails()
 -> Result<()> {
     let runtime = metadata_test_runtime()?;

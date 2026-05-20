@@ -67,7 +67,14 @@ pub(super) async fn prepare_wasm_tool(
     let prepared = reg
         .runtime
         .prepare(reg.name, reg.wasm_bytes, reg.limits)
-        .await?;
+        .await
+        .inspect_err(|error| {
+            tracing::warn!(
+                name = reg.name,
+                %error,
+                "WASM tool preparation failed"
+            );
+        })?;
 
     let credential_mappings = credential_mappings_from_capabilities(&reg.capabilities);
     let hints = WasmMetadataHints {
