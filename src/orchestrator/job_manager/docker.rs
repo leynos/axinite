@@ -154,7 +154,10 @@ impl ContainerJobManager {
         if let Err(e) = docker
             .stop_container(
                 container_id.as_str(),
-                Some(bollard::container::StopContainerOptions { t: 10 }),
+                Some(bollard::query_parameters::StopContainerOptions {
+                    t: Some(10),
+                    ..Default::default()
+                }),
             )
             .await
         {
@@ -168,7 +171,7 @@ impl ContainerJobManager {
         if let Err(e) = docker
             .remove_container(
                 container_id.as_str(),
-                Some(bollard::container::RemoveContainerOptions {
+                Some(bollard::query_parameters::RemoveContainerOptions {
                     force: true,
                     ..Default::default()
                 }),
@@ -208,7 +211,10 @@ impl ContainerJobManager {
                     if let Err(e) = docker
                         .stop_container(
                             container_id.as_str(),
-                            Some(bollard::container::StopContainerOptions { t: 5 }),
+                            Some(bollard::query_parameters::StopContainerOptions {
+                                t: Some(5),
+                                ..Default::default()
+                            }),
                         )
                         .await
                     {
@@ -221,7 +227,7 @@ impl ContainerJobManager {
                     if let Err(e) = docker
                         .remove_container(
                             container_id.as_str(),
-                            Some(bollard::container::RemoveContainerOptions {
+                            Some(bollard::query_parameters::RemoveContainerOptions {
                                 force: true,
                                 ..Default::default()
                             }),

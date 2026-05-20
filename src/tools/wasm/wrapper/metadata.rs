@@ -7,8 +7,8 @@
 //! fallback guidance for schema-aware failures.
 
 use wasmtime::Store;
-use wasmtime::component::Linker;
-use wasmtime_wasi::{ResourceTable, WasiCtx, WasiCtxBuilder, WasiView};
+use wasmtime::component::{HasSelf, Linker};
+use wasmtime_wasi::{ResourceTable, WasiCtx, WasiCtxBuilder, WasiCtxView, WasiView};
 
 use super::*;
 
@@ -115,12 +115,11 @@ impl MetadataStoreData {
 }
 
 impl WasiView for MetadataStoreData {
-    fn ctx(&mut self) -> &mut WasiCtx {
-        &mut self.wasi
-    }
-
-    fn table(&mut self) -> &mut ResourceTable {
-        &mut self.table
+    fn ctx(&mut self) -> WasiCtxView<'_> {
+        WasiCtxView {
+            ctx: &mut self.wasi,
+            table: &mut self.table,
+        }
     }
 }
 
@@ -156,9 +155,9 @@ impl near::agent::host::Host for MetadataStoreData {
 }
 
 fn add_metadata_host_functions(linker: &mut Linker<MetadataStoreData>) -> Result<(), WasmError> {
-    wasmtime_wasi::add_to_linker_sync(linker)
+    wasmtime_wasi::p2::add_to_linker_sync(linker)
         .map_err(|e| WasmError::ConfigError(format!("Failed to add WASI functions: {}", e)))?;
-    near::agent::host::add_to_linker(linker, |state| state)
+    near::agent::host::add_to_linker::<_, HasSelf<_>>(linker, |state| state)
         .map_err(|e| WasmError::ConfigError(format!("Failed to add host functions: {}", e)))?;
     Ok(())
 }

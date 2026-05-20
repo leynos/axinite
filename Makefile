@@ -4,11 +4,19 @@ BUNX ?= $(shell command -v bunx 2>/dev/null || printf '%s' "$$HOME/.bun/bin/bunx
 TEST_FEATURES ?= --features test-helpers
 NEXTEST_PROFILE ?= default
 MARKDOWNLINT_BASE ?= origin/main
+CARGO_AUDIT ?= $(CARGO) audit
 WASM_SHARED_TARGET_DIR ?= $(if $(CARGO_TARGET_DIR),$(CARGO_TARGET_DIR),target/wasm-extensions)
 GITHUB_TOOL_MANIFEST := tools-src/github/Cargo.toml
 GITHUB_TOOL_WASM_TARGET := wasm32-wasip2
+# libsql 0.9.30 still pulls hyper-rustls 0.25 / rustls 0.22 for TLS. Keep
+# these ignores centralised so they can be removed when libsql upgrades.
+AUDIT_FLAGS ?= \
+	--ignore RUSTSEC-2026-0049 \
+	--ignore RUSTSEC-2026-0098 \
+	--ignore RUSTSEC-2026-0099 \
+	--ignore RUSTSEC-2026-0104
 
-.PHONY: all install install-with-overrides sync-local-wasm-overrides build-github-tool-wasm check-fmt typecheck lint markdownlint test test-cargo test-matrix test-matrix-cargo clean
+.PHONY: all install install-with-overrides sync-local-wasm-overrides build-github-tool-wasm check-fmt typecheck lint markdownlint audit rust-audit test test-cargo test-matrix test-matrix-cargo clean
 
 all: check-fmt lint test
 
@@ -42,6 +50,17 @@ lint:
 
 markdownlint:
 	MARKDOWNLINT_BASE="$(MARKDOWNLINT_BASE)" ./scripts/lint-changed-markdown.sh "$(BUNX)"
+
+audit: rust-audit
+
+rust-audit:
+	find . \
+		\( -path '*/target/*' -o -path '*/node_modules/*' -o -path '*/.venv/*' \) -prune -o \
+		-name Cargo.toml -exec sh -c 'set -e; for manifest do \
+			manifest_dir=$$(dirname "$$manifest"); \
+			printf "Auditing Rust manifest %s\n" "$$manifest"; \
+			(cd "$$manifest_dir" && $(CARGO_AUDIT) $(AUDIT_FLAGS)); \
+		done' sh {} +
 
 test:
 	$(MAKE) build-github-tool-wasm

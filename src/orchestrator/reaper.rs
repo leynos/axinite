@@ -260,14 +260,14 @@ async fn list_docker_containers(
     docker: &DockerConnection,
     label: &str,
 ) -> Result<Vec<ReaperContainer>, crate::sandbox::SandboxError> {
-    use bollard::container::ListContainersOptions;
+    use bollard::query_parameters::ListContainersOptions;
 
     let mut filters = HashMap::new();
-    filters.insert("label", vec![label]);
+    filters.insert("label".to_string(), vec![label.to_string()]);
 
     let options = ListContainersOptions {
         all: true,
-        filters,
+        filters: Some(filters),
         ..Default::default()
     };
 
@@ -345,7 +345,10 @@ async fn reap_with_docker(
     if let Err(e) = docker
         .stop_container(
             container_id,
-            Some(bollard::container::StopContainerOptions { t: 10 }),
+            Some(bollard::query_parameters::StopContainerOptions {
+                t: Some(10),
+                ..Default::default()
+            }),
         )
         .await
     {
@@ -360,7 +363,7 @@ async fn reap_with_docker(
     if let Err(e) = docker
         .remove_container(
             container_id,
-            Some(bollard::container::RemoveContainerOptions {
+            Some(bollard::query_parameters::RemoveContainerOptions {
                 force: true,
                 ..Default::default()
             }),
