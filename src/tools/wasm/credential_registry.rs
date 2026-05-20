@@ -158,10 +158,22 @@ fn dedupe_mappings_by_secret_name(
     mappings: impl IntoIterator<Item = CredentialMapping>,
 ) -> Vec<CredentialMapping> {
     let mappings = mappings.into_iter().collect::<Vec<_>>();
-    let mut deduped = Vec::new();
-    let mut seen = HashSet::new();
+    let mut deduped: Vec<CredentialMapping> = Vec::new();
     for mapping in mappings.into_iter().rev() {
-        if seen.insert(mapping.secret_name.clone()) {
+        if let Some(existing) = deduped.iter_mut().find(|existing| {
+            existing.secret_name == mapping.secret_name && existing.location == mapping.location
+        }) {
+            let mut seen = existing
+                .host_patterns
+                .iter()
+                .cloned()
+                .collect::<HashSet<_>>();
+            for host_pattern in mapping.host_patterns {
+                if seen.insert(host_pattern.clone()) {
+                    existing.host_patterns.push(host_pattern);
+                }
+            }
+        } else {
             deduped.push(mapping);
         }
     }

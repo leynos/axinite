@@ -204,6 +204,30 @@ fn test_shared_registry_multiple_adds(registry: SharedCredentialRegistry) {
 }
 
 #[rstest]
+fn test_shared_registry_preserves_same_secret_with_different_locations(
+    registry: SharedCredentialRegistry,
+) {
+    registry.add_mappings(vec![
+        CredentialMapping::bearer("key1", "api.example.com"),
+        CredentialMapping::header("key1", "X-Api-Key", "api.example.com"),
+    ]);
+
+    let found = registry.find_for_host("api.example.com");
+    assert_eq!(found.len(), 2);
+}
+
+#[rstest]
+fn test_shared_registry_merges_same_secret_and_location_hosts(registry: SharedCredentialRegistry) {
+    registry.add_mappings(vec![
+        CredentialMapping::bearer("key1", "old.example.com"),
+        CredentialMapping::bearer("key1", "api.example.com"),
+    ]);
+
+    assert_eq!(registry.find_for_host("old.example.com").len(), 1);
+    assert_eq!(registry.find_for_host("api.example.com").len(), 1);
+}
+
+#[rstest]
 fn test_shared_registry_merges_anonymous_mappings_with_same_secret_name(
     registry: SharedCredentialRegistry,
 ) {
