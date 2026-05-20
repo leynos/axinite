@@ -170,14 +170,10 @@ structured input/output schema, and validation before resource access.[^1][^2]
 - Avoid new Rust runtime dependencies. `mime_guess`, `serde`, `serde_json`,
   `thiserror`, `tokio`, `rstest`, `rstest-bdd`, `insta`, and `proptest` are
   already available.
-- If adding Python `pytest-bdd` for end-to-end behaviour coverage requires a
-  new dependency in `tests/e2e/pyproject.toml`, keep that dependency scoped to
-  the e2e package and document why. Do not add Python tooling to the Rust
-  runtime.
-- Use `rstest` fixtures for Rust unit and integration tests. Use `pytest` for
-  Python end-to-end tests. Add `pytest-bdd` scenarios for user-requested
-  behavioural e2e coverage unless a concrete repository conflict is found; if
-  so, stop and record the conflict.
+- Use `rstest` fixtures for Rust unit and integration tests. Use
+  `rstest-bdd` for behavioural Rust coverage where the behaviour is best
+  expressed as a scenario. Use the existing Python `pytest` e2e style only
+  when the change affects externally observable server workflows.
 - Use `proptest` for path-policy invariants over a range of path inputs.
   Do not add Kani or Verus unless the implementation introduces a stronger
   invariant that cannot be covered credibly by property tests and review.
@@ -200,9 +196,9 @@ conflict in `Decision Log`, and ask for direction.
   listings, partial reads, or binary fetch URLs is out of scope unless
   explicitly approved.
 - Dependencies: if any new Rust runtime dependency appears necessary, stop.
-  If `pytest-bdd` creates dependency or CI friction, record the exact failure
-  and ask whether to keep Python BDD or substitute the existing Rust
-  `rstest-bdd` layer.
+  New test-only dependencies require a short decision-log entry explaining why
+  existing `rstest`, `rstest-bdd`, `proptest`, or `pytest` coverage is
+  insufficient.
 - Security: if a proposed design exposes absolute paths, follows symlinks out
   of the skill root, reads through a link target, or falls back to generic
   filesystem tools, stop immediately.
@@ -241,12 +237,14 @@ conflict in `Decision Log`, and ask for direction.
   Mitigation: add attenuation only after unit tests prove no writes, network
   calls, generic filesystem paths, or state mutation are involved.
 
-- Risk: Python `pytest-bdd` is not currently part of the e2e test package.
+- Risk: Python e2e coverage may need deterministic tool-call plumbing rather
+  than a direct unit-level invocation.
   Severity: medium.
-  Likelihood: high.
-  Mitigation: add it only to `tests/e2e/pyproject.toml` for behaviour coverage,
-  keep the scenario focused, and preserve the existing `pytest` suite style.
-  Escalate if the project maintainers prefer Rust `rstest-bdd` only.
+  Likelihood: medium.
+  Mitigation: prefer the existing Python `pytest` e2e style if this becomes
+  externally observable. If the existing mock model or HTTP route cannot drive
+  a deterministic tool call, record the blocker and keep the Rust
+  `rstest-bdd` behavioural coverage as the primary scenario layer.
 
 - Risk: response-size caps may conflict with existing `SKILL.md` loading caps.
   Severity: low.
@@ -254,14 +252,6 @@ conflict in `Decision Log`, and ask for direction.
   Mitigation: define a named read cap in the skill read policy, keep it at or
   below the existing prompt-oriented cap unless RFC review dictates otherwise,
   and snapshot the error payload for oversized reads.
-
-- Risk: e2e tests may need a deterministic model tool-call flow that the
-  current mock LLM does not yet provide.
-  Severity: medium.
-  Likelihood: medium.
-  Mitigation: prefer a direct HTTP/API e2e test if the server exposes tool
-  execution enough for it; otherwise extend `tests/e2e/mock_llm.py` with the
-  smallest deterministic tool-call fixture.
 
 ## Progress
 
@@ -281,6 +271,19 @@ conflict in `Decision Log`, and ask for direction.
 - [x] (2026-05-19 00:10+02:00) Drafted this pre-implementation ExecPlan.
 - [x] (2026-05-19 00:22+02:00) Ran `coderabbit review --agent`, applied the
   wording and punctuation findings, and reran it to zero findings.
+- [x] (2026-05-20 12:00+02:00) Reopened the planning context on the existing
+  `1-3-4-skill-read-file-interface` branch, confirmed it tracks
+  `origin/1-3-4-skill-read-file-interface`, and found the earlier draft PR
+  `#187` closed.
+- [x] (2026-05-20 12:00+02:00) Refreshed external prior-art checks with
+  Firecrawl against the MCP resources specification and OpenAI Apps SDK
+  reference.
+- [x] (2026-05-20 12:00+02:00) Used a Wyvern agent team for a fresh read-only
+  planning brief and incorporated its boundary and testing cautions.
+- [x] (2026-05-20 12:00+02:00) Corrected stale plan assumptions about Python
+  `pytest-bdd`; the implementation should use Rust `rstest-bdd` for
+  behavioural coverage and existing Python `pytest` e2e patterns only where
+  system-level behaviour changes.
 - [ ] Receive explicit approval for this ExecPlan before implementation.
 - [ ] Implement domain path policy and typed response model.
 - [ ] Implement and register `skill_read_file`.
@@ -304,9 +307,10 @@ conflict in `Decision Log`, and ask for direction.
   Evidence: the e2e package lists `pytest`, `pytest-asyncio`,
   `pytest-playwright`, `pytest-timeout`, `playwright`, `aiohttp`, and `httpx`,
   while Rust-side BDD is already present through `rstest-bdd`.
-  Impact: the approved implementation should either add a small e2e
-  `pytest-bdd` scenario because the task explicitly requests it, or stop if
-  that dependency conflicts with repository policy.
+  Impact: do not add Python `pytest-bdd` for this roadmap item unless a later
+  approved design specifically needs it. Use Rust `rstest-bdd` for
+  behavioural coverage and the existing Python `pytest` style for any
+  necessary e2e checks.
 
 - Observation: RFC 0003 asks for stable structured error payloads, but the
   native tool error enum is not shaped for domain-denial JSON.
@@ -320,6 +324,15 @@ conflict in `Decision Log`, and ask for direction.
   Evidence: `Cargo.toml` contains `mime_guess = "2.0.5"`.
   Impact: media type inference for non-inline asset metadata does not require
   a new Rust dependency.
+
+- Observation: the requested branch already existed locally and remotely.
+  Evidence: `git branch --list --verbose --verbose
+  '*1-3-4-skill-read-file-interface*'` showed a local branch tracking
+  `origin/1-3-4-skill-read-file-interface`, and `gh pr view` showed the
+  associated pull request `#187` was closed.
+  Impact: continue on the existing tracking branch, update the plan in place,
+  and create a new draft pull request after the refreshed plan is committed and
+  pushed.
 
 ## Decision log
 
@@ -346,11 +359,16 @@ conflict in `Decision Log`, and ask for direction.
 
 - Decision: Plan both Rust `rstest-bdd` coverage and Python `pytest-bdd` e2e
   coverage.
-  Rationale: the repository already uses `rstest-bdd` for Rust behavioural
-  tests, while the user explicitly requested `pytest` and `pytest-bdd`.
-  Keeping `pytest-bdd` scoped to the e2e package honours the request without
-  changing the Rust runtime test stack.
-  Date/Author: 2026-05-19 / Codex.
+  Rationale: this decision was superseded on 2026-05-20 after re-reading the
+  task. The request names `rstest-bdd`, not Python `pytest-bdd`, and the
+  repository already has Python e2e tests in plain `pytest`.
+  Date/Author: 2026-05-19 / Codex. Superseded 2026-05-20 / Codex.
+
+- Decision: Use Rust `rstest-bdd` for behavioural coverage and keep Python e2e
+  tests in the existing `pytest` style when system-level coverage is needed.
+  Rationale: this matches the user request and avoids adding a second BDD
+  framework to the Python e2e package without a concrete need.
+  Date/Author: 2026-05-20 / Codex.
 
 - Decision: Use `proptest` for path policy and decline Kani/Verus unless a
   stronger proof obligation emerges during implementation.
@@ -418,12 +436,10 @@ tool contract.
 Stage D adds behavioural and end-to-end coverage. Extend Rust tests with
 `rstest` fixtures and a focused `rstest-bdd` feature that proves an active
 skill can reference a bundled file and the model-facing tool reads it by
-canonical skill name. Add Python e2e coverage under `tests/e2e/` using
-`pytest`; add `pytest-bdd` only to that e2e package and create a small
-Given/When/Then scenario for installing or loading a bundled skill, invoking
-`skill_read_file`, and observing a structured text success plus a structured
-denial. Use the mock LLM or direct HTTP/tool invocation path, whichever is the
-smallest deterministic system-level route.
+canonical skill name. Add Python e2e coverage under `tests/e2e/` using the
+existing `pytest` style only if the change affects an externally observable
+server workflow. Use the mock LLM or direct HTTP/tool invocation path,
+whichever is the smallest deterministic system-level route.
 
 Stage E updates documentation. Update `docs/users-guide.md` with the new user
 behaviour, including request and response examples and phase-1 limitations.
@@ -445,7 +461,7 @@ Stage F performs final review, validation, and commit. Run
 All commands run from the repository root:
 
 ```bash
-cd /home/leynos/.lody/repos/github---leynos---axinite/worktrees/b0245e42-5cad-47f8-8090-c3eb643834a6
+cd /home/leynos/.lody/repos/github---leynos---axinite/worktrees/6c92fc0f-e404-4a10-ace1-30a36066de50
 ```
 
 Before editing, confirm the branch and workspace:
@@ -571,8 +587,9 @@ The feature is accepted when all of the following are true:
 - Snapshot tests cover any stable model-facing output whose formatting matters.
 - Property tests prove path validation cannot resolve outside the loaded skill
   root over generated path inputs.
-- Python e2e coverage with `pytest` and, if added, `pytest-bdd` proves the
-  externally observable read flow or records a documented blocker.
+- Python e2e coverage with the existing `pytest` harness proves the externally
+  observable read flow or records a documented blocker, if the final
+  implementation affects a system-level workflow.
 - Documentation explains current user-visible and maintainer-visible
   behaviour.
 - `coderabbit review --agent` has no unresolved blocking concerns.
@@ -602,10 +619,9 @@ If `coderabbit review --agent` reports concerns, fix them in the smallest
 logical commit or record why the concern is not applicable in `Decision Log`.
 Do not proceed to the next milestone with unresolved blocking concerns.
 
-If Python e2e dependency setup fails because `pytest-bdd` is not accepted by
-the repository, preserve the Rust `rstest-bdd` behavioural coverage, document
-the conflict in this plan, and ask for approval before dropping the Python BDD
-requirement.
+If Python e2e setup cannot drive the new tool deterministically, preserve the
+Rust `rstest-bdd` behavioural coverage, document the blocker in this plan, and
+ask for approval before dropping system-level e2e coverage.
 
 If the implementation has to be rolled back before commit, use ordinary Git
 diff review and reverse patches for the files changed by this task. Do not use
@@ -718,3 +734,8 @@ quality gates, and approval requirement for roadmap item `1.3.4`.
 2026-05-19: Applied CodeRabbit wording and punctuation findings and reran
 `coderabbit review --agent` to zero findings. This does not change the planned
 implementation approach.
+
+2026-05-20: Refreshed the draft after discovering the requested branch already
+existed and its previous draft pull request was closed. Corrected the concrete
+worktree path and narrowed behavioural-test guidance to Rust `rstest-bdd` plus
+existing Python `pytest` e2e patterns where applicable.
