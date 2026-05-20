@@ -2,7 +2,7 @@
 //!
 //! This module owns the transformation from [`WasmToolRegistration`] to a
 //! runtime-ready [`WasmToolWrapper`]. It sits between
-//! [`loader::WasmToolRegistration`](super::loader::WasmToolRegistration), which
+//! [`wasm_registration::WasmToolRegistration`](super::wasm_registration::WasmToolRegistration), which
 //! carries caller-supplied registration inputs, and
 //! [`ToolRegistry`](super::loader::ToolRegistry) insertion, which publishes the
 //! prepared wrapper only after this module has validated and normalized the
@@ -31,7 +31,7 @@ use std::sync::Arc;
 use crate::secrets::{CredentialMapping, SecretsStore};
 use crate::tools::wasm::{Capabilities, OAuthRefreshConfig, WasmError, WasmToolWrapper};
 
-use super::loader::WasmToolRegistration;
+use super::wasm_registration::WasmToolRegistration;
 
 /// Output of the WASM preparation pipeline, ready for registry insertion.
 ///
@@ -165,7 +165,7 @@ pub(super) fn recover_guest_metadata(
                     "Failed to recover exported WASM metadata; rejecting registration"
                 );
             } else {
-                tracing::debug!(
+                tracing::warn!(
                     name = hints.name,
                     %error,
                     "Failed to recover exported WASM description; rejecting registration"

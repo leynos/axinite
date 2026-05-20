@@ -38,3 +38,26 @@ pub struct WasmToolRegistration<'a> {
     /// OAuth refresh configuration for auto-refreshing expired tokens.
     pub oauth_refresh: Option<OAuthRefreshConfig>,
 }
+
+pub(super) fn normalized_description(description: &str) -> Option<&str> {
+    let trimmed = description.trim();
+    (!trimmed.is_empty()).then_some(trimmed)
+}
+
+#[cfg(test)]
+mod tests {
+    use rstest::rstest;
+
+    use super::normalized_description;
+
+    #[rstest]
+    #[case("", None)]
+    #[case("   \n\t  ", None)]
+    #[case("  Useful WASM tool  ", Some("Useful WASM tool"))]
+    fn normalized_description_trims_and_rejects_blank_input(
+        #[case] description: &str,
+        #[case] expected: Option<&str>,
+    ) {
+        assert_eq!(normalized_description(description), expected);
+    }
+}

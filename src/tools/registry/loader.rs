@@ -22,14 +22,14 @@ use crate::secrets::{CredentialMapping, SecretsStore};
 use crate::tools::rate_limiter::RateLimiter;
 use crate::tools::tool::Tool;
 use crate::tools::wasm::{
-    Capabilities, OAuthRefreshConfig, ResourceLimits, SharedCredentialRegistry, ToolKey, WasmError,
-    WasmStorageError, WasmToolRuntime, WasmToolStore,
+    SharedCredentialRegistry, ToolKey, WasmError, WasmToolRuntime, WasmToolStore,
 };
 
 use super::{
     PROTECTED_TOOL_NAMES, is_protected_tool_name,
     schema::normalized_schema,
     wasm_preparation::{PreparedWasmTool, prepare_wasm_tool},
+    wasm_registration::{WasmRegistrationError, WasmToolRegistration, normalized_description},
 };
 
 pub struct WasmFromStorageRegistration<'a> {
@@ -365,38 +365,6 @@ impl ToolRegistry {
     }
 }
 
-/// Error when registering a WASM tool from storage.
-#[derive(Debug, thiserror::Error)]
-pub enum WasmRegistrationError {
-    #[error("Storage error: {0}")]
-    Storage(#[from] WasmStorageError),
-
-    #[error("WASM error: {0}")]
-    Wasm(#[from] WasmError),
-}
-
-/// Configuration for registering a WASM tool.
-pub struct WasmToolRegistration<'a> {
-    /// Unique name for the tool.
-    pub name: &'a str,
-    /// Raw WASM component bytes.
-    pub wasm_bytes: &'a [u8],
-    /// WASM runtime for compilation and execution.
-    pub runtime: &'a Arc<WasmToolRuntime>,
-    /// Security capabilities to grant the tool.
-    pub capabilities: Capabilities,
-    /// Optional resource limits (uses defaults if None).
-    pub limits: Option<ResourceLimits>,
-    /// Optional description override.
-    pub description: Option<&'a str>,
-    /// Optional parameter schema override.
-    pub schema: Option<serde_json::Value>,
-    /// Secrets store for credential injection at request time.
-    pub secrets_store: Option<Arc<dyn SecretsStore + Send + Sync>>,
-    /// OAuth refresh configuration for auto-refreshing expired tokens.
-    pub oauth_refresh: Option<OAuthRefreshConfig>,
-}
-
 impl Default for ToolRegistry {
     fn default() -> Self {
         Self::new()
@@ -408,28 +376,5 @@ impl std::fmt::Debug for ToolRegistry {
         f.debug_struct("ToolRegistry")
             .field("count", &self.count())
             .finish()
-    }
-}
-
-fn normalized_description(description: &str) -> Option<&str> {
-    let trimmed = description.trim();
-    (!trimmed.is_empty()).then_some(trimmed)
-}
-
-#[cfg(test)]
-mod tests {
-    use rstest::rstest;
-
-    use super::normalized_description;
-
-    #[rstest]
-    #[case("", None)]
-    #[case("   \n\t  ", None)]
-    #[case("  Useful WASM tool  ", Some("Useful WASM tool"))]
-    fn normalized_description_trims_and_rejects_blank_input(
-        #[case] description: &str,
-        #[case] expected: Option<&str>,
-    ) {
-        assert_eq!(normalized_description(description), expected);
     }
 }
