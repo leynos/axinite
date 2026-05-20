@@ -88,7 +88,7 @@ pub(super) async fn prepare_wasm_tool(
     };
 
     let wrapper = WasmToolWrapper::new(Arc::clone(reg.runtime), prepared, reg.capabilities);
-    let wrapper = recover_guest_metadata(wrapper, &hints);
+    let wrapper = recover_guest_metadata(wrapper, &hints)?;
     let wrapper = apply_wasm_overrides(wrapper, hints, runtime_config);
 
     Ok(PreparedWasmTool {
@@ -139,13 +139,14 @@ pub(super) struct WasmRuntimeConfig {
 /// Returns early without calling `exported_metadata` when both `hints.description`
 /// and `hints.schema` are `Some`. On export failure, emits [`tracing::warn`] when
 /// the schema is also absent and [`tracing::debug`] when only the description is
-/// missing. The wrapper is returned unchanged when recovery is impossible.
+/// missing. Export failures are returned after logging so callers can decide
+/// whether to reject registration or recover at a higher boundary.
 pub(super) fn recover_guest_metadata(
     mut wrapper: WasmToolWrapper,
     hints: &WasmMetadataHints<'_>,
-) -> WasmToolWrapper {
+) -> Result<WasmToolWrapper, WasmError> {
     if hints.description.is_some() && hints.schema.is_some() {
-        return wrapper;
+        return Ok(wrapper);
     }
     match wrapper.exported_metadata() {
         Ok((description, schema)) => {
@@ -171,9 +172,10 @@ pub(super) fn recover_guest_metadata(
                     "Failed to recover exported WASM description; using placeholder or override"
                 );
             }
+            return Err(error);
         }
     }
-    wrapper
+    Ok(wrapper)
 }
 
 /// Apply explicit metadata overrides and attach runtime concerns to a wrapper.

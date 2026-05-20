@@ -27,8 +27,9 @@ use crate::tools::wasm::{
 };
 
 use super::{
-    PROTECTED_TOOL_NAMES, is_protected_tool_name, schema::normalized_schema,
-    wasm_preparation::prepare_wasm_tool,
+    PROTECTED_TOOL_NAMES, is_protected_tool_name,
+    schema::normalized_schema,
+    wasm_preparation::{PreparedWasmTool, prepare_wasm_tool},
 };
 
 pub struct WasmFromStorageRegistration<'a> {
@@ -235,7 +236,7 @@ impl ToolRegistry {
         let prepared = prepare_wasm_tool(reg).await?;
 
         let credential_count = prepared.credential_mappings.len();
-        let registered = self.register(Arc::new(prepared.wrapper)).await;
+        let registered = self.register_prepared_wasm(name, prepared).await;
         if !registered {
             tracing::warn!(name, credential_count, "WASM tool registration rejected");
             return Err(WasmError::ConfigError(
@@ -243,9 +244,32 @@ impl ToolRegistry {
             ));
         }
 
-        self.persist_credential_mappings(name, prepared.credential_mappings);
         tracing::debug!(name, credential_count, "Registered WASM tool");
         Ok(())
+    }
+
+    async fn register_prepared_wasm(&self, name: &str, prepared: PreparedWasmTool) -> bool {
+        if Self::is_protected_tool_name(name) {
+            tracing::warn!(
+                tool = %name,
+                "Rejected tool registration: protected tool names cannot be dynamically registered"
+            );
+            return false;
+        }
+        if self.builtin_names.read().await.contains(name) {
+            tracing::warn!(
+                tool = %name,
+                "Rejected tool registration: would shadow a built-in tool"
+            );
+            return false;
+        }
+
+        let wrapper: Arc<dyn Tool> = Arc::new(prepared.wrapper);
+        let mut tools = self.tools.write().await;
+        self.persist_credential_mappings(name, prepared.credential_mappings);
+        tools.insert(name.to_string(), wrapper);
+        tracing::trace!("Registered tool: {}", name);
+        true
     }
 
     fn persist_credential_mappings(&self, name: &str, credential_mappings: Vec<CredentialMapping>) {
