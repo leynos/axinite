@@ -320,3 +320,5 @@ mod helpers;
 mod repair_claims;
 #[path = "default_tests/repair_end_to_end.rs"]
 mod repair_end_to_end;
+#[path = "default_tests/repair_manual_preconditions.rs"]
+mod repair_manual_preconditions;
