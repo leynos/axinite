@@ -572,20 +572,25 @@ dual-trait pattern already used elsewhere in the repository:
 
 ### DefaultSelfRepair helper methods
 
-Three private associated functions on `DefaultSelfRepair` implement the
-tool-repair flow in `src/agent/self_repair/default.rs`:
+The `DefaultSelfRepair` tool-repair flow is split across a small type alias
+and six helper methods in `src/agent/self_repair/default.rs` and
+`src/agent/self_repair/default_repair_helpers.rs`:
 
 Table: Repair subsystem method summaries — signatures and purposes.
 
 | Method | Signature summary | Purpose |
 | --- | --- | --- |
+| `BuilderAndDb` | `type BuilderAndDb<'a> = (&'a Arc<dyn SoftwareBuilder>, &'a Arc<dyn Database>)` | Type alias used by `validate_repair_preconditions` to return the configured builder and store without a long tuple type at the call site. |
+| `validate_repair_preconditions` | `(&self, tool: &BrokenTool) -> Result<BuilderAndDb<'_>, RepairResult>` | Checks that a builder and store are configured before repair starts. Missing dependencies are logged and returned as `RepairResult::ManualRequired` so callers can stop before claiming or mutating repair state. |
 | `build_repair_requirement` | `(tool: &BrokenTool) -> Result<BuildRequirement, RepairError>` | Validates the tool name via `ProjectName::new`, then constructs the `BuildRequirement` carrying the tool name, last error, failure count, WASM tool type, Rust language, and the `http`/`workspace` capability set. Returns `RepairError::Failed` for invalid names. |
 | `handle_build_result` | `(result: BuildResult, tool: &BrokenTool, store: &dyn Database) -> Result<RepairResult, RepairError>` | Inspects the build outcome. On success, it logs, calls `store.mark_tool_repaired`, and returns `RepairResult::Success`; on failure, it logs and returns `RepairResult::Retry` with an attempt-number message. |
 | `attempt_repair_build` | `(tool: &BrokenTool, store: &dyn Database, builder: &dyn SoftwareBuilder, requirement: &BuildRequirement) -> Result<RepairResult, RepairError>` | Invokes `builder.build(requirement)` and delegates the result to `handle_build_result`. Builder-level errors are caught here and converted into `RepairResult::Retry` with a `"Repair build error: …"` message. |
+| `load_persisted_broken_tool` | `(store: &dyn Database, tool: &BrokenTool) -> Result<Option<BrokenTool>, RepairError>` | Reloads the current broken-tool row by name through `store.get_broken_tool_by_name` so repair-attempt limits are enforced against persisted state when available. Database errors are mapped to `RepairError::Failed`. |
+| `execute_repair` | `(&self, tool: &BrokenTool, builder: &dyn SoftwareBuilder, store: &dyn Database) -> Result<RepairResult, RepairError>` | Runs the post-claim repair body: enforces `max_repair_attempts`, builds the repair requirement, increments persisted repair attempts, and delegates the build to `attempt_repair_build`. |
 
-None of these methods access instance state; they are static associated
-functions and must remain so. Their unit tests live in
-`src/agent/self_repair/default_tests/`.
+Only `validate_repair_preconditions` and `execute_repair` access instance
+state. The other helper methods are static associated functions. Their unit
+tests live in `src/agent/self_repair/default_tests/`.
 
 ### Tool-repair concurrency model
 

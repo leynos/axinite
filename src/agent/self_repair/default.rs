@@ -218,7 +218,17 @@ impl NativeSelfRepair for DefaultSelfRepair {
             }
         };
 
-        let persisted_tool = Self::load_persisted_broken_tool(store.as_ref(), tool).await?;
+        let persisted_tool = match Self::load_persisted_broken_tool(store.as_ref(), tool).await {
+            Ok(persisted_tool) => persisted_tool,
+            Err(e) => {
+                tracing::error!(
+                    tool_name = %tool.name,
+                    error = %e,
+                    "failed to load persisted broken tool state"
+                );
+                return Err(e);
+            }
+        };
         let tool_for_repair = persisted_tool.as_ref().unwrap_or(tool);
         if let Some(p) = persisted_tool.as_ref() {
             tracing::debug!(

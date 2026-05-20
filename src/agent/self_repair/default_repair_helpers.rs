@@ -200,7 +200,17 @@ impl DefaultSelfRepair {
             });
         }
 
-        let requirement = Self::build_repair_requirement(tool)?;
+        let requirement = match Self::build_repair_requirement(tool) {
+            Ok(requirement) => requirement,
+            Err(e) => {
+                tracing::error!(
+                    tool_name = %tool.name,
+                    error = %e,
+                    "failed to build repair requirement"
+                );
+                return Err(e);
+            }
+        };
         tracing::info!(
             "Attempting to repair tool '{}' (attempt {})",
             tool.name,
