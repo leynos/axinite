@@ -140,13 +140,13 @@ fn test_apply_secret_input_effect_sequence_snapshot() -> io::Result<()> {
     apply_secret_input_effect(&mut stdout, &SecretInputEffect::MaskChar)?;
     apply_secret_input_effect(&mut stdout, &SecretInputEffect::Backspace)?;
     apply_secret_input_effect(&mut stdout, &SecretInputEffect::Submit)?;
-    insta::assert_debug_snapshot!(stdout, @r###"
+    insta::assert_debug_snapshot!(stdout, @"
     [
         42,
         8,
         32,
         8,
     ]
-    "###);
+    ");
     Ok(())
 }

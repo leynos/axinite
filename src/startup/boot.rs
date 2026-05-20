@@ -96,7 +96,7 @@ mod tests {
         tunnel::{NativeTunnel, Tunnel},
     };
 
-    use super::{BootScreenContext, print_startup_info};
+    use super::{BootScreenContext, build_boot_info, print_startup_info};
     use crate::startup::url_sanitize::sanitize_display_url;
 
     struct TestTunnel {
@@ -181,6 +181,10 @@ mod tests {
             active_tunnel: &active_tunnel,
         };
 
+        let boot_info = build_boot_info(&config, &cli, &data).expect("boot info");
+        let output = ironclaw::boot_screen::render_boot_screen(&boot_info);
+        assert_snapshot!("startup_info_boot_screen", output);
+
         let capture = BufferRedirect::stdout().expect("stdout capture should be available");
         print_startup_info(&config, &cli, &data);
         let mut output = String::new();
@@ -188,7 +192,7 @@ mod tests {
             .into_inner()
             .read_to_string(&mut output)
             .expect("captured stdout should be readable");
-        assert_snapshot!("startup_info_boot_screen", output);
+        assert_snapshot!("startup_info_stdout", output);
     }
 
     #[tokio::test]
