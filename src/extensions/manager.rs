@@ -903,7 +903,7 @@ impl ExtensionManager {
                 let cap_path = self
                     .wasm_tools_dir
                     .join(format!("{}.capabilities.json", name));
-                self.revoke_credential_mappings(&cap_path).await;
+                self.revoke_credential_mappings(&cap_path, name).await;
 
                 // Unregister hooks registered from this plugin source.
                 let removed_hooks = self
@@ -946,7 +946,7 @@ impl ExtensionManager {
                     .join(format!("{}.capabilities.json", name));
 
                 // Revoke credential mappings before deleting the capabilities file
-                self.revoke_credential_mappings(&cap_path).await;
+                self.revoke_credential_mappings(&cap_path, name).await;
 
                 if wasm_path.exists() {
                     tokio::fs::remove_file(&wasm_path)
@@ -3253,10 +3253,13 @@ impl ExtensionManager {
         }
     }
 
-    /// Read a capabilities.json file and revoke its credential mappings from
-    /// the shared credential registry, so removed extensions lose injection
-    /// authority immediately.
-    async fn revoke_credential_mappings(&self, cap_path: &std::path::Path) {
+    /// Read a capabilities.json file and revoke owner-scoped credential
+    /// mappings from the shared credential registry.
+    ///
+    /// The `name` parameter is the owner or extension name used to limit which
+    /// mappings are removed, so removed extensions lose injection authority
+    /// without affecting mappings owned by other extensions.
+    async fn revoke_credential_mappings(&self, cap_path: &std::path::Path, name: &str) {
         if !cap_path.exists() {
             return;
         }
@@ -3286,8 +3289,9 @@ impl ExtensionManager {
         }
 
         if let Some(cr) = self.tool_registry.credential_registry() {
-            cr.remove_mappings_for_secrets(&secret_names);
+            cr.remove_mappings_for_secrets(name, &secret_names);
             tracing::info!(
+                owner = name,
                 secrets = ?secret_names,
                 "Revoked credential mappings for removed extension"
             );

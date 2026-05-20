@@ -86,6 +86,9 @@ mod allowlist;
 mod capabilities;
 mod capabilities_schema;
 pub(crate) mod credential_injector;
+#[cfg(test)]
+mod credential_injector_tests;
+mod credential_registry;
 mod error;
 mod host;
 mod limits;
@@ -126,9 +129,8 @@ pub use capabilities::{
 // Security components (V2)
 pub use allowlist::{AllowlistResult, AllowlistValidator, DenyReason};
 pub(crate) use credential_injector::inject_credential;
-pub use credential_injector::{
-    CredentialInjector, InjectedCredentials, InjectionError, SharedCredentialRegistry,
-};
+pub use credential_injector::{CredentialInjector, InjectedCredentials, InjectionError};
+pub use credential_registry::SharedCredentialRegistry;
 pub use rate_limiter::{LimitType, RateLimitError, RateLimitResult, RateLimiter};
 
 // Storage (V2)
