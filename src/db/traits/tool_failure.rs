@@ -32,6 +32,10 @@ pub trait ToolFailureStore: Send + Sync {
         &'a self,
         threshold: i32,
     ) -> DbFuture<'a, Result<Vec<BrokenTool>, DatabaseError>>;
+    fn get_broken_tool_by_name<'a>(
+        &'a self,
+        tool_name: &'a str,
+    ) -> DbFuture<'a, Result<Option<BrokenTool>, DatabaseError>>;
     fn mark_tool_repaired<'a>(
         &'a self,
         tool_name: &'a str,
@@ -53,6 +57,10 @@ pub trait NativeToolFailureStore: Send + Sync {
         &'a self,
         threshold: i32,
     ) -> impl Future<Output = Result<Vec<BrokenTool>, DatabaseError>> + Send + 'a;
+    fn get_broken_tool_by_name<'a>(
+        &'a self,
+        tool_name: &'a str,
+    ) -> impl Future<Output = Result<Option<BrokenTool>, DatabaseError>> + Send + 'a;
     fn mark_tool_repaired<'a>(
         &'a self,
         tool_name: &'a str,

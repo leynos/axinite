@@ -18,6 +18,13 @@ impl crate::db::NativeToolFailureStore for NullDatabase {
         Ok(vec![])
     }
 
+    async fn get_broken_tool_by_name(
+        &self,
+        _tool_name: &str,
+    ) -> Result<Option<BrokenTool>, DatabaseError> {
+        Ok(None)
+    }
+
     async fn mark_tool_repaired(&self, _tool_name: &str) -> Result<(), DatabaseError> {
         Ok(())
     }
