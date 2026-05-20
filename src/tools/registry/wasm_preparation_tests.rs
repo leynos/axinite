@@ -149,15 +149,21 @@ async fn prepare_wasm_tool_returns_error_for_bad_wasm_bytes(
 
 #[tokio::test]
 async fn recover_guest_metadata_returns_early_when_both_overrides_are_present() -> Result<()> {
-    let wrapper = wasm_wrapper("metadata_overrides")
-        .await?
+    let runtime = metadata_test_runtime()?;
+    // Use a broken WASM module: if exported_metadata() is called it will
+    // fail loudly, making the early-return assertion both definitive and
+    // deterministic.
+    let prepared = runtime
+        .prepare("both_overrides", b"\0asm\r\0\x01\0", None)
+        .await?;
+    let wrapper = WasmToolWrapper::new(runtime, prepared, Capabilities::default())
         .with_description("placeholder before override")
         .with_schema(serde_json::json!({"type": "object"}));
 
     let recovered = recover_guest_metadata(
         wrapper,
         &WasmMetadataHints {
-            name: "metadata_overrides",
+            name: "both_overrides",
             description: Some("description override"),
             schema: Some(serde_json::json!({"type": "string"})),
         },
