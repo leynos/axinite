@@ -311,7 +311,7 @@ mod tests {
             requirement,
             artifact_path: PathBuf::from("/tmp/test-tool"),
             logs: vec![BuildLog {
-                timestamp: Utc::now(),
+                timestamp: now,
                 phase: BuildPhase::Complete,
                 message: "built".to_string(),
                 details: None,
