@@ -154,6 +154,19 @@ fn matches_host_patterns(owned: &OwnedCredentialMapping, host: &str) -> bool {
         .any(|pattern| host_matches_pattern(host, pattern))
 }
 
+fn merge_host_patterns_into(existing: &mut CredentialMapping, incoming: CredentialMapping) {
+    let mut seen = existing
+        .host_patterns
+        .iter()
+        .cloned()
+        .collect::<HashSet<_>>();
+    for host_pattern in incoming.host_patterns {
+        if seen.insert(host_pattern.clone()) {
+            existing.host_patterns.push(host_pattern);
+        }
+    }
+}
+
 fn dedupe_mappings_by_secret_name(
     mappings: impl IntoIterator<Item = CredentialMapping>,
 ) -> Vec<CredentialMapping> {
@@ -163,16 +176,7 @@ fn dedupe_mappings_by_secret_name(
         if let Some(existing) = deduped.iter_mut().find(|existing| {
             existing.secret_name == mapping.secret_name && existing.location == mapping.location
         }) {
-            let mut seen = existing
-                .host_patterns
-                .iter()
-                .cloned()
-                .collect::<HashSet<_>>();
-            for host_pattern in mapping.host_patterns {
-                if seen.insert(host_pattern.clone()) {
-                    existing.host_patterns.push(host_pattern);
-                }
-            }
+            merge_host_patterns_into(existing, mapping);
         } else {
             deduped.push(mapping);
         }
