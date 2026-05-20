@@ -1441,6 +1441,15 @@ so local setup instructions stay truthful.
   helpers. No functional changes were made. See
   `src/agent/self_repair/default.rs` and
   `src/agent/self_repair/default_tests/`.
+- Self-repair still has architecture follow-up work: in-process repair
+  claim tracking lives in `src/agent/self_repair/repair_claim.rs`, the
+  helper path still calls database operations directly, and several repair
+  errors use `Uuid::nil()` as a placeholder target id. A future design pass
+  should move process-local claim tracking behind an adapter boundary, hide
+  persistence operations behind a repository-style interface, and replace
+  placeholder ids with domain-shaped repair error data. Kani verification of
+  the claim lifecycle remains optional follow-up beyond the current property
+  tests.
 
 ## 33. Phased startup pipeline
 

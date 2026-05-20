@@ -1,6 +1,7 @@
 //! Unit tests for `RepairClaims` and `ToolRepairClaim`.
 
 use chrono::Utc;
+use proptest::prelude::*;
 use rstest::{fixture, rstest};
 
 use crate::agent::self_repair::BrokenTool;
@@ -124,6 +125,45 @@ fn claim_tool_respects_claim_lifecycle(
                 second.is_some(),
                 "sequential repair must succeed after the preceding claim is released"
             );
+        }
+    }
+}
+
+proptest! {
+    #[test]
+    fn claim_tool_matches_model_for_generated_orderings(
+        operations in prop::collection::vec((0usize..3, any::<bool>()), 1..100)
+    ) {
+        let claims = RepairClaims::default();
+        let tools = [
+            broken_tool("tool-alpha"),
+            broken_tool("tool-beta"),
+            broken_tool("tool-gamma"),
+        ];
+        let mut held = [None, None, None];
+        let mut model = [false; 3];
+
+        for (tool_index, should_claim) in operations {
+            if should_claim {
+                let claim = claims
+                    .claim_tool(&tools[tool_index])
+                    .expect("claim_tool should not error for generated operation");
+
+                prop_assert_eq!(
+                    claim.is_some(),
+                    !model[tool_index],
+                    "claim result must match model for {}",
+                    tools[tool_index].name
+                );
+
+                if claim.is_some() {
+                    held[tool_index] = claim;
+                    model[tool_index] = true;
+                }
+            } else {
+                held[tool_index] = None;
+                model[tool_index] = false;
+            }
         }
     }
 }
