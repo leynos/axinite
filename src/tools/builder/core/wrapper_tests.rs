@@ -5,6 +5,7 @@ use std::sync::{Arc, Mutex};
 use super::super::domain::SoftwareBuilderFuture;
 use super::*;
 use insta::assert_snapshot;
+use rstest::rstest;
 
 type AnalyzeResult = dyn Fn() -> Result<BuildRequirement, AgentToolError> + Send + Sync;
 type BuildResultFn = dyn Fn(&BuildRequirement) -> Result<BuildResult, AgentToolError> + Send + Sync;
@@ -184,17 +185,14 @@ fn resolve_software_type_none_preserves_fallback() {
     );
 }
 
-#[test]
-fn resolve_software_type_all_valid_values() {
-    for (value, expected) in [
-        ("wasm_tool", SoftwareType::WasmTool),
-        ("cli_binary", SoftwareType::CliBinary),
-        ("library", SoftwareType::Library),
-        ("script", SoftwareType::Script),
-    ] {
-        let result = BuildSoftwareTool::resolve_software_type(Some(value), SoftwareType::Library);
-        assert_eq!(result.expect("expected valid software type"), expected);
-    }
+#[rstest]
+#[case("wasm_tool", SoftwareType::WasmTool)]
+#[case("cli_binary", SoftwareType::CliBinary)]
+#[case("library", SoftwareType::Library)]
+#[case("script", SoftwareType::Script)]
+fn resolve_software_type_all_valid_values(#[case] value: &str, #[case] expected: SoftwareType) {
+    let result = BuildSoftwareTool::resolve_software_type(Some(value), SoftwareType::Library);
+    assert_eq!(result.expect("expected valid software type"), expected);
 }
 
 #[test]
@@ -216,17 +214,14 @@ fn resolve_language_none_preserves_fallback() {
     assert_eq!(result.expect("expected fallback language"), Language::Rust);
 }
 
-#[test]
-fn resolve_language_all_valid_values() {
-    for (value, expected) in [
-        ("rust", Language::Rust),
-        ("python", Language::Python),
-        ("typescript", Language::TypeScript),
-        ("bash", Language::Bash),
-    ] {
-        let result = BuildSoftwareTool::resolve_language(Some(value), Language::Rust);
-        assert_eq!(result.expect("expected valid language"), expected);
-    }
+#[rstest]
+#[case("rust", Language::Rust)]
+#[case("python", Language::Python)]
+#[case("typescript", Language::TypeScript)]
+#[case("bash", Language::Bash)]
+fn resolve_language_all_valid_values(#[case] value: &str, #[case] expected: Language) {
+    let result = BuildSoftwareTool::resolve_language(Some(value), Language::Rust);
+    assert_eq!(result.expect("expected valid language"), expected);
 }
 
 #[test]
