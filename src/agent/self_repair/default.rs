@@ -1,6 +1,6 @@
 //! Default self-repair policy implementation.
 
-use std::{sync::Arc, time::Duration};
+use std::{borrow::Cow, sync::Arc, time::Duration};
 
 use chrono::{DateTime, Utc};
 
@@ -65,6 +65,51 @@ impl DefaultSelfRepair {
     pub(crate) fn with_store(mut self, store: Arc<dyn Database>) -> Self {
         self.store = Some(store);
         self
+    }
+
+    async fn resolve_tool_for_repair<'a>(
+        &self,
+        store: &dyn Database,
+        tool: &'a BrokenTool,
+        #[cfg(feature = "metrics")] repair_started: std::time::Instant,
+    ) -> Result<Cow<'a, BrokenTool>, RepairError> {
+        let persisted_tool = match Self::load_persisted_broken_tool(store, tool).await {
+            Ok(persisted_tool) => persisted_tool,
+            Err(e) => {
+                tracing::error!(
+                    tool_name = %tool.name,
+                    error = %e,
+                    "failed to load persisted broken tool state"
+                );
+                #[cfg(feature = "metrics")]
+                {
+                    metrics::counter!(
+                        "axinite.repair.error",
+                        "category" => "load_persisted"
+                    )
+                    .increment(1);
+                    metrics::histogram!("axinite.repair.latency_ms")
+                        .record(repair_started.elapsed().as_secs_f64() * 1000.0);
+                }
+                return Err(e);
+            }
+        };
+
+        if let Some(p) = persisted_tool {
+            tracing::debug!(
+                tool_name = %p.name,
+                source = "persisted",
+                "using persisted tool state for repair"
+            );
+            Ok(Cow::Owned(p))
+        } else {
+            tracing::debug!(
+                tool_name = %tool.name,
+                source = "input",
+                "using input tool state for repair"
+            );
+            Ok(Cow::Borrowed(tool))
+        }
     }
 }
 
@@ -226,44 +271,15 @@ impl NativeSelfRepair for DefaultSelfRepair {
         #[cfg(feature = "metrics")]
         let repair_started = std::time::Instant::now();
 
-        let persisted_tool = match Self::load_persisted_broken_tool(store.as_ref(), tool).await {
-            Ok(persisted_tool) => persisted_tool,
-            Err(e) => {
-                tracing::error!(
-                    tool_name = %tool.name,
-                    error = %e,
-                    "failed to load persisted broken tool state"
-                );
-                #[cfg(feature = "metrics")]
-                {
-                    metrics::counter!(
-                        "axinite.repair.error",
-                        "category" => "load_persisted"
-                    )
-                    .increment(1);
-                    metrics::histogram!("axinite.repair.latency_ms")
-                        .record(repair_started.elapsed().as_secs_f64() * 1000.0);
-                }
-                return Err(e);
-            }
-        };
-        let tool_for_repair = persisted_tool.as_ref().unwrap_or(tool);
-        if let Some(p) = persisted_tool.as_ref() {
-            tracing::debug!(
-                tool_name = %p.name,
-                source = "persisted",
-                "using persisted tool state for repair"
-            );
-        } else {
-            tracing::debug!(
-                tool_name = %tool.name,
-                source = "input",
-                "using input tool state for repair"
-            );
-        }
+        #[cfg(feature = "metrics")]
+        let tool_for_repair = self
+            .resolve_tool_for_repair(store.as_ref(), tool, repair_started)
+            .await?;
+        #[cfg(not(feature = "metrics"))]
+        let tool_for_repair = self.resolve_tool_for_repair(store.as_ref(), tool).await?;
 
         let result = self
-            .execute_repair(tool_for_repair, builder.as_ref(), store.as_ref())
+            .execute_repair(tool_for_repair.as_ref(), builder.as_ref(), store.as_ref())
             .await;
         #[cfg(feature = "metrics")]
         metrics::histogram!("axinite.repair.latency_ms")
