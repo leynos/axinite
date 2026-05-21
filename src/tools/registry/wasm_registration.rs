@@ -46,6 +46,9 @@ pub(super) fn normalized_description(description: &str) -> Option<&str> {
 
 #[cfg(test)]
 mod tests {
+    //! Unit tests for WASM registration helper logic, including description
+    //! normalization for storage-backed registration.
+
     use rstest::rstest;
 
     use super::normalized_description;

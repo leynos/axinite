@@ -138,7 +138,7 @@ pub(super) struct WasmRuntimeConfig {
 ///
 /// Returns early without calling `exported_metadata` when both `hints.description`
 /// and `hints.schema` are `Some`. On export failure, emits [`tracing::warn`] when
-/// the schema is also absent and [`tracing::debug`] when only the description is
+/// the schema is also absent and [`tracing::warn`] when only the description is
 /// missing. Export failures are returned after logging so callers can decide
 /// whether to reject registration or recover at a higher boundary.
 pub(super) fn recover_guest_metadata(
