@@ -1,20 +1,22 @@
 //! Default self-repair policy implementation.
 
-use std::{sync::Arc, time::Duration};
+use std::{borrow::Cow, sync::Arc, time::Duration};
 
 use chrono::{DateTime, Utc};
-use uuid::Uuid;
 
 use crate::context::{ContextManager, JobRecoveryError};
 use crate::db::Database;
 use crate::error::RepairError;
+use crate::tools::SoftwareBuilder;
 #[cfg(any(test, feature = "self_repair_extras"))]
 use crate::tools::ToolRegistry;
-use crate::tools::builder::{BuildResult, ProjectName};
-use crate::tools::{BuildRequirement, Language, SoftwareBuilder, SoftwareType};
 
+use super::repair_claim::RepairClaims;
 use super::traits::NativeSelfRepair;
 use super::types::{BrokenTool, RepairResult, StuckJob};
+
+#[path = "default_repair_helpers.rs"]
+mod repair_helpers;
 
 /// Tuple of builder and database references for tool repair.
 ///
@@ -29,8 +31,13 @@ pub struct DefaultSelfRepair {
     max_repair_attempts: u32,
     store: Option<Arc<dyn Database>>,
     builder: Option<Arc<dyn SoftwareBuilder>>,
+    repair_claims: RepairClaims,
     #[cfg(any(test, feature = "self_repair_extras"))]
     tools: Option<Arc<ToolRegistry>>,
+    /// When set, repair tasks await this barrier immediately before
+    /// `claim_tool` so concurrent callers overlap on the claim window.
+    #[cfg(test)]
+    claim_overlap_barrier: Option<Arc<tokio::sync::Barrier>>,
 }
 
 impl DefaultSelfRepair {
@@ -46,8 +53,11 @@ impl DefaultSelfRepair {
             max_repair_attempts,
             store: None,
             builder: None,
+            repair_claims: RepairClaims::default(),
             #[cfg(any(test, feature = "self_repair_extras"))]
             tools: None,
+            #[cfg(test)]
+            claim_overlap_barrier: None,
         }
     }
 
@@ -57,34 +67,57 @@ impl DefaultSelfRepair {
         self
     }
 
-    /// Validates preconditions for tool repair: builder/store availability and attempt limits.
-    /// Returns the builder and store references on success, or a terminal RepairResult on failure.
-    fn validate_repair_preconditions(
+    async fn resolve_tool_for_repair<'a>(
         &self,
-        tool: &BrokenTool,
-    ) -> Result<BuilderAndDb<'_>, RepairResult> {
-        let Some(ref builder) = self.builder else {
-            return Err(RepairResult::ManualRequired {
-                message: format!("Builder not available for repairing tool '{}'", tool.name),
-            });
+        store: &dyn Database,
+        tool: &'a BrokenTool,
+        #[cfg(feature = "metrics")] repair_started: std::time::Instant,
+    ) -> Result<Cow<'a, BrokenTool>, RepairError> {
+        let persisted_tool = match Self::load_persisted_broken_tool(store, tool).await {
+            Ok(persisted_tool) => persisted_tool,
+            Err(e) => {
+                tracing::error!(
+                    tool_name = %tool.name,
+                    error = %e,
+                    "failed to load persisted broken tool state"
+                );
+                #[cfg(feature = "metrics")]
+                {
+                    metrics::counter!(
+                        "axinite.repair.error",
+                        "category" => "load_persisted"
+                    )
+                    .increment(1);
+                    metrics::histogram!("axinite.repair.latency_ms")
+                        .record(repair_started.elapsed().as_secs_f64() * 1000.0);
+                }
+                return Err(e);
+            }
         };
 
-        let Some(ref store) = self.store else {
-            return Err(RepairResult::ManualRequired {
-                message: "Store not available for tracking repair".to_string(),
-            });
-        };
-
-        if tool.repair_attempts >= self.max_repair_attempts {
-            return Err(RepairResult::ManualRequired {
-                message: format!(
-                    "Tool '{}' exceeded max repair attempts ({})",
-                    tool.name, self.max_repair_attempts
-                ),
-            });
+        if let Some(p) = persisted_tool {
+            tracing::debug!(
+                tool_name = %p.name,
+                source = "persisted",
+                "using persisted tool state for repair"
+            );
+            Ok(Cow::Owned(p))
+        } else {
+            tracing::debug!(
+                tool_name = %tool.name,
+                source = "input",
+                "using input tool state for repair"
+            );
+            Ok(Cow::Borrowed(tool))
         }
+    }
+}
 
-        Ok((builder, store))
+#[cfg(test)]
+impl DefaultSelfRepair {
+    pub(crate) fn with_claim_overlap_barrier(mut self, barrier: Arc<tokio::sync::Barrier>) -> Self {
+        self.claim_overlap_barrier = Some(barrier);
+        self
     }
 }
 
@@ -201,132 +234,57 @@ impl NativeSelfRepair for DefaultSelfRepair {
         }
     }
 
+    /// Attempts to repair a broken tool by building a new version.
+    ///
+    /// See `docs/developers-guide.md` for the helper concurrency model.
     async fn repair_broken_tool<'a>(
         &'a self,
         tool: &'a BrokenTool,
     ) -> Result<RepairResult, RepairError> {
-        // Validate preconditions (builder/store availability, attempt limits)
         let (builder, store) = match self.validate_repair_preconditions(tool) {
             Ok(tuple) => tuple,
-            Err(result) => return Ok(result),
+            Err(result) => {
+                #[cfg(feature = "metrics")]
+                metrics::counter!("axinite.repair.outcome", "result" => "manual").increment(1);
+                return Ok(result);
+            }
         };
 
-        // Create build requirement (validates tool name)
-        let requirement = create_repair_requirement(tool)?;
-
-        tracing::info!(
-            "Attempting to repair tool '{}' (attempt {})",
-            tool.name,
-            tool.repair_attempts + 1
-        );
-
-        // Increment repair attempts
-        store
-            .increment_repair_attempts(&tool.name)
-            .await
-            .map_err(|e| RepairError::Failed {
-                target_type: "tool".to_string(),
-                target_id: Uuid::nil(),
-                reason: format!(
-                    "failed to increment repair attempts for {}: {}",
-                    tool.name, e
-                ),
-            })?;
-
-        // Attempt to build/repair and handle result
-        match builder.build(&requirement).await {
-            Ok(result) => handle_build_result(result, tool, store).await,
-            Err(e) => {
-                tracing::error!("Repair build for '{}' errored: {}", tool.name, e);
-                Ok(RepairResult::Retry {
-                    message: format!("Repair build error: {}", e),
-                })
+        #[cfg(test)]
+        if let Some(barrier) = self.claim_overlap_barrier.as_ref() {
+            barrier.wait().await;
+        }
+        let _claim = match self.repair_claims.claim_tool(tool)? {
+            Some(claim) => claim,
+            None => {
+                tracing::warn!(
+                    tool_name = %tool.name,
+                    "repair precondition failed: tool repair already claimed"
+                );
+                #[cfg(feature = "metrics")]
+                metrics::counter!("axinite.repair.outcome", "result" => "retry").increment(1);
+                return Ok(RepairResult::Retry {
+                    message: format!("Repair already in progress for '{}'", tool.name),
+                });
             }
-        }
-    }
-}
+        };
+        #[cfg(feature = "metrics")]
+        let repair_started = std::time::Instant::now();
 
-/// Creates a BuildRequirement from a BrokenTool, validating the tool name.
-fn create_repair_requirement(tool: &BrokenTool) -> Result<BuildRequirement, RepairError> {
-    let project_name = ProjectName::new(&tool.name).map_err(|error| RepairError::Failed {
-        target_type: "tool".to_string(),
-        target_id: Uuid::nil(),
-        reason: format!(
-            "invalid tool name '{}' for repair build: {error}",
-            tool.name
-        ),
-    })?;
+        #[cfg(feature = "metrics")]
+        let tool_for_repair = self
+            .resolve_tool_for_repair(store.as_ref(), tool, repair_started)
+            .await?;
+        #[cfg(not(feature = "metrics"))]
+        let tool_for_repair = self.resolve_tool_for_repair(store.as_ref(), tool).await?;
 
-    Ok(BuildRequirement {
-        name: project_name,
-        description: format!(
-            "Repair broken WASM tool.\n\n\
-             Tool name: {}\n\
-             Previous error: {}\n\
-             Failure count: {}\n\n\
-             Analyze the error, fix the implementation, and rebuild.",
-            tool.name,
-            tool.last_error.as_deref().unwrap_or("Unknown error"),
-            tool.failure_count
-        ),
-        software_type: SoftwareType::WasmTool,
-        language: Language::Rust,
-        input_spec: None,
-        output_spec: None,
-        dependencies: vec![],
-        capabilities: vec!["http".to_string(), "workspace".to_string()],
-    })
-}
-
-/// Handles the build result, marking the tool as repaired if successful.
-async fn handle_build_result(
-    result: BuildResult,
-    tool: &BrokenTool,
-    store: &Arc<dyn Database>,
-) -> Result<RepairResult, RepairError> {
-    if result.success {
-        tracing::info!(
-            "Successfully rebuilt tool '{}' after {} iterations",
-            tool.name,
-            result.iterations
-        );
-
-        // Mark as repaired in database
-        store
-            .mark_tool_repaired(&tool.name)
-            .await
-            .map_err(|e| RepairError::Failed {
-                target_type: "tool".to_string(),
-                target_id: Uuid::nil(),
-                reason: format!("failed to mark {} as repaired: {}", tool.name, e),
-            })?;
-
-        // Log if the tool was auto-registered
-        if result.registered {
-            tracing::info!("Repaired tool '{}' auto-registered", tool.name);
-        }
-
-        Ok(RepairResult::Success {
-            message: format!(
-                "Tool '{}' repaired successfully after {} iterations",
-                tool.name, result.iterations
-            ),
-        })
-    } else {
-        // Build completed but failed
-        tracing::warn!(
-            "Repair build for '{}' completed but failed: {:?}",
-            tool.name,
-            result.error
-        );
-        Ok(RepairResult::Retry {
-            message: format!(
-                "Repair attempt {} for '{}' failed: {}",
-                tool.repair_attempts + 1,
-                tool.name,
-                result.error.unwrap_or_else(|| "Unknown error".to_string())
-            ),
-        })
+        let result = self
+            .execute_repair(tool_for_repair.as_ref(), builder.as_ref(), store.as_ref())
+            .await;
+        #[cfg(feature = "metrics")]
+        metrics::histogram!("axinite.repair.latency_ms")
+            .record(repair_started.elapsed().as_secs_f64() * 1000.0);
+        result
     }
 }
 

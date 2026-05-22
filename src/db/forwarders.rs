@@ -162,6 +162,7 @@ impl_db_forwarders! {
     methods = {
         fn record_tool_failure(tool_name: &'a str, error_message: &'a str) -> Result<(), DatabaseError>;
         fn get_broken_tools(threshold: i32) -> Result<Vec<BrokenTool>, DatabaseError>;
+        fn get_broken_tool_by_name(tool_name: &'a str) -> Result<Option<BrokenTool>, DatabaseError>;
         fn mark_tool_repaired(tool_name: &'a str) -> Result<(), DatabaseError>;
         fn increment_repair_attempts(tool_name: &'a str) -> Result<(), DatabaseError>;
     }

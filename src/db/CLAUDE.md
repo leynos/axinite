@@ -60,7 +60,7 @@ The `Database` supertrait is composed of seven sub-traits. Leaf consumers can de
 | `JobStore` | 13 | Agent jobs, actions, LLM calls, estimation |
 | `SandboxStore` | 13 | Sandbox jobs, job events |
 | `RoutineStore` | 15 | Routines, routine runs |
-| `ToolFailureStore` | 4 | Self-repair tracking |
+| `ToolFailureStore` | 5 | Self-repair tracking |
 | `SettingsStore` | 8 | Per-user key-value settings |
 | `WorkspaceStore` | 13 | Memory documents, chunks, hybrid search |
 

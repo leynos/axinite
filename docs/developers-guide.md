@@ -174,6 +174,11 @@ The current `Makefile` also includes:
 - `make clean` to remove Cargo build outputs for the root crate and the
   GitHub tool crate.
 
+The Makefile resolves `CARGO` to `~/.cargo/bin/cargo` when that path exists,
+falling back to `cargo` on `$PATH`. `NEXTEST` is derived as `$(CARGO) nextest`
+so both variables consistently use the same Cargo binary. Override them by
+setting `CARGO` or `NEXTEST` in the environment before invoking `make`.
+
 ## 10. Integration test fixture wiring
 
 Integration test harnesses should load fixture-only helpers at the
@@ -564,6 +569,146 @@ dual-trait pattern already used elsewhere in the repository:
   and cooperative shutdown through a `oneshot` channel.
 - `types.rs` holds the shared value types such as `StuckJob`, `BrokenTool`,
   `RepairResult`, and `RepairNotification`.
+
+### DefaultSelfRepair helper methods
+
+The `DefaultSelfRepair` tool-repair flow is split across a small type alias
+and six helper methods in `src/agent/self_repair/default.rs` and
+`src/agent/self_repair/default_repair_helpers.rs`:
+
+Table: Repair subsystem method summaries — signatures and purposes.
+
+| Method | Signature summary | Purpose |
+| --- | --- | --- |
+| `BuilderAndDb` | `type BuilderAndDb<'a> = (&'a Arc<dyn SoftwareBuilder>, &'a Arc<dyn Database>)` | Type alias used by `validate_repair_preconditions` to return the configured builder and store without a long tuple type at the call site. |
+| `validate_repair_preconditions` | `(&self, tool: &BrokenTool) -> Result<BuilderAndDb<'_>, RepairResult>` | Checks that a builder and store are configured before repair starts. Missing dependencies are logged and returned as `RepairResult::ManualRequired` so callers can stop before claiming or mutating repair state. |
+| `build_repair_requirement` | `(tool: &BrokenTool) -> Result<BuildRequirement, RepairError>` | Validates the tool name via `ProjectName::new`, then constructs the `BuildRequirement` carrying the tool name, last error, failure count, WASM tool type, Rust language, and the `http`/`workspace` capability set. Returns `RepairError::Failed` for invalid names. |
+| `handle_build_result` | `(result: BuildResult, tool: &BrokenTool, store: &dyn Database) -> Result<RepairResult, RepairError>` | Inspects the build outcome. On success, it logs, calls `store.mark_tool_repaired`, and returns `RepairResult::Success`; on failure, it logs and returns `RepairResult::Retry` with an attempt-number message. |
+| `attempt_repair_build` | `(tool: &BrokenTool, store: &dyn Database, builder: &dyn SoftwareBuilder, requirement: &BuildRequirement) -> Result<RepairResult, RepairError>` | Invokes `builder.build(requirement)` and delegates the result to `handle_build_result`. Builder-level errors are caught here and converted into `RepairResult::Retry` with a `"Repair build error: …"` message. |
+| `load_persisted_broken_tool` | `(store: &dyn Database, tool: &BrokenTool) -> Result<Option<BrokenTool>, RepairError>` | Reloads the current broken-tool row by name through `store.get_broken_tool_by_name` so repair-attempt limits are enforced against persisted state when available. Database errors are mapped to `RepairError::Failed`. |
+| `execute_repair` | `(&self, tool: &BrokenTool, builder: &dyn SoftwareBuilder, store: &dyn Database) -> Result<RepairResult, RepairError>` | Runs the post-claim repair body: enforces `max_repair_attempts`, builds the repair requirement, increments persisted repair attempts, and delegates the build to `attempt_repair_build`. |
+
+Only `validate_repair_preconditions` and `execute_repair` access instance
+state. The other helper methods are static associated functions. Their unit
+tests live in `src/agent/self_repair/default_tests/`.
+
+### Tool-repair concurrency model
+
+The three private helpers invoked by `repair_broken_tool`
+(`build_repair_requirement`, `attempt_repair_build`, `handle_build_result`) are
+static associated functions with no shared mutable state. Concurrent calls for
+different tools are therefore safe: each call operates on its own `BrokenTool`
+and `BuildResult` values.
+
+`repair_broken_tool` claims an in-process repair slot for the same
+`tool.name` before calling `store.increment_repair_attempts`. Concurrent calls
+for the same tool through the same `DefaultSelfRepair` instance return
+`RepairResult::Retry` until the active claim is released, so only the claimed
+call increments attempts and may later call `store.mark_tool_repaired`.
+
+The claim is process-local. Distributed callers still need database-level
+idempotency or scheduler-level at-most-once repair semantics if multiple
+processes can repair the same tool concurrently.
+
+The helper chain holds no locks across `.await` points. If the future is
+dropped, the process-local repair claim is released; external mutations that
+already completed, such as `store.increment_repair_attempts`, `builder.build`,
+or `store.mark_tool_repaired`, are not rolled back.
+
+### Metrics
+
+Self-repair metrics are compiled only when the `metrics` feature is enabled:
+
+```bash
+cargo test --features metrics
+```
+
+The feature enables the `metrics` crate and emits these measurements from the
+tool-repair path:
+
+Table: Self-repair metrics.
+
+| Metric | Type | Labels | Emitted when |
+| --- | --- | --- | --- |
+| `axinite.repair.outcome` | counter | `result="success"` | `handle_build_result` marks a repaired tool successfully |
+| `axinite.repair.outcome` | counter | `result="retry"` | `handle_build_result` receives a failed build result, or `repair_broken_tool` rejects a same-tool repair because a claim is already held |
+| `axinite.repair.outcome` | counter | `result="manual"` | `repair_broken_tool` stops at a precondition path such as missing builder or store |
+| `axinite.repair.error` | counter | `category="claim_poisoned"` | `RepairClaims::claim_tool` cannot lock the process-local claim set because the mutex is poisoned |
+| `axinite.repair.error` | counter | `category="load_persisted"` | `repair_broken_tool` cannot reload persisted broken-tool state |
+| `axinite.repair.error` | counter | `category="requirement_build"` | `execute_repair` cannot build a repair requirement, usually because the tool name is invalid |
+| `axinite.repair.error` | counter | `category="increment_repair_attempts"` | `execute_repair` cannot persist the repair-attempt increment |
+| `axinite.repair.error` | counter | `category="mark_tool_repaired"` | `handle_build_result` cannot mark a successfully rebuilt tool as repaired |
+| `axinite.repair.latency_ms` | histogram | none | `repair_broken_tool` has acquired a claim and is about to return |
+
+Latency starts immediately after the in-process repair claim is acquired, so
+manual precondition exits and duplicate-claim retries do not emit latency.
+Export pipeline wiring, such as Prometheus or OpenTelemetry integration, is out
+of scope for this feature flag.
+
+### In-process repair claim tracking
+
+`RepairClaims` (in `src/agent/self_repair/repair_claim.rs`) maintains a
+`Mutex<HashSet<String>>` of tool names whose repair is currently active
+within one `DefaultSelfRepair` instance.
+
+`RepairClaims::claim_tool(tool)` locks the set and:
+
+- Returns `Ok(Some(ToolRepairClaim))` when the tool name is not already
+  present, inserting it into the set.
+- Returns `Ok(None)` when the tool name is already in the set
+  (another repair is in progress for the same tool).
+- Returns `Err(RepairError::Failed)` when the mutex is poisoned.
+
+`ToolRepairClaim` is a Resource Acquisition Is Initialization (RAII)
+guard whose `Drop` implementation removes the tool name from the set,
+releasing the claim for subsequent callers.
+Claims are process-local; no distributed locking is performed.
+
+### CapturingStore test infrastructure
+
+`CapturingStore` (in `src/testing/null_db/capturing_store/`) is the
+primary test double for `DefaultSelfRepair` integration tests. PR `#168`
+added the following members:
+
+Table: CapturingStore self-repair test additions.
+
+| Member | Kind | Purpose |
+| --- | --- | --- |
+| `Calls::repaired_tools` | `Mutex<Vec<String>>` | Records each tool name passed to `mark_tool_repaired` in call order |
+| `Calls::record_repaired_tool` | async method | Appends a tool name to `repaired_tools`; called by the `NativeToolFailureStore` impl |
+| `CapturingStore::mark_repaired_error` | `SyncMutex<Option<DatabaseError>>` | Holds an optional one-shot error for the next `mark_tool_repaired` call |
+| `CapturingStore::failing_mark_tool_repaired_once` | constructor | Creates a store that fails the first `mark_tool_repaired` call with the given `DatabaseError` |
+| `CapturingStore::take_mark_repaired_error` | private method | Takes and clears the stored error; subsequent calls delegate to `self.inner` |
+
+The `NativeToolFailureStore` impl for `CapturingStore` in
+`src/testing/null_db/capturing_store/delegation.rs` now handles
+`mark_tool_repaired` directly: it records the call, checks for a
+pending error via `take_mark_repaired_error()`, and either returns the
+error or delegates to `self.inner`.
+
+Unit tests for `handle_build_result` use `failing_mark_tool_repaired_once`
+to verify that database errors during repair marking are propagated as
+`RepairError::Failed`.
+
+### Self-repair test helper module
+
+`src/agent/self_repair/default_tests/helpers.rs` provides shared
+constructors for default self-repair unit tests. Exported items:
+
+Table: Default self-repair shared test helpers.
+
+| Item | Kind | Purpose |
+| --- | --- | --- |
+| `stub_broken_tool(name, last_error, repair_attempts)` | function | Constructs a minimal `BrokenTool` with `failure_count = 3` and `Utc::now()` timestamps |
+| `stub_build_requirement()` | function | Returns a `BuildRequirement` for `"test-tool"`, `SoftwareType::WasmTool`, `Language::Rust` |
+| `stub_build_result(is_success, error, iterations, is_registered)` | function | Returns a `BuildResult` with `build_id = Uuid::nil()` and the given outcome fields |
+| `StubBuilderOutcome` | enum | Configures `StubSoftwareBuilder::build` to either return a `BuildResult` or a `ToolError::BuilderFailed` |
+| `StubSoftwareBuilder` | struct | Implements `NativeSoftwareBuilder`; `analyze` and `repair` always error |
+| `FailingRepairStore` | type alias | Alias for `CapturingStore` configured to fail `mark_tool_repaired` |
+| `failing_repair_store()` | function | Constructs a `FailingRepairStore` via `CapturingStore::failing_mark_tool_repaired_once` |
+
+These helpers are `pub(super)` and available only to the sibling test
+submodules declared in `default_tests.rs`.
 
 When modifying this path, keep three invariants in mind:
 
@@ -1324,6 +1469,22 @@ artifacts and CI duplication.
 
 When those changes land, this guide must be updated in the same branch
 so local setup instructions stay truthful.
+
+- Issue `#35` (PR `#168`): `DefaultSelfRepair::repair_broken_tool` was
+  refactored to ≤ 35 lines by extracting `build_repair_requirement`,
+  `handle_build_result`, and `attempt_repair_build` as private static
+  helpers. No functional changes were made. See
+  `src/agent/self_repair/default.rs` and
+  `src/agent/self_repair/default_tests/`.
+- Self-repair still has architecture follow-up work: in-process repair
+  claim tracking lives in `src/agent/self_repair/repair_claim.rs`, the
+  helper path still calls database operations directly, and several repair
+  errors use `Uuid::nil()` as a placeholder target id. A future design pass
+  should move process-local claim tracking behind an adapter boundary, hide
+  persistence operations behind a repository-style interface, and replace
+  placeholder ids with domain-shaped repair error data. Kani verification of
+  the claim lifecycle remains optional follow-up beyond the current property
+  tests.
 
 ## 33. Phased startup pipeline
 
