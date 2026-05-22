@@ -1,0 +1,6 @@
+---
+source: src/tools/registry/wasm_registration_tests.rs
+assertion_line: 165
+expression: "\"Dropping WASM credential mappings: credential registry unavailable\""
+---
+Dropping WASM credential mappings: credential registry unavailable

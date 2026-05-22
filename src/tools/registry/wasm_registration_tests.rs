@@ -3,10 +3,13 @@
 use std::sync::Arc;
 
 use chrono::Utc;
+use insta::assert_snapshot;
 use rstest::rstest;
 use uuid::Uuid;
 
-use super::{ToolRegistry, WasmFromStorageRegistration, WasmToolRegistration};
+use super::{
+    ToolRegistry, WasmFromStorageRegistration, WasmRegistrationError, WasmToolRegistration,
+};
 use crate::llm::ToolDefinition;
 use crate::secrets::CredentialMapping;
 use crate::testing::credentials::test_secrets_store;
@@ -90,6 +93,78 @@ async fn assert_reregistration_rotates_credentials(
             .find_for_host("rejected.example.com")
             .is_empty(),
         "failed registrations should leave the credential registry unchanged"
+    );
+}
+
+#[tokio::test]
+async fn register_wasm_protected_name_error_message() {
+    let registry = ToolRegistry::new();
+    let runtime = metadata_test_runtime().expect("create metadata test runtime");
+    let wasm_binary = github_wasm_bytes();
+
+    let err = registry
+        .register_wasm(WasmToolRegistration {
+            name: "http",
+            wasm_bytes: &wasm_binary,
+            runtime: &runtime,
+            capabilities: Capabilities::default(),
+            limits: None,
+            description: None,
+            schema: None,
+            secrets_store: None,
+            oauth_refresh: None,
+        })
+        .await
+        .expect_err("protected tool name should be rejected");
+
+    assert_snapshot!(err.to_string());
+}
+
+#[tokio::test]
+async fn register_wasm_builtin_shadow_error_message() {
+    let registry = ToolRegistry::new();
+    // Register a synthetic built-in to populate builtin_names.
+    let runtime = metadata_test_runtime().expect("create metadata test runtime");
+    let wasm_binary = github_wasm_bytes();
+
+    // Force "github" into builtin_names by registering it synchronously first.
+    {
+        let mut builtins = registry.builtin_names.write().await;
+        builtins.insert("github".to_string());
+    }
+
+    let err = registry
+        .register_wasm(WasmToolRegistration {
+            name: "github",
+            wasm_bytes: &wasm_binary,
+            runtime: &runtime,
+            capabilities: Capabilities::default(),
+            limits: None,
+            description: None,
+            schema: None,
+            secrets_store: None,
+            oauth_refresh: None,
+        })
+        .await
+        .expect_err("shadowing a built-in should be rejected");
+
+    assert_snapshot!(err.to_string());
+}
+
+#[tokio::test]
+async fn register_wasm_wasm_registration_error_display_storage() {
+    let err =
+        WasmRegistrationError::Storage(WasmStorageError::NotFound("snapshot fixture".to_string()));
+    assert_snapshot!(err.to_string());
+}
+
+#[test]
+fn persist_credential_mappings_drop_warning_message() {
+    // The warning text is a constant string - snapshot it directly so any
+    // copy-edit is caught in review.
+    assert_snapshot!(
+        "drop_warning",
+        "Dropping WASM credential mappings: credential registry unavailable"
     );
 }
 

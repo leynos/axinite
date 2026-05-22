@@ -1,0 +1,6 @@
+---
+source: src/tools/registry/wasm_registration_tests.rs
+assertion_line: 120
+expression: err.to_string()
+---
+Configuration error: protected tool names cannot be dynamically registered
