@@ -88,6 +88,9 @@ mod capabilities_schema;
 pub(crate) mod credential_injector;
 #[cfg(test)]
 mod credential_injector_tests;
+/// Thread-safe registry that aggregates [`crate::secrets::CredentialMapping`]
+/// values from installed WASM tools and exposes host-matching queries to the
+/// built-in HTTP credential injector.
 mod credential_registry;
 mod error;
 mod host;

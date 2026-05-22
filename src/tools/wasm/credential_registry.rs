@@ -175,6 +175,21 @@ fn merge_host_patterns_into(existing: &mut CredentialMapping, new_patterns: Vec<
     }
 }
 
+/// Deduplicate a set of credential mappings by `(secret_name, location)`.
+///
+/// When two mappings share the same key the later one is retained and the
+/// `host_patterns` from the earlier one are merged into it (without
+/// duplicates). The returned `Vec` preserves the original relative order of
+/// the last occurrence of each key.
+///
+/// # Complexity
+///
+/// O(N²) in the number of distinct `(secret_name, location)` pairs. In
+/// practice each WASM tool registers at most a handful of credentials
+/// (typically ≤ 5; never expected to exceed 20), so the quadratic factor
+/// is negligible. If cardinality grows beyond that bound, replace the
+/// `find`-based accumulator with a `HashMap<(String, CredentialLocation),
+/// usize>` index into `deduped`.
 fn dedupe_mappings_by_secret_name(
     mappings: impl IntoIterator<Item = CredentialMapping>,
 ) -> Vec<CredentialMapping> {
