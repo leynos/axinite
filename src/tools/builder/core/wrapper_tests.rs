@@ -4,7 +4,6 @@ use std::sync::{Arc, Mutex};
 
 use super::super::domain::SoftwareBuilderFuture;
 use super::*;
-use insta::assert_snapshot;
 use rstest::rstest;
 
 type AnalyzeResult = dyn Fn() -> Result<BuildRequirement, AgentToolError> + Send + Sync;
@@ -38,6 +37,24 @@ async fn execute_override_error(override_key: &str, override_value: &str, expect
     params[override_key] = override_value.into();
     let result = tool.execute(params, &JobContext::default()).await;
     assert_invalid_parameters(result, expected_msg);
+}
+
+async fn execute_capturing_requirement(params: serde_json::Value) -> BuildRequirement {
+    let analyzed = test_requirement();
+    let build_result = test_build_result(analyzed.clone());
+    let (builder, captured_requirement) =
+        FakeSoftwareBuilder::success_with_capture(analyzed, build_result);
+    let tool = BuildSoftwareTool::new(Arc::new(builder));
+
+    tool.execute(params, &JobContext::default())
+        .await
+        .expect("expected execute to return successful output");
+
+    captured_requirement
+        .lock()
+        .expect("captured requirement mutex should not be poisoned")
+        .clone()
+        .expect("expected build to capture requirement")
 }
 
 struct FakeSoftwareBuilder {
@@ -157,61 +174,24 @@ fn test_build_result(requirement: BuildRequirement) -> BuildResult {
     }
 }
 
-#[test]
-fn resolve_override_none_returns_fallback() {
-    let result = BuildSoftwareTool::resolve_override(None, 7u32, "thing", |_| None);
-    assert_eq!(result.expect("expected fallback value"), 7);
-}
-
-#[test]
-fn resolve_override_some_valid_returns_parsed() {
-    let result = BuildSoftwareTool::resolve_override(Some("42"), 7u32, "thing", |s| s.parse().ok());
-    assert_eq!(result.expect("expected parsed override value"), 42);
-}
-
-#[test]
-fn resolve_override_some_invalid_returns_invalid_parameters() {
-    let result: Result<u32, ToolError> =
-        BuildSoftwareTool::resolve_override(Some("nope"), 0u32, "thing", |_| None);
-    assert_invalid_parameters(result, "unknown thing: nope");
-}
-
-#[test]
-fn resolve_software_type_none_preserves_fallback() {
-    let result = BuildSoftwareTool::resolve_software_type(None, SoftwareType::Library);
-    assert_eq!(
-        result.expect("expected fallback software type"),
-        SoftwareType::Library
-    );
-}
-
 #[rstest]
 #[case("wasm_tool", SoftwareType::WasmTool)]
 #[case("cli_binary", SoftwareType::CliBinary)]
 #[case("library", SoftwareType::Library)]
 #[case("script", SoftwareType::Script)]
-fn resolve_software_type_all_valid_values(#[case] value: &str, #[case] expected: SoftwareType) {
-    let result = BuildSoftwareTool::resolve_software_type(Some(value), SoftwareType::Library);
-    assert_eq!(result.expect("expected valid software type"), expected);
-}
+#[tokio::test]
+async fn execute_valid_type_overrides_are_applied(
+    #[case] value: &str,
+    #[case] expected: SoftwareType,
+) {
+    let captured = execute_capturing_requirement(serde_json::json!({
+        "description": "build a test tool",
+        "type": value,
+    }))
+    .await;
 
-#[test]
-fn resolve_software_type_unknown_value_errors() {
-    let result =
-        BuildSoftwareTool::resolve_software_type(Some("web_service"), SoftwareType::WasmTool);
-    assert_invalid_parameters(result, "unknown type: web_service");
-}
-
-#[test]
-fn resolve_software_type_is_case_sensitive() {
-    let result = BuildSoftwareTool::resolve_software_type(Some("WasmTool"), SoftwareType::Library);
-    assert_invalid_parameters(result, "unknown type: WasmTool");
-}
-
-#[test]
-fn resolve_language_none_preserves_fallback() {
-    let result = BuildSoftwareTool::resolve_language(None, Language::Rust);
-    assert_eq!(result.expect("expected fallback language"), Language::Rust);
+    assert_eq!(captured.software_type, expected);
+    assert_eq!(captured.language, Language::Rust);
 }
 
 #[rstest]
@@ -219,38 +199,19 @@ fn resolve_language_none_preserves_fallback() {
 #[case("python", Language::Python)]
 #[case("typescript", Language::TypeScript)]
 #[case("bash", Language::Bash)]
-fn resolve_language_all_valid_values(#[case] value: &str, #[case] expected: Language) {
-    let result = BuildSoftwareTool::resolve_language(Some(value), Language::Rust);
-    assert_eq!(result.expect("expected valid language"), expected);
-}
+#[tokio::test]
+async fn execute_valid_language_overrides_are_applied(
+    #[case] value: &str,
+    #[case] expected: Language,
+) {
+    let captured = execute_capturing_requirement(serde_json::json!({
+        "description": "build a test tool",
+        "language": value,
+    }))
+    .await;
 
-#[test]
-fn resolve_language_unknown_value_errors() {
-    let result = BuildSoftwareTool::resolve_language(Some("go"), Language::Rust);
-    assert_invalid_parameters(result, "unknown language: go");
-}
-
-#[test]
-fn resolve_language_is_case_sensitive() {
-    let result = BuildSoftwareTool::resolve_language(Some("Rust"), Language::Python);
-    assert_invalid_parameters(result, "unknown language: Rust");
-}
-
-#[test]
-fn snapshot_resolve_software_type_unknown_error_message() {
-    let err =
-        BuildSoftwareTool::resolve_software_type(Some("unknown_value"), SoftwareType::WasmTool)
-            .expect_err("expected unknown software type error")
-            .to_string();
-    assert_snapshot!(err);
-}
-
-#[test]
-fn snapshot_resolve_language_unknown_error_message() {
-    let err = BuildSoftwareTool::resolve_language(Some("cobol"), Language::Rust)
-        .expect_err("expected unknown language error")
-        .to_string();
-    assert_snapshot!(err);
+    assert_eq!(captured.software_type, SoftwareType::Library);
+    assert_eq!(captured.language, expected);
 }
 
 #[tokio::test]
@@ -265,14 +226,28 @@ async fn execute_missing_description_returns_error() {
     assert_invalid_parameters(result, "missing 'description'");
 }
 
+#[rstest]
+#[case("garbage", "unknown type: garbage")]
+#[case("web_service", "unknown type: web_service")]
+#[case("WasmTool", "unknown type: WasmTool")]
 #[tokio::test]
-async fn execute_invalid_type_override_returns_error() {
-    execute_override_error("type", "garbage", "unknown type: garbage").await;
+async fn execute_invalid_type_override_returns_error(
+    #[case] value: &str,
+    #[case] expected_msg: &str,
+) {
+    execute_override_error("type", value, expected_msg).await;
 }
 
+#[rstest]
+#[case("cobol", "unknown language: cobol")]
+#[case("go", "unknown language: go")]
+#[case("Rust", "unknown language: Rust")]
 #[tokio::test]
-async fn execute_invalid_language_override_returns_error() {
-    execute_override_error("language", "cobol", "unknown language: cobol").await;
+async fn execute_invalid_language_override_returns_error(
+    #[case] value: &str,
+    #[case] expected_msg: &str,
+) {
+    execute_override_error("language", value, expected_msg).await;
 }
 
 #[tokio::test]
@@ -293,6 +268,13 @@ async fn execute_valid_params_returns_success_output() {
         .expect("expected execute to return successful output");
 
     assert_eq!(output.result["success"], true);
+
+    let captured = execute_capturing_requirement(serde_json::json!({
+        "description": "build a test tool",
+    }))
+    .await;
+    assert_eq!(captured.software_type, SoftwareType::Library);
+    assert_eq!(captured.language, Language::Rust);
 }
 
 #[tokio::test]
