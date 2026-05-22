@@ -236,32 +236,34 @@ impl ToolRegistry {
         let prepared = prepare_wasm_tool(reg).await?;
 
         let credential_count = prepared.credential_mappings.len();
-        let registered = self.register_prepared_wasm(name, prepared).await;
-        if !registered {
-            tracing::warn!(name, credential_count, "WASM tool registration rejected");
-            return Err(WasmError::ConfigError(
-                "tool registration rejected".to_string(),
-            ));
-        }
+        self.register_prepared_wasm(name, prepared).await?;
 
         tracing::debug!(name, credential_count, "Registered WASM tool");
         Ok(())
     }
 
-    async fn register_prepared_wasm(&self, name: &str, prepared: PreparedWasmTool) -> bool {
+    async fn register_prepared_wasm(
+        &self,
+        name: &str,
+        prepared: PreparedWasmTool,
+    ) -> Result<(), WasmError> {
         if Self::is_protected_tool_name(name) {
             tracing::warn!(
                 tool = %name,
                 "Rejected tool registration: protected tool names cannot be dynamically registered"
             );
-            return false;
+            return Err(WasmError::ConfigError(
+                "protected tool names cannot be dynamically registered".to_string(),
+            ));
         }
         if self.builtin_names.read().await.contains(name) {
             tracing::warn!(
                 tool = %name,
                 "Rejected tool registration: would shadow a built-in tool"
             );
-            return false;
+            return Err(WasmError::ConfigError(
+                "tool registration would shadow a built-in tool".to_string(),
+            ));
         }
 
         let mut tools = self.tools.write().await;
@@ -270,17 +272,23 @@ impl ToolRegistry {
                 tool = %name,
                 "Rejected tool registration: would shadow a built-in tool"
             );
-            return false;
+            return Err(WasmError::ConfigError(
+                "tool registration would shadow a built-in tool".to_string(),
+            ));
         }
 
         let wrapper: Arc<dyn Tool> = Arc::new(prepared.wrapper);
-        self.persist_credential_mappings(name, prepared.credential_mappings);
+        self.persist_credential_mappings(name, prepared.credential_mappings)?;
         tools.insert(name.to_string(), wrapper);
         tracing::trace!("Registered tool: {}", name);
-        true
+        Ok(())
     }
 
-    fn persist_credential_mappings(&self, name: &str, credential_mappings: Vec<CredentialMapping>) {
+    fn persist_credential_mappings(
+        &self,
+        name: &str,
+        credential_mappings: Vec<CredentialMapping>,
+    ) -> Result<(), WasmError> {
         if let Some(cr) = &self.credential_registry {
             let count = credential_mappings.len();
             cr.add_mappings_for_tool(name, credential_mappings);
@@ -291,7 +299,17 @@ impl ToolRegistry {
                     "Added credential mappings from WASM tool"
                 );
             }
+            return Ok(());
         }
+        if !credential_mappings.is_empty() {
+            let credential_count = credential_mappings.len();
+            tracing::warn!(
+                name,
+                credential_count,
+                "Dropping WASM credential mappings: credential registry unavailable"
+            );
+        }
+        Ok(())
     }
 
     /// Register a WASM tool from database storage.

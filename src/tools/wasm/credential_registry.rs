@@ -1,4 +1,12 @@
-//! Shared credential registry for host-side WASM HTTP credential injection.
+//! Shared credential registry for WASM tools and the built-in HTTP credential
+//! injection path.
+//!
+//! The registry stores credential mappings produced by installed WASM tools,
+//! deduplicates mappings by secret name and location, and matches outgoing
+//! hosts through the credential injector's host-pattern predicate. Owner-scoped
+//! replacement and removal let each tool rotate or revoke only its own
+//! mappings, while the built-in HTTP tool and synchronous approval checks query
+//! the shared state.
 
 use std::collections::HashSet;
 use std::sync::RwLock;

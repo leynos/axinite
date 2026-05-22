@@ -1,4 +1,10 @@
 //! Unit tests for WASM HTTP credential injection and shared registry behaviour.
+//!
+//! Covers host-pattern matching, header construction, registry deduplication,
+//! owner-scoped replacement and removal, and concurrent registry access. These
+//! tests exercise the relationship between `CredentialInjector`,
+//! `SharedCredentialRegistry`, and the credential mappings consumed by the
+//! built-in HTTP tool.
 
 use std::collections::HashMap;
 

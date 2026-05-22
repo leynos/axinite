@@ -115,7 +115,7 @@ async fn register_wasm_persists_credentials_only_after_successful_registration()
         ))
         .await;
     assert!(
-        matches!(rejected, Err(WasmError::ConfigError(message)) if message == "tool registration rejected"),
+        matches!(rejected, Err(WasmError::ConfigError(message)) if message == "protected tool names cannot be dynamically registered"),
         "protected tool name should reject registration"
     );
     assert!(
