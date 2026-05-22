@@ -137,10 +137,11 @@ pub(super) struct WasmRuntimeConfig {
 /// Populate absent description or schema from the wrapper's guest-exported metadata.
 ///
 /// Returns early without calling `exported_metadata` when both `hints.description`
-/// and `hints.schema` are `Some`. On export failure, emits [`tracing::warn`] when
-/// the schema is also absent and [`tracing::warn`] when only the description is
-/// missing. Export failures are returned after logging so callers can decide
-/// whether to reject registration or recover at a higher boundary.
+/// and `hints.schema` are `Some`. On export failure, both branches emit
+/// [`tracing::warn`] but use distinct messages depending on whether
+/// `hints.schema` is also missing or only the description is missing. Export
+/// failures are returned after logging so callers can decide whether to reject
+/// registration or recover at a higher boundary.
 pub(super) fn recover_guest_metadata(
     mut wrapper: WasmToolWrapper,
     hints: &WasmMetadataHints<'_>,

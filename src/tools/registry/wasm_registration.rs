@@ -39,6 +39,11 @@ pub struct WasmToolRegistration<'a> {
     pub oauth_refresh: Option<OAuthRefreshConfig>,
 }
 
+/// Trim a caller-supplied description and reject blank values.
+///
+/// This `pub(super)` helper returns `Some(&str)` with a trimmed slice into the
+/// original input when the result is non-empty, or `None` when the input is
+/// empty or contains only whitespace.
 pub(super) fn normalized_description(description: &str) -> Option<&str> {
     let trimmed = description.trim();
     (!trimmed.is_empty()).then_some(trimmed)
