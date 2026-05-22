@@ -4,6 +4,7 @@ use std::sync::{Arc, Mutex};
 
 use super::super::domain::SoftwareBuilderFuture;
 use super::*;
+use insta::assert_snapshot;
 use rstest::rstest;
 
 type AnalyzeResult = dyn Fn() -> Result<BuildRequirement, AgentToolError> + Send + Sync;
@@ -26,6 +27,13 @@ impl Clock for FixedClock {
 fn assert_invalid_parameters<T: std::fmt::Debug>(result: Result<T, ToolError>, expected_msg: &str) {
     match result.expect_err("expected invalid parameters error") {
         ToolError::InvalidParameters(msg) => assert_eq!(msg, expected_msg),
+        other => panic!("unexpected error: {:?}", other),
+    }
+}
+
+fn assert_execution_failed<T: std::fmt::Debug>(result: Result<T, ToolError>, expected_msg: &str) {
+    match result.expect_err("expected execution failure") {
+        ToolError::ExecutionFailed(msg) => assert_eq!(msg, expected_msg),
         other => panic!("unexpected error: {:?}", other),
     }
 }
@@ -63,10 +71,24 @@ struct FakeSoftwareBuilder {
 }
 
 impl FakeSoftwareBuilder {
+    fn analyze_error(message: &'static str) -> Self {
+        Self {
+            analyze_result: Arc::new(move || Err(AgentToolError::BuilderFailed(message.into()))),
+            build_result: Arc::new(|_| panic!("build not expected")),
+        }
+    }
+
     fn always_analyze(req: BuildRequirement) -> Self {
         Self {
             analyze_result: Arc::new(move || Ok(req.clone())),
             build_result: Arc::new(|_| panic!("build not expected")),
+        }
+    }
+
+    fn build_error(req: BuildRequirement, message: &'static str) -> Self {
+        Self {
+            analyze_result: Arc::new(move || Ok(req.clone())),
+            build_result: Arc::new(move |_| Err(AgentToolError::BuilderFailed(message.into()))),
         }
     }
 
@@ -226,6 +248,43 @@ async fn execute_missing_description_returns_error() {
     assert_invalid_parameters(result, "missing 'description'");
 }
 
+#[tokio::test]
+async fn execute_analyze_failure_returns_execution_failed() {
+    let builder = FakeSoftwareBuilder::analyze_error("analysis exploded");
+    let tool = BuildSoftwareTool::new(Arc::new(builder));
+
+    let result = tool
+        .execute(
+            serde_json::json!({
+                "description": "build a test tool",
+            }),
+            &JobContext::default(),
+        )
+        .await;
+
+    assert_execution_failed(
+        result,
+        "Analysis failed: Tool builder failed: analysis exploded",
+    );
+}
+
+#[tokio::test]
+async fn execute_build_failure_returns_execution_failed() {
+    let builder = FakeSoftwareBuilder::build_error(test_requirement(), "build exploded");
+    let tool = BuildSoftwareTool::new(Arc::new(builder));
+
+    let result = tool
+        .execute(
+            serde_json::json!({
+                "description": "build a test tool",
+            }),
+            &JobContext::default(),
+        )
+        .await;
+
+    assert_execution_failed(result, "Build failed: Tool builder failed: build exploded");
+}
+
 #[rstest]
 #[case("garbage", "unknown type: garbage")]
 #[case("web_service", "unknown type: web_service")]
@@ -278,7 +337,7 @@ async fn execute_valid_params_returns_success_output() {
 }
 
 #[tokio::test]
-async fn execute_uses_injected_clock_duration() {
+async fn execute_success_output_matches_snapshot() {
     let requirement = test_requirement();
     let build_result = test_build_result(requirement.clone());
     let builder = FakeSoftwareBuilder::success(requirement, build_result);
@@ -298,6 +357,11 @@ async fn execute_uses_injected_clock_duration() {
         .expect("expected execute to return successful output");
 
     assert_eq!(output.duration, std::time::Duration::from_millis(42));
+    assert_eq!(output.cost, None);
+    assert_eq!(output.raw, None);
+    assert_snapshot!(
+        serde_json::to_string_pretty(&output.result).expect("output result should serialize")
+    );
 }
 
 #[tokio::test]

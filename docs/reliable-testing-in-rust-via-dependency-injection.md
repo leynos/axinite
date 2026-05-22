@@ -194,6 +194,10 @@ mod tests {
 
 In production, an instance of `RealClock::new()` would be used.
 
+The same pattern applies to internal tool seams. `BuildSoftwareTool` keeps
+override resolution private and tests it through `execute`, while injecting a
+narrow clock seam so duration assertions do not depend on wall-clock time.
+
 ______________________________________________________________________
 
 ## 📌 Key takeaways
