@@ -1,28 +1,18 @@
 //! Tests for the build software native-tool wrapper.
 
-use std::sync::{Arc, Mutex};
+use std::sync::{
+    Arc, Mutex,
+    atomic::{AtomicUsize, Ordering},
+};
 
 use super::super::domain::SoftwareBuilderFuture;
 use super::*;
 use insta::assert_snapshot;
+use mockable::MockClock;
 use rstest::rstest;
 
 type AnalyzeResult = dyn Fn() -> Result<BuildRequirement, AgentToolError> + Send + Sync;
 type BuildResultFn = dyn Fn(&BuildRequirement) -> Result<BuildResult, AgentToolError> + Send + Sync;
-
-struct FixedClock {
-    elapsed: std::time::Duration,
-}
-
-impl Clock for FixedClock {
-    fn now(&self) -> std::time::Instant {
-        std::time::Instant::now()
-    }
-
-    fn elapsed_since(&self, _start: std::time::Instant) -> std::time::Duration {
-        self.elapsed
-    }
-}
 
 fn assert_invalid_parameters<T: std::fmt::Debug>(result: Result<T, ToolError>, expected_msg: &str) {
     match result.expect_err("expected invalid parameters error") {
@@ -341,10 +331,23 @@ async fn execute_success_output_matches_snapshot() {
     let requirement = test_requirement();
     let build_result = test_build_result(requirement.clone());
     let builder = FakeSoftwareBuilder::success(requirement, build_result);
-    let clock = Arc::new(FixedClock {
-        elapsed: std::time::Duration::from_millis(42),
+    let mut clock = MockClock::new();
+    let start = Utc::now();
+    let calls = Arc::new(AtomicUsize::new(0));
+    clock.expect_utc().returning({
+        let calls = Arc::clone(&calls);
+        move || {
+            if calls.fetch_add(1, Ordering::Relaxed) == 0 {
+                start
+            } else {
+                start + chrono::Duration::milliseconds(42)
+            }
+        }
     });
-    let tool = BuildSoftwareTool::new_with_clock(Arc::new(builder), clock);
+    let tool = BuildSoftwareTool {
+        builder: Arc::new(builder),
+        clock: Arc::new(clock),
+    };
 
     let output = tool
         .execute(

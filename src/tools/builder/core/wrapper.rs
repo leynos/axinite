@@ -8,24 +8,7 @@
 //! centralize fallback and error-message logic.
 
 use super::*;
-
-trait Clock: Send + Sync {
-    fn now(&self) -> std::time::Instant;
-
-    fn elapsed_since(&self, start: std::time::Instant) -> std::time::Duration;
-}
-
-struct SystemClock;
-
-impl Clock for SystemClock {
-    fn now(&self) -> std::time::Instant {
-        std::time::Instant::now()
-    }
-
-    fn elapsed_since(&self, start: std::time::Instant) -> std::time::Duration {
-        start.elapsed()
-    }
-}
+use mockable::{Clock, DefaultClock};
 
 /// Tool that allows the agent to build software on demand.
 pub struct BuildSoftwareTool {
@@ -38,13 +21,8 @@ impl BuildSoftwareTool {
     pub fn new(builder: Arc<dyn SoftwareBuilder>) -> Self {
         Self {
             builder,
-            clock: Arc::new(SystemClock),
+            clock: Arc::new(DefaultClock),
         }
-    }
-
-    #[cfg(test)]
-    fn new_with_clock(builder: Arc<dyn SoftwareBuilder>, clock: Arc<dyn Clock>) -> Self {
-        Self { builder, clock }
     }
 
     /// Resolves an optional string override against a parse closure.
@@ -156,7 +134,7 @@ impl NativeTool for BuildSoftwareTool {
             .and_then(|v| v.as_str())
             .ok_or_else(|| ToolError::InvalidParameters("missing 'description'".into()))?;
 
-        let start = self.clock.now();
+        let start = self.clock.utc();
 
         // Analyze the requirement
         let mut requirement = self
@@ -193,7 +171,14 @@ impl NativeTool for BuildSoftwareTool {
             "phases": result.logs.iter().map(|l| format!("{:?}: {}", l.phase, l.message)).collect::<Vec<_>>()
         });
 
-        Ok(ToolOutput::success(output, self.clock.elapsed_since(start)))
+        Ok(ToolOutput::success(
+            output,
+            self.clock
+                .utc()
+                .signed_duration_since(start)
+                .to_std()
+                .unwrap_or_default(),
+        ))
     }
 
     /// Approval is required unless the surrounding job auto-approves tools.

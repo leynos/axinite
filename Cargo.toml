@@ -181,6 +181,7 @@ rusqlite = { version = "0.32", optional = true }
 json5 = { version = "0.4", optional = true }
 tempfile = { version = "3", optional = true }
 const_format = { version = "0.2.35", default-features = false }
+mockable = { version = "3.0.0", default-features = false, features = ["clock"] }
 
 # macOS keychain
 [target.'cfg(target_os = "macos")'.dependencies]
@@ -206,6 +207,7 @@ rstest-bdd = "0.5.0"
 rstest-bdd-macros = { version = "0.5.0", features = ["compile-time-validation"] }
 tempfile = "3"
 mockall = "0.13"
+mockable = { version = "3.0.0", default-features = false, features = ["clock", "mock"] }
 trybuild = "1"
 proptest = "1.6.0"
 delegate = "0.13"
