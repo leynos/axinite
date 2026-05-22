@@ -11,7 +11,7 @@
 use std::collections::HashSet;
 use std::sync::RwLock;
 
-use crate::secrets::CredentialMapping;
+use crate::secrets::{CredentialLocation, CredentialMapping};
 use crate::tools::wasm::credential_injector::host_matches_pattern;
 
 /// Thread-safe registry of credential mappings from all installed tools.
@@ -202,10 +202,11 @@ fn merge_host_patterns_from_existing(
         .iter()
         .cloned()
         .collect::<HashSet<_>>();
-    for existing in guard
-        .iter()
-        .filter(|e| e.owner.is_none() && e.mapping.secret_name == mapping.secret_name)
-    {
+    for existing in guard.iter().filter(|e| {
+        e.owner.is_none()
+            && e.mapping.secret_name == mapping.secret_name
+            && e.mapping.location == mapping.location
+    }) {
         for host_pattern in &existing.mapping.host_patterns {
             if seen.insert(host_pattern.clone()) {
                 mapping.host_patterns.push(host_pattern.clone());
@@ -216,13 +217,16 @@ fn merge_host_patterns_from_existing(
 
 fn replace_ownerless_mappings(
     guard: &mut Vec<OwnedCredentialMapping>,
-    secret_names: &HashSet<String>,
+    mapping_keys: &HashSet<(String, CredentialLocation)>,
     mut mappings: Vec<CredentialMapping>,
 ) {
     for mapping in &mut mappings {
         merge_host_patterns_from_existing(guard, mapping);
     }
-    guard.retain(|m| m.owner.is_some() || !secret_names.contains(&m.mapping.secret_name));
+    guard.retain(|m| {
+        m.owner.is_some()
+            || !mapping_keys.contains(&(m.mapping.secret_name.clone(), m.mapping.location.clone()))
+    });
     guard.extend(mappings.into_iter().map(|mapping| OwnedCredentialMapping {
         owner: None,
         mapping,
@@ -249,11 +253,11 @@ fn replace_mappings_by_secret_name(
     match owner {
         Some(owner) => replace_owned_mappings(guard, owner, mappings),
         None => {
-            let secret_names = mappings
+            let mapping_keys = mappings
                 .iter()
-                .map(|m| m.secret_name.clone())
+                .map(|m| (m.secret_name.clone(), m.location.clone()))
                 .collect::<HashSet<_>>();
-            replace_ownerless_mappings(guard, &secret_names, mappings);
+            replace_ownerless_mappings(guard, &mapping_keys, mappings);
         }
     }
 }

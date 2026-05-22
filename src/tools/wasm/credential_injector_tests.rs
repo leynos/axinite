@@ -223,6 +223,35 @@ fn test_shared_registry_preserves_same_secret_with_different_locations(
 }
 
 #[rstest]
+fn test_shared_registry_preserves_ownerless_same_secret_with_different_locations(
+    registry: SharedCredentialRegistry,
+) {
+    registry.add_mappings(vec![CredentialMapping::bearer(
+        "key1",
+        "bearer.example.com",
+    )]);
+    registry.add_mappings(vec![CredentialMapping::header(
+        "key1",
+        "X-Api-Key",
+        "header.example.com",
+    )]);
+
+    let bearer = registry.find_for_host("bearer.example.com");
+    assert_eq!(bearer.len(), 1);
+    assert_eq!(bearer[0].location, CredentialLocation::AuthorizationBearer);
+
+    let header = registry.find_for_host("header.example.com");
+    assert_eq!(header.len(), 1);
+    assert_eq!(
+        header[0].location,
+        CredentialLocation::Header {
+            name: "X-Api-Key".to_string(),
+            prefix: None,
+        }
+    );
+}
+
+#[rstest]
 fn test_shared_registry_merges_same_secret_and_location_hosts(registry: SharedCredentialRegistry) {
     registry.add_mappings(vec![
         CredentialMapping::bearer("key1", "old.example.com"),
