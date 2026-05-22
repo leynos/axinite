@@ -1,21 +1,117 @@
+//! Wrapper exposing [`BuildSoftwareTool`] as a [`NativeTool`].
+//!
+//! This module bridges the builder pipeline to the agent tool interface.
+//! [`BuildSoftwareTool::execute`] accepts a JSON parameter object,
+//! delegates analysis and compilation to a [`SoftwareBuilder`], and
+//! returns a structured JSON [`ToolOutput`].  Optional `type` and
+//! `language` parameters are resolved through private helpers that
+//! centralize fallback and error-message logic.
+
 use super::*;
+
+trait Clock: Send + Sync {
+    fn now(&self) -> std::time::Instant;
+
+    fn elapsed_since(&self, start: std::time::Instant) -> std::time::Duration;
+}
+
+struct SystemClock;
+
+impl Clock for SystemClock {
+    fn now(&self) -> std::time::Instant {
+        std::time::Instant::now()
+    }
+
+    fn elapsed_since(&self, start: std::time::Instant) -> std::time::Duration {
+        start.elapsed()
+    }
+}
 
 /// Tool that allows the agent to build software on demand.
 pub struct BuildSoftwareTool {
     builder: Arc<dyn SoftwareBuilder>,
+    clock: Arc<dyn Clock>,
 }
 
 impl BuildSoftwareTool {
+    /// Wraps a [`SoftwareBuilder`] for use as a [`NativeTool`].
     pub fn new(builder: Arc<dyn SoftwareBuilder>) -> Self {
-        Self { builder }
+        Self {
+            builder,
+            clock: Arc::new(SystemClock),
+        }
+    }
+
+    #[cfg(test)]
+    fn new_with_clock(builder: Arc<dyn SoftwareBuilder>, clock: Arc<dyn Clock>) -> Self {
+        Self { builder, clock }
+    }
+
+    /// Resolves an optional string override against a parse closure.
+    ///
+    /// Returns `fallback` when `override_str` is `None`.  When
+    /// `override_str` is `Some(s)`, calls `parse(s)`; if the closure
+    /// returns `None` the method produces
+    /// [`ToolError::InvalidParameters`] with the message
+    /// `"unknown {label}: {s}"`.
+    fn resolve_override<T>(
+        override_str: Option<&str>,
+        fallback: T,
+        label: &str,
+        parse: impl Fn(&str) -> Option<T>,
+    ) -> Result<T, ToolError> {
+        match override_str {
+            None => Ok(fallback),
+            Some(s) => parse(s)
+                .ok_or_else(|| ToolError::InvalidParameters(format!("unknown {label}: {s}"))),
+        }
+    }
+
+    /// Parses an optional `type` parameter override into a
+    /// [`SoftwareType`] variant, falling back to `fallback` when absent.
+    ///
+    /// Accepted values: `"wasm_tool"`, `"cli_binary"`, `"library"`,
+    /// `"script"`.  Any other value yields
+    /// [`ToolError::InvalidParameters`].
+    fn resolve_software_type(
+        override_str: Option<&str>,
+        fallback: SoftwareType,
+    ) -> Result<SoftwareType, ToolError> {
+        Self::resolve_override(override_str, fallback, "type", |s| match s {
+            "wasm_tool" => Some(SoftwareType::WasmTool),
+            "cli_binary" => Some(SoftwareType::CliBinary),
+            "library" => Some(SoftwareType::Library),
+            "script" => Some(SoftwareType::Script),
+            _ => None,
+        })
+    }
+
+    /// Parses an optional `language` parameter override into a
+    /// [`Language`] variant, falling back to `fallback` when absent.
+    ///
+    /// Accepted values: `"rust"`, `"python"`, `"typescript"`, `"bash"`.
+    /// Any other value yields [`ToolError::InvalidParameters`].
+    fn resolve_language(
+        override_str: Option<&str>,
+        fallback: Language,
+    ) -> Result<Language, ToolError> {
+        Self::resolve_override(override_str, fallback, "language", |s| match s {
+            "rust" => Some(Language::Rust),
+            "python" => Some(Language::Python),
+            "typescript" => Some(Language::TypeScript),
+            "bash" => Some(Language::Bash),
+            _ => None,
+        })
     }
 }
 
 impl NativeTool for BuildSoftwareTool {
+    /// Stable tool identifier exposed to the model (`build_software`).
     fn name(&self) -> &str {
         "build_software"
     }
 
+    /// Short guidance for agents on when and how to call this tool.
     fn description(&self) -> &str {
         "Build software from a description. IMPORTANT: For tools the agent will use, \
          ALWAYS build Rust WASM tools (type: wasm_tool, language: rust). Only use cli_binary, \
@@ -23,6 +119,8 @@ impl NativeTool for BuildSoftwareTool {
          implements, compiles, and tests iteratively."
     }
 
+    /// JSON Schema for tool parameters: required `description`, optional `type`,
+    /// and optional `language`.
     fn parameters_schema(&self) -> serde_json::Value {
         serde_json::json!({
             "type": "object",
@@ -46,6 +144,8 @@ impl NativeTool for BuildSoftwareTool {
         })
     }
 
+    /// Analyses the requirement, applies optional overrides, runs the build, and
+    /// returns a JSON [`ToolOutput`].
     async fn execute(
         &self,
         params: serde_json::Value,
@@ -56,7 +156,7 @@ impl NativeTool for BuildSoftwareTool {
             .and_then(|v| v.as_str())
             .ok_or_else(|| ToolError::InvalidParameters("missing 'description'".into()))?;
 
-        let start = std::time::Instant::now();
+        let start = self.clock.now();
 
         // Analyze the requirement
         let mut requirement = self
@@ -66,33 +166,15 @@ impl NativeTool for BuildSoftwareTool {
             .map_err(|e| ToolError::ExecutionFailed(format!("Analysis failed: {}", e)))?;
 
         // Override type/language if specified
-        if let Some(type_str) = params.get("type").and_then(|v| v.as_str()) {
-            requirement.software_type = match type_str {
-                "wasm_tool" => SoftwareType::WasmTool,
-                "cli_binary" => SoftwareType::CliBinary,
-                "library" => SoftwareType::Library,
-                "script" => SoftwareType::Script,
-                other => {
-                    return Err(ToolError::InvalidParameters(format!(
-                        "unknown type: {other}"
-                    )));
-                }
-            };
-        }
+        requirement.software_type = Self::resolve_software_type(
+            params.get("type").and_then(|v| v.as_str()),
+            requirement.software_type,
+        )?;
 
-        if let Some(lang_str) = params.get("language").and_then(|v| v.as_str()) {
-            requirement.language = match lang_str {
-                "rust" => Language::Rust,
-                "python" => Language::Python,
-                "typescript" => Language::TypeScript,
-                "bash" => Language::Bash,
-                other => {
-                    return Err(ToolError::InvalidParameters(format!(
-                        "unknown language: {other}"
-                    )));
-                }
-            };
-        }
+        requirement.language = Self::resolve_language(
+            params.get("language").and_then(|v| v.as_str()),
+            requirement.language,
+        )?;
 
         // Build
         let result = self
@@ -111,14 +193,20 @@ impl NativeTool for BuildSoftwareTool {
             "phases": result.logs.iter().map(|l| format!("{:?}: {}", l.phase, l.message)).collect::<Vec<_>>()
         });
 
-        Ok(ToolOutput::success(output, start.elapsed()))
+        Ok(ToolOutput::success(output, self.clock.elapsed_since(start)))
     }
 
+    /// Approval is required unless the surrounding job auto-approves tools.
     fn requires_approval(&self, _params: &serde_json::Value) -> ApprovalRequirement {
         ApprovalRequirement::UnlessAutoApproved
     }
 
+    /// Hosted runs are tied to the approval-gated eligibility tier.
     fn hosted_tool_eligibility(&self) -> HostedToolEligibility {
         HostedToolEligibility::ApprovalGated
     }
 }
+
+#[cfg(test)]
+#[path = "wrapper_tests.rs"]
+mod tests;

@@ -1,6 +1,5 @@
 ---
-source: src/worker/job.rs
-assertion_line: 2077
+source: src/testing/worker_harness.rs
 expression: "&event_call.data"
 ---
 {

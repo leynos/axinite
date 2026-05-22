@@ -1,6 +1,5 @@
 ---
 source: tests/worker_orchestrator_json_shapes.rs
-assertion_line: 18
 expression: "&original"
 ---
 {

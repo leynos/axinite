@@ -1,0 +1,16 @@
+---
+source: src/tools/builder/core/wrapper_tests.rs
+assertion_line: 362
+expression: "serde_json::to_string_pretty(&output.result).expect(\"output result should serialize\")"
+---
+{
+  "artifact_path": "/tmp/test-tool",
+  "build_id": "00000000-0000-0000-0000-000000000000",
+  "error": null,
+  "iterations": 1,
+  "name": "test_tool",
+  "phases": [
+    "Complete: built"
+  ],
+  "success": true
+}

@@ -1,3 +1,9 @@
+//! Rendering utilities for styled setup-prompt output.
+//!
+//! Provides [`print_header`] and [`print_step`] for writing formatted
+//! terminal output (bordered headers and numbered step indicators) used
+//! by the interactive setup wizard.
+
 /// Print a styled header box.
 ///
 /// # Example
