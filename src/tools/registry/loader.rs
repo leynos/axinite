@@ -256,16 +256,10 @@ impl ToolRegistry {
                 "protected tool names cannot be dynamically registered".to_string(),
             ));
         }
-        if self.builtin_names.read().await.contains(name) {
-            tracing::warn!(
-                tool = %name,
-                "Rejected tool registration: would shadow a built-in tool"
-            );
-            return Err(WasmError::ConfigError(
-                "tool registration would shadow a built-in tool".to_string(),
-            ));
-        }
-
+        // Lock ordering: always acquire `tools` write lock before reading
+        // `builtin_names` under it. Never hold `builtin_names` write lock
+        // when acquiring `tools` write lock. This invariant prevents
+        // deadlocks across concurrent registrations.
         let mut tools = self.tools.write().await;
         if self.builtin_names.read().await.contains(name) {
             tracing::warn!(

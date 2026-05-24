@@ -208,6 +208,17 @@ fn dedupe_mappings_by_secret_name_and_location(
     deduped
 }
 
+/// Merge host patterns from existing ownerless registry entries into an
+/// incoming mapping with the same `(secret_name, location)`.
+///
+/// # Complexity
+///
+/// O(R) in the number of entries in the registry guard. Called once per
+/// incoming mapping during `replace_ownerless_mappings`, giving O(R×M)
+/// overall for a batch of M mappings. The registry is bounded by the
+/// total credential count across all installed tools; the per-tool cap of
+/// ≤ 20 credentials and the typical installation of < 50 tools bounds
+/// R×M to ≈ 1 000 iterations, well within acceptable limits.
 fn merge_host_patterns_from_existing(
     guard: &[OwnedCredentialMapping],
     mapping: &mut CredentialMapping,
