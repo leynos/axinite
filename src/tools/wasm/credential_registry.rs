@@ -60,7 +60,7 @@ impl SharedCredentialRegistry {
         owner: Option<&str>,
         mappings: impl IntoIterator<Item = CredentialMapping>,
     ) {
-        let mappings = dedupe_mappings_by_secret_name(mappings);
+        let mappings = dedupe_mappings_by_secret_name_and_location(mappings);
         let owner = owner.map(str::to_string);
 
         match self.mappings.write() {
@@ -190,7 +190,7 @@ fn merge_host_patterns_into(existing: &mut CredentialMapping, new_patterns: Vec<
 /// is negligible. If cardinality grows beyond that bound, replace the
 /// `find`-based accumulator with a `HashMap<(String, CredentialLocation),
 /// usize>` index into `deduped`.
-fn dedupe_mappings_by_secret_name(
+fn dedupe_mappings_by_secret_name_and_location(
     mappings: impl IntoIterator<Item = CredentialMapping>,
 ) -> Vec<CredentialMapping> {
     let mappings = mappings.into_iter().collect::<Vec<_>>();
