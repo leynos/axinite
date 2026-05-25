@@ -6,17 +6,23 @@ use ironclaw::llm::{ChatMessage, CompletionRequest, ToolCompletionRequest};
 use crate::support::trace_provider::TraceLlm;
 use crate::support::trace_types::LlmTrace;
 
+#[derive(Copy, Clone, Debug)]
+pub struct TextStepSpec<'a> {
+    pub content: &'a str,
+    pub input_tokens: u32,
+    pub output_tokens: u32,
+}
+
 /// Builds a text-response trace step.
 ///
-/// `content`, `input_tokens`, and `output_tokens` populate the response; the
-/// returned [`TraceStep`] has no request hint or expected tool results.
-pub fn text_step(content: &str, input_tokens: u32, output_tokens: u32) -> TraceStep {
+/// The returned [`TraceStep`] has no request hint or expected tool results.
+pub fn text_step(spec: TextStepSpec<'_>) -> TraceStep {
     TraceStep {
         request_hint: None,
         response: TraceResponse::Text {
-            content: content.to_string(),
-            input_tokens,
-            output_tokens,
+            content: spec.content.to_string(),
+            input_tokens: spec.input_tokens,
+            output_tokens: spec.output_tokens,
         },
         expected_tool_results: Vec::new(),
     }
@@ -67,18 +73,9 @@ pub fn make_completion_request(user_msg: &str) -> CompletionRequest {
 
 /// Builds a [`TraceLlm`] backed by a single text-response step.
 ///
-/// `user_msg` seeds the trace turn, while `content`, `input_tokens`, and
-/// `output_tokens` configure the returned provider's only replayable response.
-pub fn single_text_step_llm(
-    user_msg: &str,
-    content: &str,
-    input_tokens: u32,
-    output_tokens: u32,
-) -> TraceLlm {
-    let trace = LlmTrace::single_turn(
-        "test-model",
-        user_msg,
-        vec![text_step(content, input_tokens, output_tokens)],
-    );
+/// `user_msg` seeds the trace turn, while `spec` configures the returned
+/// provider's only replayable response.
+pub fn single_text_step_llm(user_msg: &str, spec: TextStepSpec<'_>) -> TraceLlm {
+    let trace = LlmTrace::single_turn("test-model", user_msg, vec![text_step(spec)]);
     TraceLlm::from_trace(trace)
 }
