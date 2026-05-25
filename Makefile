@@ -10,11 +10,16 @@ GITHUB_TOOL_MANIFEST := tools-src/github/Cargo.toml
 GITHUB_TOOL_WASM_TARGET := wasm32-wasip2
 # libsql 0.9.30 still pulls hyper-rustls 0.25 / rustls 0.22 for TLS. Keep
 # these ignores centralised so they can be removed when libsql upgrades.
+# TODO: Remove RUSTSEC-2026-0149 once wasmtime >=44.0.2 / >=45.0.0 is
+# published on crates.io.
+# RUSTSEC-2026-0149: wasmtime-wasi WASI path_open(TRUNCATE) bypass. Temporary
+# ignore until wasmtime >=44.0.2 / >=45.0.0 is published on crates.io.
 AUDIT_FLAGS ?= \
 	--ignore RUSTSEC-2026-0049 \
 	--ignore RUSTSEC-2026-0098 \
 	--ignore RUSTSEC-2026-0099 \
-	--ignore RUSTSEC-2026-0104
+	--ignore RUSTSEC-2026-0104 \
+	--ignore RUSTSEC-2026-0149
 
 .PHONY: all install install-with-overrides sync-local-wasm-overrides build-github-tool-wasm check-fmt typecheck lint markdownlint audit rust-audit test test-cargo test-matrix test-matrix-cargo clean
 

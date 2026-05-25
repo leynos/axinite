@@ -103,7 +103,7 @@ unicode-width = "0.2"
 unicode-segmentation = "1.12"
 
 # YAML parsing for SKILL.md frontmatter
-serde_yml = "0.0.12"
+serde_yaml = "0.9"
 
 # Filesystem paths
 dirs = "6"
