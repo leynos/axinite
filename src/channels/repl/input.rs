@@ -12,11 +12,12 @@ use rustyline::{
     Cmd as ReadlineCmd, ConditionalEventHandler, Event, EventContext, Helper, RepeatCount,
 };
 
-/// Slash command entry with name and description.
+/// Slash command entry with name, description, and help grouping metadata.
 #[derive(Clone, Copy)]
 pub(super) struct SlashCommand {
     pub(super) name: &'static str,
     pub(super) description: &'static str,
+    pub(super) group: &'static str,
 }
 
 /// Slash commands available in the REPL.
@@ -24,94 +25,117 @@ pub(super) const SLASH_COMMANDS: &[SlashCommand] = &[
     SlashCommand {
         name: "/help",
         description: "show this help",
+        group: "Commands",
     },
     SlashCommand {
         name: "/quit",
         description: "exit the repl",
+        group: "Commands",
     },
     SlashCommand {
         name: "/exit",
         description: "exit the repl",
+        group: "Commands",
     },
     SlashCommand {
         name: "/debug",
         description: "toggle verbose output",
+        group: "Commands",
     },
     SlashCommand {
         name: "/model",
         description: "show or change model",
+        group: "Configuration",
     },
     SlashCommand {
         name: "/undo",
         description: "undo the last turn",
+        group: "Conversation",
     },
     SlashCommand {
         name: "/redo",
         description: "redo an undone turn",
+        group: "Conversation",
     },
     SlashCommand {
         name: "/clear",
         description: "clear conversation",
+        group: "Conversation",
     },
     SlashCommand {
         name: "/compact",
         description: "compact context window",
+        group: "Conversation",
     },
     SlashCommand {
         name: "/new",
         description: "new conversation thread",
+        group: "Conversation",
     },
     SlashCommand {
         name: "/interrupt",
         description: "stop current operation",
+        group: "Conversation",
     },
     SlashCommand {
         name: "/version",
         description: "show version information",
+        group: "Configuration",
     },
     SlashCommand {
         name: "/tools",
         description: "list available tools",
+        group: "Configuration",
     },
     SlashCommand {
         name: "/ping",
         description: "test connection",
+        group: "Diagnostics",
     },
     SlashCommand {
         name: "/job",
         description: "manage background jobs",
+        group: "Jobs",
     },
     SlashCommand {
         name: "/status",
         description: "show system status",
+        group: "Diagnostics",
     },
     SlashCommand {
         name: "/cancel",
         description: "cancel current operation",
+        group: "Jobs",
     },
     SlashCommand {
         name: "/list",
         description: "list conversations",
+        group: "Threads",
     },
     SlashCommand {
         name: "/heartbeat",
         description: "send heartbeat",
+        group: "Diagnostics",
     },
     SlashCommand {
         name: "/summarize",
         description: "summarize conversation",
+        group: "Threads",
     },
     SlashCommand {
         name: "/suggest",
         description: "get suggestions",
+        group: "Threads",
     },
     SlashCommand {
         name: "/thread",
         description: "manage conversation threads",
+        group: "Threads",
     },
     SlashCommand {
         name: "/resume",
         description: "resume a conversation",
+        group: "Threads",
     },
 ];
 
