@@ -94,10 +94,7 @@ async fn read_file_contents(target: OpenedTarget) -> Result<Vec<u8>, SkillReadFi
     Ok(contents)
 }
 
-fn limited_reader(file: &mut tokio::fs::File, limit: u64) -> Take<&mut tokio::fs::File> {
-    file.take(limit)
-}
-
+#[cfg(target_os = "linux")]
 async fn metadata_for_opened_file(file: &tokio::fs::File) -> Result<u64, SkillReadFileError> {
     let metadata = file
         .metadata()
@@ -107,6 +104,10 @@ async fn metadata_for_opened_file(file: &tokio::fs::File) -> Result<u64, SkillRe
         return Err(path_not_readable());
     }
     Ok(metadata.len())
+}
+
+fn limited_reader(file: &mut tokio::fs::File, limit: u64) -> Take<&mut tokio::fs::File> {
+    file.take(limit)
 }
 
 #[cfg(target_os = "linux")]
