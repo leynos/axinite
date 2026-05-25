@@ -1,0 +1,295 @@
+//! Shared credential registry for WASM tools and the built-in HTTP credential
+//! injection path.
+//!
+//! The registry stores credential mappings produced by installed WASM tools,
+//! deduplicates mappings by secret name and location, and matches outgoing
+//! hosts through the credential injector's host-pattern predicate. Owner-scoped
+//! replacement and removal let each tool rotate or revoke only its own
+//! mappings, while the built-in HTTP tool and synchronous approval checks query
+//! the shared state.
+
+use std::collections::HashSet;
+use std::sync::RwLock;
+
+use crate::secrets::{CredentialLocation, CredentialMapping};
+use crate::tools::wasm::credential_injector::host_matches_pattern;
+
+/// Thread-safe registry of credential mappings from all installed tools.
+///
+/// Aggregates credential mappings from WASM tools so the built-in HTTP tool can
+/// auto-inject credentials for matching hosts. Uses `std::sync::RwLock` so
+/// `requires_approval` can query it from synchronous code.
+pub struct SharedCredentialRegistry {
+    mappings: RwLock<Vec<OwnedCredentialMapping>>,
+}
+
+#[derive(Clone)]
+struct OwnedCredentialMapping {
+    owner: Option<String>,
+    mapping: CredentialMapping,
+}
+
+impl SharedCredentialRegistry {
+    /// Create an empty registry.
+    pub fn new() -> Self {
+        Self {
+            mappings: RwLock::new(Vec::new()),
+        }
+    }
+
+    /// Add credential mappings without assigning them to a specific tool owner.
+    pub fn add_mappings(&self, mappings: impl IntoIterator<Item = CredentialMapping>) {
+        self.add_mappings_for_owner(None, mappings);
+    }
+
+    /// Replace credential mappings owned by a specific tool.
+    ///
+    /// Re-registration for the same tool removes that tool's earlier mappings
+    /// before adding the new set, without clobbering other tools that reference
+    /// the same secret.
+    pub fn add_mappings_for_tool(
+        &self,
+        tool_name: &str,
+        mappings: impl IntoIterator<Item = CredentialMapping>,
+    ) {
+        self.add_mappings_for_owner(Some(tool_name), mappings);
+    }
+
+    fn add_mappings_for_owner(
+        &self,
+        owner: Option<&str>,
+        mappings: impl IntoIterator<Item = CredentialMapping>,
+    ) {
+        let mappings = dedupe_mappings_by_secret_name_and_location(mappings);
+        let owner = owner.map(str::to_string);
+
+        match self.mappings.write() {
+            Ok(mut guard) => {
+                replace_mappings_by_secret_name(&mut guard, owner, mappings);
+            }
+            Err(poisoned) => {
+                tracing::warn!(
+                    "SharedCredentialRegistry RwLock poisoned during add_mappings; recovering"
+                );
+                let mut guard = poisoned.into_inner();
+                replace_mappings_by_secret_name(&mut guard, owner, mappings);
+            }
+        }
+    }
+
+    /// Remove credential mappings whose owner matches `owner_id`.
+    ///
+    /// When `secret_names` is empty, all mappings owned by `owner_id` are
+    /// removed. Otherwise, only mappings whose `secret_name` matches one of the
+    /// given names are removed.
+    ///
+    /// Called when an extension is unregistered/deactivated so its credential
+    /// injection authority does not outlive the extension. Only removes mappings
+    /// owned by the specified owner, leaving other tools' mappings for the same
+    /// secret intact.
+    pub fn remove_mappings_for_secrets(&self, owner_id: &str, secret_names: &[String]) {
+        let mut guard = match self.mappings.write() {
+            Ok(guard) => guard,
+            Err(poisoned) => {
+                tracing::warn!(
+                    "SharedCredentialRegistry RwLock poisoned during remove_mappings_for_secrets; recovering"
+                );
+                poisoned.into_inner()
+            }
+        };
+        if secret_names.is_empty() {
+            guard.retain(|m| m.owner.as_deref() != Some(owner_id));
+        } else {
+            let secret_names = secret_names
+                .iter()
+                .map(String::as_str)
+                .collect::<HashSet<_>>();
+            guard.retain(|m| {
+                !(secret_names.contains(m.mapping.secret_name.as_str())
+                    && m.owner.as_deref() == Some(owner_id))
+            });
+        }
+    }
+
+    /// Remove credential mappings owned by a specific tool whose
+    /// `secret_name` also matches any of the given names.
+    ///
+    /// A thin alias for [`remove_mappings_for_secrets`] with owner-scoped
+    /// semantics. Preserves mappings owned by other tools or ownerless
+    /// mappings even when they share a `secret_name`.
+    pub fn remove_mappings_for_tool_secrets(&self, tool_name: &str, secret_names: &[String]) {
+        self.remove_mappings_for_secrets(tool_name, secret_names);
+    }
+
+    /// Check if any credential mapping matches this host.
+    pub fn has_credentials_for_host(&self, host: &str) -> bool {
+        let guard = match self.mappings.read() {
+            Ok(guard) => guard,
+            Err(poisoned) => {
+                tracing::warn!(
+                    "SharedCredentialRegistry RwLock poisoned during has_credentials_for_host; recovering"
+                );
+                poisoned.into_inner()
+            }
+        };
+        guard.iter().any(|owned| matches_host_patterns(owned, host))
+    }
+
+    /// Get all credential mappings matching a host.
+    pub fn find_for_host(&self, host: &str) -> Vec<CredentialMapping> {
+        let guard = match self.mappings.read() {
+            Ok(guard) => guard,
+            Err(poisoned) => {
+                tracing::warn!(
+                    "SharedCredentialRegistry RwLock poisoned during find_for_host; recovering"
+                );
+                poisoned.into_inner()
+            }
+        };
+        guard
+            .iter()
+            .filter(|owned| matches_host_patterns(owned, host))
+            .map(|owned| owned.mapping.clone())
+            .collect()
+    }
+}
+
+fn matches_host_patterns(owned: &OwnedCredentialMapping, host: &str) -> bool {
+    owned
+        .mapping
+        .host_patterns
+        .iter()
+        .any(|pattern| host_matches_pattern(host, pattern))
+}
+
+fn merge_host_patterns_into(existing: &mut CredentialMapping, new_patterns: Vec<String>) {
+    let mut seen = existing
+        .host_patterns
+        .iter()
+        .cloned()
+        .collect::<HashSet<_>>();
+    for host_pattern in new_patterns {
+        if seen.insert(host_pattern.clone()) {
+            existing.host_patterns.push(host_pattern);
+        }
+    }
+}
+
+/// Deduplicate a set of credential mappings by `(secret_name, location)`.
+///
+/// When two mappings share the same key the later one is retained and the
+/// `host_patterns` from the earlier one are merged into it (without
+/// duplicates). The returned `Vec` preserves the original relative order of
+/// the last occurrence of each key.
+///
+/// # Complexity
+///
+/// O(N²) in the number of distinct `(secret_name, location)` pairs. In
+/// practice each WASM tool registers at most a handful of credentials
+/// (typically ≤ 5; never expected to exceed 20), so the quadratic factor
+/// is negligible. If cardinality grows beyond that bound, replace the
+/// `find`-based accumulator with a `HashMap<(String, CredentialLocation),
+/// usize>` index into `deduped`.
+fn dedupe_mappings_by_secret_name_and_location(
+    mappings: impl IntoIterator<Item = CredentialMapping>,
+) -> Vec<CredentialMapping> {
+    let mappings = mappings.into_iter().collect::<Vec<_>>();
+    let mut deduped: Vec<CredentialMapping> = Vec::new();
+    for mapping in mappings.into_iter().rev() {
+        if let Some(existing) = deduped.iter_mut().find(|existing| {
+            existing.secret_name == mapping.secret_name && existing.location == mapping.location
+        }) {
+            merge_host_patterns_into(existing, mapping.host_patterns);
+        } else {
+            deduped.push(mapping);
+        }
+    }
+    deduped.reverse();
+    deduped
+}
+
+/// Merge host patterns from existing ownerless registry entries into an
+/// incoming mapping with the same `(secret_name, location)`.
+///
+/// # Complexity
+///
+/// O(R) in the number of entries in the registry guard. Called once per
+/// incoming mapping during `replace_ownerless_mappings`, giving O(R×M)
+/// overall for a batch of M mappings. The registry is bounded by the
+/// total credential count across all installed tools; the per-tool cap of
+/// ≤ 20 credentials and the typical installation of < 50 tools bounds
+/// R×M to ≈ 1 000 iterations, well within acceptable limits.
+fn merge_host_patterns_from_existing(
+    guard: &[OwnedCredentialMapping],
+    mapping: &mut CredentialMapping,
+) {
+    let mut seen = mapping
+        .host_patterns
+        .iter()
+        .cloned()
+        .collect::<HashSet<_>>();
+    for existing in guard.iter().filter(|e| {
+        e.owner.is_none()
+            && e.mapping.secret_name == mapping.secret_name
+            && e.mapping.location == mapping.location
+    }) {
+        for host_pattern in &existing.mapping.host_patterns {
+            if seen.insert(host_pattern.clone()) {
+                mapping.host_patterns.push(host_pattern.clone());
+            }
+        }
+    }
+}
+
+fn replace_ownerless_mappings(
+    guard: &mut Vec<OwnedCredentialMapping>,
+    mapping_keys: &HashSet<(String, CredentialLocation)>,
+    mut mappings: Vec<CredentialMapping>,
+) {
+    for mapping in &mut mappings {
+        merge_host_patterns_from_existing(guard, mapping);
+    }
+    guard.retain(|m| {
+        m.owner.is_some()
+            || !mapping_keys.contains(&(m.mapping.secret_name.clone(), m.mapping.location.clone()))
+    });
+    guard.extend(mappings.into_iter().map(|mapping| OwnedCredentialMapping {
+        owner: None,
+        mapping,
+    }));
+}
+
+fn replace_owned_mappings(
+    guard: &mut Vec<OwnedCredentialMapping>,
+    owner: String,
+    mappings: Vec<CredentialMapping>,
+) {
+    guard.retain(|m| m.owner.as_deref() != Some(owner.as_str()));
+    guard.extend(mappings.into_iter().map(|mapping| OwnedCredentialMapping {
+        owner: Some(owner.clone()),
+        mapping,
+    }));
+}
+
+fn replace_mappings_by_secret_name(
+    guard: &mut Vec<OwnedCredentialMapping>,
+    owner: Option<String>,
+    mappings: Vec<CredentialMapping>,
+) {
+    match owner {
+        Some(owner) => replace_owned_mappings(guard, owner, mappings),
+        None => {
+            let mapping_keys = mappings
+                .iter()
+                .map(|m| (m.secret_name.clone(), m.location.clone()))
+                .collect::<HashSet<_>>();
+            replace_ownerless_mappings(guard, &mapping_keys, mappings);
+        }
+    }
+}
+
+impl Default for SharedCredentialRegistry {
+    fn default() -> Self {
+        Self::new()
+    }
+}

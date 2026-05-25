@@ -1,0 +1,6 @@
+---
+source: src/tools/registry/wasm_registration_tests.rs
+assertion_line: 158
+expression: err.to_string()
+---
+Storage error: Tool not found: snapshot fixture
