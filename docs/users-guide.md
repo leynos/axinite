@@ -2,6 +2,42 @@
 
 This guide captures operator-visible behaviour for the current Axinite runtime.
 
+
+## REPL commands
+
+The interactive REPL accepts slash-commands for local conversation control,
+configuration, diagnostics, jobs, and conversation threads.
+
+| Command | Description |
+| --- | --- |
+| `/help` | Show the REPL help. |
+| `/quit` | Exit the REPL. |
+| `/exit` | Exit the REPL. |
+| `/debug` | Toggle verbose output. |
+| `/undo` | Undo the last turn. |
+| `/redo` | Redo an undone turn. |
+| `/clear` | Clear the conversation. |
+| `/compact` | Compact the context window. |
+| `/new` | Start a new conversation thread. |
+| `/interrupt` | Stop the current operation. |
+| `/model` | Show or change the model. |
+| `/version` | Show version information. |
+| `/tools` | List available tools. |
+| `/ping` | Test the connection. |
+| `/status` | Show system status. |
+| `/heartbeat` | Send a heartbeat. |
+| `/job` | Manage background jobs. |
+| `/cancel` | Cancel the current operation. |
+| `/list` | List conversations. |
+| `/summarize` | Summarize a conversation. |
+| `/suggest` | Get suggestions. |
+| `/thread` | Manage conversation threads. |
+| `/resume` | Resume a conversation. |
+
+Pressing `Esc` stops the current operation. When a tool requests approval,
+respond with `yes` or `y` to approve the run, `no` or `n` to deny it, or
+`always` or `a` to approve matching requests for the session.
+
 ## Skill bundle installs
 
 Axinite now validates passive multi-file skill bundles when a skill is
