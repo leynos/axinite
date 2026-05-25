@@ -228,7 +228,7 @@ impl ToolRegistry {
         tracing::debug!("Registered 8 extension management tools");
     }
 
-    /// Register skill management tools (list, search, install, remove).
+    /// Register skill management tools (list, search, read_file, install, remove).
     ///
     /// These allow the LLM to manage prompt-level skills through conversation.
     pub fn register_skill_tools(

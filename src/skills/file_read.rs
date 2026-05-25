@@ -57,7 +57,7 @@ impl SkillReadFileResponse {
 pub struct SkillReadFileSuccess {
     /// Canonical skill identifier used for the read.
     pub skill: String,
-    /// Normalised bundle-relative path that was read.
+    /// Normalized bundle-relative path that was read.
     pub path: String,
     /// Best-effort media type inferred from the bundle-relative path.
     pub mime_type: String,
@@ -70,7 +70,7 @@ pub struct SkillReadFileSuccess {
 pub struct SkillReadFileErrorResponse {
     /// Canonical skill identifier, or the requested identifier for unknown skills.
     pub skill: String,
-    /// Requested or normalised bundle-relative path.
+    /// Requested or normalized bundle-relative path.
     pub path: String,
     /// Stable, model-facing error payload.
     pub error: SkillReadFileError,

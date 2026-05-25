@@ -1,6 +1,6 @@
 //! Filesystem resolution and inline decoding for scoped skill file reads.
 
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
 use tokio::io::AsyncReadExt;
 
@@ -16,8 +16,8 @@ struct ReadDisplay<'a> {
     path: String,
 }
 
-struct CanonicalTarget {
-    path: PathBuf,
+struct OpenedTarget {
+    file: tokio::fs::File,
     size: u64,
 }
 
@@ -30,12 +30,12 @@ pub(super) async fn read_validated_skill_file(
         path: relative_path.to_string_lossy().replace('\\', "/"),
     };
 
-    let target = match resolve_and_validate_target(skill.skill_root(), relative_path).await {
+    let target = match open_validated_target(skill.skill_root(), relative_path).await {
         Ok(target) => target,
         Err(error) => return error_response(&display, error),
     };
     let mime_type = mime_type_for(relative_path);
-    let content = match read_inline_content(&target, relative_path, mime_type.clone()).await {
+    let content = match read_inline_content(target, relative_path, mime_type.clone()).await {
         Ok(content) => content,
         Err(error) => return error_response(&display, error),
     };
@@ -48,42 +48,18 @@ pub(super) async fn read_validated_skill_file(
     })
 }
 
-async fn resolve_and_validate_target(
+async fn open_validated_target(
     root: &Path,
     relative_path: &Path,
-) -> Result<CanonicalTarget, SkillReadFileError> {
+) -> Result<OpenedTarget, SkillReadFileError> {
     let canonical_root = tokio::fs::canonicalize(root)
         .await
         .map_err(|_| io_error("Skill root is not readable"))?;
-    let target = root.join(relative_path);
-    let metadata = readable_file_metadata(&target).await?;
-    let canonical_target = tokio::fs::canonicalize(&target)
-        .await
-        .map_err(|_| io_error("File is not available for reading"))?;
-
-    if !canonical_target.starts_with(&canonical_root) {
-        return Err(path_not_readable());
-    }
-
-    Ok(CanonicalTarget {
-        path: canonical_target,
-        size: metadata.len(),
-    })
-}
-
-async fn readable_file_metadata(path: &Path) -> Result<std::fs::Metadata, SkillReadFileError> {
-    match tokio::fs::symlink_metadata(path).await {
-        Ok(metadata) if metadata.file_type().is_symlink() || !metadata.is_file() => {
-            Err(path_not_readable())
-        }
-        Ok(metadata) => Ok(metadata),
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Err(path_not_readable()),
-        Err(_) => Err(io_error("File is not available for reading")),
-    }
+    open_relative_to_root(&canonical_root, relative_path).await
 }
 
 async fn read_inline_content(
-    target: &CanonicalTarget,
+    target: OpenedTarget,
     relative_path: &Path,
     mime_type: String,
 ) -> Result<String, SkillReadFileError> {
@@ -95,53 +71,31 @@ async fn read_inline_content(
         ));
     }
 
+    let size = target.size;
     let bytes = read_file_contents(target).await?;
-    parse_utf8_content(bytes, relative_path, target.size, mime_type)
+    let actual_size = bytes.len() as u64;
+    if actual_size > MAX_SKILL_READ_FILE_BYTES {
+        return Err(non_inline_error(
+            SkillReadFileErrorCode::FileTooLarge,
+            actual_size,
+            mime_type,
+        ));
+    }
+    parse_utf8_content(bytes, relative_path, size, mime_type)
 }
 
-async fn read_file_contents(target: &CanonicalTarget) -> Result<Vec<u8>, SkillReadFileError> {
-    let mut file = open_readonly_no_follow(&target.path).await?;
-    validate_opened_file(&file, target.size).await?;
-
+async fn read_file_contents(target: OpenedTarget) -> Result<Vec<u8>, SkillReadFileError> {
+    let OpenedTarget { mut file, size } = target;
     // The cast is safe because the size is first capped at
     // MAX_SKILL_READ_FILE_BYTES, which fits in usize on supported platforms.
-    let mut contents = Vec::with_capacity(target.size.min(MAX_SKILL_READ_FILE_BYTES) as usize);
+    let mut contents = Vec::with_capacity(size.min(MAX_SKILL_READ_FILE_BYTES) as usize);
     file.read_to_end(&mut contents)
         .await
         .map_err(|_| io_error("File is not available for reading"))?;
     Ok(contents)
 }
 
-#[cfg(unix)]
-async fn open_readonly_no_follow(path: &Path) -> Result<tokio::fs::File, SkillReadFileError> {
-    tokio::fs::OpenOptions::new()
-        .read(true)
-        .custom_flags(libc::O_NOFOLLOW)
-        .open(path)
-        .await
-        .map_err(|error| match error.raw_os_error() {
-            Some(libc::ELOOP) => path_not_readable(),
-            _ => io_error("File is not available for reading"),
-        })
-}
-
-#[cfg(not(unix))]
-async fn open_readonly_no_follow(path: &Path) -> Result<tokio::fs::File, SkillReadFileError> {
-    // Non-Unix platforms do not have the Unix O_NOFOLLOW path used above.
-    // This fallback relies on the earlier symlink_metadata rejection and the
-    // later validate_opened_file size check: file size must match stored size
-    // after open or the open is rejected. TODO: use platform-specific atomic
-    // no-follow open semantics for non-Unix targets when this tool supports
-    // those platforms as first-class deployment environments.
-    tokio::fs::File::open(path)
-        .await
-        .map_err(|_| io_error("File is not available for reading"))
-}
-
-async fn validate_opened_file(
-    file: &tokio::fs::File,
-    expected_size: u64,
-) -> Result<(), SkillReadFileError> {
+async fn metadata_for_opened_file(file: &tokio::fs::File) -> Result<u64, SkillReadFileError> {
     let metadata = file
         .metadata()
         .await
@@ -149,10 +103,85 @@ async fn validate_opened_file(
     if !metadata.is_file() {
         return Err(path_not_readable());
     }
-    if metadata.len() != expected_size {
-        return Err(io_error("File changed while reading"));
+    Ok(metadata.len())
+}
+
+#[cfg(target_os = "linux")]
+async fn open_relative_to_root(
+    root: &Path,
+    relative_path: &Path,
+) -> Result<OpenedTarget, SkillReadFileError> {
+    use std::ffi::CString;
+    use std::os::fd::{FromRawFd, OwnedFd};
+    use std::os::unix::ffi::OsStrExt;
+    use std::os::unix::io::AsRawFd;
+
+    let root = std::fs::File::open(root).map_err(|_| io_error("Skill root is not readable"))?;
+    if !root
+        .metadata()
+        .map_err(|_| io_error("Skill root is not readable"))?
+        .is_dir()
+    {
+        return Err(path_not_readable());
     }
-    Ok(())
+
+    let path =
+        CString::new(relative_path.as_os_str().as_bytes()).map_err(|_| path_not_readable())?;
+    // SAFETY: Linux requires `open_how` to be zero-initialized so unknown
+    // future fields default to zero before the supported fields are set.
+    let mut how: libc::open_how = unsafe { std::mem::zeroed() };
+    how.flags = (libc::O_RDONLY | libc::O_CLOEXEC) as u64;
+    how.mode = 0;
+    how.resolve = libc::RESOLVE_BENEATH | libc::RESOLVE_NO_SYMLINKS;
+
+    // SAFETY: `root` is a live directory file descriptor, `path` is a
+    // NUL-terminated relative path owned by this stack frame, and `how` points
+    // to an initialized `open_how` with its correct size. `openat2` returns a
+    // new file descriptor on success, which is immediately wrapped in
+    // `OwnedFd` to transfer ownership and ensure it is closed.
+    let fd = unsafe {
+        libc::syscall(
+            libc::SYS_openat2,
+            root.as_raw_fd(),
+            path.as_ptr(),
+            &how,
+            std::mem::size_of::<libc::open_how>(),
+        )
+    };
+
+    if fd < 0 {
+        let error = std::io::Error::last_os_error();
+        return Err(openat2_error(error));
+    }
+
+    // SAFETY: `fd` was returned by a successful `openat2` call above and has
+    // not been transferred elsewhere.
+    let file = std::fs::File::from(unsafe { OwnedFd::from_raw_fd(fd as libc::c_int) });
+    let file = tokio::fs::File::from_std(file);
+    let size = metadata_for_opened_file(&file).await?;
+
+    Ok(OpenedTarget { file, size })
+}
+
+#[cfg(not(target_os = "linux"))]
+async fn open_relative_to_root(
+    _root: &Path,
+    _relative_path: &Path,
+) -> Result<OpenedTarget, SkillReadFileError> {
+    Err(io_error(
+        "Atomic skill file reads are not supported on this platform",
+    ))
+}
+
+#[cfg(target_os = "linux")]
+fn openat2_error(error: std::io::Error) -> SkillReadFileError {
+    match error.raw_os_error() {
+        Some(libc::ENOENT | libc::ENOTDIR | libc::ELOOP | libc::EXDEV | libc::EAGAIN) => {
+            path_not_readable()
+        }
+        Some(libc::ENOSYS | libc::EINVAL) => io_error("Atomic skill file reads are not supported"),
+        _ => io_error("File is not available for reading"),
+    }
 }
 
 fn parse_utf8_content(

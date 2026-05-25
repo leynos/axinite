@@ -65,6 +65,29 @@ async fn reads_bundle_reference_text(skill_read_fixture: SkillReadFixture) {
 
 #[rstest]
 #[tokio::test]
+async fn reads_bundle_reference_text_at_max_size(skill_read_fixture: SkillReadFixture) {
+    std::fs::write(
+        skill_read_fixture
+            .skill
+            .skill_root()
+            .join("references/max-size.md"),
+        "x".repeat(MAX_SKILL_READ_FILE_BYTES as usize),
+    )
+    .expect("max-size reference should be written");
+
+    let response = read_skill_file(&skill_read_fixture.skill, "references/max-size.md").await;
+
+    let SkillReadFileResponse::Success(success) = response else {
+        panic!("max-size reference should be returned inline");
+    };
+    assert_eq!(success.skill, "deploy-docs");
+    assert_eq!(success.path, "references/max-size.md");
+    assert_eq!(success.mime_type, "text/markdown");
+    assert_eq!(success.content.len(), MAX_SKILL_READ_FILE_BYTES as usize);
+}
+
+#[rstest]
+#[tokio::test]
 async fn reads_skill_entrypoint(skill_read_fixture: SkillReadFixture) {
     let response = read_skill_file(&skill_read_fixture.skill, "SKILL.md").await;
 
@@ -147,6 +170,27 @@ async fn symlink_paths_are_rejected(skill_read_fixture: SkillReadFixture) {
     .expect("symlink should be created");
 
     let response = read_skill_file(&skill_read_fixture.skill, "references/link.md").await;
+
+    assert_error_code(response, SkillReadFileErrorCode::PathNotReadable);
+}
+
+#[cfg(unix)]
+#[rstest]
+#[tokio::test]
+async fn intermediate_symlink_paths_are_rejected(skill_read_fixture: SkillReadFixture) {
+    let external = tempfile::tempdir().expect("external tempdir should be created");
+    std::fs::write(external.path().join("usage.md"), "# Escaped\n")
+        .expect("external reference should be written");
+    std::os::unix::fs::symlink(
+        external.path(),
+        skill_read_fixture
+            .skill
+            .skill_root()
+            .join("references/external"),
+    )
+    .expect("intermediate symlink should be created");
+
+    let response = read_skill_file(&skill_read_fixture.skill, "references/external/usage.md").await;
 
     assert_error_code(response, SkillReadFileErrorCode::PathNotReadable);
 }

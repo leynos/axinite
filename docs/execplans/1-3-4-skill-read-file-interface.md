@@ -116,7 +116,7 @@ The relevant test bases are `src/skills/bundle/tests.rs`,
 `src/skills/registry/tests/prop_tests.rs`,
 `src/tools/builtin/skill_tools/tests.rs`,
 `src/agent/dispatcher/tests/skill_bundle_context_bdd.rs`,
-`tests/channels/skills_upload.rs`, and
+`tests/channels/skills_upload.rs`, and end-to-end (e2e)
 `tests/e2e/scenarios/test_skills.py`.
 
 The implementation should load these skills before editing:
@@ -311,8 +311,9 @@ conflict in `Decision Log`, and ask for direction.
 
 ## Surprises & discoveries
 
-- Observation: `leta workspace add` succeeded, but the first Rust LSP query
-  failed because `rust-analyzer` was not installed for the active toolchain.
+- Observation: `leta workspace add` succeeded, but the first Rust Language
+  Server Protocol (LSP) query failed because `rust-analyzer` was not installed
+  for the active toolchain.
   Evidence: `leta grep ...` reported that the Rust language server failed to
   start and suggested `rustup component add rust-analyzer`.
   Impact: install the component and restart the `leta` daemon before relying
@@ -454,6 +455,28 @@ conflict in `Decision Log`, and ask for direction.
   was clean; `/tmp/all-final-axinite-1-3-4-skill-read-file-interface.out`
   passed `make all`, including 4091 nextest tests and 5 GitHub tool tests.
   Impact: the implementation is locally gated and ready to commit.
+
+- Observation: the 2026-05-25 review correctly identified that canonicalizing
+  a target and then reopening it by path was still a time-of-check/time-of-use
+  gap, including for intermediate symlink components.
+  Evidence: `src/skills/file_read/io.rs` previously stored a canonical target
+  path in `CanonicalTarget` and later opened that path in
+  `read_file_contents`.
+  Impact: replace the path reopen with a Linux `openat2` call anchored to the
+  canonical skill-root directory file descriptor and using
+  `RESOLVE_BENEATH | RESOLVE_NO_SYMLINKS`, then read from that opened handle.
+  Non-Linux targets now fail closed with a skill-scoped I/O error rather than
+  using a weaker plain `File::open` fallback.
+
+- Observation: the same review requested exact maximum-size coverage and
+  clearer documentation/comment spelling.
+  Evidence: review comments called out the missing
+  `MAX_SKILL_READ_FILE_BYTES` boundary case, two Rustdoc comments using
+  non-Oxford spelling, the stale skill tool registry summary, and first-use
+  definitions for `e2e` and `LSP`.
+  Impact: add an exact-size success test, update the Rustdoc and registry
+  comments, and define end-to-end (e2e) and Language Server Protocol (LSP) in
+  the ExecPlan.
 
 - Observation: no Python e2e test was added for this slice.
   Evidence: the implementation changes a model-facing built-in tool contract
