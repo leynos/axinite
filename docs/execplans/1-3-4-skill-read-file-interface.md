@@ -922,3 +922,9 @@ implementation approach.
 existed and its previous draft pull request was closed. Corrected the concrete
 worktree path and narrowed behavioural-test guidance to Rust `rstest-bdd` plus
 existing Python `pytest` e2e patterns where applicable.
+
+2026-05-25: Applied follow-up review fixes for the file-read hardening path.
+The implementation now opens the bundle root as a stable directory handle
+before calling Linux `openat2`, caps inline reads at
+`MAX_SKILL_READ_FILE_BYTES + 1`, and makes Linux-only behavioural tests
+explicit while non-Linux allowed reads fail closed with `io_error`.

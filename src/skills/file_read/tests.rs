@@ -49,6 +49,7 @@ fn skill_read_fixture() -> SkillReadFixture {
 
 #[rstest]
 #[tokio::test]
+#[cfg(target_os = "linux")]
 async fn reads_bundle_reference_text(skill_read_fixture: SkillReadFixture) {
     let response = read_skill_file(&skill_read_fixture.skill, "references/usage.md").await;
 
@@ -65,6 +66,7 @@ async fn reads_bundle_reference_text(skill_read_fixture: SkillReadFixture) {
 
 #[rstest]
 #[tokio::test]
+#[cfg(target_os = "linux")]
 async fn reads_bundle_reference_text_at_max_size(skill_read_fixture: SkillReadFixture) {
     std::fs::write(
         skill_read_fixture
@@ -88,6 +90,7 @@ async fn reads_bundle_reference_text_at_max_size(skill_read_fixture: SkillReadFi
 
 #[rstest]
 #[tokio::test]
+#[cfg(target_os = "linux")]
 async fn reads_skill_entrypoint(skill_read_fixture: SkillReadFixture) {
     let response = read_skill_file(&skill_read_fixture.skill, "SKILL.md").await;
 
@@ -111,6 +114,7 @@ async fn rejects_disallowed_paths(skill_read_fixture: SkillReadFixture, #[case] 
 
 #[rstest]
 #[tokio::test]
+#[cfg(target_os = "linux")]
 async fn binary_asset_returns_non_inline_metadata(skill_read_fixture: SkillReadFixture) {
     let response = read_skill_file(&skill_read_fixture.skill, "assets/logo.png").await;
 
@@ -130,6 +134,7 @@ async fn binary_asset_returns_non_inline_metadata(skill_read_fixture: SkillReadF
 
 #[rstest]
 #[tokio::test]
+#[cfg(target_os = "linux")]
 async fn oversized_text_returns_file_too_large(skill_read_fixture: SkillReadFixture) {
     std::fs::write(
         skill_read_fixture
@@ -147,13 +152,14 @@ async fn oversized_text_returns_file_too_large(skill_read_fixture: SkillReadFixt
 
 #[rstest]
 #[tokio::test]
+#[cfg(target_os = "linux")]
 async fn missing_file_returns_path_not_readable(skill_read_fixture: SkillReadFixture) {
     let response = read_skill_file(&skill_read_fixture.skill, "references/missing.md").await;
 
     assert_error_code(response, SkillReadFileErrorCode::PathNotReadable);
 }
 
-#[cfg(unix)]
+#[cfg(target_os = "linux")]
 #[rstest]
 #[tokio::test]
 async fn symlink_paths_are_rejected(skill_read_fixture: SkillReadFixture) {
@@ -174,7 +180,7 @@ async fn symlink_paths_are_rejected(skill_read_fixture: SkillReadFixture) {
     assert_error_code(response, SkillReadFileErrorCode::PathNotReadable);
 }
 
-#[cfg(unix)]
+#[cfg(target_os = "linux")]
 #[rstest]
 #[tokio::test]
 async fn intermediate_symlink_paths_are_rejected(skill_read_fixture: SkillReadFixture) {
@@ -193,6 +199,20 @@ async fn intermediate_symlink_paths_are_rejected(skill_read_fixture: SkillReadFi
     let response = read_skill_file(&skill_read_fixture.skill, "references/external/usage.md").await;
 
     assert_error_code(response, SkillReadFileErrorCode::PathNotReadable);
+}
+
+#[cfg(not(target_os = "linux"))]
+#[rstest]
+#[case::reference("references/usage.md")]
+#[case::entrypoint("SKILL.md")]
+#[tokio::test]
+async fn allowed_reads_fail_closed_on_non_linux(
+    skill_read_fixture: SkillReadFixture,
+    #[case] path: &str,
+) {
+    let response = read_skill_file(&skill_read_fixture.skill, path).await;
+
+    assert_error_code(response, SkillReadFileErrorCode::IoError);
 }
 
 fn assert_error_code(response: SkillReadFileResponse, expected: SkillReadFileErrorCode) {

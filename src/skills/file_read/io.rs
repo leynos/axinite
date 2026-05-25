@@ -2,7 +2,7 @@
 
 use std::path::Path;
 
-use tokio::io::AsyncReadExt;
+use tokio::io::{AsyncReadExt, Take};
 
 use super::validation::{is_asset_path, path_not_readable};
 use super::{
@@ -52,10 +52,7 @@ async fn open_validated_target(
     root: &Path,
     relative_path: &Path,
 ) -> Result<OpenedTarget, SkillReadFileError> {
-    let canonical_root = tokio::fs::canonicalize(root)
-        .await
-        .map_err(|_| io_error("Skill root is not readable"))?;
-    open_relative_to_root(&canonical_root, relative_path).await
+    open_relative_to_root(root, relative_path).await
 }
 
 async fn read_inline_content(
@@ -86,13 +83,19 @@ async fn read_inline_content(
 
 async fn read_file_contents(target: OpenedTarget) -> Result<Vec<u8>, SkillReadFileError> {
     let OpenedTarget { mut file, size } = target;
-    // The cast is safe because the size is first capped at
-    // MAX_SKILL_READ_FILE_BYTES, which fits in usize on supported platforms.
-    let mut contents = Vec::with_capacity(size.min(MAX_SKILL_READ_FILE_BYTES) as usize);
-    file.read_to_end(&mut contents)
+    // The cast is safe because the size is first capped at the read limit,
+    // which fits in usize on supported platforms.
+    let read_limit = MAX_SKILL_READ_FILE_BYTES + 1;
+    let mut contents = Vec::with_capacity(size.min(read_limit) as usize);
+    limited_reader(&mut file, read_limit)
+        .read_to_end(&mut contents)
         .await
         .map_err(|_| io_error("File is not available for reading"))?;
     Ok(contents)
+}
+
+fn limited_reader(file: &mut tokio::fs::File, limit: u64) -> Take<&mut tokio::fs::File> {
+    file.take(limit)
 }
 
 async fn metadata_for_opened_file(file: &tokio::fs::File) -> Result<u64, SkillReadFileError> {
@@ -116,7 +119,7 @@ async fn open_relative_to_root(
     use std::os::unix::ffi::OsStrExt;
     use std::os::unix::io::AsRawFd;
 
-    let root = std::fs::File::open(root).map_err(|_| io_error("Skill root is not readable"))?;
+    let root = open_root_directory(root)?;
     if !root
         .metadata()
         .map_err(|_| io_error("Skill root is not readable"))?
@@ -161,6 +164,17 @@ async fn open_relative_to_root(
     let size = metadata_for_opened_file(&file).await?;
 
     Ok(OpenedTarget { file, size })
+}
+
+#[cfg(target_os = "linux")]
+fn open_root_directory(root: &Path) -> Result<std::fs::File, SkillReadFileError> {
+    use std::os::unix::fs::OpenOptionsExt;
+
+    std::fs::OpenOptions::new()
+        .read(true)
+        .custom_flags(libc::O_CLOEXEC | libc::O_DIRECTORY | libc::O_NOFOLLOW)
+        .open(root)
+        .map_err(|_| io_error("Skill root is not readable"))
 }
 
 #[cfg(not(target_os = "linux"))]
