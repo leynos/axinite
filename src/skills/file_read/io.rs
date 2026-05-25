@@ -182,6 +182,9 @@ async fn open_relative_to_root(
     _root: &Path,
     _relative_path: &Path,
 ) -> Result<OpenedTarget, SkillReadFileError> {
+    tracing::warn!(
+        "skill_read_file is unavailable on this platform because atomic symlink-safe reads require Linux openat2"
+    );
     Err(io_error(
         "Atomic skill file reads are not supported on this platform",
     ))

@@ -928,3 +928,8 @@ The implementation now opens the bundle root as a stable directory handle
 before calling Linux `openat2`, caps inline reads at
 `MAX_SKILL_READ_FILE_BYTES + 1`, and makes Linux-only behavioural tests
 explicit while non-Linux allowed reads fail closed with `io_error`.
+
+2026-05-25: Verified follow-up overall comments. The per-read canonicalization
+comment was stale because `open_validated_target` no longer canonicalizes the
+root. The non-Linux diagnostic comment remained valid, so the fail-closed
+branch now emits a warning before returning `io_error`.
