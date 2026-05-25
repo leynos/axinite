@@ -238,41 +238,38 @@ async fn execute_missing_description_returns_error() {
     assert_invalid_parameters(result, "missing 'description'");
 }
 
-#[tokio::test]
-async fn execute_analyze_failure_returns_execution_failed() {
-    let builder = FakeSoftwareBuilder::analyze_error("analysis exploded");
-    let tool = BuildSoftwareTool::new(Arc::new(builder));
-
+async fn execute_failure_returns_execution_failed(
+    builder: Arc<dyn SoftwareBuilder>,
+    expected_msg: &str,
+) {
+    let tool = BuildSoftwareTool::new(builder);
     let result = tool
         .execute(
-            serde_json::json!({
-                "description": "build a test tool",
-            }),
+            serde_json::json!({ "description": "build a test tool" }),
             &JobContext::default(),
         )
         .await;
+    assert_execution_failed(result, expected_msg);
+}
 
-    assert_execution_failed(
-        result,
+#[tokio::test]
+async fn execute_analyze_failure_returns_execution_failed() {
+    let builder = FakeSoftwareBuilder::analyze_error("analysis exploded");
+    execute_failure_returns_execution_failed(
+        Arc::new(builder),
         "Analysis failed: Tool builder failed: analysis exploded",
-    );
+    )
+    .await;
 }
 
 #[tokio::test]
 async fn execute_build_failure_returns_execution_failed() {
     let builder = FakeSoftwareBuilder::build_error(test_requirement(), "build exploded");
-    let tool = BuildSoftwareTool::new(Arc::new(builder));
-
-    let result = tool
-        .execute(
-            serde_json::json!({
-                "description": "build a test tool",
-            }),
-            &JobContext::default(),
-        )
-        .await;
-
-    assert_execution_failed(result, "Build failed: Tool builder failed: build exploded");
+    execute_failure_returns_execution_failed(
+        Arc::new(builder),
+        "Build failed: Tool builder failed: build exploded",
+    )
+    .await;
 }
 
 #[rstest]
