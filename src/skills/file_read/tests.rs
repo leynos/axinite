@@ -260,40 +260,51 @@ fn skill_entrypoint_path_validates() {
 
 // ── JSON shape snapshot tests ────────────────────────────────────────────────
 
-#[test]
-fn snapshot_success_response() {
-    let response = SkillReadFileResponse::Success(SkillReadFileSuccess {
+#[rstest]
+#[case::success("skill_read_file_success", snapshot_success_response())]
+#[case::unknown_skill("skill_read_file_error_unknown_skill", snapshot_error_unknown_skill())]
+#[case::path_not_readable(
+    "skill_read_file_error_path_not_readable",
+    snapshot_error_path_not_readable()
+)]
+#[case::non_inline_asset(
+    "skill_read_file_error_non_inline_asset",
+    snapshot_error_non_inline_asset()
+)]
+#[case::file_too_large(
+    "skill_read_file_error_file_too_large",
+    snapshot_error_file_too_large()
+)]
+#[case::invalid_utf8("skill_read_file_error_invalid_utf8", snapshot_error_invalid_utf8())]
+#[case::io_error("skill_read_file_error_io_error", snapshot_error_io_error())]
+fn snapshot_skill_read_file_response_shapes(
+    #[case] snapshot_name: &str,
+    #[case] response: SkillReadFileResponse,
+) {
+    assert_json_snapshot!(snapshot_name, &response);
+}
+
+fn snapshot_success_response() -> SkillReadFileResponse {
+    SkillReadFileResponse::Success(SkillReadFileSuccess {
         skill: "deploy-docs".to_string(),
         path: "references/usage.md".to_string(),
         mime_type: "text/markdown".to_string(),
         content: "# Usage\n".to_string(),
-    });
-    assert_json_snapshot!("skill_read_file_success", &response);
+    })
 }
 
-#[test]
-fn snapshot_error_unknown_skill() {
-    let response = SkillReadFileResponse::unknown_skill("deploy-docs", "references/usage.md");
-    assert_json_snapshot!("skill_read_file_error_unknown_skill", &response);
+fn snapshot_error_unknown_skill() -> SkillReadFileResponse {
+    SkillReadFileResponse::unknown_skill("deploy-docs", "references/usage.md")
 }
 
-#[test]
-fn snapshot_error_path_not_readable() {
-    let response = SkillReadFileResponse::Error(SkillReadFileErrorResponse {
-        skill: "deploy-docs".to_string(),
-        path: "../secret".to_string(),
-        error: SkillReadFileError {
-            code: SkillReadFileErrorCode::PathNotReadable,
-            message: "Path is not readable within the skill bundle".to_string(),
-            metadata: None,
-        },
-    });
-    assert_json_snapshot!("skill_read_file_error_path_not_readable", &response);
+fn snapshot_error_path_not_readable() -> SkillReadFileResponse {
+    let error = validate_bundle_relative_path("../secret")
+        .expect_err("traversal path should fail validation");
+    SkillReadFileResponse::error("deploy-docs", "../secret", error)
 }
 
-#[test]
-fn snapshot_error_non_inline_asset() {
-    let response = SkillReadFileResponse::Error(SkillReadFileErrorResponse {
+fn snapshot_error_non_inline_asset() -> SkillReadFileResponse {
+    SkillReadFileResponse::Error(SkillReadFileErrorResponse {
         skill: "deploy-docs".to_string(),
         path: "assets/logo.png".to_string(),
         error: SkillReadFileError {
@@ -305,13 +316,11 @@ fn snapshot_error_non_inline_asset() {
                 fetch_hint: NON_INLINE_FETCH_HINT.to_string(),
             }),
         },
-    });
-    assert_json_snapshot!("skill_read_file_error_non_inline_asset", &response);
+    })
 }
 
-#[test]
-fn snapshot_error_file_too_large() {
-    let response = SkillReadFileResponse::Error(SkillReadFileErrorResponse {
+fn snapshot_error_file_too_large() -> SkillReadFileResponse {
+    SkillReadFileResponse::Error(SkillReadFileErrorResponse {
         skill: "deploy-docs".to_string(),
         path: "references/large.md".to_string(),
         error: SkillReadFileError {
@@ -323,13 +332,11 @@ fn snapshot_error_file_too_large() {
                 fetch_hint: NON_INLINE_FETCH_HINT.to_string(),
             }),
         },
-    });
-    assert_json_snapshot!("skill_read_file_error_file_too_large", &response);
+    })
 }
 
-#[test]
-fn snapshot_error_invalid_utf8() {
-    let response = SkillReadFileResponse::Error(SkillReadFileErrorResponse {
+fn snapshot_error_invalid_utf8() -> SkillReadFileResponse {
+    SkillReadFileResponse::Error(SkillReadFileErrorResponse {
         skill: "deploy-docs".to_string(),
         path: "references/binary.md".to_string(),
         error: SkillReadFileError {
@@ -337,13 +344,11 @@ fn snapshot_error_invalid_utf8() {
             message: "File is not valid UTF-8 text".to_string(),
             metadata: None,
         },
-    });
-    assert_json_snapshot!("skill_read_file_error_invalid_utf8", &response);
+    })
 }
 
-#[test]
-fn snapshot_error_io_error() {
-    let response = SkillReadFileResponse::Error(SkillReadFileErrorResponse {
+fn snapshot_error_io_error() -> SkillReadFileResponse {
+    SkillReadFileResponse::Error(SkillReadFileErrorResponse {
         skill: "deploy-docs".to_string(),
         path: "references/usage.md".to_string(),
         error: SkillReadFileError {
@@ -351,6 +356,5 @@ fn snapshot_error_io_error() {
             message: "File is not available for reading".to_string(),
             metadata: None,
         },
-    });
-    assert_json_snapshot!("skill_read_file_error_io_error", &response);
+    })
 }

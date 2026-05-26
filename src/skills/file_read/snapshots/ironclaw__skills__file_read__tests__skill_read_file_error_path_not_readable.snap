@@ -7,6 +7,6 @@ expression: "&response"
   "path": "../secret",
   "error": {
     "code": "path_not_readable",
-    "message": "Path is not readable within the skill bundle"
+    "message": "File is not available for reading"
   }
 }
