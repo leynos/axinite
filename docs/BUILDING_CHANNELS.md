@@ -176,7 +176,13 @@ fn on_respond(response: AgentResponse) -> Result<(), String> {
 ```rust
 // The host replaces {TELEGRAM_BOT_TOKEN} with the actual token
 let url = "https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage";
-channel_host::http_request("POST", url, &headers_json, Some(&body));
+channel_host::http_request(&channel_host::HttpRequestParams {
+    method: "POST".to_string(),
+    url: url.to_string(),
+    headers_json,
+    body: Some(body),
+    timeout_ms: None,
+});
 ```
 
 ### Header Placeholders (WhatsApp-style)
@@ -187,7 +193,13 @@ let headers = serde_json::json!({
     "Content-Type": "application/json",
     "Authorization": "Bearer {WHATSAPP_ACCESS_TOKEN}"
 });
-channel_host::http_request("POST", &url, &headers.to_string(), Some(&body));
+channel_host::http_request(&channel_host::HttpRequestParams {
+    method: "POST".to_string(),
+    url,
+    headers_json: headers.to_string(),
+    body: Some(body),
+    timeout_ms: None,
+});
 ```
 
 The placeholder format is `{SECRET_NAME}` where `SECRET_NAME` matches the
@@ -323,7 +335,13 @@ let data = channel_host::workspace_read("state/offset");
 channel_host::workspace_write("state/offset", "12345")?;
 
 // HTTP requests (credentials auto-injected)
-let response = channel_host::http_request("POST", &url, &headers, Some(&body))?;
+let response = channel_host::http_request(&channel_host::HttpRequestParams {
+    method: "POST".to_string(),
+    url,
+    headers_json: headers,
+    body: Some(body),
+    timeout_ms: None,
+})?;
 
 // Emit message to agent
 channel_host::emit_message(&EmittedMessage { ... });

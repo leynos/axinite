@@ -122,12 +122,10 @@ fn execute_inner(params: &str) -> Result<String, String> {
 
     // Pre-flight: verify API key is available.
     if !near::agent::host::secret_exists("brave_api_key") {
-        return Err(
-            "Brave API key not found in secret store. Set it with: \
+        return Err("Brave API key not found in secret store. Set it with: \
              ironclaw secret set brave_api_key <key>. \
              Get a key at: https://brave.com/search/api/"
-                .into(),
-        );
+            .into());
     }
 
     let count = params.count.unwrap_or(DEFAULT_COUNT).clamp(1, MAX_COUNT);
@@ -145,9 +143,14 @@ fn execute_inner(params: &str) -> Result<String, String> {
         loop {
             attempt += 1;
 
-            let resp =
-                near::agent::host::http_request("GET", &url, &headers.to_string(), None, None)
-                    .map_err(|e| format!("HTTP request failed: {e}"))?;
+            let resp = near::agent::host::http_request(&near::agent::host::HttpRequestParams {
+                method: "GET".to_string(),
+                url: url.clone(),
+                headers_json: headers.to_string(),
+                body: None,
+                timeout_ms: None,
+            })
+            .map_err(|e| format!("HTTP request failed: {e}"))?;
 
             if resp.status >= 200 && resp.status < 300 {
                 break resp;
@@ -165,10 +168,7 @@ fn execute_inner(params: &str) -> Result<String, String> {
             }
 
             let body = String::from_utf8_lossy(&resp.body);
-            return Err(format!(
-                "Brave API error (HTTP {}): {}",
-                resp.status, body
-            ));
+            return Err(format!("Brave API error (HTTP {}): {}", resp.status, body));
         }
     };
 

@@ -448,13 +448,13 @@ impl Guest for WhatsAppChannel {
             "Authorization": "Bearer {WHATSAPP_ACCESS_TOKEN}"
         });
 
-        let result = channel_host::http_request(
-            "POST",
-            &api_url,
-            &headers.to_string(),
-            Some(&payload_bytes),
-            None,
-        );
+        let result = channel_host::http_request(&channel_host::HttpRequestParams {
+            method: "POST".to_string(),
+            url: api_url.clone(),
+            headers_json: headers.to_string(),
+            body: Some(payload_bytes.clone()),
+            timeout_ms: None,
+        });
 
         match result {
             Ok(http_response) => {
@@ -760,11 +760,7 @@ fn handle_message(
     let user_name = contact_names.get(&message.from).cloned();
 
     // Permission check (WhatsApp is always DM)
-    if !check_sender_permission(
-        &message.from,
-        user_name.as_deref(),
-        phone_number_id,
-    ) {
+    if !check_sender_permission(&message.from, user_name.as_deref(), phone_number_id) {
         return;
     }
 
@@ -867,10 +863,7 @@ fn check_sender_permission(
             Ok(result) => {
                 channel_host::log(
                     channel_host::LogLevel::Info,
-                    &format!(
-                        "Pairing request for {}: code {}",
-                        sender_phone, result.code
-                    ),
+                    &format!("Pairing request for {}: code {}", sender_phone, result.code),
                 );
                 if result.created {
                     let _ = send_pairing_reply(sender_phone, phone_number_id, &result.code);
@@ -924,13 +917,13 @@ fn send_pairing_reply(
         "Authorization": "Bearer {WHATSAPP_ACCESS_TOKEN}"
     });
 
-    let result = channel_host::http_request(
-        "POST",
-        &url,
-        &headers.to_string(),
-        Some(&payload_bytes),
-        None,
-    );
+    let result = channel_host::http_request(&channel_host::HttpRequestParams {
+        method: "POST".to_string(),
+        url: url.clone(),
+        headers_json: headers.to_string(),
+        body: Some(payload_bytes.clone()),
+        timeout_ms: None,
+    });
 
     match result {
         Ok(response) if response.status >= 200 && response.status < 300 => Ok(()),
@@ -1120,10 +1113,7 @@ mod tests {
         assert_eq!(attachments.len(), 1);
         assert_eq!(attachments[0].id, "media_doc_1");
         assert_eq!(attachments[0].mime_type, "application/pdf");
-        assert_eq!(
-            attachments[0].filename,
-            Some("report.pdf".to_string())
-        );
+        assert_eq!(attachments[0].filename, Some("report.pdf".to_string()));
     }
 
     #[test]

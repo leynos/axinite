@@ -285,13 +285,13 @@ impl Guest for DiscordChannel {
             "Content-Type": "application/json"
         });
 
-        let result = channel_host::http_request(
-            "POST",
-            &url,
-            &headers.to_string(),
-            Some(&payload_bytes),
-            None,
-        );
+        let result = channel_host::http_request(&channel_host::HttpRequestParams {
+            method: "POST".to_string(),
+            url: url.clone(),
+            headers_json: headers.to_string(),
+            body: Some(payload_bytes.clone()),
+            timeout_ms: None,
+        });
 
         match result {
             Ok(http_response) => {
@@ -401,13 +401,13 @@ fn handle_slash_command(interaction: &DiscordInteraction) -> bool {
                 "content": "❌ Internal Error: Failed to process command metadata.",
                 "flags": 64
             });
-            let _ = channel_host::http_request(
-                "POST",
-                &url,
-                &serde_json::json!({"Content-Type": "application/json"}).to_string(),
-                Some(&serde_json::to_vec(&payload).unwrap_or_default()),
-                None,
-            );
+            let _ = channel_host::http_request(&channel_host::HttpRequestParams {
+                method: "POST".to_string(),
+                url: url.clone(),
+                headers_json: serde_json::json!({"Content-Type": "application/json"}).to_string(),
+                body: Some(serde_json::to_vec(&payload).unwrap_or_default()),
+                timeout_ms: None,
+            });
             return true; // Error, but not a permission denial
         }
     };
@@ -552,10 +552,7 @@ fn check_sender_permission(
             Ok(result) => {
                 channel_host::log(
                     channel_host::LogLevel::Info,
-                    &format!(
-                        "Pairing request for user {}: code {}",
-                        user_id, result.code
-                    ),
+                    &format!("Pairing request for user {}: code {}", user_id, result.code),
                 );
                 if result.created {
                     if let Some(ctx) = reply_ctx {
@@ -594,13 +591,13 @@ fn send_pairing_reply(ctx: &PairingReplyCtx, code: &str) -> Result<(), String> {
 
     let headers = serde_json::json!({"Content-Type": "application/json"});
 
-    let result = channel_host::http_request(
-        "POST",
-        &url,
-        &headers.to_string(),
-        Some(&payload_bytes),
-        None,
-    );
+    let result = channel_host::http_request(&channel_host::HttpRequestParams {
+        method: "POST".to_string(),
+        url: url.clone(),
+        headers_json: headers.to_string(),
+        body: Some(payload_bytes.clone()),
+        timeout_ms: None,
+    });
 
     match result {
         Ok(response) if response.status >= 200 && response.status < 300 => Ok(()),

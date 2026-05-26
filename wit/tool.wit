@@ -52,6 +52,20 @@ interface host {
         body: list<u8>,
     }
 
+    /// Parameters for an outbound HTTP request.
+    record http-request-params {
+        /// HTTP method (GET, POST, PUT, DELETE, PATCH, HEAD).
+        method: string,
+        /// Target URL; credential placeholders are resolved by the host.
+        url: string,
+        /// Request headers as a JSON object string.
+        headers-json: string,
+        /// Optional request body bytes.
+        body: option<list<u8>>,
+        /// Optional timeout in milliseconds (default 30 000, max 300 000).
+        timeout-ms: option<u32>,
+    }
+
     /// Make an HTTP request (if capability granted).
     ///
     /// Security:
@@ -72,11 +86,7 @@ interface host {
     /// in milliseconds. Defaults to 30000 (30s) when not provided.
     /// Capped at the callback timeout to prevent hangs.
     http-request: func(
-        method: string,
-        url: string,
-        headers-json: string,
-        body: option<list<u8>>,
-        timeout-ms: option<u32>,
+        params: http-request-params,
     ) -> result<http-response, string>;
 
     // ==================== Tool Invocation Capability ====================

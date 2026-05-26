@@ -239,12 +239,15 @@ impl near::agent::channel_host::Host for ChannelStoreData {
 
     fn http_request(
         &mut self,
-        method: String,
-        url: String,
-        headers_json: String,
-        body: Option<Vec<u8>>,
-        timeout_ms: Option<u32>,
+        params: near::agent::channel_host::HttpRequestParams,
     ) -> Result<near::agent::channel_host::HttpResponse, String> {
+        let near::agent::channel_host::HttpRequestParams {
+            method,
+            url,
+            headers_json,
+            body,
+            timeout_ms,
+        } = params;
         tracing::info!(
             method = %method,
             original_url = %url,

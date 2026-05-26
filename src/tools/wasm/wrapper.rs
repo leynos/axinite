@@ -352,12 +352,15 @@ impl near::agent::host::Host for StoreData {
 
     fn http_request(
         &mut self,
-        method: String,
-        url: String,
-        headers_json: String,
-        body: Option<Vec<u8>>,
-        timeout_ms: Option<u32>,
+        params: near::agent::host::HttpRequestParams,
     ) -> Result<near::agent::host::HttpResponse, String> {
+        let near::agent::host::HttpRequestParams {
+            method,
+            url,
+            headers_json,
+            body,
+            timeout_ms,
+        } = params;
         let leak_detector = LeakDetector::new();
         let PreparedHttpRequest { url, headers } = self.prepare_http_request_with_detector(
             &method,
@@ -1605,11 +1608,13 @@ mod tests {
 
         let err = <StoreData as host::Host>::http_request(
             &mut store_data,
-            "GET".to_string(),
-            format!("https://{host}/repos/leynos/mxd"),
-            "{}".to_string(),
-            None,
-            Some(1000),
+            host::HttpRequestParams {
+                method: "GET".to_string(),
+                url: format!("https://{host}/repos/leynos/mxd"),
+                headers_json: "{}".to_string(),
+                body: None,
+                timeout_ms: Some(1000),
+            },
         )
         .expect_err("invalid public hostname should fail after request preparation");
 

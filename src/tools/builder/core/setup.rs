@@ -110,8 +110,13 @@ host::now_millis() -> u64;  // Unix timestamp in milliseconds
 host::workspace_read(path: &str) -> Option<String>;
 
 // HTTP (if capability granted)
-host::http_request(method: &str, url: &str, headers_json: &str, body: Option<Vec<u8>>)
-    -> Result<HttpResponse, String>;
+host::http_request(&HttpRequestParams {
+    method: "GET".to_string(),
+    url: url.to_string(),
+    headers_json: "{}".to_string(),
+    body: None,
+    timeout_ms: None,
+}) -> Result<HttpResponse, String>;
 // HttpResponse has: status: u16, headers_json: String, body: Vec<u8>
 
 // Tool invocation (if capability granted)

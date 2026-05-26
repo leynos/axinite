@@ -491,8 +491,7 @@ impl Guest for TelegramChannel {
 
             // Delete any existing webhook before polling. Telegram returns success
             // when no webhook exists, so any error here (e.g. 401) means a bad token.
-            delete_webhook()
-                .map_err(|e| format!("Bot token validation failed: {}", e))?;
+            delete_webhook().map_err(|e| format!("Bot token validation failed: {}", e))?;
         }
 
         // Configure polling only if not in webhook mode
@@ -581,13 +580,13 @@ impl Guest for TelegramChannel {
         // 35s HTTP timeout outlives Telegram's 30s server-side long-poll.
         // If the TCP connection drops, retry once immediately with a short poll
         // so we don't wait a full extra tick (~30s) before delivering updates.
-        let result = match channel_host::http_request(
-            "GET",
-            &primary_url,
-            &headers_json,
-            None,
-            Some(35_000),
-        ) {
+        let result = match channel_host::http_request(&channel_host::HttpRequestParams {
+            method: "GET".to_string(),
+            url: primary_url.clone(),
+            headers_json: headers_json.clone(),
+            body: None,
+            timeout_ms: Some(35_000),
+        }) {
             Ok(response) => Ok(response),
             Err(primary_err) => {
                 channel_host::log(
@@ -599,10 +598,16 @@ impl Guest for TelegramChannel {
                 );
 
                 let retry_url = get_updates_url(offset, 3);
-                channel_host::http_request("GET", &retry_url, &headers_json, None, Some(8_000))
-                    .map_err(|retry_err| {
-                        format!("primary error: {}; retry error: {}", primary_err, retry_err)
-                    })
+                channel_host::http_request(&channel_host::HttpRequestParams {
+                    method: "GET".to_string(),
+                    url: retry_url.clone(),
+                    headers_json: headers_json.clone(),
+                    body: None,
+                    timeout_ms: Some(8_000),
+                })
+                .map_err(|retry_err| {
+                    format!("primary error: {}; retry error: {}", primary_err, retry_err)
+                })
             }
         };
 
@@ -726,13 +731,14 @@ impl Guest for TelegramChannel {
                     "Content-Type": "application/json"
                 });
 
-                let result = channel_host::http_request(
-                    "POST",
-                    "https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendChatAction",
-                    &headers.to_string(),
-                    Some(&payload_bytes),
-                    None,
-                );
+                let result = channel_host::http_request(&channel_host::HttpRequestParams {
+                    method: "POST".to_string(),
+                    url: "https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendChatAction"
+                        .to_string(),
+                    headers_json: headers.to_string(),
+                    body: Some(payload_bytes.clone()),
+                    timeout_ms: None,
+                });
 
                 if let Err(e) = result {
                     channel_host::log(
@@ -826,13 +832,13 @@ fn send_message(
 
     let headers = serde_json::json!({ "Content-Type": "application/json" });
 
-    let result = channel_host::http_request(
-        "POST",
-        "https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage",
-        &headers.to_string(),
-        Some(&payload_bytes),
-        None,
-    );
+    let result = channel_host::http_request(&channel_host::HttpRequestParams {
+        method: "POST".to_string(),
+        url: "https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage".to_string(),
+        headers_json: headers.to_string(),
+        body: Some(payload_bytes.clone()),
+        timeout_ms: None,
+    });
 
     match result {
         Ok(http_response) => {
@@ -911,19 +917,26 @@ fn download_telegram_file(file_id: &str) -> Result<Vec<u8>, String> {
     );
 
     let headers = serde_json::json!({});
-    let result =
-        channel_host::http_request("GET", &get_file_url, &headers.to_string(), None, None);
+    let result = channel_host::http_request(&channel_host::HttpRequestParams {
+        method: "GET".to_string(),
+        url: get_file_url.clone(),
+        headers_json: headers.to_string(),
+        body: None,
+        timeout_ms: None,
+    });
 
     let response = result.map_err(|e| format!("getFile request failed: {}", e))?;
 
     if response.status != 200 {
         let body_str = String::from_utf8_lossy(&response.body);
-        return Err(format!("getFile returned {}: {}", response.status, body_str));
+        return Err(format!(
+            "getFile returned {}: {}",
+            response.status, body_str
+        ));
     }
 
-    let api_response: TelegramApiResponse<TelegramFile> =
-        serde_json::from_slice(&response.body)
-            .map_err(|e| format!("Failed to parse getFile response: {}", e))?;
+    let api_response: TelegramApiResponse<TelegramFile> = serde_json::from_slice(&response.body)
+        .map_err(|e| format!("Failed to parse getFile response: {}", e))?;
 
     if !api_response.ok {
         return Err(format!(
@@ -953,16 +966,18 @@ fn download_telegram_file(file_id: &str) -> Result<Vec<u8>, String> {
         file_path
     );
 
-    let result =
-        channel_host::http_request("GET", &download_url, &headers.to_string(), None, None);
+    let result = channel_host::http_request(&channel_host::HttpRequestParams {
+        method: "GET".to_string(),
+        url: download_url.clone(),
+        headers_json: headers.to_string(),
+        body: None,
+        timeout_ms: None,
+    });
 
     let response = result.map_err(|e| format!("File download failed: {}", e))?;
 
     if response.status != 200 {
-        return Err(format!(
-            "File download returned status {}",
-            response.status
-        ));
+        return Err(format!("File download returned status {}", response.status));
     }
 
     // Post-download size guard: Telegram metadata file_size is optional,
@@ -1054,7 +1069,12 @@ fn send_photo(
 
     write_multipart_field(&mut body, &boundary, "chat_id", &chat_id.to_string());
     if let Some(msg_id) = reply_to_message_id {
-        write_multipart_field(&mut body, &boundary, "reply_to_message_id", &msg_id.to_string());
+        write_multipart_field(
+            &mut body,
+            &boundary,
+            "reply_to_message_id",
+            &msg_id.to_string(),
+        );
     }
     write_multipart_file(&mut body, &boundary, "photo", filename, mime_type, data);
     body.extend_from_slice(format!("--{}--\r\n", boundary).as_bytes());
@@ -1063,13 +1083,13 @@ fn send_photo(
         "Content-Type": format!("multipart/form-data; boundary={}", boundary)
     });
 
-    let result = channel_host::http_request(
-        "POST",
-        "https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendPhoto",
-        &headers.to_string(),
-        Some(&body),
-        Some(60_000), // 60s timeout for file uploads
-    );
+    let result = channel_host::http_request(&channel_host::HttpRequestParams {
+        method: "POST".to_string(),
+        url: "https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendPhoto".to_string(),
+        headers_json: headers.to_string(),
+        body: Some(body.clone()),
+        timeout_ms: Some(60_000), // 60s timeout for file uploads
+    });
 
     match result {
         Ok(resp) if resp.status == 200 => {
@@ -1103,7 +1123,12 @@ fn send_document(
 
     write_multipart_field(&mut body, &boundary, "chat_id", &chat_id.to_string());
     if let Some(msg_id) = reply_to_message_id {
-        write_multipart_field(&mut body, &boundary, "reply_to_message_id", &msg_id.to_string());
+        write_multipart_field(
+            &mut body,
+            &boundary,
+            "reply_to_message_id",
+            &msg_id.to_string(),
+        );
     }
     write_multipart_file(&mut body, &boundary, "document", filename, mime_type, data);
     body.extend_from_slice(format!("--{}--\r\n", boundary).as_bytes());
@@ -1112,13 +1137,13 @@ fn send_document(
         "Content-Type": format!("multipart/form-data; boundary={}", boundary)
     });
 
-    let result = channel_host::http_request(
-        "POST",
-        "https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendDocument",
-        &headers.to_string(),
-        Some(&body),
-        Some(60_000), // 60s timeout for file uploads
-    );
+    let result = channel_host::http_request(&channel_host::HttpRequestParams {
+        method: "POST".to_string(),
+        url: "https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendDocument".to_string(),
+        headers_json: headers.to_string(),
+        body: Some(body.clone()),
+        timeout_ms: Some(60_000), // 60s timeout for file uploads
+    });
 
     match result {
         Ok(resp) if resp.status == 200 => {
@@ -1140,12 +1165,7 @@ fn send_document(
 }
 
 /// Image MIME types that Telegram's sendPhoto API supports.
-const PHOTO_MIME_TYPES: &[&str] = &[
-    "image/jpeg",
-    "image/png",
-    "image/gif",
-    "image/webp",
-];
+const PHOTO_MIME_TYPES: &[&str] = &["image/jpeg", "image/png", "image/gif", "image/webp"];
 
 /// Send a full agent response (attachments + text) to a chat.
 ///
@@ -1166,7 +1186,12 @@ fn send_response(
     }
 
     // Try Markdown, fall back to plain text on parse errors
-    match send_message(chat_id, &response.content, reply_to_message_id, Some("Markdown")) {
+    match send_message(
+        chat_id,
+        &response.content,
+        reply_to_message_id,
+        Some("Markdown"),
+    ) {
         Ok(_) => Ok(()),
         Err(SendError::ParseEntities(_)) => {
             send_message(chat_id, &response.content, reply_to_message_id, None)
@@ -1215,13 +1240,13 @@ fn delete_webhook() -> Result<(), String> {
         "Content-Type": "application/json"
     });
 
-    let result = channel_host::http_request(
-        "POST",
-        "https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/deleteWebhook",
-        &headers.to_string(),
-        None,
-        None,
-    );
+    let result = channel_host::http_request(&channel_host::HttpRequestParams {
+        method: "POST".to_string(),
+        url: "https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/deleteWebhook".to_string(),
+        headers_json: headers.to_string(),
+        body: None,
+        timeout_ms: None,
+    });
 
     match result {
         Ok(response) => {
@@ -1278,13 +1303,13 @@ fn register_webhook(tunnel_url: &str, webhook_secret: Option<&str>) -> Result<()
 
     // Make HTTP request to Telegram API
     // Note: {TELEGRAM_BOT_TOKEN} is replaced by host with the actual token
-    let result = channel_host::http_request(
-        "POST",
-        "https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/setWebhook",
-        &headers.to_string(),
-        Some(&body_bytes),
-        None,
-    );
+    let result = channel_host::http_request(&channel_host::HttpRequestParams {
+        method: "POST".to_string(),
+        url: "https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/setWebhook".to_string(),
+        headers_json: headers.to_string(),
+        body: Some(body_bytes.clone()),
+        timeout_ms: None,
+    });
 
     let mut response = match result {
         Ok(response) => response,
@@ -1300,13 +1325,13 @@ fn register_webhook(tunnel_url: &str, webhook_secret: Option<&str>) -> Result<()
         let _ = delete_webhook();
         retried = true;
 
-        response = match channel_host::http_request(
-            "POST",
-            "https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/setWebhook",
-            &headers.to_string(),
-            Some(&body_bytes),
-            None,
-        ) {
+        response = match channel_host::http_request(&channel_host::HttpRequestParams {
+            method: "POST".to_string(),
+            url: "https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/setWebhook".to_string(),
+            headers_json: headers.to_string(),
+            body: Some(body_bytes.clone()),
+            timeout_ms: None,
+        }) {
             Ok(resp) => resp,
             Err(e) => return Err(format!("HTTP request failed (after 409 retry): {}", e)),
         };
@@ -1337,7 +1362,10 @@ fn register_webhook(tunnel_url: &str, webhook_secret: Option<&str>) -> Result<()
     let context = if retried { " (after retry)" } else { "" };
     channel_host::log(
         channel_host::LogLevel::Info,
-        &format!("Webhook registered successfully{}: {}", context, webhook_url),
+        &format!(
+            "Webhook registered successfully{}: {}",
+            context, webhook_url
+        ),
     );
 
     Ok(())
@@ -1438,7 +1466,9 @@ fn extract_attachments(message: &TelegramMessage) -> Vec<InboundAttachment> {
     if let Some(ref doc) = message.document {
         attachments.push(make_inbound_attachment(
             doc.file_id.clone(),
-            doc.mime_type.clone().unwrap_or_else(|| "application/octet-stream".to_string()),
+            doc.mime_type
+                .clone()
+                .unwrap_or_else(|| "application/octet-stream".to_string()),
             doc.file_name.clone(),
             doc.file_size.map(|s| s as u64),
             Some(get_file_url(&doc.file_id)),
@@ -1451,7 +1481,10 @@ fn extract_attachments(message: &TelegramMessage) -> Vec<InboundAttachment> {
     if let Some(ref audio) = message.audio {
         attachments.push(make_inbound_attachment(
             audio.file_id.clone(),
-            audio.mime_type.clone().unwrap_or_else(|| "audio/mpeg".to_string()),
+            audio
+                .mime_type
+                .clone()
+                .unwrap_or_else(|| "audio/mpeg".to_string()),
             audio.file_name.clone(),
             audio.file_size.map(|s| s as u64),
             Some(get_file_url(&audio.file_id)),
@@ -1464,7 +1497,10 @@ fn extract_attachments(message: &TelegramMessage) -> Vec<InboundAttachment> {
     if let Some(ref video) = message.video {
         attachments.push(make_inbound_attachment(
             video.file_id.clone(),
-            video.mime_type.clone().unwrap_or_else(|| "video/mp4".to_string()),
+            video
+                .mime_type
+                .clone()
+                .unwrap_or_else(|| "video/mp4".to_string()),
             video.file_name.clone(),
             video.file_size.map(|s| s as u64),
             Some(get_file_url(&video.file_id)),
@@ -2438,7 +2474,11 @@ mod tests {
         assert_eq!(attachments[0].id, "large_id"); // Largest photo
         assert_eq!(attachments[0].mime_type, "image/jpeg");
         assert_eq!(attachments[0].size_bytes, Some(54321));
-        assert!(attachments[0].source_url.as_ref().unwrap().contains("large_id"));
+        assert!(attachments[0]
+            .source_url
+            .as_ref()
+            .unwrap()
+            .contains("large_id"));
     }
 
     #[test]
@@ -2490,9 +2530,7 @@ mod tests {
             attachments[0].filename.as_deref(),
             Some("voice_voice_xyz.ogg")
         );
-        assert!(attachments[0]
-            .extras_json
-            .contains("\"duration_secs\":5"));
+        assert!(attachments[0].extras_json.contains("\"duration_secs\":5"));
     }
 
     #[test]
@@ -2638,18 +2676,33 @@ mod tests {
         };
 
         // PDFs and Office docs should be downloaded
-        assert!(is_downloadable_document(&make("application/pdf", Some("report.pdf"))));
+        assert!(is_downloadable_document(&make(
+            "application/pdf",
+            Some("report.pdf")
+        )));
         assert!(is_downloadable_document(&make(
             "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
             Some("doc.docx"),
         )));
-        assert!(is_downloadable_document(&make("text/plain", Some("notes.txt"))));
+        assert!(is_downloadable_document(&make(
+            "text/plain",
+            Some("notes.txt")
+        )));
 
         // Voice, image, audio, video should NOT be downloaded
-        assert!(!is_downloadable_document(&make("audio/ogg", Some("voice_123.ogg"))));
+        assert!(!is_downloadable_document(&make(
+            "audio/ogg",
+            Some("voice_123.ogg")
+        )));
         assert!(!is_downloadable_document(&make("image/jpeg", None)));
-        assert!(!is_downloadable_document(&make("audio/mpeg", Some("song.mp3"))));
-        assert!(!is_downloadable_document(&make("video/mp4", Some("clip.mp4"))));
+        assert!(!is_downloadable_document(&make(
+            "audio/mpeg",
+            Some("song.mp3")
+        )));
+        assert!(!is_downloadable_document(&make(
+            "video/mp4",
+            Some("clip.mp4")
+        )));
     }
 
     #[test]

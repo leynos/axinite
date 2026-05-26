@@ -136,11 +136,7 @@ impl near::agent::host::Host for MetadataStoreData {
 
     fn http_request(
         &mut self,
-        _method: String,
-        _url: String,
-        _headers_json: String,
-        _body: Option<Vec<u8>>,
-        _timeout_ms: Option<u32>,
+        _params: near::agent::host::HttpRequestParams,
     ) -> Result<near::agent::host::HttpResponse, String> {
         Err("metadata export context does not permit http_request".to_string())
     }
