@@ -115,6 +115,52 @@ impl std::fmt::Display for CredentialContext<'_> {
     }
 }
 
+/// A validated HTTP method.
+///
+/// Replaces bare `&str` / `String` method arguments in internal helpers,
+/// eliminating a source of stringly-typed interfaces.
+#[derive(Clone, Copy, Debug)]
+pub(super) enum HttpMethod {
+    Get,
+    Post,
+    Put,
+    Delete,
+    Patch,
+    Head,
+}
+
+impl HttpMethod {
+    /// Parses a case-insensitive method string. Returns `None` for unknown methods.
+    pub(super) fn from_str(s: &str) -> Option<Self> {
+        match s.to_uppercase().as_str() {
+            "GET" => Some(Self::Get),
+            "POST" => Some(Self::Post),
+            "PUT" => Some(Self::Put),
+            "DELETE" => Some(Self::Delete),
+            "PATCH" => Some(Self::Patch),
+            "HEAD" => Some(Self::Head),
+            _ => None,
+        }
+    }
+
+    pub(super) fn as_str(self) -> &'static str {
+        match self {
+            Self::Get => "GET",
+            Self::Post => "POST",
+            Self::Put => "PUT",
+            Self::Delete => "DELETE",
+            Self::Patch => "PATCH",
+            Self::Head => "HEAD",
+        }
+    }
+}
+
+impl std::fmt::Display for HttpMethod {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(self.as_str())
+    }
+}
+
 /// The raw HTTP request parameters supplied by the WASM guest, before any
 /// host-side credential injection or access-control checks.
 ///
@@ -123,7 +169,7 @@ impl std::fmt::Display for CredentialContext<'_> {
 /// injection.
 pub(super) struct OutboundRequestSpec<'a> {
     /// HTTP method (e.g. `"GET"`, `"POST"`).
-    pub(super) method: &'a str,
+    pub(super) method: HttpMethod,
     /// Target URL; credential placeholders will be resolved by the host.
     pub(super) url: String,
     /// Request headers as a JSON object string.

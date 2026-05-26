@@ -6,7 +6,9 @@ use wasmtime_wasi::{ResourceTable, WasiCtx, WasiCtxBuilder, WasiCtxView, WasiVie
 
 use super::credentials::extract_host_from_url;
 use super::near;
-use super::types::{ChannelName, CredentialContext, HostPattern, OutboundRequestSpec, SecretValue};
+use super::types::{
+    ChannelName, CredentialContext, HostPattern, HttpMethod, OutboundRequestSpec, SecretValue,
+};
 use crate::channels::wasm::capabilities::ChannelCapabilities;
 use crate::channels::wasm::host::{ChannelHostState, EmittedMessage};
 use crate::pairing::PairingStore;
@@ -223,7 +225,7 @@ impl ChannelStoreData {
 
         // Check if HTTP is allowed for this URL
         self.host_state
-            .check_http_allowed(&injected_url, method)
+            .check_http_allowed(&injected_url, method.as_str())
             .map_err(|e| {
                 tracing::error!(error = %e, "HTTP not allowed");
                 format!("HTTP not allowed: {}", e)
@@ -287,18 +289,17 @@ impl ChannelStoreData {
 /// Maps an HTTP method name to the corresponding `reqwest::RequestBuilder`.
 fn build_http_client_request(
     client: &reqwest::Client,
-    method: &str,
+    method: HttpMethod,
     url: &str,
 ) -> Result<reqwest::RequestBuilder, String> {
-    match method.to_uppercase().as_str() {
-        "GET" => Ok(client.get(url)),
-        "POST" => Ok(client.post(url)),
-        "PUT" => Ok(client.put(url)),
-        "DELETE" => Ok(client.delete(url)),
-        "PATCH" => Ok(client.patch(url)),
-        "HEAD" => Ok(client.head(url)),
-        other => Err(format!("Unsupported HTTP method: {}", other)),
-    }
+    Ok(match method {
+        HttpMethod::Get => client.get(url),
+        HttpMethod::Post => client.post(url),
+        HttpMethod::Put => client.put(url),
+        HttpMethod::Delete => client.delete(url),
+        HttpMethod::Patch => client.patch(url),
+        HttpMethod::Head => client.head(url),
+    })
 }
 
 /// Walks `reqwest`'s error source chain to produce a single diagnostic string.
@@ -330,7 +331,7 @@ fn log_response_body(body: &[u8]) {
 
 /// Executes the outbound HTTP request and returns the normalised response.
 async fn send_http_request(
-    method: &str,
+    method: HttpMethod,
     url: String,
     headers: HashMap<String, String>,
     body: Option<Vec<u8>>,
@@ -474,8 +475,11 @@ impl near::agent::channel_host::Host for ChannelStoreData {
             "WASM http_request called"
         );
 
+        let http_method = HttpMethod::from_str(&method)
+            .ok_or_else(|| format!("Unsupported HTTP method: {}", method))?;
+
         let (url, headers, leak_detector) = self.prepare_outbound_request(OutboundRequestSpec {
-            method: &method,
+            method: http_method,
             url,
             headers_json: &headers_json,
             body: body.as_deref(),
@@ -508,7 +512,7 @@ impl near::agent::channel_host::Host for ChannelStoreData {
 
         let result = rt
             .block_on(send_http_request(
-                &method,
+                http_method,
                 url,
                 headers,
                 body,
