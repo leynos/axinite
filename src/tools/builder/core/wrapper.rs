@@ -8,21 +8,17 @@
 //! centralize fallback and error-message logic.
 
 use super::*;
-use mockable::{Clock, DefaultClock};
+use std::time::Instant;
 
 /// Tool that allows the agent to build software on demand.
 pub struct BuildSoftwareTool {
     builder: Arc<dyn SoftwareBuilder>,
-    clock: Arc<dyn Clock>,
 }
 
 impl BuildSoftwareTool {
     /// Wraps a [`SoftwareBuilder`] for use as a [`NativeTool`].
     pub fn new(builder: Arc<dyn SoftwareBuilder>) -> Self {
-        Self {
-            builder,
-            clock: Arc::new(DefaultClock),
-        }
+        Self { builder }
     }
 
     /// Resolves an optional string override against a parse closure.
@@ -134,7 +130,7 @@ impl NativeTool for BuildSoftwareTool {
             .and_then(|v| v.as_str())
             .ok_or_else(|| ToolError::InvalidParameters("missing 'description'".into()))?;
 
-        let start = self.clock.utc();
+        let start = Instant::now();
 
         // Analyze the requirement
         let mut requirement = self
@@ -171,14 +167,7 @@ impl NativeTool for BuildSoftwareTool {
             "phases": result.logs.iter().map(|l| format!("{:?}: {}", l.phase, l.message)).collect::<Vec<_>>()
         });
 
-        Ok(ToolOutput::success(
-            output,
-            self.clock
-                .utc()
-                .signed_duration_since(start)
-                .to_std()
-                .unwrap_or_default(),
-        ))
+        Ok(ToolOutput::success(output, start.elapsed()))
     }
 
     /// Approval is required unless the surrounding job auto-approves tools.

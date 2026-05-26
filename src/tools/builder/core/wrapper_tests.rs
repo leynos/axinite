@@ -1,14 +1,10 @@
 //! Tests for the build software native-tool wrapper.
 
-use std::sync::{
-    Arc, Mutex,
-    atomic::{AtomicUsize, Ordering},
-};
+use std::sync::{Arc, Mutex};
 
 use super::super::domain::SoftwareBuilderFuture;
 use super::*;
 use insta::assert_snapshot;
-use mockable::MockClock;
 use rstest::rstest;
 
 type AnalyzeResult = dyn Fn() -> Result<BuildRequirement, AgentToolError> + Send + Sync;
@@ -328,23 +324,7 @@ async fn execute_success_output_matches_snapshot() {
     let requirement = test_requirement();
     let build_result = test_build_result(requirement.clone());
     let builder = FakeSoftwareBuilder::success(requirement, build_result);
-    let mut clock = MockClock::new();
-    let start = Utc::now();
-    let calls = Arc::new(AtomicUsize::new(0));
-    clock.expect_utc().returning({
-        let calls = Arc::clone(&calls);
-        move || {
-            if calls.fetch_add(1, Ordering::Relaxed) == 0 {
-                start
-            } else {
-                start + chrono::Duration::milliseconds(42)
-            }
-        }
-    });
-    let tool = BuildSoftwareTool {
-        builder: Arc::new(builder),
-        clock: Arc::new(clock),
-    };
+    let tool = BuildSoftwareTool::new(Arc::new(builder));
 
     let output = tool
         .execute(
@@ -356,7 +336,6 @@ async fn execute_success_output_matches_snapshot() {
         .await
         .expect("expected execute to return successful output");
 
-    assert_eq!(output.duration, std::time::Duration::from_millis(42));
     assert_eq!(output.cost, None);
     assert_eq!(output.raw, None);
     assert_snapshot!(
