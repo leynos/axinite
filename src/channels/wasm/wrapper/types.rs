@@ -114,3 +114,20 @@ impl std::fmt::Display for CredentialContext<'_> {
         }
     }
 }
+
+/// The raw HTTP request parameters supplied by the WASM guest, before any
+/// host-side credential injection or access-control checks.
+///
+/// Lifetime `'a` covers the borrowed method string, header JSON string, and
+/// optional body slice; the URL is owned because it will be mutated during
+/// injection.
+pub(super) struct OutboundRequestSpec<'a> {
+    /// HTTP method (e.g. `"GET"`, `"POST"`).
+    pub(super) method: &'a str,
+    /// Target URL; credential placeholders will be resolved by the host.
+    pub(super) url: String,
+    /// Request headers as a JSON object string.
+    pub(super) headers_json: &'a str,
+    /// Optional request body bytes.
+    pub(super) body: Option<&'a [u8]>,
+}
