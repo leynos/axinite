@@ -87,105 +87,96 @@ fn build_auth_required_message(
     lines.join("\n")
 }
 
-pub(super) fn status_to_wit(
-    status: &StatusUpdate,
-    metadata: &serde_json::Value,
-) -> wit_channel::StatusUpdate {
-    let metadata_json = serde_json::to_string(metadata).unwrap_or_default();
-
+/// Maps a [`StatusUpdate`] variant to the `(StatusType, message)` pair
+/// used by the WIT interface.
+fn status_type_and_message(status: &StatusUpdate) -> (wit_channel::StatusType, String) {
     match status {
-        StatusUpdate::Thinking(msg) => wit_channel::StatusUpdate {
-            status: wit_channel::StatusType::Thinking,
-            message: msg.clone(),
-            metadata_json,
-        },
-        StatusUpdate::ToolStarted { name } => wit_channel::StatusUpdate {
-            status: wit_channel::StatusType::ToolStarted,
-            message: format!("Tool started: {}", name),
-            metadata_json,
-        },
-        StatusUpdate::ToolCompleted { name, success, .. } => wit_channel::StatusUpdate {
-            status: wit_channel::StatusType::ToolCompleted,
-            message: format!(
+        StatusUpdate::Thinking(msg) => (wit_channel::StatusType::Thinking, msg.clone()),
+        StatusUpdate::StreamChunk(chunk) => (wit_channel::StatusType::Thinking, chunk.clone()),
+        StatusUpdate::ToolStarted { name } => (
+            wit_channel::StatusType::ToolStarted,
+            format!("Tool started: {}", name),
+        ),
+        StatusUpdate::ToolCompleted { name, success, .. } => (
+            wit_channel::StatusType::ToolCompleted,
+            format!(
                 "Tool completed: {} ({})",
                 name,
                 if *success { "ok" } else { "failed" }
             ),
-            metadata_json,
-        },
-        StatusUpdate::ToolResult { name, preview } => wit_channel::StatusUpdate {
-            status: wit_channel::StatusType::ToolResult,
-            message: format!(
+        ),
+        StatusUpdate::ToolResult { name, preview } => (
+            wit_channel::StatusType::ToolResult,
+            format!(
                 "Tool result: {}\n{}",
                 name,
                 truncate_status_text(preview, 280)
             ),
-            metadata_json,
-        },
-        StatusUpdate::StreamChunk(chunk) => wit_channel::StatusUpdate {
-            status: wit_channel::StatusType::Thinking,
-            message: chunk.clone(),
-            metadata_json,
-        },
-        StatusUpdate::Status(msg) => wit_channel::StatusUpdate {
-            status: classify_status_string(msg),
-            message: msg.clone(),
-            metadata_json,
-        },
+        ),
+        StatusUpdate::Status(msg) => (classify_status_string(msg), msg.clone()),
         StatusUpdate::ApprovalNeeded {
             request_id,
             tool_name,
             description,
             ..
-        } => wit_channel::StatusUpdate {
-            status: wit_channel::StatusType::ApprovalNeeded,
-            message: format!(
-                "Approval needed for tool '{}'. {}\nRequest ID: {}\nReply with: yes (or /approve), no (or /deny), or always (or /always).",
+        } => (
+            wit_channel::StatusType::ApprovalNeeded,
+            format!(
+                "Approval needed for tool '{}'. {}\nRequest ID: {}\n\
+                 Reply with: yes (or /approve), no (or /deny), or always (or /always).",
                 tool_name, description, request_id
             ),
-            metadata_json,
-        },
+        ),
         StatusUpdate::JobStarted {
             job_id,
             title,
             browse_url,
-        } => wit_channel::StatusUpdate {
-            status: wit_channel::StatusType::JobStarted,
-            message: format!("Job started: {} ({})\n{}", title, job_id, browse_url),
-            metadata_json,
-        },
+        } => (
+            wit_channel::StatusType::JobStarted,
+            format!("Job started: {} ({})\n{}", title, job_id, browse_url),
+        ),
         StatusUpdate::AuthRequired {
             extension_name,
             instructions,
             auth_url,
             setup_url,
-        } => wit_channel::StatusUpdate {
-            status: wit_channel::StatusType::AuthRequired,
-            message: build_auth_required_message(extension_name, instructions, auth_url, setup_url),
-            metadata_json,
-        },
+        } => (
+            wit_channel::StatusType::AuthRequired,
+            build_auth_required_message(extension_name, instructions, auth_url, setup_url),
+        ),
         StatusUpdate::AuthCompleted {
             extension_name,
             success,
             message,
-        } => wit_channel::StatusUpdate {
-            status: wit_channel::StatusType::AuthCompleted,
-            message: format!(
+        } => (
+            wit_channel::StatusType::AuthCompleted,
+            format!(
                 "Authentication {} for {}. {}",
                 if *success { "completed" } else { "failed" },
                 extension_name,
                 message
             ),
-            metadata_json,
-        },
-        StatusUpdate::ImageGenerated { path, .. } => wit_channel::StatusUpdate {
-            status: wit_channel::StatusType::Status,
-            message: match path {
+        ),
+        StatusUpdate::ImageGenerated { path, .. } => (
+            wit_channel::StatusType::Status,
+            match path {
                 Some(p) => format!("[image] {}", p),
                 None => "[image generated]".to_string(),
             },
-            metadata_json,
-        },
+        ),
+    }
+}
+
+pub(super) fn status_to_wit(
+    status: &StatusUpdate,
+    metadata: &serde_json::Value,
+) -> wit_channel::StatusUpdate {
+    let metadata_json = serde_json::to_string(metadata).unwrap_or_default();
+    let (status_type, message) = status_type_and_message(status);
+    wit_channel::StatusUpdate {
+        status: status_type,
+        message,
+        metadata_json,
     }
 }
 
