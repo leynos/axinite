@@ -1,4 +1,5 @@
 use super::store::ResolvedHostCredential;
+use super::types::{HostPattern, SecretValue};
 use crate::channels::wasm::capabilities::ChannelCapabilities;
 use crate::secrets::SecretsStore;
 use crate::tools::wasm::credential_injector::{InjectedCredentials, inject_credential};
@@ -77,10 +78,14 @@ pub(super) async fn resolve_channel_host_credentials(
         }
 
         resolved.push(ResolvedHostCredential {
-            host_patterns: mapping.host_patterns.clone(),
+            host_patterns: mapping
+                .host_patterns
+                .iter()
+                .filter_map(|pattern| HostPattern::new(pattern.clone()))
+                .collect(),
             headers: injected.headers,
             query_params: injected.query_params,
-            secret_value: secret.expose().to_string(),
+            secret_value: SecretValue::new(secret.expose().to_string()),
         });
     }
 

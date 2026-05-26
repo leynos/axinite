@@ -5,6 +5,7 @@ use wasmtime_wasi::{ResourceTable, WasiCtx, WasiCtxBuilder, WasiCtxView, WasiVie
 
 use super::credentials::extract_host_from_url;
 use super::near;
+use super::types::{ChannelName, HostPattern, SecretValue};
 use crate::channels::wasm::capabilities::ChannelCapabilities;
 use crate::channels::wasm::host::{ChannelHostState, EmittedMessage};
 use crate::pairing::PairingStore;
@@ -21,13 +22,13 @@ use crate::tools::wasm::credential_injector::host_matches_pattern;
 #[derive(Clone)]
 pub(super) struct ResolvedHostCredential {
     /// Host patterns this credential applies to (e.g., "api.slack.com").
-    pub(super) host_patterns: Vec<String>,
+    pub(super) host_patterns: Vec<HostPattern>,
     /// Headers to add to matching requests (e.g., "Authorization: Bearer ...").
     pub(super) headers: HashMap<String, String>,
     /// Query parameters to add to matching requests.
     pub(super) query_params: HashMap<String, String>,
     /// Raw secret value for redaction in error messages.
-    pub(super) secret_value: String,
+    pub(super) secret_value: SecretValue,
 }
 
 /// Store data for WASM channel execution.
@@ -40,7 +41,7 @@ pub(super) struct ChannelStoreData {
     table: ResourceTable,
     /// Injected credentials for URL substitution (e.g., bot tokens).
     /// Keys are placeholder names like "TELEGRAM_BOT_TOKEN".
-    credentials: HashMap<String, String>,
+    credentials: HashMap<String, SecretValue>,
     /// Pre-resolved credentials for automatic host-based injection.
     /// Applied per-request by matching the URL host against host_patterns.
     host_credentials: Vec<ResolvedHostCredential>,
@@ -54,9 +55,9 @@ pub(super) struct ChannelStoreData {
 impl ChannelStoreData {
     pub(super) fn new(
         memory_limit: u64,
-        channel_name: &str,
+        channel_name: &ChannelName,
         capabilities: ChannelCapabilities,
-        credentials: HashMap<String, String>,
+        credentials: HashMap<String, SecretValue>,
         host_credentials: Vec<ResolvedHostCredential>,
         pairing_store: Arc<PairingStore>,
     ) -> Self {
@@ -65,7 +66,7 @@ impl ChannelStoreData {
 
         Self {
             limiter: WasmResourceLimiter::new(memory_limit),
-            host_state: ChannelHostState::new(channel_name, capabilities),
+            host_state: ChannelHostState::new(channel_name.as_str(), capabilities),
             wasi,
             table: ResourceTable::new(),
             credentials,
@@ -102,7 +103,7 @@ impl ChannelStoreData {
                     context = %context,
                     "Found and replacing credential placeholder"
                 );
-                result = result.replace(&placeholder, value);
+                result = result.replace(&placeholder, value.as_str());
             }
         }
 
@@ -137,10 +138,10 @@ impl ChannelStoreData {
         for (name, value) in &self.credentials {
             if !value.is_empty() {
                 let tag = format!("[REDACTED:{}]", name);
-                result = result.replace(value, &tag);
+                result = result.replace(value.as_str(), &tag);
                 // Also redact URL-encoded form (covers secrets in query strings)
-                let encoded = urlencoding::encode(value);
-                if encoded != *value {
+                let encoded = urlencoding::encode(value.as_str());
+                if encoded.as_ref() != value.as_str() {
                     result = result.replace(encoded.as_ref(), &tag);
                 }
             }
@@ -148,10 +149,10 @@ impl ChannelStoreData {
         for cred in &self.host_credentials {
             if !cred.secret_value.is_empty() {
                 let tag = "[REDACTED:host_credential]";
-                result = result.replace(&cred.secret_value, tag);
+                result = result.replace(cred.secret_value.as_str(), tag);
                 // Also redact URL-encoded form (covers secrets injected as query params)
-                let encoded = urlencoding::encode(&cred.secret_value);
-                if encoded.as_ref() != cred.secret_value {
+                let encoded = urlencoding::encode(cred.secret_value.as_str());
+                if encoded.as_ref() != cred.secret_value.as_str() {
                     result = result.replace(encoded.as_ref(), tag);
                 }
             }
@@ -165,7 +166,7 @@ impl ChannelStoreData {
     /// Matching credentials have their headers merged and query params appended.
     pub(super) fn inject_host_credentials(
         &self,
-        url_host: &str,
+        url_host: &HostPattern,
         headers: &mut HashMap<String, String>,
         url: &mut String,
     ) {
@@ -173,7 +174,7 @@ impl ChannelStoreData {
             let matches = cred
                 .host_patterns
                 .iter()
-                .any(|pattern| host_matches_pattern(url_host, pattern));
+                .any(|pattern| host_matches_pattern(url_host.as_str(), pattern.as_str()));
 
             if !matches {
                 continue;
@@ -314,8 +315,10 @@ impl near::agent::channel_host::Host for ChannelStoreData {
 
         // Inject pre-resolved host credentials (Bearer tokens, API keys, etc.)
         // after the leak scan so host-injected secrets don't trigger false positives.
-        if let Some(host) = extract_host_from_url(&url) {
-            self.inject_host_credentials(&host, &mut headers, &mut url);
+        if let Some(host) = extract_host_from_url(&url)
+            && let Some(host_pattern) = HostPattern::new(host)
+        {
+            self.inject_host_credentials(&host_pattern, &mut headers, &mut url);
         }
 
         // Get the max response size from capabilities (default 10MB).

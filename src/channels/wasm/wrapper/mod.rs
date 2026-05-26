@@ -59,6 +59,7 @@ mod polling;
 mod shared;
 mod status;
 mod store;
+mod types;
 
 use attachments::read_attachments;
 use convert::{
@@ -68,6 +69,7 @@ use convert::{
 use credentials::resolve_channel_host_credentials;
 use metadata::do_update_broadcast_metadata;
 use store::{ChannelStoreData, ResolvedHostCredential};
+use types::SecretValue;
 
 pub use shared::SharedWasmChannel;
 
@@ -129,7 +131,7 @@ pub struct WasmChannel {
     /// Injected credentials for HTTP requests (e.g., bot tokens).
     /// Keys are placeholder names like "TELEGRAM_BOT_TOKEN".
     /// Wrapped in Arc for sharing with the polling task.
-    credentials: Arc<RwLock<HashMap<String, String>>>,
+    credentials: Arc<RwLock<HashMap<String, SecretValue>>>,
 
     /// Background task that repeats typing indicators every 4 seconds.
     /// Telegram's "typing..." indicator expires after ~5s, so we refresh it.
@@ -231,12 +233,17 @@ impl WasmChannel {
         self.credentials
             .write()
             .await
-            .insert(name.to_string(), value);
+            .insert(name.to_string(), SecretValue::new(value));
     }
 
     /// Get a snapshot of credentials for use in callbacks.
     pub async fn get_credentials(&self) -> HashMap<String, String> {
-        self.credentials.read().await.clone()
+        self.credentials
+            .read()
+            .await
+            .iter()
+            .map(|(name, value)| (name.clone(), value.as_str().to_string()))
+            .collect()
     }
 
     /// Get the channel name.
@@ -302,7 +309,7 @@ impl WasmChannel {
         let config_json = self.config_json.read().await.clone();
         let timeout = self.runtime.config().callback_timeout;
         let channel_name = self.name.clone();
-        let credentials = self.get_credentials().await;
+        let credentials = self.credentials.read().await.clone();
         let host_credentials =
             resolve_channel_host_credentials(&self.capabilities, self.secrets_store.as_deref())
                 .await;
@@ -442,7 +449,7 @@ impl WasmChannel {
         let prepared = Arc::clone(&self.prepared);
         let capabilities = Self::inject_workspace_reader(&self.capabilities, &self.workspace_store);
         let timeout = self.runtime.config().callback_timeout;
-        let credentials = self.get_credentials().await;
+        let credentials = self.credentials.read().await.clone();
         let host_credentials =
             resolve_channel_host_credentials(&self.capabilities, self.secrets_store.as_deref())
                 .await;
@@ -545,7 +552,7 @@ impl WasmChannel {
         let capabilities = Self::inject_workspace_reader(&self.capabilities, &self.workspace_store);
         let timeout = self.runtime.config().callback_timeout;
         let channel_name = self.name.clone();
-        let credentials = self.get_credentials().await;
+        let credentials = self.credentials.read().await.clone();
         let host_credentials =
             resolve_channel_host_credentials(&self.capabilities, self.secrets_store.as_deref())
                 .await;
@@ -652,7 +659,7 @@ impl WasmChannel {
         let capabilities = self.capabilities.clone();
         let timeout = self.runtime.config().callback_timeout;
         let channel_name = self.name.clone();
-        let credentials = self.get_credentials().await;
+        let credentials = self.credentials.read().await.clone();
         let host_credentials =
             resolve_channel_host_credentials(&self.capabilities, self.secrets_store.as_deref())
                 .await;
@@ -793,7 +800,7 @@ impl WasmChannel {
         let capabilities = self.capabilities.clone();
         let timeout = self.runtime.config().callback_timeout;
         let channel_name = self.name.clone();
-        let credentials = self.get_credentials().await;
+        let credentials = self.credentials.read().await.clone();
         let host_credentials =
             resolve_channel_host_credentials(&self.capabilities, self.secrets_store.as_deref())
                 .await;
@@ -897,7 +904,7 @@ impl WasmChannel {
         let capabilities = self.capabilities.clone();
         let timeout = self.runtime.config().callback_timeout;
         let channel_name = self.name.clone();
-        let credentials = self.get_credentials().await;
+        let credentials = self.credentials.read().await.clone();
         let host_credentials =
             resolve_channel_host_credentials(&self.capabilities, self.secrets_store.as_deref())
                 .await;
@@ -1150,6 +1157,8 @@ mod tests {
     use crate::pairing::PairingStore;
     use crate::testing::credentials::TEST_TELEGRAM_BOT_TOKEN;
     use crate::tools::wasm::ResourceLimits;
+
+    use super::types::{ChannelName, HostPattern, SecretValue};
 
     fn create_test_channel() -> WasmChannel {
         let config = WasmChannelRuntimeConfig::for_testing();
@@ -2099,13 +2108,14 @@ mod tests {
         let mut creds = std::collections::HashMap::new();
         creds.insert(
             "TELEGRAM_BOT_TOKEN".to_string(),
-            TEST_TELEGRAM_BOT_TOKEN.to_string(),
+            SecretValue::new(TEST_TELEGRAM_BOT_TOKEN.to_string()),
         );
-        creds.insert("OTHER_SECRET".to_string(), "s3cret".to_string());
+        creds.insert("OTHER_SECRET".to_string(), SecretValue::new("s3cret"));
+        let channel_name = ChannelName::new("test").expect("test channel name is non-empty");
 
         let store = ChannelStoreData::new(
             1024 * 1024,
-            "test",
+            &channel_name,
             ChannelCapabilities::default(),
             creds,
             Vec::new(),
@@ -2136,10 +2146,11 @@ mod tests {
     #[test]
     fn test_redact_credentials_no_op_without_credentials() {
         use super::ChannelStoreData;
+        let channel_name = ChannelName::new("test").expect("test channel name is non-empty");
 
         let store = ChannelStoreData::new(
             1024 * 1024,
-            "test",
+            &channel_name,
             ChannelCapabilities::default(),
             std::collections::HashMap::new(),
             Vec::new(),
@@ -2158,19 +2169,22 @@ mod tests {
         let mut creds = std::collections::HashMap::new();
         creds.insert(
             "API_KEY".to_string(),
-            "key with spaces&special=chars".to_string(),
+            SecretValue::new("key with spaces&special=chars"),
         );
 
         let host_creds = vec![ResolvedHostCredential {
-            host_patterns: vec!["api.example.com".to_string()],
+            host_patterns: vec![
+                HostPattern::new("api.example.com").expect("test host pattern is non-empty"),
+            ],
             headers: std::collections::HashMap::new(),
             query_params: std::collections::HashMap::new(),
-            secret_value: "host secret+value".to_string(),
+            secret_value: SecretValue::new("host secret+value"),
         }];
+        let channel_name = ChannelName::new("test").expect("test channel name is non-empty");
 
         let store = ChannelStoreData::new(
             1024 * 1024,
-            "test",
+            &channel_name,
             ChannelCapabilities::default(),
             creds,
             host_creds,
@@ -2199,11 +2213,12 @@ mod tests {
         use super::ChannelStoreData;
 
         let mut creds = std::collections::HashMap::new();
-        creds.insert("EMPTY_TOKEN".to_string(), String::new());
+        creds.insert("EMPTY_TOKEN".to_string(), SecretValue::new(String::new()));
+        let channel_name = ChannelName::new("test").expect("test channel name is non-empty");
 
         let store = ChannelStoreData::new(
             1024 * 1024,
-            "test",
+            &channel_name,
             ChannelCapabilities::default(),
             creds,
             Vec::new(),
@@ -2398,11 +2413,15 @@ mod tests {
         let host = "slack.invalid";
         let slack_bot_token = "slack-dummy-token-12345".to_string();
         let mut credentials = HashMap::new();
-        credentials.insert("SLACK_BOT_TOKEN".to_string(), slack_bot_token);
+        credentials.insert(
+            "SLACK_BOT_TOKEN".to_string(),
+            SecretValue::new(slack_bot_token),
+        );
+        let channel_name = ChannelName::new("test").expect("test channel name is non-empty");
 
         let mut store = ChannelStoreData::new(
             1024 * 1024,
-            "test",
+            &channel_name,
             test_channel_http_capabilities(host),
             credentials,
             Vec::new(),
