@@ -212,18 +212,31 @@ interface channel-host {
         created: bool,
     }
 
+    /// Identifies a user within a channel for pairing purposes.
+    record pairing-identity {
+        /// Channel identifier (e.g., "telegram", "discord").
+        channel: string,
+        /// Per-channel user identifier.
+        id: string,
+    }
+
+    /// Parameters for upserting a pairing request.
+    record pairing-upsert-params {
+        /// Identity of the user requesting pairing.
+        identity: pairing-identity,
+        /// Optional metadata as a JSON object string; empty string means none.
+        meta-json: string,
+    }
+
     /// Upsert a pairing request for an unknown sender.
     /// Returns (code, created). When created is true, the channel should send a pairing reply.
     pairing-upsert-request: func(
-        channel: string,
-        id: string,
-        meta-json: string
+        params: pairing-upsert-params
     ) -> result<pairing-upsert-result, string>;
 
     /// Check if a sender is allowed (in allowFrom store).
     pairing-is-allowed: func(
-        channel: string,
-        id: string,
+        identity: pairing-identity,
         username: option<string>
     ) -> result<bool, string>;
 

@@ -1775,7 +1775,15 @@ fn handle_message(message: TelegramMessage) {
                     })
                     .to_string();
 
-                    match channel_host::pairing_upsert_request(CHANNEL_NAME, &id_str, &meta) {
+                    match channel_host::pairing_upsert_request(
+                        &channel_host::PairingUpsertParams {
+                            identity: channel_host::PairingIdentity {
+                                channel: CHANNEL_NAME.to_string(),
+                                id: id_str.clone(),
+                            },
+                            meta_json: meta,
+                        },
+                    ) {
                         Ok(result) => {
                             channel_host::log(
                                 channel_host::LogLevel::Info,

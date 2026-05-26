@@ -548,7 +548,13 @@ fn check_sender_permission(
         })
         .to_string();
 
-        match channel_host::pairing_upsert_request(CHANNEL_NAME, user_id, &meta) {
+        match channel_host::pairing_upsert_request(&channel_host::PairingUpsertParams {
+            identity: channel_host::PairingIdentity {
+                channel: CHANNEL_NAME.to_string(),
+                id: user_id.to_string(),
+            },
+            meta_json: meta,
+        }) {
             Ok(result) => {
                 channel_host::log(
                     channel_host::LogLevel::Info,
