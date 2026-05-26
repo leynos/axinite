@@ -293,13 +293,13 @@ fn github_request(method: &str, path: &str, body: Option<String>) -> Result<Stri
     loop {
         attempt += 1;
 
-        let response = near::agent::host::http_request(
-            method,
-            &url,
-            &headers.to_string(),
-            body_bytes.as_deref(),
-            None,
-        );
+        let response = near::agent::host::http_request(&near::agent::host::HttpRequestParams {
+            method: method.to_string(),
+            url: url.clone(),
+            headers_json: headers.to_string(),
+            body: body_bytes.clone(),
+            timeout_ms: None,
+        });
 
         match response {
             Ok(resp) => {

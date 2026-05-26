@@ -26,7 +26,13 @@ fn api_call(method: &str, path: &str, body: Option<&str>) -> Result<String, Stri
         &format!("Gmail API: {} {}", method, path),
     );
 
-    let response = host::http_request(method, &url, headers, body_bytes.as_deref(), None)?;
+    let response = host::http_request(&host::HttpRequestParams {
+        method: method.to_string(),
+        url: url.clone(),
+        headers_json: headers.to_string(),
+        body: body_bytes.clone(),
+        timeout_ms: None,
+    })?;
 
     if response.status < 200 || response.status >= 300 {
         let body_text = String::from_utf8_lossy(&response.body);

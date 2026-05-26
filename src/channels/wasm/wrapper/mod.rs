@@ -2430,15 +2430,17 @@ mod tests {
 
         let err = <ChannelStoreData as channel_host::Host>::http_request(
             &mut store,
-            "GET".to_string(),
-            format!("https://{host}/api/chat.postMessage"),
-            serde_json::json!({
-                "Authorization": "Bearer {SLACK_BOT_TOKEN}",
-                "Content-Type": "application/json"
-            })
-            .to_string(),
-            None,
-            Some(1000),
+            channel_host::HttpRequestParams {
+                method: "GET".to_string(),
+                url: format!("https://{host}/api/chat.postMessage"),
+                headers_json: serde_json::json!({
+                    "Authorization": "Bearer {SLACK_BOT_TOKEN}",
+                    "Content-Type": "application/json"
+                })
+                .to_string(),
+                body: None,
+                timeout_ms: Some(1000),
+            },
         )
         .expect_err("invalid public hostname should fail after request preparation");
 
