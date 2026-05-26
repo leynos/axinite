@@ -6,7 +6,7 @@ use wasmtime_wasi::{ResourceTable, WasiCtx, WasiCtxBuilder, WasiCtxView, WasiVie
 
 use super::credentials::extract_host_from_url;
 use super::near;
-use super::types::{ChannelName, HostPattern, SecretValue};
+use super::types::{ChannelName, CredentialContext, HostPattern, SecretValue};
 use crate::channels::wasm::capabilities::ChannelCapabilities;
 use crate::channels::wasm::host::{ChannelHostState, EmittedMessage};
 use crate::pairing::PairingStore;
@@ -84,7 +84,7 @@ impl ChannelStoreData {
     /// channels to reference credentials without ever seeing the actual values.
     ///
     /// Works on URLs, headers, or any string with credential placeholders.
-    pub(super) fn inject_credentials(&self, input: &str, context: &str) -> String {
+    pub(super) fn inject_credentials(&self, input: &str, context: CredentialContext<'_>) -> String {
         let mut result = input.to_string();
 
         tracing::debug!(
@@ -212,7 +212,7 @@ impl ChannelStoreData {
         // Preserve the raw request for leak scanning before any host-side
         // placeholder resolution. WASM only sees placeholders, not real secrets.
         let raw_url = url.clone();
-        let injected_url = self.inject_credentials(&raw_url, "url");
+        let injected_url = self.inject_credentials(&raw_url, CredentialContext::Url);
 
         // Log whether injection happened (without revealing the token)
         let url_changed = injected_url != url;
@@ -253,7 +253,7 @@ impl ChannelStoreData {
             .map(|(k, v)| {
                 (
                     k.clone(),
-                    self.inject_credentials(&v, &format!("header:{}", k)),
+                    self.inject_credentials(&v, CredentialContext::Header(&k)),
                 )
             })
             .collect();
@@ -608,16 +608,21 @@ impl near::agent::channel_host::Host for ChannelStoreData {
 
     fn pairing_upsert_request(
         &mut self,
-        channel: String,
-        id: String,
-        meta_json: String,
+        params: near::agent::channel_host::PairingUpsertParams,
     ) -> Result<near::agent::channel_host::PairingUpsertResult, String> {
+        let near::agent::channel_host::PairingUpsertParams {
+            identity,
+            meta_json,
+        } = params;
         let meta = if meta_json.is_empty() {
             None
         } else {
             serde_json::from_str(&meta_json).ok()
         };
-        match self.pairing_store.upsert_request(&channel, &id, meta) {
+        match self
+            .pairing_store
+            .upsert_request(&identity.channel, &identity.id, meta)
+        {
             Ok(r) => Ok(near::agent::channel_host::PairingUpsertResult {
                 code: r.code,
                 created: r.created,
@@ -628,12 +633,11 @@ impl near::agent::channel_host::Host for ChannelStoreData {
 
     fn pairing_is_allowed(
         &mut self,
-        channel: String,
-        id: String,
+        identity: near::agent::channel_host::PairingIdentity,
         username: Option<String>,
     ) -> Result<bool, String> {
         self.pairing_store
-            .is_sender_allowed(&channel, &id, username.as_deref())
+            .is_sender_allowed(&identity.channel, &identity.id, username.as_deref())
             .map_err(|e| e.to_string())
     }
 
