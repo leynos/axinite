@@ -260,23 +260,6 @@ fn skill_entrypoint_path_validates() {
 
 // ── JSON shape snapshot tests ────────────────────────────────────────────────
 
-fn snapshot_error_response(
-    path: &str,
-    code: SkillReadFileErrorCode,
-    message: &str,
-    metadata: Option<SkillReadFileMetadata>,
-) -> SkillReadFileResponse {
-    SkillReadFileResponse::Error(SkillReadFileErrorResponse {
-        skill: "deploy-docs".to_string(),
-        path: path.to_string(),
-        error: SkillReadFileError {
-            code,
-            message: message.to_string(),
-            metadata,
-        },
-    })
-}
-
 #[rstest]
 #[case::success("skill_read_file_success", snapshot_success_response())]
 #[case::unknown_skill("skill_read_file_error_unknown_skill", snapshot_error_unknown_skill())]
@@ -317,16 +300,28 @@ fn snapshot_error_unknown_skill() -> SkillReadFileResponse {
 fn snapshot_error_path_not_readable() -> SkillReadFileResponse {
     let error = validate_bundle_relative_path("../secret")
         .expect_err("traversal path should fail validation");
-    let SkillReadFileError {
-        code,
-        message,
-        metadata,
-    } = error;
-    snapshot_error_response("../secret", code, &message, metadata)
+    SkillReadFileResponse::error("deploy-docs", "../secret", error)
+}
+
+fn make_error_response(
+    path: &str,
+    code: SkillReadFileErrorCode,
+    message: &str,
+    metadata: Option<SkillReadFileMetadata>,
+) -> SkillReadFileResponse {
+    SkillReadFileResponse::Error(SkillReadFileErrorResponse {
+        skill: "deploy-docs".to_string(),
+        path: path.to_string(),
+        error: SkillReadFileError {
+            code,
+            message: message.to_string(),
+            metadata,
+        },
+    })
 }
 
 fn snapshot_error_non_inline_asset() -> SkillReadFileResponse {
-    snapshot_error_response(
+    make_error_response(
         "assets/logo.png",
         SkillReadFileErrorCode::NonInlineAsset,
         "Phase 1 does not return binary or oversized assets inline.",
@@ -339,7 +334,7 @@ fn snapshot_error_non_inline_asset() -> SkillReadFileResponse {
 }
 
 fn snapshot_error_file_too_large() -> SkillReadFileResponse {
-    snapshot_error_response(
+    make_error_response(
         "references/large.md",
         SkillReadFileErrorCode::FileTooLarge,
         "Phase 1 does not return binary or oversized assets inline.",
@@ -352,7 +347,7 @@ fn snapshot_error_file_too_large() -> SkillReadFileResponse {
 }
 
 fn snapshot_error_invalid_utf8() -> SkillReadFileResponse {
-    snapshot_error_response(
+    make_error_response(
         "references/binary.md",
         SkillReadFileErrorCode::InvalidUtf8,
         "File is not valid UTF-8 text",
@@ -361,7 +356,7 @@ fn snapshot_error_invalid_utf8() -> SkillReadFileResponse {
 }
 
 fn snapshot_error_io_error() -> SkillReadFileResponse {
-    snapshot_error_response(
+    make_error_response(
         "references/usage.md",
         SkillReadFileErrorCode::IoError,
         "File is not available for reading",
