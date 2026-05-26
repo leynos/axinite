@@ -5,6 +5,7 @@ use std::time::Duration;
 
 use tokio::sync::oneshot;
 
+use super::dispatch::DispatchContext;
 use super::{WasmChannel, resolve_channel_host_credentials};
 
 impl WasmChannel {
@@ -64,10 +65,12 @@ impl WasmChannel {
                                     && let Err(e) = Self::dispatch_emitted_messages(
                                         &channel_name,
                                         emitted_messages,
-                                        &message_tx,
-                                        &rate_limiter,
-                                        &last_broadcast_metadata,
-                                        settings_store.as_ref(),
+                                        DispatchContext {
+                                            message_tx: &message_tx,
+                                            rate_limiter: &rate_limiter,
+                                            last_broadcast_metadata: &last_broadcast_metadata,
+                                            settings_store: settings_store.as_ref(),
+                                        },
                                     ).await {
                                         tracing::warn!(
                                             channel = %channel_name,
