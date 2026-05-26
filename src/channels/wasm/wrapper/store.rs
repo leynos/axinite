@@ -78,7 +78,48 @@ impl ChannelStoreData {
             http_runtime: None,
         }
     }
+}
 
+/// Replaces a single credential placeholder in `result` if it is present.
+///
+/// Logs at DEBUG level when a substitution is made.
+fn replace_credential_placeholder(
+    result: &mut String,
+    name: &str,
+    value: &SecretValue,
+    context: CredentialContext<'_>,
+) {
+    let placeholder = format!("{{{}}}", name);
+    if result.contains(&placeholder) {
+        tracing::debug!(
+            placeholder = %placeholder,
+            context = %context,
+            "Found and replacing credential placeholder"
+        );
+        *result = result.replace(&placeholder, value.as_str());
+    }
+}
+
+/// Emits a WARN trace when `text` still contains an unresolved `{UPPER_CASE}`
+/// credential placeholder after injection.
+///
+/// Brace pairs that look like JSON objects are ignored.
+fn warn_if_unresolved_placeholders(text: &str, context: CredentialContext<'_>) {
+    if !text.contains('{') || !text.contains('}') {
+        return;
+    }
+    let brace_pattern = regex::Regex::new(r"\{[A-Z_]+\}").ok();
+    if let Some(re) = brace_pattern
+        && re.is_match(text)
+    {
+        tracing::warn!(
+            context = %context,
+            "String may contain unresolved credential placeholders"
+        );
+    }
+}
+
+impl ChannelStoreData {
     /// Inject credentials into a string by replacing placeholders.
     ///
     /// Replaces patterns like `{TELEGRAM_BOT_TOKEN}` or `{WHATSAPP_ACCESS_TOKEN}`
@@ -97,36 +138,30 @@ impl ChannelStoreData {
             "Injecting credentials"
         );
 
-        // Replace all known placeholders from the credentials map
         for (name, value) in &self.credentials {
-            let placeholder = format!("{{{}}}", name);
-            if result.contains(&placeholder) {
-                tracing::debug!(
-                    placeholder = %placeholder,
-                    context = %context,
-                    "Found and replacing credential placeholder"
-                );
-                result = result.replace(&placeholder, value.as_str());
-            }
+            replace_credential_placeholder(&mut result, name, value, context);
         }
 
-        // Check if any placeholders remain (indicates missing credential)
-        if result.contains('{') && result.contains('}') {
-            // Only warn if it looks like an unresolved placeholder (not JSON braces)
-            let brace_pattern = regex::Regex::new(r"\{[A-Z_]+\}").ok();
-            if let Some(re) = brace_pattern
-                && re.is_match(&result)
-            {
-                tracing::warn!(
-                    context = %context,
-                    "String may contain unresolved credential placeholders"
-                );
-            }
-        }
+        warn_if_unresolved_placeholders(&result, context);
 
         result
     }
+}
 
+/// Replaces every occurrence of `raw` — and its URL-encoded form — in
+/// `result` with `tag`.
+///
+/// The URL-encoded form is only substituted when it differs from the raw
+/// value, which avoids a redundant second pass for plain-ASCII secrets.
+fn redact_value(result: &mut String, raw: &str, tag: &str) {
+    *result = result.replace(raw, tag);
+    let encoded = urlencoding::encode(raw);
+    if encoded.as_ref() != raw {
+        *result = result.replace(encoded.as_ref(), tag);
+    }
+}
+
+impl ChannelStoreData {
     /// Replace injected credential values with `[REDACTED]` in text.
     ///
     /// Prevents credentials from leaking through error messages, logs, or
@@ -138,28 +173,23 @@ impl ChannelStoreData {
     /// to prevent exfiltration via encoded representations in error strings.
     pub(super) fn redact_credentials(&self, text: &str) -> String {
         let mut result = text.to_string();
+
         for (name, value) in &self.credentials {
             if !value.is_empty() {
-                let tag = format!("[REDACTED:{}]", name);
-                result = result.replace(value.as_str(), &tag);
-                // Also redact URL-encoded form (covers secrets in query strings)
-                let encoded = urlencoding::encode(value.as_str());
-                if encoded.as_ref() != value.as_str() {
-                    result = result.replace(encoded.as_ref(), &tag);
-                }
+                redact_value(&mut result, value.as_str(), &format!("[REDACTED:{}]", name));
             }
         }
+
         for cred in &self.host_credentials {
             if !cred.secret_value.is_empty() {
-                let tag = "[REDACTED:host_credential]";
-                result = result.replace(cred.secret_value.as_str(), tag);
-                // Also redact URL-encoded form (covers secrets injected as query params)
-                let encoded = urlencoding::encode(cred.secret_value.as_str());
-                if encoded.as_ref() != cred.secret_value.as_str() {
-                    result = result.replace(encoded.as_ref(), tag);
-                }
+                redact_value(
+                    &mut result,
+                    cred.secret_value.as_str(),
+                    "[REDACTED:host_credential]",
+                );
             }
         }
+
         result
     }
 
