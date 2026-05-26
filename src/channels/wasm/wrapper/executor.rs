@@ -14,6 +14,7 @@ use crate::channels::wasm::host::{ChannelHostState, ChannelWorkspaceStore, Emitt
 use crate::channels::wasm::runtime::{PreparedChannelModule, WasmChannelRuntime};
 use crate::pairing::PairingStore;
 
+use super::types::{ChannelName, SecretValue};
 use super::{
     ChannelStoreData, ResolvedHostCredential, SandboxedChannel, WasmChannel, near, wit_channel,
 };
@@ -44,17 +45,19 @@ impl WasmChannel {
         runtime: &WasmChannelRuntime,
         prepared: &PreparedChannelModule,
         capabilities: &ChannelCapabilities,
-        credentials: HashMap<String, String>,
+        credentials: HashMap<String, SecretValue>,
         host_credentials: Vec<ResolvedHostCredential>,
         pairing_store: Arc<PairingStore>,
     ) -> Result<Store<ChannelStoreData>, WasmChannelError> {
         let engine = runtime.engine();
         let limits = &prepared.limits;
+        let channel_name =
+            ChannelName::new(&prepared.name).expect("channel name must be non-empty");
 
         // Create fresh store with channel state (NEAR pattern: fresh instance per call)
         let store_data = ChannelStoreData::new(
             limits.memory_bytes,
-            &prepared.name,
+            &channel_name,
             capabilities.clone(),
             credentials,
             host_credentials,
@@ -164,7 +167,7 @@ impl WasmChannel {
         runtime: &Arc<WasmChannelRuntime>,
         prepared: &Arc<PreparedChannelModule>,
         capabilities: &ChannelCapabilities,
-        credentials: &RwLock<HashMap<String, String>>,
+        credentials: &RwLock<HashMap<String, SecretValue>>,
         host_credentials: Vec<ResolvedHostCredential>,
         pairing_store: Arc<PairingStore>,
         timeout: Duration,
@@ -228,7 +231,7 @@ impl WasmChannel {
         runtime: &Arc<WasmChannelRuntime>,
         prepared: &Arc<PreparedChannelModule>,
         capabilities: &ChannelCapabilities,
-        credentials: &RwLock<HashMap<String, String>>,
+        credentials: &RwLock<HashMap<String, SecretValue>>,
         host_credentials: Vec<ResolvedHostCredential>,
         pairing_store: Arc<PairingStore>,
         timeout: Duration,
