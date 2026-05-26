@@ -2,13 +2,99 @@
 
 use std::sync::Arc;
 
-use tokio::sync::{RwLock, mpsc};
+use tokio::sync::mpsc;
 
 use crate::channels::IncomingMessage;
 use crate::channels::wasm::error::WasmChannelError;
 use crate::channels::wasm::host::{ChannelEmitRateLimiter, EmittedMessage};
 
 use super::{WasmChannel, do_update_broadcast_metadata};
+
+/// Bundles the per-channel async state references required by
+/// `dispatch_emitted_messages`.
+///
+/// Using a parameter object keeps the function signature within the
+/// four-argument threshold whilst avoiding the overhead of an extra `Arc`.
+pub(super) struct DispatchContext<'a> {
+    pub(super) message_tx: &'a tokio::sync::RwLock<Option<mpsc::Sender<IncomingMessage>>>,
+    pub(super) rate_limiter: &'a tokio::sync::RwLock<ChannelEmitRateLimiter>,
+    pub(super) last_broadcast_metadata: &'a tokio::sync::RwLock<Option<String>>,
+    pub(super) settings_store: Option<&'a Arc<dyn crate::db::SettingsStore>>,
+}
+
+/// Converts a single [`EmittedMessage`] into an [`IncomingMessage`], applying
+/// optional user name, thread id, and attachments.
+///
+/// Metadata parsing is left to the caller because it triggers a side-effect
+/// (broadcast metadata persistence).
+fn convert_emitted_to_incoming(channel_name: &str, emitted: &EmittedMessage) -> IncomingMessage {
+    let mut msg = IncomingMessage::new(channel_name, &emitted.user_id, &emitted.content);
+
+    if let Some(name) = emitted.user_name.clone() {
+        msg = msg.with_user_name(name);
+    }
+
+    if let Some(thread_id) = emitted.thread_id.clone() {
+        msg = msg.with_thread(thread_id);
+    }
+
+    if !emitted.attachments.is_empty() {
+        let incoming_attachments = emitted
+            .attachments
+            .iter()
+            .map(|a| crate::channels::IncomingAttachment {
+                id: a.id.clone(),
+                kind: crate::channels::AttachmentKind::from_mime_type(&a.mime_type),
+                mime_type: a.mime_type.clone(),
+                filename: a.filename.clone(),
+                size_bytes: a.size_bytes,
+                source_url: a.source_url.clone(),
+                storage_key: a.storage_key.clone(),
+                extracted_text: a.extracted_text.clone(),
+                data: a.data.clone(),
+                duration_secs: a.duration_secs,
+            })
+            .collect();
+        msg = msg.with_attachments(incoming_attachments);
+    }
+
+    msg
+}
+
+/// Checks the rate limiter and, if permitted, sends `msg` on `tx`.
+///
+/// Returns `Err(WasmChannelError::EmitRateLimited)` when the rate limit is
+/// exceeded, and `Ok(false)` when the sender is closed (so callers can
+/// `break` out of their dispatch loop).
+async fn send_with_rate_limit(
+    channel_name: &str,
+    msg: IncomingMessage,
+    tx: &mpsc::Sender<IncomingMessage>,
+    limiter: &mut ChannelEmitRateLimiter,
+) -> Result<bool, WasmChannelError> {
+    if !limiter.check_and_record() {
+        tracing::warn!(channel = %channel_name, "Message emission rate limited");
+        return Err(WasmChannelError::EmitRateLimited {
+            name: channel_name.to_string(),
+        });
+    }
+
+    tracing::info!(
+        channel = %channel_name,
+        user_id = %msg.user_id,
+        content_len = msg.content.len(),
+        attachment_count = msg.attachments.len(),
+        "Sending message to agent"
+    );
+
+    if tx.send(msg).await.is_err() {
+        tracing::error!(channel = %channel_name, "Failed to send message, channel closed");
+        return Ok(false);
+    }
+
+    tracing::info!(channel = %channel_name, "Message successfully sent to agent queue");
+    Ok(true)
+}
 
 impl WasmChannel {
     pub(super) async fn process_emitted_messages(
@@ -39,77 +125,16 @@ impl WasmChannel {
         let mut rate_limiter = self.rate_limiter.write().await;
 
         for emitted in messages {
-            // Check rate limit
-            if !rate_limiter.check_and_record() {
-                tracing::warn!(
-                    channel = %self.name,
-                    "Message emission rate limited"
-                );
-                return Err(WasmChannelError::EmitRateLimited {
-                    name: self.name.clone(),
-                });
-            }
+            let mut msg = convert_emitted_to_incoming(&self.name, &emitted);
 
-            // Convert to IncomingMessage
-            let mut msg = IncomingMessage::new(&self.name, &emitted.user_id, &emitted.content);
-
-            if let Some(name) = emitted.user_name {
-                msg = msg.with_user_name(name);
-            }
-
-            if let Some(thread_id) = emitted.thread_id {
-                msg = msg.with_thread(thread_id);
-            }
-
-            // Convert attachments
-            if !emitted.attachments.is_empty() {
-                let incoming_attachments = emitted
-                    .attachments
-                    .iter()
-                    .map(|a| crate::channels::IncomingAttachment {
-                        id: a.id.clone(),
-                        kind: crate::channels::AttachmentKind::from_mime_type(&a.mime_type),
-                        mime_type: a.mime_type.clone(),
-                        filename: a.filename.clone(),
-                        size_bytes: a.size_bytes,
-                        source_url: a.source_url.clone(),
-                        storage_key: a.storage_key.clone(),
-                        extracted_text: a.extracted_text.clone(),
-                        data: a.data.clone(),
-                        duration_secs: a.duration_secs,
-                    })
-                    .collect();
-                msg = msg.with_attachments(incoming_attachments);
-            }
-
-            // Parse metadata JSON
             if let Ok(metadata) = serde_json::from_str(&emitted.metadata_json) {
                 msg = msg.with_metadata(metadata);
-                // Store for broadcast routing (chat_id etc.)
                 self.update_broadcast_metadata(&emitted.metadata_json).await;
             }
 
-            // Send to stream
-            tracing::info!(
-                channel = %self.name,
-                user_id = %emitted.user_id,
-                content_len = emitted.content.len(),
-                attachment_count = msg.attachments.len(),
-                "Sending emitted message to agent"
-            );
-
-            if tx.send(msg).await.is_err() {
-                tracing::error!(
-                    channel = %self.name,
-                    "Failed to send emitted message, channel closed"
-                );
+            if !send_with_rate_limit(&self.name, msg, tx, &mut rate_limiter).await? {
                 break;
             }
-
-            tracing::info!(
-                channel = %self.name,
-                "Message successfully sent to agent queue"
-            );
         }
 
         Ok(())
@@ -125,10 +150,7 @@ impl WasmChannel {
     pub(super) async fn dispatch_emitted_messages(
         channel_name: &str,
         messages: Vec<EmittedMessage>,
-        message_tx: &RwLock<Option<mpsc::Sender<IncomingMessage>>>,
-        rate_limiter: &RwLock<ChannelEmitRateLimiter>,
-        last_broadcast_metadata: &tokio::sync::RwLock<Option<String>>,
-        settings_store: Option<&Arc<dyn crate::db::SettingsStore>>,
+        ctx: DispatchContext<'_>,
     ) -> Result<(), WasmChannelError> {
         tracing::info!(
             channel = %channel_name,
@@ -136,7 +158,7 @@ impl WasmChannel {
             "Processing emitted messages from polling callback"
         );
 
-        let tx_guard = message_tx.read().await;
+        let tx_guard = ctx.message_tx.read().await;
         let Some(tx) = tx_guard.as_ref() else {
             tracing::error!(
                 channel = %channel_name,
@@ -146,86 +168,25 @@ impl WasmChannel {
             return Ok(());
         };
 
-        let mut limiter = rate_limiter.write().await;
+        let mut limiter = ctx.rate_limiter.write().await;
 
         for emitted in messages {
-            // Check rate limit
-            if !limiter.check_and_record() {
-                tracing::warn!(
-                    channel = %channel_name,
-                    "Message emission rate limited"
-                );
-                return Err(WasmChannelError::EmitRateLimited {
-                    name: channel_name.to_string(),
-                });
-            }
+            let mut msg = convert_emitted_to_incoming(channel_name, &emitted);
 
-            // Convert to IncomingMessage
-            let mut msg = IncomingMessage::new(channel_name, &emitted.user_id, &emitted.content);
-
-            if let Some(name) = emitted.user_name {
-                msg = msg.with_user_name(name);
-            }
-
-            if let Some(thread_id) = emitted.thread_id {
-                msg = msg.with_thread(thread_id);
-            }
-
-            // Convert attachments
-            if !emitted.attachments.is_empty() {
-                let incoming_attachments = emitted
-                    .attachments
-                    .iter()
-                    .map(|a| crate::channels::IncomingAttachment {
-                        id: a.id.clone(),
-                        kind: crate::channels::AttachmentKind::from_mime_type(&a.mime_type),
-                        mime_type: a.mime_type.clone(),
-                        filename: a.filename.clone(),
-                        size_bytes: a.size_bytes,
-                        source_url: a.source_url.clone(),
-                        storage_key: a.storage_key.clone(),
-                        extracted_text: a.extracted_text.clone(),
-                        data: a.data.clone(),
-                        duration_secs: a.duration_secs,
-                    })
-                    .collect();
-                msg = msg.with_attachments(incoming_attachments);
-            }
-
-            // Parse metadata JSON
             if let Ok(metadata) = serde_json::from_str(&emitted.metadata_json) {
                 msg = msg.with_metadata(metadata);
-                // Store for broadcast routing (chat_id etc.)
                 do_update_broadcast_metadata(
                     channel_name,
                     &emitted.metadata_json,
-                    last_broadcast_metadata,
-                    settings_store,
+                    ctx.last_broadcast_metadata,
+                    ctx.settings_store,
                 )
                 .await;
             }
 
-            // Send to stream
-            tracing::info!(
-                channel = %channel_name,
-                user_id = %emitted.user_id,
-                content_len = emitted.content.len(),
-                attachment_count = msg.attachments.len(),
-                "Sending polled message to agent"
-            );
-
-            if tx.send(msg).await.is_err() {
-                tracing::error!(
-                    channel = %channel_name,
-                    "Failed to send polled message, channel closed"
-                );
+            if !send_with_rate_limit(channel_name, msg, tx, &mut limiter).await? {
                 break;
             }
-
-            tracing::info!(
-                channel = %channel_name,
-                "Message successfully sent to agent queue"
-            );
         }
 
         Ok(())

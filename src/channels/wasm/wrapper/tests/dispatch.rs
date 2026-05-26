@@ -1,5 +1,6 @@
 use std::sync::Arc;
 
+use super::super::dispatch::DispatchContext;
 use crate::channels::wasm::wrapper::WasmChannel;
 
 #[tokio::test]
@@ -24,10 +25,12 @@ async fn test_dispatch_emitted_messages_sends_to_channel() {
     let result = WasmChannel::dispatch_emitted_messages(
         "test-channel",
         messages,
-        &message_tx,
-        &rate_limiter,
-        &last_broadcast_metadata,
-        None,
+        DispatchContext {
+            message_tx: message_tx.as_ref(),
+            rate_limiter: rate_limiter.as_ref(),
+            last_broadcast_metadata: last_broadcast_metadata.as_ref(),
+            settings_store: None,
+        },
     )
     .await;
 
@@ -65,10 +68,12 @@ async fn test_dispatch_emitted_messages_no_sender_returns_ok() {
     let result = WasmChannel::dispatch_emitted_messages(
         "test-channel",
         messages,
-        &message_tx,
-        &rate_limiter,
-        &last_broadcast_metadata,
-        None,
+        DispatchContext {
+            message_tx: message_tx.as_ref(),
+            rate_limiter: rate_limiter.as_ref(),
+            last_broadcast_metadata: last_broadcast_metadata.as_ref(),
+            settings_store: None,
+        },
     )
     .await;
 
@@ -143,10 +148,12 @@ async fn test_dispatch_emitted_messages_preserves_attachments() {
     let result = WasmChannel::dispatch_emitted_messages(
         "test-channel",
         messages,
-        &message_tx,
-        &rate_limiter,
-        &last_broadcast_metadata,
-        None,
+        DispatchContext {
+            message_tx: message_tx.as_ref(),
+            rate_limiter: rate_limiter.as_ref(),
+            last_broadcast_metadata: last_broadcast_metadata.as_ref(),
+            settings_store: None,
+        },
     )
     .await;
 
@@ -200,10 +207,12 @@ async fn test_dispatch_emitted_messages_no_attachments_backward_compat() {
     let result = WasmChannel::dispatch_emitted_messages(
         "test-channel",
         messages,
-        &message_tx,
-        &rate_limiter,
-        &last_broadcast_metadata,
-        None,
+        DispatchContext {
+            message_tx: message_tx.as_ref(),
+            rate_limiter: rate_limiter.as_ref(),
+            last_broadcast_metadata: last_broadcast_metadata.as_ref(),
+            settings_store: None,
+        },
     )
     .await;
 
