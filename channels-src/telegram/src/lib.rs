@@ -1435,6 +1435,39 @@ fn make_inbound_attachment(
     }
 }
 
+/// The variable fields extracted from a Telegram media object.
+///
+/// Shared by all per-media attachment helpers; the common fields
+/// (`source_url`, `storage_key`, `extracted_text`) are computed once
+/// inside [`attachment_from_spec`].
+struct MediaSpec {
+    file_id: String,
+    mime_type: String,
+    filename: Option<String>,
+    /// Raw `file_size` field from the Telegram object (signed because the
+    /// Telegram API returns `Integer`, which may be signed in practice).
+    file_size: Option<i64>,
+    duration_secs: Option<u32>,
+}
+
+/// Converts a [`MediaSpec`] into an [`InboundAttachment`], computing the
+/// source URL via `get_file_url` and hard-coding the fields that are always
+/// `None` for Telegram media (`storage_key`, `extracted_text`).
+fn attachment_from_spec(
+    spec: MediaSpec,
+    get_file_url: &impl Fn(&str) -> String,
+) -> InboundAttachment {
+    make_inbound_attachment(
+        spec.file_id.clone(),
+        spec.mime_type,
+        spec.filename,
+        spec.file_size.map(|s| s as u64),
+        Some(get_file_url(&spec.file_id)),
+        None,
+        spec.duration_secs,
+    )
+}
+
 /// Returns `mime.clone()` when present, falling back to `default`.
 fn resolve_mime(mime: &Option<String>, default: &str) -> String {
     mime.clone().unwrap_or_else(|| default.to_string())
@@ -1445,14 +1478,15 @@ fn photo_attachment(
     get_file_url: &impl Fn(&str) -> String,
 ) -> Option<InboundAttachment> {
     let largest = message.photo.as_ref()?.last()?;
-    Some(make_inbound_attachment(
-        largest.file_id.clone(),
-        "image/jpeg".to_string(),
-        None,
-        largest.file_size.map(|s| s as u64),
-        Some(get_file_url(&largest.file_id)),
-        None,
-        None,
+    Some(attachment_from_spec(
+        MediaSpec {
+            file_id: largest.file_id.clone(),
+            mime_type: "image/jpeg".to_string(),
+            filename: None,
+            file_size: largest.file_size,
+            duration_secs: None,
+        },
+        get_file_url,
     ))
 }
 
@@ -1461,14 +1495,15 @@ fn document_attachment(
     get_file_url: &impl Fn(&str) -> String,
 ) -> Option<InboundAttachment> {
     let doc = message.document.as_ref()?;
-    Some(make_inbound_attachment(
-        doc.file_id.clone(),
-        resolve_mime(&doc.mime_type, "application/octet-stream"),
-        doc.file_name.clone(),
-        doc.file_size.map(|s| s as u64),
-        Some(get_file_url(&doc.file_id)),
-        None,
-        None,
+    Some(attachment_from_spec(
+        MediaSpec {
+            file_id: doc.file_id.clone(),
+            mime_type: resolve_mime(&doc.mime_type, "application/octet-stream"),
+            filename: doc.file_name.clone(),
+            file_size: doc.file_size,
+            duration_secs: None,
+        },
+        get_file_url,
     ))
 }
 
@@ -1477,14 +1512,15 @@ fn audio_attachment(
     get_file_url: &impl Fn(&str) -> String,
 ) -> Option<InboundAttachment> {
     let audio = message.audio.as_ref()?;
-    Some(make_inbound_attachment(
-        audio.file_id.clone(),
-        resolve_mime(&audio.mime_type, "audio/mpeg"),
-        audio.file_name.clone(),
-        audio.file_size.map(|s| s as u64),
-        Some(get_file_url(&audio.file_id)),
-        None,
-        audio.duration,
+    Some(attachment_from_spec(
+        MediaSpec {
+            file_id: audio.file_id.clone(),
+            mime_type: resolve_mime(&audio.mime_type, "audio/mpeg"),
+            filename: audio.file_name.clone(),
+            file_size: audio.file_size,
+            duration_secs: audio.duration,
+        },
+        get_file_url,
     ))
 }
 
@@ -1493,14 +1529,15 @@ fn video_attachment(
     get_file_url: &impl Fn(&str) -> String,
 ) -> Option<InboundAttachment> {
     let video = message.video.as_ref()?;
-    Some(make_inbound_attachment(
-        video.file_id.clone(),
-        resolve_mime(&video.mime_type, "video/mp4"),
-        video.file_name.clone(),
-        video.file_size.map(|s| s as u64),
-        Some(get_file_url(&video.file_id)),
-        None,
-        video.duration,
+    Some(attachment_from_spec(
+        MediaSpec {
+            file_id: video.file_id.clone(),
+            mime_type: resolve_mime(&video.mime_type, "video/mp4"),
+            filename: video.file_name.clone(),
+            file_size: video.file_size,
+            duration_secs: video.duration,
+        },
+        get_file_url,
     ))
 }
 
@@ -1509,14 +1546,15 @@ fn voice_attachment(
     get_file_url: &impl Fn(&str) -> String,
 ) -> Option<InboundAttachment> {
     let voice = message.voice.as_ref()?;
-    Some(make_inbound_attachment(
-        voice.file_id.clone(),
-        resolve_mime(&voice.mime_type, "audio/ogg"),
-        Some(format!("voice_{}.ogg", voice.file_id)),
-        voice.file_size.map(|s| s as u64),
-        Some(get_file_url(&voice.file_id)),
-        None,
-        Some(voice.duration),
+    Some(attachment_from_spec(
+        MediaSpec {
+            file_id: voice.file_id.clone(),
+            mime_type: resolve_mime(&voice.mime_type, "audio/ogg"),
+            filename: Some(format!("voice_{}.ogg", voice.file_id)),
+            file_size: voice.file_size,
+            duration_secs: Some(voice.duration),
+        },
+        get_file_url,
     ))
 }
 
@@ -1525,14 +1563,15 @@ fn sticker_attachment(
     get_file_url: &impl Fn(&str) -> String,
 ) -> Option<InboundAttachment> {
     let sticker = message.sticker.as_ref()?;
-    Some(make_inbound_attachment(
-        sticker.file_id.clone(),
-        "image/webp".to_string(),
-        None,
-        sticker.file_size.map(|s| s as u64),
-        Some(get_file_url(&sticker.file_id)),
-        None,
-        None,
+    Some(attachment_from_spec(
+        MediaSpec {
+            file_id: sticker.file_id.clone(),
+            mime_type: "image/webp".to_string(),
+            filename: None,
+            file_size: sticker.file_size,
+            duration_secs: None,
+        },
+        get_file_url,
     ))
 }
 
