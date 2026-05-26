@@ -77,10 +77,10 @@
 ///
 /// Extensions declaring a `wit_version` in their capabilities file are checked
 /// against this at load time: same major, not greater than host.
-pub const WIT_TOOL_VERSION: &str = "0.3.0";
+pub const WIT_TOOL_VERSION: &str = "0.3.1";
 
 /// Host WIT version for channel extensions.
-pub const WIT_CHANNEL_VERSION: &str = "0.3.0";
+pub const WIT_CHANNEL_VERSION: &str = "0.3.1";
 
 mod allowlist;
 mod capabilities;
