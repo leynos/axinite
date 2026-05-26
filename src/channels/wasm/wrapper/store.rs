@@ -6,7 +6,7 @@ use wasmtime_wasi::{ResourceTable, WasiCtx, WasiCtxBuilder, WasiCtxView, WasiVie
 
 use super::credentials::extract_host_from_url;
 use super::near;
-use super::types::{ChannelName, CredentialContext, HostPattern, SecretValue};
+use super::types::{ChannelName, CredentialContext, HostPattern, OutboundRequestSpec, SecretValue};
 use crate::channels::wasm::capabilities::ChannelCapabilities;
 use crate::channels::wasm::host::{ChannelHostState, EmittedMessage};
 use crate::pairing::PairingStore;
@@ -204,11 +204,14 @@ impl ChannelStoreData {
     /// leak scan, and returns the resolved URL and header map ready for dispatch.
     fn prepare_outbound_request(
         &mut self,
-        method: &str,
-        url: String,
-        headers_json: &str,
-        body: Option<&[u8]>,
+        req: OutboundRequestSpec<'_>,
     ) -> Result<(String, HashMap<String, String>, LeakDetector), String> {
+        let OutboundRequestSpec {
+            method,
+            url,
+            headers_json,
+            body,
+        } = req;
         // Preserve the raw request for leak scanning before any host-side
         // placeholder resolution. WASM only sees placeholders, not real secrets.
         let raw_url = url.clone();
@@ -471,8 +474,12 @@ impl near::agent::channel_host::Host for ChannelStoreData {
             "WASM http_request called"
         );
 
-        let (url, headers, leak_detector) =
-            self.prepare_outbound_request(&method, url, &headers_json, body.as_deref())?;
+        let (url, headers, leak_detector) = self.prepare_outbound_request(OutboundRequestSpec {
+            method: &method,
+            url,
+            headers_json: &headers_json,
+            body: body.as_deref(),
+        })?;
 
         // Get the max response size from capabilities (default 10MB).
         let max_response_bytes = self
