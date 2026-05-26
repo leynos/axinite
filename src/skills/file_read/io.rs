@@ -130,7 +130,7 @@ async fn open_relative_to_root(
     use std::os::unix::ffi::OsStrExt;
     use std::os::unix::io::AsRawFd;
 
-    let root = open_root_directory(root)?;
+    let root = open_root_directory(root).await?;
     if !root
         .metadata()
         .map_err(|_| io_error("Skill root is not readable"))?
@@ -178,14 +178,19 @@ async fn open_relative_to_root(
 }
 
 #[cfg(target_os = "linux")]
-fn open_root_directory(root: &Path) -> Result<std::fs::File, SkillReadFileError> {
+async fn open_root_directory(root: &Path) -> Result<std::fs::File, SkillReadFileError> {
     use std::os::unix::fs::OpenOptionsExt;
 
-    std::fs::OpenOptions::new()
-        .read(true)
-        .custom_flags(libc::O_CLOEXEC | libc::O_DIRECTORY | libc::O_NOFOLLOW)
-        .open(root)
-        .map_err(|_| io_error("Skill root is not readable"))
+    let root = root.to_path_buf();
+    tokio::task::spawn_blocking(move || {
+        std::fs::OpenOptions::new()
+            .read(true)
+            .custom_flags(libc::O_CLOEXEC | libc::O_DIRECTORY | libc::O_NOFOLLOW)
+            .open(root)
+    })
+    .await
+    .map_err(|_| io_error("Skill root is not readable"))?
+    .map_err(|_| io_error("Skill root is not readable"))
 }
 
 #[cfg(not(target_os = "linux"))]
