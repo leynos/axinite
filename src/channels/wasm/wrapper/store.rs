@@ -174,20 +174,20 @@ impl ChannelStoreData {
     pub(super) fn redact_credentials(&self, text: &str) -> String {
         let mut result = text.to_string();
 
-        for (name, value) in &self.credentials {
-            if !value.is_empty() {
-                redact_value(&mut result, value.as_str(), &format!("[REDACTED:{}]", name));
-            }
+        for (name, value) in self.credentials.iter().filter(|(_, v)| !v.is_empty()) {
+            redact_value(&mut result, value.as_str(), &format!("[REDACTED:{}]", name));
         }
 
-        for cred in &self.host_credentials {
-            if !cred.secret_value.is_empty() {
-                redact_value(
-                    &mut result,
-                    cred.secret_value.as_str(),
-                    "[REDACTED:host_credential]",
-                );
-            }
+        for cred in self
+            .host_credentials
+            .iter()
+            .filter(|c| !c.secret_value.is_empty())
+        {
+            redact_value(
+                &mut result,
+                cred.secret_value.as_str(),
+                "[REDACTED:host_credential]",
+            );
         }
 
         result
