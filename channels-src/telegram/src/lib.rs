@@ -1437,9 +1437,109 @@ fn make_inbound_attachment(
     }
 }
 
+/// Returns `mime.clone()` when present, falling back to `default`.
+fn resolve_mime(mime: &Option<String>, default: &str) -> String {
+    mime.clone().unwrap_or_else(|| default.to_string())
+}
+
+fn photo_attachment(
+    message: &TelegramMessage,
+    get_file_url: &impl Fn(&str) -> String,
+) -> Option<InboundAttachment> {
+    let largest = message.photo.as_ref()?.last()?;
+    Some(make_inbound_attachment(
+        largest.file_id.clone(),
+        "image/jpeg".to_string(),
+        None,
+        largest.file_size.map(|s| s as u64),
+        Some(get_file_url(&largest.file_id)),
+        None,
+        None,
+    ))
+}
+
+fn document_attachment(
+    message: &TelegramMessage,
+    get_file_url: &impl Fn(&str) -> String,
+) -> Option<InboundAttachment> {
+    let doc = message.document.as_ref()?;
+    Some(make_inbound_attachment(
+        doc.file_id.clone(),
+        resolve_mime(&doc.mime_type, "application/octet-stream"),
+        doc.file_name.clone(),
+        doc.file_size.map(|s| s as u64),
+        Some(get_file_url(&doc.file_id)),
+        None,
+        None,
+    ))
+}
+
+fn audio_attachment(
+    message: &TelegramMessage,
+    get_file_url: &impl Fn(&str) -> String,
+) -> Option<InboundAttachment> {
+    let audio = message.audio.as_ref()?;
+    Some(make_inbound_attachment(
+        audio.file_id.clone(),
+        resolve_mime(&audio.mime_type, "audio/mpeg"),
+        audio.file_name.clone(),
+        audio.file_size.map(|s| s as u64),
+        Some(get_file_url(&audio.file_id)),
+        None,
+        audio.duration,
+    ))
+}
+
+fn video_attachment(
+    message: &TelegramMessage,
+    get_file_url: &impl Fn(&str) -> String,
+) -> Option<InboundAttachment> {
+    let video = message.video.as_ref()?;
+    Some(make_inbound_attachment(
+        video.file_id.clone(),
+        resolve_mime(&video.mime_type, "video/mp4"),
+        video.file_name.clone(),
+        video.file_size.map(|s| s as u64),
+        Some(get_file_url(&video.file_id)),
+        None,
+        video.duration,
+    ))
+}
+
+fn voice_attachment(
+    message: &TelegramMessage,
+    get_file_url: &impl Fn(&str) -> String,
+) -> Option<InboundAttachment> {
+    let voice = message.voice.as_ref()?;
+    Some(make_inbound_attachment(
+        voice.file_id.clone(),
+        resolve_mime(&voice.mime_type, "audio/ogg"),
+        Some(format!("voice_{}.ogg", voice.file_id)),
+        voice.file_size.map(|s| s as u64),
+        Some(get_file_url(&voice.file_id)),
+        None,
+        Some(voice.duration),
+    ))
+}
+
+fn sticker_attachment(
+    message: &TelegramMessage,
+    get_file_url: &impl Fn(&str) -> String,
+) -> Option<InboundAttachment> {
+    let sticker = message.sticker.as_ref()?;
+    Some(make_inbound_attachment(
+        sticker.file_id.clone(),
+        "image/webp".to_string(),
+        None,
+        sticker.file_size.map(|s| s as u64),
+        Some(get_file_url(&sticker.file_id)),
+        None,
+        None,
+    ))
+}
+
 /// Extract attachments from a Telegram message.
 fn extract_attachments(message: &TelegramMessage) -> Vec<InboundAttachment> {
-    let mut attachments = Vec::new();
     let get_file_url = |file_id: &str| {
         format!(
             "https://api.telegram.org/bot{{TELEGRAM_BOT_TOKEN}}/getFile?file_id={}",
@@ -1447,100 +1547,17 @@ fn extract_attachments(message: &TelegramMessage) -> Vec<InboundAttachment> {
         )
     };
 
-    // Photo: Telegram sends multiple sizes; use the largest (last).
-    if let Some(ref photos) = message.photo {
-        if let Some(largest) = photos.last() {
-            attachments.push(make_inbound_attachment(
-                largest.file_id.clone(),
-                "image/jpeg".to_string(),
-                None,
-                largest.file_size.map(|s| s as u64),
-                Some(get_file_url(&largest.file_id)),
-                None,
-                None,
-            ));
-        }
-    }
-
-    // Document
-    if let Some(ref doc) = message.document {
-        attachments.push(make_inbound_attachment(
-            doc.file_id.clone(),
-            doc.mime_type
-                .clone()
-                .unwrap_or_else(|| "application/octet-stream".to_string()),
-            doc.file_name.clone(),
-            doc.file_size.map(|s| s as u64),
-            Some(get_file_url(&doc.file_id)),
-            None,
-            None,
-        ));
-    }
-
-    // Audio
-    if let Some(ref audio) = message.audio {
-        attachments.push(make_inbound_attachment(
-            audio.file_id.clone(),
-            audio
-                .mime_type
-                .clone()
-                .unwrap_or_else(|| "audio/mpeg".to_string()),
-            audio.file_name.clone(),
-            audio.file_size.map(|s| s as u64),
-            Some(get_file_url(&audio.file_id)),
-            None,
-            audio.duration,
-        ));
-    }
-
-    // Video
-    if let Some(ref video) = message.video {
-        attachments.push(make_inbound_attachment(
-            video.file_id.clone(),
-            video
-                .mime_type
-                .clone()
-                .unwrap_or_else(|| "video/mp4".to_string()),
-            video.file_name.clone(),
-            video.file_size.map(|s| s as u64),
-            Some(get_file_url(&video.file_id)),
-            None,
-            video.duration,
-        ));
-    }
-
-    // Voice
-    if let Some(ref voice) = message.voice {
-        let mime_type = voice
-            .mime_type
-            .clone()
-            .unwrap_or_else(|| "audio/ogg".to_string());
-
-        attachments.push(make_inbound_attachment(
-            voice.file_id.clone(),
-            mime_type,
-            Some(format!("voice_{}.ogg", voice.file_id)),
-            voice.file_size.map(|s| s as u64),
-            Some(get_file_url(&voice.file_id)),
-            None,
-            Some(voice.duration),
-        ));
-    }
-
-    // Sticker
-    if let Some(ref sticker) = message.sticker {
-        attachments.push(make_inbound_attachment(
-            sticker.file_id.clone(),
-            "image/webp".to_string(),
-            None,
-            sticker.file_size.map(|s| s as u64),
-            Some(get_file_url(&sticker.file_id)),
-            None,
-            None,
-        ));
-    }
-
-    attachments
+    [
+        photo_attachment(message, &get_file_url),
+        document_attachment(message, &get_file_url),
+        audio_attachment(message, &get_file_url),
+        video_attachment(message, &get_file_url),
+        voice_attachment(message, &get_file_url),
+        sticker_attachment(message, &get_file_url),
+    ]
+    .into_iter()
+    .flatten()
+    .collect()
 }
 
 /// Download voice file bytes and store them via the host for transcription.
