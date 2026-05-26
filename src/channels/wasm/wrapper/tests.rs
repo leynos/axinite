@@ -2,6 +2,8 @@
 
 use std::sync::Arc;
 
+use rstest::rstest;
+
 use crate::channels::NativeChannel;
 use crate::channels::wasm::capabilities::ChannelCapabilities;
 use crate::channels::wasm::runtime::{
@@ -816,10 +818,28 @@ fn test_status_to_wit_approval_needed() {
     assert!(wit.message.contains("/approve"));
 }
 
+fn assert_submission(input: &str, expected_approved: bool, expected_always: bool) {
+    use crate::agent::submission::{Submission, SubmissionParser};
+    match SubmissionParser::parse(input) {
+        Submission::ApprovalResponse { approved, always } => {
+            assert_eq!(
+                approved, expected_approved,
+                "wrong `approved` for input {:?}",
+                input
+            );
+            assert_eq!(
+                always, expected_always,
+                "wrong `always` for input {:?}",
+                input
+            );
+        }
+        other => panic!("expected ApprovalResponse for {:?}, got {:?}", input, other),
+    }
+}
+
 #[test]
 fn test_approval_prompt_roundtrip_submission_aliases() {
     use super::status_to_wit;
-    use crate::agent::submission::{Submission, SubmissionParser};
 
     let metadata = serde_json::json!({"chat_id": 42});
     let wit = status_to_wit(
@@ -840,32 +860,9 @@ fn test_approval_prompt_roundtrip_submission_aliases() {
     assert!(wit.message.contains("/deny"));
     assert!(wit.message.contains("/always"));
 
-    let approve = SubmissionParser::parse("/approve");
-    assert!(matches!(
-        approve,
-        Submission::ApprovalResponse {
-            approved: true,
-            always: false
-        }
-    ));
-
-    let deny = SubmissionParser::parse("/deny");
-    assert!(matches!(
-        deny,
-        Submission::ApprovalResponse {
-            approved: false,
-            always: false
-        }
-    ));
-
-    let always = SubmissionParser::parse("/always");
-    assert!(matches!(
-        always,
-        Submission::ApprovalResponse {
-            approved: true,
-            always: true
-        }
-    ));
+    assert_submission("/approve", true, false);
+    assert_submission("/deny", false, false);
+    assert_submission("/always", true, true);
 }
 
 #[test]
@@ -921,39 +918,36 @@ fn test_clone_wit_status_update_auth_completed() {
     assert_eq!(cloned.message, "auth complete");
 }
 
-#[test]
-fn test_clone_wit_status_update_all_variants() {
+#[rstest]
+#[case(crate::channels::wasm::wrapper::wit_channel::StatusType::Thinking)]
+#[case(crate::channels::wasm::wrapper::wit_channel::StatusType::Done)]
+#[case(crate::channels::wasm::wrapper::wit_channel::StatusType::Interrupted)]
+#[case(crate::channels::wasm::wrapper::wit_channel::StatusType::ToolStarted)]
+#[case(crate::channels::wasm::wrapper::wit_channel::StatusType::ToolCompleted)]
+#[case(crate::channels::wasm::wrapper::wit_channel::StatusType::ToolResult)]
+#[case(crate::channels::wasm::wrapper::wit_channel::StatusType::ApprovalNeeded)]
+#[case(crate::channels::wasm::wrapper::wit_channel::StatusType::Status)]
+#[case(crate::channels::wasm::wrapper::wit_channel::StatusType::JobStarted)]
+#[case(crate::channels::wasm::wrapper::wit_channel::StatusType::AuthRequired)]
+#[case(crate::channels::wasm::wrapper::wit_channel::StatusType::AuthCompleted)]
+fn test_clone_wit_status_update_all_variants(
+    #[case] status: crate::channels::wasm::wrapper::wit_channel::StatusType,
+) {
     use super::{clone_wit_status_update, wit_channel};
 
-    let variants = vec![
-        wit_channel::StatusType::Thinking,
-        wit_channel::StatusType::Done,
-        wit_channel::StatusType::Interrupted,
-        wit_channel::StatusType::ToolStarted,
-        wit_channel::StatusType::ToolCompleted,
-        wit_channel::StatusType::ToolResult,
-        wit_channel::StatusType::ApprovalNeeded,
-        wit_channel::StatusType::Status,
-        wit_channel::StatusType::JobStarted,
-        wit_channel::StatusType::AuthRequired,
-        wit_channel::StatusType::AuthCompleted,
-    ];
+    let original = wit_channel::StatusUpdate {
+        status,
+        message: "sample".to_string(),
+        metadata_json: "{}".to_string(),
+    };
+    let cloned = clone_wit_status_update(&original);
 
-    for status in variants {
-        let original = wit_channel::StatusUpdate {
-            status,
-            message: "sample".to_string(),
-            metadata_json: "{}".to_string(),
-        };
-        let cloned = clone_wit_status_update(&original);
-
-        assert_eq!(
-            std::mem::discriminant(&cloned.status),
-            std::mem::discriminant(&original.status)
-        );
-        assert_eq!(cloned.message, "sample");
-        assert_eq!(cloned.metadata_json, "{}");
-    }
+    assert_eq!(
+        std::mem::discriminant(&cloned.status),
+        std::mem::discriminant(&original.status)
+    );
+    assert_eq!(cloned.message, "sample");
+    assert_eq!(cloned.metadata_json, "{}");
 }
 
 #[test]
@@ -1133,6 +1127,29 @@ async fn test_dedicated_runtime_real_http() {
     assert_eq!(result, 404);
 }
 
+#[expect(
+    clippy::too_many_arguments,
+    reason = "test helper mirrors attachment fields to reduce assertion block size"
+)]
+fn assert_attachment(
+    attachment: &crate::channels::IncomingAttachment,
+    id: &str,
+    mime_type: &str,
+    filename: Option<&str>,
+    size_bytes: Option<u64>,
+    source_url: Option<&str>,
+    storage_key: Option<&str>,
+    extracted_text: Option<&str>,
+) {
+    assert_eq!(attachment.id, id);
+    assert_eq!(attachment.mime_type, mime_type);
+    assert_eq!(attachment.filename.as_deref(), filename);
+    assert_eq!(attachment.size_bytes, size_bytes);
+    assert_eq!(attachment.source_url.as_deref(), source_url);
+    assert_eq!(attachment.storage_key.as_deref(), storage_key);
+    assert_eq!(attachment.extracted_text.as_deref(), extracted_text);
+}
+
 #[tokio::test]
 async fn test_dispatch_emitted_messages_preserves_attachments() {
     use crate::channels::wasm::host::{Attachment, EmittedMessage};
@@ -1192,25 +1209,27 @@ async fn test_dispatch_emitted_messages_preserves_attachments() {
     assert_eq!(msg.attachments.len(), 2);
 
     // Verify first attachment
-    assert_eq!(msg.attachments[0].id, "photo123");
-    assert_eq!(msg.attachments[0].mime_type, "image/jpeg");
-    assert_eq!(msg.attachments[0].filename, Some("cat.jpg".to_string()));
-    assert_eq!(msg.attachments[0].size_bytes, Some(50_000));
-    assert_eq!(
-        msg.attachments[0].source_url,
-        Some("https://api.telegram.org/file/photo123".to_string())
+    assert_attachment(
+        &msg.attachments[0],
+        "photo123",
+        "image/jpeg",
+        Some("cat.jpg"),
+        Some(50_000),
+        Some("https://api.telegram.org/file/photo123"),
+        None,
+        None,
     );
 
     // Verify second attachment
-    assert_eq!(msg.attachments[1].id, "doc456");
-    assert_eq!(msg.attachments[1].mime_type, "application/pdf");
-    assert_eq!(
-        msg.attachments[1].extracted_text,
-        Some("Report contents...".to_string())
-    );
-    assert_eq!(
-        msg.attachments[1].storage_key,
-        Some("store/doc456".to_string())
+    assert_attachment(
+        &msg.attachments[1],
+        "doc456",
+        "application/pdf",
+        Some("report.pdf"),
+        Some(120_000),
+        None,
+        Some("store/doc456"),
+        Some("Report contents..."),
     );
 }
 
@@ -1309,22 +1328,17 @@ fn test_channel_http_request_allows_placeholder_header_injection() {
     );
 }
 
-#[test]
-fn test_mime_from_extension() {
-    assert_eq!(mime_from_extension("screenshot.png"), "image/png");
-    assert_eq!(mime_from_extension("photo.JPG"), "image/jpeg");
-    assert_eq!(mime_from_extension("photo.jpeg"), "image/jpeg");
-    assert_eq!(mime_from_extension("animation.gif"), "image/gif");
-    assert_eq!(mime_from_extension("doc.pdf"), "application/pdf");
-    assert_eq!(mime_from_extension("video.mp4"), "video/mp4");
-    assert_eq!(mime_from_extension("data.csv"), "text/csv");
-    assert_eq!(
-        mime_from_extension("unknown.qqqzzz"),
-        "application/octet-stream"
-    );
-    assert_eq!(mime_from_extension("noext"), "application/octet-stream");
-    assert_eq!(
-        mime_from_extension("/home/user/.ironclaw/screenshot.png"),
-        "image/png"
-    );
+#[rstest]
+#[case("screenshot.png", "image/png")]
+#[case("photo.JPG", "image/jpeg")]
+#[case("photo.jpeg", "image/jpeg")]
+#[case("animation.gif", "image/gif")]
+#[case("doc.pdf", "application/pdf")]
+#[case("video.mp4", "video/mp4")]
+#[case("data.csv", "text/csv")]
+#[case("unknown.qqqzzz", "application/octet-stream")]
+#[case("noext", "application/octet-stream")]
+#[case("/home/user/.ironclaw/screenshot.png", "image/png")]
+fn test_mime_from_extension(#[case] filename: &str, #[case] expected: &str) {
+    assert_eq!(mime_from_extension(filename), expected);
 }
