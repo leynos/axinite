@@ -1,0 +1,12 @@
+---
+source: src/skills/file_read/tests.rs
+expression: "&response"
+---
+{
+  "skill": "deploy-docs",
+  "path": "../secret",
+  "error": {
+    "code": "path_not_readable",
+    "message": "Path is not readable within the skill bundle"
+  }
+}

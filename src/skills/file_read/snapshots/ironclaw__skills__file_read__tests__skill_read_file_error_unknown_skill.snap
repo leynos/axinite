@@ -1,0 +1,12 @@
+---
+source: src/skills/file_read/tests.rs
+expression: "&response"
+---
+{
+  "skill": "deploy-docs",
+  "path": "references/usage.md",
+  "error": {
+    "code": "unknown_skill",
+    "message": "Skill is not loaded or available for reading"
+  }
+}

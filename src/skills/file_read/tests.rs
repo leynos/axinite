@@ -2,6 +2,7 @@
 
 use std::path::PathBuf;
 
+use insta::assert_json_snapshot;
 use proptest::prelude::*;
 use rstest::{fixture, rstest};
 use tempfile::TempDir;
@@ -255,4 +256,101 @@ proptest! {
 #[test]
 fn skill_entrypoint_path_validates() {
     assert!(validate_bundle_relative_path("SKILL.md").is_ok());
+}
+
+// ── JSON shape snapshot tests ────────────────────────────────────────────────
+
+#[test]
+fn snapshot_success_response() {
+    let response = SkillReadFileResponse::Success(SkillReadFileSuccess {
+        skill: "deploy-docs".to_string(),
+        path: "references/usage.md".to_string(),
+        mime_type: "text/markdown".to_string(),
+        content: "# Usage\n".to_string(),
+    });
+    assert_json_snapshot!("skill_read_file_success", &response);
+}
+
+#[test]
+fn snapshot_error_unknown_skill() {
+    let response = SkillReadFileResponse::unknown_skill("deploy-docs", "references/usage.md");
+    assert_json_snapshot!("skill_read_file_error_unknown_skill", &response);
+}
+
+#[test]
+fn snapshot_error_path_not_readable() {
+    let response = SkillReadFileResponse::Error(SkillReadFileErrorResponse {
+        skill: "deploy-docs".to_string(),
+        path: "../secret".to_string(),
+        error: SkillReadFileError {
+            code: SkillReadFileErrorCode::PathNotReadable,
+            message: "Path is not readable within the skill bundle".to_string(),
+            metadata: None,
+        },
+    });
+    assert_json_snapshot!("skill_read_file_error_path_not_readable", &response);
+}
+
+#[test]
+fn snapshot_error_non_inline_asset() {
+    let response = SkillReadFileResponse::Error(SkillReadFileErrorResponse {
+        skill: "deploy-docs".to_string(),
+        path: "assets/logo.png".to_string(),
+        error: SkillReadFileError {
+            code: SkillReadFileErrorCode::NonInlineAsset,
+            message: "Phase 1 does not return binary or oversized assets inline.".to_string(),
+            metadata: Some(SkillReadFileMetadata {
+                size: 8,
+                mime_type: "image/png".to_string(),
+                fetch_hint: NON_INLINE_FETCH_HINT.to_string(),
+            }),
+        },
+    });
+    assert_json_snapshot!("skill_read_file_error_non_inline_asset", &response);
+}
+
+#[test]
+fn snapshot_error_file_too_large() {
+    let response = SkillReadFileResponse::Error(SkillReadFileErrorResponse {
+        skill: "deploy-docs".to_string(),
+        path: "references/large.md".to_string(),
+        error: SkillReadFileError {
+            code: SkillReadFileErrorCode::FileTooLarge,
+            message: "Phase 1 does not return binary or oversized assets inline.".to_string(),
+            metadata: Some(SkillReadFileMetadata {
+                size: MAX_SKILL_READ_FILE_BYTES + 1,
+                mime_type: "text/markdown".to_string(),
+                fetch_hint: NON_INLINE_FETCH_HINT.to_string(),
+            }),
+        },
+    });
+    assert_json_snapshot!("skill_read_file_error_file_too_large", &response);
+}
+
+#[test]
+fn snapshot_error_invalid_utf8() {
+    let response = SkillReadFileResponse::Error(SkillReadFileErrorResponse {
+        skill: "deploy-docs".to_string(),
+        path: "references/binary.md".to_string(),
+        error: SkillReadFileError {
+            code: SkillReadFileErrorCode::InvalidUtf8,
+            message: "File is not valid UTF-8 text".to_string(),
+            metadata: None,
+        },
+    });
+    assert_json_snapshot!("skill_read_file_error_invalid_utf8", &response);
+}
+
+#[test]
+fn snapshot_error_io_error() {
+    let response = SkillReadFileResponse::Error(SkillReadFileErrorResponse {
+        skill: "deploy-docs".to_string(),
+        path: "references/usage.md".to_string(),
+        error: SkillReadFileError {
+            code: SkillReadFileErrorCode::IoError,
+            message: "File is not available for reading".to_string(),
+            metadata: None,
+        },
+    });
+    assert_json_snapshot!("skill_read_file_error_io_error", &response);
 }
