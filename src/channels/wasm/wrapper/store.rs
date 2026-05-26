@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use std::error::Error;
 use std::sync::Arc;
 
 use wasmtime_wasi::{ResourceTable, WasiCtx, WasiCtxBuilder, WasiCtxView, WasiView};
@@ -198,6 +199,221 @@ impl ChannelStoreData {
             }
         }
     }
+
+    /// Injects credentials, enforces access-control policy, runs the pre-flight
+    /// leak scan, and returns the resolved URL and header map ready for dispatch.
+    fn prepare_outbound_request(
+        &mut self,
+        method: &str,
+        url: String,
+        headers_json: &str,
+        body: Option<&[u8]>,
+    ) -> Result<(String, HashMap<String, String>, LeakDetector), String> {
+        // Preserve the raw request for leak scanning before any host-side
+        // placeholder resolution. WASM only sees placeholders, not real secrets.
+        let raw_url = url.clone();
+        let injected_url = self.inject_credentials(&raw_url, "url");
+
+        // Log whether injection happened (without revealing the token)
+        let url_changed = injected_url != url;
+        tracing::info!(url_changed = url_changed, "URL after credential injection");
+
+        // Check if HTTP is allowed for this URL
+        self.host_state
+            .check_http_allowed(&injected_url, method)
+            .map_err(|e| {
+                tracing::error!(error = %e, "HTTP not allowed");
+                format!("HTTP not allowed: {}", e)
+            })?;
+
+        // Record the request for rate limiting
+        self.host_state.record_http_request().map_err(|e| {
+            tracing::error!(error = %e, "Rate limit exceeded");
+            format!("Rate limit exceeded: {}", e)
+        })?;
+
+        // Parse the raw header values supplied by WASM.
+        let raw_headers: HashMap<String, String> =
+            serde_json::from_str(headers_json).unwrap_or_default();
+
+        // Leak scan runs on WASM-provided values before any host-side
+        // credential injection. This prevents false positives where the
+        // resolved secret value would otherwise be attributed to the channel.
+        let leak_detector = LeakDetector::new();
+        let raw_header_vec: Vec<(String, String)> = raw_headers
+            .iter()
+            .map(|(k, v)| (k.clone(), v.clone()))
+            .collect();
+        leak_detector
+            .scan_http_request(&raw_url, &raw_header_vec, body)
+            .map_err(|e| format!("Potential secret leak blocked: {}", e))?;
+
+        let mut headers: HashMap<String, String> = raw_headers
+            .into_iter()
+            .map(|(k, v)| {
+                (
+                    k.clone(),
+                    self.inject_credentials(&v, &format!("header:{}", k)),
+                )
+            })
+            .collect();
+
+        let headers_changed = headers
+            .values()
+            .any(|v| v.contains("Bearer ") && !v.contains('{'));
+        tracing::debug!(
+            header_count = headers.len(),
+            headers_changed = headers_changed,
+            "Parsed and injected request headers"
+        );
+
+        let mut url = injected_url;
+
+        // Inject pre-resolved host credentials (Bearer tokens, API keys, etc.)
+        // after the leak scan so host-injected secrets don't trigger false positives.
+        if let Some(host) = extract_host_from_url(&url)
+            && let Some(host_pattern) = HostPattern::new(host)
+        {
+            self.inject_host_credentials(&host_pattern, &mut headers, &mut url);
+        }
+
+        Ok((url, headers, leak_detector))
+    }
+}
+
+/// Maps an HTTP method name to the corresponding `reqwest::RequestBuilder`.
+fn build_http_client_request(
+    client: &reqwest::Client,
+    method: &str,
+    url: &str,
+) -> Result<reqwest::RequestBuilder, String> {
+    match method.to_uppercase().as_str() {
+        "GET" => Ok(client.get(url)),
+        "POST" => Ok(client.post(url)),
+        "PUT" => Ok(client.put(url)),
+        "DELETE" => Ok(client.delete(url)),
+        "PATCH" => Ok(client.patch(url)),
+        "HEAD" => Ok(client.head(url)),
+        other => Err(format!("Unsupported HTTP method: {}", other)),
+    }
+}
+
+/// Walks `reqwest`'s error source chain to produce a single diagnostic string.
+fn format_error_chain(e: &reqwest::Error) -> String {
+    // Walk the full error chain so we get the actual root cause
+    // (DNS, TLS, connection refused, etc.) instead of just
+    // "error sending request for url (...)".
+    let mut chain = format!("HTTP request failed: {}", e);
+    let mut source: Option<&dyn Error> = e.source();
+    while let Some(cause) = source {
+        chain.push_str(&format!(" -> {}", cause));
+        source = cause.source();
+    }
+    chain
+}
+
+/// Logs a truncated preview of a UTF-8 response body at DEBUG level.
+fn log_response_body(body: &[u8]) {
+    // Log response body for debugging (truncated at char boundary)
+    if let Ok(body_str) = std::str::from_utf8(body) {
+        let truncated = if body_str.chars().count() > 500 {
+            format!("{}...", body_str.chars().take(500).collect::<String>())
+        } else {
+            body_str.to_string()
+        };
+        tracing::debug!(body = %truncated, "Response body");
+    }
+}
+
+/// Executes the outbound HTTP request and returns the normalised response.
+async fn send_http_request(
+    method: &str,
+    url: String,
+    headers: HashMap<String, String>,
+    body: Option<Vec<u8>>,
+    timeout_ms: Option<u32>,
+    max_response_bytes: usize,
+    leak_detector: &LeakDetector,
+) -> Result<near::agent::channel_host::HttpResponse, String> {
+    let client = reqwest::Client::builder()
+        .connect_timeout(std::time::Duration::from_secs(10))
+        .build()
+        .map_err(|e| format!("Failed to build HTTP client: {e}"))?;
+
+    let mut request = build_http_client_request(&client, method, &url)?;
+
+    // Add headers
+    for (key, value) in headers {
+        request = request.header(&key, &value);
+    }
+
+    // Add body if present
+    if let Some(body_bytes) = body {
+        request = request.body(body_bytes);
+    }
+
+    // Send request with caller-specified timeout (default 30s, max 5min).
+    let timeout_ms = timeout_ms.unwrap_or(30_000).min(300_000) as u64;
+    let timeout = std::time::Duration::from_millis(timeout_ms);
+    let response = request
+        .timeout(timeout)
+        .send()
+        .await
+        .map_err(|e| format_error_chain(&e))?;
+
+    let status = response.status().as_u16();
+    let response_headers: HashMap<String, String> = response
+        .headers()
+        .iter()
+        .filter_map(|(k, v)| {
+            v.to_str()
+                .ok()
+                .map(|v| (k.as_str().to_string(), v.to_string()))
+        })
+        .collect();
+    let headers_json = serde_json::to_string(&response_headers).unwrap_or_default();
+
+    // Enforce max response body size to prevent memory exhaustion.
+    if let Some(cl) = response.content_length()
+        && cl as usize > max_response_bytes
+    {
+        return Err(format!(
+            "Response body too large: {} bytes exceeds limit of {} bytes",
+            cl, max_response_bytes
+        ));
+    }
+    let body = response
+        .bytes()
+        .await
+        .map_err(|e| format!("Failed to read response body: {}", e))?;
+    if body.len() > max_response_bytes {
+        return Err(format!(
+            "Response body too large: {} bytes exceeds limit of {} bytes",
+            body.len(),
+            max_response_bytes
+        ));
+    }
+    let body = body.to_vec();
+
+    tracing::info!(
+        status = status,
+        body_len = body.len(),
+        "HTTP response received"
+    );
+    log_response_body(&body);
+
+    // Leak detection on response body (best-effort)
+    if let Ok(body_str) = std::str::from_utf8(&body) {
+        leak_detector
+            .scan_and_clean(body_str)
+            .map_err(|e| format!("Potential secret leak in response: {}", e))?;
+    }
+
+    Ok(near::agent::channel_host::HttpResponse {
+        status,
+        headers_json,
+        body,
+    })
 }
 
 // Implement WasiView to provide WASI context and resource table
@@ -255,74 +471,8 @@ impl near::agent::channel_host::Host for ChannelStoreData {
             "WASM http_request called"
         );
 
-        // Preserve the raw request for leak scanning before any host-side
-        // placeholder resolution. WASM only sees placeholders, not real secrets.
-        let raw_url = url.clone();
-        let injected_url = self.inject_credentials(&raw_url, "url");
-
-        // Log whether injection happened (without revealing the token)
-        let url_changed = injected_url != url;
-        tracing::info!(url_changed = url_changed, "URL after credential injection");
-
-        // Check if HTTP is allowed for this URL
-        self.host_state
-            .check_http_allowed(&injected_url, &method)
-            .map_err(|e| {
-                tracing::error!(error = %e, "HTTP not allowed");
-                format!("HTTP not allowed: {}", e)
-            })?;
-
-        // Record the request for rate limiting
-        self.host_state.record_http_request().map_err(|e| {
-            tracing::error!(error = %e, "Rate limit exceeded");
-            format!("Rate limit exceeded: {}", e)
-        })?;
-
-        // Parse the raw header values supplied by WASM.
-        let raw_headers: std::collections::HashMap<String, String> =
-            serde_json::from_str(&headers_json).unwrap_or_default();
-
-        // Leak scan runs on WASM-provided values before any host-side
-        // credential injection. This prevents false positives where the
-        // resolved secret value would otherwise be attributed to the channel.
-        let leak_detector = LeakDetector::new();
-        let raw_header_vec: Vec<(String, String)> = raw_headers
-            .iter()
-            .map(|(k, v)| (k.clone(), v.clone()))
-            .collect();
-
-        leak_detector
-            .scan_http_request(&raw_url, &raw_header_vec, body.as_deref())
-            .map_err(|e| format!("Potential secret leak blocked: {}", e))?;
-
-        let mut headers: std::collections::HashMap<String, String> = raw_headers
-            .into_iter()
-            .map(|(k, v)| {
-                (
-                    k.clone(),
-                    self.inject_credentials(&v, &format!("header:{}", k)),
-                )
-            })
-            .collect();
-
-        let headers_changed = headers
-            .values()
-            .any(|v| v.contains("Bearer ") && !v.contains('{'));
-        tracing::debug!(
-            header_count = headers.len(),
-            headers_changed = headers_changed,
-            "Parsed and injected request headers"
-        );
-
-        let mut url = injected_url;
-
-        // Inject pre-resolved host credentials (Bearer tokens, API keys, etc.)
-        // after the leak scan so host-injected secrets don't trigger false positives.
-        if let Some(host) = extract_host_from_url(&url)
-            && let Some(host_pattern) = HostPattern::new(host)
-        {
-            self.inject_host_credentials(&host_pattern, &mut headers, &mut url);
-        }
+        let (url, headers, leak_detector) =
+            self.prepare_outbound_request(&method, url, &headers_json, body.as_deref())?;
 
         // Get the max response size from capabilities (default 10MB).
         let max_response_bytes = self
@@ -348,117 +498,18 @@ impl near::agent::channel_host::Host for ChannelStoreData {
             );
         }
         let rt = self.http_runtime.as_ref().expect("just initialized");
-        let result = rt.block_on(async {
-            let client = reqwest::Client::builder()
-                .connect_timeout(std::time::Duration::from_secs(10))
-                .build()
-                .map_err(|e| format!("Failed to build HTTP client: {e}"))?;
 
-            let mut request = match method.to_uppercase().as_str() {
-                "GET" => client.get(&url),
-                "POST" => client.post(&url),
-                "PUT" => client.put(&url),
-                "DELETE" => client.delete(&url),
-                "PATCH" => client.patch(&url),
-                "HEAD" => client.head(&url),
-                _ => return Err(format!("Unsupported HTTP method: {}", method)),
-            };
-
-            // Add headers
-            for (key, value) in headers {
-                request = request.header(&key, &value);
-            }
-
-            // Add body if present
-            if let Some(body_bytes) = body {
-                request = request.body(body_bytes);
-            }
-
-            // Send request with caller-specified timeout (default 30s, max 5min).
-            let timeout_ms = timeout_ms.unwrap_or(30_000).min(300_000) as u64;
-            let timeout = std::time::Duration::from_millis(timeout_ms);
-            let response = request.timeout(timeout).send().await.map_err(|e| {
-                // Walk the full error chain so we get the actual root cause
-                // (DNS, TLS, connection refused, etc.) instead of just
-                // "error sending request for url (...)".
-                let mut chain = format!("HTTP request failed: {}", e);
-                let mut source = std::error::Error::source(&e);
-                while let Some(cause) = source {
-                    chain.push_str(&format!(" -> {}", cause));
-                    source = cause.source();
-                }
-                chain
-            })?;
-
-            let status = response.status().as_u16();
-            let response_headers: std::collections::HashMap<String, String> = response
-                .headers()
-                .iter()
-                .filter_map(|(k, v)| {
-                    v.to_str()
-                        .ok()
-                        .map(|v| (k.as_str().to_string(), v.to_string()))
-                })
-                .collect();
-            let headers_json = serde_json::to_string(&response_headers).unwrap_or_default();
-
-            // Enforce max response body size to prevent memory exhaustion.
-            let max_response = max_response_bytes;
-            if let Some(cl) = response.content_length()
-                && cl as usize > max_response
-            {
-                return Err(format!(
-                    "Response body too large: {} bytes exceeds limit of {} bytes",
-                    cl, max_response
-                ));
-            }
-            let body = response
-                .bytes()
-                .await
-                .map_err(|e| format!("Failed to read response body: {}", e))?;
-            if body.len() > max_response {
-                return Err(format!(
-                    "Response body too large: {} bytes exceeds limit of {} bytes",
-                    body.len(),
-                    max_response
-                ));
-            }
-            let body = body.to_vec();
-
-            tracing::info!(
-                status = status,
-                body_len = body.len(),
-                "HTTP response received"
-            );
-
-            // Log response body for debugging (truncated at char boundary)
-            if let Ok(body_str) = std::str::from_utf8(&body) {
-                let truncated = if body_str.chars().count() > 500 {
-                    format!("{}...", body_str.chars().take(500).collect::<String>())
-                } else {
-                    body_str.to_string()
-                };
-                tracing::debug!(body = %truncated, "Response body");
-            }
-
-            // Leak detection on response body (best-effort)
-            if let Ok(body_str) = std::str::from_utf8(&body) {
-                leak_detector
-                    .scan_and_clean(body_str)
-                    .map_err(|e| format!("Potential secret leak in response: {}", e))?;
-            }
-
-            Ok(near::agent::channel_host::HttpResponse {
-                status,
-                headers_json,
+        let result = rt
+            .block_on(send_http_request(
+                &method,
+                url,
+                headers,
                 body,
-            })
-        });
-
-        // Scrub credential values from error messages before logging or returning
-        // to WASM. reqwest::Error includes the full URL (with injected credentials)
-        // in its Display output.
-        let result = result.map_err(|e| self.redact_credentials(&e));
+                timeout_ms,
+                max_response_bytes,
+                &leak_detector,
+            ))
+            .map_err(|e| self.redact_credentials(&e));
 
         match &result {
             Ok(resp) => {
