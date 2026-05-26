@@ -402,6 +402,101 @@ fn classify_status_update(update: &StatusUpdate) -> Option<TelegramStatusAction>
     }
 }
 
+/// Issues a `getUpdates` long-poll request and, on failure, retries once
+/// immediately with a short timeout and a small limit.
+///
+/// Returns the successful [`channel_host::HttpResponse`] or a combined error
+/// string describing both attempts.
+fn fetch_updates(offset: i64, headers_json: &str) -> Result<channel_host::HttpResponse, String> {
+    let primary_url = get_updates_url(offset, 25);
+
+    channel_host::http_request(&channel_host::HttpRequestParams {
+        method: "GET".to_string(),
+        url: primary_url,
+        headers_json: headers_json.to_string(),
+        body: None,
+        timeout_ms: Some(35_000),
+    })
+    .or_else(|primary_err| {
+        channel_host::log(
+            channel_host::LogLevel::Warn,
+            &format!(
+                "getUpdates request failed ({}), retrying once immediately",
+                primary_err
+            ),
+        );
+
+        let retry_url = get_updates_url(offset, 3);
+        channel_host::http_request(&channel_host::HttpRequestParams {
+            method: "GET".to_string(),
+            url: retry_url,
+            headers_json: headers_json.to_string(),
+            body: None,
+            timeout_ms: Some(8_000),
+        })
+        .map_err(|retry_err| format!("primary error: {}; retry error: {}", primary_err, retry_err))
+    })
+}
+
+/// Processes a successful `getUpdates` HTTP response.
+///
+/// Checks the HTTP status, parses the Telegram API envelope, dispatches each
+/// update, and persists the new offset when it advances.
+fn process_updates_response(response: channel_host::HttpResponse, offset: i64) {
+    if response.status != 200 {
+        let body_str = String::from_utf8_lossy(&response.body);
+        channel_host::log(
+            channel_host::LogLevel::Error,
+            &format!("getUpdates returned {}: {}", response.status, body_str),
+        );
+        return;
+    }
+
+    let api_response: Result<TelegramApiResponse<Vec<TelegramUpdate>>, _> =
+        serde_json::from_slice(&response.body);
+
+    match api_response {
+        Ok(resp) if resp.ok => {
+            if let Some(updates) = resp.result {
+                let mut new_offset = offset;
+
+                for update in updates {
+                    if update.update_id >= new_offset {
+                        new_offset = update.update_id + 1;
+                    }
+                    handle_update(update);
+                }
+
+                if new_offset != offset {
+                    if let Err(e) =
+                        channel_host::workspace_write(POLLING_STATE_PATH, &new_offset.to_string())
+                    {
+                        channel_host::log(
+                            channel_host::LogLevel::Error,
+                            &format!("Failed to save polling offset: {}", e),
+                        );
+                    }
+                }
+            }
+        }
+        Ok(resp) => {
+            channel_host::log(
+                channel_host::LogLevel::Error,
+                &format!(
+                    "Telegram API error: {}",
+                    resp.description.unwrap_or_else(|| "unknown".to_string())
+                ),
+            );
+        }
+        Err(e) => {
+            channel_host::log(
+                channel_host::LogLevel::Error,
+                &format!("Failed to parse getUpdates response: {}", e),
+            );
+        }
+    }
+}
+
 impl Guest for TelegramChannel {
     fn on_start(config_json: String) -> Result<ChannelConfig, String> {
         channel_host::log(
@@ -563,7 +658,6 @@ impl Guest for TelegramChannel {
     }
 
     fn on_poll() {
-        // Read last offset from workspace storage
         let offset = match channel_host::workspace_read(POLLING_STATE_PATH) {
             Some(s) => s.parse::<i64>().unwrap_or(0),
             None => 0,
@@ -575,109 +669,13 @@ impl Guest for TelegramChannel {
         );
 
         let headers_json = serde_json::json!({}).to_string();
-        let primary_url = get_updates_url(offset, 25);
 
-        // 35s HTTP timeout outlives Telegram's 30s server-side long-poll.
-        // If the TCP connection drops, retry once immediately with a short poll
-        // so we don't wait a full extra tick (~30s) before delivering updates.
-        let result = match channel_host::http_request(&channel_host::HttpRequestParams {
-            method: "GET".to_string(),
-            url: primary_url.clone(),
-            headers_json: headers_json.clone(),
-            body: None,
-            timeout_ms: Some(35_000),
-        }) {
-            Ok(response) => Ok(response),
-            Err(primary_err) => {
-                channel_host::log(
-                    channel_host::LogLevel::Warn,
-                    &format!(
-                        "getUpdates request failed ({}), retrying once immediately",
-                        primary_err
-                    ),
-                );
-
-                let retry_url = get_updates_url(offset, 3);
-                channel_host::http_request(&channel_host::HttpRequestParams {
-                    method: "GET".to_string(),
-                    url: retry_url.clone(),
-                    headers_json: headers_json.clone(),
-                    body: None,
-                    timeout_ms: Some(8_000),
-                })
-                .map_err(|retry_err| {
-                    format!("primary error: {}; retry error: {}", primary_err, retry_err)
-                })
-            }
-        };
-
-        match result {
-            Ok(response) => {
-                if response.status != 200 {
-                    let body_str = String::from_utf8_lossy(&response.body);
-                    channel_host::log(
-                        channel_host::LogLevel::Error,
-                        &format!("getUpdates returned {}: {}", response.status, body_str),
-                    );
-                    return;
-                }
-
-                // Parse response
-                let api_response: Result<TelegramApiResponse<Vec<TelegramUpdate>>, _> =
-                    serde_json::from_slice(&response.body);
-
-                match api_response {
-                    Ok(resp) if resp.ok => {
-                        if let Some(updates) = resp.result {
-                            let mut new_offset = offset;
-
-                            for update in updates {
-                                // Track highest update_id for next poll
-                                if update.update_id >= new_offset {
-                                    new_offset = update.update_id + 1;
-                                }
-
-                                // Process the update (emits messages)
-                                handle_update(update);
-                            }
-
-                            // Save new offset if it changed
-                            if new_offset != offset {
-                                if let Err(e) = channel_host::workspace_write(
-                                    POLLING_STATE_PATH,
-                                    &new_offset.to_string(),
-                                ) {
-                                    channel_host::log(
-                                        channel_host::LogLevel::Error,
-                                        &format!("Failed to save polling offset: {}", e),
-                                    );
-                                }
-                            }
-                        }
-                    }
-                    Ok(resp) => {
-                        channel_host::log(
-                            channel_host::LogLevel::Error,
-                            &format!(
-                                "Telegram API error: {}",
-                                resp.description.unwrap_or_else(|| "unknown".to_string())
-                            ),
-                        );
-                    }
-                    Err(e) => {
-                        channel_host::log(
-                            channel_host::LogLevel::Error,
-                            &format!("Failed to parse getUpdates response: {}", e),
-                        );
-                    }
-                }
-            }
-            Err(e) => {
-                channel_host::log(
-                    channel_host::LogLevel::Error,
-                    &format!("getUpdates request failed: {}", e),
-                );
-            }
+        match fetch_updates(offset, &headers_json) {
+            Ok(response) => process_updates_response(response, offset),
+            Err(e) => channel_host::log(
+                channel_host::LogLevel::Error,
+                &format!("getUpdates request failed: {}", e),
+            ),
         }
     }
 
