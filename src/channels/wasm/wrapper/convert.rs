@@ -55,6 +55,38 @@ pub(super) fn truncate_status_text(input: &str, max_chars: usize) -> String {
     }
 }
 
+fn classify_status_string(msg: &str) -> wit_channel::StatusType {
+    let trimmed = msg.trim();
+    if trimmed.eq_ignore_ascii_case("done") {
+        wit_channel::StatusType::Done
+    } else if trimmed.eq_ignore_ascii_case("interrupted") {
+        wit_channel::StatusType::Interrupted
+    } else {
+        wit_channel::StatusType::Status
+    }
+}
+
+fn build_auth_required_message(
+    extension_name: &str,
+    instructions: &Option<String>,
+    auth_url: &Option<String>,
+    setup_url: &Option<String>,
+) -> String {
+    let mut lines = vec![format!("Authentication required for {}.", extension_name)];
+    if let Some(text) = instructions
+        && !text.trim().is_empty()
+    {
+        lines.push(text.trim().to_string());
+    }
+    if let Some(url) = auth_url {
+        lines.push(format!("Auth URL: {}", url));
+    }
+    if let Some(url) = setup_url {
+        lines.push(format!("Setup URL: {}", url));
+    }
+    lines.join("\n")
+}
+
 pub(super) fn status_to_wit(
     status: &StatusUpdate,
     metadata: &serde_json::Value,
@@ -95,24 +127,11 @@ pub(super) fn status_to_wit(
             message: chunk.clone(),
             metadata_json,
         },
-        StatusUpdate::Status(msg) => {
-            // Map well-known status strings to WIT types (case-insensitive
-            // to stay consistent with is_terminal_text_status and the
-            // Telegram-side classify_status_update).
-            let trimmed = msg.trim();
-            let status_type = if trimmed.eq_ignore_ascii_case("done") {
-                wit_channel::StatusType::Done
-            } else if trimmed.eq_ignore_ascii_case("interrupted") {
-                wit_channel::StatusType::Interrupted
-            } else {
-                wit_channel::StatusType::Status
-            };
-            wit_channel::StatusUpdate {
-                status: status_type,
-                message: msg.clone(),
-                metadata_json,
-            }
-        }
+        StatusUpdate::Status(msg) => wit_channel::StatusUpdate {
+            status: classify_status_string(msg),
+            message: msg.clone(),
+            metadata_json,
+        },
         StatusUpdate::ApprovalNeeded {
             request_id,
             tool_name,
@@ -142,21 +161,7 @@ pub(super) fn status_to_wit(
             setup_url,
         } => wit_channel::StatusUpdate {
             status: wit_channel::StatusType::AuthRequired,
-            message: {
-                let mut lines = vec![format!("Authentication required for {}.", extension_name)];
-                if let Some(text) = instructions
-                    && !text.trim().is_empty()
-                {
-                    lines.push(text.trim().to_string());
-                }
-                if let Some(url) = auth_url {
-                    lines.push(format!("Auth URL: {}", url));
-                }
-                if let Some(url) = setup_url {
-                    lines.push(format!("Setup URL: {}", url));
-                }
-                lines.join("\n")
-            },
+            message: build_auth_required_message(extension_name, instructions, auth_url, setup_url),
             metadata_json,
         },
         StatusUpdate::AuthCompleted {
