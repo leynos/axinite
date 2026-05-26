@@ -61,6 +61,11 @@ async fn read_inline_content(
     mime_type: String,
 ) -> Result<String, SkillReadFileError> {
     if target.size > MAX_SKILL_READ_FILE_BYTES {
+        tracing::debug!(
+            size = target.size,
+            limit = MAX_SKILL_READ_FILE_BYTES,
+            "skill_read_file: file exceeds size cap (metadata)"
+        );
         return Err(non_inline_error(
             SkillReadFileErrorCode::FileTooLarge,
             target.size,
@@ -72,6 +77,11 @@ async fn read_inline_content(
     let bytes = read_file_contents(target).await?;
     let actual_size = bytes.len() as u64;
     if actual_size > MAX_SKILL_READ_FILE_BYTES {
+        tracing::debug!(
+            size = actual_size,
+            limit = MAX_SKILL_READ_FILE_BYTES,
+            "skill_read_file: file exceeds size cap (post-read)"
+        );
         return Err(non_inline_error(
             SkillReadFileErrorCode::FileTooLarge,
             actual_size,
@@ -195,10 +205,17 @@ async fn open_relative_to_root(
 fn openat2_error(error: std::io::Error) -> SkillReadFileError {
     match error.raw_os_error() {
         Some(libc::ENOENT | libc::ENOTDIR | libc::ELOOP | libc::EXDEV | libc::EAGAIN) => {
+            tracing::debug!(os_error = ?error, "skill_read_file: openat2 path not readable");
             path_not_readable()
         }
-        Some(libc::ENOSYS | libc::EINVAL) => io_error("Atomic skill file reads are not supported"),
-        _ => io_error("File is not available for reading"),
+        Some(libc::ENOSYS | libc::EINVAL) => {
+            tracing::warn!(os_error = ?error, "skill_read_file: openat2 unsupported on this kernel");
+            io_error("Atomic skill file reads are not supported")
+        }
+        _ => {
+            tracing::debug!(os_error = ?error, "skill_read_file: openat2 I/O error");
+            io_error("File is not available for reading")
+        }
     }
 }
 
@@ -223,6 +240,14 @@ fn parse_utf8_content(
 }
 
 fn error_response(display: &ReadDisplay<'_>, error: SkillReadFileError) -> SkillReadFileResponse {
+    let skill_id = display.skill;
+    let path = &display.path;
+    tracing::debug!(
+        skill_id = %skill_id,
+        path = %path,
+        error_code = ?error.code,
+        "skill_read_file: read failed"
+    );
     SkillReadFileResponse::error(display.skill, &display.path, error)
 }
 

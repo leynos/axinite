@@ -169,7 +169,15 @@ pub async fn read_skill_file(skill: &LoadedSkill, requested_path: &str) -> Skill
     let display_path = display_path(requested_path);
     let relative_path = match validate_bundle_relative_path(requested_path) {
         Ok(path) => path,
-        Err(error) => return SkillReadFileResponse::error(display_skill, &display_path, error),
+        Err(error) => {
+            tracing::debug!(
+                skill_id = %display_skill,
+                path = %display_path,
+                error_code = ?error.code,
+                "skill_read_file: path validation rejected"
+            );
+            return SkillReadFileResponse::error(display_skill, &display_path, error);
+        }
     };
 
     read_validated_skill_file(skill, &relative_path).await
