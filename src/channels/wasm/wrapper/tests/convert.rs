@@ -1,13 +1,26 @@
 use super::super::convert::status_to_wit;
 
+/// Calls `status_to_wit` with the given status and a `null` JSON metadata
+/// value (sufficient for the majority of tests that do not assert on
+/// `metadata_json` content), and returns the resulting WIT struct.
+fn wit_for(status: &crate::channels::StatusUpdate) -> super::super::wit_channel::StatusUpdate {
+    status_to_wit(status, &serde_json::json!(null))
+}
+
+/// As `wit_for`, but uses the provided `metadata` value.
+fn wit_for_meta(
+    status: &crate::channels::StatusUpdate,
+    metadata: &serde_json::Value,
+) -> super::super::wit_channel::StatusUpdate {
+    status_to_wit(status, metadata)
+}
+
 #[test]
 fn test_status_to_wit_thinking() {
-    let metadata = serde_json::json!({"chat_id": 42});
-    let wit = status_to_wit(
+    let wit = wit_for_meta(
         &crate::channels::StatusUpdate::Thinking("Processing...".into()),
-        &metadata,
+        &serde_json::json!({"chat_id": 42}),
     );
-
     assert!(matches!(
         wit.status,
         super::super::wit_channel::StatusType::Thinking
@@ -18,12 +31,7 @@ fn test_status_to_wit_thinking() {
 
 #[test]
 fn test_status_to_wit_done() {
-    let metadata = serde_json::json!(null);
-    let wit = status_to_wit(
-        &crate::channels::StatusUpdate::Status("Done".into()),
-        &metadata,
-    );
-
+    let wit = wit_for(&crate::channels::StatusUpdate::Status("Done".into()));
     assert!(matches!(
         wit.status,
         super::super::wit_channel::StatusType::Done
@@ -32,23 +40,13 @@ fn test_status_to_wit_done() {
 
 #[test]
 fn test_status_to_wit_done_case_insensitive() {
-    let metadata = serde_json::json!(null);
-
-    // lowercase
-    let wit = status_to_wit(
-        &crate::channels::StatusUpdate::Status("done".into()),
-        &metadata,
-    );
+    let wit = wit_for(&crate::channels::StatusUpdate::Status("done".into()));
     assert!(matches!(
         wit.status,
         super::super::wit_channel::StatusType::Done
     ));
 
-    // with whitespace
-    let wit = status_to_wit(
-        &crate::channels::StatusUpdate::Status(" Done ".into()),
-        &metadata,
-    );
+    let wit = wit_for(&crate::channels::StatusUpdate::Status(" Done ".into()));
     assert!(matches!(
         wit.status,
         super::super::wit_channel::StatusType::Done
@@ -57,12 +55,7 @@ fn test_status_to_wit_done_case_insensitive() {
 
 #[test]
 fn test_status_to_wit_interrupted() {
-    let metadata = serde_json::json!(null);
-    let wit = status_to_wit(
-        &crate::channels::StatusUpdate::Status("Interrupted".into()),
-        &metadata,
-    );
-
+    let wit = wit_for(&crate::channels::StatusUpdate::Status("Interrupted".into()));
     assert!(matches!(
         wit.status,
         super::super::wit_channel::StatusType::Interrupted
@@ -71,23 +64,15 @@ fn test_status_to_wit_interrupted() {
 
 #[test]
 fn test_status_to_wit_interrupted_case_insensitive() {
-    let metadata = serde_json::json!(null);
-
-    // lowercase
-    let wit = status_to_wit(
-        &crate::channels::StatusUpdate::Status("interrupted".into()),
-        &metadata,
-    );
+    let wit = wit_for(&crate::channels::StatusUpdate::Status("interrupted".into()));
     assert!(matches!(
         wit.status,
         super::super::wit_channel::StatusType::Interrupted
     ));
 
-    // with whitespace
-    let wit = status_to_wit(
-        &crate::channels::StatusUpdate::Status(" Interrupted ".into()),
-        &metadata,
-    );
+    let wit = wit_for(&crate::channels::StatusUpdate::Status(
+        " Interrupted ".into(),
+    ));
     assert!(matches!(
         wit.status,
         super::super::wit_channel::StatusType::Interrupted
@@ -96,12 +81,9 @@ fn test_status_to_wit_interrupted_case_insensitive() {
 
 #[test]
 fn test_status_to_wit_generic_status() {
-    let metadata = serde_json::json!(null);
-    let wit = status_to_wit(
-        &crate::channels::StatusUpdate::Status("Awaiting approval".into()),
-        &metadata,
-    );
-
+    let wit = wit_for(&crate::channels::StatusUpdate::Status(
+        "Awaiting approval".into(),
+    ));
     assert!(matches!(
         wit.status,
         super::super::wit_channel::StatusType::Status
@@ -111,17 +93,15 @@ fn test_status_to_wit_generic_status() {
 
 #[test]
 fn test_status_to_wit_auth_required() {
-    let metadata = serde_json::json!({"chat_id": 42});
-    let wit = status_to_wit(
+    let wit = wit_for_meta(
         &crate::channels::StatusUpdate::AuthRequired {
             extension_name: "weather".to_string(),
             instructions: Some("Paste your token".to_string()),
             auth_url: Some("https://example.com/auth".to_string()),
             setup_url: None,
         },
-        &metadata,
+        &serde_json::json!({"chat_id": 42}),
     );
-
     assert!(matches!(
         wit.status,
         super::super::wit_channel::StatusType::AuthRequired
@@ -132,14 +112,12 @@ fn test_status_to_wit_auth_required() {
 
 #[test]
 fn test_status_to_wit_tool_started() {
-    let metadata = serde_json::json!({"chat_id": 7});
-    let wit = status_to_wit(
+    let wit = wit_for_meta(
         &crate::channels::StatusUpdate::ToolStarted {
             name: "http_request".to_string(),
         },
-        &metadata,
+        &serde_json::json!({"chat_id": 7}),
     );
-
     assert!(matches!(
         wit.status,
         super::super::wit_channel::StatusType::ToolStarted
@@ -149,17 +127,12 @@ fn test_status_to_wit_tool_started() {
 
 #[test]
 fn test_status_to_wit_tool_completed_success() {
-    let metadata = serde_json::json!(null);
-    let wit = status_to_wit(
-        &crate::channels::StatusUpdate::ToolCompleted {
-            name: "http_request".to_string(),
-            success: true,
-            error: None,
-            parameters: None,
-        },
-        &metadata,
-    );
-
+    let wit = wit_for(&crate::channels::StatusUpdate::ToolCompleted {
+        name: "http_request".to_string(),
+        success: true,
+        error: None,
+        parameters: None,
+    });
     assert!(matches!(
         wit.status,
         super::super::wit_channel::StatusType::ToolCompleted
@@ -169,17 +142,12 @@ fn test_status_to_wit_tool_completed_success() {
 
 #[test]
 fn test_status_to_wit_tool_completed_failure() {
-    let metadata = serde_json::json!(null);
-    let wit = status_to_wit(
-        &crate::channels::StatusUpdate::ToolCompleted {
-            name: "http_request".to_string(),
-            success: false,
-            error: Some("connection refused".to_string()),
-            parameters: None,
-        },
-        &metadata,
-    );
-
+    let wit = wit_for(&crate::channels::StatusUpdate::ToolCompleted {
+        name: "http_request".to_string(),
+        success: false,
+        error: Some("connection refused".to_string()),
+        parameters: None,
+    });
     assert!(matches!(
         wit.status,
         super::super::wit_channel::StatusType::ToolCompleted
@@ -189,15 +157,10 @@ fn test_status_to_wit_tool_completed_failure() {
 
 #[test]
 fn test_status_to_wit_tool_result() {
-    let metadata = serde_json::json!(null);
-    let wit = status_to_wit(
-        &crate::channels::StatusUpdate::ToolResult {
-            name: "http_request".to_string(),
-            preview: "{".to_string() + "\"temperature\": 22}",
-        },
-        &metadata,
-    );
-
+    let wit = wit_for(&crate::channels::StatusUpdate::ToolResult {
+        name: "http_request".to_string(),
+        preview: "{\"temperature\": 22}".to_string(),
+    });
     assert!(matches!(
         wit.status,
         super::super::wit_channel::StatusType::ToolResult
@@ -207,16 +170,10 @@ fn test_status_to_wit_tool_result() {
 
 #[test]
 fn test_status_to_wit_tool_result_truncates_preview() {
-    let metadata = serde_json::json!(null);
-    let long_preview = "x".repeat(400);
-    let wit = status_to_wit(
-        &crate::channels::StatusUpdate::ToolResult {
-            name: "big_tool".to_string(),
-            preview: long_preview,
-        },
-        &metadata,
-    );
-
+    let wit = wit_for(&crate::channels::StatusUpdate::ToolResult {
+        name: "big_tool".to_string(),
+        preview: "x".repeat(400),
+    });
     assert!(matches!(
         wit.status,
         super::super::wit_channel::StatusType::ToolResult
@@ -226,16 +183,14 @@ fn test_status_to_wit_tool_result_truncates_preview() {
 
 #[test]
 fn test_status_to_wit_job_started() {
-    let metadata = serde_json::json!({"chat_id": 1});
-    let wit = status_to_wit(
+    let wit = wit_for_meta(
         &crate::channels::StatusUpdate::JobStarted {
             job_id: "job-1".to_string(),
             title: "Daily sync".to_string(),
             browse_url: "https://example.com/jobs/job-1".to_string(),
         },
-        &metadata,
+        &serde_json::json!({"chat_id": 1}),
     );
-
     assert!(matches!(
         wit.status,
         super::super::wit_channel::StatusType::JobStarted
@@ -246,16 +201,11 @@ fn test_status_to_wit_job_started() {
 
 #[test]
 fn test_status_to_wit_auth_completed_success() {
-    let metadata = serde_json::json!(null);
-    let wit = status_to_wit(
-        &crate::channels::StatusUpdate::AuthCompleted {
-            extension_name: "weather".to_string(),
-            success: true,
-            message: "Token saved".to_string(),
-        },
-        &metadata,
-    );
-
+    let wit = wit_for(&crate::channels::StatusUpdate::AuthCompleted {
+        extension_name: "weather".to_string(),
+        success: true,
+        message: "Token saved".to_string(),
+    });
     assert!(matches!(
         wit.status,
         super::super::wit_channel::StatusType::AuthCompleted
@@ -266,16 +216,11 @@ fn test_status_to_wit_auth_completed_success() {
 
 #[test]
 fn test_status_to_wit_auth_completed_failure() {
-    let metadata = serde_json::json!(null);
-    let wit = status_to_wit(
-        &crate::channels::StatusUpdate::AuthCompleted {
-            extension_name: "weather".to_string(),
-            success: false,
-            message: "Invalid token".to_string(),
-        },
-        &metadata,
-    );
-
+    let wit = wit_for(&crate::channels::StatusUpdate::AuthCompleted {
+        extension_name: "weather".to_string(),
+        success: false,
+        message: "Invalid token".to_string(),
+    });
     assert!(matches!(
         wit.status,
         super::super::wit_channel::StatusType::AuthCompleted
@@ -286,17 +231,15 @@ fn test_status_to_wit_auth_completed_failure() {
 
 #[test]
 fn test_status_to_wit_approval_needed() {
-    let metadata = serde_json::json!({"chat_id": 42});
-    let wit = status_to_wit(
+    let wit = wit_for_meta(
         &crate::channels::StatusUpdate::ApprovalNeeded {
             request_id: "req-123".to_string(),
             tool_name: "http_request".to_string(),
             description: "Fetch weather data".to_string(),
             parameters: serde_json::json!({"url": "https://api.weather.test"}),
         },
-        &metadata,
+        &serde_json::json!({"chat_id": 42}),
     );
-
     assert!(matches!(
         wit.status,
         super::super::wit_channel::StatusType::ApprovalNeeded
