@@ -80,43 +80,38 @@ async fn test_dispatch_emitted_messages_no_sender_returns_ok() {
     assert!(result.is_ok());
 }
 
-#[expect(
-    clippy::too_many_arguments,
-    reason = "test helper mirrors attachment fields to reduce assertion block size"
-)]
-fn assert_attachment(
-    attachment: &crate::channels::IncomingAttachment,
-    id: &str,
-    mime_type: &str,
-    filename: Option<&str>,
+/// Expected field values for one [`crate::channels::IncomingAttachment`], used
+/// by [`assert_attachment`] to keep call sites concise and named.
+struct ExpectedAttachment<'a> {
+    id: &'a str,
+    mime_type: &'a str,
+    filename: Option<&'a str>,
     size_bytes: Option<u64>,
-    source_url: Option<&str>,
-    storage_key: Option<&str>,
-    extracted_text: Option<&str>,
-) {
-    assert_eq!(attachment.id, id);
-    assert_eq!(attachment.mime_type, mime_type);
-    assert_eq!(attachment.filename.as_deref(), filename);
-    assert_eq!(attachment.size_bytes, size_bytes);
-    assert_eq!(attachment.source_url.as_deref(), source_url);
-    assert_eq!(attachment.storage_key.as_deref(), storage_key);
-    assert_eq!(attachment.extracted_text.as_deref(), extracted_text);
+    source_url: Option<&'a str>,
+    storage_key: Option<&'a str>,
+    extracted_text: Option<&'a str>,
 }
 
-#[tokio::test]
-async fn test_dispatch_emitted_messages_preserves_attachments() {
-    use crate::channels::wasm::host::{Attachment, EmittedMessage};
+fn assert_attachment(
+    attachment: &crate::channels::IncomingAttachment,
+    expected: &ExpectedAttachment<'_>,
+) {
+    assert_eq!(attachment.id, expected.id);
+    assert_eq!(attachment.mime_type, expected.mime_type);
+    assert_eq!(attachment.filename.as_deref(), expected.filename);
+    assert_eq!(attachment.size_bytes, expected.size_bytes);
+    assert_eq!(attachment.source_url.as_deref(), expected.source_url);
+    assert_eq!(attachment.storage_key.as_deref(), expected.storage_key);
+    assert_eq!(
+        attachment.extracted_text.as_deref(),
+        expected.extracted_text
+    );
+}
 
-    let (tx, mut rx) = tokio::sync::mpsc::channel(10);
-    let message_tx = Arc::new(tokio::sync::RwLock::new(Some(tx)));
+fn build_test_attachments() -> Vec<crate::channels::wasm::host::Attachment> {
+    use crate::channels::wasm::host::Attachment;
 
-    let rate_limiter = Arc::new(tokio::sync::RwLock::new(
-        crate::channels::wasm::host::ChannelEmitRateLimiter::new(
-            crate::channels::wasm::capabilities::EmitRateLimitConfig::default(),
-        ),
-    ));
-
-    let attachments = vec![
+    vec![
         Attachment {
             id: "photo123".to_string(),
             mime_type: "image/jpeg".to_string(),
@@ -139,10 +134,26 @@ async fn test_dispatch_emitted_messages_preserves_attachments() {
             data: Vec::new(),
             duration_secs: None,
         },
-    ];
+    ]
+}
 
-    let messages =
-        vec![EmittedMessage::new("user1", "Check these files").with_attachments(attachments)];
+#[tokio::test]
+async fn test_dispatch_emitted_messages_preserves_attachments() {
+    use crate::channels::wasm::host::EmittedMessage;
+
+    let (tx, mut rx) = tokio::sync::mpsc::channel(10);
+    let message_tx = Arc::new(tokio::sync::RwLock::new(Some(tx)));
+
+    let rate_limiter = Arc::new(tokio::sync::RwLock::new(
+        crate::channels::wasm::host::ChannelEmitRateLimiter::new(
+            crate::channels::wasm::capabilities::EmitRateLimitConfig::default(),
+        ),
+    ));
+
+    let messages = vec![
+        EmittedMessage::new("user1", "Check these files")
+            .with_attachments(build_test_attachments()),
+    ];
 
     let last_broadcast_metadata = Arc::new(tokio::sync::RwLock::new(None));
     let result = WasmChannel::dispatch_emitted_messages(
@@ -166,25 +177,29 @@ async fn test_dispatch_emitted_messages_preserves_attachments() {
     // Verify first attachment
     assert_attachment(
         &msg.attachments[0],
-        "photo123",
-        "image/jpeg",
-        Some("cat.jpg"),
-        Some(50_000),
-        Some("https://api.telegram.org/file/photo123"),
-        None,
-        None,
+        &ExpectedAttachment {
+            id: "photo123",
+            mime_type: "image/jpeg",
+            filename: Some("cat.jpg"),
+            size_bytes: Some(50_000),
+            source_url: Some("https://api.telegram.org/file/photo123"),
+            storage_key: None,
+            extracted_text: None,
+        },
     );
 
     // Verify second attachment
     assert_attachment(
         &msg.attachments[1],
-        "doc456",
-        "application/pdf",
-        Some("report.pdf"),
-        Some(120_000),
-        None,
-        Some("store/doc456"),
-        Some("Report contents..."),
+        &ExpectedAttachment {
+            id: "doc456",
+            mime_type: "application/pdf",
+            filename: Some("report.pdf"),
+            size_bytes: Some(120_000),
+            source_url: None,
+            storage_key: Some("store/doc456"),
+            extracted_text: Some("Report contents..."),
+        },
     );
 }
 
