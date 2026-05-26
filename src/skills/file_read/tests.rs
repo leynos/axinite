@@ -260,6 +260,23 @@ fn skill_entrypoint_path_validates() {
 
 // ── JSON shape snapshot tests ────────────────────────────────────────────────
 
+fn snapshot_error_response(
+    path: &str,
+    code: SkillReadFileErrorCode,
+    message: &str,
+    metadata: Option<SkillReadFileMetadata>,
+) -> SkillReadFileResponse {
+    SkillReadFileResponse::Error(SkillReadFileErrorResponse {
+        skill: "deploy-docs".to_string(),
+        path: path.to_string(),
+        error: SkillReadFileError {
+            code,
+            message: message.to_string(),
+            metadata,
+        },
+    })
+}
+
 #[rstest]
 #[case::success("skill_read_file_success", snapshot_success_response())]
 #[case::unknown_skill("skill_read_file_error_unknown_skill", snapshot_error_unknown_skill())]
@@ -300,61 +317,54 @@ fn snapshot_error_unknown_skill() -> SkillReadFileResponse {
 fn snapshot_error_path_not_readable() -> SkillReadFileResponse {
     let error = validate_bundle_relative_path("../secret")
         .expect_err("traversal path should fail validation");
-    SkillReadFileResponse::error("deploy-docs", "../secret", error)
+    let SkillReadFileError {
+        code,
+        message,
+        metadata,
+    } = error;
+    snapshot_error_response("../secret", code, &message, metadata)
 }
 
 fn snapshot_error_non_inline_asset() -> SkillReadFileResponse {
-    SkillReadFileResponse::Error(SkillReadFileErrorResponse {
-        skill: "deploy-docs".to_string(),
-        path: "assets/logo.png".to_string(),
-        error: SkillReadFileError {
-            code: SkillReadFileErrorCode::NonInlineAsset,
-            message: "Phase 1 does not return binary or oversized assets inline.".to_string(),
-            metadata: Some(SkillReadFileMetadata {
-                size: 8,
-                mime_type: "image/png".to_string(),
-                fetch_hint: NON_INLINE_FETCH_HINT.to_string(),
-            }),
-        },
-    })
+    snapshot_error_response(
+        "assets/logo.png",
+        SkillReadFileErrorCode::NonInlineAsset,
+        "Phase 1 does not return binary or oversized assets inline.",
+        Some(SkillReadFileMetadata {
+            size: 8,
+            mime_type: "image/png".to_string(),
+            fetch_hint: NON_INLINE_FETCH_HINT.to_string(),
+        }),
+    )
 }
 
 fn snapshot_error_file_too_large() -> SkillReadFileResponse {
-    SkillReadFileResponse::Error(SkillReadFileErrorResponse {
-        skill: "deploy-docs".to_string(),
-        path: "references/large.md".to_string(),
-        error: SkillReadFileError {
-            code: SkillReadFileErrorCode::FileTooLarge,
-            message: "Phase 1 does not return binary or oversized assets inline.".to_string(),
-            metadata: Some(SkillReadFileMetadata {
-                size: MAX_SKILL_READ_FILE_BYTES + 1,
-                mime_type: "text/markdown".to_string(),
-                fetch_hint: NON_INLINE_FETCH_HINT.to_string(),
-            }),
-        },
-    })
+    snapshot_error_response(
+        "references/large.md",
+        SkillReadFileErrorCode::FileTooLarge,
+        "Phase 1 does not return binary or oversized assets inline.",
+        Some(SkillReadFileMetadata {
+            size: MAX_SKILL_READ_FILE_BYTES + 1,
+            mime_type: "text/markdown".to_string(),
+            fetch_hint: NON_INLINE_FETCH_HINT.to_string(),
+        }),
+    )
 }
 
 fn snapshot_error_invalid_utf8() -> SkillReadFileResponse {
-    SkillReadFileResponse::Error(SkillReadFileErrorResponse {
-        skill: "deploy-docs".to_string(),
-        path: "references/binary.md".to_string(),
-        error: SkillReadFileError {
-            code: SkillReadFileErrorCode::InvalidUtf8,
-            message: "File is not valid UTF-8 text".to_string(),
-            metadata: None,
-        },
-    })
+    snapshot_error_response(
+        "references/binary.md",
+        SkillReadFileErrorCode::InvalidUtf8,
+        "File is not valid UTF-8 text",
+        None,
+    )
 }
 
 fn snapshot_error_io_error() -> SkillReadFileResponse {
-    SkillReadFileResponse::Error(SkillReadFileErrorResponse {
-        skill: "deploy-docs".to_string(),
-        path: "references/usage.md".to_string(),
-        error: SkillReadFileError {
-            code: SkillReadFileErrorCode::IoError,
-            message: "File is not available for reading".to_string(),
-            metadata: None,
-        },
-    })
+    snapshot_error_response(
+        "references/usage.md",
+        SkillReadFileErrorCode::IoError,
+        "File is not available for reading",
+        None,
+    )
 }
