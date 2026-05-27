@@ -4,7 +4,9 @@ use std::path::Path;
 
 use tokio::io::{AsyncReadExt, Take};
 
-use super::validation::{is_asset_path, path_not_readable};
+use super::validation::is_asset_path;
+#[cfg(target_os = "linux")]
+use super::validation::path_not_readable;
 use super::{
     MAX_SKILL_READ_FILE_BYTES, NON_INLINE_FETCH_HINT, SkillReadFileError, SkillReadFileErrorCode,
     SkillReadFileMetadata, SkillReadFileResponse, SkillReadFileSuccess,
