@@ -1,6 +1,6 @@
 //! Agent-callable tools for managing skills (prompt-level extensions).
 //!
-//! Four tools for discovering, installing, listing, and removing skills
+//! Five tools for discovering, installing, listing, removing, and reading bundled files from skills
 //! entirely through conversation, following the extension_tools pattern.
 
 use std::collections::HashSet;
@@ -196,7 +196,14 @@ impl NativeTool for SkillReadFileTool {
 
         let response = match self.lookup_skill(skill_name)? {
             Some(skill) => read_skill_file(&skill, path).await,
-            None => SkillReadFileResponse::unknown_skill(skill_name, path),
+            None => {
+                tracing::debug!(
+                    skill_id = %skill_name,
+                    path = %path,
+                    "skill_read_file: skill not found in registry"
+                );
+                SkillReadFileResponse::unknown_skill(skill_name, path)
+            }
         };
 
         let result = serde_json::to_value(response).map_err(|error| {

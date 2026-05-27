@@ -18,6 +18,7 @@ pub mod attenuation;
 pub mod bundle;
 pub mod catalog;
 pub mod escape;
+/// Read-only, skill-scoped access to bundled skill resources (references and assets).
 pub mod file_read;
 pub mod gating;
 /// Shared source-field normalisation helpers for skill install adapters.

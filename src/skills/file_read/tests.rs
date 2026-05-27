@@ -237,19 +237,28 @@ proptest! {
     }
 
     #[test]
-    fn disallowed_generated_paths_do_not_validate(raw in "\\PC*") {
-        let looks_allowed = raw == "SKILL.md"
-            || raw.starts_with("references/")
-            || raw.starts_with("assets/");
+    fn nested_entrypoints_are_rejected(root in "(references|assets)") {
+        let path = format!("{root}/SKILL.md");
+        prop_assert!(validate_bundle_relative_path(&path).is_err());
+    }
 
-        if !looks_allowed
-            || raw.contains("..")
-            || raw.contains('\\')
-            || raw.starts_with('/')
-            || raw.trim().is_empty()
-        {
-            prop_assert!(validate_bundle_relative_path(&raw).is_err());
-        }
+    #[test]
+    fn unsupported_root_paths_are_rejected(
+        root in "[a-z][a-z0-9_-]{1,10}",
+        filename in "[a-z][a-z0-9_-]{0,10}\\.[a-z]{1,4}",
+    ) {
+        prop_assume!(root != "references" && root != "assets");
+        let path = format!("{root}/{filename}");
+        prop_assert!(validate_bundle_relative_path(&path).is_err());
+    }
+
+    #[test]
+    fn traversal_segments_are_rejected(
+        prefix in "(references|assets|scripts)?/?",
+        stem in "[a-z0-9_-]{0,10}",
+    ) {
+        let path = format!("{prefix}../{stem}");
+        prop_assert!(validate_bundle_relative_path(&path).is_err());
     }
 }
 
