@@ -260,6 +260,76 @@ proptest! {
         let path = format!("{prefix}../{stem}");
         prop_assert!(validate_bundle_relative_path(&path).is_err());
     }
+
+    #[test]
+    fn absolute_paths_are_rejected(
+        root in prop_oneof![Just("references"), Just("assets"), Just("SKILL")],
+        suffix in "(/[a-z0-9_-]{0,10})?",
+    ) {
+        let path = format!("/{root}{suffix}");
+        prop_assert!(validate_bundle_relative_path(&path).is_err());
+    }
+
+    #[test]
+    fn backslash_separators_are_rejected(
+        root in prop_oneof![Just("references"), Just("assets"), Just("scripts")],
+        child in "[a-z0-9_-]{1,10}",
+    ) {
+        let path = format!("{root}\\{child}");
+        prop_assert!(validate_bundle_relative_path(&path).is_err());
+    }
+
+    #[test]
+    fn bare_dotdot_is_rejected(
+        root in prop_oneof![Just("references"), Just("assets")],
+    ) {
+        let path = format!("{root}/..");
+        prop_assert!(validate_bundle_relative_path(&path).is_err());
+    }
+
+    #[test]
+    fn double_traversal_is_rejected(
+        root in prop_oneof![Just("references"), Just("assets")],
+        leaf in "[a-z0-9_-]{0,10}",
+    ) {
+        let path = format!("{root}/../../{leaf}");
+        prop_assert!(validate_bundle_relative_path(&path).is_err());
+    }
+
+    #[test]
+    fn double_traversal_alone_is_rejected(leaf in "[a-z0-9_-]{0,10}") {
+        let path = format!("../../{leaf}");
+        prop_assert!(validate_bundle_relative_path(&path).is_err());
+    }
+
+    #[test]
+    fn bare_dot_leading_is_rejected(
+        segment in "[a-z0-9_-]{1,10}",
+    ) {
+        let path = format!("./{segment}");
+        prop_assert!(validate_bundle_relative_path(&path).is_err());
+    }
+
+    #[test]
+    fn bare_dot_alone_is_rejected(
+        dot in Just("."),
+    ) {
+        prop_assert!(validate_bundle_relative_path(dot).is_err());
+    }
+
+    #[test]
+    fn utf8_boundary_size_succeeds(size in (0..=MAX_SKILL_READ_FILE_BYTES)) {
+        let content = "x".repeat(size as usize);
+        let utf8_check = std::str::from_utf8(content.as_bytes());
+        prop_assert!(utf8_check.is_ok());
+        prop_assert_eq!(utf8_check.unwrap().len(), size as usize);
+    }
+
+    #[test]
+    fn size_boundary_above_cap_is_measured(size in (MAX_SKILL_READ_FILE_BYTES + 1..=MAX_SKILL_READ_FILE_BYTES + 1024)) {
+        let content = "x".repeat(size as usize);
+        prop_assert!(content.len() > MAX_SKILL_READ_FILE_BYTES as usize);
+    }
 }
 
 #[test]

@@ -206,10 +206,32 @@ impl NativeTool for SkillReadFileTool {
             }
         };
 
+        let elapsed = start.elapsed();
+        match &response {
+            SkillReadFileResponse::Success(success) => {
+                tracing::debug!(
+                    skill_id = %skill_name,
+                    path = %path,
+                    size = success.content.len(),
+                    duration_ms = elapsed.as_millis(),
+                    "skill_read_file: success"
+                );
+            }
+            SkillReadFileResponse::Error(error) => {
+                tracing::debug!(
+                    skill_id = %skill_name,
+                    path = %path,
+                    error_code = ?error.error.code,
+                    duration_ms = elapsed.as_millis(),
+                    "skill_read_file: error"
+                );
+            }
+        }
+
         let result = serde_json::to_value(response).map_err(|error| {
             ToolError::ExecutionFailed(format!("failed to serialize skill read response: {error}"))
         })?;
-        Ok(ToolOutput::success(result, start.elapsed()))
+        Ok(ToolOutput::success(result, elapsed))
     }
 }
 

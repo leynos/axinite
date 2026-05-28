@@ -239,10 +239,17 @@ fn parse_utf8_content(
             size,
             mime_type,
         )),
-        Err(_) => Err(SkillReadFileError::new(
-            SkillReadFileErrorCode::InvalidUtf8,
-            "File is not valid UTF-8 text",
-        )),
+        Err(_) => {
+            tracing::debug!(
+                error_code = ?SkillReadFileErrorCode::InvalidUtf8,
+                path = %relative_path.display(),
+                "skill_read_file: file is not valid UTF-8"
+            );
+            Err(SkillReadFileError::new(
+                SkillReadFileErrorCode::InvalidUtf8,
+                "File is not valid UTF-8 text",
+            ))
+        }
     }
 }
 
