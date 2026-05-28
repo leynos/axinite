@@ -95,7 +95,15 @@ async fn reads_bundle_reference_text_at_max_size(skill_read_fixture: SkillReadFi
 async fn reads_skill_entrypoint(skill_read_fixture: SkillReadFixture) {
     let response = read_skill_file(&skill_read_fixture.skill, "SKILL.md").await;
 
-    assert!(matches!(response, SkillReadFileResponse::Success(_)));
+    assert_eq!(
+        response,
+        SkillReadFileResponse::Success(SkillReadFileSuccess {
+            skill: "deploy-docs".to_string(),
+            path: "SKILL.md".to_string(),
+            mime_type: "text/markdown".to_string(),
+            content: "# Deploy docs\n".to_string(),
+        })
+    );
 }
 
 #[rstest]
