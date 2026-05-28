@@ -322,7 +322,10 @@ proptest! {
         let content = "x".repeat(size as usize);
         let utf8_check = std::str::from_utf8(content.as_bytes());
         prop_assert!(utf8_check.is_ok());
-        prop_assert_eq!(utf8_check.unwrap().len(), size as usize);
+        prop_assert_eq!(
+            utf8_check.expect("failed to decode bytes as UTF-8 in utf8_check").len(),
+            size as usize
+        );
     }
 
     #[test]
