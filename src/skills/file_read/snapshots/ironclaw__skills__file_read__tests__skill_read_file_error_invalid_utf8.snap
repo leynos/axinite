@@ -1,0 +1,12 @@
+---
+source: src/skills/file_read/tests.rs
+expression: "&response"
+---
+{
+  "skill": "deploy-docs",
+  "path": "references/binary.md",
+  "error": {
+    "code": "invalid_utf8",
+    "message": "File is not valid UTF-8 text"
+  }
+}

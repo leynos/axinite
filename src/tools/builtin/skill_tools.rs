@@ -1,6 +1,6 @@
 //! Agent-callable tools for managing skills (prompt-level extensions).
 //!
-//! Four tools for discovering, installing, listing, and removing skills
+//! Five tools for discovering, installing, listing, removing, and reading bundled files from skills
 //! entirely through conversation, following the extension_tools pattern.
 
 use std::collections::HashSet;
@@ -13,11 +13,13 @@ use crate::skills::registry::SkillRegistry;
 use crate::tools::tool::{NativeTool, ToolError, ToolOutput, require_str};
 
 mod install;
+mod read_file;
 mod remove;
 #[cfg(test)]
 mod tests;
 
 pub use install::SkillInstallTool;
+pub use read_file::SkillReadFileTool;
 pub use remove::SkillRemoveTool;
 
 /// Build a minimal JSON Schema object descriptor.
@@ -31,6 +33,12 @@ fn object_schema(properties: serde_json::Value, required: &[&str]) -> serde_json
     if !required.is_empty() {
         schema["required"] = serde_json::json!(required);
     }
+    schema
+}
+
+fn strict_object_schema(properties: serde_json::Value, required: &[&str]) -> serde_json::Value {
+    let mut schema = object_schema(properties, required);
+    schema["additionalProperties"] = serde_json::Value::Bool(false);
     schema
 }
 

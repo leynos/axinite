@@ -40,7 +40,9 @@ pub use routine::{
 };
 pub use secrets_tools::{SecretDeleteTool, SecretListTool};
 pub use shell::ShellTool;
-pub use skill_tools::{SkillInstallTool, SkillListTool, SkillRemoveTool, SkillSearchTool};
+pub use skill_tools::{
+    SkillInstallTool, SkillListTool, SkillReadFileTool, SkillRemoveTool, SkillSearchTool,
+};
 pub use time::TimeTool;
 mod html_converter;
 pub mod image_analyze;

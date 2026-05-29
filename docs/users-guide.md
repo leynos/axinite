@@ -33,10 +33,8 @@ such as sending both a name and a URL, fail before any download or install
 attempt. Malformed archives report explicit `invalid_skill_bundle: ...` errors
 that describe the archive-shape problem.
 
-This slice does not yet add runtime file reads from bundled references and
-assets. When a bundled skill is active, the runtime still injects only the
-selected `SKILL.md` body into the prompt. The runtime now records the
-installed skill root and `SKILL.md` entrypoint internally. The model-facing
+When a bundled skill is active, the runtime injects the selected `SKILL.md`
+body into the prompt and advertises stable bundle metadata. The model-facing
 active-skill block includes this required metadata contract:
 
 - `skill`: required string. The stable skill identifier from the loaded skill
@@ -50,7 +48,38 @@ active-skill block includes this required metadata contract:
   `bundle`.
 
 Host-local filesystem paths are not exposed as model instructions. A dedicated
-`skill_read_file` tool is planned for a later release.
+`skill_read_file` tool lets the model read allowed bundle-relative files
+without access to the generic filesystem tools.
+
+The `skill_read_file` input schema requires:
+
+```json
+{
+  "skill": "deploy-docs",
+  "path": "references/usage.md"
+}
+```
+
+The `skill` value must match the active skill identifier. The `path` value must
+be one of `SKILL.md`, a file below `references/`, or a file below `assets/`.
+Absolute paths, `..`, backslashes, nested `SKILL.md` files, and other roots are
+rejected.
+
+A successful text read returns inline UTF-8 content:
+
+```json
+{
+  "skill": "deploy-docs",
+  "path": "references/usage.md",
+  "mime_type": "text/markdown",
+  "content": "# Usage\n..."
+}
+```
+
+Binary assets and oversized files are not returned inline in this phase. They
+return a typed error with size, media type, and a stable fetch hint. Unknown
+skills, missing files, disallowed paths, invalid UTF-8, and I/O failures also
+return skill-scoped JSON error payloads rather than host-local paths.
 
 ## Hosted workers and remote tools
 

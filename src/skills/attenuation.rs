@@ -32,6 +32,7 @@ const READ_ONLY_TOOLS: &[&str] = &[
     "json",
     "skill_list",
     "skill_search",
+    "skill_read_file",
 ];
 
 /// Result of tool attenuation, including transparency information.
@@ -146,6 +147,7 @@ mod tests {
             make_tool("time"),
             make_tool("echo"),
             make_tool("json"),
+            make_tool("skill_read_file"),
         ]
     }
 
@@ -182,6 +184,7 @@ mod tests {
         assert!(!kept_names.contains(&"memory_write"));
         assert!(kept_names.contains(&"memory_search"));
         assert!(kept_names.contains(&"memory_read"));
+        assert!(kept_names.contains(&"skill_read_file"));
         assert!(kept_names.contains(&"time"));
         assert_eq!(result.min_trust, SkillTrust::Installed);
     }

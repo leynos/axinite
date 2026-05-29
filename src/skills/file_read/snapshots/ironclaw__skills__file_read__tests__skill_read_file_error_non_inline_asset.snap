@@ -1,0 +1,17 @@
+---
+source: src/skills/file_read/tests.rs
+expression: "&response"
+---
+{
+  "skill": "deploy-docs",
+  "path": "assets/logo.png",
+  "error": {
+    "code": "non_inline_asset",
+    "message": "Phase 1 does not return binary or oversized assets inline.",
+    "metadata": {
+      "size": 8,
+      "mime_type": "image/png",
+      "fetch_hint": "Treat this as a passive asset; request only referenced text files in phase 1."
+    }
+  }
+}

@@ -1,0 +1,17 @@
+---
+source: src/skills/file_read/tests.rs
+expression: "&response"
+---
+{
+  "skill": "deploy-docs",
+  "path": "references/large.md",
+  "error": {
+    "code": "file_too_large",
+    "message": "Phase 1 does not return binary or oversized assets inline.",
+    "metadata": {
+      "size": 65537,
+      "mime_type": "text/markdown",
+      "fetch_hint": "Treat this as a passive asset; request only referenced text files in phase 1."
+    }
+  }
+}
