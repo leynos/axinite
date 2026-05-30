@@ -7,18 +7,32 @@
 //! `language` parameters are resolved through private helpers that
 //! centralize fallback and error-message logic.
 
+#[cfg(test)]
+use super::clock;
 use super::*;
-use std::time::Instant;
+use super::{MonotonicClock, StdMonotonicClock};
 
 /// Tool that allows the agent to build software on demand.
 pub struct BuildSoftwareTool {
     builder: Arc<dyn SoftwareBuilder>,
+    clock: Arc<dyn MonotonicClock>,
 }
 
 impl BuildSoftwareTool {
     /// Wraps a [`SoftwareBuilder`] for use as a [`NativeTool`].
     pub fn new(builder: Arc<dyn SoftwareBuilder>) -> Self {
-        Self { builder }
+        Self {
+            builder,
+            clock: Arc::new(StdMonotonicClock),
+        }
+    }
+
+    #[cfg(test)]
+    pub(crate) fn new_with_clock(
+        builder: Arc<dyn SoftwareBuilder>,
+        clock: Arc<dyn MonotonicClock>,
+    ) -> Self {
+        Self { builder, clock }
     }
 
     /// Resolves an optional string override against a parse closure.
@@ -130,7 +144,7 @@ impl NativeTool for BuildSoftwareTool {
             .and_then(|v| v.as_str())
             .ok_or_else(|| ToolError::InvalidParameters("missing 'description'".into()))?;
 
-        let start = Instant::now();
+        let start = self.clock.now();
 
         // Analyze the requirement
         let mut requirement = self
@@ -167,7 +181,10 @@ impl NativeTool for BuildSoftwareTool {
             "phases": result.logs.iter().map(|l| format!("{:?}: {}", l.phase, l.message)).collect::<Vec<_>>()
         });
 
-        Ok(ToolOutput::success(output, start.elapsed()))
+        Ok(ToolOutput::success(
+            output,
+            self.clock.now().duration_since(start),
+        ))
     }
 
     /// Approval is required unless the surrounding job auto-approves tools.

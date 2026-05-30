@@ -49,10 +49,12 @@ use crate::tools::tool::{
 
 mod build_loop;
 mod builder_impl;
+mod clock;
 mod domain;
 mod setup;
 mod wrapper;
 
+pub(crate) use clock::{MonotonicClock, StdMonotonicClock};
 pub use domain::{
     BuildLog, BuildPhase, BuildRequirement, BuildResult, BuilderConfig, ExecutionCommand, Language,
     NativeSoftwareBuilder, ProjectName, SoftwareBuilder, SoftwareType,

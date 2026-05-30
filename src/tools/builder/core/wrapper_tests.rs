@@ -1,8 +1,10 @@
 //! Tests for the build software native-tool wrapper.
 
 use std::sync::{Arc, Mutex};
+use std::time::Duration;
 
 use super::super::domain::SoftwareBuilderFuture;
+use super::clock::FixedMonotonicClock;
 use super::*;
 use insta::assert_snapshot;
 use rstest::rstest;
@@ -297,7 +299,10 @@ async fn execute_valid_params_returns_success_output() {
     let requirement = test_requirement();
     let build_result = test_build_result(requirement.clone());
     let builder = FakeSoftwareBuilder::success(requirement, build_result);
-    let tool = BuildSoftwareTool::new(Arc::new(builder));
+    let tool = BuildSoftwareTool::new_with_clock(
+        Arc::new(builder),
+        Arc::new(FixedMonotonicClock::with_elapsed(Duration::from_millis(1))),
+    );
 
     let output = tool
         .execute(
@@ -309,6 +314,10 @@ async fn execute_valid_params_returns_success_output() {
         .await
         .expect("expected execute to return successful output");
 
+    assert!(
+        output.duration > Duration::ZERO,
+        "duration must be positive"
+    );
     assert_eq!(output.result["success"], true);
 
     let captured = execute_capturing_requirement(serde_json::json!({
@@ -324,7 +333,10 @@ async fn execute_success_output_matches_snapshot() {
     let requirement = test_requirement();
     let build_result = test_build_result(requirement.clone());
     let builder = FakeSoftwareBuilder::success(requirement, build_result);
-    let tool = BuildSoftwareTool::new(Arc::new(builder));
+    let tool = BuildSoftwareTool::new_with_clock(
+        Arc::new(builder),
+        Arc::new(FixedMonotonicClock::with_elapsed(Duration::from_millis(42))),
+    );
 
     let output = tool
         .execute(
@@ -336,6 +348,11 @@ async fn execute_success_output_matches_snapshot() {
         .await
         .expect("expected execute to return successful output");
 
+    assert_eq!(
+        output.duration,
+        Duration::from_millis(42),
+        "duration must reflect the clock seam, not wall time"
+    );
     assert_eq!(output.cost, None);
     assert_eq!(output.raw, None);
     assert_snapshot!(
