@@ -10,11 +10,8 @@ use crate::channels::wasm::host::{ChannelEmitRateLimiter, EmittedMessage};
 
 use super::{WasmChannel, do_update_broadcast_metadata};
 
-/// Bundles the per-channel async state references required by
-/// `dispatch_emitted_messages`.
-///
-/// Using a parameter object keeps the function signature within the
-/// four-argument threshold whilst avoiding the overhead of an extra `Arc`.
+/// Bundles the per-channel async state required when dispatching messages
+/// from the polling path.
 pub(super) struct DispatchContext<'a> {
     pub(super) message_tx: &'a tokio::sync::RwLock<Option<mpsc::Sender<IncomingMessage>>>,
     pub(super) rate_limiter: &'a tokio::sync::RwLock<ChannelEmitRateLimiter>,
@@ -42,23 +39,35 @@ fn convert_emitted_to_incoming(channel_name: &str, emitted: &EmittedMessage) -> 
         let incoming_attachments = emitted
             .attachments
             .iter()
-            .map(|a| crate::channels::IncomingAttachment {
-                id: a.id.clone(),
-                kind: crate::channels::AttachmentKind::from_mime_type(&a.mime_type),
-                mime_type: a.mime_type.clone(),
-                filename: a.filename.clone(),
-                size_bytes: a.size_bytes,
-                source_url: a.source_url.clone(),
-                storage_key: a.storage_key.clone(),
-                extracted_text: a.extracted_text.clone(),
-                data: a.data.clone(),
-                duration_secs: a.duration_secs,
+            .map(|attachment| crate::channels::IncomingAttachment {
+                id: attachment.id.clone(),
+                kind: crate::channels::AttachmentKind::from_mime_type(&attachment.mime_type),
+                mime_type: attachment.mime_type.clone(),
+                filename: attachment.filename.clone(),
+                size_bytes: attachment.size_bytes,
+                source_url: attachment.source_url.clone(),
+                storage_key: attachment.storage_key.clone(),
+                extracted_text: attachment.extracted_text.clone(),
+                data: attachment.data.clone(),
+                duration_secs: attachment.duration_secs,
             })
             .collect();
         msg = msg.with_attachments(incoming_attachments);
     }
 
     msg
+}
+
+fn apply_emitted_metadata(
+    mut msg: IncomingMessage,
+    emitted: &EmittedMessage,
+) -> (IncomingMessage, bool) {
+    if let Ok(metadata) = serde_json::from_str(&emitted.metadata_json) {
+        msg = msg.with_metadata(metadata);
+        return (msg, true);
+    }
+
+    (msg, false)
 }
 
 /// Checks the rate limiter and, if permitted, sends `msg` on `tx`.
@@ -125,10 +134,10 @@ impl WasmChannel {
         let mut rate_limiter = self.rate_limiter.write().await;
 
         for emitted in messages {
-            let mut msg = convert_emitted_to_incoming(&self.name, &emitted);
+            let msg = convert_emitted_to_incoming(&self.name, &emitted);
+            let (msg, has_metadata) = apply_emitted_metadata(msg, &emitted);
 
-            if let Ok(metadata) = serde_json::from_str(&emitted.metadata_json) {
-                msg = msg.with_metadata(metadata);
+            if has_metadata {
                 self.update_broadcast_metadata(&emitted.metadata_json).await;
             }
 
@@ -171,10 +180,10 @@ impl WasmChannel {
         let mut limiter = ctx.rate_limiter.write().await;
 
         for emitted in messages {
-            let mut msg = convert_emitted_to_incoming(channel_name, &emitted);
+            let msg = convert_emitted_to_incoming(channel_name, &emitted);
+            let (msg, has_metadata) = apply_emitted_metadata(msg, &emitted);
 
-            if let Ok(metadata) = serde_json::from_str(&emitted.metadata_json) {
-                msg = msg.with_metadata(metadata);
+            if has_metadata {
                 do_update_broadcast_metadata(
                     channel_name,
                     &emitted.metadata_json,
