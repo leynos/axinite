@@ -137,11 +137,13 @@ fn build_test_attachments() -> Vec<crate::channels::wasm::host::Attachment> {
     ]
 }
 
-#[tokio::test]
-async fn test_dispatch_emitted_messages_preserves_attachments() {
-    use crate::channels::wasm::host::EmittedMessage;
-
-    let (tx, mut rx) = tokio::sync::mpsc::channel(10);
+async fn dispatch_messages_for_test(
+    messages: Vec<crate::channels::wasm::host::EmittedMessage>,
+) -> (
+    Result<(), crate::channels::wasm::error::WasmChannelError>,
+    tokio::sync::mpsc::Receiver<crate::channels::IncomingMessage>,
+) {
+    let (tx, rx) = tokio::sync::mpsc::channel(10);
     let message_tx = Arc::new(tokio::sync::RwLock::new(Some(tx)));
 
     let rate_limiter = Arc::new(tokio::sync::RwLock::new(
@@ -149,11 +151,6 @@ async fn test_dispatch_emitted_messages_preserves_attachments() {
             crate::channels::wasm::capabilities::EmitRateLimitConfig::default(),
         ),
     ));
-
-    let messages = vec![
-        EmittedMessage::new("user1", "Check these files")
-            .with_attachments(build_test_attachments()),
-    ];
 
     let last_broadcast_metadata = Arc::new(tokio::sync::RwLock::new(None));
     let result = WasmChannel::dispatch_emitted_messages(
@@ -168,10 +165,10 @@ async fn test_dispatch_emitted_messages_preserves_attachments() {
     )
     .await;
 
-    assert!(result.is_ok());
+    (result, rx)
+}
 
-    let msg = rx.try_recv().expect("Should receive message");
-    assert_eq!(msg.content, "Check these files");
+fn assert_preserved_attachments(msg: &crate::channels::IncomingMessage) {
     assert_eq!(msg.attachments.len(), 2);
 
     // Verify first attachment
@@ -201,6 +198,24 @@ async fn test_dispatch_emitted_messages_preserves_attachments() {
             extracted_text: Some("Report contents..."),
         },
     );
+}
+
+#[tokio::test]
+async fn test_dispatch_emitted_messages_preserves_attachments() {
+    use crate::channels::wasm::host::EmittedMessage;
+
+    let messages = vec![
+        EmittedMessage::new("user1", "Check these files")
+            .with_attachments(build_test_attachments()),
+    ];
+
+    let (result, mut rx) = dispatch_messages_for_test(messages).await;
+
+    assert!(result.is_ok());
+
+    let msg = rx.try_recv().expect("Should receive message");
+    assert_eq!(msg.content, "Check these files");
+    assert_preserved_attachments(&msg);
 }
 
 #[tokio::test]
