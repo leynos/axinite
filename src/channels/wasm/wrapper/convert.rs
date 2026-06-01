@@ -87,6 +87,50 @@ fn build_auth_required_message(
     lines.join("\n")
 }
 
+fn tool_completed_message(name: &str, success: bool) -> String {
+    format!(
+        "Tool completed: {} ({})",
+        name,
+        if success { "ok" } else { "failed" }
+    )
+}
+
+fn tool_result_message(name: &str, preview: &str) -> String {
+    format!(
+        "Tool result: {}\n{}",
+        name,
+        truncate_status_text(preview, 280)
+    )
+}
+
+fn approval_needed_message(request_id: &str, tool_name: &str, description: &str) -> String {
+    format!(
+        "Approval needed for tool '{}'. {}\nRequest ID: {}\n\
+         Reply with: yes (or /approve), no (or /deny), or always (or /always).",
+        tool_name, description, request_id
+    )
+}
+
+fn job_started_message(job_id: &str, title: &str, browse_url: &str) -> String {
+    format!("Job started: {} ({})\n{}", title, job_id, browse_url)
+}
+
+fn auth_completed_message(extension_name: &str, success: bool, message: &str) -> String {
+    format!(
+        "Authentication {} for {}. {}",
+        if success { "completed" } else { "failed" },
+        extension_name,
+        message
+    )
+}
+
+fn image_generated_message(path: Option<&String>) -> String {
+    match path {
+        Some(p) => format!("[image] {}", p),
+        None => "[image generated]".to_string(),
+    }
+}
+
 /// Maps a [`StatusUpdate`] variant to the `(StatusType, message)` pair
 /// used by the WIT interface.
 fn status_type_and_message(status: &StatusUpdate) -> (wit_channel::StatusType, String) {
@@ -99,19 +143,11 @@ fn status_type_and_message(status: &StatusUpdate) -> (wit_channel::StatusType, S
         ),
         StatusUpdate::ToolCompleted { name, success, .. } => (
             wit_channel::StatusType::ToolCompleted,
-            format!(
-                "Tool completed: {} ({})",
-                name,
-                if *success { "ok" } else { "failed" }
-            ),
+            tool_completed_message(name, *success),
         ),
         StatusUpdate::ToolResult { name, preview } => (
             wit_channel::StatusType::ToolResult,
-            format!(
-                "Tool result: {}\n{}",
-                name,
-                truncate_status_text(preview, 280)
-            ),
+            tool_result_message(name, preview),
         ),
         StatusUpdate::Status(msg) => (classify_status_string(msg), msg.clone()),
         StatusUpdate::ApprovalNeeded {
@@ -121,11 +157,7 @@ fn status_type_and_message(status: &StatusUpdate) -> (wit_channel::StatusType, S
             ..
         } => (
             wit_channel::StatusType::ApprovalNeeded,
-            format!(
-                "Approval needed for tool '{}'. {}\nRequest ID: {}\n\
-                 Reply with: yes (or /approve), no (or /deny), or always (or /always).",
-                tool_name, description, request_id
-            ),
+            approval_needed_message(request_id, tool_name, description),
         ),
         StatusUpdate::JobStarted {
             job_id,
@@ -133,7 +165,7 @@ fn status_type_and_message(status: &StatusUpdate) -> (wit_channel::StatusType, S
             browse_url,
         } => (
             wit_channel::StatusType::JobStarted,
-            format!("Job started: {} ({})\n{}", title, job_id, browse_url),
+            job_started_message(job_id, title, browse_url),
         ),
         StatusUpdate::AuthRequired {
             extension_name,
@@ -150,19 +182,11 @@ fn status_type_and_message(status: &StatusUpdate) -> (wit_channel::StatusType, S
             message,
         } => (
             wit_channel::StatusType::AuthCompleted,
-            format!(
-                "Authentication {} for {}. {}",
-                if *success { "completed" } else { "failed" },
-                extension_name,
-                message
-            ),
+            auth_completed_message(extension_name, *success, message),
         ),
         StatusUpdate::ImageGenerated { path, .. } => (
             wit_channel::StatusType::Status,
-            match path {
-                Some(p) => format!("[image] {}", p),
-                None => "[image generated]".to_string(),
-            },
+            image_generated_message(path.as_ref()),
         ),
     }
 }
