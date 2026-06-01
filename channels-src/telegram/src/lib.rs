@@ -1450,6 +1450,100 @@ struct MediaSpec {
     duration_secs: Option<u32>,
 }
 
+/// Borrowed reference to one Telegram media payload that can become an
+/// inbound attachment.
+enum TelegramMediaRef<'a> {
+    Photo(&'a PhotoSize),
+    Document(&'a TelegramDocument),
+    Audio(&'a TelegramAudio),
+    Video(&'a TelegramVideo),
+    Voice(&'a TelegramVoice),
+    Sticker(&'a TelegramSticker),
+}
+
+impl TelegramMediaRef<'_> {
+    fn file_id(&self) -> &str {
+        match self {
+            Self::Photo(media) => &media.file_id,
+            Self::Document(media) => &media.file_id,
+            Self::Audio(media) => &media.file_id,
+            Self::Video(media) => &media.file_id,
+            Self::Voice(media) => &media.file_id,
+            Self::Sticker(media) => &media.file_id,
+        }
+    }
+
+    fn mime_type(&self) -> String {
+        match self {
+            Self::Photo(_) => "image/jpeg".to_string(),
+            Self::Document(media) => resolve_mime(&media.mime_type, "application/octet-stream"),
+            Self::Audio(media) => resolve_mime(&media.mime_type, "audio/mpeg"),
+            Self::Video(media) => resolve_mime(&media.mime_type, "video/mp4"),
+            Self::Voice(media) => resolve_mime(&media.mime_type, "audio/ogg"),
+            Self::Sticker(_) => "image/webp".to_string(),
+        }
+    }
+
+    fn filename(&self) -> Option<String> {
+        match self {
+            Self::Photo(_) | Self::Sticker(_) => None,
+            Self::Document(media) => media.file_name.clone(),
+            Self::Audio(media) => media.file_name.clone(),
+            Self::Video(media) => media.file_name.clone(),
+            Self::Voice(media) => Some(format!("voice_{}.ogg", media.file_id)),
+        }
+    }
+
+    fn file_size(&self) -> Option<i64> {
+        match self {
+            Self::Photo(media) => media.file_size,
+            Self::Document(media) => media.file_size,
+            Self::Audio(media) => media.file_size,
+            Self::Video(media) => media.file_size,
+            Self::Voice(media) => media.file_size,
+            Self::Sticker(media) => media.file_size,
+        }
+    }
+
+    fn duration_secs(&self) -> Option<u32> {
+        match self {
+            Self::Audio(media) => media.duration,
+            Self::Video(media) => media.duration,
+            Self::Voice(media) => Some(media.duration),
+            Self::Photo(_) | Self::Document(_) | Self::Sticker(_) => None,
+        }
+    }
+}
+
+fn telegram_media_sources(message: &TelegramMessage) -> Vec<TelegramMediaRef<'_>> {
+    let mut sources = Vec::new();
+
+    sources.extend(
+        message
+            .photo
+            .as_ref()
+            .and_then(|photos| photos.last())
+            .map(TelegramMediaRef::Photo),
+    );
+    sources.extend(message.document.as_ref().map(TelegramMediaRef::Document));
+    sources.extend(message.audio.as_ref().map(TelegramMediaRef::Audio));
+    sources.extend(message.video.as_ref().map(TelegramMediaRef::Video));
+    sources.extend(message.voice.as_ref().map(TelegramMediaRef::Voice));
+    sources.extend(message.sticker.as_ref().map(TelegramMediaRef::Sticker));
+
+    sources
+}
+
+fn media_spec_from_ref(media: TelegramMediaRef<'_>) -> MediaSpec {
+    MediaSpec {
+        file_id: media.file_id().to_string(),
+        mime_type: media.mime_type(),
+        filename: media.filename(),
+        file_size: media.file_size(),
+        duration_secs: media.duration_secs(),
+    }
+}
+
 /// Converts a [`MediaSpec`] into an [`InboundAttachment`], computing the
 /// source URL via `get_file_url` and hard-coding the fields that are always
 /// `None` for Telegram media (`storage_key`, `extracted_text`).
@@ -1473,108 +1567,6 @@ fn resolve_mime(mime: &Option<String>, default: &str) -> String {
     mime.clone().unwrap_or_else(|| default.to_string())
 }
 
-fn photo_attachment(
-    message: &TelegramMessage,
-    get_file_url: &impl Fn(&str) -> String,
-) -> Option<InboundAttachment> {
-    let largest = message.photo.as_ref()?.last()?;
-    Some(attachment_from_spec(
-        MediaSpec {
-            file_id: largest.file_id.clone(),
-            mime_type: "image/jpeg".to_string(),
-            filename: None,
-            file_size: largest.file_size,
-            duration_secs: None,
-        },
-        get_file_url,
-    ))
-}
-
-fn document_attachment(
-    message: &TelegramMessage,
-    get_file_url: &impl Fn(&str) -> String,
-) -> Option<InboundAttachment> {
-    let doc = message.document.as_ref()?;
-    Some(attachment_from_spec(
-        MediaSpec {
-            file_id: doc.file_id.clone(),
-            mime_type: resolve_mime(&doc.mime_type, "application/octet-stream"),
-            filename: doc.file_name.clone(),
-            file_size: doc.file_size,
-            duration_secs: None,
-        },
-        get_file_url,
-    ))
-}
-
-fn audio_attachment(
-    message: &TelegramMessage,
-    get_file_url: &impl Fn(&str) -> String,
-) -> Option<InboundAttachment> {
-    let audio = message.audio.as_ref()?;
-    Some(attachment_from_spec(
-        MediaSpec {
-            file_id: audio.file_id.clone(),
-            mime_type: resolve_mime(&audio.mime_type, "audio/mpeg"),
-            filename: audio.file_name.clone(),
-            file_size: audio.file_size,
-            duration_secs: audio.duration,
-        },
-        get_file_url,
-    ))
-}
-
-fn video_attachment(
-    message: &TelegramMessage,
-    get_file_url: &impl Fn(&str) -> String,
-) -> Option<InboundAttachment> {
-    let video = message.video.as_ref()?;
-    Some(attachment_from_spec(
-        MediaSpec {
-            file_id: video.file_id.clone(),
-            mime_type: resolve_mime(&video.mime_type, "video/mp4"),
-            filename: video.file_name.clone(),
-            file_size: video.file_size,
-            duration_secs: video.duration,
-        },
-        get_file_url,
-    ))
-}
-
-fn voice_attachment(
-    message: &TelegramMessage,
-    get_file_url: &impl Fn(&str) -> String,
-) -> Option<InboundAttachment> {
-    let voice = message.voice.as_ref()?;
-    Some(attachment_from_spec(
-        MediaSpec {
-            file_id: voice.file_id.clone(),
-            mime_type: resolve_mime(&voice.mime_type, "audio/ogg"),
-            filename: Some(format!("voice_{}.ogg", voice.file_id)),
-            file_size: voice.file_size,
-            duration_secs: Some(voice.duration),
-        },
-        get_file_url,
-    ))
-}
-
-fn sticker_attachment(
-    message: &TelegramMessage,
-    get_file_url: &impl Fn(&str) -> String,
-) -> Option<InboundAttachment> {
-    let sticker = message.sticker.as_ref()?;
-    Some(attachment_from_spec(
-        MediaSpec {
-            file_id: sticker.file_id.clone(),
-            mime_type: "image/webp".to_string(),
-            filename: None,
-            file_size: sticker.file_size,
-            duration_secs: None,
-        },
-        get_file_url,
-    ))
-}
-
 /// Extract attachments from a Telegram message.
 fn extract_attachments(message: &TelegramMessage) -> Vec<InboundAttachment> {
     let get_file_url = |file_id: &str| {
@@ -1584,17 +1576,11 @@ fn extract_attachments(message: &TelegramMessage) -> Vec<InboundAttachment> {
         )
     };
 
-    [
-        photo_attachment(message, &get_file_url),
-        document_attachment(message, &get_file_url),
-        audio_attachment(message, &get_file_url),
-        video_attachment(message, &get_file_url),
-        voice_attachment(message, &get_file_url),
-        sticker_attachment(message, &get_file_url),
-    ]
-    .into_iter()
-    .flatten()
-    .collect()
+    telegram_media_sources(message)
+        .into_iter()
+        .map(media_spec_from_ref)
+        .map(|spec| attachment_from_spec(spec, &get_file_url))
+        .collect()
 }
 
 /// Download voice file bytes and store them via the host for transcription.
