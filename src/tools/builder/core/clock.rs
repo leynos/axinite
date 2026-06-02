@@ -9,7 +9,7 @@
 //! [`StdMonotonicClock`] is the production adapter over [`Instant::now`].
 //! [`FixedMonotonicClock`] is compiled only for tests and supplies a queued
 //! pair of instants so wrapper tests can assert the exact elapsed duration
-//! without depending on real time. The fixed clock is synchronised with a mutex
+//! without depending on real time. The fixed clock is synchronized with a mutex
 //! so it satisfies the same `Send + Sync` contract as the production clock.
 
 use std::time::Instant;
