@@ -27,6 +27,10 @@ impl BuildSoftwareTool {
         }
     }
 
+    /// Constructs a [`BuildSoftwareTool`] with an injected clock for tests.
+    ///
+    /// Use this constructor only in test code to supply a deterministic
+    /// [`MonotonicClock`] implementation.
     #[cfg(test)]
     pub(crate) fn new_with_clock(
         builder: Arc<dyn SoftwareBuilder>,

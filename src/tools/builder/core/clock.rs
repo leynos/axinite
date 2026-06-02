@@ -9,7 +9,7 @@
 //! [`StdMonotonicClock`] is the production adapter over [`Instant::now`].
 //! [`FixedMonotonicClock`] is compiled only for tests and supplies a queued
 //! pair of instants so wrapper tests can assert the exact elapsed duration
-//! without depending on real time. The fixed clock is synchronized with a mutex
+//! without depending on real time. The fixed clock is synchronized with a mutex,
 //! so it satisfies the same `Send + Sync` contract as the production clock.
 
 use std::time::Instant;
@@ -24,6 +24,7 @@ pub trait MonotonicClock: Send + Sync {
 pub struct StdMonotonicClock;
 
 impl MonotonicClock for StdMonotonicClock {
+    /// Returns the current monotonic instant via [`Instant::now`].
     fn now(&self) -> Instant {
         Instant::now()
     }
@@ -56,6 +57,9 @@ impl FixedMonotonicClock {
 
 #[cfg(test)]
 impl MonotonicClock for FixedMonotonicClock {
+    /// Pops and returns the next pre-seeded instant.
+    ///
+    /// Panics if the queue is exhausted, signalling a test misconfiguration.
     fn now(&self) -> Instant {
         let next = self
             .instants

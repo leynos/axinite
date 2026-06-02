@@ -251,3 +251,6 @@
 - [ADR 011: Extract register_wasm helpers to reduce cyclomatic complexity](adr-011-extract-register-wasm-helpers.md)
   records the helper split that keeps the WASM registration path within the
   repository's complexity threshold.
+- [ADR 012: Monotonic clock seam for build duration measurement](adr-012-monotonic-clock-seam-for-build-duration.md)
+  records why `BuildSoftwareTool` uses an `Instant`-backed duration seam
+  instead of `mockable::Clock` for elapsed-time assertions.
