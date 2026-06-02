@@ -314,9 +314,10 @@ async fn execute_valid_params_returns_success_output() {
         .await
         .expect("expected execute to return successful output");
 
-    assert!(
-        output.duration > Duration::ZERO,
-        "duration must be positive"
+    assert_eq!(
+        output.duration,
+        Duration::from_millis(1),
+        "duration must reflect the injected clock seam exactly"
     );
     assert_eq!(output.result["success"], true);
 

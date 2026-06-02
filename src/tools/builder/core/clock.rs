@@ -42,6 +42,10 @@ impl MonotonicClock for FixedMonotonicClock {
             .lock()
             .expect("fixed monotonic clock mutex should not be poisoned")
             .pop_front()
-            .unwrap_or_else(Instant::now)
+            .unwrap_or_else(|| {
+                panic!(
+                    "deterministic clock queue exhausted: no instant available - test misconfigured"
+                )
+            })
     }
 }
