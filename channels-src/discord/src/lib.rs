@@ -486,6 +486,109 @@ struct PairingReplyCtx {
     token: String,
 }
 
+/// Applies the owner restriction if configured.
+///
+/// Returns:
+/// - `Some(true)` when an owner is configured and `user_id` is that owner.
+/// - `Some(false)` when an owner is configured and `user_id` is not that owner.
+/// - `None` when no owner restriction is configured.
+fn owner_allows_sender(user_id: &str) -> Option<bool> {
+    let owner_id = channel_host::workspace_read(OWNER_ID_PATH).filter(|s| !s.is_empty());
+
+    let Some(owner) = owner_id else {
+        return None;
+    };
+
+    if user_id != owner {
+        channel_host::log(
+            channel_host::LogLevel::Debug,
+            &format!(
+                "Dropping interaction from non-owner user {} (owner: {})",
+                user_id, owner
+            ),
+        );
+        return Some(false);
+    }
+
+    Some(true)
+}
+
+/// Loads the configured DM policy, defaulting to `pairing`.
+fn load_dm_policy() -> String {
+    channel_host::workspace_read(DM_POLICY_PATH).unwrap_or_else(|| "pairing".to_string())
+}
+
+/// Loads the merged allow-list from workspace configuration and pairing store.
+fn load_allowed_senders() -> Vec<String> {
+    let mut allowed: Vec<String> = channel_host::workspace_read(ALLOW_FROM_PATH)
+        .and_then(|s| serde_json::from_str(&s).ok())
+        .unwrap_or_default();
+
+    if let Ok(store_allowed) = channel_host::pairing_read_allow_from(CHANNEL_NAME) {
+        allowed.extend(store_allowed);
+    }
+
+    allowed
+}
+
+/// Checks whether the sender is explicitly allowed.
+fn sender_in_allow_list(allowed: &[String], user_id: &str, username: Option<&str>) -> bool {
+    allowed.iter().any(|entry| entry == "*")
+        || allowed.iter().any(|entry| entry == user_id)
+        || username.is_some_and(|u| allowed.iter().any(|entry| entry == u))
+}
+
+/// Sends an ephemeral Discord pairing reply when a new pairing request was created.
+fn send_pairing_reply_if_new(
+    result: &channel_host::PairingUpsertResult,
+    reply_ctx: Option<&PairingReplyCtx>,
+) {
+    if !result.created {
+        return;
+    }
+
+    let Some(ctx) = reply_ctx else {
+        return;
+    };
+
+    let _ = send_pairing_reply(ctx, &result.code);
+}
+
+/// Creates or refreshes a pairing request for a denied DM sender.
+fn request_pairing_for_sender(
+    user_id: &str,
+    username: Option<&str>,
+    reply_ctx: Option<&PairingReplyCtx>,
+) {
+    let meta = serde_json::json!({
+        "user_id": user_id,
+        "username": username,
+    })
+    .to_string();
+
+    match channel_host::pairing_upsert_request(&channel_host::PairingUpsertParams {
+        identity: channel_host::PairingIdentity {
+            channel: CHANNEL_NAME.to_string(),
+            id: user_id.to_string(),
+        },
+        meta_json: meta,
+    }) {
+        Ok(result) => {
+            channel_host::log(
+                channel_host::LogLevel::Info,
+                &format!("Pairing request for user {}: code {}", user_id, result.code),
+            );
+            send_pairing_reply_if_new(&result, reply_ctx);
+        }
+        Err(e) => {
+            channel_host::log(
+                channel_host::LogLevel::Error,
+                &format!("Pairing upsert failed: {}", e),
+            );
+        }
+    }
+}
+
 /// Check if a sender is permitted to interact with the bot.
 /// Returns true if allowed, false if denied (pairing reply sent if applicable).
 fn check_sender_permission(
@@ -495,19 +598,8 @@ fn check_sender_permission(
     reply_ctx: Option<&PairingReplyCtx>,
 ) -> bool {
     // 1. Owner check (highest priority, applies to all contexts)
-    let owner_id = channel_host::workspace_read(OWNER_ID_PATH).filter(|s| !s.is_empty());
-    if let Some(ref owner) = owner_id {
-        if user_id != owner {
-            channel_host::log(
-                channel_host::LogLevel::Debug,
-                &format!(
-                    "Dropping interaction from non-owner user {} (owner: {})",
-                    user_id, owner
-                ),
-            );
-            return false;
-        }
-        return true;
+    if let Some(allowed_by_owner) = owner_allows_sender(user_id) {
+        return allowed_by_owner;
     }
 
     // 2. DM policy (only for DMs when no owner_id)
@@ -515,64 +607,23 @@ fn check_sender_permission(
         return true; // Guild interactions bypass DM policy
     }
 
-    let dm_policy =
-        channel_host::workspace_read(DM_POLICY_PATH).unwrap_or_else(|| "pairing".to_string());
+    let dm_policy = load_dm_policy();
 
     if dm_policy == "open" {
         return true;
     }
 
     // 3. Build merged allow list: config allow_from + pairing store
-    let mut allowed: Vec<String> = channel_host::workspace_read(ALLOW_FROM_PATH)
-        .and_then(|s| serde_json::from_str(&s).ok())
-        .unwrap_or_default();
-
-    if let Ok(store_allowed) = channel_host::pairing_read_allow_from(CHANNEL_NAME) {
-        allowed.extend(store_allowed);
-    }
+    let allowed = load_allowed_senders();
 
     // 4. Check sender against allow list
-    let is_allowed = allowed.contains(&"*".to_string())
-        || allowed.contains(&user_id.to_string())
-        || username.is_some_and(|u| allowed.contains(&u.to_string()));
-
-    if is_allowed {
+    if sender_in_allow_list(&allowed, user_id, username) {
         return true;
     }
 
     // 5. Not allowed — handle by policy
     if dm_policy == "pairing" {
-        let meta = serde_json::json!({
-            "user_id": user_id,
-            "username": username,
-        })
-        .to_string();
-
-        match channel_host::pairing_upsert_request(&channel_host::PairingUpsertParams {
-            identity: channel_host::PairingIdentity {
-                channel: CHANNEL_NAME.to_string(),
-                id: user_id.to_string(),
-            },
-            meta_json: meta,
-        }) {
-            Ok(result) => {
-                channel_host::log(
-                    channel_host::LogLevel::Info,
-                    &format!("Pairing request for user {}: code {}", user_id, result.code),
-                );
-                if result.created {
-                    if let Some(ctx) = reply_ctx {
-                        let _ = send_pairing_reply(ctx, &result.code);
-                    }
-                }
-            }
-            Err(e) => {
-                channel_host::log(
-                    channel_host::LogLevel::Error,
-                    &format!("Pairing upsert failed: {}", e),
-                );
-            }
-        }
+        request_pairing_for_sender(user_id, username, reply_ctx);
     }
     false
 }
