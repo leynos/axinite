@@ -196,7 +196,13 @@ In production, an instance of `RealClock::new()` would be used.
 
 The same pattern applies to internal tool seams. `BuildSoftwareTool` keeps
 override resolution private and tests it through `execute`, while injecting a
-narrow clock seam so duration assertions do not depend on wall-clock time.
+narrow monotonic clock seam, so duration assertions do not depend on wall-clock
+time. This seam deliberately uses `std::time::Instant` instead of
+`SystemTime`, because tool duration is elapsed-time data rather than calendar
+time. The production adapter calls `Instant::now`, and tests use a queued fixed
+clock that returns pre-seeded instants. If a test consumes more instants than it
+seeded, the fixed clock panics with a configuration error, so the failure is
+immediate and deterministic.
 
 ______________________________________________________________________
 

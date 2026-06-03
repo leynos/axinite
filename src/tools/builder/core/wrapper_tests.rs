@@ -1,28 +1,16 @@
 //! Tests for the build software native-tool wrapper.
 
 use std::sync::{Arc, Mutex};
+use std::time::Duration;
 
 use super::super::domain::SoftwareBuilderFuture;
+use super::clock::FixedMonotonicClock;
 use super::*;
 use insta::assert_snapshot;
 use rstest::rstest;
 
 type AnalyzeResult = dyn Fn() -> Result<BuildRequirement, AgentToolError> + Send + Sync;
 type BuildResultFn = dyn Fn(&BuildRequirement) -> Result<BuildResult, AgentToolError> + Send + Sync;
-
-struct FixedClock {
-    elapsed: std::time::Duration,
-}
-
-impl Clock for FixedClock {
-    fn now(&self) -> std::time::Instant {
-        std::time::Instant::now()
-    }
-
-    fn elapsed_since(&self, _start: std::time::Instant) -> std::time::Duration {
-        self.elapsed
-    }
-}
 
 fn assert_invalid_parameters<T: std::fmt::Debug>(result: Result<T, ToolError>, expected_msg: &str) {
     match result.expect_err("expected invalid parameters error") {
@@ -248,41 +236,38 @@ async fn execute_missing_description_returns_error() {
     assert_invalid_parameters(result, "missing 'description'");
 }
 
-#[tokio::test]
-async fn execute_analyze_failure_returns_execution_failed() {
-    let builder = FakeSoftwareBuilder::analyze_error("analysis exploded");
-    let tool = BuildSoftwareTool::new(Arc::new(builder));
-
+async fn execute_failure_returns_execution_failed(
+    builder: Arc<dyn SoftwareBuilder>,
+    expected_msg: &str,
+) {
+    let tool = BuildSoftwareTool::new(builder);
     let result = tool
         .execute(
-            serde_json::json!({
-                "description": "build a test tool",
-            }),
+            serde_json::json!({ "description": "build a test tool" }),
             &JobContext::default(),
         )
         .await;
+    assert_execution_failed(result, expected_msg);
+}
 
-    assert_execution_failed(
-        result,
+#[tokio::test]
+async fn execute_analyze_failure_returns_execution_failed() {
+    let builder = FakeSoftwareBuilder::analyze_error("analysis exploded");
+    execute_failure_returns_execution_failed(
+        Arc::new(builder),
         "Analysis failed: Tool builder failed: analysis exploded",
-    );
+    )
+    .await;
 }
 
 #[tokio::test]
 async fn execute_build_failure_returns_execution_failed() {
     let builder = FakeSoftwareBuilder::build_error(test_requirement(), "build exploded");
-    let tool = BuildSoftwareTool::new(Arc::new(builder));
-
-    let result = tool
-        .execute(
-            serde_json::json!({
-                "description": "build a test tool",
-            }),
-            &JobContext::default(),
-        )
-        .await;
-
-    assert_execution_failed(result, "Build failed: Tool builder failed: build exploded");
+    execute_failure_returns_execution_failed(
+        Arc::new(builder),
+        "Build failed: Tool builder failed: build exploded",
+    )
+    .await;
 }
 
 #[rstest]
@@ -314,7 +299,10 @@ async fn execute_valid_params_returns_success_output() {
     let requirement = test_requirement();
     let build_result = test_build_result(requirement.clone());
     let builder = FakeSoftwareBuilder::success(requirement, build_result);
-    let tool = BuildSoftwareTool::new(Arc::new(builder));
+    let tool = BuildSoftwareTool::new_with_clock(
+        Arc::new(builder),
+        Arc::new(FixedMonotonicClock::with_elapsed(Duration::from_millis(1))),
+    );
 
     let output = tool
         .execute(
@@ -326,6 +314,11 @@ async fn execute_valid_params_returns_success_output() {
         .await
         .expect("expected execute to return successful output");
 
+    assert_eq!(
+        output.duration,
+        Duration::from_millis(1),
+        "duration must reflect the injected clock seam exactly"
+    );
     assert_eq!(output.result["success"], true);
 
     let captured = execute_capturing_requirement(serde_json::json!({
@@ -341,10 +334,10 @@ async fn execute_success_output_matches_snapshot() {
     let requirement = test_requirement();
     let build_result = test_build_result(requirement.clone());
     let builder = FakeSoftwareBuilder::success(requirement, build_result);
-    let clock = Arc::new(FixedClock {
-        elapsed: std::time::Duration::from_millis(42),
-    });
-    let tool = BuildSoftwareTool::new_with_clock(Arc::new(builder), clock);
+    let tool = BuildSoftwareTool::new_with_clock(
+        Arc::new(builder),
+        Arc::new(FixedMonotonicClock::with_elapsed(Duration::from_millis(42))),
+    );
 
     let output = tool
         .execute(
@@ -356,7 +349,11 @@ async fn execute_success_output_matches_snapshot() {
         .await
         .expect("expected execute to return successful output");
 
-    assert_eq!(output.duration, std::time::Duration::from_millis(42));
+    assert_eq!(
+        output.duration,
+        Duration::from_millis(42),
+        "duration must reflect the clock seam, not wall time"
+    );
     assert_eq!(output.cost, None);
     assert_eq!(output.raw, None);
     assert_snapshot!(

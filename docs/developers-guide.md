@@ -429,6 +429,34 @@ For tests, prefer the helpers in `src/testing/test_utils.rs` or
 `Config::for_testing(...)` instead of mutating `std::env`. That keeps
 tests independent of host machine secrets, keychains, and shell state.
 
+
+### Monotonic clock seam for duration measurement
+
+When a component must measure elapsed time (rather than compare against a
+wall-clock timestamp), prefer a narrow monotonic seam over `mockable::Clock`.
+`mockable::Clock` exposes `SystemTime`, which can move backwards; elapsed
+duration measurement requires a source guaranteed to be non-decreasing.
+
+`BuildSoftwareTool` demonstrates the pattern:
+
+```rust
+pub trait MonotonicClock: Send + Sync {
+    fn now(&self) -> std::time::Instant;
+}
+```
+
+- **Production:** `StdMonotonicClock` delegates to `Instant::now()`.
+- **Tests:** `FixedMonotonicClock::with_elapsed(duration)` seeds two
+  pre-computed instants so tests can assert the exact elapsed value rather
+  than `> Duration::ZERO`.
+
+Inject the clock via `Arc<dyn MonotonicClock>` and expose a
+`#[cfg(test)] pub(crate) fn new_with_clock(...)` constructor following the
+same dependency injection conventions as `mockable`-backed abstractions.
+
+Use `mockable::Clock` for wall-clock comparisons (cache expiry, scheduling).
+Use `MonotonicClock` when only elapsed duration matters.
+
 ## 18. AppBuilder
 
 `AppBuilder` owns the mechanical bootstrap sequence for host startup.

@@ -7,30 +7,15 @@
 //! `language` parameters are resolved through private helpers that
 //! centralize fallback and error-message logic.
 
+#[cfg(test)]
+use super::clock;
 use super::*;
-
-trait Clock: Send + Sync {
-    fn now(&self) -> std::time::Instant;
-
-    fn elapsed_since(&self, start: std::time::Instant) -> std::time::Duration;
-}
-
-struct SystemClock;
-
-impl Clock for SystemClock {
-    fn now(&self) -> std::time::Instant {
-        std::time::Instant::now()
-    }
-
-    fn elapsed_since(&self, start: std::time::Instant) -> std::time::Duration {
-        start.elapsed()
-    }
-}
+use super::{MonotonicClock, StdMonotonicClock};
 
 /// Tool that allows the agent to build software on demand.
 pub struct BuildSoftwareTool {
     builder: Arc<dyn SoftwareBuilder>,
-    clock: Arc<dyn Clock>,
+    clock: Arc<dyn MonotonicClock>,
 }
 
 impl BuildSoftwareTool {
@@ -38,12 +23,19 @@ impl BuildSoftwareTool {
     pub fn new(builder: Arc<dyn SoftwareBuilder>) -> Self {
         Self {
             builder,
-            clock: Arc::new(SystemClock),
+            clock: Arc::new(StdMonotonicClock),
         }
     }
 
+    /// Constructs a [`BuildSoftwareTool`] with an injected clock for tests.
+    ///
+    /// Use this constructor only in test code to supply a deterministic
+    /// [`MonotonicClock`] implementation.
     #[cfg(test)]
-    fn new_with_clock(builder: Arc<dyn SoftwareBuilder>, clock: Arc<dyn Clock>) -> Self {
+    pub(crate) fn new_with_clock(
+        builder: Arc<dyn SoftwareBuilder>,
+        clock: Arc<dyn MonotonicClock>,
+    ) -> Self {
         Self { builder, clock }
     }
 
@@ -193,7 +185,10 @@ impl NativeTool for BuildSoftwareTool {
             "phases": result.logs.iter().map(|l| format!("{:?}: {}", l.phase, l.message)).collect::<Vec<_>>()
         });
 
-        Ok(ToolOutput::success(output, self.clock.elapsed_since(start)))
+        Ok(ToolOutput::success(
+            output,
+            self.clock.now().duration_since(start),
+        ))
     }
 
     /// Approval is required unless the surrounding job auto-approves tools.
