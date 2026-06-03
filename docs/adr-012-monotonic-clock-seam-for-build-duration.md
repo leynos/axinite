@@ -51,3 +51,9 @@ while remaining fully deterministic in tests.
   Instant::now() with DI guide
 - `docs/reliable-testing-in-rust-via-dependency-injection.md`
 - `docs/developers-guide.md`
+
+# ADR-012 — Monotonic clock seam for build duration measurement
+
+**Status:** Accepted
+**Date:** 2026-05-22
+**Deciders:** `@leynos`
