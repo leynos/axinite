@@ -65,8 +65,16 @@ fn build_approval_prompt(
          Parameters:\n\
          {params_preview}\n\
          \n\
-         Reply \"yes\" to approve, \"no\" to deny, or \"always\" to auto-approve."
+        Reply \"yes\" to approve, \"no\" to deny, or \"always\" to auto-approve."
     )
+}
+
+struct ApprovalNeededContext<'a> {
+    status: &'a StatusUpdate,
+    metadata: &'a serde_json::Value,
+    tool_name: &'a str,
+    description: &'a str,
+    parameters: &'a serde_json::Value,
 }
 
 impl WasmChannel {
@@ -184,21 +192,14 @@ impl WasmChannel {
             .await;
     }
 
-    async fn handle_approval_needed_status(
-        &self,
-        status: &StatusUpdate,
-        metadata: &serde_json::Value,
-        tool_name: &str,
-        description: &str,
-        parameters: &serde_json::Value,
-    ) {
+    async fn handle_approval_needed_status(&self, ctx: ApprovalNeededContext<'_>) {
         // WASM channels (Telegram, Slack, etc.) cannot render
         // interactive approval overlays. Send the approval prompt
         // as an actual message so the user can reply yes/no.
         self.cancel_typing_task().await;
 
-        let prompt = build_approval_prompt(tool_name, description, parameters);
-        let metadata_json = serde_json::to_string(metadata).unwrap_or_default();
+        let prompt = build_approval_prompt(ctx.tool_name, ctx.description, ctx.parameters);
+        let metadata_json = serde_json::to_string(ctx.metadata).unwrap_or_default();
 
         if let Err(e) = self
             .call_on_respond(uuid::Uuid::new_v4(), &prompt, None, &metadata_json, &[])
@@ -210,7 +211,7 @@ impl WasmChannel {
                 "Failed to send approval prompt via on_respond, falling back to on_status"
             );
             // Fall back to status update (typing indicator)
-            let _ = self.call_on_status(status, metadata).await;
+            let _ = self.call_on_status(ctx.status, ctx.metadata).await;
         }
     }
 
@@ -244,13 +245,13 @@ impl WasmChannel {
                 parameters,
                 ..
             } => {
-                self.handle_approval_needed_status(
-                    &status,
+                self.handle_approval_needed_status(ApprovalNeededContext {
+                    status: &status,
                     metadata,
                     tool_name,
                     description,
                     parameters,
-                )
+                })
                 .await;
             }
             status if should_cancel_typing_for_status(status) => {
