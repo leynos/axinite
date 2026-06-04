@@ -1,6 +1,62 @@
 use crate::attachments::extract_attachments;
 use crate::types::TelegramMessage;
 
+struct ExpectedAttachment<'a> {
+    id: &'a str,
+    mime_type: &'a str,
+    filename: Option<&'a str>,
+    size_bytes: Option<Option<u64>>,
+    source_url_contains: Option<&'a str>,
+    extras_json_contains: Option<&'a str>,
+}
+
+fn parse_message(json: &str) -> TelegramMessage {
+    serde_json::from_str(json).unwrap()
+}
+
+fn single_attachment(json: &str) -> crate::near::agent::channel_host::InboundAttachment {
+    let msg = parse_message(json);
+    let attachments = extract_attachments(&msg);
+
+    assert_eq!(attachments.len(), 1);
+
+    attachments.into_iter().next().unwrap()
+}
+
+fn assert_attachment_matches(
+    attachment: &crate::near::agent::channel_host::InboundAttachment,
+    expected: ExpectedAttachment<'_>,
+) {
+    assert_eq!(attachment.id, expected.id);
+    assert_eq!(attachment.mime_type, expected.mime_type);
+    assert_eq!(attachment.filename.as_deref(), expected.filename);
+
+    if let Some(size_bytes) = expected.size_bytes {
+        assert_eq!(attachment.size_bytes, size_bytes);
+    }
+
+    if let Some(needle) = expected.source_url_contains {
+        assert!(
+            attachment
+                .source_url
+                .as_ref()
+                .is_some_and(|url| url.contains(needle)),
+            "expected source_url {:?} to contain {:?}",
+            attachment.source_url,
+            needle
+        );
+    }
+
+    if let Some(needle) = expected.extras_json_contains {
+        assert!(
+            attachment.extras_json.contains(needle),
+            "expected extras_json {:?} to contain {:?}",
+            attachment.extras_json,
+            needle
+        );
+    }
+}
+
 // === Attachment extraction fixture tests ===
 
 #[test]
@@ -15,18 +71,19 @@ fn test_extract_attachments_photo() {
             {"file_id": "large_id", "file_unique_id": "l1", "width": 800, "height": 600, "file_size": 54321}
         ]
     }"#;
-    let msg: TelegramMessage = serde_json::from_str(json).unwrap();
-    let attachments = extract_attachments(&msg);
+    let attachment = single_attachment(json);
 
-    assert_eq!(attachments.len(), 1);
-    assert_eq!(attachments[0].id, "large_id"); // Largest photo
-    assert_eq!(attachments[0].mime_type, "image/jpeg");
-    assert_eq!(attachments[0].size_bytes, Some(54321));
-    assert!(attachments[0]
-        .source_url
-        .as_ref()
-        .unwrap()
-        .contains("large_id"));
+    assert_attachment_matches(
+        &attachment,
+        ExpectedAttachment {
+            id: "large_id", // Largest photo
+            mime_type: "image/jpeg",
+            filename: None,
+            size_bytes: Some(Some(54321)),
+            source_url_contains: Some("large_id"),
+            extras_json_contains: None,
+        },
+    );
 }
 
 #[test]
@@ -44,14 +101,19 @@ fn test_extract_attachments_document() {
         },
         "caption": "Here is the report"
     }"#;
-    let msg: TelegramMessage = serde_json::from_str(json).unwrap();
-    let attachments = extract_attachments(&msg);
+    let attachment = single_attachment(json);
 
-    assert_eq!(attachments.len(), 1);
-    assert_eq!(attachments[0].id, "doc_abc");
-    assert_eq!(attachments[0].mime_type, "application/pdf");
-    assert_eq!(attachments[0].filename, Some("report.pdf".to_string()));
-    assert_eq!(attachments[0].size_bytes, Some(102400));
+    assert_attachment_matches(
+        &attachment,
+        ExpectedAttachment {
+            id: "doc_abc",
+            mime_type: "application/pdf",
+            filename: Some("report.pdf"),
+            size_bytes: Some(Some(102400)),
+            source_url_contains: None,
+            extras_json_contains: None,
+        },
+    );
 }
 
 #[test]
@@ -68,17 +130,19 @@ fn test_extract_attachments_voice() {
             "file_size": 9000
         }
     }"#;
-    let msg: TelegramMessage = serde_json::from_str(json).unwrap();
-    let attachments = extract_attachments(&msg);
+    let attachment = single_attachment(json);
 
-    assert_eq!(attachments.len(), 1);
-    assert_eq!(attachments[0].id, "voice_xyz");
-    assert_eq!(attachments[0].mime_type, "audio/ogg");
-    assert_eq!(
-        attachments[0].filename.as_deref(),
-        Some("voice_voice_xyz.ogg")
+    assert_attachment_matches(
+        &attachment,
+        ExpectedAttachment {
+            id: "voice_xyz",
+            mime_type: "audio/ogg",
+            filename: Some("voice_voice_xyz.ogg"),
+            size_bytes: None,
+            source_url_contains: None,
+            extras_json_contains: Some("\"duration_secs\":5"),
+        },
     );
-    assert!(attachments[0].extras_json.contains("\"duration_secs\":5"));
 }
 
 #[test]
@@ -96,13 +160,19 @@ fn test_extract_attachments_video() {
         },
         "caption": "Check this out"
     }"#;
-    let msg: TelegramMessage = serde_json::from_str(json).unwrap();
-    let attachments = extract_attachments(&msg);
+    let attachment = single_attachment(json);
 
-    assert_eq!(attachments.len(), 1);
-    assert_eq!(attachments[0].id, "vid_1");
-    assert_eq!(attachments[0].mime_type, "video/mp4");
-    assert_eq!(attachments[0].filename, Some("clip.mp4".to_string()));
+    assert_attachment_matches(
+        &attachment,
+        ExpectedAttachment {
+            id: "vid_1",
+            mime_type: "video/mp4",
+            filename: Some("clip.mp4"),
+            size_bytes: None,
+            source_url_contains: None,
+            extras_json_contains: None,
+        },
+    );
 }
 
 #[test]
@@ -119,13 +189,19 @@ fn test_extract_attachments_audio() {
             "file_size": 3000000
         }
     }"#;
-    let msg: TelegramMessage = serde_json::from_str(json).unwrap();
-    let attachments = extract_attachments(&msg);
+    let attachment = single_attachment(json);
 
-    assert_eq!(attachments.len(), 1);
-    assert_eq!(attachments[0].id, "audio_1");
-    assert_eq!(attachments[0].mime_type, "audio/mpeg");
-    assert_eq!(attachments[0].filename, Some("song.mp3".to_string()));
+    assert_attachment_matches(
+        &attachment,
+        ExpectedAttachment {
+            id: "audio_1",
+            mime_type: "audio/mpeg",
+            filename: Some("song.mp3"),
+            size_bytes: None,
+            source_url_contains: None,
+            extras_json_contains: None,
+        },
+    );
 }
 
 #[test]
