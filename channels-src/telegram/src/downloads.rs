@@ -106,6 +106,18 @@ fn is_image_attachment(att: &InboundAttachment) -> bool {
     att.mime_type.starts_with("image/")
 }
 
+fn is_audio_attachment(att: &InboundAttachment) -> bool {
+    att.mime_type.starts_with("audio/")
+}
+
+fn is_video_attachment(att: &InboundAttachment) -> bool {
+    att.mime_type.starts_with("video/")
+}
+
+fn is_media_attachment(att: &InboundAttachment) -> bool {
+    is_image_attachment(att) || is_audio_attachment(att) || is_video_attachment(att)
+}
+
 fn store_downloaded_attachment(att: &InboundAttachment, bytes: &[u8], data_kind: &str) {
     if let Err(e) = channel_host::store_attachment_data(&att.id, bytes) {
         channel_host::log(
@@ -164,19 +176,14 @@ pub(crate) fn download_and_store_images(attachments: &[InboundAttachment]) {
 /// Excludes voice (handled by transcription), image (vision pipeline),
 /// audio (transcription), and video attachments.
 pub(crate) fn is_downloadable_document(att: &InboundAttachment) -> bool {
-    let is_voice = att
-        .filename
-        .as_ref()
-        .is_some_and(|f| f.starts_with("voice_"));
-    if is_voice {
+    if is_voice_attachment(att) {
         return false;
     }
-    if att.mime_type.starts_with("image/")
-        || att.mime_type.starts_with("audio/")
-        || att.mime_type.starts_with("video/")
-    {
+
+    if is_media_attachment(att) {
         return false;
     }
+
     true
 }
 
