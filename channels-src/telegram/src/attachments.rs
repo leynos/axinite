@@ -64,16 +64,43 @@ enum TelegramMediaRef<'a> {
     Sticker(&'a TelegramSticker),
 }
 
+struct TelegramFileCore<'a> {
+    file_id: &'a str,
+    file_size: Option<i64>,
+}
+
 impl TelegramMediaRef<'_> {
-    fn file_id(&self) -> &str {
+    fn core(&self) -> TelegramFileCore<'_> {
         match self {
-            Self::Photo(media) => &media.file_id,
-            Self::Document(media) => &media.file_id,
-            Self::Audio(media) => &media.file_id,
-            Self::Video(media) => &media.file_id,
-            Self::Voice(media) => &media.file_id,
-            Self::Sticker(media) => &media.file_id,
+            Self::Photo(media) => TelegramFileCore {
+                file_id: &media.file_id,
+                file_size: media.file_size,
+            },
+            Self::Document(media) => TelegramFileCore {
+                file_id: &media.file_id,
+                file_size: media.file_size,
+            },
+            Self::Audio(media) => TelegramFileCore {
+                file_id: &media.file_id,
+                file_size: media.file_size,
+            },
+            Self::Video(media) => TelegramFileCore {
+                file_id: &media.file_id,
+                file_size: media.file_size,
+            },
+            Self::Voice(media) => TelegramFileCore {
+                file_id: &media.file_id,
+                file_size: media.file_size,
+            },
+            Self::Sticker(media) => TelegramFileCore {
+                file_id: &media.file_id,
+                file_size: media.file_size,
+            },
         }
+    }
+
+    fn file_id(&self) -> &str {
+        self.core().file_id
     }
 
     fn mime_type(&self) -> String {
@@ -98,14 +125,7 @@ impl TelegramMediaRef<'_> {
     }
 
     fn file_size(&self) -> Option<i64> {
-        match self {
-            Self::Photo(media) => media.file_size,
-            Self::Document(media) => media.file_size,
-            Self::Audio(media) => media.file_size,
-            Self::Video(media) => media.file_size,
-            Self::Voice(media) => media.file_size,
-            Self::Sticker(media) => media.file_size,
-        }
+        self.core().file_size
     }
 
     fn duration_secs(&self) -> Option<u32> {

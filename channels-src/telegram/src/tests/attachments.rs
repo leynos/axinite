@@ -1,6 +1,9 @@
+use rstest::rstest;
+
 use crate::attachments::extract_attachments;
 use crate::types::TelegramMessage;
 
+#[derive(Clone, Copy)]
 struct ExpectedAttachment<'a> {
     id: &'a str,
     mime_type: &'a str,
@@ -86,9 +89,9 @@ fn test_extract_attachments_photo() {
     );
 }
 
-#[test]
-fn test_extract_attachments_document() {
-    let json = r#"{
+#[rstest]
+#[case(
+    r#"{
         "message_id": 2,
         "from": {"id": 1, "is_bot": false, "first_name": "A"},
         "chat": {"id": 1, "type": "private"},
@@ -100,25 +103,18 @@ fn test_extract_attachments_document() {
             "file_size": 102400
         },
         "caption": "Here is the report"
-    }"#;
-    let attachment = single_attachment(json);
-
-    assert_attachment_matches(
-        &attachment,
-        ExpectedAttachment {
-            id: "doc_abc",
-            mime_type: "application/pdf",
-            filename: Some("report.pdf"),
-            size_bytes: Some(Some(102400)),
-            source_url_contains: None,
-            extras_json_contains: None,
-        },
-    );
-}
-
-#[test]
-fn test_extract_attachments_voice() {
-    let json = r#"{
+    }"#,
+    ExpectedAttachment {
+        id: "doc_abc",
+        mime_type: "application/pdf",
+        filename: Some("report.pdf"),
+        size_bytes: Some(Some(102400)),
+        source_url_contains: None,
+        extras_json_contains: None,
+    }
+)]
+#[case(
+    r#"{
         "message_id": 3,
         "from": {"id": 1, "is_bot": false, "first_name": "A"},
         "chat": {"id": 1, "type": "private"},
@@ -129,25 +125,18 @@ fn test_extract_attachments_voice() {
             "mime_type": "audio/ogg",
             "file_size": 9000
         }
-    }"#;
-    let attachment = single_attachment(json);
-
-    assert_attachment_matches(
-        &attachment,
-        ExpectedAttachment {
-            id: "voice_xyz",
-            mime_type: "audio/ogg",
-            filename: Some("voice_voice_xyz.ogg"),
-            size_bytes: None,
-            source_url_contains: None,
-            extras_json_contains: Some("\"duration_secs\":5"),
-        },
-    );
-}
-
-#[test]
-fn test_extract_attachments_video() {
-    let json = r#"{
+    }"#,
+    ExpectedAttachment {
+        id: "voice_xyz",
+        mime_type: "audio/ogg",
+        filename: Some("voice_voice_xyz.ogg"),
+        size_bytes: None,
+        source_url_contains: None,
+        extras_json_contains: Some("\"duration_secs\":5"),
+    }
+)]
+#[case(
+    r#"{
         "message_id": 4,
         "from": {"id": 1, "is_bot": false, "first_name": "A"},
         "chat": {"id": 1, "type": "private"},
@@ -159,25 +148,18 @@ fn test_extract_attachments_video() {
             "file_size": 5000000
         },
         "caption": "Check this out"
-    }"#;
-    let attachment = single_attachment(json);
-
-    assert_attachment_matches(
-        &attachment,
-        ExpectedAttachment {
-            id: "vid_1",
-            mime_type: "video/mp4",
-            filename: Some("clip.mp4"),
-            size_bytes: None,
-            source_url_contains: None,
-            extras_json_contains: None,
-        },
-    );
-}
-
-#[test]
-fn test_extract_attachments_audio() {
-    let json = r#"{
+    }"#,
+    ExpectedAttachment {
+        id: "vid_1",
+        mime_type: "video/mp4",
+        filename: Some("clip.mp4"),
+        size_bytes: None,
+        source_url_contains: None,
+        extras_json_contains: None,
+    }
+)]
+#[case(
+    r#"{
         "message_id": 5,
         "from": {"id": 1, "is_bot": false, "first_name": "A"},
         "chat": {"id": 1, "type": "private"},
@@ -188,20 +170,23 @@ fn test_extract_attachments_audio() {
             "mime_type": "audio/mpeg",
             "file_size": 3000000
         }
-    }"#;
+    }"#,
+    ExpectedAttachment {
+        id: "audio_1",
+        mime_type: "audio/mpeg",
+        filename: Some("song.mp3"),
+        size_bytes: None,
+        source_url_contains: None,
+        extras_json_contains: None,
+    }
+)]
+fn test_extract_attachments_single_media(
+    #[case] json: &str,
+    #[case] expected: ExpectedAttachment<'_>,
+) {
     let attachment = single_attachment(json);
 
-    assert_attachment_matches(
-        &attachment,
-        ExpectedAttachment {
-            id: "audio_1",
-            mime_type: "audio/mpeg",
-            filename: Some("song.mp3"),
-            size_bytes: None,
-            source_url_contains: None,
-            extras_json_contains: None,
-        },
-    );
+    assert_attachment_matches(&attachment, expected);
 }
 
 #[test]
