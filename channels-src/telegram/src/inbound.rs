@@ -239,28 +239,30 @@ fn content_to_emit(content: &str, has_attachments: bool) -> Option<String> {
     }
 }
 
-fn emit_agent_message(
-    message: &TelegramMessage,
+struct AgentMessageEmission {
+    chat_id: i64,
     user_id: i64,
     user_name: String,
     content: String,
     metadata_json: String,
     attachments: Vec<InboundAttachment>,
-) {
+}
+
+fn emit_agent_message(emission: AgentMessageEmission) {
     channel_host::emit_message(&EmittedMessage {
-        user_id: user_id.to_string(),
-        user_name: Some(user_name),
-        content,
+        user_id: emission.user_id.to_string(),
+        user_name: Some(emission.user_name),
+        content: emission.content,
         thread_id: None, // Telegram doesn't have threads in the same way
-        metadata_json,
-        attachments,
+        metadata_json: emission.metadata_json,
+        attachments: emission.attachments,
     });
 
     channel_host::log(
         channel_host::LogLevel::Debug,
         &format!(
             "Emitted message from user {} in chat {}",
-            user_id, message.chat.id
+            emission.user_id, emission.chat_id
         ),
     );
 }
@@ -315,14 +317,14 @@ fn handle_message(message: TelegramMessage) {
         return;
     };
 
-    emit_agent_message(
-        &message,
-        from.id,
+    emit_agent_message(AgentMessageEmission {
+        chat_id: message.chat.id,
+        user_id: from.id,
         user_name,
-        content_to_emit,
+        content: content_to_emit,
         metadata_json,
         attachments,
-    );
+    });
 }
 
 fn strip_leading_command(text: String) -> Option<String> {
