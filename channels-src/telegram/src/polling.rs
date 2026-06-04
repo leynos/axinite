@@ -43,13 +43,59 @@ pub(crate) fn fetch_updates(offset: i64, headers_json: &str) -> Result<channel_h
     })
 }
 
-pub(crate) fn process_updates_response(response: channel_host::HttpResponse, offset: i64) {
-    if response.status != 200 {
-        let body_str = String::from_utf8_lossy(&response.body);
+fn log_non_successful_get_updates(response: &channel_host::HttpResponse) {
+    let body_str = String::from_utf8_lossy(&response.body);
+    channel_host::log(
+        channel_host::LogLevel::Error,
+        &format!("getUpdates returned {}: {}", response.status, body_str),
+    );
+}
+
+fn persist_offset_if_changed(offset: i64, new_offset: i64) {
+    if new_offset == offset {
+        return;
+    }
+
+    if let Err(e) = channel_host::workspace_write(POLLING_STATE_PATH, &new_offset.to_string()) {
         channel_host::log(
             channel_host::LogLevel::Error,
-            &format!("getUpdates returned {}: {}", response.status, body_str),
+            &format!("Failed to save polling offset: {}", e),
         );
+    }
+}
+
+fn handle_updates(updates: Vec<TelegramUpdate>, offset: i64) {
+    let mut new_offset = offset;
+
+    for update in updates {
+        if update.update_id >= new_offset {
+            new_offset = update.update_id + 1;
+        }
+        handle_update(update);
+    }
+
+    persist_offset_if_changed(offset, new_offset);
+}
+
+fn handle_successful_updates_response(resp: TelegramApiResponse<Vec<TelegramUpdate>>, offset: i64) {
+    if let Some(updates) = resp.result {
+        handle_updates(updates, offset);
+    }
+}
+
+fn log_telegram_api_error(resp: TelegramApiResponse<Vec<TelegramUpdate>>) {
+    channel_host::log(
+        channel_host::LogLevel::Error,
+        &format!(
+            "Telegram API error: {}",
+            resp.description.unwrap_or_else(|| "unknown".to_string())
+        ),
+    );
+}
+
+pub(crate) fn process_updates_response(response: channel_host::HttpResponse, offset: i64) {
+    if response.status != 200 {
+        log_non_successful_get_updates(&response);
         return;
     }
 
@@ -57,38 +103,8 @@ pub(crate) fn process_updates_response(response: channel_host::HttpResponse, off
         serde_json::from_slice(&response.body);
 
     match api_response {
-        Ok(resp) if resp.ok => {
-            if let Some(updates) = resp.result {
-                let mut new_offset = offset;
-
-                for update in updates {
-                    if update.update_id >= new_offset {
-                        new_offset = update.update_id + 1;
-                    }
-                    handle_update(update);
-                }
-
-                if new_offset != offset {
-                    if let Err(e) =
-                        channel_host::workspace_write(POLLING_STATE_PATH, &new_offset.to_string())
-                    {
-                        channel_host::log(
-                            channel_host::LogLevel::Error,
-                            &format!("Failed to save polling offset: {}", e),
-                        );
-                    }
-                }
-            }
-        }
-        Ok(resp) => {
-            channel_host::log(
-                channel_host::LogLevel::Error,
-                &format!(
-                    "Telegram API error: {}",
-                    resp.description.unwrap_or_else(|| "unknown".to_string())
-                ),
-            );
-        }
+        Ok(resp) if resp.ok => handle_successful_updates_response(resp, offset),
+        Ok(resp) => log_telegram_api_error(resp),
         Err(e) => {
             channel_host::log(
                 channel_host::LogLevel::Error,
