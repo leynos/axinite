@@ -32,10 +32,10 @@ pub fn post_plain<R: Serializable>(dc_id: u8, request: &R) -> Result<Vec<u8>, St
     plain.finalize(&mut buffer);
 
     let body: Vec<u8> = buffer[..].to_vec();
-    let response = http_post_binary(&url, &body)?;
+    let mut response = http_post_binary(&url, &body)?;
 
     let results = plain
-        .deserialize(&response)
+        .deserialize(&mut response)
         .map_err(|e| format!("plain deserialize: {e}"))?;
 
     for result in results {
@@ -66,10 +66,10 @@ pub fn post_encrypted(
     mtp.finalize(&mut buffer);
 
     let body: Vec<u8> = buffer[..].to_vec();
-    let response = http_post_binary(&url, &body)?;
+    let mut response = http_post_binary(&url, &body)?;
 
     let results = mtp
-        .deserialize(&response)
+        .deserialize(&mut response)
         .map_err(|e| format!("encrypted deserialize: {e}"))?;
 
     for result in results {
