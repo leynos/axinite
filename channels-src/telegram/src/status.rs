@@ -27,6 +27,18 @@ pub(crate) fn status_message_for_user(update: &StatusUpdate) -> Option<String> {
     }
 }
 
+fn is_terminal_text_status(message: &str) -> bool {
+    let msg = message.trim();
+
+    ["Done", "Interrupted", "Awaiting approval", "Rejected"]
+        .iter()
+        .any(|terminal| msg.eq_ignore_ascii_case(terminal))
+}
+
+fn notify_status_for_user(update: &StatusUpdate) -> Option<TelegramStatusAction> {
+    status_message_for_user(update).map(TelegramStatusAction::Notify)
+}
+
 pub(crate) fn classify_status_update(update: &StatusUpdate) -> Option<TelegramStatusAction> {
     match update.status {
         StatusType::Thinking => Some(TelegramStatusAction::Typing),
@@ -34,22 +46,15 @@ pub(crate) fn classify_status_update(update: &StatusUpdate) -> Option<TelegramSt
         // Tool telemetry can be noisy in chat; keep it as typing-only UX.
         StatusType::ToolStarted | StatusType::ToolCompleted | StatusType::ToolResult => None,
         StatusType::Status => {
-            let msg = update.message.trim();
-            if msg.eq_ignore_ascii_case("Done")
-                || msg.eq_ignore_ascii_case("Interrupted")
-                || msg.eq_ignore_ascii_case("Awaiting approval")
-                || msg.eq_ignore_ascii_case("Rejected")
-            {
+            if is_terminal_text_status(&update.message) {
                 None
             } else {
-                status_message_for_user(update).map(TelegramStatusAction::Notify)
+                notify_status_for_user(update)
             }
         }
         StatusType::ApprovalNeeded
         | StatusType::JobStarted
         | StatusType::AuthRequired
-        | StatusType::AuthCompleted => {
-            status_message_for_user(update).map(TelegramStatusAction::Notify)
-        }
+        | StatusType::AuthCompleted => notify_status_for_user(update),
     }
 }
