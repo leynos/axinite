@@ -2,6 +2,52 @@ use crate::exports::near::agent::channel::{AgentResponse, Attachment};
 use crate::near::agent::channel_host;
 use crate::types::{SentMessage, TelegramApiResponse};
 
+/// Text sent to Telegram as a message body.
+#[derive(Clone, Copy)]
+pub(crate) struct MessageText<'a>(pub(crate) &'a str);
+
+/// Telegram parse mode, for example `Markdown`.
+#[derive(Clone, Copy)]
+pub(crate) struct ParseMode<'a>(pub(crate) &'a str);
+
+/// A string value that will be percent-encoded for a URL query parameter.
+#[derive(Clone, Copy)]
+pub(crate) struct QueryParamValue<'a>(pub(crate) &'a str);
+
+/// A Telegram pairing code rendered into a user-facing pairing reply.
+#[derive(Clone, Copy)]
+pub(crate) struct PairingCode<'a>(pub(crate) &'a str);
+
+/// Multipart/form-data boundary.
+#[derive(Clone, Copy)]
+struct MultipartBoundary<'a>(&'a str);
+
+/// One multipart/form-data text field.
+#[derive(Clone, Copy)]
+struct MultipartField<'a> {
+    name: &'a str,
+    value: &'a str,
+}
+
+/// Describes one multipart/form-data file part.
+#[derive(Clone, Copy)]
+struct MultipartFilePart<'a> {
+    field: &'a str,
+    filename: &'a str,
+    content_type: &'a str,
+    data: &'a [u8],
+}
+
+/// Parameters for uploading a Telegram file attachment.
+#[derive(Clone, Copy)]
+struct TelegramUpload<'a> {
+    chat_id: i64,
+    filename: &'a str,
+    mime_type: &'a str,
+    data: &'a [u8],
+    reply_to_message_id: Option<i64>,
+}
+
 /// Errors from send_message, split so callers can match on parse-entity failures.
 pub(crate) enum SendError {
     /// Telegram returned 400 with "can't parse entities" (Markdown issue).
@@ -26,13 +72,13 @@ impl std::fmt::Display for SendError {
 /// `SendError::ParseEntities` so the caller can retry without formatting.
 pub(crate) fn send_message(
     chat_id: i64,
-    text: &str,
+    text: MessageText<'_>,
     reply_to_message_id: Option<i64>,
-    parse_mode: Option<&str>,
+    parse_mode: Option<ParseMode<'_>>,
 ) -> Result<i64, SendError> {
     let mut payload = serde_json::json!({
         "chat_id": chat_id,
-        "text": text,
+        "text": text.0,
     });
 
     if let Some(message_id) = reply_to_message_id {
@@ -40,7 +86,7 @@ pub(crate) fn send_message(
     }
 
     if let Some(mode) = parse_mode {
-        payload["parse_mode"] = serde_json::Value::String(mode.to_string());
+        payload["parse_mode"] = serde_json::Value::String(mode.0.to_string());
     }
 
     let payload_bytes = serde_json::to_vec(&payload)
@@ -96,7 +142,8 @@ pub(crate) fn send_message(
 }
 
 /// Percent-encode a string for safe use as a URL query parameter value.
-pub(crate) fn percent_encode(s: &str) -> String {
+pub(crate) fn percent_encode(value: QueryParamValue<'_>) -> String {
+    let s = value.0;
     let mut out = String::with_capacity(s.len());
     for b in s.bytes() {
         match b {
@@ -115,25 +162,29 @@ pub(crate) fn percent_encode(s: &str) -> String {
 const MAX_PHOTO_SIZE: usize = 10 * 1024 * 1024;
 
 /// Write a multipart/form-data text field.
-fn write_multipart_field(body: &mut Vec<u8>, boundary: &str, name: &str, value: &str) {
-    body.extend_from_slice(format!("--{}\r\n", boundary).as_bytes());
+fn write_multipart_field(
+    body: &mut Vec<u8>,
+    boundary: MultipartBoundary<'_>,
+    field: MultipartField<'_>,
+) {
+    body.extend_from_slice(format!("--{}\r\n", boundary.0).as_bytes());
     body.extend_from_slice(
-        format!("Content-Disposition: form-data; name=\"{}\"\r\n\r\n", name).as_bytes(),
+        format!(
+            "Content-Disposition: form-data; name=\"{}\"\r\n\r\n",
+            field.name
+        )
+        .as_bytes(),
     );
-    body.extend_from_slice(value.as_bytes());
+    body.extend_from_slice(field.value.as_bytes());
     body.extend_from_slice(b"\r\n");
 }
 
-/// Describes one multipart/form-data file part.
-struct MultipartFilePart<'a> {
-    field: &'a str,
-    filename: &'a str,
-    content_type: &'a str,
-    data: &'a [u8],
-}
-
 /// Write a multipart/form-data file field.
-fn write_multipart_file(body: &mut Vec<u8>, boundary: &str, part: MultipartFilePart<'_>) {
+fn write_multipart_file(
+    body: &mut Vec<u8>,
+    boundary: MultipartBoundary<'_>,
+    part: MultipartFilePart<'_>,
+) {
     // Sanitize filename: strip quotes, newlines, and non-ASCII to prevent header injection
     let safe_filename: String = part
         .filename
@@ -145,7 +196,7 @@ fn write_multipart_file(body: &mut Vec<u8>, boundary: &str, part: MultipartFileP
     } else {
         safe_filename
     };
-    body.extend_from_slice(format!("--{}\r\n", boundary).as_bytes());
+    body.extend_from_slice(format!("--{}\r\n", boundary.0).as_bytes());
     body.extend_from_slice(
         format!(
             "Content-Disposition: form-data; name=\"{}\"; filename=\"{}\"\r\n",
@@ -156,16 +207,6 @@ fn write_multipart_file(body: &mut Vec<u8>, boundary: &str, part: MultipartFileP
     body.extend_from_slice(format!("Content-Type: {}\r\n\r\n", part.content_type).as_bytes());
     body.extend_from_slice(part.data);
     body.extend_from_slice(b"\r\n");
-}
-
-/// Parameters for uploading a Telegram file attachment.
-#[derive(Clone, Copy)]
-struct TelegramUpload<'a> {
-    chat_id: i64,
-    filename: &'a str,
-    mime_type: &'a str,
-    data: &'a [u8],
-    reply_to_message_id: Option<i64>,
 }
 
 /// Send a photo via the Telegram Bot API (multipart upload).
@@ -187,13 +228,29 @@ fn send_photo(upload: TelegramUpload<'_>) -> Result<(), String> {
     let boundary = format!("ironclaw-{}", channel_host::now_millis());
     let mut body = Vec::new();
 
-    write_multipart_field(&mut body, &boundary, "chat_id", &upload.chat_id.to_string());
+    let chat_id_value = upload.chat_id.to_string();
+    write_multipart_field(
+        &mut body,
+        MultipartBoundary(&boundary),
+        MultipartField {
+            name: "chat_id",
+            value: &chat_id_value,
+        },
+    );
     if let Some(msg_id) = upload.reply_to_message_id {
-        write_multipart_field(&mut body, &boundary, "reply_to_message_id", &msg_id.to_string());
+        let reply_to_message_id = msg_id.to_string();
+        write_multipart_field(
+            &mut body,
+            MultipartBoundary(&boundary),
+            MultipartField {
+                name: "reply_to_message_id",
+                value: &reply_to_message_id,
+            },
+        );
     }
     write_multipart_file(
         &mut body,
-        &boundary,
+        MultipartBoundary(&boundary),
         MultipartFilePart {
             field: "photo",
             filename: upload.filename,
@@ -239,13 +296,29 @@ fn send_document(upload: TelegramUpload<'_>) -> Result<(), String> {
     let boundary = format!("ironclaw-{}", channel_host::now_millis());
     let mut body = Vec::new();
 
-    write_multipart_field(&mut body, &boundary, "chat_id", &upload.chat_id.to_string());
+    let chat_id_value = upload.chat_id.to_string();
+    write_multipart_field(
+        &mut body,
+        MultipartBoundary(&boundary),
+        MultipartField {
+            name: "chat_id",
+            value: &chat_id_value,
+        },
+    );
     if let Some(msg_id) = upload.reply_to_message_id {
-        write_multipart_field(&mut body, &boundary, "reply_to_message_id", &msg_id.to_string());
+        let reply_to_message_id = msg_id.to_string();
+        write_multipart_field(
+            &mut body,
+            MultipartBoundary(&boundary),
+            MultipartField {
+                name: "reply_to_message_id",
+                value: &reply_to_message_id,
+            },
+        );
     }
     write_multipart_file(
         &mut body,
-        &boundary,
+        MultipartBoundary(&boundary),
         MultipartFilePart {
             field: "document",
             filename: upload.filename,
@@ -313,13 +386,18 @@ pub(crate) fn send_response(
     // Try Markdown, fall back to plain text on parse errors
     match send_message(
         chat_id,
-        &response.content,
+        MessageText(&response.content),
         reply_to_message_id,
-        Some("Markdown"),
+        Some(ParseMode("Markdown")),
     ) {
         Ok(_) => Ok(()),
         Err(SendError::ParseEntities(_)) => {
-            send_message(chat_id, &response.content, reply_to_message_id, None)
+            send_message(
+                chat_id,
+                MessageText(&response.content),
+                reply_to_message_id,
+                None,
+            )
                 .map(|_| ())
                 .map_err(|e| format!("Plain-text retry also failed: {}", e))
         }
@@ -353,15 +431,17 @@ fn send_attachment(
 }
 
 /// Send a pairing code message to a chat. Used when an unknown user DMs the bot.
-pub(crate) fn send_pairing_reply(chat_id: i64, code: &str) -> Result<(), String> {
+pub(crate) fn send_pairing_reply(chat_id: i64, code: PairingCode<'_>) -> Result<(), String> {
+    let message = format!(
+        "To pair with this bot, run: `ironclaw pairing approve telegram {}`",
+        code.0
+    );
+
     send_message(
         chat_id,
-        &format!(
-            "To pair with this bot, run: `ironclaw pairing approve telegram {}`",
-            code
-        ),
+        MessageText(&message),
         None,
-        Some("Markdown"),
+        Some(ParseMode("Markdown")),
     )
     .map(|_| ())
     .map_err(|e| e.to_string())

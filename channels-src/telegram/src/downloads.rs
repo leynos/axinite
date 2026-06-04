@@ -1,5 +1,5 @@
 use crate::near::agent::channel_host::{self, InboundAttachment};
-use crate::send::percent_encode;
+use crate::send::{QueryParamValue, percent_encode};
 use crate::types::{TelegramApiResponse, TelegramFile};
 
 /// Maximum file size to download (20 MB). Files larger than this are discarded
@@ -15,7 +15,7 @@ fn download_telegram_file(file_id: &str) -> Result<Vec<u8>, String> {
     // Step 1: Call getFile to get file_path
     let get_file_url = format!(
         "https://api.telegram.org/bot{{TELEGRAM_BOT_TOKEN}}/getFile?file_id={}",
-        percent_encode(file_id)
+        percent_encode(QueryParamValue(file_id))
     );
 
     let headers = serde_json::json!({});

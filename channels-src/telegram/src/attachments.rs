@@ -1,5 +1,5 @@
 use crate::near::agent::channel_host::InboundAttachment;
-use crate::send::percent_encode;
+use crate::send::{QueryParamValue, percent_encode};
 use crate::types::{
     PhotoSize, TelegramAudio, TelegramDocument, TelegramMessage, TelegramSticker, TelegramVideo,
     TelegramVoice,
@@ -175,7 +175,7 @@ pub(crate) fn extract_attachments(message: &TelegramMessage) -> Vec<InboundAttac
     let get_file_url = |file_id: &str| {
         format!(
             "https://api.telegram.org/bot{{TELEGRAM_BOT_TOKEN}}/getFile?file_id={}",
-            percent_encode(file_id)
+            percent_encode(QueryParamValue(file_id))
         )
     };
 

@@ -4,7 +4,7 @@ use crate::exports::near::agent::channel::{
 };
 use crate::inbound::handle_update;
 use crate::polling::{fetch_updates, process_updates_response};
-use crate::send::{send_message, send_response};
+use crate::send::{MessageText, send_message, send_response};
 use crate::state::{
     ALLOW_FROM_PATH, BOT_USERNAME_PATH, DM_POLICY_PATH, OWNER_ID_PATH, POLLING_STATE_PATH,
     RESPOND_TO_ALL_GROUP_PATH,
@@ -304,7 +304,12 @@ impl Guest for TelegramChannel {
             TelegramStatusAction::Notify(prompt) => {
                 // Send user-visible status updates for actionable events.
                 if let Err(first_err) =
-                    send_message(metadata.chat_id, &prompt, Some(metadata.message_id), None)
+                    send_message(
+                        metadata.chat_id,
+                        MessageText(&prompt),
+                        Some(metadata.message_id),
+                        None,
+                    )
                 {
                     channel_host::log(
                         channel_host::LogLevel::Warn,
@@ -314,7 +319,9 @@ impl Guest for TelegramChannel {
                         ),
                     );
 
-                    if let Err(retry_err) = send_message(metadata.chat_id, &prompt, None, None) {
+                    if let Err(retry_err) =
+                        send_message(metadata.chat_id, MessageText(&prompt), None, None)
+                    {
                         channel_host::log(
                             channel_host::LogLevel::Debug,
                             &format!(
