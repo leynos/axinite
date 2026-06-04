@@ -531,7 +531,7 @@ fn load_allowed_senders() -> Vec<String> {
     allowed
 }
 
-/// Checks whether the sender is explicitly allowed.
+/// Checks whether the sender is explicitly allowed by wildcard, user id, or username.
 fn sender_in_allow_list(allowed: &[String], user_id: &str, username: Option<&str>) -> bool {
     allowed.iter().any(|entry| entry == "*")
         || allowed.iter().any(|entry| entry == user_id)
