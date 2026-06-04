@@ -145,6 +145,44 @@ fn download_and_store_attachment(att: &InboundAttachment, data_kind: &str) {
     }
 }
 
+#[cfg(test)]
+fn download_and_store_document_attachment(att: &mut InboundAttachment) {
+    let _ = att;
+}
+
+#[cfg(not(test))]
+fn download_and_store_document_attachment(att: &mut InboundAttachment) {
+    match download_telegram_file(&att.id) {
+        Ok(bytes) => {
+            channel_host::log(
+                channel_host::LogLevel::Info,
+                &format!(
+                    "Downloaded document file: {} bytes, mime={}",
+                    bytes.len(),
+                    att.mime_type
+                ),
+            );
+            if let Err(e) = channel_host::store_attachment_data(&att.id, &bytes) {
+                channel_host::log(
+                    channel_host::LogLevel::Error,
+                    &format!("Failed to store document data: {}", e),
+                );
+            }
+        }
+        Err(e) => {
+            channel_host::log(
+                channel_host::LogLevel::Error,
+                &format!("Failed to download document file: {}", e),
+            );
+            let name = att.filename.as_deref().unwrap_or("document");
+            att.extracted_text = Some(format!(
+                "[Failed to download '{name}': {e}. \
+                 The file may be too large or unavailable. Please try a smaller file.]"
+            ));
+        }
+    }
+}
+
 fn download_and_store_matching_attachments(
     attachments: &[InboundAttachment],
     data_kind: &str,
@@ -193,52 +231,11 @@ pub(crate) fn is_downloadable_document(att: &InboundAttachment) -> bool {
 /// `DocumentExtractionMiddleware` can extract text from PDFs, Office docs, etc.
 ///
 /// On failure, sets `extracted_text` to an error message so the user gets feedback.
-#[cfg(test)]
 pub(crate) fn download_and_store_documents(attachments: &mut [InboundAttachment]) {
-    let _ = attachments;
-}
-
-/// Download document file bytes and store them via the host for text extraction.
-///
-/// Downloads any attachment that isn't voice or image so the host-side
-/// `DocumentExtractionMiddleware` can extract text from PDFs, Office docs, etc.
-///
-/// On failure, sets `extracted_text` to an error message so the user gets feedback.
-#[cfg(not(test))]
-pub(crate) fn download_and_store_documents(attachments: &mut [InboundAttachment]) {
-    for att in attachments.iter_mut() {
-        if !is_downloadable_document(att) {
-            continue;
-        }
-
-        match download_telegram_file(&att.id) {
-            Ok(bytes) => {
-                channel_host::log(
-                    channel_host::LogLevel::Info,
-                    &format!(
-                        "Downloaded document file: {} bytes, mime={}",
-                        bytes.len(),
-                        att.mime_type
-                    ),
-                );
-                if let Err(e) = channel_host::store_attachment_data(&att.id, &bytes) {
-                    channel_host::log(
-                        channel_host::LogLevel::Error,
-                        &format!("Failed to store document data: {}", e),
-                    );
-                }
-            }
-            Err(e) => {
-                channel_host::log(
-                    channel_host::LogLevel::Error,
-                    &format!("Failed to download document file: {}", e),
-                );
-                let name = att.filename.as_deref().unwrap_or("document");
-                att.extracted_text = Some(format!(
-                    "[Failed to download '{name}': {e}. \
-                     The file may be too large or unavailable. Please try a smaller file.]"
-                ));
-            }
-        }
+    for att in attachments
+        .iter_mut()
+        .filter(|att| is_downloadable_document(att))
+    {
+        download_and_store_document_attachment(att);
     }
 }
