@@ -368,6 +368,7 @@ pub fn send_message(session: &Session, chat_id: i64, text: &str) -> Result<Strin
         effect: None,
         allow_paid_stars: None,
         suggested_post: None,
+        schedule_repeat_period: None,
     }
     .to_bytes();
 
@@ -428,6 +429,8 @@ pub fn forward_message(
         video_timestamp: None,
         allow_paid_stars: None,
         suggested_post: None,
+        effect: None,
+        schedule_repeat_period: None,
     }
     .to_bytes();
 
