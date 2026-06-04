@@ -1,6 +1,6 @@
 use crate::exports::near::agent::channel::{
     AgentResponse, ChannelConfig, Guest, HttpEndpointConfig, IncomingHttpRequest,
-    OutgoingHttpResponse, PollConfig, StatusType, StatusUpdate,
+    OutgoingHttpResponse, PollConfig, StatusUpdate,
 };
 use crate::inbound::handle_update;
 use crate::polling::{fetch_updates, process_updates_response};
@@ -12,7 +12,8 @@ use crate::state::{
 use crate::status::{classify_status_update, TelegramStatusAction};
 use crate::types::{TelegramConfig, TelegramMessageMetadata};
 use crate::webhook::{delete_webhook, json_response, register_webhook};
-use crate::{channel_host, TelegramChannel};
+use crate::near::agent::channel_host;
+use crate::TelegramChannel;
 
 fn log_bot_username(config: &TelegramConfig) {
     if let Some(ref username) = config.bot_username {

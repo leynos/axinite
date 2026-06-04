@@ -3,7 +3,7 @@ use crate::near::agent::channel_host;
 use crate::types::{SentMessage, TelegramApiResponse};
 
 /// Errors from send_message, split so callers can match on parse-entity failures.
-enum SendError {
+pub(crate) enum SendError {
     /// Telegram returned 400 with "can't parse entities" (Markdown issue).
     ParseEntities(String),
     /// Any other failure.

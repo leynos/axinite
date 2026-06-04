@@ -8,7 +8,7 @@ use crate::types::{
 /// Build extras-json with optional duration.
 pub(crate) fn extras_json(duration_secs: Option<u32>) -> String {
     match duration_secs {
-        Some(d) => format!(r#"{{\"duration_secs\":{}}}"#, d),
+        Some(d) => format!(r#"{{"duration_secs":{}}}"#, d),
         None => String::new(),
     }
 }
@@ -171,7 +171,7 @@ fn resolve_mime(mime: &Option<String>, default: &str) -> String {
 pub(crate) fn extract_attachments(message: &TelegramMessage) -> Vec<InboundAttachment> {
     let get_file_url = |file_id: &str| {
         format!(
-            "https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/getFile?file_id={}",
+            "https://api.telegram.org/bot{{TELEGRAM_BOT_TOKEN}}/getFile?file_id={}",
             percent_encode(file_id)
         )
     };
