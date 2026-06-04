@@ -179,10 +179,21 @@ fn image_generated_message(path: Option<&String>) -> String {
 
 /// Maps a [`StatusUpdate`] variant to the `(StatusType, message)` pair
 /// used by the WIT interface.
-fn status_type_and_message(status: &StatusUpdate) -> (wit_channel::StatusType, String) {
+fn simple_status_type_and_message(status: &StatusUpdate) -> (wit_channel::StatusType, String) {
     match status {
         StatusUpdate::Thinking(msg) => (wit_channel::StatusType::Thinking, msg.clone()),
         StatusUpdate::StreamChunk(chunk) => (wit_channel::StatusType::Thinking, chunk.clone()),
+        StatusUpdate::Status(msg) => (classify_status_string(StatusText(msg)), msg.clone()),
+        StatusUpdate::ImageGenerated { path, .. } => (
+            wit_channel::StatusType::Status,
+            image_generated_message(path.as_ref()),
+        ),
+        _ => unreachable!("simple_status_type_and_message called with non-simple status"),
+    }
+}
+
+fn tool_status_type_and_message(status: &StatusUpdate) -> (wit_channel::StatusType, String) {
+    match status {
         StatusUpdate::ToolStarted { name } => (
             wit_channel::StatusType::ToolStarted,
             format!("Tool started: {}", name),
@@ -198,7 +209,12 @@ fn status_type_and_message(status: &StatusUpdate) -> (wit_channel::StatusType, S
             wit_channel::StatusType::ToolResult,
             tool_result_message(ToolResultMessageParts { name, preview }),
         ),
-        StatusUpdate::Status(msg) => (classify_status_string(StatusText(msg)), msg.clone()),
+        _ => unreachable!("tool_status_type_and_message called with non-tool status"),
+    }
+}
+
+fn workflow_status_type_and_message(status: &StatusUpdate) -> (wit_channel::StatusType, String) {
+    match status {
         StatusUpdate::ApprovalNeeded {
             request_id,
             tool_name,
@@ -224,6 +240,12 @@ fn status_type_and_message(status: &StatusUpdate) -> (wit_channel::StatusType, S
                 browse_url,
             }),
         ),
+        _ => unreachable!("workflow_status_type_and_message called with non-workflow status"),
+    }
+}
+
+fn auth_status_type_and_message(status: &StatusUpdate) -> (wit_channel::StatusType, String) {
+    match status {
         StatusUpdate::AuthRequired {
             extension_name,
             instructions,
@@ -250,10 +272,28 @@ fn status_type_and_message(status: &StatusUpdate) -> (wit_channel::StatusType, S
                 message,
             }),
         ),
-        StatusUpdate::ImageGenerated { path, .. } => (
-            wit_channel::StatusType::Status,
-            image_generated_message(path.as_ref()),
-        ),
+        _ => unreachable!("auth_status_type_and_message called with non-auth status"),
+    }
+}
+
+fn status_type_and_message(status: &StatusUpdate) -> (wit_channel::StatusType, String) {
+    match status {
+        StatusUpdate::Thinking(_)
+        | StatusUpdate::StreamChunk(_)
+        | StatusUpdate::Status(_)
+        | StatusUpdate::ImageGenerated { .. } => simple_status_type_and_message(status),
+
+        StatusUpdate::ToolStarted { .. }
+        | StatusUpdate::ToolCompleted { .. }
+        | StatusUpdate::ToolResult { .. } => tool_status_type_and_message(status),
+
+        StatusUpdate::ApprovalNeeded { .. } | StatusUpdate::JobStarted { .. } => {
+            workflow_status_type_and_message(status)
+        }
+
+        StatusUpdate::AuthRequired { .. } | StatusUpdate::AuthCompleted { .. } => {
+            auth_status_type_and_message(status)
+        }
     }
 }
 
