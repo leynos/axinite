@@ -304,7 +304,7 @@ pub struct HttpResponse {
     pub body: Vec<u8>,
 }
 
-fn error_body_bytes(body: ErrorBody<'_>) -> Vec<u8> {
+fn http_error_body(body: ErrorBody<'_>) -> Vec<u8> {
     body.0.as_bytes().to_vec()
 }
 
@@ -335,7 +335,7 @@ impl HttpResponse {
         Self {
             status,
             headers: HashMap::new(),
-            body: error_body_bytes(ErrorBody(message)),
+            body: http_error_body(ErrorBody(message)),
         }
     }
 }
