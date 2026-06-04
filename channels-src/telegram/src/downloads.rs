@@ -14,7 +14,7 @@ fn download_telegram_file(file_id: &str) -> Result<Vec<u8>, String> {
 
     // Step 1: Call getFile to get file_path
     let get_file_url = format!(
-        "https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/getFile?file_id={}",
+        "https://api.telegram.org/bot{{TELEGRAM_BOT_TOKEN}}/getFile?file_id={}",
         percent_encode(file_id)
     );
 
@@ -64,7 +64,7 @@ fn download_telegram_file(file_id: &str) -> Result<Vec<u8>, String> {
 
     // Step 2: Download the actual file bytes
     let download_url = format!(
-        "https://api.telegram.org/file/bot{TELEGRAM_BOT_TOKEN}/{}",
+        "https://api.telegram.org/file/bot{{TELEGRAM_BOT_TOKEN}}/{}",
         file_path
     );
 
@@ -186,6 +186,18 @@ pub(crate) fn is_downloadable_document(att: &InboundAttachment) -> bool {
 /// `DocumentExtractionMiddleware` can extract text from PDFs, Office docs, etc.
 ///
 /// On failure, sets `extracted_text` to an error message so the user gets feedback.
+#[cfg(test)]
+pub(crate) fn download_and_store_documents(attachments: &mut [InboundAttachment]) {
+    let _ = attachments;
+}
+
+/// Download document file bytes and store them via the host for text extraction.
+///
+/// Downloads any attachment that isn't voice or image so the host-side
+/// `DocumentExtractionMiddleware` can extract text from PDFs, Office docs, etc.
+///
+/// On failure, sets `extracted_text` to an error message so the user gets feedback.
+#[cfg(not(test))]
 pub(crate) fn download_and_store_documents(attachments: &mut [InboundAttachment]) {
     for att in attachments.iter_mut() {
         if !is_downloadable_document(att) {

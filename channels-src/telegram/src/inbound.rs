@@ -1,4 +1,4 @@
-use crate::attachments::{extract_attachments, extras_json};
+use crate::attachments::extract_attachments;
 use crate::downloads::{
     download_and_store_documents, download_and_store_images, download_and_store_voice,
 };

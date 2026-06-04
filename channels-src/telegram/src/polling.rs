@@ -5,7 +5,7 @@ use crate::inbound::handle_update;
 
 pub(crate) fn get_updates_url(offset: i64, timeout_secs: u32) -> String {
     format!(
-        "https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/getUpdates?offset={}&timeout={}&allowed_updates=[\"message\",\"edited_message\"]",
+        "https://api.telegram.org/bot{{TELEGRAM_BOT_TOKEN}}/getUpdates?offset={}&timeout={}&allowed_updates=[\"message\",\"edited_message\"]",
         offset, timeout_secs
     )
 }

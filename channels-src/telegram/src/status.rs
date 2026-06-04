@@ -6,9 +6,9 @@ pub(crate) enum TelegramStatusAction {
     Notify(String),
 }
 
-const TELEGRAM_STATUS_MAX_CHARS: usize = 600;
+pub(crate) const TELEGRAM_STATUS_MAX_CHARS: usize = 600;
 
-fn truncate_status_message(input: &str, max_chars: usize) -> String {
+pub(crate) fn truncate_status_message(input: &str, max_chars: usize) -> String {
     let mut iter = input.chars();
     let truncated: String = iter.by_ref().take(max_chars).collect();
     if iter.next().is_some() {
@@ -18,7 +18,7 @@ fn truncate_status_message(input: &str, max_chars: usize) -> String {
     }
 }
 
-fn status_message_for_user(update: &StatusUpdate) -> Option<String> {
+pub(crate) fn status_message_for_user(update: &StatusUpdate) -> Option<String> {
     let message = update.message.trim();
     if message.is_empty() {
         None
