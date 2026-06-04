@@ -124,17 +124,19 @@ fn write_multipart_field(body: &mut Vec<u8>, boundary: &str, name: &str, value: 
     body.extend_from_slice(b"\r\n");
 }
 
+/// Describes one multipart/form-data file part.
+struct MultipartFilePart<'a> {
+    field: &'a str,
+    filename: &'a str,
+    content_type: &'a str,
+    data: &'a [u8],
+}
+
 /// Write a multipart/form-data file field.
-fn write_multipart_file(
-    body: &mut Vec<u8>,
-    boundary: &str,
-    field: &str,
-    filename: &str,
-    content_type: &str,
-    data: &[u8],
-) {
+fn write_multipart_file(body: &mut Vec<u8>, boundary: &str, part: MultipartFilePart<'_>) {
     // Sanitize filename: strip quotes, newlines, and non-ASCII to prevent header injection
-    let safe_filename: String = filename
+    let safe_filename: String = part
+        .filename
         .chars()
         .filter(|c| *c != '"' && *c != '\r' && *c != '\n' && *c != '\\' && c.is_ascii())
         .collect();
@@ -147,45 +149,58 @@ fn write_multipart_file(
     body.extend_from_slice(
         format!(
             "Content-Disposition: form-data; name=\"{}\"; filename=\"{}\"\r\n",
-            field, safe_filename
+            part.field, safe_filename
         )
         .as_bytes(),
     );
-    body.extend_from_slice(format!("Content-Type: {}\r\n\r\n", content_type).as_bytes());
-    body.extend_from_slice(data);
+    body.extend_from_slice(format!("Content-Type: {}\r\n\r\n", part.content_type).as_bytes());
+    body.extend_from_slice(part.data);
     body.extend_from_slice(b"\r\n");
+}
+
+/// Parameters for uploading a Telegram file attachment.
+#[derive(Clone, Copy)]
+struct TelegramUpload<'a> {
+    chat_id: i64,
+    filename: &'a str,
+    mime_type: &'a str,
+    data: &'a [u8],
+    reply_to_message_id: Option<i64>,
 }
 
 /// Send a photo via the Telegram Bot API (multipart upload).
 ///
 /// Falls back to `send_document()` if the photo exceeds 10 MB.
-fn send_photo(
-    chat_id: i64,
-    filename: &str,
-    mime_type: &str,
-    data: &[u8],
-    reply_to_message_id: Option<i64>,
-) -> Result<(), String> {
-    if data.len() > MAX_PHOTO_SIZE {
+fn send_photo(upload: TelegramUpload<'_>) -> Result<(), String> {
+    if upload.data.len() > MAX_PHOTO_SIZE {
         channel_host::log(
             channel_host::LogLevel::Info,
             &format!(
                 "Photo {} exceeds 10MB ({}), sending as document",
-                filename,
-                data.len()
+                upload.filename,
+                upload.data.len()
             ),
         );
-        return send_document(chat_id, filename, mime_type, data, reply_to_message_id);
+        return send_document(upload);
     }
 
     let boundary = format!("ironclaw-{}", channel_host::now_millis());
     let mut body = Vec::new();
 
-    write_multipart_field(&mut body, &boundary, "chat_id", &chat_id.to_string());
-    if let Some(msg_id) = reply_to_message_id {
+    write_multipart_field(&mut body, &boundary, "chat_id", &upload.chat_id.to_string());
+    if let Some(msg_id) = upload.reply_to_message_id {
         write_multipart_field(&mut body, &boundary, "reply_to_message_id", &msg_id.to_string());
     }
-    write_multipart_file(&mut body, &boundary, "photo", filename, mime_type, data);
+    write_multipart_file(
+        &mut body,
+        &boundary,
+        MultipartFilePart {
+            field: "photo",
+            filename: upload.filename,
+            content_type: upload.mime_type,
+            data: upload.data,
+        },
+    );
     body.extend_from_slice(format!("--{}--\r\n", boundary).as_bytes());
 
     let headers = serde_json::json!({
@@ -204,7 +219,7 @@ fn send_photo(
         Ok(resp) if resp.status == 200 => {
             channel_host::log(
                 channel_host::LogLevel::Debug,
-                &format!("Sent photo '{}' to chat {}", filename, chat_id),
+                &format!("Sent photo '{}' to chat {}", upload.filename, upload.chat_id),
             );
             Ok(())
         }
@@ -220,21 +235,24 @@ fn send_photo(
 }
 
 /// Send a document via the Telegram Bot API (multipart upload).
-fn send_document(
-    chat_id: i64,
-    filename: &str,
-    mime_type: &str,
-    data: &[u8],
-    reply_to_message_id: Option<i64>,
-) -> Result<(), String> {
+fn send_document(upload: TelegramUpload<'_>) -> Result<(), String> {
     let boundary = format!("ironclaw-{}", channel_host::now_millis());
     let mut body = Vec::new();
 
-    write_multipart_field(&mut body, &boundary, "chat_id", &chat_id.to_string());
-    if let Some(msg_id) = reply_to_message_id {
+    write_multipart_field(&mut body, &boundary, "chat_id", &upload.chat_id.to_string());
+    if let Some(msg_id) = upload.reply_to_message_id {
         write_multipart_field(&mut body, &boundary, "reply_to_message_id", &msg_id.to_string());
     }
-    write_multipart_file(&mut body, &boundary, "document", filename, mime_type, data);
+    write_multipart_file(
+        &mut body,
+        &boundary,
+        MultipartFilePart {
+            field: "document",
+            filename: upload.filename,
+            content_type: upload.mime_type,
+            data: upload.data,
+        },
+    );
     body.extend_from_slice(format!("--{}--\r\n", boundary).as_bytes());
 
     let headers = serde_json::json!({
@@ -253,7 +271,10 @@ fn send_document(
         Ok(resp) if resp.status == 200 => {
             channel_host::log(
                 channel_host::LogLevel::Debug,
-                &format!("Sent document '{}' to chat {}", filename, chat_id),
+                &format!(
+                    "Sent document '{}' to chat {}",
+                    upload.filename, upload.chat_id
+                ),
             );
             Ok(())
         }
@@ -313,21 +334,21 @@ fn send_attachment(
     reply_to_message_id: Option<i64>,
 ) -> Result<(), String> {
     if PHOTO_MIME_TYPES.contains(&attachment.mime_type.as_str()) {
-        send_photo(
+        send_photo(TelegramUpload {
             chat_id,
-            &attachment.filename,
-            &attachment.mime_type,
-            &attachment.data,
+            filename: &attachment.filename,
+            mime_type: &attachment.mime_type,
+            data: &attachment.data,
             reply_to_message_id,
-        )
+        })
     } else {
-        send_document(
+        send_document(TelegramUpload {
             chat_id,
-            &attachment.filename,
-            &attachment.mime_type,
-            &attachment.data,
+            filename: &attachment.filename,
+            mime_type: &attachment.mime_type,
+            data: &attachment.data,
             reply_to_message_id,
-        )
+        })
     }
 }
 

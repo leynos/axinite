@@ -13,8 +13,8 @@ pub(crate) fn extras_json(duration_secs: Option<u32>) -> String {
     }
 }
 
-/// Build an inbound attachment with the standard fields.
-fn make_inbound_attachment(
+/// Field values used to construct an inbound attachment.
+struct InboundAttachmentParts {
     id: String,
     mime_type: String,
     filename: Option<String>,
@@ -22,16 +22,19 @@ fn make_inbound_attachment(
     source_url: Option<String>,
     extracted_text: Option<String>,
     duration_secs: Option<u32>,
-) -> InboundAttachment {
+}
+
+/// Build an inbound attachment with the standard fields.
+fn make_inbound_attachment(parts: InboundAttachmentParts) -> InboundAttachment {
     InboundAttachment {
-        id,
-        mime_type,
-        filename,
-        size_bytes,
-        source_url,
+        id: parts.id,
+        mime_type: parts.mime_type,
+        filename: parts.filename,
+        size_bytes: parts.size_bytes,
+        source_url: parts.source_url,
         storage_key: None,
-        extracted_text,
-        extras_json: extras_json(duration_secs),
+        extracted_text: parts.extracted_text,
+        extras_json: extras_json(parts.duration_secs),
     }
 }
 
@@ -151,15 +154,15 @@ fn attachment_from_spec(
     spec: MediaSpec,
     get_file_url: &impl Fn(&str) -> String,
 ) -> InboundAttachment {
-    make_inbound_attachment(
-        spec.file_id.clone(),
-        spec.mime_type,
-        spec.filename,
-        spec.file_size.map(|s| s as u64),
-        Some(get_file_url(&spec.file_id)),
-        None,
-        spec.duration_secs,
-    )
+    make_inbound_attachment(InboundAttachmentParts {
+        id: spec.file_id.clone(),
+        mime_type: spec.mime_type,
+        filename: spec.filename,
+        size_bytes: spec.file_size.map(|s| s as u64),
+        source_url: Some(get_file_url(&spec.file_id)),
+        extracted_text: None,
+        duration_secs: spec.duration_secs,
+    })
 }
 
 /// Returns `mime.clone()` when present, falling back to `default`.
