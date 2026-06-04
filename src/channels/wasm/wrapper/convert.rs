@@ -10,6 +10,47 @@ use crate::channels::wasm::schema::ChannelConfig;
 // Type aliases for the generated WIT types (exported interface)
 pub(super) use super::exports::near::agent::channel as wit_channel;
 
+struct StatusText<'a>(&'a str);
+
+struct StatusPreview<'a>(&'a str);
+
+struct ErrorBody<'a>(&'a str);
+
+struct AuthRequiredMessageParts<'a> {
+    extension_name: &'a str,
+    instructions: &'a Option<String>,
+    auth_url: &'a Option<String>,
+    setup_url: &'a Option<String>,
+}
+
+struct ToolCompletedMessageParts<'a> {
+    name: &'a str,
+    success: bool,
+}
+
+struct ToolResultMessageParts<'a> {
+    name: &'a str,
+    preview: &'a str,
+}
+
+struct ApprovalNeededMessageParts<'a> {
+    request_id: &'a str,
+    tool_name: &'a str,
+    description: &'a str,
+}
+
+struct JobStartedMessageParts<'a> {
+    job_id: &'a str,
+    title: &'a str,
+    browse_url: &'a str,
+}
+
+struct AuthCompletedMessageParts<'a> {
+    extension_name: &'a str,
+    success: bool,
+    message: &'a str,
+}
+
 /// Convert WIT-generated ChannelConfig to our internal type.
 pub(super) fn convert_channel_config(wit: wit_channel::ChannelConfig) -> ChannelConfig {
     ChannelConfig {
@@ -45,8 +86,8 @@ pub(super) fn convert_http_response(wit: wit_channel::OutgoingHttpResponse) -> H
 }
 
 /// Convert a StatusUpdate + metadata into the WIT StatusUpdate type.
-pub(super) fn truncate_status_text(input: &str, max_chars: usize) -> String {
-    let mut iter = input.chars();
+fn truncate_status_text(input: StatusPreview<'_>, max_chars: usize) -> String {
+    let mut iter = input.0.chars();
     let truncated: String = iter.by_ref().take(max_chars).collect();
     if iter.next().is_some() {
         format!("{}...", truncated)
@@ -55,8 +96,8 @@ pub(super) fn truncate_status_text(input: &str, max_chars: usize) -> String {
     }
 }
 
-fn classify_status_string(msg: &str) -> wit_channel::StatusType {
-    let trimmed = msg.trim();
+fn classify_status_string(msg: StatusText<'_>) -> wit_channel::StatusType {
+    let trimmed = msg.0.trim();
     if trimmed.eq_ignore_ascii_case("done") {
         wit_channel::StatusType::Done
     } else if trimmed.eq_ignore_ascii_case("interrupted") {
@@ -66,12 +107,14 @@ fn classify_status_string(msg: &str) -> wit_channel::StatusType {
     }
 }
 
-fn build_auth_required_message(
-    extension_name: &str,
-    instructions: &Option<String>,
-    auth_url: &Option<String>,
-    setup_url: &Option<String>,
-) -> String {
+fn build_auth_required_message(parts: AuthRequiredMessageParts<'_>) -> String {
+    let AuthRequiredMessageParts {
+        extension_name,
+        instructions,
+        auth_url,
+        setup_url,
+    } = parts;
+
     let mut lines = vec![format!("Authentication required for {}.", extension_name)];
     if let Some(text) = instructions
         && !text.trim().is_empty()
@@ -87,40 +130,43 @@ fn build_auth_required_message(
     lines.join("\n")
 }
 
-fn tool_completed_message(name: &str, success: bool) -> String {
+fn tool_completed_message(parts: ToolCompletedMessageParts<'_>) -> String {
     format!(
         "Tool completed: {} ({})",
-        name,
-        if success { "ok" } else { "failed" }
+        parts.name,
+        if parts.success { "ok" } else { "failed" }
     )
 }
 
-fn tool_result_message(name: &str, preview: &str) -> String {
+fn tool_result_message(parts: ToolResultMessageParts<'_>) -> String {
     format!(
         "Tool result: {}\n{}",
-        name,
-        truncate_status_text(preview, 280)
+        parts.name,
+        truncate_status_text(StatusPreview(parts.preview), 280)
     )
 }
 
-fn approval_needed_message(request_id: &str, tool_name: &str, description: &str) -> String {
+fn approval_needed_message(parts: ApprovalNeededMessageParts<'_>) -> String {
     format!(
         "Approval needed for tool '{}'. {}\nRequest ID: {}\n\
          Reply with: yes (or /approve), no (or /deny), or always (or /always).",
-        tool_name, description, request_id
+        parts.tool_name, parts.description, parts.request_id
     )
 }
 
-fn job_started_message(job_id: &str, title: &str, browse_url: &str) -> String {
-    format!("Job started: {} ({})\n{}", title, job_id, browse_url)
+fn job_started_message(parts: JobStartedMessageParts<'_>) -> String {
+    format!(
+        "Job started: {} ({})\n{}",
+        parts.title, parts.job_id, parts.browse_url
+    )
 }
 
-fn auth_completed_message(extension_name: &str, success: bool, message: &str) -> String {
+fn auth_completed_message(parts: AuthCompletedMessageParts<'_>) -> String {
     format!(
         "Authentication {} for {}. {}",
-        if success { "completed" } else { "failed" },
-        extension_name,
-        message
+        if parts.success { "completed" } else { "failed" },
+        parts.extension_name,
+        parts.message
     )
 }
 
@@ -143,13 +189,16 @@ fn status_type_and_message(status: &StatusUpdate) -> (wit_channel::StatusType, S
         ),
         StatusUpdate::ToolCompleted { name, success, .. } => (
             wit_channel::StatusType::ToolCompleted,
-            tool_completed_message(name, *success),
+            tool_completed_message(ToolCompletedMessageParts {
+                name,
+                success: *success,
+            }),
         ),
         StatusUpdate::ToolResult { name, preview } => (
             wit_channel::StatusType::ToolResult,
-            tool_result_message(name, preview),
+            tool_result_message(ToolResultMessageParts { name, preview }),
         ),
-        StatusUpdate::Status(msg) => (classify_status_string(msg), msg.clone()),
+        StatusUpdate::Status(msg) => (classify_status_string(StatusText(msg)), msg.clone()),
         StatusUpdate::ApprovalNeeded {
             request_id,
             tool_name,
@@ -157,7 +206,11 @@ fn status_type_and_message(status: &StatusUpdate) -> (wit_channel::StatusType, S
             ..
         } => (
             wit_channel::StatusType::ApprovalNeeded,
-            approval_needed_message(request_id, tool_name, description),
+            approval_needed_message(ApprovalNeededMessageParts {
+                request_id,
+                tool_name,
+                description,
+            }),
         ),
         StatusUpdate::JobStarted {
             job_id,
@@ -165,7 +218,11 @@ fn status_type_and_message(status: &StatusUpdate) -> (wit_channel::StatusType, S
             browse_url,
         } => (
             wit_channel::StatusType::JobStarted,
-            job_started_message(job_id, title, browse_url),
+            job_started_message(JobStartedMessageParts {
+                job_id,
+                title,
+                browse_url,
+            }),
         ),
         StatusUpdate::AuthRequired {
             extension_name,
@@ -174,7 +231,12 @@ fn status_type_and_message(status: &StatusUpdate) -> (wit_channel::StatusType, S
             setup_url,
         } => (
             wit_channel::StatusType::AuthRequired,
-            build_auth_required_message(extension_name, instructions, auth_url, setup_url),
+            build_auth_required_message(AuthRequiredMessageParts {
+                extension_name,
+                instructions,
+                auth_url,
+                setup_url,
+            }),
         ),
         StatusUpdate::AuthCompleted {
             extension_name,
@@ -182,7 +244,11 @@ fn status_type_and_message(status: &StatusUpdate) -> (wit_channel::StatusType, S
             message,
         } => (
             wit_channel::StatusType::AuthCompleted,
-            auth_completed_message(extension_name, *success, message),
+            auth_completed_message(AuthCompletedMessageParts {
+                extension_name,
+                success: *success,
+                message,
+            }),
         ),
         StatusUpdate::ImageGenerated { path, .. } => (
             wit_channel::StatusType::Status,
@@ -238,6 +304,10 @@ pub struct HttpResponse {
     pub body: Vec<u8>,
 }
 
+fn error_body_bytes(body: ErrorBody<'_>) -> Vec<u8> {
+    body.0.as_bytes().to_vec()
+}
+
 impl HttpResponse {
     /// Create an OK response.
     pub fn ok() -> Self {
@@ -265,7 +335,7 @@ impl HttpResponse {
         Self {
             status,
             headers: HashMap::new(),
-            body: message.as_bytes().to_vec(),
+            body: error_body_bytes(ErrorBody(message)),
         }
     }
 }
