@@ -52,10 +52,10 @@ pub(crate) fn delete_webhook() -> Result<(), String> {
 /// Register webhook URL with Telegram API.
 ///
 /// Called during on_start() when tunnel_url is configured.
-pub(crate) fn register_webhook(tunnel_url: &str, webhook_secret: Option<&str>) -> Result<(), String> {
-    let webhook_url = format!("{}/webhook/telegram", tunnel_url);
-
-    // Build setWebhook request body
+fn build_set_webhook_body(
+    webhook_url: &str,
+    webhook_secret: Option<&str>,
+) -> Result<Vec<u8>, String> {
     let mut body = serde_json::json!({
         "url": webhook_url,
         "allowed_updates": ["message", "edited_message"]
@@ -65,70 +65,99 @@ pub(crate) fn register_webhook(tunnel_url: &str, webhook_secret: Option<&str>) -
         body["secret_token"] = serde_json::Value::String(secret.to_string());
     }
 
-    let body_bytes =
-        serde_json::to_vec(&body).map_err(|e| format!("Failed to serialize body: {}", e))?;
+    serde_json::to_vec(&body).map_err(|e| format!("Failed to serialize body: {}", e))
+}
 
-    let headers = serde_json::json!({
+fn set_webhook_headers() -> String {
+    serde_json::json!({
         "Content-Type": "application/json"
-    });
+    })
+    .to_string()
+}
 
-    // Make HTTP request to Telegram API
-    // Note: {TELEGRAM_BOT_TOKEN} is replaced by host with the actual token
-    let result = channel_host::http_request(&channel_host::HttpRequestParams {
+fn post_set_webhook(
+    headers_json: &str,
+    body_bytes: &[u8],
+    retry_context: Option<&str>,
+) -> Result<channel_host::HttpResponse, String> {
+    channel_host::http_request(&channel_host::HttpRequestParams {
         method: "POST".to_string(),
         url: "https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/setWebhook".to_string(),
-        headers_json: headers.to_string(),
-        body: Some(body_bytes.clone()),
+        headers_json: headers_json.to_string(),
+        body: Some(body_bytes.to_vec()),
         timeout_ms: None,
-    });
+    })
+    .map_err(|e| match retry_context {
+        Some(context) => format!("HTTP request failed {}: {}", context, e),
+        None => format!("HTTP request failed: {}", e),
+    })
+}
 
-    let mut response = match result {
-        Ok(response) => response,
-        Err(e) => return Err(format!("HTTP request failed: {}", e)),
-    };
+fn retry_set_webhook_after_conflict(
+    headers_json: &str,
+    body_bytes: &[u8],
+) -> Result<channel_host::HttpResponse, String> {
+    channel_host::log(
+        channel_host::LogLevel::Warn,
+        "409 Conflict -- deleting existing webhook and retrying",
+    );
+    let _ = delete_webhook();
 
-    let mut retried = false;
-    if response.status == 409 {
-        channel_host::log(
-            channel_host::LogLevel::Warn,
-            "409 Conflict -- deleting existing webhook and retrying",
-        );
-        let _ = delete_webhook();
-        retried = true;
+    channel_host::http_request(&channel_host::HttpRequestParams {
+        method: "POST".to_string(),
+        url: "https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/setWebhook".to_string(),
+        headers_json: headers_json.to_string(),
+        body: Some(body_bytes.to_vec()),
+        timeout_ms: None,
+    })
+    .map_err(|e| format!("HTTP request failed (after 409 retry): {}", e))
+}
 
-        response = match channel_host::http_request(&channel_host::HttpRequestParams {
-            method: "POST".to_string(),
-            url: "https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/setWebhook".to_string(),
-            headers_json: headers.to_string(),
-            body: Some(body_bytes.clone()),
-            timeout_ms: None,
-        }) {
-            Ok(resp) => resp,
-            Err(e) => return Err(format!("HTTP request failed (after 409 retry): {}", e)),
-        };
+fn register_webhook_response_after_retry(
+    response: channel_host::HttpResponse,
+    headers_json: &str,
+    body_bytes: &[u8],
+) -> Result<(channel_host::HttpResponse, bool), String> {
+    if response.status != 409 {
+        return Ok((response, false));
     }
 
-    if response.status != 200 {
-        let body_str = String::from_utf8_lossy(&response.body);
-        let context = if retried { " (after 409 retry)" } else { "" };
-        return Err(format!("HTTP {}{}: {}", response.status, context, body_str));
+    retry_set_webhook_after_conflict(headers_json, body_bytes).map(|response| (response, true))
+}
+
+fn validate_http_status(response: &channel_host::HttpResponse, retried: bool) -> Result<(), String> {
+    if response.status == 200 {
+        return Ok(());
     }
 
-    // Parse Telegram API response
-    let api_response: TelegramApiResponse<serde_json::Value> = serde_json::from_slice(&response.body)
-        .map_err(|e| format!("Failed to parse response: {}", e))?;
+    let body_str = String::from_utf8_lossy(&response.body);
+    let context = if retried { " (after 409 retry)" } else { "" };
+    Err(format!("HTTP {}{}: {}", response.status, context, body_str))
+}
 
-    if !api_response.ok {
-        let context = if retried { " (after 409 retry)" } else { "" };
-        return Err(format!(
-            "Telegram API error{}: {}",
-            context,
-            api_response
-                .description
-                .unwrap_or_else(|| "unknown".to_string())
-        ));
+fn validate_telegram_api_response(
+    response: &channel_host::HttpResponse,
+    retried: bool,
+) -> Result<(), String> {
+    let api_response: TelegramApiResponse<serde_json::Value> =
+        serde_json::from_slice(&response.body)
+            .map_err(|e| format!("Failed to parse response: {}", e))?;
+
+    if api_response.ok {
+        return Ok(());
     }
 
+    let context = if retried { " (after 409 retry)" } else { "" };
+    Err(format!(
+        "Telegram API error{}: {}",
+        context,
+        api_response
+            .description
+            .unwrap_or_else(|| "unknown".to_string())
+    ))
+}
+
+fn log_webhook_registered(webhook_url: &str, retried: bool) {
     let context = if retried { " (after retry)" } else { "" };
     channel_host::log(
         channel_host::LogLevel::Info,
@@ -137,6 +166,24 @@ pub(crate) fn register_webhook(tunnel_url: &str, webhook_secret: Option<&str>) -
             context, webhook_url
         ),
     );
+}
+
+pub(crate) fn register_webhook(
+    tunnel_url: &str,
+    webhook_secret: Option<&str>,
+) -> Result<(), String> {
+    let webhook_url = format!("{}/webhook/telegram", tunnel_url);
+    let body_bytes = build_set_webhook_body(&webhook_url, webhook_secret)?;
+    let headers_json = set_webhook_headers();
+
+    // Note: {TELEGRAM_BOT_TOKEN} is replaced by host with the actual token
+    let response = post_set_webhook(&headers_json, &body_bytes, None)?;
+    let (response, retried) =
+        register_webhook_response_after_retry(response, &headers_json, &body_bytes)?;
+
+    validate_http_status(&response, retried)?;
+    validate_telegram_api_response(&response, retried)?;
+    log_webhook_registered(&webhook_url, retried);
 
     Ok(())
 }

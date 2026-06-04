@@ -95,42 +95,60 @@ fn download_telegram_file(file_id: &str) -> Result<Vec<u8>, String> {
     Ok(response.body)
 }
 
+fn is_voice_attachment(att: &InboundAttachment) -> bool {
+    // Voice attachments have a generated filename like "voice_<id>.ogg"
+    att.filename
+        .as_ref()
+        .is_some_and(|f| f.starts_with("voice_"))
+}
+
+fn is_image_attachment(att: &InboundAttachment) -> bool {
+    att.mime_type.starts_with("image/")
+}
+
+fn store_downloaded_attachment(att: &InboundAttachment, bytes: &[u8], data_kind: &str) {
+    if let Err(e) = channel_host::store_attachment_data(&att.id, bytes) {
+        channel_host::log(
+            channel_host::LogLevel::Error,
+            &format!("Failed to store {} data: {}", data_kind, e),
+        );
+    }
+}
+
+fn download_and_store_attachment(att: &InboundAttachment, data_kind: &str) {
+    match download_telegram_file(&att.id) {
+        Ok(bytes) => {
+            channel_host::log(
+                channel_host::LogLevel::Info,
+                &format!("Downloaded {} file: {} bytes", data_kind, bytes.len()),
+            );
+            store_downloaded_attachment(att, &bytes, data_kind);
+        }
+        Err(e) => {
+            channel_host::log(
+                channel_host::LogLevel::Error,
+                &format!("Failed to download {} file: {}", data_kind, e),
+            );
+        }
+    }
+}
+
+fn download_and_store_matching_attachments(
+    attachments: &[InboundAttachment],
+    data_kind: &str,
+    predicate: impl Fn(&InboundAttachment) -> bool,
+) {
+    for att in attachments.iter().filter(|att| predicate(att)) {
+        download_and_store_attachment(att, data_kind);
+    }
+}
+
 /// Download voice file bytes and store them via the host for transcription.
 ///
 /// Separated from `extract_attachments` so that function stays pure (no host
 /// calls) and remains testable in native unit tests.
 pub(crate) fn download_and_store_voice(attachments: &[InboundAttachment]) {
-    for att in attachments {
-        // Voice attachments have a generated filename like "voice_<id>.ogg"
-        let is_voice = att
-            .filename
-            .as_ref()
-            .is_some_and(|f| f.starts_with("voice_"));
-        if !is_voice {
-            continue;
-        }
-
-        match download_telegram_file(&att.id) {
-            Ok(bytes) => {
-                channel_host::log(
-                    channel_host::LogLevel::Info,
-                    &format!("Downloaded voice file: {} bytes", bytes.len()),
-                );
-                if let Err(e) = channel_host::store_attachment_data(&att.id, &bytes) {
-                    channel_host::log(
-                        channel_host::LogLevel::Error,
-                        &format!("Failed to store voice data: {}", e),
-                    );
-                }
-            }
-            Err(e) => {
-                channel_host::log(
-                    channel_host::LogLevel::Error,
-                    &format!("Failed to download voice file: {}", e),
-                );
-            }
-        }
-    }
+    download_and_store_matching_attachments(attachments, "voice", is_voice_attachment);
 }
 
 /// Download image file bytes and store them via the host for the vision pipeline.
@@ -138,32 +156,7 @@ pub(crate) fn download_and_store_voice(attachments: &[InboundAttachment]) {
 /// Separated from `extract_attachments` so that function stays pure (no host
 /// calls) and remains testable in native unit tests.
 pub(crate) fn download_and_store_images(attachments: &[InboundAttachment]) {
-    for att in attachments {
-        if !att.mime_type.starts_with("image/") {
-            continue;
-        }
-
-        match download_telegram_file(&att.id) {
-            Ok(bytes) => {
-                channel_host::log(
-                    channel_host::LogLevel::Info,
-                    &format!("Downloaded image file: {} bytes", bytes.len()),
-                );
-                if let Err(e) = channel_host::store_attachment_data(&att.id, &bytes) {
-                    channel_host::log(
-                        channel_host::LogLevel::Error,
-                        &format!("Failed to store image data: {}", e),
-                    );
-                }
-            }
-            Err(e) => {
-                channel_host::log(
-                    channel_host::LogLevel::Error,
-                    &format!("Failed to download image file: {}", e),
-                );
-            }
-        }
-    }
+    download_and_store_matching_attachments(attachments, "image", is_image_attachment);
 }
 
 /// Returns true if the attachment should be downloaded for document text extraction.

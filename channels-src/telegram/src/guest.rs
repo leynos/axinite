@@ -14,6 +14,118 @@ use crate::types::{TelegramConfig, TelegramMessageMetadata};
 use crate::webhook::{delete_webhook, json_response, register_webhook};
 use crate::{channel_host, TelegramChannel};
 
+fn log_bot_username(config: &TelegramConfig) {
+    if let Some(ref username) = config.bot_username {
+        channel_host::log(
+            channel_host::LogLevel::Info,
+            &format!("Bot username: @{}", username),
+        );
+    }
+}
+
+fn persist_owner_id(owner_id: i64) {
+    if let Err(e) = channel_host::workspace_write(OWNER_ID_PATH, &owner_id.to_string()) {
+        channel_host::log(
+            channel_host::LogLevel::Error,
+            &format!("Failed to persist owner_id: {}", e),
+        );
+    }
+
+    channel_host::log(
+        channel_host::LogLevel::Info,
+        &format!("Owner restriction enabled: user {}", owner_id),
+    );
+}
+
+fn clear_owner_id() {
+    let _ = channel_host::workspace_write(OWNER_ID_PATH, "");
+    channel_host::log(
+        channel_host::LogLevel::Warn,
+        "No owner_id configured, bot is open to all users",
+    );
+}
+
+fn persist_owner_config(owner_id: Option<i64>) {
+    match owner_id {
+        Some(owner_id) => persist_owner_id(owner_id),
+        None => clear_owner_id(),
+    }
+}
+
+fn persist_runtime_config(config: &TelegramConfig) {
+    let dm_policy = config.dm_policy.as_deref().unwrap_or("pairing").to_string();
+    let _ = channel_host::workspace_write(DM_POLICY_PATH, &dm_policy);
+
+    let allow_from_json = serde_json::to_string(&config.allow_from.clone().unwrap_or_default())
+        .unwrap_or_else(|_| "[]".to_string());
+    let _ = channel_host::workspace_write(ALLOW_FROM_PATH, &allow_from_json);
+
+    let _ = channel_host::workspace_write(
+        BOT_USERNAME_PATH,
+        &config.bot_username.clone().unwrap_or_default(),
+    );
+    let _ = channel_host::workspace_write(
+        RESPOND_TO_ALL_GROUP_PATH,
+        &config.respond_to_all_group_messages.to_string(),
+    );
+}
+
+fn webhook_mode_enabled(config: &TelegramConfig) -> bool {
+    config.tunnel_url.is_some() && !config.polling_enabled
+}
+
+fn start_webhook_mode(config: &TelegramConfig) -> Result<(), String> {
+    channel_host::log(
+        channel_host::LogLevel::Info,
+        "Webhook mode enabled (tunnel configured)",
+    );
+
+    let Some(ref tunnel_url) = config.tunnel_url else {
+        return Ok(());
+    };
+
+    // Clear any stale webhook first to avoid 409 Conflict
+    let _ = delete_webhook();
+
+    channel_host::log(
+        channel_host::LogLevel::Info,
+        &format!("Registering webhook: {}/webhook/telegram", tunnel_url),
+    );
+
+    register_webhook(tunnel_url, config.webhook_secret.as_deref())
+        .map_err(|e| format!("Failed to register webhook: {}", e))
+}
+
+fn start_polling_mode() -> Result<(), String> {
+    channel_host::log(
+        channel_host::LogLevel::Info,
+        "Polling mode enabled (no tunnel configured)",
+    );
+
+    // Delete any existing webhook before polling. Telegram returns success
+    // when no webhook exists, so any error here (e.g. 401) means a bad token.
+    delete_webhook().map_err(|e| format!("Bot token validation failed: {}", e))
+}
+
+fn configure_transport(config: &TelegramConfig, webhook_mode: bool) -> Result<(), String> {
+    if webhook_mode {
+        start_webhook_mode(config)
+    } else {
+        start_polling_mode()
+    }
+}
+
+fn poll_config_for_mode(webhook_mode: bool) -> Option<PollConfig> {
+    if webhook_mode {
+        None
+    } else {
+        Some(PollConfig {
+            interval_ms: 30000, // 30 seconds minimum
+            enabled: true,
+        })
+    }
+}
+
 impl Guest for TelegramChannel {
     fn on_start(config_json: String) -> Result<ChannelConfig, String> {
         channel_host::log(
@@ -26,95 +138,21 @@ impl Guest for TelegramChannel {
 
         channel_host::log(channel_host::LogLevel::Info, "Telegram channel starting");
 
-        if let Some(ref username) = config.bot_username {
-            channel_host::log(
-                channel_host::LogLevel::Info,
-                &format!("Bot username: @{}", username),
-            );
-        }
-
         // Persist owner_id so subsequent callbacks (on_http_request, on_poll) can read it
-        if let Some(owner_id) = config.owner_id {
-            if let Err(e) = channel_host::workspace_write(OWNER_ID_PATH, &owner_id.to_string()) {
-                channel_host::log(
-                    channel_host::LogLevel::Error,
-                    &format!("Failed to persist owner_id: {}", e),
-                );
-            }
-            channel_host::log(
-                channel_host::LogLevel::Info,
-                &format!("Owner restriction enabled: user {}", owner_id),
-            );
-        } else {
-            // Clear any stale owner_id from a previous config
-            let _ = channel_host::workspace_write(OWNER_ID_PATH, "");
-            channel_host::log(
-                channel_host::LogLevel::Warn,
-                "No owner_id configured, bot is open to all users",
-            );
-        }
-
         // Persist dm_policy and allow_from for DM pairing in handle_message
-        let dm_policy = config.dm_policy.as_deref().unwrap_or("pairing").to_string();
-        let _ = channel_host::workspace_write(DM_POLICY_PATH, &dm_policy);
-
-        let allow_from_json = serde_json::to_string(&config.allow_from.unwrap_or_default())
-            .unwrap_or_else(|_| "[]".to_string());
-        let _ = channel_host::workspace_write(ALLOW_FROM_PATH, &allow_from_json);
-
         // Persist bot_username and respond_to_all_group_messages for group handling
-        let _ = channel_host::workspace_write(
-            BOT_USERNAME_PATH,
-            &config.bot_username.unwrap_or_default(),
-        );
-        let _ = channel_host::workspace_write(
-            RESPOND_TO_ALL_GROUP_PATH,
-            &config.respond_to_all_group_messages.to_string(),
-        );
+        log_bot_username(&config);
+        persist_owner_config(config.owner_id);
+        persist_runtime_config(&config);
 
         // Mode: use polling if explicitly enabled, otherwise use webhooks when tunnel available.
-        let webhook_mode = config.tunnel_url.is_some() && !config.polling_enabled;
-
-        if webhook_mode {
-            channel_host::log(
-                channel_host::LogLevel::Info,
-                "Webhook mode enabled (tunnel configured)",
-            );
-
-            // Register webhook with Telegram API — propagate errors so a bad token
-            // causes activation to fail rather than silently succeeding.
-            if let Some(ref tunnel_url) = config.tunnel_url {
-                // Clear any stale webhook first to avoid 409 Conflict
-                let _ = delete_webhook();
-
-                channel_host::log(
-                    channel_host::LogLevel::Info,
-                    &format!("Registering webhook: {}/webhook/telegram", tunnel_url),
-                );
-
-                register_webhook(tunnel_url, config.webhook_secret.as_deref())
-                    .map_err(|e| format!("Failed to register webhook: {}", e))?;
-            }
-        } else {
-            channel_host::log(
-                channel_host::LogLevel::Info,
-                "Polling mode enabled (no tunnel configured)",
-            );
-
-            // Delete any existing webhook before polling. Telegram returns success
-            // when no webhook exists, so any error here (e.g. 401) means a bad token.
-            delete_webhook().map_err(|e| format!("Bot token validation failed: {}", e))?;
-        }
+        let webhook_mode = webhook_mode_enabled(&config);
+        // Register webhook with Telegram API — propagate errors so a bad token
+        // causes activation to fail rather than silently succeeding.
+        configure_transport(&config, webhook_mode)?;
 
         // Configure polling only if not in webhook mode
-        let poll = if !webhook_mode {
-            Some(PollConfig {
-                interval_ms: 30000, // 30 seconds minimum
-                enabled: true,
-            })
-        } else {
-            None
-        };
+        let poll = poll_config_for_mode(webhook_mode);
 
         // Webhook secret validation is handled by the host
         let require_secret = config.webhook_secret.is_some();
