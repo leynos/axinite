@@ -3,7 +3,7 @@ use crate::downloads::{
     download_and_store_documents, download_and_store_images, download_and_store_voice,
 };
 use crate::near::agent::channel_host::{self, EmittedMessage, InboundAttachment};
-use crate::send::send_pairing_reply;
+use crate::send::{PairingCode, send_pairing_reply};
 use crate::state::{
     ALLOW_FROM_PATH, BOT_USERNAME_PATH, CHANNEL_NAME, DM_POLICY_PATH, OWNER_ID_PATH,
     RESPOND_TO_ALL_GROUP_PATH,
@@ -101,7 +101,7 @@ fn sender_in_allow_list(allowed: &[String], user_id: i64, username: Option<&str>
 
 fn send_pairing_reply_if_new(chat_id: i64, result: &channel_host::PairingUpsertResult) {
     if result.created {
-        let _ = send_pairing_reply(chat_id, &result.code);
+        let _ = send_pairing_reply(chat_id, PairingCode(&result.code));
     }
 }
 
