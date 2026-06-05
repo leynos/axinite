@@ -336,29 +336,51 @@ fn strip_leading_command(text: String) -> Option<String> {
         .map(|space_idx| text[space_idx..].trim_start().to_string())
 }
 
+fn non_empty_trimmed_suffix(text: &str, start: usize) -> Option<String> {
+    let rest = text[start..].trim_start();
+
+    if rest.is_empty() {
+        None
+    } else {
+        Some(rest.to_string())
+    }
+}
+
+fn strip_exact_bot_mention_prefix(text: &str, mention: &str) -> Option<Option<String>> {
+    let mention_lower = mention.to_lowercase();
+    let text_lower = text.to_lowercase();
+
+    if text_lower.starts_with(&mention_lower) {
+        return Some(non_empty_trimmed_suffix(text, mention.len()));
+    }
+
+    None
+}
+
+fn strip_first_word_bot_mention(text: &str, mention: &str) -> Option<String> {
+    let space_idx = text.find(' ')?;
+    let first_word = &text[..space_idx];
+
+    if first_word.eq_ignore_ascii_case(mention) {
+        return Some(text[space_idx..].trim_start().to_string());
+    }
+
+    None
+}
+
 fn strip_known_bot_mention(text: String, bot: &str) -> Option<String> {
     if !text.starts_with('@') {
         return Some(text);
     }
 
     let mention = format!("@{}", bot);
-    let mention_lower = mention.to_lowercase();
-    let text_lower = text.to_lowercase();
 
-    if text_lower.starts_with(&mention_lower) {
-        let rest = text[mention.len()..].trim_start();
-        return if rest.is_empty() {
-            None
-        } else {
-            Some(rest.to_string())
-        };
+    if let Some(stripped) = strip_exact_bot_mention_prefix(&text, &mention) {
+        return stripped;
     }
 
-    if let Some(space_idx) = text.find(' ') {
-        let first_word = &text[..space_idx];
-        if first_word.eq_ignore_ascii_case(&mention) {
-            return Some(text[space_idx..].trim_start().to_string());
-        }
+    if let Some(stripped) = strip_first_word_bot_mention(&text, &mention) {
+        return Some(stripped);
     }
 
     Some(text)
