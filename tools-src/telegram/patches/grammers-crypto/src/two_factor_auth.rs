@@ -17,32 +17,124 @@ use sha2::Sha512;
 // H(data) := sha256(data)
 use crate::sha256 as h;
 
+#[derive(Clone, Copy)]
+pub struct SrpGenerator(i32);
+
+impl SrpGenerator {
+    pub fn new(value: i32) -> Self {
+        Self(value)
+    }
+
+    fn as_i32(self) -> i32 {
+        self.0
+    }
+
+    fn as_u8(self) -> u8 {
+        self.0 as u8
+    }
+
+    fn as_u32(self) -> u32 {
+        self.0 as u32
+    }
+}
+
+#[derive(Clone, Copy)]
+pub struct SrpPrimeBytes<'a>(&'a [u8]);
+
+impl<'a> SrpPrimeBytes<'a> {
+    pub fn new(bytes: &'a [u8]) -> Self {
+        Self(bytes)
+    }
+
+    fn as_bytes(self) -> &'a [u8] {
+        self.0
+    }
+}
+
+#[derive(Clone, Copy)]
+pub struct SaltPair<'a> {
+    salt1: &'a [u8],
+    salt2: &'a [u8],
+}
+
+impl<'a> SaltPair<'a> {
+    pub fn new(salt1: &'a [u8], salt2: &'a [u8]) -> Self {
+        Self { salt1, salt2 }
+    }
+}
+
+pub struct PasswordProofParams<'a, P> {
+    pub salts: SaltPair<'a>,
+    pub prime: SrpPrimeBytes<'a>,
+    pub generator: SrpGenerator,
+    pub server_public_value: Vec<u8>,
+    pub client_private_nonce: Vec<u8>,
+    pub password: P,
+}
+
+#[derive(Clone, Copy)]
+pub struct SrpGroupParams<'a> {
+    prime: SrpPrimeBytes<'a>,
+    generator: SrpGenerator,
+}
+
+impl<'a> SrpGroupParams<'a> {
+    pub fn new(prime: SrpPrimeBytes<'a>, generator: SrpGenerator) -> Self {
+        Self { prime, generator }
+    }
+}
+
+#[derive(Clone, Copy)]
+struct SaltedHashInput<'a> {
+    data: &'a [u8],
+    salt: &'a [u8],
+}
+
+#[derive(Clone, Copy)]
+struct PasswordHashInput<'a> {
+    password: &'a [u8],
+    salts: SaltPair<'a>,
+}
+
+#[derive(Clone, Copy)]
+struct HashPair<'a> {
+    left: &'a [u8; 32],
+    right: &'a [u8; 32],
+}
+
+#[derive(Clone, Copy)]
+struct PaddedSrpBytes<'a>(&'a [u8]);
+
 /// Prepare the password for sending to telegram for verification.
 /// The method returns *M1* and *g_a* parameters that should be sent to Telegram
 /// (without the raw password!).
 ///
 /// The algorithm is described in <https://core.telegram.org/api/srp>.
-pub fn calculate_2fa(
-    salt1: &[u8],
-    salt2: &[u8],
-    p: &[u8],
-    g: &i32,
-    g_b: Vec<u8>,
-    a: Vec<u8>,
-    password: impl AsRef<[u8]>,
-) -> ([u8; 32], [u8; 256]) {
+pub fn calculate_2fa<P: AsRef<[u8]>>(params: PasswordProofParams<'_, P>) -> ([u8; 32], [u8; 256]) {
+    let PasswordProofParams {
+        salts,
+        prime,
+        generator,
+        server_public_value,
+        client_private_nonce,
+        password,
+    } = params;
+
+    let p = prime.as_bytes();
+    let password = password.as_ref();
+
     // Prepare our parameters
     let big_p = BigInt::from_bytes_be(Sign::Plus, p);
 
-    let g_b = pad_to_256(&g_b);
-    let a = pad_to_256(&a);
+    let g_b = pad_to_256(PaddedSrpBytes(&server_public_value));
+    let a = pad_to_256(PaddedSrpBytes(&client_private_nonce));
 
-    let g_for_hash = vec![*g as u8];
-    let g_for_hash = pad_to_256(&g_for_hash);
+    let g_for_hash = vec![generator.as_u8()];
+    let g_for_hash = pad_to_256(PaddedSrpBytes(&g_for_hash));
 
     let big_g_b = BigInt::from_bytes_be(Sign::Plus, &g_b);
 
-    let big_g = BigInt::from(*g as u32);
+    let big_g = BigInt::from(generator.as_u32());
     let big_a = BigInt::from_bytes_be(Sign::Plus, &a);
 
     // k := H(p | g)
@@ -51,14 +143,14 @@ pub fn calculate_2fa(
 
     // g_a := pow(g, a) mod p
     let g_a = big_g.modpow(&big_a, &big_p);
-    let g_a = pad_to_256(&g_a.to_bytes_be().1);
+    let g_a = pad_to_256(PaddedSrpBytes(&g_a.to_bytes_be().1));
 
     // u := H(g_a | g_b)
     let u = h!(&g_a, &g_b);
     let u = BigInt::from_bytes_be(Sign::Plus, &u);
 
     // x := PH2(password, salt1, salt2)
-    let x = ph2(&password, salt1, salt2);
+    let x = ph2(PasswordHashInput { password, salts });
     let x = BigInt::from_bytes_be(Sign::Plus, &x);
 
     // v := pow(g, x) mod p
@@ -76,30 +168,41 @@ pub fn calculate_2fa(
     let big_s_a = big_t.modpow(&second, &big_p);
 
     // k_a := H(s_a)
-    let k_a = h!(&pad_to_256(&big_s_a.to_bytes_be().1));
+    let k_a = h!(&pad_to_256(PaddedSrpBytes(&big_s_a.to_bytes_be().1)));
 
     // M1 := H(H(p) xor H(g) | H(salt1) | H(salt2) | g_a | g_b | k_a)
     let h_p = h!(&p);
     let h_g = h!(&g_for_hash);
 
-    let p_xor_g = xor(&h_p, &h_g);
+    let p_xor_g = xor(HashPair {
+        left: &h_p,
+        right: &h_g,
+    });
 
-    let m1 = h!(&p_xor_g, &h!(&salt1), &h!(&salt2), &g_a, &g_b, &k_a);
+    let m1 = h!(
+        &p_xor_g,
+        &h!(&salts.salt1),
+        &h!(&salts.salt2),
+        &g_a,
+        &g_b,
+        &k_a
+    );
 
     (m1, g_a)
 }
 
 /// Validation for parameters required for Two-Factor authentication.
-pub fn check_p_and_g(p: &[u8], g: &i32) -> bool {
-    if !check_p_len(p) {
+pub fn check_p_and_g(params: SrpGroupParams<'_>) -> bool {
+    if !check_p_len(params.prime) {
         return false;
     }
 
-    check_p_prime_and_subgroup(p, g)
+    check_p_prime_and_subgroup(params)
 }
 
-fn check_p_prime_and_subgroup(p: &[u8], g: &i32) -> bool {
-    let p = &BigUint::from_bytes_be(p);
+fn check_p_prime_and_subgroup(params: SrpGroupParams<'_>) -> bool {
+    let p = &BigUint::from_bytes_be(params.prime.as_bytes());
+    let g = params.generator.as_i32();
 
     if !safe_prime::check(p) {
         return false;
@@ -127,41 +230,53 @@ fn check_p_prime_and_subgroup(p: &[u8], g: &i32) -> bool {
     }
 }
 
-fn check_p_len(p: &[u8]) -> bool {
-    p.len() == 256
+fn check_p_len(p: SrpPrimeBytes<'_>) -> bool {
+    p.as_bytes().len() == 256
 }
 
 // SH(data, salt) := H(salt | data | salt)
-fn sh(data: impl AsRef<[u8]>, salt: impl AsRef<[u8]>) -> [u8; 32] {
-    h!(&salt, &data, &salt)
+fn sh(input: SaltedHashInput<'_>) -> [u8; 32] {
+    h!(input.salt, input.data, input.salt)
 }
 
 // PH1(password, salt1, salt2) := SH(SH(password, salt1), salt2)
-fn ph1(password: impl AsRef<[u8]>, salt1: &[u8], salt2: &[u8]) -> [u8; 32] {
-    sh(sh(password, salt1), salt2)
+fn ph1(input: PasswordHashInput<'_>) -> [u8; 32] {
+    let hash = sh(SaltedHashInput {
+        data: input.password,
+        salt: input.salts.salt1,
+    });
+
+    sh(SaltedHashInput {
+        data: &hash,
+        salt: input.salts.salt2,
+    })
 }
 
 // PH2(password, salt1, salt2)
 //                      := SH(pbkdf2(sha512, PH1(password, salt1, salt2), salt1, 100000), salt2)
-fn ph2(password: impl AsRef<[u8]>, salt1: &[u8], salt2: &[u8]) -> [u8; 32] {
-    let hash1 = ph1(password, salt1, salt2);
+fn ph2(input: PasswordHashInput<'_>) -> [u8; 32] {
+    let hash1 = ph1(input);
 
     // 512-bit derived key
     let mut dk = [0u8; 64];
-    pbkdf2::pbkdf2::<Hmac<Sha512>>(&hash1, salt1, 100000, &mut dk).unwrap();
+    pbkdf2::pbkdf2::<Hmac<Sha512>>(&hash1, input.salts.salt1, 100000, &mut dk).unwrap();
 
-    sh(dk, salt2)
+    sh(SaltedHashInput {
+        data: &dk,
+        salt: input.salts.salt2,
+    })
 }
 
-fn xor(left: &[u8; 32], right: &[u8; 32]) -> [u8; 32] {
+fn xor(input: HashPair<'_>) -> [u8; 32] {
     let mut out = [0; 32];
     out.iter_mut().enumerate().for_each(|(i, o)| {
-        *o = left[i] ^ right[i];
+        *o = input.left[i] ^ input.right[i];
     });
     out
 }
 
-fn pad_to_256(data: &[u8]) -> [u8; 256] {
+fn pad_to_256(data: PaddedSrpBytes<'_>) -> [u8; 256] {
+    let data = data.0;
     let mut out = [0; 256];
     out[256 - data.len()..].copy_from_slice(data);
     out
@@ -176,12 +291,19 @@ mod tests {
         let salt1 = vec![1];
         let salt2 = vec![2];
         let g = 3;
-        let p = pad_to_256(&[47]);
+        let p = pad_to_256(PaddedSrpBytes(&[47]));
         let g_b = vec![5];
         let a = vec![6];
         let password = vec![7];
 
-        let (m1, g_a) = calculate_2fa(&salt1, &salt2, &p, &g, g_b, a, password);
+        let (m1, g_a) = calculate_2fa(PasswordProofParams {
+            salts: SaltPair::new(&salt1, &salt2),
+            prime: SrpPrimeBytes::new(&p),
+            generator: SrpGenerator::new(g),
+            server_public_value: g_b,
+            client_private_nonce: a,
+            password,
+        });
 
         let expected_m1 = vec![
             157, 131, 196, 103, 0, 184, 116, 232, 7, 196, 85, 231, 17, 36, 30, 222, 158, 234, 98,
@@ -278,7 +400,14 @@ mod tests {
         ];
         let password = vec![50, 51, 52, 53, 54, 55];
 
-        let (m1, g_a) = calculate_2fa(&salt1, &salt2, &p, &g, g_b, a, password);
+        let (m1, g_a) = calculate_2fa(PasswordProofParams {
+            salts: SaltPair::new(&salt1, &salt2),
+            prime: SrpPrimeBytes::new(&p),
+            generator: SrpGenerator::new(g),
+            server_public_value: g_b,
+            client_private_nonce: a,
+            password,
+        });
 
         let expected_m1 = vec![
             77, 122, 244, 18, 197, 162, 231, 177, 84, 103, 55, 107, 209, 24, 184, 83, 96, 78, 104,
@@ -308,36 +437,59 @@ mod tests {
     #[test]
     fn test_check_p_and_g() {
         // Not prime
-        assert_incorrect_pg(4, 0);
+        assert_incorrect_pg(PgFixture::new(4, 0));
         // Bad prime
-        assert_incorrect_pg(13, 0);
+        assert_incorrect_pg(PgFixture::new(13, 0));
 
-        assert_incorrect_pg(11, 2);
-        assert_correct_pg(23, 2);
+        assert_incorrect_pg(PgFixture::new(11, 2));
+        assert_correct_pg(PgFixture::new(23, 2));
 
-        assert_incorrect_pg(13, 3);
-        assert_correct_pg(47, 3);
+        assert_incorrect_pg(PgFixture::new(13, 3));
+        assert_correct_pg(PgFixture::new(47, 3));
 
-        assert_correct_pg(11, 4);
+        assert_correct_pg(PgFixture::new(11, 4));
 
-        assert_incorrect_pg(13, 5);
-        assert_correct_pg(11, 5);
-        assert_correct_pg(179, 5);
+        assert_incorrect_pg(PgFixture::new(13, 5));
+        assert_correct_pg(PgFixture::new(11, 5));
+        assert_correct_pg(PgFixture::new(179, 5));
 
-        assert_incorrect_pg(13, 6);
-        assert_correct_pg(383, 6);
+        assert_incorrect_pg(PgFixture::new(13, 6));
+        assert_correct_pg(PgFixture::new(383, 6));
 
-        assert_incorrect_pg(13, 7);
-        assert_correct_pg(479, 7);
-        assert_correct_pg(383, 7);
-        assert_correct_pg(503, 7);
+        assert_incorrect_pg(PgFixture::new(13, 7));
+        assert_correct_pg(PgFixture::new(479, 7));
+        assert_correct_pg(PgFixture::new(383, 7));
+        assert_correct_pg(PgFixture::new(503, 7));
     }
 
-    fn assert_incorrect_pg(p: u32, g: i32) {
-        assert!(!check_p_prime_and_subgroup(p.to_be_bytes().as_ref(), &g))
+    #[derive(Clone, Copy)]
+    struct PgFixture {
+        p: u32,
+        g: SrpGenerator,
     }
 
-    fn assert_correct_pg(p: u32, g: i32) {
-        assert!(check_p_prime_and_subgroup(p.to_be_bytes().as_ref(), &g))
+    impl PgFixture {
+        fn new(p: u32, g: i32) -> Self {
+            Self {
+                p,
+                g: SrpGenerator::new(g),
+            }
+        }
+    }
+
+    fn assert_incorrect_pg(fixture: PgFixture) {
+        let p = fixture.p.to_be_bytes();
+        assert!(!check_p_prime_and_subgroup(SrpGroupParams::new(
+            SrpPrimeBytes::new(&p),
+            fixture.g,
+        )));
+    }
+
+    fn assert_correct_pg(fixture: PgFixture) {
+        let p = fixture.p.to_be_bytes();
+        assert!(check_p_prime_and_subgroup(SrpGroupParams::new(
+            SrpPrimeBytes::new(&p),
+            fixture.g,
+        )));
     }
 }

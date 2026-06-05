@@ -4,6 +4,9 @@
 //! HTTP POST to `https://{dc}.web.telegram.org/apiw`. Uses grammers-mtproto
 //! (Sans-IO) for message framing and encryption; no TDLib/TDLight needed.
 
+use grammers_crypto::two_factor_auth::{
+    PasswordProofParams, SaltPair, SrpGenerator, SrpPrimeBytes,
+};
 use grammers_mtproto::mtp::Encrypted;
 use grammers_tl_types::{self as tl, Deserializable, Serializable};
 
@@ -189,15 +192,14 @@ pub fn check_password(session: &mut Session, password: &str) -> Result<String, S
             let mut a_bytes = vec![0u8; 256];
             getrandom::fill(&mut a_bytes).map_err(|e| format!("getrandom failed: {e}"))?;
 
-            let (m1, g_a) = grammers_crypto::two_factor_auth::calculate_2fa(
-                &algo.salt1,
-                &algo.salt2,
-                &algo.p,
-                &algo.g,
-                srp_b,
-                a_bytes,
-                password.as_bytes(),
-            );
+            let (m1, g_a) = grammers_crypto::two_factor_auth::calculate_2fa(PasswordProofParams {
+                salts: SaltPair::new(&algo.salt1, &algo.salt2),
+                prime: SrpPrimeBytes::new(&algo.p),
+                generator: SrpGenerator::new(algo.g),
+                server_public_value: srp_b,
+                client_private_nonce: a_bytes,
+                password: password.as_bytes(),
+            });
 
             let check_req = tl::functions::auth::CheckPassword {
                 password: tl::enums::InputCheckPasswordSrp::Srp(tl::types::InputCheckPasswordSrp {
