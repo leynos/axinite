@@ -78,13 +78,17 @@ mod assertions {
         );
     }
 
+    pub(super) struct FailureCounts {
+        pub(super) warnings: usize,
+        pub(super) tests_passed: u32,
+        pub(super) tests_failed: u32,
+    }
+
     #[track_caller]
     pub(super) fn assert_build_result_failure(
         res: &BuildResult,
         expected_error: &str,
-        expected_warnings: usize,
-        tests_passed: u32,
-        tests_failed: u32,
+        expected: FailureCounts,
     ) {
         assert_build_failure_contains(res, expected_error);
         assert_eq!(
@@ -94,7 +98,12 @@ mod assertions {
                 res.tests_failed,
                 res.registered,
             ),
-            (expected_warnings, tests_passed, tests_failed, false)
+            (
+                expected.warnings,
+                expected.tests_passed,
+                expected.tests_failed,
+                false
+            )
         );
     }
 
@@ -461,9 +470,11 @@ fn test_build_result_serde_failure() {
     assert_build_result_failure(
         &deserialized,
         "compilation error: undefined reference",
-        1,
-        2,
-        3,
+        FailureCounts {
+            warnings: 1,
+            tests_passed: 2,
+            tests_failed: 3,
+        },
     );
 }
 
