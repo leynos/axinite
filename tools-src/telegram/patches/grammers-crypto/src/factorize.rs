@@ -32,6 +32,10 @@ fn modpow(mut n: u128, mut e: u128, m: u128) -> u128 {
     result
 }
 
+fn abs_sub(a: u128, b: u128) -> u128 {
+    a.max(b) - a.min(b)
+}
+
 /// Factorize the given number into its two prime factors.
 ///
 /// The algorithm here is a faster variant of [Pollard's rho algorithm],
@@ -57,60 +61,102 @@ pub fn factorize(pq: u64) -> (u64, u64) {
     panic!("failed to factorize in a fixed amount of attempts")
 }
 
+struct BrentFactorizer {
+    pq: u128,
+    c: u128,
+    m: u128,
+    y: u128,
+    g: u128,
+    r: u128,
+    q: u128,
+    x: u128,
+    ys: u128,
+}
+
+impl BrentFactorizer {
+    fn new(pq: u128, c: u128) -> Self {
+        Self {
+            pq,
+            c,
+            // Random values in the range of 1..pq, chosen by fair dice roll.
+            // c is an input free to change in case the chosen value fails.
+            y: 3 * (pq / 7),
+            m: 7 * (pq / 13),
+            g: 1,
+            r: 1,
+            q: 1,
+            x: 0,
+            ys: 0,
+        }
+    }
+
+    fn next_value(&self, value: u128) -> u128 {
+        (modpow(value, 2, self.pq) + self.c) % self.pq
+    }
+
+    fn advance_power_window(&mut self) {
+        self.x = self.y;
+        for _ in 0..self.r {
+            self.y = self.next_value(self.y);
+        }
+    }
+
+    fn accumulate_batch(&mut self, steps: u128) {
+        for _ in 0..steps {
+            self.y = self.next_value(self.y);
+            self.q = (self.q * abs_sub(self.x, self.y)) % self.pq;
+        }
+    }
+
+    fn search_current_window(&mut self) {
+        let mut k = 0;
+
+        while k < self.r && self.g == 1 {
+            self.ys = self.y;
+            self.accumulate_batch(self.m.min(self.r - k));
+
+            self.g = gcd(self.q, self.pq);
+            k += self.m;
+        }
+
+        self.r *= 2;
+    }
+
+    fn recover_factor_after_degenerate_cycle(&mut self) {
+        if self.g != self.pq {
+            return;
+        }
+
+        loop {
+            self.ys = self.next_value(self.ys);
+            self.g = gcd(abs_sub(self.x, self.ys), self.pq);
+
+            if self.g > 1 {
+                return;
+            }
+        }
+    }
+
+    fn factors(&self) -> (u64, u64) {
+        let (p, q) = (self.g as u64, (self.pq / self.g) as u64);
+        (p.min(q), p.max(q))
+    }
+}
+
 fn factorize_with_param(pq: u64, c: u64) -> (u64, u64) {
     if pq % 2 == 0 {
         return (2, pq / 2);
     }
 
-    let pq = pq as u128;
-    fn abs_sub(a: u128, b: u128) -> u128 {
-        a.max(b) - a.min(b)
+    let mut factorizer = BrentFactorizer::new(pq as u128, c as u128);
+
+    while factorizer.g == 1 {
+        factorizer.advance_power_window();
+        factorizer.search_current_window();
     }
 
-    // Random values in the range of 1..pq, chosen by fair dice roll.
-    // c is an input free to change in case the chosen value fails.
-    let mut y = 3 * (pq / 7);
-    let c = c as u128;
-    let m = 7 * (pq / 13);
-    let mut g = 1u128;
-    let mut r = 1u128;
-    let mut q = 1u128;
-    let mut x = 0u128;
-    let mut ys = 0u128;
-
-    while g == 1 {
-        x = y;
-        for _ in 0..r {
-            y = (modpow(y, 2, pq) + c) % pq;
-        }
-
-        let mut k = 0;
-        while k < r && g == 1 {
-            ys = y;
-            for _ in 0..m.min(r - k) {
-                y = (modpow(y, 2, pq) + c) % pq;
-                q = (q * abs_sub(x, y)) % pq;
-            }
-
-            g = gcd(q, pq);
-            k += m;
-        }
-
-        r *= 2;
-    }
-
-    if g == pq {
-        loop {
-            ys = (modpow(ys, 2, pq) + c) % pq;
-            g = gcd(abs_sub(x, ys), pq);
-            if g > 1 {
-                break;
-            }
-        }
-    }
-
-    let (p, q) = (g as u64, (pq / g) as u64);
-    (p.min(q), p.max(q))
+    factorizer.recover_factor_after_degenerate_cycle();
+    factorizer.factors()
 }
 
 #[cfg(test)]
