@@ -3,12 +3,96 @@ use crate::downloads::{
     download_and_store_documents, download_and_store_images, download_and_store_voice,
 };
 use crate::near::agent::channel_host::{self, EmittedMessage, InboundAttachment};
-use crate::send::{PairingCode, send_pairing_reply};
+use crate::send::{send_pairing_reply, PairingCode};
 use crate::state::{
     ALLOW_FROM_PATH, BOT_USERNAME_PATH, CHANNEL_NAME, DM_POLICY_PATH, OWNER_ID_PATH,
     RESPOND_TO_ALL_GROUP_PATH,
 };
 use crate::types::{TelegramMessage, TelegramUpdate};
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct TelegramUserId(i64);
+
+impl TelegramUserId {
+    fn as_i64(self) -> i64 {
+        self.0
+    }
+
+    fn as_pairing_id(self) -> String {
+        self.0.to_string()
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct TelegramChatId(i64);
+
+impl TelegramChatId {
+    fn as_i64(self) -> i64 {
+        self.0
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum ChatVisibility {
+    Private,
+    Group,
+}
+
+impl ChatVisibility {
+    fn from_chat_type(chat_type: &str) -> Self {
+        if chat_type == "private" {
+            Self::Private
+        } else {
+            Self::Group
+        }
+    }
+
+    fn is_private(self) -> bool {
+        matches!(self, Self::Private)
+    }
+}
+
+#[derive(Clone, Copy, Debug)]
+struct SenderContext<'a> {
+    chat_id: TelegramChatId,
+    user_id: TelegramUserId,
+    username: Option<&'a str>,
+    visibility: ChatVisibility,
+}
+
+impl SenderContext<'_> {
+    fn is_private(self) -> bool {
+        self.visibility.is_private()
+    }
+}
+
+#[derive(Clone, Copy, Debug)]
+struct MessageContent<'a>(&'a str);
+
+impl<'a> MessageContent<'a> {
+    fn as_str(self) -> &'a str {
+        self.0
+    }
+
+    fn starts_with_command(self) -> bool {
+        self.0.starts_with('/')
+    }
+}
+
+#[derive(Clone, Copy, Debug)]
+enum AttachmentPresence {
+    Present,
+    Absent,
+}
+
+impl AttachmentPresence {
+    fn is_present(self) -> bool {
+        matches!(self, Self::Present)
+    }
+}
+
+#[derive(Clone, Copy, Debug)]
+struct BotUsername<'a>(&'a str);
 
 /// Process a Telegram update and emit messages if applicable.
 pub(crate) fn handle_update(update: TelegramUpdate) {
@@ -54,7 +138,7 @@ fn user_display_name(first_name: &str, last_name: Option<&str>) -> String {
     }
 }
 
-fn owner_allows_sender(user_id: i64) -> Option<bool> {
+fn owner_allows_sender(user_id: TelegramUserId) -> Option<bool> {
     let owner_id_str = channel_host::workspace_read(OWNER_ID_PATH).filter(|s| !s.is_empty());
 
     let Some(id_str) = owner_id_str else {
@@ -65,12 +149,13 @@ fn owner_allows_sender(user_id: i64) -> Option<bool> {
         return Some(true);
     };
 
-    if user_id != owner_id {
+    if user_id.as_i64() != owner_id {
         channel_host::log(
             channel_host::LogLevel::Debug,
             &format!(
                 "Dropping message from non-owner user {} (owner: {})",
-                user_id, owner_id
+                user_id.as_i64(),
+                owner_id
             ),
         );
         return Some(false);
@@ -91,26 +176,28 @@ fn load_allowed_senders() -> Vec<String> {
     allowed
 }
 
-fn sender_in_allow_list(allowed: &[String], user_id: i64, username: Option<&str>) -> bool {
-    let id = user_id.to_string();
+fn sender_in_allow_list(allowed: &[String], sender: SenderContext<'_>) -> bool {
+    let id = sender.user_id.as_pairing_id();
 
     allowed.iter().any(|entry| entry == "*")
         || allowed.iter().any(|entry| entry == &id)
-        || username.is_some_and(|u| allowed.iter().any(|entry| entry == u))
+        || sender
+            .username
+            .is_some_and(|u| allowed.iter().any(|entry| entry == u))
 }
 
-fn send_pairing_reply_if_new(chat_id: i64, result: &channel_host::PairingUpsertResult) {
+fn send_pairing_reply_if_new(chat_id: TelegramChatId, result: &channel_host::PairingUpsertResult) {
     if result.created {
-        let _ = send_pairing_reply(chat_id, PairingCode(&result.code));
+        let _ = send_pairing_reply(chat_id.as_i64(), PairingCode(&result.code));
     }
 }
 
-fn request_pairing_for_sender(chat_id: i64, user_id: i64, username: Option<&str>) {
-    let id_str = user_id.to_string();
+fn request_pairing_for_sender(sender: SenderContext<'_>) {
+    let id_str = sender.user_id.as_pairing_id();
     let meta = serde_json::json!({
-        "chat_id": chat_id,
-        "user_id": user_id,
-        "username": username,
+        "chat_id": sender.chat_id.as_i64(),
+        "user_id": sender.user_id.as_i64(),
+        "username": sender.username,
     })
     .to_string();
 
@@ -126,10 +213,12 @@ fn request_pairing_for_sender(chat_id: i64, user_id: i64, username: Option<&str>
                 channel_host::LogLevel::Info,
                 &format!(
                     "Pairing request for user {} (chat {}): code {}",
-                    user_id, chat_id, result.code
+                    sender.user_id.as_i64(),
+                    sender.chat_id.as_i64(),
+                    result.code
                 ),
             );
-            send_pairing_reply_if_new(chat_id, &result);
+            send_pairing_reply_if_new(sender.chat_id, &result);
         }
         Err(e) => {
             channel_host::log(
@@ -140,23 +229,18 @@ fn request_pairing_for_sender(chat_id: i64, user_id: i64, username: Option<&str>
     }
 }
 
-fn log_unauthorized_group_sender(user_id: i64) {
+fn log_unauthorized_group_sender(user_id: TelegramUserId) {
     channel_host::log(
         channel_host::LogLevel::Debug,
         &format!(
             "Dropping message from unauthorized user {} in group chat",
-            user_id
+            user_id.as_i64()
         ),
     );
 }
 
-fn sender_is_authorized(
-    chat_id: i64,
-    user_id: i64,
-    username: Option<&str>,
-    is_private: bool,
-) -> bool {
-    if let Some(allowed_by_owner) = owner_allows_sender(user_id) {
+fn sender_is_authorized(sender: SenderContext<'_>) -> bool {
+    if let Some(allowed_by_owner) = owner_allows_sender(sender.user_id) {
         return allowed_by_owner;
     }
 
@@ -168,14 +252,14 @@ fn sender_is_authorized(
     }
 
     let allowed = load_allowed_senders();
-    if sender_in_allow_list(&allowed, user_id, username) {
+    if sender_in_allow_list(&allowed, sender) {
         return true;
     }
 
-    if is_private && dm_policy == "pairing" {
-        request_pairing_for_sender(chat_id, user_id, username);
-    } else if !is_private {
-        log_unauthorized_group_sender(user_id);
+    if sender.is_private() && dm_policy == "pairing" {
+        request_pairing_for_sender(sender);
+    } else if !sender.is_private() {
+        log_unauthorized_group_sender(sender.user_id);
     }
 
     false
@@ -190,17 +274,23 @@ fn bot_username() -> Option<String> {
     }
 }
 
-fn content_mentions_bot(content: &str, bot_username: Option<&str>) -> bool {
+fn content_mentions_bot(
+    content: MessageContent<'_>,
+    bot_username: Option<BotUsername<'_>>,
+) -> bool {
     match bot_username {
         Some(username) => {
-            let mention = format!("@{}", username);
-            content.to_lowercase().contains(&mention.to_lowercase())
+            let mention = format!("@{}", username.0);
+            content
+                .as_str()
+                .to_lowercase()
+                .contains(&mention.to_lowercase())
         }
-        None => content.contains('@'),
+        None => content.as_str().contains('@'),
     }
 }
 
-fn group_message_should_emit(content: &str) -> bool {
+fn group_message_should_emit(content: MessageContent<'_>) -> bool {
     let respond_to_all = channel_host::workspace_read(RESPOND_TO_ALL_GROUP_PATH)
         .as_deref()
         .unwrap_or("false")
@@ -210,31 +300,38 @@ fn group_message_should_emit(content: &str) -> bool {
         return true;
     }
 
-    content.starts_with('/') || content_mentions_bot(content, bot_username().as_deref())
+    content.starts_with_command()
+        || content_mentions_bot(content, bot_username().as_deref().map(BotUsername))
 }
 
-fn log_ignored_group_message(content: &str) {
+fn log_ignored_group_message(content: MessageContent<'_>) {
     channel_host::log(
         channel_host::LogLevel::Debug,
-        &format!("Ignoring group message without mention: {}", content),
+        &format!(
+            "Ignoring group message without mention: {}",
+            content.as_str()
+        ),
     );
 }
 
-fn metadata_json_for_message(message: &TelegramMessage, user_id: i64, is_private: bool) -> String {
+fn metadata_json_for_message(message: &TelegramMessage, sender: SenderContext<'_>) -> String {
     let metadata = crate::types::TelegramMessageMetadata {
         chat_id: message.chat.id,
         message_id: message.message_id,
-        user_id,
-        is_private,
+        user_id: sender.user_id.as_i64(),
+        is_private: sender.is_private(),
     };
 
     serde_json::to_string(&metadata).unwrap_or_else(|_| "{}".to_string())
 }
 
-fn content_to_emit(content: &str, has_attachments: bool) -> Option<String> {
-    match content_to_emit_for_agent(content, bot_username().as_deref()) {
+fn content_to_emit(
+    content: MessageContent<'_>,
+    attachment_presence: AttachmentPresence,
+) -> Option<String> {
+    match content_to_emit_for_agent(content.as_str(), bot_username().as_deref()) {
         Some(value) => Some(value),
-        None if has_attachments => Some(String::new()),
+        None if attachment_presence.is_present() => Some(String::new()),
         None => None,
     }
 }
@@ -297,29 +394,42 @@ fn handle_message(message: TelegramMessage) {
         return;
     }
 
-    let is_private = message.chat.chat_type == "private";
-    let username = from.username.as_deref();
+    let visibility = ChatVisibility::from_chat_type(&message.chat.chat_type);
+    let sender = SenderContext {
+        chat_id: TelegramChatId(message.chat.id),
+        user_id: TelegramUserId(from.id),
+        username: from.username.as_deref(),
+        visibility,
+    };
 
-    if !sender_is_authorized(message.chat.id, from.id, username, is_private) {
+    if !sender_is_authorized(sender) {
         return;
     }
 
+    let message_content = MessageContent(&content);
+
     // For group chats, only respond if bot was mentioned or respond_to_all is enabled
-    if !is_private && !group_message_should_emit(&content) {
-        log_ignored_group_message(&content);
+    if !sender.is_private() && !group_message_should_emit(message_content) {
+        log_ignored_group_message(message_content);
         return;
     }
 
     let user_name = user_display_name(&from.first_name, from.last_name.as_deref());
-    let metadata_json = metadata_json_for_message(&message, from.id, is_private);
+    let metadata_json = metadata_json_for_message(&message, sender);
 
-    let Some(content_to_emit) = content_to_emit(&content, !attachments.is_empty()) else {
+    let attachment_presence = if attachments.is_empty() {
+        AttachmentPresence::Absent
+    } else {
+        AttachmentPresence::Present
+    };
+
+    let Some(content_to_emit) = content_to_emit(message_content, attachment_presence) else {
         return;
     };
 
     emit_agent_message(AgentMessageEmission {
-        chat_id: message.chat.id,
-        user_id: from.id,
+        chat_id: sender.chat_id.as_i64(),
+        user_id: sender.user_id.as_i64(),
         user_name,
         content: content_to_emit,
         metadata_json,
@@ -418,7 +528,10 @@ pub(crate) fn clean_message_text(text: &str, bot_username: Option<&str>) -> Stri
 /// - bare slash commands are passed through for Submission parsing
 /// - empty/mention-only messages are ignored
 /// - otherwise cleaned text is emitted
-pub(crate) fn content_to_emit_for_agent(content: &str, bot_username: Option<&str>) -> Option<String> {
+pub(crate) fn content_to_emit_for_agent(
+    content: &str,
+    bot_username: Option<&str>,
+) -> Option<String> {
     let cleaned_text = clean_message_text(content, bot_username);
     let trimmed_content = content.trim();
 
