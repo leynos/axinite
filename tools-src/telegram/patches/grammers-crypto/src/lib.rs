@@ -257,6 +257,14 @@ mod tests {
         buffer
     }
 
+    fn apply_ige_op(op: fn(&mut [u8], &[u8; 32], &[u8; 32])) -> [u8; 32] {
+        let mut data = get_test_aes_key_or_iv();
+        let key = get_test_aes_key_or_iv();
+        let iv = get_test_aes_key_or_iv();
+        op(&mut data, &key, &iv);
+        data
+    }
+
     #[test]
     fn calc_client_key() {
         let auth_key = get_test_auth_key();
@@ -391,33 +399,21 @@ mod tests {
 
     #[test]
     fn verify_ige_encryption() {
-        let mut plaintext = get_test_aes_key_or_iv(); // Encrypting the key with itself
-        let key = get_test_aes_key_or_iv();
-        let iv = get_test_aes_key_or_iv();
-        let expected = vec![
-            226, 129, 18, 165, 62, 92, 137, 199, 177, 234, 128, 113, 193, 51, 105, 159, 212, 232,
-            107, 38, 196, 186, 201, 252, 90, 241, 171, 140, 226, 122, 68, 164,
+        let expected: &[u8] = &[
+            226, 129, 18, 165, 62, 92, 137, 199, 177, 234, 128, 113, 193, 51, 105,
+            159, 212, 232, 107, 38, 196, 186, 201, 252, 90, 241, 171, 140, 226,
+            122, 68, 164,
         ];
-
-        aes::ige_encrypt(&mut plaintext, &key, &iv);
-        let ciphertext = plaintext;
-
-        assert_eq!(ciphertext.as_slice(), &expected);
+        assert_eq!(apply_ige_op(aes::ige_encrypt).as_slice(), expected);
     }
 
     #[test]
     fn verify_ige_decryption() {
-        let mut ciphertext = get_test_aes_key_or_iv(); // Decrypting the key with itself
-        let key = get_test_aes_key_or_iv();
-        let iv = get_test_aes_key_or_iv();
-        let expected = vec![
-            229, 119, 122, 250, 205, 123, 44, 22, 247, 172, 64, 202, 230, 30, 246, 3, 254, 230, 9,
-            143, 184, 168, 134, 10, 185, 238, 103, 44, 215, 229, 186, 204,
+        let expected: &[u8] = &[
+            229, 119, 122, 250, 205, 123, 44, 22, 247, 172, 64, 202, 230, 30, 246,
+            3, 254, 230, 9, 143, 184, 168, 134, 10, 185, 238, 103, 44, 215, 229,
+            186, 204,
         ];
-
-        aes::ige_decrypt(&mut ciphertext, &key, &iv);
-        let plaintext = ciphertext;
-
-        assert_eq!(plaintext.as_slice(), &expected);
+        assert_eq!(apply_ige_op(aes::ige_decrypt).as_slice(), expected);
     }
 }
