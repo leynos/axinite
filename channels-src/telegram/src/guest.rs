@@ -127,6 +127,57 @@ fn poll_config_for_mode(webhook_mode: bool) -> Option<PollConfig> {
     }
 }
 
+fn send_typing_action(chat_id: i64) {
+    let payload = serde_json::json!({
+        "chat_id": chat_id,
+        "action": "typing"
+    });
+
+    let payload_bytes = match serde_json::to_vec(&payload) {
+        Ok(b) => b,
+        Err(_) => return,
+    };
+
+    let headers = serde_json::json!({ "Content-Type": "application/json" });
+
+    let result = channel_host::http_request(&channel_host::HttpRequestParams {
+        method: "POST".to_string(),
+        url: "https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendChatAction".to_string(),
+        headers_json: headers.to_string(),
+        body: Some(payload_bytes),
+        timeout_ms: None,
+    });
+
+    if let Err(e) = result {
+        channel_host::log(
+            channel_host::LogLevel::Debug,
+            &format!("sendChatAction failed: {}", e),
+        );
+    }
+}
+
+fn send_status_notify(chat_id: i64, message_id: i64, prompt: &str) {
+    if let Err(first_err) = send_message(chat_id, MessageText(prompt), Some(message_id), None) {
+        channel_host::log(
+            channel_host::LogLevel::Warn,
+            &format!(
+                "Failed to send status reply ({}), retrying without reply context",
+                first_err
+            ),
+        );
+
+        if let Err(retry_err) = send_message(chat_id, MessageText(prompt), None, None) {
+            channel_host::log(
+                channel_host::LogLevel::Debug,
+                &format!(
+                    "Failed to send status message without reply context: {}",
+                    retry_err
+                ),
+            );
+        }
+    }
+}
+
 impl Guest for TelegramChannel {
     fn on_start(config_json: String) -> Result<ChannelConfig, String> {
         channel_host::log(
@@ -256,7 +307,6 @@ impl Guest for TelegramChannel {
             None => return,
         };
 
-        // Parse chat_id from metadata
         let metadata: TelegramMessageMetadata = match serde_json::from_str(&update.metadata_json) {
             Ok(m) => m,
             Err(_) => {
@@ -269,68 +319,9 @@ impl Guest for TelegramChannel {
         };
 
         match action {
-            TelegramStatusAction::Typing => {
-                // POST /sendChatAction with action "typing"
-                let payload = serde_json::json!({
-                    "chat_id": metadata.chat_id,
-                    "action": "typing"
-                });
-
-                let payload_bytes = match serde_json::to_vec(&payload) {
-                    Ok(b) => b,
-                    Err(_) => return,
-                };
-
-                let headers = serde_json::json!({
-                    "Content-Type": "application/json"
-                });
-
-                let result = channel_host::http_request(&channel_host::HttpRequestParams {
-                    method: "POST".to_string(),
-                    url: "https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendChatAction"
-                        .to_string(),
-                    headers_json: headers.to_string(),
-                    body: Some(payload_bytes.clone()),
-                    timeout_ms: None,
-                });
-
-                if let Err(e) = result {
-                    channel_host::log(
-                        channel_host::LogLevel::Debug,
-                        &format!("sendChatAction failed: {}", e),
-                    );
-                }
-            }
+            TelegramStatusAction::Typing => send_typing_action(metadata.chat_id),
             TelegramStatusAction::Notify(prompt) => {
-                // Send user-visible status updates for actionable events.
-                if let Err(first_err) =
-                    send_message(
-                        metadata.chat_id,
-                        MessageText(&prompt),
-                        Some(metadata.message_id),
-                        None,
-                    )
-                {
-                    channel_host::log(
-                        channel_host::LogLevel::Warn,
-                        &format!(
-                            "Failed to send status reply ({}), retrying without reply context",
-                            first_err
-                        ),
-                    );
-
-                    if let Err(retry_err) =
-                        send_message(metadata.chat_id, MessageText(&prompt), None, None)
-                    {
-                        channel_host::log(
-                            channel_host::LogLevel::Debug,
-                            &format!(
-                                "Failed to send status message without reply context: {}",
-                                retry_err
-                            ),
-                        );
-                    }
-                }
+                send_status_notify(metadata.chat_id, metadata.message_id, &prompt)
             }
         }
     }
