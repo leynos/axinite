@@ -6,6 +6,26 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
+/// A semiprime (product of two distinct primes) to be factorised.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct SemiPrime(pub u64);
+
+/// The two prime factors of a semiprime, with `p <= q`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct PrimeFactors {
+    pub p: u64,
+    pub q: u64,
+}
+
+impl PrimeFactors {
+    fn new(a: u64, b: u64) -> Self {
+        Self {
+            p: a.min(b),
+            q: a.max(b),
+        }
+    }
+}
+
 fn gcd(mut a: u128, mut b: u128) -> u128 {
     while b != 0 {
         let (na, nb) = (b, a % b);
@@ -45,17 +65,17 @@ fn abs_sub(a: u128, b: u128) -> u128 {
 /// Pollard's rho algorithm: <https://en.wikipedia.org/wiki/Pollard%27s_rho_algorithm>
 /// Richard Brent: <https://maths-people.anu.edu.au/~brent/pd/rpb051i.pdf>
 #[allow(clippy::many_single_char_names)]
-pub fn factorize(pq: u64) -> (u64, u64) {
+pub fn factorize(pq: SemiPrime) -> PrimeFactors {
     const ATTEMPTS: [u64; 5] = [43, 47, 53, 59, 61];
     for attempt in ATTEMPTS {
         // > Note that this algorithm may not find the factors and will return failure for composite n.
         // > In that case, use a different f(x) and try again [...] We choose f(x) = x*x + c
         // Thus by choosing a different `c` we're changing `f(x)` and can try again.
         // Prime factors are used for the attempts in the hopes they'll be more likely to work.
-        let c = attempt * (pq / 103);
-        let (p, q) = factorize_with_param(pq, c);
-        if p != 1 {
-            return (p, q);
+        let c = attempt * (pq.0 / 103);
+        let factors = factorize_with_param(pq, c);
+        if factors.p != 1 {
+            return factors;
         }
     }
     panic!("failed to factorize in a fixed amount of attempts")
@@ -137,18 +157,18 @@ impl BrentFactorizer {
         }
     }
 
-    fn factors(&self) -> (u64, u64) {
+    fn factors(&self) -> PrimeFactors {
         let (p, q) = (self.g as u64, (self.pq / self.g) as u64);
-        (p.min(q), p.max(q))
+        PrimeFactors::new(p, q)
     }
 }
 
-fn factorize_with_param(pq: u64, c: u64) -> (u64, u64) {
-    if pq % 2 == 0 {
-        return (2, pq / 2);
+fn factorize_with_param(pq: SemiPrime, c: u64) -> PrimeFactors {
+    if pq.0 % 2 == 0 {
+        return PrimeFactors::new(2, pq.0 / 2);
     }
 
-    let mut factorizer = BrentFactorizer::new(pq as u128, c as u128);
+    let mut factorizer = BrentFactorizer::new(pq.0 as u128, c as u128);
 
     while factorizer.g == 1 {
         factorizer.advance_power_window();
@@ -165,19 +185,19 @@ mod tests {
 
     #[test]
     fn test_factorization_1() {
-        let pq = factorize(1470626929934143021);
-        assert_eq!(pq, (1206429347, 1218991343));
+        let pq = factorize(SemiPrime(1470626929934143021));
+        assert_eq!((pq.p, pq.q), (1206429347, 1218991343));
     }
 
     #[test]
     fn test_factorization_2() {
-        let pq = factorize(2363612107535801713);
-        assert_eq!(pq, (1518968219, 1556064227));
+        let pq = factorize(SemiPrime(2363612107535801713));
+        assert_eq!((pq.p, pq.q), (1518968219, 1556064227));
     }
 
     #[test]
     fn test_factorization_3() {
-        let pq = factorize(2804275833720261793);
-        assert_eq!(pq, (1555252417, 1803100129));
+        let pq = factorize(SemiPrime(2804275833720261793));
+        assert_eq!((pq.p, pq.q), (1555252417, 1803100129));
     }
 }
