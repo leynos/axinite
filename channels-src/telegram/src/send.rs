@@ -48,6 +48,16 @@ struct TelegramUpload<'a> {
     reply_to_message_id: Option<i64>,
 }
 
+/// Parameters that differ between sendPhoto and sendDocument.
+struct TelegramMediaEndpoint<'a> {
+    /// Multipart form-data field name for the file part.
+    field: &'a str,
+    /// Telegram Bot API method (e.g. `"sendPhoto"`). Used in the URL and error messages.
+    method: &'a str,
+    /// Human-readable label for success log messages (e.g. `"photo"`).
+    label: &'a str,
+}
+
 /// Errors from send_message, split so callers can match on parse-entity failures.
 pub(crate) enum SendError {
     /// Telegram returned 400 with "can't parse entities" (Markdown issue).
@@ -209,6 +219,83 @@ fn write_multipart_file(
     body.extend_from_slice(b"\r\n");
 }
 
+/// Core multipart upload shared by `send_photo` and `send_document`.
+fn send_multipart_upload(
+    upload: TelegramUpload<'_>,
+    endpoint: TelegramMediaEndpoint<'_>,
+) -> Result<(), String> {
+    let boundary = format!("ironclaw-{}", channel_host::now_millis());
+    let mut body = Vec::new();
+
+    let chat_id_value = upload.chat_id.to_string();
+    write_multipart_field(
+        &mut body,
+        MultipartBoundary(&boundary),
+        MultipartField {
+            name: "chat_id",
+            value: &chat_id_value,
+        },
+    );
+    if let Some(msg_id) = upload.reply_to_message_id {
+        let reply_to_message_id = msg_id.to_string();
+        write_multipart_field(
+            &mut body,
+            MultipartBoundary(&boundary),
+            MultipartField {
+                name: "reply_to_message_id",
+                value: &reply_to_message_id,
+            },
+        );
+    }
+    write_multipart_file(
+        &mut body,
+        MultipartBoundary(&boundary),
+        MultipartFilePart {
+            field: endpoint.field,
+            filename: upload.filename,
+            content_type: upload.mime_type,
+            data: upload.data,
+        },
+    );
+    body.extend_from_slice(format!("--{}--\r\n", boundary).as_bytes());
+
+    let headers = serde_json::json!({
+        "Content-Type": format!("multipart/form-data; boundary={}", boundary)
+    });
+
+    let result = channel_host::http_request(&channel_host::HttpRequestParams {
+        method: "POST".to_string(),
+        url: format!(
+            "https://api.telegram.org/bot{{TELEGRAM_BOT_TOKEN}}/{}",
+            endpoint.method
+        ),
+        headers_json: headers.to_string(),
+        body: Some(body),
+        timeout_ms: Some(60_000),
+    });
+
+    match result {
+        Ok(resp) if resp.status == 200 => {
+            channel_host::log(
+                channel_host::LogLevel::Debug,
+                &format!(
+                    "Sent {} '{}' to chat {}",
+                    endpoint.label, upload.filename, upload.chat_id
+                ),
+            );
+            Ok(())
+        }
+        Ok(resp) => {
+            let body_str = String::from_utf8_lossy(&resp.body);
+            Err(format!(
+                "{} failed (HTTP {}): {}",
+                endpoint.method, resp.status, body_str
+            ))
+        }
+        Err(e) => Err(format!("{} HTTP request failed: {}", endpoint.method, e)),
+    }
+}
+
 /// Send a photo via the Telegram Bot API (multipart upload).
 ///
 /// Falls back to `send_document()` if the photo exceeds 10 MB.
@@ -224,142 +311,26 @@ fn send_photo(upload: TelegramUpload<'_>) -> Result<(), String> {
         );
         return send_document(upload);
     }
-
-    let boundary = format!("ironclaw-{}", channel_host::now_millis());
-    let mut body = Vec::new();
-
-    let chat_id_value = upload.chat_id.to_string();
-    write_multipart_field(
-        &mut body,
-        MultipartBoundary(&boundary),
-        MultipartField {
-            name: "chat_id",
-            value: &chat_id_value,
-        },
-    );
-    if let Some(msg_id) = upload.reply_to_message_id {
-        let reply_to_message_id = msg_id.to_string();
-        write_multipart_field(
-            &mut body,
-            MultipartBoundary(&boundary),
-            MultipartField {
-                name: "reply_to_message_id",
-                value: &reply_to_message_id,
-            },
-        );
-    }
-    write_multipart_file(
-        &mut body,
-        MultipartBoundary(&boundary),
-        MultipartFilePart {
+    send_multipart_upload(
+        upload,
+        TelegramMediaEndpoint {
             field: "photo",
-            filename: upload.filename,
-            content_type: upload.mime_type,
-            data: upload.data,
+            method: "sendPhoto",
+            label: "photo",
         },
-    );
-    body.extend_from_slice(format!("--{}--\r\n", boundary).as_bytes());
-
-    let headers = serde_json::json!({
-        "Content-Type": format!("multipart/form-data; boundary={}", boundary)
-    });
-
-    let result = channel_host::http_request(&channel_host::HttpRequestParams {
-        method: "POST".to_string(),
-        url: "https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendPhoto".to_string(),
-        headers_json: headers.to_string(),
-        body: Some(body.clone()),
-        timeout_ms: Some(60_000), // 60s timeout for file uploads
-    });
-
-    match result {
-        Ok(resp) if resp.status == 200 => {
-            channel_host::log(
-                channel_host::LogLevel::Debug,
-                &format!("Sent photo '{}' to chat {}", upload.filename, upload.chat_id),
-            );
-            Ok(())
-        }
-        Ok(resp) => {
-            let body_str = String::from_utf8_lossy(&resp.body);
-            Err(format!(
-                "sendPhoto failed (HTTP {}): {}",
-                resp.status, body_str
-            ))
-        }
-        Err(e) => Err(format!("sendPhoto HTTP request failed: {}", e)),
-    }
+    )
 }
 
 /// Send a document via the Telegram Bot API (multipart upload).
 fn send_document(upload: TelegramUpload<'_>) -> Result<(), String> {
-    let boundary = format!("ironclaw-{}", channel_host::now_millis());
-    let mut body = Vec::new();
-
-    let chat_id_value = upload.chat_id.to_string();
-    write_multipart_field(
-        &mut body,
-        MultipartBoundary(&boundary),
-        MultipartField {
-            name: "chat_id",
-            value: &chat_id_value,
-        },
-    );
-    if let Some(msg_id) = upload.reply_to_message_id {
-        let reply_to_message_id = msg_id.to_string();
-        write_multipart_field(
-            &mut body,
-            MultipartBoundary(&boundary),
-            MultipartField {
-                name: "reply_to_message_id",
-                value: &reply_to_message_id,
-            },
-        );
-    }
-    write_multipart_file(
-        &mut body,
-        MultipartBoundary(&boundary),
-        MultipartFilePart {
+    send_multipart_upload(
+        upload,
+        TelegramMediaEndpoint {
             field: "document",
-            filename: upload.filename,
-            content_type: upload.mime_type,
-            data: upload.data,
+            method: "sendDocument",
+            label: "document",
         },
-    );
-    body.extend_from_slice(format!("--{}--\r\n", boundary).as_bytes());
-
-    let headers = serde_json::json!({
-        "Content-Type": format!("multipart/form-data; boundary={}", boundary)
-    });
-
-    let result = channel_host::http_request(&channel_host::HttpRequestParams {
-        method: "POST".to_string(),
-        url: "https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendDocument".to_string(),
-        headers_json: headers.to_string(),
-        body: Some(body.clone()),
-        timeout_ms: Some(60_000), // 60s timeout for file uploads
-    });
-
-    match result {
-        Ok(resp) if resp.status == 200 => {
-            channel_host::log(
-                channel_host::LogLevel::Debug,
-                &format!(
-                    "Sent document '{}' to chat {}",
-                    upload.filename, upload.chat_id
-                ),
-            );
-            Ok(())
-        }
-        Ok(resp) => {
-            let body_str = String::from_utf8_lossy(&resp.body);
-            Err(format!(
-                "sendDocument failed (HTTP {}): {}",
-                resp.status, body_str
-            ))
-        }
-        Err(e) => Err(format!("sendDocument HTTP request failed: {}", e)),
-    }
+    )
 }
 
 /// Image MIME types that Telegram's sendPhoto API supports.
