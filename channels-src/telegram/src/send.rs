@@ -209,19 +209,18 @@ fn write_multipart_file(
     body.extend_from_slice(b"\r\n");
 }
 
-/// Shared multipart upload implementation for `send_photo` and `send_document`.
-fn upload_file(
-    upload: TelegramUpload<'_>,
-    endpoint: &str,
+/// Build the multipart/form-data body for a Telegram file upload.
+fn build_multipart_body(
+    upload: &TelegramUpload<'_>,
+    boundary: &str,
     field_name: &str,
-) -> Result<(), String> {
-    let boundary = format!("ironclaw-{}", channel_host::now_millis());
+) -> Vec<u8> {
     let mut body = Vec::new();
 
     let chat_id_value = upload.chat_id.to_string();
     write_multipart_field(
         &mut body,
-        MultipartBoundary(&boundary),
+        MultipartBoundary(boundary),
         MultipartField {
             name: "chat_id",
             value: &chat_id_value,
@@ -231,7 +230,7 @@ fn upload_file(
         let reply_to_message_id = msg_id.to_string();
         write_multipart_field(
             &mut body,
-            MultipartBoundary(&boundary),
+            MultipartBoundary(boundary),
             MultipartField {
                 name: "reply_to_message_id",
                 value: &reply_to_message_id,
@@ -240,7 +239,7 @@ fn upload_file(
     }
     write_multipart_file(
         &mut body,
-        MultipartBoundary(&boundary),
+        MultipartBoundary(boundary),
         MultipartFilePart {
             field: field_name,
             filename: upload.filename,
@@ -249,6 +248,17 @@ fn upload_file(
         },
     );
     body.extend_from_slice(format!("--{}--\r\n", boundary).as_bytes());
+    body
+}
+
+/// Shared multipart upload implementation for `send_photo` and `send_document`.
+fn upload_file(
+    upload: TelegramUpload<'_>,
+    endpoint: &str,
+    field_name: &str,
+) -> Result<(), String> {
+    let boundary = format!("ironclaw-{}", channel_host::now_millis());
+    let body = build_multipart_body(&upload, &boundary, field_name);
 
     let headers = serde_json::json!({
         "Content-Type": format!("multipart/form-data; boundary={}", boundary)
