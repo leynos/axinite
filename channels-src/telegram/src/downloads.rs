@@ -6,28 +6,27 @@ use crate::types::{TelegramApiResponse, TelegramFile};
 /// to avoid excessive memory use and slow downloads in the WASM runtime.
 pub(crate) const MAX_DOWNLOAD_SIZE_BYTES: u64 = 20 * 1024 * 1024;
 
-fn download_telegram_file(file_id: &str) -> Result<Vec<u8>, String> {
-    // Reject file_id containing curly braces to prevent credential placeholder injection
+/// Validate `file_id` and call the Telegram `getFile` API to resolve the
+/// server-side `file_path`.
+fn resolve_file_path(file_id: &str) -> Result<String, String> {
     if file_id.contains('{') || file_id.contains('}') {
         return Err("invalid file_id: contains forbidden characters".to_string());
     }
 
-    // Step 1: Call getFile to get file_path
     let get_file_url = format!(
         "https://api.telegram.org/bot{{TELEGRAM_BOT_TOKEN}}/getFile?file_id={}",
         percent_encode(QueryParamValue(file_id))
     );
 
     let headers = serde_json::json!({});
-    let result = channel_host::http_request(&channel_host::HttpRequestParams {
+    let response = channel_host::http_request(&channel_host::HttpRequestParams {
         method: "GET".to_string(),
-        url: get_file_url.clone(),
+        url: get_file_url,
         headers_json: headers.to_string(),
         body: None,
         timeout_ms: None,
-    });
-
-    let response = result.map_err(|e| format!("getFile request failed: {}", e))?;
+    })
+    .map_err(|e| format!("getFile request failed: {}", e))?;
 
     if response.status != 200 {
         let body_str = String::from_utf8_lossy(&response.body);
@@ -53,37 +52,35 @@ fn download_telegram_file(file_id: &str) -> Result<Vec<u8>, String> {
         .result
         .ok_or_else(|| "getFile returned no result".to_string())?;
 
-    let file_path = file
-        .file_path
-        .ok_or_else(|| "getFile returned no file_path".to_string())?;
+    file.file_path
+        .ok_or_else(|| "getFile returned no file_path".to_string())
+}
 
-    // Sanitize file_path against credential placeholder injection
+/// Validate `file_path`, fetch the raw bytes, and enforce the size limit.
+fn fetch_file_bytes(file_path: &str) -> Result<Vec<u8>, String> {
     if file_path.contains('{') || file_path.contains('}') {
         return Err("invalid file_path: contains forbidden characters".to_string());
     }
 
-    // Step 2: Download the actual file bytes
     let download_url = format!(
         "https://api.telegram.org/file/bot{{TELEGRAM_BOT_TOKEN}}/{}",
         file_path
     );
 
-    let result = channel_host::http_request(&channel_host::HttpRequestParams {
+    let headers = serde_json::json!({});
+    let response = channel_host::http_request(&channel_host::HttpRequestParams {
         method: "GET".to_string(),
-        url: download_url.clone(),
+        url: download_url,
         headers_json: headers.to_string(),
         body: None,
         timeout_ms: None,
-    });
-
-    let response = result.map_err(|e| format!("File download failed: {}", e))?;
+    })
+    .map_err(|e| format!("File download failed: {}", e))?;
 
     if response.status != 200 {
         return Err(format!("File download returned status {}", response.status));
     }
 
-    // Post-download size guard: Telegram metadata file_size is optional,
-    // so enforce the limit on actual downloaded bytes.
     if response.body.len() as u64 > MAX_DOWNLOAD_SIZE_BYTES {
         return Err(format!(
             "Downloaded file exceeds {} MB limit ({} bytes)",
@@ -93,6 +90,11 @@ fn download_telegram_file(file_id: &str) -> Result<Vec<u8>, String> {
     }
 
     Ok(response.body)
+}
+
+fn download_telegram_file(file_id: &str) -> Result<Vec<u8>, String> {
+    let file_path = resolve_file_path(file_id)?;
+    fetch_file_bytes(&file_path)
 }
 
 fn is_voice_attachment(att: &InboundAttachment) -> bool {
