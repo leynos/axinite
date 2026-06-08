@@ -65,6 +65,49 @@ impl std::fmt::Display for SendError {
     }
 }
 
+/// Interpret the raw HTTP result of a `sendMessage` call and convert it to the
+/// domain-level `Result<i64, SendError>`.
+fn interpret_send_message_response(
+    result: Result<channel_host::HttpResponse, String>,
+) -> Result<i64, SendError> {
+    let http_response =
+        result.map_err(|e| SendError::Other(format!("HTTP request failed: {}", e)))?;
+
+    if http_response.status == 400 {
+        let body_str = String::from_utf8_lossy(&http_response.body);
+        if body_str.contains("can't parse entities") {
+            return Err(SendError::ParseEntities(body_str.to_string()));
+        }
+        return Err(SendError::Other(format!(
+            "Telegram API returned 400: {}",
+            body_str
+        )));
+    }
+
+    if http_response.status != 200 {
+        let body_str = String::from_utf8_lossy(&http_response.body);
+        return Err(SendError::Other(format!(
+            "Telegram API returned status {}: {}",
+            http_response.status, body_str
+        )));
+    }
+
+    let api_response: TelegramApiResponse<SentMessage> =
+        serde_json::from_slice(&http_response.body)
+            .map_err(|e| SendError::Other(format!("Failed to parse response: {}", e)))?;
+
+    if !api_response.ok {
+        return Err(SendError::Other(format!(
+            "Telegram API error: {}",
+            api_response
+                .description
+                .unwrap_or_else(|| "unknown".to_string())
+        )));
+    }
+
+    Ok(api_response.result.map(|r| r.message_id).unwrap_or(0))
+}
+
 /// Send a message via the Telegram Bot API.
 ///
 /// Returns the sent message_id on success. When `parse_mode` is set and
@@ -98,47 +141,11 @@ pub(crate) fn send_message(
         method: "POST".to_string(),
         url: "https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage".to_string(),
         headers_json: headers.to_string(),
-        body: Some(payload_bytes.clone()),
+        body: Some(payload_bytes),
         timeout_ms: None,
     });
 
-    match result {
-        Ok(http_response) => {
-            if http_response.status == 400 {
-                let body_str = String::from_utf8_lossy(&http_response.body);
-                if body_str.contains("can't parse entities") {
-                    return Err(SendError::ParseEntities(body_str.to_string()));
-                }
-                return Err(SendError::Other(format!(
-                    "Telegram API returned 400: {}",
-                    body_str
-                )));
-            }
-
-            if http_response.status != 200 {
-                let body_str = String::from_utf8_lossy(&http_response.body);
-                return Err(SendError::Other(format!(
-                    "Telegram API returned status {}: {}",
-                    http_response.status, body_str
-                )));
-            }
-
-            let api_response: TelegramApiResponse<SentMessage> = serde_json::from_slice(&http_response.body)
-                .map_err(|e| SendError::Other(format!("Failed to parse response: {}", e)))?;
-
-            if !api_response.ok {
-                return Err(SendError::Other(format!(
-                    "Telegram API error: {}",
-                    api_response
-                        .description
-                        .unwrap_or_else(|| "unknown".to_string())
-                )));
-            }
-
-            Ok(api_response.result.map(|r| r.message_id).unwrap_or(0))
-        }
-        Err(e) => Err(SendError::Other(format!("HTTP request failed: {}", e))),
-    }
+    interpret_send_message_response(result)
 }
 
 /// Percent-encode a string for safe use as a URL query parameter value.
