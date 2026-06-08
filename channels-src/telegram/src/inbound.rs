@@ -364,58 +364,64 @@ fn emit_agent_message(emission: AgentMessageEmission) {
     );
 }
 
-fn handle_message(message: TelegramMessage) {
-    // Extract attachments from media fields (pure data mapping, no host calls)
-    let mut attachments = extract_attachments(&message);
+/// Extract the authorised sender from a message.
+///
+/// Returns `None` if the message has no sender, the sender is a bot,
+/// or the sender is not authorised to interact with the agent.
+fn resolve_authorized_sender(message: &TelegramMessage) -> Option<SenderContext<'_>> {
+    let from = message.from.as_ref()?;
 
-    // Download and store voice attachments for host-side transcription
-    download_and_store_voice(&attachments);
-
-    // Download and store image attachments for host-side vision pipeline
-    download_and_store_images(&attachments);
-
-    // Download and store document attachments for host-side text extraction
-    download_and_store_documents(&mut attachments);
-
-    let content = message_content(&message);
-
-    // Allow messages with attachments even if text content is empty
-    if content.is_empty() && attachments.is_empty() {
-        return;
-    }
-
-    // Skip messages without a sender (channel posts)
-    let Some(from) = message.from.as_ref() else {
-        return;
-    };
-
-    // Skip bot messages to avoid loops
     if from.is_bot {
-        return;
+        return None;
     }
 
-    let visibility = ChatVisibility::from_chat_type(&message.chat.chat_type);
     let sender = SenderContext {
         chat_id: TelegramChatId(message.chat.id),
         user_id: TelegramUserId(from.id),
         username: from.username.as_deref(),
-        visibility,
+        visibility: ChatVisibility::from_chat_type(&message.chat.chat_type),
     };
 
     if !sender_is_authorized(sender) {
+        return None;
+    }
+
+    Some(sender)
+}
+
+/// Determine the content to emit for a validated sender.
+///
+/// Returns `None` when the message should be silently ignored (e.g. an unaddressed
+/// group message, or one whose text strips to empty with no attachments).
+fn resolve_emittable_content(
+    content: MessageContent<'_>,
+    sender: SenderContext<'_>,
+    attachment_presence: AttachmentPresence,
+) -> Option<String> {
+    if !sender.is_private() && !group_message_should_emit(content) {
+        log_ignored_group_message(content);
+        return None;
+    }
+
+    content_to_emit(content, attachment_presence)
+}
+
+fn handle_message(message: TelegramMessage) {
+    let mut attachments = extract_attachments(&message);
+
+    download_and_store_voice(&attachments);
+    download_and_store_images(&attachments);
+    download_and_store_documents(&mut attachments);
+
+    let content = message_content(&message);
+
+    if content.is_empty() && attachments.is_empty() {
         return;
     }
 
-    let message_content = MessageContent(&content);
-
-    // For group chats, only respond if bot was mentioned or respond_to_all is enabled
-    if !sender.is_private() && !group_message_should_emit(message_content) {
-        log_ignored_group_message(message_content);
+    let Some(sender) = resolve_authorized_sender(&message) else {
         return;
-    }
-
-    let user_name = user_display_name(&from.first_name, from.last_name.as_deref());
-    let metadata_json = metadata_json_for_message(&message, sender);
+    };
 
     let attachment_presence = if attachments.is_empty() {
         AttachmentPresence::Absent
@@ -423,9 +429,18 @@ fn handle_message(message: TelegramMessage) {
         AttachmentPresence::Present
     };
 
-    let Some(content_to_emit) = content_to_emit(message_content, attachment_presence) else {
+    let Some(content_to_emit) =
+        resolve_emittable_content(MessageContent(&content), sender, attachment_presence)
+    else {
         return;
     };
+
+    // `resolve_authorized_sender` already confirmed `from` is `Some` and not a bot.
+    let Some(from) = message.from.as_ref() else {
+        return;
+    };
+    let user_name = user_display_name(&from.first_name, from.last_name.as_deref());
+    let metadata_json = metadata_json_for_message(&message, sender);
 
     emit_agent_message(AgentMessageEmission {
         chat_id: sender.chat_id.as_i64(),
