@@ -103,6 +103,12 @@ mod tests {
         buffer
     }
 
+    fn check_nonce_hash(number: u8, expected: [u8; 16]) {
+        let auth_key = get_test_auth_key();
+        let new_nonce = get_test_new_nonce();
+        assert_eq!(auth_key.calc_new_nonce_hash(&new_nonce, number), expected);
+    }
+
     #[test]
     fn auth_key_aux_hash() {
         let auth_key = get_test_auth_key();
@@ -121,37 +127,32 @@ mod tests {
 
     #[test]
     fn calc_new_nonce_hash1() {
-        let auth_key = get_test_auth_key();
-        let new_nonce = get_test_new_nonce();
-        assert_eq!(
-            auth_key.calc_new_nonce_hash(&new_nonce, 1),
+        check_nonce_hash(
+            1,
             [
-                194, 206, 210, 179, 62, 89, 58, 85, 210, 127, 74, 93, 171, 238, 124, 103
-            ]
+                194, 206, 210, 179, 62, 89, 58, 85, 210, 127, 74, 93, 171, 238, 124, 103,
+            ],
         );
     }
 
     #[test]
     fn calc_new_nonce_hash2() {
-        let auth_key = get_test_auth_key();
-        let new_nonce = get_test_new_nonce();
-        assert_eq!(
-            auth_key.calc_new_nonce_hash(&new_nonce, 2),
+        check_nonce_hash(
+            2,
             [
-                244, 49, 142, 133, 189, 47, 243, 190, 132, 217, 254, 252, 227, 220, 227, 159
-            ]
+                244, 49, 142, 133, 189, 47, 243, 190, 132, 217, 254, 252, 227, 220, 227,
+                159,
+            ],
         );
     }
 
     #[test]
     fn calc_new_nonce_hash3() {
-        let auth_key = get_test_auth_key();
-        let new_nonce = get_test_new_nonce();
-        assert_eq!(
-            auth_key.calc_new_nonce_hash(&new_nonce, 3),
+        check_nonce_hash(
+            3,
             [
-                75, 249, 215, 179, 125, 180, 19, 238, 67, 29, 40, 81, 118, 49, 203, 61
-            ]
+                75, 249, 215, 179, 125, 180, 19, 238, 67, 29, 40, 81, 118, 49, 203, 61,
+            ],
         );
     }
 }
