@@ -7,14 +7,19 @@
 // except according to those terms.
 
 /// A semiprime (product of two distinct primes) to be factorised.
+///
+/// Internal to this module: the public [`factorize`] signature must stay
+/// identical to upstream `grammers-crypto` because `[patch.crates-io]`
+/// substitutes this crate for crates.io dependents such as
+/// `grammers-mtproto`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct SemiPrime(pub u64);
+struct SemiPrime(u64);
 
 /// The two prime factors of a semiprime, with `p <= q`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct PrimeFactors {
-    pub p: u64,
-    pub q: u64,
+struct PrimeFactors {
+    p: u64,
+    q: u64,
 }
 
 impl PrimeFactors {
@@ -65,7 +70,12 @@ fn abs_sub(a: u128, b: u128) -> u128 {
 /// Pollard's rho algorithm: <https://en.wikipedia.org/wiki/Pollard%27s_rho_algorithm>
 /// Richard Brent: <https://maths-people.anu.edu.au/~brent/pd/rpb051i.pdf>
 #[allow(clippy::many_single_char_names)]
-pub fn factorize(pq: SemiPrime) -> PrimeFactors {
+pub fn factorize(pq: u64) -> (u64, u64) {
+    let factors = factorize_semiprime(SemiPrime(pq));
+    (factors.p, factors.q)
+}
+
+fn factorize_semiprime(pq: SemiPrime) -> PrimeFactors {
     const ATTEMPTS: [u64; 5] = [43, 47, 53, 59, 61];
     for attempt in ATTEMPTS {
         // > Note that this algorithm may not find the factors and will return failure for composite n.
@@ -185,19 +195,19 @@ mod tests {
 
     #[test]
     fn test_factorization_1() {
-        let pq = factorize(SemiPrime(1470626929934143021));
-        assert_eq!((pq.p, pq.q), (1206429347, 1218991343));
+        let pq = factorize(1470626929934143021);
+        assert_eq!(pq, (1206429347, 1218991343));
     }
 
     #[test]
     fn test_factorization_2() {
-        let pq = factorize(SemiPrime(2363612107535801713));
-        assert_eq!((pq.p, pq.q), (1518968219, 1556064227));
+        let pq = factorize(2363612107535801713);
+        assert_eq!(pq, (1518968219, 1556064227));
     }
 
     #[test]
     fn test_factorization_3() {
-        let pq = factorize(SemiPrime(2804275833720261793));
-        assert_eq!((pq.p, pq.q), (1555252417, 1803100129));
+        let pq = factorize(2804275833720261793);
+        assert_eq!(pq, (1555252417, 1803100129));
     }
 }
