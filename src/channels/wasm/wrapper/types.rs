@@ -99,18 +99,13 @@ pub(super) enum CredentialContext<'a> {
     Url,
     /// A named request header.
     Header(&'a str),
-    /// The request body.
-    Body,
 }
-
-const _: CredentialContext<'static> = CredentialContext::Body;
 
 impl std::fmt::Display for CredentialContext<'_> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Self::Url => f.write_str("url"),
             Self::Header(name) => write!(f, "header:{}", name),
-            Self::Body => f.write_str("body"),
         }
     }
 }

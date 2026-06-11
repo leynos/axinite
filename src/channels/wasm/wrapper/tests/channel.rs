@@ -84,6 +84,33 @@ fn test_http_response_error() {
     assert_eq!(response.body, b"Bad request");
 }
 
+#[test]
+fn test_create_store_rejects_empty_channel_name() {
+    let config = WasmChannelRuntimeConfig::for_testing();
+    let runtime = WasmChannelRuntime::new(config).unwrap();
+    let prepared = PreparedChannelModule {
+        name: String::new(),
+        description: "Invalid channel".to_string(),
+        component: None,
+        limits: ResourceLimits::default(),
+    };
+
+    let result = WasmChannel::create_store(
+        &runtime,
+        &prepared,
+        &ChannelCapabilities::for_channel("test"),
+        std::collections::HashMap::new(),
+        Vec::new(),
+        Arc::new(PairingStore::new()),
+    );
+
+    assert!(matches!(
+        result,
+        Err(crate::channels::wasm::error::WasmChannelError::InvalidName(name))
+            if name.is_empty()
+    ));
+}
+
 #[tokio::test]
 async fn test_channel_start_and_shutdown() {
     let channel = create_test_channel();

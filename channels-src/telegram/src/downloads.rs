@@ -147,12 +147,14 @@ fn download_and_store_attachment(att: &InboundAttachment, data_kind: &str) {
     }
 }
 
-#[cfg(test)]
-fn download_and_store_document_attachment(att: &mut InboundAttachment) {
-    let _ = att;
+pub(crate) fn document_download_failure_feedback(filename: Option<&str>, error: &str) -> String {
+    let name = filename.unwrap_or("document");
+    format!(
+        "[Failed to download '{name}': {error}. \
+         The file may be too large or unavailable. Please try a smaller file.]"
+    )
 }
 
-#[cfg(not(test))]
 fn download_and_store_document_attachment(att: &mut InboundAttachment) {
     match download_telegram_file(&att.id) {
         Ok(bytes) => {
@@ -176,10 +178,9 @@ fn download_and_store_document_attachment(att: &mut InboundAttachment) {
                 channel_host::LogLevel::Error,
                 &format!("Failed to download document file: {}", e),
             );
-            let name = att.filename.as_deref().unwrap_or("document");
-            att.extracted_text = Some(format!(
-                "[Failed to download '{name}': {e}. \
-                 The file may be too large or unavailable. Please try a smaller file.]"
+            att.extracted_text = Some(document_download_failure_feedback(
+                att.filename.as_deref(),
+                &e,
             ));
         }
     }

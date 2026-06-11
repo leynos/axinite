@@ -70,17 +70,11 @@ fn apply_emitted_metadata(
     (msg, false)
 }
 
-/// Checks the rate limiter and, if permitted, sends `msg` on `tx`.
-///
-/// Returns `Err(WasmChannelError::EmitRateLimited)` when the rate limit is
-/// exceeded, and `Ok(false)` when the sender is closed (so callers can
-/// `break` out of their dispatch loop).
-async fn send_with_rate_limit(
+/// Reserve one emit slot before performing any message side effects.
+fn reserve_emit_slot(
     channel_name: &str,
-    msg: IncomingMessage,
-    tx: &mpsc::Sender<IncomingMessage>,
     limiter: &mut ChannelEmitRateLimiter,
-) -> Result<bool, WasmChannelError> {
+) -> Result<(), WasmChannelError> {
     if !limiter.check_and_record() {
         tracing::warn!(channel = %channel_name, "Message emission rate limited");
         return Err(WasmChannelError::EmitRateLimited {
@@ -88,6 +82,18 @@ async fn send_with_rate_limit(
         });
     }
 
+    Ok(())
+}
+
+/// Sends `msg` on `tx`.
+///
+/// Returns `Ok(false)` when the sender is closed, so callers can `break` out
+/// of their dispatch loop.
+async fn send_to_agent(
+    channel_name: &str,
+    msg: IncomingMessage,
+    tx: &mpsc::Sender<IncomingMessage>,
+) -> Result<bool, WasmChannelError> {
     tracing::info!(
         channel = %channel_name,
         user_id = %msg.user_id,
@@ -134,6 +140,8 @@ impl WasmChannel {
         let mut rate_limiter = self.rate_limiter.write().await;
 
         for emitted in messages {
+            reserve_emit_slot(&self.name, &mut rate_limiter)?;
+
             let msg = convert_emitted_to_incoming(&self.name, &emitted);
             let (msg, has_metadata) = apply_emitted_metadata(msg, &emitted);
 
@@ -141,7 +149,7 @@ impl WasmChannel {
                 self.update_broadcast_metadata(&emitted.metadata_json).await;
             }
 
-            if !send_with_rate_limit(&self.name, msg, tx, &mut rate_limiter).await? {
+            if !send_to_agent(&self.name, msg, tx).await? {
                 break;
             }
         }
@@ -180,6 +188,8 @@ impl WasmChannel {
         let mut limiter = ctx.rate_limiter.write().await;
 
         for emitted in messages {
+            reserve_emit_slot(channel_name, &mut limiter)?;
+
             let msg = convert_emitted_to_incoming(channel_name, &emitted);
             let (msg, has_metadata) = apply_emitted_metadata(msg, &emitted);
 
@@ -193,7 +203,7 @@ impl WasmChannel {
                 .await;
             }
 
-            if !send_with_rate_limit(channel_name, msg, tx, &mut limiter).await? {
+            if !send_to_agent(channel_name, msg, tx).await? {
                 break;
             }
         }

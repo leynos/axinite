@@ -99,6 +99,9 @@ management.
   - `make check-fmt`
   - `make lint`
   - `make test`
+- Run `make audit` when dependency manifests, lockfiles, audit policy, or CI
+  supply-chain gates change. It is intentionally separate from `make all`
+  because it fetches the RustSec advisory database and requires network access.
 - `make typecheck` is available as a standalone quick smoke-check target but
   is not part of `make all` because `cargo clippy` is a strict superset of
   `cargo check`.

@@ -12,6 +12,9 @@ name: Run Tests
 jobs:
   audit:
     name: Dependency Audit
+    if: >
+      github.event_name == 'push' ||
+      (github.event_name == 'pull_request' && github.base_ref != 'staging')
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository

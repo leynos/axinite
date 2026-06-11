@@ -169,8 +169,8 @@ impl ChannelStoreData {
     /// Display output, so any error from an injected-URL request will
     /// contain the raw credential unless we scrub it.
     ///
-    /// Scrubs raw, URL-encoded, and Base64-encoded forms of each secret
-    /// to prevent exfiltration via encoded representations in error strings.
+    /// Scrubs raw and URL-encoded forms of each secret to prevent
+    /// exfiltration via encoded representations in error strings.
     pub(super) fn redact_credentials(&self, text: &str) -> String {
         let mut result = text.to_string();
 

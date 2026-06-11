@@ -80,6 +80,43 @@ async fn test_dispatch_emitted_messages_no_sender_returns_ok() {
     assert!(result.is_ok());
 }
 
+#[tokio::test]
+async fn test_dispatch_emitted_messages_rate_limit_does_not_update_metadata() {
+    use crate::channels::wasm::capabilities::EmitRateLimitConfig;
+    use crate::channels::wasm::error::WasmChannelError;
+    use crate::channels::wasm::host::{ChannelEmitRateLimiter, EmittedMessage};
+
+    let (tx, mut rx) = tokio::sync::mpsc::channel(10);
+    let message_tx = Arc::new(tokio::sync::RwLock::new(Some(tx)));
+    let rate_limiter = Arc::new(tokio::sync::RwLock::new(ChannelEmitRateLimiter::new(
+        EmitRateLimitConfig {
+            messages_per_minute: 0,
+            messages_per_hour: 0,
+        },
+    )));
+    let last_broadcast_metadata = Arc::new(tokio::sync::RwLock::new(None));
+    let metadata_json = r#"{"chat_id":123,"message_id":456}"#;
+
+    let result = WasmChannel::dispatch_emitted_messages(
+        "test-channel",
+        vec![EmittedMessage::new("user1", "Hello!").with_metadata(metadata_json)],
+        DispatchContext {
+            message_tx: message_tx.as_ref(),
+            rate_limiter: rate_limiter.as_ref(),
+            last_broadcast_metadata: last_broadcast_metadata.as_ref(),
+            settings_store: None,
+        },
+    )
+    .await;
+
+    assert!(matches!(
+        result,
+        Err(WasmChannelError::EmitRateLimited { name }) if name == "test-channel"
+    ));
+    assert!(last_broadcast_metadata.read().await.is_none());
+    assert!(rx.try_recv().is_err());
+}
+
 /// Expected field values for one [`crate::channels::IncomingAttachment`], used
 /// by [`assert_attachment`] to keep call sites concise and named.
 struct ExpectedAttachment<'a> {

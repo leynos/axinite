@@ -1,5 +1,6 @@
 use crate::downloads::{
-    download_and_store_documents, is_downloadable_document, MAX_DOWNLOAD_SIZE_BYTES,
+    document_download_failure_feedback, download_and_store_documents, is_downloadable_document,
+    MAX_DOWNLOAD_SIZE_BYTES,
 };
 use crate::near::agent::channel_host::InboundAttachment;
 
@@ -56,7 +57,7 @@ fn test_max_download_size_constant() {
 fn test_download_and_store_documents_function_exists() {
     let attachments = &mut [InboundAttachment {
         id: "1".to_string(),
-        mime_type: "application/pdf".to_string(),
+        mime_type: "image/jpeg".to_string(),
         filename: Some("x".to_string()),
         size_bytes: Some(1),
         source_url: None,
@@ -65,4 +66,22 @@ fn test_download_and_store_documents_function_exists() {
         extras_json: String::new(),
     }];
     download_and_store_documents(attachments);
+}
+
+#[test]
+fn test_document_download_failure_feedback_includes_filename() {
+    assert_eq!(
+        document_download_failure_feedback(Some("report.pdf"), "getFile returned no result"),
+        "[Failed to download 'report.pdf': getFile returned no result. \
+         The file may be too large or unavailable. Please try a smaller file.]"
+    );
+}
+
+#[test]
+fn test_document_download_failure_feedback_uses_default_name() {
+    assert_eq!(
+        document_download_failure_feedback(None, "File download returned status 404"),
+        "[Failed to download 'document': File download returned status 404. \
+         The file may be too large or unavailable. Please try a smaller file.]"
+    );
 }
