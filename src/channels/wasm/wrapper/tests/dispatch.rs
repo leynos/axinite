@@ -22,6 +22,12 @@ impl RecordingSettingsStore {
     }
 }
 
+fn ready_db_ok<'a, T: Send + 'a>(
+    value: T,
+) -> crate::db::DbFuture<'a, Result<T, crate::error::DatabaseError>> {
+    Box::pin(async move { Ok(value) })
+}
+
 impl crate::db::SettingsStore for RecordingSettingsStore {
     fn get_setting<'a>(
         &'a self,
@@ -29,7 +35,7 @@ impl crate::db::SettingsStore for RecordingSettingsStore {
         _key: crate::db::SettingKey,
     ) -> crate::db::DbFuture<'a, Result<Option<serde_json::Value>, crate::error::DatabaseError>>
     {
-        Box::pin(async { Ok(None) })
+        ready_db_ok(None)
     }
 
     fn get_setting_full<'a>(
@@ -40,7 +46,7 @@ impl crate::db::SettingsStore for RecordingSettingsStore {
         'a,
         Result<Option<crate::history::SettingRow>, crate::error::DatabaseError>,
     > {
-        Box::pin(async { Ok(None) })
+        ready_db_ok(None)
     }
 
     fn set_setting<'a>(
@@ -63,7 +69,7 @@ impl crate::db::SettingsStore for RecordingSettingsStore {
         _user_id: crate::db::UserId,
         _key: crate::db::SettingKey,
     ) -> crate::db::DbFuture<'a, Result<bool, crate::error::DatabaseError>> {
-        Box::pin(async { Ok(false) })
+        ready_db_ok(false)
     }
 
     fn list_settings<'a>(
@@ -71,7 +77,7 @@ impl crate::db::SettingsStore for RecordingSettingsStore {
         _user_id: crate::db::UserId,
     ) -> crate::db::DbFuture<'a, Result<Vec<crate::history::SettingRow>, crate::error::DatabaseError>>
     {
-        Box::pin(async { Ok(Vec::new()) })
+        ready_db_ok(Vec::new())
     }
 
     fn get_all_settings<'a>(
@@ -81,7 +87,7 @@ impl crate::db::SettingsStore for RecordingSettingsStore {
         'a,
         Result<std::collections::HashMap<String, serde_json::Value>, crate::error::DatabaseError>,
     > {
-        Box::pin(async { Ok(std::collections::HashMap::new()) })
+        ready_db_ok(std::collections::HashMap::new())
     }
 
     fn set_all_settings<'a>(
@@ -89,14 +95,14 @@ impl crate::db::SettingsStore for RecordingSettingsStore {
         _user_id: crate::db::UserId,
         _settings: &'a std::collections::HashMap<String, serde_json::Value>,
     ) -> crate::db::DbFuture<'a, Result<(), crate::error::DatabaseError>> {
-        Box::pin(async { Ok(()) })
+        ready_db_ok(())
     }
 
     fn has_settings<'a>(
         &'a self,
         _user_id: crate::db::UserId,
     ) -> crate::db::DbFuture<'a, Result<bool, crate::error::DatabaseError>> {
-        Box::pin(async { Ok(false) })
+        ready_db_ok(false)
     }
 }
 
