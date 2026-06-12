@@ -24,7 +24,9 @@ entries, oversized archives, excessive file counts, invalid UTF-8 in
 Accepted bundles are extracted through a staged install path and only committed
 into the installed-skills directory once validation and on-disk staging both
 succeed. A failed bundle install should therefore leave no partial installed
-skill tree behind.
+skill tree behind. Bundle authors can rely on every documented entry under
+`SKILL.md`, `references/`, and `assets/` being preserved byte-for-byte after a
+successful install.
 
 The browser Skills tab accepts exactly one install source at a time: a
 catalogue name or slug, an HTTPS `SKILL.md` or `.skill` URL, raw `SKILL.md`

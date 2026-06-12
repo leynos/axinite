@@ -496,6 +496,29 @@ policy and filesystem checks. The adapter in
 responses; it must not duplicate path policy or call the generic `read_file`
 tool.
 
+### 8.6 Bundle test inventory
+
+The bundled-skill regression suite is intentionally split by boundary:
+
+- `src/skills/registry/tests/install.rs` proves documented bundle entries are
+  preserved byte-for-byte for downloaded bytes and uploaded archive bytes.
+- `src/skills/registry/tests/prop_tests.rs` generates small valid bundle
+  manifests and checks the same install round trip as a property.
+- `src/skills/file_read/tests.rs` installs a real bundle and reads `SKILL.md`,
+  nested references, text assets, and PNG metadata through
+  `read_skill_file(...)`.
+- `src/tools/builtin/skill_tools/tests.rs` drives `SkillReadFileTool` against a
+  registry produced by the staged install helper.
+- `tests/channels/skills_upload.rs` covers multipart upload success,
+  malformed-archive rejection, filename validation, and upload-to-read.
+- `src/agent/dispatcher/tests/features/active_skill_context.feature` records
+  that active bundle prompts do not eagerly inject ancillary file contents.
+
+Use that split when adding coverage: domain invariants stay under
+`src/skills/`, tool adapters stay under `src/tools/`, web transport behaviour
+stays under `tests/channels/`, and prompt-rendering behaviour stays under the
+dispatcher BDD tests.
+
 ## 9. Extension points
 
 Table 5. Main extension points in the current design.

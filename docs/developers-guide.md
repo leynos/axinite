@@ -1898,6 +1898,17 @@ The builder defaults: version `1.0.0`, trust `Trusted`, source `/tmp`,
 `location` override is accepted via `.location(LoadedSkillLocation::new(...))`;
 if omitted, the builder derives `SingleFile` from `/tmp/SKILL.md`.
 
+Use `installed_bundle_fixture(...)` when a test needs a real installed bundle
+rather than a hand-built `LoadedSkillLocation`. The helper builds an in-memory
+`.skill` ZIP archive, stages it through
+`SkillRegistry::prepare_install_to_disk(...)`, commits it with
+`SkillRegistry::commit_install(...)`, and returns the owning tempdirs, the
+registry, and the loaded skill. Registry tests can assert the on-disk file set
+directly; adapter tests can wrap the returned registry in
+`Arc<RwLock<SkillRegistry>>` and drive the tool under test. This keeps
+install-to-read tests on the same path as production without widening the
+runtime API surface.
+
 ##### Scoped skill file reads (roadmap 1.3.4)
 
 `src/skills/file_read.rs` owns the domain contract for `skill_read_file`.

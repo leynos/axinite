@@ -338,9 +338,9 @@ document the conflict in `Decision Log`, and ask for direction.
   (`tests/channels/skills_upload.rs`).
 - [x] Stage E: behavioural feature for install→read journey
   (`src/tools/builtin/skill_tools/features/`).
-- [ ] Stage F: roadmap and documentation updates.
-- [x] Stage G: first `coderabbit review --agent` clean for
-  Stages A through E.
+- [x] Stage F: roadmap and documentation updates.
+- [x] Stage G: `coderabbit review --agent` clean for Stages A
+  through F.
 - [ ] Stage H: final gates (`make check-fmt`, `make lint`,
   `make test`, optionally `make all`).
 - [ ] Commit the approved test additions and mark `1.3.5` done.
@@ -1026,6 +1026,14 @@ recorded in `Decision Log` with a one-line justification.
 - `/tmp/coderabbit-stage-abcde-1-3-5-axinite-1-3-5-installation-and-runtime-tests-for-bundled-skills.out`:
   `coderabbit review --agent` completed with `findings: 0` for
   the code/test milestone.
+- `/tmp/markdownlint-stage-f-1-3-5-axinite-1-3-5-installation-and-runtime-tests-for-bundled-skills.out`:
+  markdownlint passed for the execplan, roadmap, user's guide,
+  developer's guide, and agent-skills support document.
+- `/tmp/diff-check-stage-f-1-3-5-axinite-1-3-5-installation-and-runtime-tests-for-bundled-skills.out`:
+  `git diff --check` passed after documentation updates.
+- `/tmp/coderabbit-stage-f-1-3-5-axinite-1-3-5-installation-and-runtime-tests-for-bundled-skills.out`:
+  `coderabbit review --agent` completed with `findings: 0` for
+  the documentation milestone.
 
 ## Revision note
 

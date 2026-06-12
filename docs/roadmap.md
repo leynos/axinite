@@ -185,7 +185,7 @@ packaging.
   - Success: the model can read bundle-relative files without raw filesystem
     access, and oversized or disallowed files fail through a skill-scoped error
     path.
-- [ ] 1.3.5. Add installation and runtime tests for bundled skills. Requires
+- [x] 1.3.5. Add installation and runtime tests for bundled skills. Requires
       1.3.2, 1.3.3, and 1.3.4.
   - See [RFC 0003 §Goals](./rfcs/0003-skill-bundle-installation.md#goals) and
     [RFC 0003 §Rollout Plan](./rfcs/0003-skill-bundle-installation.md#rollout-plan).
