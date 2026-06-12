@@ -341,9 +341,9 @@ document the conflict in `Decision Log`, and ask for direction.
 - [x] Stage F: roadmap and documentation updates.
 - [x] Stage G: `coderabbit review --agent` clean for Stages A
   through F.
-- [ ] Stage H: final gates (`make check-fmt`, `make lint`,
+- [x] Stage H: final gates (`make check-fmt`, `make lint`,
   `make test`, optionally `make all`).
-- [ ] Commit the approved test additions and mark `1.3.5` done.
+- [x] Commit the approved test additions and mark `1.3.5` done.
 - [ ] Push the branch and refresh the draft pull request.
 
 ## Surprises & discoveries
@@ -551,11 +551,27 @@ document the conflict in `Decision Log`, and ask for direction.
 
 ## Outcomes & retrospective
 
-To be completed after implementation. Compare against the purpose:
-do the new tests provably cover valid install, malformed install,
-lazy bundled-file reads, and the "no dropped files" regression named
-in the RFC? What patterns did the round-trip property test surface
-that hand-written negatives missed?
+Roadmap item `1.3.5` is complete. The test suite now covers valid
+bundle installation through both staged payload variants, arbitrary
+small valid bundle manifests via `proptest`, lazy reads after a real
+install through the domain function and tool adapter, malformed
+multipart upload rejection, and upload-to-read through the web
+gateway. The dispatcher BDD now also names the progressive-disclosure
+contract: active bundled skills inject `SKILL.md` prompt content but
+not ancillary reference or asset bytes.
+
+The round-trip property test surfaced one useful implementation lesson
+during development: generated bundle contents must model the validator
+contract. Arbitrary bytes are valid for binary assets, but `.md`
+reference files are text and must be valid UTF-8. Constraining the
+generator to valid UTF-8 bodies made the property match the milestone's
+"arbitrary valid bundle shapes" requirement instead of retesting known
+validator denials.
+
+Two follow-up notes remain outside this milestone. RFC 0003's future
+upgrade/force/auto-rename collision matrix is still not implemented,
+and the existing `schema_helpers_ui::ui` test can be slow on a cold
+run, although the final cached `make all` completed quickly.
 
 ## Plan of work
 
@@ -1034,6 +1050,9 @@ recorded in `Decision Log` with a one-line justification.
 - `/tmp/coderabbit-stage-f-1-3-5-axinite-1-3-5-installation-and-runtime-tests-for-bundled-skills.out`:
   `coderabbit review --agent` completed with `findings: 0` for
   the documentation milestone.
+- `/tmp/all-final-1-3-5-axinite-1-3-5-installation-and-runtime-tests-for-bundled-skills.out`:
+  `make all` passed on the final tree, including formatting, clippy,
+  `4215` workspace nextest tests, and `5` GitHub tool tests.
 
 ## Revision note
 
