@@ -10,6 +10,24 @@ name: Run Tests
       - main
 
 jobs:
+  audit:
+    name: Dependency Audit
+    if: >
+      github.event_name == 'push' ||
+      (github.event_name == 'pull_request' && github.base_ref != 'staging')
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+      - name: Install cargo-audit
+        uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-audit
+      - name: Audit dependencies
+        run: make audit
+
   tests:
     name: Tests (${{ matrix.name }})
     runs-on: ubuntu-latest
@@ -190,6 +208,7 @@ jobs:
     runs-on: ubuntu-latest
     if: always()
     needs:
+      - audit
       - tests
       - telegram-tests
       - wasm-wit-compat
@@ -206,9 +225,10 @@ jobs:
           # Gated jobs must pass on promotion PRs and push events.
           # On developer PRs they may be skipped.
           for job in \
-            telegram-tests wasm-wit-compat docker-build \
+            audit telegram-tests wasm-wit-compat docker-build \
             windows-build version-check; do
             case "$job" in
+              audit) result="${{ needs.audit.result }}" ;;
               telegram-tests) result="${{ needs.telegram-tests.result }}" ;;
               wasm-wit-compat) result="${{ needs.wasm-wit-compat.result }}" ;;
               docker-build) result="${{ needs.docker-build.result }}" ;;

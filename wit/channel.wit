@@ -1,4 +1,4 @@
-package near:agent@0.3.0;
+package near:agent@0.3.1;
 
 // WASM Channel Sandbox Interface
 //
@@ -83,6 +83,20 @@ interface channel-host {
         body: list<u8>,
     }
 
+    /// Parameters for an outbound HTTP request.
+    record http-request-params {
+        /// HTTP method (GET, POST, PUT, DELETE, PATCH, HEAD).
+        method: string,
+        /// Target URL; credential placeholders are resolved by the host.
+        url: string,
+        /// Request headers as a JSON object string.
+        headers-json: string,
+        /// Optional request body bytes.
+        body: option<list<u8>>,
+        /// Optional timeout in milliseconds (default 30 000, max 300 000).
+        timeout-ms: option<u32>,
+    }
+
     /// Make an HTTP request (if capability granted).
     ///
     /// Security:
@@ -96,11 +110,7 @@ interface channel-host {
     /// longer timeout for long-polling requests (e.g., Telegram getUpdates).
     /// Capped at the channel's callback_timeout to prevent hangs.
     http-request: func(
-        method: string,
-        url: string,
-        headers-json: string,
-        body: option<list<u8>>,
-        timeout-ms: option<u32>,
+        params: http-request-params,
     ) -> result<http-response, string>;
 
     /// Check if a secret exists (if capability granted).
@@ -202,18 +212,31 @@ interface channel-host {
         created: bool,
     }
 
+    /// Identifies a user within a channel for pairing purposes.
+    record pairing-identity {
+        /// Channel identifier (e.g., "telegram", "discord").
+        channel: string,
+        /// Per-channel user identifier.
+        id: string,
+    }
+
+    /// Parameters for upserting a pairing request.
+    record pairing-upsert-params {
+        /// Identity of the user requesting pairing.
+        identity: pairing-identity,
+        /// Optional metadata as a JSON object string; empty string means none.
+        meta-json: string,
+    }
+
     /// Upsert a pairing request for an unknown sender.
     /// Returns (code, created). When created is true, the channel should send a pairing reply.
     pairing-upsert-request: func(
-        channel: string,
-        id: string,
-        meta-json: string
+        params: pairing-upsert-params
     ) -> result<pairing-upsert-result, string>;
 
     /// Check if a sender is allowed (in allowFrom store).
     pairing-is-allowed: func(
-        channel: string,
-        id: string,
+        identity: pairing-identity,
         username: option<string>
     ) -> result<bool, string>;
 

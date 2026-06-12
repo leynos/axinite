@@ -32,10 +32,10 @@ pub fn post_plain<R: Serializable>(dc_id: u8, request: &R) -> Result<Vec<u8>, St
     plain.finalize(&mut buffer);
 
     let body: Vec<u8> = buffer[..].to_vec();
-    let response = http_post_binary(&url, &body)?;
+    let mut response = http_post_binary(&url, &body)?;
 
     let results = plain
-        .deserialize(&response)
+        .deserialize(&mut response)
         .map_err(|e| format!("plain deserialize: {e}"))?;
 
     for result in results {
@@ -66,10 +66,10 @@ pub fn post_encrypted(
     mtp.finalize(&mut buffer);
 
     let body: Vec<u8> = buffer[..].to_vec();
-    let response = http_post_binary(&url, &body)?;
+    let mut response = http_post_binary(&url, &body)?;
 
     let results = mtp
-        .deserialize(&response)
+        .deserialize(&mut response)
         .map_err(|e| format!("encrypted deserialize: {e}"))?;
 
     for result in results {
@@ -89,7 +89,13 @@ pub fn post_encrypted(
 
 /// HTTP POST with raw binary body via the WASM host's http-request capability.
 fn http_post_binary(url: &str, body: &[u8]) -> Result<Vec<u8>, String> {
-    let resp = host::http_request("POST", url, "{}", Some(body), None)?;
+    let resp = host::http_request(&host::HttpRequestParams {
+        method: "POST".to_string(),
+        url: url.to_string(),
+        headers_json: "{}".to_string(),
+        body: Some(body.to_vec()),
+        timeout_ms: None,
+    })?;
 
     if resp.status < 200 || resp.status >= 300 {
         let body_text = String::from_utf8_lossy(&resp.body);

@@ -12,8 +12,8 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use wasmtime::Store;
-use wasmtime::component::Linker;
-use wasmtime_wasi::{ResourceTable, WasiCtx, WasiCtxBuilder, WasiView};
+use wasmtime::component::{HasSelf, Linker};
+use wasmtime_wasi::{ResourceTable, WasiCtx, WasiCtxBuilder, WasiCtxView, WasiView};
 
 use crate::context::JobContext;
 use crate::safety::LeakDetector;
@@ -39,7 +39,6 @@ pub(crate) mod metadata;
 wasmtime::component::bindgen!({
     path: "wit/tool.wit",
     world: "sandboxed-tool",
-    async: false,
     with: {},
 });
 
@@ -122,6 +121,125 @@ fn secret_redaction_variants(secret: &str) -> Vec<String> {
     variants
 }
 
+/// Maps an HTTP method string to the corresponding `reqwest::RequestBuilder`.
+fn build_http_client_request(
+    client: &reqwest::Client,
+    method: &str,
+    url: &str,
+) -> Result<reqwest::RequestBuilder, String> {
+    match method.to_uppercase().as_str() {
+        "GET" => Ok(client.get(url)),
+        "POST" => Ok(client.post(url)),
+        "PUT" => Ok(client.put(url)),
+        "DELETE" => Ok(client.delete(url)),
+        "PATCH" => Ok(client.patch(url)),
+        "HEAD" => Ok(client.head(url)),
+        other => Err(format!("Unsupported HTTP method: {}", other)),
+    }
+}
+
+/// Walks a `reqwest::Error`'s source chain into a single diagnostic string.
+fn format_error_chain(e: &reqwest::Error) -> String {
+    let mut chain = format!("HTTP request failed: {}", e);
+    let mut source: Option<&dyn std::error::Error> = std::error::Error::source(e);
+    while let Some(cause) = source {
+        chain.push_str(&format!(" -> {}", cause));
+        source = cause.source();
+    }
+    chain
+}
+
+/// Executes the outbound HTTP request and returns the normalised response.
+///
+/// Includes per-request DNS rebinding protection via `reject_private_ip`.
+async fn send_http_request(
+    method: &str,
+    url: String,
+    headers: HashMap<String, String>,
+    body: Option<Vec<u8>>,
+    timeout_ms: Option<u32>,
+    max_response_bytes: usize,
+    leak_detector: &LeakDetector,
+) -> Result<near::agent::host::HttpResponse, String> {
+    // Reject private/internal IPs to prevent DNS rebinding attacks.
+    // Must run inside the runtime so DNS resolution can be performed asynchronously
+    // when the host is a domain name; the sync outer path already called
+    // `reject_private_ip` but this second check catches any race.
+    reject_private_ip(&url)?;
+
+    let client = reqwest::Client::builder()
+        .connect_timeout(Duration::from_secs(10))
+        .redirect(reqwest::redirect::Policy::none())
+        .build()
+        .map_err(|e| format!("Failed to build HTTP client: {e}"))?;
+
+    let mut request = build_http_client_request(&client, method, &url)?;
+
+    for (key, value) in headers {
+        request = request.header(&key, &value);
+    }
+
+    if let Some(body_bytes) = body {
+        request = request.body(body_bytes);
+    }
+
+    // Caller-specified timeout (default 30s, max 5min).
+    let timeout_ms = timeout_ms.unwrap_or(30_000).min(300_000) as u64;
+    let timeout = Duration::from_millis(timeout_ms);
+    let response = request
+        .timeout(timeout)
+        .send()
+        .await
+        .map_err(|e| format_error_chain(&e))?;
+
+    let status = response.status().as_u16();
+    let response_headers: HashMap<String, String> = response
+        .headers()
+        .iter()
+        .filter_map(|(k, v)| {
+            v.to_str()
+                .ok()
+                .map(|v| (k.as_str().to_string(), v.to_string()))
+        })
+        .collect();
+    let headers_json = serde_json::to_string(&response_headers).unwrap_or_default();
+
+    // Early rejection on Content-Length to avoid streaming large bodies.
+    if let Some(cl) = response.content_length()
+        && cl as usize > max_response_bytes
+    {
+        return Err(format!(
+            "Response body too large: {} bytes exceeds limit of {} bytes",
+            cl, max_response_bytes
+        ));
+    }
+
+    let body = response
+        .bytes()
+        .await
+        .map_err(|e| format!("Failed to read response body: {}", e))?;
+    if body.len() > max_response_bytes {
+        return Err(format!(
+            "Response body too large: {} bytes exceeds limit of {} bytes",
+            body.len(),
+            max_response_bytes
+        ));
+    }
+    let body = body.to_vec();
+
+    // Leak detection on response body (best-effort).
+    if let Ok(body_str) = std::str::from_utf8(&body) {
+        leak_detector
+            .scan_and_clean(body_str)
+            .map_err(|e| format!("Potential secret leak in response: {}", e))?;
+    }
+
+    Ok(near::agent::host::HttpResponse {
+        status,
+        headers_json,
+        body,
+    })
+}
 impl StoreData {
     fn new(
         memory_limit: u64,
@@ -319,12 +437,11 @@ impl StoreData {
 // Provide WASI context for the WASM component.
 // Required because tools are compiled with wasm32-wasip2 target.
 impl WasiView for StoreData {
-    fn ctx(&mut self) -> &mut WasiCtx {
-        &mut self.wasi
-    }
-
-    fn table(&mut self) -> &mut ResourceTable {
-        &mut self.table
+    fn ctx(&mut self) -> WasiCtxView<'_> {
+        WasiCtxView {
+            ctx: &mut self.wasi,
+            table: &mut self.table,
+        }
     }
 }
 
@@ -354,12 +471,15 @@ impl near::agent::host::Host for StoreData {
 
     fn http_request(
         &mut self,
-        method: String,
-        url: String,
-        headers_json: String,
-        body: Option<Vec<u8>>,
-        timeout_ms: Option<u32>,
+        params: near::agent::host::HttpRequestParams,
     ) -> Result<near::agent::host::HttpResponse, String> {
+        let near::agent::host::HttpRequestParams {
+            method,
+            url,
+            headers_json,
+            body,
+            timeout_ms,
+        } = params;
         let leak_detector = LeakDetector::new();
         let PreparedHttpRequest { url, headers } = self.prepare_http_request_with_detector(
             &method,
@@ -369,6 +489,9 @@ impl near::agent::host::Host for StoreData {
             &leak_detector,
         )?;
 
+        // SSRF pre-check: reject private IPs before even creating the runtime.
+        reject_private_ip(&url)?;
+
         // Get the max response size from capabilities (default 10MB).
         let max_response_bytes = self
             .host_state
@@ -377,9 +500,6 @@ impl near::agent::host::Host for StoreData {
             .as_ref()
             .map(|h| h.max_response_bytes)
             .unwrap_or(10 * 1024 * 1024);
-
-        // Resolve hostname and reject private/internal IPs to prevent DNS rebinding.
-        reject_private_ip(&url)?;
 
         // Make HTTP request using a dedicated single-threaded runtime.
         // We're inside spawn_blocking, so we can't rely on the main runtime's
@@ -395,97 +515,17 @@ impl near::agent::host::Host for StoreData {
             );
         }
         let rt = self.http_runtime.as_ref().expect("just initialized");
-        let result = rt.block_on(async {
-            let client = reqwest::Client::builder()
-                .connect_timeout(Duration::from_secs(10))
-                .redirect(reqwest::redirect::Policy::none())
-                .build()
-                .map_err(|e| format!("Failed to build HTTP client: {e}"))?;
+        let result = rt.block_on(send_http_request(
+            &method,
+            url,
+            headers,
+            body,
+            timeout_ms,
+            max_response_bytes,
+            &leak_detector,
+        ));
 
-            let mut request = match method.to_uppercase().as_str() {
-                "GET" => client.get(&url),
-                "POST" => client.post(&url),
-                "PUT" => client.put(&url),
-                "DELETE" => client.delete(&url),
-                "PATCH" => client.patch(&url),
-                "HEAD" => client.head(&url),
-                _ => return Err(format!("Unsupported HTTP method: {}", method)),
-            };
-
-            for (key, value) in headers {
-                request = request.header(&key, &value);
-            }
-
-            if let Some(body_bytes) = body {
-                request = request.body(body_bytes);
-            }
-
-            // Caller-specified timeout (default 30s, max 5min)
-            let timeout_ms = timeout_ms.unwrap_or(30_000).min(300_000) as u64;
-            let timeout = Duration::from_millis(timeout_ms);
-            let response = request.timeout(timeout).send().await.map_err(|e| {
-                // Walk the full error chain for the actual root cause
-                let mut chain = format!("HTTP request failed: {}", e);
-                let mut source = std::error::Error::source(&e);
-                while let Some(cause) = source {
-                    chain.push_str(&format!(" -> {}", cause));
-                    source = cause.source();
-                }
-                chain
-            })?;
-
-            let status = response.status().as_u16();
-            let response_headers: HashMap<String, String> = response
-                .headers()
-                .iter()
-                .filter_map(|(k, v)| {
-                    v.to_str()
-                        .ok()
-                        .map(|v| (k.as_str().to_string(), v.to_string()))
-                })
-                .collect();
-            let headers_json = serde_json::to_string(&response_headers).unwrap_or_default();
-
-            // Check Content-Length header for early rejection of oversized responses.
-            let max_response = max_response_bytes;
-            if let Some(cl) = response.content_length()
-                && cl as usize > max_response
-            {
-                return Err(format!(
-                    "Response body too large: {} bytes exceeds limit of {} bytes",
-                    cl, max_response
-                ));
-            }
-
-            // Read body with a size cap to prevent memory exhaustion.
-            let body = response
-                .bytes()
-                .await
-                .map_err(|e| format!("Failed to read response body: {}", e))?;
-            if body.len() > max_response {
-                return Err(format!(
-                    "Response body too large: {} bytes exceeds limit of {} bytes",
-                    body.len(),
-                    max_response
-                ));
-            }
-            let body = body.to_vec();
-
-            // Leak detection on response body
-            if let Ok(body_str) = std::str::from_utf8(&body) {
-                leak_detector
-                    .scan_and_clean(body_str)
-                    .map_err(|e| format!("Potential secret leak in response: {}", e))?;
-            }
-
-            Ok(near::agent::host::HttpResponse {
-                status,
-                headers_json,
-                body,
-            })
-        });
-
-        // Redact credentials from error messages before returning to WASM
+        // Redact credentials from error messages before returning to WASM.
         result.map_err(|e| self.redact_credentials(&e))
     }
 
@@ -606,11 +646,11 @@ impl WasmToolWrapper {
     /// `near:agent/host` namespace.
     fn add_host_functions(linker: &mut Linker<StoreData>) -> Result<(), WasmError> {
         // Add WASI support (required by components built with wasm32-wasip2)
-        wasmtime_wasi::add_to_linker_sync(linker)
+        wasmtime_wasi::p2::add_to_linker_sync(linker)
             .map_err(|e| WasmError::ConfigError(format!("Failed to add WASI functions: {}", e)))?;
 
         // Add our custom host interface using the generated add_to_linker
-        near::agent::host::add_to_linker(linker, |state| state)
+        near::agent::host::add_to_linker::<_, HasSelf<_>>(linker, |state| state)
             .map_err(|e| WasmError::ConfigError(format!("Failed to add host functions: {}", e)))?;
 
         Ok(())
@@ -1617,11 +1657,13 @@ mod tests {
 
         let err = <StoreData as host::Host>::http_request(
             &mut store_data,
-            "GET".to_string(),
-            format!("https://{host}/repos/leynos/mxd"),
-            "{}".to_string(),
-            None,
-            Some(1000),
+            host::HttpRequestParams {
+                method: "GET".to_string(),
+                url: format!("https://{host}/repos/leynos/mxd"),
+                headers_json: "{}".to_string(),
+                body: None,
+                timeout_ms: Some(1000),
+            },
         )
         .expect_err("invalid public hostname should fail after request preparation");
 

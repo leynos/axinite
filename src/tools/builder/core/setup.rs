@@ -14,6 +14,193 @@ pub struct LlmSoftwareBuilder {
     pub(super) tools: Arc<ToolRegistry>,
 }
 
+const WASM_TOOL_INTRO: &str = r#"
+
+## WASM Tool Requirements
+
+You are building a WASM Component tool for an autonomous agent using the WASM Component Model.
+The tool MUST use `wit_bindgen` and `cargo-component` to build.
+"#;
+
+const WASM_HOST_FUNCTIONS: &str = r#"
+## Available Host Functions (from WIT interface)
+
+The host provides these functions via `near::agent::host`:
+
+```rust
+// Logging (always available)
+host::log(level: LogLevel, message: &str);  // LogLevel: Trace, Debug, Info, Warn, Error
+
+// Time (always available)
+host::now_millis() -> u64;  // Unix timestamp in milliseconds
+
+// Workspace (if capability granted)
+host::workspace_read(path: &str) -> Option<String>;
+
+// HTTP (if capability granted)
+host::http_request(&HttpRequestParams {
+    method: "GET".to_string(),
+    url: url.to_string(),
+    headers_json: "{}".to_string(),
+    body: None,
+    timeout_ms: None,
+}) -> Result<HttpResponse, String>;
+// HttpResponse has: status: u16, headers_json: String, body: Vec<u8>
+
+// Tool invocation (if capability granted)
+host::tool_invoke(alias: &str, params_json: &str) -> Result<String, String>;
+
+// Secrets (if capability granted) - can only CHECK existence, not read values
+host::secret_exists(name: &str) -> bool;
+```
+"#;
+
+const WASM_PROJECT_STRUCTURE: &str = r#"
+## Project Structure
+
+```
+my_tool/
+├── Cargo.toml
+├── wit/
+│   └── tool.wit      # Copy from agent's wit/tool.wit
+└── src/
+    └── lib.rs
+```
+"#;
+
+const WASM_CARGO_TOML_TEMPLATE: &str = r#"
+## Cargo.toml Template
+
+```toml
+[package]
+name = "my_tool"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+wit-bindgen = "0.54.0"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+```
+"#;
+
+const WASM_LIB_RS_TEMPLATE: &str = r#"
+## src/lib.rs Template
+
+```rust
+// Generate bindings from the WIT interface
+wit_bindgen::generate!({
+    world: "sandboxed-tool",
+    path: "wit/tool.wit",
+});
+
+use serde::{Deserialize, Serialize};
+use exports::near::agent::tool::{Guest, Request, Response};
+use near::agent::host::{self, LogLevel};
+
+// Your input/output types
+#[derive(Deserialize)]
+struct MyInput {
+    // Define parameters here
+}
+
+#[derive(Serialize)]
+struct MyOutput {
+    // Define output here
+}
+
+struct MyTool;
+
+impl Guest for MyTool {
+    fn execute(req: Request) -> Response {
+        // Parse input
+        let input: MyInput = match serde_json::from_str(&req.params) {
+            Ok(i) => i,
+            Err(e) => return Response {
+                output: None,
+                error: Some(format!("Invalid input: {}", e)),
+            },
+        };
+
+        host::log(LogLevel::Info, &format!("Processing request..."));
+
+        // Your implementation here
+        let output = MyOutput { /* ... */ };
+
+        // Return success
+        Response {
+            output: Some(serde_json::to_string(&output).unwrap()),
+            error: None,
+        }
+    }
+
+    fn schema() -> String {
+        serde_json::json!({
+            "type": "object",
+            "properties": {
+                // Define your JSON Schema here
+            },
+            "required": []
+        }).to_string()
+    }
+
+    fn description() -> String {
+        "Description of what this tool does".to_string()
+    }
+}
+
+export!(MyTool);
+```
+"#;
+
+const WASM_BUILD_COMMANDS: &str = r#"
+## Build Commands
+
+```bash
+# Install cargo-component (one time)
+cargo install cargo-component
+
+# Build the WASM component
+cargo component build --release
+
+# Output: target/wasm32-wasip2/release/my_tool.wasm
+```
+"#;
+
+const WASM_CAPABILITIES_FILE: &str = r#"
+## Capabilities File (my_tool.capabilities.json)
+
+Create alongside the .wasm file to grant capabilities:
+
+```json
+{
+    "http": {
+        "allowed_endpoints": [
+            {"host": "api.example.com", "path_prefix": "/v1/"}
+        ]
+    },
+    "workspace": true,
+    "secrets": {
+        "allowed": ["API_KEY"]
+    }
+}
+```
+"#;
+
+const WASM_IMPORTANT_NOTES: &str = r#"
+## Important Notes
+
+1. NEVER panic - always return Response with error field set
+2. Secrets are NEVER exposed to WASM - use placeholders like `{API_KEY}` in URLs
+   and the host will inject the real value
+3. HTTP requests are rate-limited and only allowed to endpoints in capabilities
+4. Keep the tool focused on one thing - small, composable tools are better
+
+"#;
+
 impl LlmSoftwareBuilder {
     /// Create a new LLM-based software builder.
     pub fn new(
@@ -88,173 +275,16 @@ Language: {language:?}
 
     /// Get additional context for building WASM tools.
     fn wasm_tool_context(&self) -> String {
-        r#"
-
-## WASM Tool Requirements
-
-You are building a WASM Component tool for an autonomous agent using the WASM Component Model.
-The tool MUST use `wit_bindgen` and `cargo-component` to build.
-
-## Available Host Functions (from WIT interface)
-
-The host provides these functions via `near::agent::host`:
-
-```rust
-// Logging (always available)
-host::log(level: LogLevel, message: &str);  // LogLevel: Trace, Debug, Info, Warn, Error
-
-// Time (always available)
-host::now_millis() -> u64;  // Unix timestamp in milliseconds
-
-// Workspace (if capability granted)
-host::workspace_read(path: &str) -> Option<String>;
-
-// HTTP (if capability granted)
-host::http_request(method: &str, url: &str, headers_json: &str, body: Option<Vec<u8>>)
-    -> Result<HttpResponse, String>;
-// HttpResponse has: status: u16, headers_json: String, body: Vec<u8>
-
-// Tool invocation (if capability granted)
-host::tool_invoke(alias: &str, params_json: &str) -> Result<String, String>;
-
-// Secrets (if capability granted) - can only CHECK existence, not read values
-host::secret_exists(name: &str) -> bool;
-```
-
-## Project Structure
-
-```
-my_tool/
-├── Cargo.toml
-├── wit/
-│   └── tool.wit      # Copy from agent's wit/tool.wit
-└── src/
-    └── lib.rs
-```
-
-## Cargo.toml Template
-
-```toml
-[package]
-name = "my_tool"
-version = "0.1.0"
-edition = "2021"
-
-[lib]
-crate-type = ["cdylib"]
-
-[dependencies]
-wit-bindgen = "0.54.0"
-serde = { version = "1", features = ["derive"] }
-serde_json = "1"
-```
-
-## src/lib.rs Template
-
-```rust
-// Generate bindings from the WIT interface
-wit_bindgen::generate!({
-    world: "sandboxed-tool",
-    path: "wit/tool.wit",
-});
-
-use serde::{Deserialize, Serialize};
-use exports::near::agent::tool::{Guest, Request, Response};
-use near::agent::host::{self, LogLevel};
-
-// Your input/output types
-#[derive(Deserialize)]
-struct MyInput {
-    // Define parameters here
-}
-
-#[derive(Serialize)]
-struct MyOutput {
-    // Define output here
-}
-
-struct MyTool;
-
-impl Guest for MyTool {
-    fn execute(req: Request) -> Response {
-        // Parse input
-        let input: MyInput = match serde_json::from_str(&req.params) {
-            Ok(i) => i,
-            Err(e) => return Response {
-                output: None,
-                error: Some(format!("Invalid input: {}", e)),
-            },
-        };
-
-        host::log(LogLevel::Info, &format!("Processing request..."));
-
-        // Your implementation here
-        let output = MyOutput { /* ... */ };
-
-        // Return success
-        Response {
-            output: Some(serde_json::to_string(&output).unwrap()),
-            error: None,
-        }
-    }
-
-    fn schema() -> String {
-        serde_json::json!({
-            "type": "object",
-            "properties": {
-                // Define your JSON Schema here
-            },
-            "required": []
-        }).to_string()
-    }
-
-    fn description() -> String {
-        "Description of what this tool does".to_string()
-    }
-}
-
-export!(MyTool);
-```
-
-## Build Commands
-
-```bash
-# Install cargo-component (one time)
-cargo install cargo-component
-
-# Build the WASM component
-cargo component build --release
-
-# Output: target/wasm32-wasip2/release/my_tool.wasm
-```
-
-## Capabilities File (my_tool.capabilities.json)
-
-Create alongside the .wasm file to grant capabilities:
-
-```json
-{
-    "http": {
-        "allowed_endpoints": [
-            {"host": "api.example.com", "path_prefix": "/v1/"}
+        [
+            WASM_TOOL_INTRO,
+            WASM_HOST_FUNCTIONS,
+            WASM_PROJECT_STRUCTURE,
+            WASM_CARGO_TOML_TEMPLATE,
+            WASM_LIB_RS_TEMPLATE,
+            WASM_BUILD_COMMANDS,
+            WASM_CAPABILITIES_FILE,
+            WASM_IMPORTANT_NOTES,
         ]
-    },
-    "workspace": true,
-    "secrets": {
-        "allowed": ["API_KEY"]
-    }
-}
-```
-
-## Important Notes
-
-1. NEVER panic - always return Response with error field set
-2. Secrets are NEVER exposed to WASM - use placeholders like `{API_KEY}` in URLs
-   and the host will inject the real value
-3. HTTP requests are rate-limited and only allowed to endpoints in capabilities
-4. Keep the tool focused on one thing - small, composable tools are better
-
-"#
-        .to_string()
+        .concat()
     }
 }

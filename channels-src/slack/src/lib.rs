@@ -277,13 +277,13 @@ impl Guest for SlackChannel {
             "Content-Type": "application/json"
         });
 
-        let result = channel_host::http_request(
-            "POST",
-            "https://slack.com/api/chat.postMessage",
-            &headers.to_string(),
-            Some(&payload_bytes),
-            None,
-        );
+        let result = channel_host::http_request(&channel_host::HttpRequestParams {
+            method: "POST".to_string(),
+            url: "https://slack.com/api/chat.postMessage".to_string(),
+            headers_json: headers.to_string(),
+            body: Some(payload_bytes.clone()),
+            timeout_ms: None,
+        });
 
         match result {
             Ok(http_response) => {
@@ -364,7 +364,13 @@ fn extract_slack_attachments(files: &Option<Vec<SlackFile>>) -> Vec<InboundAttac
 fn download_slack_file(url: &str) -> Result<Vec<u8>, String> {
     let headers = serde_json::json!({});
 
-    let result = channel_host::http_request("GET", url, &headers.to_string(), None, None);
+    let result = channel_host::http_request(&channel_host::HttpRequestParams {
+        method: "GET".to_string(),
+        url: url.to_string(),
+        headers_json: headers.to_string(),
+        body: None,
+        timeout_ms: None,
+    });
 
     let response = result.map_err(|e| format!("Slack file download failed: {}", e))?;
 
@@ -606,8 +612,7 @@ fn check_sender_permission(user_id: &str, channel_id: &str, is_dm: bool) -> bool
     }
 
     // 4. Check sender (Slack events only have user ID, not username)
-    let is_allowed =
-        allowed.contains(&"*".to_string()) || allowed.contains(&user_id.to_string());
+    let is_allowed = allowed.contains(&"*".to_string()) || allowed.contains(&user_id.to_string());
 
     if is_allowed {
         return true;
@@ -621,14 +626,17 @@ fn check_sender_permission(user_id: &str, channel_id: &str, is_dm: bool) -> bool
         })
         .to_string();
 
-        match channel_host::pairing_upsert_request(CHANNEL_NAME, user_id, &meta) {
+        match channel_host::pairing_upsert_request(&channel_host::PairingUpsertParams {
+            identity: channel_host::PairingIdentity {
+                channel: CHANNEL_NAME.to_string(),
+                id: user_id.to_string(),
+            },
+            meta_json: meta,
+        }) {
             Ok(result) => {
                 channel_host::log(
                     channel_host::LogLevel::Info,
-                    &format!(
-                        "Pairing request for user {}: code {}",
-                        user_id, result.code
-                    ),
+                    &format!("Pairing request for user {}: code {}", user_id, result.code),
                 );
                 if result.created {
                     let _ = send_pairing_reply(channel_id, &result.code);
@@ -660,13 +668,13 @@ fn send_pairing_reply(channel_id: &str, code: &str) -> Result<(), String> {
 
     let headers = serde_json::json!({"Content-Type": "application/json"});
 
-    let result = channel_host::http_request(
-        "POST",
-        "https://slack.com/api/chat.postMessage",
-        &headers.to_string(),
-        Some(&payload_bytes),
-        None,
-    );
+    let result = channel_host::http_request(&channel_host::HttpRequestParams {
+        method: "POST".to_string(),
+        url: "https://slack.com/api/chat.postMessage".to_string(),
+        headers_json: headers.to_string(),
+        body: Some(payload_bytes.clone()),
+        timeout_ms: None,
+    });
 
     match result {
         Ok(response) if response.status == 200 => Ok(()),

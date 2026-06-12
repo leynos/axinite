@@ -4,11 +4,37 @@ BUNX ?= $(shell command -v bunx 2>/dev/null || printf '%s' "$$HOME/.bun/bin/bunx
 TEST_FEATURES ?= --features test-helpers
 NEXTEST_PROFILE ?= default
 MARKDOWNLINT_BASE ?= origin/main
+CARGO_AUDIT ?= $(CARGO) audit
 WASM_SHARED_TARGET_DIR ?= $(if $(CARGO_TARGET_DIR),$(CARGO_TARGET_DIR),target/wasm-extensions)
 GITHUB_TOOL_MANIFEST := tools-src/github/Cargo.toml
 GITHUB_TOOL_WASM_TARGET := wasm32-wasip2
+# Keep audit ignores centralised and remove each one as soon as the triggering
+# transitive dependency is upgraded.
+# RUSTSEC-2026-0049: affected crate rustls-webpki 0.102.8, via libsql
+# 0.9.30 -> hyper-rustls 0.25 -> rustls 0.22. CRL distribution point matching
+# is not used directly; remove when libsql no longer pulls rustls-webpki
+# <0.103.10.
+# RUSTSEC-2026-0098: affected crate rustls-webpki 0.102.8, via the same
+# libsql TLS chain. URI name-constraint handling is accepted only for this
+# transitive dependency; remove when libsql no longer pulls rustls-webpki
+# <0.103.12.
+# RUSTSEC-2026-0099: affected crate rustls-webpki 0.102.8, via the same
+# libsql TLS chain. Wildcard/name-constraint handling is accepted only for
+# this transitive dependency; remove when libsql no longer pulls rustls-webpki
+# <0.103.12.
+# RUSTSEC-2026-0104: affected crate rustls-webpki 0.102.8, via the same
+# libsql TLS chain. axinite does not parse CRLs directly; remove when libsql
+# no longer pulls rustls-webpki <0.103.13.
+# RUSTSEC-2026-0149: wasmtime-wasi WASI path_open(TRUNCATE) bypass. Temporary
+# ignore until wasmtime >=44.0.2 / >=45.0.0 is published on crates.io.
+AUDIT_FLAGS ?= \
+	--ignore RUSTSEC-2026-0049 \
+	--ignore RUSTSEC-2026-0098 \
+	--ignore RUSTSEC-2026-0099 \
+	--ignore RUSTSEC-2026-0104 \
+	--ignore RUSTSEC-2026-0149
 
-.PHONY: all install install-with-overrides sync-local-wasm-overrides build-github-tool-wasm check-fmt typecheck lint markdownlint test test-cargo test-matrix test-matrix-cargo clean
+.PHONY: all install install-with-overrides sync-local-wasm-overrides build-github-tool-wasm check-fmt typecheck lint markdownlint audit rust-audit test test-cargo test-matrix test-matrix-cargo clean
 
 all: check-fmt lint test
 
@@ -42,6 +68,17 @@ lint:
 
 markdownlint:
 	MARKDOWNLINT_BASE="$(MARKDOWNLINT_BASE)" ./scripts/lint-changed-markdown.sh "$(BUNX)"
+
+audit: rust-audit
+
+rust-audit:
+	find . \
+		\( -path '*/target/*' -o -path '*/node_modules/*' -o -path '*/.venv/*' \) -prune -o \
+		-name Cargo.toml -exec sh -c 'set -e; for manifest do \
+			manifest_dir=$$(dirname "$$manifest"); \
+			printf "Auditing Rust manifest %s\n" "$$manifest"; \
+			(cd "$$manifest_dir" && $(CARGO_AUDIT) $(AUDIT_FLAGS)); \
+		done' sh {} +
 
 test:
 	$(MAKE) build-github-tool-wasm
