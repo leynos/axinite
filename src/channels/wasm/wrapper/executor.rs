@@ -51,8 +51,9 @@ impl WasmChannel {
     ) -> Result<Store<ChannelStoreData>, WasmChannelError> {
         let engine = runtime.engine();
         let limits = &prepared.limits;
-        let channel_name = ChannelName::new(&prepared.name)
-            .ok_or_else(|| WasmChannelError::InvalidName(prepared.name.clone()))?;
+        let channel_name = ChannelName::new(&prepared.name).ok_or_else(|| {
+            WasmChannelError::Config("channel name must be non-empty".to_string())
+        })?;
 
         // Create fresh store with channel state (NEAR pattern: fresh instance per call)
         let store_data = ChannelStoreData::new(

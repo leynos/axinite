@@ -106,8 +106,8 @@ fn test_create_store_rejects_empty_channel_name() {
 
     assert!(matches!(
         result,
-        Err(crate::channels::wasm::error::WasmChannelError::InvalidName(name))
-            if name.is_empty()
+        Err(crate::channels::wasm::error::WasmChannelError::Config(message))
+            if message == "channel name must be non-empty"
     ));
 }
 

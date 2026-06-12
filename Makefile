@@ -10,18 +10,21 @@ GITHUB_TOOL_MANIFEST := tools-src/github/Cargo.toml
 GITHUB_TOOL_WASM_TARGET := wasm32-wasip2
 # Keep audit ignores centralised and remove each one as soon as the triggering
 # transitive dependency is upgraded.
-# RUSTSEC-2026-0049: rustls-webpki 0.102.8 CRL distribution point matching.
-# Accepted only through libsql 0.9.30 -> hyper-rustls 0.25 -> rustls 0.22;
-# remove when libsql no longer pulls rustls-webpki <0.103.10.
-# RUSTSEC-2026-0098: rustls-webpki 0.102.8 URI name-constraint handling.
-# Accepted only through the same libsql TLS chain; remove when libsql no
-# longer pulls rustls-webpki <0.103.12.
-# RUSTSEC-2026-0099: rustls-webpki 0.102.8 wildcard/name-constraint handling.
-# Accepted only through the same libsql TLS chain; remove when libsql no
-# longer pulls rustls-webpki <0.103.12.
-# RUSTSEC-2026-0104: rustls-webpki 0.102.8 CRL parsing panic. axinite does
-# not parse CRLs directly; remove when libsql no longer pulls rustls-webpki
-# <0.103.13.
+# RUSTSEC-2026-0049: affected crate rustls-webpki 0.102.8, via libsql
+# 0.9.30 -> hyper-rustls 0.25 -> rustls 0.22. CRL distribution point matching
+# is not used directly; remove when libsql no longer pulls rustls-webpki
+# <0.103.10.
+# RUSTSEC-2026-0098: affected crate rustls-webpki 0.102.8, via the same
+# libsql TLS chain. URI name-constraint handling is accepted only for this
+# transitive dependency; remove when libsql no longer pulls rustls-webpki
+# <0.103.12.
+# RUSTSEC-2026-0099: affected crate rustls-webpki 0.102.8, via the same
+# libsql TLS chain. Wildcard/name-constraint handling is accepted only for
+# this transitive dependency; remove when libsql no longer pulls rustls-webpki
+# <0.103.12.
+# RUSTSEC-2026-0104: affected crate rustls-webpki 0.102.8, via the same
+# libsql TLS chain. axinite does not parse CRLs directly; remove when libsql
+# no longer pulls rustls-webpki <0.103.13.
 # RUSTSEC-2026-0149: wasmtime-wasi WASI path_open(TRUNCATE) bypass. Temporary
 # ignore until wasmtime >=44.0.2 / >=45.0.0 is published on crates.io.
 AUDIT_FLAGS ?= \

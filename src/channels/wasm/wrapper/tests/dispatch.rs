@@ -3,6 +3,103 @@ use std::sync::Arc;
 use super::super::dispatch::DispatchContext;
 use crate::channels::wasm::wrapper::WasmChannel;
 
+struct RecordingSettingsStore {
+    writes: std::sync::Mutex<Vec<String>>,
+}
+
+impl RecordingSettingsStore {
+    fn new() -> Self {
+        Self {
+            writes: std::sync::Mutex::new(Vec::new()),
+        }
+    }
+
+    fn writes(&self) -> Vec<String> {
+        self.writes
+            .lock()
+            .expect("settings writes lock poisoned")
+            .clone()
+    }
+}
+
+impl crate::db::SettingsStore for RecordingSettingsStore {
+    fn get_setting<'a>(
+        &'a self,
+        _user_id: crate::db::UserId,
+        _key: crate::db::SettingKey,
+    ) -> crate::db::DbFuture<'a, Result<Option<serde_json::Value>, crate::error::DatabaseError>>
+    {
+        Box::pin(async { Ok(None) })
+    }
+
+    fn get_setting_full<'a>(
+        &'a self,
+        _user_id: crate::db::UserId,
+        _key: crate::db::SettingKey,
+    ) -> crate::db::DbFuture<
+        'a,
+        Result<Option<crate::history::SettingRow>, crate::error::DatabaseError>,
+    > {
+        Box::pin(async { Ok(None) })
+    }
+
+    fn set_setting<'a>(
+        &'a self,
+        _user_id: crate::db::UserId,
+        key: crate::db::SettingKey,
+        _value: &'a serde_json::Value,
+    ) -> crate::db::DbFuture<'a, Result<(), crate::error::DatabaseError>> {
+        Box::pin(async move {
+            self.writes
+                .lock()
+                .expect("settings writes lock poisoned")
+                .push(key.to_string());
+            Ok(())
+        })
+    }
+
+    fn delete_setting<'a>(
+        &'a self,
+        _user_id: crate::db::UserId,
+        _key: crate::db::SettingKey,
+    ) -> crate::db::DbFuture<'a, Result<bool, crate::error::DatabaseError>> {
+        Box::pin(async { Ok(false) })
+    }
+
+    fn list_settings<'a>(
+        &'a self,
+        _user_id: crate::db::UserId,
+    ) -> crate::db::DbFuture<'a, Result<Vec<crate::history::SettingRow>, crate::error::DatabaseError>>
+    {
+        Box::pin(async { Ok(Vec::new()) })
+    }
+
+    fn get_all_settings<'a>(
+        &'a self,
+        _user_id: crate::db::UserId,
+    ) -> crate::db::DbFuture<
+        'a,
+        Result<std::collections::HashMap<String, serde_json::Value>, crate::error::DatabaseError>,
+    > {
+        Box::pin(async { Ok(std::collections::HashMap::new()) })
+    }
+
+    fn set_all_settings<'a>(
+        &'a self,
+        _user_id: crate::db::UserId,
+        _settings: &'a std::collections::HashMap<String, serde_json::Value>,
+    ) -> crate::db::DbFuture<'a, Result<(), crate::error::DatabaseError>> {
+        Box::pin(async { Ok(()) })
+    }
+
+    fn has_settings<'a>(
+        &'a self,
+        _user_id: crate::db::UserId,
+    ) -> crate::db::DbFuture<'a, Result<bool, crate::error::DatabaseError>> {
+        Box::pin(async { Ok(false) })
+    }
+}
+
 #[tokio::test]
 async fn test_dispatch_emitted_messages_sends_to_channel() {
     use crate::channels::wasm::host::EmittedMessage;
@@ -96,6 +193,8 @@ async fn test_dispatch_emitted_messages_rate_limit_does_not_update_metadata() {
     )));
     let last_broadcast_metadata = Arc::new(tokio::sync::RwLock::new(None));
     let metadata_json = r#"{"chat_id":123,"message_id":456}"#;
+    let settings_store = Arc::new(RecordingSettingsStore::new());
+    let settings_store_dyn: Arc<dyn crate::db::SettingsStore> = settings_store.clone();
 
     let result = WasmChannel::dispatch_emitted_messages(
         "test-channel",
@@ -104,7 +203,7 @@ async fn test_dispatch_emitted_messages_rate_limit_does_not_update_metadata() {
             message_tx: message_tx.as_ref(),
             rate_limiter: rate_limiter.as_ref(),
             last_broadcast_metadata: last_broadcast_metadata.as_ref(),
-            settings_store: None,
+            settings_store: Some(&settings_store_dyn),
         },
     )
     .await;
@@ -114,6 +213,7 @@ async fn test_dispatch_emitted_messages_rate_limit_does_not_update_metadata() {
         Err(WasmChannelError::EmitRateLimited { name }) if name == "test-channel"
     ));
     assert!(last_broadcast_metadata.read().await.is_none());
+    assert!(settings_store.writes().is_empty());
     assert!(rx.try_recv().is_err());
 }
 
