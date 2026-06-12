@@ -4,6 +4,7 @@ use std::path::PathBuf;
 
 use rstest::fixture;
 use rstest_bdd_macros::{given, scenario, then, when};
+use tempfile::TempDir;
 
 use super::*;
 use crate::skills::{
@@ -16,6 +17,7 @@ struct SkillContextWorld {
     active_skill: Option<LoadedSkill>,
     rendered_context: Option<String>,
     filesystem_root: Option<PathBuf>,
+    _installed_dir: Option<TempDir>,
 }
 
 #[fixture]
@@ -23,7 +25,15 @@ fn skill_context_world() -> SkillContextWorld {
     SkillContextWorld::default()
 }
 
-fn make_loaded_bundle_skill(skill: &str, filesystem_root: PathBuf) -> LoadedSkill {
+const PROMPT_MARKER: &str = "PROMPT-MARKER";
+const REFERENCES_MARKER: &str = "REFERENCES-MARKER";
+const ASSETS_MARKER: &str = "ASSETS-MARKER";
+
+fn make_loaded_bundle_skill(
+    skill: &str,
+    filesystem_root: PathBuf,
+    prompt_content: &str,
+) -> LoadedSkill {
     LoadedSkill::new(LoadedSkillParts {
         manifest: SkillManifest {
             name: skill.to_string(),
@@ -36,7 +46,7 @@ fn make_loaded_bundle_skill(skill: &str, filesystem_root: PathBuf) -> LoadedSkil
             },
             metadata: None,
         },
-        prompt_content: "Use references/usage.md for deployment details.".to_string(),
+        prompt_content: prompt_content.to_string(),
         trust: SkillTrust::Installed,
         source: SkillSource::User(filesystem_root.clone()),
         location: LoadedSkillLocation::new(
@@ -59,8 +69,38 @@ fn make_loaded_bundle_skill(skill: &str, filesystem_root: PathBuf) -> LoadedSkil
 fn installed_bundled_skill(skill_context_world: &mut SkillContextWorld) {
     let filesystem_root = PathBuf::from("/tmp/axinite-test-installed/deploy-docs");
     skill_context_world.filesystem_root = Some(filesystem_root.clone());
-    skill_context_world.active_skill =
-        Some(make_loaded_bundle_skill("deploy-docs", filesystem_root));
+    skill_context_world.active_skill = Some(make_loaded_bundle_skill(
+        "deploy-docs",
+        filesystem_root,
+        "Use references/usage.md for deployment details.",
+    ));
+}
+
+#[given("an installed bundled skill with a references file and an assets file")]
+fn installed_bundled_skill_with_ancillary_files(skill_context_world: &mut SkillContextWorld) {
+    let installed_dir = tempfile::tempdir().expect("installed bundle tempdir should be created");
+    std::fs::create_dir_all(installed_dir.path().join("references"))
+        .expect("references directory should be created");
+    std::fs::create_dir_all(installed_dir.path().join("assets"))
+        .expect("assets directory should be created");
+    std::fs::write(installed_dir.path().join("SKILL.md"), PROMPT_MARKER)
+        .expect("SKILL.md should be written");
+    std::fs::write(
+        installed_dir.path().join("references/usage.md"),
+        REFERENCES_MARKER,
+    )
+    .expect("reference file should be written");
+    std::fs::write(installed_dir.path().join("assets/note.txt"), ASSETS_MARKER)
+        .expect("asset file should be written");
+
+    let filesystem_root = installed_dir.path().to_path_buf();
+    skill_context_world.filesystem_root = Some(filesystem_root.clone());
+    skill_context_world.active_skill = Some(make_loaded_bundle_skill(
+        "deploy-docs",
+        filesystem_root,
+        PROMPT_MARKER,
+    ));
+    skill_context_world._installed_dir = Some(installed_dir);
 }
 
 #[when("the skill is selected for an agent turn")]
@@ -103,6 +143,24 @@ fn context_hides_filesystem_root(skill_context_world: &SkillContextWorld) {
     );
 }
 
+#[then("only SKILL.md content is injected into the active skill context")]
+fn only_skill_md_content_is_injected(skill_context_world: &SkillContextWorld) {
+    let rendered = rendered_context(skill_context_world);
+    assert!(rendered.contains(PROMPT_MARKER));
+}
+
+#[then("the references file content is absent from the rendered context block")]
+fn references_content_is_absent(skill_context_world: &SkillContextWorld) {
+    let rendered = rendered_context(skill_context_world);
+    assert!(!rendered.contains(REFERENCES_MARKER));
+}
+
+#[then("the assets file content is absent from the rendered context block")]
+fn assets_content_is_absent(skill_context_world: &SkillContextWorld) {
+    let rendered = rendered_context(skill_context_world);
+    assert!(!rendered.contains(ASSETS_MARKER));
+}
+
 fn rendered_context(skill_context_world: &SkillContextWorld) -> &str {
     skill_context_world
         .rendered_context
@@ -115,6 +173,16 @@ fn rendered_context(skill_context_world: &SkillContextWorld) -> &str {
     name = "Selected bundle skill exposes stable bundle-relative metadata"
 )]
 fn selected_bundle_skill_exposes_stable_bundle_relative_metadata(
+    skill_context_world: SkillContextWorld,
+) {
+    assert!(skill_context_world.rendered_context.is_some());
+}
+
+#[scenario(
+    path = "src/agent/dispatcher/tests/features/active_skill_context.feature",
+    name = "Activated bundle skill does not eagerly load ancillary files"
+)]
+fn activated_bundle_skill_does_not_eagerly_load_ancillary_files(
     skill_context_world: SkillContextWorld,
 ) {
     assert!(skill_context_world.rendered_context.is_some());

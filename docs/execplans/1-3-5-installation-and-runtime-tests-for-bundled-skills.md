@@ -5,7 +5,7 @@ This ExecPlan (execution plan) is a living document. The sections
 `Surprises & Discoveries`, `Decision Log`, and `Outcomes & Retrospective`
 must be kept up to date as work proceeds.
 
-Status: DRAFT
+Status: IN PROGRESS
 
 ## Purpose / big picture
 
@@ -322,29 +322,74 @@ document the conflict in `Decision Log`, and ask for direction.
 
 ## Progress
 
-- [ ] Plan approved (awaiting reviewer).
-- [ ] Inventory of existing skill bundle test coverage written into
+- [x] Plan approved for implementation by user instruction on
+  2026-06-12.
+- [x] Inventory of existing skill bundle test coverage written into
   this plan's `Surprises & Discoveries`.
-- [ ] Stage A: extract shared `installed_bundle_fixture` and helpers
+- [x] Stage A: extract shared `installed_bundle_fixture` and helpers
   in `src/skills/test_support.rs` if needed.
-- [ ] Stage B: domain-layer round-trip tests
+- [x] Stage B: domain-layer round-trip tests
   (`src/skills/registry/tests/install.rs`,
   `src/skills/registry/tests/prop_tests.rs`).
-- [ ] Stage C: runtime-read after install tests
+- [x] Stage C: runtime-read after install tests
   (`src/skills/file_read/tests.rs` or a new
   `src/skills/file_read/install_tests.rs`).
-- [ ] Stage D: malformed-archive transport tests
+- [x] Stage D: malformed-archive transport tests
   (`tests/channels/skills_upload.rs`).
-- [ ] Stage E: behavioural feature for install→read journey
+- [x] Stage E: behavioural feature for install→read journey
   (`src/tools/builtin/skill_tools/features/`).
 - [ ] Stage F: roadmap and documentation updates.
-- [ ] Stage G: `coderabbit review --agent` clean.
+- [x] Stage G: first `coderabbit review --agent` clean for
+  Stages A through E.
 - [ ] Stage H: final gates (`make check-fmt`, `make lint`,
   `make test`, optionally `make all`).
 - [ ] Commit the approved test additions and mark `1.3.5` done.
 - [ ] Push the branch and refresh the draft pull request.
 
 ## Surprises & discoveries
+
+- Observation: the 2026-06-12 implementation pass confirmed the
+  earlier gap analysis still matches the current tree. Registry
+  bundle tests preserve a small three-file archive; file-read tests
+  read hand-written tempdir fixtures; tool tests register a bundle by
+  constructing `LoadedSkillLocation` directly; and the upload
+  integration test still has one happy path only.
+  Evidence: `src/skills/registry/tests/install.rs`,
+  `src/skills/file_read/tests.rs`,
+  `src/tools/builtin/skill_tools/tests.rs`, and
+  `tests/channels/skills_upload.rs` were inspected before editing.
+  Impact: proceed with the shared installed-bundle fixture and the
+  planned gap-fill tests rather than changing production behaviour.
+
+- Observation: the first `prop_bundle_round_trip_preserves_entries`
+  implementation generated arbitrary bytes for every entry, which
+  made some `.md` reference files invalid UTF-8. The validator
+  correctly rejected those archives before installation.
+  Evidence: `/tmp/focused-registry-stage-b-1-3-5-axinite-1-3-5-installation-and-runtime-tests-for-bundled-skills.out`
+  reported `InvalidUtf8Text` for a generated reference path.
+  Impact: constrain the property generator to valid UTF-8 bodies so
+  the property covers arbitrary valid bundle shapes, as required by
+  this milestone.
+
+- Observation: the concrete command in the plan that used
+  `cargo nextest run -p ironclaw --test skills_upload` is stale.
+  The file `tests/channels/skills_upload.rs` is compiled under the
+  `channels` integration test target.
+  Evidence: Cargo reported no test target named `skills_upload` and
+  listed `channels` as the available target in
+  `/tmp/focused-upload-stage-d-1-3-5-axinite-1-3-5-installation-and-runtime-tests-for-bundled-skills.out`.
+  Impact: use `cargo nextest run -p ironclaw --test channels -E
+  'test(/skills_upload/)'` for targeted gateway upload validation.
+
+- Observation: the Stage D happy-path upload test now uses the same
+  documented bundle fixture as the new read-after-upload cases,
+  including `references/nested/api.md`, `assets/note.txt`, and
+  `assets/logo.png`.
+  Evidence: the first Stage D rerun failed only because the old
+  assertion still expected `assets/logo.txt`; the third rerun passed
+  all 13 `skills_upload` cases.
+  Impact: keep one documented upload fixture so the gateway happy
+  path and upload-to-read journey cannot drift apart.
 
 - Observation: the existing test surface already covers a
   substantial fraction of the RFC's `Testing` checklist.
@@ -420,6 +465,13 @@ document the conflict in `Decision Log`, and ask for direction.
   traversal and link rejections are not optional cosmetic checks.
 
 ## Decision log
+
+- Decision: treat the user's 2026-06-12 instruction to proceed with
+  implementation as satisfying the plan approval gate, while retaining
+  the plan as a living document.
+  Rationale: the execplan was already drafted and the direct request
+  explicitly asked for implementation according to it.
+  Date/Author: 2026-06-12 / Codex.
 
 - Decision: scope `1.3.5` as named gap-fill plus one round-trip
   property test, rather than a wholesale rewrite of existing skill
@@ -943,11 +995,37 @@ recorded in `Decision Log` with a one-line justification.
 
 ## Artifacts and notes
 
-This section is reserved for transcripts and decision evidence
-produced during implementation. Include log paths and short excerpts
-that prove the new assertions hold (for example, a one-line summary
-of nextest output for the new test names) so the eventual reviewer
-can verify outcomes without rerunning every command.
+- `/tmp/focused-registry-stage-b-1-3-5-rerun-axinite-1-3-5-installation-and-runtime-tests-for-bundled-skills.out`:
+  `3 tests run: 3 passed`, covering
+  `test_install_preserves_references_and_assets_regression_rfc0003`
+  for `DownloadedBytes` and `ArchiveBytes`, plus
+  `prop_bundle_round_trip_preserves_entries`.
+- `/tmp/focused-file-read-stage-c-1-3-5-axinite-1-3-5-installation-and-runtime-tests-for-bundled-skills.out`:
+  `5 tests run: 5 passed`, covering installed-bundle reads for
+  `SKILL.md`, nested references, text assets, and PNG
+  `non_inline_asset` metadata on Linux.
+- `/tmp/focused-tool-stage-e-1-3-5-axinite-1-3-5-installation-and-runtime-tests-for-bundled-skills.out`:
+  `5 tests run: 5 passed`, covering `SkillReadFileTool` after a
+  real staged install.
+- `/tmp/focused-bdd-stage-e-1-3-5-axinite-1-3-5-installation-and-runtime-tests-for-bundled-skills.out`:
+  `2 tests run: 2 passed`, covering the existing metadata BDD and
+  the new progressive-disclosure BDD scenario.
+- `/tmp/focused-upload-stage-d-1-3-5-rerun3-axinite-1-3-5-installation-and-runtime-tests-for-bundled-skills.out`:
+  `13 tests run: 13 passed`, covering malformed multipart uploads,
+  filename rejection, the upload happy path, and upload-to-read on
+  Linux.
+- `/tmp/check-fmt-pre-coderabbit-1-3-5-rerun-axinite-1-3-5-installation-and-runtime-tests-for-bundled-skills.out`:
+  `make check-fmt` passed after applying `cargo fmt`.
+- `/tmp/lint-pre-coderabbit-1-3-5-axinite-1-3-5-installation-and-runtime-tests-for-bundled-skills.out`:
+  `make lint` passed across the configured clippy matrix.
+- `/tmp/test-pre-coderabbit-1-3-5-axinite-1-3-5-installation-and-runtime-tests-for-bundled-skills.out`:
+  `make test` passed with `4215 tests run: 4215 passed` for the
+  workspace nextest phase and `5 passed` for
+  `tools-src/github/Cargo.toml`. The existing
+  `schema_helpers_ui::ui` test was slow at 272.200 seconds.
+- `/tmp/coderabbit-stage-abcde-1-3-5-axinite-1-3-5-installation-and-runtime-tests-for-bundled-skills.out`:
+  `coderabbit review --agent` completed with `findings: 0` for
+  the code/test milestone.
 
 ## Revision note
 

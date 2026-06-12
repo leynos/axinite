@@ -1,4 +1,5 @@
-use std::path::Path;
+use std::collections::BTreeMap;
+use std::path::{Path, PathBuf};
 
 use rstest::rstest;
 
@@ -12,6 +13,45 @@ fn assert_deploy_docs_bundle_files_present(path: &Path) {
     assert!(path.join("SKILL.md").exists());
     assert!(path.join("references/usage.md").exists());
     assert!(path.join("assets/logo.txt").exists());
+}
+
+fn documented_bundle_entries() -> Vec<(&'static str, &'static [u8])> {
+    vec![
+        (
+            "deploy-docs/SKILL.md",
+            b"---\nname: deploy-docs\n---\n\n# deploy-docs\n",
+        ),
+        ("deploy-docs/references/usage.md", b"# Usage\n"),
+        ("deploy-docs/references/nested/api.md", b"# API\n"),
+        ("deploy-docs/assets/note.txt", b"asset notes\n"),
+        (
+            "deploy-docs/assets/logo.png",
+            &[0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A],
+        ),
+    ]
+}
+
+fn collect_installed_files(root: &Path) -> BTreeMap<PathBuf, Vec<u8>> {
+    fn visit(base: &Path, current: &Path, files: &mut BTreeMap<PathBuf, Vec<u8>>) {
+        for entry in std::fs::read_dir(current).expect("installed directory should be readable") {
+            let entry = entry.expect("installed directory entry should be readable");
+            let path = entry.path();
+            if path.is_dir() {
+                visit(base, &path, files);
+            } else {
+                let relative = path
+                    .strip_prefix(base)
+                    .expect("installed file should be under bundle root")
+                    .to_path_buf();
+                let contents = std::fs::read(&path).expect("installed file should be readable");
+                files.insert(relative, contents);
+            }
+        }
+    }
+
+    let mut files = BTreeMap::new();
+    visit(root, root, &mut files);
+    files
 }
 
 #[tokio::test]
@@ -89,6 +129,61 @@ async fn test_archive_payload_preserves_files(
     let installed_root = installed_dir.path().join("deploy-docs");
     assert_deploy_docs_bundle_files_present(&installed_root);
     assert!(registry.has("deploy-docs"));
+    let skill = registry
+        .find_by_name("deploy-docs")
+        .expect("committed bundle skill should be loaded");
+    assert_eq!(skill.package_kind(), SkillPackageKind::Bundle);
+    assert_eq!(skill.skill_root(), installed_root.as_path());
+}
+
+/// RFC 0003 regression: installing a `.skill` bundle must preserve every
+/// documented entry class instead of dropping references or assets.
+#[rstest]
+#[case::downloaded_bytes(|b| SkillInstallPayload::DownloadedBytes(b))]
+#[case::archive_bytes(|b| SkillInstallPayload::ArchiveBytes(b))]
+#[tokio::test]
+async fn test_install_preserves_references_and_assets_regression_rfc0003(
+    bundle_install_fixture: BundleInstallFixture,
+    #[case] make_payload: impl FnOnce(Vec<u8>) -> SkillInstallPayload,
+) {
+    let BundleInstallFixture {
+        installed_dir,
+        mut registry,
+        ..
+    } = bundle_install_fixture;
+
+    let entries = documented_bundle_entries();
+    let archive = build_bundle_archive(&entries);
+    let prepared = SkillRegistry::prepare_install_to_disk(
+        registry.install_target_dir(),
+        make_payload(archive),
+    )
+    .await
+    .expect("documented bundle should prepare");
+    assert_eq!(
+        prepared.loaded_skill.package_kind(),
+        SkillPackageKind::Bundle
+    );
+
+    registry
+        .commit_install(prepared)
+        .expect("documented bundle should commit");
+
+    let installed_root = installed_dir.path().join("deploy-docs");
+    let expected = entries
+        .into_iter()
+        .map(|(path, contents)| {
+            (
+                PathBuf::from(
+                    path.strip_prefix("deploy-docs/")
+                        .expect("manifest path should be bundle rooted"),
+                ),
+                contents.to_vec(),
+            )
+        })
+        .collect::<BTreeMap<_, _>>();
+    assert_eq!(collect_installed_files(&installed_root), expected);
+
     let skill = registry
         .find_by_name("deploy-docs")
         .expect("committed bundle skill should be loaded");

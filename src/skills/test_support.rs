@@ -1,11 +1,71 @@
 //! Shared test helpers for constructing [`LoadedSkill`] instances.
 
+use std::io::Write;
 use std::path::PathBuf;
 
+use crate::skills::registry::{SkillInstallPayload, SkillRegistry};
 use crate::skills::{
     ActivationCriteria, LoadedSkill, LoadedSkillLocation, LoadedSkillParts, SkillManifest,
     SkillPackageKind, SkillSource, SkillTrust,
 };
+
+pub struct InstalledBundleFixture {
+    pub _user_dir: tempfile::TempDir,
+    pub _installed_dir: tempfile::TempDir,
+    pub registry: SkillRegistry,
+    pub loaded_skill: LoadedSkill,
+}
+
+pub fn build_bundle_archive(entries: &[(&str, &[u8])]) -> Vec<u8> {
+    let cursor = std::io::Cursor::new(Vec::new());
+    let mut writer = zip::ZipWriter::new(cursor);
+    let options =
+        zip::write::SimpleFileOptions::default().compression_method(zip::CompressionMethod::Stored);
+
+    for (name, contents) in entries {
+        writer
+            .start_file(*name, options)
+            .expect("test archive should start file");
+        writer
+            .write_all(contents)
+            .expect("test archive should write file contents");
+    }
+
+    writer
+        .finish()
+        .expect("test archive should finish")
+        .into_inner()
+}
+
+pub async fn installed_bundle_fixture(entries: &[(&str, &[u8])]) -> InstalledBundleFixture {
+    let user_dir = tempfile::tempdir().expect("user tempdir should be created for test");
+    let installed_dir = tempfile::tempdir().expect("installed tempdir should be created for test");
+    let mut registry = SkillRegistry::new(user_dir.path().to_path_buf())
+        .with_installed_dir(installed_dir.path().to_path_buf());
+    let archive = build_bundle_archive(entries);
+
+    let prepared = SkillRegistry::prepare_install_to_disk(
+        registry.install_target_dir(),
+        SkillInstallPayload::ArchiveBytes(archive),
+    )
+    .await
+    .expect("bundle install fixture should prepare");
+    let name = prepared.name().to_string();
+    registry
+        .commit_install(prepared)
+        .expect("bundle install fixture should commit");
+    let loaded_skill = registry
+        .find_by_name(&name)
+        .expect("installed fixture skill should be loaded")
+        .clone();
+
+    InstalledBundleFixture {
+        _user_dir: user_dir,
+        _installed_dir: installed_dir,
+        registry,
+        loaded_skill,
+    }
+}
 
 pub struct TestSkillBuilder {
     name: String,

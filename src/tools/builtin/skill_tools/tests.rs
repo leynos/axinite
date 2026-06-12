@@ -9,6 +9,7 @@ use rstest_bdd_macros::{given, scenario, then, when};
 use crate::context::JobContext;
 use crate::skills::catalog::SkillCatalog;
 use crate::skills::registry::SkillRegistry;
+use crate::skills::test_support::installed_bundle_fixture;
 use crate::skills::{LoadedSkillLocation, SkillPackageKind, SkillSource};
 use crate::tools::tool::{ApprovalRequirement, NativeTool, Tool};
 
@@ -48,6 +49,22 @@ fn test_catalog() -> Arc<SkillCatalog> {
 
 fn skill_markdown(name: &str) -> String {
     format!("---\nname: {name}\n---\n\n# {name}\n")
+}
+
+fn documented_bundle_entries() -> Vec<(&'static str, &'static [u8])> {
+    vec![
+        (
+            "deploy-docs/SKILL.md",
+            b"---\nname: deploy-docs\n---\n\n# deploy-docs\n",
+        ),
+        ("deploy-docs/references/usage.md", b"# Usage\n"),
+        ("deploy-docs/references/nested/api.md", b"# API\n"),
+        ("deploy-docs/assets/note.txt", b"asset notes\n"),
+        (
+            "deploy-docs/assets/logo.png",
+            &[0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A],
+        ),
+    ]
 }
 
 fn insert_deploy_docs_bundle(
@@ -303,6 +320,79 @@ async fn skill_read_file_tool_reads_bundle_reference(test_registry: TestRegistry
     assert_eq!(output.result["path"], "references/usage.md");
     assert_eq!(output.result["content"], "# Usage\n");
     assert!(output.result.get("error").is_none());
+}
+
+#[rstest]
+#[case::entrypoint(
+    "SKILL.md",
+    "text/markdown",
+    "---\nname: deploy-docs\n---\n\n# deploy-docs\n"
+)]
+#[case::reference("references/usage.md", "text/markdown", "# Usage\n")]
+#[case::nested_reference("references/nested/api.md", "text/markdown", "# API\n")]
+#[case::text_asset("assets/note.txt", "text/plain", "asset notes\n")]
+#[tokio::test]
+#[cfg(target_os = "linux")]
+async fn test_skill_read_file_tool_after_install_returns_each_documented_entry(
+    #[case] path: &str,
+    #[case] mime_type: &str,
+    #[case] content: &str,
+) {
+    let fixture = installed_bundle_fixture(&documented_bundle_entries()).await;
+    let _user_dir = fixture._user_dir;
+    let _installed_dir = fixture._installed_dir;
+    let registry = Arc::new(std::sync::RwLock::new(fixture.registry));
+    let tool = SkillReadFileTool::new(registry);
+
+    let output = NativeTool::execute(
+        &tool,
+        serde_json::json!({
+            "skill": "deploy-docs",
+            "path": path,
+        }),
+        &JobContext::default(),
+    )
+    .await
+    .expect("skill_read_file should return installed text entry");
+
+    assert_eq!(output.result["skill"], "deploy-docs");
+    assert_eq!(output.result["path"], path);
+    assert_eq!(output.result["mime_type"], mime_type);
+    assert_eq!(output.result["content"], content);
+    assert!(output.result.get("error").is_none());
+}
+
+#[rstest]
+#[tokio::test]
+#[cfg(target_os = "linux")]
+async fn test_skill_read_file_tool_after_install_returns_non_inline_for_png() {
+    let fixture = installed_bundle_fixture(&documented_bundle_entries()).await;
+    let _user_dir = fixture._user_dir;
+    let _installed_dir = fixture._installed_dir;
+    let registry = Arc::new(std::sync::RwLock::new(fixture.registry));
+    let tool = SkillReadFileTool::new(registry);
+
+    let output = NativeTool::execute(
+        &tool,
+        serde_json::json!({
+            "skill": "deploy-docs",
+            "path": "assets/logo.png",
+        }),
+        &JobContext::default(),
+    )
+    .await
+    .expect("skill_read_file should return non-inline payload");
+
+    assert_eq!(output.result["skill"], "deploy-docs");
+    assert_eq!(output.result["path"], "assets/logo.png");
+    assert_eq!(output.result["error"]["code"], "non_inline_asset");
+    assert_eq!(output.result["error"]["metadata"]["size"], 8);
+    assert_eq!(output.result["error"]["metadata"]["mime_type"], "image/png");
+    assert!(
+        output.result["error"]["metadata"]["fetch_hint"]
+            .as_str()
+            .is_some_and(|hint| hint.contains("passive asset"))
+    );
 }
 
 #[rstest]
