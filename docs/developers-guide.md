@@ -429,7 +429,6 @@ For tests, prefer the helpers in `src/testing/test_utils.rs` or
 `Config::for_testing(...)` instead of mutating `std::env`. That keeps
 tests independent of host machine secrets, keychains, and shell state.
 
-
 ### Monotonic clock seam for duration measurement
 
 When a component must measure elapsed time (rather than compare against a
