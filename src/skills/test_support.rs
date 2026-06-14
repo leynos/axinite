@@ -12,6 +12,7 @@ use crate::skills::{
 pub struct InstalledBundleFixture {
     pub _user_dir: tempfile::TempDir,
     pub _installed_dir: tempfile::TempDir,
+    #[cfg(target_os = "linux")]
     pub registry: SkillRegistry,
     pub loaded_skill: LoadedSkill,
 }
@@ -62,6 +63,7 @@ pub async fn installed_bundle_fixture(entries: &[(&str, &[u8])]) -> InstalledBun
     InstalledBundleFixture {
         _user_dir: user_dir,
         _installed_dir: installed_dir,
+        #[cfg(target_os = "linux")]
         registry,
         loaded_skill,
     }

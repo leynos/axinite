@@ -10,7 +10,9 @@ use std::sync::{Arc, RwLock};
 
 use ironclaw::channels::web::test_helpers::TestGatewayBuilder;
 use ironclaw::skills::SkillRegistry;
+#[cfg(target_os = "linux")]
 use ironclaw::tools::NativeTool;
+#[cfg(target_os = "linux")]
 use ironclaw::tools::builtin::SkillReadFileTool;
 use reqwest::multipart::{Form, Part};
 use rstest::rstest;

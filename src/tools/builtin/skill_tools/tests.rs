@@ -9,6 +9,7 @@ use rstest_bdd_macros::{given, scenario, then, when};
 use crate::context::JobContext;
 use crate::skills::catalog::SkillCatalog;
 use crate::skills::registry::SkillRegistry;
+#[cfg(target_os = "linux")]
 use crate::skills::test_support::installed_bundle_fixture;
 use crate::skills::{LoadedSkillLocation, SkillPackageKind, SkillSource};
 use crate::tools::tool::{ApprovalRequirement, NativeTool, Tool};
@@ -51,6 +52,7 @@ fn skill_markdown(name: &str) -> String {
     format!("---\nname: {name}\n---\n\n# {name}\n")
 }
 
+#[cfg(target_os = "linux")]
 fn documented_bundle_entries() -> Vec<(&'static str, &'static [u8])> {
     vec![
         (
