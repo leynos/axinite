@@ -191,6 +191,11 @@ packaging.
     [RFC 0003 §Rollout Plan](./rfcs/0003-skill-bundle-installation.md#rollout-plan).
   - Success: tests cover valid bundles, malformed bundles, and lazy bundled-file
     reads, and prove that installation no longer drops ancillary files.
+  - Status note: implemented in PR
+    [#208](https://github.com/leynos/axinite/pull/208). The rebased branch also
+    records the follow-up hardening required by current gates: markdownlint
+    cleanup, PostgreSQL RustSec lockfile refresh for `make audit`, and
+    Windows/libSQL clippy gating for Linux-only bundled-skill helpers.
 
 ## 2. Introduce controlled execution surfaces
 

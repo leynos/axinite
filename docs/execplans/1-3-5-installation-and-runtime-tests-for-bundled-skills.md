@@ -5,7 +5,7 @@ This ExecPlan (execution plan) is a living document. The sections
 `Surprises & Discoveries`, `Decision Log`, and `Outcomes & Retrospective`
 must be kept up to date as work proceeds.
 
-Status: IN PROGRESS
+Status: COMPLETE
 
 ## Purpose / big picture
 
@@ -344,7 +344,15 @@ document the conflict in `Decision Log`, and ask for direction.
 - [x] Stage H: final gates (`make check-fmt`, `make lint`,
   `make test`, optionally `make all`).
 - [x] Commit the approved test additions and mark `1.3.5` done.
-- [ ] Push the branch and refresh the draft pull request.
+- [x] Push the branch and refresh the draft pull request.
+- [x] Rebase onto `origin/main` at `8045e754` with no conflicts and
+  validate the rebased tree.
+- [x] Fix post-turn markdownlint fallout in
+  `docs/developers-guide.md`.
+- [x] Fix the new `make audit` RustSec failures by refreshing the
+  affected PostgreSQL crates in `Cargo.lock`.
+- [x] Fix the Windows `--no-default-features --features libsql`
+  clippy unused-code findings by gating Linux-only test helpers.
 
 ## Surprises & discoveries
 
@@ -464,6 +472,48 @@ document the conflict in `Decision Log`, and ask for direction.
   modules citing both CVEs so reviewers understand why the
   traversal and link rejections are not optional cosmetic checks.
 
+- Observation: rebasing this branch onto `origin/main` at
+  `8045e754` had no conflicts. The main-branch change introduced the
+  repository `make audit` gate, so the branch needed later
+  supply-chain validation in addition to the original `make all`
+  gate.
+  Evidence: `make check-fmt`, `make test`, `make typecheck`, and
+  `make lint` all passed after the rebase, and the branch was
+  force-pushed with lease.
+  Impact: the feature work stayed intact, and the later audit fix is
+  recorded as post-completion hardening rather than a scope change to
+  `1.3.5`.
+
+- Observation: the post-turn markdownlint hook caught one existing
+  formatting issue in `docs/developers-guide.md`: two consecutive
+  blank lines near the bundled-skills documentation update.
+  Evidence: `make markdownlint` reported `MD012/no-multiple-blanks`
+  for `docs/developers-guide.md`.
+  Impact: remove the extra blank line and keep this as a documentation
+  hygiene fix separate from the Rust implementation.
+
+- Observation: `make audit` failed after the branch picked up the new
+  audit gate because `Cargo.lock` still resolved `tokio-postgres`
+  `0.7.17` and `postgres-protocol` `0.6.11`, which are covered by
+  RustSec advisories `RUSTSEC-2026-0178`,
+  `RUSTSEC-2026-0179`, and `RUSTSEC-2026-0180`.
+  Evidence: the audit output requested `tokio-postgres >=0.7.18`
+  and `postgres-protocol >=0.6.12`.
+  Impact: refresh the lockfile to `tokio-postgres 0.7.18`,
+  `postgres-protocol 0.6.12`, and matching `postgres-types 0.2.14`
+  without changing manifest ranges.
+
+- Observation: the Windows clippy profile
+  `--no-default-features --features libsql` compiles out Linux-only
+  file-read assertions, which makes related fixture fields and imports
+  look unused on that target.
+  Evidence: CI reported unused imports in
+  `src/tools/builtin/skill_tools/tests.rs` and
+  `tests/channels/skills_upload.rs`, plus an unread `registry` field
+  in `src/skills/test_support.rs`.
+  Impact: gate the Linux-only helper field and imports with
+  `#[cfg(target_os = "linux")]` instead of suppressing warnings.
+
 ## Decision log
 
 - Decision: treat the user's 2026-06-12 instruction to proceed with
@@ -549,6 +599,27 @@ document the conflict in `Decision Log`, and ask for direction.
   lower-layer assertions without covering a distinct system flow.
   Date/Author: 2026-06-02 / Codex.
 
+- Decision: use a lockfile-only patch update for the PostgreSQL audit
+  findings.
+  Rationale: the existing `Cargo.toml` SemVer ranges already permit
+  the fixed patch releases, and widening manifests would create
+  unrelated dependency churn.
+  Date/Author: 2026-06-14 / Codex.
+
+- Decision: fix target-specific unused-code findings with conditional
+  compilation boundaries rather than `allow` or `expect` attributes.
+  Rationale: the affected helpers are genuinely Linux-only because the
+  file-read implementation uses Linux `openat2`. Target gating
+  matches the test contract and keeps clippy strict on Windows.
+  Date/Author: 2026-06-14 / Codex.
+
+- Decision: keep roadmap item `1.3.5` marked complete while recording
+  the rebase, audit, markdownlint, and Windows/libSQL lint work as
+  follow-up hardening.
+  Rationale: those changes validate and preserve the shipped milestone;
+  they do not alter the milestone's runtime or test-coverage scope.
+  Date/Author: 2026-06-16 / Codex.
+
 ## Outcomes & retrospective
 
 Roadmap item `1.3.5` is complete. The test suite now covers valid
@@ -572,6 +643,15 @@ Two follow-up notes remain outside this milestone. RFC 0003's future
 upgrade/force/auto-rename collision matrix is still not implemented,
 and the existing `schema_helpers_ui::ui` test can be slow on a cold
 run, although the final cached `make all` completed quickly.
+
+After the milestone landed, the branch was rebased onto `origin/main`
+at `8045e754` with no conflicts and force-pushed with lease. The
+post-rebase tree passed `make check-fmt`, `make test`,
+`make typecheck`, and `make lint`. Subsequent CI-facing hardening fixed
+one markdownlint issue, refreshed the PostgreSQL lockfile entries that
+triggered the new `make audit` gate, and gated Linux-only bundled-skill
+test helpers so the Windows libSQL clippy profile passes without lint
+suppression.
 
 ## Plan of work
 
@@ -1053,6 +1133,34 @@ recorded in `Decision Log` with a one-line justification.
 - `/tmp/all-final-1-3-5-axinite-1-3-5-installation-and-runtime-tests-for-bundled-skills.out`:
   `make all` passed on the final tree, including formatting, clippy,
   `4215` workspace nextest tests, and `5` GitHub tool tests.
+- `/tmp/check-fmt-rebase-1-3-5-installation-and-runtime-tests-for-bundled-skills.out`,
+  `/tmp/test-rebase-1-3-5-installation-and-runtime-tests-for-bundled-skills.out`,
+  `/tmp/typecheck-rebase-1-3-5-installation-and-runtime-tests-for-bundled-skills.out`,
+  and
+  `/tmp/lint-rebase-1-3-5-installation-and-runtime-tests-for-bundled-skills.out`:
+  post-rebase formatting, test, typecheck, and lint gates passed.
+- `/tmp/markdownlint-hook-fix-1-3-5-installation-and-runtime-tests-for-bundled-skills.out`:
+  `make markdownlint` passed after removing the duplicate blank line
+  from `docs/developers-guide.md`.
+- `/tmp/diff-check-hook-fix-1-3-5-installation-and-runtime-tests-for-bundled-skills.out`:
+  `git diff --check` passed for the markdownlint cleanup.
+- `/tmp/audit-postgres-fix-1-3-5-installation-and-runtime-tests-for-bundled-skills.out`:
+  `make audit` passed after refreshing the PostgreSQL crates in
+  `Cargo.lock`.
+- `/tmp/typecheck-postgres-audit-fix-1-3-5-installation-and-runtime-tests-for-bundled-skills.out`:
+  `make typecheck` passed after the audit fix.
+- `/tmp/all-postgres-audit-fix-1-3-5-installation-and-runtime-tests-for-bundled-skills.out`:
+  `make all` passed after the audit fix.
+- `/tmp/clippy-libsql-unused-code-fix-1-3-5-installation-and-runtime-tests-for-bundled-skills.out`:
+  the Windows-CI equivalent libSQL clippy profile passed on Linux:
+  `cargo clippy --all --benches --tests --examples --no-default-features
+  --features libsql -- -D warnings`.
+- `/tmp/check-fmt-unused-code-fix-1-3-5-installation-and-runtime-tests-for-bundled-skills.out`,
+  `/tmp/lint-unused-code-fix-1-3-5-installation-and-runtime-tests-for-bundled-skills.out`,
+  and
+  `/tmp/test-unused-code-fix-1-3-5-installation-and-runtime-tests-for-bundled-skills.out`:
+  formatting, lint, and test gates passed after the target-specific
+  unused-code fix.
 
 ## Revision note
 
@@ -1084,3 +1192,8 @@ fallthrough test for clarity; added Decision Log entries for the
 fixture ownership model, the BDD/rstest split, and the
 scenario placement; recorded the RFC §3 collision-handling gap as
 a future-work observation; added a CodeRabbit-retry tolerance.
+
+2026-06-16: Marked the plan complete and recorded post-completion
+branch hardening: no-conflict rebase onto `origin/main` at
+`8045e754`, markdownlint cleanup, PostgreSQL RustSec lockfile refresh,
+and Windows/libSQL unused-code lint fixes.
