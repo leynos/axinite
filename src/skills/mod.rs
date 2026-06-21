@@ -26,8 +26,8 @@ pub(crate) mod install_source;
 pub mod parser;
 pub mod registry;
 pub mod selector;
-#[cfg(test)]
-pub(crate) mod test_support;
+#[cfg(any(test, feature = "test-helpers"))]
+pub mod test_support;
 #[cfg(test)]
 mod tests;
 

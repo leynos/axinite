@@ -6,8 +6,6 @@
 //! `MAX_BUNDLE_FILE_COUNT`, `MAX_BUNDLE_TOTAL_BYTES`, and
 //! `MAX_PROMPT_FILE_SIZE`.
 
-use std::io::Write;
-
 use rstest::rstest;
 
 use super::{
@@ -15,6 +13,9 @@ use super::{
     looks_like_skill_archive, validate_skill_archive,
 };
 use crate::skills::MAX_PROMPT_FILE_SIZE;
+use crate::skills::test_support::{
+    BundleArchiveEntry, build_bundle_archive_from_entries as build_bundle_archive,
+};
 
 #[test]
 fn looks_like_zip_signatures_detect_skill_archives() {
@@ -253,53 +254,15 @@ fn skill_markdown(name: impl AsRef<str>) -> String {
     format!("{}\n\n# {name}\n", skill_frontmatter(name))
 }
 
-#[derive(Clone)]
-struct EntrySpec {
-    name: String,
-    data: Vec<u8>,
-    unix_mode: Option<u32>,
-}
-
 fn file_entry(name: impl AsRef<str>, data: &[u8]) -> EntrySpec {
-    EntrySpec {
-        name: name.as_ref().to_string(),
-        data: data.to_vec(),
-        unix_mode: None,
-    }
+    BundleArchiveEntry::file(name, data)
 }
 
 fn file_entry_with_mode(name: impl AsRef<str>, data: &[u8], unix_mode: u32) -> EntrySpec {
-    EntrySpec {
-        name: name.as_ref().to_string(),
-        data: data.to_vec(),
-        unix_mode: Some(unix_mode),
-    }
+    BundleArchiveEntry::file_with_mode(name, data, unix_mode)
 }
 
-fn build_bundle_archive(entries: &[EntrySpec]) -> Vec<u8> {
-    let cursor = std::io::Cursor::new(Vec::new());
-    let mut writer = zip::ZipWriter::new(cursor);
-    let options = zip::write::SimpleFileOptions::default()
-        .compression_method(zip::CompressionMethod::Deflated);
-
-    for entry in entries {
-        let mut entry_options = options;
-        if let Some(unix_mode) = entry.unix_mode {
-            entry_options = entry_options.unix_permissions(unix_mode);
-        }
-        writer
-            .start_file(&entry.name, entry_options)
-            .expect("test archive should start file");
-        writer
-            .write_all(&entry.data)
-            .expect("test archive should accept file data");
-    }
-
-    writer
-        .finish()
-        .expect("test archive should finish")
-        .into_inner()
-}
+type EntrySpec = BundleArchiveEntry;
 
 fn build_bundle_archive_with_symlink(name: impl AsRef<str>, target: impl AsRef<str>) -> Vec<u8> {
     let cursor = std::io::Cursor::new(Vec::new());

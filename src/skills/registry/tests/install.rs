@@ -1,3 +1,6 @@
+//! Deterministic regression tests for skill bundle installation correctness
+//! and byte-for-byte file preservation across supported install transports.
+
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 

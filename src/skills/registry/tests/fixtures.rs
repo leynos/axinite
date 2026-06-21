@@ -8,16 +8,14 @@
 //! - [`bundle_install_fixture`] / [`fresh_registry_fixture`] — `rstest`
 //!   `#[fixture]` constructors for the above.
 //! - [`skill_markdown`] — generates minimal valid `SKILL.md` content.
-//! - [`build_bundle_archive`] — constructs an in-memory ZIP archive from
-//!   named byte entries.
 //! - [`write_skill_subdir`] / [`write_skill_flat`] — write `SKILL.md` into
 //!   a temp directory in subdirectory or flat layout respectively.
-use std::io::Write;
 use std::path::Path;
 
 use rstest::fixture;
 
 use crate::skills::registry::SkillRegistry;
+pub(super) use crate::skills::test_support::build_bundle_archive;
 
 pub(super) struct BundleInstallFixture {
     pub(super) user_dir: tempfile::TempDir,
@@ -32,27 +30,6 @@ pub(super) struct FreshRegistryFixture {
 
 pub(super) fn skill_markdown(name: &str) -> String {
     format!("---\nname: {name}\n---\n\n# {name}\n")
-}
-
-pub(super) fn build_bundle_archive(entries: &[(&str, &[u8])]) -> Vec<u8> {
-    let cursor = std::io::Cursor::new(Vec::new());
-    let mut writer = zip::ZipWriter::new(cursor);
-    let options = zip::write::SimpleFileOptions::default()
-        .compression_method(zip::CompressionMethod::Deflated);
-
-    for (name, contents) in entries {
-        writer
-            .start_file(*name, options)
-            .expect("test archive should start file");
-        writer
-            .write_all(contents)
-            .expect("test archive should write file contents");
-    }
-
-    writer
-        .finish()
-        .expect("test archive should finish")
-        .into_inner()
 }
 
 #[fixture]

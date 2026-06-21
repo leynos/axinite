@@ -353,6 +353,11 @@ document the conflict in `Decision Log`, and ask for direction.
   affected PostgreSQL crates in `Cargo.lock`.
 - [x] Fix the Windows `--no-default-features --features libsql`
   clippy unused-code findings by gating Linux-only test helpers.
+- [x] Address review feedback by documenting
+  `src/skills/registry/tests/install.rs`, documenting
+  `InstalledBundleFixture` and `build_bundle_archive` in the
+  developer guide, and consolidating internal bundle archive builders
+  into `src/skills/test_support.rs`.
 
 ## Surprises & discoveries
 
@@ -1161,6 +1166,16 @@ recorded in `Decision Log` with a one-line justification.
   `/tmp/test-unused-code-fix-1-3-5-installation-and-runtime-tests-for-bundled-skills.out`:
   formatting, lint, and test gates passed after the target-specific
   unused-code fix.
+- `/tmp/check-fmt-axinite-1-3-5-installation-and-runtime-tests-for-bundled-skills.out`,
+  `/tmp/typecheck-axinite-1-3-5-installation-and-runtime-tests-for-bundled-skills.out`,
+  `/tmp/lint-axinite-1-3-5-installation-and-runtime-tests-for-bundled-skills.out`,
+  and
+  `/tmp/test-axinite-1-3-5-installation-and-runtime-tests-for-bundled-skills.out`:
+  review-feedback formatting, typecheck, lint, and test gates passed.
+  The workspace nextest phase ran `4238` tests with `4238` passed;
+  the GitHub tool test phase ran `5` tests with `5` passed.
+- `/tmp/all-review-feedback-1-3-5-installation-and-runtime-tests-for-bundled-skills.out`:
+  `make all` passed after the review-feedback consolidation.
 
 ## Revision note
 
@@ -1197,3 +1212,10 @@ a future-work observation; added a CodeRabbit-retry tolerance.
 branch hardening: no-conflict rebase onto `origin/main` at
 `8045e754`, markdownlint cleanup, PostgreSQL RustSec lockfile refresh,
 and Windows/libSQL unused-code lint fixes.
+
+2026-06-21: Recorded review-feedback follow-up. Added the missing
+module-level documentation for deterministic bundle install tests,
+documented the public test fixture/archive-helper APIs in the
+developer guide, and consolidated internal ZIP archive construction on
+`src/skills/test_support.rs`, including the external upload integration
+test through the existing `test-helpers` feature.

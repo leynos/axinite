@@ -5,11 +5,11 @@
 //! executable-extension rejection so passive skill bundles cannot grow an
 //! accidental script-install surface.
 
-use std::io::Write;
 use std::sync::{Arc, RwLock};
 
 use ironclaw::channels::web::test_helpers::TestGatewayBuilder;
 use ironclaw::skills::SkillRegistry;
+use ironclaw::skills::test_support::{build_bundle_archive, build_bundle_archive_from_owned};
 #[cfg(target_os = "linux")]
 use ironclaw::tools::NativeTool;
 #[cfg(target_os = "linux")]
@@ -17,7 +17,6 @@ use ironclaw::tools::builtin::SkillReadFileTool;
 use reqwest::multipart::{Form, Part};
 use rstest::rstest;
 use tempfile::TempDir;
-use zip::write::SimpleFileOptions;
 
 const AUTH_TOKEN: &str = "test-skill-upload-token";
 const DEPLOY_DOCS_SKILL_MD: &str = "---\nname: deploy-docs\ndescription: Deploy documentation\nversion: 1.0.0\n---\n# Deploy docs\n";
@@ -55,7 +54,7 @@ async fn multipart_skill_bundle_upload_installs_bundle_files() {
         .multipart(
             Form::new().part(
                 "bundle",
-                Part::bytes(build_bundle_archive(documented_bundle_entries()))
+                Part::bytes(build_bundle_archive(&documented_bundle_entries()))
                     .file_name("deploy-docs.skill")
                     .mime_str("application/octet-stream")
                     .expect("bundle MIME type should parse"),
@@ -142,7 +141,7 @@ async fn multipart_skill_bundle_upload_rejects_non_skill_filename() {
 
     let response = upload_bundle(
         &addr,
-        build_bundle_archive(documented_bundle_entries()),
+        build_bundle_archive(&documented_bundle_entries()),
         "deploy-docs.zip",
     )
     .await;
@@ -180,7 +179,7 @@ async fn multipart_skill_bundle_upload_round_trip_reads_each_entry(
 
     let response = upload_bundle(
         &addr,
-        build_bundle_archive(documented_bundle_entries()),
+        build_bundle_archive(&documented_bundle_entries()),
         "deploy-docs.skill",
     )
     .await;
@@ -259,26 +258,26 @@ fn documented_bundle_entries() -> Vec<(&'static str, &'static [u8])> {
 
 fn build_malformed_archive(kind: MalformedKind) -> Vec<u8> {
     match kind {
-        MalformedKind::ScriptsDir => build_bundle_archive(vec![
+        MalformedKind::ScriptsDir => build_bundle_archive(&[
             ("deploy-docs/SKILL.md", DEPLOY_DOCS_SKILL_MD.as_bytes()),
             ("deploy-docs/scripts/install.sh", b"echo nope"),
         ]),
-        MalformedKind::ExecutableExtensionUnderAssets => build_bundle_archive(vec![
+        MalformedKind::ExecutableExtensionUnderAssets => build_bundle_archive(&[
             ("deploy-docs/SKILL.md", DEPLOY_DOCS_SKILL_MD.as_bytes()),
             ("deploy-docs/assets/install.sh", b"echo nope"),
         ]),
-        MalformedKind::DuplicateCaseFold => build_bundle_archive(vec![
+        MalformedKind::DuplicateCaseFold => build_bundle_archive(&[
             ("deploy-docs/SKILL.md", DEPLOY_DOCS_SKILL_MD.as_bytes()),
             ("deploy-docs/references/Guide.md", b"# A\n"),
             ("deploy-docs/references/guide.md", b"# B\n"),
         ]),
-        MalformedKind::Traversal => build_bundle_archive(vec![
+        MalformedKind::Traversal => build_bundle_archive(&[
             ("deploy-docs/SKILL.md", DEPLOY_DOCS_SKILL_MD.as_bytes()),
             ("deploy-docs/../evil.md", b"bad"),
         ]),
         MalformedKind::OversizedArchive => {
             let large = vec![b'x'; 512 * 1024 + 1];
-            build_bundle_archive_owned(vec![
+            build_bundle_archive_from_owned(vec![
                 (
                     "deploy-docs/SKILL.md".to_string(),
                     DEPLOY_DOCS_SKILL_MD.as_bytes().to_vec(),
@@ -287,40 +286,13 @@ fn build_malformed_archive(kind: MalformedKind) -> Vec<u8> {
             ])
         }
         MalformedKind::MissingSkillMd => {
-            build_bundle_archive(vec![("deploy-docs/references/usage.md", b"# Usage\n")])
+            build_bundle_archive(&[("deploy-docs/references/usage.md", b"# Usage\n")])
         }
-        MalformedKind::MultipleTopLevelPrefixes => build_bundle_archive(vec![
+        MalformedKind::MultipleTopLevelPrefixes => build_bundle_archive(&[
             ("deploy-docs/SKILL.md", DEPLOY_DOCS_SKILL_MD.as_bytes()),
             ("other-skill/references/usage.md", b"# Usage\n"),
         ]),
     }
-}
-
-fn build_bundle_archive(entries: Vec<(&str, &[u8])>) -> Vec<u8> {
-    build_bundle_archive_owned(
-        entries
-            .into_iter()
-            .map(|(path, contents)| (path.to_string(), contents.to_vec()))
-            .collect(),
-    )
-}
-
-fn build_bundle_archive_owned(entries: Vec<(String, Vec<u8>)>) -> Vec<u8> {
-    let mut cursor = std::io::Cursor::new(Vec::new());
-    {
-        let mut archive = zip::ZipWriter::new(&mut cursor);
-        let options = SimpleFileOptions::default();
-        for (path, contents) in entries {
-            archive
-                .start_file(path.as_str(), options)
-                .expect("archive file should start");
-            archive
-                .write_all(&contents)
-                .expect("archive file should write");
-        }
-        archive.finish().expect("archive should finish");
-    }
-    cursor.into_inner()
 }
 
 fn install_dir_entries(path: &std::path::Path) -> Vec<String> {

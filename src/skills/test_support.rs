@@ -1,4 +1,5 @@
-//! Shared test helpers for constructing [`LoadedSkill`] instances.
+//! Shared test helpers for constructing [`LoadedSkill`] instances and skill
+//! bundle archives.
 
 use std::io::Write;
 use std::path::PathBuf;
@@ -17,18 +18,63 @@ pub struct InstalledBundleFixture {
     pub loaded_skill: LoadedSkill,
 }
 
+#[derive(Clone)]
+pub struct BundleArchiveEntry {
+    name: String,
+    data: Vec<u8>,
+    unix_mode: Option<u32>,
+}
+
+impl BundleArchiveEntry {
+    pub fn file(name: impl AsRef<str>, data: &[u8]) -> Self {
+        Self {
+            name: name.as_ref().to_string(),
+            data: data.to_vec(),
+            unix_mode: None,
+        }
+    }
+
+    pub fn file_with_mode(name: impl AsRef<str>, data: &[u8], unix_mode: u32) -> Self {
+        Self {
+            name: name.as_ref().to_string(),
+            data: data.to_vec(),
+            unix_mode: Some(unix_mode),
+        }
+    }
+}
+
 pub fn build_bundle_archive(entries: &[(&str, &[u8])]) -> Vec<u8> {
+    let entries = entries
+        .iter()
+        .map(|(name, data)| BundleArchiveEntry::file(*name, data))
+        .collect::<Vec<_>>();
+    build_bundle_archive_from_entries(&entries)
+}
+
+pub fn build_bundle_archive_from_owned(entries: Vec<(String, Vec<u8>)>) -> Vec<u8> {
+    let entries = entries
+        .into_iter()
+        .map(|(name, data)| BundleArchiveEntry::file(name, &data))
+        .collect::<Vec<_>>();
+    build_bundle_archive_from_entries(&entries)
+}
+
+pub fn build_bundle_archive_from_entries(entries: &[BundleArchiveEntry]) -> Vec<u8> {
     let cursor = std::io::Cursor::new(Vec::new());
     let mut writer = zip::ZipWriter::new(cursor);
-    let options =
-        zip::write::SimpleFileOptions::default().compression_method(zip::CompressionMethod::Stored);
+    let options = zip::write::SimpleFileOptions::default()
+        .compression_method(zip::CompressionMethod::Deflated);
 
-    for (name, contents) in entries {
+    for entry in entries {
+        let mut entry_options = options;
+        if let Some(unix_mode) = entry.unix_mode {
+            entry_options = entry_options.unix_permissions(unix_mode);
+        }
         writer
-            .start_file(*name, options)
+            .start_file(&entry.name, entry_options)
             .expect("test archive should start file");
         writer
-            .write_all(contents)
+            .write_all(&entry.data)
             .expect("test archive should write file contents");
     }
 

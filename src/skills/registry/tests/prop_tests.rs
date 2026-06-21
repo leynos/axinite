@@ -1,13 +1,13 @@
 //! Property tests for skill location and bundle install invariants.
 
 use std::collections::{BTreeMap, BTreeSet};
-use std::io::Write;
 use std::path::Path;
 use std::path::PathBuf;
 
 use proptest::prelude::*;
 
 use crate::skills::registry::{SkillInstallPayload, SkillRegistry};
+use crate::skills::test_support::build_bundle_archive_from_owned;
 use crate::skills::{
     ActivationCriteria, LoadedSkill, LoadedSkillLocation, LoadedSkillParts, SkillManifest,
     SkillPackageKind, SkillSource, SkillTrust,
@@ -53,27 +53,6 @@ fn arb_bundle_path() -> impl Strategy<Value = String> {
 
 fn skill_markdown(name: &str) -> Vec<u8> {
     format!("---\nname: {name}\n---\n\n# {name}\n").into_bytes()
-}
-
-fn build_stored_bundle_archive(entries: &[(String, Vec<u8>)]) -> Vec<u8> {
-    let cursor = std::io::Cursor::new(Vec::new());
-    let mut writer = zip::ZipWriter::new(cursor);
-    let options =
-        zip::write::SimpleFileOptions::default().compression_method(zip::CompressionMethod::Stored);
-
-    for (name, contents) in entries {
-        writer
-            .start_file(name, options)
-            .expect("test archive should start file");
-        writer
-            .write_all(contents)
-            .expect("test archive should write file contents");
-    }
-
-    writer
-        .finish()
-        .expect("test archive should finish")
-        .into_inner()
 }
 
 fn collect_installed_files(root: &Path) -> BTreeMap<PathBuf, Vec<u8>> {
@@ -212,7 +191,7 @@ proptest! {
             let mut entries = Vec::with_capacity(generated_entries.len() + 1);
             entries.push(("deploy-docs/SKILL.md".to_string(), skill_markdown("deploy-docs")));
             entries.extend(generated_entries);
-            let archive = build_stored_bundle_archive(&entries);
+            let archive = build_bundle_archive_from_owned(entries.clone());
 
             let prepared = SkillRegistry::prepare_install_to_disk(
                 registry.install_target_dir(),

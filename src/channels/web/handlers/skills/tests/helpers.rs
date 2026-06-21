@@ -10,6 +10,7 @@ use rstest::fixture;
 use crate::channels::web::handlers::skills::skills_install_handler;
 use crate::channels::web::test_helpers::TestGatewayBuilder;
 use crate::skills::registry::SkillRegistry;
+pub(crate) use crate::skills::test_support::build_bundle_archive;
 
 pub(crate) struct SkillsApiFixture {
     pub(crate) _installed_dir: tempfile::TempDir,
@@ -44,27 +45,6 @@ pub(crate) fn skills_router(state: Arc<crate::channels::web::server::GatewayStat
 
 pub(crate) fn skill_markdown(name: &str) -> String {
     format!("---\nname: {name}\n---\n\n# {name}\n")
-}
-
-pub(crate) fn build_bundle_archive(entries: &[(&str, &[u8])]) -> Vec<u8> {
-    let cursor = std::io::Cursor::new(Vec::new());
-    let mut writer = zip::ZipWriter::new(cursor);
-    let options = zip::write::SimpleFileOptions::default()
-        .compression_method(zip::CompressionMethod::Deflated);
-
-    for (name, contents) in entries {
-        writer
-            .start_file(*name, options)
-            .expect("test archive should start file");
-        writer
-            .write_all(contents)
-            .expect("test archive should write file contents");
-    }
-
-    writer
-        .finish()
-        .expect("test archive should finish")
-        .into_inner()
 }
 
 pub(crate) enum MultipartPart<'a> {

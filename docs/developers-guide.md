@@ -1908,6 +1908,29 @@ directly; adapter tests can wrap the returned registry in
 install-to-read tests on the same path as production without widening the
 runtime API surface.
 
+The helper returns an `InstalledBundleFixture`:
+
+```rust
+pub struct InstalledBundleFixture {
+    pub _user_dir: tempfile::TempDir,
+    pub _installed_dir: tempfile::TempDir,
+    pub registry: SkillRegistry,
+    pub loaded_skill: LoadedSkill,
+}
+```
+
+Use the returned tempdirs to keep installed files alive for the duration of the
+test, `registry` when a tool adapter needs the committed registry state, and
+`loaded_skill` when a domain test needs direct access to the installed
+`LoadedSkill`.
+
+Use `build_bundle_archive(entries: &[(&str, &[u8])]) -> Vec<u8>` when a test
+needs a deterministic in-memory `.skill` archive but does not need a committed
+registry. The helper writes the supplied archive paths and bytes into a ZIP
+bundle using the same shared test archive writer as bundle install fixtures.
+Integration tests can import it through the `test-helpers` feature when they
+need byte-identical archive construction across harness boundaries.
+
 ##### Scoped skill file reads (roadmap 1.3.4)
 
 `src/skills/file_read.rs` owns the domain contract for `skill_read_file`.
