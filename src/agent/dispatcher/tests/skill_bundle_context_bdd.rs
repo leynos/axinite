@@ -176,6 +176,10 @@ fn selected_bundle_skill_exposes_stable_bundle_relative_metadata(
     skill_context_world: SkillContextWorld,
 ) {
     assert!(skill_context_world.rendered_context.is_some());
+    insta::assert_snapshot!(
+        "selected_bundle_skill_context_block",
+        rendered_context(&skill_context_world)
+    );
 }
 
 #[scenario(
@@ -186,4 +190,8 @@ fn activated_bundle_skill_does_not_eagerly_load_ancillary_files(
     skill_context_world: SkillContextWorld,
 ) {
     assert!(skill_context_world.rendered_context.is_some());
+    insta::assert_snapshot!(
+        "activated_bundle_skill_context_block",
+        rendered_context(&skill_context_world)
+    );
 }

@@ -34,7 +34,6 @@ pub struct InstalledBundleFixture {
 /// [`BundleArchiveEntry::file_with_mode`] when a test needs to exercise ZIP
 /// permission metadata.  Archive construction helpers consume these entries to
 /// keep bundle layout setup close to the regression that uses it.
-#[derive(Clone)]
 pub struct BundleArchiveEntry {
     name: String,
     data: Vec<u8>,
