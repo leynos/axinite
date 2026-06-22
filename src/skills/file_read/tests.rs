@@ -79,8 +79,8 @@ async fn test_read_skill_file_after_install_returns_each_text_entry(
     #[case] path: &str,
     #[case] mime_type: &str,
     #[case] content: &str,
-) {
-    let fixture = installed_bundle_fixture(&installed_read_entries()).await;
+) -> Result<(), Box<dyn std::error::Error>> {
+    let fixture = installed_bundle_fixture(&installed_read_entries()).await?;
 
     let response = read_skill_file(&fixture.loaded_skill, path).await;
 
@@ -93,13 +93,15 @@ async fn test_read_skill_file_after_install_returns_each_text_entry(
             content: content.to_string(),
         })
     );
+    Ok(())
 }
 
 #[rstest]
 #[tokio::test]
 #[cfg(target_os = "linux")]
-async fn test_read_skill_file_after_install_returns_non_inline_metadata_for_binary() {
-    let fixture = installed_bundle_fixture(&installed_read_entries()).await;
+async fn test_read_skill_file_after_install_returns_non_inline_metadata_for_binary()
+-> Result<(), Box<dyn std::error::Error>> {
+    let fixture = installed_bundle_fixture(&installed_read_entries()).await?;
 
     let response = read_skill_file(&fixture.loaded_skill, "assets/logo.png").await;
 
@@ -115,17 +117,20 @@ async fn test_read_skill_file_after_install_returns_non_inline_metadata_for_bina
             fetch_hint: NON_INLINE_FETCH_HINT.to_string(),
         }
     );
+    Ok(())
 }
 
 #[rstest]
 #[tokio::test]
 #[cfg(not(target_os = "linux"))]
-async fn test_read_skill_file_after_install_returns_io_error_on_non_linux() {
-    let fixture = installed_bundle_fixture(&installed_read_entries()).await;
+async fn test_read_skill_file_after_install_returns_io_error_on_non_linux()
+-> Result<(), Box<dyn std::error::Error>> {
+    let fixture = installed_bundle_fixture(&installed_read_entries()).await?;
 
     let response = read_skill_file(&fixture.loaded_skill, "references/usage.md").await;
 
     assert_error_code(response, SkillReadFileErrorCode::IoError);
+    Ok(())
 }
 
 #[rstest]

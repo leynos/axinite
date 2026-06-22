@@ -10,14 +10,30 @@ use crate::skills::{
     SkillPackageKind, SkillSource, SkillTrust,
 };
 
+/// Installed bundle state returned by [`installed_bundle_fixture`].
+///
+/// The fixture owns the temporary user and installed-skill directories so tests
+/// can read files through the same registry and runtime paths used by real
+/// installed bundles.  This mirrors the repository-level test support pattern
+/// of returning owned setup state rather than hiding lifetimes in globals.
 pub struct InstalledBundleFixture {
+    /// Temporary user skill directory used as the registry's trusted source.
     pub _user_dir: tempfile::TempDir,
+    /// Temporary installed-skill directory that receives the staged bundle.
     pub _installed_dir: tempfile::TempDir,
+    /// Registry containing the committed bundle install.
     #[cfg(target_os = "linux")]
     pub registry: SkillRegistry,
+    /// Loaded skill discovered after the bundle install is committed.
     pub loaded_skill: LoadedSkill,
 }
 
+/// File entry used by bundle archive builders in tests.
+///
+/// Use [`BundleArchiveEntry::file`] for ordinary bundle files and
+/// [`BundleArchiveEntry::file_with_mode`] when a test needs to exercise ZIP
+/// permission metadata.  Archive construction helpers consume these entries to
+/// keep bundle layout setup close to the regression that uses it.
 #[derive(Clone)]
 pub struct BundleArchiveEntry {
     name: String,
@@ -26,6 +42,11 @@ pub struct BundleArchiveEntry {
 }
 
 impl BundleArchiveEntry {
+    /// Build an archive entry with default ZIP file permissions.
+    ///
+    /// `name` is the bundle-relative path written into the archive and `data`
+    /// is copied into the entry body.  Use this for the common
+    /// `SKILL.md`, `references/`, and `assets/` fixtures.
     pub fn file(name: impl AsRef<str>, data: &[u8]) -> Self {
         Self {
             name: name.as_ref().to_string(),
@@ -34,6 +55,11 @@ impl BundleArchiveEntry {
         }
     }
 
+    /// Build an archive entry with explicit Unix permission bits.
+    ///
+    /// `name` is the bundle-relative path, `data` is copied into the entry
+    /// body, and `unix_mode` is written as ZIP Unix metadata.  This supports
+    /// adapter-boundary tests that need malformed or unusual archive metadata.
     pub fn file_with_mode(name: impl AsRef<str>, data: &[u8], unix_mode: u32) -> Self {
         Self {
             name: name.as_ref().to_string(),
@@ -43,6 +69,12 @@ impl BundleArchiveEntry {
     }
 }
 
+/// Build a `.skill` archive from borrowed test entries.
+///
+/// Each tuple contains the bundle-relative file name and byte content.  This
+/// convenience wrapper is used by deterministic install tests; property tests
+/// that already own generated strings should prefer
+/// [`build_bundle_archive_from_owned`] to avoid cloning the generated data.
 pub fn build_bundle_archive(entries: &[(&str, &[u8])]) -> Vec<u8> {
     let entries = entries
         .iter()
@@ -51,6 +83,11 @@ pub fn build_bundle_archive(entries: &[(&str, &[u8])]) -> Vec<u8> {
     build_bundle_archive_from_entries(&entries)
 }
 
+/// Build a `.skill` archive from owned generated entries.
+///
+/// Each tuple contains the bundle-relative file name and byte content.  This
+/// helper lets property tests transfer generated cases directly into archive
+/// construction without retaining an extra copy.
 pub fn build_bundle_archive_from_owned(entries: Vec<(String, Vec<u8>)>) -> Vec<u8> {
     let entries = entries
         .into_iter()
@@ -59,6 +96,12 @@ pub fn build_bundle_archive_from_owned(entries: Vec<(String, Vec<u8>)>) -> Vec<u
     build_bundle_archive_from_entries(&entries)
 }
 
+/// Build a `.skill` archive from fully described archive entries.
+///
+/// Use this lower-level helper when a test needs entry metadata such as Unix
+/// permissions.  The archive bytes can be passed directly to
+/// [`SkillInstallPayload::ArchiveBytes`] or uploaded through channel adapter
+/// tests.
 pub fn build_bundle_archive_from_entries(entries: &[BundleArchiveEntry]) -> Vec<u8> {
     let cursor = std::io::Cursor::new(Vec::new());
     let mut writer = zip::ZipWriter::new(cursor);
@@ -84,9 +127,18 @@ pub fn build_bundle_archive_from_entries(entries: &[BundleArchiveEntry]) -> Vec<
         .into_inner()
 }
 
-pub async fn installed_bundle_fixture(entries: &[(&str, &[u8])]) -> InstalledBundleFixture {
-    let user_dir = tempfile::tempdir().expect("user tempdir should be created for test");
-    let installed_dir = tempfile::tempdir().expect("installed tempdir should be created for test");
+/// Install a bundle archive into an isolated temporary registry.
+///
+/// `entries` are bundle-relative file paths and byte contents passed through
+/// [`build_bundle_archive`].  The returned fixture owns the temporary
+/// directories, registry, and loaded skill so tests can exercise the same
+/// install-to-read path used by runtime skill file access.  Setup failures are
+/// returned to the calling test instead of panicking inside shared test support.
+pub async fn installed_bundle_fixture(
+    entries: &[(&str, &[u8])],
+) -> Result<InstalledBundleFixture, Box<dyn std::error::Error>> {
+    let user_dir = tempfile::tempdir()?;
+    let installed_dir = tempfile::tempdir()?;
     let mut registry = SkillRegistry::new(user_dir.path().to_path_buf())
         .with_installed_dir(installed_dir.path().to_path_buf());
     let archive = build_bundle_archive(entries);
@@ -95,24 +147,26 @@ pub async fn installed_bundle_fixture(entries: &[(&str, &[u8])]) -> InstalledBun
         registry.install_target_dir(),
         SkillInstallPayload::ArchiveBytes(archive),
     )
-    .await
-    .expect("bundle install fixture should prepare");
+    .await?;
     let name = prepared.name().to_string();
-    registry
-        .commit_install(prepared)
-        .expect("bundle install fixture should commit");
+    registry.commit_install(prepared)?;
     let loaded_skill = registry
         .find_by_name(&name)
-        .expect("installed fixture skill should be loaded")
+        .ok_or_else(|| {
+            std::io::Error::new(
+                std::io::ErrorKind::NotFound,
+                format!("installed fixture skill `{name}` should be loaded"),
+            )
+        })?
         .clone();
 
-    InstalledBundleFixture {
+    Ok(InstalledBundleFixture {
         _user_dir: user_dir,
         _installed_dir: installed_dir,
         #[cfg(target_os = "linux")]
         registry,
         loaded_skill,
-    }
+    })
 }
 
 pub struct TestSkillBuilder {

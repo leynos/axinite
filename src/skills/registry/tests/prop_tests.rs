@@ -191,7 +191,19 @@ proptest! {
             let mut entries = Vec::with_capacity(generated_entries.len() + 1);
             entries.push(("deploy-docs/SKILL.md".to_string(), skill_markdown("deploy-docs")));
             entries.extend(generated_entries);
-            let archive = build_bundle_archive_from_owned(entries.clone());
+            let expected = entries
+                .iter()
+                .map(|(path, contents)| {
+                    (
+                        PathBuf::from(
+                            path.strip_prefix("deploy-docs/")
+                                .expect("generated path should be bundle rooted"),
+                        ),
+                        contents.clone(),
+                    )
+                })
+                .collect::<BTreeMap<_, _>>();
+            let archive = build_bundle_archive_from_owned(entries);
 
             let prepared = SkillRegistry::prepare_install_to_disk(
                 registry.install_target_dir(),
@@ -202,19 +214,6 @@ proptest! {
             registry
                 .commit_install(prepared)
                 .expect("generated valid bundle should commit");
-
-            let expected = entries
-                .into_iter()
-                .map(|(path, contents)| {
-                    (
-                        PathBuf::from(
-                            path.strip_prefix("deploy-docs/")
-                                .expect("generated path should be bundle rooted"),
-                        ),
-                        contents,
-                    )
-                })
-                .collect::<BTreeMap<_, _>>();
             let installed_root = installed_dir.path().join("deploy-docs");
             prop_assert_eq!(collect_installed_files(&installed_root), expected);
 

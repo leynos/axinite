@@ -339,8 +339,8 @@ async fn test_skill_read_file_tool_after_install_returns_each_documented_entry(
     #[case] path: &str,
     #[case] mime_type: &str,
     #[case] content: &str,
-) {
-    let fixture = installed_bundle_fixture(&documented_bundle_entries()).await;
+) -> Result<(), Box<dyn std::error::Error>> {
+    let fixture = installed_bundle_fixture(&documented_bundle_entries()).await?;
     let _user_dir = fixture._user_dir;
     let _installed_dir = fixture._installed_dir;
     let registry = Arc::new(std::sync::RwLock::new(fixture.registry));
@@ -362,13 +362,15 @@ async fn test_skill_read_file_tool_after_install_returns_each_documented_entry(
     assert_eq!(output.result["mime_type"], mime_type);
     assert_eq!(output.result["content"], content);
     assert!(output.result.get("error").is_none());
+    Ok(())
 }
 
 #[rstest]
 #[tokio::test]
 #[cfg(target_os = "linux")]
-async fn test_skill_read_file_tool_after_install_returns_non_inline_for_png() {
-    let fixture = installed_bundle_fixture(&documented_bundle_entries()).await;
+async fn test_skill_read_file_tool_after_install_returns_non_inline_for_png()
+-> Result<(), Box<dyn std::error::Error>> {
+    let fixture = installed_bundle_fixture(&documented_bundle_entries()).await?;
     let _user_dir = fixture._user_dir;
     let _installed_dir = fixture._installed_dir;
     let registry = Arc::new(std::sync::RwLock::new(fixture.registry));
@@ -395,6 +397,7 @@ async fn test_skill_read_file_tool_after_install_returns_non_inline_for_png() {
             .as_str()
             .is_some_and(|hint| hint.contains("passive asset"))
     );
+    Ok(())
 }
 
 #[rstest]
