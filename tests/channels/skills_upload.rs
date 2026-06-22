@@ -9,7 +9,10 @@ use std::sync::{Arc, RwLock};
 
 use ironclaw::channels::web::test_helpers::TestGatewayBuilder;
 use ironclaw::skills::SkillRegistry;
-use ironclaw::skills::test_support::{build_bundle_archive, build_bundle_archive_from_owned};
+use ironclaw::skills::test_support::{
+    build_bundle_archive as try_build_bundle_archive,
+    build_bundle_archive_from_owned as try_build_bundle_archive_from_owned,
+};
 #[cfg(target_os = "linux")]
 use ironclaw::tools::NativeTool;
 #[cfg(target_os = "linux")]
@@ -31,6 +34,14 @@ enum MalformedKind {
     OversizedArchive,
     MissingSkillMd,
     MultipleTopLevelPrefixes,
+}
+
+fn build_bundle_archive(entries: &[(&str, &[u8])]) -> Vec<u8> {
+    try_build_bundle_archive(entries).expect("test bundle archive should build")
+}
+
+fn build_bundle_archive_from_owned(entries: Vec<(String, Vec<u8>)>) -> Vec<u8> {
+    try_build_bundle_archive_from_owned(entries).expect("test bundle archive should build")
 }
 
 #[tokio::test]

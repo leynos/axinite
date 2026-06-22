@@ -203,7 +203,8 @@ proptest! {
                     )
                 })
                 .collect::<BTreeMap<_, _>>();
-            let archive = build_bundle_archive_from_owned(entries);
+            let archive = build_bundle_archive_from_owned(entries)
+                .expect("generated test bundle archive should build");
 
             let prepared = SkillRegistry::prepare_install_to_disk(
                 registry.install_target_dir(),

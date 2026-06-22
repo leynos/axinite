@@ -13,9 +13,11 @@ use super::{
     looks_like_skill_archive, validate_skill_archive,
 };
 use crate::skills::MAX_PROMPT_FILE_SIZE;
-use crate::skills::test_support::{
-    BundleArchiveEntry, build_bundle_archive_from_entries as build_bundle_archive,
-};
+use crate::skills::test_support::{BundleArchiveEntry, build_bundle_archive_from_entries};
+
+fn build_bundle_archive(entries: &[BundleArchiveEntry]) -> Vec<u8> {
+    build_bundle_archive_from_entries(entries).expect("test bundle archive should build")
+}
 
 #[test]
 fn looks_like_zip_signatures_detect_skill_archives() {

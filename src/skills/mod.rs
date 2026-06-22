@@ -26,6 +26,7 @@ pub(crate) mod install_source;
 pub mod parser;
 pub mod registry;
 pub mod selector;
+/// Shared skill fixtures and archive builders for unit and integration tests.
 #[cfg(any(test, feature = "test-helpers"))]
 pub mod test_support;
 #[cfg(test)]

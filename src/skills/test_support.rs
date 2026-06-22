@@ -75,7 +75,7 @@ impl BundleArchiveEntry {
 /// convenience wrapper is used by deterministic install tests; property tests
 /// that already own generated strings should prefer
 /// [`build_bundle_archive_from_owned`] to avoid cloning the generated data.
-pub fn build_bundle_archive(entries: &[(&str, &[u8])]) -> Vec<u8> {
+pub fn build_bundle_archive(entries: &[(&str, &[u8])]) -> Result<Vec<u8>, zip::result::ZipError> {
     let entries = entries
         .iter()
         .map(|(name, data)| BundleArchiveEntry::file(*name, data))
@@ -88,7 +88,9 @@ pub fn build_bundle_archive(entries: &[(&str, &[u8])]) -> Vec<u8> {
 /// Each tuple contains the bundle-relative file name and byte content.  This
 /// helper lets property tests transfer generated cases directly into archive
 /// construction without retaining an extra copy.
-pub fn build_bundle_archive_from_owned(entries: Vec<(String, Vec<u8>)>) -> Vec<u8> {
+pub fn build_bundle_archive_from_owned(
+    entries: Vec<(String, Vec<u8>)>,
+) -> Result<Vec<u8>, zip::result::ZipError> {
     let entries = entries
         .into_iter()
         .map(|(name, data)| BundleArchiveEntry::file(name, &data))
@@ -102,7 +104,9 @@ pub fn build_bundle_archive_from_owned(entries: Vec<(String, Vec<u8>)>) -> Vec<u
 /// permissions.  The archive bytes can be passed directly to
 /// [`SkillInstallPayload::ArchiveBytes`] or uploaded through channel adapter
 /// tests.
-pub fn build_bundle_archive_from_entries(entries: &[BundleArchiveEntry]) -> Vec<u8> {
+pub fn build_bundle_archive_from_entries(
+    entries: &[BundleArchiveEntry],
+) -> Result<Vec<u8>, zip::result::ZipError> {
     let cursor = std::io::Cursor::new(Vec::new());
     let mut writer = zip::ZipWriter::new(cursor);
     let options = zip::write::SimpleFileOptions::default()
@@ -113,18 +117,11 @@ pub fn build_bundle_archive_from_entries(entries: &[BundleArchiveEntry]) -> Vec<
         if let Some(unix_mode) = entry.unix_mode {
             entry_options = entry_options.unix_permissions(unix_mode);
         }
-        writer
-            .start_file(&entry.name, entry_options)
-            .expect("test archive should start file");
-        writer
-            .write_all(&entry.data)
-            .expect("test archive should write file contents");
+        writer.start_file(&entry.name, entry_options)?;
+        writer.write_all(&entry.data)?;
     }
 
-    writer
-        .finish()
-        .expect("test archive should finish")
-        .into_inner()
+    Ok(writer.finish()?.into_inner())
 }
 
 /// Install a bundle archive into an isolated temporary registry.
@@ -141,7 +138,7 @@ pub async fn installed_bundle_fixture(
     let installed_dir = tempfile::tempdir()?;
     let mut registry = SkillRegistry::new(user_dir.path().to_path_buf())
         .with_installed_dir(installed_dir.path().to_path_buf());
-    let archive = build_bundle_archive(entries);
+    let archive = build_bundle_archive(entries)?;
 
     let prepared = SkillRegistry::prepare_install_to_disk(
         registry.install_target_dir(),

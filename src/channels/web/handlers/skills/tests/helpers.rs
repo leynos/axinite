@@ -10,7 +10,6 @@ use rstest::fixture;
 use crate::channels::web::handlers::skills::skills_install_handler;
 use crate::channels::web::test_helpers::TestGatewayBuilder;
 use crate::skills::registry::SkillRegistry;
-pub(crate) use crate::skills::test_support::build_bundle_archive;
 
 pub(crate) struct SkillsApiFixture {
     pub(crate) _installed_dir: tempfile::TempDir,
@@ -45,6 +44,11 @@ pub(crate) fn skills_router(state: Arc<crate::channels::web::server::GatewayStat
 
 pub(crate) fn skill_markdown(name: &str) -> String {
     format!("---\nname: {name}\n---\n\n# {name}\n")
+}
+
+pub(crate) fn build_bundle_archive(entries: &[(&str, &[u8])]) -> Vec<u8> {
+    crate::skills::test_support::build_bundle_archive(entries)
+        .expect("test bundle archive should build")
 }
 
 pub(crate) enum MultipartPart<'a> {

@@ -15,7 +15,6 @@ use std::path::Path;
 use rstest::fixture;
 
 use crate::skills::registry::SkillRegistry;
-pub(super) use crate::skills::test_support::build_bundle_archive;
 
 pub(super) struct BundleInstallFixture {
     pub(super) user_dir: tempfile::TempDir,
@@ -30,6 +29,11 @@ pub(super) struct FreshRegistryFixture {
 
 pub(super) fn skill_markdown(name: &str) -> String {
     format!("---\nname: {name}\n---\n\n# {name}\n")
+}
+
+pub(super) fn build_bundle_archive(entries: &[(&str, &[u8])]) -> Vec<u8> {
+    crate::skills::test_support::build_bundle_archive(entries)
+        .expect("test bundle archive should build")
 }
 
 #[fixture]
