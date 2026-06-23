@@ -27,12 +27,29 @@ GITHUB_TOOL_WASM_TARGET := wasm32-wasip2
 # no longer pulls rustls-webpki <0.103.13.
 # RUSTSEC-2026-0149: wasmtime-wasi WASI path_open(TRUNCATE) bypass. Temporary
 # ignore until wasmtime >=44.0.2 / >=45.0.0 is published on crates.io.
+# RUSTSEC-2026-0185: quinn-proto 0.11.14 remote memory exhaustion in
+# out-of-order stream reassembly. Track removal in
+# https://github.com/leynos/axinite/issues/210.
+# RUSTSEC-2025-0141: bincode 1.3.3 is unmaintained via libsql. Track removal
+# in https://github.com/leynos/axinite/issues/211.
+# RUSTSEC-2024-0370: proc-macro-error 1.0.4 is unmaintained via
+# rstest-bdd-macros. Track removal in
+# https://github.com/leynos/axinite/issues/212.
+# RUSTSEC-2025-0134: rustls-pemfile 2.2.0 is unmaintained via the libsql TLS
+# chain. Track removal in https://github.com/leynos/axinite/issues/213.
+# kuchikikiki 0.9.2 is yanked via readabilityrs. cargo-audit exposes no
+# advisory ID to ignore for this warning; track removal in
+# https://github.com/leynos/axinite/issues/214.
 AUDIT_FLAGS ?= \
 	--ignore RUSTSEC-2026-0049 \
 	--ignore RUSTSEC-2026-0098 \
 	--ignore RUSTSEC-2026-0099 \
 	--ignore RUSTSEC-2026-0104 \
-	--ignore RUSTSEC-2026-0149
+	--ignore RUSTSEC-2026-0149 \
+	--ignore RUSTSEC-2026-0185 \
+	--ignore RUSTSEC-2025-0141 \
+	--ignore RUSTSEC-2024-0370 \
+	--ignore RUSTSEC-2025-0134
 
 .PHONY: all install install-with-overrides sync-local-wasm-overrides build-github-tool-wasm check-fmt typecheck lint markdownlint audit rust-audit test test-cargo test-matrix test-matrix-cargo clean
 
