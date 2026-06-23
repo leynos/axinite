@@ -118,7 +118,10 @@ fn selected_for_agent_turn(skill_context_world: &mut SkillContextWorld) {
 
 #[then("the active skill context names the skill identifier")]
 fn context_names_skill_identifier(skill_context_world: &SkillContextWorld) {
-    let rendered = rendered_context(skill_context_world);
+    let rendered = match skill_context_world.rendered_context.as_deref() {
+        Some(rendered) => rendered,
+        None => panic!("When step should render active skill context"),
+    };
     assert!(rendered.contains("skill=\"deploy-docs\""));
     assert!(rendered.contains("root=\".\""));
     assert!(rendered.contains("package=\"bundle\""));
@@ -126,13 +129,19 @@ fn context_names_skill_identifier(skill_context_world: &SkillContextWorld) {
 
 #[then("the active skill context names SKILL.md as the entrypoint")]
 fn context_names_entrypoint(skill_context_world: &SkillContextWorld) {
-    let rendered = rendered_context(skill_context_world);
+    let rendered = match skill_context_world.rendered_context.as_deref() {
+        Some(rendered) => rendered,
+        None => panic!("When step should render active skill context"),
+    };
     assert!(rendered.contains("entry=\"SKILL.md\""));
 }
 
 #[then("the active skill context does not expose the filesystem root")]
 fn context_hides_filesystem_root(skill_context_world: &SkillContextWorld) {
-    let rendered = rendered_context(skill_context_world);
+    let rendered = match skill_context_world.rendered_context.as_deref() {
+        Some(rendered) => rendered,
+        None => panic!("When step should render active skill context"),
+    };
     let filesystem_root = skill_context_world
         .filesystem_root
         .as_ref()
@@ -145,27 +154,29 @@ fn context_hides_filesystem_root(skill_context_world: &SkillContextWorld) {
 
 #[then("only SKILL.md content is injected into the active skill context")]
 fn only_skill_md_content_is_injected(skill_context_world: &SkillContextWorld) {
-    let rendered = rendered_context(skill_context_world);
+    let rendered = match skill_context_world.rendered_context.as_deref() {
+        Some(rendered) => rendered,
+        None => panic!("When step should render active skill context"),
+    };
     assert!(rendered.contains(PROMPT_MARKER));
 }
 
 #[then("the references file content is absent from the rendered context block")]
 fn references_content_is_absent(skill_context_world: &SkillContextWorld) {
-    let rendered = rendered_context(skill_context_world);
+    let rendered = match skill_context_world.rendered_context.as_deref() {
+        Some(rendered) => rendered,
+        None => panic!("When step should render active skill context"),
+    };
     assert!(!rendered.contains(REFERENCES_MARKER));
 }
 
 #[then("the assets file content is absent from the rendered context block")]
 fn assets_content_is_absent(skill_context_world: &SkillContextWorld) {
-    let rendered = rendered_context(skill_context_world);
+    let rendered = match skill_context_world.rendered_context.as_deref() {
+        Some(rendered) => rendered,
+        None => panic!("When step should render active skill context"),
+    };
     assert!(!rendered.contains(ASSETS_MARKER));
-}
-
-fn rendered_context(skill_context_world: &SkillContextWorld) -> &str {
-    skill_context_world
-        .rendered_context
-        .as_deref()
-        .expect("When step should render active skill context")
 }
 
 #[scenario(
@@ -176,10 +187,11 @@ fn selected_bundle_skill_exposes_stable_bundle_relative_metadata(
     skill_context_world: SkillContextWorld,
 ) {
     assert!(skill_context_world.rendered_context.is_some());
-    insta::assert_snapshot!(
-        "selected_bundle_skill_context_block",
-        rendered_context(&skill_context_world)
-    );
+    let rendered = match skill_context_world.rendered_context.as_deref() {
+        Some(rendered) => rendered,
+        None => panic!("When step should render active skill context"),
+    };
+    insta::assert_snapshot!("selected_bundle_skill_context_block", rendered);
 }
 
 #[scenario(
@@ -190,8 +202,9 @@ fn activated_bundle_skill_does_not_eagerly_load_ancillary_files(
     skill_context_world: SkillContextWorld,
 ) {
     assert!(skill_context_world.rendered_context.is_some());
-    insta::assert_snapshot!(
-        "activated_bundle_skill_context_block",
-        rendered_context(&skill_context_world)
-    );
+    let rendered = match skill_context_world.rendered_context.as_deref() {
+        Some(rendered) => rendered,
+        None => panic!("When step should render active skill context"),
+    };
+    insta::assert_snapshot!("activated_bundle_skill_context_block", rendered);
 }
