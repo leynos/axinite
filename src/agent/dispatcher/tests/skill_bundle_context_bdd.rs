@@ -179,6 +179,13 @@ fn assets_content_is_absent(skill_context_world: &SkillContextWorld) {
     assert!(!rendered.contains(ASSETS_MARKER));
 }
 
+fn assert_rendered_snapshot(skill_context_world: SkillContextWorld, snapshot_name: &str) {
+    let rendered = skill_context_world
+        .rendered_context
+        .expect("When step should render active skill context");
+    insta::assert_snapshot!(snapshot_name, rendered);
+}
+
 #[scenario(
     path = "src/agent/dispatcher/tests/features/active_skill_context.feature",
     name = "Selected bundle skill exposes stable bundle-relative metadata"
@@ -186,12 +193,7 @@ fn assets_content_is_absent(skill_context_world: &SkillContextWorld) {
 fn selected_bundle_skill_exposes_stable_bundle_relative_metadata(
     skill_context_world: SkillContextWorld,
 ) {
-    assert!(skill_context_world.rendered_context.is_some());
-    let rendered = match skill_context_world.rendered_context.as_deref() {
-        Some(rendered) => rendered,
-        None => panic!("When step should render active skill context"),
-    };
-    insta::assert_snapshot!("selected_bundle_skill_context_block", rendered);
+    assert_rendered_snapshot(skill_context_world, "selected_bundle_skill_context_block");
 }
 
 #[scenario(
@@ -201,10 +203,5 @@ fn selected_bundle_skill_exposes_stable_bundle_relative_metadata(
 fn activated_bundle_skill_does_not_eagerly_load_ancillary_files(
     skill_context_world: SkillContextWorld,
 ) {
-    assert!(skill_context_world.rendered_context.is_some());
-    let rendered = match skill_context_world.rendered_context.as_deref() {
-        Some(rendered) => rendered,
-        None => panic!("When step should render active skill context"),
-    };
-    insta::assert_snapshot!("activated_bundle_skill_context_block", rendered);
+    assert_rendered_snapshot(skill_context_world, "activated_bundle_skill_context_block");
 }
