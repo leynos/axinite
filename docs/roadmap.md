@@ -185,12 +185,17 @@ packaging.
   - Success: the model can read bundle-relative files without raw filesystem
     access, and oversized or disallowed files fail through a skill-scoped error
     path.
-- [ ] 1.3.5. Add installation and runtime tests for bundled skills. Requires
+- [x] 1.3.5. Add installation and runtime tests for bundled skills. Requires
       1.3.2, 1.3.3, and 1.3.4.
   - See [RFC 0003 §Goals](./rfcs/0003-skill-bundle-installation.md#goals) and
     [RFC 0003 §Rollout Plan](./rfcs/0003-skill-bundle-installation.md#rollout-plan).
   - Success: tests cover valid bundles, malformed bundles, and lazy bundled-file
     reads, and prove that installation no longer drops ancillary files.
+  - Status note: implemented in PR
+    [#208](https://github.com/leynos/axinite/pull/208). The rebased branch also
+    records the follow-up hardening required by current gates: markdownlint
+    cleanup, PostgreSQL RustSec lockfile refresh for `make audit`, and
+    Windows/libSQL clippy gating for Linux-only bundled-skill helpers.
 
 ## 2. Introduce controlled execution surfaces
 

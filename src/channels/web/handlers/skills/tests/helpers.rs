@@ -47,24 +47,8 @@ pub(crate) fn skill_markdown(name: &str) -> String {
 }
 
 pub(crate) fn build_bundle_archive(entries: &[(&str, &[u8])]) -> Vec<u8> {
-    let cursor = std::io::Cursor::new(Vec::new());
-    let mut writer = zip::ZipWriter::new(cursor);
-    let options = zip::write::SimpleFileOptions::default()
-        .compression_method(zip::CompressionMethod::Deflated);
-
-    for (name, contents) in entries {
-        writer
-            .start_file(*name, options)
-            .expect("test archive should start file");
-        writer
-            .write_all(contents)
-            .expect("test archive should write file contents");
-    }
-
-    writer
-        .finish()
-        .expect("test archive should finish")
-        .into_inner()
+    crate::skills::test_support::build_bundle_archive(entries)
+        .expect("test bundle archive should build")
 }
 
 pub(crate) enum MultipartPart<'a> {

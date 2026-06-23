@@ -240,6 +240,10 @@ test-helpers = ["dep:tempfile"]
 docker = ["dep:bollard"]
 
 [[test]]
+name = "channels"
+required-features = ["test-helpers"]
+
+[[test]]
 name = "e2e_traces"
 required-features = ["test-helpers"]
 

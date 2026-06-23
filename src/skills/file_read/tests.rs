@@ -8,7 +8,7 @@ use rstest::{fixture, rstest};
 use tempfile::TempDir;
 
 use super::*;
-use crate::skills::test_support::TestSkillBuilder;
+use crate::skills::test_support::{TestSkillBuilder, installed_bundle_fixture};
 use crate::skills::{LoadedSkillLocation, SkillPackageKind};
 
 struct SkillReadFixture {
@@ -46,6 +46,91 @@ fn skill_read_fixture() -> SkillReadFixture {
         .build();
 
     SkillReadFixture { _dir: dir, skill }
+}
+
+fn installed_read_entries() -> Vec<(&'static str, &'static [u8])> {
+    vec![
+        (
+            "deploy-docs/SKILL.md",
+            b"---\nname: deploy-docs\n---\n\n# deploy-docs\n",
+        ),
+        ("deploy-docs/references/usage.md", b"# Usage\n"),
+        ("deploy-docs/references/nested/api.md", b"# API\n"),
+        ("deploy-docs/assets/note.txt", b"asset notes\n"),
+        (
+            "deploy-docs/assets/logo.png",
+            &[0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A],
+        ),
+    ]
+}
+
+#[rstest]
+#[case::entrypoint(
+    "SKILL.md",
+    "text/markdown",
+    "---\nname: deploy-docs\n---\n\n# deploy-docs\n"
+)]
+#[case::reference("references/usage.md", "text/markdown", "# Usage\n")]
+#[case::nested_reference("references/nested/api.md", "text/markdown", "# API\n")]
+#[case::text_asset("assets/note.txt", "text/plain", "asset notes\n")]
+#[tokio::test]
+#[cfg(target_os = "linux")]
+async fn test_read_skill_file_after_install_returns_each_text_entry(
+    #[case] path: &str,
+    #[case] mime_type: &str,
+    #[case] content: &str,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let fixture = installed_bundle_fixture(&installed_read_entries()).await?;
+
+    let response = read_skill_file(&fixture.loaded_skill, path).await;
+
+    assert_eq!(
+        response,
+        SkillReadFileResponse::Success(SkillReadFileSuccess {
+            skill: "deploy-docs".to_string(),
+            path: path.to_string(),
+            mime_type: mime_type.to_string(),
+            content: content.to_string(),
+        })
+    );
+    Ok(())
+}
+
+#[rstest]
+#[tokio::test]
+#[cfg(target_os = "linux")]
+async fn test_read_skill_file_after_install_returns_non_inline_metadata_for_binary()
+-> Result<(), Box<dyn std::error::Error>> {
+    let fixture = installed_bundle_fixture(&installed_read_entries()).await?;
+
+    let response = read_skill_file(&fixture.loaded_skill, "assets/logo.png").await;
+
+    let SkillReadFileResponse::Error(response) = response else {
+        panic!("binary asset should return a typed error payload");
+    };
+    assert_eq!(response.error.code, SkillReadFileErrorCode::NonInlineAsset);
+    assert_eq!(
+        response.error.metadata.expect("metadata should be present"),
+        SkillReadFileMetadata {
+            size: 8,
+            mime_type: "image/png".to_string(),
+            fetch_hint: NON_INLINE_FETCH_HINT.to_string(),
+        }
+    );
+    Ok(())
+}
+
+#[rstest]
+#[tokio::test]
+#[cfg(not(target_os = "linux"))]
+async fn test_read_skill_file_after_install_returns_io_error_on_non_linux()
+-> Result<(), Box<dyn std::error::Error>> {
+    let fixture = installed_bundle_fixture(&installed_read_entries()).await?;
+
+    let response = read_skill_file(&fixture.loaded_skill, "references/usage.md").await;
+
+    assert_error_code(response, SkillReadFileErrorCode::IoError);
+    Ok(())
 }
 
 #[rstest]

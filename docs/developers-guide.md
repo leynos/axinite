@@ -429,7 +429,6 @@ For tests, prefer the helpers in `src/testing/test_utils.rs` or
 `Config::for_testing(...)` instead of mutating `std::env`. That keeps
 tests independent of host machine secrets, keychains, and shell state.
 
-
 ### Monotonic clock seam for duration measurement
 
 When a component must measure elapsed time (rather than compare against a
@@ -1879,8 +1878,11 @@ install commit).
 
 ##### TestSkillBuilder and test_support module
 
-`src/skills/test_support.rs` (compiled only under `#[cfg(test)]`) provides a
-fluent `TestSkillBuilder` to reduce boilerplate in unit tests that construct
+`src/skills/test_support.rs` is compiled under
+`#[cfg(any(test, feature = "test-helpers"))]`. It is available to unit tests
+through `#[cfg(test)]` and is publicly exposed to integration tests when the
+`test-helpers` feature is enabled. The module provides a fluent
+`TestSkillBuilder` to reduce boilerplate in unit tests that construct
 `LoadedSkill` instances. Use it whenever a test varies only a small number of
 fields:
 
@@ -1897,6 +1899,73 @@ The builder defaults: version `1.0.0`, trust `Trusted`, source `/tmp`,
 `max_context_tokens` `1000`, prompt `"Test prompt"`, hash `sha256:000`. A
 `location` override is accepted via `.location(LoadedSkillLocation::new(...))`;
 if omitted, the builder derives `SingleFile` from `/tmp/SKILL.md`.
+
+Use `installed_bundle_fixture(...)` when a test needs a real installed bundle
+rather than a hand-built `LoadedSkillLocation`:
+
+```rust
+pub async fn installed_bundle_fixture(
+    entries: &[(&str, &[u8])],
+) -> Result<InstalledBundleFixture, Box<dyn std::error::Error>>;
+```
+
+The helper builds an in-memory `.skill` ZIP archive, stages it through
+`SkillRegistry::prepare_install_to_disk(...)`, commits it with
+`SkillRegistry::commit_install(...)`, and returns the owning tempdirs, the
+registry, and the loaded skill. Registry tests can assert the on-disk file set
+directly; adapter tests can wrap the returned registry in
+`Arc<RwLock<SkillRegistry>>` and drive the tool under test. This keeps
+install-to-read tests on the same path as production without widening the
+runtime API surface.
+
+The helper returns an `InstalledBundleFixture`:
+
+```rust
+pub struct InstalledBundleFixture {
+    pub _user_dir: tempfile::TempDir,
+    pub _installed_dir: tempfile::TempDir,
+    pub registry: SkillRegistry,
+    pub loaded_skill: LoadedSkill,
+}
+```
+
+Use the returned tempdirs to keep installed files alive for the duration of the
+test, `registry` when a tool adapter needs the committed registry state, and
+`loaded_skill` when a domain test needs direct access to the installed
+`LoadedSkill`.
+
+Use `build_bundle_archive(...)` when a test needs a deterministic in-memory
+`.skill` archive but does not need a committed registry:
+
+```rust
+pub fn build_bundle_archive(
+    entries: &[(&str, &[u8])],
+) -> Result<Vec<u8>, zip::result::ZipError>;
+```
+
+Use `build_bundle_archive_from_entries(...)` when the test needs entry metadata
+such as Unix permission bits:
+
+```rust
+pub fn build_bundle_archive_from_entries(
+    entries: &[BundleArchiveEntry],
+) -> Result<Vec<u8>, zip::result::ZipError>;
+```
+
+Use `build_bundle_archive_from_owned(...)` when a generated test case already
+owns its path and content buffers:
+
+```rust
+pub fn build_bundle_archive_from_owned(
+    entries: Vec<(String, Vec<u8>)>,
+) -> Result<Vec<u8>, zip::result::ZipError>;
+```
+
+The helpers write the supplied archive paths and bytes into a ZIP bundle using
+the same shared test archive writer as bundle install fixtures and return ZIP
+failures to the caller. Integration tests can import them through the
+`test-helpers` feature when they need byte-identical archive construction
+across harness boundaries.
 
 ##### Scoped skill file reads (roadmap 1.3.4)
 
