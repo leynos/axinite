@@ -8,6 +8,15 @@ use unicode_width::UnicodeWidthStr;
 use super::common::sanitize_for_terminal;
 use super::input::SLASH_COMMANDS;
 
+const HELP_COMMAND_GROUPS: &[&str] = &[
+    "Commands",
+    "Conversation",
+    "Configuration",
+    "Diagnostics",
+    "Jobs",
+    "Threads",
+];
+
 /// A pending tool-use request awaiting user approval.
 pub(super) struct ToolApprovalRequest<'a> {
     pub request_id: &'a str,
@@ -38,28 +47,17 @@ pub(super) fn print_help() {
     let d = "\x1b[90m"; // dim gray (descriptions)
     let r = "\x1b[0m"; // reset
 
-    // Group commands by category
-    let general_cmds = &["/help", "/debug", "/quit", "/exit"];
-    let conversation_cmds = &["/undo", "/redo", "/clear", "/compact", "/new", "/interrupt"];
-
     println!();
     println!("  {h}IronClaw REPL{r}");
-    println!();
-    println!("  {h}Commands{r}");
-    for cmd in SLASH_COMMANDS
-        .iter()
-        .filter(|c| general_cmds.contains(&c.name))
-    {
-        println!("  {c}{:<16}{r}  {d}{}{r}", cmd.name, cmd.description);
+
+    for group in HELP_COMMAND_GROUPS {
+        println!();
+        println!("  {h}{group}{r}");
+        for cmd in SLASH_COMMANDS.iter().filter(|cmd| cmd.group == *group) {
+            println!("  {c}{:<16}{r}  {d}{}{r}", cmd.name, cmd.description);
+        }
     }
-    println!();
-    println!("  {h}Conversation{r}");
-    for cmd in SLASH_COMMANDS
-        .iter()
-        .filter(|c| conversation_cmds.contains(&c.name))
-    {
-        println!("  {c}{:<16}{r}  {d}{}{r}", cmd.name, cmd.description);
-    }
+
     println!("  {c}esc{r}              {d}stop current operation{r}");
     println!();
     println!("  {h}Approval responses{r}");
