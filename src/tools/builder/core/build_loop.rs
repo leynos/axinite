@@ -32,6 +32,11 @@ struct ReasoningBundle {
     ctx: ReasoningContext,
 }
 
+struct ToolCallPayload {
+    tool_calls: Vec<ToolCall>,
+    content: Option<String>,
+}
+
 fn is_completion_signal(lower: &str) -> bool {
     COMPLETION_MARKERS
         .iter()
@@ -231,18 +236,17 @@ impl LlmSoftwareBuilder {
         inputs: &BuildLoopParams,
         bundle: &mut ReasoningBundle,
         state: &mut BuildLoopState,
-        tool_calls: Vec<ToolCall>,
-        content: Option<String>,
+        payload: ToolCallPayload,
     ) {
         bundle
             .ctx
             .messages
             .push(ChatMessage::assistant_with_tool_calls(
-                content,
-                tool_calls.clone(),
+                payload.content,
+                payload.tool_calls.clone(),
             ));
 
-        for tc in tool_calls {
+        for tc in payload.tool_calls {
             state.logs.push(BuildLog {
                 timestamp: Utc::now(),
                 phase: state.current_phase,
@@ -368,8 +372,16 @@ impl LlmSoftwareBuilder {
                     content,
                 } => {
                     state.tools_executed = true;
-                    self.handle_tool_calls(&inputs, &mut bundle, &mut state, tool_calls, content)
-                        .await;
+                    self.handle_tool_calls(
+                        &inputs,
+                        &mut bundle,
+                        &mut state,
+                        ToolCallPayload {
+                            tool_calls,
+                            content,
+                        },
+                    )
+                    .await;
                 }
             }
         }
