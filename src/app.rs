@@ -24,6 +24,7 @@
 
 use std::sync::Arc;
 
+use crate::bootstrap::tools::{MediaToolsArgs, register_image_and_vision_tools};
 use crate::channels::web::log_layer::LogBroadcaster;
 use crate::config::Config;
 use crate::context::ContextManager;
@@ -35,10 +36,10 @@ use crate::safety::SafetyLayer;
 use crate::secrets::SecretsStore;
 use crate::skills::SkillRegistry;
 use crate::skills::catalog::SkillCatalog;
+use crate::tools::ToolRegistry;
 use crate::tools::mcp::{McpProcessManager, McpSessionManager};
 use crate::tools::wasm::SharedCredentialRegistry;
 use crate::tools::wasm::WasmToolRuntime;
-use crate::tools::{ImageToolsRegistration, ToolRegistry, VisionToolsRegistration};
 use crate::workspace::{EmbeddingProvider, Workspace};
 use anyhow::Context;
 
@@ -176,14 +177,50 @@ impl AppBuilder {
         self.llm_override = Some(llm);
     }
 
-    fn register_image_tools_default(
-        &self,
-        tools: &ToolRegistry,
-        api_base: String,
-        api_key: String,
-        gen_model: String,
-    ) {
-        tools.register_image_tools(ImageToolsRegistration::new(api_base, api_key, gen_model));
+    fn resolve_media_tools_config(&self) -> Option<MediaToolsArgs> {
+        use secrecy::ExposeSecret;
+
+        let (api_base_url, api_key, model_name) =
+            if let Some(ref provider) = self.config.llm.provider {
+                (
+                    provider.base_url.clone(),
+                    provider.api_key.as_ref()?.expose_secret().to_string(),
+                    provider.model.clone(),
+                )
+            } else {
+                (
+                    self.config.llm.nearai.base_url.clone(),
+                    self.config
+                        .llm
+                        .nearai
+                        .api_key
+                        .as_ref()?
+                        .expose_secret()
+                        .to_string(),
+                    self.config.llm.nearai.model.clone(),
+                )
+            };
+
+        let models = vec![model_name.clone()];
+        let gen_model = crate::llm::image_models::suggest_image_model(&models)
+            .unwrap_or("flux-1.1-pro")
+            .to_string();
+        let vision_model = crate::llm::vision_models::suggest_vision_model(&models)
+            .unwrap_or(&model_name)
+            .to_string();
+
+        Some(MediaToolsArgs {
+            api_base_url,
+            api_key,
+            gen_model,
+            vision_model,
+            base_dir: None,
+        })
+    }
+
+    fn should_register_builder_tool(&self) -> bool {
+        self.config.builder.enabled
+            && (self.config.agent.allow_local_tools || !self.config.sandbox.enabled)
     }
 
     /// Phase 1: Initialize database backend.
@@ -376,62 +413,14 @@ impl AppBuilder {
         };
 
         // Register image/vision tools if we have a workspace and LLM API credentials
-        if workspace.is_some() {
-            let (api_base, api_key_opt) = if let Some(ref provider) = self.config.llm.provider {
-                (
-                    provider.base_url.clone(),
-                    provider.api_key.as_ref().map(|s| {
-                        use secrecy::ExposeSecret;
-                        s.expose_secret().to_string()
-                    }),
-                )
-            } else {
-                (
-                    self.config.llm.nearai.base_url.clone(),
-                    self.config.llm.nearai.api_key.as_ref().map(|s| {
-                        use secrecy::ExposeSecret;
-                        s.expose_secret().to_string()
-                    }),
-                )
-            };
-
-            if let Some(api_key) = api_key_opt {
-                // Check for image generation models
-                let model_name = self
-                    .config
-                    .llm
-                    .provider
-                    .as_ref()
-                    .map(|p| p.model.clone())
-                    .unwrap_or_else(|| self.config.llm.nearai.model.clone());
-                let models = vec![model_name.clone()];
-                let gen_model = crate::llm::image_models::suggest_image_model(&models)
-                    .unwrap_or("flux-1.1-pro")
-                    .to_string();
-                self.register_image_tools_default(
-                    &tools,
-                    api_base.clone(),
-                    api_key.clone(),
-                    gen_model,
-                );
-
-                // Check for vision models
-                let vision_model = crate::llm::vision_models::suggest_vision_model(&models)
-                    .unwrap_or(&model_name)
-                    .to_string();
-                tools.register_vision_tools(VisionToolsRegistration {
-                    api_base_url: api_base,
-                    api_key,
-                    vision_model,
-                    base_dir: None,
-                });
-            }
+        if workspace.is_some()
+            && let Some(media_args) = self.resolve_media_tools_config()
+        {
+            register_image_and_vision_tools(&tools, media_args);
         }
 
         // Register builder tool if enabled
-        if self.config.builder.enabled
-            && (self.config.agent.allow_local_tools || !self.config.sandbox.enabled)
-        {
+        if self.should_register_builder_tool() {
             tools
                 .register_builder_tool(llm.clone(), Some(self.config.builder.to_builder_config()))
                 .await?;
