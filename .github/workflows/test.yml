@@ -12,9 +12,14 @@ name: Run Tests
 jobs:
   audit:
     name: Dependency Audit
+    # Dependency audits report advisories against the whole lockfile, so a
+    # newly published advisory would fail every Dependabot PR regardless of
+    # content and deadlock auto-merge. The scheduled audit workflow covers
+    # Dependabot merges instead.
     if: >
-      github.event_name == 'push' ||
-      (github.event_name == 'pull_request' && github.base_ref != 'staging')
+      (github.event_name == 'push' ||
+      (github.event_name == 'pull_request' && github.base_ref != 'staging'))
+      && github.actor != 'dependabot[bot]'
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
