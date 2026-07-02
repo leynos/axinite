@@ -39,7 +39,7 @@ jobs:
         run: cargo build --no-default-features --features libsql
 
       - name: Upload binary
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: ironclaw-e2e-binary
           path: target/debug/ironclaw
@@ -94,7 +94,7 @@ jobs:
 
       - name: Upload screenshots on failure
         if: failure()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: e2e-screenshots-${{ matrix.group }}
           path: tests/e2e/screenshots/
