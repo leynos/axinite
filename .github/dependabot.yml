@@ -1,0 +1,54 @@
+version: 2
+
+updates:
+  - package-ecosystem: "cargo"
+    directories:
+      - "/"
+      - "/channels-src/discord"
+      - "/channels-src/slack"
+      - "/channels-src/telegram"
+      - "/channels-src/whatsapp"
+      - "/fuzz"
+      - "/tools-src/github"
+      - "/tools-src/gmail"
+      - "/tools-src/google-calendar"
+      - "/tools-src/google-docs"
+      - "/tools-src/google-drive"
+      - "/tools-src/google-sheets"
+      - "/tools-src/google-slides"
+      - "/tools-src/slack"
+      - "/tools-src/telegram"
+      - "/tools-src/web-search"
+    open-pull-requests-limit: 5
+    labels:
+      - "dependencies"
+      - "cargo"
+    schedule:
+      interval: "daily"
+    cooldown:
+      default-days: 7
+      semver-major-days: 14
+
+  - package-ecosystem: "pip"
+    directory: "/tests/e2e"
+    open-pull-requests-limit: 5
+    labels:
+      - "dependencies"
+      - "python"
+    schedule:
+      interval: "daily"
+    cooldown:
+      default-days: 7
+      semver-major-days: 14
+
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    open-pull-requests-limit: 5
+    labels:
+      - "dependencies"
+      - "github-actions"
+    schedule:
+      interval: "weekly"
+    cooldown:
+      default-days: 7
+      semver-major-days: 14
