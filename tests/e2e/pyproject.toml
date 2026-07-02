@@ -8,7 +8,7 @@ dependencies = [
     "pytest-playwright>=0.5",
     "pytest-timeout>=2.3",
     "playwright>=1.40",
-    "aiohttp>=3.9",
+    "aiohttp>=3.14.1",
     "httpx>=0.27",
 ]
 
