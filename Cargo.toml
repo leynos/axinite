@@ -21,7 +21,7 @@ exclude = [
 name = "ironclaw"
 version = "0.18.0"
 edition = "2024"
-rust-version = "1.92"
+rust-version = "1.93"
 description = "Secure personal AI assistant that protects your data and expands its capabilities on the fly"
 authors = ["NEAR AI <support@near.ai>"]
 license = "MIT OR Apache-2.0"
@@ -128,8 +128,8 @@ open = "5"
 pgvector = { version = "0.4", features = ["postgres"], optional = true }
 
 # WASM sandbox for untrusted tool execution
-wasmtime = { version = "44", features = ["cache", "component-model"] }
-wasmtime-wasi = "44"  # WASI support for component model
+wasmtime = { version = "45", features = ["cache", "component-model"] }
+wasmtime-wasi = "45"  # WASI support for component model
 wasmparser = "0.220"  # WASM binary parsing for validation
 
 # Cryptography for secrets management
@@ -160,7 +160,7 @@ flate2 = "1"
 tar = "0.4"
 
 # Document text extraction
-pdf-extract = "0.7"
+pdf-extract = "0.12"
 zip = { version = "2", default-features = false, features = ["deflate"] }
 
 # HTTP proxy for sandboxed network access
