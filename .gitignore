@@ -39,3 +39,6 @@ trace_*.json
 
 # Pending snapshot files (transient test artifacts)
 *.pending-snap
+
+# Python bytecode caches (workflow contract tests)
+__pycache__/

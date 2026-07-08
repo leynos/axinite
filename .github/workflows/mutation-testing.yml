@@ -1,199 +1,79 @@
 ---
-name: Mutation Testing
-# Runs cargo-mutants nightly against Rust source files changed in the past
-# 24 hours. Surviving mutants are uploaded as a downloadable artefact and
-# summarised in the job summary. The workflow can also be triggered manually
-# with an explicit list of source-file paths or globs to mutate.
+name: Mutation testing
+
+# Thin caller of the shared mutation-testing reusable workflow; caller
+# guide: leynos/shared-actions docs/mutation-cargo-workflow.md.
+# Scheduled runs mutate only files changed within the detection window;
+# manual dispatch runs mutate everything, fanned out across shards. To
+# test a branch, select it in the Actions "Run workflow" control.
 #
 # This workflow is NOT a required status check. Surviving mutants are
 # informational, not a merge gate.
 
 "on":
   schedule:
-    - cron: "0 3 * * *"        # Nightly at 03:00 UTC
+    - cron: "50 10 * * *" # Daily, 10:50 UTC
   workflow_dispatch:
-    inputs:
-      branch:
-        description: "Branch to check out and mutate"
-        type: string
-        default: main
-      paths:
-        description: >-
-          Newline-separated list of source file paths or globs to mutate.
-          When empty, the same 24-hour diff logic as the scheduled run is used.
-        type: string
-        default: ""
 
-permissions:
-  contents: read
+# Default the token to no scopes; the job opts in explicitly.
+permissions: {}
 
+# Serialize runs per ref: a dispatch during a scheduled run (or vice
+# versa) queues rather than racing. Runs are informational, so queued
+# runs wait instead of cancelling.
 concurrency:
   group: mutation-testing-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 jobs:
-  mutate:
-    name: Mutation Testing
-    runs-on: ubuntu-latest
-    timeout-minutes: 120
-    env:
-      CARGO_INCREMENTAL: "0"
-      CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_LINKER: clang
-      CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_RUSTFLAGS: >-
-        -C link-arg=-fuse-ld=mold
-    steps:
-      - name: Free disk space
-        uses: jlumbroso/free-disk-space@54081f138730dfa15788a46383842cd2f914a1be
-        with:
-          tool-cache: false
-          android: true
-          dotnet: true
-          haskell: true
-          large-packages: true
-          docker-images: false
-          swap-storage: false
-      - name: Checkout repository
-        uses: actions/checkout@v6
-        with:
-          # workflow_dispatch supplies inputs.branch (default: main).
-          # Scheduled runs fall back to github.ref (the default branch).
-          ref: ${{ inputs.branch || github.ref }}
-          fetch-depth: 0        # Full history required for git log --since
-
-      - name: Compute file list
-        id: compute-files
-        env:
-          INPUT_PATHS: ${{ inputs.paths }}
-        run: |
-          set -euo pipefail
-
-          if [[ -n "$INPUT_PATHS" ]]; then
-            # Manual dispatch with explicit paths: use them directly.
-            CHANGED_FILES="$INPUT_PATHS"
-          else
-            # Scheduled run: find .rs files changed in the past 24 hours.
-            # -m expands merge commits so that files introduced via a
-            # recently-landed merge branch are included even when the
-            # individual side-branch commits are older than 24 hours.
-            CHANGED_FILES=$(
-              git log -m --since="24 hours ago" \
-                --diff-filter=ACMR --name-only --pretty=format: HEAD \
-              | grep '\.rs$' | sort -u || true
-            )
-          fi
-
-          # Exclude out-of-tree crates from the mutation scope.
-          # tools-src/ and channels-src/ use separate manifests and are
-          # not workspace members; cargo-mutants cannot target them.
-          CHANGED_FILES=$(
-            printf '%s\n' "$CHANGED_FILES" \
-            | grep -v -E '^(tools-src|channels-src)/' \
-            || true
-          )
-
-          if [[ -z "$CHANGED_FILES" ]]; then
-            echo "No Rust source files changed in the past 24 hours." \
-              "Skipping mutation run."
-            echo "skip=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "Files selected for mutation testing:"
-            echo "$CHANGED_FILES"
-            {
-              echo "files<<EOF"
-              echo "$CHANGED_FILES"
-              echo "EOF"
-            } >> "$GITHUB_OUTPUT"
-            echo "skip=false" >> "$GITHUB_OUTPUT"
-          fi
-
-      - name: Install Rust
-        if: steps.compute-files.outputs.skip != 'true'
-        uses: dtolnay/rust-toolchain@stable
-        with:
-          targets: wasm32-wasip2
-
-      - name: Install mold
-        if: steps.compute-files.outputs.skip != 'true'
-        uses: rui314/setup-mold@v1
-
-      - name: Rust cache
-        if: steps.compute-files.outputs.skip != 'true'
-        uses: Swatinem/rust-cache@v2
-        with:
-          key: mutation-testing
-
-      - name: Install cargo-mutants
-        if: steps.compute-files.outputs.skip != 'true'
-        uses: taiki-e/install-action@cargo-mutants
-
-      - name: Install cargo-nextest
-        if: steps.compute-files.outputs.skip != 'true'
-        uses: taiki-e/install-action@cargo-nextest
-
-      - name: Install cargo-component
-        if: steps.compute-files.outputs.skip != 'true'
-        uses: taiki-e/install-action@v2
-        with:
-          tool: cargo-component
-
-      - name: Build GitHub WASM tool (for metadata/schema tests)
-        if: steps.compute-files.outputs.skip != 'true'
-        run: make build-github-tool-wasm
-
-      - name: Build WASM channels (for integration tests)
-        if: steps.compute-files.outputs.skip != 'true'
-        run: ./scripts/build-wasm-extensions.sh --channels
-
-      - name: Run cargo-mutants
-        if: steps.compute-files.outputs.skip != 'true'
-        id: run-mutants
-        # continue-on-error so surviving mutants do not fail the job.
-        # Surviving mutants are informational; the artefact and summary
-        # steps below capture the results regardless of exit code.
-        continue-on-error: true
-        env:
-          FILES: ${{ steps.compute-files.outputs.files }}
-        run: |
-          set -euo pipefail
-
-          file_args=""
-          while IFS= read -r f; do
-            [[ -n "$f" ]] && file_args+=" --file $f"
-          done <<< "$FILES"
-
-          # shellcheck disable=SC2086
-          cargo mutants --no-shuffle --test-tool nextest \
-            --timeout-multiplier 3 \
-            --features test-helpers \
-            ${file_args}
-
-      - name: Print surviving mutants summary
-        if: steps.compute-files.outputs.skip != 'true'
-        run: |
-          echo "## Surviving mutants" >> "$GITHUB_STEP_SUMMARY"
-          if [[ -s mutants.out/survived.txt ]]; then
-            echo '```' >> "$GITHUB_STEP_SUMMARY"
-            cat mutants.out/survived.txt >> "$GITHUB_STEP_SUMMARY"
-            echo '```' >> "$GITHUB_STEP_SUMMARY"
-          else
-            echo "No surviving mutants." >> "$GITHUB_STEP_SUMMARY"
-          fi
-
-      - name: Upload mutation report
-        if: steps.compute-files.outputs.skip != 'true'
-        uses: actions/upload-artifact@v4
-        with:
-          name: mutants-report
-          path: mutants.out/
-          retention-days: 14
-          # Prevent a hard failure if cargo-mutants exits before creating
-          # the output directory (e.g. internal error or misconfiguration).
-          if-no-files-found: ignore
-
-      - name: Trim build artefacts before cache save
-        if: always()
-        run: |
-          rm -rf target/debug/incremental
-          rm -rf target/debug/.fingerprint
-          cargo clean --doc 2>/dev/null || true
-          find target -name "*.d" -delete 2>/dev/null || true
+  mutation:
+    permissions:
+      contents: read
+      id-token: write # OIDC workflow-source resolution
+    uses: leynos/shared-actions/.github/workflows/mutation-cargo.yml@859416a90eb3987b46a57682c5d6b8964ad3f0a6
+    with:
+      # Mutate only the root ironclaw crate. tools-src/, channels-src/
+      # and fuzz/ sit outside the workspace (root Cargo.toml excludes
+      # them), and the vendored grammers-crypto patch crate under
+      # tools-src/telegram/patches/ must never be mutated.
+      paths: "src/"
+      # Test-support scaffolding compiled into non-test builds, whose
+      # survivors are noise. src/tools/builder/testing.rs is production
+      # code (the built-tool testing pipeline phase) and stays in scope.
+      exclude-globs: >-
+        src/testing/**,src/testing_wasm.rs,src/skills/test_support.rs,src/channels/web/test_helpers.rs
+      # Mirror the CI default test leg (make test runs with
+      # --features test-helpers on top of default features); the CI
+      # baseline is workspace-wide (nextest --workspace), so run
+      # workspace tests against each mutant. Test with nextest, not
+      # plain cargo test: the startup boot-screen snapshot test
+      # captures stdout at file-descriptor level (gag), which needs
+      # process-per-test isolation, so the plain cargo test baseline
+      # fails (issue #237); the previous bespoke mutation workflow
+      # also ran nextest. The passthrough filter drops the
+      # schema_helpers_ui trybuild binary from per-mutant runs: it
+      # recompiles the crate inside its own sandbox for every case,
+      # dominating per-mutant runtime while asserting compile-time
+      # contracts that mutants do not usefully exercise (the larger
+      # trybuild binary is already excluded by the default nextest
+      # profile).
+      extra-args: >-
+        --features test-helpers --test-workspace=true
+        --test-tool=nextest --
+        -E "not binary(schema_helpers_ui)"
+      # Heavy crate (~760 source files atop wasmtime/libsql); eight
+      # shards keep full dispatch legs inside the step timeout.
+      shard-count: 8
+      # Mirror the CI test environment (test.yml "Tests" job): free
+      # runner disk, the clang+mold linker demanded by
+      # .cargo/config.toml, the wasm32-wasip2 target, cargo-component,
+      # and the prebuilt WASM artefacts the integration tests load
+      # (the Telegram channel tests hard-fail in CI when absent).
+      setup-commands: |
+        sudo rm -rf /usr/local/lib/android /usr/share/dotnet /usr/local/.ghcup
+        sudo apt-get update
+        sudo apt-get install -y clang mold
+        rustup target add wasm32-wasip2
+        cargo binstall --no-confirm cargo-component cargo-nextest
+        make build-github-tool-wasm
+        ./scripts/build-wasm-extensions.sh --channels
