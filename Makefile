@@ -25,8 +25,6 @@ GITHUB_TOOL_WASM_TARGET := wasm32-wasip2
 # RUSTSEC-2026-0104: affected crate rustls-webpki 0.102.8, via the same
 # libsql TLS chain. axinite does not parse CRLs directly; remove when libsql
 # no longer pulls rustls-webpki <0.103.13.
-# RUSTSEC-2026-0149: wasmtime-wasi WASI path_open(TRUNCATE) bypass. Temporary
-# ignore until wasmtime >=44.0.2 / >=45.0.0 is published on crates.io.
 # RUSTSEC-2026-0185: quinn-proto 0.11.14 remote memory exhaustion in
 # out-of-order stream reassembly. Track removal in
 # https://github.com/leynos/axinite/issues/210.
@@ -45,7 +43,6 @@ AUDIT_FLAGS ?= \
 	--ignore RUSTSEC-2026-0098 \
 	--ignore RUSTSEC-2026-0099 \
 	--ignore RUSTSEC-2026-0104 \
-	--ignore RUSTSEC-2026-0149 \
 	--ignore RUSTSEC-2026-0185 \
 	--ignore RUSTSEC-2025-0141 \
 	--ignore RUSTSEC-2024-0370 \
