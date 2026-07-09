@@ -48,7 +48,7 @@ AUDIT_FLAGS ?= \
 	--ignore RUSTSEC-2024-0370 \
 	--ignore RUSTSEC-2025-0134
 
-.PHONY: all install install-with-overrides sync-local-wasm-overrides build-github-tool-wasm check-fmt typecheck lint markdownlint audit rust-audit test test-cargo test-matrix test-matrix-cargo clean
+.PHONY: all install install-with-overrides sync-local-wasm-overrides build-github-tool-wasm check-fmt typecheck lint markdownlint audit rust-audit test test-cargo test-matrix test-matrix-cargo test-workflow-contracts clean
 
 all: check-fmt lint test
 
@@ -117,6 +117,10 @@ test-matrix-cargo:
 	$(CARGO) test --no-default-features --features libsql-test-helpers -- --nocapture
 	$(CARGO) test --features postgres,libsql-test-helpers,html-to-markdown -- --nocapture
 	$(CARGO) test --manifest-path $(GITHUB_TOOL_MANIFEST) -- --nocapture
+
+# Validate the mutation-testing caller workflow contract.
+test-workflow-contracts:
+	uv run --with 'pytest>=8' --with 'pyyaml>=6' pytest tests/workflow_contracts -q
 
 clean:
 	$(CARGO) clean
