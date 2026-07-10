@@ -203,6 +203,8 @@ pub async fn create_secrets_store(
 
 #[cfg(test)]
 mod tests {
+    //! Unit tests for runtime database backend selection.
+
     use super::*;
 
     /// Regression test: `create_secrets_store` selects the correct backend at

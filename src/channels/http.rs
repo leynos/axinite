@@ -511,6 +511,8 @@ impl crate::channels::channel::NativeChannelSecretUpdater for HttpChannelState {
 
 #[cfg(test)]
 mod tests {
+    //! Unit tests for HTTP channel request handling and authentication.
+
     use axum::body::Body;
     use axum::http::Request;
     use secrecy::SecretString;

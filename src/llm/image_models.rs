@@ -48,6 +48,8 @@ pub fn suggest_image_model(models: &[String]) -> Option<&str> {
 
 #[cfg(test)]
 mod tests {
+    //! Unit tests for detecting image-generation models by name.
+
     use super::*;
 
     #[test]

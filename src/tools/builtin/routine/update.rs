@@ -1,3 +1,6 @@
+//! Routine update handling: parses partial update patches and applies
+//! changes to a routine's prompt, schedule, timezone, and enabled state.
+
 use super::*;
 
 struct UpdatePatch {

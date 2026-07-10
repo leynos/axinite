@@ -1298,6 +1298,8 @@ fn coerce_params_to_schema(
 
 #[cfg(test)]
 mod tests {
+    //! Unit tests for the WASM tool wrapper and credential handling.
+
     use std::sync::Arc;
 
     use insta::assert_snapshot;

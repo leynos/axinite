@@ -697,6 +697,8 @@ pub struct DiscoveredTool {
 
 #[cfg(test)]
 mod tests {
+    //! Unit tests for WASM tool loading and metadata extraction.
+
     use std::io::Write;
     use std::sync::Arc;
 

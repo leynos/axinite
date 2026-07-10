@@ -1,3 +1,5 @@
+//! Heartbeat configuration, including quiet hours and notification targets.
+
 use crate::config::EnvContext;
 use crate::config::helpers::{
     EnvKey, optional_env_from, parse_bool_env_from, parse_option_env_from, parse_optional_env_from,
@@ -107,6 +109,8 @@ const _: () = {
 
 #[cfg(test)]
 mod tests {
+    //! Unit tests for quiet-hours resolution and validation.
+
     use super::*;
 
     #[test]

@@ -639,6 +639,8 @@ impl Agent {
 
 #[cfg(test)]
 mod tests {
+    //! Unit tests for the agent loop's message handling and lifecycle.
+
     use std::sync::{Arc, Mutex};
     use std::time::Duration;
 

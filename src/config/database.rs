@@ -1,3 +1,6 @@
+//! Database configuration: backend selection and connection settings
+//! resolved from the environment.
+
 use std::path::PathBuf;
 
 use secrecy::{ExposeSecret, SecretString};
@@ -212,6 +215,8 @@ pub fn default_libsql_path() -> PathBuf {
 
 #[cfg(test)]
 mod tests {
+    //! Unit tests for database configuration parsing and defaults.
+
     use super::*;
 
     #[test]

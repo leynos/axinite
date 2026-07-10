@@ -436,6 +436,8 @@ pub fn spawn_heartbeat(
 
 #[cfg(test)]
 mod tests {
+    //! Unit tests for heartbeat configuration defaults and builders.
+
     use super::*;
 
     #[test]

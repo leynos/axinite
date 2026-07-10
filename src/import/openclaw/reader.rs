@@ -372,6 +372,8 @@ impl OpenClawReader {
 
 #[cfg(test)]
 mod security_tests {
+    //! Unit tests for API key redaction in imported config debug output.
+
     use super::*;
 
     #[test]

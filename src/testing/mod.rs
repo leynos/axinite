@@ -531,6 +531,8 @@ impl Default for TestHarnessBuilder {
 
 #[cfg(test)]
 mod tests {
+    //! Unit tests for the test harness builder defaults.
+
     use super::*;
 
     #[cfg(all(feature = "libsql", feature = "test-helpers"))]

@@ -313,6 +313,8 @@ fn format_turns_for_storage(turns: &[crate::agent::session::Turn]) -> String {
 
 #[cfg(test)]
 mod tests {
+    //! Unit tests for thread turn formatting and compaction summaries.
+
     use super::*;
     use crate::agent::session::Thread;
     use uuid::Uuid;

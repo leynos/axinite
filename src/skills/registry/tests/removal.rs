@@ -1,3 +1,5 @@
+//! Tests for skill removal across flat and nested registry layouts.
+
 use std::fs;
 
 use super::super::*;

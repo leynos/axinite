@@ -412,6 +412,8 @@ pub fn default_channels_dir() -> PathBuf {
 
 #[cfg(test)]
 mod tests {
+    //! Unit tests for WASM channel discovery and loading.
+
     use std::io::Write;
 
     use tempfile::TempDir;

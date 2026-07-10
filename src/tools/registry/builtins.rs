@@ -1,3 +1,5 @@
+//! Registration of built-in native tools with the tool registry.
+
 use std::sync::Arc;
 
 use crate::agent::routine_engine::RoutineEngine;

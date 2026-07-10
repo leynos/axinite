@@ -317,6 +317,8 @@ impl DiscoveryPort for NoOpDiscovery {
 
 #[cfg(test)]
 mod tests {
+    //! Unit tests for extension discovery helpers and MCP URL validation.
+
     use crate::extensions::ExtensionSource;
     use crate::extensions::discovery::{
         OnlineDiscovery, extract_source, titlecase, validate_mcp_url_with_client,

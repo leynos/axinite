@@ -1464,6 +1464,8 @@ impl NativeTool for JobPromptTool {
 
 #[cfg(test)]
 mod tests {
+    //! Unit tests for job creation tools and sandbox-dependent schemas.
+
     use super::*;
 
     #[tokio::test]

@@ -1024,6 +1024,8 @@ fn merge_non_default(
 
 #[cfg(test)]
 mod tests {
+    //! Unit tests for settings round-trips and keyed access.
+
     use crate::settings::*;
 
     #[test]

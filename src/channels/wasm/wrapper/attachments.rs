@@ -1,3 +1,6 @@
+//! Attachment helpers for WASM channels: MIME detection and validated
+//! reading of attachment files into WIT records.
+
 use super::wit_channel;
 
 // ============================================================================

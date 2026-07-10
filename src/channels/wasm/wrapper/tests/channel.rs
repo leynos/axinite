@@ -1,3 +1,6 @@
+//! Tests for the WASM channel wrapper's typing-task lifecycle across
+//! status updates.
+
 use std::sync::Arc;
 
 use crate::channels::NativeChannel;

@@ -337,6 +337,8 @@ impl Config {
 
 #[cfg(test)]
 mod tests {
+    //! Unit tests for configuration resolution from the environment.
+
     use std::fs;
     use std::path::Path;
 

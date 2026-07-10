@@ -182,6 +182,8 @@ pub(crate) fn row_to_routine_run_libsql(row: &libsql::Row) -> Result<RoutineRun,
 
 #[cfg(test)]
 mod tests {
+    //! Unit tests for mapping routine rows to and from the database schema.
+
     use super::*;
 
     /// Create the routines table for testing.

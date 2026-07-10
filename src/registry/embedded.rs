@@ -72,6 +72,8 @@ pub fn load_embedded_bundles() -> HashMap<String, BundleDefinition> {
 
 #[cfg(test)]
 mod tests {
+    //! Unit tests for parsing the embedded registry catalogue.
+
     use super::*;
 
     #[test]

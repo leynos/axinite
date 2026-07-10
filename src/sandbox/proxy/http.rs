@@ -532,6 +532,9 @@ fn full_body(bytes: Bytes) -> BoxBody<Bytes, Infallible> {
 
 #[cfg(test)]
 mod tests {
+    //! Unit tests for the sandbox HTTP proxy lifecycle and policy
+    //! enforcement.
+
     use super::*;
     use crate::sandbox::proxy::allowlist::DomainAllowlist;
     use crate::sandbox::proxy::policy::DefaultPolicyDecider;

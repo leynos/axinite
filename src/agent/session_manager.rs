@@ -351,6 +351,8 @@ impl Default for SessionManager {
 
 #[cfg(test)]
 mod tests {
+    //! Unit tests for session reuse and per-channel thread resolution.
+
     use super::*;
 
     #[tokio::test]

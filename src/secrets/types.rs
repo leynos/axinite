@@ -251,6 +251,8 @@ impl CredentialMapping {
 
 #[cfg(test)]
 mod tests {
+    //! Unit tests for secret reference and parameter types.
+
     use crate::secrets::types::{CreateSecretParams, DecryptedSecret, SecretRef};
 
     #[test]

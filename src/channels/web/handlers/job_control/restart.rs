@@ -364,6 +364,8 @@ async fn mark_sandbox_restart_failed(
 
 #[cfg(test)]
 mod tests {
+    //! Unit tests for normalising credential grant JSON on job restart.
+
     use super::*;
 
     #[test]

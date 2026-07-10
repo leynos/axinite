@@ -45,6 +45,8 @@ pub fn detect_system_timezone() -> Tz {
 
 #[cfg(test)]
 mod tests {
+    //! Unit tests for timezone resolution precedence and parsing.
+
     use chrono::Datelike;
 
     use super::*;

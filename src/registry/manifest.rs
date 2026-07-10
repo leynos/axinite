@@ -202,6 +202,8 @@ impl ExtensionManifest {
 
 #[cfg(test)]
 mod tests {
+    //! Unit tests for parsing registry manifest JSON.
+
     use super::*;
 
     #[test]

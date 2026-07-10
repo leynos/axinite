@@ -3582,6 +3582,8 @@ async fn install_selected_bundled_channels(
 
 #[cfg(test)]
 mod tests {
+    //! Unit tests for the interactive setup wizard.
+
     use std::collections::HashSet;
 
     use tempfile::tempdir;

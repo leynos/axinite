@@ -15,6 +15,8 @@ pub(crate) fn trimmed_non_empty(value: Option<&str>) -> Option<&str> {
 
 #[cfg(test)]
 mod tests {
+    //! Unit tests for install-source string sanitisation helpers.
+
     use rstest::rstest;
 
     use super::{non_blank_raw, trimmed_non_empty};

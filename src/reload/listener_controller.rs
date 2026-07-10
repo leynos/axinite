@@ -121,6 +121,9 @@ impl NativeListenerController for WebhookListenerController {
 
 #[cfg(test)]
 mod tests {
+    //! Unit tests for listener controller rebinding and webhook
+    //! configuration reload.
+
     use axum::{Json, Router, routing::get};
     use serde_json::json;
     use std::net::TcpListener as StdTcpListener;

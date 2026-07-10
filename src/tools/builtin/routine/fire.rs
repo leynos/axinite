@@ -1,3 +1,5 @@
+//! Built-in tool for manually firing a routine, bypassing its schedule.
+
 use super::*;
 
 pub struct RoutineFireTool {
@@ -85,6 +87,8 @@ impl NativeTool for RoutineFireTool {
 
 #[cfg(test)]
 mod tests {
+    //! Unit tests for the routine-fire tool's approval requirement.
+
     use super::*;
 
     #[test]

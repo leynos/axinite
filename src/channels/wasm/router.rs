@@ -643,6 +643,8 @@ pub fn create_wasm_channel_router(
 
 #[cfg(test)]
 mod tests {
+    //! Unit tests for WASM channel routing and endpoint registration.
+
     use std::sync::Arc;
 
     use crate::channels::wasm::capabilities::ChannelCapabilities;

@@ -450,6 +450,8 @@ pub fn builtin_entries_with_relay(relay_url: Option<String>) -> Vec<RegistryEntr
 
 #[cfg(test)]
 mod tests {
+    //! Unit tests for extension registry search scoring and lookup.
+
     use crate::extensions::registry::{ExtensionRegistry, score_entry};
     use crate::extensions::{AuthHint, ExtensionKind, ExtensionSource, RegistryEntry};
 

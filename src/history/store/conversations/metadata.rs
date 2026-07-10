@@ -39,6 +39,8 @@ impl Store {
 
 #[cfg(all(test, feature = "postgres"))]
 mod tests {
+    //! Postgres-backed tests for conversation metadata round-tripping.
+
     use rstest::{fixture, rstest};
     use uuid::Uuid;
 

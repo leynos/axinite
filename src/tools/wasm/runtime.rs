@@ -319,6 +319,8 @@ impl std::fmt::Debug for WasmToolRuntime {
 
 #[cfg(test)]
 mod tests {
+    //! Unit tests for WASM runtime configuration and module caching.
+
     use crate::tools::wasm::limits::ResourceLimits;
     use crate::tools::wasm::runtime::{WasmRuntimeConfig, WasmToolRuntime};
 

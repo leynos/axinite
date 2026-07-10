@@ -166,6 +166,8 @@ impl Drop for EventBuffer {
 
 #[cfg(test)]
 mod tests {
+    //! Unit tests for tracing output buffering and UTF-8 truncation.
+
     use std::sync::{Arc, Mutex};
 
     use crate::tracing_fmt::{EventBuffer, TruncatingStderr, utf8_floor};

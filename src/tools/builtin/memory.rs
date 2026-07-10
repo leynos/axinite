@@ -494,6 +494,8 @@ impl NativeTool for MemoryTreeTool {
 
 #[cfg(all(test, feature = "postgres"))]
 mod tests {
+    //! Unit tests for the memory tool against a workspace store.
+
     use super::*;
 
     fn make_test_workspace() -> Arc<Workspace> {

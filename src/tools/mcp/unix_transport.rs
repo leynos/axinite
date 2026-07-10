@@ -162,6 +162,8 @@ impl NativeMcpTransport for UnixMcpTransport {
 
 #[cfg(test)]
 mod tests {
+    //! Unit tests for the MCP Unix socket transport.
+
     use super::*;
     use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader as TokioBufReader};
     use tokio::net::UnixListener;

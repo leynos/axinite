@@ -292,6 +292,8 @@ impl Default for Sanitizer {
 
 #[cfg(test)]
 mod tests {
+    //! Unit tests for prompt-injection detection in the sanitizer.
+
     use super::*;
 
     #[test]

@@ -133,6 +133,8 @@ impl Default for Router {
 
 #[cfg(test)]
 mod tests {
+    //! Unit tests for slash-command routing and command detection.
+
     use super::*;
 
     #[test]

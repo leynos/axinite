@@ -63,6 +63,8 @@ impl Default for CostEstimator {
 
 #[cfg(test)]
 mod tests {
+    //! Unit tests for tool and LLM cost estimation.
+
     use super::*;
 
     #[test]

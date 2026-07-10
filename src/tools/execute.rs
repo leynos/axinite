@@ -158,6 +158,8 @@ pub async fn execute_tool_simple(
 
 #[cfg(test)]
 mod tests {
+    //! Unit tests for tool execution with safety checks applied.
+
     use super::*;
     use crate::tools::tool::{NativeTool, Tool, ToolError, ToolOutput};
     use std::sync::Arc;

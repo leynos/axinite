@@ -1,3 +1,5 @@
+//! Docker sandbox configuration: policy, limits, image, and reaper settings.
+
 use crate::config::EnvContext;
 use crate::config::helpers::{
     EnvKey, optional_env_from, parse_bool_env_from, parse_optional_env_from, parse_string_env_from,
@@ -299,6 +301,8 @@ fn parse_oauth_access_token(json: &str) -> Option<String> {
 
 #[cfg(test)]
 mod tests {
+    //! Unit tests for sandbox configuration defaults and overrides.
+
     use crate::config::sandbox::*;
     use crate::testing::credentials::*;
 

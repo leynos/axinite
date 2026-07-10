@@ -655,6 +655,8 @@ fn check_binary(name: &str, args: &[&str]) -> CheckResult {
 
 #[cfg(test)]
 mod tests {
+    //! Unit tests for doctor diagnostic checks and result formatting.
+
     use crate::cli::doctor::*;
 
     #[test]

@@ -872,6 +872,9 @@ pub struct HealthResponse {
 
 #[cfg(test)]
 mod tests {
+    //! Unit tests for WebSocket message serialization and
+    //! deserialization.
+
     use super::*;
 
     // ---- WsClientMessage deserialization tests ----

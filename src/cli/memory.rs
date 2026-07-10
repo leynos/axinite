@@ -274,6 +274,8 @@ fn score_indicator(score: f32) -> &'static str {
 
 #[cfg(test)]
 mod tests {
+    //! Unit tests for memory CLI display formatting helpers.
+
     use super::*;
 
     #[test]

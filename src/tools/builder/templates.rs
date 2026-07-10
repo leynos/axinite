@@ -480,6 +480,8 @@ usage() {
 
 #[cfg(test)]
 mod tests {
+    //! Unit tests for the tool-builder template engine and templates.
+
     use super::*;
 
     #[test]

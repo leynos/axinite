@@ -337,6 +337,8 @@ fn save_state(path: &std::path::Path) {
 
 #[cfg(test)]
 mod tests {
+    //! Unit tests for hygiene configuration and report behaviour.
+
     use std::sync::Mutex;
 
     use crate::workspace::hygiene::*;
@@ -529,6 +531,8 @@ mod tests {
 
     #[cfg(feature = "libsql")]
     mod async_tests {
+        //! Database-backed tests for hygiene cleanup of logs and documents.
+
         use super::*;
         use crate::db::Database;
         use std::sync::Arc;

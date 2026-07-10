@@ -9,6 +9,8 @@ pub use crate::db::{NativeSettingsStore, SettingKey, SettingsStore, UserId};
 
 #[cfg(test)]
 mod tests {
+    //! Unit tests for the string-newtype contract of settings identifiers.
+
     use std::collections::{HashMap, HashSet};
 
     use super::*;

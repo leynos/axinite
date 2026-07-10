@@ -149,6 +149,8 @@ fn score_skill(skill: &LoadedSkill, message_lower: &str, message_original: &str)
 
 #[cfg(test)]
 mod tests {
+    //! Unit tests for skill prefiltering and relevance scoring.
+
     use super::*;
     use crate::skills::{LoadedSkill, SkillSource};
     use std::path::PathBuf;

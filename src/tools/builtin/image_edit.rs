@@ -269,6 +269,8 @@ impl ImageEditTool {
 
 #[cfg(test)]
 mod tests {
+    //! Unit tests for the image editing tool.
+
     use super::*;
     use tempfile::TempDir;
 

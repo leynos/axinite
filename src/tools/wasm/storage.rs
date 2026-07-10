@@ -1143,6 +1143,8 @@ fn libsql_row_to_tool_at(
 
 #[cfg(test)]
 mod tests {
+    //! Unit tests for WASM binary hashing, integrity, and trust levels.
+
     use crate::tools::wasm::storage::{
         ToolStatus, TrustLevel, compute_binary_hash, verify_binary_integrity,
     };

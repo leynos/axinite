@@ -1,3 +1,5 @@
+//! Memory hygiene configuration parsed from the environment.
+
 use crate::bootstrap::ironclaw_base_dir;
 use crate::config::EnvContext;
 use crate::config::helpers::{EnvKey, parse_bool_env_from, parse_optional_env_from};

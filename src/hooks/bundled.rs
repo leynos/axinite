@@ -895,6 +895,8 @@ fn extract_primary_content(event: &HookEvent) -> String {
 
 #[cfg(test)]
 mod tests {
+    //! Unit tests for bundled hook event handling.
+
     use super::*;
 
     fn inbound_event(content: &str) -> HookEvent {

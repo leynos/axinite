@@ -105,6 +105,8 @@ const _: () = {
 
 #[cfg(test)]
 mod tests {
+    //! Unit tests for transcription provider configuration parsing.
+
     use super::*;
 
     #[test]

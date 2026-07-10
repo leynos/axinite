@@ -470,6 +470,8 @@ impl RegistryCatalog {
 
 #[cfg(test)]
 mod tests {
+    //! Unit tests for loading and querying the extension registry catalogue.
+
     use super::*;
     use std::fs;
 

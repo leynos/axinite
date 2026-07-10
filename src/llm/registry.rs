@@ -113,11 +113,12 @@ impl SetupHint {
     }
 }
 
-/// Validates unsupported_params during deserialization.
-///
-/// Only allows: "temperature", "max_tokens", "stop_sequences".
-/// Invalid parameter names cause a deserialization error.
 mod unsupported_params_de {
+    //! Validates `unsupported_params` during deserialization.
+    //!
+    //! Only allows: "temperature", "max_tokens", "stop_sequences".
+    //! Invalid parameter names cause a deserialization error.
+
     use serde::{Deserialize, Deserializer};
 
     const VALID_PARAMS: &[&str] = &["temperature", "max_tokens", "stop_sequences"];
@@ -323,6 +324,8 @@ fn user_providers_path() -> Option<std::path::PathBuf> {
 
 #[cfg(test)]
 mod tests {
+    //! Unit tests for the provider registry and built-in provider data.
+
     use super::*;
 
     #[test]

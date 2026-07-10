@@ -214,6 +214,8 @@ impl NativeNetworkPolicyDecider for DenyAllDecider {
 
 #[cfg(test)]
 mod tests {
+    //! Unit tests for network request parsing and domain allowlist policy.
+
     use super::*;
 
     #[test]

@@ -1,3 +1,5 @@
+//! Tool exposing routine run history from the database.
+
 use super::*;
 
 pub struct RoutineHistoryTool {

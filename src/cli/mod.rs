@@ -281,6 +281,8 @@ pub async fn run_memory_command(mem_cmd: &MemoryCommand) -> anyhow::Result<()> {
 
 #[cfg(test)]
 mod tests {
+    //! Unit tests for CLI argument parsing and version output.
+
     use super::*;
     use clap::CommandFactory;
     use insta::assert_snapshot;

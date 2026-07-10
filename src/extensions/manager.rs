@@ -3369,6 +3369,8 @@ fn combine_install_errors(
 
 #[cfg(test)]
 mod tests {
+    //! Unit tests for extension kind inference and install fallback logic.
+
     use std::sync::Arc;
 
     use crate::extensions::ExtensionManager;

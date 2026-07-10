@@ -316,6 +316,8 @@ async fn handle_client_message(
 
 #[cfg(test)]
 mod tests {
+    //! Unit tests for WebSocket connection tracking and client messages.
+
     use super::*;
 
     #[test]

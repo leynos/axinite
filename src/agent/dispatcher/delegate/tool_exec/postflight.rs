@@ -360,6 +360,8 @@ pub(super) async fn fold_into_context(
 
 #[cfg(test)]
 mod tests {
+    //! Unit tests for parsing tool authentication barrier payloads.
+
     use super::*;
 
     #[test]

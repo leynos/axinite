@@ -150,6 +150,8 @@ impl crate::db::NativeConversationStore for NullDatabase {
 
 #[cfg(test)]
 mod tests {
+    //! Unit tests for the null database conversation store.
+
     use super::*;
     use crate::db::NativeConversationStore;
 

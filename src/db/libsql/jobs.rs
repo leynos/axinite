@@ -374,6 +374,8 @@ impl NativeJobStore for LibSqlBackend {
 
 #[cfg(test)]
 mod tests {
+    //! Unit tests for libSQL job persistence and event recording.
+
     use super::*;
     use crate::db::NativeDatabase;
     use crate::db::SandboxEventType;

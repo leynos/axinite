@@ -1,3 +1,5 @@
+//! Tests for skill discovery in the skill registry.
+
 use std::fs;
 use std::path::PathBuf;
 

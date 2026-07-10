@@ -7,6 +7,8 @@ use super::*;
 use std::path::Path;
 
 mod assertions {
+    //! Shared assertion helpers for build result tests.
+
     use super::*;
 
     pub(super) fn assert_build_success(res: &BuildResult) {

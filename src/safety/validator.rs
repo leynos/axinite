@@ -269,6 +269,8 @@ fn has_excessive_repetition(s: &str) -> bool {
 
 #[cfg(test)]
 mod tests {
+    //! Unit tests for input safety validation.
+
     use super::*;
 
     #[test]

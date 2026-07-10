@@ -1185,6 +1185,8 @@ fn truncate(s: &str, max: usize) -> String {
 
 #[cfg(test)]
 mod tests {
+    //! Unit tests for routine engine behaviour such as notification gating.
+
     use crate::agent::routine::{NotifyConfig, RunStatus};
     use crate::config::RoutineConfig;
 

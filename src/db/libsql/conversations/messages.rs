@@ -201,6 +201,8 @@ pub(super) async fn list_conversation_messages_scoped(
 
 #[cfg(test)]
 mod tests {
+    //! Unit tests for storing and listing conversation messages in libSQL.
+
     use rstest::rstest;
     use uuid::Uuid;
 

@@ -316,6 +316,8 @@ impl<S: tracing::Subscriber> Layer<S> for WebLogLayer {
 
 #[cfg(test)]
 mod tests {
+    //! Unit tests for the log broadcaster and web log layer.
+
     use super::*;
 
     #[test]

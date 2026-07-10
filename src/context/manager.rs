@@ -272,6 +272,8 @@ pub struct ContextSummary {
 
 #[cfg(test)]
 mod tests {
+    //! Unit tests for job context creation and concurrency limits.
+
     use super::*;
 
     #[tokio::test]

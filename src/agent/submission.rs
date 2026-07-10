@@ -431,6 +431,8 @@ impl SubmissionResult {
 
 #[cfg(test)]
 mod tests {
+    //! Unit tests for submission classification and command parsing.
+
     use super::*;
 
     #[test]

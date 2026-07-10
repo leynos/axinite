@@ -203,6 +203,8 @@ impl Default for Policy {
 
 #[cfg(test)]
 mod tests {
+    //! Unit tests for the default safety policy's blocking rules.
+
     use super::*;
 
     #[test]

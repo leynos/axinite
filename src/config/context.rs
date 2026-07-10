@@ -169,6 +169,8 @@ fn resolve_base_dir_snapshot(env_vars: &HashMap<String, String>) -> PathBuf {
 
 #[cfg(test)]
 mod tests {
+    //! Unit tests for `EnvContext` environment and secret lookup precedence.
+
     use super::EnvContext;
     use std::collections::HashMap;
     use std::path::PathBuf;

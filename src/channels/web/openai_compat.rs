@@ -854,6 +854,8 @@ pub async fn models_handler(
 
 #[cfg(test)]
 mod tests {
+    //! Unit tests for OpenAI-compatible role and finish-reason mapping.
+
     use super::*;
 
     #[test]

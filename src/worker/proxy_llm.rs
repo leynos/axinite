@@ -65,6 +65,8 @@ impl NativeLlmProvider for ProxyLlmProvider {
 
 #[cfg(test)]
 mod tests {
+    //! Unit tests for the worker proxy LLM client.
+
     use super::*;
 
     fn test_client() -> Arc<WorkerHttpClient> {

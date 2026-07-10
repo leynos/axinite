@@ -1381,6 +1381,8 @@ static SIGNAL_PAIRING_STORE_OVERRIDE: std::sync::OnceLock<
 
 #[cfg(test)]
 mod tests {
+    //! Unit tests for Signal channel pairing storage and message handling.
+
     use std::sync::{LazyLock, Mutex, MutexGuard};
 
     use tempfile::TempDir;

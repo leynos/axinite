@@ -1792,6 +1792,8 @@ fn collapse_newlines(text: &str) -> String {
 
 #[cfg(test)]
 mod tests {
+    //! Unit tests for reasoning plan extraction and structural helpers.
+
     use super::*;
 
     // ---- Utility / structural tests ----

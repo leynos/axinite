@@ -633,6 +633,8 @@ async fn get_secrets_store() -> anyhow::Result<Arc<dyn SecretsStore + Send + Syn
 
 #[cfg(test)]
 mod tests {
+    //! Unit tests for MCP command parsing and header validation.
+
     use super::*;
 
     #[test]

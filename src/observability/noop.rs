@@ -22,6 +22,8 @@ impl Observer for NoopObserver {
 
 #[cfg(test)]
 mod tests {
+    //! Unit tests confirming the no-op observer accepts events safely.
+
     use std::time::Duration;
 
     use crate::observability::traits::*;

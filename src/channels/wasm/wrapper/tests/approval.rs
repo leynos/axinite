@@ -1,3 +1,5 @@
+//! Tests for approval prompt round-trips through the WASM wrapper.
+
 use crate::agent::submission::{Submission, SubmissionParser};
 
 use super::super::status_to_wit;

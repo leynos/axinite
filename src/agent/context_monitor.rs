@@ -186,6 +186,8 @@ impl ContextBreakdown {
 
 #[cfg(test)]
 mod tests {
+    //! Unit tests for token estimation and context compaction thresholds.
+
     use super::*;
 
     #[test]

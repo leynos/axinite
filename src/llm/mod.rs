@@ -534,6 +534,8 @@ pub async fn build_provider_chain(
 
 #[cfg(test)]
 mod tests {
+    //! Unit tests for LLM provider configuration and routing.
+
     use super::*;
     use crate::llm::config::NearAiConfig;
 

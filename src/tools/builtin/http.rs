@@ -605,6 +605,8 @@ impl NativeTool for HttpTool {
 
 #[cfg(test)]
 mod tests {
+    //! Unit tests for the HTTP tool schema and credential handling.
+
     use super::*;
     use crate::testing::credentials::{TEST_OPENAI_API_KEY, test_secrets_store};
 

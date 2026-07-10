@@ -309,6 +309,8 @@ impl ContentBlock {
 
 #[cfg(test)]
 mod tests {
+    //! Unit tests for MCP protocol message serialisation.
+
     use super::*;
 
     #[test]

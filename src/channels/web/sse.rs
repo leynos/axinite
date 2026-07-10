@@ -195,6 +195,8 @@ impl<S> Drop for CountedStream<S> {
 
 #[cfg(test)]
 mod tests {
+    //! Unit tests for SSE connection management and broadcasting.
+
     use super::*;
 
     #[test]

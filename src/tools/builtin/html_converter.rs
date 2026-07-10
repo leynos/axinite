@@ -36,6 +36,8 @@ pub fn convert_html_to_markdown(html: &str, url: &str) -> Result<String, ToolErr
 
 #[cfg(test)]
 mod tests {
+    //! Unit tests for HTML-to-Markdown conversion and its passthrough.
+
     use super::*;
 
     #[cfg(not(feature = "html-to-markdown"))]

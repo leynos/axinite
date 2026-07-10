@@ -1,3 +1,5 @@
+//! Agent behaviour configuration resolved from settings and environment.
+
 use std::time::Duration;
 
 use crate::config::EnvContext;
@@ -147,6 +149,8 @@ const _: () = {
 
 #[cfg(test)]
 mod tests {
+    //! Unit tests for default timezone validation in agent config.
+
     use super::*;
 
     #[test]

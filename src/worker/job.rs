@@ -1509,6 +1509,8 @@ impl From<TaskOutput> for Result<String, Error> {
 
 #[cfg(test)]
 mod tests {
+    //! Unit tests for worker job execution and tool concurrency.
+
     use std::sync::atomic::{AtomicUsize, Ordering};
 
     use super::*;

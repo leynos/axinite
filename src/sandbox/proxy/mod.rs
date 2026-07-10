@@ -134,6 +134,8 @@ impl Default for NetworkProxyBuilder {
 
 #[cfg(test)]
 mod tests {
+    //! Unit tests for the network proxy builder and allowlist handling.
+
     use super::*;
 
     #[test]

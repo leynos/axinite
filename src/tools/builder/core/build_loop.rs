@@ -1,3 +1,6 @@
+//! Iterative build loop for the software builder, tracking phases and
+//! detecting completion or failure signals in LLM responses.
+
 use super::*;
 use crate::llm::ToolCall;
 

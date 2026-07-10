@@ -243,6 +243,8 @@ impl Memory {
 
 #[cfg(test)]
 mod tests {
+    //! Unit tests for action records and context memory tracking.
+
     use super::*;
 
     #[test]

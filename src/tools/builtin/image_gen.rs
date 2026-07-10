@@ -187,6 +187,8 @@ impl NativeTool for ImageGenerateTool {
 
 #[cfg(test)]
 mod tests {
+    //! Unit tests for the image generation tool metadata and requests.
+
     use super::*;
 
     #[test]

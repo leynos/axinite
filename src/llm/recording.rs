@@ -613,6 +613,8 @@ impl crate::llm::NativeLlmProvider for RecordingLlm {
 
 #[cfg(test)]
 mod tests {
+    //! Unit tests for the recording LLM wrapper.
+
     use super::*;
     use crate::testing::StubLlm;
 

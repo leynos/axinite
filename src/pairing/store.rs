@@ -555,6 +555,8 @@ impl Default for PairingStore {
 
 #[cfg(test)]
 mod tests {
+    //! Unit tests for the pairing store and channel key sanitization.
+
     use super::*;
     use tempfile::TempDir;
 

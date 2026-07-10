@@ -259,6 +259,8 @@ impl From<RateLimitResult> for Result<(), RateLimitError> {
 
 #[cfg(test)]
 mod tests {
+    //! Unit tests for per-user tool rate limiting windows.
+
     use super::*;
     use crate::tools::tool::ToolRateLimitConfig;
 

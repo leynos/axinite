@@ -381,6 +381,8 @@ impl crate::llm::NativeLlmProvider for FailoverProvider {
 
 #[cfg(test)]
 mod tests {
+    //! Unit tests for LLM provider failover behaviour.
+
     use super::*;
 
     use std::sync::{Mutex, RwLock};

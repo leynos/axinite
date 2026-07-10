@@ -1,3 +1,5 @@
+//! Secrets management configuration parsed from the environment.
+
 use secrecy::{ExposeSecret, SecretString};
 
 use crate::config::EnvContext;

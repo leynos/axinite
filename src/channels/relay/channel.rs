@@ -482,6 +482,8 @@ impl NativeChannel for RelayChannel {
 
 #[cfg(test)]
 mod tests {
+    //! Unit tests for relay channel naming and conversation metadata.
+
     use super::*;
 
     fn test_client() -> RelayClient {

@@ -1,3 +1,5 @@
+//! Unit tests for skill registry lookup by name.
+
 use std::fs;
 use std::path::PathBuf;
 

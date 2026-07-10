@@ -503,6 +503,8 @@ pub fn next_cron_fire(
 
 #[cfg(test)]
 mod tests {
+    //! Unit tests for routine trigger round-trips and cron scheduling.
+
     use crate::agent::routine::{
         RoutineAction, RoutineGuardrails, RunStatus, Trigger, content_hash, next_cron_fire,
     };

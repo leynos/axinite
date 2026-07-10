@@ -565,6 +565,8 @@ fn extract_response_content(response: &AnthropicResponse) -> (Option<String>, Ve
 
 #[cfg(test)]
 mod tests {
+    //! Unit tests for Anthropic OAuth message conversion.
+
     use super::*;
 
     #[test]

@@ -144,6 +144,8 @@ pub(super) async fn list_job_events(
 
 #[cfg(test)]
 mod tests {
+    //! Unit tests for persisting and querying sandbox job events.
+
     use chrono::Utc;
     use tempfile::TempDir;
     use tempfile::tempdir;

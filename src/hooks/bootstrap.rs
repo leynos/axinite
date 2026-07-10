@@ -322,6 +322,8 @@ fn is_workspace_hook_file(path: &str) -> bool {
 
 #[cfg(test)]
 mod tests {
+    //! Unit tests for extracting hook sections from capability manifests.
+
     use super::*;
 
     #[test]

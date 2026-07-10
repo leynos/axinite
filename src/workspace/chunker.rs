@@ -115,6 +115,8 @@ pub fn chunk_document(content: &str, config: ChunkConfig) -> Vec<String> {
 
 #[cfg(test)]
 mod tests {
+    //! Unit tests for document chunking behaviour and edge cases.
+
     use super::*;
 
     #[test]

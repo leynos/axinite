@@ -230,6 +230,8 @@ impl From<RateLimitConfig> for EmitRateLimitConfig {
 
 #[cfg(test)]
 mod tests {
+    //! Unit tests for WASM channel capability defaults and validation.
+
     use crate::channels::wasm::capabilities::{
         ChannelCapabilities, EmitRateLimitConfig, HttpEndpointConfig, MIN_POLL_INTERVAL_MS,
     };

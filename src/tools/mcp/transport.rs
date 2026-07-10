@@ -206,6 +206,8 @@ pub fn spawn_jsonrpc_reader<R: AsyncBufRead + Unpin + Send + 'static>(
 
 #[cfg(test)]
 mod tests {
+    //! Unit tests for MCP JSON-RPC transport framing.
+
     use super::*;
 
     #[tokio::test]

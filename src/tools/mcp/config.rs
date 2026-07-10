@@ -562,6 +562,8 @@ pub enum EffectiveTransport<'a> {
 
 #[cfg(test)]
 mod tests {
+    //! Unit tests for MCP server configuration parsing and URL checks.
+
     use super::*;
     use tempfile::tempdir;
 

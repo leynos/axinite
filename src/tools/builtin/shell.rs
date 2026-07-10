@@ -761,6 +761,8 @@ fn truncate_for_error(s: &str) -> String {
 
 #[cfg(test)]
 mod tests {
+    //! Unit tests for the shell command execution tool.
+
     use super::*;
 
     #[tokio::test]

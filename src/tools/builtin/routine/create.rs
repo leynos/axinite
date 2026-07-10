@@ -1,3 +1,6 @@
+//! Routine creation tool: parameter schema builders and routine
+//! construction from tool arguments.
+
 use super::*;
 
 fn object_schema(properties: serde_json::Value, required: &[&str]) -> serde_json::Value {

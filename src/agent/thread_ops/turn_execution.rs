@@ -88,6 +88,8 @@ impl Agent {
 
 #[cfg(test)]
 mod tests {
+    //! Unit tests for turn execution short-circuits on thread state errors.
+
     use std::sync::Arc;
 
     use rstest::{fixture, rstest};

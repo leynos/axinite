@@ -190,6 +190,8 @@ impl TranscriptionMiddleware {
 
 #[cfg(test)]
 mod tests {
+    //! Unit tests for audio transcription of message attachments.
+
     use super::*;
     use crate::channels::{AttachmentKind, IncomingAttachment, IncomingMessage};
 

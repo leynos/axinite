@@ -83,6 +83,8 @@ pub type Result<T> = std::result::Result<T, Error>;
 
 #[cfg(test)]
 mod tests {
+    //! Unit tests for error message content across error variants.
+
     use super::*;
     use rstest::rstest;
     use uuid::Uuid;

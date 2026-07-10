@@ -147,6 +147,8 @@ fn url_contains_userinfo(params: &serde_json::Value) -> bool {
 
 #[cfg(test)]
 mod tests {
+    //! Unit tests for detecting manual credentials in request params.
+
     use super::*;
 
     // ── Header name exact match ────────────────────────────────────────

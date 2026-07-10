@@ -963,6 +963,8 @@ impl crate::llm::NativeLlmProvider for SmartRoutingProvider {
 
 #[cfg(test)]
 mod tests {
+    //! Unit tests for smart routing configuration and model selection.
+
     use super::*;
     use crate::llm::ChatMessage;
     use crate::testing::StubLlm;

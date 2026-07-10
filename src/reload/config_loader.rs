@@ -89,6 +89,8 @@ impl NativeConfigLoader for EnvConfigLoader {
 
 #[cfg(test)]
 mod tests {
+    //! Unit tests for configuration reloading from settings storage.
+
     use std::collections::HashMap;
     use std::sync::Arc;
 

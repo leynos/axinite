@@ -169,6 +169,8 @@ fn is_path_safe_minimal(path: &str) -> bool {
 
 #[cfg(test)]
 mod tests {
+    //! Unit tests for path safety validation helpers.
+
     use super::*;
     use tempfile::tempdir;
 

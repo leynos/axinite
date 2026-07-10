@@ -657,6 +657,8 @@ pub struct TurnToolCall {
 
 #[cfg(test)]
 mod tests {
+    //! Unit tests for session and thread lifecycle management.
+
     use super::*;
 
     mod record_tool_result_content;

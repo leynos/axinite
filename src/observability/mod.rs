@@ -50,6 +50,8 @@ pub fn create_observer(config: &ObservabilityConfig) -> Box<dyn Observer> {
 
 #[cfg(test)]
 mod tests {
+    //! Unit tests for observability configuration defaults and parsing.
+
     use crate::observability::*;
 
     #[test]

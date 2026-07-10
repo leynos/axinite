@@ -918,6 +918,8 @@ fn generate_secret_with_length(length: usize) -> String {
 
 #[cfg(test)]
 mod tests {
+    //! Unit tests for webhook secret generation and token validation.
+
     use base64::Engine;
 
     use crate::setup::channels::{generate_webhook_secret, validate_cloudflare_token_format};

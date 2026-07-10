@@ -279,6 +279,9 @@ pub(crate) fn sanitize_error_body(body: &str) -> String {
 
 #[cfg(test)]
 mod tests {
+    //! Unit tests for the MCP HTTP transport and error body
+    //! sanitization.
+
     use super::*;
 
     #[test]

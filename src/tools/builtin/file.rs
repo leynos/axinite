@@ -620,6 +620,8 @@ impl NativeTool for ApplyPatchTool {
 
 #[cfg(test)]
 mod tests {
+    //! Unit tests for the file read and write tools.
+
     use super::*;
     use crate::tools::builtin::path_utils::normalize_lexical;
     use tempfile::TempDir;

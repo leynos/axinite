@@ -286,6 +286,8 @@ impl WasmValidator {
 
 #[cfg(test)]
 mod tests {
+    //! Unit tests for WASM tool artefact validation.
+
     use super::*;
 
     #[test]

@@ -150,6 +150,8 @@ impl std::fmt::Debug for SecretsCrypto {
 
 #[cfg(test)]
 mod tests {
+    //! Unit tests for secrets encryption and decryption.
+
     use secrecy::SecretString;
 
     use crate::secrets::crypto::SecretsCrypto;

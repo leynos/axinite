@@ -288,6 +288,8 @@ fn xml_escape(raw: &str) -> String {
 
 #[cfg(test)]
 mod tests {
+    //! Unit tests for XML escaping and service command execution helpers.
+
     use crate::service::*;
 
     #[test]

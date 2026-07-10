@@ -448,6 +448,8 @@ pub struct PollConfigSchema {
 
 #[cfg(test)]
 mod tests {
+    //! Unit tests for parsing channel capability schema files.
+
     use crate::channels::wasm::schema::ChannelCapabilitiesFile;
 
     #[test]

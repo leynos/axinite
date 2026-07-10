@@ -440,6 +440,8 @@ pub fn shared_catalog() -> Arc<SkillCatalog> {
 
 #[cfg(test)]
 mod tests {
+    //! Unit tests for skill catalogue registry URLs, search, and caching.
+
     use super::*;
 
     #[test]

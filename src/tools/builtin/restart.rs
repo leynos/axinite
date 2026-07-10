@@ -162,6 +162,8 @@ impl NativeTool for RestartTool {
 
 #[cfg(test)]
 mod tests {
+    //! Unit tests for the restart tool's Docker environment handling.
+
     use super::*;
 
     /// Helper to simulate Docker environment for testing

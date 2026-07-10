@@ -533,6 +533,8 @@ fn default_patterns() -> Vec<LeakPattern> {
 
 #[cfg(test)]
 mod tests {
+    //! Unit tests for secret leak detection and severity grading.
+
     use crate::safety::leak_detector::{LeakDetector, LeakSeverity};
 
     #[test]

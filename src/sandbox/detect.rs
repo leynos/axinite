@@ -200,6 +200,8 @@ fn docker_cli_daemon_reachable() -> bool {
 
 #[cfg(test)]
 mod tests {
+    //! Unit tests for platform detection and sandbox install hints.
+
     use super::*;
 
     #[test]

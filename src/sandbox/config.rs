@@ -172,6 +172,8 @@ pub fn default_credential_mappings() -> Vec<crate::secrets::CredentialMapping> {
 
 #[cfg(test)]
 mod tests {
+    //! Unit tests for sandbox policy parsing and permission properties.
+
     use super::*;
 
     #[test]

@@ -82,6 +82,8 @@ pub async fn auth_middleware(
 
 #[cfg(test)]
 mod tests {
+    //! Unit tests for web channel authentication state and token checks.
+
     use super::*;
     use crate::testing::credentials::{TEST_AUTH_SECRET_TOKEN, TEST_BEARER_TOKEN};
 

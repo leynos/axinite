@@ -203,6 +203,8 @@ impl FuelConfig {
 
 #[cfg(test)]
 mod tests {
+    //! Unit tests for WASM resource limit defaults and enforcement.
+
     use crate::tools::wasm::limits::{
         DEFAULT_FUEL_LIMIT, DEFAULT_MEMORY_LIMIT, DEFAULT_TIMEOUT, FuelConfig, ResourceLimits,
         WasmResourceLimiter,

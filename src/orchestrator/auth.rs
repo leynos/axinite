@@ -149,6 +149,8 @@ fn extract_job_id_from_path(path: &str) -> Option<Uuid> {
 
 #[cfg(test)]
 mod tests {
+    //! Unit tests for orchestrator token creation and validation.
+
     use super::*;
 
     #[tokio::test]

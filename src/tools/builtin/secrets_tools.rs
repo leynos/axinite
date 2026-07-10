@@ -158,6 +158,8 @@ impl NativeTool for SecretDeleteTool {
 
 #[cfg(test)]
 mod tests {
+    //! Unit tests for the built-in secrets management tools.
+
     use std::sync::Arc;
 
     use super::*;

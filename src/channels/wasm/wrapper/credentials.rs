@@ -1,3 +1,5 @@
+//! Host credential resolution and injection for WASM channel requests.
+
 use super::store::ResolvedHostCredential;
 use super::types::{HostPattern, SecretValue};
 use crate::channels::wasm::capabilities::ChannelCapabilities;

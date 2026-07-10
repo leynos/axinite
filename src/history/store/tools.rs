@@ -118,6 +118,8 @@ impl Store {
 
 #[cfg(all(test, feature = "postgres"))]
 mod tests {
+    //! Postgres-backed tests for tool failure recording and upserts.
+
     use chrono::Utc;
     use rstest::{fixture, rstest};
 

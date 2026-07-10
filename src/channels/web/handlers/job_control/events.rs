@@ -101,6 +101,8 @@ pub async fn jobs_events_handler(
 
 #[cfg(test)]
 mod tests {
+    //! Unit tests for job event page trimming and cursor computation.
+
     use chrono::Utc;
     use uuid::Uuid;
 

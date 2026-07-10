@@ -309,6 +309,8 @@ impl Store {
 
 #[cfg(test)]
 mod tests {
+    //! Unit tests for job history persistence.
+
     use super::*;
     #[cfg(feature = "postgres")]
     use crate::context::StateTransition;

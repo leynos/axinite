@@ -285,6 +285,8 @@ fn to_cents(usd: Decimal) -> u64 {
 
 #[cfg(test)]
 mod tests {
+    //! Unit tests for cost guard budget and rate-limit enforcement.
+
     use super::*;
 
     #[tokio::test]

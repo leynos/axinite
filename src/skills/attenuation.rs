@@ -116,6 +116,8 @@ pub fn attenuate_tools(
 
 #[cfg(test)]
 mod tests {
+    //! Unit tests for trust-based skill tool attenuation.
+
     use super::*;
     use crate::skills::SkillTrust;
 

@@ -469,6 +469,8 @@ pub fn generate_basic_tests(name: &str, input_schema: &serde_json::Value) -> Tes
 
 #[cfg(test)]
 mod tests {
+    //! Unit tests for builder testing helpers such as JSON path lookup.
+
     use super::*;
 
     #[test]

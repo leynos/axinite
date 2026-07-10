@@ -184,6 +184,8 @@ fn extract_content(event: &HookEvent) -> String {
 
 #[cfg(test)]
 mod tests {
+    //! Unit tests for hook registration and execution ordering.
+
     use super::*;
     use crate::hooks::hook::{HookFailureMode, HookPoint, NativeHook};
     use std::time::Duration;

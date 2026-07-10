@@ -1,3 +1,5 @@
+//! Unit tests for tool schema validation and parameter helpers.
+
 use std::time::Duration;
 
 use insta::assert_snapshot;
@@ -497,6 +499,8 @@ fn test_require_param_missing_error_snapshot() {
 }
 
 mod property_tests {
+    //! Property tests for schema path joining and parameter-name round-trips.
+
     use proptest::prelude::*;
 
     use super::super::*;

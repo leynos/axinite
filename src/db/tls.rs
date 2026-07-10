@@ -72,6 +72,8 @@ pub fn create_pool(
 
 #[cfg(test)]
 mod tests {
+    //! Unit tests for pool creation under each SSL mode.
+
     use super::*;
 
     #[test]

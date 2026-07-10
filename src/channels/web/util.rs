@@ -115,6 +115,8 @@ pub fn build_turns_from_db_messages(
 
 #[cfg(test)]
 mod tests {
+    //! Unit tests for preview truncation at byte and character boundaries.
+
     use super::*;
     use uuid::Uuid;
 

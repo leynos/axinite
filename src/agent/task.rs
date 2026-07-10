@@ -275,6 +275,8 @@ pub enum TaskStatus {
 
 #[cfg(test)]
 mod tests {
+    //! Unit tests for native task handlers and task output handling.
+
     use super::*;
 
     struct EchoTaskHandler;

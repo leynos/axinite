@@ -199,6 +199,8 @@ pub(super) async fn apply_agent_jobs_context_fields_migration(
 
 #[cfg(test)]
 mod tests {
+    //! Unit tests for the v16 agent-jobs context-field migration.
+
     use std::collections::BTreeSet;
 
     use rstest::rstest;

@@ -108,6 +108,8 @@ pub fn verify_slack_signature(
 
 #[cfg(test)]
 mod tests {
+    //! Unit tests for Ed25519 message signature verification.
+
     use super::*;
     use ed25519_dalek::{Signer, SigningKey};
 

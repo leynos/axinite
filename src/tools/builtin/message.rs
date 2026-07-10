@@ -277,6 +277,8 @@ impl NativeTool for MessageTool {
 
 #[cfg(test)]
 mod tests {
+    //! Unit tests for the message tool's metadata and parameter handling.
+
     use super::*;
 
     #[test]

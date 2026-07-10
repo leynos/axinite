@@ -452,6 +452,8 @@ fn try_extract_by_extension(data: &[u8], filename: Option<&str>) -> Option<Strin
 
 #[cfg(test)]
 mod tests {
+    //! Unit tests for document text extraction helpers.
+
     use super::*;
 
     #[test]

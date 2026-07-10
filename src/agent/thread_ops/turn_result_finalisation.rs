@@ -174,6 +174,8 @@ impl Agent {
 
 #[cfg(all(test, feature = "libsql"))]
 mod tests {
+    //! Unit tests for turn result finalisation and persistence.
+
     use std::sync::Arc;
 
     use anyhow::Result;

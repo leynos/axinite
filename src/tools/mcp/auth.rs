@@ -1097,6 +1097,8 @@ pub async fn refresh_access_token(
 
 #[cfg(test)]
 mod tests {
+    //! Unit tests for MCP OAuth PKCE and authentication flows.
+
     use super::*;
 
     #[test]

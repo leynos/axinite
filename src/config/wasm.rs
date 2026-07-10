@@ -1,3 +1,6 @@
+//! WASM sandbox configuration: tool directories, resource limits, and
+//! module caching.
+
 use std::path::PathBuf;
 use std::time::Duration;
 

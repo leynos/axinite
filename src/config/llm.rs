@@ -1,3 +1,6 @@
+//! LLM configuration loading: backend selection, provider resolution, and
+//! session settings drawn from the environment and persisted settings.
+
 use std::path::PathBuf;
 
 use crate::bootstrap::ironclaw_base_dir;
@@ -131,6 +134,8 @@ pub fn default_session_path() -> PathBuf {
 
 #[cfg(test)]
 mod tests {
+    //! Unit tests for LLM backend and model resolution from the environment.
+
     use super::*;
     use crate::config::helpers::ENV_MUTEX;
     use crate::llm::ProviderProtocol;

@@ -379,6 +379,8 @@ fn validate_workspace_path(path: &str) -> Result<(), WasmError> {
 
 #[cfg(test)]
 mod tests {
+    //! Unit tests for WASM host state, logging limits, and path validation.
+
     use std::sync::Arc;
 
     use crate::tools::wasm::capabilities::{

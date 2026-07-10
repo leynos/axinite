@@ -547,6 +547,8 @@ pub enum ExtensionError {
 
 #[cfg(test)]
 mod tests {
+    //! Unit tests for extension authentication results and metadata.
+
     use super::*;
 
     #[test]

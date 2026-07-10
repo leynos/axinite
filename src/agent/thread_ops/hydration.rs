@@ -145,6 +145,8 @@ impl Agent {
 
 #[cfg(all(test, feature = "libsql", feature = "test-helpers"))]
 mod tests {
+    //! Unit tests for hydrating agent session state from the database.
+
     use std::sync::Arc;
 
     use uuid::Uuid;

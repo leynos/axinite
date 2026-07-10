@@ -255,6 +255,8 @@ fn has_valid_percent_encoding(segment: &str) -> bool {
 
 #[cfg(test)]
 mod tests {
+    //! Unit tests for the WASM HTTP endpoint allowlist validator.
+
     use crate::tools::wasm::allowlist::{AllowlistValidator, DenyReason};
     use crate::tools::wasm::capabilities::EndpointPattern;
 

@@ -264,6 +264,8 @@ fn show_path(has_db: bool) -> anyhow::Result<()> {
 
 #[cfg(test)]
 mod tests {
+    //! Unit tests for CLI settings listing and persistence.
+
     use super::*;
     use tempfile::tempdir;
 

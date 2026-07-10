@@ -118,6 +118,8 @@ impl Store {
 
 #[cfg(all(test, feature = "postgres"))]
 mod tests {
+    //! Unit tests for idempotent singleton conversation upserts.
+
     use rstest::{fixture, rstest};
     use uuid::Uuid;
 

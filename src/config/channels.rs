@@ -1,3 +1,6 @@
+//! Channel configuration: CLI, HTTP, gateway, Signal, and WASM channel
+//! settings resolved from the environment and persisted settings.
+
 use std::collections::HashMap;
 use std::path::PathBuf;
 
@@ -247,6 +250,8 @@ fn default_channels_dir() -> PathBuf {
 
 #[cfg(test)]
 mod tests {
+    //! Unit tests for channel configuration parsing and defaults.
+
     use crate::config::EnvContext;
     use crate::config::channels::*;
     use crate::settings::Settings;

@@ -114,6 +114,8 @@ pub(crate) fn v12_wasm_wit_default_migration_sql() -> String {
 
 #[cfg(test)]
 mod tests {
+    //! Unit tests for the v12 WASM WIT-version migration SQL.
+
     use tempfile::tempdir;
 
     use super::v12_wasm_wit_default_migration_sql;

@@ -13,6 +13,8 @@ use tokio::sync::mpsc;
 
 /// Known relay event types.
 pub mod event_types {
+    //! String constants naming the relay event types.
+
     pub const MESSAGE: &str = "message";
     pub const DIRECT_MESSAGE: &str = "direct_message";
     pub const MENTION: &str = "mention";
@@ -420,6 +422,8 @@ pub enum RelayError {
 
 #[cfg(test)]
 mod tests {
+    //! Unit tests for relay event deserialisation and client helpers.
+
     use super::*;
 
     #[test]

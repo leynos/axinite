@@ -274,6 +274,8 @@ fn count_wasm_files(dir: &std::path::Path) -> usize {
 
 #[cfg(test)]
 mod tests {
+    //! Unit tests for status command settings loading.
+
     use super::load_settings_from;
 
     /// Regression test for #354: load_settings_from must read config.toml.

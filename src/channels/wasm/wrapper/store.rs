@@ -1,3 +1,6 @@
+//! WASM store state for channel execution: WASI context, resource limits,
+//! and pre-resolved host credentials injected into outbound requests.
+
 use std::collections::HashMap;
 use std::error::Error;
 use std::sync::Arc;

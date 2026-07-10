@@ -150,6 +150,8 @@ fn format_size(bytes: u64) -> String {
 
 #[cfg(test)]
 mod tests {
+    //! Unit tests for incoming attachment construction and validation.
+
     use super::*;
 
     fn make_attachment(kind: AttachmentKind) -> IncomingAttachment {

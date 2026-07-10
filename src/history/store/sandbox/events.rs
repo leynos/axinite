@@ -135,6 +135,8 @@ impl Store {
 
 #[cfg(all(test, feature = "postgres"))]
 mod tests {
+    //! Unit tests for sandbox event persistence against PostgreSQL.
+
     use chrono::Utc;
     use rstest::{fixture, rstest};
     use uuid::Uuid;

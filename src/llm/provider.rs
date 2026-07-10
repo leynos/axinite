@@ -661,6 +661,8 @@ pub fn strip_unsupported_tool_params(
 
 #[cfg(test)]
 mod tests {
+    //! Unit tests for provider request shaping and tool-result handling.
+
     use super::*;
     mod default_contracts;
 

@@ -1126,6 +1126,9 @@ fn parse_usage(usage: Option<&ChatCompletionUsage>) -> (u32, u32) {
 
 #[cfg(test)]
 mod tests {
+    //! Unit tests for the NearAI chat provider configuration and
+    //! requests.
+
     use super::*;
     use crate::llm::session::SessionConfig;
     use rust_decimal_macros::dec;

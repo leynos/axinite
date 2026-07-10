@@ -627,6 +627,9 @@ impl ChannelEmitRateLimiter {
 
 #[cfg(test)]
 mod tests {
+    //! Unit tests for channel host message emission, limits, and rate
+    //! limiting.
+
     use crate::channels::wasm::capabilities::{ChannelCapabilities, EmitRateLimitConfig};
     use crate::channels::wasm::host::{
         Attachment, ChannelEmitRateLimiter, ChannelHostState, EmittedMessage,

@@ -737,6 +737,8 @@ fn extract_tar_gz(
 
 #[cfg(test)]
 mod tests {
+    //! Unit tests for registry manifest installation.
+
     use super::*;
     use std::collections::HashMap;
 

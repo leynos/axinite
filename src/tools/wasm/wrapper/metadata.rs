@@ -248,6 +248,8 @@ pub(super) fn build_fallback_guidance(
 
 #[cfg(test)]
 mod tests {
+    //! Unit tests for WASM tool metadata and placeholder-schema handling.
+
     use insta::assert_snapshot;
     use rstest::{fixture, rstest};
 

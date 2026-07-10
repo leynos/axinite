@@ -106,6 +106,8 @@ fn is_local_model(model_id: &str) -> bool {
 
 #[cfg(test)]
 mod tests {
+    //! Unit tests for per-model cost lookup and free local models.
+
     use super::*;
 
     #[test]

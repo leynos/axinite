@@ -305,6 +305,8 @@ impl Store {
 
 #[cfg(test)]
 mod tests {
+    //! Unit tests for conversation history store records and errors.
+
     use chrono::Utc;
     use uuid::Uuid;
 

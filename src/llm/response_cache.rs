@@ -304,6 +304,8 @@ impl crate::llm::NativeLlmProvider for CachedProvider {
 
 #[cfg(test)]
 mod tests {
+    //! Unit tests for response caching and per-model cache key isolation.
+
     use std::sync::atomic::{AtomicU32, Ordering};
 
     use rust_decimal::Decimal;

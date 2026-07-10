@@ -1,3 +1,5 @@
+//! Unit tests for cloning WIT status updates across variants.
+
 use rstest::rstest;
 
 use super::super::{clone_wit_status_update, wit_channel};

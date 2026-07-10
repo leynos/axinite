@@ -99,6 +99,8 @@ pub(crate) async fn execute_tool_calls(
 
 #[cfg(test)]
 mod tests {
+    //! Unit tests for delegated tool execution within the dispatcher.
+
     use std::sync::Arc;
     use std::time::Duration;
 

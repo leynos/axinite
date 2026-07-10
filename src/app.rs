@@ -744,6 +744,8 @@ impl RuntimeSideEffects {
 
 #[cfg(test)]
 mod tests {
+    //! Unit tests for application wiring and start-up configuration.
+
     use super::*;
     use std::{
         path::{Path, PathBuf},

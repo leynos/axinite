@@ -602,6 +602,8 @@ impl NativeEmbeddingProvider for MockEmbeddings {
 
 #[cfg(test)]
 mod tests {
+    //! Unit tests for workspace embedding providers.
+
     use super::*;
 
     #[tokio::test]

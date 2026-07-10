@@ -686,6 +686,9 @@ pub(crate) fn document_to_json(doc: &Document) -> serde_json::Value {
 
 #[cfg(test)]
 mod tests {
+    //! Unit tests for Bedrock JSON document conversion and message
+    //! mapping.
+
     use super::*;
     use crate::llm::provider::{ChatMessage, Role};
 

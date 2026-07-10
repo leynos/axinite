@@ -31,6 +31,8 @@ impl NativeTunnel for NoneTunnel {
 
 #[cfg(test)]
 mod tests {
+    //! Unit tests for the no-op tunnel implementation.
+
     use super::*;
 
     #[test]

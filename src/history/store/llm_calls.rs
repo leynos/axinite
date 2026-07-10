@@ -63,6 +63,8 @@ impl Store {
 
 #[cfg(all(test, feature = "postgres"))]
 mod tests {
+    //! Unit tests for persisting LLM call records to Postgres.
+
     use rstest::{fixture, rstest};
 
     use super::{LlmCallRecord, Store};

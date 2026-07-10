@@ -1,3 +1,6 @@
+//! Unit tests for MIME type inference from attachment file
+//! extensions.
+
 use rstest::rstest;
 
 use super::super::attachments::mime_from_extension;

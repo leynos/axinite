@@ -368,6 +368,8 @@ impl Store {
 
 #[cfg(test)]
 mod tests {
+    //! Unit tests for credential-grant parsing in sandbox history rows.
+
     use super::*;
 
     #[test]

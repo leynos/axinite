@@ -366,6 +366,8 @@ fn localize_naive_datetime(
 
 #[cfg(test)]
 mod tests {
+    //! Unit tests for the time tool's timezone handling.
+
     use super::*;
 
     #[tokio::test]

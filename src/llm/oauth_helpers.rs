@@ -267,6 +267,9 @@ pub async fn wait_for_callback(
 
 #[cfg(test)]
 mod tests {
+    //! Unit tests for OAuth loopback detection and callback listener
+    //! binding.
+
     use rstest::rstest;
 
     use super::*;

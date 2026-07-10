@@ -251,6 +251,8 @@ impl NativeDatabase for LibSqlBackend {
 
 #[cfg(test)]
 mod tests {
+    //! Unit tests for the libSQL database backend and timestamp parsing.
+
     use std::sync::Arc;
 
     use chrono::{TimeZone, Utc};

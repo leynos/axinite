@@ -255,6 +255,8 @@ impl WebhookServer {
 
 #[cfg(test)]
 mod tests {
+    //! Unit tests for webhook server startup and health routes.
+
     use std::net::TcpListener as StdTcpListener;
 
     use axum::Json;

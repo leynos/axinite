@@ -553,6 +553,8 @@ fn strip_top_level_nulls(value: serde_json::Value) -> serde_json::Value {
 
 #[cfg(test)]
 mod tests {
+    //! Unit tests for MCP request construction and client behaviour.
+
     use super::*;
     use crate::tools::mcp::transport::NativeMcpTransport;
 

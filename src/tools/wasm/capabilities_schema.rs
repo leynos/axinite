@@ -610,6 +610,8 @@ pub struct ToolSecretSetupSchema {
 
 #[cfg(test)]
 mod tests {
+    //! Unit tests for parsing WASM capability manifests.
+
     use crate::tools::wasm::capabilities_schema::{CapabilitiesFile, CredentialLocationSchema};
 
     #[test]

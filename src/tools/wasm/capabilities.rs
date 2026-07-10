@@ -310,6 +310,9 @@ pub use crate::tools::tool::ToolRateLimitConfig as RateLimitConfig;
 
 #[cfg(test)]
 mod tests {
+    //! Unit tests for WASM capability defaults and endpoint pattern
+    //! matching.
+
     use crate::tools::wasm::capabilities::{Capabilities, EndpointPattern, SecretsCapability};
 
     #[test]

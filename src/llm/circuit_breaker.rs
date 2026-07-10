@@ -309,6 +309,8 @@ impl crate::llm::NativeLlmProvider for CircuitBreakerProvider {
 
 #[cfg(test)]
 mod tests {
+    //! Unit tests for circuit breaker state transitions and recovery.
+
     use super::*;
 
     use crate::testing::StubLlm;

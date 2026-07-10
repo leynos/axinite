@@ -801,6 +801,8 @@ fn libsql_row_to_secret(row: &libsql::Row) -> Result<Secret, SecretError> {
 /// persistent secrets backend is configured (extension listing/install still
 /// works, but stored secrets won't survive a restart).
 pub mod in_memory {
+    //! In-memory secrets store used for testing and development.
+
     use std::collections::HashMap;
     use std::sync::Arc;
 
@@ -960,6 +962,8 @@ pub mod in_memory {
 
 #[cfg(test)]
 mod tests {
+    //! Unit tests for the in-memory secrets store.
+
     use crate::secrets::store::NativeSecretsStore;
     use crate::secrets::types::CreateSecretParams;
     use crate::testing::credentials::{

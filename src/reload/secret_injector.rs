@@ -100,6 +100,9 @@ impl DbSecretInjector {
 
 #[cfg(test)]
 mod tests {
+    //! Unit tests for secret injection from the secrets store into the
+    //! environment overlay.
+
     use std::sync::Arc;
 
     use mockall::automock;

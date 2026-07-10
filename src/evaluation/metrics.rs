@@ -200,6 +200,8 @@ fn categorize_error(error: &str) -> String {
 
 #[cfg(test)]
 mod tests {
+    //! Unit tests for tool metrics collection and error categorisation.
+
     use super::*;
     use rust_decimal_macros::dec;
 

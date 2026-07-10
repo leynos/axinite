@@ -93,6 +93,8 @@ async fn validate_bind_mount_path_against_base(
 
 #[cfg(test)]
 mod tests {
+    //! Unit tests for bind-mount path validation.
+
     use uuid::Uuid;
 
     use super::validate_bind_mount_path_against_base;

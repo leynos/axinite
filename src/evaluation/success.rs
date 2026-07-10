@@ -65,6 +65,8 @@ pub trait SuccessEvaluator: Send + Sync {
 
 #[cfg(test)]
 mod tests {
+    //! Unit tests for success evaluation using a rule-based evaluator.
+
     use super::*;
     use crate::context::{ActionRecord, JobContext};
     use crate::error::EvaluationError;

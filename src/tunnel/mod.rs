@@ -305,6 +305,8 @@ pub async fn start_managed_tunnel(
 
 #[cfg(test)]
 mod tests {
+    //! Unit tests for tunnel provider creation and error reporting.
+
     use super::*;
     use tokio::process::Command;
 
