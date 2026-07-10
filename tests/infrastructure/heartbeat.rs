@@ -1,4 +1,3 @@
-#![cfg(feature = "postgres")]
 //! Heartbeat integration test.
 //!
 //! Exercises the heartbeat system in isolation: connects to the real
@@ -7,6 +6,8 @@
 //!
 //! Usage:
 //!   cargo test --test heartbeat_integration -- --ignored --nocapture
+
+#![cfg(feature = "postgres")]
 
 use std::sync::Arc;
 

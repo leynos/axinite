@@ -306,6 +306,8 @@ impl NativeChannel for TestChannel {
 
 #[cfg(test)]
 mod tests {
+    //! Unit tests for the TestChannel event capture behaviour.
+
     use super::*;
 
     fn make_channel() -> TestChannel {

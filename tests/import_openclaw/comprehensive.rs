@@ -4,6 +4,8 @@
 
 #[cfg(feature = "import")]
 mod comprehensive_import_tests {
+    //! End-to-end OpenClaw import tests over synthetic directory data.
+
     use std::path::{Path, PathBuf};
     use tempfile::TempDir;
     use uuid::Uuid;

@@ -8,6 +8,8 @@
 
 #[cfg(all(feature = "import", feature = "libsql"))]
 mod import_integration_tests {
+    //! Import integration tests verifying persisted database state.
+
     use ironclaw::db::Database;
     use ironclaw::db::libsql::LibSqlBackend;
     use ironclaw::import::openclaw::reader::OpenClawReader;

@@ -50,6 +50,8 @@ fn create_test_channel(
 }
 
 mod router_tests {
+    //! Tests for registering channels and routing via the WASM router.
+
     use super::*;
 
     #[tokio::test]
@@ -189,6 +191,8 @@ mod router_tests {
 }
 
 mod channel_lifecycle_tests {
+    //! Tests for WASM channel start-up and shutdown behaviour.
+
     use super::*;
 
     #[tokio::test]
@@ -239,6 +243,8 @@ mod channel_lifecycle_tests {
 }
 
 mod loader_tests {
+    //! Tests for discovering WASM channel artefacts on disk.
+
     use super::*;
     use std::io::Write;
 
@@ -320,6 +326,8 @@ mod loader_tests {
 }
 
 mod capabilities_tests {
+    //! Tests for channel capability declarations and validation.
+
     use super::*;
 
     #[test]
@@ -395,6 +403,8 @@ mod capabilities_tests {
 }
 
 mod message_emission_tests {
+    //! Tests for message emission through the channel host state.
+
     use super::*;
     use ironclaw::channels::wasm::{ChannelHostState, EmittedMessage};
 

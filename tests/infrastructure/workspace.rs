@@ -1,8 +1,9 @@
-#![cfg(feature = "postgres")]
 //! Integration tests for the workspace module.
 //!
 //! Requires a running PostgreSQL with pgvector extension.
 //! Set DATABASE_URL=postgres://localhost/ironclaw_test
+
+#![cfg(feature = "postgres")]
 
 use std::sync::Arc;
 

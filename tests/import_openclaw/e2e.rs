@@ -7,6 +7,8 @@
 
 #[cfg(feature = "import")]
 mod e2e_import_tests {
+    //! Tests executing the complete OpenClaw import pipeline end to end.
+
     use std::path::PathBuf;
     use tempfile::TempDir;
     use uuid::Uuid;

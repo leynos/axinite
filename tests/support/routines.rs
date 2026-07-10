@@ -43,6 +43,8 @@ impl<'a> SystemEventSpec<'a> {
 }
 
 mod db {
+    //! Temporary libSQL database helpers for routine tests.
+
     use super::*;
 
     /// Create a temp libSQL database with migrations applied.
@@ -81,6 +83,8 @@ mod db {
 }
 
 mod builders {
+    //! Builders for routine and message test fixtures.
+
     use super::*;
 
     /// Helper to insert a routine directly into the database.
@@ -131,6 +135,8 @@ mod builders {
 }
 
 mod engine {
+    //! Helpers constructing a minimal `RoutineEngine` for tests.
+
     use super::*;
 
     /// Build a minimal RoutineEngine from a TraceLlm, returning both the engine and the notify receiver.
@@ -164,6 +170,8 @@ mod engine {
 }
 
 mod registration {
+    //! Helpers registering routines for system event tests.
+
     use super::builders::make_routine;
     use super::*;
 
@@ -190,6 +198,8 @@ mod registration {
 }
 
 mod assertions {
+    //! Assertion helpers for routine engine event tests.
+
     use super::*;
 
     /// Assert that a system event fires the expected number of routines.
@@ -221,6 +231,8 @@ pub use registration::register_github_issue_routine;
 /// `RoutineEngine` (e.g. `heartbeat`) never reference these items, while
 /// compile-time type assertions in `support::mod` prove liveness for the rest.
 pub mod engine_sync {
+    //! Deterministic synchronization helpers for `RoutineEngine` tests.
+
     use std::sync::Arc;
     use std::time::Duration;
 

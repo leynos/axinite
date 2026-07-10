@@ -11,6 +11,8 @@
 
 #[cfg(feature = "import")]
 mod error_handling_tests {
+    //! Error handling and edge case tests for the OpenClaw importer.
+
     use std::path::PathBuf;
     use tempfile::TempDir;
 
