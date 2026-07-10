@@ -118,6 +118,7 @@ impl NativeTool for ReadFileTool {
         // Check file size
         let metadata = fs::metadata(&path)
             .await
+            .map(ambient_fs::Metadata::from_std)
             .map_err(|e| ToolError::ExecutionFailed(format!("Cannot access file: {}", e)))?;
 
         if metadata.len() > MAX_READ_SIZE {
@@ -434,7 +435,11 @@ async fn list_dir_inner(
             .unwrap_or(&entry_path)
             .to_string_lossy();
 
-        let metadata = entry.metadata().await.ok();
+        let metadata = entry
+            .metadata()
+            .await
+            .ok()
+            .map(ambient_fs::Metadata::from_std);
         let is_dir = metadata.as_ref().is_some_and(|m| m.is_dir());
 
         let display = if is_dir {
@@ -630,7 +635,7 @@ mod tests {
     async fn test_read_file() {
         let dir = TempDir::new().unwrap();
         let file_path = dir.path().join("test.txt");
-        std::fs::write(&file_path, "line 1\nline 2\nline 3\n").unwrap();
+        ambient_fs::write(&file_path, "line 1\nline 2\nline 3\n").unwrap();
 
         let tool = ReadFileTool::new().with_base_dir(dir.path().to_path_buf());
         let ctx = JobContext::default();
@@ -668,14 +673,14 @@ mod tests {
             .unwrap();
 
         assert!(result.result.get("success").unwrap().as_bool().unwrap());
-        assert_eq!(std::fs::read_to_string(&file_path).unwrap(), "hello world");
+        assert_eq!(ambient_fs::read_to_string(&file_path).unwrap(), "hello world");
     }
 
     #[tokio::test]
     async fn test_apply_patch() {
         let dir = TempDir::new().unwrap();
         let file_path = dir.path().join("code.rs");
-        std::fs::write(&file_path, "fn main() {\n    println!(\"old\");\n}\n").unwrap();
+        ambient_fs::write(&file_path, "fn main() {\n    println!(\"old\");\n}\n").unwrap();
 
         let tool = ApplyPatchTool::new().with_base_dir(dir.path().to_path_buf());
         let ctx = JobContext::default();
@@ -693,7 +698,7 @@ mod tests {
             .unwrap();
 
         assert!(result.result.get("success").unwrap().as_bool().unwrap());
-        let content = std::fs::read_to_string(&file_path).unwrap();
+        let content = ambient_fs::read_to_string(&file_path).unwrap();
         assert!(content.contains("println!(\"new\")"));
     }
 
@@ -772,8 +777,8 @@ mod tests {
     #[tokio::test]
     async fn test_list_dir() {
         let dir = TempDir::new().unwrap();
-        std::fs::write(dir.path().join("file1.txt"), "content").unwrap();
-        std::fs::create_dir(dir.path().join("subdir")).unwrap();
+        ambient_fs::write(dir.path().join("file1.txt"), "content").unwrap();
+        ambient_fs::create_dir(dir.path().join("subdir")).unwrap();
 
         let tool = ListDirTool::new();
         let ctx = JobContext::default();
@@ -858,7 +863,7 @@ mod tests {
     fn test_validate_path_allows_dot_dot_within_sandbox() {
         // a/b/../c resolves to a/c which is still inside the sandbox
         let dir = TempDir::new().unwrap();
-        std::fs::create_dir_all(dir.path().join("a/b")).unwrap();
+        ambient_fs::create_dir_all(dir.path().join("a/b")).unwrap();
         let result = validate_path("a/b/../c.txt", Some(dir.path()));
         assert!(
             result.is_ok(),

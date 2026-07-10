@@ -19,16 +19,16 @@ struct SkillReadFixture {
 #[fixture]
 fn skill_read_fixture() -> SkillReadFixture {
     let dir = tempfile::tempdir().expect("tempdir should be created");
-    std::fs::create_dir_all(dir.path().join("references"))
+    ambient_fs::create_dir_all(dir.path().join("references"))
         .expect("references dir should be created");
-    std::fs::create_dir_all(dir.path().join("assets")).expect("assets dir should be created");
-    std::fs::write(dir.path().join("SKILL.md"), "# Deploy docs\n")
+    ambient_fs::create_dir_all(dir.path().join("assets")).expect("assets dir should be created");
+    ambient_fs::write(dir.path().join("SKILL.md"), "# Deploy docs\n")
         .expect("skill prompt should be written");
-    std::fs::write(dir.path().join("references/usage.md"), "# Usage\n")
+    ambient_fs::write(dir.path().join("references/usage.md"), "# Usage\n")
         .expect("reference should be written");
-    std::fs::write(dir.path().join("assets/note.txt"), "asset notes\n")
+    ambient_fs::write(dir.path().join("assets/note.txt"), "asset notes\n")
         .expect("text asset should be written");
-    std::fs::write(
+    ambient_fs::write(
         dir.path().join("assets/logo.png"),
         [0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A],
     )
@@ -154,7 +154,7 @@ async fn reads_bundle_reference_text(skill_read_fixture: SkillReadFixture) {
 #[tokio::test]
 #[cfg(target_os = "linux")]
 async fn reads_bundle_reference_text_at_max_size(skill_read_fixture: SkillReadFixture) {
-    std::fs::write(
+    ambient_fs::write(
         skill_read_fixture
             .skill
             .skill_root()
@@ -230,7 +230,7 @@ async fn binary_asset_returns_non_inline_metadata(skill_read_fixture: SkillReadF
 #[tokio::test]
 #[cfg(target_os = "linux")]
 async fn oversized_text_returns_file_too_large(skill_read_fixture: SkillReadFixture) {
-    std::fs::write(
+    ambient_fs::write(
         skill_read_fixture
             .skill
             .skill_root()
@@ -279,7 +279,7 @@ async fn symlink_paths_are_rejected(skill_read_fixture: SkillReadFixture) {
 #[tokio::test]
 async fn intermediate_symlink_paths_are_rejected(skill_read_fixture: SkillReadFixture) {
     let external = tempfile::tempdir().expect("external tempdir should be created");
-    std::fs::write(external.path().join("usage.md"), "# Escaped\n")
+    ambient_fs::write(external.path().join("usage.md"), "# Escaped\n")
         .expect("external reference should be written");
     std::os::unix::fs::symlink(
         external.path(),

@@ -227,7 +227,7 @@ impl ProviderRegistry {
         if let Some(user_path) = user_providers_path()
             && user_path.exists()
         {
-            match std::fs::read_to_string(&user_path) {
+            match ambient_fs::read_to_string(&user_path) {
                 Ok(contents) => match serde_json::from_str::<Vec<ProviderDefinition>>(&contents) {
                     Ok(user_defs) => {
                         tracing::info!(

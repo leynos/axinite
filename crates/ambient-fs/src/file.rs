@@ -147,6 +147,27 @@ impl From<std::fs::File> for File {
     }
 }
 
+#[cfg(unix)]
+impl From<std::os::fd::OwnedFd> for File {
+    fn from(fd: std::os::fd::OwnedFd) -> Self {
+        Self(std::fs::File::from(fd))
+    }
+}
+
+#[cfg(unix)]
+impl std::os::fd::AsFd for File {
+    fn as_fd(&self) -> std::os::fd::BorrowedFd<'_> {
+        std::os::fd::AsFd::as_fd(&self.0)
+    }
+}
+
+#[cfg(unix)]
+impl std::os::fd::AsRawFd for File {
+    fn as_raw_fd(&self) -> std::os::fd::RawFd {
+        std::os::fd::AsRawFd::as_raw_fd(&self.0)
+    }
+}
+
 /// Options controlling how a file is opened, wrapping
 /// [`std::fs::OpenOptions`].
 #[derive(Clone, Debug)]
@@ -200,6 +221,14 @@ impl OpenOptions {
     pub fn mode(&mut self, mode: u32) -> &mut Self {
         use std::os::unix::fs::OpenOptionsExt;
         self.0.mode(mode);
+        self
+    }
+
+    /// Passes custom flags to the `flags` argument of `open`.
+    #[cfg(unix)]
+    pub fn custom_flags(&mut self, flags: i32) -> &mut Self {
+        use std::os::unix::fs::OpenOptionsExt;
+        self.0.custom_flags(flags);
         self
     }
 

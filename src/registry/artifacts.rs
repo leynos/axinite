@@ -120,7 +120,7 @@ pub fn find_any_wasm_artifact(crate_dir: &Path, profile: &str) -> Option<PathBuf
             if !dir.is_dir() {
                 continue;
             }
-            if let Ok(entries) = std::fs::read_dir(&dir) {
+            if let Ok(entries) = ambient_fs::read_dir(&dir) {
                 for entry in entries.flatten() {
                     let path = entry.path();
                     if path.extension().map(|ext| ext == "wasm").unwrap_or(false) {

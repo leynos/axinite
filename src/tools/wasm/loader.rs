@@ -195,7 +195,7 @@ impl WasmToolLoader {
     ///
     /// Tools without a capabilities file get no permissions (default deny).
     pub async fn load_from_dir(&self, dir: &Path) -> Result<LoadResults, WasmLoadError> {
-        match fs::metadata(dir).await {
+        match fs::metadata(dir).await.map(ambient_fs::Metadata::from_std) {
             Ok(meta) if meta.is_dir() => {}
             Ok(_) => {
                 return Err(WasmLoadError::Io(std::io::Error::new(
@@ -586,8 +586,12 @@ pub async fn load_dev_tools(
         let should_load = if installed_path.exists() {
             // Compare modification times: prefer fresher build artifact
             match (
-                fs::metadata(&discovered.wasm_path).await,
-                fs::metadata(&installed_path).await,
+                fs::metadata(&discovered.wasm_path)
+                    .await
+                    .map(ambient_fs::Metadata::from_std),
+                fs::metadata(&installed_path)
+                    .await
+                    .map(ambient_fs::Metadata::from_std),
             ) {
                 (Ok(dev_meta), Ok(inst_meta)) => {
                     let dev_modified = dev_meta.modified().unwrap_or(std::time::UNIX_EPOCH);
@@ -764,7 +768,7 @@ mod tests {
 
         // Create a fake .wasm file
         let wasm_path = dir.path().join("test_tool.wasm");
-        std::fs::File::create(&wasm_path).unwrap();
+        ambient_fs::File::create(&wasm_path).unwrap();
 
         let tools = discover_tools(dir.path()).await.unwrap();
         assert_eq!(tools.len(), 1);
@@ -777,9 +781,9 @@ mod tests {
         let dir = TempDir::new().unwrap();
 
         // Create wasm and capabilities files
-        std::fs::File::create(dir.path().join("slack.wasm")).unwrap();
+        ambient_fs::File::create(dir.path().join("slack.wasm")).unwrap();
         let mut cap_file =
-            std::fs::File::create(dir.path().join("slack.capabilities.json")).unwrap();
+            ambient_fs::File::create(dir.path().join("slack.capabilities.json")).unwrap();
         cap_file.write_all(b"{}").unwrap();
 
         let tools = discover_tools(dir.path()).await.unwrap();
@@ -792,9 +796,9 @@ mod tests {
         let dir = TempDir::new().unwrap();
 
         // Create non-wasm files
-        std::fs::File::create(dir.path().join("readme.md")).unwrap();
-        std::fs::File::create(dir.path().join("config.json")).unwrap();
-        std::fs::File::create(dir.path().join("tool.wasm")).unwrap();
+        ambient_fs::File::create(dir.path().join("readme.md")).unwrap();
+        ambient_fs::File::create(dir.path().join("config.json")).unwrap();
+        ambient_fs::File::create(dir.path().join("tool.wasm")).unwrap();
 
         let tools = discover_tools(dir.path()).await.unwrap();
         assert_eq!(tools.len(), 1);
@@ -986,7 +990,7 @@ mod tests {
         let dir = TempDir::new().unwrap();
         // Create a valid wasm file so the name check is the only failure path
         let wasm_path = dir.path().join("dummy.wasm");
-        std::fs::File::create(&wasm_path).unwrap();
+        ambient_fs::File::create(&wasm_path).unwrap();
 
         let loader = make_loader();
 
@@ -1011,7 +1015,7 @@ mod tests {
     async fn test_tool_name_rejects_empty() {
         let dir = TempDir::new().unwrap();
         let wasm_path = dir.path().join("dummy.wasm");
-        std::fs::File::create(&wasm_path).unwrap();
+        ambient_fs::File::create(&wasm_path).unwrap();
 
         let loader = make_loader();
         let result = loader.load_from_files("", &wasm_path, None).await;
@@ -1049,7 +1053,7 @@ mod tests {
         let wasm_path = dir.path().join("invalid.wasm");
 
         // Write random invalid bytes (not a valid WASM module)
-        let mut f = std::fs::File::create(&wasm_path).unwrap();
+        let mut f = ambient_fs::File::create(&wasm_path).unwrap();
         f.write_all(b"this is not a valid wasm module at all")
             .unwrap();
 
@@ -1074,8 +1078,8 @@ mod tests {
         let dir = TempDir::new().unwrap();
 
         // Create a dotfile .wasm and a normal .wasm
-        std::fs::File::create(dir.path().join(".hidden.wasm")).unwrap();
-        std::fs::File::create(dir.path().join("visible.wasm")).unwrap();
+        ambient_fs::File::create(dir.path().join(".hidden.wasm")).unwrap();
+        ambient_fs::File::create(dir.path().join("visible.wasm")).unwrap();
 
         let tools = discover_tools(dir.path()).await.unwrap();
 
@@ -1099,12 +1103,12 @@ mod tests {
         let dir = TempDir::new().unwrap();
 
         // Create a top-level wasm file
-        std::fs::File::create(dir.path().join("top_level.wasm")).unwrap();
+        ambient_fs::File::create(dir.path().join("top_level.wasm")).unwrap();
 
         // Create a subdirectory with a wasm file inside
         let sub_dir = dir.path().join("subdir");
-        std::fs::create_dir(&sub_dir).unwrap();
-        std::fs::File::create(sub_dir.join("nested.wasm")).unwrap();
+        ambient_fs::create_dir(&sub_dir).unwrap();
+        ambient_fs::File::create(sub_dir.join("nested.wasm")).unwrap();
 
         let tools = discover_tools(dir.path()).await.unwrap();
 

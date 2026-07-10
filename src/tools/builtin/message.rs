@@ -402,7 +402,7 @@ mod tests {
 
     #[tokio::test]
     async fn message_tool_with_attachments_inside_sandbox_no_channel() {
-        use std::fs;
+        use ambient_fs as fs;
 
         let tool = MessageTool::new(Arc::new(ChannelManager::new()));
         tool.set_context(Some("signal".to_string()), Some("+1234567890".to_string()))
@@ -435,7 +435,7 @@ mod tests {
 
     #[tokio::test]
     async fn message_tool_with_attachments_in_tmp_no_channel() {
-        use std::fs;
+        use ambient_fs as fs;
 
         let tool = MessageTool::new(Arc::new(ChannelManager::new()));
         tool.set_context(Some("telegram".to_string()), Some("12345".to_string()))
@@ -535,7 +535,7 @@ mod tests {
 
     #[tokio::test]
     async fn message_tool_passes_attachment_to_broadcast() {
-        use std::fs;
+        use ambient_fs as fs;
 
         let tool = MessageTool::new(Arc::new(ChannelManager::new()));
         tool.set_context(Some("signal".to_string()), Some("+1234567890".to_string()))
@@ -572,7 +572,7 @@ mod tests {
 
     #[tokio::test]
     async fn message_tool_passes_multiple_attachments_to_broadcast() {
-        use std::fs;
+        use ambient_fs as fs;
 
         let tool = MessageTool::new(Arc::new(ChannelManager::new()));
         tool.set_context(Some("signal".to_string()), Some("+1234567890".to_string()))

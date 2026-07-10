@@ -103,9 +103,9 @@ mod tests {
     async fn test_validate_bind_mount_valid_path() {
         let tmp = tempfile::tempdir().expect("failed to create tempdir for valid bind-mount test");
         let base = tmp.path().join("projects");
-        std::fs::create_dir_all(&base).expect("failed to create projects base for valid test");
+        ambient_fs::create_dir_all(&base).expect("failed to create projects base for valid test");
         let test_dir = base.join("test_validate_bind");
-        std::fs::create_dir_all(&test_dir).expect("failed to create test project directory");
+        ambient_fs::create_dir_all(&test_dir).expect("failed to create test project directory");
 
         let result = validate_bind_mount_path_against_base(&test_dir, &base, Uuid::new_v4()).await;
         assert!(result.is_ok());
@@ -119,8 +119,8 @@ mod tests {
             tempfile::tempdir().expect("failed to create tempdir for outside-base bind-mount test");
         let base = tmp.path().join("projects");
         let outside = tmp.path().join("outside");
-        std::fs::create_dir_all(&base).expect("failed to create projects base for outside test");
-        std::fs::create_dir_all(&outside)
+        ambient_fs::create_dir_all(&base).expect("failed to create projects base for outside test");
+        ambient_fs::create_dir_all(&outside)
             .expect("failed to create outside directory for outside-base test");
 
         let result = validate_bind_mount_path_against_base(&outside, &base, Uuid::new_v4()).await;
@@ -140,7 +140,7 @@ mod tests {
         let tmp =
             tempfile::tempdir().expect("failed to create tempdir for nonexistent bind-mount test");
         let base = tmp.path().join("projects");
-        std::fs::create_dir_all(&base)
+        ambient_fs::create_dir_all(&base)
             .expect("failed to create projects base for nonexistent bind-mount test");
         let nonexistent = base.join("missing/project");
         let result =

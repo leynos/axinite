@@ -83,11 +83,11 @@ fn insert_deploy_docs_bundle(
 #[tokio::test]
 async fn skill_read_file_tool_reads_bundle_reference(test_registry: TestRegistryHandle) {
     let bundle_dir = tempfile::tempdir().expect("bundle tempdir should be created");
-    std::fs::create_dir_all(bundle_dir.path().join("references"))
+    ambient_fs::create_dir_all(bundle_dir.path().join("references"))
         .expect("references dir should be created");
-    std::fs::write(bundle_dir.path().join("SKILL.md"), "# Deploy docs\n")
+    ambient_fs::write(bundle_dir.path().join("SKILL.md"), "# Deploy docs\n")
         .expect("SKILL.md should be written");
-    std::fs::write(bundle_dir.path().join("references/usage.md"), "# Usage\n")
+    ambient_fs::write(bundle_dir.path().join("references/usage.md"), "# Usage\n")
         .expect("reference should be written");
     insert_deploy_docs_bundle(&test_registry.registry, bundle_dir.path());
 
@@ -209,11 +209,11 @@ async fn skill_read_file_tool_reports_unknown_skill(test_registry: TestRegistryH
 #[given("a loaded skill bundle with a referenced usage file")]
 fn bdd_loaded_skill_bundle(skill_read_file_world: &mut SkillReadFileWorld) {
     let bundle_dir = tempfile::tempdir().expect("bundle tempdir should be created");
-    std::fs::create_dir_all(bundle_dir.path().join("references"))
+    ambient_fs::create_dir_all(bundle_dir.path().join("references"))
         .expect("references dir should be created");
-    std::fs::write(bundle_dir.path().join("SKILL.md"), "# Deploy docs\n")
+    ambient_fs::write(bundle_dir.path().join("SKILL.md"), "# Deploy docs\n")
         .expect("SKILL.md should be written");
-    std::fs::write(bundle_dir.path().join("references/usage.md"), "# Usage\n")
+    ambient_fs::write(bundle_dir.path().join("references/usage.md"), "# Usage\n")
         .expect("reference should be written");
 
     let registry = Arc::new(std::sync::RwLock::new(SkillRegistry::new(

@@ -2,9 +2,11 @@
 
 use std::{
     ffi::{OsStr, OsString},
-    fs, io,
+    io,
     path::{Path, PathBuf},
 };
+
+use ambient_fs as fs;
 
 use crate::error::WorkerError;
 
@@ -16,12 +18,12 @@ impl ClaudeBridgeRuntime {
         let settings_json = build_permission_settings(&self.config.allowed_tools)?;
         tokio::task::spawn_blocking(move || {
             let settings_dir = std::path::Path::new("/workspace/.claude");
-            std::fs::create_dir_all(settings_dir).map_err(|error| {
+            ambient_fs::create_dir_all(settings_dir).map_err(|error| {
                 WorkerError::ExecutionFailed {
                     reason: format!("failed to create /workspace/.claude/: {error}"),
                 }
             })?;
-            std::fs::write(settings_dir.join("settings.json"), settings_json).map_err(|error| {
+            ambient_fs::write(settings_dir.join("settings.json"), settings_json).map_err(|error| {
                 WorkerError::ExecutionFailed {
                     reason: format!("failed to write settings.json: {error}"),
                 }
@@ -53,7 +55,7 @@ impl ClaudeBridgeRuntime {
 
         let target = std::path::PathBuf::from("/home/sandbox/.claude");
         let copied = tokio::task::spawn_blocking(move || {
-            std::fs::create_dir_all(&target).map_err(|error| WorkerError::ExecutionFailed {
+            ambient_fs::create_dir_all(&target).map_err(|error| WorkerError::ExecutionFailed {
                 reason: format!("failed to create ~/.claude: {error}"),
             })?;
 

@@ -367,6 +367,8 @@ async fn setup_orchestrator_context(
 
 #[cfg(test)]
 mod tests {
+    //! Unit tests for startup phase configuration and context loading.
+
     use std::collections::HashMap;
     use std::sync::{Arc, LazyLock, Mutex};
 

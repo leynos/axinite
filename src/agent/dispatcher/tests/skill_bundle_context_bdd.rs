@@ -79,18 +79,18 @@ fn installed_bundled_skill(skill_context_world: &mut SkillContextWorld) {
 #[given("an installed bundled skill with a references file and an assets file")]
 fn installed_bundled_skill_with_ancillary_files(skill_context_world: &mut SkillContextWorld) {
     let installed_dir = tempfile::tempdir().expect("installed bundle tempdir should be created");
-    std::fs::create_dir_all(installed_dir.path().join("references"))
+    ambient_fs::create_dir_all(installed_dir.path().join("references"))
         .expect("references directory should be created");
-    std::fs::create_dir_all(installed_dir.path().join("assets"))
+    ambient_fs::create_dir_all(installed_dir.path().join("assets"))
         .expect("assets directory should be created");
-    std::fs::write(installed_dir.path().join("SKILL.md"), PROMPT_MARKER)
+    ambient_fs::write(installed_dir.path().join("SKILL.md"), PROMPT_MARKER)
         .expect("SKILL.md should be written");
-    std::fs::write(
+    ambient_fs::write(
         installed_dir.path().join("references/usage.md"),
         REFERENCES_MARKER,
     )
     .expect("reference file should be written");
-    std::fs::write(installed_dir.path().join("assets/note.txt"), ASSETS_MARKER)
+    ambient_fs::write(installed_dir.path().join("assets/note.txt"), ASSETS_MARKER)
         .expect("asset file should be written");
 
     let filesystem_root = installed_dir.path().to_path_buf();

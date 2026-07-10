@@ -2722,7 +2722,7 @@ impl SetupWizard {
     /// session file, etc.).
     async fn persist_session_to_db(&self) {
         let session_path = crate::config::llm::default_session_path();
-        let data = match std::fs::read_to_string(&session_path) {
+        let data = match ambient_fs::read_to_string(&session_path) {
             Ok(d) if !d.trim().is_empty() => d,
             _ => return,
         };

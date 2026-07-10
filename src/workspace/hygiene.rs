@@ -300,7 +300,7 @@ fn state_path_dir(state_file: &std::path::Path) -> Option<&std::path::Path> {
 }
 
 fn load_state(path: &std::path::Path) -> Option<HygieneState> {
-    let data = std::fs::read_to_string(path).ok()?;
+    let data = ambient_fs::read_to_string(path).ok()?;
     serde_json::from_str(&data).ok()
 }
 
@@ -313,7 +313,7 @@ fn save_state(path: &std::path::Path) {
         last_run: Utc::now(),
     };
     if let Some(dir) = state_path_dir(path)
-        && let Err(e) = std::fs::create_dir_all(dir)
+        && let Err(e) = ambient_fs::create_dir_all(dir)
     {
         tracing::warn!("memory hygiene: failed to create state dir: {e}");
         return;
@@ -324,14 +324,14 @@ fn save_state(path: &std::path::Path) {
 
     // Write to a temp file in the same directory, then atomically rename.
     let tmp_path = path.with_extension("json.tmp");
-    if let Err(e) = std::fs::write(&tmp_path, &json) {
+    if let Err(e) = ambient_fs::write(&tmp_path, &json) {
         tracing::warn!("memory hygiene: failed to write temp state: {e}");
         return;
     }
-    if let Err(e) = std::fs::rename(&tmp_path, path) {
+    if let Err(e) = ambient_fs::rename(&tmp_path, path) {
         tracing::warn!("memory hygiene: failed to rename state file: {e}");
         // Clean up temp file on rename failure
-        let _ = std::fs::remove_file(&tmp_path);
+        let _ = ambient_fs::remove_file(&tmp_path);
     }
 }
 

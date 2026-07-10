@@ -79,7 +79,7 @@ impl SessionManager {
         };
 
         // Try to load existing session synchronously during construction
-        if let Ok(data) = std::fs::read_to_string(&manager.config.session_path)
+        if let Ok(data) = ambient_fs::read_to_string(&manager.config.session_path)
             && let Ok(session) = serde_json::from_str::<SessionData>(&data)
         {
             // We can't await here, so we use try_write
@@ -299,9 +299,8 @@ impl SessionManager {
         // Restrictive permissions: session file contains a secret token
         #[cfg(unix)]
         {
-            use std::os::unix::fs::PermissionsExt;
-            let perms = std::fs::Permissions::from_mode(0o600);
-            tokio::fs::set_permissions(&self.config.session_path, perms)
+            let perms = ambient_fs::Permissions::from_mode(0o600);
+            tokio::fs::set_permissions(&self.config.session_path, perms.into_std())
                 .await
                 .map_err(|e| {
                     LlmError::Io(std::io::Error::new(

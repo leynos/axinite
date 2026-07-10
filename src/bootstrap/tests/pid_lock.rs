@@ -17,7 +17,7 @@ fn test_pid_lock_acquire_and_drop() {
     let lock = PidLock::acquire_at(pid_path.clone()).expect("acquire initial pid lock");
     assert!(pid_path.exists());
 
-    let contents = std::fs::read_to_string(&pid_path).expect("read pid lock file");
+    let contents = ambient_fs::read_to_string(&pid_path).expect("read pid lock file");
     assert_eq!(
         contents.trim().parse::<u32>().expect("parse current pid"),
         std::process::id()
@@ -59,10 +59,10 @@ fn test_pid_lock_reclaims_stale_file_without_flock() {
     let dir = tempdir().expect("create temp dir for stale-file pid lock test");
     let pid_path = dir.path().join("ironclaw.pid");
 
-    std::fs::write(&pid_path, "4294967294").expect("write stale pid file");
+    ambient_fs::write(&pid_path, "4294967294").expect("write stale pid file");
 
     let lock = PidLock::acquire_at(pid_path.clone()).expect("reclaim stale pid lock");
-    let contents = std::fs::read_to_string(&pid_path).expect("read reclaimed pid lock");
+    let contents = ambient_fs::read_to_string(&pid_path).expect("read reclaimed pid lock");
     assert_eq!(
         contents.trim().parse::<u32>().expect("parse reclaimed pid"),
         std::process::id()
@@ -75,7 +75,7 @@ fn test_pid_lock_handles_corrupt_pid_file() {
     let dir = tempdir().expect("create temp dir for corrupt pid test");
     let pid_path = dir.path().join("ironclaw.pid");
 
-    std::fs::write(&pid_path, "not-a-number").expect("write corrupt pid file");
+    ambient_fs::write(&pid_path, "not-a-number").expect("write corrupt pid file");
 
     let lock = PidLock::acquire_at(pid_path).expect("reclaim corrupt pid file");
     drop(lock);

@@ -60,13 +60,13 @@ pub(super) fn fresh_registry_fixture() -> FreshRegistryFixture {
 /// Writes `content` to `<root>/<skill_name>/SKILL.md`, creating the subdirectory.
 pub(super) fn write_skill_subdir(root: &Path, skill_name: &str, content: &str) {
     let skill_dir = root.join(skill_name);
-    std::fs::create_dir(&skill_dir).expect("skill subdirectory should be created for test");
-    std::fs::write(skill_dir.join("SKILL.md"), content)
+    ambient_fs::create_dir(&skill_dir).expect("skill subdirectory should be created for test");
+    ambient_fs::write(skill_dir.join("SKILL.md"), content)
         .expect("SKILL.md should be written for test");
 }
 
 /// Writes `content` to `<root>/SKILL.md` (flat layout).
 pub(super) fn write_skill_flat(root: &Path, content: &str) {
-    std::fs::write(root.join("SKILL.md"), content)
+    ambient_fs::write(root.join("SKILL.md"), content)
         .expect("flat SKILL.md should be written for test");
 }

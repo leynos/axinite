@@ -184,7 +184,7 @@ impl WasmChannelLoader {
     /// └── telegram.capabilities.json
     /// ```
     pub async fn load_from_dir(&self, dir: &Path) -> Result<LoadResults, WasmChannelError> {
-        match fs::metadata(dir).await {
+        match fs::metadata(dir).await.map(ambient_fs::Metadata::from_std) {
             Ok(meta) if meta.is_dir() => {}
             Ok(_) => {
                 return Err(WasmChannelError::Io(std::io::Error::new(
@@ -436,7 +436,7 @@ mod tests {
 
         // Create a fake .wasm file
         let wasm_path = dir.path().join("slack.wasm");
-        std::fs::File::create(&wasm_path).unwrap();
+        ambient_fs::File::create(&wasm_path).unwrap();
 
         let channels = discover_channels(dir.path()).await.unwrap();
         assert_eq!(channels.len(), 1);
@@ -449,9 +449,9 @@ mod tests {
         let dir = TempDir::new().unwrap();
 
         // Create wasm and capabilities files
-        std::fs::File::create(dir.path().join("telegram.wasm")).unwrap();
+        ambient_fs::File::create(dir.path().join("telegram.wasm")).unwrap();
         let mut cap_file =
-            std::fs::File::create(dir.path().join("telegram.capabilities.json")).unwrap();
+            ambient_fs::File::create(dir.path().join("telegram.capabilities.json")).unwrap();
         cap_file.write_all(b"{}").unwrap();
 
         let channels = discover_channels(dir.path()).await.unwrap();
@@ -464,9 +464,9 @@ mod tests {
         let dir = TempDir::new().unwrap();
 
         // Create non-wasm files
-        std::fs::File::create(dir.path().join("readme.md")).unwrap();
-        std::fs::File::create(dir.path().join("config.json")).unwrap();
-        std::fs::File::create(dir.path().join("channel.wasm")).unwrap();
+        ambient_fs::File::create(dir.path().join("readme.md")).unwrap();
+        ambient_fs::File::create(dir.path().join("config.json")).unwrap();
+        ambient_fs::File::create(dir.path().join("channel.wasm")).unwrap();
 
         let channels = discover_channels(dir.path()).await.unwrap();
         assert_eq!(channels.len(), 1);

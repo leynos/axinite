@@ -237,7 +237,7 @@ impl ClaudeCodeConfig {
         // Linux / fallback: read from ~/.claude/.credentials.json
         if let Some(home) = dirs::home_dir() {
             let creds_path = home.join(".claude").join(".credentials.json");
-            if let Ok(json) = std::fs::read_to_string(&creds_path) {
+            if let Ok(json) = ambient_fs::read_to_string(&creds_path) {
                 return parse_oauth_access_token(&json);
             }
         }

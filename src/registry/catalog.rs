@@ -195,7 +195,7 @@ impl RegistryCatalog {
         // Load bundles
         let bundles_path = registry_dir.join("_bundles.json");
         let bundles = if bundles_path.is_file() {
-            let content = std::fs::read_to_string(&bundles_path).map_err(|e| {
+            let content = ambient_fs::read_to_string(&bundles_path).map_err(|e| {
                 RegistryError::BundlesRead(format!("{}: {}", bundles_path.display(), e))
             })?;
             let bundles_file: BundlesFile = serde_json::from_str(&content).map_err(|e| {
@@ -218,7 +218,7 @@ impl RegistryCatalog {
         kind_prefix: &str,
         manifests: &mut HashMap<String, ExtensionManifest>,
     ) -> Result<(), RegistryError> {
-        let entries = std::fs::read_dir(dir).map_err(|e| RegistryError::ManifestRead {
+        let entries = ambient_fs::read_dir(dir).map_err(|e| RegistryError::ManifestRead {
             path: dir.to_path_buf(),
             reason: e.to_string(),
         })?;
@@ -235,7 +235,7 @@ impl RegistryCatalog {
             }
 
             let content =
-                std::fs::read_to_string(&path).map_err(|e| RegistryError::ManifestRead {
+                ambient_fs::read_to_string(&path).map_err(|e| RegistryError::ManifestRead {
                     path: path.clone(),
                     reason: e.to_string(),
                 })?;
@@ -473,7 +473,7 @@ mod tests {
     //! Unit tests for loading and querying the extension registry catalogue.
 
     use super::*;
-    use std::fs;
+    use ambient_fs as fs;
 
     fn create_test_registry(dir: &Path) {
         let tools_dir = dir.join("tools");

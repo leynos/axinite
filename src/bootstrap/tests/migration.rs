@@ -13,7 +13,7 @@ fn would_autodetect_libsql(db_path: &std::path::Path) -> bool {
 
 fn assert_bootstrap_env_written(env_path: &std::path::Path, expected_url: &str) {
     assert!(env_path.exists(), ".env must exist after migration");
-    let content = std::fs::read_to_string(env_path).expect("read migrated .env");
+    let content = ambient_fs::read_to_string(env_path).expect("read migrated .env");
     assert_eq!(
         content,
         format!("DATABASE_URL=\"{expected_url}\"\n"),
@@ -44,7 +44,7 @@ fn test_migrate_bootstrap_json_to_env() {
         "onboard_completed": true
     });
 
-    std::fs::write(
+    ambient_fs::write(
         &bootstrap_path,
         serde_json::to_string_pretty(&bootstrap_json).expect("serialize bootstrap.json"),
     )
@@ -79,7 +79,7 @@ fn load_ironclaw_env_migrates_bootstrap_json_to_env() {
     let bootstrap_json = serde_json::json!({
         "database_url": "postgres://localhost/ironclaw_public_boundary"
     });
-    std::fs::write(
+    ambient_fs::write(
         &bootstrap_path,
         serde_json::to_string_pretty(&bootstrap_json).expect("serialize bootstrap.json"),
     )
@@ -110,7 +110,7 @@ fn test_migrate_bootstrap_json_no_database_url() {
     let bootstrap_path = dir.path().join("bootstrap.json");
     let bootstrap_json = serde_json::json!({ "onboard_completed": false });
 
-    std::fs::write(
+    ambient_fs::write(
         &bootstrap_path,
         serde_json::to_string_pretty(&bootstrap_json).expect("serialize bootstrap without url"),
     )
@@ -146,7 +146,7 @@ fn test_libsql_autodetect_sets_backend_when_db_exists() {
         "should not auto-detect when db file is absent"
     );
 
-    std::fs::write(&db_path, "").expect("create libsql marker file");
+    ambient_fs::write(&db_path, "").expect("create libsql marker file");
     assert!(
         would_autodetect_libsql(&db_path),
         "should detect libsql when db file is present and backend unset"
@@ -160,7 +160,7 @@ fn test_libsql_autodetect_does_not_override_explicit_backend() {
 
     let dir = tempdir().expect("create temp dir for explicit backend autodetect test");
     let db_path = dir.path().join("ironclaw.db");
-    std::fs::write(&db_path, "").expect("create libsql marker file");
+    ambient_fs::write(&db_path, "").expect("create libsql marker file");
 
     let would_override = std::env::var("DATABASE_BACKEND").is_err() && db_path.exists();
     assert!(
@@ -204,7 +204,7 @@ fn migrate_bootstrap_json_to_env_rename_failure_leaves_env_written() {
         "database_url": "postgres://localhost/ironclaw_rename_fail",
     });
 
-    std::fs::write(
+    ambient_fs::write(
         &bootstrap_path,
         serde_json::to_string_pretty(&bootstrap_json).expect("serialize"),
     )

@@ -315,8 +315,6 @@ async fn test_save_session_with_no_auth_provider() {
 #[cfg(unix)]
 #[tokio::test]
 async fn test_session_file_permissions() {
-    use std::os::unix::fs::PermissionsExt;
-
     let dir = tempdir().expect("failed to create temp dir");
     let session_path = dir.path().join("session.json");
     let config = mk_config(session_path.clone());
@@ -327,7 +325,7 @@ async fn test_session_file_permissions() {
         .await
         .expect("failed to save session with permissions");
 
-    let metadata = std::fs::metadata(&session_path).expect("failed to stat session file");
+    let metadata = ambient_fs::metadata(&session_path).expect("failed to stat session file");
     let mode = metadata.permissions().mode() & 0o777;
     assert_eq!(mode, 0o600, "Session file should have 0600 permissions");
 }

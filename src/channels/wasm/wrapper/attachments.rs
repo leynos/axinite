@@ -44,7 +44,7 @@ pub(super) fn read_attachments(paths: &[String]) -> Result<Vec<wit_channel::Atta
         })?;
 
         // Pre-check file size before reading into memory to avoid OOM
-        let file_size = std::fs::metadata(&validated)
+        let file_size = ambient_fs::metadata(&validated)
             .map_err(|e| format!("Failed to stat attachment '{}': {}", validated.display(), e))?
             .len();
         total_bytes += file_size;
@@ -55,7 +55,7 @@ pub(super) fn read_attachments(paths: &[String]) -> Result<Vec<wit_channel::Atta
             ));
         }
 
-        let data = std::fs::read(&validated)
+        let data = ambient_fs::read(&validated)
             .map_err(|e| format!("Failed to read attachment '{}': {}", validated.display(), e))?;
 
         let filename = validated

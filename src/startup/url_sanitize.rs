@@ -126,6 +126,8 @@ fn should_redact_query_key(key: &str) -> bool {
 
 #[cfg(test)]
 mod tests {
+    //! Property tests for sanitizing sensitive URL query parameters.
+
     use std::borrow::Cow;
 
     use proptest::{prelude::*, strategy::Strategy};

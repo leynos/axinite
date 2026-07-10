@@ -227,7 +227,7 @@ async fn register_wasm_persists_credentials_only_after_successful_registration()
 
 fn github_wasm_bytes() -> Vec<u8> {
     let wasm_path = github_wasm_artifact().expect("build or find github WASM artifact");
-    std::fs::read(wasm_path).expect("read github wasm artifact")
+    ambient_fs::read(wasm_path).expect("read github wasm artifact")
 }
 
 struct CredentialSpec<'a> {

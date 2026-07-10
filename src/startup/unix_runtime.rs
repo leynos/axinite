@@ -130,6 +130,8 @@ pub(crate) fn spawn_sighup_handler(
 
 #[cfg(test)]
 mod tests {
+    //! Unit tests for Unix runtime webhook server wiring.
+
     use std::collections::HashMap;
     use std::sync::Arc;
 

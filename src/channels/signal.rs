@@ -2766,7 +2766,7 @@ mod tests {
 
     #[test]
     fn validate_attachment_paths_accepts_normal_paths() {
-        use std::fs;
+        use ambient_fs as fs;
 
         // Create test files in sandbox
         let base_dir = crate::bootstrap::ironclaw_base_dir();

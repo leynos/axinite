@@ -968,7 +968,7 @@ impl Workspace {
             return Ok(0);
         }
 
-        let entries = std::fs::read_dir(dir).map_err(|e| WorkspaceError::IoError {
+        let entries = ambient_fs::read_dir(dir).map_err(|e| WorkspaceError::IoError {
             reason: format!("failed to read directory {}: {}", dir.display(), e),
         })?;
 
@@ -1002,7 +1002,7 @@ impl Workspace {
                 }
             }
 
-            let content = match std::fs::read_to_string(&path) {
+            let content = match ambient_fs::read_to_string(&path) {
                 Ok(c) => c,
                 Err(e) => {
                     tracing::warn!("Failed to read import file {}: {}", path.display(), e);

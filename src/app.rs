@@ -856,10 +856,10 @@ mod tests {
         let db_path = temp_dir.path().join("app-migration.db");
         let skills_dir = temp_dir.path().join("skills");
         let installed_skills_dir = temp_dir.path().join("installed_skills");
-        std::fs::create_dir_all(&ironclaw_dir)?;
-        std::fs::create_dir_all(&skills_dir)?;
-        std::fs::create_dir_all(&installed_skills_dir)?;
-        std::fs::write(
+        ambient_fs::create_dir_all(&ironclaw_dir)?;
+        ambient_fs::create_dir_all(&skills_dir)?;
+        ambient_fs::create_dir_all(&installed_skills_dir)?;
+        ambient_fs::write(
             ironclaw_dir.join("settings.json"),
             serde_json::to_string_pretty(&serde_json::json!({
                 "onboard_completed": true,

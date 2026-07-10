@@ -706,7 +706,7 @@ fn extract_tar_gz(
                     url: url.to_string(),
                     reason: format!("failed to read {} from archive: {}", wasm_filename, e),
                 })?;
-            std::fs::write(target_wasm, &data).map_err(RegistryError::Io)?;
+            ambient_fs::write(target_wasm, &data).map_err(RegistryError::Io)?;
             found_wasm = true;
         } else if filename == caps_filename {
             let mut data = Vec::with_capacity(entry.size() as usize);
@@ -715,7 +715,7 @@ fn extract_tar_gz(
                     url: url.to_string(),
                     reason: format!("failed to read {} from archive: {}", caps_filename, e),
                 })?;
-            std::fs::write(target_caps, &data).map_err(RegistryError::Io)?;
+            ambient_fs::write(target_caps, &data).map_err(RegistryError::Io)?;
             found_caps = true;
         }
     }

@@ -197,7 +197,7 @@ fn check_settings_file() -> CheckResult {
         return CheckResult::Pass("no settings file (defaults will be used)".into());
     }
 
-    match std::fs::read_to_string(&path) {
+    match ambient_fs::read_to_string(&path) {
         Ok(data) => match serde_json::from_str::<serde_json::Value>(&data) {
             Ok(_) => CheckResult::Pass(format!("valid ({})", path.display())),
             Err(e) => CheckResult::Fail(format!(
@@ -227,7 +227,7 @@ async fn check_nearai_session() -> CheckResult {
     }
 
     // Verify the session file is readable and non-empty
-    match std::fs::read_to_string(&session_path) {
+    match ambient_fs::read_to_string(&session_path) {
         Ok(content) if content.trim().is_empty() => {
             CheckResult::Fail("session file is empty".into())
         }
@@ -421,7 +421,7 @@ fn check_embeddings_with_context(ctx: &EnvContext, settings: &Settings) -> Check
                     // (src/workspace/embeddings.rs:309, src/llm/session.rs:132).
                     let session_path = crate::config::llm::default_session_path();
                     session_path.exists()
-                        && std::fs::read_to_string(&session_path)
+                        && ambient_fs::read_to_string(&session_path)
                             .map(|s| !s.trim().is_empty())
                             .unwrap_or(false)
                 }

@@ -730,7 +730,7 @@ impl Settings {
 
     /// Load settings from a specific path (used by bootstrap legacy migration).
     pub fn load_from(path: &std::path::Path) -> Self {
-        match std::fs::read_to_string(path) {
+        match ambient_fs::read_to_string(path) {
             Ok(data) => serde_json::from_str(&data).unwrap_or_default(),
             Err(_) => Self::default(),
         }
@@ -746,7 +746,7 @@ impl Settings {
     /// Returns `None` if the file doesn't exist. Returns an error only
     /// if the file exists but can't be parsed.
     pub fn load_toml(path: &std::path::Path) -> Result<Option<Self>, String> {
-        let data = match std::fs::read_to_string(path) {
+        let data = match ambient_fs::read_to_string(path) {
             Ok(d) => d,
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(None),
             Err(e) => return Err(format!("failed to read {}: {}", path.display(), e)),
@@ -775,11 +775,11 @@ impl Settings {
         );
 
         if let Some(parent) = path.parent() {
-            std::fs::create_dir_all(parent)
+            ambient_fs::create_dir_all(parent)
                 .map_err(|e| format!("failed to create {}: {}", parent.display(), e))?;
         }
 
-        std::fs::write(path, content)
+        ambient_fs::write(path, content)
             .map_err(|e| format!("failed to write {}: {}", path.display(), e))
     }
 
@@ -1158,7 +1158,7 @@ mod tests {
             ..Default::default()
         };
         let json = serde_json::to_string_pretty(&settings).unwrap();
-        std::fs::write(&path, json).unwrap();
+        ambient_fs::write(&path, json).unwrap();
 
         let loaded = Settings::load_from(&path);
         assert_eq!(loaded.llm_backend, Some("anthropic".to_string()));
@@ -1256,7 +1256,7 @@ mod tests {
     fn toml_invalid_content_returns_error() {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("bad.toml");
-        std::fs::write(&path, "this is not valid toml [[[").unwrap();
+        ambient_fs::write(&path, "this is not valid toml [[[").unwrap();
 
         let result = Settings::load_toml(&path);
         assert!(result.is_err());
@@ -1268,7 +1268,7 @@ mod tests {
         let path = dir.path().join("partial.toml");
 
         // Only set agent name, everything else should be default
-        std::fs::write(&path, "[agent]\nname = \"partial-bot\"\n").unwrap();
+        ambient_fs::write(&path, "[agent]\nname = \"partial-bot\"\n").unwrap();
 
         let loaded = Settings::load_toml(&path).unwrap().unwrap();
         assert_eq!(loaded.agent.name, "partial-bot");
@@ -1283,7 +1283,7 @@ mod tests {
         let path = dir.path().join("config.toml");
 
         Settings::default().save_toml(&path).unwrap();
-        let content = std::fs::read_to_string(&path).unwrap();
+        let content = ambient_fs::read_to_string(&path).unwrap();
 
         assert!(content.starts_with("# IronClaw configuration file."));
         assert!(content.contains("[agent]"));
@@ -1619,7 +1619,7 @@ mod tests {
 
         // JSON round-trip
         let json = serde_json::to_string_pretty(&original).unwrap();
-        std::fs::write(&json_path, &json).unwrap();
+        ambient_fs::write(&json_path, &json).unwrap();
         let from_json = Settings::load_from(&json_path);
 
         // DB map round-trip

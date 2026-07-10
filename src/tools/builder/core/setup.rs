@@ -208,7 +208,7 @@ impl LlmSoftwareBuilder {
         llm: Arc<dyn LlmProvider>,
         tools: Arc<ToolRegistry>,
     ) -> Result<Self, std::io::Error> {
-        std::fs::create_dir_all(&config.build_dir)?;
+        ambient_fs::create_dir_all(&config.build_dir)?;
         Ok(Self { config, llm, tools })
     }
 

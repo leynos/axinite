@@ -101,7 +101,7 @@ fn read_bootstrap_json(path: &Path) -> io::Result<Option<serde_json::Value>> {
         return Ok(None);
     }
 
-    let content = std::fs::read_to_string(path)?;
+    let content = ambient_fs::read_to_string(path)?;
     serde_json::from_str(&content)
         .map(Some)
         .map_err(|error| io::Error::new(io::ErrorKind::InvalidData, error))
@@ -125,7 +125,7 @@ fn quote_env_value(raw: &str) -> String {
 
 fn upsert_env_pairs(env_path: &Path, pairs: &[EnvPair<'_>]) -> io::Result<()> {
     if let Some(parent) = env_path.parent()
-        && let Err(error) = std::fs::create_dir_all(parent)
+        && let Err(error) = ambient_fs::create_dir_all(parent)
     {
         eprintln!("Warning: failed to create {}: {}", parent.display(), error);
         return Err(error);
@@ -133,7 +133,7 @@ fn upsert_env_pairs(env_path: &Path, pairs: &[EnvPair<'_>]) -> io::Result<()> {
 
     let keys_being_written: std::collections::HashSet<&str> =
         pairs.iter().map(|pair| pair.key.as_str()).collect();
-    let existing = match std::fs::read_to_string(env_path) {
+    let existing = match ambient_fs::read_to_string(env_path) {
         Ok(contents) => contents,
         Err(error) if error.kind() == io::ErrorKind::NotFound => String::new(),
         Err(error) => {
@@ -165,7 +165,7 @@ fn upsert_env_pairs(env_path: &Path, pairs: &[EnvPair<'_>]) -> io::Result<()> {
         ));
     }
 
-    if let Err(error) = std::fs::write(env_path, result) {
+    if let Err(error) = ambient_fs::write(env_path, result) {
         eprintln!(
             "Warning: failed to migrate bootstrap.json to .env: {}",
             error
@@ -189,7 +189,7 @@ fn read_optional_json_file(path: &Path, file_name: &str) -> Option<serde_json::V
         return None;
     }
 
-    let content = match std::fs::read_to_string(path) {
+    let content = match ambient_fs::read_to_string(path) {
         Ok(content) => content,
         Err(error) => {
             tracing::warn!("Failed to read {}: {}", file_name, error);
@@ -382,7 +382,7 @@ pub(super) async fn migrate_disk_to_db_from_dir(
 pub(super) fn rename_to_migrated(path: &Path) -> io::Result<()> {
     let mut migrated = path.as_os_str().to_owned();
     migrated.push(".migrated");
-    std::fs::rename(path, &migrated).map_err(|error| {
+    ambient_fs::rename(path, &migrated).map_err(|error| {
         tracing::warn!(
             "Failed to rename {} to .migrated: {}",
             path.display(),

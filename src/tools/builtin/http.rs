@@ -121,7 +121,7 @@ fn validate_save_to_path(save_to: &str) -> Result<std::path::PathBuf, ToolError>
     let validated = crate::tools::builtin::path_utils::validate_path(save_to, Some(tmp_base))?;
     // Only create parent directories for the validated (safe) path
     if let Some(parent) = validated.parent() {
-        std::fs::create_dir_all(parent).map_err(|e| {
+        ambient_fs::create_dir_all(parent).map_err(|e| {
             ToolError::ExecutionFailed(format!("failed to create directory: {}", e))
         })?;
     }
@@ -512,7 +512,7 @@ impl NativeTool for HttpTool {
             let bytes_clone = body_bytes.clone();
             tokio::task::spawn_blocking(move || {
                 let canonical = validate_save_to_path(&save_to_owned)?;
-                std::fs::write(&canonical, &bytes_clone).map_err(|e| {
+                ambient_fs::write(&canonical, &bytes_clone).map_err(|e| {
                     ToolError::ExecutionFailed(format!("failed to write file: {}", e))
                 })?;
                 Ok::<_, ToolError>(canonical)
@@ -1007,14 +1007,14 @@ mod tests {
     fn test_save_to_accepts_simple_tmp_path() {
         let path = validate_save_to_path("/tmp/test_ironclaw_photo.jpg").unwrap();
         assert!(path.starts_with("/tmp"));
-        let _ = std::fs::remove_file(&path);
+        let _ = ambient_fs::remove_file(&path);
     }
 
     #[test]
     fn test_save_to_accepts_nested_tmp_path() {
         let path = validate_save_to_path("/tmp/ironclaw_test_subdir/nested/file.png").unwrap();
         assert!(path.starts_with("/tmp"));
-        let _ = std::fs::remove_dir_all("/tmp/ironclaw_test_subdir");
+        let _ = ambient_fs::remove_dir_all("/tmp/ironclaw_test_subdir");
     }
 
     #[test]

@@ -7,7 +7,7 @@ pub(crate) fn load_complex_tool_schema_fixture(tool_name: &str) -> serde_json::V
     let path = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .join("tests/fixtures/schemas")
         .join(format!("{tool_name}.json"));
-    let raw = std::fs::read_to_string(&path)
+    let raw = ambient_fs::read_to_string(&path)
         .unwrap_or_else(|err| panic!("failed to read schema fixture {}: {err}", path.display()));
 
     serde_json::from_str(&raw)

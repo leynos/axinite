@@ -3,12 +3,11 @@
 //! Stored in ~/.ironclaw/{channel}-pairing.json and {channel}-allowFrom.json.
 
 use std::collections::HashSet;
-use std::fs;
 use std::io::{Seek, SeekFrom, Write};
 use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use fs4::FileExt;
+use ambient_fs as fs;
 use rand::Rng;
 use rand::rngs::OsRng;
 use serde::{Deserialize, Serialize};
@@ -253,7 +252,7 @@ impl PairingStore {
         let now_secs = now_secs();
         let id = id.trim().to_string();
         if id.is_empty() {
-            fs4::FileExt::unlock(&file)?;
+            file.unlock()?;
             return Err(PairingStoreError::InvalidChannel("empty id".to_string()));
         }
 
@@ -277,7 +276,7 @@ impl PairingStore {
                 req.meta = Some(m);
             }
             self.write_pairing_file_locked(&mut file, channel, &store.requests)?;
-            fs4::FileExt::unlock(&file)?;
+            file.unlock()?;
             return Ok(UpsertResult {
                 code,
                 created: false,
@@ -285,7 +284,7 @@ impl PairingStore {
         }
 
         if store.requests.len() >= PAIRING_PENDING_MAX {
-            fs4::FileExt::unlock(&file)?;
+            file.unlock()?;
             return Ok(UpsertResult {
                 code: String::new(),
                 created: false,
@@ -302,7 +301,7 @@ impl PairingStore {
         });
 
         self.write_pairing_file_locked(&mut file, channel, &store.requests)?;
-        fs4::FileExt::unlock(&file)?;
+        file.unlock()?;
 
         Ok(UpsertResult {
             code,
@@ -353,7 +352,7 @@ impl PairingStore {
 
         let json = serde_json::to_string_pretty(&data)?;
         fs::write(&path, json)?;
-        fs4::FileExt::unlock(&file)?;
+        file.unlock()?;
         Ok(())
     }
 
@@ -406,14 +405,14 @@ impl PairingStore {
         let entry = match idx {
             Some(i) => store.requests.remove(i),
             None => {
-                fs4::FileExt::unlock(&file)?;
+                file.unlock()?;
                 self.record_failed_approve(channel)?;
                 return Ok(None);
             }
         };
 
         self.write_pairing_file_locked(&mut file, channel, &store.requests)?;
-        fs4::FileExt::unlock(&file)?;
+        file.unlock()?;
 
         self.add_allow_from(channel, &entry.id)?;
 
@@ -499,7 +498,7 @@ impl PairingStore {
             .iter()
             .any(|e| e.to_lowercase() == normalized)
         {
-            fs4::FileExt::unlock(&file)?;
+            file.unlock()?;
             return Ok(());
         }
 
@@ -507,7 +506,7 @@ impl PairingStore {
         let json = serde_json::to_string_pretty(&store)?;
         fs::write(&path, json)?;
 
-        fs4::FileExt::unlock(&file)?;
+        file.unlock()?;
         Ok(())
     }
 
@@ -524,7 +523,7 @@ impl PairingStore {
             .open(&path)?;
         file.lock_exclusive()?;
         self.write_pairing_file_locked(&mut file, channel, requests)?;
-        fs4::FileExt::unlock(&file)?;
+        file.unlock()?;
         Ok(())
     }
 

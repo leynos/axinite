@@ -158,7 +158,7 @@ impl NativeChannel for ReplChannel {
             // Load history
             let hist_path = history_path();
             if let Some(parent) = hist_path.parent() {
-                let _ = std::fs::create_dir_all(parent);
+                let _ = ambient_fs::create_dir_all(parent);
             }
             let _ = rl.load_history(&hist_path);
 

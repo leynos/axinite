@@ -35,9 +35,11 @@ pub(super) async fn delete_skill_files(path: &Path) -> Result<(), SkillRegistryE
     perform_delete(path, &metadata).await
 }
 
-async fn check_path_metadata(path: &Path) -> Result<Option<std::fs::Metadata>, SkillRegistryError> {
+async fn check_path_metadata(
+    path: &Path,
+) -> Result<Option<ambient_fs::Metadata>, SkillRegistryError> {
     match tokio::fs::symlink_metadata(path).await {
-        Ok(metadata) => Ok(Some(metadata)),
+        Ok(metadata) => Ok(Some(ambient_fs::Metadata::from_std(metadata))),
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(None),
         Err(error) => Err(SkillRegistryError::WriteError {
             path: path.display().to_string(),
@@ -48,7 +50,7 @@ async fn check_path_metadata(path: &Path) -> Result<Option<std::fs::Metadata>, S
 
 async fn perform_delete(
     path: &Path,
-    metadata: &std::fs::Metadata,
+    metadata: &ambient_fs::Metadata,
 ) -> Result<(), SkillRegistryError> {
     let result = if metadata.is_file() {
         tokio::fs::remove_file(path).await

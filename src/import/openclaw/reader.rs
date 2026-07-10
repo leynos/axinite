@@ -118,7 +118,7 @@ impl OpenClawReader {
             });
         }
 
-        let content = std::fs::read_to_string(&config_path).map_err(ImportError::Io)?;
+        let content = ambient_fs::read_to_string(&config_path).map_err(ImportError::Io)?;
 
         #[cfg(feature = "import")]
         {
@@ -202,7 +202,7 @@ impl OpenClawReader {
         }
 
         let mut dbs = Vec::new();
-        for entry in std::fs::read_dir(&agents_dir).map_err(ImportError::Io)? {
+        for entry in ambient_fs::read_dir(&agents_dir).map_err(ImportError::Io)? {
             let entry = entry.map_err(ImportError::Io)?;
             let path = entry.path();
             if path.extension().and_then(|s| s.to_str()) == Some("sqlite") {
@@ -356,7 +356,7 @@ impl OpenClawReader {
         }
 
         let mut count = 0;
-        if let Ok(entries) = std::fs::read_dir(&workspace_dir) {
+        if let Ok(entries) = ambient_fs::read_dir(&workspace_dir) {
             for entry in entries.flatten() {
                 if let Some(ext) = entry.path().extension()
                     && ext == "md"

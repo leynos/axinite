@@ -205,7 +205,7 @@ pub(super) fn commit_install(
         loaded_skill,
     } = prepared;
 
-    if let Err(error) = std::fs::rename(&staged_dir, &final_dir) {
+    if let Err(error) = ambient_fs::rename(&staged_dir, &final_dir) {
         return Err(CommitPreparedInstallError {
             error: SkillRegistryError::WriteError {
                 path: final_dir.display().to_string(),

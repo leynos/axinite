@@ -1732,14 +1732,14 @@ impl ExtensionManager {
                 let mut data = Vec::with_capacity(entry.size() as usize);
                 std::io::Read::read_to_end(&mut entry.by_ref().take(MAX_ENTRY_SIZE), &mut data)
                     .map_err(|e| ExtensionError::InstallFailed(e.to_string()))?;
-                std::fs::write(target_wasm, &data)
+                ambient_fs::write(target_wasm, &data)
                     .map_err(|e| ExtensionError::InstallFailed(e.to_string()))?;
                 found_wasm = true;
             } else if filename == caps_filename {
                 let mut data = Vec::with_capacity(entry.size() as usize);
                 std::io::Read::read_to_end(&mut entry.by_ref().take(MAX_ENTRY_SIZE), &mut data)
                     .map_err(|e| ExtensionError::InstallFailed(e.to_string()))?;
-                std::fs::write(target_caps, &data)
+                ambient_fs::write(target_caps, &data)
                     .map_err(|e| ExtensionError::InstallFailed(e.to_string()))?;
             }
         }
@@ -3495,28 +3495,28 @@ mod tests {
         let dir = tempfile::tempdir().expect("temp dir");
         let tools_dir = dir.path().join("tools");
         let channels_dir = dir.path().join("channels");
-        std::fs::create_dir_all(&tools_dir).unwrap();
-        std::fs::create_dir_all(&channels_dir).unwrap();
+        ambient_fs::create_dir_all(&tools_dir).unwrap();
+        ambient_fs::create_dir_all(&channels_dir).unwrap();
 
         let name = "telegram";
         let tool_wasm = tools_dir.join(format!("{}.wasm", name));
         let channel_wasm = channels_dir.join(format!("{}.wasm", name));
 
         // Simulate installing both.
-        std::fs::write(&tool_wasm, b"tool-payload").unwrap();
-        std::fs::write(&channel_wasm, b"channel-payload").unwrap();
+        ambient_fs::write(&tool_wasm, b"tool-payload").unwrap();
+        ambient_fs::write(&channel_wasm, b"channel-payload").unwrap();
 
         // Both files exist and contain distinct content.
         assert!(tool_wasm.exists());
         assert!(channel_wasm.exists());
         assert_ne!(
-            std::fs::read(&tool_wasm).unwrap(),
-            std::fs::read(&channel_wasm).unwrap(),
+            ambient_fs::read(&tool_wasm).unwrap(),
+            ambient_fs::read(&channel_wasm).unwrap(),
             "Tool and channel files must be independent"
         );
 
         // Removing one doesn't affect the other.
-        std::fs::remove_file(&tool_wasm).unwrap();
+        ambient_fs::remove_file(&tool_wasm).unwrap();
         assert!(!tool_wasm.exists());
         assert!(
             channel_wasm.exists(),
@@ -3532,27 +3532,27 @@ mod tests {
         let dir = tempfile::tempdir().expect("temp dir");
         let tools_dir = dir.path().join("tools");
         let channels_dir = dir.path().join("channels");
-        std::fs::create_dir_all(&tools_dir).unwrap();
-        std::fs::create_dir_all(&channels_dir).unwrap();
+        ambient_fs::create_dir_all(&tools_dir).unwrap();
+        ambient_fs::create_dir_all(&channels_dir).unwrap();
 
         let name = "ambiguous";
         let tool_wasm = tools_dir.join(format!("{}.wasm", name));
         let channel_wasm = channels_dir.join(format!("{}.wasm", name));
 
         // Only channel exists → channel kind.
-        std::fs::write(&channel_wasm, b"channel").unwrap();
+        ambient_fs::write(&channel_wasm, b"channel").unwrap();
         assert!(!tool_wasm.exists());
         assert!(channel_wasm.exists());
 
         // Both exist → tools dir checked first.
-        std::fs::write(&tool_wasm, b"tool").unwrap();
+        ambient_fs::write(&tool_wasm, b"tool").unwrap();
         assert!(tool_wasm.exists());
         assert!(channel_wasm.exists());
         // This documents the determine_installed_kind priority:
         // tools are checked before channels.
 
         // Only tool exists → tool kind.
-        std::fs::remove_file(&channel_wasm).unwrap();
+        ambient_fs::remove_file(&channel_wasm).unwrap();
         assert!(tool_wasm.exists());
         assert!(!channel_wasm.exists());
     }
@@ -3575,8 +3575,8 @@ mod tests {
         let dir = tempfile::tempdir().expect("temp dir");
         let tools_dir = dir.path().join("tools");
         let channels_dir = dir.path().join("channels");
-        std::fs::create_dir_all(&tools_dir).unwrap();
-        std::fs::create_dir_all(&channels_dir).unwrap();
+        ambient_fs::create_dir_all(&tools_dir).unwrap();
+        ambient_fs::create_dir_all(&channels_dir).unwrap();
 
         let name = "telegram";
         let tool_cap = tools_dir.join(format!("{}.capabilities.json", name));
@@ -3585,12 +3585,12 @@ mod tests {
         let tool_caps = r#"{"required_secrets":["TELEGRAM_API_KEY"]}"#;
         let channel_caps = r#"{"required_secrets":["TELEGRAM_BOT_TOKEN"]}"#;
 
-        std::fs::write(&tool_cap, tool_caps).unwrap();
-        std::fs::write(&channel_cap, channel_caps).unwrap();
+        ambient_fs::write(&tool_cap, tool_caps).unwrap();
+        ambient_fs::write(&channel_cap, channel_caps).unwrap();
 
         // Both exist with distinct content.
-        assert_eq!(std::fs::read_to_string(&tool_cap).unwrap(), tool_caps);
-        assert_eq!(std::fs::read_to_string(&channel_cap).unwrap(), channel_caps);
+        assert_eq!(ambient_fs::read_to_string(&tool_cap).unwrap(), tool_caps);
+        assert_eq!(ambient_fs::read_to_string(&channel_cap).unwrap(), channel_caps);
     }
 
     #[tokio::test]
@@ -3615,11 +3615,11 @@ mod tests {
     async fn test_upgrade_up_to_date_extension() {
         let dir = tempfile::tempdir().expect("temp dir");
         let channels_dir = dir.path().join("channels");
-        std::fs::create_dir_all(&channels_dir).unwrap();
+        ambient_fs::create_dir_all(&channels_dir).unwrap();
 
         // Write a fake .wasm file and capabilities with current WIT version
         let wasm_path = channels_dir.join("test-channel.wasm");
-        std::fs::write(&wasm_path, b"\0asm fake").unwrap();
+        ambient_fs::write(&wasm_path, b"\0asm fake").unwrap();
 
         let cap_path = channels_dir.join("test-channel.capabilities.json");
         let caps = serde_json::json!({
@@ -3627,7 +3627,7 @@ mod tests {
             "name": "test-channel",
             "wit_version": crate::tools::wasm::WIT_CHANNEL_VERSION,
         });
-        std::fs::write(&cap_path, serde_json::to_string(&caps).unwrap()).unwrap();
+        ambient_fs::write(&cap_path, serde_json::to_string(&caps).unwrap()).unwrap();
 
         let manager = make_manager_custom_dirs(dir.path().join("tools"), channels_dir);
 
@@ -3640,11 +3640,11 @@ mod tests {
     async fn test_upgrade_outdated_not_in_registry() {
         let dir = tempfile::tempdir().expect("temp dir");
         let channels_dir = dir.path().join("channels");
-        std::fs::create_dir_all(&channels_dir).unwrap();
+        ambient_fs::create_dir_all(&channels_dir).unwrap();
 
         // Write a fake .wasm file and capabilities with OLD WIT version
         let wasm_path = channels_dir.join("custom-channel.wasm");
-        std::fs::write(&wasm_path, b"\0asm fake").unwrap();
+        ambient_fs::write(&wasm_path, b"\0asm fake").unwrap();
 
         let cap_path = channels_dir.join("custom-channel.capabilities.json");
         let caps = serde_json::json!({
@@ -3652,7 +3652,7 @@ mod tests {
             "name": "custom-channel",
             "wit_version": "0.1.0",
         });
-        std::fs::write(&cap_path, serde_json::to_string(&caps).unwrap()).unwrap();
+        ambient_fs::write(&cap_path, serde_json::to_string(&caps).unwrap()).unwrap();
 
         let manager = make_manager_custom_dirs(dir.path().join("tools"), channels_dir);
 
@@ -3674,8 +3674,8 @@ mod tests {
         use crate::testing::credentials::TEST_CRYPTO_KEY;
         use crate::tools::ToolRegistry;
 
-        std::fs::create_dir_all(&tools_dir).ok();
-        std::fs::create_dir_all(&channels_dir).ok();
+        ambient_fs::create_dir_all(&tools_dir).ok();
+        ambient_fs::create_dir_all(&channels_dir).ok();
 
         let master_key = secrecy::SecretString::from(TEST_CRYPTO_KEY.to_string());
         let crypto = Arc::new(SecretsCrypto::new(master_key).unwrap());

@@ -27,7 +27,7 @@ async fn find_existing_path(candidates: Vec<PathBuf>) -> anyhow::Result<Option<P
 
 fn classify_install_source(
     path: &Path,
-    metadata: &std::fs::Metadata,
+    metadata: &ambient_fs::Metadata,
 ) -> anyhow::Result<InstallSourceKind> {
     if metadata.is_dir() {
         return Ok(InstallSourceKind::SourceDirectory);
@@ -147,7 +147,7 @@ pub(super) async fn install_tool(
 ) -> anyhow::Result<()> {
     let target_dir = target.unwrap_or_else(default_tools_dir);
 
-    let metadata = fs::metadata(&path).await?;
+    let metadata = ambient_fs::Metadata::from_std(fs::metadata(&path).await?);
     let source_kind = classify_install_source(&path, &metadata)?;
 
     let (wasm_path, tool_name, caps_path) = match source_kind {

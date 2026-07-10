@@ -101,7 +101,7 @@ pub async fn test_db() -> (Arc<dyn Database>, TempDir) {
 pub async fn github_wasm_wrapper() -> Result<WasmToolWrapper> {
     let wasm_path = github_wasm_artifact()?;
     let runtime = metadata_test_runtime()?;
-    let wasm_bytes = std::fs::read(&wasm_path)?;
+    let wasm_bytes = ambient_fs::read(&wasm_path)?;
     let prepared = runtime.prepare("github", &wasm_bytes, None).await?;
     let wrapper = WasmToolWrapper::new(runtime, prepared, Capabilities::default());
     let (description, schema) = wrapper.exported_metadata()?;

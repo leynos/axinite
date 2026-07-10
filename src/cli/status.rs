@@ -262,7 +262,7 @@ async fn check_database() -> anyhow::Result<()> {
 }
 
 fn count_wasm_files(dir: &std::path::Path) -> usize {
-    std::fs::read_dir(dir)
+    ambient_fs::read_dir(dir)
         .map(|entries| {
             entries
                 .filter_map(|e| e.ok())
@@ -286,7 +286,7 @@ mod tests {
         let toml_path = dir.path().join("config.toml");
 
         // No JSON file — only TOML
-        std::fs::write(
+        ambient_fs::write(
             &toml_path,
             "[heartbeat]\nenabled = true\ninterval_secs = 600",
         )
@@ -315,7 +315,7 @@ mod tests {
         let json_path = dir.path().join("settings.json");
         let toml_path = dir.path().join("nonexistent.toml");
 
-        std::fs::write(
+        ambient_fs::write(
             &json_path,
             r#"{"heartbeat":{"enabled":true,"interval_secs":900}}"#,
         )
@@ -333,12 +333,12 @@ mod tests {
         let json_path = dir.path().join("settings.json");
         let toml_path = dir.path().join("config.toml");
 
-        std::fs::write(
+        ambient_fs::write(
             &json_path,
             r#"{"heartbeat":{"enabled":false,"interval_secs":100}}"#,
         )
         .expect("write json");
-        std::fs::write(
+        ambient_fs::write(
             &toml_path,
             "[heartbeat]\nenabled = true\ninterval_secs = 200",
         )
@@ -356,12 +356,12 @@ mod tests {
         let json_path = dir.path().join("settings.json");
         let toml_path = dir.path().join("config.toml");
 
-        std::fs::write(
+        ambient_fs::write(
             &json_path,
             r#"{"heartbeat":{"enabled":true,"interval_secs":500}}"#,
         )
         .expect("write json");
-        std::fs::write(&toml_path, "this is not valid toml [[[").expect("write bad toml");
+        ambient_fs::write(&toml_path, "this is not valid toml [[[").expect("write bad toml");
 
         let settings = load_settings_from(&json_path, &toml_path);
         // Should fall back to JSON values, not crash

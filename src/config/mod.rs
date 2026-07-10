@@ -339,8 +339,9 @@ impl Config {
 mod tests {
     //! Unit tests for configuration resolution from the environment.
 
-    use std::fs;
     use std::path::Path;
+
+    use ambient_fs as fs;
 
     use super::{Config, DatabaseBackend, EnvContext};
     use crate::settings::Settings;

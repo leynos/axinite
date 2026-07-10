@@ -103,9 +103,9 @@ impl LibSqlDatabase {
 impl Drop for LibSqlDatabase {
     fn drop(&mut self) {
         if let Some(path) = &self.temp_path {
-            let _ = std::fs::remove_file(path);
-            let _ = std::fs::remove_file(path.with_extension("db-wal"));
-            let _ = std::fs::remove_file(path.with_extension("db-shm"));
+            let _ = ambient_fs::remove_file(path);
+            let _ = ambient_fs::remove_file(path.with_extension("db-wal"));
+            let _ = ambient_fs::remove_file(path.with_extension("db-shm"));
         }
     }
 }
@@ -124,7 +124,7 @@ pub struct LibSqlBackend {
 impl LibSqlBackend {
     fn ensure_parent_dir(path: &Path) -> Result<(), DatabaseError> {
         if let Some(parent) = path.parent() {
-            std::fs::create_dir_all(parent).map_err(|e| {
+            ambient_fs::create_dir_all(parent).map_err(|e| {
                 DatabaseError::Pool(format!("Failed to create database directory: {}", e))
             })?;
         }
@@ -339,9 +339,9 @@ mod tests {
 
         // Touch the database and sidecar files so the drop handler has
         // something concrete to delete.
-        std::fs::write(&path, b"").expect("failed to create temp db file");
-        std::fs::write(&wal, b"").expect("failed to create sidecar file");
-        std::fs::write(&shm, b"").expect("failed to create sidecar file");
+        ambient_fs::write(&path, b"").expect("failed to create temp db file");
+        ambient_fs::write(&wal, b"").expect("failed to create sidecar file");
+        ambient_fs::write(&shm, b"").expect("failed to create sidecar file");
 
         assert!(path.exists(), "temp db file must exist before drop");
         assert!(wal.exists(), "WAL sidecar must exist before drop");

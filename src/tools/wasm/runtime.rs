@@ -52,14 +52,14 @@ pub fn enable_compilation_cache(
 
     match custom_dir {
         Some(dir) => {
-            std::fs::create_dir_all(&dir)?;
+            ambient_fs::create_dir_all(&dir)?;
             let toml_path = dir.join("wasmtime-cache.toml");
             let escaped = dir
                 .to_string_lossy()
                 .replace('\\', "\\\\")
                 .replace('"', "\\\"");
             let toml_content = format!("[cache]\ndirectory = \"{}\"\n", escaped);
-            std::fs::write(&toml_path, toml_content)?;
+            ambient_fs::write(&toml_path, toml_content)?;
             wasmtime_config.cache(Some(wasmtime::Cache::from_file(Some(&toml_path))?));
             Ok(())
         }
@@ -389,7 +389,7 @@ mod tests {
         let toml_path = cache_dir.join("wasmtime-cache.toml");
         assert!(toml_path.exists(), "TOML config should be written");
 
-        let content = std::fs::read_to_string(&toml_path).unwrap();
+        let content = ambient_fs::read_to_string(&toml_path).unwrap();
         assert!(
             content.contains("[cache]"),
             "TOML must contain [cache] section"

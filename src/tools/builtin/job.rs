@@ -759,7 +759,7 @@ fn resolve_project_dir(
     project_id: Uuid,
 ) -> Result<(PathBuf, String), ToolError> {
     let base = projects_base();
-    std::fs::create_dir_all(&base).map_err(|e| {
+    ambient_fs::create_dir_all(&base).map_err(|e| {
         ToolError::ExecutionFailed(format!(
             "failed to create projects base {}: {}",
             base.display(),
@@ -791,7 +791,7 @@ fn resolve_project_dir(
         }
         None => {
             let dir = canonical_base.join(project_id.to_string());
-            std::fs::create_dir_all(&dir).map_err(|e| {
+            ambient_fs::create_dir_all(&dir).map_err(|e| {
                 ToolError::ExecutionFailed(format!(
                     "failed to create project dir {}: {}",
                     dir.display(),
@@ -1743,16 +1743,16 @@ mod tests {
         let base = projects_base().canonicalize().unwrap();
         assert!(dir.starts_with(&base));
 
-        let _ = std::fs::remove_dir_all(&dir);
+        let _ = ambient_fs::remove_dir_all(&dir);
     }
 
     #[test]
     fn test_resolve_project_dir_explicit_under_base() {
         let base = projects_base();
-        std::fs::create_dir_all(&base).unwrap();
+        ambient_fs::create_dir_all(&base).unwrap();
         let explicit = base.join("test_explicit_project");
         // Explicit paths must already exist (no auto-create).
-        std::fs::create_dir_all(&explicit).unwrap();
+        ambient_fs::create_dir_all(&explicit).unwrap();
         let project_id = Uuid::new_v4();
 
         let (dir, browse_id) = resolve_project_dir(Some(explicit.clone()), project_id).unwrap();
@@ -1762,7 +1762,7 @@ mod tests {
         let canonical_base = base.canonicalize().unwrap();
         assert!(dir.starts_with(&canonical_base));
 
-        let _ = std::fs::remove_dir_all(&explicit);
+        let _ = ambient_fs::remove_dir_all(&explicit);
     }
 
     #[test]
@@ -1810,11 +1810,11 @@ mod tests {
         // Traversal path that actually resolves gets the prefix check.
         // `base/../` resolves to the parent of projects base, which is outside.
         let base_parent = projects_base().join("..").join("definitely_not_projects");
-        std::fs::create_dir_all(&base_parent).ok();
+        ambient_fs::create_dir_all(&base_parent).ok();
         if base_parent.exists() {
             let result = resolve_project_dir(Some(base_parent.clone()), Uuid::new_v4());
             assert!(result.is_err(), "path outside base should be rejected");
-            let _ = std::fs::remove_dir_all(&base_parent);
+            let _ = ambient_fs::remove_dir_all(&base_parent);
         }
     }
 

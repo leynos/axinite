@@ -300,7 +300,7 @@ mod tests {
         init_toml(None, Some(path.clone()), false).await.unwrap();
         assert!(path.exists());
 
-        let content = std::fs::read_to_string(&path).unwrap();
+        let content = ambient_fs::read_to_string(&path).unwrap();
         assert!(content.contains("[agent]"));
     }
 
@@ -308,7 +308,7 @@ mod tests {
     async fn init_toml_refuses_overwrite_without_force() {
         let dir = tempdir().unwrap();
         let path = dir.path().join("config.toml");
-        std::fs::write(&path, "existing").unwrap();
+        ambient_fs::write(&path, "existing").unwrap();
 
         let result = init_toml(None, Some(path.clone()), false).await;
         assert!(result.is_err());
@@ -319,11 +319,11 @@ mod tests {
     async fn init_toml_force_overwrites() {
         let dir = tempdir().unwrap();
         let path = dir.path().join("config.toml");
-        std::fs::write(&path, "old content").unwrap();
+        ambient_fs::write(&path, "old content").unwrap();
 
         init_toml(None, Some(path.clone()), true).await.unwrap();
 
-        let content = std::fs::read_to_string(&path).unwrap();
+        let content = ambient_fs::read_to_string(&path).unwrap();
         assert!(content.contains("[agent]"));
     }
 }

@@ -36,7 +36,7 @@ fn documented_bundle_entries() -> Vec<(&'static str, &'static [u8])> {
 
 fn collect_installed_files(root: &Path) -> BTreeMap<PathBuf, Vec<u8>> {
     fn visit(base: &Path, current: &Path, files: &mut BTreeMap<PathBuf, Vec<u8>>) {
-        for entry in std::fs::read_dir(current).expect("installed directory should be readable") {
+        for entry in ambient_fs::read_dir(current).expect("installed directory should be readable") {
             let entry = entry.expect("installed directory entry should be readable");
             let path = entry.path();
             if path.is_dir() {
@@ -46,7 +46,7 @@ fn collect_installed_files(root: &Path) -> BTreeMap<PathBuf, Vec<u8>> {
                     .strip_prefix(base)
                     .expect("installed file should be under bundle root")
                     .to_path_buf();
-                let contents = std::fs::read(&path).expect("installed file should be readable");
+                let contents = ambient_fs::read(&path).expect("installed file should be readable");
                 files.insert(relative, contents);
             }
         }
@@ -403,7 +403,7 @@ async fn test_prepare_install_cleans_staged_dir_when_validation_fails(
         "expected parse error for invalid staged skill, got {error:?}"
     );
 
-    let install_root_entries = std::fs::read_dir(installed_dir.path())
+    let install_root_entries = ambient_fs::read_dir(installed_dir.path())
         .expect("installed dir should remain readable after failed prepare");
     let leaked_staged_dirs = install_root_entries
         .filter_map(Result::ok)
