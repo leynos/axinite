@@ -1,0 +1,11 @@
+[package]
+name = "ambient-fs"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.93"
+description = "Deliberately-ambient filesystem boundary for the axinite host"
+license = "MIT OR Apache-2.0"
+publish = false
+
+[dependencies]
+fs4 = "0.6"
