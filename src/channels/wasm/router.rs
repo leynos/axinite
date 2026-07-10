@@ -541,13 +541,14 @@ async fn webhook_handler(
                 "WASM channel on_http_request completed successfully"
             );
 
-            // Build response with headers
-            let body_json: serde_json::Value = serde_json::from_slice(&response.body)
-                .unwrap_or_else(|_| {
-                    serde_json::json!({
-                        "raw": String::from_utf8_lossy(&response.body).to_string()
-                    })
-                });
+            // Build response with headers; fall back to a raw-text envelope
+            // when the body is not valid JSON.
+            let body_json: serde_json::Value = match serde_json::from_slice(&response.body) {
+                Ok(value) => value,
+                Err(_) => serde_json::json!({
+                    "raw": String::from_utf8_lossy(&response.body).to_string()
+                }),
+            };
 
             (status, Json(body_json))
         }

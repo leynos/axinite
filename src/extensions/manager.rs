@@ -3590,12 +3590,15 @@ mod tests {
 
         // Both exist with distinct content.
         assert_eq!(ambient_fs::read_to_string(&tool_cap).unwrap(), tool_caps);
-        assert_eq!(ambient_fs::read_to_string(&channel_cap).unwrap(), channel_caps);
+        assert_eq!(
+            ambient_fs::read_to_string(&channel_cap).unwrap(),
+            channel_caps
+        );
     }
 
     #[tokio::test]
     async fn test_upgrade_no_installed_extensions() {
-        let manager = make_manager_with_temp_dirs();
+        let manager = make_manager_with_temp_dirs().expect("manager should be created");
         let result = manager.upgrade(None).await.unwrap();
         assert!(result.results.is_empty());
         assert!(result.message.contains("No WASM extensions installed"));
@@ -3603,7 +3606,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_upgrade_mcp_server_rejected() {
-        let manager = make_manager_with_temp_dirs();
+        let manager = make_manager_with_temp_dirs().expect("manager should be created");
         // MCP servers can't be upgraded via tool_upgrade
         let err = manager.upgrade(Some("some-mcp")).await;
         // It will fail with NotInstalled because there's no MCP server named "some-mcp",
@@ -3661,9 +3664,14 @@ mod tests {
         assert_eq!(result.results[0].status, "not_in_registry");
     }
 
-    fn make_manager_with_temp_dirs() -> ExtensionManager {
-        let dir = tempfile::tempdir().expect("temp dir");
-        make_manager_custom_dirs(dir.path().join("tools"), dir.path().join("channels"))
+    fn make_manager_with_temp_dirs() -> anyhow::Result<ExtensionManager> {
+        use anyhow::Context as _;
+
+        let dir = tempfile::tempdir().context("temp dir")?;
+        Ok(make_manager_custom_dirs(
+            dir.path().join("tools"),
+            dir.path().join("channels"),
+        ))
     }
 
     fn make_manager_custom_dirs(

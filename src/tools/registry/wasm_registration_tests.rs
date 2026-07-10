@@ -32,7 +32,7 @@ async fn register_wasm_from_storage_recovers_guest_schema_for_absent_or_placehol
     // Null or placeholder schemas trigger guest export recovery.
     let registry = ToolRegistry::new();
     let runtime = metadata_test_runtime().expect("create metadata test runtime");
-    let wasm_binary = github_wasm_bytes();
+    let wasm_binary = github_wasm_bytes().expect("github wasm bytes should load");
 
     assert!(
         super::schema::normalized_schema(parameters_schema.clone()).is_none(),
@@ -66,7 +66,9 @@ async fn assert_reregistration_rotates_credentials(
     credential_registry: &SharedCredentialRegistry,
     runtime: &Arc<crate::tools::wasm::WasmToolRuntime>,
     wasm_binary: &[u8],
-) {
+) -> anyhow::Result<()> {
+    use anyhow::Context as _;
+
     registry
         .register_wasm(registration_with_credential(
             "github",
@@ -78,7 +80,7 @@ async fn assert_reregistration_rotates_credentials(
             },
         ))
         .await
-        .expect("re-registration should replace credentials for the same tool");
+        .context("re-registration should replace credentials for the same tool")?;
     assert!(
         credential_registry
             .find_for_host("api.example.com")
@@ -94,13 +96,14 @@ async fn assert_reregistration_rotates_credentials(
             .is_empty(),
         "failed registrations should leave the credential registry unchanged"
     );
+    Ok(())
 }
 
 #[tokio::test]
 async fn register_wasm_protected_name_error_message() {
     let registry = ToolRegistry::new();
     let runtime = metadata_test_runtime().expect("create metadata test runtime");
-    let wasm_binary = github_wasm_bytes();
+    let wasm_binary = github_wasm_bytes().expect("github wasm bytes should load");
 
     let err = registry
         .register_wasm(WasmToolRegistration {
@@ -125,7 +128,7 @@ async fn register_wasm_builtin_shadow_error_message() {
     let registry = ToolRegistry::new();
     // Register a synthetic built-in to populate builtin_names.
     let runtime = metadata_test_runtime().expect("create metadata test runtime");
-    let wasm_binary = github_wasm_bytes();
+    let wasm_binary = github_wasm_bytes().expect("github wasm bytes should load");
 
     // Force "github" into builtin_names by registering it synchronously first.
     {
@@ -176,7 +179,7 @@ async fn register_wasm_persists_credentials_only_after_successful_registration()
         Arc::new(test_secrets_store()),
     );
     let runtime = metadata_test_runtime().expect("create metadata test runtime");
-    let wasm_binary = github_wasm_bytes();
+    let wasm_binary = github_wasm_bytes().expect("github wasm bytes should load");
 
     let rejected = registry
         .register_wasm(registration_with_credential(
@@ -222,12 +225,15 @@ async fn register_wasm_persists_credentials_only_after_successful_registration()
         &runtime,
         &wasm_binary,
     )
-    .await;
+    .await
+    .expect("re-registration should rotate credentials");
 }
 
-fn github_wasm_bytes() -> Vec<u8> {
-    let wasm_path = github_wasm_artifact().expect("build or find github WASM artifact");
-    ambient_fs::read(wasm_path).expect("read github wasm artifact")
+fn github_wasm_bytes() -> anyhow::Result<Vec<u8>> {
+    use anyhow::Context as _;
+
+    let wasm_path = github_wasm_artifact().context("build or find github WASM artifact")?;
+    ambient_fs::read(wasm_path).context("read github wasm artifact")
 }
 
 struct CredentialSpec<'a> {

@@ -379,28 +379,35 @@ mod tests {
     use super::*;
     use crate::db::NativeDatabase;
     use crate::db::SandboxEventType;
+    use anyhow::Context as _;
     use chrono::Utc;
     use serde_json::json;
 
-    async fn count_job_events(backend: &LibSqlBackend, job_id: Uuid) -> i64 {
-        let conn = backend.connect().await.expect("connection should succeed");
+    async fn count_job_events(backend: &LibSqlBackend, job_id: Uuid) -> anyhow::Result<i64> {
+        let conn = backend
+            .connect()
+            .await
+            .context("connection should succeed")?;
         let mut rows = conn
             .query(
                 "SELECT COUNT(*) FROM job_events WHERE job_id = ?1",
                 params![job_id.to_string()],
             )
             .await
-            .expect("count query should succeed");
+            .context("count query should succeed")?;
         let row = rows
             .next()
             .await
-            .expect("count row should load")
-            .expect("count row should exist");
-        row.get::<i64>(0).expect("count column should decode")
+            .context("count row should load")?
+            .context("count row should exist")?;
+        row.get::<i64>(0).context("count column should decode")
     }
 
-    async fn seed_non_direct_job(backend: &LibSqlBackend, job_id: Uuid) {
-        let conn = backend.connect().await.expect("connection should succeed");
+    async fn seed_non_direct_job(backend: &LibSqlBackend, job_id: Uuid) -> anyhow::Result<()> {
+        let conn = backend
+            .connect()
+            .await
+            .context("connection should succeed")?;
         conn.execute(
             r#"
             INSERT INTO agent_jobs (
@@ -418,7 +425,8 @@ mod tests {
             ],
         )
         .await
-        .expect("sandbox job should seed");
+        .context("sandbox job should seed")?;
+        Ok(())
     }
 
     #[tokio::test]
@@ -445,14 +453,18 @@ mod tests {
             .await;
 
         assert!(result.is_err(), "unknown job ID should fail");
+        let event_count = count_job_events(&backend, job_id)
+            .await
+            .expect("counting job events should succeed");
         assert_eq!(
-            count_job_events(&backend, job_id).await,
-            0,
+            event_count, 0,
             "unknown job ID should not leave a terminal event behind"
         );
 
         let sandbox_job_id = Uuid::new_v4();
-        seed_non_direct_job(&backend, sandbox_job_id).await;
+        seed_non_direct_job(&backend, sandbox_job_id)
+            .await
+            .expect("sandbox job should seed");
 
         let sandbox_result = backend
             .persist_terminal_result_and_status(TerminalJobPersistence {
@@ -468,9 +480,11 @@ mod tests {
             sandbox_result.is_err(),
             "non-direct job ID should fail terminal persistence"
         );
+        let sandbox_event_count = count_job_events(&backend, sandbox_job_id)
+            .await
+            .expect("counting job events should succeed");
         assert_eq!(
-            count_job_events(&backend, sandbox_job_id).await,
-            0,
+            sandbox_event_count, 0,
             "non-direct job ID should not leave a terminal event behind"
         );
     }

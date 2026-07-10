@@ -50,7 +50,8 @@ fn test_save_and_load_database_url() {
     let parse_error = format!("parse dotenv from {}", env_path.display());
 
     let url = "postgres://localhost:5432/ironclaw_test";
-    ambient_fs::write(&env_path, format!("DATABASE_URL=\"{}\"\n", url)).expect(write_error.as_str());
+    ambient_fs::write(&env_path, format!("DATABASE_URL=\"{}\"\n", url))
+        .expect(write_error.as_str());
 
     let content = ambient_fs::read_to_string(&env_path).expect(read_error.as_str());
     assert_eq!(
@@ -214,7 +215,8 @@ fn upsert_bootstrap_var_preserves_existing() {
 
     ambient_fs::write(&env_path, initial).expect("write initial env for single upsert test");
 
-    let content = ambient_fs::read_to_string(&env_path).expect("read initial env for single upsert");
+    let content =
+        ambient_fs::read_to_string(&env_path).expect("read initial env for single upsert");
     let new_line = "LLM_BACKEND=\"anthropic\"";
     let mut result = content.clone();
     result.push_str(new_line);

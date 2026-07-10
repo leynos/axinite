@@ -352,25 +352,31 @@ mod tests {
     async fn assert_dedup_window_maps_to(
         dedup_window_secs: Option<i64>,
         expected: Option<std::time::Duration>,
-    ) {
+    ) -> Result<(), Box<dyn std::error::Error>> {
         let row = mock_routine_row_with_dedup_window(dedup_window_secs, None)
             .await
-            .expect("failed to create mock row");
-        let routine = row_to_routine_libsql(&row).expect("failed to map row to routine");
+            .map_err(|e| format!("failed to create mock row: {e}"))?;
+        let routine = row_to_routine_libsql(&row)
+            .map_err(|e| format!("failed to map row to routine: {e}"))?;
         assert_eq!(
             routine.guardrails.dedup_window, expected,
             "dedup_window mismatch for input {dedup_window_secs:?}",
         );
+        Ok(())
     }
 
     #[tokio::test]
     async fn test_dedup_window_null_yields_none() {
-        assert_dedup_window_maps_to(None, None).await;
+        assert_dedup_window_maps_to(None, None)
+            .await
+            .expect("dedup window assertion failed");
     }
 
     #[tokio::test]
     async fn test_dedup_window_valid_value() {
-        assert_dedup_window_maps_to(Some(300), Some(std::time::Duration::from_secs(300))).await;
+        assert_dedup_window_maps_to(Some(300), Some(std::time::Duration::from_secs(300)))
+            .await
+            .expect("dedup window assertion failed");
     }
 
     #[tokio::test]
@@ -392,24 +398,31 @@ mod tests {
     }
 
     /// Assert that a tokens_used value results in a Serialization error.
-    async fn assert_tokens_used_serialisation_error(tokens: i64) {
+    async fn assert_tokens_used_serialisation_error(
+        tokens: i64,
+    ) -> Result<(), Box<dyn std::error::Error>> {
         let row = mock_routine_run_row_with_tokens(Some(tokens), None)
             .await
-            .expect("failed to create mock row");
+            .map_err(|e| format!("failed to create mock row: {e}"))?;
         let result = row_to_routine_run_libsql(&row);
         assert!(
             matches!(result, Err(DatabaseError::Serialization(_))),
             "Expected Serialization error for tokens_used = {tokens}, got {result:?}",
         );
+        Ok(())
     }
 
     #[tokio::test]
     async fn test_tokens_used_out_of_range_returns_serialization_error() {
-        assert_tokens_used_serialisation_error(i64::from(i32::MAX) + 1).await;
+        assert_tokens_used_serialisation_error(i64::from(i32::MAX) + 1)
+            .await
+            .expect("serialisation error assertion failed");
     }
 
     #[tokio::test]
     async fn test_tokens_used_negative_returns_serialization_error() {
-        assert_tokens_used_serialisation_error(-1).await;
+        assert_tokens_used_serialisation_error(-1)
+            .await
+            .expect("serialisation error assertion failed");
     }
 }

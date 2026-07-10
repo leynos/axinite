@@ -33,7 +33,7 @@ fn extract_tool_event_names<'a>(tool_events: &[&'a StatusUpdate]) -> (Vec<&'a st
 
 /// Assert that every ToolCompleted is preceded by a ToolStarted for the same
 /// tool name, and that no ToolStarted is left unmatched at the end.
-fn assert_tool_event_ordering(tool_events: &[&StatusUpdate]) {
+fn assert_tool_event_ordering(tool_events: &[&StatusUpdate]) -> anyhow::Result<()> {
     let mut pending_starts: Vec<String> = Vec::new();
     for event in tool_events {
         match event {
@@ -44,12 +44,12 @@ fn assert_tool_event_ordering(tool_events: &[&StatusUpdate]) {
                 let pos = pending_starts
                     .iter()
                     .rposition(|n| n == name)
-                    .unwrap_or_else(|| {
-                        panic!(
+                    .ok_or_else(|| {
+                        anyhow::anyhow!(
                             "ToolCompleted for '{name}' without preceding ToolStarted. \
                              Pending starts: {pending_starts:?}"
                         )
-                    });
+                    })?;
                 pending_starts.remove(pos);
             }
             _ => {}
@@ -59,6 +59,7 @@ fn assert_tool_event_ordering(tool_events: &[&StatusUpdate]) {
         pending_starts.is_empty(),
         "ToolStarted without matching ToolCompleted: {pending_starts:?}"
     );
+    Ok(())
 }
 
 /// For a 3-tool chain (echo -> echo -> echo), verify that:
@@ -110,7 +111,7 @@ async fn test_status_event_ordering() {
         completions.len()
     );
 
-    assert_tool_event_ordering(&tool_events);
+    assert_tool_event_ordering(&tool_events).expect("tool events should be correctly ordered");
 
     let metrics = rig.collect_metrics().await;
     assert!(

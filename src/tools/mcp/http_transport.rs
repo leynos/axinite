@@ -19,7 +19,10 @@ use crate::tools::tool::ToolError;
 pub struct HttpMcpTransport {
     server_url: String,
     server_name: String,
-    http_client: reqwest::Client,
+    /// Client construction is deferred to first use: builder failure is kept
+    /// here and surfaced as a `ToolError` from `send` instead of panicking in
+    /// the constructor.
+    http_client: Result<reqwest::Client, reqwest::Error>,
     session_manager: Option<Arc<McpSessionManager>>,
     custom_headers: HashMap<String, String>,
 }
@@ -32,12 +35,11 @@ impl HttpMcpTransport {
             server_name: server_name.into(),
             // reqwest::Client::builder().build() only fails if the TLS backend
             // cannot initialize, which does not happen with the default rustls
-            // feature set. Panic is acceptable here (same as reqwest's own
-            // `Client::new()`).
+            // feature set. Any failure is stored and reported from `send`
+            // rather than panicking here.
             http_client: reqwest::Client::builder()
                 .timeout(std::time::Duration::from_secs(30))
-                .build()
-                .expect("Failed to create HTTP client"),
+                .build(),
             session_manager: None,
             custom_headers: HashMap::new(),
         }
@@ -75,9 +77,15 @@ impl NativeMcpTransport for HttpMcpTransport {
         request: &McpRequest,
         headers: &HashMap<String, String>,
     ) -> Result<McpResponse, ToolError> {
-        // Build the HTTP request.
-        let mut req_builder = self
-            .http_client
+        // Build the HTTP request. Surface any deferred client construction
+        // failure as a transport error instead of a constructor panic.
+        let http_client = self.http_client.as_ref().map_err(|e| {
+            ToolError::ExecutionFailed(format!(
+                "[{}] Failed to create HTTP client: {e}",
+                self.server_name
+            ))
+        })?;
+        let mut req_builder = http_client
             .post(&self.server_url)
             .header("Content-Type", "application/json")
             .header("Accept", "application/json, text/event-stream")

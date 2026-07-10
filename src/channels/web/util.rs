@@ -52,10 +52,7 @@ pub fn build_turns_from_db_messages(
             };
 
             // Check if next message is a tool_calls record
-            if let Some(next) = iter.peek()
-                && next.role == "tool_calls"
-            {
-                let tc_msg = iter.next().expect("peeked");
+            if let Some(tc_msg) = iter.next_if(|next| next.role == "tool_calls") {
                 match serde_json::from_str::<Vec<serde_json::Value>>(&tc_msg.content) {
                     Ok(calls) => {
                         turn.tool_calls = calls
@@ -79,10 +76,7 @@ pub fn build_turns_from_db_messages(
             }
 
             // Check if next message is an assistant response
-            if let Some(next) = iter.peek()
-                && next.role == "assistant"
-            {
-                let assistant_msg = iter.next().expect("peeked");
+            if let Some(assistant_msg) = iter.next_if(|next| next.role == "assistant") {
                 turn.response = Some(assistant_msg.content.clone());
                 turn.completed_at = Some(assistant_msg.created_at.to_rfc3339());
             }

@@ -514,7 +514,11 @@ impl near::agent::host::Host for StoreData {
                     .map_err(|e| format!("Failed to create HTTP runtime: {e}"))?,
             );
         }
-        let rt = self.http_runtime.as_ref().expect("just initialized");
+        // Populated just above; propagate rather than panic if that ever changes.
+        let rt = self
+            .http_runtime
+            .as_ref()
+            .ok_or_else(|| "HTTP runtime unavailable after initialization".to_string())?;
         let result = rt.block_on(send_http_request(
             &method,
             url,

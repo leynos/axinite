@@ -16,7 +16,9 @@ pub struct EnvVarsGuard {
 impl EnvVarsGuard {
     /// Lock env access for the duration of the guard and snapshot the keys.
     pub fn new(keys: &[&'static str]) -> Self {
-        let lock = ENV_MUTEX.lock().expect("env mutex poisoned");
+        // The lock is infallible (`Err` is `Infallible`), so the pattern is
+        // exhaustive and no panic path exists.
+        let Ok(lock) = ENV_MUTEX.lock();
         let originals = keys
             .iter()
             .map(|key| ((*key).to_string(), std::env::var(key).ok()))

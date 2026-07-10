@@ -9,6 +9,7 @@ use super::*;
 use crate::config::SafetyConfig;
 use crate::history::ConversationMessage;
 use crate::safety::SafetyLayer;
+use anyhow::Context as _;
 use rstest::{fixture, rstest};
 
 fn make_db_msg(role: &str, content: &str) -> ConversationMessage {
@@ -120,7 +121,10 @@ fn assert_tool_result_message(
 
 /// Asserts that `msg` is an [`crate::llm::Role::Assistant`] message with
 /// `tool_calls` populated, and returns a reference to the inner slice.
-fn assert_assistant_with_tool_calls(msg: &ChatMessage) -> &[crate::llm::ToolCall] {
+///
+/// Returns an error rather than panicking so callers inside tests can decide
+/// how to surface the failure.
+fn assert_assistant_with_tool_calls(msg: &ChatMessage) -> anyhow::Result<&[crate::llm::ToolCall]> {
     assert_eq!(
         msg.role,
         crate::llm::Role::Assistant,
@@ -128,7 +132,7 @@ fn assert_assistant_with_tool_calls(msg: &ChatMessage) -> &[crate::llm::ToolCall
     );
     msg.tool_calls
         .as_deref()
-        .expect("expected tool_calls to be Some on assistant message")
+        .context("expected tool_calls to be Some on assistant message")
 }
 
 #[rstest]
@@ -170,7 +174,8 @@ fn test_rebuild_chat_messages_with_enriched_tool_calls(test_safety_layer: Safety
     assert_eq!(result.len(), 5);
     assert_eq!(result[0].role, crate::llm::Role::User);
 
-    let tcs = assert_assistant_with_tool_calls(&result[1]);
+    let tcs = assert_assistant_with_tool_calls(&result[1])
+        .expect("expected tool_calls to be Some on assistant message");
     assert_eq!(tcs.len(), 2);
     assert_eq!(tcs[0].name, "memory_search");
     assert_eq!(tcs[0].id, "call_0");
@@ -343,7 +348,8 @@ fn test_rebuild_chat_messages_multi_turn_with_tools(test_safety_layer: SafetyLay
     assert_eq!(result[0].content, "Find X");
 
     assert_eq!(result[1].role, crate::llm::Role::Assistant);
-    let first_turn_tool_calls = assert_assistant_with_tool_calls(&result[1]);
+    let first_turn_tool_calls = assert_assistant_with_tool_calls(&result[1])
+        .expect("expected tool_calls to be Some on assistant message");
     assert_eq!(first_turn_tool_calls.len(), 1);
     assert_eq!(first_turn_tool_calls[0].id, "call_0");
     assert_eq!(first_turn_tool_calls[0].name, "search");
@@ -358,7 +364,8 @@ fn test_rebuild_chat_messages_multi_turn_with_tools(test_safety_layer: SafetyLay
     assert_eq!(result[4].content, "Write it");
 
     assert_eq!(result[5].role, crate::llm::Role::Assistant);
-    let second_turn_tool_calls = assert_assistant_with_tool_calls(&result[5]);
+    let second_turn_tool_calls = assert_assistant_with_tool_calls(&result[5])
+        .expect("expected tool_calls to be Some on assistant message");
     assert_eq!(second_turn_tool_calls.len(), 1);
     assert_eq!(second_turn_tool_calls[0].id, "call_1");
     assert_eq!(second_turn_tool_calls[0].name, "write");
@@ -414,7 +421,8 @@ fn test_tool_result_content_fallbacks(
     let result = rebuild_chat_messages_from_db(&messages, &test_safety_layer);
 
     assert_eq!(result.len(), 4);
-    let tcs = assert_assistant_with_tool_calls(&result[1]);
+    let tcs = assert_assistant_with_tool_calls(&result[1])
+        .expect("expected tool_calls to be Some on assistant message");
     assert_eq!(tcs.len(), 1);
     assert_eq!(tcs[0].id, expected_call_id);
     assert_eq!(tcs[0].name, expected_tool_name);

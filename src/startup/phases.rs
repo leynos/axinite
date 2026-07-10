@@ -395,7 +395,11 @@ mod tests {
 
     impl EnvVarsGuard {
         fn new(keys: &[&'static str]) -> Self {
-            let lock = PHASES_ENV_MUTEX.lock().expect("env mutex poisoned");
+            // Recover from poisoning: the guard only snapshots and restores
+            // environment variables, so the protected state stays coherent.
+            let lock = PHASES_ENV_MUTEX
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
             let originals = keys
                 .iter()
                 .map(|key| (*key, std::env::var(key).ok()))
@@ -448,35 +452,33 @@ mod tests {
         guard
     }
 
-    async fn loaded_context() -> LoadedConfigContext {
+    async fn loaded_context() -> anyhow::Result<LoadedConfigContext> {
         let snapshot = LOADED_CONTEXT
-            .get_or_init(|| async {
+            .get_or_try_init(|| async {
                 let _env_guard = phase_env_guard();
-                let loaded = phase_load_config_and_tracing(&cli_no_db())
-                    .await
-                    .expect("load ok");
-                LoadedConfigContextSnapshot {
+                let loaded = phase_load_config_and_tracing(&cli_no_db()).await?;
+                anyhow::Ok(LoadedConfigContextSnapshot {
                     config: loaded.config,
                     toml_path: loaded.toml_path,
                     session: loaded.session,
                     log_broadcaster: loaded.log_broadcaster,
                     log_level_handle: loaded.log_level_handle,
-                }
+                })
             })
-            .await;
+            .await?;
 
-        LoadedConfigContext {
+        Ok(LoadedConfigContext {
             config: snapshot.config.clone(),
             toml_path: snapshot.toml_path.clone(),
             session: Arc::clone(&snapshot.session),
             log_broadcaster: Arc::clone(&snapshot.log_broadcaster),
             log_level_handle: Arc::clone(&snapshot.log_level_handle),
-        }
+        })
     }
 
     #[tokio::test]
     async fn load_config_and_tracing_smoke() {
-        let loaded = loaded_context().await;
+        let loaded = loaded_context().await.expect("load ok");
         assert!(Arc::strong_count(&loaded.log_broadcaster) >= 1);
         assert!(Arc::strong_count(&loaded.session) >= 1);
     }
@@ -484,7 +486,7 @@ mod tests {
     #[tokio::test]
     async fn build_components_smoke() {
         let cli = cli_no_db();
-        let loaded = loaded_context().await;
+        let loaded = loaded_context().await.expect("load ok");
         let built = phase_build_components(&cli, loaded)
             .await
             .expect("build ok");

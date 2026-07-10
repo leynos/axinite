@@ -202,7 +202,9 @@ async fn concurrent_register_and_read_no_panic() {
     use std::sync::Arc as StdArc;
 
     let registry = StdArc::new(ToolRegistry::new());
-    registry.register_builtin_tools();
+    registry
+        .register_builtin_tools()
+        .expect("register builtin tools should succeed");
 
     // Spawn concurrent readers and check they don't panic
     let mut handles = Vec::new();
@@ -283,7 +285,9 @@ async fn test_tool_definitions_sorted_alphabetically() {
 #[tokio::test]
 async fn test_retain_only_filters_tools() {
     let registry = ToolRegistry::new();
-    registry.register_builtin_tools();
+    registry
+        .register_builtin_tools()
+        .expect("register builtin tools should succeed");
     let all = registry.list().await;
     assert!(all.len() > 2, "expected multiple built-in tools");
     registry.retain_only(&["echo", "time"]).await;
@@ -296,7 +300,9 @@ async fn test_retain_only_filters_tools() {
 #[tokio::test]
 async fn test_retain_only_empty_is_noop() {
     let registry = ToolRegistry::new();
-    registry.register_builtin_tools();
+    registry
+        .register_builtin_tools()
+        .expect("register builtin tools should succeed");
     let before = registry.list().await.len();
     registry.retain_only(&[]).await;
     let after = registry.list().await.len();

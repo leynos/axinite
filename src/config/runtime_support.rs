@@ -23,11 +23,12 @@ pub(crate) async fn inject_llm_keys_with<HasValue, SetValue>(
     user_id: &str,
     mut has_value: HasValue,
     mut set_value: SetValue,
-) where
+) -> Result<(), ConfigError>
+where
     HasValue: FnMut(&str) -> bool,
     SetValue: FnMut(&str, String),
 {
-    for (secret_name, env_var) in secret_mappings() {
+    for (secret_name, env_var) in secret_mappings()? {
         if has_value(&env_var) {
             continue;
         }
@@ -40,6 +41,7 @@ pub(crate) async fn inject_llm_keys_with<HasValue, SetValue>(
             tracing::debug!("Loaded secret '{}' for env var '{}'", secret_name, env_var);
         }
     }
+    Ok(())
 }
 
 #[cfg(feature = "libsql")]
@@ -133,7 +135,7 @@ fn apply_toml_overlay_at(
 pub async fn inject_llm_keys_from_secrets(
     secrets: &dyn crate::secrets::SecretsStore,
     user_id: &str,
-) {
+) -> Result<(), ConfigError> {
     let mut injected = HashMap::new();
     inject_llm_keys_with(
         secrets,
@@ -143,10 +145,11 @@ pub async fn inject_llm_keys_from_secrets(
             injected.insert(env_var.to_string(), value);
         },
     )
-    .await;
+    .await?;
 
     inject_os_credential_store_tokens(&mut injected);
     merge_injected_vars(injected);
+    Ok(())
 }
 
 /// Inject decrypted LLM credentials into an explicit [`EnvContext`].
@@ -160,16 +163,17 @@ pub async fn inject_llm_keys_from_secrets(
 /// ```no_run
 /// # async fn example(
 /// #     secrets: &dyn ironclaw::secrets::SecretsStore,
-/// # ) {
+/// # ) -> Result<(), ironclaw::error::ConfigError> {
 /// let mut ctx = ironclaw::config::EnvContext::default();
-/// ironclaw::config::inject_llm_keys_into_context(&mut ctx, secrets, "user-123").await;
+/// ironclaw::config::inject_llm_keys_into_context(&mut ctx, secrets, "user-123").await?;
+/// # Ok(())
 /// # }
 /// ```
 pub async fn inject_llm_keys_into_context(
     ctx: &mut EnvContext,
     secrets: &dyn crate::secrets::SecretsStore,
     user_id: &str,
-) {
+) -> Result<(), ConfigError> {
     let mut injected = HashMap::new();
     inject_llm_keys_with(
         secrets,
@@ -179,9 +183,10 @@ pub async fn inject_llm_keys_into_context(
             injected.insert(env_var.to_string(), value);
         },
     )
-    .await;
+    .await?;
     ctx.merge_secrets(injected);
     inject_os_credentials_into_context(ctx);
+    Ok(())
 }
 
 /// Load tokens from OS credential stores (no DB required).
@@ -236,7 +241,7 @@ pub fn remove_single_var(key: &str) {
     }
 }
 
-fn secret_mappings() -> Vec<(String, String)> {
+fn secret_mappings() -> Result<Vec<(String, String)>, ConfigError> {
     let mut mappings: Vec<(String, String)> = vec![
         (
             "llm_nearai_api_key".to_string(),
@@ -248,7 +253,7 @@ fn secret_mappings() -> Vec<(String, String)> {
         ),
     ];
 
-    let registry = crate::llm::ProviderRegistry::load();
+    let registry = crate::llm::ProviderRegistry::load()?;
     mappings.extend(registry.selectable().iter().filter_map(|def| {
         def.api_key_env.as_ref().and_then(|env_var| {
             def.setup
@@ -257,7 +262,7 @@ fn secret_mappings() -> Vec<(String, String)> {
                 .map(|secret_name| (secret_name.to_string(), env_var.clone()))
         })
     }));
-    mappings
+    Ok(mappings)
 }
 
 /// Merge new entries into the global injected-vars overlay.

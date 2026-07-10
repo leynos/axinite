@@ -21,13 +21,15 @@ struct TestRegistryHandle {
 }
 
 #[fixture]
-fn test_registry() -> TestRegistryHandle {
-    let dir = tempfile::tempdir().expect("tempdir creation failed");
+fn test_registry() -> anyhow::Result<TestRegistryHandle> {
+    use anyhow::Context as _;
+
+    let dir = tempfile::tempdir().context("tempdir creation failed")?;
     let path = dir.path().to_path_buf();
-    TestRegistryHandle {
+    Ok(TestRegistryHandle {
         _dir: dir,
         registry: Arc::new(std::sync::RwLock::new(SkillRegistry::new(path))),
-    }
+    })
 }
 
 #[fixture]
@@ -45,19 +47,19 @@ fn assert_tool_schema(
     expected_name: &str,
     expected_approval: ApprovalRequirement,
     expected_property_keys: &[&str],
-) {
+) -> anyhow::Result<()> {
+    use anyhow::Context as _;
+
     assert_eq!(tool.name(), expected_name);
     assert_eq!(
         tool.requires_approval(&serde_json::json!({})),
         expected_approval
     );
     let schema = tool.parameters_schema();
-    let actual_keys: BTreeSet<String> = schema["properties"]
+    let properties = schema["properties"]
         .as_object()
-        .expect("parameters_schema should expose an object properties map")
-        .keys()
-        .cloned()
-        .collect();
+        .context("parameters_schema should expose an object properties map")?;
+    let actual_keys: BTreeSet<String> = properties.keys().cloned().collect();
     let expected_keys: BTreeSet<String> = expected_property_keys
         .iter()
         .map(|key| (*key).to_string())
@@ -66,6 +68,7 @@ fn assert_tool_schema(
         actual_keys, expected_keys,
         "unexpected parameters_schema keys"
     );
+    Ok(())
 }
 
 fn assert_schema_required_fields(tool: &dyn Tool, expected_required: &[&str]) {
@@ -84,14 +87,16 @@ fn assert_schema_required_fields(tool: &dyn Tool, expected_required: &[&str]) {
 }
 
 #[rstest]
-fn test_skill_list_schema(test_registry: TestRegistryHandle) {
+fn test_skill_list_schema(test_registry: anyhow::Result<TestRegistryHandle>) {
+    let test_registry = test_registry.expect("test registry fixture should build");
     let tool = SkillListTool::new(Arc::clone(&test_registry.registry));
     assert_tool_schema(
         &tool,
         "skill_list",
         ApprovalRequirement::Never,
         &["verbose"],
-    );
+    )
+    .expect("skill_list schema contract should hold");
 }
 
 #[rstest]
@@ -128,19 +133,22 @@ fn test_skill_list_schema(test_registry: TestRegistryHandle) {
     &["path", "skill"] as &[&str],
 )]
 fn test_skill_tool_schema(
-    test_registry: TestRegistryHandle,
+    test_registry: anyhow::Result<TestRegistryHandle>,
     test_catalog: Arc<SkillCatalog>,
     #[case] make_tool: impl Fn(&TestRegistryHandle, Arc<SkillCatalog>) -> Box<dyn Tool>,
     #[case] expected_name: &str,
     #[case] expected_approval: ApprovalRequirement,
     #[case] expected_keys: &[&str],
 ) {
+    let test_registry = test_registry.expect("test registry fixture should build");
     let tool = make_tool(&test_registry, Arc::clone(&test_catalog));
-    assert_tool_schema(&*tool, expected_name, expected_approval, expected_keys);
+    assert_tool_schema(&*tool, expected_name, expected_approval, expected_keys)
+        .expect("skill tool schema contract should hold");
 }
 
 #[rstest]
-fn skill_read_file_schema_is_strict(test_registry: TestRegistryHandle) {
+fn skill_read_file_schema_is_strict(test_registry: anyhow::Result<TestRegistryHandle>) {
+    let test_registry = test_registry.expect("test registry fixture should build");
     let tool = SkillReadFileTool::new(Arc::clone(&test_registry.registry));
     let schema = NativeTool::parameters_schema(&tool);
 
@@ -149,7 +157,10 @@ fn skill_read_file_schema_is_strict(test_registry: TestRegistryHandle) {
 }
 
 #[rstest]
-fn skill_install_schema_does_not_require_catalogue_name(test_registry: TestRegistryHandle) {
+fn skill_install_schema_does_not_require_catalogue_name(
+    test_registry: anyhow::Result<TestRegistryHandle>,
+) {
+    let test_registry = test_registry.expect("test registry fixture should build");
     let tool = SkillInstallTool::new(Arc::clone(&test_registry.registry), test_catalog());
 
     assert_schema_required_fields(&tool, &[]);
@@ -168,9 +179,10 @@ fn skill_install_schema_does_not_require_catalogue_name(test_registry: TestRegis
 #[case::custom_skill(serde_json::json!({"name": "custom-skill"}))]
 #[case::extra_fields(serde_json::json!({"name": "skill", "extra": "field"}))]
 fn skill_remove_always_requires_approval_regardless_of_params(
-    test_registry: TestRegistryHandle,
+    test_registry: anyhow::Result<TestRegistryHandle>,
     #[case] params: serde_json::Value,
 ) {
+    let test_registry = test_registry.expect("test registry fixture should build");
     let tool = SkillRemoveTool::new(Arc::clone(&test_registry.registry));
     assert_eq!(
         NativeTool::requires_approval(&tool, &params),
@@ -214,14 +226,18 @@ fn skill_search_matches_query_checks_name_description_and_keywords(
         .keywords(&["skill-search", "rust"])
         .prompt_content("")
         .content_hash("hash")
-        .build();
+        .build()
+        .expect("test skill should build");
 
     assert_eq!(SkillSearchTool::matches_query(&skill, query), expected);
 }
 
 #[rstest]
 #[tokio::test]
-async fn skill_install_tool_installs_inline_content(test_registry: TestRegistryHandle) {
+async fn skill_install_tool_installs_inline_content(
+    test_registry: anyhow::Result<TestRegistryHandle>,
+) {
+    let test_registry = test_registry.expect("test registry fixture should build");
     let tool = SkillInstallTool::new(Arc::clone(&test_registry.registry), test_catalog());
     let output = NativeTool::execute(
         &tool,
@@ -245,7 +261,10 @@ async fn skill_install_tool_installs_inline_content(test_registry: TestRegistryH
 
 #[rstest]
 #[tokio::test]
-async fn skill_install_tool_rejects_duplicate_inline_install(test_registry: TestRegistryHandle) {
+async fn skill_install_tool_rejects_duplicate_inline_install(
+    test_registry: anyhow::Result<TestRegistryHandle>,
+) {
+    let test_registry = test_registry.expect("test registry fixture should build");
     let tool = SkillInstallTool::new(Arc::clone(&test_registry.registry), test_catalog());
     let params = serde_json::json!({
         "content": skill_markdown("deploy-docs"),
@@ -283,9 +302,10 @@ async fn skill_install_tool_rejects_duplicate_inline_install(test_registry: Test
 }))]
 #[tokio::test]
 async fn skill_install_tool_rejects_ambiguous_sources(
-    test_registry: TestRegistryHandle,
+    test_registry: anyhow::Result<TestRegistryHandle>,
     #[case] params: serde_json::Value,
 ) {
+    let test_registry = test_registry.expect("test registry fixture should build");
     let tool = SkillInstallTool::new(Arc::clone(&test_registry.registry), test_catalog());
 
     let error = NativeTool::execute(&tool, params, &JobContext::default())

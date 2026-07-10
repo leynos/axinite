@@ -129,7 +129,7 @@ mod tests {
         }
     }
 
-    fn make_skill_with_trust(name: &str, trust: SkillTrust) -> LoadedSkill {
+    fn make_skill_with_trust(name: &str, trust: SkillTrust) -> anyhow::Result<LoadedSkill> {
         crate::skills::test_support::TestSkillBuilder::new(name)
             .version("1.0.0")
             .trust(trust)
@@ -164,7 +164,10 @@ mod tests {
     #[test]
     fn test_trusted_skills_no_filtering() {
         let tools = all_tools();
-        let skills = vec![make_skill_with_trust("trusted_skill", SkillTrust::Trusted)];
+        let skills = vec![
+            make_skill_with_trust("trusted_skill", SkillTrust::Trusted)
+                .expect("test skill should build"),
+        ];
         let result = attenuate_tools(&tools, &skills);
         assert_eq!(result.tools.len(), tools.len());
         assert!(result.removed_tools.is_empty());
@@ -174,10 +177,10 @@ mod tests {
     #[test]
     fn test_installed_only_read_only() {
         let tools = all_tools();
-        let skills = vec![make_skill_with_trust(
-            "installed_skill",
-            SkillTrust::Installed,
-        )];
+        let skills = vec![
+            make_skill_with_trust("installed_skill", SkillTrust::Installed)
+                .expect("test skill should build"),
+        ];
         let result = attenuate_tools(&tools, &skills);
 
         let kept_names: Vec<&str> = result.tools.iter().map(|t| t.name.as_str()).collect();
@@ -195,8 +198,10 @@ mod tests {
     fn test_mixed_trust_drops_to_lowest() {
         let tools = all_tools();
         let skills = vec![
-            make_skill_with_trust("trusted_skill", SkillTrust::Trusted),
-            make_skill_with_trust("installed_skill", SkillTrust::Installed),
+            make_skill_with_trust("trusted_skill", SkillTrust::Trusted)
+                .expect("test skill should build"),
+            make_skill_with_trust("installed_skill", SkillTrust::Installed)
+                .expect("test skill should build"),
         ];
         let result = attenuate_tools(&tools, &skills);
 
@@ -209,7 +214,10 @@ mod tests {
     #[test]
     fn test_attenuation_result_has_explanation() {
         let tools = vec![make_tool("shell"), make_tool("time")];
-        let skills = vec![make_skill_with_trust("installed", SkillTrust::Installed)];
+        let skills = vec![
+            make_skill_with_trust("installed", SkillTrust::Installed)
+                .expect("test skill should build"),
+        ];
         let result = attenuate_tools(&tools, &skills);
 
         assert!(!result.explanation.is_empty());

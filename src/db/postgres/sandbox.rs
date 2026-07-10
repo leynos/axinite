@@ -103,20 +103,26 @@ mod tests {
         use uuid::Uuid;
 
         #[fixture]
-        async fn db() -> Option<PgBackend> {
-            try_test_pg_db()
-                .await
-                .expect("unexpected Postgres test setup error")
+        async fn db() -> Result<Option<PgBackend>, DatabaseError> {
+            try_test_pg_db().await
         }
 
-        async fn cleanup_job(db: &PgBackend, job_id: Uuid) {
-            let conn = db.store.conn().await.expect("failed to get connection");
+        async fn cleanup_job(
+            db: &PgBackend,
+            job_id: Uuid,
+        ) -> Result<(), Box<dyn std::error::Error>> {
+            let conn = db
+                .store
+                .conn()
+                .await
+                .map_err(|e| format!("failed to get connection: {e}"))?;
             conn.execute("DELETE FROM job_events WHERE job_id = $1", &[&job_id])
                 .await
-                .expect("failed to clean up job events");
+                .map_err(|e| format!("failed to clean up job events: {e}"))?;
             conn.execute("DELETE FROM agent_jobs WHERE id = $1", &[&job_id])
                 .await
-                .expect("failed to clean up sandbox job");
+                .map_err(|e| format!("failed to clean up sandbox job: {e}"))?;
+            Ok(())
         }
 
         #[fixture]
@@ -139,10 +145,12 @@ mod tests {
         #[rstest]
         #[tokio::test]
         async fn test_update_sandbox_job_status_field_passthrough(
-            #[future] db: Option<PgBackend>,
+            #[future] db: Result<Option<PgBackend>, DatabaseError>,
             pending_job: SandboxJobRecord,
         ) {
-            let Some(db) = db.await else { return };
+            let Some(db) = db.await.expect("unexpected Postgres test setup error") else {
+                return;
+            };
             let job_id = pending_job.id;
 
             db.save_sandbox_job(&pending_job)
@@ -192,10 +200,12 @@ mod tests {
         #[rstest]
         #[tokio::test]
         async fn test_list_sandbox_jobs_for_user(
-            #[future] db: Option<PgBackend>,
+            #[future] db: Result<Option<PgBackend>, DatabaseError>,
             pending_job: SandboxJobRecord,
         ) {
-            let Some(db) = db.await else { return };
+            let Some(db) = db.await.expect("unexpected Postgres test setup error") else {
+                return;
+            };
 
             // Generate unique user IDs to avoid cross-run collisions
             let user1_id = format!("user1-{}", Uuid::new_v4());
@@ -253,10 +263,12 @@ mod tests {
         #[rstest]
         #[tokio::test]
         async fn test_sandbox_job_summary_for_user(
-            #[future] db: Option<PgBackend>,
+            #[future] db: Result<Option<PgBackend>, DatabaseError>,
             pending_job: SandboxJobRecord,
         ) {
-            let Some(db) = db.await else { return };
+            let Some(db) = db.await.expect("unexpected Postgres test setup error") else {
+                return;
+            };
 
             // Generate unique user IDs to avoid cross-run collisions
             let user_id = format!("summary-user-{}", Uuid::new_v4());
@@ -310,11 +322,13 @@ mod tests {
         #[case(SandboxMode::ClaudeCode)]
         #[tokio::test]
         async fn test_sandbox_job_mode_roundtrip(
-            #[future] db: Option<PgBackend>,
+            #[future] db: Result<Option<PgBackend>, DatabaseError>,
             pending_job: SandboxJobRecord,
             #[case] mode: SandboxMode,
         ) {
-            let Some(db) = db.await else { return };
+            let Some(db) = db.await.expect("unexpected Postgres test setup error") else {
+                return;
+            };
             let job_id = pending_job.id;
 
             db.save_sandbox_job(&pending_job)
@@ -331,16 +345,20 @@ mod tests {
                 .expect("get_sandbox_job_mode should succeed");
             assert_eq!(stored_mode, Some(mode));
 
-            cleanup_job(&db, job_id).await;
+            cleanup_job(&db, job_id)
+                .await
+                .expect("cleanup_job should succeed");
         }
 
         #[rstest]
         #[tokio::test]
         async fn test_save_job_event_roundtrip(
-            #[future] db: Option<PgBackend>,
+            #[future] db: Result<Option<PgBackend>, DatabaseError>,
             pending_job: SandboxJobRecord,
         ) {
-            let Some(db) = db.await else { return };
+            let Some(db) = db.await.expect("unexpected Postgres test setup error") else {
+                return;
+            };
             let job_id = pending_job.id;
             let event_type = SandboxEventType::from("stdout");
             let data = serde_json::json!({
@@ -366,16 +384,20 @@ mod tests {
 
             assert_eq!(stored_event.data, data);
 
-            cleanup_job(&db, job_id).await;
+            cleanup_job(&db, job_id)
+                .await
+                .expect("cleanup_job should succeed");
         }
 
         #[rstest]
         #[tokio::test]
         async fn test_sandbox_job_belongs_to_user(
-            #[future] db: Option<PgBackend>,
+            #[future] db: Result<Option<PgBackend>, DatabaseError>,
             pending_job: SandboxJobRecord,
         ) {
-            let Some(db) = db.await else { return };
+            let Some(db) = db.await.expect("unexpected Postgres test setup error") else {
+                return;
+            };
 
             // Generate unique user IDs to avoid cross-run collisions
             let owner_id = format!("owner-{}", Uuid::new_v4());

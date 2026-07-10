@@ -17,22 +17,25 @@ struct SkillReadFixture {
 }
 
 #[fixture]
-fn skill_read_fixture() -> SkillReadFixture {
-    let dir = tempfile::tempdir().expect("tempdir should be created");
+fn skill_read_fixture() -> anyhow::Result<SkillReadFixture> {
+    use anyhow::Context as _;
+
+    let dir = tempfile::tempdir().context("tempdir should be created")?;
     ambient_fs::create_dir_all(dir.path().join("references"))
-        .expect("references dir should be created");
-    ambient_fs::create_dir_all(dir.path().join("assets")).expect("assets dir should be created");
+        .context("references dir should be created")?;
+    ambient_fs::create_dir_all(dir.path().join("assets"))
+        .context("assets dir should be created")?;
     ambient_fs::write(dir.path().join("SKILL.md"), "# Deploy docs\n")
-        .expect("skill prompt should be written");
+        .context("skill prompt should be written")?;
     ambient_fs::write(dir.path().join("references/usage.md"), "# Usage\n")
-        .expect("reference should be written");
+        .context("reference should be written")?;
     ambient_fs::write(dir.path().join("assets/note.txt"), "asset notes\n")
-        .expect("text asset should be written");
+        .context("text asset should be written")?;
     ambient_fs::write(
         dir.path().join("assets/logo.png"),
         [0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A],
     )
-    .expect("binary asset should be written");
+    .context("binary asset should be written")?;
 
     let location = LoadedSkillLocation::new(
         "deploy-docs",
@@ -40,12 +43,12 @@ fn skill_read_fixture() -> SkillReadFixture {
         PathBuf::from("SKILL.md"),
         SkillPackageKind::Bundle,
     )
-    .expect("test location should be valid");
+    .context("test location should be valid")?;
     let skill = TestSkillBuilder::new("deploy-docs")
         .location(location)
-        .build();
+        .build()?;
 
-    SkillReadFixture { _dir: dir, skill }
+    Ok(SkillReadFixture { _dir: dir, skill })
 }
 
 fn installed_read_entries() -> Vec<(&'static str, &'static [u8])> {
@@ -136,7 +139,8 @@ async fn test_read_skill_file_after_install_returns_io_error_on_non_linux()
 #[rstest]
 #[tokio::test]
 #[cfg(target_os = "linux")]
-async fn reads_bundle_reference_text(skill_read_fixture: SkillReadFixture) {
+async fn reads_bundle_reference_text(skill_read_fixture: anyhow::Result<SkillReadFixture>) {
+    let skill_read_fixture = skill_read_fixture.expect("skill read fixture should build");
     let response = read_skill_file(&skill_read_fixture.skill, "references/usage.md").await;
 
     assert_eq!(
@@ -153,7 +157,10 @@ async fn reads_bundle_reference_text(skill_read_fixture: SkillReadFixture) {
 #[rstest]
 #[tokio::test]
 #[cfg(target_os = "linux")]
-async fn reads_bundle_reference_text_at_max_size(skill_read_fixture: SkillReadFixture) {
+async fn reads_bundle_reference_text_at_max_size(
+    skill_read_fixture: anyhow::Result<SkillReadFixture>,
+) {
+    let skill_read_fixture = skill_read_fixture.expect("skill read fixture should build");
     ambient_fs::write(
         skill_read_fixture
             .skill
@@ -177,7 +184,8 @@ async fn reads_bundle_reference_text_at_max_size(skill_read_fixture: SkillReadFi
 #[rstest]
 #[tokio::test]
 #[cfg(target_os = "linux")]
-async fn reads_skill_entrypoint(skill_read_fixture: SkillReadFixture) {
+async fn reads_skill_entrypoint(skill_read_fixture: anyhow::Result<SkillReadFixture>) {
+    let skill_read_fixture = skill_read_fixture.expect("skill read fixture should build");
     let response = read_skill_file(&skill_read_fixture.skill, "SKILL.md").await;
 
     assert_eq!(
@@ -200,7 +208,11 @@ async fn reads_skill_entrypoint(skill_read_fixture: SkillReadFixture) {
 #[case::bare_references_directory("references/")]
 #[case::bare_assets_directory("assets/")]
 #[tokio::test]
-async fn rejects_disallowed_paths(skill_read_fixture: SkillReadFixture, #[case] path: &str) {
+async fn rejects_disallowed_paths(
+    skill_read_fixture: anyhow::Result<SkillReadFixture>,
+    #[case] path: &str,
+) {
+    let skill_read_fixture = skill_read_fixture.expect("skill read fixture should build");
     let response = read_skill_file(&skill_read_fixture.skill, path).await;
 
     assert_error_code(response, SkillReadFileErrorCode::PathNotReadable);
@@ -209,7 +221,10 @@ async fn rejects_disallowed_paths(skill_read_fixture: SkillReadFixture, #[case] 
 #[rstest]
 #[tokio::test]
 #[cfg(target_os = "linux")]
-async fn binary_asset_returns_non_inline_metadata(skill_read_fixture: SkillReadFixture) {
+async fn binary_asset_returns_non_inline_metadata(
+    skill_read_fixture: anyhow::Result<SkillReadFixture>,
+) {
+    let skill_read_fixture = skill_read_fixture.expect("skill read fixture should build");
     let response = read_skill_file(&skill_read_fixture.skill, "assets/logo.png").await;
 
     let SkillReadFileResponse::Error(response) = response else {
@@ -229,7 +244,10 @@ async fn binary_asset_returns_non_inline_metadata(skill_read_fixture: SkillReadF
 #[rstest]
 #[tokio::test]
 #[cfg(target_os = "linux")]
-async fn oversized_text_returns_file_too_large(skill_read_fixture: SkillReadFixture) {
+async fn oversized_text_returns_file_too_large(
+    skill_read_fixture: anyhow::Result<SkillReadFixture>,
+) {
+    let skill_read_fixture = skill_read_fixture.expect("skill read fixture should build");
     ambient_fs::write(
         skill_read_fixture
             .skill
@@ -247,7 +265,10 @@ async fn oversized_text_returns_file_too_large(skill_read_fixture: SkillReadFixt
 #[rstest]
 #[tokio::test]
 #[cfg(target_os = "linux")]
-async fn missing_file_returns_path_not_readable(skill_read_fixture: SkillReadFixture) {
+async fn missing_file_returns_path_not_readable(
+    skill_read_fixture: anyhow::Result<SkillReadFixture>,
+) {
+    let skill_read_fixture = skill_read_fixture.expect("skill read fixture should build");
     let response = read_skill_file(&skill_read_fixture.skill, "references/missing.md").await;
 
     assert_error_code(response, SkillReadFileErrorCode::PathNotReadable);
@@ -256,7 +277,8 @@ async fn missing_file_returns_path_not_readable(skill_read_fixture: SkillReadFix
 #[cfg(target_os = "linux")]
 #[rstest]
 #[tokio::test]
-async fn symlink_paths_are_rejected(skill_read_fixture: SkillReadFixture) {
+async fn symlink_paths_are_rejected(skill_read_fixture: anyhow::Result<SkillReadFixture>) {
+    let skill_read_fixture = skill_read_fixture.expect("skill read fixture should build");
     std::os::unix::fs::symlink(
         skill_read_fixture
             .skill
@@ -277,7 +299,10 @@ async fn symlink_paths_are_rejected(skill_read_fixture: SkillReadFixture) {
 #[cfg(target_os = "linux")]
 #[rstest]
 #[tokio::test]
-async fn intermediate_symlink_paths_are_rejected(skill_read_fixture: SkillReadFixture) {
+async fn intermediate_symlink_paths_are_rejected(
+    skill_read_fixture: anyhow::Result<SkillReadFixture>,
+) {
+    let skill_read_fixture = skill_read_fixture.expect("skill read fixture should build");
     let external = tempfile::tempdir().expect("external tempdir should be created");
     ambient_fs::write(external.path().join("usage.md"), "# Escaped\n")
         .expect("external reference should be written");
@@ -301,9 +326,10 @@ async fn intermediate_symlink_paths_are_rejected(skill_read_fixture: SkillReadFi
 #[case::entrypoint("SKILL.md")]
 #[tokio::test]
 async fn allowed_reads_fail_closed_on_non_linux(
-    skill_read_fixture: SkillReadFixture,
+    skill_read_fixture: anyhow::Result<SkillReadFixture>,
     #[case] path: &str,
 ) {
+    let skill_read_fixture = skill_read_fixture.expect("skill read fixture should build");
     let response = read_skill_file(&skill_read_fixture.skill, path).await;
 
     assert_error_code(response, SkillReadFileErrorCode::IoError);

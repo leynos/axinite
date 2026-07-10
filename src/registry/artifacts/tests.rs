@@ -49,7 +49,8 @@ fn test_find_wasm_artifact_falls_back_to_repo_shared_target_dir(_cleared_target_
 
     ambient_fs::create_dir_all(&crate_dir).expect("create crate dir");
     ambient_fs::create_dir_all(&wasm_dir).expect("create shared wasm dir");
-    ambient_fs::File::create(wasm_dir.join("demo_channel.wasm")).expect("create shared wasm artifact");
+    ambient_fs::File::create(wasm_dir.join("demo_channel.wasm"))
+        .expect("create shared wasm artifact");
 
     let result = find_wasm_artifact(&crate_dir, "demo-channel", "release");
     assert_eq!(

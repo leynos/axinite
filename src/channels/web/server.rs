@@ -212,14 +212,18 @@ pub async fn start_server(
 
     // CORS: restrict to same-origin by default. Only localhost/127.0.0.1
     // origins are allowed, since the gateway is a local-first service.
+    let parse_origin = |origin: String| {
+        origin.parse::<header::HeaderValue>().map_err(|e| {
+            crate::error::ChannelError::StartupFailed {
+                name: "gateway".to_string(),
+                reason: format!("valid origin expected, got {origin:?}: {e}"),
+            }
+        })
+    };
     let cors = CorsLayer::new()
         .allow_origin([
-            format!("http://{}:{}", addr.ip(), addr.port())
-                .parse()
-                .expect("valid origin"),
-            format!("http://localhost:{}", addr.port())
-                .parse()
-                .expect("valid origin"),
+            parse_origin(format!("http://{}:{}", addr.ip(), addr.port()))?,
+            parse_origin(format!("http://localhost:{}", addr.port()))?,
         ])
         .allow_methods([
             axum::http::Method::GET,

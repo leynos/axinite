@@ -26,17 +26,26 @@ fn assert_execution_failed<T: std::fmt::Debug>(result: Result<T, ToolError>, exp
     }
 }
 
-async fn execute_override_error(override_key: &str, override_value: &str, expected_msg: &str) {
-    let builder = FakeSoftwareBuilder::always_analyze(test_requirement());
+async fn execute_override_error(
+    override_key: &str,
+    override_value: &str,
+    expected_msg: &str,
+) -> anyhow::Result<()> {
+    let builder = FakeSoftwareBuilder::always_analyze(test_requirement()?);
     let tool = BuildSoftwareTool::new(Arc::new(builder));
     let mut params = serde_json::json!({"description": "x"});
     params[override_key] = override_value.into();
     let result = tool.execute(params, &JobContext::default()).await;
     assert_invalid_parameters(result, expected_msg);
+    Ok(())
 }
 
-async fn execute_capturing_requirement(params: serde_json::Value) -> BuildRequirement {
-    let analyzed = test_requirement();
+async fn execute_capturing_requirement(
+    params: serde_json::Value,
+) -> anyhow::Result<BuildRequirement> {
+    use anyhow::Context as _;
+
+    let analyzed = test_requirement()?;
     let build_result = test_build_result(analyzed.clone());
     let (builder, captured_requirement) =
         FakeSoftwareBuilder::success_with_capture(analyzed, build_result);
@@ -44,13 +53,13 @@ async fn execute_capturing_requirement(params: serde_json::Value) -> BuildRequir
 
     tool.execute(params, &JobContext::default())
         .await
-        .expect("expected execute to return successful output");
+        .map_err(|e| anyhow::anyhow!("expected execute to return successful output: {e:?}"))?;
 
     captured_requirement
         .lock()
-        .expect("captured requirement mutex should not be poisoned")
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
         .clone()
-        .expect("expected build to capture requirement")
+        .context("expected build to capture requirement")
 }
 
 struct FakeSoftwareBuilder {
@@ -104,8 +113,7 @@ impl FakeSoftwareBuilder {
             build_result: Arc::new(move |requirement| {
                 *build_capture
                     .lock()
-                    .expect("captured requirement mutex should not be poisoned") =
-                    Some(requirement.clone());
+                    .unwrap_or_else(std::sync::PoisonError::into_inner) = Some(requirement.clone());
                 Ok(result.clone())
             }),
         };
@@ -139,9 +147,10 @@ impl SoftwareBuilder for FakeSoftwareBuilder {
     }
 }
 
-fn test_requirement() -> BuildRequirement {
-    BuildRequirement {
-        name: ProjectName::new("test_tool").expect("test project name should be valid"),
+fn test_requirement() -> anyhow::Result<BuildRequirement> {
+    Ok(BuildRequirement {
+        name: ProjectName::new("test_tool")
+            .map_err(|e| anyhow::anyhow!("test project name should be valid: {e}"))?,
         description: "build a test tool".to_string(),
         software_type: SoftwareType::Library,
         language: Language::Rust,
@@ -149,15 +158,18 @@ fn test_requirement() -> BuildRequirement {
         output_spec: None,
         dependencies: vec![],
         capabilities: vec![],
-    }
+    })
 }
 
-fn expected_requirement(software_type: SoftwareType, language: Language) -> BuildRequirement {
-    BuildRequirement {
+fn expected_requirement(
+    software_type: SoftwareType,
+    language: Language,
+) -> anyhow::Result<BuildRequirement> {
+    Ok(BuildRequirement {
         software_type,
         language,
-        ..test_requirement()
-    }
+        ..test_requirement()?
+    })
 }
 
 fn test_build_result(requirement: BuildRequirement) -> BuildResult {
@@ -198,7 +210,8 @@ async fn execute_valid_type_overrides_are_applied(
         "description": "build a test tool",
         "type": value,
     }))
-    .await;
+    .await
+    .expect("capturing execution should succeed");
 
     assert_eq!(captured.software_type, expected);
     assert_eq!(captured.language, Language::Rust);
@@ -218,7 +231,8 @@ async fn execute_valid_language_overrides_are_applied(
         "description": "build a test tool",
         "language": value,
     }))
-    .await;
+    .await
+    .expect("capturing execution should succeed");
 
     assert_eq!(captured.software_type, SoftwareType::Library);
     assert_eq!(captured.language, expected);
@@ -226,7 +240,8 @@ async fn execute_valid_language_overrides_are_applied(
 
 #[tokio::test]
 async fn execute_missing_description_returns_error() {
-    let builder = FakeSoftwareBuilder::always_analyze(test_requirement());
+    let requirement = test_requirement().expect("test requirement should build");
+    let builder = FakeSoftwareBuilder::always_analyze(requirement);
     let tool = BuildSoftwareTool::new(Arc::new(builder));
 
     let result = tool
@@ -262,7 +277,10 @@ async fn execute_analyze_failure_returns_execution_failed() {
 
 #[tokio::test]
 async fn execute_build_failure_returns_execution_failed() {
-    let builder = FakeSoftwareBuilder::build_error(test_requirement(), "build exploded");
+    let builder = FakeSoftwareBuilder::build_error(
+        test_requirement().expect("test requirement should build"),
+        "build exploded",
+    );
     execute_failure_returns_execution_failed(
         Arc::new(builder),
         "Build failed: Tool builder failed: build exploded",
@@ -279,7 +297,9 @@ async fn execute_invalid_type_override_returns_error(
     #[case] value: &str,
     #[case] expected_msg: &str,
 ) {
-    execute_override_error("type", value, expected_msg).await;
+    execute_override_error("type", value, expected_msg)
+        .await
+        .expect("override error scenario should run");
 }
 
 #[rstest]
@@ -291,12 +311,14 @@ async fn execute_invalid_language_override_returns_error(
     #[case] value: &str,
     #[case] expected_msg: &str,
 ) {
-    execute_override_error("language", value, expected_msg).await;
+    execute_override_error("language", value, expected_msg)
+        .await
+        .expect("override error scenario should run");
 }
 
 #[tokio::test]
 async fn execute_valid_params_returns_success_output() {
-    let requirement = test_requirement();
+    let requirement = test_requirement().expect("test requirement should build");
     let build_result = test_build_result(requirement.clone());
     let builder = FakeSoftwareBuilder::success(requirement, build_result);
     let tool = BuildSoftwareTool::new_with_clock(
@@ -324,14 +346,15 @@ async fn execute_valid_params_returns_success_output() {
     let captured = execute_capturing_requirement(serde_json::json!({
         "description": "build a test tool",
     }))
-    .await;
+    .await
+    .expect("capturing execution should succeed");
     assert_eq!(captured.software_type, SoftwareType::Library);
     assert_eq!(captured.language, Language::Rust);
 }
 
 #[tokio::test]
 async fn execute_success_output_matches_snapshot() {
-    let requirement = test_requirement();
+    let requirement = test_requirement().expect("test requirement should build");
     let build_result = test_build_result(requirement.clone());
     let builder = FakeSoftwareBuilder::success(requirement, build_result);
     let tool = BuildSoftwareTool::new_with_clock(
@@ -363,8 +386,9 @@ async fn execute_success_output_matches_snapshot() {
 
 #[tokio::test]
 async fn execute_valid_overrides_are_applied_before_build() {
-    let analyzed = test_requirement();
-    let expected = expected_requirement(SoftwareType::WasmTool, Language::TypeScript);
+    let analyzed = test_requirement().expect("test requirement should build");
+    let expected = expected_requirement(SoftwareType::WasmTool, Language::TypeScript)
+        .expect("expected requirement should build");
     let (builder, captured_requirement) =
         FakeSoftwareBuilder::success_with_capture(analyzed, test_build_result(expected));
     let tool = BuildSoftwareTool::new(Arc::new(builder));

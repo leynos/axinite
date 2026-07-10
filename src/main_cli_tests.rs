@@ -6,6 +6,7 @@
 
 use std::sync::Arc;
 
+use anyhow::Context as _;
 use ironclaw::cli::{Cli, Command, PairingCommand};
 use rstest::rstest;
 
@@ -28,12 +29,13 @@ fn cli_with(command: Option<Command>) -> Cli {
 
 /// Asserts that `dispatch_cli_tool_commands` returns `Ok(None)` for the
 /// given passthrough command variant.
-async fn assert_tool_commands_passthrough(command: Command) {
+async fn assert_tool_commands_passthrough(command: Command) -> anyhow::Result<()> {
     let cli = cli_with(Some(command));
     let result = dispatch_cli_tool_commands(&cli)
         .await
-        .expect("dispatch should succeed");
+        .context("dispatch should succeed")?;
     assert!(result.is_none());
+    Ok(())
 }
 
 /// RAII guard installing an agent dispatch hook for the duration of the test.
@@ -119,12 +121,13 @@ fn status_command() -> Command {
 }
 
 /// Asserts that `dispatch_subcommand` returns `true` for the given command.
-async fn assert_subcommand_short_circuits(command: Command) {
+async fn assert_subcommand_short_circuits(command: Command) -> anyhow::Result<()> {
     let cli = cli_with(Some(command));
     let dispatched = dispatch_subcommand(&cli)
         .await
-        .expect("dispatch should succeed");
+        .context("dispatch should succeed")?;
     assert!(dispatched);
+    Ok(())
 }
 
 #[tokio::test]
@@ -138,7 +141,9 @@ async fn tool_commands_returns_none_for_no_command() {
 
 #[tokio::test]
 async fn tool_commands_returns_none_for_run() {
-    assert_tool_commands_passthrough(Command::Run).await;
+    assert_tool_commands_passthrough(Command::Run)
+        .await
+        .expect("dispatch should succeed");
 }
 
 #[rstest]
@@ -147,7 +152,9 @@ async fn tool_commands_returns_none_for_run() {
 #[case(onboard_command())]
 #[tokio::test]
 async fn tool_commands_returns_none_for_agent_passthrough_variants(#[case] command: Command) {
-    assert_tool_commands_passthrough(command).await;
+    assert_tool_commands_passthrough(command)
+        .await
+        .expect("dispatch should succeed");
 }
 
 #[tokio::test]
@@ -212,11 +219,15 @@ async fn agent_commands_returns_some_for_handled_worker_command() {
 #[tokio::test]
 async fn dispatch_subcommand_short_circuits_for_pairing_command() {
     let _guard = AgentDispatchHookGuard::hold().await;
-    assert_subcommand_short_circuits(pairing_list_command()).await;
+    assert_subcommand_short_circuits(pairing_list_command())
+        .await
+        .expect("dispatch should succeed");
 }
 
 #[tokio::test]
 async fn dispatch_subcommand_short_circuits_for_handled_worker_command() {
     let _hook = AgentDispatchHookGuard::install(handled_agent_command).await;
-    assert_subcommand_short_circuits(worker_command()).await;
+    assert_subcommand_short_circuits(worker_command())
+        .await
+        .expect("dispatch should succeed");
 }

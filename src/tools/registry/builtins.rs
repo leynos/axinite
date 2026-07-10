@@ -64,18 +64,24 @@ pub struct RegisterJobToolsOptions {
 
 impl ToolRegistry {
     /// Register all built-in tools.
-    pub fn register_builtin_tools(&self) {
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when the HTTP tool's underlying client cannot be
+    /// built.
+    pub fn register_builtin_tools(&self) -> Result<(), crate::tools::tool::ToolError> {
         self.register_sync(Arc::new(EchoTool));
         self.register_sync(Arc::new(TimeTool));
         self.register_sync(Arc::new(JsonTool));
 
-        let mut http = HttpTool::new();
+        let mut http = HttpTool::new()?;
         if let (Some(cr), Some(ss)) = (&self.credential_registry, &self.secrets_store) {
             http = http.with_credentials(Arc::clone(cr), Arc::clone(ss));
         }
         self.register_sync(Arc::new(http));
 
         tracing::debug!("Registered {} built-in tools", self.count());
+        Ok(())
     }
 
     /// Register only orchestrator-domain tools (safe for the main process).
@@ -83,8 +89,13 @@ impl ToolRegistry {
     /// This registers tools that don't touch the filesystem or run shell commands:
     /// echo, time, json, http. Use this when `allow_local_tools = false` and
     /// container-domain tools should only be available inside sandboxed containers.
-    pub fn register_orchestrator_tools(&self) {
-        self.register_builtin_tools();
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when the HTTP tool's underlying client cannot be
+    /// built.
+    pub fn register_orchestrator_tools(&self) -> Result<(), crate::tools::tool::ToolError> {
+        self.register_builtin_tools()
         // register_builtin_tools already only registers orchestrator-domain tools
     }
 

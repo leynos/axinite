@@ -93,42 +93,55 @@ async fn insert_test_wasm_channel(conn: &libsql::Connection) {
     .expect("insert wasm channel without wit_version");
 }
 
-async fn assert_wit_version(conn: &libsql::Connection, table: &str, id: &str, expected: &str) {
+async fn assert_wit_version(
+    conn: &libsql::Connection,
+    table: &str,
+    id: &str,
+    expected: &str,
+) -> Result<(), Box<dyn std::error::Error>> {
     let query = format!("SELECT wit_version FROM {table} WHERE id = ?1");
     let mut rows = conn
         .query(&query, libsql::params![id])
         .await
-        .unwrap_or_else(|error| panic!("query {table} wit_version: {error}"));
+        .map_err(|error| format!("query {table} wit_version: {error}"))?;
     let row = rows
         .next()
         .await
-        .unwrap_or_else(|error| panic!("read {table} wit_version row: {error}"))
-        .unwrap_or_else(|| panic!("missing {table} row for id {id}"));
+        .map_err(|error| format!("read {table} wit_version row: {error}"))?
+        .ok_or_else(|| format!("missing {table} row for id {id}"))?;
     let actual: String = row
         .get(0)
-        .unwrap_or_else(|error| panic!("read {table} wit_version value: {error}"));
+        .map_err(|error| format!("read {table} wit_version value: {error}"))?;
     assert_eq!(actual, expected);
+    Ok(())
 }
 
-async fn assert_migration_absent(conn: &libsql::Connection, version: i64) {
+async fn assert_migration_absent(
+    conn: &libsql::Connection,
+    version: i64,
+) -> Result<(), Box<dyn std::error::Error>> {
     let mut old_version_rows = conn
         .query(
             "SELECT name FROM _migrations WHERE version = ?1",
             libsql::params![version],
         )
         .await
-        .unwrap_or_else(|error| panic!("query migration marker for version {version}: {error}"));
+        .map_err(|error| format!("query migration marker for version {version}: {error}"))?;
+    let row = old_version_rows
+        .next()
+        .await
+        .map_err(|error| format!("read migration row for version {version}: {error}"))?;
     assert!(
-        old_version_rows
-            .next()
-            .await
-            .unwrap_or_else(|error| panic!("read migration row for version {version}: {error}"))
-            .is_none(),
+        row.is_none(),
         "unexpected _migrations row for version {version}; migration numbering regressed"
     );
+    Ok(())
 }
 
-async fn assert_migration_entries(conn: &libsql::Connection, entries: &[(i64, &str)]) {
+async fn assert_migration_entries(
+    conn: &libsql::Connection,
+    entries: &[(i64, &str)],
+) -> Result<(), Box<dyn std::error::Error>> {
     for (version, expected_name) in entries {
         let mut migration_rows = conn
             .query(
@@ -136,23 +149,22 @@ async fn assert_migration_entries(conn: &libsql::Connection, entries: &[(i64, &s
                 libsql::params![*version],
             )
             .await
-            .unwrap_or_else(|error| {
-                panic!("query migration marker for version {version}: {error}")
-            });
+            .map_err(|error| format!("query migration marker for version {version}: {error}"))?;
         let migration_row = migration_rows
             .next()
             .await
-            .unwrap_or_else(|error| panic!("read migration row for version {version}: {error}"))
-            .unwrap_or_else(|| {
-                panic!(
+            .map_err(|error| format!("read migration row for version {version}: {error}"))?
+            .ok_or_else(|| {
+                format!(
                     "expected _migrations row for version {version}; migration sequences diverged"
                 )
-            });
+            })?;
         let migration_name: String = migration_row
             .get(0)
-            .unwrap_or_else(|error| panic!("read migration name for version {version}: {error}"));
+            .map_err(|error| format!("read migration name for version {version}: {error}"))?;
         assert_eq!(migration_name, *expected_name);
     }
+    Ok(())
 }
 
 #[tokio::test]
@@ -171,9 +183,15 @@ async fn libsql_run_migrations_upgrades_legacy_wasm_wit_defaults() {
     let conn = backend.connect().await.expect("connect after migration");
     insert_test_wasm_tool(&conn).await;
     insert_test_wasm_channel(&conn).await;
-    assert_wit_version(&conn, "wasm_tools", "tool-1", "0.3.0").await;
-    assert_wit_version(&conn, "wasm_channels", "channel-1", "0.3.0").await;
-    assert_migration_absent(&conn, 10).await;
+    assert_wit_version(&conn, "wasm_tools", "tool-1", "0.3.0")
+        .await
+        .expect("wasm_tools wit_version should upgrade");
+    assert_wit_version(&conn, "wasm_channels", "channel-1", "0.3.0")
+        .await
+        .expect("wasm_channels wit_version should upgrade");
+    assert_migration_absent(&conn, 10)
+        .await
+        .expect("migration marker for version 10 should be absent");
     assert_migration_entries(
         &conn,
         &[
@@ -182,5 +200,6 @@ async fn libsql_run_migrations_upgrades_legacy_wasm_wit_defaults() {
             (14_i64, "drop_redundant_wasm_tools_name_index"),
         ],
     )
-    .await;
+    .await
+    .expect("expected migration entries should be present");
 }

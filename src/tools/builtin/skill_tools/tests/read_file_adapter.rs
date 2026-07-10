@@ -61,7 +61,7 @@ fn documented_bundle_entries() -> Vec<(&'static str, &'static [u8])> {
 fn insert_deploy_docs_bundle(
     registry: &Arc<std::sync::RwLock<SkillRegistry>>,
     root: &std::path::Path,
-) {
+) -> anyhow::Result<()> {
     let location = LoadedSkillLocation::new(
         "deploy-docs",
         root,
@@ -71,12 +71,13 @@ fn insert_deploy_docs_bundle(
     .expect("bundle location should be valid");
     let skill = crate::skills::test_support::TestSkillBuilder::new("deploy-docs")
         .location(location)
-        .build();
+        .build()?;
     registry
         .write()
         .expect("registry lock should be writable")
         .commit_loaded_skill("deploy-docs", skill)
         .expect("skill should be inserted");
+    Ok(())
 }
 
 #[rstest]
@@ -89,7 +90,8 @@ async fn skill_read_file_tool_reads_bundle_reference(test_registry: TestRegistry
         .expect("SKILL.md should be written");
     ambient_fs::write(bundle_dir.path().join("references/usage.md"), "# Usage\n")
         .expect("reference should be written");
-    insert_deploy_docs_bundle(&test_registry.registry, bundle_dir.path());
+    insert_deploy_docs_bundle(&test_registry.registry, bundle_dir.path())
+        .expect("deploy-docs bundle should be inserted");
 
     let tool = SkillReadFileTool::new(Arc::clone(&test_registry.registry));
     let output = NativeTool::execute(
@@ -219,7 +221,8 @@ fn bdd_loaded_skill_bundle(skill_read_file_world: &mut SkillReadFileWorld) {
     let registry = Arc::new(std::sync::RwLock::new(SkillRegistry::new(
         bundle_dir.path().join("unused-user-dir"),
     )));
-    insert_deploy_docs_bundle(&registry, bundle_dir.path());
+    insert_deploy_docs_bundle(&registry, bundle_dir.path())
+        .expect("deploy-docs bundle should be inserted");
 
     skill_read_file_world.bundle_dir = Some(bundle_dir);
     skill_read_file_world.registry = Some(registry);

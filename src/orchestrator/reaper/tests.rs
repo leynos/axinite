@@ -11,7 +11,7 @@ use rstest::rstest;
 /// Build a standard 600-second-threshold `ReaperConfig`, fabricate a single
 /// `ironclaw.created_at` label `age_offset` before now, parse it, and return
 /// whether the container is past the orphan threshold.
-fn container_age_is_past_threshold(age_offset: chrono::Duration) -> bool {
+fn container_age_is_past_threshold(age_offset: chrono::Duration) -> Result<bool> {
     let cfg = ReaperConfig {
         orphan_threshold: Duration::from_secs(600),
         ..Default::default()
@@ -23,24 +23,22 @@ fn container_age_is_past_threshold(age_offset: chrono::Duration) -> bool {
         (now - age_offset).to_rfc3339(),
     );
     let created_at = parse_created_at_label(&labels, None)
-        .expect("timestamp should parse in orphan-threshold test");
-    is_past_orphan_threshold(created_at, &cfg, now)
+        .context("timestamp should parse in orphan-threshold test")?;
+    Ok(is_past_orphan_threshold(created_at, &cfg, now))
 }
 
 #[test]
-fn orphan_threshold_filters_young_containers() {
-    assert!(
-        !container_age_is_past_threshold(chrono::Duration::minutes(2)),
-        "Young container should be skipped"
-    );
+fn orphan_threshold_filters_young_containers() -> Result<()> {
+    let is_past = container_age_is_past_threshold(chrono::Duration::minutes(2))?;
+    assert!(!is_past, "Young container should be skipped");
+    Ok(())
 }
 
 #[test]
-fn orphan_threshold_allows_old_containers() {
-    assert!(
-        container_age_is_past_threshold(chrono::Duration::minutes(15)),
-        "Old container should be reaped"
-    );
+fn orphan_threshold_allows_old_containers() -> Result<()> {
+    let is_past = container_age_is_past_threshold(chrono::Duration::minutes(15))?;
+    assert!(is_past, "Old container should be reaped");
+    Ok(())
 }
 
 #[tokio::test]
@@ -58,22 +56,22 @@ async fn make_terminal_job(
     ctx_mgr: &ContextManager,
     description: &str,
     state: JobState,
-) -> (Uuid, JobContext) {
+) -> Result<(Uuid, JobContext)> {
     let job_id = ctx_mgr
         .create_job_for_user("default", "test", description)
         .await
-        .expect("create_job_for_user failed in make_terminal_job");
+        .context("create_job_for_user failed in make_terminal_job")?;
     ctx_mgr
         .update_context(job_id, |ctx| {
             ctx.state = state;
         })
         .await
-        .expect("update_context failed when setting terminal JobState in make_terminal_job");
+        .context("update_context failed when setting terminal JobState in make_terminal_job")?;
     let ctx = ctx_mgr
         .get_context(job_id)
         .await
-        .expect("get_context failed in make_terminal_job");
-    (job_id, ctx)
+        .context("get_context failed in make_terminal_job")?;
+    Ok((job_id, ctx))
 }
 
 /// Create a freshly-pending job and return whether its state `is_active()`.
@@ -124,13 +122,14 @@ async fn active_job_remains_active(
 #[case(JobState::Failed)]
 #[case(JobState::Cancelled)]
 #[tokio::test]
-async fn terminal_job_is_treated_as_orphaned(#[case] state: JobState) {
+async fn terminal_job_is_treated_as_orphaned(#[case] state: JobState) -> Result<()> {
     let ctx_mgr = Arc::new(ContextManager::new(5));
-    let (_job_id, ctx) = make_terminal_job(&ctx_mgr, "test description", state).await;
+    let (_job_id, ctx) = make_terminal_job(&ctx_mgr, "test description", state).await?;
     assert!(
         !ctx.state.is_active(),
         "Terminal job should be treated as orphaned"
     );
+    Ok(())
 }
 
 #[test]

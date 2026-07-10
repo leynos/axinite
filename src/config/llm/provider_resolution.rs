@@ -66,8 +66,12 @@ fn is_bedrock_backend(backend: &str) -> bool {
     matches!(backend, "bedrock" | "aws_bedrock" | "aws")
 }
 
-fn should_warn_unknown_backend(backend: &str, is_nearai: bool, is_bedrock: bool) -> bool {
-    !is_nearai && !is_bedrock && ProviderRegistry::load().find(backend).is_none()
+fn should_warn_unknown_backend(
+    backend: &str,
+    is_nearai: bool,
+    is_bedrock: bool,
+) -> Result<bool, ConfigError> {
+    Ok(!is_nearai && !is_bedrock && ProviderRegistry::load()?.find(backend).is_none())
 }
 
 fn resolve_bedrock_region(ctx: &EnvContext, settings: &Settings) -> Result<String, ConfigError> {
@@ -272,7 +276,7 @@ impl LlmConfig {
         let is_nearai = is_nearai_backend(&backend_lower);
         let is_bedrock = is_bedrock_backend(&backend_lower);
 
-        if should_warn_unknown_backend(&backend_lower, is_nearai, is_bedrock) {
+        if should_warn_unknown_backend(&backend_lower, is_nearai, is_bedrock)? {
             tracing::warn!(
                 "Unknown LLM backend '{}'. Will attempt as openai_compatible fallback.",
                 backend

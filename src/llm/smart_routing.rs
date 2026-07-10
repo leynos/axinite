@@ -20,6 +20,7 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
 
+use lazy_regex::{Lazy, lazy_regex, regex};
 use regex::Regex;
 use rust_decimal::Decimal;
 
@@ -247,7 +248,7 @@ fn build_domain_regex(keywords: &[&str]) -> Regex {
     let pattern = format!(r"(?i)\b({})\b", keywords.join("|"));
     Regex::new(&pattern).unwrap_or_else(|e| {
         tracing::warn!(error = %e, "Invalid domain keywords pattern, using minimal fallback");
-        Regex::new(r"(?i)\b(api|code|deploy)\b").expect("fallback regex is valid")
+        Regex::clone(regex!(r"(?i)\b(api|code|deploy)\b"))
     })
 }
 
@@ -265,80 +266,53 @@ pub struct ScoreBreakdown {
 }
 
 // ---------------------------------------------------------------------------
-// Static regex patterns (compiled once via LazyLock)
+// Static regex patterns (compile-checked via lazy_regex)
 // ---------------------------------------------------------------------------
 
 use std::sync::LazyLock;
 
-static RE_REASONING: LazyLock<Regex> = LazyLock::new(|| {
-    Regex::new(
-        r"(?i)\b(why|how|explain|analyze|analyse|compare|contrast|evaluate|assess|reason|think|consider|implications?|consequences?|trade-?offs?|pros?\s*(and|&)\s*cons?|advantages?|disadvantages?|benefits?|drawbacks?|differs?|difference|versus|vs\.?|better|worse|optimal|best|worst)\b"
-    ).expect("RE_REASONING is a valid regex")
-});
+static RE_REASONING: Lazy<Regex> = lazy_regex!(
+    r"(?i)\b(why|how|explain|analyze|analyse|compare|contrast|evaluate|assess|reason|think|consider|implications?|consequences?|trade-?offs?|pros?\s*(and|&)\s*cons?|advantages?|disadvantages?|benefits?|drawbacks?|differs?|difference|versus|vs\.?|better|worse|optimal|best|worst)\b"
+);
 
-static RE_MULTI_STEP: LazyLock<Regex> = LazyLock::new(|| {
-    Regex::new(
-        r"(?i)\b(first|then|next|after|before|finally|step|steps|phase|stages?|process|workflow|sequence|procedure|pipeline|chain|series|order|followed by)\b"
-    ).expect("RE_MULTI_STEP is a valid regex")
-});
+static RE_MULTI_STEP: Lazy<Regex> = lazy_regex!(
+    r"(?i)\b(first|then|next|after|before|finally|step|steps|phase|stages?|process|workflow|sequence|procedure|pipeline|chain|series|order|followed by)\b"
+);
 
-static RE_CREATIVITY: LazyLock<Regex> = LazyLock::new(|| {
-    Regex::new(
-        r"(?i)\b(write|create|generate|compose|design|imagine|brainstorm|ideate|draft|invent|story|poem|essay|article|blog|content|narrative|script|summarize|summarise|rewrite|paraphrase|translate|adapt|tweet|post|thread|outline|structure|format|style|tone|voice)\b"
-    ).expect("RE_CREATIVITY is a valid regex")
-});
+static RE_CREATIVITY: Lazy<Regex> = lazy_regex!(
+    r"(?i)\b(write|create|generate|compose|design|imagine|brainstorm|ideate|draft|invent|story|poem|essay|article|blog|content|narrative|script|summarize|summarise|rewrite|paraphrase|translate|adapt|tweet|post|thread|outline|structure|format|style|tone|voice)\b"
+);
 
-static RE_PRECISION: LazyLock<Regex> = LazyLock::new(|| {
-    Regex::new(
-        r"(?i)\b(\d{4}|\d+\.\d+|exactly|precisely|specific|accurate|correct|verify|confirm|date|time|number|calculate|compute|measure|count)\b"
-    ).expect("RE_PRECISION is a valid regex")
-});
+static RE_PRECISION: Lazy<Regex> = lazy_regex!(
+    r"(?i)\b(\d{4}|\d+\.\d+|exactly|precisely|specific|accurate|correct|verify|confirm|date|time|number|calculate|compute|measure|count)\b"
+);
 
-static RE_CODE: LazyLock<Regex> = LazyLock::new(|| {
-    Regex::new(
-        r"(?i)(`{1,3}|```|function|const|let|var|import|export|class|def |async|await|=>|\.ts|\.js|\.py|\.rs|\.go|\.sol|\(\)|\[\]|\{\}|<[A-Z][a-z]+>|useState|useEffect|npm|yarn|pnpm|cargo|pip|implement|rebase|merge|commit|branch|PR|pull.?request|columns?|migrations?|module|refactor|debug|fix|bug|error|schema|database|query)"
-    ).expect("RE_CODE is a valid regex")
-});
+static RE_CODE: Lazy<Regex> = lazy_regex!(
+    r"(?i)(`{1,3}|```|function|const|let|var|import|export|class|def |async|await|=>|\.ts|\.js|\.py|\.rs|\.go|\.sol|\(\)|\[\]|\{\}|<[A-Z][a-z]+>|useState|useEffect|npm|yarn|pnpm|cargo|pip|implement|rebase|merge|commit|branch|PR|pull.?request|columns?|migrations?|module|refactor|debug|fix|bug|error|schema|database|query)"
+);
 
-static RE_TOOL: LazyLock<Regex> = LazyLock::new(|| {
-    Regex::new(
-        r"(?i)\b(file|read|write|search|fetch|run|execute|check|look up|find|open|save|send|post|get|download|upload|install|deploy|build|compile|test|add|update|remove|delete|modify|change|edit|create|resolve|push|pull|clone)\b"
-    ).expect("RE_TOOL is a valid regex")
-});
+static RE_TOOL: Lazy<Regex> = lazy_regex!(
+    r"(?i)\b(file|read|write|search|fetch|run|execute|check|look up|find|open|save|send|post|get|download|upload|install|deploy|build|compile|test|add|update|remove|delete|modify|change|edit|create|resolve|push|pull|clone)\b"
+);
 
-static RE_SAFETY: LazyLock<Regex> = LazyLock::new(|| {
-    Regex::new(
-        r"(?i)\b(password|secret|private|confidential|medical|legal|financial|personal|sensitive|ssn|credit.?card|auth|token|key|encrypt|decrypt|hash|vulnerability|exploit|attack|breach)\b"
-    ).expect("RE_SAFETY is a valid regex")
-});
+static RE_SAFETY: Lazy<Regex> = lazy_regex!(
+    r"(?i)\b(password|secret|private|confidential|medical|legal|financial|personal|sensitive|ssn|credit.?card|auth|token|key|encrypt|decrypt|hash|vulnerability|exploit|attack|breach)\b"
+);
 
-static RE_CONTEXT: LazyLock<Regex> = LazyLock::new(|| {
-    Regex::new(
-        r"(?i)\b(previous|earlier|above|before|last|that|those|it|they|we discussed|you said|mentioned|remember|recall|as I said|like I mentioned)\b"
-    ).expect("RE_CONTEXT is a valid regex")
-});
+static RE_CONTEXT: Lazy<Regex> = lazy_regex!(
+    r"(?i)\b(previous|earlier|above|before|last|that|those|it|they|we discussed|you said|mentioned|remember|recall|as I said|like I mentioned)\b"
+);
 
-static RE_VAGUE: LazyLock<Regex> = LazyLock::new(|| {
-    Regex::new(r"(?i)\b(it|this|that|something|stuff|thing|things)\b")
-        .expect("RE_VAGUE is a valid regex")
-});
+static RE_VAGUE: Lazy<Regex> = lazy_regex!(r"(?i)\b(it|this|that|something|stuff|thing|things)\b");
 
-static RE_OPEN_ENDED: LazyLock<Regex> = LazyLock::new(|| {
-    Regex::new(r"(?i)\b(why|how|what if|explain|describe|elaborate|discuss)\b")
-        .expect("RE_OPEN_ENDED is a valid regex")
-});
+static RE_OPEN_ENDED: Lazy<Regex> =
+    lazy_regex!(r"(?i)\b(why|how|what if|explain|describe|elaborate|discuss)\b");
 
-static RE_CONJUNCTIONS: LazyLock<Regex> = LazyLock::new(|| {
-    Regex::new(
-        r"(?i)\b(and|but|or|however|therefore|because|although|while|whereas|moreover|furthermore)\b",
-    )
-    .expect("RE_CONJUNCTIONS is a valid regex")
-});
+static RE_CONJUNCTIONS: Lazy<Regex> = lazy_regex!(
+    r"(?i)\b(and|but|or|however|therefore|because|although|while|whereas|moreover|furthermore)\b"
+);
 
-static RE_TIER_HINT: LazyLock<Regex> = LazyLock::new(|| {
-    Regex::new(r"(?i)\[tier:(flash|standard|pro|frontier)\]")
-        .expect("RE_TIER_HINT is a valid regex")
-});
+static RE_TIER_HINT: Lazy<Regex> = lazy_regex!(r"(?i)\[tier:(flash|standard|pro|frontier)\]");
 
 /// Default domain regex, compiled once from `DEFAULT_DOMAIN_KEYWORDS`.
 static RE_DOMAIN_DEFAULT: LazyLock<Regex> =
@@ -359,41 +333,37 @@ static DEFAULT_OVERRIDES: LazyLock<Vec<PatternOverride>> = LazyLock::new(|| {
     vec![
         // Flash tier: greetings and acknowledgments
         PatternOverride {
-            regex: Regex::new(
-                r"(?i)^(hi|hello|hey|thanks|ok|sure|yes|no|yep|nope|cool|nice|great|got it)$",
-            )
-            .expect("greeting pattern is valid"),
+            regex: Regex::clone(regex!(
+                r"(?i)^(hi|hello|hey|thanks|ok|sure|yes|no|yep|nope|cool|nice|great|got it)$"
+            )),
             tier: Tier::Flash,
         },
         // Flash tier: quick lookups (end-anchored to avoid matching complex questions
         // like "What time complexity is merge sort?")
         PatternOverride {
-            regex: Regex::new(
-                r"(?i)^what(?:'s|\s+is)?\s+(?:the\s+)?(time|date|day|weather)\b(?:\s+(?:is\s+it|today|now|in\s+\S+))?[?.!]*$",
-            )
-            .expect("lookup pattern is valid"),
+            regex: Regex::clone(regex!(
+                r"(?i)^what(?:'s|\s+is)?\s+(?:the\s+)?(time|date|day|weather)\b(?:\s+(?:is\s+it|today|now|in\s+\S+))?[?.!]*$"
+            )),
             tier: Tier::Flash,
         },
         // Frontier tier: security audits
         PatternOverride {
-            regex: Regex::new(r"(?i)security.*(audit|review|scan)")
-                .expect("security audit pattern is valid"),
+            regex: Regex::clone(regex!(r"(?i)security.*(audit|review|scan)")),
             tier: Tier::Frontier,
         },
         PatternOverride {
-            regex: Regex::new(r"(?i)vulnerabilit(y|ies).*(review|scan|check|audit)")
-                .expect("vulnerability pattern is valid"),
+            regex: Regex::clone(regex!(
+                r"(?i)vulnerabilit(y|ies).*(review|scan|check|audit)"
+            )),
             tier: Tier::Frontier,
         },
         // Pro tier: production deployments
         PatternOverride {
-            regex: Regex::new(r"(?i)deploy.*(mainnet|production)")
-                .expect("deploy pattern is valid"),
+            regex: Regex::clone(regex!(r"(?i)deploy.*(mainnet|production)")),
             tier: Tier::Pro,
         },
         PatternOverride {
-            regex: Regex::new(r"(?i)production.*(deploy|release|push)")
-                .expect("production pattern is valid"),
+            regex: Regex::clone(regex!(r"(?i)production.*(deploy|release|push)")),
             tier: Tier::Pro,
         },
     ]
@@ -450,7 +420,9 @@ fn score_complexity_internal(
 
     // Check for explicit tier hint (e.g. "[tier:flash]")
     if let Some(caps) = RE_TIER_HINT.captures(prompt) {
-        let tier_str = caps.get(1).expect("capture group 1 exists").as_str();
+        // Group 1 always exists when the regex matches; an empty string
+        // falls through to the defensive branch below.
+        let tier_str = caps.get(1).map_or("", |m| m.as_str());
         let tier = match tier_str.to_lowercase().as_str() {
             "flash" => Tier::Flash,
             "standard" => Tier::Standard,
@@ -757,7 +729,9 @@ impl SmartRoutingProvider {
 
         // Highest priority: explicit tier hints (e.g. "[tier:flash]")
         if let Some(caps) = RE_TIER_HINT.captures(last_user_msg) {
-            let tier_str = caps.get(1).expect("capture group 1 exists").as_str();
+            // Group 1 always exists when the regex matches; an empty string
+            // falls through to the defensive branch below.
+            let tier_str = caps.get(1).map_or("", |m| m.as_str());
             let tier = match tier_str.to_lowercase().as_str() {
                 "flash" => Tier::Flash,
                 "standard" => Tier::Standard,

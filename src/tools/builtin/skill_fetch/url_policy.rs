@@ -76,9 +76,14 @@ pub(super) fn validate_fetch_url(url: &HttpsUrl) -> Result<reqwest::Url, ToolErr
     let parsed = url.as_url().clone();
     let display_host = parsed
         .host()
-        .expect("HttpsUrl guarantees that validated URLs always have a host")
+        .ok_or_else(|| {
+            ToolError::InvalidParameters(
+                "URL has no host (HttpsUrl guarantees that validated URLs always have a host)"
+                    .to_string(),
+            )
+        })?
         .to_string();
-    match parse_host(&parsed) {
+    match parse_host(&parsed)? {
         Host::Ip(ip) => validate_fetch_ip(&ip, &display_host)?,
         Host::Domain(domain) => {
             if is_blocked_hostname(&domain) {
@@ -93,15 +98,18 @@ pub(super) fn validate_fetch_url(url: &HttpsUrl) -> Result<reqwest::Url, ToolErr
     Ok(parsed)
 }
 
-fn parse_host(url: &reqwest::Url) -> Host {
-    match url
-        .host()
-        .expect("HttpsUrl guarantees that validated URLs always have a host")
-    {
+fn parse_host(url: &reqwest::Url) -> Result<Host, ToolError> {
+    let host = url.host().ok_or_else(|| {
+        ToolError::InvalidParameters(
+            "URL has no host (HttpsUrl guarantees that validated URLs always have a host)"
+                .to_string(),
+        )
+    })?;
+    Ok(match host {
         url::Host::Ipv4(v4) => Host::Ip(IpAddr::V4(v4)),
         url::Host::Ipv6(v6) => Host::Ip(normalize_ip(IpAddr::V6(v6))),
         url::Host::Domain(domain) => Host::Domain(NormalizedDomain::new(domain)),
-    }
+    })
 }
 
 fn normalize_ip(ip: IpAddr) -> IpAddr {

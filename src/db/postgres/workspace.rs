@@ -62,19 +62,19 @@ mod tests {
     //! retrieve data through the full delegation chain.
 
     use super::*;
+    use crate::error::DatabaseError;
     use crate::testing::postgres::try_test_pg_db;
     use crate::workspace::SearchConfig;
+    use anyhow::Context as _;
     use rstest::{fixture, rstest};
 
     #[fixture]
-    async fn db() -> Option<PgBackend> {
-        try_test_pg_db()
-            .await
-            .expect("unexpected Postgres test setup error")
+    async fn db() -> Result<Option<PgBackend>, DatabaseError> {
+        try_test_pg_db().await
     }
 
     /// Create a document owned by a unique user so chunks can reference it.
-    async fn setup_document(db: &PgBackend) -> (String, MemoryDocument) {
+    async fn setup_document(db: &PgBackend) -> anyhow::Result<(String, MemoryDocument)> {
         setup_document_for_agent(db, None).await
     }
 
@@ -82,21 +82,27 @@ mod tests {
     async fn setup_document_for_agent(
         db: &PgBackend,
         agent_id: Option<Uuid>,
-    ) -> (String, MemoryDocument) {
+    ) -> anyhow::Result<(String, MemoryDocument)> {
         let user_id = format!("ws-test-{}", Uuid::new_v4());
         let path = format!("/test/{}.md", Uuid::new_v4());
         let doc = db
             .get_or_create_document_by_path(&user_id, agent_id, &path)
             .await
-            .expect("get_or_create_document_by_path should succeed");
-        (user_id, doc)
+            .context("get_or_create_document_by_path should succeed")?;
+        Ok((user_id, doc))
     }
 
     #[rstest]
     #[tokio::test]
-    async fn test_insert_chunk_persists_with_embedding(#[future] db: Option<PgBackend>) {
-        let Some(db) = db.await else { return };
-        let (user_id, doc) = setup_document(&db).await;
+    async fn test_insert_chunk_persists_with_embedding(
+        #[future] db: Result<Option<PgBackend>, DatabaseError>,
+    ) {
+        let Some(db) = db.await.expect("unexpected Postgres test setup error") else {
+            return;
+        };
+        let (user_id, doc) = setup_document(&db)
+            .await
+            .expect("setup_document should succeed");
 
         let embedding = vec![1.5, 2.7, 3.9, 4.2];
         let params = InsertChunkParams {
@@ -129,9 +135,15 @@ mod tests {
 
     #[rstest]
     #[tokio::test]
-    async fn test_insert_chunk_persists_without_embedding(#[future] db: Option<PgBackend>) {
-        let Some(db) = db.await else { return };
-        let (user_id, doc) = setup_document(&db).await;
+    async fn test_insert_chunk_persists_without_embedding(
+        #[future] db: Result<Option<PgBackend>, DatabaseError>,
+    ) {
+        let Some(db) = db.await.expect("unexpected Postgres test setup error") else {
+            return;
+        };
+        let (user_id, doc) = setup_document(&db)
+            .await
+            .expect("setup_document should succeed");
 
         let params = InsertChunkParams {
             document_id: doc.id,
@@ -162,9 +174,15 @@ mod tests {
 
     #[rstest]
     #[tokio::test]
-    async fn test_insert_chunk_fields_round_trip(#[future] db: Option<PgBackend>) {
-        let Some(db) = db.await else { return };
-        let (user_id, doc) = setup_document(&db).await;
+    async fn test_insert_chunk_fields_round_trip(
+        #[future] db: Result<Option<PgBackend>, DatabaseError>,
+    ) {
+        let Some(db) = db.await.expect("unexpected Postgres test setup error") else {
+            return;
+        };
+        let (user_id, doc) = setup_document(&db)
+            .await
+            .expect("setup_document should succeed");
 
         let content = "round-trip content verification";
         let params = InsertChunkParams {
@@ -198,9 +216,15 @@ mod tests {
 
     #[rstest]
     #[tokio::test]
-    async fn test_hybrid_search_returns_inserted_chunk(#[future] db: Option<PgBackend>) {
-        let Some(db) = db.await else { return };
-        let (user_id, doc) = setup_document(&db).await;
+    async fn test_hybrid_search_returns_inserted_chunk(
+        #[future] db: Result<Option<PgBackend>, DatabaseError>,
+    ) {
+        let Some(db) = db.await.expect("unexpected Postgres test setup error") else {
+            return;
+        };
+        let (user_id, doc) = setup_document(&db)
+            .await
+            .expect("setup_document should succeed");
 
         // Insert a chunk with searchable content
         let content = "the quick brown fox jumps over the lazy dog";
@@ -239,9 +263,15 @@ mod tests {
 
     #[rstest]
     #[tokio::test]
-    async fn test_hybrid_search_respects_user_isolation(#[future] db: Option<PgBackend>) {
-        let Some(db) = db.await else { return };
-        let (_user_id, doc) = setup_document(&db).await;
+    async fn test_hybrid_search_respects_user_isolation(
+        #[future] db: Result<Option<PgBackend>, DatabaseError>,
+    ) {
+        let Some(db) = db.await.expect("unexpected Postgres test setup error") else {
+            return;
+        };
+        let (_user_id, doc) = setup_document(&db)
+            .await
+            .expect("setup_document should succeed");
         let other_user = format!("ws-other-{}", Uuid::new_v4());
 
         // Insert a chunk under user_id
@@ -281,10 +311,16 @@ mod tests {
 
     #[rstest]
     #[tokio::test]
-    async fn test_hybrid_search_respects_agent_scope(#[future] db: Option<PgBackend>) {
-        let Some(db) = db.await else { return };
+    async fn test_hybrid_search_respects_agent_scope(
+        #[future] db: Result<Option<PgBackend>, DatabaseError>,
+    ) {
+        let Some(db) = db.await.expect("unexpected Postgres test setup error") else {
+            return;
+        };
         let agent_id = Uuid::new_v4();
-        let (user_id, doc) = setup_document_for_agent(&db, Some(agent_id)).await;
+        let (user_id, doc) = setup_document_for_agent(&db, Some(agent_id))
+            .await
+            .expect("setup_document_for_agent should succeed");
 
         db.insert_chunk(InsertChunkParams {
             document_id: doc.id,

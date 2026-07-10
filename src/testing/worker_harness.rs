@@ -232,26 +232,31 @@ pub fn check_terminal_persistence_calls(
 }
 
 /// Assert terminal persistence state matches expected values.
+///
+/// # Errors
+///
+/// Returns an error when the store has captured no status update or no job
+/// event.
 pub async fn assert_terminal_persistence(
     store: &CapturingStore,
     expected_state: JobState,
     expected_status_str: &str,
     expected_reason: Option<&str>,
-) {
+) -> anyhow::Result<()> {
     let status_call = store
         .calls()
         .last_status
         .lock()
         .await
         .clone()
-        .expect("expected a status update");
+        .context("expected a status update")?;
     let event_call = store
         .calls()
         .last_event
         .lock()
         .await
         .clone()
-        .expect("expected a job event");
+        .context("expected a job event")?;
     check_terminal_persistence_calls(
         &status_call,
         &event_call,
@@ -263,29 +268,35 @@ pub async fn assert_terminal_persistence(
             reason: expected_reason,
         },
     );
+    Ok(())
 }
 
 /// Assert terminal persistence state with snapshot testing.
+///
+/// # Errors
+///
+/// Returns an error when the store has captured no status update or no job
+/// event.
 pub async fn assert_terminal_persistence_with_snapshot(
     store: &CapturingStore,
     expected_state: JobState,
     expected_status_str: &str,
     expected_reason: Option<&str>,
-) {
+) -> anyhow::Result<()> {
     let status_call = store
         .calls()
         .last_status
         .lock()
         .await
         .clone()
-        .expect("expected a status update");
+        .context("expected a status update")?;
     let event_call = store
         .calls()
         .last_event
         .lock()
         .await
         .clone()
-        .expect("expected a job event");
+        .context("expected a job event")?;
     check_terminal_persistence_calls(
         &status_call,
         &event_call,
@@ -301,6 +312,7 @@ pub async fn assert_terminal_persistence_with_snapshot(
         format!("terminal_persistence_result_{}", expected_status_str),
         &event_call.data
     );
+    Ok(())
 }
 
 /// Methods for driving terminal state transitions in tests.

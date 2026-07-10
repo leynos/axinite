@@ -362,16 +362,18 @@ mod tests {
     }
 
     #[cfg(feature = "libsql")]
-    async fn make_unmigrated_workspace() -> crate::workspace::Workspace {
+    async fn make_unmigrated_workspace()
+    -> Result<crate::workspace::Workspace, crate::error::DatabaseError> {
         use crate::db::Database;
         use crate::db::libsql::LibSqlBackend;
 
         // Intentionally skip migrations so workspace append operations fail.
-        let backend = LibSqlBackend::new_memory()
-            .await
-            .expect("should create in-memory libsql backend");
+        let backend = LibSqlBackend::new_memory().await?;
         let db: Arc<dyn Database> = Arc::new(backend);
-        crate::workspace::Workspace::new_with_db("compaction-test", db)
+        Ok(crate::workspace::Workspace::new_with_db(
+            "compaction-test",
+            db,
+        ))
     }
 
     // ------------------------------------------------------------------
@@ -580,7 +582,9 @@ mod tests {
         let mut thread = make_thread(8);
         let original_inputs: Vec<String> =
             thread.turns.iter().map(|t| t.user_input.clone()).collect();
-        let workspace = make_unmigrated_workspace().await;
+        let workspace = make_unmigrated_workspace()
+            .await
+            .expect("should create in-memory libsql backend");
 
         let result = compactor
             .compact(
@@ -665,7 +669,9 @@ mod tests {
         let mut thread = make_thread(20);
         let original_inputs: Vec<String> =
             thread.turns.iter().map(|t| t.user_input.clone()).collect();
-        let workspace = make_unmigrated_workspace().await;
+        let workspace = make_unmigrated_workspace()
+            .await
+            .expect("should create in-memory libsql backend");
 
         let result = compactor
             .compact(

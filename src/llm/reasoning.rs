@@ -153,24 +153,46 @@ pub fn is_silent_reply(text: &str) -> bool {
                 .all(|c| c.is_whitespace() || c.is_ascii_punctuation())
 }
 
+/// Compile a static tag-stripping regex, logging and yielding `None` when the
+/// pattern fails to compile so callers can skip that stripping stage instead
+/// of panicking at first use.
+fn compile_tag_regex(name: &str, pattern: &str) -> Option<Regex> {
+    match Regex::new(pattern) {
+        Ok(re) => Some(re),
+        Err(error) => {
+            tracing::error!("failed to compile {name} regex: {error}");
+            None
+        }
+    }
+}
+
 /// Quick-check: bail early if no reasoning/final tags are present at all.
-static QUICK_TAG_RE: LazyLock<Regex> = LazyLock::new(|| {
-    Regex::new(r"(?i)<\s*/?\s*(?:think(?:ing)?|thought|thoughts|antthinking|reasoning|reflection|scratchpad|inner_monologue|final)\b").expect("QUICK_TAG_RE")
+static QUICK_TAG_RE: LazyLock<Option<Regex>> = LazyLock::new(|| {
+    compile_tag_regex(
+        "QUICK_TAG_RE",
+        r"(?i)<\s*/?\s*(?:think(?:ing)?|thought|thoughts|antthinking|reasoning|reflection|scratchpad|inner_monologue|final)\b",
+    )
 });
 
 /// Matches thinking/reasoning open and close tags. Capture group 1 is "/" for close tags.
 /// Whitespace-tolerant, case-insensitive, attribute-aware.
-static THINKING_TAG_RE: LazyLock<Regex> = LazyLock::new(|| {
-    Regex::new(r"(?i)<\s*(/?)\s*(?:think(?:ing)?|thought|thoughts|antthinking|reasoning|reflection|scratchpad|inner_monologue)\b[^<>]*>").expect("THINKING_TAG_RE")
+static THINKING_TAG_RE: LazyLock<Option<Regex>> = LazyLock::new(|| {
+    compile_tag_regex(
+        "THINKING_TAG_RE",
+        r"(?i)<\s*(/?)\s*(?:think(?:ing)?|thought|thoughts|antthinking|reasoning|reflection|scratchpad|inner_monologue)\b[^<>]*>",
+    )
 });
 
 /// Matches `<final>` / `</final>` tags. Capture group 1 is "/" for close tags.
-static FINAL_TAG_RE: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r"(?i)<\s*(/?)\s*final\b[^<>]*>").expect("FINAL_TAG_RE"));
+static FINAL_TAG_RE: LazyLock<Option<Regex>> =
+    LazyLock::new(|| compile_tag_regex("FINAL_TAG_RE", r"(?i)<\s*(/?)\s*final\b[^<>]*>"));
 
 /// Matches pipe-delimited reasoning tags: `<|think|>...<|/think|>` etc.
-static PIPE_REASONING_TAG_RE: LazyLock<Regex> = LazyLock::new(|| {
-    Regex::new(r"(?i)<\|(/?)\s*(?:think(?:ing)?|thought|thoughts|antthinking|reasoning|reflection|scratchpad|inner_monologue)\|>").expect("PIPE_REASONING_TAG_RE")
+static PIPE_REASONING_TAG_RE: LazyLock<Option<Regex>> = LazyLock::new(|| {
+    compile_tag_regex(
+        "PIPE_REASONING_TAG_RE",
+        r"(?i)<\|(/?)\s*(?:think(?:ing)?|thought|thoughts|antthinking|reasoning|reflection|scratchpad|inner_monologue)\|>",
+    )
 });
 
 /// Context for reasoning operations.
@@ -1418,7 +1440,8 @@ fn recover_tool_calls_from_content(
 /// 7. Collapse triple+ newlines, trim
 fn clean_response(text: &str) -> String {
     // 1. Quick-check
-    let mut result = if !QUICK_TAG_RE.is_match(text) {
+    let has_tags = QUICK_TAG_RE.as_ref().is_some_and(|re| re.is_match(text));
+    let mut result = if !has_tags {
         text.to_string()
     } else {
         // 2 + 3. Build code regions, strip thinking tags
@@ -1426,7 +1449,10 @@ fn clean_response(text: &str) -> String {
         let after_thinking = strip_thinking_tags_regex(text, &code_regions);
 
         // 4. If <final> tags present, extract only their content
-        if FINAL_TAG_RE.is_match(&after_thinking) {
+        let has_final = FINAL_TAG_RE
+            .as_ref()
+            .is_some_and(|re| re.is_match(&after_thinking));
+        if has_final {
             let fresh_regions = find_code_regions(&after_thinking);
             extract_final_content(&after_thinking, &fresh_regions).unwrap_or(after_thinking)
         } else {
@@ -1576,11 +1602,15 @@ fn closing_tag_for(open_pattern: &str) -> Option<String> {
 ///
 /// Strict mode: an unclosed opening tag discards all trailing text after it.
 fn strip_thinking_tags_regex(text: &str, code_regions: &[CodeRegion]) -> String {
+    // Fallback: with no usable regex, leave the text unstripped.
+    let Some(thinking_tag_re) = THINKING_TAG_RE.as_ref() else {
+        return text.to_string();
+    };
     let mut result = String::with_capacity(text.len());
     let mut last_index = 0;
     let mut in_thinking = false;
 
-    for m in THINKING_TAG_RE.find_iter(text) {
+    for m in thinking_tag_re.find_iter(text) {
         let idx = m.start();
 
         if is_inside_code(idx, code_regions) {
@@ -1588,7 +1618,7 @@ fn strip_thinking_tags_regex(text: &str, code_regions: &[CodeRegion]) -> String 
         }
 
         // Check if this is a close tag by looking at capture group
-        let caps = THINKING_TAG_RE.captures(&text[idx..]);
+        let caps = thinking_tag_re.captures(&text[idx..]);
         let is_close = caps
             .and_then(|c| c.get(1))
             .is_some_and(|g| g.as_str() == "/");
@@ -1626,19 +1656,21 @@ fn strip_thinking_tags_regex(text: &str, code_regions: &[CodeRegion]) -> String 
 /// When `<final>` tags are present, ONLY content inside them reaches the user.
 /// This discards any untagged reasoning that leaked outside `<think>` tags.
 fn extract_final_content(text: &str, code_regions: &[CodeRegion]) -> Option<String> {
+    // Fallback: with no usable regex, report no <final> tags.
+    let final_tag_re = FINAL_TAG_RE.as_ref()?;
     let mut parts: Vec<&str> = Vec::new();
     let mut in_final = false;
     let mut last_index = 0;
     let mut found_any = false;
 
-    for m in FINAL_TAG_RE.find_iter(text) {
+    for m in final_tag_re.find_iter(text) {
         let idx = m.start();
 
         if is_inside_code(idx, code_regions) {
             continue;
         }
 
-        let caps = FINAL_TAG_RE.captures(&text[idx..]);
+        let caps = final_tag_re.captures(&text[idx..]);
         let is_close = caps
             .and_then(|c| c.get(1))
             .is_some_and(|g| g.as_str() == "/");
@@ -1670,7 +1702,11 @@ fn extract_final_content(text: &str, code_regions: &[CodeRegion]) -> Option<Stri
 
 /// Strip pipe-delimited reasoning tags, respecting code regions.
 fn strip_pipe_reasoning_tags(text: &str) -> String {
-    if !PIPE_REASONING_TAG_RE.is_match(text) {
+    // Fallback: with no usable regex, leave the text unstripped.
+    let Some(pipe_tag_re) = PIPE_REASONING_TAG_RE.as_ref() else {
+        return text.to_string();
+    };
+    if !pipe_tag_re.is_match(text) {
         return text.to_string();
     }
 
@@ -1679,14 +1715,14 @@ fn strip_pipe_reasoning_tags(text: &str) -> String {
     let mut last_index = 0;
     let mut in_tag = false;
 
-    for m in PIPE_REASONING_TAG_RE.find_iter(text) {
+    for m in pipe_tag_re.find_iter(text) {
         let idx = m.start();
 
         if is_inside_code(idx, &code_regions) {
             continue;
         }
 
-        let caps = PIPE_REASONING_TAG_RE.captures(&text[idx..]);
+        let caps = pipe_tag_re.captures(&text[idx..]);
         let is_close = caps
             .and_then(|c| c.get(1))
             .is_some_and(|g| g.as_str() == "/");
@@ -1797,6 +1833,17 @@ mod tests {
     use super::*;
 
     // ---- Utility / structural tests ----
+
+    #[test]
+    fn static_tag_regexes_compile() {
+        assert!(QUICK_TAG_RE.is_some(), "QUICK_TAG_RE must compile");
+        assert!(THINKING_TAG_RE.is_some(), "THINKING_TAG_RE must compile");
+        assert!(FINAL_TAG_RE.is_some(), "FINAL_TAG_RE must compile");
+        assert!(
+            PIPE_REASONING_TAG_RE.is_some(),
+            "PIPE_REASONING_TAG_RE must compile"
+        );
+    }
 
     #[test]
     fn test_extract_json() {

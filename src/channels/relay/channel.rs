@@ -486,19 +486,18 @@ mod tests {
 
     use super::*;
 
-    fn test_client() -> RelayClient {
+    fn test_client() -> Result<RelayClient, RelayError> {
         RelayClient::new(
             "http://localhost:3001".into(),
             secrecy::SecretString::from("key".to_string()),
             30,
         )
-        .expect("client")
     }
 
     #[test]
     fn relay_channel_name() {
         let channel = RelayChannel::new(
-            test_client(),
+            test_client().expect("client"),
             "token".into(),
             "T123".into(),
             "inst1".into(),
@@ -510,7 +509,7 @@ mod tests {
     #[test]
     fn conversation_context_extracts_metadata() {
         let channel = RelayChannel::new(
-            test_client(),
+            test_client().expect("client"),
             "token".into(),
             "T123".into(),
             "inst1".into(),
@@ -556,7 +555,7 @@ mod tests {
     #[test]
     fn with_timeouts_sets_values() {
         let channel = RelayChannel::new(
-            test_client(),
+            test_client().expect("client"),
             "token".into(),
             "T123".into(),
             "inst1".into(),
@@ -572,7 +571,7 @@ mod tests {
     #[test]
     fn build_send_body_slack() {
         let channel = RelayChannel::new(
-            test_client(),
+            test_client().expect("client"),
             "token".into(),
             "T123".into(),
             "inst1".into(),
@@ -588,7 +587,7 @@ mod tests {
     #[test]
     fn parser_handle_is_shared_arc() {
         let channel = RelayChannel::new(
-            test_client(),
+            test_client().expect("client"),
             "token".into(),
             "T123".into(),
             "inst1".into(),
@@ -603,7 +602,7 @@ mod tests {
     #[test]
     fn with_max_failures_sets_value() {
         let channel = RelayChannel::new(
-            test_client(),
+            test_client().expect("client"),
             "token".into(),
             "T123".into(),
             "inst1".into(),
@@ -617,7 +616,7 @@ mod tests {
     #[test]
     fn default_max_failures_is_50() {
         let channel = RelayChannel::new(
-            test_client(),
+            test_client().expect("client"),
             "token".into(),
             "T123".into(),
             "inst1".into(),
@@ -631,7 +630,7 @@ mod tests {
         // Regression: empty team_id (when no DB store is available) must not
         // prevent channel construction or cause immediate shutdown.
         let channel = RelayChannel::new(
-            test_client(),
+            test_client().expect("client"),
             "token".into(),
             String::new(), // empty team_id
             "inst1".into(),

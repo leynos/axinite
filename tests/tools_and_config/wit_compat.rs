@@ -321,8 +321,10 @@ fn wit_compat_tool_components_compile_and_instantiate() {
         found_any = true;
         eprintln!("  TEST {}: {}", ext.name, wasm_path.display());
 
-        let wasm_bytes = std::fs::read(&wasm_path)
-            .unwrap_or_else(|e| panic!("failed to read {}: {e}", wasm_path.display()));
+        let wasm_bytes = match std::fs::read(&wasm_path) {
+            Ok(bytes) => bytes,
+            Err(e) => panic!("failed to read {}: {e}", wasm_path.display()),
+        };
 
         let component = match compile_component(&engine, &wasm_bytes) {
             Ok(c) => c,
@@ -386,8 +388,10 @@ fn wit_compat_channel_components_compile_and_instantiate() {
         found_any = true;
         eprintln!("  TEST {}: {}", ext.name, wasm_path.display());
 
-        let wasm_bytes = std::fs::read(&wasm_path)
-            .unwrap_or_else(|e| panic!("failed to read {}: {e}", wasm_path.display()));
+        let wasm_bytes = match std::fs::read(&wasm_path) {
+            Ok(bytes) => bytes,
+            Err(e) => panic!("failed to read {}: {e}", wasm_path.display()),
+        };
 
         let component = match compile_component(&engine, &wasm_bytes) {
             Ok(c) => c,
@@ -465,8 +469,10 @@ fn wit_files_contain_version_annotation() {
 
     for wit_file in &["wit/tool.wit", "wit/channel.wit"] {
         let path = repo_root.join(wit_file);
-        let content = std::fs::read_to_string(&path)
-            .unwrap_or_else(|e| panic!("failed to read {wit_file}: {e}"));
+        let content = match std::fs::read_to_string(&path) {
+            Ok(content) => content,
+            Err(e) => panic!("failed to read {wit_file}: {e}"),
+        };
 
         assert!(
             content.contains("package near:agent@"),

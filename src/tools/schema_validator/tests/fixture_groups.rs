@@ -1,20 +1,24 @@
 //! Fixture-backed schema test groups used by the strict tool schema validator.
 
-use super::*;
+use anyhow::Context as _;
 use rstest::rstest;
 
-pub(crate) fn load_complex_tool_schema_fixture(tool_name: &str) -> serde_json::Value {
+use super::*;
+
+pub(crate) fn load_complex_tool_schema_fixture(
+    tool_name: &str,
+) -> anyhow::Result<serde_json::Value> {
     let path = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .join("tests/fixtures/schemas")
         .join(format!("{tool_name}.json"));
     let raw = ambient_fs::read_to_string(&path)
-        .unwrap_or_else(|err| panic!("failed to read schema fixture {}: {err}", path.display()));
+        .with_context(|| format!("failed to read schema fixture {}", path.display()))?;
 
     serde_json::from_str(&raw)
-        .unwrap_or_else(|err| panic!("failed to parse schema fixture for {tool_name}: {err}"))
+        .with_context(|| format!("failed to parse schema fixture for {tool_name}"))
 }
 
-fn simple_tool_schemas() -> Vec<(String, serde_json::Value)> {
+fn simple_tool_schemas() -> anyhow::Result<Vec<(String, serde_json::Value)>> {
     use crate::tools::Tool;
     use crate::tools::builtin::{
         ApplyPatchTool, EchoTool, HttpTool, JsonTool, ListDirTool, ReadFileTool, ShellTool,
@@ -25,7 +29,7 @@ fn simple_tool_schemas() -> Vec<(String, serde_json::Value)> {
         Box::new(EchoTool),
         Box::new(TimeTool),
         Box::new(JsonTool),
-        Box::new(HttpTool::new()),
+        Box::new(HttpTool::new().context("Failed to create HTTP client")?),
         Box::new(ShellTool::new()),
         Box::new(ReadFileTool::new()),
         Box::new(WriteFileTool::new()),
@@ -33,10 +37,10 @@ fn simple_tool_schemas() -> Vec<(String, serde_json::Value)> {
         Box::new(ApplyPatchTool::new()),
     ];
 
-    tools
+    Ok(tools
         .into_iter()
         .map(|tool| (tool.name().to_string(), tool.parameters_schema()))
-        .collect()
+        .collect())
 }
 
 fn job_tool_schemas() -> Vec<(String, serde_json::Value)> {
@@ -98,65 +102,26 @@ fn skill_tool_schemas() -> Vec<(String, serde_json::Value)> {
 /// Validate schemas from tools that cannot be easily constructed by
 /// inlining the JSON schema directly. This covers the extension tools and
 /// routine tools whose constructors require heavy dependencies.
-fn complex_tool_schemas() -> Vec<(String, serde_json::Value)> {
-    vec![
-        (
-            "tool_search".to_string(),
-            load_complex_tool_schema_fixture("tool_search"),
-        ),
-        (
-            "tool_install".to_string(),
-            load_complex_tool_schema_fixture("tool_install"),
-        ),
-        (
-            "tool_auth".to_string(),
-            load_complex_tool_schema_fixture("tool_auth"),
-        ),
-        (
-            "tool_activate".to_string(),
-            load_complex_tool_schema_fixture("tool_activate"),
-        ),
-        (
-            "tool_list".to_string(),
-            load_complex_tool_schema_fixture("tool_list"),
-        ),
-        (
-            "tool_remove".to_string(),
-            load_complex_tool_schema_fixture("tool_remove"),
-        ),
-        (
-            "routine_create".to_string(),
-            load_complex_tool_schema_fixture("routine_create"),
-        ),
-        (
-            "routine_list".to_string(),
-            load_complex_tool_schema_fixture("routine_list"),
-        ),
-        (
-            "routine_update".to_string(),
-            load_complex_tool_schema_fixture("routine_update"),
-        ),
-        (
-            "routine_delete".to_string(),
-            load_complex_tool_schema_fixture("routine_delete"),
-        ),
-        (
-            "routine_fire".to_string(),
-            load_complex_tool_schema_fixture("routine_fire"),
-        ),
-        (
-            "routine_history".to_string(),
-            load_complex_tool_schema_fixture("routine_history"),
-        ),
-        (
-            "job_events".to_string(),
-            load_complex_tool_schema_fixture("job_events"),
-        ),
-        (
-            "job_prompt".to_string(),
-            load_complex_tool_schema_fixture("job_prompt"),
-        ),
+fn complex_tool_schemas() -> anyhow::Result<Vec<(String, serde_json::Value)>> {
+    [
+        "tool_search",
+        "tool_install",
+        "tool_auth",
+        "tool_activate",
+        "tool_list",
+        "tool_remove",
+        "routine_create",
+        "routine_list",
+        "routine_update",
+        "routine_delete",
+        "routine_fire",
+        "routine_history",
+        "job_events",
+        "job_prompt",
     ]
+    .into_iter()
+    .map(|name| Ok((name.to_string(), load_complex_tool_schema_fixture(name)?)))
+    .collect()
 }
 
 fn validate_named_schemas(schemas: Vec<(String, serde_json::Value)>, context: &str) {
@@ -176,10 +141,10 @@ fn validate_named_schemas(schemas: Vec<(String, serde_json::Value)>, context: &s
 }
 
 #[rstest]
-#[case::simple(simple_tool_schemas(), "simple tool schemas")]
+#[case::simple(simple_tool_schemas().expect("simple tool schemas should build"), "simple tool schemas")]
 #[case::jobs(job_tool_schemas(), "job tool schemas")]
 #[case::skills(skill_tool_schemas(), "skill tool schemas")]
-#[case::complex(complex_tool_schemas(), "inline schemas")]
+#[case::complex(complex_tool_schemas().expect("complex tool schema fixtures should load"), "inline schemas")]
 fn test_schema_fixture_groups(
     #[case] schemas: Vec<(String, serde_json::Value)>,
     #[case] context: &str,

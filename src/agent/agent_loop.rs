@@ -715,7 +715,7 @@ mod tests {
         ) -> Result<(), ChannelError> {
             self.broadcasts
                 .lock()
-                .expect("broadcast capture should not be poisoned")
+                .unwrap_or_else(std::sync::PoisonError::into_inner)
                 .push((user_id.to_string(), response));
             Ok(())
         }

@@ -105,7 +105,7 @@ impl SignalChannel {
             if let Some(base_dir) = SIGNAL_PAIRING_STORE_OVERRIDE
                 .get_or_init(|| std::sync::Mutex::new(None))
                 .lock()
-                .expect("signal pairing store override mutex should not be poisoned")
+                .unwrap_or_else(std::sync::PoisonError::into_inner)
                 .clone()
             {
                 return PairingStore::with_base_dir(base_dir);
@@ -1383,7 +1383,7 @@ static SIGNAL_PAIRING_STORE_OVERRIDE: std::sync::OnceLock<
 mod tests {
     //! Unit tests for Signal channel pairing storage and message handling.
 
-    use std::sync::{LazyLock, Mutex, MutexGuard};
+    use std::sync::{LazyLock, Mutex, MutexGuard, PoisonError};
 
     use tempfile::TempDir;
 
@@ -1397,20 +1397,19 @@ mod tests {
     }
 
     impl SignalPairingStoreGuard {
-        fn install() -> Self {
+        fn install() -> std::io::Result<Self> {
             let guard = SIGNAL_PAIRING_TEST_LOCK
                 .lock()
-                .expect("signal pairing test lock should not be poisoned");
-            let temp_dir = tempfile::tempdir().expect("temporary pairing dir should be created");
+                .unwrap_or_else(PoisonError::into_inner);
+            let temp_dir = tempfile::tempdir()?;
             *SIGNAL_PAIRING_STORE_OVERRIDE
                 .get_or_init(|| Mutex::new(None))
                 .lock()
-                .expect("signal pairing store override mutex should not be poisoned") =
-                Some(temp_dir.path().to_path_buf());
-            Self {
+                .unwrap_or_else(PoisonError::into_inner) = Some(temp_dir.path().to_path_buf());
+            Ok(Self {
                 _guard: guard,
                 _temp_dir: temp_dir,
-            }
+            })
         }
     }
 
@@ -1419,7 +1418,7 @@ mod tests {
             *SIGNAL_PAIRING_STORE_OVERRIDE
                 .get_or_init(|| Mutex::new(None))
                 .lock()
-                .expect("signal pairing store override mutex should not be poisoned") = None;
+                .unwrap_or_else(PoisonError::into_inner) = None;
         }
     }
 
@@ -1871,7 +1870,8 @@ mod tests {
 
     #[tokio::test]
     async fn process_envelope_pairing_accepts_already_paired_sender() -> Result<(), ChannelError> {
-        let _pairing_guard = SignalPairingStoreGuard::install();
+        let _pairing_guard =
+            SignalPairingStoreGuard::install().expect("pairing store guard should install");
         let mut config = make_config();
         config.allow_from = vec![];
         config.dm_policy = "pairing".to_string();
@@ -1902,7 +1902,8 @@ mod tests {
     #[tokio::test]
     async fn process_envelope_pairing_creates_request_for_unpaired_sender()
     -> Result<(), ChannelError> {
-        let _pairing_guard = SignalPairingStoreGuard::install();
+        let _pairing_guard =
+            SignalPairingStoreGuard::install().expect("pairing store guard should install");
         let mut config = make_config();
         config.allow_from = vec![];
         config.dm_policy = "pairing".to_string();

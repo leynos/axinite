@@ -1,5 +1,6 @@
 //! Tests for boot-screen rendering, snapshots, and `BootInfo` derivation.
 
+use anyhow::Context as _;
 use insta::assert_snapshot;
 use mockall::mock;
 use rstest::rstest;
@@ -148,17 +149,17 @@ fn no_features_boot_info() -> BootInfo {
     }
 }
 
-async fn test_config() -> Config {
-    let tempdir = tempfile::tempdir().expect("tempdir should be created");
+async fn test_config() -> anyhow::Result<Config> {
+    let tempdir = tempfile::tempdir().context("tempdir should be created")?;
     let mut config = Config::for_testing(
         tempdir.path().join("test.db"),
         tempdir.path().join("skills"),
         tempdir.path().join("installed-skills"),
     )
     .await
-    .expect("test config should be built");
+    .context("test config should be built")?;
     config.tunnel.public_url = Some("https://fallback.example.test".to_string());
-    config
+    Ok(config)
 }
 
 fn test_cli(no_db: bool) -> Cli {
@@ -224,7 +225,7 @@ async fn boot_info_from_config_and_data_applies_db_override(
     #[case] expected_backend: &str,
     #[case] expected_connected: bool,
 ) {
-    let config = test_config().await;
+    let config = test_config().await.expect("test config should be built");
     let cli = test_cli(no_db);
     let active_tunnel: Option<Box<dyn Tunnel>> = None;
     let info = BootInfo::from_config_and_data(&config, &cli, &test_data(&active_tunnel));
@@ -263,7 +264,7 @@ async fn boot_info_from_config_and_data_resolves_tunnel_fields(
     #[case] expected_url: Option<&str>,
     #[case] expected_provider: Option<&str>,
 ) {
-    let mut config = test_config().await;
+    let mut config = test_config().await.expect("test config should be built");
     config.tunnel.public_url = fallback_public_url.map(ToString::to_string);
     let cli = test_cli(false);
     let active_tunnel = if has_active_tunnel {

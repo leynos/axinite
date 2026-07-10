@@ -618,19 +618,19 @@ mod tests {
     use super::*;
     use crate::testing::StubLlm;
 
-    fn make_recorder(stub: Arc<StubLlm>) -> RecordingLlm {
-        let dir = tempfile::tempdir().expect("failed to create temp dir");
-        RecordingLlm::new(
+    fn make_recorder(stub: Arc<StubLlm>) -> std::io::Result<RecordingLlm> {
+        let dir = tempfile::tempdir()?;
+        Ok(RecordingLlm::new(
             stub,
             dir.path().join("test_recording.json"),
             "test-recording".to_string(),
-        )
+        ))
     }
 
     #[tokio::test]
     async fn captures_user_input_before_first_response() {
         let stub = Arc::new(StubLlm::new("hello back"));
-        let recorder = make_recorder(stub);
+        let recorder = make_recorder(stub).expect("failed to create temp dir");
 
         let request = CompletionRequest::new(vec![
             ChatMessage::system("You are helpful."),
@@ -655,7 +655,7 @@ mod tests {
     #[tokio::test]
     async fn captures_text_response_correctly() {
         let stub = Arc::new(StubLlm::new("test response"));
-        let recorder = make_recorder(stub);
+        let recorder = make_recorder(stub).expect("failed to create temp dir");
 
         let request = CompletionRequest::new(vec![ChatMessage::user("question")]);
         recorder.complete(request).await.unwrap();
@@ -680,7 +680,7 @@ mod tests {
     #[tokio::test]
     async fn captures_tool_calls_response() {
         let stub = Arc::new(StubLlm::new("tool result"));
-        let recorder = make_recorder(stub);
+        let recorder = make_recorder(stub).expect("failed to create temp dir");
 
         // complete_with_tools on StubLlm returns text, not tool_calls.
         // But we can still verify the recording captures it as text.
@@ -694,7 +694,7 @@ mod tests {
     #[tokio::test]
     async fn no_spurious_user_input_for_tool_iterations() {
         let stub = Arc::new(StubLlm::new("response"));
-        let recorder = make_recorder(stub);
+        let recorder = make_recorder(stub).expect("failed to create temp dir");
 
         // First call with user message
         let request = CompletionRequest::new(vec![
@@ -728,7 +728,7 @@ mod tests {
     #[tokio::test]
     async fn captures_tool_results_for_verification() {
         let stub = Arc::new(StubLlm::new("response"));
-        let recorder = make_recorder(stub);
+        let recorder = make_recorder(stub).expect("failed to create temp dir");
 
         // First call: user asks something
         let request = CompletionRequest::new(vec![
@@ -759,7 +759,7 @@ mod tests {
     #[tokio::test]
     async fn request_hint_extraction() {
         let stub = Arc::new(StubLlm::new("response"));
-        let recorder = make_recorder(stub);
+        let recorder = make_recorder(stub).expect("failed to create temp dir");
 
         let request = CompletionRequest::new(vec![
             ChatMessage::system("sys"),
@@ -976,7 +976,7 @@ mod tests {
     #[tokio::test]
     async fn request_hint_handles_multibyte_utf8() {
         let stub = Arc::new(StubLlm::new("response"));
-        let recorder = make_recorder(stub);
+        let recorder = make_recorder(stub).expect("failed to create temp dir");
 
         // Create a string where byte index 80 falls inside a multi-byte char.
         // Each CJK character is 3 bytes; 26 chars × 3 bytes = 78, then "ab" = 80 bytes,

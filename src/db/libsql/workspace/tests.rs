@@ -1,5 +1,6 @@
 //! Tests for the libSQL workspace-store module split.
 
+use anyhow::Context as _;
 use libsql::params;
 
 use super::super::LibSqlBackend;
@@ -45,15 +46,15 @@ fn assert_sole_search_result(
 
 /// Create a temp-file-backed [`LibSqlBackend`] with migrations applied,
 /// ready for use in unit tests.
-async fn setup_backend() -> LibSqlBackend {
+async fn setup_backend() -> anyhow::Result<LibSqlBackend> {
     let backend = LibSqlBackend::new_memory()
         .await
-        .expect("failed to create in-memory libsql backend");
+        .context("failed to create in-memory libsql backend")?;
     backend
         .run_migrations()
         .await
-        .expect("failed to run libsql migrations");
-    backend
+        .context("failed to run libsql migrations")?;
+    Ok(backend)
 }
 
 /// Create a document at `path` for the default user scope, ready for use in
@@ -61,11 +62,11 @@ async fn setup_backend() -> LibSqlBackend {
 async fn create_test_document(
     backend: &LibSqlBackend,
     path: &str,
-) -> crate::workspace::MemoryDocument {
+) -> anyhow::Result<crate::workspace::MemoryDocument> {
     backend
         .get_or_create_document_by_path("default", None, path)
         .await
-        .unwrap_or_else(|e| panic!("failed to create test document at '{path}': {e}"))
+        .with_context(|| format!("failed to create test document at '{path}'"))
 }
 
 /// Assert that `result` is the `DocumentNotFound` error variant.
@@ -150,7 +151,7 @@ fn test_embedding_to_vector_json_formats_floats_as_json_array() {
 
 #[tokio::test]
 async fn get_chunks_without_embeddings_skips_invalid_chunk_id_uuid() {
-    let backend = setup_backend().await;
+    let backend = setup_backend().await.expect("failed to set up backend");
 
     let document = backend
         .get_or_create_document_by_path("default", None, "notes/bad-chunk-uuid.md")
@@ -187,7 +188,7 @@ async fn get_chunks_without_embeddings_skips_invalid_chunk_id_uuid() {
 
 #[tokio::test]
 async fn get_chunks_without_embeddings_errors_on_negative_chunk_index() {
-    let backend = setup_backend().await;
+    let backend = setup_backend().await.expect("failed to set up backend");
 
     let document = backend
         .get_or_create_document_by_path("default", None, "notes/neg-idx.md")
@@ -215,7 +216,7 @@ async fn get_chunks_without_embeddings_errors_on_negative_chunk_index() {
 
 #[tokio::test]
 async fn get_document_by_path_returns_not_found_for_missing_document() {
-    let backend = setup_backend().await;
+    let backend = setup_backend().await.expect("failed to set up backend");
     let result = backend
         .get_document_by_path("default", None, "does/not/exist.md")
         .await;
@@ -224,7 +225,7 @@ async fn get_document_by_path_returns_not_found_for_missing_document() {
 
 #[tokio::test]
 async fn get_document_by_id_returns_not_found_for_unknown_id() {
-    let backend = setup_backend().await;
+    let backend = setup_backend().await.expect("failed to set up backend");
     let result = backend.get_document_by_id(uuid::Uuid::new_v4()).await;
     assert_document_not_found(result);
 }
@@ -235,7 +236,7 @@ async fn get_document_by_id_returns_not_found_for_unknown_id() {
 // fallback assertions begin.
 #[tokio::test]
 async fn hybrid_search_uses_brute_force_when_vector_index_is_unavailable() {
-    let backend = setup_backend().await;
+    let backend = setup_backend().await.expect("failed to set up backend");
 
     let document = backend
         .get_or_create_document_by_path("default", None, "notes/search.md")
@@ -295,7 +296,7 @@ async fn hybrid_search_uses_brute_force_when_vector_index_is_unavailable() {
 
 #[tokio::test]
 async fn brute_force_vector_search_skips_mismatched_embedding_dimensions() {
-    let backend = setup_backend().await;
+    let backend = setup_backend().await.expect("failed to set up backend");
 
     let document = backend
         .get_or_create_document_by_path("default", None, "notes/mixed-dim.md")
@@ -342,7 +343,7 @@ async fn brute_force_vector_search_skips_mismatched_embedding_dimensions() {
 
 #[tokio::test]
 async fn hybrid_search_returns_fts_only_results_without_embedding() {
-    let backend = setup_backend().await;
+    let backend = setup_backend().await.expect("failed to set up backend");
 
     let document = backend
         .get_or_create_document_by_path("default", None, "notes/fts-only.md")
@@ -374,9 +375,11 @@ async fn hybrid_search_returns_fts_only_results_without_embedding() {
 
 #[tokio::test]
 async fn insert_chunk_and_delete_chunks_round_trip() {
-    let backend = setup_backend().await;
+    let backend = setup_backend().await.expect("failed to set up backend");
 
-    let document = create_test_document(&backend, "notes/chunks.md").await;
+    let document = create_test_document(&backend, "notes/chunks.md")
+        .await
+        .expect("failed to create test document");
 
     let chunk_id = backend
         .insert_chunk(InsertChunkParams {
@@ -414,9 +417,11 @@ async fn insert_chunk_and_delete_chunks_round_trip() {
 
 #[tokio::test]
 async fn update_chunk_embedding_is_reflected_in_chunks_list() {
-    let backend = setup_backend().await;
+    let backend = setup_backend().await.expect("failed to set up backend");
 
-    let document = create_test_document(&backend, "notes/embed-update.md").await;
+    let document = create_test_document(&backend, "notes/embed-update.md")
+        .await
+        .expect("failed to create test document");
 
     let chunk_id = backend
         .insert_chunk(InsertChunkParams {
@@ -454,7 +459,7 @@ async fn update_chunk_embedding_is_reflected_in_chunks_list() {
 
 #[tokio::test]
 async fn get_or_create_document_by_path_is_idempotent() {
-    let backend = setup_backend().await;
+    let backend = setup_backend().await.expect("failed to set up backend");
 
     let first = backend
         .get_or_create_document_by_path("default", None, "notes/idempotent.md")
@@ -470,7 +475,7 @@ async fn get_or_create_document_by_path_is_idempotent() {
 
 #[tokio::test]
 async fn update_document_changes_content() {
-    let backend = setup_backend().await;
+    let backend = setup_backend().await.expect("failed to set up backend");
 
     let document = backend
         .get_or_create_document_by_path("default", None, "notes/update.md")
@@ -493,7 +498,7 @@ async fn update_document_changes_content() {
 
 #[tokio::test]
 async fn delete_document_by_path_removes_document_and_chunks() {
-    let backend = setup_backend().await;
+    let backend = setup_backend().await.expect("failed to set up backend");
 
     let document = backend
         .get_or_create_document_by_path("default", None, "notes/delete-me.md")
@@ -531,9 +536,11 @@ async fn delete_document_by_path_removes_document_and_chunks() {
 
 #[tokio::test]
 async fn list_all_paths_returns_inserted_document_path() {
-    let backend = setup_backend().await;
+    let backend = setup_backend().await.expect("failed to set up backend");
 
-    create_test_document(&backend, "notes/listed.md").await;
+    create_test_document(&backend, "notes/listed.md")
+        .await
+        .expect("failed to create test document");
 
     let paths = backend
         .list_all_paths("default", None)
@@ -548,9 +555,11 @@ async fn list_all_paths_returns_inserted_document_path() {
 
 #[tokio::test]
 async fn list_documents_returns_inserted_document() {
-    let backend = setup_backend().await;
+    let backend = setup_backend().await.expect("failed to set up backend");
 
-    let document = create_test_document(&backend, "notes/listed-doc.md").await;
+    let document = create_test_document(&backend, "notes/listed-doc.md")
+        .await
+        .expect("failed to create test document");
 
     let docs = backend
         .list_documents("default", None)
@@ -565,7 +574,7 @@ async fn list_documents_returns_inserted_document() {
 
 #[tokio::test]
 async fn list_directory_returns_immediate_children_only() {
-    let backend = setup_backend().await;
+    let backend = setup_backend().await.expect("failed to set up backend");
 
     backend
         .get_or_create_document_by_path("default", None, "notes/dir/child.md")

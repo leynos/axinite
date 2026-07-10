@@ -286,7 +286,7 @@ impl AppBuilder {
 
         if let Some(ref secrets) = store {
             // Inject LLM API keys from encrypted storage
-            crate::config::inject_llm_keys_from_secrets(secrets.as_ref(), "default").await;
+            crate::config::inject_llm_keys_from_secrets(secrets.as_ref(), "default").await?;
 
             // Re-resolve only the LLM config with newly available keys.
             let store: Option<&(dyn crate::db::SettingsStore + Sync)> =
@@ -350,7 +350,7 @@ impl AppBuilder {
         } else {
             Arc::new(ToolRegistry::new())
         };
-        tools.register_builtin_tools();
+        tools.register_builtin_tools()?;
 
         if let Some(ref ss) = self.secrets_store {
             tools.register_secrets_tools(Arc::clone(ss));
@@ -914,7 +914,10 @@ mod tests {
 
         builder.init_database().await?;
 
-        let db = builder.db.as_ref().expect("init_database should store db");
+        let db = builder
+            .db
+            .as_ref()
+            .context("init_database should store db")?;
         let migrated = db
             .get_setting(
                 UserId::from("default"),

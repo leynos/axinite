@@ -507,7 +507,12 @@ mod tests {
                 .lock()
                 .unwrap()
                 .take()
-                .expect("MockProvider::complete called more than once")
+                .unwrap_or_else(|| {
+                    Err(LlmError::InvalidResponse {
+                        provider: self.name.clone(),
+                        reason: "MockProvider::complete called more than once".to_string(),
+                    })
+                })
         }
 
         async fn complete_with_tools(
@@ -518,7 +523,13 @@ mod tests {
                 .lock()
                 .unwrap()
                 .take()
-                .expect("MockProvider::complete_with_tools called more than once")
+                .unwrap_or_else(|| {
+                    Err(LlmError::InvalidResponse {
+                        provider: self.name.clone(),
+                        reason: "MockProvider::complete_with_tools called more than once"
+                            .to_string(),
+                    })
+                })
         }
 
         async fn list_models(&self) -> Result<Vec<String>, LlmError> {

@@ -1648,7 +1648,9 @@ mod tests {
     }
 
     #[test]
-    fn set_get_round_trip_all_documented_paths() {
+    fn set_get_round_trip_all_documented_paths() -> anyhow::Result<()> {
+        use anyhow::Context as _;
+
         let mut settings = Settings::default();
 
         // Test set + get for each documented settings path
@@ -1664,12 +1666,13 @@ mod tests {
         for (path, value) in &test_cases {
             settings
                 .set(path, value)
-                .unwrap_or_else(|e| panic!("set({path}, {value}) failed: {e}"));
+                .map_err(|e| anyhow::anyhow!("set({path}, {value}) failed: {e}"))?;
             let got = settings
                 .get(path)
-                .unwrap_or_else(|| panic!("get({path}) returned None after set"));
+                .with_context(|| format!("get({path}) returned None after set"))?;
             assert_eq!(&got, value, "set/get round-trip failed for path '{path}'");
         }
+        Ok(())
     }
 
     #[test]

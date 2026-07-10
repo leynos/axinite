@@ -3,12 +3,17 @@
 #[cfg(all(feature = "libsql", feature = "test-helpers"))]
 use super::*;
 #[cfg(all(feature = "libsql", feature = "test-helpers"))]
+use anyhow::Context as _;
+#[cfg(all(feature = "libsql", feature = "test-helpers"))]
 use rstest::rstest;
 
 #[cfg(all(feature = "libsql", feature = "test-helpers"))]
 #[tokio::test]
 async fn test_settings_crud() {
-    let harness = TestHarnessBuilder::new().build().await;
+    let harness = TestHarnessBuilder::new()
+        .build()
+        .await
+        .expect("test harness should build");
     let db = &harness.db;
 
     let val = db
@@ -69,51 +74,55 @@ async fn test_settings_crud() {
 }
 
 #[cfg(all(feature = "libsql", feature = "test-helpers"))]
-async fn run_settings_crud_flow(db: &Arc<dyn Database>, user_id: UserId, key: SettingKey) {
+async fn run_settings_crud_flow(
+    db: &Arc<dyn Database>,
+    user_id: UserId,
+    key: SettingKey,
+) -> anyhow::Result<()> {
     let initial_value = serde_json::json!("dark");
     let updated_value = serde_json::json!("light");
 
     db.set_setting(user_id.clone(), key.clone(), &initial_value)
         .await
-        .expect("set setting");
+        .context("set setting")?;
 
     let stored = db
         .get_setting(user_id.clone(), key.clone())
         .await
-        .expect("get setting")
-        .expect("setting should exist");
+        .context("get setting")?
+        .context("setting should exist")?;
     assert_eq!(stored, initial_value);
 
     let listed = db
         .list_settings(user_id.clone())
         .await
-        .expect("list settings");
+        .context("list settings")?;
     assert_eq!(listed.len(), 1);
     assert_eq!(listed[0].key, key);
     assert_eq!(listed[0].value, initial_value);
 
     db.set_setting(user_id.clone(), key.clone(), &updated_value)
         .await
-        .expect("update setting");
+        .context("update setting")?;
 
     let stored = db
         .get_setting(user_id.clone(), key.clone())
         .await
-        .expect("get updated setting")
-        .expect("updated setting should exist");
+        .context("get updated setting")?
+        .context("updated setting should exist")?;
     assert_eq!(stored, updated_value);
 
     let deleted = db
         .delete_setting(user_id.clone(), key.clone())
         .await
-        .expect("delete setting");
+        .context("delete setting")?;
     assert!(deleted);
-    assert!(
-        db.get_setting(user_id, key)
-            .await
-            .expect("get deleted setting")
-            .is_none()
-    );
+    let remaining = db
+        .get_setting(user_id, key)
+        .await
+        .context("get deleted setting")?;
+    assert!(remaining.is_none());
+    Ok(())
 }
 
 #[cfg(all(feature = "libsql", feature = "test-helpers"))]
@@ -122,7 +131,10 @@ async fn run_settings_crud_flow(db: &Arc<dyn Database>, user_id: UserId, key: Se
 #[case(true)]
 #[tokio::test]
 async fn test_settings_crud_variants(#[case] use_owned_strings: bool) {
-    let harness = TestHarnessBuilder::new().build().await;
+    let harness = TestHarnessBuilder::new()
+        .build()
+        .await
+        .expect("test harness should build");
     let db = &harness.db;
 
     let (user_id, key) = if use_owned_strings {
@@ -134,13 +146,18 @@ async fn test_settings_crud_variants(#[case] use_owned_strings: bool) {
         (UserId::from("literal-user"), SettingKey::from("theme"))
     };
 
-    run_settings_crud_flow(db, user_id, key).await;
+    run_settings_crud_flow(db, user_id, key)
+        .await
+        .expect("settings CRUD flow should succeed");
 }
 
 #[cfg(all(feature = "libsql", feature = "test-helpers"))]
 #[tokio::test]
 async fn test_settings_bulk_operations() {
-    let harness = TestHarnessBuilder::new().build().await;
+    let harness = TestHarnessBuilder::new()
+        .build()
+        .await
+        .expect("test harness should build");
     let db = &harness.db;
 
     let has = db

@@ -1047,7 +1047,8 @@ impl SetupWizard {
     /// NearAI is always first (special auth), then all registry providers
     /// that have setup hints.
     async fn step_inference_provider(&mut self) -> Result<(), SetupError> {
-        let registry = crate::llm::ProviderRegistry::load();
+        let registry =
+            crate::llm::ProviderRegistry::load().map_err(|e| SetupError::Config(e.to_string()))?;
 
         // Show current provider if already configured
         if let Some(current) = self.settings.llm_backend.clone() {
@@ -1664,7 +1665,8 @@ impl SetupWizard {
         }
 
         let backend = self.settings.llm_backend.as_deref().unwrap_or("nearai");
-        let registry = crate::llm::ProviderRegistry::load();
+        let registry =
+            crate::llm::ProviderRegistry::load().map_err(|e| SetupError::Config(e.to_string()))?;
 
         if backend == "nearai" {
             // NEAR AI: use existing provider list_models()
@@ -2577,7 +2579,8 @@ impl SetupWizard {
     /// re-resolution in `AppBuilder::build_all()` fills them in after
     /// `inject_llm_keys_from_secrets()` loads from encrypted storage.
     fn write_bootstrap_env(&self) -> Result<(), SetupError> {
-        let registry = crate::llm::ProviderRegistry::load();
+        let registry =
+            crate::llm::ProviderRegistry::load().map_err(|e| SetupError::Config(e.to_string()))?;
         let mut env_vars: Vec<(String, String)> = Vec::new();
 
         if let Some(ref backend) = self.settings.database_backend {
@@ -3799,7 +3802,8 @@ mod tests {
 
     impl EnvGuard {
         fn new_with_action(key: &'static str, f: impl FnOnce()) -> Self {
-            let lock = ENV_MUTEX.lock().expect("env mutex poisoned");
+            // The env mutex lock is infallible (its error type is `Infallible`).
+            let Ok(lock) = ENV_MUTEX.lock();
             let original = std::env::var(key).ok();
             // SAFETY: Tests hold ENV_MUTEX for the full guard lifetime, so no
             // concurrent env mutation can occur while this override is active.
@@ -3836,7 +3840,8 @@ mod tests {
 
     impl EnvBatchGuard {
         fn new(updates: &[(&'static str, Option<&str>)]) -> Self {
-            let lock = ENV_MUTEX.lock().expect("env mutex poisoned");
+            // The env mutex lock is infallible (its error type is `Infallible`).
+            let Ok(lock) = ENV_MUTEX.lock();
             let originals = updates
                 .iter()
                 .map(|(key, _)| (*key, std::env::var(key).ok()))
@@ -3885,7 +3890,8 @@ mod tests {
 
     impl OverlayGuard {
         fn set(key: &'static str, value: &str) -> Self {
-            let lock = ENV_MUTEX.lock().expect("env mutex poisoned");
+            // The env mutex lock is infallible (its error type is `Infallible`).
+            let Ok(lock) = ENV_MUTEX.lock();
             crate::config::remove_single_var(key);
             crate::config::inject_single_var(key, value);
             Self { _lock: lock, key }

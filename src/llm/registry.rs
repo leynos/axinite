@@ -217,10 +217,19 @@ impl ProviderRegistry {
     ///
     /// User providers from `~/.ironclaw/providers.json` are appended,
     /// with later entries overriding earlier ones by ID/alias.
-    pub fn load() -> Self {
+    ///
+    /// # Errors
+    ///
+    /// Returns [`ConfigError::ParseError`] when the compiled-in
+    /// `providers.json` is not valid JSON. Invalid user overrides are
+    /// logged and skipped rather than treated as fatal.
+    pub fn load() -> Result<Self, crate::error::ConfigError> {
         let builtins: Vec<ProviderDefinition> =
-            serde_json::from_str(include_str!("../../providers.json"))
-                .expect("built-in providers.json must be valid JSON");
+            serde_json::from_str(include_str!("../../providers.json")).map_err(|e| {
+                crate::error::ConfigError::ParseError(format!(
+                    "built-in providers.json must be valid JSON: {e}"
+                ))
+            })?;
 
         let mut all = builtins;
 
@@ -255,7 +264,7 @@ impl ProviderRegistry {
             }
         }
 
-        Self::new(all)
+        Ok(Self::new(all))
     }
 
     /// Look up a provider by ID or alias (case-insensitive).

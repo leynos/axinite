@@ -673,7 +673,10 @@ mod tests {
             .unwrap();
 
         assert!(result.result.get("success").unwrap().as_bool().unwrap());
-        assert_eq!(ambient_fs::read_to_string(&file_path).unwrap(), "hello world");
+        assert_eq!(
+            ambient_fs::read_to_string(&file_path).unwrap(),
+            "hello world"
+        );
     }
 
     #[tokio::test]

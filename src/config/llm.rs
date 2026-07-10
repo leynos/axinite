@@ -53,7 +53,7 @@ impl LlmConfig {
     }
 
     pub(crate) fn resolve_from(ctx: &EnvContext, settings: &Settings) -> Result<Self, ConfigError> {
-        let registry = ProviderRegistry::load();
+        let registry = ProviderRegistry::load()?;
         let (backend_lower, is_nearai, is_bedrock) = Self::resolve_backend_name(ctx, settings)?;
         let session = Self::resolve_session_config(ctx)?;
         let nearai = Self::resolve_nearai_config(ctx, settings)?;

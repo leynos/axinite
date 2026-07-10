@@ -34,7 +34,10 @@ pub struct InjectionWarning {
 /// Sanitizer for external data.
 pub struct Sanitizer {
     /// Fast pattern matcher for known injection patterns.
-    pattern_matcher: AhoCorasick,
+    ///
+    /// `None` only if the matcher failed to build, which cannot happen for
+    /// the compile-time constant pattern list; regex detection still runs.
+    pattern_matcher: Option<AhoCorasick>,
     /// Patterns with their metadata.
     patterns: Vec<PatternInfo>,
     /// Regex patterns for more complex detection.
@@ -157,10 +160,20 @@ impl Sanitizer {
         ];
 
         let pattern_strings: Vec<&str> = patterns.iter().map(|p| p.pattern.as_str()).collect();
+        // Building from the small compile-time constant pattern list cannot
+        // exceed aho-corasick's limits; log loudly rather than panic if that
+        // invariant is ever broken so degraded matching is never silent.
         let pattern_matcher = AhoCorasick::builder()
             .ascii_case_insensitive(true)
             .build(&pattern_strings)
-            .expect("Failed to build pattern matcher");
+            .map_err(|error| {
+                tracing::error!(
+                    %error,
+                    "Failed to build pattern matcher; literal injection-pattern \
+                     detection is disabled"
+                );
+            })
+            .ok();
 
         // Regex patterns for more complex detection
         let regex_patterns = vec![
@@ -202,7 +215,11 @@ impl Sanitizer {
         let mut warnings = Vec::new();
 
         // Detect patterns using Aho-Corasick
-        for mat in self.pattern_matcher.find_iter(content) {
+        for mat in self
+            .pattern_matcher
+            .iter()
+            .flat_map(|m| m.find_iter(content))
+        {
             let pattern_info = &self.patterns[mat.pattern().as_usize()];
             warnings.push(InjectionWarning {
                 pattern: pattern_info.pattern.clone(),

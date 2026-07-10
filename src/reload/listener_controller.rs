@@ -139,17 +139,14 @@ mod tests {
     /// where the port is consumed immediately, but production code should either:
     /// - Keep the listener alive and pass it to the consumer
     /// - Use socket options like `SO_REUSEADDR` if appropriate
-    fn reserve_addr() -> SocketAddr {
-        let listener =
-            StdTcpListener::bind("127.0.0.1:0").expect("should reserve an ephemeral port");
-        listener
-            .local_addr()
-            .expect("reserved listener should report its address")
+    fn reserve_addr() -> std::io::Result<SocketAddr> {
+        let listener = StdTcpListener::bind("127.0.0.1:0")?;
+        listener.local_addr()
     }
 
     #[tokio::test]
     async fn webhook_listener_controller_drives_webhook_server_lifecycle() {
-        let addr1 = reserve_addr();
+        let addr1 = reserve_addr().expect("should reserve an ephemeral port");
 
         let mut server = WebhookServer::new(WebhookServerConfig { addr: addr1 });
         server.add_routes(
@@ -157,7 +154,7 @@ mod tests {
         );
         server.start().await.expect("server should start");
 
-        let addr2 = reserve_addr();
+        let addr2 = reserve_addr().expect("should reserve an ephemeral port");
         assert_ne!(addr1, addr2, "reserved addresses should be different");
 
         let server = Arc::new(Mutex::new(server));

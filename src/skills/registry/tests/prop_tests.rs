@@ -57,7 +57,8 @@ fn skill_markdown(name: &str) -> Vec<u8> {
 
 fn collect_installed_files(root: &Path) -> BTreeMap<PathBuf, Vec<u8>> {
     fn visit(base: &Path, current: &Path, files: &mut BTreeMap<PathBuf, Vec<u8>>) {
-        for entry in ambient_fs::read_dir(current).expect("installed directory should be readable") {
+        for entry in ambient_fs::read_dir(current).expect("installed directory should be readable")
+        {
             let entry = entry.expect("installed directory entry should be readable");
             let path = entry.path();
             if path.is_dir() {

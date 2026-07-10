@@ -538,17 +538,20 @@ mod tests {
         use std::sync::Arc;
 
         /// Helper to create a test database with migrations.
-        async fn create_test_db() -> (Arc<dyn crate::db::Database>, tempfile::TempDir) {
+        async fn create_test_db()
+        -> anyhow::Result<(Arc<dyn crate::db::Database>, tempfile::TempDir)> {
+            use anyhow::Context as _;
+
             use crate::db::libsql::LibSqlBackend;
 
-            let temp_dir = tempfile::tempdir().expect("tempdir");
+            let temp_dir = tempfile::tempdir().context("tempdir")?;
             let db_path = temp_dir.path().join("test_hygiene.db");
             let backend = LibSqlBackend::new_local(&db_path)
                 .await
-                .expect("LibSqlBackend::new_local");
-            backend.run_migrations().await.expect("run_migrations");
+                .context("LibSqlBackend::new_local")?;
+            backend.run_migrations().await.context("run_migrations")?;
             let db: Arc<dyn Database> = Arc::new(backend);
-            (db, temp_dir)
+            Ok((db, temp_dir))
         }
 
         /// Helper to create a workspace from a test database.
@@ -558,7 +561,9 @@ mod tests {
 
         #[tokio::test]
         async fn cleanup_daily_logs_preserves_identity_documents() {
-            let (db, _tmp) = create_test_db().await;
+            let (db, _tmp) = create_test_db()
+                .await
+                .expect("create_test_db should succeed");
             let ws = create_workspace(&db);
 
             // Write several regular documents (non-identity)
@@ -599,7 +604,9 @@ mod tests {
 
         #[tokio::test]
         async fn cleanup_conversation_docs_handles_empty_directory() {
-            let (db, _tmp) = create_test_db().await;
+            let (db, _tmp) = create_test_db()
+                .await
+                .expect("create_test_db should succeed");
             let ws = create_workspace(&db);
 
             // Run cleanup on an empty directory (conversations/ doesn't exist)
@@ -613,7 +620,9 @@ mod tests {
 
         #[tokio::test]
         async fn cleanup_respects_cadence_prevents_concurrent_runs() {
-            let (db, _tmp) = create_test_db().await;
+            let (db, _tmp) = create_test_db()
+                .await
+                .expect("create_test_db should succeed");
             let ws = create_workspace(&db);
 
             let config = HygieneConfig {
@@ -642,7 +651,9 @@ mod tests {
 
         #[tokio::test]
         async fn cleanup_reports_deletion_counts_correctly() {
-            let (db, _tmp) = create_test_db().await;
+            let (db, _tmp) = create_test_db()
+                .await
+                .expect("create_test_db should succeed");
             let ws = create_workspace(&db);
 
             // Write some documents

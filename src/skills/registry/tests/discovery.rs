@@ -107,7 +107,7 @@ async fn test_load_skill_layout(
     assert_single_skill_loaded(&mut registry, skill_name, content_fragment).await;
     let skill = registry
         .find_by_name(skill_name)
-        .unwrap_or_else(|| panic!("{skill_name} should remain loaded"));
+        .expect("skill under test should remain loaded");
     assert_eq!(skill.skill_identifier(), skill_name);
     assert_eq!(skill.skill_root(), expected_root.as_path());
     assert_eq!(skill.skill_entrypoint(), std::path::Path::new("SKILL.md"));
@@ -252,8 +252,7 @@ async fn test_bundle_layout_records_bundle_package_kind(
             .expect("marker path should have a parent dir"),
     )
     .expect("marker directory should be created for test");
-    fs::write(&marker_path, b"marker content")
-        .expect("marker file should be written for test");
+    fs::write(&marker_path, b"marker content").expect("marker file should be written for test");
 
     registry.discover_all().await;
 

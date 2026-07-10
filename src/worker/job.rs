@@ -1673,7 +1673,7 @@ mod tests {
             let result_str = result
                 .result
                 .as_ref()
-                .unwrap_or_else(|_| panic!("tool {i} should return a captured result"))
+                .map_err(|error| format!("tool {i} should return a captured result: {error}"))?
                 .clone();
             assert!(
                 result_str.contains(expected),
@@ -2113,7 +2113,7 @@ mod tests {
             case.expected_status,
             case.expected_reason,
         )
-        .await;
+        .await?;
         Ok(())
     }
 
@@ -2181,7 +2181,8 @@ mod tests {
             "State should match expected terminal state"
         );
 
-        assert_terminal_persistence(&store, expected_state, expected_status, expected_reason).await;
+        assert_terminal_persistence(&store, expected_state, expected_status, expected_reason)
+            .await?;
         let before = get_call_counts(&store).await;
 
         for rejected in [
@@ -2239,7 +2240,7 @@ mod tests {
             "completed",
             Some("Job completed successfully"),
         )
-        .await;
+        .await?;
         Ok(())
     }
 

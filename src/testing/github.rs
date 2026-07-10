@@ -24,22 +24,18 @@
 /// ```
 pub fn assert_real_github_schema(parameters: &serde_json::Value) {
     assert_eq!(parameters["type"], serde_json::json!("object"));
+    // A missing or non-array value fails the assertion rather than panicking
+    // separately, so the diagnostic message still shows the offending JSON.
+    let action_enum = parameters["properties"]["action"]["enum"].as_array();
     assert!(
-        parameters["properties"]["action"]["enum"]
-            .as_array()
-            .expect("action enum array")
-            .iter()
-            .any(|value| value == "get_repo"),
-        "expected 'get_repo' in action enum: {}",
+        action_enum.is_some_and(|values| values.iter().any(|value| value == "get_repo")),
+        "expected 'get_repo' in action enum array: {}",
         parameters["properties"]["action"]["enum"]
     );
+    let required = parameters["required"].as_array();
     assert!(
-        parameters["required"]
-            .as_array()
-            .expect("required array")
-            .iter()
-            .any(|value| value == "action"),
-        "expected required action field in schema: {}",
+        required.is_some_and(|values| values.iter().any(|value| value == "action")),
+        "expected required array with action field in schema: {}",
         parameters
     );
 }

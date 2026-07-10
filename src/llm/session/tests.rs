@@ -27,16 +27,16 @@ fn mk_config(session_path: std::path::PathBuf) -> SessionConfig {
     }
 }
 
-fn new_mgr() -> (TempDir, SessionManager) {
-    let dir = tempdir().expect("tempdir should be created");
+fn new_mgr() -> std::io::Result<(TempDir, SessionManager)> {
+    let dir = tempdir()?;
     let manager = SessionManager::new(mk_config(dir.path().join("session.json")));
-    (dir, manager)
+    Ok((dir, manager))
 }
 
-async fn new_mgr_async() -> (TempDir, SessionManager) {
-    let dir = tempdir().expect("tempdir should be created");
+async fn new_mgr_async() -> std::io::Result<(TempDir, SessionManager)> {
+    let dir = tempdir()?;
     let manager = SessionManager::new_async(mk_config(dir.path().join("session.json"))).await;
-    (dir, manager)
+    Ok((dir, manager))
 }
 
 #[tokio::test]
@@ -146,7 +146,7 @@ async fn test_new_with_nonexistent_session_file() {
 #[case(SecretKind::ApiKey, "sk_test")]
 #[tokio::test]
 async fn test_secret_roundtrip(#[case] kind: SecretKind, #[case] secret: &str) {
-    let (_dir, manager) = new_mgr_async().await;
+    let (_dir, manager) = new_mgr_async().await.expect("tempdir should be created");
 
     match kind {
         SecretKind::Token => {
@@ -167,7 +167,7 @@ async fn test_secret_roundtrip(#[case] kind: SecretKind, #[case] secret: &str) {
 #[case(SecretKind::ApiKey, "sk_test")]
 #[tokio::test]
 async fn test_has_secret_false_then_true(#[case] kind: SecretKind, #[case] secret: &str) {
-    let (_dir, manager) = new_mgr();
+    let (_dir, manager) = new_mgr().expect("tempdir should be created");
 
     match kind {
         SecretKind::Token => {
@@ -185,7 +185,7 @@ async fn test_has_secret_false_then_true(#[case] kind: SecretKind, #[case] secre
 
 #[tokio::test]
 async fn test_ensure_authenticated_short_circuits_with_api_key() {
-    let (_dir, manager) = new_mgr_async().await;
+    let (_dir, manager) = new_mgr_async().await.expect("tempdir should be created");
 
     manager.set_api_key(SecretString::from("sk_test")).await;
 
@@ -198,7 +198,7 @@ async fn test_ensure_authenticated_short_circuits_with_api_key() {
 #[cfg(feature = "libsql")]
 #[tokio::test]
 async fn test_save_session_persists_to_db_under_typed_setting_key() {
-    let (dir, manager) = new_mgr_async().await;
+    let (dir, manager) = new_mgr_async().await.expect("tempdir should be created");
     let db_path = dir.path().join("session.db");
     let backend = Arc::new(
         crate::db::libsql::LibSqlBackend::new_local(&db_path)
@@ -230,7 +230,7 @@ async fn test_save_session_persists_to_db_under_typed_setting_key() {
 #[cfg(feature = "libsql")]
 #[tokio::test]
 async fn test_attach_store_loads_legacy_session_key_from_db() {
-    let (dir, manager) = new_mgr_async().await;
+    let (dir, manager) = new_mgr_async().await.expect("tempdir should be created");
     let db_path = dir.path().join("session.db");
     let backend = Arc::new(
         crate::db::libsql::LibSqlBackend::new_local(&db_path)

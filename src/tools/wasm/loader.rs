@@ -706,6 +706,8 @@ mod tests {
     use std::io::Write;
     use std::sync::Arc;
 
+    use anyhow::Context as _;
+
     use tempfile::TempDir;
 
     use crate::llm::ToolDefinition;
@@ -963,22 +965,22 @@ mod tests {
     use crate::tools::wasm::{WasmRuntimeConfig, WasmToolRuntime};
 
     /// Helper: create a WasmToolLoader backed by a real runtime + registry.
-    fn make_loader() -> super::WasmToolLoader {
+    fn make_loader() -> anyhow::Result<super::WasmToolLoader> {
         let runtime = Arc::new(
             WasmToolRuntime::new(WasmRuntimeConfig::for_testing())
-                .expect("failed to create WASM runtime for test"),
+                .context("failed to create WASM runtime for test")?,
         );
         let registry = Arc::new(ToolRegistry::new());
-        super::WasmToolLoader::new(runtime, registry)
+        Ok(super::WasmToolLoader::new(runtime, registry))
     }
 
-    fn make_metadata_loader() -> (super::WasmToolLoader, Arc<ToolRegistry>) {
-        let runtime = metadata_test_runtime().expect("create metadata test runtime");
+    fn make_metadata_loader() -> anyhow::Result<(super::WasmToolLoader, Arc<ToolRegistry>)> {
+        let runtime = metadata_test_runtime().context("create metadata test runtime")?;
         let registry = Arc::new(ToolRegistry::new());
-        (
+        Ok((
             super::WasmToolLoader::new(runtime, Arc::clone(&registry)),
             registry,
-        )
+        ))
     }
 
     fn assert_real_github_schema(definition: ToolDefinition) {
@@ -992,7 +994,7 @@ mod tests {
         let wasm_path = dir.path().join("dummy.wasm");
         ambient_fs::File::create(&wasm_path).unwrap();
 
-        let loader = make_loader();
+        let loader = make_loader().expect("failed to create WASM loader for test");
 
         for bad_name in &["../evil", "foo/bar", "foo\\bar"] {
             let result = loader.load_from_files(bad_name, &wasm_path, None).await;
@@ -1017,7 +1019,7 @@ mod tests {
         let wasm_path = dir.path().join("dummy.wasm");
         ambient_fs::File::create(&wasm_path).unwrap();
 
-        let loader = make_loader();
+        let loader = make_loader().expect("failed to create WASM loader for test");
         let result = loader.load_from_files("", &wasm_path, None).await;
 
         assert!(result.is_err(), "Expected error for empty name, got Ok");
@@ -1031,7 +1033,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_load_nonexistent_wasm_file() {
-        let loader = make_loader();
+        let loader = make_loader().expect("failed to create WASM loader for test");
         let bogus_path = std::path::PathBuf::from("/tmp/nonexistent_tool_12345.wasm");
 
         let result = loader.load_from_files("bogus", &bogus_path, None).await;
@@ -1057,7 +1059,7 @@ mod tests {
         f.write_all(b"this is not a valid wasm module at all")
             .unwrap();
 
-        let loader = make_loader();
+        let loader = make_loader().expect("failed to create WASM loader for test");
         let result = loader.load_from_files("invalid", &wasm_path, None).await;
 
         assert!(
@@ -1126,7 +1128,7 @@ mod tests {
 
     #[tokio::test]
     async fn load_from_dir_returns_empty_when_dir_missing() {
-        let loader = make_loader();
+        let loader = make_loader().expect("failed to create WASM loader for test");
 
         let dir = TempDir::new().unwrap();
         let missing = dir.path().join("nonexistent_tools_dir");
@@ -1143,7 +1145,8 @@ mod tests {
     async fn load_from_files_publishes_guest_schema_in_tool_definitions() {
         let wasm_path = github_wasm_artifact().expect("build or find github WASM artifact");
         let capabilities_path = github_tool_source_dir().join("github-tool.capabilities.json");
-        let (loader, registry) = make_metadata_loader();
+        let (loader, registry) =
+            make_metadata_loader().expect("failed to create metadata loader for test");
 
         loader
             .load_from_files("github", &wasm_path, Some(&capabilities_path))
@@ -1164,7 +1167,8 @@ mod tests {
     async fn load_dev_tools_publishes_guest_schema_in_tool_definitions() {
         github_wasm_artifact().expect("build or find github WASM artifact");
         let install_dir = TempDir::new().expect("create install dir");
-        let (loader, registry) = make_metadata_loader();
+        let (loader, registry) =
+            make_metadata_loader().expect("failed to create metadata loader for test");
 
         let results = super::load_dev_tools(&loader, install_dir.path())
             .await

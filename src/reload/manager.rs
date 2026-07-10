@@ -216,8 +216,19 @@ impl HotReloadManager {
             }
         }
 
-        // All candidates failed
-        Err(last_error.expect("at least one candidate address").into())
+        // All candidates failed. `resolve_http_addrs` guarantees at least one
+        // candidate, so the fallback arm is defensive rather than reachable.
+        Err(last_error.map_or_else(
+            || {
+                ReloadError::from(crate::error::ConfigError::InvalidValue {
+                    key: "http.host:http.port".to_string(),
+                    message: "no candidate socket addresses to restart listener \
+                              (expected at least one candidate address)"
+                        .to_string(),
+                })
+            },
+            Into::into,
+        ))
     }
 
     fn listener_matches_resolved_addr(

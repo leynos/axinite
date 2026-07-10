@@ -3,6 +3,7 @@
 use std::sync::Arc;
 use std::time::Duration;
 
+use anyhow::Context as _;
 use chrono::Utc;
 use rstest::rstest;
 
@@ -58,21 +59,23 @@ async fn seed_job_with_two_stuck_transitions(
     cm: &Arc<ContextManager>,
     first_age_secs: i64,
     second_age_secs: i64,
-) -> Uuid {
+) -> anyhow::Result<Uuid> {
     let job_id = cm
         .create_job("Stuck job", "desc")
         .await
-        .expect("failed to await create_job");
+        .context("failed to await create_job")?;
 
     // First transition: InProgress -> Stuck, then backdate timestamp by first_age_secs
     cm.update_context(job_id, |ctx| ctx.transition_to(JobState::InProgress, None))
         .await
-        .expect("failed to await update_context")
-        .expect("expected in-progress transition to succeed");
+        .context("failed to await update_context")?
+        .map_err(anyhow::Error::msg)
+        .context("expected in-progress transition to succeed")?;
     cm.update_context(job_id, |ctx| ctx.transition_to(JobState::Stuck, None))
         .await
-        .expect("failed to await update_context")
-        .expect("expected first stuck transition to succeed");
+        .context("failed to await update_context")?
+        .map_err(anyhow::Error::msg)
+        .context("expected first stuck transition to succeed")?;
     cm.update_context(job_id, |ctx| {
         let stuck_since = Utc::now() - chrono::Duration::seconds(first_age_secs);
         let Some(last_transition) = ctx.transitions.last_mut() else {
@@ -82,18 +85,21 @@ async fn seed_job_with_two_stuck_transitions(
         Ok(())
     })
     .await
-    .expect("failed to await update_context")
-    .expect("expected first stuck timestamp update to succeed");
+    .context("failed to await update_context")?
+    .map_err(anyhow::Error::msg)
+    .context("expected first stuck timestamp update to succeed")?;
 
     // Second transition: Stuck -> InProgress -> Stuck, then backdate timestamp by second_age_secs
     cm.update_context(job_id, |ctx| ctx.transition_to(JobState::InProgress, None))
         .await
-        .expect("failed to await update_context")
-        .expect("expected recovery transition to succeed");
+        .context("failed to await update_context")?
+        .map_err(anyhow::Error::msg)
+        .context("expected recovery transition to succeed")?;
     cm.update_context(job_id, |ctx| ctx.transition_to(JobState::Stuck, None))
         .await
-        .expect("failed to await update_context")
-        .expect("expected second stuck transition to succeed");
+        .context("failed to await update_context")?
+        .map_err(anyhow::Error::msg)
+        .context("expected second stuck transition to succeed")?;
     cm.update_context(job_id, |ctx| {
         let stuck_since = Utc::now() - chrono::Duration::seconds(second_age_secs);
         let Some(last_transition) = ctx.transitions.last_mut() else {
@@ -103,10 +109,11 @@ async fn seed_job_with_two_stuck_transitions(
         Ok(())
     })
     .await
-    .expect("failed to await update_context")
-    .expect("expected second stuck timestamp update to succeed");
+    .context("failed to await update_context")?
+    .map_err(anyhow::Error::msg)
+    .context("expected second stuck timestamp update to succeed")?;
 
-    job_id
+    Ok(job_id)
 }
 
 #[rstest]
@@ -123,7 +130,9 @@ async fn detect_stuck_jobs_uses_latest_stuck_transition(
     let threshold = Duration::from_secs(60);
 
     // First transition is always 120s old, second transition age varies by test case.
-    let job_id = seed_job_with_two_stuck_transitions(&cm, 120, second_age_secs).await;
+    let job_id = seed_job_with_two_stuck_transitions(&cm, 120, second_age_secs)
+        .await
+        .expect("seeding job with two stuck transitions should succeed");
     let repair = DefaultSelfRepair::new(Arc::clone(&cm), threshold, 3);
 
     let stuck_jobs = NativeSelfRepair::detect_stuck_jobs(&repair).await;

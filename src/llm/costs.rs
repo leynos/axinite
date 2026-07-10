@@ -189,8 +189,9 @@ mod tests {
             "microsoft/phi-4:free",
             "nousresearch/deephermes-3-llama-3-8b-preview:free",
         ] {
-            let (input, output) =
-                model_cost(model).unwrap_or_else(|| panic!("{model} should return Some"));
+            let Some((input, output)) = model_cost(model) else {
+                panic!("{model} should return Some");
+            };
             assert_eq!(input, Decimal::ZERO, "{model} input cost should be zero");
             assert_eq!(output, Decimal::ZERO, "{model} output cost should be zero");
         }

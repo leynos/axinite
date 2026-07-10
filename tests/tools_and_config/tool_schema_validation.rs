@@ -74,7 +74,9 @@ fn extension_manager_fixture() -> ExtensionManagerFixture {
 #[tokio::test]
 async fn all_core_builtin_tool_schemas_are_valid() {
     let registry = ToolRegistry::new();
-    registry.register_builtin_tools();
+    registry
+        .register_builtin_tools()
+        .expect("register builtin tools should succeed");
     registry.register_dev_tools();
 
     let tools = registry.all().await;
@@ -107,7 +109,9 @@ async fn all_core_builtin_tool_schemas_are_valid() {
 #[tokio::test]
 async fn core_registration_covers_expected_tools() {
     let registry = ToolRegistry::new();
-    registry.register_builtin_tools();
+    registry
+        .register_builtin_tools()
+        .expect("register builtin tools should succeed");
     registry.register_dev_tools();
 
     let mut names = registry.list().await;
@@ -205,7 +209,7 @@ fn json_tool_freeform_data_field_is_valid() {
 #[test]
 fn http_tool_headers_array_is_valid() {
     // Regression: http tool's "headers" is an array of {name, value} objects.
-    let tool = ironclaw::tools::builtin::HttpTool::new();
+    let tool = ironclaw::tools::builtin::HttpTool::new().expect("Failed to create HTTP client");
     let schema = tool.parameters_schema();
     let errors = validate_tool_schema(&schema, "http");
     assert!(errors.is_empty(), "http tool schema errors: {errors:?}");
@@ -248,7 +252,9 @@ fn shell_tool_schema_is_valid() {
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn all_core_tools_work_in_multi_thread_runtime() {
     let registry = ToolRegistry::new();
-    registry.register_builtin_tools();
+    registry
+        .register_builtin_tools()
+        .expect("register builtin tools should succeed");
     registry.register_dev_tools();
 
     let tools = registry.all().await;

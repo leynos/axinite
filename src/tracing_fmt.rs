@@ -144,7 +144,11 @@ impl Drop for EventBuffer {
 
             #[cfg(test)]
             if let Some(ref sink) = self.sink {
-                let mut s = sink.lock().expect("test sink lock poisoned");
+                // Recover from poisoning: the sink is an append-only byte
+                // buffer, so partial writes from a panicked holder are safe.
+                let mut s = sink
+                    .lock()
+                    .unwrap_or_else(std::sync::PoisonError::into_inner);
                 s.extend_from_slice(&truncated);
                 return;
             }
@@ -155,7 +159,11 @@ impl Drop for EventBuffer {
 
         #[cfg(test)]
         if let Some(ref sink) = self.sink {
-            let mut s = sink.lock().expect("test sink lock poisoned");
+            // Recover from poisoning: the sink is an append-only byte
+            // buffer, so partial writes from a panicked holder are safe.
+            let mut s = sink
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
             s.extend_from_slice(output);
             return;
         }

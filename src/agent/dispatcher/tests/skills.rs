@@ -55,13 +55,18 @@ fn make_test_skill(
     .expect("test skill location should match manifest")
 }
 
-/// Insert a skill into `registry` under the given name, asserting success.
-fn install_skill(registry: &Arc<RwLock<SkillRegistry>>, name: &str, skill: LoadedSkill) {
+/// Insert a skill into `registry` under the given name.
+fn install_skill(
+    registry: &Arc<RwLock<SkillRegistry>>,
+    name: &str,
+    skill: LoadedSkill,
+) -> anyhow::Result<()> {
     let mut reg = registry
         .write()
-        .expect("failed to acquire registry write lock");
+        .map_err(|e| anyhow::anyhow!("failed to acquire registry write lock: {e}"))?;
     reg.commit_loaded_skill(name, skill)
-        .unwrap_or_else(|e| panic!("failed to commit_loaded_skill {name}: {e}"));
+        .map_err(|e| anyhow::anyhow!("failed to commit_loaded_skill {name}: {e}"))?;
+    Ok(())
 }
 
 fn make_context_skill(trust: SkillTrust) -> LoadedSkill {
@@ -80,7 +85,7 @@ fn test_select_active_skills_returns_empty_when_disabled() {
         "Test skill for disabled check",
         vec!["test".to_string()],
     );
-    install_skill(&registry, "test-skill", skill);
+    install_skill(&registry, "test-skill", skill).expect("install_skill should succeed");
 
     let skills_cfg = SkillsConfig {
         enabled: false,
@@ -103,7 +108,7 @@ fn test_select_active_skills_returns_empty_when_registry_lock_is_poisoned() {
         "Skill to ensure non-empty registry before poisoning",
         vec!["hello".to_string()],
     );
-    install_skill(&registry, "poison-skill", skill);
+    install_skill(&registry, "poison-skill", skill).expect("install_skill should succeed");
 
     let poison_registry = Arc::clone(&registry);
     let handle = std::thread::spawn(move || {
@@ -137,7 +142,7 @@ fn test_select_active_skills_selects_matching_skill() {
         "Provides weather-related assistance",
         vec!["weather".to_string(), "forecast".to_string()],
     );
-    install_skill(&registry, "weather-helper", skill);
+    install_skill(&registry, "weather-helper", skill).expect("install_skill should succeed");
 
     let skills_cfg = SkillsConfig {
         enabled: true,

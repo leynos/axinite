@@ -39,7 +39,12 @@ pub struct HttpTool {
 
 impl HttpTool {
     /// Create a new HTTP tool.
-    pub fn new() -> Self {
+    ///
+    /// # Errors
+    ///
+    /// Returns [`ToolError::ExecutionFailed`] when the underlying reqwest
+    /// client cannot be built.
+    pub fn new() -> Result<Self, ToolError> {
         let client = Client::builder()
             .timeout(Duration::from_secs(30))
             .redirect(reqwest::redirect::Policy::custom(|attempt| {
@@ -82,13 +87,15 @@ impl HttpTool {
                 attempt.follow()
             }))
             .build()
-            .expect("Failed to create HTTP client");
+            .map_err(|e| {
+                ToolError::ExecutionFailed(format!("Failed to create HTTP client: {e}"))
+            })?;
 
-        Self {
+        Ok(Self {
             client,
             credential_registry: None,
             secrets_store: None,
-        }
+        })
     }
 
     /// Attach a credential registry and secrets store for auto-injection.
@@ -254,12 +261,6 @@ fn extract_host_from_params(params: &serde_json::Value) -> Option<String> {
         .and_then(|u| u.as_str())
         .and_then(|u| reqwest::Url::parse(u).ok())
         .and_then(|u| u.host_str().map(|h| h.to_string()))
-}
-
-impl Default for HttpTool {
-    fn default() -> Self {
-        Self::new()
-    }
 }
 
 impl NativeTool for HttpTool {
@@ -612,7 +613,7 @@ mod tests {
 
     #[test]
     fn test_http_tool_schema_headers_is_array() {
-        let tool = HttpTool::new();
+        let tool = HttpTool::new().expect("Failed to create HTTP client");
         let schema = tool.parameters_schema();
         assert_eq!(schema["properties"]["headers"]["type"], "array");
     }
@@ -705,7 +706,9 @@ mod tests {
 
     #[test]
     fn test_http_tool_schema_body_is_freeform() {
-        let schema = HttpTool::new().parameters_schema();
+        let schema = HttpTool::new()
+            .expect("Failed to create HTTP client")
+            .parameters_schema();
         let body = schema
             .get("properties")
             .and_then(|p| p.get("body"))
@@ -724,7 +727,7 @@ mod tests {
 
     #[test]
     fn test_no_auth_headers_returns_unless_auto_approved() {
-        let tool = HttpTool::new();
+        let tool = HttpTool::new().expect("Failed to create HTTP client");
         let params = serde_json::json!({
             "method": "GET",
             "url": "https://api.example.com/data"
@@ -737,7 +740,7 @@ mod tests {
 
     #[test]
     fn test_auth_header_object_format_returns_always() {
-        let tool = HttpTool::new();
+        let tool = HttpTool::new().expect("Failed to create HTTP client");
         let params = serde_json::json!({
             "method": "GET",
             "url": "https://api.example.com/data",
@@ -748,7 +751,7 @@ mod tests {
 
     #[test]
     fn test_auth_header_array_format_returns_always() {
-        let tool = HttpTool::new();
+        let tool = HttpTool::new().expect("Failed to create HTTP client");
         let params = serde_json::json!({
             "method": "GET",
             "url": "https://api.example.com/data",
@@ -759,7 +762,7 @@ mod tests {
 
     #[test]
     fn test_auth_header_case_insensitive() {
-        let tool = HttpTool::new();
+        let tool = HttpTool::new().expect("Failed to create HTTP client");
 
         // Object format with mixed case
         let params = serde_json::json!({
@@ -780,7 +783,7 @@ mod tests {
 
     #[test]
     fn test_all_auth_header_names_detected() {
-        let tool = HttpTool::new();
+        let tool = HttpTool::new().expect("Failed to create HTTP client");
         for header_name in [
             "authorization",
             "x-api-key",
@@ -813,7 +816,7 @@ mod tests {
 
     #[test]
     fn test_non_auth_headers_return_unless_auto_approved() {
-        let tool = HttpTool::new();
+        let tool = HttpTool::new().expect("Failed to create HTTP client");
         let params = serde_json::json!({
             "method": "GET",
             "url": "https://example.com",
@@ -827,7 +830,7 @@ mod tests {
 
     #[test]
     fn test_empty_headers_return_unless_auto_approved() {
-        let tool = HttpTool::new();
+        let tool = HttpTool::new().expect("Failed to create HTTP client");
 
         // Empty object
         let params = serde_json::json!({
@@ -865,11 +868,13 @@ mod tests {
             "api.openai.com",
         )]);
 
-        let tool = HttpTool::new().with_credentials(
-            registry,
-            // secrets_store is not used in requires_approval, just needs to be present
-            Arc::new(test_secrets_store()),
-        );
+        let tool = HttpTool::new()
+            .expect("Failed to create HTTP client")
+            .with_credentials(
+                registry,
+                // secrets_store is not used in requires_approval, just needs to be present
+                Arc::new(test_secrets_store()),
+            );
 
         let params = serde_json::json!({
             "method": "GET",
@@ -885,7 +890,9 @@ mod tests {
         let registry = Arc::new(SharedCredentialRegistry::new());
         // Empty registry - no credential mappings
 
-        let tool = HttpTool::new().with_credentials(registry, Arc::new(test_secrets_store()));
+        let tool = HttpTool::new()
+            .expect("Failed to create HTTP client")
+            .with_credentials(registry, Arc::new(test_secrets_store()));
 
         let params = serde_json::json!({
             "method": "GET",
@@ -899,7 +906,7 @@ mod tests {
 
     #[test]
     fn test_url_query_param_credential_returns_always() {
-        let tool = HttpTool::new();
+        let tool = HttpTool::new().expect("Failed to create HTTP client");
         let params = serde_json::json!({
             "method": "GET",
             "url": "https://api.example.com/data?api_key=secret123"
@@ -909,7 +916,7 @@ mod tests {
 
     #[test]
     fn test_bearer_value_in_custom_header_returns_always() {
-        let tool = HttpTool::new();
+        let tool = HttpTool::new().expect("Failed to create HTTP client");
         let params = serde_json::json!({
             "method": "GET",
             "url": "https://example.com",
@@ -944,7 +951,9 @@ mod tests {
         let registry = Arc::new(SharedCredentialRegistry::new());
         registry.add_mappings(vec![CredentialMapping::bearer("test_key", "api.test.com")]);
 
-        let tool = HttpTool::new().with_credentials(registry, Arc::new(test_secrets_store()));
+        let tool = HttpTool::new()
+            .expect("Failed to create HTTP client")
+            .with_credentials(registry, Arc::new(test_secrets_store()));
 
         // These calls should not panic in multi-thread runtime
         let params_no_auth = serde_json::json!({

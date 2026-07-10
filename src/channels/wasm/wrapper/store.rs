@@ -541,7 +541,10 @@ impl near::agent::channel_host::Host for ChannelStoreData {
                     .map_err(|e| format!("Failed to create HTTP runtime: {e}"))?,
             );
         }
-        let rt = self.http_runtime.as_ref().expect("just initialized");
+        let rt = self
+            .http_runtime
+            .as_ref()
+            .ok_or_else(|| "HTTP runtime missing despite being just initialized".to_string())?;
 
         let result = rt
             .block_on(send_http_request(

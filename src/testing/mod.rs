@@ -20,7 +20,10 @@
 //!
 //! #[tokio::test]
 //! async fn test_something() {
-//!     let harness = TestHarnessBuilder::new().build().await;
+//!     let harness = TestHarnessBuilder::new()
+//!         .build()
+//!         .await
+//!         .expect("test harness should build");
 //!     // use harness.deps, harness.db, etc.
 //! }
 //! ```
@@ -77,21 +80,28 @@ use crate::tools::wasm::{Capabilities, WasmToolWrapper};
 ///
 /// Returns the database and a `TempDir` guard — the database file is
 /// deleted when the guard is dropped.
+///
+/// # Errors
+///
+/// Returns an error when the temporary directory cannot be created, the
+/// backend cannot be initialized, or the migrations fail to run.
 #[cfg(all(feature = "libsql", feature = "test-helpers"))]
-pub async fn test_db() -> (Arc<dyn Database>, TempDir) {
+pub async fn test_db() -> Result<(Arc<dyn Database>, TempDir)> {
+    use anyhow::Context as _;
+
     use crate::db::libsql::LibSqlBackend;
     use tempfile::tempdir;
 
-    let dir = tempdir().expect("failed to create temp dir");
+    let dir = tempdir().context("failed to create temp dir")?;
     let path = dir.path().join("test.db");
     let backend = LibSqlBackend::new_local(&path)
         .await
-        .expect("failed to create test LibSqlBackend");
+        .context("failed to create test LibSqlBackend")?;
     backend
         .run_migrations()
         .await
-        .expect("failed to run migrations");
-    (Arc::new(backend) as Arc<dyn Database>, dir)
+        .context("failed to run migrations")?;
+    Ok((Arc::new(backend) as Arc<dyn Database>, dir))
 }
 
 /// Build a `WasmToolWrapper` for the shared GitHub WASM fixture.
@@ -301,7 +311,10 @@ impl StubChannel {
 
     /// Get all captured (message, response) pairs.
     pub fn captured_responses(&self) -> Vec<(IncomingMessage, OutgoingResponse)> {
-        self.responses.lock().expect("poisoned").clone()
+        self.responses
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .clone()
     }
 
     /// Get a shared handle to the response capture list.
@@ -316,7 +329,10 @@ impl StubChannel {
 
     /// Get all captured status updates.
     pub fn captured_statuses(&self) -> Vec<StatusUpdate> {
-        self.statuses.lock().expect("poisoned").clone()
+        self.statuses
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .clone()
     }
 
     /// Get a shared handle to the status capture list.
@@ -356,7 +372,7 @@ impl NativeChannel for StubChannel {
     ) -> Result<(), ChannelError> {
         self.responses
             .lock()
-            .expect("poisoned")
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
             .push((msg.clone(), response));
         Ok(())
     }
@@ -366,7 +382,10 @@ impl NativeChannel for StubChannel {
         status: StatusUpdate,
         _metadata: &serde_json::Value,
     ) -> Result<(), ChannelError> {
-        self.statuses.lock().expect("poisoned").push(status);
+        self.statuses
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .push(status);
         Ok(())
     }
 
@@ -390,9 +409,10 @@ pub struct TestHarness {
     /// Stub channel sender + manager, present if `with_stub_channel()` was called.
     pub channel: Option<(mpsc::Sender<IncomingMessage>, ChannelManager)>,
     /// Temp directory guard — keeps the test database alive. Dropped
-    /// automatically when the harness goes out of scope.
+    /// automatically when the harness goes out of scope. `None` when the
+    /// caller supplied its own database, which needs no on-disk guard.
     #[cfg(all(feature = "libsql", feature = "test-helpers"))]
-    _temp_dir: TempDir,
+    _temp_dir: Option<TempDir>,
 }
 
 /// Builder for constructing a [`TestHarness`] with sensible defaults.
@@ -450,29 +470,36 @@ impl TestHarnessBuilder {
     }
 
     /// Build the harness with defaults applied.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when the fallback test database cannot be
+    /// provisioned.
     #[cfg(all(feature = "libsql", feature = "test-helpers"))]
-    pub async fn build(self) -> TestHarness {
+    pub async fn build(self) -> Result<TestHarness> {
         use crate::agent::cost_guard::{CostGuard, CostGuardConfig};
         use crate::config::{SafetyConfig, SkillsConfig};
         use crate::hooks::HookRegistry;
         use crate::safety::SafetyLayer;
-        use tempfile::tempdir;
 
         let (db, temp_dir) = if let Some(db) = self.db {
-            // Caller provided a DB; create a dummy temp dir to satisfy the struct.
-            let dir = tempdir().expect("failed to create temp dir");
-            (db, dir)
+            // Caller provided a DB; no on-disk guard is needed.
+            (db, None)
         } else {
-            test_db().await
+            let (db, dir) = test_db().await?;
+            (db, Some(dir))
         };
 
         let llm: Arc<dyn LlmProvider> = self.llm.unwrap_or_else(|| Arc::new(StubLlm::default()));
 
-        let tools = self.tools.unwrap_or_else(|| {
-            let t = Arc::new(ToolRegistry::new());
-            t.register_builtin_tools();
-            t
-        });
+        let tools = match self.tools {
+            Some(t) => t,
+            None => {
+                let t = Arc::new(ToolRegistry::new());
+                t.register_builtin_tools()?;
+                t
+            }
+        };
 
         let safety = Arc::new(SafetyLayer::new(&SafetyConfig {
             max_output_length: 100_000,
@@ -514,12 +541,12 @@ impl TestHarnessBuilder {
             document_extraction: None,
         };
 
-        TestHarness {
+        Ok(TestHarness {
             deps,
             db,
             channel,
             _temp_dir: temp_dir,
-        }
+        })
     }
 }
 
@@ -533,12 +560,18 @@ impl Default for TestHarnessBuilder {
 mod tests {
     //! Unit tests for the test harness builder defaults.
 
+    #[cfg(all(feature = "libsql", feature = "test-helpers"))]
+    use anyhow::Context as _;
+
     use super::*;
 
     #[cfg(all(feature = "libsql", feature = "test-helpers"))]
     #[tokio::test]
     async fn test_harness_builds_with_defaults() {
-        let harness = TestHarnessBuilder::new().build().await;
+        let harness = TestHarnessBuilder::new()
+            .build()
+            .await
+            .expect("test harness should build");
         assert!(harness.deps.store.is_some());
         assert_eq!(harness.deps.llm.model_name(), "stub-model");
     }
@@ -547,14 +580,21 @@ mod tests {
     #[tokio::test]
     async fn test_harness_custom_llm() {
         let custom_llm = Arc::new(StubLlm::new("custom response").with_model_name("my-model"));
-        let harness = TestHarnessBuilder::new().with_llm(custom_llm).build().await;
+        let harness = TestHarnessBuilder::new()
+            .with_llm(custom_llm)
+            .build()
+            .await
+            .expect("test harness should build");
         assert_eq!(harness.deps.llm.model_name(), "my-model");
     }
 
     #[cfg(all(feature = "libsql", feature = "test-helpers"))]
     #[tokio::test]
     async fn test_harness_db_works() {
-        let harness = TestHarnessBuilder::new().build().await;
+        let harness = TestHarnessBuilder::new()
+            .build()
+            .await
+            .expect("test harness should build");
 
         let id = harness
             .db
@@ -569,7 +609,10 @@ mod tests {
     #[cfg(all(feature = "libsql", feature = "test-helpers"))]
     #[tokio::test]
     async fn test_conversation_message_round_trip() {
-        let harness = TestHarnessBuilder::new().build().await;
+        let harness = TestHarnessBuilder::new()
+            .build()
+            .await
+            .expect("test harness should build");
         let db = &harness.db;
 
         let conv_id = db
@@ -616,7 +659,10 @@ mod tests {
     #[cfg(all(feature = "libsql", feature = "test-helpers"))]
     #[tokio::test]
     async fn test_conversation_metadata_persistence() {
-        let harness = TestHarnessBuilder::new().build().await;
+        let harness = TestHarnessBuilder::new()
+            .build()
+            .await
+            .expect("test harness should build");
         let db = &harness.db;
 
         let conv_id = db
@@ -668,7 +714,10 @@ mod tests {
     #[cfg(all(feature = "libsql", feature = "test-helpers"))]
     #[tokio::test]
     async fn test_conversation_belongs_to_user() {
-        let harness = TestHarnessBuilder::new().build().await;
+        let harness = TestHarnessBuilder::new()
+            .build()
+            .await
+            .expect("test harness should build");
         let db = &harness.db;
 
         let conv_id = db
@@ -694,7 +743,10 @@ mod tests {
     #[cfg(all(feature = "libsql", feature = "test-helpers"))]
     #[tokio::test]
     async fn test_ensure_conversation_idempotent() {
-        let harness = TestHarnessBuilder::new().build().await;
+        let harness = TestHarnessBuilder::new()
+            .build()
+            .await
+            .expect("test harness should build");
         let db = &harness.db;
 
         let conv_id = uuid::Uuid::new_v4();
@@ -738,7 +790,10 @@ mod tests {
     #[cfg(all(feature = "libsql", feature = "test-helpers"))]
     #[tokio::test]
     async fn test_paginated_messages() {
-        let harness = TestHarnessBuilder::new().build().await;
+        let harness = TestHarnessBuilder::new()
+            .build()
+            .await
+            .expect("test harness should build");
         let db = &harness.db;
 
         let conv_id = db
@@ -780,7 +835,10 @@ mod tests {
     #[cfg(all(feature = "libsql", feature = "test-helpers"))]
     #[tokio::test]
     async fn test_conversations_with_preview() {
-        let harness = TestHarnessBuilder::new().build().await;
+        let harness = TestHarnessBuilder::new()
+            .build()
+            .await
+            .expect("test harness should build");
         let db = &harness.db;
 
         // Create two conversations for the same user.
@@ -818,7 +876,10 @@ mod tests {
     async fn test_job_action_persistence() {
         use crate::context::{ActionRecord, JobContext, JobState};
 
-        let harness = TestHarnessBuilder::new().build().await;
+        let harness = TestHarnessBuilder::new()
+            .build()
+            .await
+            .expect("test harness should build");
         let db = &harness.db;
 
         let ctx = JobContext::with_user("user1", "Do something", "test task");
@@ -928,7 +989,11 @@ mod tests {
     #[cfg(all(feature = "libsql", feature = "test-helpers"))]
     #[tokio::test]
     async fn test_harness_with_channel() {
-        let harness = TestHarnessBuilder::new().with_stub_channel().build().await;
+        let harness = TestHarnessBuilder::new()
+            .with_stub_channel()
+            .build()
+            .await
+            .expect("test harness should build");
 
         let (sender, channel_manager) =
             harness.channel.as_ref().expect("channel should be present");
@@ -947,7 +1012,10 @@ mod tests {
     #[cfg(all(feature = "libsql", feature = "test-helpers"))]
     #[tokio::test]
     async fn test_tool_failure_tracking() {
-        let harness = TestHarnessBuilder::new().build().await;
+        let harness = TestHarnessBuilder::new()
+            .build()
+            .await
+            .expect("test harness should build");
         let db = &harness.db;
 
         // Record some failures
@@ -974,7 +1042,7 @@ mod tests {
     }
 
     #[cfg(all(feature = "libsql", feature = "test-helpers"))]
-    async fn create_routine_fixture(db: &Arc<dyn Database>) -> uuid::Uuid {
+    async fn create_routine_fixture(db: &Arc<dyn Database>) -> Result<uuid::Uuid> {
         use crate::agent::routine::{
             NotifyConfig, Routine, RoutineAction, RoutineGuardrails, Trigger,
         };
@@ -1016,14 +1084,16 @@ mod tests {
             updated_at: chrono::Utc::now(),
         };
 
-        db.create_routine(&routine).await.expect("create routine");
+        db.create_routine(&routine)
+            .await
+            .context("create routine")?;
 
         // Get by ID
         let fetched = db
             .get_routine(routine_id)
             .await
-            .expect("get routine")
-            .expect("should exist");
+            .context("get routine")?
+            .context("should exist")?;
         assert_eq!(fetched.name, "test-routine");
         assert!(fetched.enabled);
 
@@ -1031,37 +1101,42 @@ mod tests {
         let by_name = db
             .get_routine_by_name("user1", "test-routine")
             .await
-            .expect("get by name")
-            .expect("should exist");
+            .context("get by name")?
+            .context("should exist")?;
         assert_eq!(by_name.id, routine_id);
 
         // List routines for user
-        let list = db.list_routines("user1").await.expect("list routines");
+        let list = db.list_routines("user1").await.context("list routines")?;
         assert_eq!(list.len(), 1);
 
         // List all routines
-        let all = db.list_all_routines().await.expect("list all");
+        let all = db.list_all_routines().await.context("list all")?;
         assert!(!all.is_empty());
 
         // Update routine (disable + change description)
         let mut updated = fetched;
         updated.enabled = false;
         updated.description = "Updated description".to_string();
-        db.update_routine(&updated).await.expect("update routine");
+        db.update_routine(&updated)
+            .await
+            .context("update routine")?;
 
         let re_fetched = db
             .get_routine(routine_id)
             .await
-            .expect("get")
-            .expect("exists");
+            .context("get")?
+            .context("exists")?;
         assert!(!re_fetched.enabled);
         assert_eq!(re_fetched.description, "Updated description");
 
-        routine_id
+        Ok(routine_id)
     }
 
     #[cfg(all(feature = "libsql", feature = "test-helpers"))]
-    async fn start_routine_run(db: &Arc<dyn Database>, routine_id: uuid::Uuid) -> uuid::Uuid {
+    async fn start_routine_run(
+        db: &Arc<dyn Database>,
+        routine_id: uuid::Uuid,
+    ) -> Result<uuid::Uuid> {
         use crate::agent::routine::{RoutineRun, RunStatus};
 
         let run_id = uuid::Uuid::new_v4();
@@ -1078,21 +1153,21 @@ mod tests {
             job_id: None,
             created_at: chrono::Utc::now(),
         };
-        db.create_routine_run(&run).await.expect("create run");
+        db.create_routine_run(&run).await.context("create run")?;
 
         // List runs
         let runs = db
             .list_routine_runs(routine_id, 10)
             .await
-            .expect("list runs");
+            .context("list runs")?;
         assert_eq!(runs.len(), 1);
         assert!(matches!(runs[0].status, RunStatus::Running));
 
-        run_id
+        Ok(run_id)
     }
 
     #[cfg(all(feature = "libsql", feature = "test-helpers"))]
-    async fn complete_routine_run_ok(db: &Arc<dyn Database>, run_id: uuid::Uuid) {
+    async fn complete_routine_run_ok(db: &Arc<dyn Database>, run_id: uuid::Uuid) -> Result<()> {
         use crate::agent::routine::RunStatus;
 
         db.complete_routine_run(RoutineRunCompletion {
@@ -1102,44 +1177,70 @@ mod tests {
             tokens_used: Some(150),
         })
         .await
-        .expect("complete run");
+        .context("complete run")?;
+        Ok(())
     }
 
     #[cfg(all(feature = "libsql", feature = "test-helpers"))]
-    async fn assert_history_len(db: &Arc<dyn Database>, routine_id: uuid::Uuid, expected: usize) {
+    async fn assert_history_len(
+        db: &Arc<dyn Database>,
+        routine_id: uuid::Uuid,
+        expected: usize,
+    ) -> Result<()> {
         use crate::agent::routine::RunStatus;
 
         let runs = db
             .list_routine_runs(routine_id, 10)
             .await
-            .expect("list runs after complete");
+            .context("list runs after complete")?;
         assert_eq!(runs.len(), expected);
         if expected > 0 {
             assert!(matches!(runs[0].status, RunStatus::Ok));
         }
+        Ok(())
     }
 
     #[cfg(all(feature = "libsql", feature = "test-helpers"))]
-    async fn delete_routine_and_assert_absent(db: &Arc<dyn Database>, routine_id: uuid::Uuid) {
-        let deleted = db.delete_routine(routine_id).await.expect("delete");
+    async fn delete_routine_and_assert_absent(
+        db: &Arc<dyn Database>,
+        routine_id: uuid::Uuid,
+    ) -> Result<()> {
+        let deleted = db.delete_routine(routine_id).await.context("delete")?;
         assert!(deleted);
 
         // Delete non-existent
-        let deleted = db.delete_routine(routine_id).await.expect("delete again");
+        let deleted = db
+            .delete_routine(routine_id)
+            .await
+            .context("delete again")?;
         assert!(!deleted);
+        Ok(())
     }
 
     #[cfg(all(feature = "libsql", feature = "test-helpers"))]
     #[tokio::test]
     async fn test_routine_crud() {
-        let harness = TestHarnessBuilder::new().build().await;
+        let harness = TestHarnessBuilder::new()
+            .build()
+            .await
+            .expect("test harness should build");
         let db = &harness.db;
 
-        let routine_id = create_routine_fixture(db).await;
-        let run_id = start_routine_run(db, routine_id).await;
-        complete_routine_run_ok(db, run_id).await;
-        assert_history_len(db, routine_id, 1).await;
-        delete_routine_and_assert_absent(db, routine_id).await;
+        let routine_id = create_routine_fixture(db)
+            .await
+            .expect("create routine fixture");
+        let run_id = start_routine_run(db, routine_id)
+            .await
+            .expect("start routine run");
+        complete_routine_run_ok(db, run_id)
+            .await
+            .expect("complete routine run");
+        assert_history_len(db, routine_id, 1)
+            .await
+            .expect("assert history length");
+        delete_routine_and_assert_absent(db, routine_id)
+            .await
+            .expect("delete routine");
     }
 
     #[cfg(all(feature = "libsql", feature = "test-helpers"))]
@@ -1149,7 +1250,10 @@ mod tests {
             NotifyConfig, Routine, RoutineAction, RoutineGuardrails, Trigger,
         };
 
-        let harness = TestHarnessBuilder::new().build().await;
+        let harness = TestHarnessBuilder::new()
+            .build()
+            .await
+            .expect("test harness should build");
         let db = &harness.db;
 
         let routine_id = uuid::Uuid::new_v4();
@@ -1218,7 +1322,10 @@ mod tests {
     async fn test_llm_call_recording() {
         use crate::history::LlmCallRecord;
 
-        let harness = TestHarnessBuilder::new().build().await;
+        let harness = TestHarnessBuilder::new()
+            .build()
+            .await
+            .expect("test harness should build");
         let db = &harness.db;
 
         let record = LlmCallRecord {
@@ -1241,7 +1348,10 @@ mod tests {
     async fn test_sandbox_job_lifecycle() {
         use crate::history::SandboxJobRecord;
 
-        let harness = TestHarnessBuilder::new().build().await;
+        let harness = TestHarnessBuilder::new()
+            .build()
+            .await
+            .expect("test harness should build");
         let db = &harness.db;
 
         let job_id = uuid::Uuid::new_v4();
@@ -1336,7 +1446,10 @@ mod tests {
     async fn test_sandbox_job_mode() {
         use crate::history::SandboxJobRecord;
 
-        let harness = TestHarnessBuilder::new().build().await;
+        let harness = TestHarnessBuilder::new()
+            .build()
+            .await
+            .expect("test harness should build");
         let db = &harness.db;
 
         let job_id = uuid::Uuid::new_v4();
@@ -1377,7 +1490,10 @@ mod tests {
     async fn test_job_events() {
         use crate::history::SandboxJobRecord;
 
-        let harness = TestHarnessBuilder::new().build().await;
+        let harness = TestHarnessBuilder::new()
+            .build()
+            .await
+            .expect("test harness should build");
         let db = &harness.db;
 
         // Create a sandbox job first (foreign key)
@@ -1448,7 +1564,10 @@ mod tests {
     #[cfg(all(feature = "libsql", feature = "test-helpers"))]
     #[tokio::test]
     async fn test_estimation_snapshot_round_trip() {
-        let harness = TestHarnessBuilder::new().build().await;
+        let harness = TestHarnessBuilder::new()
+            .build()
+            .await
+            .expect("test harness should build");
         let db = &harness.db;
 
         // Create a job first
