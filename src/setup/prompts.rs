@@ -58,8 +58,7 @@ pub fn select_one(prompt: &str, options: &[&str]) -> io::Result<usize> {
 
         // Parse number
         if let Ok(num) = input.parse::<usize>()
-            && num >= 1
-            && num <= options.len()
+            && (1..=options.len()).contains(&num)
         {
             return Ok(num - 1);
         }
@@ -111,18 +110,7 @@ pub fn select_many(prompt: &str, options: &[(&str, bool)]) -> io::Result<Vec<usi
             )?;
             writeln!(stdout, "\r")?;
 
-            for (i, (label, _)) in options.iter().enumerate() {
-                let checkbox = if selected[i] { "[x]" } else { "[ ]" };
-                let prefix = if i == cursor_pos { ">" } else { " " };
-
-                if i == cursor_pos {
-                    execute!(stdout, SetForegroundColor(Color::Cyan))?;
-                    writeln!(stdout, "  {} {} {}\r", prefix, checkbox, label)?;
-                    execute!(stdout, ResetColor)?;
-                } else {
-                    writeln!(stdout, "  {} {} {}\r", prefix, checkbox, label)?;
-                }
-            }
+            render_select_many_options(&mut stdout, options, &selected, cursor_pos)?;
 
             stdout.flush()?;
 
@@ -131,24 +119,18 @@ pub fn select_many(prompt: &str, options: &[(&str, bool)]) -> io::Result<Vec<usi
                 code, modifiers, ..
             }) = event::read()?
             {
-                match code {
-                    KeyCode::Up => {
-                        cursor_pos = cursor_pos.saturating_sub(1);
-                    }
-                    KeyCode::Down if cursor_pos < options.len() - 1 => {
-                        cursor_pos += 1;
-                    }
-                    KeyCode::Down => {}
-                    KeyCode::Char(' ') => {
-                        selected[cursor_pos] = !selected[cursor_pos];
-                    }
-                    KeyCode::Enter => {
-                        break;
-                    }
-                    KeyCode::Char('c') if modifiers.contains(KeyModifiers::CONTROL) => {
+                match apply_select_many_key(
+                    code,
+                    modifiers,
+                    options.len(),
+                    &mut selected,
+                    &mut cursor_pos,
+                ) {
+                    SelectManyAction::Confirm => break,
+                    SelectManyAction::Interrupt => {
                         return Err(io::Error::new(io::ErrorKind::Interrupted, "Ctrl-C"));
                     }
-                    _ => {}
+                    SelectManyAction::Continue => {}
                 }
 
                 // Move cursor up to redraw
@@ -174,6 +156,64 @@ pub fn select_many(prompt: &str, options: &[(&str, bool)]) -> io::Result<Vec<usi
         .enumerate()
         .filter_map(|(i, &s)| if s { Some(i) } else { None })
         .collect())
+}
+
+/// Outcome of a single key press in the multi-select prompt.
+enum SelectManyAction {
+    Continue,
+    Confirm,
+    Interrupt,
+}
+
+/// Render the multi-select option list, highlighting the cursor row.
+fn render_select_many_options<W: Write>(
+    stdout: &mut W,
+    options: &[(&str, bool)],
+    selected: &[bool],
+    cursor_pos: usize,
+) -> io::Result<()> {
+    for (i, (label, _)) in options.iter().enumerate() {
+        let checkbox = if selected[i] { "[x]" } else { "[ ]" };
+        let prefix = if i == cursor_pos { ">" } else { " " };
+
+        if i == cursor_pos {
+            execute!(stdout, SetForegroundColor(Color::Cyan))?;
+            writeln!(stdout, "  {} {} {}\r", prefix, checkbox, label)?;
+            execute!(stdout, ResetColor)?;
+        } else {
+            writeln!(stdout, "  {} {} {}\r", prefix, checkbox, label)?;
+        }
+    }
+    Ok(())
+}
+
+/// Apply a key press to the multi-select state, reporting how to proceed.
+fn apply_select_many_key(
+    code: KeyCode,
+    modifiers: KeyModifiers,
+    option_count: usize,
+    selected: &mut [bool],
+    cursor_pos: &mut usize,
+) -> SelectManyAction {
+    match code {
+        KeyCode::Up => {
+            *cursor_pos = cursor_pos.saturating_sub(1);
+            SelectManyAction::Continue
+        }
+        KeyCode::Down if *cursor_pos < option_count - 1 => {
+            *cursor_pos += 1;
+            SelectManyAction::Continue
+        }
+        KeyCode::Char(' ') => {
+            selected[*cursor_pos] = !selected[*cursor_pos];
+            SelectManyAction::Continue
+        }
+        KeyCode::Enter => SelectManyAction::Confirm,
+        KeyCode::Char('c') if modifiers.contains(KeyModifiers::CONTROL) => {
+            SelectManyAction::Interrupt
+        }
+        _ => SelectManyAction::Continue,
+    }
 }
 
 /// Password/secret input with hidden characters.

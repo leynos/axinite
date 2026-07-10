@@ -863,17 +863,11 @@ async fn validate_cloudflare_token_live(token: &str) -> Result<(), String> {
     let result = tokio::time::timeout(std::time::Duration::from_secs(10), async {
         while let Ok(Some(line)) = reader.next_line().await {
             // A successful connection logs a URL like "https://xxx.cfargotunnel.com"
-            if line.contains("https://")
-                && (line.contains("cfargotunnel.com") || line.contains("trycloudflare.com"))
-            {
+            if is_tunnel_connected_line(&line) {
                 return Ok(());
             }
             // Error indicators that appear before a URL mean the token is bad
-            let lower = line.to_lowercase();
-            if lower.starts_with("err")
-                || lower.contains("failed to unmarshal")
-                || lower.contains("unauthorized")
-            {
+            if is_tunnel_error_line(&line.to_lowercase()) {
                 return Err(line);
             }
         }
@@ -892,6 +886,22 @@ async fn validate_cloudflare_token_live(token: &str) -> Result<(), String> {
             Ok(())
         }
     }
+}
+
+/// Return `true` when a `cloudflared` stderr line reports a tunnel URL,
+/// which signals a successful connection.
+fn is_tunnel_connected_line(line: &str) -> bool {
+    let has_tunnel_domain = line.contains("cfargotunnel.com") || line.contains("trycloudflare.com");
+    line.contains("https://") && has_tunnel_domain
+}
+
+/// Return `true` when a lowercased `cloudflared` stderr line carries an
+/// error indicator that means the token is bad.
+fn is_tunnel_error_line(lower: &str) -> bool {
+    if lower.starts_with("err") {
+        return true;
+    }
+    lower.contains("failed to unmarshal") || lower.contains("unauthorized")
 }
 
 /// Validate that a Cloudflare tunnel token has the expected format.

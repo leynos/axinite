@@ -259,8 +259,7 @@ fn resolve_timezone_for_output(
 /// primary source. Falls back to metadata fields for backward compatibility.
 fn context_timezone(ctx: &JobContext) -> Result<Option<(Tz, String)>, ToolError> {
     // Primary: use the dedicated user_timezone field from JobContext
-    if ctx.user_timezone != "UTC"
-        && !ctx.user_timezone.is_empty()
+    if has_explicit_user_timezone(ctx)
         && let Some(tz) = crate::timezone::parse_timezone(&ctx.user_timezone)
     {
         return Ok(Some((tz, tz.to_string())));
@@ -280,6 +279,11 @@ fn context_timezone(ctx: &JobContext) -> Result<Option<(Tz, String)>, ToolError>
         }
         None => Ok(None),
     }
+}
+
+/// Return `true` when the context carries an explicit, non-default user timezone.
+fn has_explicit_user_timezone(ctx: &JobContext) -> bool {
+    ctx.user_timezone != "UTC" && !ctx.user_timezone.is_empty()
 }
 
 fn optional_timezone(params: &serde_json::Value, keys: &[&str]) -> Result<Option<Tz>, ToolError> {

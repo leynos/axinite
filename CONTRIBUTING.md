@@ -15,6 +15,7 @@ This installs the Rust toolchain, WASM targets, git hooks, and runs initial chec
 ```bash
 cargo fmt                                                    # format
 cargo clippy --all --benches --tests --examples --all-features  # lint (zero warnings)
+make lint-whitaker                                           # Whitaker Dylint suite
 cargo test                                                   # unit tests
 cargo test --features integration                            # + PostgreSQL tests
 ```

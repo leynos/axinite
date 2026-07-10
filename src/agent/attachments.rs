@@ -73,69 +73,85 @@ fn format_attachment(index: usize, att: &IncomingAttachment) -> String {
     let mime = escape_xml_attr(&att.mime_type);
 
     match &att.kind {
-        AttachmentKind::Audio => {
-            let duration_attr = att
-                .duration_secs
-                .map(|d| format!(" duration=\"{d}s\""))
-                .unwrap_or_default();
-
-            let body = match &att.extracted_text {
-                Some(text) => format!("Transcript: {}", escape_xml_text(text)),
-                None => "Audio transcript unavailable.".to_string(),
-            };
-
-            format!(
-                "<attachment index=\"{index}\" type=\"audio\" filename=\"{filename}\"{duration_attr}>\n\
-                 {body}\n\
-                 </attachment>"
-            )
-        }
-        AttachmentKind::Image => {
-            let size_attr = att
-                .size_bytes
-                .map(|s| format!(" size=\"{}\"", format_size(s)))
-                .unwrap_or_default();
-
-            let body = if att.data.is_empty() {
-                "[Image attached — visual content not available in this conversation]"
-            } else {
-                "[Image attached — sent as visual content]"
-            };
-
-            format!(
-                "<attachment index=\"{index}\" type=\"image\" filename=\"{filename}\" mime=\"{mime}\"{size_attr}>\n\
-                 {body}\n\
-                 </attachment>"
-            )
-        }
-        AttachmentKind::Document => {
-            let body: String = match &att.extracted_text {
-                Some(text) => escape_xml_text(text),
-                None => {
-                    let size_info = att
-                        .size_bytes
-                        .map(|s| format!(" size=\"{}\"", format_size(s)))
-                        .unwrap_or_default();
-                    return format!(
-                        "<attachment index=\"{index}\" type=\"document\" filename=\"{filename}\" mime=\"{mime}\"{size_info}>\n\
-                         [Document attached — text extraction unavailable]\n\
-                         </attachment>"
-                    );
-                }
-            };
-
-            let size_attr = att
-                .size_bytes
-                .map(|s| format!(" size=\"{}\"", format_size(s)))
-                .unwrap_or_default();
-
-            format!(
-                "<attachment index=\"{index}\" type=\"document\" filename=\"{filename}\" mime=\"{mime}\"{size_attr}>\n\
-                 {body}\n\
-                 </attachment>"
-            )
-        }
+        AttachmentKind::Audio => format_audio_attachment(index, att, &filename),
+        AttachmentKind::Image => format_image_attachment(index, att, &filename, &mime),
+        AttachmentKind::Document => format_document_attachment(index, att, &filename, &mime),
     }
+}
+
+/// Render the optional ` size="…"` XML attribute for an attachment.
+fn size_attr(att: &IncomingAttachment) -> String {
+    att.size_bytes
+        .map(|s| format!(" size=\"{}\"", format_size(s)))
+        .unwrap_or_default()
+}
+
+/// Render an audio attachment element, embedding the transcript when available.
+fn format_audio_attachment(index: usize, att: &IncomingAttachment, filename: &str) -> String {
+    let duration_attr = att
+        .duration_secs
+        .map(|d| format!(" duration=\"{d}s\""))
+        .unwrap_or_default();
+
+    let body = match &att.extracted_text {
+        Some(text) => format!("Transcript: {}", escape_xml_text(text)),
+        None => "Audio transcript unavailable.".to_string(),
+    };
+
+    format!(
+        "<attachment index=\"{index}\" type=\"audio\" filename=\"{filename}\"{duration_attr}>\n\
+         {body}\n\
+         </attachment>"
+    )
+}
+
+/// Render an image attachment element, noting whether visual data accompanies it.
+fn format_image_attachment(
+    index: usize,
+    att: &IncomingAttachment,
+    filename: &str,
+    mime: &str,
+) -> String {
+    let size_attr = size_attr(att);
+
+    let body = if att.data.is_empty() {
+        "[Image attached — visual content not available in this conversation]"
+    } else {
+        "[Image attached — sent as visual content]"
+    };
+
+    format!(
+        "<attachment index=\"{index}\" type=\"image\" filename=\"{filename}\" mime=\"{mime}\"{size_attr}>\n\
+         {body}\n\
+         </attachment>"
+    )
+}
+
+/// Render a document attachment element, embedding extracted text when available.
+fn format_document_attachment(
+    index: usize,
+    att: &IncomingAttachment,
+    filename: &str,
+    mime: &str,
+) -> String {
+    let size_attr = size_attr(att);
+
+    let body: String = match &att.extracted_text {
+        Some(text) => escape_xml_text(text),
+        None => {
+            return format!(
+                "<attachment index=\"{index}\" type=\"document\" filename=\"{filename}\" mime=\"{mime}\"{size_attr}>\n\
+                 [Document attached — text extraction unavailable]\n\
+                 </attachment>"
+            );
+        }
+    };
+
+    format!(
+        "<attachment index=\"{index}\" type=\"document\" filename=\"{filename}\" mime=\"{mime}\"{size_attr}>\n\
+         {body}\n\
+         </attachment>"
+    )
 }
 
 fn format_size(bytes: u64) -> String {

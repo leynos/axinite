@@ -228,10 +228,17 @@ fn normalize_path(path: &str) -> Result<String, String> {
     let mut result = String::with_capacity(path.len().max(1));
     result.push('/');
     result.push_str(&segments.join("/"));
-    if path.len() > 1 && path.ends_with('/') && !result.ends_with('/') {
+    if needs_trailing_slash(path, &result) {
         result.push('/');
     }
     Ok(result)
+}
+
+/// Whether the normalised path must have the original's trailing slash
+/// restored (the original had one and normalisation dropped it).
+fn needs_trailing_slash(path: &str, result: &str) -> bool {
+    let had_trailing_slash = path.len() > 1 && path.ends_with('/');
+    had_trailing_slash && !result.ends_with('/')
 }
 
 fn has_valid_percent_encoding(segment: &str) -> bool {
@@ -239,10 +246,7 @@ fn has_valid_percent_encoding(segment: &str) -> bool {
     let mut i = 0;
     while i < bytes.len() {
         if bytes[i] == b'%' {
-            if i + 2 >= bytes.len()
-                || !bytes[i + 1].is_ascii_hexdigit()
-                || !bytes[i + 2].is_ascii_hexdigit()
-            {
+            if !is_valid_percent_escape(bytes, i) {
                 return false;
             }
             i += 3;
@@ -251,6 +255,14 @@ fn has_valid_percent_encoding(segment: &str) -> bool {
         }
     }
     true
+}
+
+/// Whether the `%` at `i` is followed by two ASCII hexadecimal digits.
+fn is_valid_percent_escape(bytes: &[u8], i: usize) -> bool {
+    if i + 2 >= bytes.len() {
+        return false;
+    }
+    bytes[i + 1].is_ascii_hexdigit() && bytes[i + 2].is_ascii_hexdigit()
 }
 
 #[cfg(test)]

@@ -270,32 +270,43 @@ pub async fn start_managed_tunnel(
         .channels
         .gateway
         .as_ref()
-        .map(|g| g.host.as_str())
-        .unwrap_or("127.0.0.1");
+        .map(|g| g.host.clone())
+        .unwrap_or_else(|| "127.0.0.1".to_string());
 
     match create_tunnel(provider_config) {
-        Ok(Some(tunnel)) => {
-            tracing::info!(
-                "Starting {} tunnel on {}:{}...",
-                tunnel.name(),
-                gateway_host,
-                gateway_port
-            );
-            match tunnel.start(gateway_host, gateway_port).await {
-                Ok(url) => {
-                    tracing::info!("Tunnel started: {}", url);
-                    config.tunnel.public_url = Some(url);
-                    (config, Some(tunnel))
-                }
-                Err(e) => {
-                    tracing::error!("Failed to start tunnel: {}", e);
-                    (config, None)
-                }
-            }
-        }
+        Ok(Some(tunnel)) => activate_tunnel(config, tunnel, &gateway_host, gateway_port).await,
         Ok(None) => (config, None),
         Err(e) => {
             tracing::error!("Failed to create tunnel: {}", e);
+            (config, None)
+        }
+    }
+}
+
+/// Start a freshly created tunnel and record its public URL on the config.
+///
+/// A startup failure is logged and tolerated: the gateway continues without
+/// external exposure rather than aborting.
+async fn activate_tunnel(
+    mut config: crate::config::Config,
+    tunnel: Box<dyn Tunnel>,
+    gateway_host: &str,
+    gateway_port: u16,
+) -> (crate::config::Config, Option<Box<dyn Tunnel>>) {
+    tracing::info!(
+        "Starting {} tunnel on {}:{}...",
+        tunnel.name(),
+        gateway_host,
+        gateway_port
+    );
+    match tunnel.start(gateway_host, gateway_port).await {
+        Ok(url) => {
+            tracing::info!("Tunnel started: {}", url);
+            config.tunnel.public_url = Some(url);
+            (config, Some(tunnel))
+        }
+        Err(e) => {
+            tracing::error!("Failed to start tunnel: {}", e);
             (config, None)
         }
     }

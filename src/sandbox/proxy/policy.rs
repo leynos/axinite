@@ -170,16 +170,23 @@ fn host_matches_pattern(host: &str, pattern: &str) -> bool {
 
     // Support wildcard: *.example.com matches sub.example.com
     if let Some(suffix) = pattern_lower.strip_prefix("*.")
-        && host.ends_with(suffix)
-        && host.len() > suffix.len()
+        && wildcard_suffix_matches(host, suffix)
     {
-        let prefix = &host[..host.len() - suffix.len()];
-        if prefix.ends_with('.') || prefix.is_empty() {
-            return true;
-        }
+        return true;
     }
 
     false
+}
+
+/// Whether `host` ends with the wildcard `suffix` at a label boundary
+/// (e.g. `sub.example.com` matches suffix `example.com`, whereas
+/// `notexample.com` does not).
+fn wildcard_suffix_matches(host: &str, suffix: &str) -> bool {
+    if !host.ends_with(suffix) || host.len() <= suffix.len() {
+        return false;
+    }
+    let prefix = &host[..host.len() - suffix.len()];
+    prefix.ends_with('.') || prefix.is_empty()
 }
 
 /// A policy decider that allows everything (use with FullAccess policy).

@@ -189,9 +189,8 @@ async fn register_channel(
         .await;
 
     // Register Ed25519 signature key if declared in capabilities.
-    if let Some(ref sig_key_name) = sig_key_secret_name
-        && let Some(secrets) = secrets_store
-        && let Ok(key_secret) = secrets.get_decrypted("default", sig_key_name).await
+    if let Some(key_secret) =
+        resolve_declared_secret(secrets_store, sig_key_secret_name.as_deref()).await
     {
         match wasm_router
             .register_signature_key(&channel_name, key_secret.expose())
@@ -207,9 +206,7 @@ async fn register_channel(
     }
 
     // Register HMAC signing secret if declared in capabilities.
-    if let Some(ref hmac_secret_name) = hmac_secret_name
-        && let Some(secrets) = secrets_store
-        && let Ok(secret) = secrets.get_decrypted("default", hmac_secret_name).await
+    if let Some(secret) = resolve_declared_secret(secrets_store, hmac_secret_name.as_deref()).await
     {
         wasm_router
             .register_hmac_secret(&channel_name, secret.expose())
@@ -246,6 +243,19 @@ async fn register_channel(
     }
 
     (channel_name, Box::new(SharedWasmChannel::new(channel_arc)))
+}
+
+/// Fetch a decrypted secret when both a secret name and a store are available.
+///
+/// Returns `None` when the channel declares no secret, no store is configured,
+/// or decryption fails; callers treat all three cases as "nothing to register".
+async fn resolve_declared_secret(
+    secrets_store: &Option<Arc<dyn SecretsStore + Send + Sync>>,
+    secret_name: Option<&str>,
+) -> Option<crate::secrets::DecryptedSecret> {
+    let name = secret_name?;
+    let secrets = secrets_store.as_ref()?;
+    secrets.get_decrypted("default", name).await.ok()
 }
 
 /// Inject credentials for a channel based on naming convention.

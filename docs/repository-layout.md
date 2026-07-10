@@ -14,6 +14,7 @@ Listing 1. Simplified repository tree.
 ├── .claude/
 ├── .github/
 ├── channels-src/
+├── crates/
 ├── deploy/
 ├── docker/
 ├── docs/
@@ -48,6 +49,7 @@ Table 1. Major repository paths and their current responsibilities.
 | `.claude/` | Local automation prompts and rules used by assistant-driven workflows | Contributor-facing only when working on those automation flows |
 | `.github/` | GitHub Actions workflows, repository automation, and pull request templates | Workflow changes often need YAML-aware review because they affect release and CI behaviour |
 | `channels-src/` | Standalone source crates for WebAssembly (WASM) channel integrations such as Telegram, Slack, Discord, and WhatsApp | These crates are intentionally excluded from the root workspace build and are packaged as runtime-loadable channel artefacts |
+| `crates/` | Internal workspace crates, currently the `ambient-fs` boundary crate for deliberately-ambient filesystem access | Excluded from the Whitaker `no_std_fs_operations` lint via `dylint.toml`; see `crates/ambient-fs/src/lib.rs` for the rationale |
 | `deploy/` | Service-unit examples, deployment environment templates, and setup scripts | Intended for operational setup rather than local development logic |
 | `docker/` and `Dockerfile*` | Container build material for host, test, and worker runtimes | The worker image and sandbox image are part of the execution-isolation story, not just packaging |
 | `docs/` | Long-lived maintainer and design documentation, including plans and RFCs | `plans/` and `rfcs/` are durable reference subtrees rather than scratch notes |

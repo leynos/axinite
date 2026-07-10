@@ -247,6 +247,19 @@ impl NearAiChatProvider {
         }
     }
 
+    /// Log the serialized request body at DEBUG level.
+    ///
+    /// Checks the level first so serialization is skipped when DEBUG
+    /// logging is disabled.
+    fn debug_log_request_body<T: Serialize>(body: &T) {
+        if !tracing::enabled!(tracing::Level::DEBUG) {
+            return;
+        }
+        if let Ok(json) = serde_json::to_string(body) {
+            tracing::debug!("NEAR AI Chat request body: {}", json);
+        }
+    }
+
     /// Inner request implementation (single attempt).
     async fn send_request_inner<T: Serialize, R: for<'de> Deserialize<'de>>(
         &self,
@@ -256,12 +269,7 @@ impl NearAiChatProvider {
         let url = Self::api_url_for_base(&self.api_base_url().await, "chat/completions");
 
         tracing::debug!("Sending request to NEAR AI Chat: {}", url);
-
-        if tracing::enabled!(tracing::Level::DEBUG)
-            && let Ok(json) = serde_json::to_string(body)
-        {
-            tracing::debug!("NEAR AI Chat request body: {}", json);
-        }
+        Self::debug_log_request_body(body);
 
         let response = self
             .client
@@ -991,6 +999,13 @@ fn flatten_tool_messages(messages: Vec<ChatCompletionMessage>) -> Vec<ChatComple
         .collect()
 }
 
+/// Whether an assistant message carries only tool calls, so its empty
+/// content should serialize as `null` rather than an empty string.
+fn is_tool_call_only_message(role: &str, has_tool_calls: bool, content: &str) -> bool {
+    let assistant_with_calls = role == "assistant" && has_tool_calls;
+    assistant_with_calls && content.is_empty()
+}
+
 impl From<ChatMessage> for ChatCompletionMessage {
     fn from(msg: ChatMessage) -> Self {
         let role = match msg.role {
@@ -1014,7 +1029,7 @@ impl From<ChatMessage> for ChatCompletionMessage {
                 .collect()
         });
 
-        let content = if role == "assistant" && tool_calls.is_some() && msg.content.is_empty() {
+        let content = if is_tool_call_only_message(role, tool_calls.is_some(), &msg.content) {
             None
         } else if !msg.content_parts.is_empty() {
             // Build multimodal content array: text + image parts

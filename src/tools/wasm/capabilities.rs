@@ -238,18 +238,26 @@ impl EndpointPattern {
 
         // Support wildcard: *.example.com matches sub.example.com
         if let Some(suffix) = self.host.strip_prefix("*.")
-            && url_host.ends_with(suffix)
-            && url_host.len() > suffix.len()
+            && wildcard_suffix_matches(url_host, suffix)
         {
-            // Ensure there's a dot before the suffix (or it's the whole thing)
-            let prefix = &url_host[..url_host.len() - suffix.len()];
-            if prefix.ends_with('.') || prefix.is_empty() {
-                return true;
-            }
+            return true;
         }
 
         false
     }
+}
+
+/// Check whether `url_host` matches a `*.`-pattern's `suffix`: the host must
+/// end with the suffix, be longer than it, and the preceding label boundary
+/// must be a dot (or the suffix must be the whole host).
+fn wildcard_suffix_matches(url_host: &str, suffix: &str) -> bool {
+    let is_proper_suffix = url_host.ends_with(suffix) && url_host.len() > suffix.len();
+    if !is_proper_suffix {
+        return false;
+    }
+    // Ensure there's a dot before the suffix (or it's the whole thing)
+    let prefix = &url_host[..url_host.len() - suffix.len()];
+    prefix.ends_with('.') || prefix.is_empty()
 }
 
 /// Tool invocation capability.

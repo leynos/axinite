@@ -307,46 +307,8 @@ impl RuleHook {
         }
 
         let timeout = timeout_from_ms(config.timeout_ms, &scoped_name)?;
-
-        let when_regex = match config.when_regex {
-            Some(pattern) => {
-                Some(
-                    Regex::new(&pattern).map_err(|e| HookBundleError::InvalidRegex {
-                        hook: scoped_name.clone(),
-                        pattern,
-                        reason: e.to_string(),
-                    })?,
-                )
-            }
-            None => None,
-        };
-
-        let mut replacements = Vec::with_capacity(config.replacements.len());
-        for replacement in config.replacements {
-            let compiled =
-                Regex::new(&replacement.pattern).map_err(|e| HookBundleError::InvalidRegex {
-                    hook: scoped_name.clone(),
-                    pattern: replacement.pattern.clone(),
-                    reason: e.to_string(),
-                })?;
-
-            replacements.push(CompiledReplacement {
-                regex: compiled,
-                replacement: replacement.replacement,
-            });
-        }
-
-        if when_regex.is_some()
-            && config.reject_reason.is_none()
-            && replacements.is_empty()
-            && config.prepend.as_deref().is_none()
-            && config.append.as_deref().is_none()
-        {
-            tracing::warn!(
-                hook = %scoped_name,
-                "Rule hook has a guard but no actions; it will always no-op"
-            );
-        }
+        let when_regex = compile_when_regex(config.when_regex, &scoped_name)?;
+        let replacements = compile_replacements(config.replacements, &scoped_name)?;
 
         let hook = Self {
             name: scoped_name,
@@ -360,8 +322,69 @@ impl RuleHook {
             append: config.append,
         };
 
+        if hook.is_inert_guard() {
+            tracing::warn!(
+                hook = %hook.name,
+                "Rule hook has a guard but no actions; it will always no-op"
+            );
+        }
+
         Ok((hook, config.priority.unwrap_or(DEFAULT_RULE_PRIORITY)))
     }
+
+    /// Whether this hook has a `when` guard but nothing it would do on match.
+    fn is_inert_guard(&self) -> bool {
+        self.when_regex.is_some() && !self.has_actions()
+    }
+
+    /// Whether the hook defines a rejection or any content rewrite action.
+    fn has_actions(&self) -> bool {
+        self.reject_reason.is_some() || self.rewrites_content()
+    }
+
+    /// Whether the hook replaces, prepends, or appends content.
+    fn rewrites_content(&self) -> bool {
+        let inserts = self.prepend.is_some() || self.append.is_some();
+        !self.replacements.is_empty() || inserts
+    }
+}
+
+/// Compile a rule hook's optional `when_regex` guard, naming `hook` on error.
+fn compile_when_regex(
+    pattern: Option<String>,
+    hook: &str,
+) -> Result<Option<Regex>, HookBundleError> {
+    match pattern {
+        Some(pattern) => Ok(Some(Regex::new(&pattern).map_err(|e| {
+            HookBundleError::InvalidRegex {
+                hook: hook.to_string(),
+                pattern,
+                reason: e.to_string(),
+            }
+        })?)),
+        None => Ok(None),
+    }
+}
+
+/// Compile a rule hook's replacement patterns in order, naming `hook` on error.
+fn compile_replacements(
+    raw: Vec<RegexReplacementConfig>,
+    hook: &str,
+) -> Result<Vec<CompiledReplacement>, HookBundleError> {
+    let mut replacements = Vec::with_capacity(raw.len());
+    for replacement in raw {
+        let compiled =
+            Regex::new(&replacement.pattern).map_err(|e| HookBundleError::InvalidRegex {
+                hook: hook.to_string(),
+                pattern: replacement.pattern.clone(),
+                reason: e.to_string(),
+            })?;
+        replacements.push(CompiledReplacement {
+            regex: compiled,
+            replacement: replacement.replacement,
+        });
+    }
+    Ok(replacements)
 }
 
 impl NativeHook for RuleHook {
@@ -779,12 +802,7 @@ fn is_forbidden_ip(ip: IpAddr) -> bool {
                 return is_forbidden_ipv4(mapped);
             }
 
-            if v6.is_loopback()
-                || v6.is_unspecified()
-                || v6.is_unique_local()
-                || v6.is_unicast_link_local()
-                || v6.is_multicast()
-            {
+            if is_local_scope_ipv6(v6) {
                 return true;
             }
 
@@ -795,15 +813,24 @@ fn is_forbidden_ip(ip: IpAddr) -> bool {
     }
 }
 
+/// Whether an IPv6 address is loopback, unspecified, or otherwise
+/// local in scope (unique-local, link-local, or multicast).
+fn is_local_scope_ipv6(v6: Ipv6Addr) -> bool {
+    let unbound = v6.is_loopback() || v6.is_unspecified();
+    unbound || is_link_or_multicast_ipv6(v6)
+}
+
+/// Whether an IPv6 address is unique-local, unicast link-local, or multicast.
+fn is_link_or_multicast_ipv6(v6: Ipv6Addr) -> bool {
+    let local = v6.is_unique_local() || v6.is_unicast_link_local();
+    local || v6.is_multicast()
+}
+
 fn ipv6_mapped_ipv4(v6: Ipv6Addr) -> Option<Ipv4Addr> {
     let segments = v6.segments();
-    if segments[0] == 0
-        && segments[1] == 0
-        && segments[2] == 0
-        && segments[3] == 0
-        && segments[4] == 0
-        && segments[5] == 0xffff
-    {
+    // An IPv4-mapped address is ::ffff:a.b.c.d — five zero segments
+    // followed by 0xffff.
+    if segments[..5] == [0u16; 5] && segments[5] == 0xffff {
         Some(Ipv4Addr::new(
             (segments[6] >> 8) as u8,
             segments[6] as u8,
@@ -815,15 +842,20 @@ fn ipv6_mapped_ipv4(v6: Ipv6Addr) -> Option<Ipv4Addr> {
     }
 }
 
+/// Whether an IPv4 address falls in a standard non-public class
+/// (private, loopback, link-local, unspecified, broadcast,
+/// documentation, or multicast).
+fn is_nonpublic_ipv4_class(v4: Ipv4Addr) -> bool {
+    let internal = v4.is_private() || v4.is_loopback();
+    let local = v4.is_link_local() || v4.is_unspecified();
+    let special = v4.is_broadcast() || v4.is_documentation();
+    let scoped = internal || local;
+    let reserved = special || v4.is_multicast();
+    scoped || reserved
+}
+
 fn is_forbidden_ipv4(v4: Ipv4Addr) -> bool {
-    if v4.is_private()
-        || v4.is_loopback()
-        || v4.is_link_local()
-        || v4.is_broadcast()
-        || v4.is_documentation()
-        || v4.is_unspecified()
-        || v4.is_multicast()
-    {
+    if is_nonpublic_ipv4_class(v4) {
         return true;
     }
 

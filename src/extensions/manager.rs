@@ -621,6 +621,12 @@ impl ExtensionManager {
         }
     }
 
+    /// Whether a listing filtered by `kind_filter` should include extensions
+    /// of `kind`.
+    fn kind_selected(kind_filter: Option<ExtensionKind>, kind: ExtensionKind) -> bool {
+        kind_filter.is_none() || kind_filter == Some(kind)
+    }
+
     /// List extensions with their status.
     ///
     /// When `include_available` is `true`, registry entries that are not yet
@@ -683,8 +689,7 @@ impl ExtensionManager {
         }
 
         // List WASM tools
-        if (kind_filter.is_none() || kind_filter == Some(ExtensionKind::WasmTool))
-            && self.wasm_tools_dir.exists()
+        if Self::kind_selected(kind_filter, ExtensionKind::WasmTool) && self.wasm_tools_dir.exists()
         {
             match discover_tools(&self.wasm_tools_dir).await {
                 Ok(tools) => {
@@ -734,7 +739,7 @@ impl ExtensionManager {
         }
 
         // List WASM channels
-        if (kind_filter.is_none() || kind_filter == Some(ExtensionKind::WasmChannel))
+        if Self::kind_selected(kind_filter, ExtensionKind::WasmChannel)
             && self.wasm_channels_dir.exists()
         {
             match crate::channels::wasm::discover_channels(&self.wasm_channels_dir).await {
@@ -977,22 +982,26 @@ impl ExtensionManager {
                     .await;
 
                 // Shut down the channel (check both runtime paths for WASM+relay and relay-only modes)
-                let mut shut_down = false;
-                if let Some(ref rt) = *self.channel_runtime.read().await
-                    && let Some(channel) = rt.channel_manager.get_channel(name).await
-                {
-                    let _ = channel.shutdown().await;
-                    shut_down = true;
-                }
-                if !shut_down
-                    && let Some(ref cm) = *self.relay_channel_manager.read().await
-                    && let Some(channel) = cm.get_channel(name).await
-                {
-                    let _ = channel.shutdown().await;
-                }
+                self.shutdown_relay_channel(name).await;
 
                 Ok(format!("Removed channel relay '{}'", name))
             }
+        }
+    }
+
+    /// Shut down a relay channel, preferring the WASM channel runtime and
+    /// falling back to the relay-only channel manager.
+    async fn shutdown_relay_channel(&self, name: &str) {
+        if let Some(ref rt) = *self.channel_runtime.read().await
+            && let Some(channel) = rt.channel_manager.get_channel(name).await
+        {
+            let _ = channel.shutdown().await;
+            return;
+        }
+        if let Some(ref cm) = *self.relay_channel_manager.read().await
+            && let Some(channel) = cm.get_channel(name).await
+        {
+            let _ = channel.shutdown().await;
         }
     }
 
@@ -1197,6 +1206,19 @@ impl ExtensionManager {
         }
     }
 
+    /// Read and parse a capabilities file, returning `None` when the file is
+    /// absent, unreadable, or fails to parse.
+    async fn load_capabilities<T>(
+        cap_path: &std::path::Path,
+        parse: impl FnOnce(&[u8]) -> Option<T>,
+    ) -> Option<T> {
+        if !cap_path.exists() {
+            return None;
+        }
+        let bytes = tokio::fs::read(cap_path).await.ok()?;
+        parse(&bytes)
+    }
+
     /// Get detailed info about an installed extension (version, wit_version, host compatibility).
     pub async fn extension_info(&self, name: &str) -> Result<serde_json::Value, ExtensionError> {
         Self::validate_extension_name(name)?;
@@ -1215,9 +1237,10 @@ impl ExtensionManager {
                     "installed": wasm_path.exists(),
                 });
 
-                if cap_path.exists()
-                    && let Ok(bytes) = tokio::fs::read(&cap_path).await
-                    && let Ok(cap) = crate::tools::wasm::CapabilitiesFile::from_bytes(&bytes)
+                if let Some(cap) = Self::load_capabilities(&cap_path, |bytes| {
+                    crate::tools::wasm::CapabilitiesFile::from_bytes(bytes).ok()
+                })
+                .await
                 {
                     info["version"] =
                         serde_json::json!(cap.version.unwrap_or_else(|| "unknown".into()));
@@ -1242,10 +1265,10 @@ impl ExtensionManager {
                     "active": self.active_channel_names.read().await.contains(name),
                 });
 
-                if cap_path.exists()
-                    && let Ok(bytes) = tokio::fs::read(&cap_path).await
-                    && let Ok(cap) =
-                        crate::channels::wasm::ChannelCapabilitiesFile::from_bytes(&bytes)
+                if let Some(cap) = Self::load_capabilities(&cap_path, |bytes| {
+                    crate::channels::wasm::ChannelCapabilitiesFile::from_bytes(bytes).ok()
+                })
+                .await
                 {
                     info["version"] =
                         serde_json::json!(cap.version.unwrap_or_else(|| "unknown".into()));
@@ -1531,6 +1554,11 @@ impl ExtensionManager {
         })
     }
 
+    /// Whether the payload begins with the gzip magic number (`0x1f 0x8b`).
+    fn is_gzip_payload(bytes: &[u8]) -> bool {
+        bytes.starts_with(&[0x1f, 0x8b])
+    }
+
     /// Download a WASM extension (tool or channel) from URL and install to target directory.
     ///
     /// Handles both tar.gz bundles (containing `.wasm` + `.capabilities.json`) and bare
@@ -1611,7 +1639,7 @@ impl ExtensionManager {
         let caps_path = target_dir.join(format!("{}.capabilities.json", name));
 
         // Detect format: gzip (tar.gz bundle) or bare WASM
-        if bytes.len() >= 2 && bytes[0] == 0x1f && bytes[1] == 0x8b {
+        if Self::is_gzip_payload(&bytes) {
             // tar.gz bundle: extract {name}.wasm and {name}.capabilities.json
             self.extract_wasm_tar_gz(name, &bytes, &wasm_path, &caps_path)?;
         } else {
@@ -2121,17 +2149,31 @@ impl ExtensionManager {
 
         if let Ok(tools) = discover_tools(&self.wasm_tools_dir).await {
             for tool_name in tools.keys() {
-                if let Some(cap) = self.load_tool_capabilities(tool_name).await
-                    && let Some(auth) = &cap.auth
-                    && auth.secret_name == secret_name
-                    && let Some(oauth) = &auth.oauth
-                {
-                    all_scopes.extend(oauth.scopes.iter().cloned());
+                if let Some(scopes) = self.oauth_scopes_for_secret(tool_name, secret_name).await {
+                    all_scopes.extend(scopes);
                 }
             }
         }
 
         all_scopes.into_iter().collect()
+    }
+
+    /// OAuth scopes declared by `tool_name` when its auth shares `secret_name`.
+    ///
+    /// Returns `None` when the tool has no capabilities file, declares no
+    /// auth, uses a different secret, or has no OAuth configuration.
+    async fn oauth_scopes_for_secret(
+        &self,
+        tool_name: &str,
+        secret_name: &str,
+    ) -> Option<Vec<String>> {
+        let cap = self.load_tool_capabilities(tool_name).await?;
+        let auth = cap.auth.as_ref()?;
+        if auth.secret_name != secret_name {
+            return None;
+        }
+        let oauth = auth.oauth.as_ref()?;
+        Some(oauth.scopes.clone())
     }
 
     /// Check whether the stored scopes are insufficient for the merged scopes.
@@ -2900,9 +2942,16 @@ impl ExtensionManager {
         )))
     }
 
+    /// Whether the name contains a path separator, traversal sequence, or NUL.
+    fn has_unsafe_name_characters(name: &str) -> bool {
+        let has_separator = name.contains('/') || name.contains('\\');
+        let has_traversal_or_nul = name.contains("..") || name.contains('\0');
+        has_separator || has_traversal_or_nul
+    }
+
     /// Reject names containing path separators or traversal sequences.
     fn validate_extension_name(name: &str) -> Result<(), ExtensionError> {
-        if name.contains('/') || name.contains('\\') || name.contains("..") || name.contains('\0') {
+        if Self::has_unsafe_name_characters(name) {
             return Err(ExtensionError::InstallFailed(format!(
                 "Invalid extension name '{}': contains path separator or traversal characters",
                 name
@@ -2993,6 +3042,32 @@ impl ExtensionManager {
             }
             _ => Ok(Vec::new()),
         }
+    }
+
+    /// Delete a tool's stored OAuth token, scopes, and refresh token so the
+    /// next `auth()` call starts a fresh flow.
+    ///
+    /// No-op when the tool has no capabilities file or no OAuth configuration.
+    async fn purge_tool_oauth_tokens(&self, name: &str) {
+        let Some(cap) = self.load_tool_capabilities(name).await else {
+            return;
+        };
+        let Some(ref auth_cfg) = cap.auth else {
+            return;
+        };
+        if auth_cfg.oauth.is_none() {
+            return;
+        }
+        let secret_name = &auth_cfg.secret_name;
+        let _ = self.secrets.delete(&self.user_id, secret_name).await;
+        let _ = self
+            .secrets
+            .delete(&self.user_id, &format!("{}_scopes", secret_name))
+            .await;
+        let _ = self
+            .secrets
+            .delete(&self.user_id, &format!("{}_refresh_token", secret_name))
+            .await;
     }
 
     /// Save setup secrets for an extension, validating names against the capabilities schema.
@@ -3151,26 +3226,7 @@ impl ExtensionManager {
                     // Delete existing OAuth token so auth() starts a fresh flow.
                     // Done AFTER activation succeeds to avoid losing tokens on failure.
                     // This covers Reconfigure: user wants to re-auth (switch account, update creds).
-                    if let Some(cap) = self.load_tool_capabilities(name).await
-                        && let Some(ref auth_cfg) = cap.auth
-                        && auth_cfg.oauth.is_some()
-                    {
-                        let _ = self
-                            .secrets
-                            .delete(&self.user_id, &auth_cfg.secret_name)
-                            .await;
-                        let _ = self
-                            .secrets
-                            .delete(&self.user_id, &format!("{}_scopes", auth_cfg.secret_name))
-                            .await;
-                        let _ = self
-                            .secrets
-                            .delete(
-                                &self.user_id,
-                                &format!("{}_refresh_token", auth_cfg.secret_name),
-                            )
-                            .await;
-                    }
+                    self.purge_tool_oauth_tokens(name).await;
 
                     // Check if auth is needed (OAuth or manual token).
                     // This is safe to call here — cancel-and-retry prevents port conflicts.

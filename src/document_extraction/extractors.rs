@@ -355,6 +355,11 @@ fn parse_xlsx_shared_strings(xml: &str) -> Vec<String> {
     strings
 }
 
+/// Return `true` when an XLSX sheet tag opens a cell (`<c>` or `<c ...>`).
+fn is_cell_open_tag(tag: &str) -> bool {
+    tag.starts_with("c ") || tag == "c"
+}
+
 /// Parse XLSX sheet XML into tab-separated rows.
 fn parse_xlsx_sheet(xml: &str, shared_strings: &[String]) -> String {
     // Simple extraction: find <v> values in <c> cells, resolve shared string refs
@@ -384,7 +389,7 @@ fn parse_xlsx_sheet(xml: &str, shared_strings: &[String]) -> String {
                     if !current_row.is_empty() {
                         rows.push(std::mem::take(&mut current_row));
                     }
-                } else if in_row && (tag.starts_with("c ") || tag == "c") {
+                } else if in_row && is_cell_open_tag(&tag) {
                     // Extract type attribute: t="s" means shared string
                     cell_type.clear();
                     if let Some(t_pos) = tag.find("t=\"") {

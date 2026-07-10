@@ -114,54 +114,11 @@ impl DatabaseConfig {
     }
 
     pub(crate) fn resolve_from(ctx: &EnvContext) -> Result<Self, ConfigError> {
-        let backend: DatabaseBackend =
-            if let Some(b) = optional_env_from(ctx, EnvKey("DATABASE_BACKEND"))? {
-                b.parse().map_err(|e| ConfigError::InvalidValue {
-                    key: "DATABASE_BACKEND".to_string(),
-                    message: e,
-                })?
-            } else {
-                DatabaseBackend::default()
-            };
-
-        // PostgreSQL URL is required only when using the postgres backend.
-        // For libsql backend, default to an empty placeholder.
-        // DATABASE_URL is loaded from ~/.ironclaw/.env via dotenvy early in startup.
-        let url = optional_env_from(ctx, EnvKey("DATABASE_URL"))?
-            .or_else(|| {
-                if backend == DatabaseBackend::LibSql {
-                    Some("unused://libsql".to_string())
-                } else {
-                    None
-                }
-            })
-            .ok_or_else(|| ConfigError::MissingRequired {
-                key: "DATABASE_URL".to_string(),
-                hint: "Run 'ironclaw onboard' or set DATABASE_URL environment variable".to_string(),
-            })?;
-
+        let backend = Self::resolve_backend(ctx)?;
+        let url = Self::resolve_url(ctx, backend)?;
         let pool_size = parse_optional_env_from(ctx, EnvKey("DATABASE_POOL_SIZE"), 10)?;
-
-        let ssl_mode: SslMode = if let Some(s) = optional_env_from(ctx, EnvKey("DATABASE_SSLMODE"))?
-        {
-            s.parse().map_err(|e| ConfigError::InvalidValue {
-                key: "DATABASE_SSLMODE".to_string(),
-                message: e,
-            })?
-        } else {
-            SslMode::default()
-        };
-
-        let libsql_path = optional_env_from(ctx, EnvKey("LIBSQL_PATH"))?
-            .map(PathBuf::from)
-            .or_else(|| {
-                if backend == DatabaseBackend::LibSql {
-                    Some(ctx.ironclaw_base_dir().join("ironclaw.db"))
-                } else {
-                    None
-                }
-            });
-
+        let ssl_mode = Self::resolve_ssl_mode(ctx)?;
+        let libsql_path = Self::resolve_libsql_path(ctx, backend)?;
         let libsql_url = optional_env_from(ctx, EnvKey("LIBSQL_URL"))?;
         let libsql_auth_token =
             optional_env_from(ctx, EnvKey("LIBSQL_AUTH_TOKEN"))?.map(SecretString::from);
@@ -182,6 +139,55 @@ impl DatabaseConfig {
             libsql_url,
             libsql_auth_token,
         })
+    }
+
+    /// Resolve the backend from DATABASE_BACKEND, defaulting when unset.
+    fn resolve_backend(ctx: &EnvContext) -> Result<DatabaseBackend, ConfigError> {
+        match optional_env_from(ctx, EnvKey("DATABASE_BACKEND"))? {
+            Some(b) => b.parse().map_err(|e| ConfigError::InvalidValue {
+                key: "DATABASE_BACKEND".to_string(),
+                message: e,
+            }),
+            None => Ok(DatabaseBackend::default()),
+        }
+    }
+
+    /// Resolve the database URL for the chosen backend.
+    ///
+    /// The PostgreSQL URL is required only when using the postgres backend.
+    /// For the libsql backend, default to an empty placeholder.
+    /// DATABASE_URL is loaded from ~/.ironclaw/.env via dotenvy early in startup.
+    fn resolve_url(ctx: &EnvContext, backend: DatabaseBackend) -> Result<String, ConfigError> {
+        optional_env_from(ctx, EnvKey("DATABASE_URL"))?
+            .or_else(|| (backend == DatabaseBackend::LibSql).then(|| "unused://libsql".to_string()))
+            .ok_or_else(|| ConfigError::MissingRequired {
+                key: "DATABASE_URL".to_string(),
+                hint: "Run 'ironclaw onboard' or set DATABASE_URL environment variable".to_string(),
+            })
+    }
+
+    /// Resolve the TLS mode from DATABASE_SSLMODE, defaulting when unset.
+    fn resolve_ssl_mode(ctx: &EnvContext) -> Result<SslMode, ConfigError> {
+        match optional_env_from(ctx, EnvKey("DATABASE_SSLMODE"))? {
+            Some(s) => s.parse().map_err(|e| ConfigError::InvalidValue {
+                key: "DATABASE_SSLMODE".to_string(),
+                message: e,
+            }),
+            None => Ok(SslMode::default()),
+        }
+    }
+
+    /// Resolve the local libSQL path, defaulting for the libsql backend.
+    fn resolve_libsql_path(
+        ctx: &EnvContext,
+        backend: DatabaseBackend,
+    ) -> Result<Option<PathBuf>, ConfigError> {
+        Ok(optional_env_from(ctx, EnvKey("LIBSQL_PATH"))?
+            .map(PathBuf::from)
+            .or_else(|| {
+                (backend == DatabaseBackend::LibSql)
+                    .then(|| ctx.ironclaw_base_dir().join("ironclaw.db"))
+            }))
     }
 
     /// Get the database URL (exposes the secret).

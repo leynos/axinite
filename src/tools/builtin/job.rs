@@ -6,7 +6,7 @@
 //! - Check job status
 //! - Cancel running jobs
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -770,43 +770,9 @@ fn resolve_project_dir(
         ToolError::ExecutionFailed(format!("failed to canonicalize projects base: {}", e))
     })?;
 
-    let (canonical_dir, _was_explicit) = match explicit {
-        Some(d) => {
-            // Explicit paths: validate BEFORE creating anything.
-            // The path must already exist (it comes from a previous job run).
-            let canonical = d.canonicalize().map_err(|e| {
-                ToolError::InvalidParameters(format!(
-                    "explicit project dir {} does not exist or is inaccessible: {}",
-                    d.display(),
-                    e
-                ))
-            })?;
-            if !canonical.starts_with(&canonical_base) {
-                return Err(ToolError::InvalidParameters(format!(
-                    "project directory must be under {}",
-                    canonical_base.display()
-                )));
-            }
-            (canonical, true)
-        }
-        None => {
-            let dir = canonical_base.join(project_id.to_string());
-            ambient_fs::create_dir_all(&dir).map_err(|e| {
-                ToolError::ExecutionFailed(format!(
-                    "failed to create project dir {}: {}",
-                    dir.display(),
-                    e
-                ))
-            })?;
-            let canonical = dir.canonicalize().map_err(|e| {
-                ToolError::ExecutionFailed(format!(
-                    "failed to canonicalize project dir {}: {}",
-                    dir.display(),
-                    e
-                ))
-            })?;
-            (canonical, false)
-        }
+    let canonical_dir = match explicit {
+        Some(d) => canonicalize_explicit_project_dir(d, &canonical_base)?,
+        None => create_default_project_dir(&canonical_base, project_id)?,
     };
 
     let browse_id = canonical_dir
@@ -814,6 +780,53 @@ fn resolve_project_dir(
         .map(|n| n.to_string_lossy().to_string())
         .unwrap_or_else(|| project_id.to_string());
     Ok((canonical_dir, browse_id))
+}
+
+/// Validate a caller-supplied project directory against the canonical base.
+///
+/// Explicit paths are validated BEFORE creating anything: the path must
+/// already exist (it comes from a previous job run) and must canonicalize
+/// to somewhere under the projects base.
+fn canonicalize_explicit_project_dir(
+    dir: PathBuf,
+    canonical_base: &Path,
+) -> Result<PathBuf, ToolError> {
+    let canonical = dir.canonicalize().map_err(|e| {
+        ToolError::InvalidParameters(format!(
+            "explicit project dir {} does not exist or is inaccessible: {}",
+            dir.display(),
+            e
+        ))
+    })?;
+    if !canonical.starts_with(canonical_base) {
+        return Err(ToolError::InvalidParameters(format!(
+            "project directory must be under {}",
+            canonical_base.display()
+        )));
+    }
+    Ok(canonical)
+}
+
+/// Create and canonicalize the default project directory for a project id.
+fn create_default_project_dir(
+    canonical_base: &Path,
+    project_id: Uuid,
+) -> Result<PathBuf, ToolError> {
+    let dir = canonical_base.join(project_id.to_string());
+    ambient_fs::create_dir_all(&dir).map_err(|e| {
+        ToolError::ExecutionFailed(format!(
+            "failed to create project dir {}: {}",
+            dir.display(),
+            e
+        ))
+    })?;
+    dir.canonicalize().map_err(|e| {
+        ToolError::ExecutionFailed(format!(
+            "failed to canonicalize project dir {}: {}",
+            dir.display(),
+            e
+        ))
+    })
 }
 
 impl NativeTool for CreateJobTool {

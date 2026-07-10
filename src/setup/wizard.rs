@@ -312,7 +312,7 @@ impl SetupWizard {
 
         // Try libsql first if that's the configured backend.
         #[cfg(feature = "libsql")]
-        if backend == "libsql" || backend == "turso" || backend == "sqlite" {
+        if is_libsql_backend(&backend) {
             return self.reconnect_libsql().await;
         }
 
@@ -405,10 +405,10 @@ impl SetupWizard {
             let env_backend = std::env::var("DATABASE_BACKEND").ok();
 
             if let Some(ref backend) = env_backend {
-                if backend == "libsql" || backend == "turso" || backend == "sqlite" {
+                if is_libsql_backend(backend) {
                     return self.step_database_libsql().await;
                 }
-                if backend != "postgres" && backend != "postgresql" {
+                if !is_postgres_backend(backend) {
                     print_info(&format!(
                         "Unknown DATABASE_BACKEND '{}', defaulting to PostgreSQL",
                         backend
@@ -915,7 +915,7 @@ impl SetupWizard {
 
         #[cfg(feature = "postgres")]
         if let Some(ref backend) = env_backend
-            && (backend == "postgres" || backend == "postgresql")
+            && is_postgres_backend(backend)
         {
             if let Ok(url) = std::env::var("DATABASE_URL") {
                 print_info("Using existing PostgreSQL configuration");
@@ -2332,8 +2332,7 @@ impl SetupWizard {
 
                     // Track auth needs
                     if let Some(auth) = &tool.auth_summary
-                        && auth.method.as_deref() != Some("none")
-                        && auth.method.is_some()
+                        && requires_auth(auth)
                     {
                         let provider = auth.provider.as_deref().unwrap_or(&tool.name);
                         // Only mention unique providers (Google tools share auth)
@@ -2583,6 +2582,46 @@ impl SetupWizard {
             crate::llm::ProviderRegistry::load().map_err(|e| SetupError::Config(e.to_string()))?;
         let mut env_vars: Vec<(String, String)> = Vec::new();
 
+        self.push_database_env(&mut env_vars);
+        self.push_llm_env(&registry, &mut env_vars);
+
+        // Secrets master key (env var mode): write to .env so it's available
+        // on next startup before the DB is connected.
+        if let Some(ref key_hex) = self.settings.secrets_master_key_hex {
+            env_vars.push(("SECRETS_MASTER_KEY".to_string(), key_hex.clone()));
+        }
+
+        // Always write ONBOARD_COMPLETED so that check_onboard_needed()
+        // (which runs before the DB is connected) knows to skip re-onboarding.
+        if self.settings.onboard_completed {
+            env_vars.push(("ONBOARD_COMPLETED".to_string(), "true".to_string()));
+        }
+
+        // Claude Code sandbox mode
+        if self.settings.sandbox.claude_code_enabled {
+            env_vars.push(("CLAUDE_CODE_ENABLED".to_string(), "true".to_string()));
+        }
+
+        self.push_signal_env(&mut env_vars);
+
+        if !env_vars.is_empty() {
+            let pairs: Vec<(&str, &str)> = env_vars
+                .iter()
+                .map(|(k, v)| (k.as_str(), v.as_str()))
+                .collect();
+            crate::bootstrap::upsert_bootstrap_vars(&pairs).map_err(|e| {
+                SetupError::Io(std::io::Error::other(format!(
+                    "Failed to save bootstrap env to .env: {}",
+                    e
+                )))
+            })?;
+        }
+
+        Ok(())
+    }
+
+    /// Append database bootstrap variables for `~/.ironclaw/.env`.
+    fn push_database_env(&self, env_vars: &mut Vec<(String, String)>) {
         if let Some(ref backend) = self.settings.database_backend {
             env_vars.push(("DATABASE_BACKEND".to_string(), backend.clone()));
         }
@@ -2595,9 +2634,17 @@ impl SetupWizard {
         if let Some(ref url) = self.settings.libsql_url {
             env_vars.push(("LIBSQL_URL".to_string(), url.clone()));
         }
+    }
 
-        // LLM bootstrap vars: same chicken-and-egg problem as DATABASE_BACKEND.
-        // Config::from_env() needs the backend before the DB is connected.
+    /// Append LLM bootstrap variables for `~/.ironclaw/.env`.
+    ///
+    /// Same chicken-and-egg problem as DATABASE_BACKEND:
+    /// `Config::from_env()` needs the backend before the DB is connected.
+    fn push_llm_env(
+        &self,
+        registry: &crate::llm::ProviderRegistry,
+        env_vars: &mut Vec<(String, String)>,
+    ) {
         if let Some(ref backend) = self.settings.llm_backend {
             env_vars.push(("LLM_BACKEND".to_string(), backend.clone()));
         }
@@ -2611,15 +2658,7 @@ impl SetupWizard {
             env_vars.push(("BEDROCK_REGION".to_string(), region.clone()));
         }
         if self.settings.llm_backend.as_deref() == Some("bedrock") {
-            if let Some(ref model) = self.settings.selected_model {
-                env_vars.push(("BEDROCK_MODEL".to_string(), model.clone()));
-            }
-            if let Some(ref cross) = self.settings.bedrock_cross_region {
-                env_vars.push(("BEDROCK_CROSS_REGION".to_string(), cross.clone()));
-            }
-            if let Some(ref profile) = self.settings.bedrock_profile {
-                env_vars.push(("AWS_PROFILE".to_string(), profile.clone()));
-            }
+            self.push_bedrock_env(env_vars);
         }
 
         // Model name: same chicken-and-egg — Config::from_env() resolves the
@@ -2639,33 +2678,28 @@ impl SetupWizard {
         // defines one (e.g., GROQ doesn't need LLM_BASE_URL since its
         // default is compiled in, but it doesn't hurt to be explicit).
         if let Some(ref backend) = self.settings.llm_backend
-            && let Some(def) = registry.find(backend)
-            && let Some(ref base_url_env) = def.base_url_env
-            && let Some(ref base_url) = def.default_base_url
-            && base_url_env != "LLM_BASE_URL"
-            && base_url_env != "OLLAMA_BASE_URL"
+            && let Some(pair) = provider_base_url_var(registry, backend)
         {
-            env_vars.push((base_url_env.clone(), base_url.clone()));
+            env_vars.push(pair);
         }
+    }
 
-        // Secrets master key (env var mode): write to .env so it's available
-        // on next startup before the DB is connected.
-        if let Some(ref key_hex) = self.settings.secrets_master_key_hex {
-            env_vars.push(("SECRETS_MASTER_KEY".to_string(), key_hex.clone()));
+    /// Append Bedrock-specific bootstrap variables.
+    fn push_bedrock_env(&self, env_vars: &mut Vec<(String, String)>) {
+        if let Some(ref model) = self.settings.selected_model {
+            env_vars.push(("BEDROCK_MODEL".to_string(), model.clone()));
         }
-
-        // Always write ONBOARD_COMPLETED so that check_onboard_needed()
-        // (which runs before the DB is connected) knows to skip re-onboarding.
-        if self.settings.onboard_completed {
-            env_vars.push(("ONBOARD_COMPLETED".to_string(), "true".to_string()));
+        if let Some(ref cross) = self.settings.bedrock_cross_region {
+            env_vars.push(("BEDROCK_CROSS_REGION".to_string(), cross.clone()));
         }
-
-        // Claude Code sandbox mode
-        if self.settings.sandbox.claude_code_enabled {
-            env_vars.push(("CLAUDE_CODE_ENABLED".to_string(), "true".to_string()));
+        if let Some(ref profile) = self.settings.bedrock_profile {
+            env_vars.push(("AWS_PROFILE".to_string(), profile.clone()));
         }
+    }
 
-        // Signal channel env vars (chicken-and-egg: config resolves before DB).
+    /// Append Signal channel bootstrap variables for `~/.ironclaw/.env`
+    /// (chicken-and-egg: config resolves before DB).
+    fn push_signal_env(&self, env_vars: &mut Vec<(String, String)>) {
         if let Some(ref url) = self.settings.channels.signal_http_url {
             env_vars.push(("SIGNAL_HTTP_URL".to_string(), url.clone()));
         }
@@ -2697,21 +2731,6 @@ impl SetupWizard {
                 group_allow_from.clone(),
             ));
         }
-
-        if !env_vars.is_empty() {
-            let pairs: Vec<(&str, &str)> = env_vars
-                .iter()
-                .map(|(k, v)| (k.as_str(), v.as_str()))
-                .collect();
-            crate::bootstrap::upsert_bootstrap_vars(&pairs).map_err(|e| {
-                SetupError::Io(std::io::Error::other(format!(
-                    "Failed to save bootstrap env to .env: {}",
-                    e
-                )))
-            })?;
-        }
-
-        Ok(())
     }
 
     /// Persist the NEAR AI session token to the database.
@@ -2926,6 +2945,39 @@ impl SetupWizard {
 
         Ok(())
     }
+}
+
+/// Whether a DATABASE_BACKEND value selects the libSQL backend.
+#[cfg(feature = "libsql")]
+fn is_libsql_backend(backend: &str) -> bool {
+    matches!(backend, "libsql" | "turso" | "sqlite")
+}
+
+/// Whether a DATABASE_BACKEND value selects the PostgreSQL backend.
+#[cfg(feature = "postgres")]
+fn is_postgres_backend(backend: &str) -> bool {
+    matches!(backend, "postgres" | "postgresql")
+}
+
+/// Whether a tool's auth summary declares an authentication method.
+fn requires_auth(auth: &crate::registry::manifest::AuthSummary) -> bool {
+    auth.method.as_deref() != Some("none") && auth.method.is_some()
+}
+
+/// The provider-specific base URL variable and value, when the provider
+/// defines one distinct from the generic LLM_BASE_URL/OLLAMA_BASE_URL vars.
+fn provider_base_url_var(
+    registry: &crate::llm::ProviderRegistry,
+    backend: &str,
+) -> Option<(String, String)> {
+    let def = registry.find(backend)?;
+    let base_url_env = def.base_url_env.as_ref()?;
+    let base_url = def.default_base_url.as_ref()?;
+    let is_generic = base_url_env == "LLM_BASE_URL" || base_url_env == "OLLAMA_BASE_URL";
+    if is_generic {
+        return None;
+    }
+    Some((base_url_env.clone(), base_url.clone()))
 }
 
 impl Default for SetupWizard {

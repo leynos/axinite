@@ -261,6 +261,29 @@ mod tests {
         Ok(())
     }
 
+    /// Confirms the submission result is `NeedApproval` carrying the expected
+    /// request identity and display details.
+    fn is_expected_need_approval(
+        result: &SubmissionResult,
+        request_id: Uuid,
+        tool_name: &str,
+        description: &str,
+        parameters: &serde_json::Value,
+    ) -> bool {
+        let SubmissionResult::NeedApproval {
+            request_id: actual_request_id,
+            tool_name: actual_tool_name,
+            description: actual_description,
+            parameters: actual_parameters,
+        } = result
+        else {
+            return false;
+        };
+        let identity_matches = *actual_request_id == request_id && actual_tool_name == tool_name;
+        let details_match = actual_description == description && actual_parameters == parameters;
+        identity_matches && details_match
+    }
+
     #[rstest]
     #[tokio::test]
     async fn handle_loop_result_need_approval_returns_submission_result(
@@ -286,17 +309,12 @@ mod tests {
             .expect("approval finalisation should succeed");
 
         assert!(
-            matches!(
-                result,
-                SubmissionResult::NeedApproval {
-                    request_id: actual_request_id,
-                    tool_name: ref actual_tool_name,
-                    description: ref actual_description,
-                    parameters: ref actual_parameters
-                } if actual_request_id == request_id
-                    && actual_tool_name == &expected_tool_name
-                    && actual_description == &expected_description
-                    && actual_parameters == &expected_parameters
+            is_expected_need_approval(
+                &result,
+                request_id,
+                &expected_tool_name,
+                &expected_description,
+                &expected_parameters,
             ),
             "expected need-approval submission result"
         );

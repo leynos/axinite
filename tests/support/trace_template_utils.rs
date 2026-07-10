@@ -157,15 +157,28 @@ fn unwrap_tool_output(content: &str) -> Cow<'_, str> {
     Cow::Borrowed(content)
 }
 
+/// Return `true` when the whole string is a single `{{key}}` placeholder.
+fn is_single_placeholder(s: &str) -> bool {
+    let wrapped = s.starts_with("{{") && s.ends_with("}}");
+    wrapped && s.matches("{{").count() == 1
+}
+
 fn is_exact_template(
     s: &str,
     vars: &HashMap<String, serde_json::Value>,
 ) -> Option<serde_json::Value> {
-    if s.starts_with("{{") && s.ends_with("}}") && s.matches("{{").count() == 1 {
+    if is_single_placeholder(s) {
         let key = s[2..s.len() - 2].trim();
         return vars.get(key).cloned();
     }
     None
+}
+
+/// Return `true` when the placeholder at `start..end` covers the entire string
+/// and is the only placeholder present.
+fn placeholder_spans_string(result: &str, start: usize, end: usize) -> bool {
+    let covers_all = start == 0 && end == result.len();
+    covers_all && result.matches("{{").count() == 1
 }
 
 fn expand_one_template(
@@ -176,7 +189,7 @@ fn expand_one_template(
     let end = result[start..].find("}}").map(|end| start + end + 2)?;
     let key = result[start + 2..end - 2].trim();
     let resolved = vars.get(key)?;
-    if start == 0 && end == result.len() && result.matches("{{").count() == 1 {
+    if placeholder_spans_string(result, start, end) {
         return Some(match resolved.as_str() {
             Some(resolved_str) => TemplateExpansion::String(resolved_str.to_owned()),
             None => TemplateExpansion::Value(resolved.clone()),
@@ -191,6 +204,39 @@ fn expand_one_template(
     new_result.push_str(&replacement);
     new_result.push_str(&result[end..]);
     Some(TemplateExpansion::String(new_result))
+}
+
+/// Iteratively expand embedded `{{key}}` placeholders in a string.
+///
+/// Stops at [`MAX_TEMPLATE_EXPANSIONS`], on a cycle (a previously visited
+/// intermediate string), or when no further placeholder resolves. Returns
+/// [`TemplateExpansion::Value`] when a whole-string placeholder resolves to a
+/// non-string JSON value.
+fn expand_templates_iteratively(
+    mut result: String,
+    vars: &HashMap<String, serde_json::Value>,
+) -> TemplateExpansion {
+    let mut visited_results = HashSet::new();
+    let mut substitutions = 0usize;
+    while result.contains("{{") {
+        if substitutions >= MAX_TEMPLATE_EXPANSIONS {
+            break;
+        }
+        if !visited_results.insert(result.clone()) {
+            break;
+        }
+        match expand_one_template(&result, vars) {
+            Some(TemplateExpansion::String(expanded)) => {
+                result = expanded;
+                substitutions += 1;
+            }
+            Some(TemplateExpansion::Value(resolved)) => {
+                return TemplateExpansion::Value(resolved);
+            }
+            None => break,
+        }
+    }
+    TemplateExpansion::String(result)
 }
 
 /// Performs in-place `{{key}}` template substitution over a JSON value tree.
@@ -232,39 +278,18 @@ pub(super) fn substitute_templates(
 ) {
     match value {
         serde_json::Value::String(s) => {
-            let mut result = if let Some(resolved) = is_exact_template(s, vars) {
-                if let Some(resolved_str) = resolved.as_str() {
-                    resolved_str.to_owned()
-                } else {
+            let initial = match is_exact_template(s, vars) {
+                Some(serde_json::Value::String(resolved_str)) => resolved_str,
+                Some(resolved) => {
                     *value = resolved;
                     return;
                 }
-            } else {
-                s.clone()
+                None => s.clone(),
             };
-
-            let mut visited_results = HashSet::new();
-            let mut substitutions = 0usize;
-            while result.contains("{{") {
-                if substitutions >= MAX_TEMPLATE_EXPANSIONS {
-                    break;
-                }
-                if !visited_results.insert(result.clone()) {
-                    break;
-                }
-                match expand_one_template(&result, vars) {
-                    Some(TemplateExpansion::String(expanded)) => {
-                        result = expanded;
-                        substitutions += 1;
-                    }
-                    Some(TemplateExpansion::Value(resolved)) => {
-                        *value = resolved;
-                        return;
-                    }
-                    None => break,
-                }
+            match expand_templates_iteratively(initial, vars) {
+                TemplateExpansion::String(result) => *s = result,
+                TemplateExpansion::Value(resolved) => *value = resolved,
             }
-            *s = result;
         }
         serde_json::Value::Object(map) => {
             for value in map.values_mut() {

@@ -457,14 +457,17 @@ Report when the job is complete or if you encounter issues you cannot resolve."#
         }
 
         if let Ok(ctx) = self.context_manager().get_context(self.job_id).await
-            && (ctx.state.is_terminal()
-                || ctx.state == JobState::Stuck
-                || ctx.state == JobState::Completed)
+            && Self::is_finished_state(ctx.state)
         {
             return Ok(Some(WorkerLoopOutcome::Exited));
         }
 
         Ok(None)
+    }
+
+    /// Whether the job has reached a state where the worker loop should exit.
+    fn is_finished_state(state: JobState) -> bool {
+        state.is_terminal() || matches!(state, JobState::Stuck | JobState::Completed)
     }
 
     async fn execution_loop(

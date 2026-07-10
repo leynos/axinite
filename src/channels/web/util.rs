@@ -41,70 +41,96 @@ pub fn build_turns_from_db_messages(
 
     while let Some(msg) = iter.next() {
         if msg.role == "user" {
-            let mut turn = TurnInfo {
-                turn_number,
-                user_input: msg.content.clone(),
-                response: None,
-                state: "Completed".to_string(),
-                started_at: msg.created_at.to_rfc3339(),
-                completed_at: None,
-                tool_calls: Vec::new(),
-            };
-
-            // Check if next message is a tool_calls record
-            if let Some(tc_msg) = iter.next_if(|next| next.role == "tool_calls") {
-                match serde_json::from_str::<Vec<serde_json::Value>>(&tc_msg.content) {
-                    Ok(calls) => {
-                        turn.tool_calls = calls
-                            .iter()
-                            .map(|c| ToolCallInfo {
-                                name: c["name"].as_str().unwrap_or("unknown").to_string(),
-                                has_result: c.get("result_preview").is_some(),
-                                has_error: c.get("error").is_some(),
-                                result_preview: c["result_preview"].as_str().map(String::from),
-                                error: c["error"].as_str().map(String::from),
-                            })
-                            .collect();
-                    }
-                    Err(e) => {
-                        tracing::warn!(
-                            message_id = %tc_msg.id,
-                            "Malformed tool_calls JSON in DB, skipping: {e}"
-                        );
-                    }
-                }
-            }
-
-            // Check if next message is an assistant response
-            if let Some(assistant_msg) = iter.next_if(|next| next.role == "assistant") {
-                turn.response = Some(assistant_msg.content.clone());
-                turn.completed_at = Some(assistant_msg.created_at.to_rfc3339());
-            }
-
-            // Incomplete turn (user message without response)
-            if turn.response.is_none() {
-                turn.state = "Failed".to_string();
-            }
-
-            turns.push(turn);
+            turns.push(build_user_turn(&mut iter, turn_number, msg));
             turn_number += 1;
         } else if msg.role == "assistant" {
-            // Standalone assistant message (e.g. routine output, heartbeat)
-            // with no preceding user message — render as a turn with empty input.
-            turns.push(TurnInfo {
-                turn_number,
-                user_input: String::new(),
-                response: Some(msg.content.clone()),
-                state: "Completed".to_string(),
-                started_at: msg.created_at.to_rfc3339(),
-                completed_at: Some(msg.created_at.to_rfc3339()),
-                tool_calls: Vec::new(),
-            });
+            turns.push(standalone_assistant_turn(turn_number, msg));
             turn_number += 1;
         }
     }
 
     turns
+}
+
+/// Peekable iterator over flat DB conversation messages.
+type DbMessageIter<'a> =
+    std::iter::Peekable<std::slice::Iter<'a, crate::history::ConversationMessage>>;
+
+/// Build a turn from a user message, consuming an optional following
+/// tool_calls record and assistant response from the iterator.
+fn build_user_turn(
+    iter: &mut DbMessageIter<'_>,
+    turn_number: usize,
+    msg: &crate::history::ConversationMessage,
+) -> TurnInfo {
+    let mut turn = TurnInfo {
+        turn_number,
+        user_input: msg.content.clone(),
+        response: None,
+        state: "Completed".to_string(),
+        started_at: msg.created_at.to_rfc3339(),
+        completed_at: None,
+        tool_calls: Vec::new(),
+    };
+
+    // Check if next message is a tool_calls record
+    if let Some(tc_msg) = iter.next_if(|next| next.role == "tool_calls") {
+        turn.tool_calls = parse_tool_call_infos(tc_msg);
+    }
+
+    // Check if next message is an assistant response
+    if let Some(assistant_msg) = iter.next_if(|next| next.role == "assistant") {
+        turn.response = Some(assistant_msg.content.clone());
+        turn.completed_at = Some(assistant_msg.created_at.to_rfc3339());
+    }
+
+    // Incomplete turn (user message without response)
+    if turn.response.is_none() {
+        turn.state = "Failed".to_string();
+    }
+
+    turn
+}
+
+/// Parse a persisted tool_calls record into summaries, returning an empty
+/// list (with a warning) when the stored JSON is malformed.
+fn parse_tool_call_infos(tc_msg: &crate::history::ConversationMessage) -> Vec<ToolCallInfo> {
+    match serde_json::from_str::<Vec<serde_json::Value>>(&tc_msg.content) {
+        Ok(calls) => calls
+            .iter()
+            .map(|c| ToolCallInfo {
+                name: c["name"].as_str().unwrap_or("unknown").to_string(),
+                has_result: c.get("result_preview").is_some(),
+                has_error: c.get("error").is_some(),
+                result_preview: c["result_preview"].as_str().map(String::from),
+                error: c["error"].as_str().map(String::from),
+            })
+            .collect(),
+        Err(e) => {
+            tracing::warn!(
+                message_id = %tc_msg.id,
+                "Malformed tool_calls JSON in DB, skipping: {e}"
+            );
+            Vec::new()
+        }
+    }
+}
+
+/// Render a standalone assistant message (e.g. routine output, heartbeat)
+/// with no preceding user message as a turn with empty input.
+fn standalone_assistant_turn(
+    turn_number: usize,
+    msg: &crate::history::ConversationMessage,
+) -> TurnInfo {
+    TurnInfo {
+        turn_number,
+        user_input: String::new(),
+        response: Some(msg.content.clone()),
+        state: "Completed".to_string(),
+        started_at: msg.created_at.to_rfc3339(),
+        completed_at: Some(msg.created_at.to_rfc3339()),
+        tool_calls: Vec::new(),
+    }
 }
 
 #[cfg(test)]

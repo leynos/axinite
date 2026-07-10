@@ -111,7 +111,7 @@ impl SubmissionParser {
             };
         }
 
-        if lower == "/quit" || lower == "/exit" || lower == "/shutdown" {
+        if is_quit_command(&lower) {
             return Submission::Quit;
         }
 
@@ -156,10 +156,7 @@ impl SubmissionParser {
         }
 
         // Try structured JSON approval (from web gateway's /api/chat/approval endpoint)
-        if trimmed.starts_with('{')
-            && let Ok(submission) = serde_json::from_str::<Submission>(trimmed)
-            && matches!(submission, Submission::ExecApproval { .. })
-        {
+        if let Some(submission) = parse_exec_approval(trimmed) {
             return submission;
         }
 
@@ -192,6 +189,21 @@ impl SubmissionParser {
             content: content.to_string(),
         }
     }
+}
+
+/// Return `true` when the lowercased input is one of the quit commands.
+fn is_quit_command(lower: &str) -> bool {
+    matches!(lower, "/quit" | "/exit" | "/shutdown")
+}
+
+/// Parse a structured JSON exec-approval submission, returning `None` for
+/// anything else so ordinary JSON-looking text falls through to user input.
+fn parse_exec_approval(input: &str) -> Option<Submission> {
+    if !input.starts_with('{') {
+        return None;
+    }
+    let submission = serde_json::from_str::<Submission>(input).ok()?;
+    matches!(submission, Submission::ExecApproval { .. }).then_some(submission)
 }
 
 /// A submission to the agent.
@@ -435,6 +447,21 @@ mod tests {
 
     use super::*;
 
+    /// Check that a submission is an `ExecApproval` carrying exactly the
+    /// expected request id and flags.
+    fn is_exec_approval(
+        submission: &Submission,
+        request_id: Uuid,
+        approved: bool,
+        always: bool,
+    ) -> bool {
+        matches!(
+            submission,
+            Submission::ExecApproval { request_id: rid, approved: a, always: al }
+                if (*rid, *a, *al) == (request_id, approved, always)
+        )
+    }
+
     #[test]
     fn test_submission_types() {
         let input = Submission::user_input("Hello");
@@ -609,10 +636,7 @@ mod tests {
         .expect("serialize");
 
         let submission = SubmissionParser::parse(&json);
-        assert!(
-            matches!(submission, Submission::ExecApproval { request_id, approved, always }
-                if request_id == req_id && approved && !always)
-        );
+        assert!(is_exec_approval(&submission, req_id, true, false));
     }
 
     #[test]
@@ -626,10 +650,7 @@ mod tests {
         .expect("serialize");
 
         let submission = SubmissionParser::parse(&json);
-        assert!(
-            matches!(submission, Submission::ExecApproval { request_id, approved, always }
-                if request_id == req_id && approved && always)
-        );
+        assert!(is_exec_approval(&submission, req_id, true, true));
     }
 
     #[test]
@@ -643,10 +664,7 @@ mod tests {
         .expect("serialize");
 
         let submission = SubmissionParser::parse(&json);
-        assert!(
-            matches!(submission, Submission::ExecApproval { request_id, approved, always }
-                if request_id == req_id && !approved && !always)
-        );
+        assert!(is_exec_approval(&submission, req_id, false, false));
     }
 
     #[test]
@@ -672,8 +690,7 @@ mod tests {
 
         let parsed = SubmissionParser::parse(&json);
         assert!(
-            matches!(parsed, Submission::ExecApproval { request_id: rid, approved, always }
-                if rid == request_id && approved && !always),
+            is_exec_approval(&parsed, request_id, true, false),
             "Expected ExecApproval, got {:?}",
             parsed
         );

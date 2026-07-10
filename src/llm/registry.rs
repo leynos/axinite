@@ -305,12 +305,14 @@ impl ProviderRegistry {
         result
     }
 
+    /// Whether the backend string names the NearAI provider.
+    fn is_nearai_backend(backend: &str) -> bool {
+        matches!(backend, "nearai" | "near_ai" | "near")
+    }
+
     /// Check whether a backend string is a known provider (NearAI or registry).
     pub fn is_known(&self, backend: &str) -> bool {
-        backend == "nearai"
-            || backend == "near_ai"
-            || backend == "near"
-            || self.find(backend).is_some()
+        Self::is_nearai_backend(backend) || self.find(backend).is_some()
     }
 
     /// Get the model env var for a backend string.
@@ -318,7 +320,7 @@ impl ProviderRegistry {
     /// Returns the registry provider's `model_env` if found,
     /// or `"NEARAI_MODEL"` for the NearAI backend.
     pub fn model_env_var(&self, backend: &str) -> &str {
-        if backend == "nearai" || backend == "near_ai" || backend == "near" {
+        if Self::is_nearai_backend(backend) {
             return "NEARAI_MODEL";
         }
         self.find(backend)
@@ -488,17 +490,22 @@ mod tests {
         }
     }
 
+    /// Whether an OpenAI-completions provider must declare a
+    /// `default_base_url` (some hosts resolve their endpoint by other means).
+    fn requires_default_base_url(def: &ProviderDefinition) -> bool {
+        let exempt = matches!(
+            def.id.as_str(),
+            "openai" | "openai_compatible" | "bedrock" | "cloudflare"
+        );
+        def.protocol == ProviderProtocol::OpenAiCompletions && !exempt
+    }
+
     #[test]
     fn test_openai_compatible_providers_have_base_url() {
         let providers: Vec<ProviderDefinition> =
             serde_json::from_str(include_str!("../../providers.json")).unwrap();
         for def in &providers {
-            if def.protocol == ProviderProtocol::OpenAiCompletions
-                && def.id != "openai"
-                && def.id != "openai_compatible"
-                && def.id != "bedrock"
-                && def.id != "cloudflare"
-            {
+            if requires_default_base_url(def) {
                 assert!(
                     def.default_base_url.is_some(),
                     "{}: OpenAI-completions provider should have a default_base_url",

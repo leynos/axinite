@@ -148,44 +148,30 @@ impl McpServerConfig {
 
     /// Validate the server configuration.
     pub fn validate(&self) -> Result<(), ConfigError> {
-        if self.name.is_empty() {
-            return Err(ConfigError::InvalidConfig {
-                reason: "Server name cannot be empty".to_string(),
-            });
-        }
+        require_non_empty(&self.name, "Server name cannot be empty")?;
 
         match self.effective_transport() {
-            EffectiveTransport::Http => {
-                if self.url.is_empty() {
-                    return Err(ConfigError::InvalidConfig {
-                        reason: "Server URL cannot be empty".to_string(),
-                    });
-                }
-
-                // Remote servers must use HTTPS (localhost is allowed for development)
-                let url_lower = self.url.to_lowercase();
-                let is_localhost =
-                    url_lower.contains("localhost") || url_lower.contains("127.0.0.1");
-                if !is_localhost && !url_lower.starts_with("https://") {
-                    return Err(ConfigError::InvalidConfig {
-                        reason: "Remote MCP servers must use HTTPS".to_string(),
-                    });
-                }
-            }
+            EffectiveTransport::Http => self.validate_http_transport(),
             EffectiveTransport::Stdio { command, .. } => {
-                if command.is_empty() {
-                    return Err(ConfigError::InvalidConfig {
-                        reason: "Stdio transport command cannot be empty".to_string(),
-                    });
-                }
+                require_non_empty(command, "Stdio transport command cannot be empty")
             }
             EffectiveTransport::Unix { socket_path } => {
-                if socket_path.is_empty() {
-                    return Err(ConfigError::InvalidConfig {
-                        reason: "Unix socket path cannot be empty".to_string(),
-                    });
-                }
+                require_non_empty(socket_path, "Unix socket path cannot be empty")
             }
+        }
+    }
+
+    /// Validate HTTP transport settings: the URL must be present, and remote
+    /// servers must use HTTPS (localhost is allowed for development).
+    fn validate_http_transport(&self) -> Result<(), ConfigError> {
+        require_non_empty(&self.url, "Server URL cannot be empty")?;
+
+        let url_lower = self.url.to_lowercase();
+        let is_localhost = url_lower.contains("localhost") || url_lower.contains("127.0.0.1");
+        if !is_localhost && !url_lower.starts_with("https://") {
+            return Err(ConfigError::InvalidConfig {
+                reason: "Remote MCP servers must use HTTPS".to_string(),
+            });
         }
 
         Ok(())
@@ -227,6 +213,16 @@ impl McpServerConfig {
     pub fn client_id_secret_name(&self) -> String {
         format!("mcp_{}_client_id", self.name)
     }
+}
+
+/// Require a non-empty configuration value, reporting `reason` otherwise.
+fn require_non_empty(value: &str, reason: &str) -> Result<(), ConfigError> {
+    if value.is_empty() {
+        return Err(ConfigError::InvalidConfig {
+            reason: reason.to_string(),
+        });
+    }
+    Ok(())
 }
 
 /// OAuth 2.1 configuration for an MCP server.

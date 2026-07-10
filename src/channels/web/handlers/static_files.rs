@@ -100,13 +100,15 @@ pub async fn project_file_handler(
     serve_project_file(&project_id, &path).await
 }
 
+/// Rejects `project_id` values that could escape the projects directory.
+fn is_invalid_project_id(project_id: &str) -> bool {
+    let has_path_separator = project_id.contains('/') || project_id.contains('\\');
+    let is_traversal_or_empty = project_id.contains("..") || project_id.is_empty();
+    has_path_separator || is_traversal_or_empty
+}
+
 async fn serve_project_file(project_id: &str, path: &str) -> axum::response::Response {
-    // Reject project_id values that could escape the projects directory.
-    if project_id.contains('/')
-        || project_id.contains('\\')
-        || project_id.contains("..")
-        || project_id.is_empty()
-    {
+    if is_invalid_project_id(project_id) {
         return (StatusCode::BAD_REQUEST, "Invalid project ID").into_response();
     }
 

@@ -69,6 +69,11 @@ use secrecy::ExposeSecret;
 // LlmConfig, NearAiConfig, RegistryProviderConfig, and LlmError are
 // re-exported via `pub use` above from config and error submodules.
 
+/// Whether the configured backend name selects the NEAR AI provider.
+fn is_nearai_backend(backend: &str) -> bool {
+    matches!(backend, "nearai" | "near_ai" | "near")
+}
+
 /// Create an LLM provider based on configuration.
 ///
 /// - NearAI backend: Uses session manager for authentication
@@ -79,7 +84,7 @@ pub async fn create_llm_provider(
 ) -> Result<Arc<dyn LlmProvider>, LlmError> {
     let timeout = config.request_timeout_secs;
 
-    if config.backend == "nearai" || config.backend == "near_ai" || config.backend == "near" {
+    if is_nearai_backend(&config.backend) {
         return create_llm_provider_with_config(&config.nearai, session, timeout);
     }
 
@@ -238,17 +243,23 @@ fn create_openai_compat_from_registry(
     Ok(Arc::new(adapter))
 }
 
-fn create_anthropic_from_registry(
-    config: &RegistryProviderConfig,
-) -> Result<Arc<dyn LlmProvider>, LlmError> {
-    // Route to OAuth provider when an OAuth token is present and no real API
-    // key was provided. When both are set, the API key takes priority (standard
-    // x-api-key auth via rig-core).
+/// Whether the registry config should authenticate via Anthropic OAuth: an
+/// OAuth token is present and no real API key was provided (either absent or
+/// the placeholder value). When both are set, the API key takes priority
+/// (standard x-api-key auth via rig-core).
+fn should_use_anthropic_oauth(config: &RegistryProviderConfig) -> bool {
     let api_key_is_placeholder = config
         .api_key
         .as_ref()
         .is_some_and(|k| k.expose_secret() == crate::llm::config::OAUTH_PLACEHOLDER);
-    if config.oauth_token.is_some() && (config.api_key.is_none() || api_key_is_placeholder) {
+    let no_real_api_key = config.api_key.is_none() || api_key_is_placeholder;
+    config.oauth_token.is_some() && no_real_api_key
+}
+
+fn create_anthropic_from_registry(
+    config: &RegistryProviderConfig,
+) -> Result<Arc<dyn LlmProvider>, LlmError> {
+    if should_use_anthropic_oauth(config) {
         tracing::debug!(
             provider = %config.provider_id,
             model = %config.model,

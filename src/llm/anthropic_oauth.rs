@@ -507,20 +507,15 @@ fn convert_messages(messages: Vec<ChatMessage>) -> (Option<String>, Vec<Anthropi
                     tool_use_id: tool_call_id,
                     content: msg.content,
                 };
-                // If the last message is already a user message with blocks,
-                // append to it (Anthropic requires consecutive tool results
-                // in one user message).
-                if let Some(last) = anthropic_msgs.last_mut()
-                    && last.role == "user"
-                    && let AnthropicContent::Blocks(ref mut blocks) = last.content
-                {
-                    blocks.push(block);
-                    continue;
+                // Anthropic requires consecutive tool results in one user
+                // message, so append to a trailing user block message when
+                // present and start a new user message otherwise.
+                if let Some(block) = append_to_trailing_user_blocks(&mut anthropic_msgs, block) {
+                    anthropic_msgs.push(AnthropicMessage {
+                        role: "user".to_string(),
+                        content: AnthropicContent::Blocks(vec![block]),
+                    });
                 }
-                anthropic_msgs.push(AnthropicMessage {
-                    role: "user".to_string(),
-                    content: AnthropicContent::Blocks(vec![block]),
-                });
             }
         }
     }
@@ -532,6 +527,25 @@ fn convert_messages(messages: Vec<ChatMessage>) -> (Option<String>, Vec<Anthropi
     };
 
     (system, anthropic_msgs)
+}
+
+/// Append `block` to the last message when it is a user message carrying
+/// content blocks; otherwise hand the block back for a fresh user message.
+fn append_to_trailing_user_blocks(
+    msgs: &mut [AnthropicMessage],
+    block: AnthropicContentBlock,
+) -> Option<AnthropicContentBlock> {
+    let Some(last) = msgs.last_mut() else {
+        return Some(block);
+    };
+    if last.role != "user" {
+        return Some(block);
+    }
+    let AnthropicContent::Blocks(ref mut blocks) = last.content else {
+        return Some(block);
+    };
+    blocks.push(block);
+    None
 }
 
 /// Extract text content and tool calls from an Anthropic response.

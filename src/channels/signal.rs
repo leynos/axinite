@@ -517,6 +517,32 @@ impl SignalChannel {
         Ok(parsed.get("result").cloned())
     }
 
+    /// Attach optional message text and non-empty attachments to RPC params.
+    fn apply_message_params(
+        params: &mut serde_json::Value,
+        message: Option<&str>,
+        attachments: Option<&[String]>,
+    ) {
+        if let Some(msg) = message {
+            params["message"] = serde_json::Value::String(msg.to_string());
+        }
+        if let Some(attachments) = attachments
+            && !attachments.is_empty()
+        {
+            params["attachments"] = serde_json::Value::Array(
+                attachments
+                    .iter()
+                    .map(|s| serde_json::Value::String(s.clone()))
+                    .collect(),
+            );
+        }
+    }
+
+    /// Extract the Signal reply target from message metadata, if present.
+    fn signal_target(metadata: &serde_json::Value) -> Option<&str> {
+        metadata.get("signal_target").and_then(|v| v.as_str())
+    }
+
     /// Build JSON-RPC params for a send/typing call.
     fn build_rpc_params(
         &self,
@@ -524,48 +550,18 @@ impl SignalChannel {
         message: Option<&str>,
         attachments: Option<&[String]>,
     ) -> serde_json::Value {
-        match target {
-            RecipientTarget::Direct(id) => {
-                let mut params = serde_json::json!({
-                    "recipient": [id],
-                    "account": &self.config.account,
-                });
-                if let Some(msg) = message {
-                    params["message"] = serde_json::Value::String(msg.to_string());
-                }
-                if let Some(attachments) = attachments
-                    && !attachments.is_empty()
-                {
-                    params["attachments"] = serde_json::Value::Array(
-                        attachments
-                            .iter()
-                            .map(|s| serde_json::Value::String(s.clone()))
-                            .collect(),
-                    );
-                }
-                params
-            }
-            RecipientTarget::Group(group_id) => {
-                let mut params = serde_json::json!({
-                    "groupId": group_id,
-                    "account": &self.config.account,
-                });
-                if let Some(msg) = message {
-                    params["message"] = serde_json::Value::String(msg.to_string());
-                }
-                if let Some(attachments) = attachments
-                    && !attachments.is_empty()
-                {
-                    params["attachments"] = serde_json::Value::Array(
-                        attachments
-                            .iter()
-                            .map(|s| serde_json::Value::String(s.clone()))
-                            .collect(),
-                    );
-                }
-                params
-            }
-        }
+        let mut params = match target {
+            RecipientTarget::Direct(id) => serde_json::json!({
+                "recipient": [id],
+                "account": &self.config.account,
+            }),
+            RecipientTarget::Group(group_id) => serde_json::json!({
+                "groupId": group_id,
+                "account": &self.config.account,
+            }),
+        };
+        Self::apply_message_params(&mut params, message, attachments);
+        params
     }
 
     /// Validate that attachment paths are safe and within the sandbox.
@@ -624,47 +620,97 @@ impl SignalChannel {
         message: Option<&str>,
         attachments: Option<&[String]>,
     ) -> serde_json::Value {
-        match target {
-            RecipientTarget::Direct(id) => {
-                let mut params = serde_json::json!({
-                    "recipient": [id],
-                    "account": account,
-                });
-                if let Some(msg) = message {
-                    params["message"] = serde_json::Value::String(msg.to_string());
-                }
-                if let Some(attachments) = attachments
-                    && !attachments.is_empty()
-                {
-                    params["attachments"] = serde_json::Value::Array(
-                        attachments
-                            .iter()
-                            .map(|s| serde_json::Value::String(s.clone()))
-                            .collect(),
-                    );
-                }
-                params
+        let mut params = match target {
+            RecipientTarget::Direct(id) => serde_json::json!({
+                "recipient": [id],
+                "account": account,
+            }),
+            RecipientTarget::Group(group_id) => serde_json::json!({
+                "groupId": group_id,
+                "account": account,
+            }),
+        };
+        Self::apply_message_params(&mut params, message, attachments);
+        params
+    }
+
+    /// Return `true` when an attachment-only message must be dropped per config.
+    fn should_drop_attachment_only(&self, has_attachments: bool, has_message_text: bool) -> bool {
+        if !self.config.ignore_attachments {
+            return false;
+        }
+        has_attachments && !has_message_text
+    }
+
+    /// Apply the configured group policy; returns `false` when the message must be dropped.
+    fn group_message_allowed(&self, data_msg: &DataMessage, sender: &str) -> bool {
+        let group_id = data_msg
+            .group_info
+            .as_ref()
+            .and_then(|g| g.group_id.as_deref());
+        match self.config.group_policy.as_str() {
+            "disabled" => {
+                tracing::debug!("Signal: group messages disabled, dropping");
+                false
             }
-            RecipientTarget::Group(group_id) => {
-                let mut params = serde_json::json!({
-                    "groupId": group_id,
-                    "account": account,
-                });
-                if let Some(msg) = message {
-                    params["message"] = serde_json::Value::String(msg.to_string());
-                }
-                if let Some(attachments) = attachments
-                    && !attachments.is_empty()
+            "open" => {
+                // For "open" policy, check group allowlist but not sender allowlist
+                if let Some(group_id) = group_id
+                    && !self.is_group_allowed(group_id)
                 {
-                    params["attachments"] = serde_json::Value::Array(
-                        attachments
-                            .iter()
-                            .map(|s| serde_json::Value::String(s.clone()))
-                            .collect(),
+                    tracing::debug!(
+                        group_id = %group_id,
+                        "Signal: group not in allow_from_groups, dropping"
                     );
+                    return false;
                 }
-                params
+                true
             }
+            "allowlist" => {
+                // Default to allowlist - check group AND sender
+                let Some(group_id) = group_id else {
+                    return true;
+                };
+                if !self.is_group_allowed(group_id) {
+                    tracing::debug!(
+                        group_id = %group_id,
+                        "Signal: group not in allow_from_groups, dropping"
+                    );
+                    return false;
+                }
+                // Also check sender is allowed for group
+                if !self.is_group_sender_allowed(sender) {
+                    tracing::debug!(
+                        sender = %sender,
+                        group_id = %group_id,
+                        "Signal: sender not in group_allow_from, dropping"
+                    );
+                    return false;
+                }
+                true
+            }
+            _ => true,
+        }
+    }
+
+    /// Apply the configured DM policy; returns `false` when the message must be dropped.
+    fn dm_message_allowed(&self, sender: &str, envelope: &Envelope) -> bool {
+        match self.config.dm_policy.as_str() {
+            "open" => true,
+            "pairing" if !self.is_sender_allowed_with_pairing(sender) => {
+                // Pairing policy: check allow_from + pairing store.
+                // Handle pairing request - this will create a request and send
+                // reply if new; the message is dropped whether or not the
+                // pairing request succeeds.
+                let _ = self.handle_pairing_request(sender, envelope.source_name.as_deref());
+                false
+            }
+            "allowlist" if !self.is_sender_allowed(sender) => {
+                // Default: check allow_from list
+                tracing::debug!(sender = %sender, "Signal: sender not in allow_from, dropping");
+                false
+            }
+            _ => true,
         }
     }
 
@@ -681,7 +727,7 @@ impl SignalChannel {
         // Skip attachment-only messages when configured.
         let has_attachments = data_msg.attachments.as_ref().is_some_and(|a| !a.is_empty());
         let has_message_text = data_msg.message.as_ref().is_some_and(|m| !m.is_empty());
-        if self.config.ignore_attachments && has_attachments && !has_message_text {
+        if self.should_drop_attachment_only(has_attachments, has_message_text) {
             tracing::debug!("Signal: dropping attachment-only message");
             return None;
         }
@@ -694,13 +740,7 @@ impl SignalChannel {
             .as_deref()
             .filter(|t| !t.is_empty())
             .map(String::from)
-            .or_else(|| {
-                if has_attachments {
-                    Some("[Attachment]".to_string())
-                } else {
-                    None
-                }
-            })?;
+            .or_else(|| has_attachments.then(|| "[Attachment]".to_string()))?;
         let sender = Self::sender(envelope)?;
 
         // Log sender info including UUID if available
@@ -718,79 +758,14 @@ impl SignalChannel {
             .is_some();
 
         // Apply group policy first (before DM policy for group messages)
-        if is_group {
-            match self.config.group_policy.as_str() {
-                "disabled" => {
-                    tracing::debug!("Signal: group messages disabled, dropping");
-                    return None;
-                }
-                "open" => {
-                    // For "open" policy, check group allowlist but not sender allowlist
-                    if let Some(group_id) = data_msg
-                        .group_info
-                        .as_ref()
-                        .and_then(|g| g.group_id.as_deref())
-                        && !self.is_group_allowed(group_id)
-                    {
-                        tracing::debug!(
-                            group_id = %group_id,
-                            "Signal: group not in allow_from_groups, dropping"
-                        );
-                        return None;
-                    }
-                }
-                "allowlist" => {
-                    // Default to allowlist - check group AND sender
-                    if let Some(group_id) = data_msg
-                        .group_info
-                        .as_ref()
-                        .and_then(|g| g.group_id.as_deref())
-                    {
-                        if !self.is_group_allowed(group_id) {
-                            tracing::debug!(
-                                group_id = %group_id,
-                                "Signal: group not in allow_from_groups, dropping"
-                            );
-                            return None;
-                        }
-                        // Also check sender is allowed for group
-                        if !self.is_group_sender_allowed(&sender) {
-                            tracing::debug!(
-                                sender = %sender,
-                                group_id = %group_id,
-                                "Signal: sender not in group_allow_from, dropping"
-                            );
-                            return None;
-                        }
-                    }
-                }
-                _ => {}
-            }
+        let allowed = if is_group {
+            self.group_message_allowed(data_msg, &sender)
         } else {
             // DM message - apply DM policy
-            match self.config.dm_policy.as_str() {
-                "open" => {}
-                "pairing" if !self.is_sender_allowed_with_pairing(&sender) => {
-                    // Pairing policy: check allow_from + pairing store
-                    // Handle pairing request - this will create a request and send reply if new
-                    match self.handle_pairing_request(&sender, envelope.source_name.as_deref()) {
-                        Ok(_) => {
-                            // Pairing request processed (new or existing), drop the message
-                            return None;
-                        }
-                        Err(()) => {
-                            // Error processing pairing, drop message
-                            return None;
-                        }
-                    }
-                }
-                "allowlist" if !self.is_sender_allowed(&sender) => {
-                    // Default: check allow_from list
-                    tracing::debug!(sender = %sender, "Signal: sender not in allow_from, dropping");
-                    return None;
-                }
-                _ => {}
-            }
+            self.dm_message_allowed(&sender, envelope)
+        };
+        if !allowed {
+            return None;
         }
 
         let target = Self::reply_target(data_msg, &sender);
@@ -953,48 +928,52 @@ impl NativeChannel for SignalChannel {
         };
         // Filter/send status messages
         if let StatusUpdate::Status(msg) = &status
-            && let Some(target_str) = metadata.get("signal_target").and_then(|v| v.as_str())
-            && should_forward_status(msg)
+            && let Some(target_str) = Self::signal_target(metadata)
         {
-            self.send_status_message(target_str, msg).await;
+            if should_forward_status(msg) {
+                self.send_status_message(target_str, msg).await;
+            }
         }
 
         // Send tool result previews to user (debug mode only)
-        if self.is_debug()
-            && let StatusUpdate::ToolResult { name, preview } = &status
-            && let Some(target_str) = metadata.get("signal_target").and_then(|v| v.as_str())
+        if let StatusUpdate::ToolResult { name, preview } = &status
+            && let Some(target_str) = Self::signal_target(metadata)
         {
-            let truncated = if preview.chars().count() > 500 {
-                let s: String = preview.chars().take(500).collect();
-                format!("{s}...")
-            } else {
-                preview.clone()
-            };
-            let message = format!("Tool '{}' result:\n{}", name, truncated);
-            self.send_status_message(target_str, &message).await;
+            if self.is_debug() {
+                let truncated = if preview.chars().count() > 500 {
+                    let s: String = preview.chars().take(500).collect();
+                    format!("{s}...")
+                } else {
+                    preview.clone()
+                };
+                let message = format!("Tool '{}' result:\n{}", name, truncated);
+                self.send_status_message(target_str, &message).await;
+            }
         }
 
         // Send tool started notification (debug mode only)
-        if self.is_debug()
-            && let StatusUpdate::ToolStarted { name } = &status
-            && let Some(target_str) = metadata.get("signal_target").and_then(|v| v.as_str())
+        if let StatusUpdate::ToolStarted { name } = &status
+            && let Some(target_str) = Self::signal_target(metadata)
         {
-            let message = format!("\u{25CB} Running tool: {}", name);
-            self.send_status_message(target_str, &message).await;
+            if self.is_debug() {
+                let message = format!("\u{25CB} Running tool: {}", name);
+                self.send_status_message(target_str, &message).await;
+            }
         }
 
         // Send tool completed notification (debug mode only)
-        if self.is_debug()
-            && let StatusUpdate::ToolCompleted { name, success, .. } = &status
-            && let Some(target_str) = metadata.get("signal_target").and_then(|v| v.as_str())
+        if let StatusUpdate::ToolCompleted { name, success, .. } = &status
+            && let Some(target_str) = Self::signal_target(metadata)
         {
-            let (icon, color) = if *success {
-                ("\u{25CF}", "success")
-            } else {
-                ("\u{2717}", "failed")
-            };
-            let message = format!("{} Tool '{}' completed ({})", icon, name, color);
-            self.send_status_message(target_str, &message).await;
+            if self.is_debug() {
+                let (icon, color) = if *success {
+                    ("\u{25CF}", "success")
+                } else {
+                    ("\u{2717}", "failed")
+                };
+                let message = format!("{} Tool '{}' completed ({})", icon, name, color);
+                self.send_status_message(target_str, &message).await;
+            }
         }
 
         // Send job started notification (sandbox jobs)
@@ -1359,13 +1338,18 @@ async fn sse_listener(
         }
 
         // Process any trailing data before reconnect.
-        if !current_data.is_empty()
-            && let Ok(sse) = serde_json::from_str::<SseEnvelope>(&current_data)
+        let trailing = if current_data.is_empty() {
+            None
+        } else {
+            serde_json::from_str::<SseEnvelope>(&current_data).ok()
+        };
+        if let Some(sse) = &trailing
             && let Some(ref envelope) = sse.envelope
-            && let Some((msg, target)) = channel.process_envelope(envelope)
         {
-            reply_targets.write().await.put(msg.id, target);
-            let _ = tx.send(msg).await;
+            if let Some((msg, target)) = channel.process_envelope(envelope) {
+                reply_targets.write().await.put(msg.id, target);
+                let _ = tx.send(msg).await;
+            }
         }
 
         tracing::debug!("Signal SSE stream ended, reconnecting with backoff...");

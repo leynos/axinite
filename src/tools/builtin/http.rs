@@ -108,6 +108,17 @@ impl HttpTool {
         self.secrets_store = Some(secrets_store);
         self
     }
+
+    /// Return `true` when credentials would be auto-injected for the request's target host.
+    fn host_has_mapped_credentials(&self, params: &serde_json::Value) -> bool {
+        let Some(ref registry) = self.credential_registry else {
+            return false;
+        };
+        let Some(host) = extract_host_from_params(params) else {
+            return false;
+        };
+        registry.has_credentials_for_host(&host)
+    }
 }
 
 /// Validate and resolve a `save_to` path, ensuring it stays under `/tmp/`.
@@ -261,6 +272,12 @@ fn extract_host_from_params(params: &serde_json::Value) -> Option<String> {
         .and_then(|u| u.as_str())
         .and_then(|u| reqwest::Url::parse(u).ok())
         .and_then(|u| u.host_str().map(|h| h.to_string()))
+}
+
+/// Parse the declared `Content-Length` header as a byte count, if present and valid.
+fn declared_content_length(response: &reqwest::Response) -> Option<usize> {
+    let value = response.headers().get(reqwest::header::CONTENT_LENGTH)?;
+    value.to_str().ok()?.parse::<usize>().ok()
 }
 
 impl NativeTool for HttpTool {
@@ -472,9 +489,7 @@ impl NativeTool for HttpTool {
 
         // Pre-check Content-Length header to reject obviously oversized responses
         // before downloading anything, preventing OOM from malicious servers.
-        if let Some(content_length) = response.headers().get(reqwest::header::CONTENT_LENGTH)
-            && let Ok(s) = content_length.to_str()
-            && let Ok(len) = s.parse::<usize>()
+        if let Some(len) = declared_content_length(&response)
             && len > max_size
         {
             tracing::warn!(
@@ -589,10 +604,7 @@ impl NativeTool for HttpTool {
             return ApprovalRequirement::Always;
         }
         // 2. Target host has credential mappings (will be auto-injected)
-        if let Some(ref registry) = self.credential_registry
-            && let Some(host) = extract_host_from_params(params)
-            && registry.has_credentials_for_host(&host)
-        {
+        if self.host_has_mapped_credentials(params) {
             return ApprovalRequirement::Always;
         }
         // Default: outbound HTTP still needs approval unless auto-approved

@@ -143,39 +143,51 @@ pub(super) struct WasmRuntimeConfig {
 /// failures are returned after logging so callers can decide whether to reject
 /// registration or recover at a higher boundary.
 pub(super) fn recover_guest_metadata(
-    mut wrapper: WasmToolWrapper,
+    wrapper: WasmToolWrapper,
     hints: &WasmMetadataHints<'_>,
 ) -> Result<WasmToolWrapper, WasmError> {
     if hints.description.is_some() && hints.schema.is_some() {
         return Ok(wrapper);
     }
     match wrapper.exported_metadata() {
-        Ok((description, schema)) => {
-            if hints.description.is_none() {
-                wrapper = wrapper.with_description(description);
-            }
-            if hints.schema.is_none() {
-                wrapper = wrapper.with_schema(schema);
-            }
-        }
+        Ok(metadata) => Ok(fill_absent_metadata(wrapper, hints, metadata)),
         Err(error) => {
-            if hints.schema.is_none() {
-                tracing::warn!(
-                    name = hints.name,
-                    %error,
-                    "Failed to recover exported WASM metadata; rejecting registration"
-                );
-            } else {
-                tracing::warn!(
-                    name = hints.name,
-                    %error,
-                    "Failed to recover exported WASM description; rejecting registration"
-                );
-            }
-            return Err(error);
+            warn_metadata_export_failure(hints, &error);
+            Err(error)
         }
     }
-    Ok(wrapper)
+}
+
+/// Copy guest-exported metadata onto the wrapper for any hint left as `None`.
+fn fill_absent_metadata(
+    mut wrapper: WasmToolWrapper,
+    hints: &WasmMetadataHints<'_>,
+    (description, schema): (String, serde_json::Value),
+) -> WasmToolWrapper {
+    if hints.description.is_none() {
+        wrapper = wrapper.with_description(description);
+    }
+    if hints.schema.is_none() {
+        wrapper = wrapper.with_schema(schema);
+    }
+    wrapper
+}
+
+/// Emit the registration-rejection warning appropriate to the missing hints.
+fn warn_metadata_export_failure(hints: &WasmMetadataHints<'_>, error: &WasmError) {
+    if hints.schema.is_none() {
+        tracing::warn!(
+            name = hints.name,
+            %error,
+            "Failed to recover exported WASM metadata; rejecting registration"
+        );
+    } else {
+        tracing::warn!(
+            name = hints.name,
+            %error,
+            "Failed to recover exported WASM description; rejecting registration"
+        );
+    }
 }
 
 /// Apply explicit metadata overrides and attach runtime concerns to a wrapper.

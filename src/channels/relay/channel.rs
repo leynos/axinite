@@ -9,7 +9,7 @@ use std::sync::Arc;
 
 use tokio::sync::{RwLock, mpsc};
 
-use crate::channels::relay::client::{RelayClient, RelayError};
+use crate::channels::relay::client::{ChannelEvent, RelayClient, RelayError};
 use crate::channels::{
     IncomingMessage, MessageStream, NativeChannel, OutgoingResponse, StatusUpdate,
 };
@@ -165,6 +165,13 @@ impl RelayChannel {
     }
 }
 
+/// Whether a relay event lacks any of the identifiers required for routing.
+fn missing_required_fields(event: &ChannelEvent) -> bool {
+    // sender and channel identify the message origin; provider scope routes it.
+    let missing_ids = event.sender_id.is_empty() || event.channel_id.is_empty();
+    missing_ids || event.provider_scope.is_empty()
+}
+
 impl NativeChannel for RelayChannel {
     fn name(&self) -> &str {
         self.provider.channel_name()
@@ -215,10 +222,7 @@ impl NativeChannel for RelayChannel {
                     consecutive_failures = 0;
 
                     // Validate required fields
-                    if event.sender_id.is_empty()
-                        || event.channel_id.is_empty()
-                        || event.provider_scope.is_empty()
-                    {
+                    if missing_required_fields(&event) {
                         tracing::debug!(
                             event_type = %event.event_type,
                             sender_id = %event.sender_id,

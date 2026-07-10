@@ -451,7 +451,7 @@ async fn list_dir_inner(
 
         entries.push(display);
 
-        if recursive && is_dir && current_depth < max_depth {
+        if should_recurse(recursive, is_dir, current_depth, max_depth) {
             // Skip common non-essential directories
             let name = entry.file_name();
             let name_str = name.to_string_lossy();
@@ -473,6 +473,12 @@ async fn list_dir_inner(
     }
 
     Ok(())
+}
+
+/// Whether a directory listing should descend into a subdirectory.
+fn should_recurse(recursive: bool, is_dir: bool, current_depth: usize, max_depth: usize) -> bool {
+    let descend_into_dir = recursive && is_dir;
+    descend_into_dir && current_depth < max_depth
 }
 
 /// Format file size in human-readable form.

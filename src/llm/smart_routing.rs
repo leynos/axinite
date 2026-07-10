@@ -415,33 +415,13 @@ fn score_complexity_internal(
     weights: &ScorerWeights,
     domain_regex: &Regex,
 ) -> ScoreBreakdown {
+    // Check for explicit tier hint (e.g. "[tier:flash]")
+    if let Some(breakdown) = explicit_tier_breakdown(prompt) {
+        return breakdown;
+    }
+
     let mut hints = Vec::new();
     let mut components = HashMap::new();
-
-    // Check for explicit tier hint (e.g. "[tier:flash]")
-    if let Some(caps) = RE_TIER_HINT.captures(prompt) {
-        // Group 1 always exists when the regex matches; an empty string
-        // falls through to the defensive branch below.
-        let tier_str = caps.get(1).map_or("", |m| m.as_str());
-        let tier = match tier_str.to_lowercase().as_str() {
-            "flash" => Tier::Flash,
-            "standard" => Tier::Standard,
-            "pro" => Tier::Pro,
-            "frontier" => Tier::Frontier,
-            // The regex only captures valid tiers, so this is defensive.
-            other => {
-                tracing::error!(tier = %other, "Unexpected tier in hint despite regex constraint");
-                Tier::Standard
-            }
-        };
-        hints.push(format!("Explicit tier hint: {tier}"));
-        return ScoreBreakdown {
-            total: tier.to_score(),
-            tier,
-            components,
-            hints,
-        };
-    }
 
     // Token estimate (based on char count): <20 chars = 0, >=520 chars = 100
     let char_count = prompt.len();
@@ -451,67 +431,27 @@ fn score_complexity_internal(
         hints.push(format!("Long prompt ({char_count} chars)"));
     }
 
-    // Reasoning words
-    let reasoning_count = count_matches(&RE_REASONING, prompt);
-    let reasoning_score = (reasoning_count * 50).min(100) as u32;
-    components.insert("reasoning_words".to_string(), reasoning_score);
-    if reasoning_count >= 2 {
-        hints.push(format!("reasoning_words: {reasoning_count} matches"));
-    }
-
-    // Multi-step
-    let multi_step_count = count_matches(&RE_MULTI_STEP, prompt);
-    let multi_step_score = (multi_step_count * 50).min(100) as u32;
-    components.insert("multi_step".to_string(), multi_step_score);
-    if multi_step_count >= 2 {
-        hints.push(format!("multi_step: {multi_step_count} matches"));
-    }
-
-    // Creativity
-    let creativity_count = count_matches(&RE_CREATIVITY, prompt);
-    let creativity_score = (creativity_count * 50).min(100) as u32;
-    components.insert("creativity".to_string(), creativity_score);
-    if creativity_count >= 2 {
-        hints.push(format!("creativity: {creativity_count} matches"));
-    }
-
-    // Precision
-    let precision_count = count_matches(&RE_PRECISION, prompt);
-    let precision_score = (precision_count * 50).min(100) as u32;
-    components.insert("precision".to_string(), precision_score);
-
-    // Code indicators
-    let code_count = count_matches(&RE_CODE, prompt);
-    let code_score = (code_count * 50).min(100) as u32;
-    components.insert("code_indicators".to_string(), code_score);
-    if code_count >= 2 {
-        hints.push(format!("code_indicators: {code_count} matches"));
-    }
-
-    // Tool likelihood
-    let tool_count = count_matches(&RE_TOOL, prompt);
-    let tool_score = (tool_count * 50).min(100) as u32;
-    components.insert("tool_likelihood".to_string(), tool_score);
-
-    // Safety sensitivity
-    let safety_count = count_matches(&RE_SAFETY, prompt);
-    let safety_score = (safety_count * 50).min(100) as u32;
-    components.insert("safety_sensitivity".to_string(), safety_score);
-    if safety_count >= 1 {
-        hints.push(format!("safety_sensitivity: {safety_count} matches"));
-    }
-
-    // Context dependency
-    let context_count = count_matches(&RE_CONTEXT, prompt);
-    let context_score = (context_count * 50).min(100) as u32;
-    components.insert("context_dependency".to_string(), context_score);
-
-    // Domain specific
-    let domain_count = count_matches(domain_regex, prompt);
-    let domain_score = (domain_count * 50).min(100) as u32;
-    components.insert("domain_specific".to_string(), domain_score);
-    if domain_count >= 2 {
-        hints.push(format!("domain_specific: {domain_count} matches"));
+    // Keyword dimensions: 50 points per match, hint at the given threshold.
+    let keyword_dimensions: [(&str, &Regex, Option<usize>); 9] = [
+        ("reasoning_words", &*RE_REASONING, Some(2)),
+        ("multi_step", &*RE_MULTI_STEP, Some(2)),
+        ("creativity", &*RE_CREATIVITY, Some(2)),
+        ("precision", &*RE_PRECISION, None),
+        ("code_indicators", &*RE_CODE, Some(2)),
+        ("tool_likelihood", &*RE_TOOL, None),
+        ("safety_sensitivity", &*RE_SAFETY, Some(1)),
+        ("context_dependency", &*RE_CONTEXT, None),
+        ("domain_specific", domain_regex, Some(2)),
+    ];
+    for (name, regex, hint_threshold) in keyword_dimensions {
+        score_keyword_dimension(
+            prompt,
+            name,
+            regex,
+            hint_threshold,
+            &mut components,
+            &mut hints,
+        );
     }
 
     // Ambiguity (vague pronouns)
@@ -519,25 +459,8 @@ fn score_complexity_internal(
     let ambiguity_score = (vague_count * 25).min(100) as u32;
     components.insert("ambiguity".to_string(), ambiguity_score);
 
-    // Question complexity
-    let question_marks = prompt.matches('?').count();
-    let open_ended_count = count_matches(&RE_OPEN_ENDED, prompt);
-    let question_score = ((question_marks * 20) + (open_ended_count * 25)).min(100) as u32;
-    components.insert("question_complexity".to_string(), question_score);
-    if question_marks >= 2 {
-        hints.push(format!("Multiple questions: {question_marks}"));
-    }
-
-    // Sentence complexity (commas, semicolons, conjunctions)
-    let commas = prompt.matches(',').count();
-    let semicolons = prompt.matches(';').count();
-    let conjunctions = count_matches(&RE_CONJUNCTIONS, prompt);
-    let clauses = commas + (semicolons * 2) + conjunctions;
-    let sentence_score = (clauses * 12).min(100) as u32;
-    components.insert("sentence_complexity".to_string(), sentence_score);
-    if clauses >= 5 {
-        hints.push(format!("Complex structure: {clauses} clauses"));
-    }
+    score_question_complexity(prompt, &mut components, &mut hints);
+    score_sentence_complexity(prompt, &mut components, &mut hints);
 
     // Calculate weighted total using data-driven iteration
     let total: f32 = [
@@ -559,18 +482,7 @@ fn score_complexity_internal(
     .map(|(name, weight)| components.get(*name).copied().unwrap_or(0) as f32 * weight)
     .sum();
 
-    // Multi-dimensional boost: +30% when 3+ dimensions fire above threshold
-    let triggered_dimensions = components.values().filter(|&&v| v > 20).count();
-    let total = if triggered_dimensions >= 3 {
-        hints.push(format!(
-            "Multi-dimensional ({triggered_dimensions} triggers)"
-        ));
-        total * 1.3
-    } else if triggered_dimensions >= 2 {
-        total * 1.15
-    } else {
-        total
-    };
+    let total = apply_dimension_boost(total, &components, &mut hints);
 
     // Clamp to 0-100
     let total = (total as u32).clamp(0, 100);
@@ -581,6 +493,103 @@ fn score_complexity_internal(
         tier,
         components,
         hints,
+    }
+}
+
+/// Build a breakdown directly from an explicit "[tier:...]" hint, if present.
+fn explicit_tier_breakdown(prompt: &str) -> Option<ScoreBreakdown> {
+    let caps = RE_TIER_HINT.captures(prompt)?;
+    // Group 1 always exists when the regex matches; an empty string
+    // falls through to the defensive branch below.
+    let tier_str = caps.get(1).map_or("", |m| m.as_str());
+    let tier = match tier_str.to_lowercase().as_str() {
+        "flash" => Tier::Flash,
+        "standard" => Tier::Standard,
+        "pro" => Tier::Pro,
+        "frontier" => Tier::Frontier,
+        // The regex only captures valid tiers, so this is defensive.
+        other => {
+            tracing::error!(tier = %other, "Unexpected tier in hint despite regex constraint");
+            Tier::Standard
+        }
+    };
+    Some(ScoreBreakdown {
+        total: tier.to_score(),
+        tier,
+        components: HashMap::new(),
+        hints: vec![format!("Explicit tier hint: {tier}")],
+    })
+}
+
+/// Score one keyword dimension: 50 points per regex match, capped at 100.
+///
+/// Records a "{name}: {count} matches" hint once `hint_threshold` matches
+/// fire; dimensions with no threshold never hint.
+fn score_keyword_dimension(
+    prompt: &str,
+    name: &str,
+    regex: &Regex,
+    hint_threshold: Option<usize>,
+    components: &mut HashMap<String, u32>,
+    hints: &mut Vec<String>,
+) {
+    let count = count_matches(regex, prompt);
+    let score = (count * 50).min(100) as u32;
+    components.insert(name.to_string(), score);
+    if hint_threshold.is_some_and(|threshold| count >= threshold) {
+        hints.push(format!("{name}: {count} matches"));
+    }
+}
+
+/// Score question complexity from '?' density and open-ended phrasing.
+fn score_question_complexity(
+    prompt: &str,
+    components: &mut HashMap<String, u32>,
+    hints: &mut Vec<String>,
+) {
+    let question_marks = prompt.matches('?').count();
+    let open_ended_count = count_matches(&RE_OPEN_ENDED, prompt);
+    let question_score = ((question_marks * 20) + (open_ended_count * 25)).min(100) as u32;
+    components.insert("question_complexity".to_string(), question_score);
+    if question_marks >= 2 {
+        hints.push(format!("Multiple questions: {question_marks}"));
+    }
+}
+
+/// Score sentence complexity from commas, semicolons, and conjunctions.
+fn score_sentence_complexity(
+    prompt: &str,
+    components: &mut HashMap<String, u32>,
+    hints: &mut Vec<String>,
+) {
+    let commas = prompt.matches(',').count();
+    let semicolons = prompt.matches(';').count();
+    let conjunctions = count_matches(&RE_CONJUNCTIONS, prompt);
+    let clauses = commas + (semicolons * 2) + conjunctions;
+    let sentence_score = (clauses * 12).min(100) as u32;
+    components.insert("sentence_complexity".to_string(), sentence_score);
+    if clauses >= 5 {
+        hints.push(format!("Complex structure: {clauses} clauses"));
+    }
+}
+
+/// Apply the multi-dimensional boost: +30% when 3+ dimensions fire above
+/// threshold, +15% when exactly 2 fire.
+fn apply_dimension_boost(
+    total: f32,
+    components: &HashMap<String, u32>,
+    hints: &mut Vec<String>,
+) -> f32 {
+    let triggered_dimensions = components.values().filter(|&&v| v > 20).count();
+    if triggered_dimensions >= 3 {
+        hints.push(format!(
+            "Multi-dimensional ({triggered_dimensions} triggers)"
+        ));
+        total * 1.3
+    } else if triggered_dimensions >= 2 {
+        total * 1.15
+    } else {
+        total
     }
 }
 

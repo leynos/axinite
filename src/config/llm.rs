@@ -72,21 +72,34 @@ impl LlmConfig {
             parse_optional_env_from(ctx, EnvKey("LLM_REQUEST_TIMEOUT_SECS"), 120)?;
 
         Ok(Self {
-            backend: if is_nearai {
-                "nearai".to_string()
-            } else if is_bedrock {
-                "bedrock".to_string()
-            } else if let Some(ref p) = provider {
-                p.provider_id.clone()
-            } else {
-                backend_lower
-            },
+            backend: Self::backend_tag(is_nearai, is_bedrock, provider.as_ref(), backend_lower),
             session,
             nearai,
             provider,
             bedrock,
             request_timeout_secs,
         })
+    }
+
+    /// Choose the backend identifier stored on the config.
+    ///
+    /// Built-in backends keep their canonical tags; registry providers use
+    /// their provider id; otherwise the lowered backend name stands as-is.
+    fn backend_tag(
+        is_nearai: bool,
+        is_bedrock: bool,
+        provider: Option<&RegistryProviderConfig>,
+        backend_lower: String,
+    ) -> String {
+        if is_nearai {
+            "nearai".to_string()
+        } else if is_bedrock {
+            "bedrock".to_string()
+        } else if let Some(p) = provider {
+            p.provider_id.clone()
+        } else {
+            backend_lower
+        }
     }
 }
 

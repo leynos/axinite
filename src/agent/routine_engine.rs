@@ -620,17 +620,16 @@ async fn execute_routine(ctx: EngineContext, routine: Routine, run: RoutineRun) 
     ctx.running_count.fetch_sub(1, Ordering::Relaxed);
 }
 
+/// Return `true` when a character is safe to appear in a workspace path.
+fn is_workspace_safe_char(c: char) -> bool {
+    c.is_ascii_alphanumeric() || matches!(c, '-' | '_')
+}
+
 /// Sanitize a routine name for use in workspace paths.
 /// Only keeps alphanumeric, dash, and underscore characters; replaces everything else.
 fn sanitize_routine_name(name: &str) -> String {
     name.chars()
-        .map(|c| {
-            if c.is_ascii_alphanumeric() || c == '-' || c == '_' {
-                c
-            } else {
-                '_'
-            }
-        })
+        .map(|c| if is_workspace_safe_char(c) { c } else { '_' })
         .collect()
 }
 

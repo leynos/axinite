@@ -182,10 +182,7 @@ pub async fn wait_for_callback(
                 .await
                 .map_err(|e| OAuthCallbackError::Io(e.to_string()))?;
 
-            if let Some(path) = request_line.split_whitespace().nth(1)
-                && path.starts_with(&path_prefix)
-                && let Some(query) = path.split('?').nth(1)
-            {
+            if let Some(query) = callback_query(&request_line, &path_prefix) {
                 // Check for error first
                 if query.contains("error=") {
                     let html = landing_html(&display_name, false);
@@ -263,6 +260,16 @@ pub async fn wait_for_callback(
     })
     .await
     .map_err(|_| OAuthCallbackError::Timeout)?
+}
+
+/// Extract the query string from a request line whose path matches the
+/// expected callback prefix; `None` for any other request.
+fn callback_query<'a>(request_line: &'a str, path_prefix: &str) -> Option<&'a str> {
+    let path = request_line.split_whitespace().nth(1)?;
+    if !path.starts_with(path_prefix) {
+        return None;
+    }
+    path.split('?').nth(1)
 }
 
 #[cfg(test)]

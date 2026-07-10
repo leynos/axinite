@@ -83,6 +83,25 @@ pub enum Trigger {
     Manual,
 }
 
+/// Extract a required string field from a JSON config blob.
+///
+/// Returns `RoutineError::MissingField` naming the surrounding `context`
+/// when the field is absent or not a string.
+fn required_str_field(
+    config: &serde_json::Value,
+    context: &str,
+    field: &str,
+) -> Result<String, RoutineError> {
+    config
+        .get(field)
+        .and_then(|v| v.as_str())
+        .map(String::from)
+        .ok_or_else(|| RoutineError::MissingField {
+            context: context.into(),
+            field: field.into(),
+        })
+}
+
 impl Trigger {
     /// The string tag stored in the DB trigger_type column.
     pub fn type_tag(&self) -> &'static str {
@@ -97,85 +116,64 @@ impl Trigger {
     /// Parse a trigger from its DB representation.
     pub fn from_db(trigger_type: &str, config: serde_json::Value) -> Result<Self, RoutineError> {
         match trigger_type {
-            "cron" => {
-                let schedule = config
-                    .get("schedule")
-                    .and_then(|v| v.as_str())
-                    .ok_or_else(|| RoutineError::MissingField {
-                        context: "cron trigger".into(),
-                        field: "schedule".into(),
-                    })?
-                    .to_string();
-                let timezone = config
-                    .get("timezone")
-                    .and_then(|v| v.as_str())
-                    .and_then(|tz| {
-                        if crate::timezone::parse_timezone(tz).is_some() {
-                            Some(tz.to_string())
-                        } else {
-                            tracing::warn!(
-                                "Ignoring invalid timezone '{}' from DB for cron trigger",
-                                tz
-                            );
-                            None
-                        }
-                    });
-                Ok(Trigger::Cron { schedule, timezone })
-            }
-            "event" => {
-                let pattern = config
-                    .get("pattern")
-                    .and_then(|v| v.as_str())
-                    .ok_or_else(|| RoutineError::MissingField {
-                        context: "event trigger".into(),
-                        field: "pattern".into(),
-                    })?
-                    .to_string();
-                let channel = config
-                    .get("channel")
-                    .and_then(|v| v.as_str())
-                    .map(String::from);
-                Ok(Trigger::Event { channel, pattern })
-            }
-            "system_event" => {
-                let source = config
-                    .get("source")
-                    .and_then(|v| v.as_str())
-                    .ok_or_else(|| RoutineError::MissingField {
-                        context: "system_event trigger".into(),
-                        field: "source".into(),
-                    })?
-                    .to_string();
-                let event_type = config
-                    .get("event_type")
-                    .and_then(|v| v.as_str())
-                    .ok_or_else(|| RoutineError::MissingField {
-                        context: "system_event trigger".into(),
-                        field: "event_type".into(),
-                    })?
-                    .to_string();
-                let filters = config
-                    .get("filters")
-                    .and_then(|v| v.as_object())
-                    .map(|m| {
-                        m.iter()
-                            .filter_map(|(k, v)| {
-                                json_value_as_filter_string(v).map(|s| (k.clone(), s))
-                            })
-                            .collect()
-                    })
-                    .unwrap_or_default();
-                Ok(Trigger::SystemEvent {
-                    source,
-                    event_type,
-                    filters,
-                })
-            }
+            "cron" => Self::cron_from_config(&config),
+            "event" => Self::event_from_config(&config),
+            "system_event" => Self::system_event_from_config(&config),
             "manual" => Ok(Trigger::Manual),
             other => Err(RoutineError::UnknownTriggerType {
                 trigger_type: other.to_string(),
             }),
         }
+    }
+
+    /// Parse a `cron` trigger's config, discarding invalid timezones.
+    fn cron_from_config(config: &serde_json::Value) -> Result<Self, RoutineError> {
+        let schedule = required_str_field(config, "cron trigger", "schedule")?;
+        let timezone = config
+            .get("timezone")
+            .and_then(|v| v.as_str())
+            .and_then(|tz| {
+                if crate::timezone::parse_timezone(tz).is_some() {
+                    Some(tz.to_string())
+                } else {
+                    tracing::warn!(
+                        "Ignoring invalid timezone '{}' from DB for cron trigger",
+                        tz
+                    );
+                    None
+                }
+            });
+        Ok(Trigger::Cron { schedule, timezone })
+    }
+
+    /// Parse an `event` trigger's config.
+    fn event_from_config(config: &serde_json::Value) -> Result<Self, RoutineError> {
+        let pattern = required_str_field(config, "event trigger", "pattern")?;
+        let channel = config
+            .get("channel")
+            .and_then(|v| v.as_str())
+            .map(String::from);
+        Ok(Trigger::Event { channel, pattern })
+    }
+
+    /// Parse a `system_event` trigger's config, skipping non-scalar filters.
+    fn system_event_from_config(config: &serde_json::Value) -> Result<Self, RoutineError> {
+        let source = required_str_field(config, "system_event trigger", "source")?;
+        let event_type = required_str_field(config, "system_event trigger", "event_type")?;
+        let filters = config
+            .get("filters")
+            .and_then(|v| v.as_object())
+            .map(|m| {
+                m.iter()
+                    .filter_map(|(k, v)| json_value_as_filter_string(v).map(|s| (k.clone(), s)))
+                    .collect()
+            })
+            .unwrap_or_default();
+        Ok(Trigger::SystemEvent {
+            source,
+            event_type,
+            filters,
+        })
     }
 
     /// Serialize trigger-specific config to JSON for DB storage.
@@ -268,68 +266,52 @@ impl RoutineAction {
     /// Parse an action from its DB representation.
     pub fn from_db(action_type: &str, config: serde_json::Value) -> Result<Self, RoutineError> {
         match action_type {
-            "lightweight" => {
-                let prompt = config
-                    .get("prompt")
-                    .and_then(|v| v.as_str())
-                    .ok_or_else(|| RoutineError::MissingField {
-                        context: "lightweight action".into(),
-                        field: "prompt".into(),
-                    })?
-                    .to_string();
-                let context_paths = config
-                    .get("context_paths")
-                    .and_then(|v| v.as_array())
-                    .map(|arr| {
-                        arr.iter()
-                            .filter_map(|v| v.as_str().map(String::from))
-                            .collect()
-                    })
-                    .unwrap_or_default();
-                let max_tokens = config
-                    .get("max_tokens")
-                    .and_then(|v| v.as_u64())
-                    .unwrap_or(default_max_tokens() as u64) as u32;
-                Ok(RoutineAction::Lightweight {
-                    prompt,
-                    context_paths,
-                    max_tokens,
-                })
-            }
-            "full_job" => {
-                let title = config
-                    .get("title")
-                    .and_then(|v| v.as_str())
-                    .ok_or_else(|| RoutineError::MissingField {
-                        context: "full_job action".into(),
-                        field: "title".into(),
-                    })?
-                    .to_string();
-                let description = config
-                    .get("description")
-                    .and_then(|v| v.as_str())
-                    .ok_or_else(|| RoutineError::MissingField {
-                        context: "full_job action".into(),
-                        field: "description".into(),
-                    })?
-                    .to_string();
-                let max_iterations = config
-                    .get("max_iterations")
-                    .and_then(|v| v.as_u64())
-                    .unwrap_or(default_max_iterations() as u64)
-                    as u32;
-                let tool_permissions = parse_tool_permissions(&config);
-                Ok(RoutineAction::FullJob {
-                    title,
-                    description,
-                    max_iterations,
-                    tool_permissions,
-                })
-            }
+            "lightweight" => Self::lightweight_from_config(&config),
+            "full_job" => Self::full_job_from_config(&config),
             other => Err(RoutineError::UnknownActionType {
                 action_type: other.to_string(),
             }),
         }
+    }
+
+    /// Parse a `lightweight` action's config, defaulting optional fields.
+    fn lightweight_from_config(config: &serde_json::Value) -> Result<Self, RoutineError> {
+        let prompt = required_str_field(config, "lightweight action", "prompt")?;
+        let context_paths = config
+            .get("context_paths")
+            .and_then(|v| v.as_array())
+            .map(|arr| {
+                arr.iter()
+                    .filter_map(|v| v.as_str().map(String::from))
+                    .collect()
+            })
+            .unwrap_or_default();
+        let max_tokens = config
+            .get("max_tokens")
+            .and_then(|v| v.as_u64())
+            .unwrap_or(default_max_tokens() as u64) as u32;
+        Ok(RoutineAction::Lightweight {
+            prompt,
+            context_paths,
+            max_tokens,
+        })
+    }
+
+    /// Parse a `full_job` action's config, defaulting optional fields.
+    fn full_job_from_config(config: &serde_json::Value) -> Result<Self, RoutineError> {
+        let title = required_str_field(config, "full_job action", "title")?;
+        let description = required_str_field(config, "full_job action", "description")?;
+        let max_iterations = config
+            .get("max_iterations")
+            .and_then(|v| v.as_u64())
+            .unwrap_or(default_max_iterations() as u64) as u32;
+        let tool_permissions = parse_tool_permissions(config);
+        Ok(RoutineAction::FullJob {
+            title,
+            description,
+            max_iterations,
+            tool_permissions,
+        })
     }
 
     /// Serialize action config to JSON for DB storage.
@@ -544,10 +526,17 @@ mod tests {
         };
         let json = trigger.to_config_json();
         let parsed = Trigger::from_db("system_event", json).expect("parse system_event");
-        assert!(
-            matches!(parsed, Trigger::SystemEvent { source, event_type, filters: f }
-            if source == "github" && event_type == "issue" && f == filters)
-        );
+        let Trigger::SystemEvent {
+            source,
+            event_type,
+            filters: f,
+        } = parsed
+        else {
+            panic!("expected SystemEvent trigger");
+        };
+        assert_eq!(source, "github");
+        assert_eq!(event_type, "issue");
+        assert_eq!(f, filters);
     }
 
     #[test]
@@ -559,10 +548,17 @@ mod tests {
         };
         let json = action.to_config_json();
         let parsed = RoutineAction::from_db("lightweight", json).expect("parse lightweight");
-        assert!(
-            matches!(parsed, RoutineAction::Lightweight { prompt, context_paths, max_tokens }
-            if prompt == "Check PRs" && context_paths.len() == 1 && max_tokens == 2048)
-        );
+        let RoutineAction::Lightweight {
+            prompt,
+            context_paths,
+            max_tokens,
+        } = parsed
+        else {
+            panic!("expected Lightweight action");
+        };
+        assert_eq!(prompt, "Check PRs");
+        assert_eq!(context_paths.len(), 1);
+        assert_eq!(max_tokens, 2048);
     }
 
     #[test]
@@ -575,10 +571,18 @@ mod tests {
         };
         let json = action.to_config_json();
         let parsed = RoutineAction::from_db("full_job", json).expect("parse full_job");
-        assert!(
-            matches!(parsed, RoutineAction::FullJob { title, max_iterations, tool_permissions, .. }
-            if title == "Deploy review" && max_iterations == 5 && tool_permissions == vec!["shell".to_string()])
-        );
+        let RoutineAction::FullJob {
+            title,
+            max_iterations,
+            tool_permissions,
+            ..
+        } = parsed
+        else {
+            panic!("expected FullJob action");
+        };
+        assert_eq!(title, "Deploy review");
+        assert_eq!(max_iterations, 5);
+        assert_eq!(tool_permissions, vec!["shell".to_string()]);
     }
 
     #[test]

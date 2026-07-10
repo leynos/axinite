@@ -136,6 +136,11 @@ pub struct LeakDetector {
     known_prefixes: Vec<(String, usize)>, // (prefix, pattern_index)
 }
 
+/// Return `true` when either prefix is a leading substring of the other.
+fn prefixes_overlap(a: &str, b: &str) -> bool {
+    a.starts_with(b) || b.starts_with(a)
+}
+
 impl LeakDetector {
     /// Create a new detector with default patterns.
     pub fn new() -> Self {
@@ -187,9 +192,7 @@ impl LeakDetector {
                 // 1. A short prefix shadows a longer one (e.g. "sk-" shadows "sk-ant-api")
                 // 2. Duplicate prefixes mapping to different patterns (e.g. "-----BEGIN" for PEM and SSH)
                 for (other_prefix, other_idx) in &self.known_prefixes {
-                    if (other_prefix.starts_with(found_prefix.as_str())
-                        || found_prefix.starts_with(other_prefix.as_str()))
-                        && !indices.contains(other_idx)
+                    if prefixes_overlap(other_prefix, found_prefix) && !indices.contains(other_idx)
                     {
                         indices.push(*other_idx);
                     }

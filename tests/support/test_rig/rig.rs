@@ -301,10 +301,16 @@ impl TestRig {
     /// Check if any captured status events contain safety/injection warnings.
     pub fn has_safety_warnings(&self) -> bool {
         self.captured_status_events().iter().any(|status| {
-            matches!(status, StatusUpdate::Status(message) if message.contains("sanitiz")
-                || message.contains("inject") || message.contains("warning"))
+            matches!(status, StatusUpdate::Status(message) if mentions_safety_concern(message))
         })
     }
+}
+
+/// Return `true` when a status message mentions a safety or injection concern.
+fn mentions_safety_concern(message: &str) -> bool {
+    ["sanitiz", "inject", "warning"]
+        .iter()
+        .any(|needle| message.contains(needle))
 }
 
 impl Drop for TestRig {

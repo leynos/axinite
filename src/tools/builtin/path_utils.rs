@@ -143,8 +143,7 @@ pub fn is_path_safe_basic(path: &str) -> bool {
     }
 
     // Block URL-encoded traversal attempts
-    let lower = path.to_lowercase();
-    if lower.contains("%2e") || lower.contains("%2f") || lower.contains("%5c") {
+    if has_encoded_traversal(&path.to_lowercase()) {
         return false;
     }
 
@@ -159,12 +158,18 @@ fn is_path_safe_minimal(path: &str) -> bool {
         return false;
     }
 
-    let lower = path.to_lowercase();
-    if lower.contains("%2e") || lower.contains("%2f") || lower.contains("%5c") {
+    if has_encoded_traversal(&path.to_lowercase()) {
         return false;
     }
 
     true
+}
+
+/// Whether a lowercased path contains URL-encoded '.', '/', or '\\'
+/// sequences used to smuggle traversal past plain string checks.
+fn has_encoded_traversal(lower: &str) -> bool {
+    let encoded_separator = lower.contains("%2f") || lower.contains("%5c");
+    lower.contains("%2e") || encoded_separator
 }
 
 #[cfg(test)]

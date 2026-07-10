@@ -301,64 +301,14 @@ fn convert_messages(
                 // Flush any pending tool results before an assistant message
                 flush_tool_results(&mut pending_tool_results, &mut bedrock_messages)?;
 
-                let mut content = Vec::new();
-
-                // Add text content if non-empty
-                if !msg.content.is_empty() {
-                    content.push(ContentBlock::Text(msg.content.clone()));
-                }
-
-                // Add tool use blocks if present
-                if let Some(ref tool_calls) = msg.tool_calls {
-                    for tc in tool_calls {
-                        let input_doc = json_to_document(&tc.arguments);
-                        let tool_use = ToolUseBlock::builder()
-                            .tool_use_id(&tc.id)
-                            .name(&tc.name)
-                            .input(input_doc)
-                            .build()
-                            .map_err(|e| LlmError::RequestFailed {
-                                provider: "bedrock".to_string(),
-                                reason: format!("Failed to build ToolUseBlock: {}", e),
-                            })?;
-                        content.push(ContentBlock::ToolUse(tool_use));
-                    }
-                }
-
+                let content = assistant_content_blocks(msg)?;
                 if !content.is_empty() {
                     push_message(&mut bedrock_messages, ConversationRole::Assistant, content)?;
                 }
             }
             Role::Tool => {
                 // Accumulate tool results — they'll be flushed as a User message
-                let tool_call_id = msg.tool_call_id.as_deref().unwrap_or("unknown");
-
-                let status =
-                    if let Ok(json) = serde_json::from_str::<serde_json::Value>(&msg.content) {
-                        if json
-                            .get("is_error")
-                            .and_then(|v| v.as_bool())
-                            .unwrap_or(false)
-                        {
-                            Some(ToolResultStatus::Error)
-                        } else {
-                            Some(ToolResultStatus::Success)
-                        }
-                    } else {
-                        Some(ToolResultStatus::Success)
-                    };
-
-                let tool_result = ToolResultBlock::builder()
-                    .tool_use_id(tool_call_id)
-                    .content(ToolResultContentBlock::Text(msg.content.clone()))
-                    .set_status(status)
-                    .build()
-                    .map_err(|e| LlmError::RequestFailed {
-                        provider: "bedrock".to_string(),
-                        reason: format!("Failed to build ToolResultBlock: {}", e),
-                    })?;
-
-                pending_tool_results.push(ContentBlock::ToolResult(tool_result));
+                pending_tool_results.push(tool_result_block(msg)?);
             }
         }
     }
@@ -367,6 +317,70 @@ fn convert_messages(
     flush_tool_results(&mut pending_tool_results, &mut bedrock_messages)?;
 
     Ok((system_blocks, bedrock_messages))
+}
+
+/// Build the content blocks for an assistant message: text (when non-empty)
+/// followed by any tool use blocks.
+fn assistant_content_blocks(
+    msg: &crate::llm::provider::ChatMessage,
+) -> Result<Vec<ContentBlock>, LlmError> {
+    let mut content = Vec::new();
+
+    if !msg.content.is_empty() {
+        content.push(ContentBlock::Text(msg.content.clone()));
+    }
+
+    if let Some(ref tool_calls) = msg.tool_calls {
+        for tc in tool_calls {
+            let input_doc = json_to_document(&tc.arguments);
+            let tool_use = ToolUseBlock::builder()
+                .tool_use_id(&tc.id)
+                .name(&tc.name)
+                .input(input_doc)
+                .build()
+                .map_err(|e| LlmError::RequestFailed {
+                    provider: "bedrock".to_string(),
+                    reason: format!("Failed to build ToolUseBlock: {}", e),
+                })?;
+            content.push(ContentBlock::ToolUse(tool_use));
+        }
+    }
+
+    Ok(content)
+}
+
+/// Derive the tool result status from the result payload: a JSON payload
+/// with `"is_error": true` reports an error, everything else success.
+fn tool_result_status(content: &str) -> Option<ToolResultStatus> {
+    let Ok(json) = serde_json::from_str::<serde_json::Value>(content) else {
+        return Some(ToolResultStatus::Success);
+    };
+    let is_error = json
+        .get("is_error")
+        .and_then(|v| v.as_bool())
+        .unwrap_or(false);
+    if is_error {
+        Some(ToolResultStatus::Error)
+    } else {
+        Some(ToolResultStatus::Success)
+    }
+}
+
+/// Build a `ToolResult` content block for an accumulated tool message.
+fn tool_result_block(msg: &crate::llm::provider::ChatMessage) -> Result<ContentBlock, LlmError> {
+    let tool_call_id = msg.tool_call_id.as_deref().unwrap_or("unknown");
+
+    let tool_result = ToolResultBlock::builder()
+        .tool_use_id(tool_call_id)
+        .content(ToolResultContentBlock::Text(msg.content.clone()))
+        .set_status(tool_result_status(&msg.content))
+        .build()
+        .map_err(|e| LlmError::RequestFailed {
+            provider: "bedrock".to_string(),
+            reason: format!("Failed to build ToolResultBlock: {}", e),
+        })?;
+
+    Ok(ContentBlock::ToolResult(tool_result))
 }
 
 /// Flush accumulated tool result blocks as a single User message.

@@ -48,6 +48,35 @@ fn query_token(request: &Request) -> Option<String> {
     })
 }
 
+/// Check whether the Authorization header carries the expected bearer token
+/// (constant-time comparison).
+///
+/// RFC 6750 Section 2.1: auth-scheme comparison is case-insensitive.
+fn header_token_valid(headers: &HeaderMap, expected: &str) -> bool {
+    let Some(auth_header) = headers.get("authorization") else {
+        return false;
+    };
+    let Ok(value) = auth_header.to_str() else {
+        return false;
+    };
+    if value.len() <= 7 || !value[..7].eq_ignore_ascii_case("Bearer ") {
+        return false;
+    }
+    bool::from(value.as_bytes()[7..].ct_eq(expected.as_bytes()))
+}
+
+/// Check whether the request may authenticate via the `?token=` query
+/// parameter and the supplied token matches (constant-time comparison).
+fn query_token_valid(request: &Request, expected: &str) -> bool {
+    if !allows_query_token_auth(request) {
+        return false;
+    }
+    let Some(token) = query_token(request) else {
+        return false;
+    };
+    bool::from(token.as_bytes().ct_eq(expected.as_bytes()))
+}
+
 /// Auth middleware that validates bearer token from header or query param.
 ///
 /// SSE connections can't set headers from `EventSource`, so we also accept
@@ -59,21 +88,12 @@ pub async fn auth_middleware(
     next: Next,
 ) -> Response {
     // Try Authorization header first (constant-time comparison).
-    // RFC 6750 Section 2.1: auth-scheme comparison is case-insensitive.
-    if let Some(auth_header) = headers.get("authorization")
-        && let Ok(value) = auth_header.to_str()
-        && value.len() > 7
-        && value[..7].eq_ignore_ascii_case("Bearer ")
-        && bool::from(value.as_bytes()[7..].ct_eq(auth.token.as_bytes()))
-    {
+    if header_token_valid(&headers, &auth.token) {
         return next.run(request).await;
     }
 
     // Fall back to query parameter, but only for SSE endpoints (constant-time comparison).
-    if allows_query_token_auth(&request)
-        && let Some(token) = query_token(&request)
-        && bool::from(token.as_bytes().ct_eq(auth.token.as_bytes()))
-    {
+    if query_token_valid(&request, &auth.token) {
         return next.run(request).await;
     }
 

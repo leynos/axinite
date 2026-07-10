@@ -212,25 +212,38 @@ fn uninstall() -> Result<()> {
     stop().ok();
 
     if cfg!(target_os = "macos") {
-        let file = macos_plist_path()?;
-        if file.exists() {
-            ambient_fs::remove_file(&file)
-                .with_context(|| format!("failed to remove {}", file.display()))?;
-        }
-        println!("Service uninstalled ({})", file.display());
-        Ok(())
+        uninstall_macos()
     } else if cfg!(target_os = "linux") {
-        let file = linux_unit_path()?;
-        if file.exists() {
-            ambient_fs::remove_file(&file)
-                .with_context(|| format!("failed to remove {}", file.display()))?;
-        }
-        run_checked(Command::new("systemctl").args(["--user", "daemon-reload"])).ok();
-        println!("Service uninstalled ({})", file.display());
-        Ok(())
+        uninstall_linux()
     } else {
         bail!("Service management is only supported on macOS and Linux");
     }
+}
+
+/// Remove the macOS launchd plist, if present.
+fn uninstall_macos() -> Result<()> {
+    let file = macos_plist_path()?;
+    remove_unit_file(&file)?;
+    println!("Service uninstalled ({})", file.display());
+    Ok(())
+}
+
+/// Remove the Linux systemd user unit, if present, and reload systemd.
+fn uninstall_linux() -> Result<()> {
+    let file = linux_unit_path()?;
+    remove_unit_file(&file)?;
+    run_checked(Command::new("systemctl").args(["--user", "daemon-reload"])).ok();
+    println!("Service uninstalled ({})", file.display());
+    Ok(())
+}
+
+/// Delete a service unit file when it exists; absent files are not an error.
+fn remove_unit_file(file: &std::path::Path) -> Result<()> {
+    if file.exists() {
+        ambient_fs::remove_file(file)
+            .with_context(|| format!("failed to remove {}", file.display()))?;
+    }
+    Ok(())
 }
 
 // ── Path helpers ────────────────────────────────────────────────

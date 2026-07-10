@@ -102,6 +102,12 @@ mod tests {
         }
     }
 
+    /// Whether an action's error text signals a critical or fatal failure.
+    fn is_critical_error(error: &str) -> bool {
+        let lowered = error.to_lowercase();
+        lowered.contains("critical") || lowered.contains("fatal")
+    }
+
     impl SuccessEvaluator for RuleBasedEvaluator {
         async fn evaluate(
             &self,
@@ -140,8 +146,7 @@ mod tests {
 
             for action in actions.iter().filter(|a| !a.success) {
                 if let Some(ref error) = action.error
-                    && (error.to_lowercase().contains("critical")
-                        || error.to_lowercase().contains("fatal"))
+                    && is_critical_error(error)
                 {
                     issues.push(format!("Critical error in {}: {}", action.tool_name, error));
                 }

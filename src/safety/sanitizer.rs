@@ -266,6 +266,15 @@ impl Sanitizer {
         self.sanitize(content).warnings
     }
 
+    /// Whether the line opens with a chat role marker (`system:`, `user:`,
+    /// or `assistant:`) once leading whitespace and case are ignored.
+    fn starts_with_role_marker(line: &str) -> bool {
+        let trimmed = line.trim_start().to_lowercase();
+        ["system:", "user:", "assistant:"]
+            .iter()
+            .any(|marker| trimmed.starts_with(marker))
+    }
+
     /// Escape content to neutralize potential injections.
     fn escape_content(&self, content: &str) -> String {
         // Replace special patterns with escaped versions
@@ -285,11 +294,7 @@ impl Sanitizer {
         let escaped_lines: Vec<String> = lines
             .into_iter()
             .map(|line| {
-                let trimmed = line.trim_start().to_lowercase();
-                if trimmed.starts_with("system:")
-                    || trimmed.starts_with("user:")
-                    || trimmed.starts_with("assistant:")
-                {
+                if Self::starts_with_role_marker(line) {
                     format!("[ESCAPED] {}", line)
                 } else {
                     line.to_string()

@@ -1135,39 +1135,59 @@ struct CodeRegion {
 /// Returns sorted `Vec<CodeRegion>` of byte ranges. Tags inside these ranges are
 /// skipped during stripping so code examples mentioning `<thinking>` are preserved.
 fn find_code_regions(text: &str) -> Vec<CodeRegion> {
-    let mut regions = Vec::new();
+    let mut regions = find_fenced_regions(text);
+    append_inline_regions(text, &mut regions);
+    regions.sort_by_key(|r| r.start);
+    regions
+}
 
-    // Fenced code blocks: line starting with 3+ backticks or tildes
-    let mut i = 0;
+/// Return `true` for space or tab bytes (fence-line indentation).
+fn is_space_or_tab(b: u8) -> bool {
+    b == b' ' || b == b'\t'
+}
+
+/// Return `true` for the characters that can open a code fence.
+fn is_fence_char(b: u8) -> bool {
+    b == b'`' || b == b'~'
+}
+
+/// Advance past the next newline at or after `from`; `None` at end of input.
+fn next_line_start(text: &str, from: usize) -> Option<usize> {
+    text[from..].find('\n').map(|nl| from + nl + 1)
+}
+
+/// Detect fenced code blocks: a line starting with 3+ backticks or tildes,
+/// closed by a matching fence line (or extending to EOF when unclosed).
+fn find_fenced_regions(text: &str) -> Vec<CodeRegion> {
+    let mut regions = Vec::new();
     let bytes = text.as_bytes();
+    let mut i = 0;
     while i < bytes.len() {
         // Must be at start of line (i==0 or previous char is \n)
         if i > 0 && bytes[i - 1] != b'\n' {
-            if let Some(nl) = text[i..].find('\n') {
-                i += nl + 1;
-            } else {
+            let Some(next) = next_line_start(text, i) else {
                 break;
-            }
+            };
+            i = next;
             continue;
         }
 
         // Skip optional leading whitespace
         let line_start = i;
-        while i < bytes.len() && (bytes[i] == b' ' || bytes[i] == b'\t') {
+        while i < bytes.len() && is_space_or_tab(bytes[i]) {
             i += 1;
         }
 
-        let fence_char = if i < bytes.len() && (bytes[i] == b'`' || bytes[i] == b'~') {
-            bytes[i]
-        } else {
+        let has_fence_char = i < bytes.len() && is_fence_char(bytes[i]);
+        if !has_fence_char {
             // Not a fence line, skip to next line
-            if let Some(nl) = text[i..].find('\n') {
-                i += nl + 1;
-            } else {
+            let Some(next) = next_line_start(text, i) else {
                 break;
-            }
+            };
+            i = next;
             continue;
-        };
+        }
+        let fence_char = bytes[i];
 
         // Count fence chars
         let fence_start = i;
@@ -1176,83 +1196,93 @@ fn find_code_regions(text: &str) -> Vec<CodeRegion> {
         }
         let fence_len = i - fence_start;
         if fence_len < 3 {
-            // Not a real fence
-            if let Some(nl) = text[i..].find('\n') {
-                i += nl + 1;
-            } else {
+            // Not a real fence, skip to next line
+            let Some(next) = next_line_start(text, i) else {
                 break;
-            }
+            };
+            i = next;
             continue;
         }
 
         // Skip rest of opening fence line (info string)
-        if let Some(nl) = text[i..].find('\n') {
-            i += nl + 1;
-        } else {
+        let Some(next) = next_line_start(text, i) else {
             // Fence at EOF with no content — region extends to end
             regions.push(CodeRegion {
                 start: line_start,
                 end: bytes.len(),
             });
             break;
-        }
+        };
+        i = next;
 
         // Find closing fence: line starting with >= fence_len of same char
-        let content_start = i;
-        let mut found_close = false;
-        while i < bytes.len() {
-            let cl_start = i;
-            // Skip optional leading whitespace
-            while i < bytes.len() && (bytes[i] == b' ' || bytes[i] == b'\t') {
-                i += 1;
-            }
-            if i < bytes.len() && bytes[i] == fence_char {
-                let close_fence_start = i;
-                while i < bytes.len() && bytes[i] == fence_char {
-                    i += 1;
-                }
-                let close_fence_len = i - close_fence_start;
-                // Must be at least as long, and rest of line must be empty/whitespace
-                if close_fence_len >= fence_len {
-                    // Skip to end of line
-                    while i < bytes.len() && bytes[i] != b'\n' {
-                        if bytes[i] != b' ' && bytes[i] != b'\t' {
-                            break;
-                        }
-                        i += 1;
-                    }
-                    if i >= bytes.len() || bytes[i] == b'\n' {
-                        if i < bytes.len() {
-                            i += 1; // skip the \n
-                        }
-                        regions.push(CodeRegion {
-                            start: line_start,
-                            end: i,
-                        });
-                        found_close = true;
-                        break;
-                    }
-                }
-            }
-            // Not a closing fence, skip to next line
-            if let Some(nl) = text[cl_start..].find('\n') {
-                i = cl_start + nl + 1;
-            } else {
-                i = bytes.len();
-                break;
-            }
-        }
-        if !found_close {
+        if let Some(end) = find_closing_fence(text, i, fence_char, fence_len) {
+            regions.push(CodeRegion {
+                start: line_start,
+                end,
+            });
+            i = end;
+        } else {
             // Unclosed fence extends to EOF
-            let _ = content_start; // suppress unused warning
             regions.push(CodeRegion {
                 start: line_start,
                 end: bytes.len(),
             });
+            i = bytes.len();
         }
     }
+    regions
+}
 
-    // Inline backtick spans (not inside fenced blocks)
+/// Scan forwards from `from` for a closing fence line: optional indentation,
+/// at least `fence_len` repeats of `fence_char`, then nothing but whitespace
+/// to the end of the line. Returns the byte index just past the closing line,
+/// or `None` when the fence is unclosed.
+fn find_closing_fence(text: &str, from: usize, fence_char: u8, fence_len: usize) -> Option<usize> {
+    let bytes = text.as_bytes();
+    let mut i = from;
+    while i < bytes.len() {
+        let cl_start = i;
+        // Skip optional leading whitespace
+        while i < bytes.len() && is_space_or_tab(bytes[i]) {
+            i += 1;
+        }
+        if i < bytes.len() && bytes[i] == fence_char {
+            let close_fence_start = i;
+            while i < bytes.len() && bytes[i] == fence_char {
+                i += 1;
+            }
+            let close_fence_len = i - close_fence_start;
+            // Must be at least as long, and rest of line must be empty/whitespace
+            if close_fence_len >= fence_len {
+                // Skip to end of line
+                while i < bytes.len() && bytes[i] != b'\n' {
+                    if bytes[i] != b' ' && bytes[i] != b'\t' {
+                        break;
+                    }
+                    i += 1;
+                }
+                if i >= bytes.len() || bytes[i] == b'\n' {
+                    if i < bytes.len() {
+                        i += 1; // skip the \n
+                    }
+                    return Some(i);
+                }
+            }
+        }
+        // Not a closing fence, skip to next line
+        let Some(next) = next_line_start(text, cl_start) else {
+            break;
+        };
+        i = next;
+    }
+    None
+}
+
+/// Detect inline backtick spans outside the already-found fenced regions and
+/// append them to `regions`.
+fn append_inline_regions(text: &str, regions: &mut Vec<CodeRegion>) {
+    let bytes = text.as_bytes();
     let mut j = 0;
     while j < bytes.len() {
         if bytes[j] != b'`' {
@@ -1271,35 +1301,36 @@ fn find_code_regions(text: &str) -> Vec<CodeRegion> {
         }
         let tick_len = j - tick_start;
         // Find matching closing run of exactly tick_len backticks
-        let search_from = j;
-        let mut found = false;
-        let mut k = search_from;
-        while k < bytes.len() {
-            if bytes[k] != b'`' {
-                k += 1;
-                continue;
-            }
-            let close_start = k;
-            while k < bytes.len() && bytes[k] == b'`' {
-                k += 1;
-            }
-            if k - close_start == tick_len {
-                regions.push(CodeRegion {
-                    start: tick_start,
-                    end: k,
-                });
-                j = k;
-                found = true;
-                break;
-            }
-        }
-        if !found {
+        if let Some(end) = find_closing_backticks(bytes, j, tick_len) {
+            regions.push(CodeRegion {
+                start: tick_start,
+                end,
+            });
+            j = end;
+        } else {
             j = tick_start + tick_len; // no match, move past
         }
     }
+}
 
-    regions.sort_by_key(|r| r.start);
-    regions
+/// Scan forwards from `from` for a run of exactly `tick_len` backticks;
+/// returns the index just past the run, or `None` when no run matches.
+fn find_closing_backticks(bytes: &[u8], from: usize, tick_len: usize) -> Option<usize> {
+    let mut k = from;
+    while k < bytes.len() {
+        if bytes[k] != b'`' {
+            k += 1;
+            continue;
+        }
+        let close_start = k;
+        while k < bytes.len() && bytes[k] == b'`' {
+            k += 1;
+        }
+        if k - close_start == tick_len {
+            return Some(k);
+        }
+    }
+    None
 }
 
 /// Check if a byte position falls inside any code region.
@@ -1349,17 +1380,10 @@ fn recover_tool_calls_from_content(
             }
 
             // Try JSON first: {"name":"x","arguments":{}}
-            if let Ok(parsed) = serde_json::from_str::<serde_json::Value>(inner)
-                && let Some(name) = parsed.get("name").and_then(|v| v.as_str())
-                && tool_names.contains(name)
-            {
-                let arguments = parsed
-                    .get("arguments")
-                    .cloned()
-                    .unwrap_or(serde_json::Value::Object(Default::default()));
+            if let Some((name, arguments)) = parse_json_tool_call(inner, &tool_names) {
                 calls.push(ToolCall {
                     id: format!("recovered_{}", calls.len()),
-                    name: name.to_string(),
+                    name,
                     arguments,
                 });
                 continue;
@@ -1423,6 +1447,24 @@ fn recover_tool_calls_from_content(
     }
 
     calls
+}
+
+/// Parse an XML-tag payload as a JSON tool call (`{"name":..,"arguments":..}`),
+/// returning its name and arguments when the name matches an available tool.
+fn parse_json_tool_call(
+    inner: &str,
+    tool_names: &std::collections::HashSet<&str>,
+) -> Option<(String, serde_json::Value)> {
+    let parsed = serde_json::from_str::<serde_json::Value>(inner).ok()?;
+    let name = parsed.get("name").and_then(|v| v.as_str())?;
+    if !tool_names.contains(name) {
+        return None;
+    }
+    let arguments = parsed
+        .get("arguments")
+        .cloned()
+        .unwrap_or(serde_json::Value::Object(Default::default()));
+    Some((name.to_string(), arguments))
 }
 
 /// `<tool_call>tool_list</tool_call>` or `<|tool_call|>` in the content field

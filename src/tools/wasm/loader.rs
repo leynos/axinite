@@ -79,6 +79,14 @@ pub enum WasmLoadError {
     WitVersionMismatch(String),
 }
 
+/// Whether a name contains a path separator ('/' or '\\').
+///
+/// Names with separators could escape the plugin directory, so loaders
+/// reject them outright.
+pub(crate) fn contains_path_separator(name: &str) -> bool {
+    name.contains('/') || name.contains('\\')
+}
+
 /// Loads WASM tools from files or storage into the registry.
 pub struct WasmToolLoader {
     runtime: Arc<WasmToolRuntime>,
@@ -115,7 +123,7 @@ impl WasmToolLoader {
         wasm_path: &Path,
         capabilities_path: Option<&Path>,
     ) -> Result<(), WasmLoadError> {
-        if name.is_empty() || name.contains('/') || name.contains('\\') {
+        if name.is_empty() || contains_path_separator(name) {
             return Err(WasmLoadError::InvalidName(name.to_string()));
         }
 

@@ -429,9 +429,7 @@ impl AppBuilder {
         }
 
         // Register builder tool if enabled
-        if self.config.builder.enabled
-            && (self.config.agent.allow_local_tools || !self.config.sandbox.enabled)
-        {
+        if self.builder_tool_permitted() {
             tools
                 .register_builder_tool(llm.clone(), Some(self.config.builder.to_builder_config()))
                 .await?;
@@ -439,6 +437,15 @@ impl AppBuilder {
         }
 
         Ok((safety, tools, embeddings, workspace))
+    }
+
+    /// Return `true` when the builder tool is enabled and local tool
+    /// execution is available (allowed explicitly, or implied by a
+    /// disabled sandbox).
+    fn builder_tool_permitted(&self) -> bool {
+        let local_tools_available =
+            self.config.agent.allow_local_tools || !self.config.sandbox.enabled;
+        self.config.builder.enabled && local_tools_available
     }
 
     /// Phase 5: Initialize the skills system.

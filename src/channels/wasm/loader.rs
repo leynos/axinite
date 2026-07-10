@@ -29,6 +29,16 @@ pub struct WasmChannelLoader {
     secrets_store: Option<Arc<dyn SecretsStore + Send + Sync>>,
 }
 
+/// Whether a channel name is empty or could escape the channel directory.
+///
+/// Rejects names containing path separators or `..` traversal segments.
+fn is_invalid_channel_name(name: &str) -> bool {
+    if name.is_empty() {
+        return true;
+    }
+    crate::tools::wasm::loader::contains_path_separator(name) || name.contains("..")
+}
+
 impl WasmChannelLoader {
     /// Create a new loader with the given runtime and pairing store.
     pub fn new(
@@ -64,7 +74,7 @@ impl WasmChannelLoader {
         capabilities_path: Option<&Path>,
     ) -> Result<LoadedChannel, WasmChannelError> {
         // Validate name
-        if name.is_empty() || name.contains('/') || name.contains('\\') || name.contains("..") {
+        if is_invalid_channel_name(name) {
             return Err(WasmChannelError::InvalidName(name.to_string()));
         }
 

@@ -271,27 +271,8 @@ impl McpClient {
                 Err(ToolError::ExternalService(ref msg))
                     if msg.contains("401") || msg.contains("Unauthorized") =>
                 {
-                    if attempt == 0
-                        && let Some(ref secrets) = self.secrets
-                        && let Some(ref config) = self.server_config
-                    {
-                        tracing::debug!(
-                            "MCP token expired, attempting refresh for '{}'",
-                            self.server_name
-                        );
-                        match refresh_access_token(config, secrets, &self.user_id).await {
-                            Ok(_) => {
-                                tracing::info!("MCP token refreshed for '{}'", self.server_name);
-                                continue;
-                            }
-                            Err(e) => {
-                                tracing::debug!(
-                                    "Token refresh failed for '{}': {}",
-                                    self.server_name,
-                                    e
-                                );
-                            }
-                        }
+                    if attempt == 0 && self.refresh_expired_token().await {
+                        continue;
                     }
                     return Err(ToolError::ExternalService(format!(
                         "MCP server '{}' requires authentication. Run: ironclaw mcp auth {}",
@@ -305,6 +286,34 @@ impl McpClient {
         Err(ToolError::ExternalService(
             "MCP request failed after retry".to_string(),
         ))
+    }
+
+    /// Attempt to refresh the MCP OAuth token after a 401 response.
+    ///
+    /// Returns `true` when the refresh succeeded and the request should be
+    /// retried; returns `false` (logging any failure) when no secrets store
+    /// or server config is available, or the refresh fails.
+    async fn refresh_expired_token(&self) -> bool {
+        let Some(ref secrets) = self.secrets else {
+            return false;
+        };
+        let Some(ref config) = self.server_config else {
+            return false;
+        };
+        tracing::debug!(
+            "MCP token expired, attempting refresh for '{}'",
+            self.server_name
+        );
+        match refresh_access_token(config, secrets, &self.user_id).await {
+            Ok(_) => {
+                tracing::info!("MCP token refreshed for '{}'", self.server_name);
+                true
+            }
+            Err(e) => {
+                tracing::debug!("Token refresh failed for '{}': {}", self.server_name, e);
+                false
+            }
+        }
     }
 
     /// Initialize the connection to the MCP server.

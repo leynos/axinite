@@ -408,44 +408,51 @@ fn check_embeddings(settings: &Settings) -> CheckResult {
 }
 
 fn check_embeddings_with_context(ctx: &EnvContext, settings: &Settings) -> CheckResult {
-    match crate::config::EmbeddingsConfig::resolve_from(ctx, settings) {
-        Ok(config) => {
-            if !config.enabled {
-                return CheckResult::Skip("disabled (set EMBEDDING_ENABLED=true)".into());
-            }
-            let has_creds = match config.provider.as_str() {
-                "openai" => config.openai_api_key().is_some(),
-                "nearai" => {
-                    // NearAiEmbeddings uses SessionManager::get_token() which
-                    // only returns session tokens, NOT NEARAI_API_KEY
-                    // (src/workspace/embeddings.rs:309, src/llm/session.rs:132).
-                    let session_path = crate::config::llm::default_session_path();
-                    session_path.exists()
-                        && ambient_fs::read_to_string(&session_path)
-                            .map(|s| !s.trim().is_empty())
-                            .unwrap_or(false)
-                }
-                "ollama" => true, // local, no creds needed
-                _ => config.openai_api_key().is_some(),
-            };
-            if has_creds {
-                CheckResult::Pass(format!(
-                    "provider={}, model={}",
-                    config.provider, config.model
-                ))
-            } else {
-                let hint = match config.provider.as_str() {
-                    "nearai" => "run `ironclaw onboard` to create a session",
-                    _ => "set OPENAI_API_KEY",
-                };
-                CheckResult::Fail(format!(
-                    "provider={} but credentials missing ({})",
-                    config.provider, hint
-                ))
-            }
-        }
-        Err(e) => CheckResult::Fail(format!("config error: {e}")),
+    let config = match crate::config::EmbeddingsConfig::resolve_from(ctx, settings) {
+        Ok(config) => config,
+        Err(e) => return CheckResult::Fail(format!("config error: {e}")),
+    };
+    if !config.enabled {
+        return CheckResult::Skip("disabled (set EMBEDDING_ENABLED=true)".into());
     }
+    if embeddings_credentials_present(&config) {
+        CheckResult::Pass(format!(
+            "provider={}, model={}",
+            config.provider, config.model
+        ))
+    } else {
+        let hint = match config.provider.as_str() {
+            "nearai" => "run `ironclaw onboard` to create a session",
+            _ => "set OPENAI_API_KEY",
+        };
+        CheckResult::Fail(format!(
+            "provider={} but credentials missing ({})",
+            config.provider, hint
+        ))
+    }
+}
+
+/// Whether credentials for the configured embeddings provider are present.
+fn embeddings_credentials_present(config: &crate::config::EmbeddingsConfig) -> bool {
+    match config.provider.as_str() {
+        "openai" => config.openai_api_key().is_some(),
+        "nearai" => nearai_session_present(),
+        "ollama" => true, // local, no creds needed
+        _ => config.openai_api_key().is_some(),
+    }
+}
+
+/// Whether a non-empty NEAR AI session file exists.
+///
+/// NearAiEmbeddings uses SessionManager::get_token() which only returns
+/// session tokens, NOT NEARAI_API_KEY
+/// (src/workspace/embeddings.rs:309, src/llm/session.rs:132).
+fn nearai_session_present() -> bool {
+    let session_path = crate::config::llm::default_session_path();
+    session_path.exists()
+        && ambient_fs::read_to_string(&session_path)
+            .map(|s| !s.trim().is_empty())
+            .unwrap_or(false)
 }
 
 // ── Routines config ─────────────────────────────────────────
@@ -584,24 +591,23 @@ fn check_service_installed() -> CheckResult {
     if cfg!(target_os = "macos") {
         let plist =
             dirs::home_dir().map(|h| h.join("Library/LaunchAgents/com.ironclaw.daemon.plist"));
-        match plist {
-            Some(path) if path.exists() => {
-                CheckResult::Pass(format!("launchd plist installed ({})", path.display()))
-            }
-            Some(_) => CheckResult::Skip("not installed (run `ironclaw service install`)".into()),
-            None => CheckResult::Skip("cannot determine home directory".into()),
-        }
+        service_unit_result(plist, "launchd plist")
     } else if cfg!(target_os = "linux") {
         let unit = dirs::home_dir().map(|h| h.join(".config/systemd/user/ironclaw.service"));
-        match unit {
-            Some(path) if path.exists() => {
-                CheckResult::Pass(format!("systemd unit installed ({})", path.display()))
-            }
-            Some(_) => CheckResult::Skip("not installed (run `ironclaw service install`)".into()),
-            None => CheckResult::Skip("cannot determine home directory".into()),
-        }
+        service_unit_result(unit, "systemd unit")
     } else {
         CheckResult::Skip("service management not supported on this platform".into())
+    }
+}
+
+/// Report whether a service definition exists at the platform's expected path.
+fn service_unit_result(path: Option<std::path::PathBuf>, label: &str) -> CheckResult {
+    match path {
+        Some(path) if path.exists() => {
+            CheckResult::Pass(format!("{label} installed ({})", path.display()))
+        }
+        Some(_) => CheckResult::Skip("not installed (run `ironclaw service install`)".into()),
+        None => CheckResult::Skip("cannot determine home directory".into()),
     }
 }
 
@@ -633,23 +639,28 @@ fn check_binary(name: &str, args: &[&str]) -> CheckResult {
         .output()
     {
         Ok(output) => {
-            let version = String::from_utf8_lossy(&output.stdout);
-            let version = version.trim();
-            // Some tools print version to stderr
-            let version = if version.is_empty() {
-                let stderr = String::from_utf8_lossy(&output.stderr);
-                stderr.trim().lines().next().unwrap_or("").to_string()
-            } else {
-                version.lines().next().unwrap_or("").to_string()
-            };
-
             if output.status.success() {
-                CheckResult::Pass(version)
+                CheckResult::Pass(extract_version_line(&output))
             } else {
                 CheckResult::Fail(format!("exited with {}", output.status))
             }
         }
         Err(_) => CheckResult::Skip(format!("{name} not found in PATH")),
+    }
+}
+
+/// Extract the first version line from a tool's output, preferring stdout.
+///
+/// Some tools print their version to stderr, so fall back to it when
+/// stdout is empty.
+fn extract_version_line(output: &std::process::Output) -> String {
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let stdout = stdout.trim();
+    if stdout.is_empty() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        stderr.trim().lines().next().unwrap_or("").to_string()
+    } else {
+        stdout.lines().next().unwrap_or("").to_string()
     }
 }
 

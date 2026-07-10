@@ -249,6 +249,21 @@ where
     }
 }
 
+/// Determine whether a text-only response that signals tool intent should
+/// trigger a nudge instead of being accepted as the final answer.
+fn should_nudge_tool_intent(
+    config: &AgenticLoopConfig,
+    reason_ctx: &ReasoningContext,
+    nudges_so_far: u32,
+    text: &str,
+) -> bool {
+    let nudging_enabled =
+        config.enable_tool_intent_nudge && nudges_so_far < config.max_tool_intent_nudges;
+    let tools_expected = !reason_ctx.available_tools.is_empty() && !reason_ctx.force_text;
+    let nudge_applicable = nudging_enabled && tools_expected;
+    nudge_applicable && crate::llm::llm_signals_tool_intent(text)
+}
+
 /// Run the unified agentic loop.
 ///
 /// This is the single implementation used by all three consumers (chat, job, container).
@@ -283,12 +298,12 @@ pub async fn run_agentic_loop(
             RespondResult::Text(text) => {
                 // Tool intent nudge: if the LLM says "let me search..." without
                 // actually calling a tool, inject a nudge message.
-                if config.enable_tool_intent_nudge
-                    && !reason_ctx.available_tools.is_empty()
-                    && !reason_ctx.force_text
-                    && consecutive_tool_intent_nudges < config.max_tool_intent_nudges
-                    && crate::llm::llm_signals_tool_intent(&text)
-                {
+                if should_nudge_tool_intent(
+                    config,
+                    reason_ctx,
+                    consecutive_tool_intent_nudges,
+                    &text,
+                ) {
                     consecutive_tool_intent_nudges += 1;
                     tracing::info!(
                         iteration,

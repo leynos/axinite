@@ -178,7 +178,7 @@ impl TranscriptionMiddleware {
         }
 
         // If message has no text content, use the first successful transcription
-        if (msg.content.is_empty() || msg.content == "[Voice note]")
+        if lacks_text_content(&msg.content)
             && let Some((_, text)) = transcriptions
                 .iter()
                 .find(|(_, t)| !t.starts_with("[Transcription failed"))
@@ -186,6 +186,12 @@ impl TranscriptionMiddleware {
             msg.content = text.clone();
         }
     }
+}
+
+/// Whether the message carries no usable text of its own (empty or the
+/// `[Voice note]` placeholder inserted by voice channels).
+fn lacks_text_content(content: &str) -> bool {
+    content.is_empty() || content == "[Voice note]"
 }
 
 #[cfg(test)]

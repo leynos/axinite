@@ -221,60 +221,27 @@ pub fn detect_command_injection(cmd: &str) -> Option<&'static str> {
 
     let lower = cmd.to_lowercase();
 
-    // Base64 decode piped to shell execution (obfuscation of arbitrary commands)
-    if (lower.contains("base64 -d") || lower.contains("base64 --decode"))
-        && contains_shell_pipe(&lower)
-    {
+    if is_base64_decode_to_shell(&lower) {
         return Some("base64 decode piped to shell");
     }
 
-    // printf/echo with hex or octal escapes piped to shell
-    if (lower.contains("printf") || lower.contains("echo -e") || lower.contains("echo $'"))
-        && (lower.contains("\\x") || lower.contains("\\0"))
-        && contains_shell_pipe(&lower)
-    {
+    if is_encoded_escape_to_shell(&lower) {
         return Some("encoded escape sequences piped to shell");
     }
 
-    // xxd/od reverse (hex dump to binary) piped to shell.
-    // Use has_command_token for "od" to avoid matching words like "method", "period".
-    if (lower.contains("xxd -r") || has_command_token(&lower, "od ")) && contains_shell_pipe(&lower)
-    {
+    if is_binary_decode_to_shell(&lower) {
         return Some("binary decode piped to shell");
     }
 
-    // DNS exfiltration: dig/nslookup/host with command substitution.
-    // Use has_command_token to avoid false positives on words containing
-    // "host" (e.g., "ghost", "--host") or "dig" as substrings.
-    if (has_command_token(&lower, "dig ")
-        || has_command_token(&lower, "nslookup ")
-        || has_command_token(&lower, "host "))
-        && has_command_substitution(&lower)
-    {
+    if is_dns_exfiltration(&lower) {
         return Some("potential DNS exfiltration via command substitution");
     }
 
-    // Netcat with data piping (exfiltration channel).
-    // Use has_command_token to avoid false positives on words containing
-    // "nc" as a substring (e.g., "sync", "once", "fence").
-    if (has_command_token(&lower, "nc ")
-        || has_command_token(&lower, "ncat ")
-        || has_command_token(&lower, "netcat "))
-        && (lower.contains('|') || lower.contains('<'))
-    {
+    if is_netcat_piping(&lower) {
         return Some("netcat with data piping");
     }
 
-    // curl/wget posting file contents to a remote server.
-    // Include both "-d @file" (with space) and "-d@file" (without space)
-    // since curl accepts both forms.
-    if lower.contains("curl")
-        && (lower.contains("-d @")
-            || lower.contains("-d@")
-            || lower.contains("--data @")
-            || lower.contains("--data-binary @")
-            || lower.contains("--upload-file"))
-    {
+    if is_curl_file_post(&lower) {
         return Some("curl posting file contents");
     }
 
@@ -282,12 +249,73 @@ pub fn detect_command_injection(cmd: &str) -> Option<&'static str> {
         return Some("wget posting file contents");
     }
 
-    // Chained obfuscation: rev, tr, sed used to reconstruct hidden commands piped to shell
-    if (lower.contains("| rev") || lower.contains("|rev")) && contains_shell_pipe(&lower) {
+    if is_string_reversal_to_shell(&lower) {
         return Some("string reversal piped to shell");
     }
 
     None
+}
+
+/// Base64 decode piped to shell execution (obfuscation of arbitrary commands).
+fn is_base64_decode_to_shell(lower: &str) -> bool {
+    let decodes = lower.contains("base64 -d") || lower.contains("base64 --decode");
+    decodes && contains_shell_pipe(lower)
+}
+
+/// printf/echo with hex or octal escapes piped to shell.
+fn is_encoded_escape_to_shell(lower: &str) -> bool {
+    let echo_escape = lower.contains("echo -e") || lower.contains("echo $'");
+    let printer = lower.contains("printf") || echo_escape;
+    let escapes = lower.contains("\\x") || lower.contains("\\0");
+    let encoded_print = printer && escapes;
+    encoded_print && contains_shell_pipe(lower)
+}
+
+/// xxd/od reverse (hex dump to binary) piped to shell.
+///
+/// Uses has_command_token for "od" to avoid matching words like "method", "period".
+fn is_binary_decode_to_shell(lower: &str) -> bool {
+    let decoder = lower.contains("xxd -r") || has_command_token(lower, "od ");
+    decoder && contains_shell_pipe(lower)
+}
+
+/// DNS exfiltration: dig/nslookup/host with command substitution.
+///
+/// Uses has_command_token to avoid false positives on words containing
+/// "host" (e.g., "ghost", "--host") or "dig" as substrings.
+fn is_dns_exfiltration(lower: &str) -> bool {
+    let dig_or_nslookup = has_command_token(lower, "dig ") || has_command_token(lower, "nslookup ");
+    let dns_lookup = dig_or_nslookup || has_command_token(lower, "host ");
+    dns_lookup && has_command_substitution(lower)
+}
+
+/// Netcat with data piping (exfiltration channel).
+///
+/// Uses has_command_token to avoid false positives on words containing
+/// "nc" as a substring (e.g., "sync", "once", "fence").
+fn is_netcat_piping(lower: &str) -> bool {
+    let nc_or_ncat = has_command_token(lower, "nc ") || has_command_token(lower, "ncat ");
+    let netcat = nc_or_ncat || has_command_token(lower, "netcat ");
+    let piping = lower.contains('|') || lower.contains('<');
+    netcat && piping
+}
+
+/// curl posting file contents to a remote server.
+///
+/// Includes both "-d @file" (with space) and "-d@file" (without space)
+/// since curl accepts both forms.
+fn is_curl_file_post(lower: &str) -> bool {
+    let data_at = lower.contains("-d @") || lower.contains("-d@");
+    let data_flag = data_at || lower.contains("--data @");
+    let upload = lower.contains("--data-binary @") || lower.contains("--upload-file");
+    let posts_file = data_flag || upload;
+    lower.contains("curl") && posts_file
+}
+
+/// Chained obfuscation: rev used to reconstruct hidden commands piped to shell.
+fn is_string_reversal_to_shell(lower: &str) -> bool {
+    let reversed = lower.contains("| rev") || lower.contains("|rev");
+    reversed && contains_shell_pipe(lower)
 }
 
 /// Check if a command string contains a pipe to a shell interpreter.
@@ -619,7 +647,7 @@ impl ShellTool {
         // Use sandbox if configured; fail-closed (never silently fall through
         // to unsandboxed execution when sandbox was intended).
         if let Some(ref sandbox) = self.sandbox
-            && (sandbox.is_initialized() || sandbox.config().enabled)
+            && sandbox_active(sandbox)
         {
             return self
                 .execute_sandboxed(sandbox, cmd, &cwd, timeout_duration)
@@ -632,6 +660,12 @@ impl ShellTool {
             .await?;
         Ok((output, code as i64))
     }
+}
+
+/// Whether a configured sandbox must handle execution: it has either
+/// finished initialization or is enabled by configuration.
+fn sandbox_active(sandbox: &SandboxManager) -> bool {
+    sandbox.is_initialized() || sandbox.config().enabled
 }
 
 impl Default for ShellTool {

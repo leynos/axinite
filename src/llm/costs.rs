@@ -12,7 +12,7 @@ use rust_decimal_macros::dec;
 pub fn model_cost(model_id: &str) -> Option<(Decimal, Decimal)> {
     // OpenRouter free-tier models: `:free` suffix or the `openrouter/free` router
     // should always report zero cost (see #463).
-    if model_id.ends_with(":free") || model_id == "openrouter/free" || model_id == "free" {
+    if is_free_model(model_id) {
         return Some((Decimal::ZERO, Decimal::ZERO));
     }
 
@@ -78,6 +78,12 @@ pub fn model_cost(model_id: &str) -> Option<(Decimal, Decimal)> {
 
         _ => None,
     }
+}
+
+/// OpenRouter free-tier models: `:free` suffix or the free router aliases
+/// should always report zero cost (see #463).
+fn is_free_model(model_id: &str) -> bool {
+    model_id.ends_with(":free") || matches!(model_id, "openrouter/free" | "free")
 }
 
 /// Default cost for unknown models.

@@ -689,8 +689,12 @@ impl Workspace {
         }
 
         // Load MEMORY.md only in direct/main sessions (never group chats)
-        if !is_group_chat
-            && let Ok(doc) = self.read(paths::MEMORY).await
+        let memory_doc = if is_group_chat {
+            None
+        } else {
+            self.read(paths::MEMORY).await.ok()
+        };
+        if let Some(doc) = memory_doc
             && !doc.content.is_empty()
         {
             parts.push(format!("## Long-Term Memory\n\n{}", doc.content));
