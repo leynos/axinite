@@ -1,7 +1,12 @@
 //! libSQL settings-store regression tests for the shared test harness.
 
 #[cfg(all(feature = "libsql", feature = "test-helpers"))]
+use std::sync::Arc;
+
+#[cfg(all(feature = "libsql", feature = "test-helpers"))]
 use super::*;
+#[cfg(all(feature = "libsql", feature = "test-helpers"))]
+use crate::db::{Database, SettingKey, UserId};
 #[cfg(all(feature = "libsql", feature = "test-helpers"))]
 use anyhow::Context as _;
 #[cfg(all(feature = "libsql", feature = "test-helpers"))]

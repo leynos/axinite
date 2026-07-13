@@ -246,7 +246,7 @@ pub fn create_tunnel(config: &TunnelProviderConfig) -> Result<Option<Box<dyn Tun
 /// Returns the (potentially mutated) config with `tunnel.public_url` set,
 /// plus the active tunnel handle (if one was started) for later shutdown.
 pub async fn start_managed_tunnel(
-    mut config: crate::config::Config,
+    config: crate::config::Config,
 ) -> (crate::config::Config, Option<Box<dyn Tunnel>>) {
     if config.tunnel.public_url.is_some() {
         tracing::info!(

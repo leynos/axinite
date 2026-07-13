@@ -653,44 +653,53 @@ impl SignalChannel {
                 tracing::debug!("Signal: group messages disabled, dropping");
                 false
             }
-            "open" => {
-                // For "open" policy, check group allowlist but not sender allowlist
-                if let Some(group_id) = group_id
-                    && !self.is_group_allowed(group_id)
-                {
-                    tracing::debug!(
-                        group_id = %group_id,
-                        "Signal: group not in allow_from_groups, dropping"
-                    );
-                    return false;
-                }
-                true
-            }
-            "allowlist" => {
-                // Default to allowlist - check group AND sender
-                let Some(group_id) = group_id else {
-                    return true;
-                };
-                if !self.is_group_allowed(group_id) {
-                    tracing::debug!(
-                        group_id = %group_id,
-                        "Signal: group not in allow_from_groups, dropping"
-                    );
-                    return false;
-                }
-                // Also check sender is allowed for group
-                if !self.is_group_sender_allowed(sender) {
-                    tracing::debug!(
-                        sender = %sender,
-                        group_id = %group_id,
-                        "Signal: sender not in group_allow_from, dropping"
-                    );
-                    return false;
-                }
-                true
-            }
+            // For "open" policy, check group allowlist but not sender allowlist
+            "open" => self.open_group_policy_allows(group_id),
+            // Default to allowlist - check group AND sender
+            "allowlist" => self.allowlist_group_policy_allows(group_id, sender),
             _ => true,
         }
+    }
+
+    /// Apply the "open" group policy: senders are not vetted, but the group
+    /// allowlist still applies when a group identifier is present.
+    fn open_group_policy_allows(&self, group_id: Option<&str>) -> bool {
+        let Some(group_id) = group_id else {
+            return true;
+        };
+        if self.is_group_allowed(group_id) {
+            return true;
+        }
+        tracing::debug!(
+            group_id = %group_id,
+            "Signal: group not in allow_from_groups, dropping"
+        );
+        false
+    }
+
+    /// Apply the "allowlist" group policy: both the group and the sender must
+    /// be allowed before a group message is accepted.
+    fn allowlist_group_policy_allows(&self, group_id: Option<&str>, sender: &str) -> bool {
+        let Some(group_id) = group_id else {
+            return true;
+        };
+        if !self.is_group_allowed(group_id) {
+            tracing::debug!(
+                group_id = %group_id,
+                "Signal: group not in allow_from_groups, dropping"
+            );
+            return false;
+        }
+        // Also check sender is allowed for group
+        if !self.is_group_sender_allowed(sender) {
+            tracing::debug!(
+                sender = %sender,
+                group_id = %group_id,
+                "Signal: sender not in group_allow_from, dropping"
+            );
+            return false;
+        }
+        true
     }
 
     /// Apply the configured DM policy; returns `false` when the message must be dropped.
