@@ -10,6 +10,7 @@ use wasmtime::Store;
 use wasmtime::component::{HasSelf, Linker};
 use wasmtime_wasi::{ResourceTable, WasiCtx, WasiCtxBuilder, WasiCtxView, WasiView};
 
+use super::store::StoreData;
 use super::*;
 
 /// Return the placeholder description used until real guest metadata is recovered.

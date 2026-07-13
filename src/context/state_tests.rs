@@ -179,16 +179,16 @@ fn apply_random_step(
     case_idx: usize,
     step: usize,
 ) -> anyhow::Result<()> {
-    match rng.gen_range(0..4) {
-        0 if matches!(ctx.state, JobState::Pending) => {
+    match (rng.gen_range(0..4), &ctx.state) {
+        (0, JobState::Pending) => {
             ctx.transition_to(JobState::InProgress, None)
                 .map_err(|e| anyhow::anyhow!("failed to transition to InProgress: {e}"))?;
         }
-        1 if matches!(ctx.state, JobState::InProgress) => {
+        (1, JobState::InProgress) => {
             ctx.mark_stuck(format!("stall-{case_idx}-{step}"))
                 .map_err(|e| anyhow::anyhow!("failed to mark context as stuck: {e}"))?;
         }
-        2 if matches!(ctx.state, JobState::Stuck) => {
+        (2, JobState::Stuck) => {
             ctx.attempt_recovery()
                 .map_err(|e| anyhow::anyhow!("failed to attempt recovery: {e}"))?;
         }

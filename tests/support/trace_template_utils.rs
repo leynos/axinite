@@ -277,20 +277,7 @@ pub(super) fn substitute_templates(
     vars: &HashMap<String, serde_json::Value>,
 ) {
     match value {
-        serde_json::Value::String(s) => {
-            let initial = match is_exact_template(s, vars) {
-                Some(serde_json::Value::String(resolved_str)) => resolved_str,
-                Some(resolved) => {
-                    *value = resolved;
-                    return;
-                }
-                None => s.clone(),
-            };
-            match expand_templates_iteratively(initial, vars) {
-                TemplateExpansion::String(result) => *s = result,
-                TemplateExpansion::Value(resolved) => *value = resolved,
-            }
-        }
+        serde_json::Value::String(_) => substitute_string_template(value, vars),
         serde_json::Value::Object(map) => {
             for value in map.values_mut() {
                 substitute_templates(value, vars);
@@ -302,6 +289,35 @@ pub(super) fn substitute_templates(
             }
         }
         _ => {}
+    }
+}
+
+/// Resolve template markers within a single JSON string node.
+///
+/// Exact-match templates may replace the node with a non-string value;
+/// otherwise markers are expanded iteratively within the string.
+fn substitute_string_template(
+    value: &mut serde_json::Value,
+    vars: &HashMap<String, serde_json::Value>,
+) {
+    let serde_json::Value::String(s) = value else {
+        return;
+    };
+    let initial = match is_exact_template(s, vars) {
+        Some(serde_json::Value::String(resolved_str)) => resolved_str,
+        Some(resolved) => {
+            *value = resolved;
+            return;
+        }
+        None => s.clone(),
+    };
+    match expand_templates_iteratively(initial, vars) {
+        TemplateExpansion::String(result) => {
+            if let serde_json::Value::String(s) = value {
+                *s = result;
+            }
+        }
+        TemplateExpansion::Value(resolved) => *value = resolved,
     }
 }
 

@@ -399,17 +399,18 @@ fn apply_secret_input_effect<W: Write>(
     effect: &SecretInputEffect,
 ) -> io::Result<()> {
     match effect {
-        SecretInputEffect::Backspace => {
-            execute!(stdout, Print("\x08 \x08"))?;
-            stdout.flush()?;
+        SecretInputEffect::Backspace => print_and_flush(stdout, "\x08 \x08"),
+        SecretInputEffect::MaskChar => print_and_flush(stdout, "*"),
+        SecretInputEffect::None | SecretInputEffect::Submit | SecretInputEffect::Interrupt => {
+            Ok(())
         }
-        SecretInputEffect::MaskChar => {
-            execute!(stdout, Print('*'))?;
-            stdout.flush()?;
-        }
-        SecretInputEffect::None | SecretInputEffect::Submit | SecretInputEffect::Interrupt => {}
     }
-    Ok(())
+}
+
+/// Print `text` and flush immediately so masked input feedback is visible.
+fn print_and_flush<W: Write>(stdout: &mut W, text: &str) -> io::Result<()> {
+    execute!(stdout, Print(text))?;
+    stdout.flush()
 }
 
 fn apply_secret_key_event(

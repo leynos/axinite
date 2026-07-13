@@ -411,40 +411,49 @@ fn push_message(
         return Ok(());
     }
 
-    // Check if we need to merge with the previous message of the same role
-    if let Some(last) = messages.last()
-        && *last.role() == role
-    {
-        // Remove the last message, merge content, and re-push
-        let prev = messages.pop().ok_or_else(|| LlmError::RequestFailed {
-            provider: "bedrock".to_string(),
-            reason: "Unexpected empty message list during merge".to_string(),
-        })?;
-        let mut merged = prev.content().to_vec();
-        merged.extend(content);
-        let msg = Message::builder()
-            .role(role)
-            .set_content(Some(merged))
-            .build()
-            .map_err(|e| LlmError::RequestFailed {
-                provider: "bedrock".to_string(),
-                reason: format!("Failed to build merged Message: {}", e),
-            })?;
-        messages.push(msg);
-        return Ok(());
+    let content = merge_same_role_content(messages, &role, content)?;
+    let msg = build_bedrock_message(role, content)?;
+    messages.push(msg);
+
+    Ok(())
+}
+
+/// Merge `content` with the previous message when it shares `role`.
+///
+/// Bedrock rejects consecutive same-role messages, so the previous message
+/// is removed and its content blocks are prepended to `content`.
+fn merge_same_role_content(
+    messages: &mut Vec<Message>,
+    role: &ConversationRole,
+    content: Vec<ContentBlock>,
+) -> Result<Vec<ContentBlock>, LlmError> {
+    let same_role = messages.last().is_some_and(|last| last.role() == role);
+    if !same_role {
+        return Ok(content);
     }
 
-    let msg = Message::builder()
+    let prev = messages.pop().ok_or_else(|| LlmError::RequestFailed {
+        provider: "bedrock".to_string(),
+        reason: "Unexpected empty message list during merge".to_string(),
+    })?;
+    let mut merged = prev.content().to_vec();
+    merged.extend(content);
+    Ok(merged)
+}
+
+/// Build a Bedrock `Message` from a role and content blocks.
+fn build_bedrock_message(
+    role: ConversationRole,
+    content: Vec<ContentBlock>,
+) -> Result<Message, LlmError> {
+    Message::builder()
         .role(role)
         .set_content(Some(content))
         .build()
         .map_err(|e| LlmError::RequestFailed {
             provider: "bedrock".to_string(),
             reason: format!("Failed to build Message: {}", e),
-        })?;
-    messages.push(msg);
-
-    Ok(())
+        })
 }
 
 // ---------------------------------------------------------------------------

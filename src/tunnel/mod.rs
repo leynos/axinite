@@ -199,44 +199,51 @@ pub struct TunnelProviderConfig {
 pub fn create_tunnel(config: &TunnelProviderConfig) -> Result<Option<Box<dyn Tunnel>>> {
     match config.provider.as_str() {
         "none" | "" => Ok(None),
-
-        "cloudflare" => {
-            let cf = config.cloudflare.as_ref().ok_or_else(|| {
-                anyhow::anyhow!("TUNNEL_PROVIDER=cloudflare but no TUNNEL_CF_TOKEN configured")
-            })?;
-            Ok(Some(Box::new(CloudflareTunnel::new(cf.token.clone()))))
-        }
-
-        "tailscale" => {
-            let ts = config.tailscale.as_ref().cloned().unwrap_or_default();
-            Ok(Some(Box::new(TailscaleTunnel::new(ts.funnel, ts.hostname))))
-        }
-
-        "ngrok" => {
-            let ng = config.ngrok.as_ref().ok_or_else(|| {
-                anyhow::anyhow!("TUNNEL_PROVIDER=ngrok but no TUNNEL_NGROK_TOKEN configured")
-            })?;
-            Ok(Some(Box::new(NgrokTunnel::new(
-                ng.auth_token.clone(),
-                ng.domain.clone(),
-            ))))
-        }
-
-        "custom" => {
-            let cu = config.custom.as_ref().ok_or_else(|| {
-                anyhow::anyhow!("TUNNEL_PROVIDER=custom but no TUNNEL_CUSTOM_COMMAND configured")
-            })?;
-            Ok(Some(Box::new(CustomTunnel::new(
-                cu.start_command.clone(),
-                cu.health_url.clone(),
-                cu.url_pattern.clone(),
-            ))))
-        }
-
+        "cloudflare" => cloudflare_tunnel(config).map(Some),
+        "tailscale" => tailscale_tunnel(config).map(Some),
+        "ngrok" => ngrok_tunnel(config).map(Some),
+        "custom" => custom_tunnel(config).map(Some),
         other => bail!(
             "Unknown tunnel provider: \"{other}\". Valid: none, cloudflare, tailscale, ngrok, custom"
         ),
     }
+}
+
+/// Build the Cloudflare tunnel, requiring a configured token.
+fn cloudflare_tunnel(config: &TunnelProviderConfig) -> Result<Box<dyn Tunnel>> {
+    let cf = config.cloudflare.as_ref().ok_or_else(|| {
+        anyhow::anyhow!("TUNNEL_PROVIDER=cloudflare but no TUNNEL_CF_TOKEN configured")
+    })?;
+    Ok(Box::new(CloudflareTunnel::new(cf.token.clone())))
+}
+
+/// Build the Tailscale tunnel; missing config falls back to defaults.
+fn tailscale_tunnel(config: &TunnelProviderConfig) -> Result<Box<dyn Tunnel>> {
+    let ts = config.tailscale.as_ref().cloned().unwrap_or_default();
+    Ok(Box::new(TailscaleTunnel::new(ts.funnel, ts.hostname)))
+}
+
+/// Build the ngrok tunnel, requiring a configured auth token.
+fn ngrok_tunnel(config: &TunnelProviderConfig) -> Result<Box<dyn Tunnel>> {
+    let ng = config.ngrok.as_ref().ok_or_else(|| {
+        anyhow::anyhow!("TUNNEL_PROVIDER=ngrok but no TUNNEL_NGROK_TOKEN configured")
+    })?;
+    Ok(Box::new(NgrokTunnel::new(
+        ng.auth_token.clone(),
+        ng.domain.clone(),
+    )))
+}
+
+/// Build the custom-command tunnel, requiring a configured start command.
+fn custom_tunnel(config: &TunnelProviderConfig) -> Result<Box<dyn Tunnel>> {
+    let cu = config.custom.as_ref().ok_or_else(|| {
+        anyhow::anyhow!("TUNNEL_PROVIDER=custom but no TUNNEL_CUSTOM_COMMAND configured")
+    })?;
+    Ok(Box::new(CustomTunnel::new(
+        cu.start_command.clone(),
+        cu.health_url.clone(),
+        cu.url_pattern.clone(),
+    )))
 }
 
 // ── Managed tunnel startup ───────────────────────────────────────
