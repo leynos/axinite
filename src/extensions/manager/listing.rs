@@ -1,0 +1,342 @@
+//! Extension listing and detailed extension info reporting.
+
+use crate::extensions::{ExtensionError, ExtensionKind, InstalledExtension, ToolAuthState};
+use crate::tools::mcp::auth::is_authenticated;
+use crate::tools::wasm::discover_tools;
+
+use super::ExtensionManager;
+
+impl ExtensionManager {
+    /// List extensions with their status.
+    ///
+    /// When `include_available` is `true`, registry entries that are not yet
+    /// installed are appended with `installed: false`.
+    pub async fn list(
+        &self,
+        kind_filter: Option<ExtensionKind>,
+        include_available: bool,
+    ) -> Result<Vec<InstalledExtension>, ExtensionError> {
+        let mut extensions = Vec::new();
+
+        // List MCP servers
+        if kind_filter.is_none() || kind_filter == Some(ExtensionKind::McpServer) {
+            match self.load_mcp_servers().await {
+                Ok(servers) => {
+                    for server in &servers.servers {
+                        let authenticated =
+                            is_authenticated(server, &self.secrets, &self.user_id).await;
+                        let clients = self.mcp_clients.read().await;
+                        let active = clients.contains_key(&server.name);
+
+                        // Get tool names if active
+                        let tools = if active {
+                            self.tool_registry
+                                .list()
+                                .await
+                                .into_iter()
+                                .filter(|t| t.starts_with(&format!("{}_", server.name)))
+                                .collect()
+                        } else {
+                            Vec::new()
+                        };
+
+                        let display_name = self
+                            .registry
+                            .get_with_kind(&server.name, Some(ExtensionKind::McpServer))
+                            .await
+                            .map(|e| e.display_name);
+                        extensions.push(InstalledExtension {
+                            name: server.name.clone(),
+                            kind: ExtensionKind::McpServer,
+                            display_name,
+                            description: server.description.clone(),
+                            url: Some(server.url.clone()),
+                            authenticated,
+                            active,
+                            tools,
+                            needs_setup: false,
+                            has_auth: false,
+                            installed: true,
+                            activation_error: None,
+                            version: None,
+                        });
+                    }
+                }
+                Err(e) => {
+                    tracing::debug!("Failed to load MCP servers for listing: {}", e);
+                }
+            }
+        }
+
+        // List WASM tools
+        if Self::kind_selected(kind_filter, ExtensionKind::WasmTool) && self.wasm_tools_dir.exists()
+        {
+            match discover_tools(&self.wasm_tools_dir).await {
+                Ok(tools) => {
+                    for (name, discovered) in tools {
+                        let active = self.tool_registry.has(&name).await;
+
+                        let registry_entry = self
+                            .registry
+                            .get_with_kind(&name, Some(ExtensionKind::WasmTool))
+                            .await;
+                        let display_name = registry_entry.as_ref().map(|e| e.display_name.clone());
+                        let auth_state = self.check_tool_auth_status(&name).await;
+                        let version = if let Some(ref cap_path) = discovered.capabilities_path {
+                            tokio::fs::read(cap_path)
+                                .await
+                                .ok()
+                                .and_then(|bytes| {
+                                    crate::tools::wasm::CapabilitiesFile::from_bytes(&bytes).ok()
+                                })
+                                .and_then(|cap| cap.version)
+                        } else {
+                            None
+                        };
+                        let version =
+                            version.or_else(|| registry_entry.and_then(|e| e.version.clone()));
+                        extensions.push(InstalledExtension {
+                            name: name.clone(),
+                            kind: ExtensionKind::WasmTool,
+                            display_name,
+                            description: None,
+                            url: None,
+                            authenticated: auth_state == ToolAuthState::Ready,
+                            active,
+                            tools: if active { vec![name] } else { Vec::new() },
+                            needs_setup: auth_state == ToolAuthState::NeedsSetup,
+                            has_auth: auth_state != ToolAuthState::NoAuth,
+                            installed: true,
+                            activation_error: None,
+                            version,
+                        });
+                    }
+                }
+                Err(e) => {
+                    tracing::debug!("Failed to discover WASM tools for listing: {}", e);
+                }
+            }
+        }
+
+        // List WASM channels
+        if Self::kind_selected(kind_filter, ExtensionKind::WasmChannel)
+            && self.wasm_channels_dir.exists()
+        {
+            match crate::channels::wasm::discover_channels(&self.wasm_channels_dir).await {
+                Ok(channels) => {
+                    let active_names = self.active_channel_names.read().await;
+                    let errors = self.activation_errors.read().await;
+                    for (name, discovered) in channels {
+                        let active = active_names.contains(&name);
+                        let auth_state = self.check_channel_auth_status(&name).await;
+                        let activation_error = errors.get(&name).cloned();
+                        let registry_entry = self
+                            .registry
+                            .get_with_kind(&name, Some(ExtensionKind::WasmChannel))
+                            .await;
+                        let display_name = registry_entry.as_ref().map(|e| e.display_name.clone());
+                        let version = if let Some(ref cap_path) = discovered.capabilities_path {
+                            tokio::fs::read(cap_path)
+                                .await
+                                .ok()
+                                .and_then(|bytes| {
+                                    crate::channels::wasm::ChannelCapabilitiesFile::from_bytes(
+                                        &bytes,
+                                    )
+                                    .ok()
+                                })
+                                .and_then(|cap| cap.version)
+                        } else {
+                            None
+                        };
+                        let version =
+                            version.or_else(|| registry_entry.and_then(|e| e.version.clone()));
+                        extensions.push(InstalledExtension {
+                            name,
+                            kind: ExtensionKind::WasmChannel,
+                            display_name,
+                            description: None,
+                            url: None,
+                            authenticated: auth_state == ToolAuthState::Ready,
+                            active,
+                            tools: Vec::new(),
+                            needs_setup: auth_state == ToolAuthState::NeedsSetup,
+                            has_auth: false,
+                            installed: true,
+                            activation_error,
+                            version,
+                        });
+                    }
+                }
+                Err(e) => {
+                    tracing::debug!("Failed to discover WASM channels for listing: {}", e);
+                }
+            }
+        }
+
+        // List channel-relay extensions
+        if kind_filter.is_none() || kind_filter == Some(ExtensionKind::ChannelRelay) {
+            let installed = self.installed_relay_extensions.read().await;
+            let active_names = self.active_channel_names.read().await;
+            for name in installed.iter() {
+                let active = active_names.contains(name);
+                let has_token = self
+                    .secrets
+                    .exists(&self.user_id, &format!("relay:{}:stream_token", name))
+                    .await
+                    .unwrap_or(false);
+                let registry_entry = self
+                    .registry
+                    .get_with_kind(name, Some(ExtensionKind::ChannelRelay))
+                    .await;
+                let display_name = registry_entry.as_ref().map(|e| e.display_name.clone());
+                let description = registry_entry.as_ref().map(|e| e.description.clone());
+                extensions.push(InstalledExtension {
+                    name: name.clone(),
+                    kind: ExtensionKind::ChannelRelay,
+                    display_name,
+                    description,
+                    url: None,
+                    authenticated: has_token,
+                    active,
+                    tools: Vec::new(),
+                    needs_setup: false,
+                    has_auth: true,
+                    installed: true,
+                    activation_error: None,
+                    version: None,
+                });
+            }
+        }
+
+        // Append available-but-not-installed registry entries
+        if include_available {
+            let installed_names: std::collections::HashSet<(String, ExtensionKind)> = extensions
+                .iter()
+                .map(|e| (e.name.clone(), e.kind))
+                .collect();
+
+            for entry in self.registry.all_entries().await {
+                if let Some(filter) = kind_filter
+                    && entry.kind != filter
+                {
+                    continue;
+                }
+                if installed_names.contains(&(entry.name.clone(), entry.kind)) {
+                    continue;
+                }
+                extensions.push(InstalledExtension {
+                    name: entry.name,
+                    kind: entry.kind,
+                    display_name: Some(entry.display_name),
+                    description: Some(entry.description),
+                    url: None,
+                    authenticated: false,
+                    active: false,
+                    tools: Vec::new(),
+                    needs_setup: false,
+                    has_auth: false,
+                    installed: false,
+                    activation_error: None,
+                    version: entry.version,
+                });
+            }
+        }
+
+        Ok(extensions)
+    }
+
+    /// Read and parse a capabilities file, returning `None` when the file is
+    /// absent, unreadable, or fails to parse.
+    pub(super) async fn load_capabilities<T>(
+        cap_path: &std::path::Path,
+        parse: impl FnOnce(&[u8]) -> Option<T>,
+    ) -> Option<T> {
+        if !cap_path.exists() {
+            return None;
+        }
+        let bytes = tokio::fs::read(cap_path).await.ok()?;
+        parse(&bytes)
+    }
+
+    /// Get detailed info about an installed extension (version, wit_version, host compatibility).
+    pub async fn extension_info(&self, name: &str) -> Result<serde_json::Value, ExtensionError> {
+        Self::validate_extension_name(name)?;
+        let kind = self.determine_installed_kind(name).await?;
+
+        match kind {
+            ExtensionKind::WasmTool => {
+                let cap_path = self
+                    .wasm_tools_dir
+                    .join(format!("{}.capabilities.json", name));
+                let wasm_path = self.wasm_tools_dir.join(format!("{}.wasm", name));
+
+                let mut info = serde_json::json!({
+                    "name": name,
+                    "kind": "wasm_tool",
+                    "installed": wasm_path.exists(),
+                });
+
+                if let Some(cap) = Self::load_capabilities(&cap_path, |bytes| {
+                    crate::tools::wasm::CapabilitiesFile::from_bytes(bytes).ok()
+                })
+                .await
+                {
+                    info["version"] =
+                        serde_json::json!(cap.version.unwrap_or_else(|| "unknown".into()));
+                    info["wit_version"] =
+                        serde_json::json!(cap.wit_version.unwrap_or_else(|| "unknown".into()));
+                }
+
+                info["host_wit_version"] = serde_json::json!(crate::tools::wasm::WIT_TOOL_VERSION);
+
+                Ok(info)
+            }
+            ExtensionKind::WasmChannel => {
+                let cap_path = self
+                    .wasm_channels_dir
+                    .join(format!("{}.capabilities.json", name));
+                let wasm_path = self.wasm_channels_dir.join(format!("{}.wasm", name));
+
+                let mut info = serde_json::json!({
+                    "name": name,
+                    "kind": "wasm_channel",
+                    "installed": wasm_path.exists(),
+                    "active": self.active_channel_names.read().await.contains(name),
+                });
+
+                if let Some(cap) = Self::load_capabilities(&cap_path, |bytes| {
+                    crate::channels::wasm::ChannelCapabilitiesFile::from_bytes(bytes).ok()
+                })
+                .await
+                {
+                    info["version"] =
+                        serde_json::json!(cap.version.unwrap_or_else(|| "unknown".into()));
+                    info["wit_version"] =
+                        serde_json::json!(cap.wit_version.unwrap_or_else(|| "unknown".into()));
+                }
+
+                info["host_wit_version"] =
+                    serde_json::json!(crate::tools::wasm::WIT_CHANNEL_VERSION);
+
+                Ok(info)
+            }
+            ExtensionKind::McpServer => {
+                let info = serde_json::json!({
+                    "name": name,
+                    "kind": "mcp_server",
+                    "connected": self.mcp_clients.read().await.contains_key(name),
+                });
+                Ok(info)
+            }
+            ExtensionKind::ChannelRelay => {
+                let info = serde_json::json!({
+                    "name": name,
+                    "kind": "channel_relay",
+                    "active": self.active_channel_names.read().await.contains(name),
+                });
+                Ok(info)
+            }
+        }
+    }
+}
