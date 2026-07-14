@@ -1,6 +1,5 @@
 //! Unit tests for trace-provider internals.
 
-use std::panic;
 use std::sync::Arc;
 use std::sync::atomic::Ordering;
 use std::thread;
@@ -46,19 +45,14 @@ fn poison_inner_lock(llm: Arc<TraceLlm>) {
 }
 
 #[test]
-fn increment_hint_mismatches_panics_on_overflow() {
+fn increment_hint_mismatches_saturates_on_overflow() {
     let llm = trace_llm_from_single_turn("overflow-model", "hello", vec![text_step("hi")]);
     llm.hint_mismatches.store(usize::MAX, Ordering::Relaxed);
 
-    let result = panic::catch_unwind(|| llm.increment_hint_mismatches());
+    llm.increment_hint_mismatches();
 
-    let panic_payload = result.expect_err("expected hint mismatch overflow panic");
-    let message = panic_payload
-        .downcast_ref::<&str>()
-        .copied()
-        .or_else(|| panic_payload.downcast_ref::<String>().map(String::as_str))
-        .expect("panic payload should be a string");
-    assert_eq!(message, "hint_mismatches overflowed");
+    let counter = llm.hint_mismatches.load(Ordering::Relaxed);
+    assert_eq!(counter, usize::MAX);
 }
 
 #[rstest]
