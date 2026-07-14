@@ -327,7 +327,7 @@ fn github_request(method: &str, path: &str, body: Option<String>) -> Result<Stri
                 if resp.status >= 200 && resp.status < 300 {
                     return String::from_utf8(resp.body)
                         .map_err(|e| format!("Invalid UTF-8: {}", e));
-                } else if attempt < max_retries && (resp.status == 429 || resp.status >= 500) {
+                } else if attempt < max_retries && is_retryable_status(resp.status) {
                     near::agent::host::log(
                         near::agent::host::LogLevel::Warn,
                         &format!(
@@ -623,7 +623,7 @@ fn trigger_workflow(
     }
 
     // Validate workflow_id - must be a safe filename
-    if workflow_id.contains('/') || workflow_id.contains("..") || workflow_id.contains(':') {
+    if is_invalid_workflow_id(workflow_id) {
         return Err("Invalid workflow_id: must be a filename or numeric ID".into());
     }
     // Validate ref - must be a valid git ref
@@ -658,7 +658,7 @@ fn get_workflow_runs(
     }
     // Validate workflow_id if provided
     if let Some(wid) = workflow_id {
-        if wid.contains('/') || wid.contains("..") || wid.contains(':') {
+        if is_invalid_workflow_id(wid) {
             return Err("Invalid workflow_id: must be a filename or numeric ID".into());
         }
     }
@@ -683,10 +683,24 @@ fn get_workflow_runs(
     github_request("GET", &path, None)
 }
 
+/// Report whether an HTTP status is worth retrying (throttling or server error).
+fn is_retryable_status(status: u16) -> bool {
+    status == 429 || status >= 500
+}
+
+/// Report whether a workflow identifier contains path or ref separators.
+///
+/// Workflow identifiers must be a bare filename or numeric ID.
+fn is_invalid_workflow_id(workflow_id: &str) -> bool {
+    workflow_id.contains('/') || workflow_id.contains("..") || workflow_id.contains(':')
+}
+
 export!(GitHubTool);
 
 #[cfg(test)]
 mod tests {
+    //! Unit tests for URL encoding, input validation, and request paths.
+
     use super::*;
     use serde_json::Value;
 
