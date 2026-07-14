@@ -2,6 +2,9 @@
 
 use insta::assert_snapshot;
 
+use super::auth::{
+    AuthCompletedInfo, AuthRequiredInfo, render_auth_completed, render_auth_required_lines,
+};
 use super::*;
 
 #[test]

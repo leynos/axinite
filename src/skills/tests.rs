@@ -4,6 +4,7 @@
 //! file-size guideline.  See `escape.rs` for the escaping helpers that were
 //! factored out alongside this module.
 
+use super::loaded_skill::validate_location_matches_manifest;
 use super::*;
 use rstest::{fixture, rstest};
 
