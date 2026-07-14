@@ -172,29 +172,50 @@ fn test_stuck_since_returns_latest_stuck_transition() {
     assert_eq!(ctx.stuck_since(), Some(second_stuck_at));
 }
 
-/// Simulate random `JobContext` and `JobState` transitions with `StdRng`; the `_` branch intentionally ignores random choices that are invalid for the current `JobState`.
+/// A randomly chosen, state-valid transition for the simulation below.
+enum RandomStep {
+    Start,
+    Stall,
+    Recover,
+}
+
+/// Map a random choice to a transition valid for the current state.
+///
+/// Choices that are invalid for the current `JobState` map to `None` and
+/// are intentionally skipped by the caller.
+fn choose_random_step(choice: u8, state: &JobState) -> Option<RandomStep> {
+    match (choice, state) {
+        (0, JobState::Pending) => Some(RandomStep::Start),
+        (1, JobState::InProgress) => Some(RandomStep::Stall),
+        (2, JobState::Stuck) => Some(RandomStep::Recover),
+        _ => None,
+    }
+}
+
+/// Simulate random `JobContext` and `JobState` transitions with `StdRng`.
 fn apply_random_step(
     ctx: &mut JobContext,
     rng: &mut StdRng,
     case_idx: usize,
     step: usize,
 ) -> anyhow::Result<()> {
-    match (rng.gen_range(0..4), &ctx.state) {
-        (0, JobState::Pending) => {
-            ctx.transition_to(JobState::InProgress, None)
-                .map_err(|e| anyhow::anyhow!("failed to transition to InProgress: {e}"))?;
-        }
-        (1, JobState::InProgress) => {
-            ctx.mark_stuck(format!("stall-{case_idx}-{step}"))
-                .map_err(|e| anyhow::anyhow!("failed to mark context as stuck: {e}"))?;
-        }
-        (2, JobState::Stuck) => {
-            ctx.attempt_recovery()
-                .map_err(|e| anyhow::anyhow!("failed to attempt recovery: {e}"))?;
-        }
-        _ => {}
+    let Some(step_kind) = choose_random_step(rng.gen_range(0..4), &ctx.state) else {
+        return Ok(());
+    };
+    match step_kind {
+        RandomStep::Start => ctx
+            .transition_to(JobState::InProgress, None)
+            .map(|_| ())
+            .map_err(|e| anyhow::anyhow!("failed to transition to InProgress: {e}")),
+        RandomStep::Stall => ctx
+            .mark_stuck(format!("stall-{case_idx}-{step}"))
+            .map(|_| ())
+            .map_err(|e| anyhow::anyhow!("failed to mark context as stuck: {e}")),
+        RandomStep::Recover => ctx
+            .attempt_recovery()
+            .map(|_| ())
+            .map_err(|e| anyhow::anyhow!("failed to attempt recovery: {e}")),
     }
-    Ok(())
 }
 
 #[test]
