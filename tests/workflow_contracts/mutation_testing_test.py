@@ -31,9 +31,10 @@ pytestmark = pytest.mark.skipif(
 
 #: The pinned commit of leynos/shared-actions carrying the
 #: setup-commands input, the python-version fail-fast guard, and
-#: step-level timeout artefact preservation. Bump the caller and this
-#: test together.
-PINNED_SHA = "859416a90eb3987b46a57682c5d6b8964ad3f0a6"
+#: step-level timeout artefact preservation. Bumped to the estate-wide
+#: coverage floor (927edd4), which carries the mutation-cargo workflow
+#: unchanged. Bump the caller and this test together.
+PINNED_SHA = "927edd45ae77be4251a8a18ca9eb5613a2e32cbd"
 
 EXPECTED_USES = (
     "leynos/shared-actions/.github/workflows/mutation-cargo.yml@" + PINNED_SHA
