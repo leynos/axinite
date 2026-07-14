@@ -4,13 +4,16 @@
 
 use super::*;
 use crate::config::SafetyConfig;
+use crate::context::{JobContext, JobState};
 use crate::llm::{
     CompletionRequest, CompletionResponse, LlmError, LlmProvider, ToolCompletionRequest,
     ToolCompletionResponse,
 };
 use crate::safety::SafetyLayer;
+use crate::tools::ApprovalContext;
 use rstest::rstest;
 use rust_decimal_macros::dec;
+use std::time::Duration;
 
 /// Minimal LLM provider stub for scheduler tests that don't exercise LLM calls.
 struct StubLlm;
