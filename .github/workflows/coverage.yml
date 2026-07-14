@@ -111,6 +111,9 @@ jobs:
       - name: Install cargo-llvm-cov
         uses: taiki-e/install-action@cargo-llvm-cov
 
+      - name: Install cargo-nextest
+        uses: taiki-e/install-action@cargo-nextest
+
       - name: Install cargo-component
         uses: taiki-e/install-action@v2
         with:
@@ -139,15 +142,26 @@ jobs:
           PGPASSWORD: postgres
           PGDATABASE: ironclaw_test
 
-      - name: Set DATABASE_URL for postgres configs
+      - name: Set database URLs for postgres configs
         if: matrix.has_postgres
         run: |
           database_url="postgres://postgres:postgres@localhost/ironclaw_test"
           echo "DATABASE_URL=${database_url}" >> "$GITHUB_ENV"
+          # The Postgres test harness (src/testing/postgres.rs) reads
+          # TEST_DATABASE_URL, not DATABASE_URL; without credentials it
+          # falls back to a password-less URL and every Postgres test
+          # panics with "password missing" instead of connecting.
+          echo "TEST_DATABASE_URL=${database_url}" >> "$GITHUB_ENV"
 
+      # Instrument with nextest, not plain `cargo test`: the startup
+      # boot-screen snapshot test captures stdout at file-descriptor
+      # level (gag) and needs nextest's process-per-test isolation, so
+      # the `cargo test` baseline llvm-cov drives otherwise fails
+      # (issue #237). nextest also skips doctests; the default profile
+      # additionally drops the slow trybuild binaries.
       - name: Generate coverage
         run: >-
-          cargo llvm-cov ${{ matrix.flags }} --features test-helpers
+          cargo llvm-cov nextest ${{ matrix.flags }} --features test-helpers
           --workspace --lcov
           --output-path lcov.info
 
