@@ -112,27 +112,45 @@ impl MemoryTreeTool {
 
         let mut result = Vec::new();
         for entry in entries {
-            // Directories end with `/`, files don't
-            let display_path = if entry.is_directory {
-                format!("{}/", entry.name())
-            } else {
-                entry.name().to_string()
-            };
-
-            if entry.is_directory && current_depth < max_depth {
-                let children =
-                    Box::pin(self.build_tree(&entry.path, current_depth + 1, max_depth)).await?;
-                if children.is_empty() {
-                    result.push(serde_json::Value::String(display_path));
-                } else {
-                    result.push(serde_json::json!({ display_path: children }));
-                }
-            } else {
-                result.push(serde_json::Value::String(display_path));
-            }
+            result.push(self.render_entry(&entry, current_depth, max_depth).await?);
         }
 
         Ok(result)
+    }
+
+    /// Render one workspace entry as a tree node.
+    ///
+    /// Files and depth-limited directories render as plain strings; a
+    /// directory with children renders as a single-key object mapping the
+    /// display name to its child nodes.
+    async fn render_entry(
+        &self,
+        entry: &crate::workspace::WorkspaceEntry,
+        current_depth: usize,
+        max_depth: usize,
+    ) -> Result<serde_json::Value, ToolError> {
+        let display_path = display_name(entry);
+
+        let can_descend = entry.is_directory && current_depth < max_depth;
+        if !can_descend {
+            return Ok(serde_json::Value::String(display_path));
+        }
+
+        let children = Box::pin(self.build_tree(&entry.path, current_depth + 1, max_depth)).await?;
+        if children.is_empty() {
+            Ok(serde_json::Value::String(display_path))
+        } else {
+            Ok(serde_json::json!({ display_path: children }))
+        }
+    }
+}
+
+/// Display name for a workspace entry: directories end with `/`, files don't.
+fn display_name(entry: &crate::workspace::WorkspaceEntry) -> String {
+    if entry.is_directory {
+        format!("{}/", entry.name())
+    } else {
+        entry.name().to_string()
     }
 }
 

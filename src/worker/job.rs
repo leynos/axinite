@@ -10,6 +10,7 @@ mod planning;
 mod run_loop;
 mod terminal;
 mod tool_exec;
+mod tool_pipeline;
 
 use std::sync::Arc;
 use std::time::Duration;

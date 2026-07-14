@@ -8,6 +8,7 @@ use std::sync::Arc;
 use crate::context::{ContextManager, JobContext, JobState};
 use crate::tools::tool::{ApprovalRequirement, NativeTool, ToolError, ToolOutput, require_str};
 
+use super::output::{error_output, success_output};
 use super::resolve_job_id;
 
 /// Tool for listing jobs.
@@ -83,18 +84,19 @@ impl NativeTool for ListJobsTool {
 
         let summary = self.context_manager.summary_for(&ctx.user_id).await;
 
-        let result = serde_json::json!({
-            "jobs": jobs,
-            "summary": {
-                "total": summary.total,
-                "pending": summary.pending,
-                "in_progress": summary.in_progress,
-                "completed": summary.completed,
-                "failed": summary.failed
-            }
-        });
-
-        Ok(ToolOutput::success(result, start.elapsed()))
+        success_output(
+            serde_json::json!({
+                "jobs": jobs,
+                "summary": {
+                    "total": summary.total,
+                    "pending": summary.pending,
+                    "in_progress": summary.in_progress,
+                    "completed": summary.completed,
+                    "failed": summary.failed
+                }
+            }),
+            start,
+        )
     }
 
     fn requires_sanitization(&self) -> bool {
@@ -149,29 +151,23 @@ impl NativeTool for JobStatusTool {
         match self.context_manager.get_context(job_id).await {
             Ok(job_ctx) => {
                 if job_ctx.user_id != requester_id {
-                    let result = serde_json::json!({
-                        "error": "Job not found".to_string()
-                    });
-                    return Ok(ToolOutput::success(result, start.elapsed()));
+                    return error_output("Job not found".to_string(), start);
                 }
-                let result = serde_json::json!({
-                    "job_id": job_id.to_string(),
-                    "title": job_ctx.title,
-                    "description": job_ctx.description,
-                    "status": format!("{:?}", job_ctx.state),
-                    "created_at": job_ctx.created_at.to_rfc3339(),
-                    "started_at": job_ctx.started_at.map(|t| t.to_rfc3339()),
-                    "completed_at": job_ctx.completed_at.map(|t| t.to_rfc3339()),
-                    "actual_cost": job_ctx.actual_cost.to_string()
-                });
-                Ok(ToolOutput::success(result, start.elapsed()))
+                success_output(
+                    serde_json::json!({
+                        "job_id": job_id.to_string(),
+                        "title": job_ctx.title,
+                        "description": job_ctx.description,
+                        "status": format!("{:?}", job_ctx.state),
+                        "created_at": job_ctx.created_at.to_rfc3339(),
+                        "started_at": job_ctx.started_at.map(|t| t.to_rfc3339()),
+                        "completed_at": job_ctx.completed_at.map(|t| t.to_rfc3339()),
+                        "actual_cost": job_ctx.actual_cost.to_string()
+                    }),
+                    start,
+                )
             }
-            Err(e) => {
-                let result = serde_json::json!({
-                    "error": format!("Job not found: {}", e)
-                });
-                Ok(ToolOutput::success(result, start.elapsed()))
-            }
+            Err(e) => error_output(format!("Job not found: {}", e), start),
         }
     }
 
@@ -235,26 +231,16 @@ impl NativeTool for CancelJobTool {
             })
             .await
         {
-            Ok(Ok(())) => {
-                let result = serde_json::json!({
+            Ok(Ok(())) => success_output(
+                serde_json::json!({
                     "job_id": job_id.to_string(),
                     "status": "cancelled",
                     "message": "Job cancelled successfully"
-                });
-                Ok(ToolOutput::success(result, start.elapsed()))
-            }
-            Ok(Err(reason)) => {
-                let result = serde_json::json!({
-                    "error": format!("Cannot cancel job: {}", reason)
-                });
-                Ok(ToolOutput::success(result, start.elapsed()))
-            }
-            Err(e) => {
-                let result = serde_json::json!({
-                    "error": format!("Job not found: {}", e)
-                });
-                Ok(ToolOutput::success(result, start.elapsed()))
-            }
+                }),
+                start,
+            ),
+            Ok(Err(reason)) => error_output(format!("Cannot cancel job: {}", reason), start),
+            Err(e) => error_output(format!("Job not found: {}", e), start),
         }
     }
 

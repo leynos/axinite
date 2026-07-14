@@ -43,6 +43,88 @@ impl SignalChannel {
         }
     }
 
+    /// Extract the message text, or the "[Attachment]" placeholder for
+    /// attachment-only messages that should still be processed.
+    ///
+    /// Returns `None` when the envelope should be dropped (attachment-only
+    /// with attachments ignored, or no content at all).
+    fn extract_text(&self, data_msg: &DataMessage) -> Option<String> {
+        // Skip attachment-only messages when configured.
+        let has_attachments = data_msg.attachments.as_ref().is_some_and(|a| !a.is_empty());
+        let has_message_text = data_msg.message.as_ref().is_some_and(|m| !m.is_empty());
+        if self.should_drop_attachment_only(has_attachments, has_message_text) {
+            tracing::debug!("Signal: dropping attachment-only message");
+            return None;
+        }
+
+        // Use message text, or fall back to "[Attachment]" for attachment-only messages
+        // when ignore_attachments is false. This ensures attachment-only messages are
+        // still processed when the user wants them (rather than always being dropped).
+        data_msg
+            .message
+            .as_deref()
+            .filter(|t| !t.is_empty())
+            .map(String::from)
+            .or_else(|| has_attachments.then(|| "[Attachment]".to_string()))
+    }
+
+    /// Apply the group or DM policy appropriate to the message's origin.
+    fn message_allowed(&self, data_msg: &DataMessage, sender: &str, envelope: &Envelope) -> bool {
+        // Check if this is a group message
+        let is_group = data_msg
+            .group_info
+            .as_ref()
+            .and_then(|g| g.group_id.as_deref())
+            .is_some();
+
+        // Apply group policy first (before DM policy for group messages)
+        if is_group {
+            self.group_message_allowed(data_msg, sender)
+        } else {
+            // DM message - apply DM policy
+            self.dm_message_allowed(sender, envelope)
+        }
+    }
+
+    /// Message timestamp: data message, envelope, or the current time.
+    fn resolve_timestamp(data_msg: &DataMessage, envelope: &Envelope) -> u64 {
+        data_msg
+            .timestamp
+            .or(envelope.timestamp)
+            .unwrap_or_else(|| {
+                u64::try_from(
+                    std::time::SystemTime::now()
+                        .duration_since(std::time::UNIX_EPOCH)
+                        .unwrap_or_default()
+                        .as_millis(),
+                )
+                .unwrap_or(u64::MAX)
+            })
+    }
+
+    /// Deterministic thread identifier for the conversation.
+    ///
+    /// This ensures DMs and groups continue the same thread AND work with
+    /// maybe_hydrate_thread, enabling conversation history persistence.
+    /// Priority: group ID > source_uuid > phone number.
+    fn resolve_thread_id(
+        data_msg: &DataMessage,
+        envelope: &Envelope,
+        sender: &str,
+        target: &str,
+    ) -> String {
+        if data_msg.group_info.is_some() {
+            // For groups, use the group ID to generate a deterministic UUID
+            Self::thread_id_from_identifier(target)
+        } else if let Some(ref uuid) = envelope.source_uuid {
+            // Privacy mode users already have a UUID
+            uuid.clone()
+        } else {
+            // For regular DMs, generate a deterministic UUID from the phone number
+            Self::thread_id_from_identifier(sender)
+        }
+    }
+
     /// Process a single SSE envelope, returning an `IncomingMessage` if valid.
     pub(super) fn process_envelope(
         &self,
@@ -55,24 +137,7 @@ impl SignalChannel {
         }
 
         let data_msg = envelope.data_message.as_ref()?;
-
-        // Skip attachment-only messages when configured.
-        let has_attachments = data_msg.attachments.as_ref().is_some_and(|a| !a.is_empty());
-        let has_message_text = data_msg.message.as_ref().is_some_and(|m| !m.is_empty());
-        if self.should_drop_attachment_only(has_attachments, has_message_text) {
-            tracing::debug!("Signal: dropping attachment-only message");
-            return None;
-        }
-
-        // Use message text, or fall back to "[Attachment]" for attachment-only messages
-        // when ignore_attachments is false. This ensures attachment-only messages are
-        // still processed when the user wants them (rather than always being dropped).
-        let text = data_msg
-            .message
-            .as_deref()
-            .filter(|t| !t.is_empty())
-            .map(String::from)
-            .or_else(|| has_attachments.then(|| "[Attachment]".to_string()))?;
+        let text = self.extract_text(data_msg)?;
         let sender = Self::sender(envelope)?;
 
         // Log sender info including UUID if available
@@ -82,38 +147,12 @@ impl SignalChannel {
             "Signal: received message"
         );
 
-        // Check if this is a group message
-        let is_group = data_msg
-            .group_info
-            .as_ref()
-            .and_then(|g| g.group_id.as_deref())
-            .is_some();
-
-        // Apply group policy first (before DM policy for group messages)
-        let allowed = if is_group {
-            self.group_message_allowed(data_msg, &sender)
-        } else {
-            // DM message - apply DM policy
-            self.dm_message_allowed(&sender, envelope)
-        };
-        if !allowed {
+        if !self.message_allowed(data_msg, &sender, envelope) {
             return None;
         }
 
         let target = Self::reply_target(data_msg, &sender);
-
-        let timestamp = data_msg
-            .timestamp
-            .or(envelope.timestamp)
-            .unwrap_or_else(|| {
-                u64::try_from(
-                    std::time::SystemTime::now()
-                        .duration_since(std::time::UNIX_EPOCH)
-                        .unwrap_or_default()
-                        .as_millis(),
-                )
-                .unwrap_or(u64::MAX)
-            });
+        let timestamp = Self::resolve_timestamp(data_msg, envelope);
 
         // Build metadata with signal-specific routing info.
         let sender_uuid = envelope.source_uuid.as_deref();
@@ -133,20 +172,9 @@ impl SignalChannel {
             msg = msg.with_user_name(name);
         }
 
-        // Use a deterministic UUID as thread_id for all conversations.
-        // This ensures DMs and groups continue the same thread AND work with
-        // maybe_hydrate_thread, enabling conversation history persistence.
-        // Priority: source_uuid > generated UUID from phone/group
-        if data_msg.group_info.is_some() {
-            // For groups, use the group ID to generate a deterministic UUID
-            msg = msg.with_thread(Self::thread_id_from_identifier(&target));
-        } else if let Some(ref uuid) = envelope.source_uuid {
-            // Privacy mode users already have a UUID
-            msg = msg.with_thread(uuid.clone());
-        } else {
-            // For regular DMs, generate a deterministic UUID from the phone number
-            msg = msg.with_thread(Self::thread_id_from_identifier(&sender));
-        }
+        msg = msg.with_thread(Self::resolve_thread_id(
+            data_msg, envelope, &sender, &target,
+        ));
 
         Some((msg, target))
     }

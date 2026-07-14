@@ -17,13 +17,87 @@ use crate::llm::provider::{
     ToolCompletionRequest, ToolCompletionResponse,
 };
 
+/// Sanitize provider-neutral messages and convert them to wire format.
+fn prepare_messages(
+    mut raw_messages: Vec<crate::llm::provider::ChatMessage>,
+) -> Vec<ChatCompletionMessage> {
+    crate::llm::provider::sanitize_tool_messages(&mut raw_messages);
+    raw_messages.into_iter().map(|m| m.into()).collect()
+}
+
+/// Pull the first choice from a response, failing when there is none.
+fn first_choice(
+    response: ChatCompletionResponse,
+) -> Result<
+    (
+        crate::llm::nearai_chat::wire::ChatCompletionChoice,
+        (u32, u32),
+    ),
+    LlmError,
+> {
+    let usage = parse_usage(response.usage.as_ref());
+    let choice = response
+        .choices
+        .into_iter()
+        .next()
+        .ok_or_else(|| LlmError::InvalidResponse {
+            provider: "nearai_chat".to_string(),
+            reason: "No choices in response".to_string(),
+        })?;
+    Ok((choice, usage))
+}
+
+/// Map the wire finish reason, treating an unknown reason with tool calls
+/// present as `ToolUse`.
+fn parse_finish_reason(reason: Option<&str>, has_tool_calls: bool) -> FinishReason {
+    match reason {
+        Some("stop") => FinishReason::Stop,
+        Some("length") => FinishReason::Length,
+        Some("tool_calls") => FinishReason::ToolUse,
+        Some("content_filter") => FinishReason::ContentFilter,
+        _ if has_tool_calls => FinishReason::ToolUse,
+        _ => FinishReason::Unknown,
+    }
+}
+
+/// Convert provider-neutral tool definitions to wire format.
+fn convert_tools(tools: Vec<crate::llm::provider::ToolDefinition>) -> Vec<ChatCompletionTool> {
+    tools
+        .into_iter()
+        .map(|t| ChatCompletionTool {
+            tool_type: "function".to_string(),
+            function: ChatCompletionFunction {
+                name: t.name,
+                description: Some(t.description),
+                parameters: Some(t.parameters),
+            },
+        })
+        .collect()
+}
+
+/// Parse wire tool calls, defaulting malformed argument JSON to an empty
+/// object.
+fn convert_tool_calls(
+    raw: Option<Vec<crate::llm::nearai_chat::wire::ChatCompletionToolCall>>,
+) -> Vec<ToolCall> {
+    raw.unwrap_or_default()
+        .into_iter()
+        .map(|tc| {
+            let arguments = serde_json::from_str(&tc.function.arguments)
+                .unwrap_or(serde_json::Value::Object(Default::default()));
+            ToolCall {
+                id: tc.id,
+                name: tc.function.name,
+                arguments,
+            }
+        })
+        .collect()
+}
+
 impl NativeLlmProvider for NearAiChatProvider {
     async fn complete(&self, req: CompletionRequest) -> Result<CompletionResponse, LlmError> {
         let model = req.model.unwrap_or_else(|| self.active_model_name());
-        let mut raw_messages = req.messages;
-        crate::llm::provider::sanitize_tool_messages(&mut raw_messages);
-        let messages: Vec<ChatCompletionMessage> =
-            raw_messages.into_iter().map(|m| m.into()).collect();
+        let messages = prepare_messages(req.messages);
 
         let request = ChatCompletionRequest {
             model,
@@ -35,16 +109,7 @@ impl NativeLlmProvider for NearAiChatProvider {
         };
 
         let response: ChatCompletionResponse = self.send_request(&request).await?;
-
-        let choice =
-            response
-                .choices
-                .into_iter()
-                .next()
-                .ok_or_else(|| LlmError::InvalidResponse {
-                    provider: "nearai_chat".to_string(),
-                    reason: "No choices in response".to_string(),
-                })?;
+        let (choice, (input_tokens, output_tokens)) = first_choice(response)?;
 
         // Fall back to reasoning_content when content is null (same as
         // complete_with_tools — reasoning models may put the answer there).
@@ -53,15 +118,7 @@ impl NativeLlmProvider for NearAiChatProvider {
             .content
             .or(choice.message.reasoning_content)
             .unwrap_or_default();
-        let finish_reason = match choice.finish_reason.as_deref() {
-            Some("stop") => FinishReason::Stop,
-            Some("length") => FinishReason::Length,
-            Some("tool_calls") => FinishReason::ToolUse,
-            Some("content_filter") => FinishReason::ContentFilter,
-            _ => FinishReason::Unknown,
-        };
-
-        let (input_tokens, output_tokens) = parse_usage(response.usage.as_ref());
+        let finish_reason = parse_finish_reason(choice.finish_reason.as_deref(), false);
 
         Ok(CompletionResponse {
             content,
@@ -78,10 +135,7 @@ impl NativeLlmProvider for NearAiChatProvider {
         req: ToolCompletionRequest,
     ) -> Result<ToolCompletionResponse, LlmError> {
         let model = req.model.unwrap_or_else(|| self.active_model_name());
-        let mut raw_messages = req.messages;
-        crate::llm::provider::sanitize_tool_messages(&mut raw_messages);
-        let messages: Vec<ChatCompletionMessage> =
-            raw_messages.into_iter().map(|m| m.into()).collect();
+        let messages = prepare_messages(req.messages);
 
         // Some OpenAI-compatible providers reject `role:"tool"` messages.
         // When enabled, rewrite tool-call / tool-result pairs into plain text.
@@ -91,18 +145,7 @@ impl NativeLlmProvider for NearAiChatProvider {
             messages
         };
 
-        let tools: Vec<ChatCompletionTool> = req
-            .tools
-            .into_iter()
-            .map(|t| ChatCompletionTool {
-                tool_type: "function".to_string(),
-                function: ChatCompletionFunction {
-                    name: t.name,
-                    description: Some(t.description),
-                    parameters: Some(t.parameters),
-                },
-            })
-            .collect();
+        let tools = convert_tools(req.tools);
 
         let request = ChatCompletionRequest {
             model,
@@ -114,32 +157,9 @@ impl NativeLlmProvider for NearAiChatProvider {
         };
 
         let response: ChatCompletionResponse = self.send_request(&request).await?;
+        let (choice, (input_tokens, output_tokens)) = first_choice(response)?;
 
-        let choice =
-            response
-                .choices
-                .into_iter()
-                .next()
-                .ok_or_else(|| LlmError::InvalidResponse {
-                    provider: "nearai_chat".to_string(),
-                    reason: "No choices in response".to_string(),
-                })?;
-
-        let tool_calls: Vec<ToolCall> = choice
-            .message
-            .tool_calls
-            .unwrap_or_default()
-            .into_iter()
-            .map(|tc| {
-                let arguments = serde_json::from_str(&tc.function.arguments)
-                    .unwrap_or(serde_json::Value::Object(Default::default()));
-                ToolCall {
-                    id: tc.id,
-                    name: tc.function.name,
-                    arguments,
-                }
-            })
-            .collect();
+        let tool_calls = convert_tool_calls(choice.message.tool_calls);
 
         // Fall back to reasoning_content when content is null (e.g. GLM-5
         // returns its answer in reasoning_content instead of content), but
@@ -153,21 +173,8 @@ impl NativeLlmProvider for NearAiChatProvider {
             choice.message.content
         };
 
-        let finish_reason = match choice.finish_reason.as_deref() {
-            Some("stop") => FinishReason::Stop,
-            Some("length") => FinishReason::Length,
-            Some("tool_calls") => FinishReason::ToolUse,
-            Some("content_filter") => FinishReason::ContentFilter,
-            _ => {
-                if !tool_calls.is_empty() {
-                    FinishReason::ToolUse
-                } else {
-                    FinishReason::Unknown
-                }
-            }
-        };
-
-        let (input_tokens, output_tokens) = parse_usage(response.usage.as_ref());
+        let finish_reason =
+            parse_finish_reason(choice.finish_reason.as_deref(), !tool_calls.is_empty());
 
         Ok(ToolCompletionResponse {
             content,

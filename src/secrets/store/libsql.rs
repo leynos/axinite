@@ -10,6 +10,7 @@ use crate::secrets::crypto::SecretsCrypto;
 use crate::secrets::types::{CreateSecretParams, DecryptedSecret, Secret, SecretError, SecretRef};
 
 use super::NativeSecretsStore;
+use super::access::{ensure_not_expired, is_secret_name_allowed};
 
 // ==================== libSQL implementation ====================
 
@@ -136,17 +137,7 @@ impl NativeSecretsStore for LibSqlSecretsStore {
             .await
             .map_err(|e| SecretError::Database(e.to_string()))?
         {
-            Some(row) => {
-                let secret = libsql_row_to_secret(&row)?;
-
-                if let Some(expires_at) = secret.expires_at
-                    && expires_at < Utc::now()
-                {
-                    return Err(SecretError::Expired);
-                }
-
-                Ok(secret)
-            }
+            Some(row) => ensure_not_expired(libsql_row_to_secret(&row)?),
             None => Err(SecretError::NotFound(name.to_string())),
         }
     }
@@ -246,20 +237,7 @@ impl NativeSecretsStore for LibSqlSecretsStore {
             return Ok(false);
         }
 
-        for pattern in allowed_secrets {
-            let pattern_lower = pattern.to_lowercase();
-            if pattern_lower == secret_name_lower {
-                return Ok(true);
-            }
-
-            if let Some(prefix) = pattern_lower.strip_suffix('*')
-                && secret_name_lower.starts_with(prefix)
-            {
-                return Ok(true);
-            }
-        }
-
-        Ok(false)
+        Ok(is_secret_name_allowed(&secret_name_lower, allowed_secrets))
     }
 }
 

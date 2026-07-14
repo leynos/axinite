@@ -14,6 +14,18 @@ use crate::tools::execute::process_tool_result;
 
 use super::Worker;
 
+/// Terminal event details persisted alongside the final job status.
+pub(super) struct TerminalEvent<'a> {
+    /// Terminal state the job is moving to.
+    pub(super) status: JobState,
+    /// Optional human-readable failure reason recorded with the status.
+    pub(super) failure_reason: Option<&'a str>,
+    /// Event type label (for example `"result"`).
+    pub(super) event_type: &'a str,
+    /// JSON payload describing the terminal outcome.
+    pub(super) data: &'a serde_json::Value,
+}
+
 impl Worker {
     /// Fire-and-forget persistence and SSE broadcast for non-terminal job
     /// events only.
@@ -45,20 +57,17 @@ impl Worker {
     /// Persist the terminal event and terminal status in one durable write.
     pub(super) async fn persist_terminal_result_and_status(
         &self,
-        status: JobState,
-        failure_reason: Option<&str>,
-        event_type: &str,
-        data: &serde_json::Value,
+        event: TerminalEvent<'_>,
     ) -> Result<(), Error> {
         let job_id = self.job_id;
         if let Some(store) = self.store() {
             store
                 .persist_terminal_result_and_status(TerminalJobPersistence {
                     job_id,
-                    status,
-                    failure_reason,
-                    event_type: crate::db::SandboxEventType::from(event_type),
-                    event_data: data,
+                    status: event.status,
+                    failure_reason: event.failure_reason,
+                    event_type: crate::db::SandboxEventType::from(event.event_type),
+                    event_data: event.data,
                 })
                 .await
                 .map_err(|e| crate::error::JobError::PersistenceError {
@@ -67,7 +76,7 @@ impl Worker {
                 })?;
         }
 
-        self.broadcast_event(event_type, data);
+        self.broadcast_event(event.event_type, event.data);
         Ok(())
     }
 

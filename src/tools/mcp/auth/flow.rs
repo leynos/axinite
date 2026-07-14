@@ -12,10 +12,109 @@ use crate::cli::oauth_defaults::{self, OAUTH_CALLBACK_PORT};
 use crate::secrets::SecretsStore;
 use crate::tools::mcp::config::McpServerConfig;
 
-use super::discovery::{discover_full_oauth_metadata, discover_oauth_endpoints, register_client};
+use super::discovery::{
+    build_no_redirect_client, discover_full_oauth_metadata, discover_oauth_endpoints,
+    register_client,
+};
 use super::tokens::{store_client_id, store_tokens};
 use super::types::{AccessToken, AuthError, PkceChallenge, TokenResponse};
 use super::url_safety::{canonical_resource_uri, validate_url_safe};
+
+/// Resolved inputs for the browser authorization step.
+///
+/// Produced either from pre-configured OAuth settings or via Dynamic Client
+/// Registration (DCR).
+struct AuthorizationFlowParams {
+    client_id: String,
+    authorization_url: String,
+    token_url: String,
+    use_pkce: bool,
+    scopes: Vec<String>,
+    extra_params: HashMap<String, String>,
+}
+
+/// Resolve the client_id, endpoints, and flow options for a server.
+///
+/// Uses pre-configured OAuth settings when present; otherwise falls back to
+/// discovery plus Dynamic Client Registration.
+async fn resolve_flow_params(
+    server_config: &McpServerConfig,
+    redirect_uri: &str,
+) -> Result<AuthorizationFlowParams, AuthError> {
+    match &server_config.oauth {
+        Some(_) => preconfigured_flow_params(server_config).await,
+        None => dcr_flow_params(server_config, redirect_uri).await,
+    }
+}
+
+/// Build flow parameters from a pre-configured OAuth section.
+async fn preconfigured_flow_params(
+    server_config: &McpServerConfig,
+) -> Result<AuthorizationFlowParams, AuthError> {
+    let oauth = server_config
+        .oauth
+        .as_ref()
+        .ok_or(AuthError::NotSupported)?;
+    let (authorization_url, token_url) = discover_oauth_endpoints(server_config).await?;
+    Ok(AuthorizationFlowParams {
+        client_id: oauth.client_id.clone(),
+        authorization_url,
+        token_url,
+        use_pkce: oauth.use_pkce,
+        scopes: oauth.scopes.clone(),
+        extra_params: oauth.extra_params.clone(),
+    })
+}
+
+/// Discover endpoints and register a client dynamically (RFC 7591).
+async fn dcr_flow_params(
+    server_config: &McpServerConfig,
+    redirect_uri: &str,
+) -> Result<AuthorizationFlowParams, AuthError> {
+    println!("  Discovering OAuth endpoints...");
+    let auth_meta = discover_full_oauth_metadata(&server_config.url).await?;
+
+    let registration_endpoint = auth_meta
+        .registration_endpoint
+        .ok_or(AuthError::NotSupported)?;
+
+    println!("  Registering client dynamically...");
+    let registration = register_client(&registration_endpoint, redirect_uri).await?;
+    println!("  Client registered: {}", registration.client_id);
+
+    Ok(AuthorizationFlowParams {
+        client_id: registration.client_id,
+        authorization_url: auth_meta.authorization_endpoint,
+        token_url: auth_meta.token_endpoint,
+        use_pkce: true, // Always use PKCE for DCR clients
+        scopes: auth_meta.scopes_supported,
+        extra_params: HashMap::new(),
+    })
+}
+
+/// Warn when the callback is served over plain HTTP to a remote host.
+///
+/// Authorization codes travel unencrypted; SSH port forwarding is safer:
+/// `ssh -L <port>:127.0.0.1:<port> user@your-server`
+fn warn_if_remote_callback(host: &str, port: u16) {
+    if oauth_defaults::is_loopback_host(host) {
+        return;
+    }
+    println!("Warning: MCP OAuth callback is using plain HTTP to a remote host ({host}).");
+    println!("         Authorization codes will be transmitted unencrypted.");
+    println!("         Consider SSH port forwarding instead:");
+    println!("           ssh -L {port}:127.0.0.1:{port} user@{host}");
+}
+
+/// Open the user's browser at the authorization URL, printing a fallback.
+fn open_browser_for_authorization(auth_url: &str, server_name: &str) {
+    println!("  Opening browser for {} login...", server_name);
+    if let Err(e) = open::that(auth_url) {
+        println!("  Could not open browser: {}", e);
+        println!("  Please open this URL manually:");
+        println!("  {}", auth_url);
+    }
+}
 
 /// Perform the OAuth 2.1 authorization flow for an MCP server.
 ///
@@ -40,87 +139,35 @@ pub async fn authorize_mcp_server(
     let (listener, port) = find_available_port().await?;
     let host = oauth_defaults::callback_host();
     let redirect_uri = format!("http://{}:{}/callback", host, port);
-
-    // Warn when the callback is served over plain HTTP to a remote host.
-    // Authorization codes travel unencrypted; SSH port forwarding is safer:
-    //   ssh -L <port>:127.0.0.1:<port> user@your-server
-    if !oauth_defaults::is_loopback_host(&host) {
-        println!("Warning: MCP OAuth callback is using plain HTTP to a remote host ({host}).");
-        println!("         Authorization codes will be transmitted unencrypted.");
-        println!("         Consider SSH port forwarding instead:");
-        println!("           ssh -L {port}:127.0.0.1:{port} user@{host}");
-    }
+    warn_if_remote_callback(&host, port);
 
     // Determine client_id and endpoints
-    let (client_id, authorization_url, token_url, use_pkce, scopes, extra_params) =
-        if let Some(oauth) = &server_config.oauth {
-            // Pre-configured OAuth
-            let (auth_url, tok_url) = discover_oauth_endpoints(server_config).await?;
-            (
-                oauth.client_id.clone(),
-                auth_url,
-                tok_url,
-                oauth.use_pkce,
-                oauth.scopes.clone(),
-                oauth.extra_params.clone(),
-            )
-        } else {
-            // Try Dynamic Client Registration
-            println!("  Discovering OAuth endpoints...");
-            let auth_meta = discover_full_oauth_metadata(&server_config.url).await?;
-
-            let registration_endpoint = auth_meta
-                .registration_endpoint
-                .ok_or(AuthError::NotSupported)?;
-
-            println!("  Registering client dynamically...");
-            let registration = register_client(&registration_endpoint, &redirect_uri).await?;
-            println!("  Client registered: {}", registration.client_id);
-
-            (
-                registration.client_id,
-                auth_meta.authorization_endpoint,
-                auth_meta.token_endpoint,
-                true, // Always use PKCE for DCR clients
-                auth_meta.scopes_supported,
-                HashMap::new(),
-            )
-        };
+    let params = resolve_flow_params(server_config, &redirect_uri).await?;
 
     // Generate PKCE challenge
-    let pkce = if use_pkce {
-        Some(PkceChallenge::generate())
-    } else {
-        None
-    };
+    let pkce = params.use_pkce.then(PkceChallenge::generate);
 
     // Compute canonical resource URI for RFC 8707
     let resource = canonical_resource_uri(&server_config.url);
 
     // Validate the discovered authorization URL to prevent a malicious MCP server
     // from redirecting the user to a phishing page or non-HTTPS endpoint.
-    validate_url_safe(&authorization_url)
+    validate_url_safe(&params.authorization_url)
         .await
         .map_err(|e| AuthError::DiscoveryFailed(format!("Unsafe authorization endpoint: {}", e)))?;
 
     // Build authorization URL
     let auth_url = build_authorization_url(
-        &authorization_url,
-        &client_id,
+        &params.authorization_url,
+        &params.client_id,
         &redirect_uri,
-        &scopes,
+        &params.scopes,
         pkce.as_ref(),
-        &extra_params,
+        &params.extra_params,
         Some(&resource),
     );
 
-    // Open browser
-    println!("  Opening browser for {} login...", server_config.name);
-    if let Err(e) = open::that(&auth_url) {
-        println!("  Could not open browser: {}", e);
-        println!("  Please open this URL manually:");
-        println!("  {}", auth_url);
-    }
+    open_browser_for_authorization(&auth_url, &server_config.name);
 
     println!("  Waiting for authorization...");
 
@@ -131,8 +178,8 @@ pub async fn authorize_mcp_server(
 
     // Exchange code for token
     let token = exchange_code_for_token(
-        &token_url,
-        &client_id,
+        &params.token_url,
+        &params.client_id,
         &code,
         &redirect_uri,
         pkce.as_ref(),
@@ -145,7 +192,7 @@ pub async fn authorize_mcp_server(
 
     // Store the client_id for DCR (needed for token refresh)
     if server_config.oauth.is_none() {
-        store_client_id(secrets, user_id, server_config, &client_id).await?;
+        store_client_id(secrets, user_id, server_config, &params.client_id).await?;
     }
 
     Ok(token)
@@ -236,11 +283,7 @@ pub async fn exchange_code_for_token(
 ) -> Result<AccessToken, AuthError> {
     validate_url_safe(token_url).await?;
 
-    let client = reqwest::Client::builder()
-        .timeout(Duration::from_secs(30))
-        .redirect(reqwest::redirect::Policy::none())
-        .build()
-        .map_err(|e| AuthError::Http(e.to_string()))?;
+    let client = build_no_redirect_client(Duration::from_secs(30))?;
 
     let mut params = vec![
         ("grant_type", "authorization_code".to_string()),

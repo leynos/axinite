@@ -93,52 +93,26 @@ impl CapabilitiesFile {
     /// Called once at load time to catch issues early. Warnings are emitted via
     /// `tracing::warn` so they show up in startup logs without blocking loading.
     pub fn validate(&self, name: &str) {
-        const MIN_PROMPT_LENGTH: usize = 30;
-
-        // setup.required_secrets present but no auth section → auth card won't display
         if let Some(setup) = &self.setup {
-            if !setup.required_secrets.is_empty() && self.auth.is_none() {
-                tracing::warn!(
-                    tool = name,
-                    "setup.required_secrets defined but no 'auth' section — \
-                     chat-based auth card will not display for this tool"
-                );
-            }
-
-            // Check for short prompts
-            for secret in &setup.required_secrets {
-                if secret.prompt.len() < MIN_PROMPT_LENGTH {
-                    tracing::warn!(
-                        tool = name,
-                        secret = secret.name,
-                        prompt = secret.prompt,
-                        "setup.required_secrets prompt is shorter than {} chars — \
-                         consider a more descriptive prompt that tells the user where to find this value",
-                        MIN_PROMPT_LENGTH
-                    );
-                }
-            }
+            self.warn_setup_without_auth(setup, name);
+            warn_short_secret_prompts(setup, name);
         }
-
-        // Manual auth (no OAuth) checks
-        if let Some(auth) = &self.auth
-            && auth.oauth.is_none()
-        {
-            if auth.setup_url.is_none() {
-                tracing::warn!(
-                    tool = name,
-                    "auth section has no OAuth and no setup_url — \
-                     user has no link to obtain credentials"
-                );
-            }
-            if auth.instructions.is_none() {
-                tracing::warn!(
-                    tool = name,
-                    "auth section has no OAuth and no instructions — \
-                     user has no guidance on how to obtain credentials"
-                );
-            }
+        if let Some(auth) = &self.auth {
+            warn_manual_auth_gaps(auth, name);
         }
+    }
+
+    /// Warn when required secrets are declared without an `auth` section,
+    /// which prevents the chat-based auth card from displaying.
+    fn warn_setup_without_auth(&self, setup: &ToolSetupSchema, name: &str) {
+        if setup.required_secrets.is_empty() || self.auth.is_some() {
+            return;
+        }
+        tracing::warn!(
+            tool = name,
+            "setup.required_secrets defined but no 'auth' section — \
+             chat-based auth card will not display for this tool"
+        );
     }
 
     /// Convert to runtime Capabilities.
@@ -174,5 +148,46 @@ impl CapabilitiesFile {
         }
 
         caps
+    }
+}
+
+/// Warn about required-secret prompts too short to guide the user.
+fn warn_short_secret_prompts(setup: &ToolSetupSchema, name: &str) {
+    const MIN_PROMPT_LENGTH: usize = 30;
+
+    for secret in &setup.required_secrets {
+        if secret.prompt.len() >= MIN_PROMPT_LENGTH {
+            continue;
+        }
+        tracing::warn!(
+            tool = name,
+            secret = secret.name,
+            prompt = secret.prompt,
+            "setup.required_secrets prompt is shorter than {} chars — \
+             consider a more descriptive prompt that tells the user where to find this value",
+            MIN_PROMPT_LENGTH
+        );
+    }
+}
+
+/// Warn when a manual (non-OAuth) auth section lacks a setup link or
+/// instructions, leaving the user with no way to obtain credentials.
+fn warn_manual_auth_gaps(auth: &AuthCapabilitySchema, name: &str) {
+    if auth.oauth.is_some() {
+        return;
+    }
+    if auth.setup_url.is_none() {
+        tracing::warn!(
+            tool = name,
+            "auth section has no OAuth and no setup_url — \
+             user has no link to obtain credentials"
+        );
+    }
+    if auth.instructions.is_none() {
+        tracing::warn!(
+            tool = name,
+            "auth section has no OAuth and no instructions — \
+             user has no guidance on how to obtain credentials"
+        );
     }
 }

@@ -20,6 +20,19 @@ pub struct AppBuilderFlags {
     pub workspace_import_dir: Option<std::path::PathBuf>,
 }
 
+/// Construction inputs for [`AppBuilder::new`].
+///
+/// The `session` and `log_broadcaster` are created before the builder
+/// because tracing must be initialized before any init phase runs, and the
+/// log broadcaster is part of the tracing layer.
+pub struct AppBuilderParams {
+    pub config: Config,
+    pub flags: AppBuilderFlags,
+    pub toml_path: Option<std::path::PathBuf>,
+    pub session: Arc<SessionManager>,
+    pub log_broadcaster: Arc<LogBroadcaster>,
+}
+
 /// Builder that orchestrates the 5 mechanical init phases.
 pub struct AppBuilder {
     pub(super) config: Config,
@@ -43,23 +56,13 @@ pub struct AppBuilder {
 
 impl AppBuilder {
     /// Create a new builder.
-    ///
-    /// The `session` and `log_broadcaster` are created before the builder
-    /// because tracing must be initialized before any init phase runs,
-    /// and the log broadcaster is part of the tracing layer.
-    pub fn new(
-        config: Config,
-        flags: AppBuilderFlags,
-        toml_path: Option<std::path::PathBuf>,
-        session: Arc<SessionManager>,
-        log_broadcaster: Arc<LogBroadcaster>,
-    ) -> Self {
+    pub fn new(params: AppBuilderParams) -> Self {
         Self {
-            config,
-            flags,
-            toml_path,
-            session,
-            log_broadcaster,
+            config: params.config,
+            flags: params.flags,
+            toml_path: params.toml_path,
+            session: params.session,
+            log_broadcaster: params.log_broadcaster,
             db: None,
             secrets_store: None,
             llm_override: None,

@@ -22,40 +22,64 @@ use super::url_safety::{build_well_known_uri, validate_url_safe};
 pub(super) fn parse_resource_metadata_url(www_authenticate: &str) -> Option<String> {
     // Try comma-separated parameters first
     for part in www_authenticate.split(',') {
-        let part = part.trim();
-        if let Some(rest) = part.strip_prefix("resource_metadata=\"") {
-            return rest.strip_suffix('"').map(|s| s.to_string());
-        }
-        if let Some(rest) = part.strip_prefix("resource_metadata=") {
-            let val = rest.trim_matches('"');
-            return Some(val.to_string());
+        if let Some(value) = metadata_param_value(part.trim(), false) {
+            return value;
         }
     }
     // Also try whitespace-separated tokens (e.g. Bearer resource_metadata="url")
     for part in www_authenticate.split_whitespace() {
-        if let Some(rest) = part.strip_prefix("resource_metadata=\"") {
-            return rest
-                .trim_end_matches(',')
-                .strip_suffix('"')
-                .map(|s| s.to_string());
-        }
-        if let Some(rest) = part.strip_prefix("resource_metadata=") {
-            let val = rest.trim_matches('"').trim_end_matches(',');
-            return Some(val.to_string());
+        if let Some(value) = metadata_param_value(part, true) {
+            return value;
         }
     }
     None
 }
 
-/// Fetch protected resource metadata from a URL.
-async fn fetch_resource_metadata(url: &str) -> Result<ProtectedResourceMetadata, AuthError> {
-    validate_url_safe(url).await?;
+/// Extract the value from a single `resource_metadata=` header token.
+///
+/// Returns `None` when the token is not a resource_metadata parameter, and
+/// `Some(None)` when it is one but the quoting is malformed (search stops).
+/// Whitespace-split tokens may carry a trailing comma, which is stripped.
+fn metadata_param_value(part: &str, from_whitespace_split: bool) -> Option<Option<String>> {
+    if let Some(rest) = part.strip_prefix("resource_metadata=\"") {
+        let rest = if from_whitespace_split {
+            rest.trim_end_matches(',')
+        } else {
+            rest
+        };
+        return Some(rest.strip_suffix('"').map(|s| s.to_string()));
+    }
+    if let Some(rest) = part.strip_prefix("resource_metadata=") {
+        let val = if from_whitespace_split {
+            rest.trim_matches('"').trim_end_matches(',')
+        } else {
+            rest.trim_matches('"')
+        };
+        return Some(Some(val.to_string()));
+    }
+    None
+}
 
-    let client = reqwest::Client::builder()
-        .timeout(Duration::from_secs(10))
+/// Build a reqwest client with the given timeout and redirects disabled.
+pub(super) fn build_no_redirect_client(timeout: Duration) -> Result<reqwest::Client, AuthError> {
+    reqwest::Client::builder()
+        .timeout(timeout)
         .redirect(reqwest::redirect::Policy::none())
         .build()
-        .map_err(|e| AuthError::Http(e.to_string()))?;
+        .map_err(|e| AuthError::Http(e.to_string()))
+}
+
+/// Fetch and deserialize a JSON metadata document from a validated URL.
+///
+/// `error_for_status` maps a non-success HTTP status to the caller's error,
+/// letting each discovery strategy keep its own failure semantics.
+async fn fetch_json_metadata<T: serde::de::DeserializeOwned>(
+    url: &str,
+    error_for_status: fn(reqwest::StatusCode) -> AuthError,
+) -> Result<T, AuthError> {
+    validate_url_safe(url).await?;
+
+    let client = build_no_redirect_client(Duration::from_secs(10))?;
 
     let response = client
         .get(url)
@@ -64,10 +88,7 @@ async fn fetch_resource_metadata(url: &str) -> Result<ProtectedResourceMetadata,
         .map_err(|e| AuthError::DiscoveryFailed(e.to_string()))?;
 
     if !response.status().is_success() {
-        return Err(AuthError::DiscoveryFailed(format!(
-            "HTTP {}",
-            response.status()
-        )));
+        return Err(error_for_status(response.status()));
     }
 
     response
@@ -76,15 +97,19 @@ async fn fetch_resource_metadata(url: &str) -> Result<ProtectedResourceMetadata,
         .map_err(|e| AuthError::DiscoveryFailed(format!("Invalid metadata: {}", e)))
 }
 
+/// Fetch protected resource metadata from a URL.
+async fn fetch_resource_metadata(url: &str) -> Result<ProtectedResourceMetadata, AuthError> {
+    fetch_json_metadata(url, |status| {
+        AuthError::DiscoveryFailed(format!("HTTP {}", status))
+    })
+    .await
+}
+
 /// Try to discover OAuth metadata via 401 challenge response.
 async fn discover_via_401(server_url: &str) -> Result<AuthorizationServerMetadata, AuthError> {
     validate_url_safe(server_url).await?;
 
-    let client = reqwest::Client::builder()
-        .timeout(Duration::from_secs(10))
-        .redirect(reqwest::redirect::Policy::none())
-        .build()
-        .map_err(|e| AuthError::Http(e.to_string()))?;
+    let client = build_no_redirect_client(Duration::from_secs(10))?;
 
     let response = client
         .post(server_url)
@@ -140,29 +165,8 @@ pub async fn discover_protected_resource(
     server_url: &str,
 ) -> Result<ProtectedResourceMetadata, AuthError> {
     validate_url_safe(server_url).await?;
-
-    let client = reqwest::Client::builder()
-        .timeout(Duration::from_secs(10))
-        .redirect(reqwest::redirect::Policy::none())
-        .build()
-        .map_err(|e| AuthError::Http(e.to_string()))?;
-
     let well_known_url = build_well_known_uri(server_url, "oauth-protected-resource")?;
-
-    let response = client
-        .get(&well_known_url)
-        .send()
-        .await
-        .map_err(|e| AuthError::DiscoveryFailed(e.to_string()))?;
-
-    if !response.status().is_success() {
-        return Err(AuthError::NotSupported);
-    }
-
-    response
-        .json()
-        .await
-        .map_err(|e| AuthError::DiscoveryFailed(format!("Invalid metadata: {}", e)))
+    fetch_json_metadata(&well_known_url, |_| AuthError::NotSupported).await
 }
 
 /// Discover authorization server metadata.
@@ -170,32 +174,11 @@ pub async fn discover_authorization_server(
     auth_server_url: &str,
 ) -> Result<AuthorizationServerMetadata, AuthError> {
     validate_url_safe(auth_server_url).await?;
-
-    let client = reqwest::Client::builder()
-        .timeout(Duration::from_secs(10))
-        .redirect(reqwest::redirect::Policy::none())
-        .build()
-        .map_err(|e| AuthError::Http(e.to_string()))?;
-
     let well_known_url = build_well_known_uri(auth_server_url, "oauth-authorization-server")?;
-
-    let response = client
-        .get(&well_known_url)
-        .send()
-        .await
-        .map_err(|e| AuthError::DiscoveryFailed(e.to_string()))?;
-
-    if !response.status().is_success() {
-        return Err(AuthError::DiscoveryFailed(format!(
-            "HTTP {}",
-            response.status()
-        )));
-    }
-
-    response
-        .json()
-        .await
-        .map_err(|e| AuthError::DiscoveryFailed(format!("Invalid metadata: {}", e)))
+    fetch_json_metadata(&well_known_url, |status| {
+        AuthError::DiscoveryFailed(format!("HTTP {}", status))
+    })
+    .await
 }
 
 /// Discover OAuth endpoints for an MCP server.
@@ -264,11 +247,7 @@ pub async fn register_client(
 ) -> Result<ClientRegistrationResponse, AuthError> {
     validate_url_safe(registration_endpoint).await?;
 
-    let client = reqwest::Client::builder()
-        .timeout(Duration::from_secs(30))
-        .redirect(reqwest::redirect::Policy::none())
-        .build()
-        .map_err(|e| AuthError::Http(e.to_string()))?;
+    let client = build_no_redirect_client(Duration::from_secs(30))?;
 
     let request = ClientRegistrationRequest {
         client_name: "IronClaw".to_string(),

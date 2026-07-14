@@ -50,21 +50,32 @@ pub struct McpClient {
     pub(super) custom_headers: HashMap<String, String>,
 }
 
-impl McpClient {
-    /// Create a new simple MCP client (no authentication).
-    ///
-    /// Use this for local development servers or servers that don't require auth.
-    pub fn new(server_url: impl Into<String>) -> Self {
-        let url: String = server_url.into();
-        let name = extract_server_name(&url);
-        let transport = Arc::new(HttpMcpTransport::new(url.clone(), name.clone()));
+/// Grouped construction inputs for [`McpClient`].
+///
+/// Collects the fields that vary between constructors so each `new_*`
+/// variant only spells out what differs from the unauthenticated default.
+struct McpClientParts {
+    transport: Arc<dyn McpTransport>,
+    server_url: String,
+    server_name: String,
+    session_manager: Option<Arc<McpSessionManager>>,
+    secrets: Option<Arc<dyn SecretsStore + Send + Sync>>,
+    user_id: String,
+    server_config: Option<McpServerConfig>,
+    custom_headers: HashMap<String, String>,
+}
 
+impl McpClientParts {
+    /// Parts for an unauthenticated HTTP client with default identity.
+    fn http_unauthenticated(server_name: String, server_url: String) -> Self {
+        let transport = Arc::new(HttpMcpTransport::new(
+            server_url.clone(),
+            server_name.clone(),
+        ));
         Self {
             transport,
-            server_url: url,
-            server_name: name,
-            next_id: AtomicU64::new(1),
-            tools_cache: RwLock::new(None),
+            server_url,
+            server_name,
             session_manager: None,
             secrets: None,
             user_id: "default".to_string(),
@@ -72,27 +83,40 @@ impl McpClient {
             custom_headers: HashMap::new(),
         }
     }
+}
+
+impl From<McpClientParts> for McpClient {
+    fn from(parts: McpClientParts) -> Self {
+        Self {
+            transport: parts.transport,
+            server_url: parts.server_url,
+            server_name: parts.server_name,
+            next_id: AtomicU64::new(1),
+            tools_cache: RwLock::new(None),
+            session_manager: parts.session_manager,
+            secrets: parts.secrets,
+            user_id: parts.user_id,
+            server_config: parts.server_config,
+            custom_headers: parts.custom_headers,
+        }
+    }
+}
+
+impl McpClient {
+    /// Create a new simple MCP client (no authentication).
+    ///
+    /// Use this for local development servers or servers that don't require auth.
+    pub fn new(server_url: impl Into<String>) -> Self {
+        let url: String = server_url.into();
+        let name = extract_server_name(&url);
+        McpClientParts::http_unauthenticated(name, url).into()
+    }
 
     /// Create a new simple MCP client with a specific name.
     ///
     /// Use this when you have a configured server name but no authentication.
     pub fn new_with_name(server_name: impl Into<String>, server_url: impl Into<String>) -> Self {
-        let name: String = server_name.into();
-        let url: String = server_url.into();
-        let transport = Arc::new(HttpMcpTransport::new(url.clone(), name.clone()));
-
-        Self {
-            transport,
-            server_url: url,
-            server_name: name,
-            next_id: AtomicU64::new(1),
-            tools_cache: RwLock::new(None),
-            session_manager: None,
-            secrets: None,
-            user_id: "default".to_string(),
-            server_config: None,
-            custom_headers: HashMap::new(),
-        }
+        McpClientParts::http_unauthenticated(server_name.into(), server_url.into()).into()
     }
 
     /// Create a new simple MCP client from an HTTP server configuration (no authentication).
@@ -107,23 +131,11 @@ impl McpClient {
             ),
             "new_with_config only supports HTTP transport; use new_with_transport for stdio/UDS"
         );
-        let transport = Arc::new(HttpMcpTransport::new(
-            config.url.clone(),
-            config.name.clone(),
-        ));
-
-        Self {
-            transport,
-            server_url: config.url.clone(),
-            server_name: config.name.clone(),
-            next_id: AtomicU64::new(1),
-            tools_cache: RwLock::new(None),
-            session_manager: None,
-            secrets: None,
-            user_id: "default".to_string(),
-            custom_headers: config.headers.clone(),
-            server_config: Some(config),
-        }
+        let mut parts =
+            McpClientParts::http_unauthenticated(config.name.clone(), config.url.clone());
+        parts.custom_headers = config.headers.clone();
+        parts.server_config = Some(config);
+        parts.into()
     }
 
     /// Create a new authenticated MCP client.
@@ -140,20 +152,17 @@ impl McpClient {
                 .with_session_manager(session_manager.clone()),
         );
 
-        let custom_headers = config.headers.clone();
-
-        Self {
+        McpClientParts {
             transport,
             server_url: config.url.clone(),
             server_name: config.name.clone(),
-            next_id: AtomicU64::new(1),
-            tools_cache: RwLock::new(None),
             session_manager: Some(session_manager),
             secrets: Some(secrets),
             user_id: user_id.into(),
+            custom_headers: config.headers.clone(),
             server_config: Some(config),
-            custom_headers,
         }
+        .into()
     }
 
     /// Create a new MCP client with a custom transport.
@@ -167,8 +176,7 @@ impl McpClient {
         user_id: impl Into<String>,
         server_config: Option<McpServerConfig>,
     ) -> Self {
-        let name: String = server_name.into();
-        let url = server_config
+        let server_url = server_config
             .as_ref()
             .map(|c| c.url.clone())
             .unwrap_or_default();
@@ -177,18 +185,17 @@ impl McpClient {
             .map(|c| c.headers.clone())
             .unwrap_or_default();
 
-        Self {
+        McpClientParts {
             transport,
-            server_url: url,
-            server_name: name,
-            next_id: AtomicU64::new(1),
-            tools_cache: RwLock::new(None),
+            server_url,
+            server_name: server_name.into(),
             session_manager,
             secrets,
             user_id: user_id.into(),
             server_config,
             custom_headers,
         }
+        .into()
     }
 
     /// Get the server name.

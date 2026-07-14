@@ -17,6 +17,34 @@ use super::{
 };
 
 impl WasmChannel {
+    /// Default configuration returned when no WASM module is present
+    /// (testing mode).
+    fn default_start_config(&self) -> ChannelConfig {
+        ChannelConfig {
+            display_name: self.prepared.description.clone(),
+            http_endpoints: Vec::new(),
+            poll: None,
+        }
+    }
+
+    /// Surface WASM guest logs (errors/warnings from webhook setup, etc.)
+    /// at the matching tracing level.
+    fn surface_guest_logs(&self, host_state: &mut crate::channels::wasm::host::ChannelHostState) {
+        for entry in host_state.take_logs() {
+            match entry.level {
+                crate::tools::wasm::LogLevel::Error => {
+                    tracing::error!(channel = %self.name, "{}", entry.message);
+                }
+                crate::tools::wasm::LogLevel::Warn => {
+                    tracing::warn!(channel = %self.name, "{}", entry.message);
+                }
+                _ => {
+                    tracing::debug!(channel = %self.name, "{}", entry.message);
+                }
+            }
+        }
+    }
+
     /// Execute the on_start callback.
     ///
     /// Returns the channel configuration for HTTP endpoint registration.
@@ -32,11 +60,7 @@ impl WasmChannel {
                 channel = %self.name,
                 "WASM channel on_start called (no WASM module, returning defaults)"
             );
-            return Ok(ChannelConfig {
-                display_name: self.prepared.description.clone(),
-                http_endpoints: Vec::new(),
-                poll: None,
-            });
+            return Ok(self.default_start_config());
         }
 
         let runtime = Arc::clone(&self.runtime);
@@ -101,20 +125,7 @@ impl WasmChannel {
 
         match result {
             Ok(Ok((config, mut host_state))) => {
-                // Surface WASM guest logs (errors/warnings from webhook setup, etc.)
-                for entry in host_state.take_logs() {
-                    match entry.level {
-                        crate::tools::wasm::LogLevel::Error => {
-                            tracing::error!(channel = %self.name, "{}", entry.message);
-                        }
-                        crate::tools::wasm::LogLevel::Warn => {
-                            tracing::warn!(channel = %self.name, "{}", entry.message);
-                        }
-                        _ => {
-                            tracing::debug!(channel = %self.name, "{}", entry.message);
-                        }
-                    }
-                }
+                self.surface_guest_logs(&mut host_state);
                 tracing::info!(
                     channel = %self.name,
                     display_name = %config.display_name,

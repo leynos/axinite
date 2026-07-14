@@ -122,15 +122,49 @@ fn score_complexity_internal(
     let mut hints = Vec::new();
     let mut components = HashMap::new();
 
-    // Token estimate (based on char count): <20 chars = 0, >=520 chars = 100
+    score_token_estimate(prompt, &mut components, &mut hints);
+    score_keyword_dimensions(prompt, domain_regex, &mut components, &mut hints);
+    score_ambiguity(prompt, &mut components);
+    score_question_complexity(prompt, &mut components, &mut hints);
+    score_sentence_complexity(prompt, &mut components, &mut hints);
+
+    let total = weighted_total(&components, weights);
+    let total = apply_dimension_boost(total, &components, &mut hints);
+
+    // Clamp to 0-100
+    let total = (total as u32).clamp(0, 100);
+    let tier = Tier::from_score(total);
+
+    ScoreBreakdown {
+        total,
+        tier,
+        components,
+        hints,
+    }
+}
+
+/// Score token estimate from char count: <20 chars = 0, >=520 chars = 100.
+fn score_token_estimate(
+    prompt: &str,
+    components: &mut HashMap<String, u32>,
+    hints: &mut Vec<String>,
+) {
     let char_count = prompt.len();
     let token_score = ((char_count as i32 - 20).max(0) as f32 / 5.0).min(100.0) as u32;
     components.insert("token_estimate".to_string(), token_score);
     if char_count > 200 {
         hints.push(format!("Long prompt ({char_count} chars)"));
     }
+}
 
-    // Keyword dimensions: 50 points per match, hint at the given threshold.
+/// Score all keyword-based dimensions: 50 points per match, hint at the
+/// dimension's threshold (dimensions without a threshold never hint).
+fn score_keyword_dimensions(
+    prompt: &str,
+    domain_regex: &Regex,
+    components: &mut HashMap<String, u32>,
+    hints: &mut Vec<String>,
+) {
     let keyword_dimensions: [(&str, &Regex, Option<usize>); 9] = [
         ("reasoning_words", &*RE_REASONING, Some(2)),
         ("multi_step", &*RE_MULTI_STEP, Some(2)),
@@ -143,26 +177,20 @@ fn score_complexity_internal(
         ("domain_specific", domain_regex, Some(2)),
     ];
     for (name, regex, hint_threshold) in keyword_dimensions {
-        score_keyword_dimension(
-            prompt,
-            name,
-            regex,
-            hint_threshold,
-            &mut components,
-            &mut hints,
-        );
+        score_keyword_dimension(prompt, name, regex, hint_threshold, components, hints);
     }
+}
 
-    // Ambiguity (vague pronouns)
+/// Score ambiguity from vague-pronoun density.
+fn score_ambiguity(prompt: &str, components: &mut HashMap<String, u32>) {
     let vague_count = count_matches(&RE_VAGUE, prompt);
     let ambiguity_score = (vague_count * 25).min(100) as u32;
     components.insert("ambiguity".to_string(), ambiguity_score);
+}
 
-    score_question_complexity(prompt, &mut components, &mut hints);
-    score_sentence_complexity(prompt, &mut components, &mut hints);
-
-    // Calculate weighted total using data-driven iteration
-    let total: f32 = [
+/// Combine per-dimension scores into a weighted total.
+fn weighted_total(components: &HashMap<String, u32>, weights: &ScorerWeights) -> f32 {
+    [
         ("reasoning_words", weights.reasoning_words),
         ("token_estimate", weights.token_estimate),
         ("code_indicators", weights.code_indicators),
@@ -179,20 +207,7 @@ fn score_complexity_internal(
     ]
     .iter()
     .map(|(name, weight)| components.get(*name).copied().unwrap_or(0) as f32 * weight)
-    .sum();
-
-    let total = apply_dimension_boost(total, &components, &mut hints);
-
-    // Clamp to 0-100
-    let total = (total as u32).clamp(0, 100);
-    let tier = Tier::from_score(total);
-
-    ScoreBreakdown {
-        total,
-        tier,
-        components,
-        hints,
-    }
+    .sum()
 }
 
 /// Build a breakdown directly from an explicit "[tier:...]" hint, if present.

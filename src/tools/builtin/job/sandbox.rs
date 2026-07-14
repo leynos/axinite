@@ -216,6 +216,29 @@ impl CreateJobTool {
         Ok(ToolOutput::success(result, start.elapsed()))
     }
 
+    /// Stop and clean up a container that exceeded the polling deadline,
+    /// persisting the failed status before returning the timeout error.
+    async fn handle_timed_out_container(
+        &self,
+        jm: &ContainerJobManager,
+        job_id: Uuid,
+    ) -> Result<ToolOutput, ToolError> {
+        let _ = jm.stop_job(job_id).await;
+        jm.cleanup_job(job_id).await;
+        self.update_status_sync(
+            job_id,
+            "failed",
+            Some(false),
+            Some("Timed out (10 minutes)".to_string()),
+            None,
+            Some(Utc::now()),
+        )
+        .await;
+        Err(ToolError::ExecutionFailed(
+            "container execution timed out (10 minutes)".to_string(),
+        ))
+    }
+
     /// Poll container state until completion or timeout.
     async fn await_container_completion(
         &self,
@@ -225,54 +248,41 @@ impl CreateJobTool {
         browse_id: &str,
         start: std::time::Instant,
     ) -> Result<ToolOutput, ToolError> {
+        use crate::orchestrator::job_manager::ContainerState;
+
         let timeout = Duration::from_secs(600);
         let poll_interval = Duration::from_secs(2);
         let deadline = tokio::time::Instant::now() + timeout;
 
         loop {
             if tokio::time::Instant::now() > deadline {
-                let _ = jm.stop_job(job_id).await;
-                jm.cleanup_job(job_id).await;
-                self.update_status_sync(
-                    job_id,
-                    "failed",
-                    Some(false),
-                    Some("Timed out (10 minutes)".to_string()),
-                    None,
-                    Some(Utc::now()),
-                )
-                .await;
-                return Err(ToolError::ExecutionFailed(
-                    "container execution timed out (10 minutes)".to_string(),
-                ));
+                return self.handle_timed_out_container(jm, job_id).await;
             }
 
-            match jm.get_handle(job_id).await {
-                Some(handle) => match handle.state {
-                    crate::orchestrator::job_manager::ContainerState::Running
-                    | crate::orchestrator::job_manager::ContainerState::Creating => {
-                        tokio::time::sleep(poll_interval).await;
-                    }
-                    crate::orchestrator::job_manager::ContainerState::Stopped => {
-                        return self
-                            .handle_stopped_container(
-                                &handle,
-                                jm,
-                                job_id,
-                                project_dir_str,
-                                browse_id,
-                                start,
-                            )
-                            .await;
-                    }
-                    crate::orchestrator::job_manager::ContainerState::Failed => {
-                        return self.handle_failed_container(&handle, jm, job_id).await;
-                    }
-                },
-                None => {
+            let Some(handle) = jm.get_handle(job_id).await else {
+                return self
+                    .handle_missing_container(job_id, project_dir_str, browse_id, start)
+                    .await;
+            };
+
+            match handle.state {
+                ContainerState::Running | ContainerState::Creating => {
+                    tokio::time::sleep(poll_interval).await;
+                }
+                ContainerState::Stopped => {
                     return self
-                        .handle_missing_container(job_id, project_dir_str, browse_id, start)
+                        .handle_stopped_container(
+                            &handle,
+                            jm,
+                            job_id,
+                            project_dir_str,
+                            browse_id,
+                            start,
+                        )
                         .await;
+                }
+                ContainerState::Failed => {
+                    return self.handle_failed_container(&handle, jm, job_id).await;
                 }
             }
         }

@@ -201,6 +201,20 @@ impl SignalChannel {
         Self::signal_target(metadata).filter(|_| self.is_debug())
     }
 
+    /// Build the base JSON-RPC params identifying the account and recipient.
+    fn base_rpc_params(account: &str, target: &RecipientTarget) -> serde_json::Value {
+        match target {
+            RecipientTarget::Direct(id) => serde_json::json!({
+                "recipient": [id],
+                "account": account,
+            }),
+            RecipientTarget::Group(group_id) => serde_json::json!({
+                "groupId": group_id,
+                "account": account,
+            }),
+        }
+    }
+
     /// Build JSON-RPC params for a send/typing call.
     pub(super) fn build_rpc_params(
         &self,
@@ -208,16 +222,7 @@ impl SignalChannel {
         message: Option<&str>,
         attachments: Option<&[String]>,
     ) -> serde_json::Value {
-        let mut params = match target {
-            RecipientTarget::Direct(id) => serde_json::json!({
-                "recipient": [id],
-                "account": &self.config.account,
-            }),
-            RecipientTarget::Group(group_id) => serde_json::json!({
-                "groupId": group_id,
-                "account": &self.config.account,
-            }),
-        };
+        let mut params = Self::base_rpc_params(&self.config.account, target);
         Self::apply_message_params(&mut params, message, attachments);
         params
     }
@@ -255,18 +260,13 @@ impl SignalChannel {
     ) -> Result<(), ChannelError> {
         Self::validate_attachment_paths(attachments)?;
 
-        if attachments.is_empty() {
-            let params = self.build_rpc_params(target, Some(content), None);
-            self.rpc_request("send", params).await?;
-        } else if content.is_empty() {
-            // Attachments only - send all in a single call with no message text
-            let params = self.build_rpc_params(target, None, Some(attachments));
-            self.rpc_request("send", params).await?;
-        } else {
-            // Both text and attachments - send in a single RPC call
-            let params = self.build_rpc_params(target, Some(content), Some(attachments));
-            self.rpc_request("send", params).await?;
-        }
+        // Text and attachments always go out in a single RPC call. Message
+        // text is omitted only for attachment-only sends; a plain send with
+        // empty content still carries the (empty) message field.
+        let has_attachments = !attachments.is_empty();
+        let message = (!has_attachments || !content.is_empty()).then_some(content);
+        let params = self.build_rpc_params(target, message, has_attachments.then_some(attachments));
+        self.rpc_request("send", params).await?;
         Ok(())
     }
 
@@ -278,16 +278,7 @@ impl SignalChannel {
         message: Option<&str>,
         attachments: Option<&[String]>,
     ) -> serde_json::Value {
-        let mut params = match target {
-            RecipientTarget::Direct(id) => serde_json::json!({
-                "recipient": [id],
-                "account": account,
-            }),
-            RecipientTarget::Group(group_id) => serde_json::json!({
-                "groupId": group_id,
-                "account": account,
-            }),
-        };
+        let mut params = Self::base_rpc_params(account, target);
         Self::apply_message_params(&mut params, message, attachments);
         params
     }

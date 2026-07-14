@@ -10,31 +10,11 @@ impl SetupWizard {
         self.settings.llm_backend = Some("nearai".to_string());
 
         // Check if we already have a session
-        if let Some(ref session) = self.session_manager
-            && session.has_token().await
-        {
-            print_info("Existing session found. Validating...");
-            match session.ensure_authenticated().await {
-                Ok(()) => {
-                    print_success("NEAR AI session valid");
-                    return Ok(());
-                }
-                Err(e) => {
-                    print_info(&format!("Session invalid: {}. Re-authenticating...", e));
-                }
-            }
+        if self.reuse_valid_nearai_session().await {
+            return Ok(());
         }
 
-        // Create session manager if we don't have one
-        let session = if let Some(ref s) = self.session_manager {
-            Arc::clone(s)
-        } else {
-            let config = SessionConfig {
-                session_path: crate::config::llm::default_session_path(),
-                ..SessionConfig::default()
-            };
-            Arc::new(SessionManager::new(config))
-        };
+        let session = self.get_or_create_session_manager();
 
         // Trigger authentication flow
         session
@@ -50,21 +30,66 @@ impl SetupWizard {
         // doesn't have a DB store attached during onboarding.
         self.persist_session_to_db().await;
 
-        // If the user chose the API key path, persist it to the encrypted
-        // secrets store so inject_llm_keys_from_secrets() can load it on
-        // future runs.
-        if let Ok(ctx) = self.init_secrets_context().await {
-            if let Some(api_key) = session.get_api_key().await {
-                if let Err(e) = ctx.save_secret("llm_nearai_api_key", &api_key).await {
-                    tracing::warn!("Failed to persist NEARAI_API_KEY to secrets: {}", e);
-                }
-            } else if let Err(e) = ctx.delete_secret("llm_nearai_api_key").await {
-                tracing::warn!("Failed to clear stale NEARAI_API_KEY secret: {}", e);
-            }
-        }
+        self.persist_nearai_api_key(&session).await;
 
         print_success("NEAR AI configured");
         Ok(())
+    }
+
+    /// Validate an existing NEAR AI session, reporting the outcome.
+    ///
+    /// Returns `true` when the current session is valid and can be reused.
+    async fn reuse_valid_nearai_session(&self) -> bool {
+        let Some(ref session) = self.session_manager else {
+            return false;
+        };
+        if !session.has_token().await {
+            return false;
+        }
+
+        print_info("Existing session found. Validating...");
+        match session.ensure_authenticated().await {
+            Ok(()) => {
+                print_success("NEAR AI session valid");
+                true
+            }
+            Err(e) => {
+                print_info(&format!("Session invalid: {}. Re-authenticating...", e));
+                false
+            }
+        }
+    }
+
+    /// Return the current session manager, creating a default one when none
+    /// exists yet.
+    fn get_or_create_session_manager(&self) -> Arc<SessionManager> {
+        if let Some(ref s) = self.session_manager {
+            Arc::clone(s)
+        } else {
+            let config = SessionConfig {
+                session_path: crate::config::llm::default_session_path(),
+                ..SessionConfig::default()
+            };
+            Arc::new(SessionManager::new(config))
+        }
+    }
+
+    /// Sync the NEAR AI API key with the encrypted secrets store so
+    /// `inject_llm_keys_from_secrets()` can load it on future runs.
+    ///
+    /// Saves the key when the user chose the API key path, and clears any
+    /// stale key otherwise. Failures are logged, not fatal.
+    async fn persist_nearai_api_key(&mut self, session: &Arc<SessionManager>) {
+        let Ok(ctx) = self.init_secrets_context().await else {
+            return;
+        };
+        if let Some(api_key) = session.get_api_key().await {
+            if let Err(e) = ctx.save_secret("llm_nearai_api_key", &api_key).await {
+                tracing::warn!("Failed to persist NEARAI_API_KEY to secrets: {}", e);
+            }
+        } else if let Err(e) = ctx.delete_secret("llm_nearai_api_key").await {
+            tracing::warn!("Failed to clear stale NEARAI_API_KEY secret: {}", e);
+        }
     }
 
     /// Anthropic provider setup: API key or OAuth token from `claude login`.

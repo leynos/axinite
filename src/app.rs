@@ -37,6 +37,6 @@ mod side_effects;
 #[cfg(test)]
 mod tests;
 
-pub use builder::{AppBuilder, AppBuilderFlags};
+pub use builder::{AppBuilder, AppBuilderFlags, AppBuilderParams};
 pub use components::AppComponents;
 pub use side_effects::{RuntimeSideEffects, RuntimeSideEffectsHandle};

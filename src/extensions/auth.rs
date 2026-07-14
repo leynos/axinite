@@ -71,20 +71,21 @@ pub struct AuthResult {
 impl AuthResult {
     // ── Constructors ──────────────────────────────────────────────────
 
-    pub fn authenticated(name: impl Into<String>, kind: ExtensionKind) -> Self {
+    /// Shared constructor: pair a name and kind with a typed status.
+    fn with_status(name: impl Into<String>, kind: ExtensionKind, status: AuthStatus) -> Self {
         Self {
             name: name.into(),
             kind,
-            status: AuthStatus::Authenticated,
+            status,
         }
     }
 
+    pub fn authenticated(name: impl Into<String>, kind: ExtensionKind) -> Self {
+        Self::with_status(name, kind, AuthStatus::Authenticated)
+    }
+
     pub fn no_auth_required(name: impl Into<String>, kind: ExtensionKind) -> Self {
-        Self {
-            name: name.into(),
-            kind,
-            status: AuthStatus::NoAuthRequired,
-        }
+        Self::with_status(name, kind, AuthStatus::NoAuthRequired)
     }
 
     pub fn awaiting_authorization(
@@ -93,14 +94,14 @@ impl AuthResult {
         auth_url: String,
         callback_type: String,
     ) -> Self {
-        Self {
-            name: name.into(),
+        Self::with_status(
+            name,
             kind,
-            status: AuthStatus::AwaitingAuthorization {
+            AuthStatus::AwaitingAuthorization {
                 auth_url,
                 callback_type,
             },
-        }
+        )
     }
 
     pub fn awaiting_token(
@@ -109,14 +110,14 @@ impl AuthResult {
         instructions: String,
         setup_url: Option<String>,
     ) -> Self {
-        Self {
-            name: name.into(),
+        Self::with_status(
+            name,
             kind,
-            status: AuthStatus::AwaitingToken {
+            AuthStatus::AwaitingToken {
                 instructions,
                 setup_url,
             },
-        }
+        )
     }
 
     pub fn needs_setup(
@@ -125,14 +126,14 @@ impl AuthResult {
         instructions: String,
         setup_url: Option<String>,
     ) -> Self {
-        Self {
-            name: name.into(),
+        Self::with_status(
+            name,
             kind,
-            status: AuthStatus::NeedsSetup {
+            AuthStatus::NeedsSetup {
                 instructions,
                 setup_url,
             },
-        }
+        )
     }
 
     // ── Accessors ─────────────────────────────────────────────────────

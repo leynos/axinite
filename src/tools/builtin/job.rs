@@ -9,8 +9,9 @@
 //! The module is split by concern: [`create`] holds the `create_job` tool and
 //! its local execution path, [`sandbox`] the container execution path,
 //! [`credentials`] credential grant parsing, [`project_dir`] project directory
-//! resolution, [`status`] the list/status/cancel tools, and [`interaction`]
-//! the event log and follow-up prompt tools.
+//! resolution, [`status`] the list/status/cancel tools, [`interaction`]
+//! the event log and follow-up prompt tools, and [`output`] shared
+//! `ToolOutput` construction helpers.
 
 use std::sync::Arc;
 
@@ -23,6 +24,7 @@ use crate::tools::tool::ToolError;
 mod create;
 mod credentials;
 mod interaction;
+mod output;
 mod project_dir;
 mod sandbox;
 mod status;

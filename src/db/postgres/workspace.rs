@@ -25,31 +25,14 @@ impl NativeWorkspaceStore for PgBackend {
     }
 
     async fn insert_chunk(&self, params: InsertChunkParams<'_>) -> Result<Uuid, WorkspaceError> {
-        let InsertChunkParams {
-            document_id,
-            chunk_index,
-            content,
-            embedding,
-        } = params;
-        self.repo
-            .insert_chunk(document_id, chunk_index, content, embedding)
-            .await
+        self.repo.insert_chunk(params).await
     }
 
     async fn hybrid_search(
         &self,
         params: HybridSearchParams<'_>,
     ) -> Result<Vec<SearchResult>, WorkspaceError> {
-        let HybridSearchParams {
-            user_id,
-            agent_id,
-            query,
-            embedding,
-            config,
-        } = params;
-        self.repo
-            .hybrid_search(user_id, agent_id, query, embedding, config)
-            .await
+        self.repo.hybrid_search(params).await
     }
 }
 

@@ -21,6 +21,7 @@ use crate::secrets::SecretsStore;
 use crate::tools::tool::{NativeTool, ToolError, ToolOutput, require_str};
 
 use super::SchedulerSlot;
+use super::output::{error_output, success_output};
 
 /// Tool for creating a new job.
 ///
@@ -108,24 +109,20 @@ impl CreateJobTool {
         started_at: Option<chrono::DateTime<Utc>>,
         completed_at: Option<chrono::DateTime<Utc>>,
     ) {
-        if let Some(store) = self.store.clone() {
-            let status = crate::db::SandboxJobStatus::from(status);
-            tokio::spawn(async move {
-                if let Err(e) = store
-                    .update_sandbox_job_status(SandboxJobStatusUpdate {
-                        id: job_id,
-                        status,
-                        success,
-                        message: message.as_deref(),
-                        started_at,
-                        completed_at,
-                    })
-                    .await
-                {
-                    tracing::warn!(job_id = %job_id, "Failed to update sandbox job status: {}", e);
-                }
-            });
-        }
+        let Some(store) = self.store.clone() else {
+            return;
+        };
+        let transition = StatusTransition {
+            job_id,
+            status: crate::db::SandboxJobStatus::from(status),
+            success,
+            message,
+            started_at,
+            completed_at,
+        };
+        tokio::spawn(async move {
+            apply_status_update(store, transition).await;
+        });
     }
 
     /// Update sandbox job status synchronously (for terminal states and pre-container failures).
@@ -145,20 +142,15 @@ impl CreateJobTool {
         let Some(store) = self.store.clone() else {
             return;
         };
-        let status = crate::db::SandboxJobStatus::from(status);
-        if let Err(e) = store
-            .update_sandbox_job_status(SandboxJobStatusUpdate {
-                id: job_id,
-                status,
-                success,
-                message: message.as_deref(),
-                started_at,
-                completed_at,
-            })
-            .await
-        {
-            tracing::warn!(job_id = %job_id, "Failed to update sandbox job status: {}", e);
-        }
+        let transition = StatusTransition {
+            job_id,
+            status: crate::db::SandboxJobStatus::from(status),
+            success,
+            message,
+            started_at,
+            completed_at,
+        };
+        apply_status_update(store, transition).await;
     }
 
     /// Execute via Scheduler (persists to DB + spawns worker), or fall back to
@@ -180,24 +172,24 @@ impl CreateJobTool {
             && let Some(ref scheduler) = *slot.read().await
         {
             return match scheduler
-                .dispatch_job(&ctx.user_id, title, description, None)
+                .dispatch_job(crate::agent::scheduler::JobRequest {
+                    user_id: &ctx.user_id,
+                    title,
+                    description,
+                    metadata: None,
+                })
                 .await
             {
-                Ok(job_id) => {
-                    let result = serde_json::json!({
+                Ok(job_id) => success_output(
+                    serde_json::json!({
                         "job_id": job_id.to_string(),
                         "title": title,
                         "status": "in_progress",
                         "message": format!("Created and scheduled job '{}'", title)
-                    });
-                    Ok(ToolOutput::success(result, start.elapsed()))
-                }
-                Err(e) => {
-                    let result = serde_json::json!({
-                        "error": e.to_string()
-                    });
-                    Ok(ToolOutput::success(result, start.elapsed()))
-                }
+                    }),
+                    start,
+                ),
+                Err(e) => error_output(e.to_string(), start),
             };
         }
 
@@ -207,22 +199,48 @@ impl CreateJobTool {
             .create_job_for_user(&ctx.user_id, title, description)
             .await
         {
-            Ok(job_id) => {
-                let result = serde_json::json!({
+            Ok(job_id) => success_output(
+                serde_json::json!({
                     "job_id": job_id.to_string(),
                     "title": title,
                     "status": "pending",
                     "message": format!("Created job '{}' (not scheduled — scheduler unavailable)", title)
-                });
-                Ok(ToolOutput::success(result, start.elapsed()))
-            }
-            Err(e) => {
-                let result = serde_json::json!({
-                    "error": e.to_string()
-                });
-                Ok(ToolOutput::success(result, start.elapsed()))
-            }
+                }),
+                start,
+            ),
+            Err(e) => error_output(e.to_string(), start),
         }
+    }
+}
+
+/// Owned fields describing a sandbox job status transition.
+struct StatusTransition {
+    job_id: Uuid,
+    status: crate::db::SandboxJobStatus,
+    success: Option<bool>,
+    message: Option<String>,
+    started_at: Option<chrono::DateTime<Utc>>,
+    completed_at: Option<chrono::DateTime<Utc>>,
+}
+
+/// Persist a sandbox job status transition, logging a warning on failure.
+async fn apply_status_update(store: Arc<dyn Database>, transition: StatusTransition) {
+    if let Err(e) = store
+        .update_sandbox_job_status(SandboxJobStatusUpdate {
+            id: transition.job_id,
+            status: transition.status,
+            success: transition.success,
+            message: transition.message.as_deref(),
+            started_at: transition.started_at,
+            completed_at: transition.completed_at,
+        })
+        .await
+    {
+        tracing::warn!(
+            job_id = %transition.job_id,
+            "Failed to update sandbox job status: {}",
+            e
+        );
     }
 }
 

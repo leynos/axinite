@@ -77,17 +77,11 @@ target `bootstrap` to clear this file so setup never repeats.
 Keep the conversation natural. Do not read these steps aloud.
 ";
 
-impl Workspace {
-    /// Seed any missing core identity files in the workspace.
-    ///
-    /// Called on every boot. Only creates files that don't already exist,
-    /// so user edits are never overwritten. Returns the number of files
-    /// created (0 if all core files already existed).
-    pub async fn seed_if_empty(&self) -> Result<usize, WorkspaceError> {
-        let seed_files: &[(&str, &str)] = &[
-            (
-                paths::README,
-                "# Workspace\n\n\
+/// Core identity files seeded on first boot, paired with their templates.
+const CORE_SEED_FILES: &[(&str, &str)] = &[
+    (
+        paths::README,
+        "# Workspace\n\n\
                  This is your agent's persistent memory. Files here are indexed for search\n\
                  and used to build the agent's context.\n\n\
                  ## Structure\n\n\
@@ -102,27 +96,27 @@ impl Workspace {
                  - `context/` - Additional context documents\n\n\
                  Edit these files to shape how your agent thinks and acts.\n\
                  The agent reads them at the start of every session.",
-            ),
-            (
-                paths::MEMORY,
-                "# Memory\n\n\
+    ),
+    (
+        paths::MEMORY,
+        "# Memory\n\n\
                  Long-term notes, decisions, and facts worth remembering across sessions.\n\n\
                  The agent appends here during conversations. Curate periodically:\n\
                  remove stale entries, consolidate duplicates, keep it concise.\n\
                  This file is loaded into the system prompt, so brevity matters.",
-            ),
-            (
-                paths::IDENTITY,
-                "# Identity\n\n\
+    ),
+    (
+        paths::IDENTITY,
+        "# Identity\n\n\
                  - **Name:** (pick one during your first conversation)\n\
                  - **Vibe:** (how you come across, e.g. calm, witty, direct)\n\
                  - **Emoji:** (your signature emoji, optional)\n\n\
                  Edit this file to give the agent a custom name and personality.\n\
                  The agent will evolve this over time as it develops a voice.",
-            ),
-            (
-                paths::SOUL,
-                "# Core Values\n\n\
+    ),
+    (
+        paths::SOUL,
+        "# Core Values\n\n\
                  Be genuinely helpful, not performatively helpful. Skip filler phrases.\n\
                  Have opinions. Disagree when it matters.\n\
                  Be resourceful before asking: read the file, check context, search, then ask.\n\
@@ -133,10 +127,10 @@ impl Workspace {
                  - When in doubt about an external action, ask before acting.\n\
                  - Prefer reversible actions over destructive ones.\n\
                  - You are not the user's voice in group settings.",
-            ),
-            (
-                paths::AGENTS,
-                "# Agent Instructions\n\n\
+    ),
+    (
+        paths::AGENTS,
+        "# Agent Instructions\n\n\
                  You are a personal AI assistant with access to tools and persistent memory.\n\n\
                  ## Every Session\n\n\
                  1. Read SOUL.md (who you are)\n\
@@ -156,66 +150,98 @@ impl Workspace {
                  - Do not exfiltrate private data\n\
                  - Prefer reversible actions over destructive ones\n\
                  - When in doubt, ask",
-            ),
-            (
-                paths::USER,
-                "# User Context\n\n\
+    ),
+    (
+        paths::USER,
+        "# User Context\n\n\
                  - **Name:**\n\
                  - **Timezone:**\n\
                  - **Preferences:**\n\n\
                  The agent will fill this in as it learns about you.\n\
                  You can also edit this directly to provide context upfront.",
-            ),
-            (paths::HEARTBEAT, HEARTBEAT_SEED),
-            (paths::TOOLS, TOOLS_SEED),
-        ];
+    ),
+    (paths::HEARTBEAT, HEARTBEAT_SEED),
+    (paths::TOOLS, TOOLS_SEED),
+];
 
+impl Workspace {
+    /// Seed any missing core identity files in the workspace.
+    ///
+    /// Called on every boot. Only creates files that don't already exist,
+    /// so user edits are never overwritten. Returns the number of files
+    /// created (0 if all core files already existed).
+    pub async fn seed_if_empty(&self) -> Result<usize, WorkspaceError> {
         let mut count = 0;
-        for (path, content) in seed_files {
-            // Skip files that already exist (never overwrite user edits)
-            match self.read(path).await {
-                Ok(_) => continue,
-                Err(WorkspaceError::DocumentNotFound { .. }) => {}
-                Err(e) => {
-                    tracing::debug!("Failed to check {}: {}", path, e);
-                    continue;
-                }
-            }
-
-            if let Err(e) = self.write(path, content).await {
-                tracing::debug!("Failed to seed {}: {}", path, e);
-            } else {
+        for (path, content) in CORE_SEED_FILES {
+            if self.seed_missing_file(path, content).await {
                 count += 1;
             }
         }
 
-        // BOOTSTRAP.md is only seeded on truly fresh workspaces (no identity
-        // files exist yet). This prevents existing users from getting a
-        // spurious first-run ritual after upgrading.
-        if self.read(paths::BOOTSTRAP).await.is_err() {
-            let (agents_res, soul_res, user_res) = tokio::join!(
-                self.read(paths::AGENTS),
-                self.read(paths::SOUL),
-                self.read(paths::USER),
-            );
-            let is_fresh_workspace =
-                matches!(agents_res, Err(WorkspaceError::DocumentNotFound { .. }))
-                    && matches!(soul_res, Err(WorkspaceError::DocumentNotFound { .. }))
-                    && matches!(user_res, Err(WorkspaceError::DocumentNotFound { .. }));
-
-            if is_fresh_workspace {
-                if let Err(e) = self.write(paths::BOOTSTRAP, BOOTSTRAP_SEED).await {
-                    tracing::warn!("Failed to seed {}: {}", paths::BOOTSTRAP, e);
-                } else {
-                    count += 1;
-                }
-            }
+        if self.seed_bootstrap_if_fresh().await {
+            count += 1;
         }
 
         if count > 0 {
             tracing::info!("Seeded {} workspace files", count);
         }
         Ok(count)
+    }
+
+    /// Seed a single file when it does not already exist.
+    ///
+    /// Existing files are never overwritten, and read or write failures are
+    /// logged and treated as "not created". Returns `true` when the file was
+    /// created.
+    async fn seed_missing_file(&self, path: &str, content: &str) -> bool {
+        // Skip files that already exist (never overwrite user edits)
+        match self.read(path).await {
+            Ok(_) => return false,
+            Err(WorkspaceError::DocumentNotFound { .. }) => {}
+            Err(e) => {
+                tracing::debug!("Failed to check {}: {}", path, e);
+                return false;
+            }
+        }
+
+        match self.write(path, content).await {
+            Ok(_) => true,
+            Err(e) => {
+                tracing::debug!("Failed to seed {}: {}", path, e);
+                false
+            }
+        }
+    }
+
+    /// Seed BOOTSTRAP.md, but only on truly fresh workspaces (no identity
+    /// files exist yet).
+    ///
+    /// This prevents existing users from getting a spurious first-run ritual
+    /// after upgrading. Returns `true` when the bootstrap file was created.
+    async fn seed_bootstrap_if_fresh(&self) -> bool {
+        if self.read(paths::BOOTSTRAP).await.is_ok() {
+            return false;
+        }
+
+        let identity_reads = tokio::join!(
+            self.read(paths::AGENTS),
+            self.read(paths::SOUL),
+            self.read(paths::USER),
+        );
+        let is_fresh_workspace = [&identity_reads.0, &identity_reads.1, &identity_reads.2]
+            .into_iter()
+            .all(|res| matches!(res, Err(WorkspaceError::DocumentNotFound { .. })));
+        if !is_fresh_workspace {
+            return false;
+        }
+
+        match self.write(paths::BOOTSTRAP, BOOTSTRAP_SEED).await {
+            Ok(_) => true,
+            Err(e) => {
+                tracing::warn!("Failed to seed {}: {}", paths::BOOTSTRAP, e);
+                false
+            }
+        }
     }
 
     /// Import markdown files from a directory on disk into the workspace DB.

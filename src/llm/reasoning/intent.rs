@@ -9,69 +9,81 @@ use super::SILENT_REPLY_TOKEN;
 ///
 /// Exclusion phrases (e.g. "let me explain") are checked first to avoid
 /// false positives on conversational language.
+/// Conversational phrases that must never count as tool intent.
+const EXCLUSIONS: &[&str] = &[
+    "let me explain",
+    "let me know",
+    "let me think",
+    "let me summarize",
+    "let me clarify",
+    "let me describe",
+    "let me help",
+    "let me understand",
+    "let me break",
+    "let me outline",
+    "let me walk you",
+    "let me provide",
+    "let me suggest",
+    "let me elaborate",
+    "let me start by",
+];
+
+/// First-person prefixes that can introduce a tool action.
+const PREFIXES: &[&str] = &["let me ", "i'll ", "i will ", "i'm going to "];
+
+/// Action verbs that signal a tool call when they follow a prefix.
+const ACTION_VERBS: &[&str] = &[
+    "search",
+    "look up",
+    "check",
+    "fetch",
+    "find",
+    "read the",
+    "write the",
+    "create",
+    "run the",
+    "execute",
+    "query",
+    "retrieve",
+    "add it",
+    "add the",
+    "add this",
+    "add that",
+    "update the",
+    "delete",
+    "remove the",
+    "look into",
+];
+
 pub fn llm_signals_tool_intent(response: &str) -> bool {
     // Extract only non-code lines with quoted strings removed
     let text = strip_code_blocks(response);
     let lower = text.to_lowercase();
 
     // Exclusion phrases — if any appear, bail out immediately
-    const EXCLUSIONS: &[&str] = &[
-        "let me explain",
-        "let me know",
-        "let me think",
-        "let me summarize",
-        "let me clarify",
-        "let me describe",
-        "let me help",
-        "let me understand",
-        "let me break",
-        "let me outline",
-        "let me walk you",
-        "let me provide",
-        "let me suggest",
-        "let me elaborate",
-        "let me start by",
-    ];
     if EXCLUSIONS.iter().any(|e| lower.contains(e)) {
         return false;
     }
 
-    const PREFIXES: &[&str] = &["let me ", "i'll ", "i will ", "i'm going to "];
-    const ACTION_VERBS: &[&str] = &[
-        "search",
-        "look up",
-        "check",
-        "fetch",
-        "find",
-        "read the",
-        "write the",
-        "create",
-        "run the",
-        "execute",
-        "query",
-        "retrieve",
-        "add it",
-        "add the",
-        "add this",
-        "add that",
-        "update the",
-        "delete",
-        "remove the",
-        "look into",
-    ];
+    contains_intent_phrase(&lower)
+}
 
-    for prefix in PREFIXES {
-        for (i, _) in lower.match_indices(prefix) {
-            let after = &lower[i + prefix.len()..];
-            for verb in ACTION_VERBS {
-                if after.starts_with(verb) || after.contains(&format!(" {verb}")) {
-                    return true;
-                }
-            }
-        }
-    }
+/// Whether the lowered prose contains an intent prefix followed by an
+/// action verb.
+fn contains_intent_phrase(lower: &str) -> bool {
+    PREFIXES.iter().any(|prefix| {
+        lower
+            .match_indices(prefix)
+            .any(|(i, _)| action_verb_follows(&lower[i + prefix.len()..]))
+    })
+}
 
-    false
+/// Whether an action verb appears at the start of (or later within) the text
+/// following an intent prefix.
+fn action_verb_follows(after: &str) -> bool {
+    ACTION_VERBS
+        .iter()
+        .any(|verb| after.starts_with(verb) || after.contains(&format!(" {verb}")))
 }
 
 /// Strip fenced code blocks (``` ... ```), indented code lines (4+ spaces / tab),

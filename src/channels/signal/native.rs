@@ -12,6 +12,93 @@ use crate::error::ChannelError;
 
 use super::{SIGNAL_HEALTH_ENDPOINT, SignalChannel, sse_listener};
 
+/// Whether a plain status message should be forwarded.
+///
+/// Filters out well-known UX/terminal status messages to avoid redundant
+/// updates.
+fn should_forward_status(msg: &str) -> bool {
+    let normalized = msg.trim();
+    !normalized.eq_ignore_ascii_case("done")
+        && !normalized.eq_ignore_ascii_case("awaiting approval")
+        && !normalized.eq_ignore_ascii_case("rejected")
+}
+
+/// Format the approval prompt sent when a tool requires user approval.
+fn format_approval_prompt(
+    request_id: &str,
+    tool_name: &str,
+    parameters: &serde_json::Value,
+) -> String {
+    let params_json = serde_json::to_string_pretty(parameters).unwrap_or_default();
+    format!(
+        "⚠️ *Approval Required*\n\n\
+         *Request ID:* `{}`\n\
+         *Tool:* {}\n\
+         *Parameters:*\n```\n{}\n```\n\n\
+         Reply with:\n\
+         • `yes` or `y` - Approve this request\n\
+         • `always` or `a` - Approve and auto-approve future {} requests\n\
+         • `no` or `n` - Deny",
+        request_id, tool_name, params_json, tool_name
+    )
+}
+
+/// Format a tool result preview, truncated to 500 characters.
+fn format_tool_result(name: &str, preview: &str) -> String {
+    let truncated = if preview.chars().count() > 500 {
+        let s: String = preview.chars().take(500).collect();
+        format!("{s}...")
+    } else {
+        preview.to_string()
+    };
+    format!("Tool '{}' result:\n{}", name, truncated)
+}
+
+/// Format a tool completion notification with a success/failure icon.
+fn format_tool_completed(name: &str, success: bool) -> String {
+    let (icon, color) = if success {
+        ("\u{25CF}", "success")
+    } else {
+        ("\u{2717}", "failed")
+    };
+    format!("{} Tool '{}' completed ({})", icon, name, color)
+}
+
+/// Format an authentication-required notification with optional details.
+fn format_auth_required(
+    extension_name: &str,
+    instructions: &Option<String>,
+    auth_url: &Option<String>,
+    setup_url: &Option<String>,
+) -> String {
+    let mut message = format!("\u{1F512} Authentication required for: {}", extension_name);
+    if let Some(instr) = instructions {
+        message.push_str(&format!("\n\n{}", instr));
+    }
+    if let Some(url) = auth_url {
+        message.push_str(&format!("\n\nAuth URL: {}", url));
+    }
+    if let Some(url) = setup_url {
+        message.push_str(&format!("\nSetup URL: {}", url));
+    }
+    message
+}
+
+/// Format an authentication-completed notification.
+fn format_auth_completed(extension_name: &str, success: bool, msg: &str) -> String {
+    let icon = if success { "\u{2705}" } else { "\u{274C}" };
+    let mut message = format!(
+        "{} Authentication {} for {}",
+        icon,
+        if success { "completed" } else { "failed" },
+        extension_name
+    );
+    if !msg.is_empty() {
+        message.push_str(&format!("\n{}", msg));
+    }
+    message
+}
+
 impl NativeChannel for SignalChannel {
     fn name(&self) -> &str {
         "signal"
@@ -78,145 +165,104 @@ impl NativeChannel for SignalChannel {
         status: StatusUpdate,
         metadata: &serde_json::Value,
     ) -> Result<(), ChannelError> {
-        // Send typing indicator for thinking status.
-        if matches!(status, StatusUpdate::Thinking(_))
-            && let Some(target_str) = metadata.get("signal_target").and_then(|v| v.as_str())
-        {
-            let target = Self::parse_recipient_target(target_str);
-            let params = self.build_rpc_params(&target, None, None);
-            let _ = self.rpc_request("sendTyping", params).await;
-        }
-
-        // Send approval prompt to user
-        if let StatusUpdate::ApprovalNeeded {
-            request_id,
-            tool_name,
-            description: _,
-            parameters,
-        } = &status
-            && let Some(target_str) = metadata.get("signal_target").and_then(|v| v.as_str())
-        {
-            let params_json = serde_json::to_string_pretty(parameters).unwrap_or_default();
-            let message = format!(
-                "⚠️ *Approval Required*\n\n\
-                 *Request ID:* `{}`\n\
-                 *Tool:* {}\n\
-                 *Parameters:*\n```\n{}\n```\n\n\
-                 Reply with:\n\
-                 • `yes` or `y` - Approve this request\n\
-                 • `always` or `a` - Approve and auto-approve future {} requests\n\
-                 • `no` or `n` - Deny",
-                request_id, tool_name, params_json, tool_name
-            );
-            self.send_status_message(target_str, &message).await;
-        }
-
-        // Filter out well-known UX/terminal status messages to avoid redundant updates.
-        let should_forward_status = |msg: &str| {
-            let normalized = msg.trim();
-            !normalized.eq_ignore_ascii_case("done")
-                && !normalized.eq_ignore_ascii_case("awaiting approval")
-                && !normalized.eq_ignore_ascii_case("rejected")
-        };
-        // Filter/send status messages
-        if let StatusUpdate::Status(msg) = &status
-            && let Some(target_str) =
-                Self::signal_target(metadata).filter(|_| should_forward_status(msg))
-        {
-            self.send_status_message(target_str, msg).await;
-        }
-
-        // Send tool result previews to user (debug mode only)
-        if let StatusUpdate::ToolResult { name, preview } = &status
-            && let Some(target_str) = self.debug_signal_target(metadata)
-        {
-            let truncated = if preview.chars().count() > 500 {
-                let s: String = preview.chars().take(500).collect();
-                format!("{s}...")
-            } else {
-                preview.clone()
-            };
-            let message = format!("Tool '{}' result:\n{}", name, truncated);
-            self.send_status_message(target_str, &message).await;
-        }
-
-        // Send tool started notification (debug mode only)
-        if let StatusUpdate::ToolStarted { name } = &status
-            && let Some(target_str) = self.debug_signal_target(metadata)
-        {
-            let message = format!("\u{25CB} Running tool: {}", name);
-            self.send_status_message(target_str, &message).await;
-        }
-
-        // Send tool completed notification (debug mode only)
-        if let StatusUpdate::ToolCompleted { name, success, .. } = &status
-            && let Some(target_str) = self.debug_signal_target(metadata)
-        {
-            let (icon, color) = if *success {
-                ("\u{25CF}", "success")
-            } else {
-                ("\u{2717}", "failed")
-            };
-            let message = format!("{} Tool '{}' completed ({})", icon, name, color);
-            self.send_status_message(target_str, &message).await;
-        }
-
-        // Send job started notification (sandbox jobs)
-        if let StatusUpdate::JobStarted {
-            job_id,
-            title,
-            browse_url,
-        } = &status
-            && let Some(target_str) = metadata.get("signal_target").and_then(|v| v.as_str())
-        {
-            let message = format!(
-                "\u{1F680} Job started: {}\nID: {}\nURL: {}",
-                title, job_id, browse_url
-            );
-            self.send_status_message(target_str, &message).await;
-        }
-
-        // Send auth required notification
-        if let StatusUpdate::AuthRequired {
-            extension_name,
-            instructions,
-            auth_url,
-            setup_url,
-        } = &status
-            && let Some(target_str) = metadata.get("signal_target").and_then(|v| v.as_str())
-        {
-            let mut message = format!("\u{1F512} Authentication required for: {}", extension_name);
-            if let Some(instr) = instructions {
-                message.push_str(&format!("\n\n{}", instr));
+        match &status {
+            // Send typing indicator for thinking status.
+            StatusUpdate::Thinking(_) => {
+                if let Some(target_str) = Self::signal_target(metadata) {
+                    let target = Self::parse_recipient_target(target_str);
+                    let params = self.build_rpc_params(&target, None, None);
+                    let _ = self.rpc_request("sendTyping", params).await;
+                }
             }
-            if let Some(url) = auth_url {
-                message.push_str(&format!("\n\nAuth URL: {}", url));
-            }
-            if let Some(url) = setup_url {
-                message.push_str(&format!("\nSetup URL: {}", url));
-            }
-            self.send_status_message(target_str, &message).await;
-        }
 
-        // Send auth completed notification
-        if let StatusUpdate::AuthCompleted {
-            extension_name,
-            success,
-            message: msg,
-        } = &status
-            && let Some(target_str) = metadata.get("signal_target").and_then(|v| v.as_str())
-        {
-            let icon = if *success { "\u{2705}" } else { "\u{274C}" };
-            let mut message = format!(
-                "{} Authentication {} for {}",
-                icon,
-                if *success { "completed" } else { "failed" },
-                extension_name
-            );
-            if !msg.is_empty() {
-                message.push_str(&format!("\n{}", msg));
+            // Send approval prompt to user
+            StatusUpdate::ApprovalNeeded {
+                request_id,
+                tool_name,
+                description: _,
+                parameters,
+            } => {
+                if let Some(target_str) = Self::signal_target(metadata) {
+                    let message = format_approval_prompt(request_id, tool_name, parameters);
+                    self.send_status_message(target_str, &message).await;
+                }
             }
-            self.send_status_message(target_str, &message).await;
+
+            // Filter/send status messages
+            StatusUpdate::Status(msg) => {
+                if let Some(target_str) =
+                    Self::signal_target(metadata).filter(|_| should_forward_status(msg))
+                {
+                    self.send_status_message(target_str, msg).await;
+                }
+            }
+
+            // Send tool result previews to user (debug mode only)
+            StatusUpdate::ToolResult { name, preview } => {
+                if let Some(target_str) = self.debug_signal_target(metadata) {
+                    let message = format_tool_result(name, preview);
+                    self.send_status_message(target_str, &message).await;
+                }
+            }
+
+            // Send tool started notification (debug mode only)
+            StatusUpdate::ToolStarted { name } => {
+                if let Some(target_str) = self.debug_signal_target(metadata) {
+                    let message = format!("\u{25CB} Running tool: {}", name);
+                    self.send_status_message(target_str, &message).await;
+                }
+            }
+
+            // Send tool completed notification (debug mode only)
+            StatusUpdate::ToolCompleted { name, success, .. } => {
+                if let Some(target_str) = self.debug_signal_target(metadata) {
+                    let message = format_tool_completed(name, *success);
+                    self.send_status_message(target_str, &message).await;
+                }
+            }
+
+            // Send job started notification (sandbox jobs)
+            StatusUpdate::JobStarted {
+                job_id,
+                title,
+                browse_url,
+            } => {
+                if let Some(target_str) = Self::signal_target(metadata) {
+                    let message = format!(
+                        "\u{1F680} Job started: {}\nID: {}\nURL: {}",
+                        title, job_id, browse_url
+                    );
+                    self.send_status_message(target_str, &message).await;
+                }
+            }
+
+            // Send auth required notification
+            StatusUpdate::AuthRequired {
+                extension_name,
+                instructions,
+                auth_url,
+                setup_url,
+            } => {
+                if let Some(target_str) = Self::signal_target(metadata) {
+                    let message =
+                        format_auth_required(extension_name, instructions, auth_url, setup_url);
+                    self.send_status_message(target_str, &message).await;
+                }
+            }
+
+            // Send auth completed notification
+            StatusUpdate::AuthCompleted {
+                extension_name,
+                success,
+                message: msg,
+            } => {
+                if let Some(target_str) = Self::signal_target(metadata) {
+                    let message = format_auth_completed(extension_name, *success, msg);
+                    self.send_status_message(target_str, &message).await;
+                }
+            }
+
+            _ => {}
         }
 
         Ok(())

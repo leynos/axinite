@@ -160,6 +160,7 @@ impl RelayChannel {
     }
 }
 mod native;
+mod stream_task;
 
 #[cfg(test)]
 mod tests;

@@ -304,34 +304,59 @@ impl ExtensionManager {
         secret_name: &str,
         cap_file: &crate::tools::wasm::CapabilitiesFile,
     ) -> bool {
-        let lower = secret_name.to_lowercase();
-        let is_client_id = lower.ends_with("client_id") || lower == "client_id";
-        let is_client_secret = lower.ends_with("client_secret") || lower == "client_secret";
-        if !is_client_id && !is_client_secret {
+        let Some(field) = classify_oauth_field(secret_name) else {
             return false;
-        }
+        };
         let Some(ref auth) = cap_file.auth else {
             return false;
         };
         let Some(ref oauth) = auth.oauth else {
             return false;
         };
-        let builtin = crate::cli::oauth_defaults::builtin_credentials(&auth.secret_name);
+        let has_builtin =
+            crate::cli::oauth_defaults::builtin_credentials(&auth.secret_name).is_some();
 
-        if is_client_id {
-            oauth.client_id.is_some()
-                || oauth
-                    .client_id_env
-                    .as_ref()
-                    .is_some_and(|e| std::env::var(e).is_ok())
-                || builtin.is_some()
-        } else {
-            oauth.client_secret.is_some()
-                || oauth
-                    .client_secret_env
-                    .as_ref()
-                    .is_some_and(|e| std::env::var(e).is_ok())
-                || builtin.is_some()
+        match field {
+            OAuthField::ClientId => {
+                credential_auto_resolved(&oauth.client_id, &oauth.client_id_env, has_builtin)
+            }
+            OAuthField::ClientSecret => credential_auto_resolved(
+                &oauth.client_secret,
+                &oauth.client_secret_env,
+                has_builtin,
+            ),
         }
     }
+}
+
+/// OAuth client credential fields that may be auto-resolved.
+enum OAuthField {
+    ClientId,
+    ClientSecret,
+}
+
+/// Classify a setup secret name as an OAuth client credential field, if it
+/// is one. (`ends_with` also covers the exact-match case.)
+fn classify_oauth_field(secret_name: &str) -> Option<OAuthField> {
+    let lower = secret_name.to_lowercase();
+    if lower.ends_with("client_id") {
+        return Some(OAuthField::ClientId);
+    }
+    if lower.ends_with("client_secret") {
+        return Some(OAuthField::ClientSecret);
+    }
+    None
+}
+
+/// Whether an OAuth credential can be resolved without user input: inline
+/// value, resolvable environment variable, or builtin default.
+fn credential_auto_resolved(
+    inline: &Option<String>,
+    env_var: &Option<String>,
+    has_builtin: bool,
+) -> bool {
+    if inline.is_some() || has_builtin {
+        return true;
+    }
+    env_var.as_ref().is_some_and(|e| std::env::var(e).is_ok())
 }

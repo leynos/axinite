@@ -248,25 +248,43 @@ impl ExtensionManager {
         // authoritative signal — setup secrets (client_id/secret) are
         // intermediate and may be auto-resolved via builtins.
         if let Some(ref auth) = cap_file.auth {
-            let has_token = self
-                .secrets
-                .exists(&self.user_id, &auth.secret_name)
-                .await
-                .unwrap_or(false)
-                || auth
-                    .env_var
-                    .as_ref()
-                    .is_some_and(|v| std::env::var(v).is_ok());
-            return if has_token {
-                ToolAuthState::Ready
-            } else if auth.oauth.is_some() {
-                ToolAuthState::NeedsAuth
-            } else {
-                ToolAuthState::NeedsSetup
-            };
+            return self.auth_section_state(auth).await;
         }
 
         // No auth section — fall back to checking setup.required_secrets.
+        self.setup_secrets_state(&cap_file).await
+    }
+
+    /// Auth readiness when the tool declares an auth section: driven by the
+    /// presence of the access token (stored secret or env var).
+    async fn auth_section_state(
+        &self,
+        auth: &crate::tools::wasm::AuthCapabilitySchema,
+    ) -> ToolAuthState {
+        let has_token = self
+            .secrets
+            .exists(&self.user_id, &auth.secret_name)
+            .await
+            .unwrap_or(false)
+            || auth
+                .env_var
+                .as_ref()
+                .is_some_and(|v| std::env::var(v).is_ok());
+        if has_token {
+            ToolAuthState::Ready
+        } else if auth.oauth.is_some() {
+            ToolAuthState::NeedsAuth
+        } else {
+            ToolAuthState::NeedsSetup
+        }
+    }
+
+    /// Auth readiness from `setup.required_secrets`: all mandatory,
+    /// non-auto-resolved secrets must be stored.
+    async fn setup_secrets_state(
+        &self,
+        cap_file: &crate::tools::wasm::CapabilitiesFile,
+    ) -> ToolAuthState {
         let Some(setup) = &cap_file.setup else {
             return ToolAuthState::NoAuth;
         };
@@ -279,7 +297,7 @@ impl ExtensionManager {
                 .required_secrets
                 .iter()
                 .filter(|s| !s.optional)
-                .filter(|s| !Self::is_auto_resolved_oauth_field(&s.name, &cap_file))
+                .filter(|s| !Self::is_auto_resolved_oauth_field(&s.name, cap_file))
                 .map(|s| self.secrets.exists(&self.user_id, &s.name)),
         )
         .await

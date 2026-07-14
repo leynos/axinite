@@ -40,30 +40,7 @@ pub(super) struct EngineContext {
 /// Note: The caller must pre-increment `running_count` before spawning this task.
 /// This ensures the counter is >0 from the moment the task is queued.
 pub(super) async fn execute_routine(ctx: EngineContext, routine: Routine, run: RoutineRun) {
-    let result = match &routine.action {
-        RoutineAction::Lightweight {
-            prompt,
-            context_paths,
-            max_tokens,
-        } => execute_lightweight(&ctx, &routine, prompt, context_paths, *max_tokens).await,
-        RoutineAction::FullJob {
-            title,
-            description,
-            max_iterations,
-            tool_permissions,
-        } => {
-            execute_full_job(
-                &ctx,
-                &routine,
-                &run,
-                title,
-                description,
-                *max_iterations,
-                tool_permissions,
-            )
-            .await
-        }
-    };
+    let result = run_action(&ctx, &routine, &run).await;
 
     // Process result
     let (status, summary, tokens) = match result {
@@ -74,21 +51,84 @@ pub(super) async fn execute_routine(ctx: EngineContext, routine: Routine, run: R
         }
     };
 
-    // Complete the run record
+    complete_run_record(&ctx, &routine, &run, status, summary.as_deref(), tokens).await;
+    update_runtime_state(&ctx, &routine, status).await;
+    let thread_id = persist_run_message(&ctx, &routine, &run, status, summary.as_deref()).await;
+
+    // Send notifications based on config
+    send_notification(
+        &ctx.notify_tx,
+        &routine.notify,
+        &routine.name,
+        status,
+        summary.as_deref(),
+        thread_id.as_deref(),
+    )
+    .await;
+
+    // Decrement running count after all finalization steps are complete.
+    ctx.running_count.fetch_sub(1, Ordering::Relaxed);
+}
+
+/// Dispatches the routine's action to the lightweight or full-job executor.
+async fn run_action(
+    ctx: &EngineContext,
+    routine: &Routine,
+    run: &RoutineRun,
+) -> Result<(RunStatus, Option<String>, Option<i32>), RoutineError> {
+    match &routine.action {
+        RoutineAction::Lightweight {
+            prompt,
+            context_paths,
+            max_tokens,
+        } => execute_lightweight(ctx, routine, prompt, context_paths, *max_tokens).await,
+        RoutineAction::FullJob {
+            title,
+            description,
+            max_iterations,
+            tool_permissions,
+        } => {
+            execute_full_job(
+                ctx,
+                routine,
+                run,
+                title,
+                description,
+                *max_iterations,
+                tool_permissions,
+            )
+            .await
+        }
+    }
+}
+
+/// Marks the run record complete in the store, logging (not propagating)
+/// persistence failures.
+async fn complete_run_record(
+    ctx: &EngineContext,
+    routine: &Routine,
+    run: &RoutineRun,
+    status: RunStatus,
+    summary: Option<&str>,
+    tokens: Option<i32>,
+) {
     if let Err(e) = ctx
         .store
         .complete_routine_run(RoutineRunCompletion {
             id: run.id,
             status,
-            result_summary: summary.as_deref(),
+            result_summary: summary,
             tokens_used: tokens,
         })
         .await
     {
         tracing::error!(routine = %routine.name, "Failed to complete run record: {}", e);
     }
+}
 
-    // Update routine runtime state
+/// Updates the routine's runtime bookkeeping: last run, next cron fire,
+/// run count, and the consecutive-failure streak.
+async fn update_runtime_state(ctx: &EngineContext, routine: &Routine, status: RunStatus) {
     let now = Utc::now();
     let next_fire = if let Trigger::Cron {
         ref schedule,
@@ -120,53 +160,47 @@ pub(super) async fn execute_routine(ctx: EngineContext, routine: Routine, run: R
     {
         tracing::error!(routine = %routine.name, "Failed to update runtime state: {}", e);
     }
+}
 
-    // Persist routine result to its dedicated conversation thread
-    let thread_id = match ctx
+/// Persists the run result to the routine's dedicated conversation thread,
+/// returning the thread ID when the conversation could be resolved.
+async fn persist_run_message(
+    ctx: &EngineContext,
+    routine: &Routine,
+    run: &RoutineRun,
+    status: RunStatus,
+    summary: Option<&str>,
+) -> Option<String> {
+    let conv_id = match ctx
         .store
         .get_or_create_routine_conversation(routine.id, &routine.name, &routine.user_id)
         .await
     {
-        Ok(conv_id) => {
-            tracing::debug!(
-                routine = %routine.name,
-                routine_id = %routine.id,
-                conversation_id = %conv_id,
-                "Resolved routine conversation thread"
-            );
-            // Record the run result as a conversation message
-            let msg = match (&summary, status) {
-                (Some(s), _) => format!("[{}] {}: {}", run.trigger_type, status, s),
-                (None, _) => format!("[{}] {}", run.trigger_type, status),
-            };
-            if let Err(e) = ctx
-                .store
-                .add_conversation_message(conv_id, "assistant", &msg)
-                .await
-            {
-                tracing::error!(routine = %routine.name, "Failed to persist routine message: {}", e);
-            }
-            Some(conv_id.to_string())
-        }
+        Ok(conv_id) => conv_id,
         Err(e) => {
             tracing::error!(routine = %routine.name, "Failed to get routine conversation: {}", e);
-            None
+            return None;
         }
     };
-
-    // Send notifications based on config
-    send_notification(
-        &ctx.notify_tx,
-        &routine.notify,
-        &routine.name,
-        status,
-        summary.as_deref(),
-        thread_id.as_deref(),
-    )
-    .await;
-
-    // Decrement running count after all finalization steps are complete.
-    ctx.running_count.fetch_sub(1, Ordering::Relaxed);
+    tracing::debug!(
+        routine = %routine.name,
+        routine_id = %routine.id,
+        conversation_id = %conv_id,
+        "Resolved routine conversation thread"
+    );
+    // Record the run result as a conversation message
+    let msg = match summary {
+        Some(s) => format!("[{}] {}: {}", run.trigger_type, status, s),
+        None => format!("[{}] {}", run.trigger_type, status),
+    };
+    if let Err(e) = ctx
+        .store
+        .add_conversation_message(conv_id, "assistant", &msg)
+        .await
+    {
+        tracing::error!(routine = %routine.name, "Failed to persist routine message: {}", e);
+    }
+    Some(conv_id.to_string())
 }
 
 /// Execute a full-job routine by dispatching to the scheduler.
@@ -203,10 +237,12 @@ async fn execute_full_job(
 
     let job_id = scheduler
         .dispatch_job_with_context(
-            &routine.user_id,
-            title,
-            description,
-            Some(metadata),
+            crate::agent::scheduler::JobRequest {
+                user_id: &routine.user_id,
+                title,
+                description,
+                metadata: Some(metadata),
+            },
             approval_context,
         )
         .await

@@ -10,7 +10,34 @@ use crate::llm::{ChatMessage, CompletionRequest, ToolCall, ToolCompletionRequest
 use crate::tools::{ApprovalRequirement, ToolError};
 
 use super::execution::EngineContext;
-use super::lightweight::handle_text_response;
+use super::lightweight::{handle_text_response, initial_messages};
+
+/// Running token totals accumulated across loop iterations.
+#[derive(Default)]
+struct TokenTotals {
+    input: u32,
+    output: u32,
+}
+
+impl TokenTotals {
+    /// Adds one response's token usage to the totals.
+    fn add(&mut self, input: u32, output: u32) {
+        self.input += input;
+        self.output += output;
+    }
+}
+
+/// Builds a minimal job context for routine tool execution with a unique
+/// run ID.
+fn routine_job_context(routine: &Routine) -> JobContext {
+    JobContext {
+        job_id: Uuid::new_v4(),
+        user_id: routine.user_id.clone(),
+        title: "Lightweight Routine".to_string(),
+        description: routine.name.clone(),
+        ..Default::default()
+    }
+}
 
 /// Execute a lightweight routine with tool execution support (agentic loop).
 ///
@@ -26,123 +53,124 @@ pub(super) async fn execute_lightweight_with_tools(
     full_prompt: &str,
     effective_max_tokens: u32,
 ) -> Result<(RunStatus, Option<String>, Option<i32>), RoutineError> {
-    let mut messages = if system_prompt.is_empty() {
-        vec![ChatMessage::user(full_prompt)]
-    } else {
-        vec![
-            ChatMessage::system(system_prompt),
-            ChatMessage::user(full_prompt),
-        ]
-    };
-
+    let mut messages = initial_messages(system_prompt, full_prompt);
     let max_iterations = ctx.config.lightweight_max_iterations.min(5);
-    let mut iteration = 0;
-    let mut total_input_tokens = 0;
-    let mut total_output_tokens = 0;
+    let mut totals = TokenTotals::default();
+    let job_ctx = routine_job_context(routine);
 
-    // Create a minimal job context for tool execution with unique run ID
-    let run_id = Uuid::new_v4();
-    let job_ctx = JobContext {
-        job_id: run_id,
-        user_id: routine.user_id.clone(),
-        title: "Lightweight Routine".to_string(),
-        description: routine.name.clone(),
-        ..Default::default()
-    };
-
-    loop {
-        iteration += 1;
-
-        // Force text-only response at iteration limit
-        let force_text = iteration >= max_iterations;
-
-        if force_text {
-            // Final iteration: no tools, just get text response
-            let request = CompletionRequest::new(messages)
-                .with_max_tokens(effective_max_tokens)
-                .with_temperature(0.3);
-
-            let response = ctx
-                .llm
-                .complete(request)
-                .await
-                .map_err(RoutineError::from)?;
-
-            total_input_tokens += response.input_tokens;
-            total_output_tokens += response.output_tokens;
-
-            return handle_text_response(
-                &response.content,
-                response.finish_reason,
-                total_input_tokens,
-                total_output_tokens,
-            );
-        } else {
-            // Tool-enabled iteration
-            let tool_defs = ctx.tools.tool_definitions().await;
-
-            let request = ToolCompletionRequest::new(messages.clone(), tool_defs)
-                .with_max_tokens(effective_max_tokens)
-                .with_temperature(0.3);
-
-            let response = ctx
-                .llm
-                .complete_with_tools(request)
-                .await
-                .map_err(RoutineError::from)?;
-
-            total_input_tokens += response.input_tokens;
-            total_output_tokens += response.output_tokens;
-
-            // Check if LLM returned text (no tool calls)
-            if response.tool_calls.is_empty() {
-                let content = response.content.unwrap_or_default();
-                return handle_text_response(
-                    &content,
-                    response.finish_reason,
-                    total_input_tokens,
-                    total_output_tokens,
-                );
-            }
-
-            // LLM returned tool calls: add assistant message and execute tools
-            messages.push(ChatMessage::assistant_with_tool_calls(
-                response.content.clone(),
-                response.tool_calls.clone(),
-            ));
-
-            // Execute tools sequentially
-            for tc in response.tool_calls {
-                let result = execute_routine_tool(ctx, &job_ctx, &tc).await;
-
-                // Sanitize and wrap result (including errors)
-                let result_content = match result {
-                    Ok(output) => {
-                        let sanitized = ctx.safety.sanitize_tool_output(&tc.name, &output);
-                        ctx.safety.wrap_for_llm(
-                            &tc.name,
-                            &sanitized.content,
-                            sanitized.was_modified,
-                        )
-                    }
-                    Err(e) => {
-                        let error_msg = format!("Tool '{}' failed: {}", tc.name, e);
-                        let sanitized = ctx.safety.sanitize_tool_output(&tc.name, &error_msg);
-                        ctx.safety.wrap_for_llm(
-                            &tc.name,
-                            &sanitized.content,
-                            sanitized.was_modified,
-                        )
-                    }
-                };
-
-                // Add tool result to context
-                messages.push(ChatMessage::tool_result(&tc.id, &tc.name, &result_content));
-            }
-
-            // Continue loop to next LLM call
+    // Tool-enabled iterations; the final iteration is reserved for a
+    // text-only response.
+    for _ in 1..max_iterations {
+        let outcome = tool_iteration(
+            ctx,
+            &job_ctx,
+            &mut messages,
+            effective_max_tokens,
+            &mut totals,
+        )
+        .await?;
+        if let Some(result) = outcome {
+            return Ok(result);
         }
     }
+
+    final_text_iteration(ctx, messages, effective_max_tokens, &totals).await
+}
+
+/// Runs the forced text-only final iteration (no tools offered).
+async fn final_text_iteration(
+    ctx: &EngineContext,
+    messages: Vec<ChatMessage>,
+    effective_max_tokens: u32,
+    totals: &TokenTotals,
+) -> Result<(RunStatus, Option<String>, Option<i32>), RoutineError> {
+    let request = CompletionRequest::new(messages)
+        .with_max_tokens(effective_max_tokens)
+        .with_temperature(0.3);
+
+    let response = ctx
+        .llm
+        .complete(request)
+        .await
+        .map_err(RoutineError::from)?;
+
+    handle_text_response(
+        &response.content,
+        response.finish_reason,
+        totals.input + response.input_tokens,
+        totals.output + response.output_tokens,
+    )
+}
+
+/// One tool-enabled iteration of the agentic loop.
+///
+/// Returns `Some(result)` when the LLM answered with text (the loop is
+/// finished), or `None` after executing the requested tool calls (the loop
+/// should continue).
+async fn tool_iteration(
+    ctx: &EngineContext,
+    job_ctx: &JobContext,
+    messages: &mut Vec<ChatMessage>,
+    effective_max_tokens: u32,
+    totals: &mut TokenTotals,
+) -> Result<Option<(RunStatus, Option<String>, Option<i32>)>, RoutineError> {
+    let tool_defs = ctx.tools.tool_definitions().await;
+
+    let request = ToolCompletionRequest::new(messages.clone(), tool_defs)
+        .with_max_tokens(effective_max_tokens)
+        .with_temperature(0.3);
+
+    let response = ctx
+        .llm
+        .complete_with_tools(request)
+        .await
+        .map_err(RoutineError::from)?;
+
+    totals.add(response.input_tokens, response.output_tokens);
+
+    // Check if LLM returned text (no tool calls)
+    if response.tool_calls.is_empty() {
+        let content = response.content.unwrap_or_default();
+        return handle_text_response(
+            &content,
+            response.finish_reason,
+            totals.input,
+            totals.output,
+        )
+        .map(Some);
+    }
+
+    // LLM returned tool calls: add assistant message and execute tools
+    messages.push(ChatMessage::assistant_with_tool_calls(
+        response.content.clone(),
+        response.tool_calls.clone(),
+    ));
+
+    // Execute tools sequentially
+    for tc in response.tool_calls {
+        let result = execute_routine_tool(ctx, job_ctx, &tc).await;
+        let result_content = sanitize_tool_result(ctx, &tc, result);
+        // Add tool result to context
+        messages.push(ChatMessage::tool_result(&tc.id, &tc.name, &result_content));
+    }
+
+    // Continue loop to next LLM call
+    Ok(None)
+}
+
+/// Sanitizes and wraps a tool result (or its error) for LLM consumption.
+fn sanitize_tool_result(
+    ctx: &EngineContext,
+    tc: &ToolCall,
+    result: Result<String, Box<dyn std::error::Error + Send + Sync>>,
+) -> String {
+    let raw = match result {
+        Ok(output) => output,
+        Err(e) => format!("Tool '{}' failed: {}", tc.name, e),
+    };
+    let sanitized = ctx.safety.sanitize_tool_output(&tc.name, &raw);
+    ctx.safety
+        .wrap_for_llm(&tc.name, &sanitized.content, sanitized.was_modified)
 }
 
 /// Execute a single tool for a lightweight routine.
@@ -193,10 +221,27 @@ async fn execute_routine_tool(
         tool.execute(tc.arguments.clone(), job_ctx).await
     })
     .await;
-    let elapsed = start.elapsed();
+    log_tool_execution(tc, &result, start.elapsed(), timeout);
 
-    // Log tool execution result (single consolidated log)
-    match &result {
+    let result = result
+        .map_err(|_| ToolError::Timeout(timeout))
+        .map_err(|e| Box::new(e) as Box<dyn std::error::Error + Send + Sync>)?
+        .map_err(|e| Box::new(e) as Box<dyn std::error::Error + Send + Sync>)?;
+
+    // Serialize result to JSON string
+    let result_str =
+        serde_json::to_string(&result.result).unwrap_or_else(|_| "<serialize error>".to_string());
+    Ok(result_str)
+}
+
+/// Emits the single consolidated log line for a tool execution outcome.
+fn log_tool_execution(
+    tc: &ToolCall,
+    result: &Result<Result<crate::tools::ToolOutput, ToolError>, tokio::time::error::Elapsed>,
+    elapsed: std::time::Duration,
+    timeout: std::time::Duration,
+) {
+    match result {
         Ok(Ok(_)) => {
             tracing::debug!(
                 tool = %tc.name,
@@ -224,14 +269,4 @@ async fn execute_routine_tool(
             );
         }
     }
-
-    let result = result
-        .map_err(|_| ToolError::Timeout(timeout))
-        .map_err(|e| Box::new(e) as Box<dyn std::error::Error + Send + Sync>)?
-        .map_err(|e| Box::new(e) as Box<dyn std::error::Error + Send + Sync>)?;
-
-    // Serialize result to JSON string
-    let result_str =
-        serde_json::to_string(&result.result).unwrap_or_else(|_| "<serialize error>".to_string());
-    Ok(result_str)
 }

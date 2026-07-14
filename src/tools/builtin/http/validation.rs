@@ -84,22 +84,39 @@ pub(crate) fn validate_url(url: &str) -> Result<reqwest::Url, ToolError> {
 
 pub(super) fn is_disallowed_ip(ip: &IpAddr) -> bool {
     match ip {
-        IpAddr::V4(v4) => {
-            v4.is_private()
-                || v4.is_loopback()
-                || v4.is_link_local()
-                || v4.is_multicast()
-                || v4.is_unspecified()
-                || *v4 == std::net::Ipv4Addr::new(169, 254, 169, 254)
-        }
-        IpAddr::V6(v6) => {
-            v6.is_loopback()
-                || v6.is_unique_local()
-                || v6.is_unicast_link_local()
-                || v6.is_multicast()
-                || v6.is_unspecified()
-        }
+        IpAddr::V4(v4) => is_disallowed_ipv4(v4),
+        IpAddr::V6(v6) => is_disallowed_ipv6(v6),
     }
+}
+
+/// Whether an IPv4 address must not be fetched: private, loopback,
+/// link-local, multicast, unspecified, or the cloud metadata endpoint.
+fn is_disallowed_ipv4(v4: &std::net::Ipv4Addr) -> bool {
+    /// Cloud provider instance metadata endpoint (AWS, GCP, Azure).
+    const METADATA_ENDPOINT: std::net::Ipv4Addr = std::net::Ipv4Addr::new(169, 254, 169, 254);
+
+    let blocked = [
+        v4.is_private(),
+        v4.is_loopback(),
+        v4.is_link_local(),
+        v4.is_multicast(),
+        v4.is_unspecified(),
+        *v4 == METADATA_ENDPOINT,
+    ];
+    blocked.into_iter().any(|is_blocked| is_blocked)
+}
+
+/// Whether an IPv6 address must not be fetched: loopback, unique-local,
+/// link-local, multicast, or unspecified.
+fn is_disallowed_ipv6(v6: &std::net::Ipv6Addr) -> bool {
+    let blocked = [
+        v6.is_loopback(),
+        v6.is_unique_local(),
+        v6.is_unicast_link_local(),
+        v6.is_multicast(),
+        v6.is_unspecified(),
+    ];
+    blocked.into_iter().any(|is_blocked| is_blocked)
 }
 
 #[cfg(feature = "html-to-markdown")]

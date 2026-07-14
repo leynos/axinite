@@ -11,11 +11,11 @@ use tokio::task::JoinHandle;
 
 use super::Agent;
 use super::notifications::{
-    SYSTEM_USER_ID, apply_before_outbound_hooks, forward_repair_notification,
+    NotificationRoute, SYSTEM_USER_ID, dispatch_notification, forward_repair_notification,
 };
 use crate::agent::HeartbeatConfig as AgentHeartbeatConfig;
 use crate::agent::heartbeat::spawn_heartbeat;
-use crate::agent::routine_engine::{RoutineEngine, spawn_cron_ticker};
+use crate::agent::routine_engine::{RoutineEngine, RoutineEngineDeps, spawn_cron_ticker};
 use crate::agent::self_repair::{
     DefaultSelfRepair, RepairNotification, RepairNotificationRoute, RepairTask,
 };
@@ -84,18 +84,11 @@ impl Agent {
         })
     }
 
-    pub(super) async fn spawn_heartbeat(&self) -> Option<JoinHandle<()>> {
-        let hb_config = self.heartbeat_config.as_ref()?;
-        if !hb_config.enabled {
-            return None;
-        }
-        let workspace = match self.workspace() {
-            Some(w) => w,
-            None => {
-                tracing::warn!("Heartbeat enabled but no workspace available");
-                return None;
-            }
-        };
+    /// Builds the runtime heartbeat configuration from the agent's settings.
+    fn build_heartbeat_config(
+        &self,
+        hb_config: &crate::config::HeartbeatConfig,
+    ) -> AgentHeartbeatConfig {
         let mut config = AgentHeartbeatConfig::default()
             .with_interval(std::time::Duration::from_secs(hb_config.interval_secs));
         config.quiet_hours_start = hb_config.quiet_hours_start;
@@ -107,58 +100,49 @@ impl Agent {
         if let (Some(user), Some(channel)) = (&hb_config.notify_user, &hb_config.notify_channel) {
             config = config.with_notify(user, channel);
         }
+        config
+    }
 
-        // Set up notification channel
-        let (notify_tx, mut notify_rx) = tokio::sync::mpsc::channel::<OutgoingResponse>(16);
-
-        // Spawn notification forwarder that routes through channel manager
-        let notify_channel = hb_config.notify_channel.clone();
-        let notify_user = hb_config.notify_user.clone();
+    /// Spawns the forwarder task that routes heartbeat notifications through
+    /// the channel manager, preferring the configured channel.
+    fn spawn_heartbeat_forwarder(
+        &self,
+        notify_user: Option<String>,
+        notify_channel: Option<String>,
+        mut notify_rx: mpsc::Receiver<OutgoingResponse>,
+    ) {
         let channels = self.channels.clone();
         let hooks = Arc::clone(self.hooks());
         tokio::spawn(async move {
             while let Some(response) = notify_rx.recv().await {
-                let user = notify_user.as_deref().unwrap_or(SYSTEM_USER_ID);
-
-                // Try the configured channel first, fall back to
-                // broadcasting on all channels.
-                let targeted_ok = if let Some(ref channel) = notify_channel {
-                    if let Some(filtered_response) =
-                        apply_before_outbound_hooks(&hooks, user, channel, None, response.clone())
-                            .await
-                    {
-                        channels
-                            .broadcast(channel, user, filtered_response)
-                            .await
-                            .is_ok()
-                    } else {
-                        true
-                    }
-                } else {
-                    false
+                let route = NotificationRoute {
+                    user: notify_user.as_deref().unwrap_or(SYSTEM_USER_ID),
+                    channel: notify_channel.as_deref(),
+                    description: "heartbeat",
                 };
-
-                if !targeted_ok {
-                    for channel in channels.channel_names().await {
-                        let Some(filtered_response) = apply_before_outbound_hooks(
-                            &hooks,
-                            user,
-                            &channel,
-                            None,
-                            response.clone(),
-                        )
-                        .await
-                        else {
-                            continue;
-                        };
-                        if let Err(e) = channels.broadcast(&channel, user, filtered_response).await
-                        {
-                            tracing::warn!("Failed to broadcast heartbeat to {}: {}", channel, e);
-                        }
-                    }
-                }
+                dispatch_notification(&channels, &hooks, route, response).await;
             }
         });
+    }
+
+    pub(super) async fn spawn_heartbeat(&self) -> Option<JoinHandle<()>> {
+        let hb_config = self.heartbeat_config.as_ref()?;
+        if !hb_config.enabled {
+            return None;
+        }
+        let Some(workspace) = self.workspace() else {
+            tracing::warn!("Heartbeat enabled but no workspace available");
+            return None;
+        };
+        let config = self.build_heartbeat_config(hb_config);
+
+        // Set up notification channel and forwarder
+        let (notify_tx, notify_rx) = tokio::sync::mpsc::channel::<OutgoingResponse>(16);
+        self.spawn_heartbeat_forwarder(
+            hb_config.notify_user.clone(),
+            hb_config.notify_channel.clone(),
+            notify_rx,
+        );
 
         let hygiene = self
             .hygiene_config
@@ -191,16 +175,16 @@ impl Agent {
         // Set up notification channel (same pattern as heartbeat)
         let (notify_tx, mut notify_rx) = tokio::sync::mpsc::channel::<OutgoingResponse>(32);
 
-        let engine = Arc::new(RoutineEngine::new(
-            rt_config.clone(),
-            Arc::clone(store),
-            self.llm().clone(),
-            Arc::clone(workspace),
+        let engine = Arc::new(RoutineEngine::new(RoutineEngineDeps {
+            config: rt_config.clone(),
+            store: Arc::clone(store),
+            llm: self.llm().clone(),
+            workspace: Arc::clone(workspace),
             notify_tx,
-            Some(self.scheduler.clone()),
-            self.tools().clone(),
-            self.safety().clone(),
-        ));
+            scheduler: Some(self.scheduler.clone()),
+            tools: self.tools().clone(),
+            safety: self.safety().clone(),
+        }));
 
         // Register routine tools
         self.deps
@@ -227,47 +211,12 @@ impl Agent {
                     .and_then(|v| v.as_str())
                     .map(|s| s.to_string());
 
-                // Try the configured channel first, fall back to
-                // broadcasting on all channels.
-                let targeted_ok = if let Some(ref channel) = notify_channel {
-                    if let Some(filtered_response) =
-                        apply_before_outbound_hooks(&hooks, &user, channel, None, response.clone())
-                            .await
-                    {
-                        channels
-                            .broadcast(channel, &user, filtered_response)
-                            .await
-                            .is_ok()
-                    } else {
-                        true
-                    }
-                } else {
-                    false
+                let route = NotificationRoute {
+                    user: &user,
+                    channel: notify_channel.as_deref(),
+                    description: "routine notification",
                 };
-
-                if !targeted_ok {
-                    for channel in channels.channel_names().await {
-                        let Some(filtered_response) = apply_before_outbound_hooks(
-                            &hooks,
-                            &user,
-                            &channel,
-                            None,
-                            response.clone(),
-                        )
-                        .await
-                        else {
-                            continue;
-                        };
-                        if let Err(e) = channels.broadcast(&channel, &user, filtered_response).await
-                        {
-                            tracing::warn!(
-                                "Failed to broadcast routine notification to {}: {}",
-                                channel,
-                                e
-                            );
-                        }
-                    }
-                }
+                dispatch_notification(&channels, &hooks, route, response).await;
             }
         });
 

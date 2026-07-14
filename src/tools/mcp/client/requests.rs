@@ -49,40 +49,54 @@ impl McpClient {
         Ok(headers)
     }
 
+    /// Send the request once with freshly built auth and session headers.
+    async fn send_with_headers(&self, request: &McpRequest) -> Result<McpResponse, ToolError> {
+        let headers = self.build_request_headers().await?;
+        self.transport.send(request, &headers).await
+    }
+
+    /// Whether an error indicates the server rejected our credentials (401).
+    fn is_unauthorized_error(error: &ToolError) -> bool {
+        matches!(
+            error,
+            ToolError::ExternalService(msg) if msg.contains("401") || msg.contains("Unauthorized")
+        )
+    }
+
+    /// Error advising the user to (re-)authenticate against this server.
+    fn auth_required_error(&self) -> ToolError {
+        ToolError::ExternalService(format!(
+            "MCP server '{}' requires authentication. Run: ironclaw mcp auth {}",
+            self.server_name, self.server_name
+        ))
+    }
+
     /// Send a request to the MCP server with auth and session headers.
     /// Automatically attempts token refresh on 401 errors (HTTP transports only).
     async fn send_request(&self, request: McpRequest) -> Result<McpResponse, ToolError> {
         // For non-HTTP transports, just send directly without retry logic
         if !self.transport.supports_http_features() {
-            let headers = self.build_request_headers().await?;
-            return self.transport.send(&request, &headers).await;
+            return self.send_with_headers(&request).await;
         }
 
-        // HTTP transport: try up to 2 times (first attempt, then retry after token refresh)
-        for attempt in 0..2 {
-            let headers = self.build_request_headers().await?;
-            let result = self.transport.send(&request, &headers).await;
+        // HTTP transport: first attempt, then one retry after a token refresh.
+        let result = self.send_with_headers(&request).await;
+        let Err(error) = result else {
+            return result;
+        };
+        if !Self::is_unauthorized_error(&error) {
+            return Err(error);
+        }
+        if !self.refresh_expired_token().await {
+            return Err(self.auth_required_error());
+        }
 
-            match result {
-                Ok(response) => return Ok(response),
-                Err(ToolError::ExternalService(ref msg))
-                    if msg.contains("401") || msg.contains("Unauthorized") =>
-                {
-                    if attempt == 0 && self.refresh_expired_token().await {
-                        continue;
-                    }
-                    return Err(ToolError::ExternalService(format!(
-                        "MCP server '{}' requires authentication. Run: ironclaw mcp auth {}",
-                        self.server_name, self.server_name
-                    )));
-                }
-                Err(e) => return Err(e),
+        match self.send_with_headers(&request).await {
+            Err(retry_error) if Self::is_unauthorized_error(&retry_error) => {
+                Err(self.auth_required_error())
             }
+            other => other,
         }
-
-        Err(ToolError::ExternalService(
-            "MCP request failed after retry".to_string(),
-        ))
     }
 
     /// Attempt to refresh the MCP OAuth token after a 401 response.

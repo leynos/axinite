@@ -21,6 +21,16 @@ impl SessionManager {
         };
 
         // Save to disk (always, as bootstrap fallback)
+        self.save_session_to_disk(&session).await?;
+
+        // Also save to DB if a store is attached
+        self.save_session_to_db(&session, token).await;
+
+        Ok(())
+    }
+
+    /// Write the session file with restrictive permissions.
+    async fn save_session_to_disk(&self, session: &SessionData) -> Result<(), LlmError> {
         if let Some(parent) = self.config.session_path.parent() {
             tokio::fs::create_dir_all(parent).await.map_err(|e| {
                 LlmError::Io(std::io::Error::new(
@@ -31,7 +41,7 @@ impl SessionManager {
         }
 
         let json =
-            serde_json::to_string_pretty(&session).map_err(|e| LlmError::SessionRenewalFailed {
+            serde_json::to_string_pretty(session).map_err(|e| LlmError::SessionRenewalFailed {
                 provider: "nearai".to_string(),
                 reason: format!("Failed to serialize session: {}", e),
             })?;
@@ -49,7 +59,15 @@ impl SessionManager {
                 ))
             })?;
 
-        // Restrictive permissions: session file contains a secret token
+        self.restrict_session_file_permissions().await?;
+
+        tracing::debug!("Session saved to {}", self.config.session_path.display());
+        Ok(())
+    }
+
+    /// Restrict the session file to owner read/write — it contains a secret
+    /// token. No-op on non-Unix platforms.
+    async fn restrict_session_file_permissions(&self) -> Result<(), LlmError> {
         #[cfg(unix)]
         {
             let perms = ambient_fs::Permissions::from_mode(0o600);
@@ -66,29 +84,29 @@ impl SessionManager {
                     ))
                 })?;
         }
-
-        tracing::debug!("Session saved to {}", self.config.session_path.display());
-
-        // Also save to DB if a store is attached
-        if let Some(ref store) = *self.store.read().await {
-            let user_id = self.user_id.read().await.clone();
-            let session_json = serde_json::to_value(&session)
-                .unwrap_or(serde_json::Value::String(token.to_string()));
-            if let Err(e) = store
-                .set_setting(
-                    crate::db::UserId::from(user_id.as_str()),
-                    crate::db::SettingKey::from("nearai.session_token"),
-                    &session_json,
-                )
-                .await
-            {
-                tracing::warn!("Failed to save session to DB: {}", e);
-            } else {
-                tracing::debug!("Session also saved to DB settings");
-            }
-        }
-
         Ok(())
+    }
+
+    /// Best-effort save of the session to DB settings (warns on failure).
+    async fn save_session_to_db(&self, session: &SessionData, token: &str) {
+        let Some(ref store) = *self.store.read().await else {
+            return;
+        };
+        let user_id = self.user_id.read().await.clone();
+        let session_json =
+            serde_json::to_value(session).unwrap_or(serde_json::Value::String(token.to_string()));
+        if let Err(e) = store
+            .set_setting(
+                crate::db::UserId::from(user_id.as_str()),
+                crate::db::SettingKey::from("nearai.session_token"),
+                &session_json,
+            )
+            .await
+        {
+            tracing::warn!("Failed to save session to DB: {}", e);
+        } else {
+            tracing::debug!("Session also saved to DB settings");
+        }
     }
 
     /// Try to load session from the database.

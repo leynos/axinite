@@ -27,58 +27,87 @@ pub(super) fn libsql_wasm_parse_ts(s: &str) -> Result<DateTime<Utc>, WasmStorage
     )))
 }
 
+/// Column positions of tool fields within a query's result row.
+///
+/// Groups the per-field indices so row-mapping helpers take one layout value
+/// instead of a dozen positional integers.
+struct ToolRowIndices {
+    id: i32,
+    user_id: i32,
+    name: i32,
+    version: i32,
+    wit_version: i32,
+    description: i32,
+    schema: i32,
+    source_url: i32,
+    trust_level: i32,
+    status: i32,
+    created_at: i32,
+    updated_at: i32,
+}
+
+/// Standard column order (no binary columns).
+const STANDARD_TOOL_ROW: ToolRowIndices = ToolRowIndices {
+    id: 0,
+    user_id: 1,
+    name: 2,
+    version: 3,
+    wit_version: 4,
+    description: 5,
+    schema: 6,
+    source_url: 7,
+    trust_level: 8,
+    status: 9,
+    created_at: 10,
+    updated_at: 11,
+};
+
+/// Column order when wasm_binary(6) and binary_hash(7) are present
+/// (get_with_binary query); later fields shift by two.
+const WITH_BINARY_TOOL_ROW: ToolRowIndices = ToolRowIndices {
+    schema: 8,
+    source_url: 9,
+    trust_level: 10,
+    status: 11,
+    created_at: 12,
+    updated_at: 13,
+    ..STANDARD_TOOL_ROW
+};
+
 /// Parse a tool row with standard column order (no binary columns).
-/// Columns: id(0), user_id(1), name(2), version(3), wit_version(4), description(5),
-///          parameters_schema(6), source_url(7), trust_level(8), status(9),
-///          created_at(10), updated_at(11)
 pub(super) fn libsql_row_to_tool(row: &libsql::Row) -> Result<StoredWasmTool, WasmStorageError> {
-    libsql_row_to_tool_at(row, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11)
+    libsql_row_to_tool_at(row, &STANDARD_TOOL_ROW)
 }
 
 /// Parse a tool row when binary columns are present (get_with_binary query).
-/// Columns: id(0), user_id(1), name(2), version(3), wit_version(4), description(5),
-///          wasm_binary(6), binary_hash(7),
-///          parameters_schema(8), source_url(9), trust_level(10), status(11),
-///          created_at(12), updated_at(13)
 pub(super) fn libsql_row_to_tool_with_offset(
     row: &libsql::Row,
 ) -> Result<StoredWasmTool, WasmStorageError> {
-    libsql_row_to_tool_at(row, 0, 1, 2, 3, 4, 5, 8, 9, 10, 11, 12, 13)
+    libsql_row_to_tool_at(row, &WITH_BINARY_TOOL_ROW)
 }
 
-#[allow(clippy::too_many_arguments)]
+/// Map a result row to a [`StoredWasmTool`] using the given column layout.
 fn libsql_row_to_tool_at(
     row: &libsql::Row,
-    id_idx: i32,
-    user_id_idx: i32,
-    name_idx: i32,
-    version_idx: i32,
-    wit_version_idx: i32,
-    description_idx: i32,
-    schema_idx: i32,
-    source_url_idx: i32,
-    trust_level_idx: i32,
-    status_idx: i32,
-    created_at_idx: i32,
-    updated_at_idx: i32,
+    indices: &ToolRowIndices,
 ) -> Result<StoredWasmTool, WasmStorageError> {
     let id_str: String = row
-        .get(id_idx)
+        .get(indices.id)
         .map_err(|e| WasmStorageError::Database(e.to_string()))?;
     let trust_level_str: String = row
-        .get(trust_level_idx)
+        .get(indices.trust_level)
         .map_err(|e| WasmStorageError::Database(e.to_string()))?;
     let status_str: String = row
-        .get(status_idx)
+        .get(indices.status)
         .map_err(|e| WasmStorageError::Database(e.to_string()))?;
     let schema_str: String = row
-        .get(schema_idx)
+        .get(indices.schema)
         .map_err(|e| WasmStorageError::Database(e.to_string()))?;
     let created_at_str: String = row
-        .get(created_at_idx)
+        .get(indices.created_at)
         .map_err(|e| WasmStorageError::Database(e.to_string()))?;
     let updated_at_str: String = row
-        .get(updated_at_idx)
+        .get(indices.updated_at)
         .map_err(|e| WasmStorageError::Database(e.to_string()))?;
 
     Ok(StoredWasmTool {
@@ -86,23 +115,23 @@ fn libsql_row_to_tool_at(
             .parse()
             .map_err(|e: uuid::Error| WasmStorageError::InvalidData(e.to_string()))?,
         user_id: row
-            .get(user_id_idx)
+            .get(indices.user_id)
             .map_err(|e| WasmStorageError::Database(e.to_string()))?,
         name: row
-            .get(name_idx)
+            .get(indices.name)
             .map_err(|e| WasmStorageError::Database(e.to_string()))?,
         version: row
-            .get(version_idx)
+            .get(indices.version)
             .map_err(|e| WasmStorageError::Database(e.to_string()))?,
         wit_version: row
-            .get(wit_version_idx)
+            .get(indices.wit_version)
             .map_err(|e| WasmStorageError::Database(e.to_string()))?,
         description: row
-            .get(description_idx)
+            .get(indices.description)
             .map_err(|e| WasmStorageError::Database(e.to_string()))?,
         parameters_schema: serde_json::from_str(&schema_str).unwrap_or_default(),
         source_url: row
-            .get::<String>(source_url_idx)
+            .get::<String>(indices.source_url)
             .ok()
             .filter(|s| !s.is_empty()),
         trust_level: trust_level_str

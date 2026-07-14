@@ -6,6 +6,60 @@ use super::{
     is_inside_code,
 };
 
+/// Result of scanning a tag-pair regex over text: the surviving text, the
+/// index where the unscanned tail begins, and whether the scan ended inside
+/// an unclosed opening tag.
+struct TagScan {
+    result: String,
+    tail_start: usize,
+    in_tag: bool,
+}
+
+/// Whether the regex match at the start of `at` is a closing tag (its first
+/// capture group is "/").
+fn tag_is_close(re: &regex::Regex, at: &str) -> bool {
+    re.captures(at)
+        .and_then(|c| c.get(1))
+        .is_some_and(|g| g.as_str() == "/")
+}
+
+/// Drop the regions between open/close tag pairs (outside code regions),
+/// returning the surviving text and the state at end of scan.
+fn strip_tag_pairs(text: &str, re: &regex::Regex, code_regions: &[CodeRegion]) -> TagScan {
+    let mut result = String::with_capacity(text.len());
+    let mut last_index = 0;
+    let mut in_tag = false;
+
+    for m in re.find_iter(text) {
+        let idx = m.start();
+
+        if is_inside_code(idx, code_regions) {
+            continue;
+        }
+
+        // Check if this is a close tag by looking at the capture group
+        let is_close = tag_is_close(re, &text[idx..]);
+
+        if !in_tag {
+            // Append text before this tag
+            result.push_str(&text[last_index..idx]);
+            if !is_close {
+                in_tag = true;
+            }
+        } else if is_close {
+            in_tag = false;
+        }
+
+        last_index = m.end();
+    }
+
+    TagScan {
+        result,
+        tail_start: last_index,
+        in_tag,
+    }
+}
+
 /// Strip thinking/reasoning tags using regex, respecting code regions.
 ///
 /// Strict mode: an unclosed opening tag discards all trailing text after it.
@@ -14,49 +68,21 @@ pub(super) fn strip_thinking_tags_regex(text: &str, code_regions: &[CodeRegion])
     let Some(thinking_tag_re) = THINKING_TAG_RE.as_ref() else {
         return text.to_string();
     };
-    let mut result = String::with_capacity(text.len());
-    let mut last_index = 0;
-    let mut in_thinking = false;
-
-    for m in thinking_tag_re.find_iter(text) {
-        let idx = m.start();
-
-        if is_inside_code(idx, code_regions) {
-            continue;
-        }
-
-        // Check if this is a close tag by looking at capture group
-        let caps = thinking_tag_re.captures(&text[idx..]);
-        let is_close = caps
-            .and_then(|c| c.get(1))
-            .is_some_and(|g| g.as_str() == "/");
-
-        if !in_thinking {
-            // Append text before this tag
-            result.push_str(&text[last_index..idx]);
-            if !is_close {
-                in_thinking = true;
-            }
-        } else if is_close {
-            in_thinking = false;
-        }
-
-        last_index = m.end();
-    }
+    let mut scan = strip_tag_pairs(text, thinking_tag_re, code_regions);
 
     // Strict mode: if still inside an unclosed thinking tag, discard trailing text
     // BUT preserve any <final> block embedded in the discarded region
-    if !in_thinking {
-        result.push_str(&text[last_index..]);
+    let trailing = &text[scan.tail_start..];
+    if !scan.in_tag {
+        scan.result.push_str(trailing);
     } else {
-        let trailing = &text[last_index..];
         let trailing_regions = find_code_regions(trailing);
         if let Some(final_content) = extract_final_content(trailing, &trailing_regions) {
-            result.push_str(&final_content);
+            scan.result.push_str(&final_content);
         }
     }
 
-    result
+    scan.result
 }
 
 /// Extract content inside `<final>` tags. Returns `None` if no non-code `<final>` tags found.
@@ -119,39 +145,14 @@ pub(super) fn strip_pipe_reasoning_tags(text: &str) -> String {
     }
 
     let code_regions = find_code_regions(text);
-    let mut result = String::with_capacity(text.len());
-    let mut last_index = 0;
-    let mut in_tag = false;
+    let mut scan = strip_tag_pairs(text, pipe_tag_re, &code_regions);
 
-    for m in pipe_tag_re.find_iter(text) {
-        let idx = m.start();
-
-        if is_inside_code(idx, &code_regions) {
-            continue;
-        }
-
-        let caps = pipe_tag_re.captures(&text[idx..]);
-        let is_close = caps
-            .and_then(|c| c.get(1))
-            .is_some_and(|g| g.as_str() == "/");
-
-        if !in_tag {
-            result.push_str(&text[last_index..idx]);
-            if !is_close {
-                in_tag = true;
-            }
-        } else if is_close {
-            in_tag = false;
-        }
-
-        last_index = m.end();
+    // An unclosed opening tag discards all trailing text after it.
+    if !scan.in_tag {
+        scan.result.push_str(&text[scan.tail_start..]);
     }
 
-    if !in_tag {
-        result.push_str(&text[last_index..]);
-    }
-
-    result
+    scan.result
 }
 
 /// Strip `<tag>...</tag>` and `<tag ...>...</tag>` blocks from text.

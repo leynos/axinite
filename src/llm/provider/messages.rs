@@ -63,10 +63,10 @@ pub struct ChatMessage {
 }
 
 impl ChatMessage {
-    /// Create a system message.
-    pub fn system(content: impl Into<String>) -> Self {
+    /// Base constructor: a plain message with no parts or tool linkage.
+    fn plain(role: Role, content: impl Into<String>) -> Self {
         Self {
-            role: Role::System,
+            role,
             content: content.into(),
             content_parts: Vec::new(),
             tool_call_id: None,
@@ -75,16 +75,14 @@ impl ChatMessage {
         }
     }
 
+    /// Create a system message.
+    pub fn system(content: impl Into<String>) -> Self {
+        Self::plain(Role::System, content)
+    }
+
     /// Create a user message.
     pub fn user(content: impl Into<String>) -> Self {
-        Self {
-            role: Role::User,
-            content: content.into(),
-            content_parts: Vec::new(),
-            tool_call_id: None,
-            name: None,
-            tool_calls: None,
-        }
+        Self::plain(Role::User, content)
     }
 
     /// Create a user message with multimodal content parts (e.g., images).
@@ -92,25 +90,14 @@ impl ChatMessage {
     /// The text `content` is included as the primary text alongside the parts.
     pub fn user_with_parts(content: impl Into<String>, parts: Vec<ContentPart>) -> Self {
         Self {
-            role: Role::User,
-            content: content.into(),
             content_parts: parts,
-            tool_call_id: None,
-            name: None,
-            tool_calls: None,
+            ..Self::plain(Role::User, content)
         }
     }
 
     /// Create an assistant message.
     pub fn assistant(content: impl Into<String>) -> Self {
-        Self {
-            role: Role::Assistant,
-            content: content.into(),
-            content_parts: Vec::new(),
-            tool_call_id: None,
-            name: None,
-            tool_calls: None,
-        }
+        Self::plain(Role::Assistant, content)
     }
 
     /// Create an assistant message that includes tool calls.
@@ -119,16 +106,12 @@ impl ChatMessage {
     /// precede the corresponding tool result messages in the conversation.
     pub fn assistant_with_tool_calls(content: Option<String>, tool_calls: Vec<ToolCall>) -> Self {
         Self {
-            role: Role::Assistant,
-            content: content.unwrap_or_default(),
-            content_parts: Vec::new(),
-            tool_call_id: None,
-            name: None,
             tool_calls: if tool_calls.is_empty() {
                 None
             } else {
                 Some(tool_calls)
             },
+            ..Self::plain(Role::Assistant, content.unwrap_or_default())
         }
     }
 
@@ -139,12 +122,9 @@ impl ChatMessage {
         content: impl Into<String>,
     ) -> Self {
         Self {
-            role: Role::Tool,
-            content: content.into(),
-            content_parts: Vec::new(),
             tool_call_id: Some(tool_call_id.into()),
             name: Some(name.into()),
-            tool_calls: None,
+            ..Self::plain(Role::Tool, content)
         }
     }
 }
@@ -163,11 +143,20 @@ impl ChatMessage {
 ///
 /// Call this before sending messages to any LLM provider.
 pub fn sanitize_tool_messages(messages: &mut [ChatMessage]) {
-    use std::collections::HashSet;
+    let known_ids = known_tool_call_ids(messages);
 
-    // Collect all tool_call_ids from assistant messages with tool_calls.
-    let mut known_ids: HashSet<String> = HashSet::new();
-    for msg in messages.iter() {
+    // Rewrite orphaned tool_result messages as user messages.
+    for msg in messages.iter_mut() {
+        if msg.role == Role::Tool && is_orphaned_tool_result(msg, &known_ids) {
+            rewrite_as_user_message(msg);
+        }
+    }
+}
+
+/// Collect all tool_call_ids from assistant messages with tool_calls.
+fn known_tool_call_ids(messages: &[ChatMessage]) -> std::collections::HashSet<String> {
+    let mut known_ids = std::collections::HashSet::new();
+    for msg in messages {
         if msg.role == Role::Assistant
             && let Some(ref calls) = msg.tool_calls
         {
@@ -176,27 +165,31 @@ pub fn sanitize_tool_messages(messages: &mut [ChatMessage]) {
             }
         }
     }
+    known_ids
+}
 
-    // Rewrite orphaned tool_result messages as user messages.
-    for msg in messages.iter_mut() {
-        if msg.role != Role::Tool {
-            continue;
-        }
-        let is_orphaned = match &msg.tool_call_id {
-            Some(id) => !known_ids.contains(id),
-            None => true,
-        };
-        if is_orphaned {
-            let tool_name = msg.name.as_deref().unwrap_or("unknown");
-            tracing::debug!(
-                tool_call_id = ?msg.tool_call_id,
-                tool_name,
-                "Rewriting orphaned tool_result as user message",
-            );
-            msg.role = Role::User;
-            msg.content = format!("[Tool `{}` returned: {}]", tool_name, msg.content);
-            msg.tool_call_id = None;
-            msg.name = None;
-        }
+/// Whether a tool message references no known assistant tool call.
+fn is_orphaned_tool_result(
+    msg: &ChatMessage,
+    known_ids: &std::collections::HashSet<String>,
+) -> bool {
+    match &msg.tool_call_id {
+        Some(id) => !known_ids.contains(id),
+        None => true,
     }
+}
+
+/// Rewrite an orphaned tool result as a user message, preserving the content
+/// without violating the tool-call protocol.
+fn rewrite_as_user_message(msg: &mut ChatMessage) {
+    let tool_name = msg.name.as_deref().unwrap_or("unknown");
+    tracing::debug!(
+        tool_call_id = ?msg.tool_call_id,
+        tool_name,
+        "Rewriting orphaned tool_result as user message",
+    );
+    msg.content = format!("[Tool `{}` returned: {}]", tool_name, msg.content);
+    msg.role = Role::User;
+    msg.tool_call_id = None;
+    msg.name = None;
 }

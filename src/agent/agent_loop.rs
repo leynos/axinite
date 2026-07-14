@@ -198,9 +198,11 @@ impl Agent {
                 Ok(Some(response)) if !response.is_empty() => {
                     if let Some(response) = apply_before_outbound_hooks(
                         self.hooks(),
-                        &message.user_id,
-                        &message.channel,
-                        message.thread_id.as_deref(),
+                        notifications::OutboundRoute {
+                            user_id: &message.user_id,
+                            channel: &message.channel,
+                            thread_id: message.thread_id.as_deref(),
+                        },
                         OutgoingResponse::text(response),
                     )
                     .await

@@ -3,6 +3,22 @@
 
 use super::*;
 
+/// Explain why Docker is unavailable and how to remedy it.
+fn print_docker_unavailable_hints(
+    detection: &crate::sandbox::detect::DockerDetection,
+    not_installed: bool,
+) {
+    println!();
+    if not_installed {
+        print_error("Docker is not installed.");
+        print_info(detection.platform.install_hint());
+    } else {
+        print_error("Docker is installed but not running.");
+        print_info(detection.platform.start_hint());
+    }
+    println!();
+}
+
 impl SetupWizard {
     /// Step 8: Docker Sandbox -- check Docker installation and availability.
     pub(super) async fn step_docker_sandbox(&mut self) -> Result<(), SetupError> {
@@ -31,48 +47,10 @@ impl SetupWizard {
             }
             crate::sandbox::detect::DockerStatus::NotInstalled
             | crate::sandbox::detect::DockerStatus::NotRunning => {
-                println!();
                 let not_installed =
                     detection.status == crate::sandbox::detect::DockerStatus::NotInstalled;
-                if not_installed {
-                    print_error("Docker is not installed.");
-                    print_info(detection.platform.install_hint());
-                } else {
-                    print_error("Docker is installed but not running.");
-                    print_info(detection.platform.start_hint());
-                }
-                println!();
-
-                let retry_prompt = if not_installed {
-                    "Retry after installing Docker?"
-                } else {
-                    "Retry after starting Docker?"
-                };
-                if confirm(retry_prompt, false).map_err(SetupError::Io)? {
-                    let retry = crate::sandbox::detect::check_docker().await;
-                    if retry.status.is_ok() {
-                        self.settings.sandbox.enabled = true;
-                        print_success(if not_installed {
-                            "Docker is now available. Sandbox enabled."
-                        } else {
-                            "Docker is now running. Sandbox enabled."
-                        });
-                    } else {
-                        self.settings.sandbox.enabled = false;
-                        print_info(if not_installed {
-                            "Docker still not available. Sandbox disabled for now."
-                        } else {
-                            "Docker still not responding. Sandbox disabled for now."
-                        });
-                    }
-                } else {
-                    self.settings.sandbox.enabled = false;
-                    print_info(if not_installed {
-                        "Sandbox disabled. Install Docker and set SANDBOX_ENABLED=true later."
-                    } else {
-                        "Sandbox disabled. Start Docker and set SANDBOX_ENABLED=true later."
-                    });
-                }
+                print_docker_unavailable_hints(&detection, not_installed);
+                self.offer_docker_retry(not_installed).await?;
             }
             crate::sandbox::detect::DockerStatus::Disabled => {
                 self.settings.sandbox.enabled = false;
@@ -84,6 +62,43 @@ impl SetupWizard {
             self.step_claude_code_sandbox().await?;
         }
 
+        Ok(())
+    }
+
+    /// Offer to re-check Docker after the user installs or starts it,
+    /// enabling the sandbox when the retry succeeds.
+    async fn offer_docker_retry(&mut self, not_installed: bool) -> Result<(), SetupError> {
+        let retry_prompt = if not_installed {
+            "Retry after installing Docker?"
+        } else {
+            "Retry after starting Docker?"
+        };
+        if !confirm(retry_prompt, false).map_err(SetupError::Io)? {
+            self.settings.sandbox.enabled = false;
+            print_info(if not_installed {
+                "Sandbox disabled. Install Docker and set SANDBOX_ENABLED=true later."
+            } else {
+                "Sandbox disabled. Start Docker and set SANDBOX_ENABLED=true later."
+            });
+            return Ok(());
+        }
+
+        let retry = crate::sandbox::detect::check_docker().await;
+        if retry.status.is_ok() {
+            self.settings.sandbox.enabled = true;
+            print_success(if not_installed {
+                "Docker is now available. Sandbox enabled."
+            } else {
+                "Docker is now running. Sandbox enabled."
+            });
+        } else {
+            self.settings.sandbox.enabled = false;
+            print_info(if not_installed {
+                "Docker still not available. Sandbox disabled for now."
+            } else {
+                "Docker still not responding. Sandbox disabled for now."
+            });
+        }
         Ok(())
     }
 

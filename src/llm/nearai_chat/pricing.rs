@@ -64,6 +64,71 @@ pub(super) fn model_cost_to_decimal(mc: &ModelCost) -> Option<Decimal> {
     base.checked_mul(factor)
 }
 
+/// Build the `/v1/model/list` URL, tolerating base URLs with or without a
+/// `/v1` suffix.
+fn pricing_url(base_url: &str) -> String {
+    let base = base_url.trim_end_matches('/');
+    if base.ends_with("/v1") {
+        format!("{}/model/list", base)
+    } else {
+        format!("{}/v1/model/list", base)
+    }
+}
+
+/// Resolve the bearer token: the API key when configured, otherwise the
+/// session token.
+async fn resolve_pricing_token(
+    api_key: Option<&secrecy::SecretString>,
+    session: &SessionManager,
+) -> Result<String, LlmError> {
+    if let Some(key) = api_key {
+        return Ok(key.expose_secret().to_string());
+    }
+    let tok = session.get_token().await?;
+    Ok(tok.expose_secret().to_string())
+}
+
+/// Parse the pricing body as `{models: [...]}`, `{data: [...]}`, or a
+/// direct array. Unrecognized shapes yield no entries.
+fn parse_pricing_entries(body: &str) -> Vec<PricingModelEntry> {
+    if let Ok(resp) = serde_json::from_str::<PricingResponse>(body) {
+        return resp.models.or(resp.data).unwrap_or_default();
+    }
+    serde_json::from_str::<Vec<PricingModelEntry>>(body).unwrap_or_default()
+}
+
+/// The (input, output) per-token rates for one entry, when both are present
+/// and convertible.
+fn entry_rates(entry: &PricingModelEntry) -> Option<(Decimal, Decimal)> {
+    let input_mc = entry.input_cost_per_token.as_ref()?;
+    let output_mc = entry.output_cost_per_token.as_ref()?;
+    let input = model_cost_to_decimal(input_mc)?;
+    let output = model_cost_to_decimal(output_mc)?;
+    Some((input, output))
+}
+
+/// Index entry rates by model ID and every alias.
+fn build_pricing_map(entries: &[PricingModelEntry]) -> HashMap<String, (Decimal, Decimal)> {
+    let mut map = HashMap::new();
+    for entry in entries {
+        let Some(rates) = entry_rates(entry) else {
+            continue;
+        };
+
+        // Insert under the primary model_id
+        if let Some(ref id) = entry.model_id {
+            map.insert(id.clone(), rates);
+        }
+        // Also insert under any aliases
+        if let Some(ref meta) = entry.metadata {
+            for alias in &meta.aliases {
+                map.insert(alias.clone(), rates);
+            }
+        }
+    }
+    map
+}
+
 /// Fetch pricing from the NEAR AI `/v1/model/list` endpoint.
 ///
 /// Returns a map of model_id → (input_cost_per_token, output_cost_per_token).
@@ -74,19 +139,8 @@ pub(super) async fn fetch_pricing(
     api_key: Option<&secrecy::SecretString>,
     session: &SessionManager,
 ) -> Result<HashMap<String, (Decimal, Decimal)>, LlmError> {
-    let base = base_url.trim_end_matches('/');
-    let url = if base.ends_with("/v1") {
-        format!("{}/model/list", base)
-    } else {
-        format!("{}/v1/model/list", base)
-    };
-
-    let token = if let Some(key) = api_key {
-        key.expose_secret().to_string()
-    } else {
-        let tok = session.get_token().await?;
-        tok.expose_secret().to_string()
-    };
+    let url = pricing_url(base_url);
+    let token = resolve_pricing_token(api_key, session).await?;
 
     let response = client
         .get(&url)
@@ -111,41 +165,6 @@ pub(super) async fn fetch_pricing(
         reason: format!("Failed to read pricing response: {}", e),
     })?;
 
-    // Parse as {models: [...]} or {data: [...]} or direct array
-    let entries: Vec<PricingModelEntry> =
-        if let Ok(resp) = serde_json::from_str::<PricingResponse>(&body) {
-            resp.models.or(resp.data).unwrap_or_default()
-        } else if let Ok(arr) = serde_json::from_str::<Vec<PricingModelEntry>>(&body) {
-            arr
-        } else {
-            return Ok(HashMap::new());
-        };
-
-    let mut map = HashMap::new();
-    for entry in &entries {
-        let (Some(input_mc), Some(output_mc)) =
-            (&entry.input_cost_per_token, &entry.output_cost_per_token)
-        else {
-            continue;
-        };
-        let (Some(input), Some(output)) = (
-            model_cost_to_decimal(input_mc),
-            model_cost_to_decimal(output_mc),
-        ) else {
-            continue;
-        };
-
-        // Insert under the primary model_id
-        if let Some(ref id) = entry.model_id {
-            map.insert(id.clone(), (input, output));
-        }
-        // Also insert under any aliases
-        if let Some(ref meta) = entry.metadata {
-            for alias in &meta.aliases {
-                map.insert(alias.clone(), (input, output));
-            }
-        }
-    }
-
-    Ok(map)
+    let entries = parse_pricing_entries(&body);
+    Ok(build_pricing_map(&entries))
 }

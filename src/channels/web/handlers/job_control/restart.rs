@@ -5,6 +5,7 @@ use std::sync::Arc;
 use axum::{Json, http::StatusCode};
 use uuid::Uuid;
 
+use crate::agent::scheduler::JobRequest;
 use crate::channels::web::server::GatewayState;
 use crate::db::{Database, SandboxJobStatusUpdate};
 
@@ -317,7 +318,12 @@ pub(super) async fn restart_agent_job(
     let title = retry_label(&old_job.title, &failure_reason);
 
     let new_job_id = scheduler
-        .dispatch_job(&old_job.user_id, &title, &old_job.description, None)
+        .dispatch_job(JobRequest {
+            user_id: &old_job.user_id,
+            title: &title,
+            description: &old_job.description,
+            metadata: None,
+        })
         .await
         .map_err(|e| internal_error("Failed to restart agent job", e))?;
 

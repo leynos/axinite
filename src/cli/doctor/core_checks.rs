@@ -34,21 +34,28 @@ pub(super) fn check_settings_file() -> CheckResult {
 // ── NEAR AI session ─────────────────────────────────────────
 
 pub(super) async fn check_nearai_session() -> CheckResult {
-    // Check if session file exists
     let session_path = crate::config::llm::default_session_path();
     if !session_path.exists() {
-        // Check for API key mode
-        if std::env::var("NEARAI_API_KEY").is_ok() {
-            return CheckResult::Pass("API key configured".into());
-        }
-        return CheckResult::Fail(format!(
-            "session file not found at {}. Run `ironclaw onboard`",
-            session_path.display()
-        ));
+        return missing_session_result(&session_path);
     }
+    verify_session_file(&session_path)
+}
 
-    // Verify the session file is readable and non-empty
-    match ambient_fs::read_to_string(&session_path) {
+/// Result when no session file exists: pass in API-key mode, otherwise
+/// direct the user to onboarding.
+fn missing_session_result(session_path: &std::path::Path) -> CheckResult {
+    if std::env::var("NEARAI_API_KEY").is_ok() {
+        return CheckResult::Pass("API key configured".into());
+    }
+    CheckResult::Fail(format!(
+        "session file not found at {}. Run `ironclaw onboard`",
+        session_path.display()
+    ))
+}
+
+/// Verify the session file is readable and non-empty.
+fn verify_session_file(session_path: &std::path::Path) -> CheckResult {
+    match ambient_fs::read_to_string(session_path) {
         Ok(content) if content.trim().is_empty() => {
             CheckResult::Fail("session file is empty".into())
         }
@@ -116,8 +123,10 @@ pub(super) async fn check_database() -> CheckResult {
     }
 }
 
+/// Acquire a PostgreSQL client from `DATABASE_URL` with a 5-second
+/// connection timeout. Shared by the connection and pgvector checks.
 #[cfg(feature = "postgres")]
-async fn try_pg_connect() -> Result<(), String> {
+async fn pg_client_from_env() -> Result<deadpool_postgres::Client, String> {
     let url = std::env::var("DATABASE_URL").map_err(|_| "DATABASE_URL not set".to_string())?;
 
     let config = deadpool_postgres::Config {
@@ -127,10 +136,15 @@ async fn try_pg_connect() -> Result<(), String> {
     let pool = crate::db::tls::create_pool(&config, crate::config::SslMode::from_env())
         .map_err(|e| format!("pool error: {e}"))?;
 
-    let client = tokio::time::timeout(std::time::Duration::from_secs(5), pool.get())
+    tokio::time::timeout(std::time::Duration::from_secs(5), pool.get())
         .await
         .map_err(|_| "connection timeout (5s)".to_string())?
-        .map_err(|e| format!("{e}"))?;
+        .map_err(|e| format!("{e}"))
+}
+
+#[cfg(feature = "postgres")]
+async fn try_pg_connect() -> Result<(), String> {
+    let client = pg_client_from_env().await?;
 
     client
         .execute("SELECT 1", &[])
@@ -182,19 +196,7 @@ pub(super) async fn check_workspace_search() -> CheckResult {
 
 #[cfg(feature = "postgres")]
 async fn try_pgvector_check() -> Result<(), String> {
-    let url = std::env::var("DATABASE_URL").map_err(|_| "DATABASE_URL not set".to_string())?;
-
-    let config = deadpool_postgres::Config {
-        url: Some(url),
-        ..Default::default()
-    };
-    let pool = crate::db::tls::create_pool(&config, crate::config::SslMode::from_env())
-        .map_err(|e| format!("pool error: {e}"))?;
-
-    let client = tokio::time::timeout(std::time::Duration::from_secs(5), pool.get())
-        .await
-        .map_err(|_| "connection timeout (5s)".to_string())?
-        .map_err(|e| format!("{e}"))?;
+    let client = pg_client_from_env().await?;
 
     // Check if pgvector extension is available
     let row = client

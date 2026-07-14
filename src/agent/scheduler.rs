@@ -26,6 +26,7 @@ use crate::safety::SafetyLayer;
 use crate::tools::ToolRegistry;
 
 mod dispatch;
+pub use dispatch::JobRequest;
 mod shutdown;
 mod subtasks;
 

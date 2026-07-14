@@ -3,6 +3,33 @@
 
 use super::*;
 
+/// Hex-encode raw master key bytes for use with [`SecretsCrypto`].
+fn hex_encode_key(bytes: &[u8]) -> String {
+    bytes.iter().map(|b| format!("{:02x}", b)).collect()
+}
+
+/// Build a shared [`SecretsCrypto`] from a hex-encoded master key.
+fn build_secrets_crypto(key_hex: String) -> Result<Arc<SecretsCrypto>, SetupError> {
+    Ok(Arc::new(
+        SecretsCrypto::new(SecretString::from(key_hex))
+            .map_err(|e| SetupError::Config(e.to_string()))?,
+    ))
+}
+
+/// Default database backend for secrets storage: whichever backend is
+/// compiled in, preferring PostgreSQL. When only libsql is available, we
+/// must not default to "postgres" or we'd skip store creation.
+fn default_secrets_backend() -> &'static str {
+    #[cfg(feature = "postgres")]
+    {
+        "postgres"
+    }
+    #[cfg(not(feature = "postgres"))]
+    {
+        "libsql"
+    }
+}
+
 impl SetupWizard {
     /// Step 2: Security (secrets master key).
     pub(super) async fn step_security(&mut self) -> Result<(), SetupError> {
@@ -22,14 +49,7 @@ impl SetupWizard {
         // (each access triggers macOS system dialogs).
         print_info("Checking OS keychain for existing master key...");
         if let Ok(keychain_key_bytes) = crate::secrets::keychain::get_master_key().await {
-            let key_hex: String = keychain_key_bytes
-                .iter()
-                .map(|b| format!("{:02x}", b))
-                .collect();
-            self.secrets_crypto = Some(Arc::new(
-                SecretsCrypto::new(SecretString::from(key_hex))
-                    .map_err(|e| SetupError::Config(e.to_string()))?,
-            ));
+            self.secrets_crypto = Some(build_secrets_crypto(hex_encode_key(&keychain_key_bytes))?);
 
             print_info("Existing master key found in OS keychain.");
             if confirm("Use existing keychain key?", true).map_err(SetupError::Io)? {
@@ -69,11 +89,7 @@ impl SetupWizard {
                     })?;
 
                 // Also create crypto instance
-                let key_hex: String = key.iter().map(|b| format!("{:02x}", b)).collect();
-                self.secrets_crypto = Some(Arc::new(
-                    SecretsCrypto::new(SecretString::from(key_hex))
-                        .map_err(|e| SetupError::Config(e.to_string()))?,
-                ));
+                self.secrets_crypto = Some(build_secrets_crypto(hex_encode_key(&key))?);
 
                 self.settings.secrets_master_key_source = KeySource::Keychain;
                 print_success("Master key generated and stored in OS keychain");
@@ -84,10 +100,7 @@ impl SetupWizard {
 
                 // Initialize crypto so subsequent wizard steps (channel setup,
                 // API key storage) can encrypt secrets immediately.
-                self.secrets_crypto = Some(Arc::new(
-                    SecretsCrypto::new(SecretString::from(key_hex.clone()))
-                        .map_err(|e| SetupError::Config(e.to_string()))?,
-                ));
+                self.secrets_crypto = Some(build_secrets_crypto(key_hex.clone())?);
 
                 // Make visible to optional_env() for any subsequent config resolution.
                 crate::config::inject_single_var("SECRETS_MASTER_KEY", &key_hex);
@@ -130,14 +143,7 @@ impl SetupWizard {
         // Try existing keychain key (no prompts — get_master_key may show
         // OS dialogs on macOS, but that's unavoidable for keychain access)
         if let Ok(keychain_key_bytes) = crate::secrets::keychain::get_master_key().await {
-            let key_hex: String = keychain_key_bytes
-                .iter()
-                .map(|b| format!("{:02x}", b))
-                .collect();
-            self.secrets_crypto = Some(Arc::new(
-                SecretsCrypto::new(SecretString::from(key_hex))
-                    .map_err(|e| SetupError::Config(e.to_string()))?,
-            ));
+            self.secrets_crypto = Some(build_secrets_crypto(hex_encode_key(&keychain_key_bytes))?);
             self.settings.secrets_master_key_source = KeySource::Keychain;
             print_success("Security configured (keychain)");
             return Ok(());
@@ -150,11 +156,7 @@ impl SetupWizard {
             .await
             .is_ok()
         {
-            let key_hex: String = key.iter().map(|b| format!("{:02x}", b)).collect();
-            self.secrets_crypto = Some(Arc::new(
-                SecretsCrypto::new(SecretString::from(key_hex))
-                    .map_err(|e| SetupError::Config(e.to_string()))?,
-            ));
+            self.secrets_crypto = Some(build_secrets_crypto(hex_encode_key(&key))?);
             self.settings.secrets_master_key_source = KeySource::Keychain;
             print_success("Master key stored in OS keychain");
             return Ok(());
@@ -162,10 +164,7 @@ impl SetupWizard {
 
         // Keychain unavailable — fall back to env var mode
         let key_hex = crate::secrets::keychain::generate_master_key_hex();
-        self.secrets_crypto = Some(Arc::new(
-            SecretsCrypto::new(SecretString::from(key_hex.clone()))
-                .map_err(|e| SetupError::Config(e.to_string()))?,
-        ));
+        self.secrets_crypto = Some(build_secrets_crypto(key_hex.clone())?);
         crate::config::inject_single_var("SECRETS_MASTER_KEY", &key_hex);
         self.settings.secrets_master_key_hex = Some(key_hex);
         self.settings.secrets_master_key_source = KeySource::Env;
@@ -176,78 +175,83 @@ impl SetupWizard {
     /// Initialize secrets context for channel setup.
     pub(super) async fn init_secrets_context(&mut self) -> Result<SecretsContext, SetupError> {
         // Get crypto (should be set from step 2, or load from keychain/env)
-        let crypto = if let Some(ref c) = self.secrets_crypto {
-            Arc::clone(c)
-        } else {
-            // Try to load master key from keychain or env
-            let key = if let Ok(env_key) = std::env::var("SECRETS_MASTER_KEY") {
-                env_key
-            } else if let Ok(keychain_key) = crate::secrets::keychain::get_master_key().await {
-                keychain_key.iter().map(|b| format!("{:02x}", b)).collect()
-            } else {
-                return Err(SetupError::Config(
-                    "Secrets not configured. Run full setup or set SECRETS_MASTER_KEY.".to_string(),
-                ));
-            };
+        let crypto = self.ensure_secrets_crypto().await?;
 
-            let crypto = Arc::new(
-                SecretsCrypto::new(SecretString::from(key))
-                    .map_err(|e| SetupError::Config(e.to_string()))?,
-            );
-            self.secrets_crypto = Some(Arc::clone(&crypto));
-            crypto
-        };
-
-        // Create backend-appropriate secrets store.
-        // Use runtime dispatch based on the user's selected backend.
-        // Default to whichever backend is compiled in. When only libsql is
-        // available, we must not default to "postgres" or we'd skip store creation.
-        let default_backend = {
-            #[cfg(feature = "postgres")]
-            {
-                "postgres"
-            }
-            #[cfg(not(feature = "postgres"))]
-            {
-                "libsql"
-            }
-        };
-        let selected_backend = self
-            .settings
-            .database_backend
-            .as_deref()
-            .unwrap_or(default_backend);
-
-        match selected_backend {
-            #[cfg(feature = "libsql")]
-            "libsql" | "turso" | "sqlite" => {
-                if let Some(store) = self.create_libsql_secrets_store(&crypto)? {
-                    return Ok(SecretsContext::from_store(store, "default"));
-                }
-                // Fallback to postgres if libsql store creation returned None
-                #[cfg(feature = "postgres")]
-                if let Some(store) = self.create_postgres_secrets_store(&crypto).await? {
-                    return Ok(SecretsContext::from_store(store, "default"));
-                }
-            }
-            #[cfg(feature = "postgres")]
-            _ => {
-                if let Some(store) = self.create_postgres_secrets_store(&crypto).await? {
-                    return Ok(SecretsContext::from_store(store, "default"));
-                }
-                // Fallback to libsql if postgres store creation returned None
-                #[cfg(feature = "libsql")]
-                if let Some(store) = self.create_libsql_secrets_store(&crypto)? {
-                    return Ok(SecretsContext::from_store(store, "default"));
-                }
-            }
-            #[cfg(not(feature = "postgres"))]
-            _ => {}
+        if let Some(store) = self.secrets_store_for_backend(&crypto).await? {
+            return Ok(SecretsContext::from_store(store, "default"));
         }
 
         Err(SetupError::Config(
             "No database backend available for secrets storage".to_string(),
         ))
+    }
+
+    /// Return the cached secrets crypto, loading the master key from the
+    /// environment or the OS keychain when no crypto is cached yet.
+    async fn ensure_secrets_crypto(&mut self) -> Result<Arc<SecretsCrypto>, SetupError> {
+        if let Some(ref c) = self.secrets_crypto {
+            return Ok(Arc::clone(c));
+        }
+
+        // Try to load master key from keychain or env
+        let key = if let Ok(env_key) = std::env::var("SECRETS_MASTER_KEY") {
+            env_key
+        } else if let Ok(keychain_key) = crate::secrets::keychain::get_master_key().await {
+            hex_encode_key(&keychain_key)
+        } else {
+            return Err(SetupError::Config(
+                "Secrets not configured. Run full setup or set SECRETS_MASTER_KEY.".to_string(),
+            ));
+        };
+
+        let crypto = build_secrets_crypto(key)?;
+        self.secrets_crypto = Some(Arc::clone(&crypto));
+        Ok(crypto)
+    }
+
+    /// Create a backend-appropriate secrets store.
+    ///
+    /// Uses runtime dispatch based on the user's selected backend, falling
+    /// back to the other compiled-in backend when store creation returns
+    /// `None`.
+    async fn secrets_store_for_backend(
+        &mut self,
+        crypto: &Arc<SecretsCrypto>,
+    ) -> Result<Option<Arc<dyn SecretsStore>>, SetupError> {
+        let selected_backend = self
+            .settings
+            .database_backend
+            .clone()
+            .unwrap_or_else(|| default_secrets_backend().to_string());
+
+        match selected_backend.as_str() {
+            #[cfg(feature = "libsql")]
+            "libsql" | "turso" | "sqlite" => {
+                if let Some(store) = self.create_libsql_secrets_store(crypto)? {
+                    return Ok(Some(store));
+                }
+                // Fallback to postgres if libsql store creation returned None
+                #[cfg(feature = "postgres")]
+                if let Some(store) = self.create_postgres_secrets_store(crypto).await? {
+                    return Ok(Some(store));
+                }
+                Ok(None)
+            }
+            #[cfg(feature = "postgres")]
+            _ => {
+                if let Some(store) = self.create_postgres_secrets_store(crypto).await? {
+                    return Ok(Some(store));
+                }
+                // Fallback to libsql if postgres store creation returned None
+                #[cfg(feature = "libsql")]
+                if let Some(store) = self.create_libsql_secrets_store(crypto)? {
+                    return Ok(Some(store));
+                }
+                Ok(None)
+            }
+            #[cfg(not(feature = "postgres"))]
+            _ => Ok(None),
+        }
     }
 
     /// Create a PostgreSQL secrets store from the current pool.

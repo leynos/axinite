@@ -12,21 +12,28 @@ pub(super) type MessageIter = std::iter::Peekable<std::vec::IntoIter<ChatMessage
 /// multiple rounds of tool calls, so the cumulative base index into
 /// `turn.tool_calls` is tracked per round.
 pub(super) fn consume_tool_call_rounds(iter: &mut MessageIter, turn: &mut Turn) {
-    while let Some(next) = iter.peek() {
-        if next.role != crate::llm::Role::Assistant || next.tool_calls.is_none() {
-            break;
-        }
+    while next_opens_tool_call_round(iter) {
         let call_base_idx = turn.tool_calls.len();
-
-        if let Some(assistant_msg) = iter.next()
-            && let Some(ref tcs) = assistant_msg.tool_calls
-        {
-            for tc in tcs {
-                turn.record_tool_call(&tc.name, tc.arguments.clone());
-            }
-        }
-
+        record_round_tool_calls(iter, turn);
         consume_tool_results(iter, turn, call_base_idx);
+    }
+}
+
+/// Return `true` when the next message opens a tool-call round (an assistant
+/// message carrying tool calls).
+fn next_opens_tool_call_round(iter: &mut MessageIter) -> bool {
+    iter.peek()
+        .is_some_and(|next| next.role == crate::llm::Role::Assistant && next.tool_calls.is_some())
+}
+
+/// Consume the round's assistant message, recording each tool call it made.
+fn record_round_tool_calls(iter: &mut MessageIter, turn: &mut Turn) {
+    if let Some(assistant_msg) = iter.next()
+        && let Some(ref tcs) = assistant_msg.tool_calls
+    {
+        for tc in tcs {
+            turn.record_tool_call(&tc.name, tc.arguments.clone());
+        }
     }
 }
 

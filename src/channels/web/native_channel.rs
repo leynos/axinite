@@ -16,6 +16,24 @@ use super::GatewayChannel;
 use super::server;
 use super::types::SseEvent;
 
+impl GatewayChannel {
+    /// Broadcast a response over SSE, skipping (with a warning naming the
+    /// calling `operation`) when no thread ID is available — clients would
+    /// drop such events.
+    fn broadcast_response(&self, thread_id: Option<String>, content: String, operation: &str) {
+        let Some(thread_id) = thread_id else {
+            tracing::warn!(
+                "Gateway {} with no thread_id — skipping (clients would drop it)",
+                operation
+            );
+            return;
+        };
+        self.state
+            .sse
+            .broadcast(SseEvent::Response { content, thread_id });
+    }
+}
+
 impl NativeChannel for GatewayChannel {
     fn name(&self) -> &str {
         "gateway"
@@ -45,21 +63,7 @@ impl NativeChannel for GatewayChannel {
         msg: &IncomingMessage,
         response: OutgoingResponse,
     ) -> Result<(), ChannelError> {
-        let thread_id = match &msg.thread_id {
-            Some(tid) => tid.clone(),
-            None => {
-                tracing::warn!(
-                    "Gateway respond with no thread_id — skipping (clients would drop it)"
-                );
-                return Ok(());
-            }
-        };
-
-        self.state.sse.broadcast(SseEvent::Response {
-            content: response.content,
-            thread_id,
-        });
-
+        self.broadcast_response(msg.thread_id.clone(), response.content, "respond");
         Ok(())
     }
 
@@ -164,19 +168,7 @@ impl NativeChannel for GatewayChannel {
         _user_id: &str,
         response: OutgoingResponse,
     ) -> Result<(), ChannelError> {
-        let thread_id = match response.thread_id {
-            Some(tid) => tid,
-            None => {
-                tracing::warn!(
-                    "Gateway broadcast with no thread_id — skipping (clients would drop it)"
-                );
-                return Ok(());
-            }
-        };
-        self.state.sse.broadcast(SseEvent::Response {
-            content: response.content,
-            thread_id,
-        });
+        self.broadcast_response(response.thread_id, response.content, "broadcast");
         Ok(())
     }
 

@@ -63,7 +63,7 @@ impl TestRigBuilder {
         components: &mut AppComponents,
         db: &Arc<dyn Database>,
     ) -> anyhow::Result<()> {
-        use ironclaw::agent::routine_engine::RoutineEngine;
+        use ironclaw::agent::routine_engine::{RoutineEngine, RoutineEngineDeps};
         use ironclaw::config::RoutineConfig;
 
         if components.db.is_none() {
@@ -77,16 +77,16 @@ impl TestRigBuilder {
         let routine_config = RoutineConfig::default();
         let (notify_tx, mut notify_rx) = tokio::sync::mpsc::channel(64);
         tokio::spawn(async move { while notify_rx.recv().await.is_some() {} });
-        let engine = Arc::new(RoutineEngine::new(
-            routine_config,
-            Arc::clone(db),
-            components.llm.clone(),
-            Arc::clone(workspace),
+        let engine = Arc::new(RoutineEngine::new(RoutineEngineDeps {
+            config: routine_config,
+            store: Arc::clone(db),
+            llm: components.llm.clone(),
+            workspace: Arc::clone(workspace),
             notify_tx,
-            None,
-            components.tools.clone(),
-            components.safety.clone(),
-        ));
+            scheduler: None,
+            tools: components.tools.clone(),
+            safety: components.safety.clone(),
+        }));
         components
             .tools
             .register_routine_tools(Arc::clone(db), engine);
@@ -176,13 +176,13 @@ impl TestRigBuilder {
     ) -> anyhow::Result<AppComponents> {
         let session = Arc::new(SessionManager::new(SessionConfig::default()));
         let log_broadcaster = Arc::new(LogBroadcaster::new());
-        let mut builder = AppBuilder::new(
+        let mut builder = AppBuilder::new(AppBuilderParams {
             config,
-            AppBuilderFlags::default(),
-            None,
+            flags: AppBuilderFlags::default(),
+            toml_path: None,
             session,
             log_broadcaster,
-        );
+        });
         builder.with_database(db);
         builder.with_llm(llm);
         let (components, _side_effects) = builder

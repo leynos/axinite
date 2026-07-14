@@ -1,7 +1,7 @@
 //! The [`WasmToolLoader`]: loads WASM tools from file pairs, directories,
 //! or database storage into the tool registry.
 
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use tokio::fs;
@@ -130,78 +130,19 @@ impl WasmToolLoader {
     ///
     /// Tools without a capabilities file get no permissions (default deny).
     pub async fn load_from_dir(&self, dir: &Path) -> Result<LoadResults, WasmLoadError> {
-        match fs::metadata(dir).await.map(ambient_fs::Metadata::from_std) {
-            Ok(meta) if meta.is_dir() => {}
-            Ok(_) => {
-                return Err(WasmLoadError::Io(std::io::Error::new(
-                    std::io::ErrorKind::NotADirectory,
-                    format!("{} is not a directory", dir.display()),
-                )));
-            }
-            Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
-                return Ok(LoadResults::default());
-            }
-            Err(e) => return Err(WasmLoadError::Io(e)),
-        }
-
-        // Handle TOCTOU: if read_dir fails with NotFound, treat as empty
-        let mut entries = match fs::read_dir(dir).await {
-            Ok(entries) => entries,
-            Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
-                return Ok(LoadResults::default());
-            }
-            Err(e) => return Err(WasmLoadError::Io(e)),
+        let Some(mut entries) = open_tool_dir(dir).await? else {
+            return Ok(LoadResults::default());
         };
 
         let mut results = LoadResults::default();
         let mut tool_entries = Vec::new();
-
         while let Some(entry) = entries.next_entry().await? {
-            let path = entry.path();
-
-            if path.extension().and_then(|e| e.to_str()) != Some("wasm") {
-                continue;
-            }
-
-            let name = match path.file_stem().and_then(|s| s.to_str()) {
-                Some(n) => n.to_string(),
-                None => {
-                    results.errors.push((
-                        path.clone(),
-                        WasmLoadError::InvalidName("invalid filename".to_string()),
-                    ));
-                    continue;
-                }
-            };
-
-            let cap_path = path.with_extension("capabilities.json");
-            let has_cap = cap_path.exists();
-            tool_entries.push((name, path, if has_cap { Some(cap_path) } else { None }));
-        }
-
-        // Load all tools in parallel (file I/O + WASM compilation + registration)
-        let load_futures = tool_entries
-            .iter()
-            .map(|(name, path, cap_path)| self.load_from_files(name, path, cap_path.as_deref()));
-
-        let load_results = futures::future::join_all(load_futures).await;
-
-        for ((name, path, _), result) in tool_entries.into_iter().zip(load_results) {
-            match result {
-                Ok(()) => {
-                    results.loaded.push(name);
-                }
-                Err(e) => {
-                    tracing::error!(
-                        name = name,
-                        path = %path.display(),
-                        error = %e,
-                        "Failed to load WASM tool"
-                    );
-                    results.errors.push((path, e));
-                }
+            if let Some(tool_entry) = dir_tool_entry(entry.path(), &mut results) {
+                tool_entries.push(tool_entry);
             }
         }
+
+        self.load_dir_entries(tool_entries, &mut results).await;
 
         if !results.loaded.is_empty() {
             tracing::info!(
@@ -212,6 +153,38 @@ impl WasmToolLoader {
         }
 
         Ok(results)
+    }
+
+    /// Load discovered directory entries in parallel and record outcomes.
+    ///
+    /// Loading covers file I/O, WASM compilation, and registration.
+    async fn load_dir_entries(&self, tool_entries: Vec<DirToolEntry>, results: &mut LoadResults) {
+        let load_futures = tool_entries.iter().map(|entry| {
+            self.load_from_files(
+                &entry.name,
+                &entry.wasm_path,
+                entry.capabilities_path.as_deref(),
+            )
+        });
+
+        let load_results = futures::future::join_all(load_futures).await;
+
+        for (entry, result) in tool_entries.into_iter().zip(load_results) {
+            match result {
+                Ok(()) => {
+                    results.loaded.push(entry.name);
+                }
+                Err(e) => {
+                    tracing::error!(
+                        name = entry.name,
+                        path = %entry.wasm_path.display(),
+                        error = %e,
+                        "Failed to load WASM tool"
+                    );
+                    results.errors.push((entry.wasm_path, e));
+                }
+            }
+        }
     }
 
     /// Load a WASM tool from database storage.
@@ -276,6 +249,63 @@ impl WasmToolLoader {
 
         Ok(results)
     }
+}
+
+/// A discovered `.wasm` file with its optional capabilities sidecar.
+struct DirToolEntry {
+    name: String,
+    wasm_path: PathBuf,
+    capabilities_path: Option<PathBuf>,
+}
+
+/// Open a directory for tool scanning.
+///
+/// Returns `Ok(None)` when the directory does not exist, including a TOCTOU
+/// race where it vanishes between the metadata check and `read_dir`.
+async fn open_tool_dir(dir: &Path) -> Result<Option<fs::ReadDir>, WasmLoadError> {
+    match fs::metadata(dir).await.map(ambient_fs::Metadata::from_std) {
+        Ok(meta) if meta.is_dir() => {}
+        Ok(_) => {
+            return Err(WasmLoadError::Io(std::io::Error::new(
+                std::io::ErrorKind::NotADirectory,
+                format!("{} is not a directory", dir.display()),
+            )));
+        }
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(None),
+        Err(e) => return Err(WasmLoadError::Io(e)),
+    }
+
+    match fs::read_dir(dir).await {
+        Ok(entries) => Ok(Some(entries)),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(None),
+        Err(e) => Err(WasmLoadError::Io(e)),
+    }
+}
+
+/// Classify a directory entry as a WASM tool candidate.
+///
+/// Returns `None` for non-`.wasm` paths; `.wasm` files with unusable names
+/// are recorded as errors in `results` and also skipped.
+fn dir_tool_entry(path: PathBuf, results: &mut LoadResults) -> Option<DirToolEntry> {
+    if path.extension().and_then(|e| e.to_str()) != Some("wasm") {
+        return None;
+    }
+
+    let Some(name) = path.file_stem().and_then(|s| s.to_str()).map(String::from) else {
+        results.errors.push((
+            path,
+            WasmLoadError::InvalidName("invalid filename".to_string()),
+        ));
+        return None;
+    };
+
+    let cap_path = path.with_extension("capabilities.json");
+    let capabilities_path = cap_path.exists().then_some(cap_path);
+    Some(DirToolEntry {
+        name,
+        wasm_path: path,
+        capabilities_path,
+    })
 }
 
 /// Extract OAuth refresh configuration from a parsed capabilities file.

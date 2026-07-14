@@ -14,67 +14,80 @@ impl ExtensionManager {
     ) -> Result<Vec<crate::channels::web::types::SecretFieldInfo>, ExtensionError> {
         let kind = self.determine_installed_kind(name).await?;
         match kind {
-            ExtensionKind::WasmChannel => {
-                let cap_path = self
-                    .wasm_channels_dir
-                    .join(format!("{}.capabilities.json", name));
-                if !cap_path.exists() {
-                    return Ok(Vec::new());
-                }
-                let cap_bytes = tokio::fs::read(&cap_path)
-                    .await
-                    .map_err(|e| ExtensionError::Other(e.to_string()))?;
-                let cap_file =
-                    crate::channels::wasm::ChannelCapabilitiesFile::from_bytes(&cap_bytes)
-                        .map_err(|e| ExtensionError::Other(e.to_string()))?;
-
-                let mut fields = Vec::new();
-                for secret in &cap_file.setup.required_secrets {
-                    let provided = self
-                        .secrets
-                        .exists(&self.user_id, &secret.name)
-                        .await
-                        .unwrap_or(false);
-                    fields.push(crate::channels::web::types::SecretFieldInfo {
-                        name: secret.name.clone(),
-                        prompt: secret.prompt.clone(),
-                        optional: secret.optional,
-                        provided,
-                        auto_generate: secret.auto_generate.is_some(),
-                    });
-                }
-                Ok(fields)
-            }
-            ExtensionKind::WasmTool => {
-                let Some(cap_file) = self.load_tool_capabilities(name).await else {
-                    return Ok(Vec::new());
-                };
-
-                let mut fields = Vec::new();
-                if let Some(setup) = &cap_file.setup {
-                    for secret in &setup.required_secrets {
-                        // Skip OAuth client_id/secret fields that resolve automatically
-                        if Self::is_auto_resolved_oauth_field(&secret.name, &cap_file) {
-                            continue;
-                        }
-                        let provided = self
-                            .secrets
-                            .exists(&self.user_id, &secret.name)
-                            .await
-                            .unwrap_or(false);
-                        fields.push(crate::channels::web::types::SecretFieldInfo {
-                            name: secret.name.clone(),
-                            prompt: secret.prompt.clone(),
-                            optional: secret.optional,
-                            provided,
-                            auto_generate: false,
-                        });
-                    }
-                }
-                Ok(fields)
-            }
+            ExtensionKind::WasmChannel => self.channel_setup_schema(name).await,
+            ExtensionKind::WasmTool => Ok(self.tool_setup_schema(name).await),
             _ => Ok(Vec::new()),
         }
+    }
+
+    /// Whether a secret with this name is already stored for the user.
+    async fn secret_provided(&self, secret_name: &str) -> bool {
+        self.secrets
+            .exists(&self.user_id, secret_name)
+            .await
+            .unwrap_or(false)
+    }
+
+    /// Setup fields for a WASM channel, from its capabilities file.
+    async fn channel_setup_schema(
+        &self,
+        name: &str,
+    ) -> Result<Vec<crate::channels::web::types::SecretFieldInfo>, ExtensionError> {
+        let cap_path = self
+            .wasm_channels_dir
+            .join(format!("{}.capabilities.json", name));
+        if !cap_path.exists() {
+            return Ok(Vec::new());
+        }
+        let cap_bytes = tokio::fs::read(&cap_path)
+            .await
+            .map_err(|e| ExtensionError::Other(e.to_string()))?;
+        let cap_file = crate::channels::wasm::ChannelCapabilitiesFile::from_bytes(&cap_bytes)
+            .map_err(|e| ExtensionError::Other(e.to_string()))?;
+
+        let mut fields = Vec::new();
+        for secret in &cap_file.setup.required_secrets {
+            let provided = self.secret_provided(&secret.name).await;
+            fields.push(crate::channels::web::types::SecretFieldInfo {
+                name: secret.name.clone(),
+                prompt: secret.prompt.clone(),
+                optional: secret.optional,
+                provided,
+                auto_generate: secret.auto_generate.is_some(),
+            });
+        }
+        Ok(fields)
+    }
+
+    /// Setup fields for a WASM tool, hiding OAuth client credentials that
+    /// resolve automatically.
+    async fn tool_setup_schema(
+        &self,
+        name: &str,
+    ) -> Vec<crate::channels::web::types::SecretFieldInfo> {
+        let Some(cap_file) = self.load_tool_capabilities(name).await else {
+            return Vec::new();
+        };
+        let Some(setup) = &cap_file.setup else {
+            return Vec::new();
+        };
+
+        let mut fields = Vec::new();
+        for secret in &setup.required_secrets {
+            // Skip OAuth client_id/secret fields that resolve automatically
+            if Self::is_auto_resolved_oauth_field(&secret.name, &cap_file) {
+                continue;
+            }
+            let provided = self.secret_provided(&secret.name).await;
+            fields.push(crate::channels::web::types::SecretFieldInfo {
+                name: secret.name.clone(),
+                prompt: secret.prompt.clone(),
+                optional: secret.optional,
+                provided,
+                auto_generate: false,
+            });
+        }
+        fields
     }
 
     /// Save setup secrets for an extension, validating names against the capabilities schema.

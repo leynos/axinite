@@ -96,6 +96,69 @@ pub struct Thread {
     pub in_flight_auth: bool,
 }
 
+/// Build the user message for a turn, attaching image parts when present.
+fn turn_user_message(turn: &Turn) -> ChatMessage {
+    if turn.image_content_parts.is_empty() {
+        ChatMessage::user(&turn.user_input)
+    } else {
+        ChatMessage::user_with_parts(&turn.user_input, turn.image_content_parts.clone())
+    }
+}
+
+/// Synthetic stable call ID for the `i`-th tool call of a turn.
+fn turn_call_id(turn: &Turn, index: usize) -> String {
+    format!("turn{}_{}", turn.turn_number, index)
+}
+
+/// Render a recorded tool call's outcome, truncated to limit context size.
+fn tool_result_content(tc: &super::turn::TurnToolCall) -> String {
+    if let Some(ref err) = tc.error {
+        // .error already contains the full error text;
+        // pass through without wrapping to avoid double-prefix.
+        truncate_preview(err, 1000)
+    } else if let Some(ref res) = tc.result {
+        let raw = match res {
+            serde_json::Value::String(s) => s.clone(),
+            other => other.to_string(),
+        };
+        truncate_preview(&raw, 1000)
+    } else {
+        "OK".to_string()
+    }
+}
+
+/// Append the turn's tool-call round: the assistant message declaring the
+/// calls followed by one tool-result message per call.
+fn append_tool_call_messages(messages: &mut Vec<ChatMessage>, turn: &Turn) {
+    if turn.tool_calls.is_empty() {
+        return;
+    }
+
+    // Build ToolCall objects with synthetic stable IDs
+    let tool_calls: Vec<ToolCall> = turn
+        .tool_calls
+        .iter()
+        .enumerate()
+        .map(|(i, tc)| ToolCall {
+            id: turn_call_id(turn, i),
+            name: tc.name.clone(),
+            arguments: tc.parameters.clone(),
+        })
+        .collect();
+
+    // Assistant message declaring the tool calls (no text content)
+    messages.push(ChatMessage::assistant_with_tool_calls(None, tool_calls));
+
+    // Individual tool result messages, truncated to limit context size.
+    for (i, tc) in turn.tool_calls.iter().enumerate() {
+        messages.push(ChatMessage::tool_result(
+            turn_call_id(turn, i),
+            &tc.name,
+            tool_result_content(tc),
+        ));
+    }
+}
+
 impl Thread {
     fn init(session_id: Uuid, thread_id: Uuid) -> Self {
         let now = Utc::now();
@@ -226,50 +289,8 @@ impl Thread {
     pub fn messages(&self) -> Vec<ChatMessage> {
         let mut messages = Vec::new();
         for turn in &self.turns {
-            if turn.image_content_parts.is_empty() {
-                messages.push(ChatMessage::user(&turn.user_input));
-            } else {
-                messages.push(ChatMessage::user_with_parts(
-                    &turn.user_input,
-                    turn.image_content_parts.clone(),
-                ));
-            }
-
-            if !turn.tool_calls.is_empty() {
-                // Build ToolCall objects with synthetic stable IDs
-                let tool_calls: Vec<ToolCall> = turn
-                    .tool_calls
-                    .iter()
-                    .enumerate()
-                    .map(|(i, tc)| ToolCall {
-                        id: format!("turn{}_{}", turn.turn_number, i),
-                        name: tc.name.clone(),
-                        arguments: tc.parameters.clone(),
-                    })
-                    .collect();
-
-                // Assistant message declaring the tool calls (no text content)
-                messages.push(ChatMessage::assistant_with_tool_calls(None, tool_calls));
-
-                // Individual tool result messages, truncated to limit context size.
-                for (i, tc) in turn.tool_calls.iter().enumerate() {
-                    let call_id = format!("turn{}_{}", turn.turn_number, i);
-                    let content = if let Some(ref err) = tc.error {
-                        // .error already contains the full error text;
-                        // pass through without wrapping to avoid double-prefix.
-                        truncate_preview(err, 1000)
-                    } else if let Some(ref res) = tc.result {
-                        let raw = match res {
-                            serde_json::Value::String(s) => s.clone(),
-                            other => other.to_string(),
-                        };
-                        truncate_preview(&raw, 1000)
-                    } else {
-                        "OK".to_string()
-                    };
-                    messages.push(ChatMessage::tool_result(call_id, &tc.name, content));
-                }
-            }
+            messages.push(turn_user_message(turn));
+            append_tool_call_messages(&mut messages, turn);
             if let Some(ref response) = turn.response {
                 messages.push(ChatMessage::assistant(response));
             }

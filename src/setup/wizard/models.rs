@@ -6,157 +6,205 @@ use super::model_catalog::{
 };
 use super::*;
 
+/// Keep only models whose id contains the given filter (case-insensitive),
+/// when a filter is configured.
+fn apply_models_filter(
+    models: Vec<(String, String)>,
+    filter: Option<&str>,
+) -> Vec<(String, String)> {
+    let Some(filter) = filter else {
+        return models;
+    };
+    let filter_lower = filter.to_lowercase();
+    models
+        .into_iter()
+        .filter(|(id, _)| id.to_lowercase().contains(&filter_lower))
+        .collect()
+}
+
 impl SetupWizard {
     /// Step 4: Model selection.
     ///
     /// Branches on the selected LLM backend and fetches models from the
     /// appropriate provider API, with static defaults as fallback.
     pub(super) async fn step_model_selection(&mut self) -> Result<(), SetupError> {
-        // Show current model if already configured
-        if let Some(ref current) = self.settings.selected_model {
-            print_info(&format!("Current model: {}", current));
-            println!();
-
-            let options = ["Keep current model", "Change model"];
-            let choice =
-                select_one("What would you like to do?", &options).map_err(SetupError::Io)?;
-
-            if choice == 0 {
-                print_success(&format!("Keeping {}", current));
-                return Ok(());
-            }
+        if self.offer_keep_current_model()? {
+            return Ok(());
         }
 
-        let backend = self.settings.llm_backend.as_deref().unwrap_or("nearai");
+        let backend = self
+            .settings
+            .llm_backend
+            .as_deref()
+            .unwrap_or("nearai")
+            .to_string();
         let registry =
             crate::llm::ProviderRegistry::load().map_err(|e| SetupError::Config(e.to_string()))?;
 
         if backend == "nearai" {
-            // NEAR AI: use existing provider list_models()
-            let fetched = self.fetch_nearai_models().await;
-            let default_models: Vec<(String, String)> = vec![
-                (
-                    "zai-org/GLM-latest".into(),
-                    "GLM Latest (default, fast)".into(),
-                ),
-                (
-                    "anthropic::claude-sonnet-4-20250514".into(),
-                    "Claude Sonnet 4 (best quality)".into(),
-                ),
-                (
-                    "openai::gpt-5.3-codex".into(),
-                    "GPT-5.3 Codex (flagship)".into(),
-                ),
-                ("openai::gpt-5.2".into(), "GPT-5.2".into()),
-                ("openai::gpt-4o".into(), "GPT-4o".into()),
-            ];
+            return self.select_nearai_model().await;
+        }
+        if let Some(def) = registry.find(&backend) {
+            return self.select_registry_model(&backend, def).await;
+        }
+        if backend == "bedrock" {
+            return self.select_required_model(
+                "Bedrock model ID (e.g., anthropic.claude-opus-4-6-v1)",
+                "Model ID is required",
+            );
+        }
+        // Unknown provider, manual entry
+        self.select_required_model(
+            "Model name (e.g., meta-llama/Llama-3-8b-chat-hf)",
+            "Model name is required",
+        )
+    }
 
-            let models = if fetched.is_empty() {
-                default_models
-            } else {
-                fetched.iter().map(|m| (m.clone(), m.clone())).collect()
-            };
-            self.select_from_model_list(&models)?;
-        } else if let Some(def) = registry.find(backend) {
-            let can_list = def
-                .setup
-                .as_ref()
-                .map(|s| s.can_list_models())
-                .unwrap_or(false);
+    /// Offer to keep the currently configured model.
+    ///
+    /// Returns `true` when the user kept the current model.
+    fn offer_keep_current_model(&mut self) -> Result<bool, SetupError> {
+        let Some(current) = self.settings.selected_model.clone() else {
+            return Ok(false);
+        };
 
-            if can_list {
-                // Try to fetch models from the provider's /v1/models endpoint
-                let cached_key = self
-                    .llm_api_key
-                    .as_ref()
-                    .map(|k| k.expose_secret().to_string());
+        print_info(&format!("Current model: {}", current));
+        println!();
 
-                let models = match backend {
-                    "anthropic" => fetch_anthropic_models(cached_key.as_deref()).await,
-                    "openai" => fetch_openai_models(cached_key.as_deref()).await,
-                    "ollama" => {
-                        let base_url = self
-                            .settings
-                            .ollama_base_url
-                            .as_deref()
-                            .or(def.default_base_url.as_deref())
-                            .unwrap_or("http://localhost:11434");
-                        let models = fetch_ollama_models(base_url).await;
-                        if models.is_empty() {
-                            print_info("No models found. Pull one first: ollama pull llama3");
-                        }
-                        models
-                    }
-                    _ => {
-                        // Generic OpenAI-compatible model listing
-                        let base_url = def.default_base_url.as_deref().unwrap_or("");
-                        fetch_openai_compatible_models(OpenAICompatModelsRequest {
-                            base_url,
-                            cached_key: cached_key.as_deref(),
-                        })
-                        .await
-                    }
-                };
+        let options = ["Keep current model", "Change model"];
+        let choice = select_one("What would you like to do?", &options).map_err(SetupError::Io)?;
 
-                // Apply models_filter from setup hint (e.g., Groq "chat" filters non-chat models)
-                let models =
-                    if let Some(filter) = def.setup.as_ref().and_then(|s| s.models_filter()) {
-                        let filter_lower = filter.to_lowercase();
-                        models
-                            .into_iter()
-                            .filter(|(id, _)| id.to_lowercase().contains(&filter_lower))
-                            .collect()
-                    } else {
-                        models
-                    };
+        if choice == 0 {
+            print_success(&format!("Keeping {}", current));
+            return Ok(true);
+        }
+        Ok(false)
+    }
 
-                if models.is_empty() {
-                    // Fall back to manual entry
-                    let default = &def.default_model;
-                    let model_id = input(&format!("Model name (default: {default})"))
-                        .map_err(SetupError::Io)?;
-                    let model_id = if model_id.is_empty() {
-                        default.clone()
-                    } else {
-                        model_id
-                    };
-                    self.settings.selected_model = Some(model_id.clone());
-                    print_success(&format!("Selected {}", model_id));
-                } else {
-                    self.select_from_model_list(&models)?;
-                }
-            } else {
-                // Manual model entry
-                let default = &def.default_model;
-                let model_id =
-                    input(&format!("Model name (default: {default})")).map_err(SetupError::Io)?;
-                let model_id = if model_id.is_empty() {
-                    default.clone()
-                } else {
-                    model_id
-                };
-                self.settings.selected_model = Some(model_id.clone());
-                print_success(&format!("Selected {}", model_id));
-            }
-        } else if backend == "bedrock" {
-            let model_id = input("Bedrock model ID (e.g., anthropic.claude-opus-4-6-v1)")
-                .map_err(SetupError::Io)?;
-            if model_id.is_empty() {
-                return Err(SetupError::Config("Model ID is required".to_string()));
-            }
-            self.settings.selected_model = Some(model_id.clone());
-            print_success(&format!("Selected {}", model_id));
+    /// Model selection for NEAR AI, using the provider's `list_models()`
+    /// with static defaults as fallback.
+    async fn select_nearai_model(&mut self) -> Result<(), SetupError> {
+        let fetched = self.fetch_nearai_models().await;
+        let default_models: Vec<(String, String)> = vec![
+            (
+                "zai-org/GLM-latest".into(),
+                "GLM Latest (default, fast)".into(),
+            ),
+            (
+                "anthropic::claude-sonnet-4-20250514".into(),
+                "Claude Sonnet 4 (best quality)".into(),
+            ),
+            (
+                "openai::gpt-5.3-codex".into(),
+                "GPT-5.3 Codex (flagship)".into(),
+            ),
+            ("openai::gpt-5.2".into(), "GPT-5.2".into()),
+            ("openai::gpt-4o".into(), "GPT-4o".into()),
+        ];
+
+        let models = if fetched.is_empty() {
+            default_models
         } else {
-            // Unknown provider, manual entry
-            let model_id = input("Model name (e.g., meta-llama/Llama-3-8b-chat-hf)")
-                .map_err(SetupError::Io)?;
-            if model_id.is_empty() {
-                return Err(SetupError::Config("Model name is required".to_string()));
-            }
-            self.settings.selected_model = Some(model_id.clone());
-            print_success(&format!("Selected {}", model_id));
+            fetched.iter().map(|m| (m.clone(), m.clone())).collect()
+        };
+        self.select_from_model_list(&models)
+    }
+
+    /// Model selection for a registry-defined provider: fetch from the
+    /// provider API when possible, otherwise fall back to manual entry.
+    async fn select_registry_model(
+        &mut self,
+        backend: &str,
+        def: &crate::llm::ProviderDefinition,
+    ) -> Result<(), SetupError> {
+        let can_list = def
+            .setup
+            .as_ref()
+            .map(|s| s.can_list_models())
+            .unwrap_or(false);
+
+        if !can_list {
+            return self.select_model_with_default(&def.default_model);
         }
 
+        let models = self.fetch_models_for_backend(backend, def).await;
+        // Apply models_filter from setup hint (e.g., Groq "chat" filters non-chat models)
+        let models =
+            apply_models_filter(models, def.setup.as_ref().and_then(|s| s.models_filter()));
+
+        if models.is_empty() {
+            // Fall back to manual entry
+            return self.select_model_with_default(&def.default_model);
+        }
+        self.select_from_model_list(&models)
+    }
+
+    /// Fetch models from the appropriate provider API for the backend.
+    async fn fetch_models_for_backend(
+        &self,
+        backend: &str,
+        def: &crate::llm::ProviderDefinition,
+    ) -> Vec<(String, String)> {
+        let cached_key = self
+            .llm_api_key
+            .as_ref()
+            .map(|k| k.expose_secret().to_string());
+
+        match backend {
+            "anthropic" => fetch_anthropic_models(cached_key.as_deref()).await,
+            "openai" => fetch_openai_models(cached_key.as_deref()).await,
+            "ollama" => {
+                let base_url = self
+                    .settings
+                    .ollama_base_url
+                    .as_deref()
+                    .or(def.default_base_url.as_deref())
+                    .unwrap_or("http://localhost:11434");
+                let models = fetch_ollama_models(base_url).await;
+                if models.is_empty() {
+                    print_info("No models found. Pull one first: ollama pull llama3");
+                }
+                models
+            }
+            _ => {
+                // Generic OpenAI-compatible model listing
+                let base_url = def.default_base_url.as_deref().unwrap_or("");
+                fetch_openai_compatible_models(OpenAICompatModelsRequest {
+                    base_url,
+                    cached_key: cached_key.as_deref(),
+                })
+                .await
+            }
+        }
+    }
+
+    /// Prompt for a model name, falling back to the provider default when
+    /// the user enters nothing.
+    fn select_model_with_default(&mut self, default: &str) -> Result<(), SetupError> {
+        let model_id =
+            input(&format!("Model name (default: {default})")).map_err(SetupError::Io)?;
+        let model_id = if model_id.is_empty() {
+            default.to_string()
+        } else {
+            model_id
+        };
+        self.settings.selected_model = Some(model_id.clone());
+        print_success(&format!("Selected {}", model_id));
+        Ok(())
+    }
+
+    /// Prompt for a model identifier that must not be empty.
+    fn select_required_model(
+        &mut self,
+        prompt: &str,
+        required_msg: &str,
+    ) -> Result<(), SetupError> {
+        let model_id = input(prompt).map_err(SetupError::Io)?;
+        if model_id.is_empty() {
+            return Err(SetupError::Config(required_msg.to_string()));
+        }
+        self.settings.selected_model = Some(model_id.clone());
+        print_success(&format!("Selected {}", model_id));
         Ok(())
     }
 

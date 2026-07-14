@@ -31,13 +31,37 @@ impl Scheduler {
         let task_id = Uuid::new_v4();
         let (result_tx, result_rx) = oneshot::channel();
 
-        let handle = match task {
+        let handle = self.spawn_task_handle(parent_id, task_id, task, result_tx)?;
+        self.track_subtask(task_id, handle).await;
+        self.spawn_subtask_cleanup(task_id);
+
+        tracing::debug!(
+            parent_id = %parent_id,
+            task_id = %task_id,
+            "Spawned subtask"
+        );
+
+        Ok(result_rx)
+    }
+
+    /// Spawns the task body appropriate to the task variant, sending its
+    /// result through `result_tx`.
+    ///
+    /// `Task::Job` is rejected: jobs must go through `schedule()`.
+    fn spawn_task_handle(
+        &self,
+        parent_id: Uuid,
+        task_id: Uuid,
+        task: Task,
+        result_tx: oneshot::Sender<Result<TaskOutput, Error>>,
+    ) -> Result<tokio::task::JoinHandle<()>, JobError> {
+        match task {
             Task::Job { .. } => {
                 // Jobs should go through schedule(), not spawn_subtask
-                return Err(JobError::ContextError {
+                Err(JobError::ContextError {
                     id: parent_id,
                     reason: "Use schedule() for Job tasks, not spawn_subtask()".to_string(),
-                });
+                })
             }
 
             Task::ToolExec {
@@ -51,7 +75,7 @@ impl Scheduler {
 
                 // TODO: propagate parent job's ApprovalContext here when subtasks
                 // are used in autonomous/routine paths (currently only used in tests).
-                tokio::spawn(async move {
+                Ok(tokio::spawn(async move {
                     let result = Self::execute_tool_task(
                         tools,
                         context_manager,
@@ -65,20 +89,23 @@ impl Scheduler {
 
                     // Send result (ignore if receiver dropped)
                     let _ = result_tx.send(result);
-                })
+                }))
             }
 
             Task::Background { id: _, handler } => {
                 let ctx = TaskContext::new(task_id).with_parent(parent_id);
 
-                tokio::spawn(async move {
+                Ok(tokio::spawn(async move {
                     let result = handler.run(ctx).await;
                     let _ = result_tx.send(result);
-                })
+                }))
             }
-        };
+        }
+    }
 
-        // Track the subtask
+    /// Records the sub-task in the tracking map, wrapping the body handle so
+    /// panics surface as errors.
+    async fn track_subtask(&self, task_id: Uuid, handle: tokio::task::JoinHandle<()>) {
         self.subtasks.write().await.insert(
             task_id,
             ScheduledSubtask {
@@ -97,8 +124,11 @@ impl Scheduler {
                 }),
             },
         );
+    }
 
-        // Cleanup task for subtask tracking
+    /// Spawns a background task that removes the sub-task from the tracking
+    /// map once its handle finishes.
+    fn spawn_subtask_cleanup(&self, task_id: Uuid) {
         let subtasks = Arc::clone(&self.subtasks);
         tokio::spawn(async move {
             loop {
@@ -118,14 +148,6 @@ impl Scheduler {
                 tokio::time::sleep(Duration::from_secs(1)).await;
             }
         });
-
-        tracing::debug!(
-            parent_id = %parent_id,
-            task_id = %task_id,
-            "Spawned subtask"
-        );
-
-        Ok(result_rx)
     }
 
     /// Schedule multiple tasks in parallel and wait for all to complete.
@@ -161,23 +183,31 @@ impl Scheduler {
         // Collect results
         let mut results = Vec::with_capacity(receivers.len());
         for rx in receivers {
-            let result = match rx {
-                Some(receiver) => match receiver.await {
-                    Ok(task_result) => task_result,
-                    Err(_) => Err(Error::Job(JobError::ContextError {
-                        id: parent_id,
-                        reason: "Subtask channel closed unexpectedly".to_string(),
-                    })),
-                },
-                None => Err(Error::Job(JobError::ContextError {
-                    id: parent_id,
-                    reason: "Subtask failed to spawn".to_string(),
-                })),
-            };
-            results.push(result);
+            results.push(Self::await_batch_result(parent_id, rx).await);
         }
 
         results
+    }
+
+    /// Awaits one batch receiver, mapping spawn failures and closed channels
+    /// to descriptive errors.
+    async fn await_batch_result(
+        parent_id: Uuid,
+        rx: Option<oneshot::Receiver<Result<TaskOutput, Error>>>,
+    ) -> Result<TaskOutput, Error> {
+        let Some(receiver) = rx else {
+            return Err(Error::Job(JobError::ContextError {
+                id: parent_id,
+                reason: "Subtask failed to spawn".to_string(),
+            }));
+        };
+        match receiver.await {
+            Ok(task_result) => task_result,
+            Err(_) => Err(Error::Job(JobError::ContextError {
+                id: parent_id,
+                reason: "Subtask channel closed unexpectedly".to_string(),
+            })),
+        }
     }
 
     /// Execute a single tool as a subtask.

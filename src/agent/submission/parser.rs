@@ -10,183 +10,155 @@ pub struct SubmissionParser;
 
 impl SubmissionParser {
     /// Parse message content into a Submission.
+    ///
+    /// Tries each command family in turn — control, system, job, thread,
+    /// structured approval, then plain approval words — and falls back to
+    /// ordinary user input.
     pub fn parse(content: &str) -> Submission {
         let trimmed = content.trim();
         let lower = trimmed.to_lowercase();
         tracing::debug!("[SubmissionParser::parse] Parsing input: {:?}", trimmed);
 
-        // Control commands (exact match or prefix)
-        if lower == "/undo" {
-            return Submission::Undo;
-        }
-        if lower == "/redo" {
-            return Submission::Redo;
-        }
-        if lower == "/interrupt" || lower == "/stop" {
-            return Submission::Interrupt;
-        }
-        if lower == "/compact" {
-            return Submission::Compact;
-        }
-        if lower == "/clear" {
-            return Submission::Clear;
-        }
-        if lower == "/heartbeat" {
-            return Submission::Heartbeat;
-        }
-        if lower == "/summarize" || lower == "/summary" {
-            return Submission::Summarize;
-        }
-        if lower == "/suggest" {
-            return Submission::Suggest;
-        }
-        if lower == "/thread new" || lower == "/new" {
-            return Submission::NewThread;
-        }
-        // System commands (bypass thread-state checks)
-        if lower == "/help" || lower == "/?" {
-            return Submission::SystemCommand {
-                command: "help".to_string(),
-                args: vec![],
-            };
-        }
-        if lower == "/version" {
-            return Submission::SystemCommand {
-                command: "version".to_string(),
-                args: vec![],
-            };
-        }
-        if lower == "/tools" {
-            return Submission::SystemCommand {
-                command: "tools".to_string(),
-                args: vec![],
-            };
-        }
-        if lower == "/skills" {
-            return Submission::SystemCommand {
-                command: "skills".to_string(),
-                args: vec![],
-            };
-        }
-        if lower.starts_with("/skills ") {
-            let args: Vec<String> = trimmed
-                .split_whitespace()
-                .skip(1)
-                .map(|s| s.to_string())
-                .collect();
-            return Submission::SystemCommand {
-                command: "skills".to_string(),
-                args,
-            };
-        }
-        if lower == "/ping" {
-            return Submission::SystemCommand {
-                command: "ping".to_string(),
-                args: vec![],
-            };
-        }
-        if lower == "/debug" {
-            return Submission::SystemCommand {
-                command: "debug".to_string(),
-                args: vec![],
-            };
-        }
-        if lower == "/restart" {
+        parse_control_command(&lower)
+            .or_else(|| parse_system_command(trimmed, &lower))
+            .or_else(|| parse_job_command(&lower))
+            .or_else(|| parse_thread_command(&lower))
+            .or_else(|| parse_exec_approval(trimmed))
+            .or_else(|| parse_approval_response(&lower))
+            .unwrap_or_else(|| Submission::UserInput {
+                content: content.to_string(),
+            })
+    }
+}
+
+/// Build a `SystemCommand` submission.
+fn system_command(command: &str, args: Vec<String>) -> Submission {
+    Submission::SystemCommand {
+        command: command.to_string(),
+        args,
+    }
+}
+
+/// Extract the whitespace-separated arguments after a slash command.
+fn command_args(trimmed: &str) -> Vec<String> {
+    trimmed
+        .split_whitespace()
+        .skip(1)
+        .map(|s| s.to_string())
+        .collect()
+}
+
+/// Parse exact-match control commands (undo, redo, interrupt, and friends).
+fn parse_control_command(lower: &str) -> Option<Submission> {
+    let submission = match lower {
+        "/undo" => Submission::Undo,
+        "/redo" => Submission::Redo,
+        "/interrupt" | "/stop" => Submission::Interrupt,
+        "/compact" => Submission::Compact,
+        "/clear" => Submission::Clear,
+        "/heartbeat" => Submission::Heartbeat,
+        "/summarize" | "/summary" => Submission::Summarize,
+        "/suggest" => Submission::Suggest,
+        "/thread new" | "/new" => Submission::NewThread,
+        _ if is_quit_command(lower) => Submission::Quit,
+        _ => return None,
+    };
+    Some(submission)
+}
+
+/// Parse system commands that bypass thread-state checks.
+fn parse_system_command(trimmed: &str, lower: &str) -> Option<Submission> {
+    let simple = match lower {
+        "/help" | "/?" => Some("help"),
+        "/version" => Some("version"),
+        "/tools" => Some("tools"),
+        "/skills" => Some("skills"),
+        "/ping" => Some("ping"),
+        "/debug" => Some("debug"),
+        "/restart" => Some("restart"),
+        _ => None,
+    };
+    if let Some(command) = simple {
+        if command == "restart" {
             tracing::debug!("[SubmissionParser::parse] Recognized /restart command");
-            return Submission::SystemCommand {
-                command: "restart".to_string(),
-                args: vec![],
-            };
         }
-        if lower.starts_with("/model") {
-            let args: Vec<String> = trimmed
-                .split_whitespace()
-                .skip(1)
-                .map(|s| s.to_string())
-                .collect();
-            return Submission::SystemCommand {
-                command: "model".to_string(),
-                args,
-            };
-        }
+        return Some(system_command(command, vec![]));
+    }
+    if lower.starts_with("/skills ") {
+        return Some(system_command("skills", command_args(trimmed)));
+    }
+    if lower.starts_with("/model") {
+        return Some(system_command("model", command_args(trimmed)));
+    }
+    None
+}
 
-        if is_quit_command(&lower) {
-            return Submission::Quit;
+/// Parse job status and cancellation commands.
+fn parse_job_command(lower: &str) -> Option<Submission> {
+    if matches!(lower, "/status" | "/progress" | "/list") {
+        return Some(Submission::JobStatus { job_id: None });
+    }
+    if let Some(rest) = lower
+        .strip_prefix("/status ")
+        .or_else(|| lower.strip_prefix("/progress "))
+    {
+        let id = rest.trim().to_string();
+        if !id.is_empty() {
+            return Some(Submission::JobStatus { job_id: Some(id) });
         }
+    }
+    if let Some(rest) = lower.strip_prefix("/cancel ") {
+        let id = rest.trim().to_string();
+        if !id.is_empty() {
+            return Some(Submission::JobCancel { job_id: id });
+        }
+    }
+    None
+}
 
-        // Job commands
-        if lower == "/status" || lower == "/progress" {
-            return Submission::JobStatus { job_id: None };
-        }
-        if let Some(rest) = lower
-            .strip_prefix("/status ")
-            .or_else(|| lower.strip_prefix("/progress "))
+/// Parse thread switching and checkpoint resume commands.
+fn parse_thread_command(lower: &str) -> Option<Submission> {
+    // /thread <uuid> - switch thread
+    if let Some(rest) = lower.strip_prefix("/thread ") {
+        let rest = rest.trim();
+        if rest != "new"
+            && let Ok(id) = Uuid::parse_str(rest)
         {
-            let id = rest.trim().to_string();
-            if !id.is_empty() {
-                return Submission::JobStatus { job_id: Some(id) };
-            }
+            return Some(Submission::SwitchThread { thread_id: id });
         }
-        if lower == "/list" {
-            return Submission::JobStatus { job_id: None };
-        }
-        if let Some(rest) = lower.strip_prefix("/cancel ") {
-            let id = rest.trim().to_string();
-            if !id.is_empty() {
-                return Submission::JobCancel { job_id: id };
-            }
-        }
+    }
 
-        // /thread <uuid> - switch thread
-        if let Some(rest) = lower.strip_prefix("/thread ") {
-            let rest = rest.trim();
-            if rest != "new"
-                && let Ok(id) = Uuid::parse_str(rest)
-            {
-                return Submission::SwitchThread { thread_id: id };
-            }
-        }
+    // /resume <uuid> - resume from checkpoint
+    if let Some(rest) = lower.strip_prefix("/resume ")
+        && let Ok(id) = Uuid::parse_str(rest.trim())
+    {
+        return Some(Submission::Resume { checkpoint_id: id });
+    }
+    None
+}
 
-        // /resume <uuid> - resume from checkpoint
-        if let Some(rest) = lower.strip_prefix("/resume ")
-            && let Ok(id) = Uuid::parse_str(rest.trim())
-        {
-            return Submission::Resume { checkpoint_id: id };
+/// Parse simple yes/no/always responses to pending approvals.
+fn parse_approval_response(lower: &str) -> Option<Submission> {
+    match lower {
+        "yes" | "y" | "approve" | "ok" | "/approve" | "/yes" | "/y" => {
+            Some(Submission::ApprovalResponse {
+                approved: true,
+                always: false,
+            })
         }
-
-        // Try structured JSON approval (from web gateway's /api/chat/approval endpoint)
-        if let Some(submission) = parse_exec_approval(trimmed) {
-            return submission;
+        "always" | "a" | "yes always" | "approve always" | "/always" | "/a" => {
+            Some(Submission::ApprovalResponse {
+                approved: true,
+                always: true,
+            })
         }
-
-        // Approval responses (simple yes/no/always for pending approvals)
-        // These are short enough to check explicitly
-        match lower.as_str() {
-            "yes" | "y" | "approve" | "ok" | "/approve" | "/yes" | "/y" => {
-                return Submission::ApprovalResponse {
-                    approved: true,
-                    always: false,
-                };
-            }
-            "always" | "a" | "yes always" | "approve always" | "/always" | "/a" => {
-                return Submission::ApprovalResponse {
-                    approved: true,
-                    always: true,
-                };
-            }
-            "no" | "n" | "deny" | "reject" | "cancel" | "/deny" | "/no" | "/n" => {
-                return Submission::ApprovalResponse {
-                    approved: false,
-                    always: false,
-                };
-            }
-            _ => {}
+        "no" | "n" | "deny" | "reject" | "cancel" | "/deny" | "/no" | "/n" => {
+            Some(Submission::ApprovalResponse {
+                approved: false,
+                always: false,
+            })
         }
-
-        // Default: user input
-        Submission::UserInput {
-            content: content.to_string(),
-        }
+        _ => None,
     }
 }
 

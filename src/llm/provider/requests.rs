@@ -204,6 +204,43 @@ impl UnsupportedParam {
     }
 }
 
+/// Mutable access to the sampling parameters shared by both request types.
+trait TunableParams {
+    fn clear_temperature(&mut self);
+    fn clear_max_tokens(&mut self);
+}
+
+impl TunableParams for CompletionRequest {
+    fn clear_temperature(&mut self) {
+        self.temperature = None;
+    }
+    fn clear_max_tokens(&mut self) {
+        self.max_tokens = None;
+    }
+}
+
+impl TunableParams for ToolCompletionRequest {
+    fn clear_temperature(&mut self) {
+        self.temperature = None;
+    }
+    fn clear_max_tokens(&mut self) {
+        self.max_tokens = None;
+    }
+}
+
+/// Strip the sampling parameters common to both request types.
+fn strip_common_params(
+    unsupported: &std::collections::HashSet<String>,
+    req: &mut impl TunableParams,
+) {
+    if unsupported.contains(UnsupportedParam::Temperature.name()) {
+        req.clear_temperature();
+    }
+    if unsupported.contains(UnsupportedParam::MaxTokens.name()) {
+        req.clear_max_tokens();
+    }
+}
+
 /// Strip unsupported parameters from a `CompletionRequest` in place.
 ///
 /// This is the single helper function used by all providers to remove
@@ -215,12 +252,7 @@ pub fn strip_unsupported_completion_params(
     if unsupported.is_empty() {
         return;
     }
-    if unsupported.contains(UnsupportedParam::Temperature.name()) {
-        req.temperature = None;
-    }
-    if unsupported.contains(UnsupportedParam::MaxTokens.name()) {
-        req.max_tokens = None;
-    }
+    strip_common_params(unsupported, req);
     if unsupported.contains(UnsupportedParam::StopSequences.name()) {
         req.stop_sequences = None;
     }
@@ -240,11 +272,6 @@ pub fn strip_unsupported_tool_params(
     if unsupported.is_empty() {
         return;
     }
-    if unsupported.contains(UnsupportedParam::Temperature.name()) {
-        req.temperature = None;
-    }
-    if unsupported.contains(UnsupportedParam::MaxTokens.name()) {
-        req.max_tokens = None;
-    }
+    strip_common_params(unsupported, req);
     // Note: StopSequences is not a field in ToolCompletionRequest, so no action needed
 }

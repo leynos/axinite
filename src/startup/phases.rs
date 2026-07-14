@@ -3,7 +3,7 @@
 use std::sync::Arc;
 
 use ironclaw::{
-    app::{AppBuilder, AppBuilderFlags, AppComponents},
+    app::{AppBuilder, AppBuilderFlags, AppBuilderParams, AppComponents},
     channels::{ChannelManager, web::log_layer::LogBroadcaster},
     cli::Cli,
     config::Config,
@@ -83,13 +83,13 @@ pub(crate) async fn phase_build_components(
             .ok()
             .map(std::path::PathBuf::from),
     };
-    let (components, side_effects) = AppBuilder::new(
-        loaded.config,
+    let (components, side_effects) = AppBuilder::new(AppBuilderParams {
+        config: loaded.config,
         flags,
-        loaded.toml_path,
-        loaded.session,
-        Arc::clone(&loaded.log_broadcaster),
-    )
+        toml_path: loaded.toml_path,
+        session: loaded.session,
+        log_broadcaster: Arc::clone(&loaded.log_broadcaster),
+    })
     .build_components()
     .await?;
 

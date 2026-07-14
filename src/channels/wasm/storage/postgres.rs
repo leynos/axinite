@@ -4,11 +4,11 @@ use chrono::Utc;
 use deadpool_postgres::Pool;
 use uuid::Uuid;
 
-use crate::tools::wasm::storage::{compute_binary_hash, verify_binary_integrity};
+use crate::tools::wasm::storage::compute_binary_hash;
 
 use super::{
-    StoreChannelParams, StoredWasmChannel, StoredWasmChannelWithBinary, WasmChannelStore,
-    WasmChannelStoreError,
+    CHANNEL_COLUMNS, CHANNEL_COLUMNS_WITH_BINARY, StoreChannelParams, StoredWasmChannel,
+    StoredWasmChannelWithBinary, WasmChannelStore, WasmChannelStoreError, check_binary_integrity,
 };
 
 use super::PostgresWasmChannelStore;
@@ -50,15 +50,18 @@ impl WasmChannelStore for PostgresWasmChannelStore {
 
         let row = tx
             .query_one(
-                r#"
-                INSERT INTO wasm_channels (
-                    id, user_id, name, version, wit_version, description, wasm_binary, binary_hash,
-                    capabilities_json, status, created_at, updated_at
+                format!(
+                    concat!(
+                        "INSERT INTO wasm_channels (",
+                        "  id, user_id, name, version, wit_version, description,",
+                        "  wasm_binary, binary_hash,",
+                        "  capabilities_json, status, created_at, updated_at",
+                        ") VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, 'active', $10, $10) ",
+                        "RETURNING {}"
+                    ),
+                    CHANNEL_COLUMNS
                 )
-                VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, 'active', $10, $10)
-                RETURNING id, user_id, name, version, wit_version, description,
-                          capabilities_json, status, created_at, updated_at
-                "#,
+                .as_str(),
                 &[
                     &id,
                     &params.user_id,
@@ -97,12 +100,10 @@ impl WasmChannelStore for PostgresWasmChannelStore {
 
         let row = client
             .query_opt(
-                r#"
-                SELECT id, user_id, name, version, wit_version, description,
-                       capabilities_json, status, created_at, updated_at
-                FROM wasm_channels
-                WHERE user_id = $1 AND name = $2
-                "#,
+                format!(
+                    "SELECT {CHANNEL_COLUMNS} FROM wasm_channels WHERE user_id = $1 AND name = $2"
+                )
+                .as_str(),
                 &[&user_id, &name],
             )
             .await
@@ -127,13 +128,10 @@ impl WasmChannelStore for PostgresWasmChannelStore {
 
         let row = client
             .query_opt(
-                r#"
-                SELECT id, user_id, name, version, wit_version, description,
-                       wasm_binary, binary_hash,
-                       capabilities_json, status, created_at, updated_at
-                FROM wasm_channels
-                WHERE user_id = $1 AND name = $2
-                "#,
+                format!(
+                    "SELECT {CHANNEL_COLUMNS_WITH_BINARY} FROM wasm_channels WHERE user_id = $1 AND name = $2"
+                )
+                .as_str(),
                 &[&user_id, &name],
             )
             .await
@@ -144,27 +142,9 @@ impl WasmChannelStore for PostgresWasmChannelStore {
                 let wasm_binary: Vec<u8> = r.get("wasm_binary");
                 let binary_hash: Vec<u8> = r.get("binary_hash");
 
-                if !verify_binary_integrity(&wasm_binary, &binary_hash) {
-                    tracing::error!(
-                        user_id = user_id,
-                        name = name,
-                        "WASM channel binary integrity check failed"
-                    );
-                    return Err(WasmChannelStoreError::IntegrityCheckFailed);
-                }
+                check_binary_integrity(user_id, name, &wasm_binary, &binary_hash)?;
 
-                let channel = StoredWasmChannel {
-                    id: r.get("id"),
-                    user_id: r.get("user_id"),
-                    name: r.get("name"),
-                    version: r.get("version"),
-                    wit_version: r.get("wit_version"),
-                    description: r.get("description"),
-                    capabilities_json: r.get("capabilities_json"),
-                    status: r.get("status"),
-                    created_at: r.get("created_at"),
-                    updated_at: r.get("updated_at"),
-                };
+                let channel = pg_row_to_channel(&r)?;
 
                 Ok(StoredWasmChannelWithBinary {
                     channel,
@@ -185,13 +165,10 @@ impl WasmChannelStore for PostgresWasmChannelStore {
 
         let rows = client
             .query(
-                r#"
-                SELECT id, user_id, name, version, wit_version, description,
-                       capabilities_json, status, created_at, updated_at
-                FROM wasm_channels
-                WHERE user_id = $1
-                ORDER BY name
-                "#,
+                format!(
+                    "SELECT {CHANNEL_COLUMNS} FROM wasm_channels WHERE user_id = $1 ORDER BY name"
+                )
+                .as_str(),
                 &[&user_id],
             )
             .await

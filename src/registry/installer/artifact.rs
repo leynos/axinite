@@ -4,7 +4,7 @@
 use tokio::fs;
 
 use crate::registry::catalog::RegistryError;
-use crate::registry::manifest::{ExtensionManifest, ManifestKind};
+use crate::registry::manifest::{ArtifactSpec, ExtensionManifest};
 
 use super::archive::extract_tar_gz;
 use super::validation::{
@@ -87,52 +87,11 @@ impl RegistryInstaller {
     ) -> Result<InstallOutcome, RegistryError> {
         validate_manifest_install_inputs(manifest)?;
 
-        let artifact = manifest.artifacts.get("wasm32-wasip2").ok_or_else(|| {
-            RegistryError::ExtensionNotFound(format!(
-                "No wasm32-wasip2 artifact for '{}'",
-                manifest.name
-            ))
-        })?;
+        let (artifact, url, expected_sha) = resolve_verified_artifact(manifest)?;
 
-        let url = artifact.url.as_ref().ok_or_else(|| {
-            RegistryError::ExtensionNotFound(format!(
-                "No artifact URL for '{}'. Use --build to build from source.",
-                manifest.name
-            ))
-        })?;
-
-        validate_artifact_url(&manifest.name, "artifacts.wasm32-wasip2.url", url)?;
-
-        // Require SHA256 — refuse to install unverified binaries. Check before
-        // downloading to avoid wasting bandwidth on manifests that are missing
-        // checksums. Uses MissingChecksum (not InvalidManifest) so that
-        // install_with_source_fallback can fall back to building from source
-        // when checksums haven't been populated yet (bootstrapping).
-        let expected_sha =
-            artifact
-                .sha256
-                .as_ref()
-                .ok_or_else(|| RegistryError::MissingChecksum {
-                    name: manifest.name.clone(),
-                })?;
-
-        let target_dir = match manifest.kind {
-            ManifestKind::Tool => &self.tools_dir,
-            ManifestKind::Channel => &self.channels_dir,
-        };
-
-        fs::create_dir_all(target_dir)
-            .await
-            .map_err(RegistryError::Io)?;
-
-        let target_wasm = target_dir.join(format!("{}.wasm", manifest.name));
-
-        if target_wasm.exists() && !force {
-            return Err(RegistryError::AlreadyInstalled {
-                name: manifest.name.clone(),
-                path: target_wasm,
-            });
-        }
+        let target_wasm = self.prepare_install_target(manifest, force).await?;
+        let target_caps =
+            target_wasm.with_file_name(format!("{}.capabilities.json", manifest.name));
 
         // Download
         println!(
@@ -142,8 +101,6 @@ impl RegistryInstaller {
         let bytes = download_artifact(url).await?;
         verify_sha256(&bytes, expected_sha, url)?;
 
-        let target_caps = target_dir.join(format!("{}.capabilities.json", manifest.name));
-
         // Detect format and extract
         let has_capabilities = if is_gzip(&bytes) {
             // tar.gz bundle: extract {name}.wasm and {name}.capabilities.json
@@ -151,56 +108,8 @@ impl RegistryInstaller {
                 extract_tar_gz(&bytes, &manifest.name, &target_wasm, &target_caps, url)?;
             extracted.has_capabilities
         } else {
-            // Bare WASM file
-            fs::write(&target_wasm, &bytes)
-                .await
-                .map_err(RegistryError::Io)?;
-
-            // Try to get capabilities from:
-            // 1. Separate capabilities_url in the artifact
-            // 2. Source tree (legacy, requires repo)
-            if let Some(ref caps_url) = artifact.capabilities_url {
-                validate_artifact_url(
-                    &manifest.name,
-                    "artifacts.wasm32-wasip2.capabilities_url",
-                    caps_url,
-                )?;
-                const MAX_CAPS_SIZE: usize = 1024 * 1024; // 1 MB
-                match download_artifact(caps_url).await {
-                    Ok(caps_bytes) if caps_bytes.len() <= MAX_CAPS_SIZE => {
-                        fs::write(&target_caps, &caps_bytes)
-                            .await
-                            .map_err(RegistryError::Io)?;
-                        true
-                    }
-                    Ok(caps_bytes) => {
-                        tracing::warn!(
-                            "Capabilities file too large ({} bytes, max {}), skipping",
-                            caps_bytes.len(),
-                            MAX_CAPS_SIZE
-                        );
-                        false
-                    }
-                    Err(e) => {
-                        tracing::warn!("Failed to download capabilities from {}: {}", caps_url, e);
-                        false
-                    }
-                }
-            } else {
-                // Legacy fallback: try source tree
-                let caps_source = self
-                    .repo_root
-                    .join(&manifest.source.dir)
-                    .join(&manifest.source.capabilities);
-                if caps_source.exists() {
-                    fs::copy(&caps_source, &target_caps)
-                        .await
-                        .map_err(RegistryError::Io)?;
-                    true
-                } else {
-                    false
-                }
-            }
+            self.install_bare_wasm(manifest, artifact, &bytes, &target_wasm, &target_caps)
+                .await?
         };
 
         println!("  Installed to {}", target_wasm.display());
@@ -220,6 +129,126 @@ impl RegistryInstaller {
             has_capabilities,
             warnings,
         })
+    }
+
+    /// Install a bare (non-archive) WASM artifact, then source capabilities
+    /// from the artifact's `capabilities_url` or, failing that, the legacy
+    /// source tree. Returns whether capabilities were installed.
+    async fn install_bare_wasm(
+        &self,
+        manifest: &ExtensionManifest,
+        artifact: &ArtifactSpec,
+        bytes: &[u8],
+        target_wasm: &std::path::Path,
+        target_caps: &std::path::Path,
+    ) -> Result<bool, RegistryError> {
+        fs::write(target_wasm, bytes)
+            .await
+            .map_err(RegistryError::Io)?;
+
+        // Try to get capabilities from:
+        // 1. Separate capabilities_url in the artifact
+        // 2. Source tree (legacy, requires repo)
+        if let Some(ref caps_url) = artifact.capabilities_url {
+            validate_artifact_url(
+                &manifest.name,
+                "artifacts.wasm32-wasip2.capabilities_url",
+                caps_url,
+            )?;
+            download_capabilities(caps_url, target_caps).await
+        } else {
+            self.copy_legacy_capabilities(manifest, target_caps).await
+        }
+    }
+
+    /// Legacy fallback: copy the capabilities file from the source tree, if
+    /// present. Returns whether a file was copied.
+    async fn copy_legacy_capabilities(
+        &self,
+        manifest: &ExtensionManifest,
+        target_caps: &std::path::Path,
+    ) -> Result<bool, RegistryError> {
+        let caps_source = self
+            .repo_root
+            .join(&manifest.source.dir)
+            .join(&manifest.source.capabilities);
+        if !caps_source.exists() {
+            return Ok(false);
+        }
+        fs::copy(&caps_source, target_caps)
+            .await
+            .map_err(RegistryError::Io)?;
+        Ok(true)
+    }
+}
+
+/// Resolve the wasm32-wasip2 artifact for a manifest, validating its URL and
+/// requiring a SHA256 checksum. Returns the artifact together with its URL
+/// and expected checksum.
+///
+/// The checksum is required — installing unverified binaries is refused, and
+/// the check happens before downloading to avoid wasting bandwidth. It uses
+/// `MissingChecksum` (not `InvalidManifest`) so that
+/// `install_with_source_fallback` can fall back to building from source when
+/// checksums haven't been populated yet (bootstrapping).
+fn resolve_verified_artifact(
+    manifest: &ExtensionManifest,
+) -> Result<(&ArtifactSpec, &str, &str), RegistryError> {
+    let artifact = manifest.artifacts.get("wasm32-wasip2").ok_or_else(|| {
+        RegistryError::ExtensionNotFound(format!(
+            "No wasm32-wasip2 artifact for '{}'",
+            manifest.name
+        ))
+    })?;
+
+    let url = artifact.url.as_ref().ok_or_else(|| {
+        RegistryError::ExtensionNotFound(format!(
+            "No artifact URL for '{}'. Use --build to build from source.",
+            manifest.name
+        ))
+    })?;
+
+    validate_artifact_url(&manifest.name, "artifacts.wasm32-wasip2.url", url)?;
+
+    let expected_sha = artifact
+        .sha256
+        .as_ref()
+        .ok_or_else(|| RegistryError::MissingChecksum {
+            name: manifest.name.clone(),
+        })?;
+
+    Ok((artifact, url, expected_sha))
+}
+
+/// Download a capabilities file (capped at 1 MB) to `target_caps`.
+///
+/// Download failures and oversized files are logged and reported as "no
+/// capabilities" (best-effort for bare artifacts); local write errors are
+/// propagated.
+async fn download_capabilities(
+    caps_url: &str,
+    target_caps: &std::path::Path,
+) -> Result<bool, RegistryError> {
+    const MAX_CAPS_SIZE: usize = 1024 * 1024; // 1 MB
+    match download_artifact(caps_url).await {
+        Ok(caps_bytes) if caps_bytes.len() <= MAX_CAPS_SIZE => {
+            fs::write(target_caps, &caps_bytes)
+                .await
+                .map_err(RegistryError::Io)?;
+            Ok(true)
+        }
+        Ok(caps_bytes) => {
+            tracing::warn!(
+                "Capabilities file too large ({} bytes, max {}), skipping",
+                caps_bytes.len(),
+                MAX_CAPS_SIZE
+            );
+            Ok(false)
+        }
+        Err(e) => {
+            tracing::warn!("Failed to download capabilities from {}: {}", caps_url, e);
+            Ok(false)
+        }
     }
 }
 

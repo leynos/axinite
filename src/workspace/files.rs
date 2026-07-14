@@ -10,6 +10,24 @@ use super::{
     MemoryDocument, Workspace, WorkspaceEntry, normalize_directory, normalize_path, paths,
 };
 
+/// Separator inserted between existing content and an appended entry.
+enum EntrySeparator {
+    /// Single newline: raw, log-style appends.
+    Line,
+    /// Blank line: semantic separation between memory entries.
+    Paragraph,
+}
+
+impl EntrySeparator {
+    /// The literal separator string.
+    fn as_str(&self) -> &'static str {
+        match self {
+            Self::Line => "\n",
+            Self::Paragraph => "\n\n",
+        }
+    }
+}
+
 impl Workspace {
     /// Read a file by path.
     ///
@@ -54,6 +72,20 @@ impl Workspace {
     /// Creates the file if it doesn't exist.
     /// Adds a newline separator between existing and new content.
     pub async fn append(&self, path: &str, content: &str) -> Result<(), WorkspaceError> {
+        self.append_to_document(path, content, EntrySeparator::Line)
+            .await
+    }
+
+    /// Append an entry to the document at `path`, creating it if needed.
+    ///
+    /// The separator is only inserted when the document already has content.
+    /// Re-indexes the document after writing.
+    async fn append_to_document(
+        &self,
+        path: &str,
+        entry: &str,
+        separator: EntrySeparator,
+    ) -> Result<(), WorkspaceError> {
         let path = normalize_path(path);
         let doc = self
             .storage
@@ -61,9 +93,9 @@ impl Workspace {
             .await?;
 
         let new_content = if doc.content.is_empty() {
-            content.to_string()
+            entry.to_string()
         } else {
-            format!("{}\n{}", doc.content, content)
+            format!("{}{}{}", doc.content, separator.as_str(), entry)
         };
 
         self.storage.update_document(doc.id, &new_content).await?;
@@ -179,15 +211,8 @@ impl Workspace {
     /// remembering long-term.
     pub async fn append_memory(&self, entry: &str) -> Result<(), WorkspaceError> {
         // Use double newline for memory entries (semantic separation)
-        let doc = self.memory().await?;
-        let new_content = if doc.content.is_empty() {
-            entry.to_string()
-        } else {
-            format!("{}\n\n{}", doc.content, entry)
-        };
-        self.storage.update_document(doc.id, &new_content).await?;
-        self.reindex_document(doc.id).await?;
-        Ok(())
+        self.append_to_document(paths::MEMORY, entry, EntrySeparator::Paragraph)
+            .await
     }
 
     /// Append an entry to today's daily log.

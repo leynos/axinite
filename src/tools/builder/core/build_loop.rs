@@ -254,10 +254,12 @@ impl LlmSoftwareBuilder {
 
             match result.result {
                 RespondResult::Text(response) => {
-                    match self
-                        .handle_text_response(response, &inputs, &mut state, &mut bundle.ctx)
-                        .await
-                    {
+                    let text_ctx = responses::TextResponseContext {
+                        inputs: &inputs,
+                        state: &mut state,
+                        reason_ctx: &mut bundle.ctx,
+                    };
+                    match self.handle_text_response(response, text_ctx).await {
                         std::ops::ControlFlow::Break(done) => return Ok(done),
                         std::ops::ControlFlow::Continue(()) => {}
                     }

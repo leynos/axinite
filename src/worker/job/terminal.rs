@@ -8,6 +8,22 @@ use crate::context::JobState;
 use crate::error::Error;
 
 use super::Worker;
+use super::events::TerminalEvent;
+
+/// Descriptor for a terminal transition: the target state, optional reason,
+/// and the user-facing labels persisted with the terminal result event.
+struct TerminalOutcome<'a> {
+    /// Terminal state to persist.
+    status: JobState,
+    /// Optional failure or completion reason recorded with the status.
+    reason: Option<&'a str>,
+    /// Status label used in the persisted result event (for example "failed").
+    status_str: &'a str,
+    /// Human-readable message describing the outcome.
+    message: String,
+    /// Operation name used in rollback logging.
+    op_name: &'static str,
+}
 
 impl Worker {
     async fn transition_terminal_state<F>(&self, transition: F) -> Result<JobState, Error>
@@ -56,17 +72,19 @@ impl Worker {
     /// [`JobContext`]: crate::context::JobContext
     pub(crate) async fn mark_completed(&self) -> Result<(), Error> {
         self.apply_terminal_transition(
-            JobState::Completed,
-            Some("Job completed successfully"),
-            "completed",
-            "Job completed successfully".to_string(),
+            TerminalOutcome {
+                status: JobState::Completed,
+                reason: Some("Job completed successfully"),
+                status_str: "completed",
+                message: "Job completed successfully".to_string(),
+                op_name: "mark_completed",
+            },
             |ctx| {
                 ctx.transition_to(
                     JobState::Completed,
                     Some("Job completed successfully".to_string()),
                 )
             },
-            "mark_completed",
         )
         .await
     }
@@ -102,27 +120,28 @@ impl Worker {
 
     async fn apply_terminal_transition<F>(
         &self,
-        status: JobState,
-        reason: Option<&str>,
-        status_str: &str,
-        message: String,
+        outcome: TerminalOutcome<'_>,
         transition: F,
-        op_name: &'static str,
     ) -> Result<(), Error>
     where
         F: FnOnce(&mut crate::context::JobContext) -> Result<(), String>,
     {
         let previous = self.transition_terminal_state(transition).await?;
         let event = serde_json::json!({
-            "status": status_str,
-            "success": matches!(status, JobState::Completed),
-            "message": message,
+            "status": outcome.status_str,
+            "success": matches!(outcome.status, JobState::Completed),
+            "message": outcome.message,
         });
         if let Err(e) = self
-            .persist_terminal_result_and_status(status, reason, "result", &event)
+            .persist_terminal_result_and_status(TerminalEvent {
+                status: outcome.status,
+                failure_reason: outcome.reason,
+                event_type: "result",
+                data: &event,
+            })
             .await
         {
-            self.rollback_context(Some(previous), op_name).await;
+            self.rollback_context(Some(previous), outcome.op_name).await;
             return Err(e);
         }
         Ok(())
@@ -141,12 +160,14 @@ impl Worker {
     /// [`JobContext`]: crate::context::JobContext
     pub(crate) async fn mark_failed(&self, reason: &str) -> Result<(), Error> {
         self.apply_terminal_transition(
-            JobState::Failed,
-            Some(reason),
-            "failed",
-            format!("Execution failed: {}", reason),
+            TerminalOutcome {
+                status: JobState::Failed,
+                reason: Some(reason),
+                status_str: "failed",
+                message: format!("Execution failed: {}", reason),
+                op_name: "mark_failed",
+            },
             |ctx| ctx.transition_to(JobState::Failed, Some(reason.to_string())),
-            "mark_failed",
         )
         .await
     }
@@ -164,12 +185,14 @@ impl Worker {
     /// [`JobContext`]: crate::context::JobContext
     pub(crate) async fn mark_stuck(&self, reason: &str) -> Result<(), Error> {
         self.apply_terminal_transition(
-            JobState::Stuck,
-            Some(reason),
-            "stuck",
-            format!("Job stuck: {}", reason),
+            TerminalOutcome {
+                status: JobState::Stuck,
+                reason: Some(reason),
+                status_str: "stuck",
+                message: format!("Job stuck: {}", reason),
+                op_name: "mark_stuck",
+            },
             |ctx| ctx.mark_stuck(reason),
-            "mark_stuck",
         )
         .await
     }

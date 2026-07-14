@@ -75,8 +75,7 @@ pub fn select_many(prompt: &str, options: &[(&str, bool)]) -> io::Result<Vec<usi
     }
 
     let mut stdout = io::stdout();
-    let mut selected: Vec<bool> = options.iter().map(|(_, s)| *s).collect();
-    let mut cursor_pos = 0;
+    let mut state = SelectManyState::new(options);
 
     terminal::enable_raw_mode()?;
     execute!(stdout, cursor::Hide)?;
@@ -94,7 +93,7 @@ pub fn select_many(prompt: &str, options: &[(&str, bool)]) -> io::Result<Vec<usi
             )?;
             writeln!(stdout, "\r")?;
 
-            render_select_many_options(&mut stdout, options, &selected, cursor_pos)?;
+            render_select_many_options(&mut stdout, options, &state)?;
 
             stdout.flush()?;
 
@@ -103,13 +102,7 @@ pub fn select_many(prompt: &str, options: &[(&str, bool)]) -> io::Result<Vec<usi
                 code, modifiers, ..
             }) = event::read()?
             {
-                match apply_select_many_key(
-                    code,
-                    modifiers,
-                    options.len(),
-                    &mut selected,
-                    &mut cursor_pos,
-                ) {
+                match state.apply_key(code, modifiers) {
                     SelectManyAction::Confirm => break,
                     SelectManyAction::Interrupt => {
                         return Err(io::Error::new(io::ErrorKind::Interrupted, "Ctrl-C"));
@@ -135,11 +128,7 @@ pub fn select_many(prompt: &str, options: &[(&str, bool)]) -> io::Result<Vec<usi
 
     result?;
 
-    Ok(selected
-        .iter()
-        .enumerate()
-        .filter_map(|(i, &s)| if s { Some(i) } else { None })
-        .collect())
+    Ok(state.selected_indices())
 }
 
 /// Outcome of a single key press in the multi-select prompt.
@@ -149,18 +138,65 @@ enum SelectManyAction {
     Interrupt,
 }
 
+/// Mutable selection and cursor state for the multi-select prompt.
+struct SelectManyState {
+    selected: Vec<bool>,
+    cursor_pos: usize,
+}
+
+impl SelectManyState {
+    /// Initialize the state from the options' initial selection flags.
+    fn new(options: &[(&str, bool)]) -> Self {
+        Self {
+            selected: options.iter().map(|(_, s)| *s).collect(),
+            cursor_pos: 0,
+        }
+    }
+
+    /// Apply a key press to the state, reporting how to proceed.
+    fn apply_key(&mut self, code: KeyCode, modifiers: KeyModifiers) -> SelectManyAction {
+        match code {
+            KeyCode::Up => {
+                self.cursor_pos = self.cursor_pos.saturating_sub(1);
+                SelectManyAction::Continue
+            }
+            KeyCode::Down if self.cursor_pos < self.selected.len() - 1 => {
+                self.cursor_pos += 1;
+                SelectManyAction::Continue
+            }
+            KeyCode::Char(' ') => {
+                self.selected[self.cursor_pos] = !self.selected[self.cursor_pos];
+                SelectManyAction::Continue
+            }
+            KeyCode::Enter => SelectManyAction::Confirm,
+            KeyCode::Char('c') if modifiers.contains(KeyModifiers::CONTROL) => {
+                SelectManyAction::Interrupt
+            }
+            _ => SelectManyAction::Continue,
+        }
+    }
+
+    /// Return the indices of the currently selected options.
+    fn selected_indices(&self) -> Vec<usize> {
+        self.selected
+            .iter()
+            .enumerate()
+            .filter_map(|(i, &s)| if s { Some(i) } else { None })
+            .collect()
+    }
+}
+
 /// Render the multi-select option list, highlighting the cursor row.
 fn render_select_many_options<W: Write>(
     stdout: &mut W,
     options: &[(&str, bool)],
-    selected: &[bool],
-    cursor_pos: usize,
+    state: &SelectManyState,
 ) -> io::Result<()> {
     for (i, (label, _)) in options.iter().enumerate() {
-        let checkbox = if selected[i] { "[x]" } else { "[ ]" };
-        let prefix = if i == cursor_pos { ">" } else { " " };
+        let checkbox = if state.selected[i] { "[x]" } else { "[ ]" };
+        let prefix = if i == state.cursor_pos { ">" } else { " " };
 
-        if i == cursor_pos {
+        if i == state.cursor_pos {
             execute!(stdout, SetForegroundColor(Color::Cyan))?;
             writeln!(stdout, "  {} {} {}\r", prefix, checkbox, label)?;
             execute!(stdout, ResetColor)?;
@@ -169,33 +205,4 @@ fn render_select_many_options<W: Write>(
         }
     }
     Ok(())
-}
-
-/// Apply a key press to the multi-select state, reporting how to proceed.
-fn apply_select_many_key(
-    code: KeyCode,
-    modifiers: KeyModifiers,
-    option_count: usize,
-    selected: &mut [bool],
-    cursor_pos: &mut usize,
-) -> SelectManyAction {
-    match code {
-        KeyCode::Up => {
-            *cursor_pos = cursor_pos.saturating_sub(1);
-            SelectManyAction::Continue
-        }
-        KeyCode::Down if *cursor_pos < option_count - 1 => {
-            *cursor_pos += 1;
-            SelectManyAction::Continue
-        }
-        KeyCode::Char(' ') => {
-            selected[*cursor_pos] = !selected[*cursor_pos];
-            SelectManyAction::Continue
-        }
-        KeyCode::Enter => SelectManyAction::Confirm,
-        KeyCode::Char('c') if modifiers.contains(KeyModifiers::CONTROL) => {
-            SelectManyAction::Interrupt
-        }
-        _ => SelectManyAction::Continue,
-    }
 }

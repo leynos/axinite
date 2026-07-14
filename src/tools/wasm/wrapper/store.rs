@@ -45,6 +45,11 @@ pub(super) struct PreparedHttpRequest {
     pub(super) headers: HashMap<String, String>,
 }
 
+/// Compute the encoding variants of a secret that must all be redacted.
+///
+/// Covers the raw value, its percent-encoded form, and the `+`-for-space
+/// form used in query strings; longest variants first so substrings of a
+/// longer variant do not survive redaction.
 fn secret_redaction_variants(secret: &str) -> Vec<String> {
     let mut variants = vec![secret.to_string()];
     let percent_encoded = urlencoding::encode(secret).into_owned();
@@ -58,6 +63,15 @@ fn secret_redaction_variants(secret: &str) -> Vec<String> {
     variants.sort_by_key(|variant| std::cmp::Reverse(variant.len()));
     variants.dedup();
     variants
+}
+
+/// Replace every encoding variant of `secret` in `text` with `replacement`.
+fn redact_secret_value(text: String, secret: &str, replacement: &str) -> String {
+    let mut result = text;
+    for variant in secret_redaction_variants(secret) {
+        result = result.replace(&variant, replacement);
+    }
+    result
 }
 
 impl StoreData {
@@ -112,19 +126,17 @@ impl StoreData {
     pub(super) fn redact_credentials(&self, text: &str) -> String {
         let mut result = text.to_string();
         for (name, value) in &self.credentials {
-            if !value.is_empty() {
-                let replacement = format!("[REDACTED:{}]", name);
-                for variant in secret_redaction_variants(value) {
-                    result = result.replace(&variant, &replacement);
-                }
+            if value.is_empty() {
+                continue;
             }
+            let replacement = format!("[REDACTED:{}]", name);
+            result = redact_secret_value(result, value, &replacement);
         }
         for cred in &self.host_credentials {
-            if !cred.secret_value.is_empty() {
-                for variant in secret_redaction_variants(&cred.secret_value) {
-                    result = result.replace(&variant, "[REDACTED:host_credential]");
-                }
+            if cred.secret_value.is_empty() {
+                continue;
             }
+            result = redact_secret_value(result, &cred.secret_value, "[REDACTED:host_credential]");
         }
         result
     }

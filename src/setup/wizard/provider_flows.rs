@@ -39,27 +39,14 @@ impl SetupWizard {
             other => other,
         });
 
-        // Clear model only when switching providers (old model may be invalid)
-        if self.settings.llm_backend.as_deref() != Some(backend) {
-            self.settings.selected_model = None;
-        }
-        self.settings.llm_backend = Some(backend.to_string());
+        self.switch_llm_backend(backend);
 
         // Check env var first
-        if let Ok(existing) = std::env::var(env_var) {
-            print_info(&format!("{env_var} found: {}", mask_api_key(&existing)));
-            if confirm("Use this key?", true).map_err(SetupError::Io)? {
-                // Persist env-provided key to secrets store for future runs
-                if let Ok(ctx) = self.init_secrets_context().await {
-                    let key = SecretString::from(existing.clone());
-                    if let Err(e) = ctx.save_secret(secret_name, &key).await {
-                        tracing::warn!("Failed to persist env key to secrets: {}", e);
-                    }
-                }
-                self.llm_api_key = Some(SecretString::from(existing));
-                print_success(&format!("{display_name} configured (from env)"));
-                return Ok(());
-            }
+        if self
+            .try_env_api_key(env_var, secret_name, display_name)
+            .await?
+        {
+            return Ok(());
         }
 
         println!();
@@ -67,15 +54,67 @@ impl SetupWizard {
         println!();
 
         let key = secret_input(prompt_label).map_err(SetupError::Io)?;
-        let key_str = key.expose_secret();
-
-        if key_str.is_empty() {
+        if key.expose_secret().is_empty() {
             return Err(SetupError::Config("API key cannot be empty".to_string()));
         }
 
+        self.store_api_key(env_var, secret_name, &key).await?;
+
+        print_success(&format!("{display_name} configured"));
+        Ok(())
+    }
+
+    /// Record the chosen LLM backend, clearing the selected model only when
+    /// switching providers (the old model may be invalid).
+    fn switch_llm_backend(&mut self, backend: &str) {
+        if self.settings.llm_backend.as_deref() != Some(backend) {
+            self.settings.selected_model = None;
+        }
+        self.settings.llm_backend = Some(backend.to_string());
+    }
+
+    /// Offer to reuse an API key found in the environment, persisting it to
+    /// the secrets store when accepted.
+    ///
+    /// Returns `true` when the env-provided key was accepted.
+    async fn try_env_api_key(
+        &mut self,
+        env_var: &str,
+        secret_name: &str,
+        display_name: &str,
+    ) -> Result<bool, SetupError> {
+        let Ok(existing) = std::env::var(env_var) else {
+            return Ok(false);
+        };
+
+        print_info(&format!("{env_var} found: {}", mask_api_key(&existing)));
+        if !confirm("Use this key?", true).map_err(SetupError::Io)? {
+            return Ok(false);
+        }
+
+        // Persist env-provided key to secrets store for future runs
+        if let Ok(ctx) = self.init_secrets_context().await {
+            let key = SecretString::from(existing.clone());
+            if let Err(e) = ctx.save_secret(secret_name, &key).await {
+                tracing::warn!("Failed to persist env key to secrets: {}", e);
+            }
+        }
+        self.llm_api_key = Some(SecretString::from(existing));
+        print_success(&format!("{display_name} configured (from env)"));
+        Ok(true)
+    }
+
+    /// Persist a freshly entered API key to the secrets store (when
+    /// available), the env overlay, and the in-memory cache.
+    async fn store_api_key(
+        &mut self,
+        env_var: &str,
+        secret_name: &str,
+        key: &SecretString,
+    ) -> Result<(), SetupError> {
         // Store in secrets if available
         if let Ok(ctx) = self.init_secrets_context().await {
-            ctx.save_secret(secret_name, &key)
+            ctx.save_secret(secret_name, key)
                 .await
                 .map_err(|e| SetupError::Config(format!("Failed to save API key: {e}")))?;
             print_success("API key encrypted and saved");
@@ -85,6 +124,8 @@ impl SetupWizard {
             ));
         }
 
+        let key_str = key.expose_secret();
+
         // Make key visible to `optional_env()` for subsequent config resolution.
         // Uses the thread-safe overlay instead of `std::env::set_var` to avoid
         // UB on multi-threaded runtimes.
@@ -92,8 +133,6 @@ impl SetupWizard {
 
         // Cache key in memory for model fetching later in the wizard
         self.llm_api_key = Some(SecretString::from(key_str.to_string()));
-
-        print_success(&format!("{display_name} configured"));
         Ok(())
     }
 
@@ -102,11 +141,7 @@ impl SetupWizard {
         &mut self,
         def: &crate::llm::ProviderDefinition,
     ) -> Result<(), SetupError> {
-        // Clear model only when switching providers (old model may be invalid)
-        if self.settings.llm_backend.as_deref() != Some(&def.id) {
-            self.settings.selected_model = None;
-        }
-        self.settings.llm_backend = Some(def.id.clone());
+        self.switch_llm_backend(&def.id);
 
         let default_url = self
             .settings
@@ -145,26 +180,9 @@ impl SetupWizard {
             display_name,
         } = spec;
 
-        // Clear model only when switching providers (old model may be invalid)
-        if self.settings.llm_backend.as_deref() != Some(backend_id) {
-            self.settings.selected_model = None;
-        }
-        self.settings.llm_backend = Some(backend_id.to_string());
+        self.switch_llm_backend(backend_id);
 
-        let existing_url = self
-            .settings
-            .openai_compatible_base_url
-            .clone()
-            .or_else(|| std::env::var("LLM_BASE_URL").ok());
-
-        let url = if let Some(ref u) = existing_url {
-            let url_input = optional_input("Base URL", Some(&format!("current: {}", u)))
-                .map_err(SetupError::Io)?;
-            url_input.unwrap_or_else(|| u.clone())
-        } else {
-            input("Base URL (e.g., http://localhost:8000/v1)").map_err(SetupError::Io)?
-        };
-
+        let url = self.prompt_compatible_base_url()?;
         if url.is_empty() {
             return Err(SetupError::Config(format!(
                 "Base URL is required for {display_name}"
@@ -173,24 +191,50 @@ impl SetupWizard {
 
         self.settings.openai_compatible_base_url = Some(url.clone());
 
-        // Optional API key
-        if confirm("Does this endpoint require an API key?", false).map_err(SetupError::Io)? {
-            let key = secret_input("API key").map_err(SetupError::Io)?;
-            let key_str = key.expose_secret();
-
-            if !key_str.is_empty() {
-                if let Ok(ctx) = self.init_secrets_context().await {
-                    ctx.save_secret(secret_name, &key)
-                        .await
-                        .map_err(|e| SetupError::Config(format!("Failed to save API key: {e}")))?;
-                    print_success("API key encrypted and saved");
-                } else {
-                    print_info("Secrets not available. Set the API key in your environment.");
-                }
-            }
-        }
+        self.maybe_store_endpoint_api_key(secret_name).await?;
 
         print_success(&format!("{display_name} configured ({})", url));
+        Ok(())
+    }
+
+    /// Prompt for the endpoint base URL, offering any previously configured
+    /// value as the default.
+    fn prompt_compatible_base_url(&self) -> Result<String, SetupError> {
+        let existing_url = self
+            .settings
+            .openai_compatible_base_url
+            .clone()
+            .or_else(|| std::env::var("LLM_BASE_URL").ok());
+
+        if let Some(u) = existing_url {
+            let url_input = optional_input("Base URL", Some(&format!("current: {}", u)))
+                .map_err(SetupError::Io)?;
+            Ok(url_input.unwrap_or(u))
+        } else {
+            input("Base URL (e.g., http://localhost:8000/v1)").map_err(SetupError::Io)
+        }
+    }
+
+    /// Ask whether the endpoint needs an API key, and store one when the
+    /// user supplies it.
+    async fn maybe_store_endpoint_api_key(&mut self, secret_name: &str) -> Result<(), SetupError> {
+        if !confirm("Does this endpoint require an API key?", false).map_err(SetupError::Io)? {
+            return Ok(());
+        }
+
+        let key = secret_input("API key").map_err(SetupError::Io)?;
+        if key.expose_secret().is_empty() {
+            return Ok(());
+        }
+
+        if let Ok(ctx) = self.init_secrets_context().await {
+            ctx.save_secret(secret_name, &key)
+                .await
+                .map_err(|e| SetupError::Config(format!("Failed to save API key: {e}")))?;
+            print_success("API key encrypted and saved");
+        } else {
+            print_info("Secrets not available. Set the API key in your environment.");
+        }
         Ok(())
     }
 }

@@ -149,11 +149,6 @@ async fn list_dir_inner(
         }
 
         let entry_path = entry.path();
-        let relative = entry_path
-            .strip_prefix(base)
-            .unwrap_or(&entry_path)
-            .to_string_lossy();
-
         let metadata = entry
             .metadata()
             .await
@@ -161,37 +156,56 @@ async fn list_dir_inner(
             .map(ambient_fs::Metadata::from_std);
         let is_dir = metadata.as_ref().is_some_and(|m| m.is_dir());
 
-        let display = if is_dir {
-            format!("{}/", relative)
-        } else {
-            let size = metadata.as_ref().map(|m| m.len()).unwrap_or(0);
-            format!("{} ({})", relative, format_size(size))
-        };
+        entries.push(render_entry(base, &entry_path, metadata.as_ref(), is_dir));
 
-        entries.push(display);
-
-        if should_recurse(recursive, is_dir, current_depth, max_depth) {
-            // Skip common non-essential directories
-            let name = entry.file_name();
-            let name_str = name.to_string_lossy();
-            if !matches!(
-                name_str.as_ref(),
-                "node_modules" | "target" | ".git" | "__pycache__" | "venv" | ".venv"
-            ) {
-                Box::pin(list_dir_inner(
-                    base,
-                    &entry_path,
-                    recursive,
-                    max_depth,
-                    current_depth + 1,
-                    entries,
-                ))
-                .await?;
-            }
+        if !should_recurse(recursive, is_dir, current_depth, max_depth) {
+            continue;
         }
+        if is_excluded_dir(&entry.file_name()) {
+            continue;
+        }
+        Box::pin(list_dir_inner(
+            base,
+            &entry_path,
+            recursive,
+            max_depth,
+            current_depth + 1,
+            entries,
+        ))
+        .await?;
     }
 
     Ok(())
+}
+
+/// Render a single listing line: directories end with `/`, files carry a
+/// human-readable size.
+fn render_entry(
+    base: &Path,
+    entry_path: &Path,
+    metadata: Option<&ambient_fs::Metadata>,
+    is_dir: bool,
+) -> String {
+    let relative = entry_path
+        .strip_prefix(base)
+        .unwrap_or(entry_path)
+        .to_string_lossy();
+
+    if is_dir {
+        format!("{}/", relative)
+    } else {
+        let size = metadata.map(|m| m.len()).unwrap_or(0);
+        format!("{} ({})", relative, format_size(size))
+    }
+}
+
+/// Whether a directory name is a common non-essential directory that
+/// recursive listings skip (build outputs, caches, virtual environments).
+fn is_excluded_dir(name: &std::ffi::OsStr) -> bool {
+    matches!(
+        name.to_string_lossy().as_ref(),
+        "node_modules" | "target" | ".git" | "__pycache__" | "venv" | ".venv"
+    )
 }
 
 /// Whether a directory listing should descend into a subdirectory.

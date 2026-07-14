@@ -34,65 +34,11 @@ impl Settings {
             return Err("Empty path".to_string());
         }
 
-        // Navigate to parent and set the final key
-        let mut current = &mut json;
-        for part in &parts[..parts.len() - 1] {
-            current = current
-                .get_mut(*part)
-                .ok_or_else(|| format!("Path not found: {}", path))?;
-        }
+        let final_key = *parts.last().unwrap();
+        let obj = parent_object_mut(&mut json, &parts, path)?;
 
-        let final_key = parts.last().unwrap();
-        let obj = current
-            .as_object_mut()
-            .ok_or_else(|| format!("Parent is not an object: {}", path))?;
-
-        // Try to infer the type from the existing value
-        let new_value = if let Some(existing) = obj.get(*final_key) {
-            match existing {
-                serde_json::Value::Bool(_) => {
-                    let b = value
-                        .parse::<bool>()
-                        .map_err(|_| format!("Expected boolean for {}, got '{}'", path, value))?;
-                    serde_json::Value::Bool(b)
-                }
-                serde_json::Value::Number(n) => {
-                    if n.is_u64() {
-                        let n = value.parse::<u64>().map_err(|_| {
-                            format!("Expected integer for {}, got '{}'", path, value)
-                        })?;
-                        serde_json::Value::Number(n.into())
-                    } else if n.is_i64() {
-                        let n = value.parse::<i64>().map_err(|_| {
-                            format!("Expected integer for {}, got '{}'", path, value)
-                        })?;
-                        serde_json::Value::Number(n.into())
-                    } else {
-                        let n = value.parse::<f64>().map_err(|_| {
-                            format!("Expected number for {}, got '{}'", path, value)
-                        })?;
-                        serde_json::Number::from_f64(n)
-                            .map(serde_json::Value::Number)
-                            .unwrap_or(serde_json::Value::String(value.to_string()))
-                    }
-                }
-                serde_json::Value::Null => {
-                    // Could be Option<T>, try to parse as JSON or use string
-                    serde_json::from_str(value)
-                        .unwrap_or(serde_json::Value::String(value.to_string()))
-                }
-                serde_json::Value::Array(_) => serde_json::from_str(value)
-                    .map_err(|e| format!("Invalid JSON array for {}: {}", path, e))?,
-                serde_json::Value::Object(_) => serde_json::from_str(value)
-                    .map_err(|e| format!("Invalid JSON object for {}: {}", path, e))?,
-                serde_json::Value::String(_) => serde_json::Value::String(value.to_string()),
-            }
-        } else {
-            // Key doesn't exist, try to parse as JSON or use string
-            serde_json::from_str(value).unwrap_or(serde_json::Value::String(value.to_string()))
-        };
-
-        obj.insert((*final_key).to_string(), new_value);
+        let new_value = coerce_value(obj.get(final_key), path, value)?;
+        obj.insert(final_key.to_string(), new_value);
 
         // Deserialize back to Settings
         *self =
@@ -122,6 +68,84 @@ impl Settings {
         collect_settings(&json, String::new(), &mut results);
         results.sort_by(|a, b| a.0.cmp(&b.0));
         results
+    }
+}
+
+/// Navigate to the object holding the final key of a dotted path.
+fn parent_object_mut<'a>(
+    json: &'a mut serde_json::Value,
+    parts: &[&str],
+    path: &str,
+) -> Result<&'a mut serde_json::Map<String, serde_json::Value>, String> {
+    let mut current = json;
+    for part in &parts[..parts.len() - 1] {
+        current = current
+            .get_mut(*part)
+            .ok_or_else(|| format!("Path not found: {}", path))?;
+    }
+    current
+        .as_object_mut()
+        .ok_or_else(|| format!("Parent is not an object: {}", path))
+}
+
+/// Coerce a textual value to a JSON value, inferring the target type from
+/// the existing value at the path (if any).
+fn coerce_value(
+    existing: Option<&serde_json::Value>,
+    path: &str,
+    value: &str,
+) -> Result<serde_json::Value, String> {
+    let Some(existing) = existing else {
+        // Key doesn't exist, try to parse as JSON or use string
+        return Ok(
+            serde_json::from_str(value).unwrap_or(serde_json::Value::String(value.to_string()))
+        );
+    };
+
+    match existing {
+        serde_json::Value::Bool(_) => {
+            let b = value
+                .parse::<bool>()
+                .map_err(|_| format!("Expected boolean for {}, got '{}'", path, value))?;
+            Ok(serde_json::Value::Bool(b))
+        }
+        serde_json::Value::Number(n) => coerce_number(n, path, value),
+        serde_json::Value::Null => {
+            // Could be Option<T>, try to parse as JSON or use string
+            Ok(serde_json::from_str(value).unwrap_or(serde_json::Value::String(value.to_string())))
+        }
+        serde_json::Value::Array(_) => serde_json::from_str(value)
+            .map_err(|e| format!("Invalid JSON array for {}: {}", path, e)),
+        serde_json::Value::Object(_) => serde_json::from_str(value)
+            .map_err(|e| format!("Invalid JSON object for {}: {}", path, e)),
+        serde_json::Value::String(_) => Ok(serde_json::Value::String(value.to_string())),
+    }
+}
+
+/// Coerce a textual value to a JSON number matching the width and sign of
+/// the existing number (unsigned, signed, or floating point).
+fn coerce_number(
+    existing: &serde_json::Number,
+    path: &str,
+    value: &str,
+) -> Result<serde_json::Value, String> {
+    if existing.is_u64() {
+        let n = value
+            .parse::<u64>()
+            .map_err(|_| format!("Expected integer for {}, got '{}'", path, value))?;
+        Ok(serde_json::Value::Number(n.into()))
+    } else if existing.is_i64() {
+        let n = value
+            .parse::<i64>()
+            .map_err(|_| format!("Expected integer for {}, got '{}'", path, value))?;
+        Ok(serde_json::Value::Number(n.into()))
+    } else {
+        let n = value
+            .parse::<f64>()
+            .map_err(|_| format!("Expected number for {}, got '{}'", path, value))?;
+        Ok(serde_json::Number::from_f64(n)
+            .map(serde_json::Value::Number)
+            .unwrap_or(serde_json::Value::String(value.to_string())))
     }
 }
 

@@ -154,65 +154,9 @@ async fn forward_request(
     decision: NetworkDecision,
     state: Arc<ProxyState>,
 ) -> std::result::Result<Response<BoxBody<Bytes, Infallible>>, Infallible> {
-    let method = req.method().clone();
-    let uri = req.uri().clone();
+    let mut builder = base_forward_builder(&state, &req);
+    builder = inject_credentials(builder, decision, &state).await;
 
-    // Build the forwarded request
-    let mut builder = state.http_client.request(
-        reqwest::Method::from_bytes(method.as_str().as_bytes()).unwrap_or(reqwest::Method::GET),
-        uri.to_string(),
-    );
-
-    // Copy headers (except hop-by-hop headers)
-    for (name, value) in req.headers() {
-        if !is_hop_by_hop_header(name.as_str())
-            && let Ok(v) = value.to_str()
-        {
-            builder = builder.header(name.as_str(), v);
-        }
-    }
-
-    // Inject credentials if needed
-    if let NetworkDecision::AllowWithCredentials {
-        secret_name,
-        location,
-    } = decision
-    {
-        if let Some(credential) = state.credential_resolver.resolve(&secret_name).await {
-            builder = match location {
-                CredentialLocation::AuthorizationBearer => {
-                    builder.header("Authorization", format!("Bearer {}", credential))
-                }
-                CredentialLocation::Header { name, prefix } => {
-                    let value = match prefix {
-                        Some(p) => format!("{}{}", p, credential),
-                        None => credential.clone(),
-                    };
-                    builder.header(name, value)
-                }
-                CredentialLocation::QueryParam { name } => builder.query(&[(name, credential)]),
-                // Known limitation: AuthorizationBasic requires the proxy to
-                // construct a Base64 username:password pair from a single secret,
-                // and UrlPath requires rewriting the request URI. Neither is
-                // implemented yet. Containers needing these auth styles should
-                // fetch credentials via the orchestrator's GET /worker/{id}/credentials
-                // endpoint and set them directly.
-                CredentialLocation::AuthorizationBasic { .. }
-                | CredentialLocation::UrlPath { .. } => {
-                    tracing::warn!(
-                        "Proxy: credential location {:?} not supported for forward proxy, skipping",
-                        location
-                    );
-                    builder
-                }
-            };
-            tracing::debug!("Proxy: injected credential for {}", secret_name);
-        } else {
-            tracing::warn!("Proxy: credential {} not found", secret_name);
-        }
-    }
-
-    // Copy body
     let body_bytes = match req.collect().await {
         Ok(collected) => collected.to_bytes(),
         Err(e) => {
@@ -228,41 +172,124 @@ async fn forward_request(
         builder = builder.body(body_bytes.to_vec());
     }
 
-    // Send the request
-    match builder.send().await {
-        Ok(response) => {
-            let status = response.status();
-            let headers = response.headers().clone();
+    Ok(send_and_relay(builder).await)
+}
 
-            match response.bytes().await {
-                Ok(body) => {
-                    let mut resp_builder = Response::builder().status(status.as_u16());
+/// Start building the forwarded request: method, URI, and all headers
+/// except hop-by-hop ones.
+fn base_forward_builder(
+    state: &ProxyState,
+    req: &Request<hyper::body::Incoming>,
+) -> reqwest::RequestBuilder {
+    let mut builder = state.http_client.request(
+        reqwest::Method::from_bytes(req.method().as_str().as_bytes())
+            .unwrap_or(reqwest::Method::GET),
+        req.uri().to_string(),
+    );
 
-                    for (name, value) in headers.iter() {
-                        if !is_hop_by_hop_header(name.as_str()) {
-                            resp_builder = resp_builder.header(name.as_str(), value.as_bytes());
-                        }
-                    }
-
-                    Ok(make_response_from_builder(resp_builder, full_body(body)))
-                }
-                Err(e) => {
-                    tracing::error!("Proxy: failed to read response body: {}", e);
-                    Ok(error_response(
-                        StatusCode::BAD_GATEWAY,
-                        "Failed to read response".to_string(),
-                    ))
-                }
-            }
-        }
-        Err(e) => {
-            tracing::error!("Proxy: request failed: {}", e);
-            Ok(error_response(
-                StatusCode::BAD_GATEWAY,
-                format!("Request failed: {}", e),
-            ))
+    for (name, value) in req.headers() {
+        if !is_hop_by_hop_header(name.as_str())
+            && let Ok(v) = value.to_str()
+        {
+            builder = builder.header(name.as_str(), v);
         }
     }
+
+    builder
+}
+
+/// Inject credentials into the forwarded request when the policy decision
+/// requires them. Missing credentials are logged and skipped.
+async fn inject_credentials(
+    builder: reqwest::RequestBuilder,
+    decision: NetworkDecision,
+    state: &ProxyState,
+) -> reqwest::RequestBuilder {
+    let NetworkDecision::AllowWithCredentials {
+        secret_name,
+        location,
+    } = decision
+    else {
+        return builder;
+    };
+
+    let Some(credential) = state.credential_resolver.resolve(&secret_name).await else {
+        tracing::warn!("Proxy: credential {} not found", secret_name);
+        return builder;
+    };
+
+    let builder = apply_credential_location(builder, location, credential);
+    tracing::debug!("Proxy: injected credential for {}", secret_name);
+    builder
+}
+
+/// Place a resolved credential at its configured location on the request.
+fn apply_credential_location(
+    builder: reqwest::RequestBuilder,
+    location: CredentialLocation,
+    credential: String,
+) -> reqwest::RequestBuilder {
+    match location {
+        CredentialLocation::AuthorizationBearer => {
+            builder.header("Authorization", format!("Bearer {}", credential))
+        }
+        CredentialLocation::Header { name, prefix } => {
+            let value = match prefix {
+                Some(p) => format!("{}{}", p, credential),
+                None => credential.clone(),
+            };
+            builder.header(name, value)
+        }
+        CredentialLocation::QueryParam { name } => builder.query(&[(name, credential)]),
+        // Known limitation: AuthorizationBasic requires the proxy to
+        // construct a Base64 username:password pair from a single secret,
+        // and UrlPath requires rewriting the request URI. Neither is
+        // implemented yet. Containers needing these auth styles should
+        // fetch credentials via the orchestrator's GET /worker/{id}/credentials
+        // endpoint and set them directly.
+        CredentialLocation::AuthorizationBasic { .. } | CredentialLocation::UrlPath { .. } => {
+            tracing::warn!(
+                "Proxy: credential location {:?} not supported for forward proxy, skipping",
+                location
+            );
+            builder
+        }
+    }
+}
+
+/// Send the forwarded request and relay the upstream response, translating
+/// failures into gateway errors.
+async fn send_and_relay(builder: reqwest::RequestBuilder) -> Response<BoxBody<Bytes, Infallible>> {
+    let response = match builder.send().await {
+        Ok(response) => response,
+        Err(e) => {
+            tracing::error!("Proxy: request failed: {}", e);
+            return error_response(StatusCode::BAD_GATEWAY, format!("Request failed: {}", e));
+        }
+    };
+
+    let status = response.status();
+    let headers = response.headers().clone();
+
+    let body = match response.bytes().await {
+        Ok(body) => body,
+        Err(e) => {
+            tracing::error!("Proxy: failed to read response body: {}", e);
+            return error_response(
+                StatusCode::BAD_GATEWAY,
+                "Failed to read response".to_string(),
+            );
+        }
+    };
+
+    let mut resp_builder = Response::builder().status(status.as_u16());
+    for (name, value) in headers.iter() {
+        if !is_hop_by_hop_header(name.as_str()) {
+            resp_builder = resp_builder.header(name.as_str(), value.as_bytes());
+        }
+    }
+
+    make_response_from_builder(resp_builder, full_body(body))
 }
 
 /// Check if a header is hop-by-hop (should not be forwarded).

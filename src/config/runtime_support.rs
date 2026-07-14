@@ -32,16 +32,27 @@ where
         if has_value(&env_var) {
             continue;
         }
-        if let Ok(decrypted) = secrets.get_decrypted(user_id, &secret_name).await {
-            let value = decrypted.expose().to_string();
-            if value.trim().is_empty() {
-                continue;
-            }
+        if let Some(value) = decrypted_secret(secrets, user_id, &secret_name).await {
             set_value(&env_var, value);
             tracing::debug!("Loaded secret '{}' for env var '{}'", secret_name, env_var);
         }
     }
     Ok(())
+}
+
+/// Fetch and expose a decrypted secret, returning `None` when it is absent
+/// or blank.
+async fn decrypted_secret(
+    secrets: &dyn crate::secrets::SecretsStore,
+    user_id: &str,
+    secret_name: &str,
+) -> Option<String> {
+    let decrypted = secrets.get_decrypted(user_id, secret_name).await.ok()?;
+    let value = decrypted.expose().to_string();
+    if value.trim().is_empty() {
+        return None;
+    }
+    Some(value)
 }
 
 #[cfg(feature = "libsql")]

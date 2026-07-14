@@ -189,25 +189,35 @@ pub(super) async fn fetch_openai_models(cached_key: Option<&str>) -> Vec<(String
     }
 }
 
+/// Prefixes identifying OpenAI chat-capable model families.
+const CHAT_FAMILY_PREFIXES: &[&str] = &["gpt-", "chatgpt-", "o1", "o3", "o4", "o5"];
+
+/// Substrings identifying non-chat model variants (audio, embeddings, etc.).
+const NON_CHAT_MARKERS: &[&str] = &[
+    "realtime",
+    "audio",
+    "transcribe",
+    "tts",
+    "embedding",
+    "moderation",
+    "image",
+];
+
+/// Report whether a lowercased model id belongs to a chat-capable family.
+fn is_chat_family(id: &str) -> bool {
+    CHAT_FAMILY_PREFIXES
+        .iter()
+        .any(|prefix| id.starts_with(prefix))
+}
+
+/// Report whether a lowercased model id names a non-chat variant.
+fn is_non_chat_variant(id: &str) -> bool {
+    NON_CHAT_MARKERS.iter().any(|marker| id.contains(marker))
+}
+
 pub(super) fn is_openai_chat_model(model_id: &str) -> bool {
     let id = model_id.to_ascii_lowercase();
-
-    let is_chat_family = id.starts_with("gpt-")
-        || id.starts_with("chatgpt-")
-        || id.starts_with("o1")
-        || id.starts_with("o3")
-        || id.starts_with("o4")
-        || id.starts_with("o5");
-
-    let is_non_chat_variant = id.contains("realtime")
-        || id.contains("audio")
-        || id.contains("transcribe")
-        || id.contains("tts")
-        || id.contains("embedding")
-        || id.contains("moderation")
-        || id.contains("image");
-
-    is_chat_family && !is_non_chat_variant
+    is_chat_family(&id) && !is_non_chat_variant(&id)
 }
 
 fn openai_model_priority(model_id: &str) -> usize {

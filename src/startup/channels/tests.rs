@@ -3,7 +3,7 @@
 use std::sync::Arc;
 
 use ironclaw::{
-    app::{AppBuilder, AppBuilderFlags, AppComponents},
+    app::{AppBuilder, AppBuilderFlags, AppBuilderParams, AppComponents},
     channels::{ChannelManager, web::log_layer::LogBroadcaster},
     cli::Cli,
     config::Config,
@@ -16,16 +16,16 @@ async fn build_test_components(config: Config) -> anyhow::Result<AppComponents> 
     let tempdir = tempfile::tempdir()?;
     let session = create_session_manager(config.llm.session.clone()).await;
     let log_broadcaster = Arc::new(LogBroadcaster::new());
-    let (components, _side_effects) = AppBuilder::new(
+    let (components, _side_effects) = AppBuilder::new(AppBuilderParams {
         config,
-        AppBuilderFlags {
+        flags: AppBuilderFlags {
             no_db: true,
             ..Default::default()
         },
-        Some(tempdir.path().join("test.toml")),
+        toml_path: Some(tempdir.path().join("test.toml")),
         session,
         log_broadcaster,
-    )
+    })
     .build_components()
     .await?;
     Ok(components)

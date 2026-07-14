@@ -24,6 +24,20 @@ pub(super) enum WorkspaceStorage {
     Db(Arc<dyn crate::db::Database>),
 }
 
+/// Dispatch a method call to whichever backend this storage wraps.
+///
+/// Both `Repository` and the `Database` trait expose the same method names
+/// and signatures, so each wrapper below reduces to a single invocation.
+macro_rules! dispatch {
+    ($self:expr, $method:ident($($arg:expr),* $(,)?)) => {
+        match $self {
+            #[cfg(feature = "postgres")]
+            Self::Repo(repo) => repo.$method($($arg),*).await,
+            Self::Db(db) => db.$method($($arg),*).await,
+        }
+    };
+}
+
 impl WorkspaceStorage {
     pub(super) async fn get_document_by_path(
         &self,
@@ -31,22 +45,14 @@ impl WorkspaceStorage {
         agent_id: Option<Uuid>,
         path: &str,
     ) -> Result<MemoryDocument, WorkspaceError> {
-        match self {
-            #[cfg(feature = "postgres")]
-            Self::Repo(repo) => repo.get_document_by_path(user_id, agent_id, path).await,
-            Self::Db(db) => db.get_document_by_path(user_id, agent_id, path).await,
-        }
+        dispatch!(self, get_document_by_path(user_id, agent_id, path))
     }
 
     pub(super) async fn get_document_by_id(
         &self,
         id: Uuid,
     ) -> Result<MemoryDocument, WorkspaceError> {
-        match self {
-            #[cfg(feature = "postgres")]
-            Self::Repo(repo) => repo.get_document_by_id(id).await,
-            Self::Db(db) => db.get_document_by_id(id).await,
-        }
+        dispatch!(self, get_document_by_id(id))
     }
 
     pub(super) async fn get_or_create_document_by_path(
@@ -55,17 +61,10 @@ impl WorkspaceStorage {
         agent_id: Option<Uuid>,
         path: &str,
     ) -> Result<MemoryDocument, WorkspaceError> {
-        match self {
-            #[cfg(feature = "postgres")]
-            Self::Repo(repo) => {
-                repo.get_or_create_document_by_path(user_id, agent_id, path)
-                    .await
-            }
-            Self::Db(db) => {
-                db.get_or_create_document_by_path(user_id, agent_id, path)
-                    .await
-            }
-        }
+        dispatch!(
+            self,
+            get_or_create_document_by_path(user_id, agent_id, path)
+        )
     }
 
     pub(super) async fn update_document(
@@ -73,11 +72,7 @@ impl WorkspaceStorage {
         id: Uuid,
         content: &str,
     ) -> Result<(), WorkspaceError> {
-        match self {
-            #[cfg(feature = "postgres")]
-            Self::Repo(repo) => repo.update_document(id, content).await,
-            Self::Db(db) => db.update_document(id, content).await,
-        }
+        dispatch!(self, update_document(id, content))
     }
 
     pub(super) async fn delete_document_by_path(
@@ -86,11 +81,7 @@ impl WorkspaceStorage {
         agent_id: Option<Uuid>,
         path: &str,
     ) -> Result<(), WorkspaceError> {
-        match self {
-            #[cfg(feature = "postgres")]
-            Self::Repo(repo) => repo.delete_document_by_path(user_id, agent_id, path).await,
-            Self::Db(db) => db.delete_document_by_path(user_id, agent_id, path).await,
-        }
+        dispatch!(self, delete_document_by_path(user_id, agent_id, path))
     }
 
     pub(super) async fn list_directory(
@@ -99,11 +90,7 @@ impl WorkspaceStorage {
         agent_id: Option<Uuid>,
         directory: &str,
     ) -> Result<Vec<WorkspaceEntry>, WorkspaceError> {
-        match self {
-            #[cfg(feature = "postgres")]
-            Self::Repo(repo) => repo.list_directory(user_id, agent_id, directory).await,
-            Self::Db(db) => db.list_directory(user_id, agent_id, directory).await,
-        }
+        dispatch!(self, list_directory(user_id, agent_id, directory))
     }
 
     pub(super) async fn list_all_paths(
@@ -111,19 +98,11 @@ impl WorkspaceStorage {
         user_id: &str,
         agent_id: Option<Uuid>,
     ) -> Result<Vec<String>, WorkspaceError> {
-        match self {
-            #[cfg(feature = "postgres")]
-            Self::Repo(repo) => repo.list_all_paths(user_id, agent_id).await,
-            Self::Db(db) => db.list_all_paths(user_id, agent_id).await,
-        }
+        dispatch!(self, list_all_paths(user_id, agent_id))
     }
 
     pub(super) async fn delete_chunks(&self, document_id: Uuid) -> Result<(), WorkspaceError> {
-        match self {
-            #[cfg(feature = "postgres")]
-            Self::Repo(repo) => repo.delete_chunks(document_id).await,
-            Self::Db(db) => db.delete_chunks(document_id).await,
-        }
+        dispatch!(self, delete_chunks(document_id))
     }
 
     pub(super) async fn insert_chunk(
@@ -133,22 +112,13 @@ impl WorkspaceStorage {
         content: &str,
         embedding: Option<&[f32]>,
     ) -> Result<Uuid, WorkspaceError> {
-        match self {
-            #[cfg(feature = "postgres")]
-            Self::Repo(repo) => {
-                repo.insert_chunk(document_id, chunk_index, content, embedding)
-                    .await
-            }
-            Self::Db(db) => {
-                db.insert_chunk(InsertChunkParams {
-                    document_id,
-                    chunk_index,
-                    content,
-                    embedding,
-                })
-                .await
-            }
-        }
+        let params = InsertChunkParams {
+            document_id,
+            chunk_index,
+            content,
+            embedding,
+        };
+        dispatch!(self, insert_chunk(params))
     }
 
     pub(super) async fn update_chunk_embedding(
@@ -156,11 +126,7 @@ impl WorkspaceStorage {
         chunk_id: Uuid,
         embedding: &[f32],
     ) -> Result<(), WorkspaceError> {
-        match self {
-            #[cfg(feature = "postgres")]
-            Self::Repo(repo) => repo.update_chunk_embedding(chunk_id, embedding).await,
-            Self::Db(db) => db.update_chunk_embedding(chunk_id, embedding).await,
-        }
+        dispatch!(self, update_chunk_embedding(chunk_id, embedding))
     }
 
     pub(super) async fn get_chunks_without_embeddings(
@@ -169,17 +135,10 @@ impl WorkspaceStorage {
         agent_id: Option<Uuid>,
         limit: usize,
     ) -> Result<Vec<MemoryChunk>, WorkspaceError> {
-        match self {
-            #[cfg(feature = "postgres")]
-            Self::Repo(repo) => {
-                repo.get_chunks_without_embeddings(user_id, agent_id, limit)
-                    .await
-            }
-            Self::Db(db) => {
-                db.get_chunks_without_embeddings(user_id, agent_id, limit)
-                    .await
-            }
-        }
+        dispatch!(
+            self,
+            get_chunks_without_embeddings(user_id, agent_id, limit)
+        )
     }
 
     pub(super) async fn hybrid_search(
@@ -190,22 +149,13 @@ impl WorkspaceStorage {
         embedding: Option<&[f32]>,
         config: &SearchConfig,
     ) -> Result<Vec<SearchResult>, WorkspaceError> {
-        match self {
-            #[cfg(feature = "postgres")]
-            Self::Repo(repo) => {
-                repo.hybrid_search(user_id, agent_id, query, embedding, config)
-                    .await
-            }
-            Self::Db(db) => {
-                db.hybrid_search(HybridSearchParams {
-                    user_id,
-                    agent_id,
-                    query,
-                    embedding,
-                    config,
-                })
-                .await
-            }
-        }
+        let params = HybridSearchParams {
+            user_id,
+            agent_id,
+            query,
+            embedding,
+            config,
+        };
+        dispatch!(self, hybrid_search(params))
     }
 }

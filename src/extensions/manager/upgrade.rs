@@ -5,6 +5,34 @@ use crate::tools::wasm::discover_tools;
 
 use super::ExtensionManager;
 
+/// Build an [`UpgradeOutcome`] with the given status and detail.
+fn outcome(name: &str, kind: ExtensionKind, status: &str, detail: String) -> UpgradeOutcome {
+    UpgradeOutcome {
+        name: name.to_string(),
+        kind,
+        status: status.to_string(),
+        detail,
+    }
+}
+
+/// Summarize a batch of upgrade outcomes for the user.
+fn summarize_outcomes(outcomes: &[UpgradeOutcome]) -> String {
+    let upgraded = outcomes.iter().filter(|o| o.status == "upgraded").count();
+    let up_to_date = outcomes
+        .iter()
+        .filter(|o| o.status == "already_up_to_date")
+        .count();
+    let failed = outcomes.iter().filter(|o| o.status == "failed").count();
+
+    format!(
+        "{} extension(s) checked: {} upgraded, {} already up to date, {} failed",
+        outcomes.len(),
+        upgraded,
+        up_to_date,
+        failed
+    )
+}
+
 impl ExtensionManager {
     /// Upgrade installed WASM extensions to match the current host WIT version.
     ///
@@ -14,7 +42,33 @@ impl ExtensionManager {
     /// The upgrade preserves authentication secrets — only the `.wasm` binary
     /// (and `.capabilities.json`) are replaced.
     pub async fn upgrade(&self, name: Option<&str>) -> Result<UpgradeResult, ExtensionError> {
-        // Collect extensions to check
+        let candidates = self.collect_upgrade_candidates(name).await?;
+
+        if candidates.is_empty() {
+            return Ok(UpgradeResult {
+                results: Vec::new(),
+                message: "No WASM extensions installed.".to_string(),
+            });
+        }
+
+        let mut outcomes = Vec::new();
+        for (ext_name, kind) in &candidates {
+            outcomes.push(self.upgrade_one(ext_name, *kind).await);
+        }
+
+        let message = summarize_outcomes(&outcomes);
+        Ok(UpgradeResult {
+            results: outcomes,
+            message,
+        })
+    }
+
+    /// Resolve which extensions to check: the named one, or all discovered
+    /// WASM tools and channels.
+    async fn collect_upgrade_candidates(
+        &self,
+        name: Option<&str>,
+    ) -> Result<Vec<(String, ExtensionKind)>, ExtensionError> {
         let mut candidates: Vec<(String, ExtensionKind)> = Vec::new();
 
         if let Some(name) = name {
@@ -27,59 +81,49 @@ impl ExtensionManager {
                 ));
             }
             candidates.push((name.to_string(), kind));
-        } else {
-            // Discover all installed WASM tools
-            if self.wasm_tools_dir.exists()
-                && let Ok(tools) = discover_tools(&self.wasm_tools_dir).await
-            {
-                for (tool_name, _) in tools {
-                    candidates.push((tool_name, ExtensionKind::WasmTool));
-                }
-            }
-            // Discover all installed WASM channels
-            if self.wasm_channels_dir.exists()
-                && let Ok(channels) =
-                    crate::channels::wasm::discover_channels(&self.wasm_channels_dir).await
-            {
-                for (ch_name, _) in channels {
-                    candidates.push((ch_name, ExtensionKind::WasmChannel));
-                }
+            return Ok(candidates);
+        }
+
+        // Discover all installed WASM tools
+        if self.wasm_tools_dir.exists()
+            && let Ok(tools) = discover_tools(&self.wasm_tools_dir).await
+        {
+            for (tool_name, _) in tools {
+                candidates.push((tool_name, ExtensionKind::WasmTool));
             }
         }
-
-        if candidates.is_empty() {
-            return Ok(UpgradeResult {
-                results: Vec::new(),
-                message: "No WASM extensions installed.".to_string(),
-            });
+        // Discover all installed WASM channels
+        if self.wasm_channels_dir.exists()
+            && let Ok(channels) =
+                crate::channels::wasm::discover_channels(&self.wasm_channels_dir).await
+        {
+            for (ch_name, _) in channels {
+                candidates.push((ch_name, ExtensionKind::WasmChannel));
+            }
         }
+        Ok(candidates)
+    }
 
-        let mut outcomes = Vec::new();
-
-        for (ext_name, kind) in &candidates {
-            let outcome = self.upgrade_one(ext_name, *kind).await;
-            outcomes.push(outcome);
+    /// Read the WIT version declared in an extension's capabilities file.
+    async fn declared_wit_version(
+        cap_path: &std::path::Path,
+        kind: ExtensionKind,
+    ) -> Option<String> {
+        if !cap_path.exists() {
+            return None;
         }
-
-        let upgraded = outcomes.iter().filter(|o| o.status == "upgraded").count();
-        let up_to_date = outcomes
-            .iter()
-            .filter(|o| o.status == "already_up_to_date")
-            .count();
-        let failed = outcomes.iter().filter(|o| o.status == "failed").count();
-
-        let message = format!(
-            "{} extension(s) checked: {} upgraded, {} already up to date, {} failed",
-            outcomes.len(),
-            upgraded,
-            up_to_date,
-            failed
-        );
-
-        Ok(UpgradeResult {
-            results: outcomes,
-            message,
-        })
+        let bytes = tokio::fs::read(cap_path).await.ok()?;
+        match kind {
+            ExtensionKind::WasmTool => crate::tools::wasm::CapabilitiesFile::from_bytes(&bytes)
+                .ok()
+                .and_then(|c| c.wit_version),
+            ExtensionKind::WasmChannel => {
+                crate::channels::wasm::ChannelCapabilitiesFile::from_bytes(&bytes)
+                    .ok()
+                    .and_then(|c| c.wit_version)
+            }
+            ExtensionKind::McpServer | ExtensionKind::ChannelRelay => None,
+        }
     }
 
     /// Upgrade a single WASM extension if its WIT version is outdated.
@@ -91,40 +135,18 @@ impl ExtensionManager {
                 crate::tools::wasm::WIT_CHANNEL_VERSION,
             ),
             ExtensionKind::McpServer | ExtensionKind::ChannelRelay => {
-                return UpgradeOutcome {
-                    name: name.to_string(),
+                return outcome(
+                    name,
                     kind,
-                    status: "failed".to_string(),
-                    detail: "This extension type cannot be upgraded this way".to_string(),
-                };
+                    "failed",
+                    "This extension type cannot be upgraded this way".to_string(),
+                );
             }
         };
 
         // Read current WIT version from capabilities
         let cap_path = cap_dir.join(format!("{}.capabilities.json", name));
-        let declared_wit = if cap_path.exists() {
-            match tokio::fs::read(&cap_path).await {
-                Ok(bytes) => {
-                    let wit: Option<String> = match kind {
-                        ExtensionKind::WasmTool => {
-                            crate::tools::wasm::CapabilitiesFile::from_bytes(&bytes)
-                                .ok()
-                                .and_then(|c| c.wit_version)
-                        }
-                        ExtensionKind::WasmChannel => {
-                            crate::channels::wasm::ChannelCapabilitiesFile::from_bytes(&bytes)
-                                .ok()
-                                .and_then(|c| c.wit_version)
-                        }
-                        ExtensionKind::McpServer | ExtensionKind::ChannelRelay => None,
-                    };
-                    wit
-                }
-                Err(_) => None,
-            }
-        } else {
-            None
-        };
+        let declared_wit = Self::declared_wit_version(&cap_path, kind).await;
 
         // Check if upgrade is needed
         let needs_upgrade =
@@ -132,33 +154,33 @@ impl ExtensionManager {
                 .is_err();
 
         if !needs_upgrade {
-            return UpgradeOutcome {
-                name: name.to_string(),
+            return outcome(
+                name,
                 kind,
-                status: "already_up_to_date".to_string(),
-                detail: format!(
+                "already_up_to_date",
+                format!(
                     "WIT {} matches host WIT {}",
                     declared_wit.as_deref().unwrap_or("unknown"),
                     host_wit
                 ),
-            };
+            );
         }
 
         // Check registry for a newer version
         let entry = self.registry.get_with_kind(name, Some(kind)).await;
         let Some(entry) = entry else {
-            return UpgradeOutcome {
-                name: name.to_string(),
+            return outcome(
+                name,
                 kind,
-                status: "not_in_registry".to_string(),
-                detail: format!(
+                "not_in_registry",
+                format!(
                     "Extension '{}' has outdated WIT {} (host: {}), \
                      but is not in the registry. Reinstall manually with a URL.",
                     name,
                     declared_wit.as_deref().unwrap_or("unknown"),
                     host_wit
                 ),
-            };
+            );
         };
 
         // Delete old .wasm file (keep secrets intact)
@@ -166,12 +188,12 @@ impl ExtensionManager {
         if wasm_path.exists()
             && let Err(e) = tokio::fs::remove_file(&wasm_path).await
         {
-            return UpgradeOutcome {
-                name: name.to_string(),
+            return outcome(
+                name,
                 kind,
-                status: "failed".to_string(),
-                detail: format!("Failed to remove old WASM binary: {}", e),
-            };
+                "failed",
+                format!("Failed to remove old WASM binary: {}", e),
+            );
         }
         // Also remove old capabilities so install_from_entry can write the new one
         if cap_path.exists() {
@@ -187,23 +209,23 @@ impl ExtensionManager {
                     new_host_wit = %host_wit,
                     "Upgraded WASM extension"
                 );
-                UpgradeOutcome {
-                    name: name.to_string(),
+                outcome(
+                    name,
                     kind,
-                    status: "upgraded".to_string(),
-                    detail: format!(
+                    "upgraded",
+                    format!(
                         "Upgraded from WIT {} to host WIT {}. Restart to activate.",
                         declared_wit.as_deref().unwrap_or("unknown"),
                         host_wit
                     ),
-                }
+                )
             }
-            Err(e) => UpgradeOutcome {
-                name: name.to_string(),
+            Err(e) => outcome(
+                name,
                 kind,
-                status: "failed".to_string(),
-                detail: format!("Reinstall failed: {}. Old files were removed.", e),
-            },
+                "failed",
+                format!("Reinstall failed: {}. Old files were removed.", e),
+            ),
         }
     }
 }

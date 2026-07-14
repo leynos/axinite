@@ -3,8 +3,9 @@
 use pgvector::Vector;
 use uuid::Uuid;
 
+use crate::db::HybridSearchParams;
 use crate::error::WorkspaceError;
-use crate::workspace::search::{RankedResult, SearchConfig, SearchResult, reciprocal_rank_fusion};
+use crate::workspace::search::{RankedResult, SearchResult, reciprocal_rank_fusion};
 
 use super::Repository;
 
@@ -12,12 +13,16 @@ impl Repository {
     /// Perform hybrid search combining FTS and vector similarity.
     pub async fn hybrid_search(
         &self,
-        user_id: &str,
-        agent_id: Option<Uuid>,
-        query: &str,
-        embedding: Option<&[f32]>,
-        config: &SearchConfig,
+        params: HybridSearchParams<'_>,
     ) -> Result<Vec<SearchResult>, WorkspaceError> {
+        let HybridSearchParams {
+            user_id,
+            agent_id,
+            query,
+            embedding,
+            config,
+        } = params;
+
         let fts_results = if config.use_fts {
             let results = self
                 .fts_search(user_id, agent_id, query, config.pre_fusion_limit)

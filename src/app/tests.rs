@@ -75,16 +75,16 @@ async fn two_phase_fixture() -> anyhow::Result<(AppBuilder, PathBuf, tempfile::T
     let log_broadcaster = Arc::new(LogBroadcaster::new());
     let llm: Arc<dyn LlmProvider> = Arc::new(StubLlm::new("ok"));
 
-    let mut builder = AppBuilder::new(
+    let mut builder = AppBuilder::new(AppBuilderParams {
         config,
-        AppBuilderFlags {
+        flags: AppBuilderFlags {
             workspace_import_dir: Some(workspace_import_dir.clone()),
             ..AppBuilderFlags::default()
         },
-        None,
+        toml_path: None,
         session,
         log_broadcaster,
-    );
+    });
     builder.with_database(db);
     builder.with_llm(llm);
 
@@ -156,13 +156,13 @@ async fn run_init_database_migration_child() -> anyhow::Result<()> {
     let config = Config::for_testing(db_path, skills_dir, installed_skills_dir).await?;
     let session = Arc::new(SessionManager::new(SessionConfig::default()));
     let log_broadcaster = Arc::new(LogBroadcaster::new());
-    let mut builder = AppBuilder::new(
+    let mut builder = AppBuilder::new(AppBuilderParams {
         config,
-        AppBuilderFlags::default(),
-        None,
+        flags: AppBuilderFlags::default(),
+        toml_path: None,
         session,
         log_broadcaster,
-    );
+    });
 
     builder.init_database().await?;
 

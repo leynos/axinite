@@ -54,67 +54,7 @@ impl Agent {
 
             "ping" => Ok(SubmissionResult::response("pong!")),
 
-            "restart" => {
-                tracing::info!("[commands::restart] Restart command received");
-                // Channel authorization check: restart is only available via web interface
-                if channel != "gateway" {
-                    tracing::warn!(
-                        "[commands::restart] Restart rejected: not from gateway channel (from: {})",
-                        channel
-                    );
-                    return Ok(SubmissionResult::error(
-                        "Restart is only available through the web interface with explicit user confirmation. \
-                         Use the Restart button in the UI."
-                            .to_string(),
-                    ));
-                }
-                // Environment check: restart is only available in Docker containers
-                let in_docker = std::env::var("IRONCLAW_IN_DOCKER")
-                    .map(|v| v.to_lowercase() == "true")
-                    .unwrap_or(false);
-
-                tracing::debug!("[commands::restart] IRONCLAW_IN_DOCKER={}", in_docker);
-
-                if !in_docker {
-                    tracing::warn!(
-                        "[commands::restart] Restart rejected: not in Docker environment"
-                    );
-                    return Ok(SubmissionResult::error(
-                        "Restart is not available in this environment. \
-                         The IRONCLAW_IN_DOCKER environment variable must be set to 'true' for Docker deployments."
-                            .to_string(),
-                    ));
-                }
-
-                // Execute restart tool directly (don't dispatch as a job for LLM planning)
-                // This ensures the tool runs immediately without LLM involvement
-                use crate::tools::Tool;
-                let tool = crate::tools::builtin::RestartTool;
-                let params = serde_json::json!({});
-
-                // Create a minimal JobContext for the tool
-                let dummy_ctx =
-                    crate::context::JobContext::with_user("system", "Restart", "Graceful restart");
-
-                match tool.execute(params, &dummy_ctx).await {
-                    Ok(output) => {
-                        tracing::info!("[commands::restart] RestartTool executed successfully");
-                        // Extract text from the ToolOutput result
-                        let response = match output.result {
-                            serde_json::Value::String(s) => s,
-                            _ => output.result.to_string(),
-                        };
-                        Ok(SubmissionResult::response(response))
-                    }
-                    Err(e) => {
-                        tracing::error!(
-                            "[commands::restart] RestartTool execution failed: {:?}",
-                            e
-                        );
-                        Ok(SubmissionResult::error(format!("Restart failed: {}", e)))
-                    }
-                }
-            }
+            "restart" => self.handle_restart(channel).await,
 
             "version" => Ok(SubmissionResult::response(format!(
                 "{} v{}",
@@ -138,92 +78,159 @@ impl Agent {
                 ))
             }
 
-            "skills" => {
-                if args.first().map(|s| s.as_str()) == Some("search") {
-                    let query = args[1..].join(" ");
-                    if query.is_empty() {
-                        return Ok(SubmissionResult::error("Usage: /skills search <query>"));
-                    }
-                    self.handle_skills_search(&query).await
-                } else if args.is_empty() {
-                    self.handle_skills_list().await
-                } else {
-                    Ok(SubmissionResult::error(
-                        "Usage: /skills or /skills search <query>",
-                    ))
-                }
-            }
+            "skills" => self.handle_skills_command(args).await,
 
             "model" => {
-                let current = self.llm().active_model_name();
-
                 if args.is_empty() {
-                    // Show current model and list available models
-                    let mut out = format!("Active model: {}\n", current);
-                    match self.llm().list_models().await {
-                        Ok(models) if !models.is_empty() => {
-                            out.push_str("\nAvailable models:\n");
-                            for m in &models {
-                                let marker = if *m == current { " (active)" } else { "" };
-                                out.push_str(&format!("  {}{}\n", m, marker));
-                            }
-                            out.push_str("\nUse /model <name> to switch.");
-                        }
-                        Ok(_) => {
-                            out.push_str(
-                                "\nCould not fetch model list. Use /model <name> to switch.",
-                            );
-                        }
-                        Err(e) => {
-                            out.push_str(&format!(
-                                "\nCould not fetch models: {}. Use /model <name> to switch.",
-                                e
-                            ));
-                        }
-                    }
-                    Ok(SubmissionResult::response(out))
+                    Ok(SubmissionResult::response(self.show_models().await))
                 } else {
-                    let requested = &args[0];
-
-                    // Validate the model exists
-                    match self.llm().list_models().await {
-                        Ok(models) if !models.is_empty() => {
-                            if !models.iter().any(|m| m == requested) {
-                                return Ok(SubmissionResult::error(format!(
-                                    "Unknown model: {}. Available models:\n  {}",
-                                    requested,
-                                    models.join("\n  ")
-                                )));
-                            }
-                        }
-                        Ok(_) => {
-                            // Empty model list, can't validate but try anyway
-                        }
-                        Err(e) => {
-                            tracing::warn!("Could not fetch model list for validation: {}", e);
-                        }
-                    }
-
-                    match self.llm().set_model(requested) {
-                        Ok(()) => {
-                            // Persist the model choice so it survives restarts.
-                            self.persist_selected_model(requested).await;
-                            Ok(SubmissionResult::response(format!(
-                                "Switched model to: {}",
-                                requested
-                            )))
-                        }
-                        Err(e) => Ok(SubmissionResult::error(format!(
-                            "Failed to switch model: {}",
-                            e
-                        ))),
-                    }
+                    self.switch_model(&args[0]).await
                 }
             }
 
             _ => Ok(SubmissionResult::error(format!(
                 "Unknown command: {}. Try /help",
                 command
+            ))),
+        }
+    }
+
+    /// Handle `/restart`: gated on the gateway channel and a Docker
+    /// environment, then runs the restart tool directly (no LLM planning).
+    async fn handle_restart(&self, channel: &str) -> Result<SubmissionResult, Error> {
+        tracing::info!("[commands::restart] Restart command received");
+        // Channel authorization check: restart is only available via web interface
+        if channel != "gateway" {
+            tracing::warn!(
+                "[commands::restart] Restart rejected: not from gateway channel (from: {})",
+                channel
+            );
+            return Ok(SubmissionResult::error(
+                "Restart is only available through the web interface with explicit user confirmation. \
+                 Use the Restart button in the UI."
+                    .to_string(),
+            ));
+        }
+        // Environment check: restart is only available in Docker containers
+        let in_docker = std::env::var("IRONCLAW_IN_DOCKER")
+            .map(|v| v.to_lowercase() == "true")
+            .unwrap_or(false);
+
+        tracing::debug!("[commands::restart] IRONCLAW_IN_DOCKER={}", in_docker);
+
+        if !in_docker {
+            tracing::warn!("[commands::restart] Restart rejected: not in Docker environment");
+            return Ok(SubmissionResult::error(
+                "Restart is not available in this environment. \
+                 The IRONCLAW_IN_DOCKER environment variable must be set to 'true' for Docker deployments."
+                    .to_string(),
+            ));
+        }
+
+        // Execute restart tool directly (don't dispatch as a job for LLM planning)
+        // This ensures the tool runs immediately without LLM involvement
+        use crate::tools::Tool;
+        let tool = crate::tools::builtin::RestartTool;
+        let params = serde_json::json!({});
+
+        // Create a minimal JobContext for the tool
+        let dummy_ctx =
+            crate::context::JobContext::with_user("system", "Restart", "Graceful restart");
+
+        match tool.execute(params, &dummy_ctx).await {
+            Ok(output) => {
+                tracing::info!("[commands::restart] RestartTool executed successfully");
+                // Extract text from the ToolOutput result
+                let response = match output.result {
+                    serde_json::Value::String(s) => s,
+                    _ => output.result.to_string(),
+                };
+                Ok(SubmissionResult::response(response))
+            }
+            Err(e) => {
+                tracing::error!("[commands::restart] RestartTool execution failed: {:?}", e);
+                Ok(SubmissionResult::error(format!("Restart failed: {}", e)))
+            }
+        }
+    }
+
+    /// Handle `/skills [search <query>]`, routing to list or search.
+    async fn handle_skills_command(&self, args: &[String]) -> Result<SubmissionResult, Error> {
+        if args.first().map(|s| s.as_str()) == Some("search") {
+            let query = args[1..].join(" ");
+            if query.is_empty() {
+                return Ok(SubmissionResult::error("Usage: /skills search <query>"));
+            }
+            self.handle_skills_search(&query).await
+        } else if args.is_empty() {
+            self.handle_skills_list().await
+        } else {
+            Ok(SubmissionResult::error(
+                "Usage: /skills or /skills search <query>",
+            ))
+        }
+    }
+
+    /// Render the active model and the available model list for `/model`.
+    async fn show_models(&self) -> String {
+        let current = self.llm().active_model_name();
+        let mut out = format!("Active model: {}\n", current);
+        match self.llm().list_models().await {
+            Ok(models) if !models.is_empty() => {
+                out.push_str("\nAvailable models:\n");
+                for m in &models {
+                    let marker = if *m == current { " (active)" } else { "" };
+                    out.push_str(&format!("  {}{}\n", m, marker));
+                }
+                out.push_str("\nUse /model <name> to switch.");
+            }
+            Ok(_) => {
+                out.push_str("\nCould not fetch model list. Use /model <name> to switch.");
+            }
+            Err(e) => {
+                out.push_str(&format!(
+                    "\nCould not fetch models: {}. Use /model <name> to switch.",
+                    e
+                ));
+            }
+        }
+        out
+    }
+
+    /// Validate (best-effort) and switch to the requested model, persisting
+    /// the choice on success.
+    async fn switch_model(&self, requested: &str) -> Result<SubmissionResult, Error> {
+        // Validate the model exists
+        match self.llm().list_models().await {
+            Ok(models) if !models.is_empty() => {
+                if !models.iter().any(|m| m == requested) {
+                    return Ok(SubmissionResult::error(format!(
+                        "Unknown model: {}. Available models:\n  {}",
+                        requested,
+                        models.join("\n  ")
+                    )));
+                }
+            }
+            Ok(_) => {
+                // Empty model list, can't validate but try anyway
+            }
+            Err(e) => {
+                tracing::warn!("Could not fetch model list for validation: {}", e);
+            }
+        }
+
+        match self.llm().set_model(requested) {
+            Ok(()) => {
+                // Persist the model choice so it survives restarts.
+                self.persist_selected_model(requested).await;
+                Ok(SubmissionResult::response(format!(
+                    "Switched model to: {}",
+                    requested
+                )))
+            }
+            Err(e) => Ok(SubmissionResult::error(format!(
+                "Failed to switch model: {}",
+                e
             ))),
         }
     }

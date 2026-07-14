@@ -11,7 +11,7 @@ use crate::tools::tool::{
     ApprovalRequirement, NativeTool, ToolDomain, ToolError, ToolOutput, require_str,
 };
 
-use super::policy::{BLOCKED_COMMANDS, DANGEROUS_PATTERNS, DEFAULT_TIMEOUT};
+use super::policy::{DEFAULT_TIMEOUT, matches_blocked_command, matches_dangerous_pattern};
 use super::requires_explicit_approval;
 
 /// Shell command execution tool.
@@ -76,25 +76,20 @@ impl ShellTool {
         self
     }
 
-    /// Check if a command is blocked.
+    /// Check if a command is blocked, returning the rejection reason.
     pub(super) fn is_blocked(&self, cmd: &str) -> Option<&'static str> {
         let normalized = cmd.to_lowercase();
 
-        for blocked in BLOCKED_COMMANDS.iter() {
-            if normalized.contains(blocked) {
-                return Some("Command contains blocked pattern");
-            }
+        if matches_blocked_command(&normalized) {
+            return Some("Command contains blocked pattern");
         }
 
-        if !self.allow_dangerous {
-            for pattern in DANGEROUS_PATTERNS.iter() {
-                if normalized.contains(pattern) {
-                    return Some("Command contains potentially dangerous pattern");
-                }
-            }
+        if self.allow_dangerous {
+            return None;
         }
 
-        None
+        matches_dangerous_pattern(&normalized)
+            .then_some("Command contains potentially dangerous pattern")
     }
 }
 

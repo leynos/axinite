@@ -28,6 +28,21 @@ impl SetupWizard {
         println!("Configuration Summary:");
         println!("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
 
+        self.print_database_summary();
+        self.print_security_summary();
+        self.print_provider_summary();
+        self.print_model_summary();
+        self.print_embeddings_summary();
+        self.print_tunnel_summary();
+        self.print_channels_summary();
+        self.print_heartbeat_summary();
+        self.print_next_steps();
+
+        Ok(())
+    }
+
+    /// Summarize the configured database backend.
+    fn print_database_summary(&self) {
         let backend = self
             .settings
             .database_backend
@@ -50,37 +65,51 @@ impl SetupWizard {
                 }
             }
         }
+    }
 
+    /// Summarize where the secrets master key is stored.
+    fn print_security_summary(&self) {
         match self.settings.secrets_master_key_source {
             KeySource::Keychain => println!("  Security: OS keychain"),
             KeySource::Env => println!("  Security: environment variable"),
             KeySource::None => println!("  Security: disabled"),
         }
+    }
 
-        if let Some(ref provider) = self.settings.llm_backend {
-            let display = match provider.as_str() {
-                "nearai" => "NEAR AI",
-                "anthropic" => "Anthropic",
-                "openai" => "OpenAI",
-                "ollama" => "Ollama",
-                "openai_compatible" => "OpenAI-compatible",
-                "bedrock" => "AWS Bedrock",
-                other => other,
-            };
-            println!("  Provider: {}", display);
-        }
+    /// Summarize the configured inference provider.
+    fn print_provider_summary(&self) {
+        let Some(ref provider) = self.settings.llm_backend else {
+            return;
+        };
+        let display = match provider.as_str() {
+            "nearai" => "NEAR AI",
+            "anthropic" => "Anthropic",
+            "openai" => "OpenAI",
+            "ollama" => "Ollama",
+            "openai_compatible" => "OpenAI-compatible",
+            "bedrock" => "AWS Bedrock",
+            other => other,
+        };
+        println!("  Provider: {}", display);
+    }
 
-        if let Some(ref model) = self.settings.selected_model {
-            // Truncate long model names (char-based to avoid UTF-8 panic)
-            let display = if model.chars().count() > 40 {
-                let truncated: String = model.chars().take(37).collect();
-                format!("{}...", truncated)
-            } else {
-                model.clone()
-            };
-            println!("  Model: {}", display);
-        }
+    /// Summarize the selected model, truncating long names.
+    fn print_model_summary(&self) {
+        let Some(ref model) = self.settings.selected_model else {
+            return;
+        };
+        // Truncate long model names (char-based to avoid UTF-8 panic)
+        let display = if model.chars().count() > 40 {
+            let truncated: String = model.chars().take(37).collect();
+            format!("{}...", truncated)
+        } else {
+            model.clone()
+        };
+        println!("  Model: {}", display);
+    }
 
+    /// Summarize the embeddings configuration.
+    fn print_embeddings_summary(&self) {
         if self.settings.embeddings.enabled {
             println!(
                 "  Embeddings: {} ({})",
@@ -89,13 +118,19 @@ impl SetupWizard {
         } else {
             println!("  Embeddings: disabled");
         }
+    }
 
+    /// Summarize the tunnel configuration, when one is set up.
+    fn print_tunnel_summary(&self) {
         if let Some(ref tunnel_url) = self.settings.tunnel.public_url {
             println!("  Tunnel: {} (static)", tunnel_url);
         } else if let Some(ref provider) = self.settings.tunnel.provider {
             println!("  Tunnel: {} (managed, starts at boot)", provider);
         }
+    }
 
+    /// Summarize the enabled channels.
+    fn print_channels_summary(&self) {
         let has_tunnel =
             self.settings.tunnel.public_url.is_some() || self.settings.tunnel.provider.is_some();
 
@@ -115,14 +150,20 @@ impl SetupWizard {
                 mode
             );
         }
+    }
 
+    /// Summarize the heartbeat configuration, when enabled.
+    fn print_heartbeat_summary(&self) {
         if self.settings.heartbeat.enabled {
             println!(
                 "  Heartbeat: every {} minutes",
                 self.settings.heartbeat.interval_secs / 60
             );
         }
+    }
 
+    /// Print the closing instructions after a successful setup.
+    fn print_next_steps(&self) {
         println!();
         println!("To start the agent, run:");
         println!("  ironclaw");
@@ -138,7 +179,5 @@ impl SetupWizard {
             );
             println!();
         }
-
-        Ok(())
     }
 }

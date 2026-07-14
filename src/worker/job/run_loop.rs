@@ -20,14 +20,8 @@ impl Worker {
     pub async fn run(self, mut rx: mpsc::Receiver<WorkerMessage>) -> Result<(), Error> {
         tracing::info!("Worker starting for job {}", self.job_id);
 
-        // Wait for start signal
-        match rx.recv().await {
-            Some(WorkerMessage::Start) => {}
-            Some(WorkerMessage::Stop) | None => {
-                tracing::debug!("Worker for job {} stopped before starting", self.job_id);
-                return Ok(());
-            }
-            Some(WorkerMessage::Ping) | Some(WorkerMessage::UserMessage(_)) => {}
+        if !self.wait_for_start(&mut rx).await {
+            return Ok(());
         }
 
         // Get job context
@@ -37,10 +31,39 @@ impl Worker {
         let reasoning =
             Reasoning::new(self.llm().clone()).with_model_name(self.llm().active_model_name());
 
-        // Build initial reasoning context (tool definitions refreshed each iteration in execution_loop)
-        let mut reason_ctx = ReasoningContext::new().with_job(&job_ctx.description);
+        let mut reason_ctx = Self::build_reasoning_context(&job_ctx);
 
-        // Add system message
+        // Main execution loop with timeout
+        let result = tokio::time::timeout(self.timeout(), async {
+            self.execution_loop(&mut rx, &reasoning, &mut reason_ctx)
+                .await
+        })
+        .await;
+
+        self.settle_run_result(result).await
+    }
+
+    /// Wait for the start signal.
+    ///
+    /// Returns `false` when the worker was stopped (or the channel closed)
+    /// before starting; `Ping` and `UserMessage` are treated as a start.
+    async fn wait_for_start(&self, rx: &mut mpsc::Receiver<WorkerMessage>) -> bool {
+        match rx.recv().await {
+            Some(WorkerMessage::Stop) | None => {
+                tracing::debug!("Worker for job {} stopped before starting", self.job_id);
+                false
+            }
+            Some(WorkerMessage::Start)
+            | Some(WorkerMessage::Ping)
+            | Some(WorkerMessage::UserMessage(_)) => true,
+        }
+    }
+
+    /// Build the initial reasoning context with the job's system message.
+    ///
+    /// Tool definitions are refreshed each iteration in `execution_loop`.
+    fn build_reasoning_context(job_ctx: &crate::context::JobContext) -> ReasoningContext {
+        let mut reason_ctx = ReasoningContext::new().with_job(&job_ctx.description);
         reason_ctx.messages.push(ChatMessage::system(format!(
             r#"You are an autonomous agent working on a job.
 
@@ -52,42 +75,19 @@ You may request multiple tools at once if they can be executed in parallel.
 Report when the job is complete or if you encounter issues you cannot resolve."#,
             job_ctx.title, job_ctx.description
         )));
+        reason_ctx
+    }
 
-        // Main execution loop with timeout
-        let result = tokio::time::timeout(self.timeout(), async {
-            self.execution_loop(&mut rx, &reasoning, &mut reason_ctx)
-                .await
-        })
-        .await;
-
+    /// Translate the (possibly timed-out) loop result into a terminal
+    /// job-state transition.
+    async fn settle_run_result(
+        &self,
+        result: Result<Result<WorkerLoopOutcome, Error>, tokio::time::error::Elapsed>,
+    ) -> Result<(), Error> {
         match result {
             Ok(Ok(WorkerLoopOutcome::Completed)) => {
                 tracing::info!("Worker for job {} completed successfully", self.job_id);
-                // Only mark completed if still in an active, non-stuck state.
-                let current_state = self
-                    .context_manager()
-                    .get_context(self.job_id)
-                    .await
-                    .map(|ctx| ctx.state);
-                match current_state {
-                    Ok(state) if state.is_terminal() => {}
-                    Ok(JobState::Completed) => {}
-                    Ok(JobState::Stuck) => {
-                        tracing::info!(
-                            "Job {} returned Ok but is Stuck — leaving for self-repair",
-                            self.job_id
-                        );
-                    }
-                    Ok(_) => {
-                        self.mark_completed().await?;
-                    }
-                    Err(e) => {
-                        tracing::warn!(
-                            job_id = %self.job_id,
-                            "Failed to get job context, cannot mark as completed: {}", e
-                        );
-                    }
-                }
+                self.mark_completed_if_active().await?;
             }
             Ok(Ok(WorkerLoopOutcome::Exited)) => {}
             Ok(Ok(WorkerLoopOutcome::ContinueDirectSelection)) => {
@@ -107,6 +107,36 @@ Report when the job is complete or if you encounter issues you cannot resolve."#
             }
         }
 
+        Ok(())
+    }
+
+    /// Mark the job completed only if it is still in an active, non-stuck
+    /// state; terminal and stuck states are left untouched.
+    async fn mark_completed_if_active(&self) -> Result<(), Error> {
+        let current_state = self
+            .context_manager()
+            .get_context(self.job_id)
+            .await
+            .map(|ctx| ctx.state);
+        match current_state {
+            Ok(state) if state.is_terminal() => {}
+            Ok(JobState::Completed) => {}
+            Ok(JobState::Stuck) => {
+                tracing::info!(
+                    "Job {} returned Ok but is Stuck — leaving for self-repair",
+                    self.job_id
+                );
+            }
+            Ok(_) => {
+                self.mark_completed().await?;
+            }
+            Err(e) => {
+                tracing::warn!(
+                    job_id = %self.job_id,
+                    "Failed to get job context, cannot mark as completed: {}", e
+                );
+            }
+        }
         Ok(())
     }
 

@@ -84,11 +84,20 @@ pub(super) fn validate_artifact_url(
 pub(super) fn validate_manifest_install_inputs(
     manifest: &ExtensionManifest,
 ) -> Result<(), RegistryError> {
-    let is_valid_name = !manifest.name.is_empty()
-        && manifest
-            .name
-            .chars()
-            .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-' || c == '_');
+    validate_manifest_name(manifest)?;
+    validate_source_dir(manifest)?;
+    validate_capabilities_file_name(manifest)?;
+    Ok(())
+}
+
+/// Return `true` when the character is permitted in an extension name.
+fn is_valid_name_char(c: char) -> bool {
+    matches!(c, 'a'..='z' | '0'..='9' | '-' | '_')
+}
+
+/// Validate that the manifest name is non-empty and uses only safe characters.
+fn validate_manifest_name(manifest: &ExtensionManifest) -> Result<(), RegistryError> {
+    let is_valid_name = !manifest.name.is_empty() && manifest.name.chars().all(is_valid_name_char);
 
     if !is_valid_name {
         return Err(RegistryError::InvalidManifest {
@@ -97,7 +106,12 @@ pub(super) fn validate_manifest_install_inputs(
             reason: "name must contain only lowercase letters, digits, '-' or '_'".to_string(),
         });
     }
+    Ok(())
+}
 
+/// Validate that `source.dir` sits under the expected prefix for its kind
+/// and is a safe relative path without traversal segments.
+fn validate_source_dir(manifest: &ExtensionManifest) -> Result<(), RegistryError> {
     let expected_prefix = match manifest.kind {
         ManifestKind::Tool => "tools-src/",
         ManifestKind::Channel => "channels-src/",
@@ -112,24 +126,33 @@ pub(super) fn validate_manifest_install_inputs(
     }
 
     let source_path = Path::new(&manifest.source.dir);
-    let has_unsafe_component = source_path.components().any(|component| {
-        matches!(
-            component,
-            Component::ParentDir | Component::RootDir | Component::Prefix(_) | Component::CurDir
-        )
-    });
-
-    if source_path.is_absolute() || has_unsafe_component {
+    if source_path.is_absolute() || has_unsafe_component(source_path) {
         return Err(RegistryError::InvalidManifest {
             name: manifest.name.clone(),
             field: "source.dir",
             reason: "must be a safe relative path without traversal segments".to_string(),
         });
     }
+    Ok(())
+}
 
-    let has_path_separator = manifest.source.capabilities.contains('/')
-        || manifest.source.capabilities.contains('\\')
-        || manifest.source.capabilities.contains("..");
+/// Return `true` when the path contains a traversal or non-relative segment.
+fn has_unsafe_component(path: &Path) -> bool {
+    path.components().any(|component| {
+        matches!(
+            component,
+            Component::ParentDir | Component::RootDir | Component::Prefix(_) | Component::CurDir
+        )
+    })
+}
+
+/// Validate that `source.capabilities` is a bare file name (no separators or
+/// traversal segments).
+fn validate_capabilities_file_name(manifest: &ExtensionManifest) -> Result<(), RegistryError> {
+    let capabilities = &manifest.source.capabilities;
+    let has_path_separator = ["/", "\\", ".."]
+        .iter()
+        .any(|fragment| capabilities.contains(fragment));
 
     if has_path_separator {
         return Err(RegistryError::InvalidManifest {
@@ -138,7 +161,6 @@ pub(super) fn validate_manifest_install_inputs(
             reason: "must be a file name without path separators".to_string(),
         });
     }
-
     Ok(())
 }
 

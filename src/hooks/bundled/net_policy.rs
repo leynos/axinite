@@ -64,6 +64,7 @@ pub(super) async fn dispatch_client_for_target(
         .ok_or_else(|| "Webhook URL has no host".to_string())?;
     let normalized_host = normalize_host(host);
 
+    // Literal IP targets need no DNS pinning; just screen the address.
     if let Ok(ip) = normalized_host.parse::<IpAddr>() {
         if is_forbidden_ip(ip) {
             return Err(format!("Webhook target resolves to blocked IP {ip}"));
@@ -75,7 +76,13 @@ pub(super) async fn dispatch_client_for_target(
         .port_or_known_default()
         .ok_or_else(|| "Webhook URL has no valid port".to_string())?;
 
-    let addrs: Vec<SocketAddr> = tokio::net::lookup_host((normalized_host, port))
+    let addrs = resolve_and_screen(normalized_host, port).await?;
+    build_pinned_client(timeout, normalized_host, &addrs)
+}
+
+/// Resolve a host to addresses and reject empty or forbidden results.
+async fn resolve_and_screen(host: &str, port: u16) -> Result<Vec<SocketAddr>, String> {
+    let addrs: Vec<SocketAddr> = tokio::net::lookup_host((host, port))
         .await
         .map_err(|e| format!("DNS resolution failed: {e}"))?
         .collect();
@@ -92,11 +99,19 @@ pub(super) async fn dispatch_client_for_target(
             ));
         }
     }
+    Ok(addrs)
+}
 
+/// Build a redirect-free client pinned to the pre-screened addresses.
+fn build_pinned_client(
+    timeout: Duration,
+    host: &str,
+    addrs: &[SocketAddr],
+) -> Result<reqwest::Client, String> {
     reqwest::Client::builder()
         .timeout(timeout)
         .redirect(reqwest::redirect::Policy::none())
-        .resolve_to_addrs(normalized_host, &addrs)
+        .resolve_to_addrs(host, addrs)
         .build()
         .map_err(|e| format!("Failed to build resolved webhook client: {e}"))
 }
@@ -231,13 +246,16 @@ fn is_forbidden_ipv4(v4: Ipv4Addr) -> bool {
 
 fn is_forbidden_header(name: &str) -> bool {
     let lower = name.to_ascii_lowercase();
-    lower == "host"
-        || lower == "authorization"
-        || lower == "cookie"
-        || lower == "proxy-authorization"
-        || lower == "forwarded"
-        || lower == "x-real-ip"
-        || lower == "transfer-encoding"
-        || lower == "connection"
-        || lower.starts_with("x-forwarded-")
+    let exact = matches!(
+        lower.as_str(),
+        "host"
+            | "authorization"
+            | "cookie"
+            | "proxy-authorization"
+            | "forwarded"
+            | "x-real-ip"
+            | "transfer-encoding"
+            | "connection"
+    );
+    exact || lower.starts_with("x-forwarded-")
 }

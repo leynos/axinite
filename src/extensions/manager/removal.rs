@@ -11,121 +11,139 @@ impl ExtensionManager {
         let kind = self.determine_installed_kind(name).await?;
 
         match kind {
-            ExtensionKind::McpServer => {
-                // Unregister tools with this server's prefix
-                let tool_names: Vec<String> = self
-                    .tool_registry
-                    .list()
-                    .await
-                    .into_iter()
-                    .filter(|t| t.starts_with(&format!("{}_", name)))
-                    .collect();
-
-                for tool_name in &tool_names {
-                    self.tool_registry.unregister(tool_name).await;
-                }
-
-                // Remove MCP client
-                self.mcp_clients.write().await.remove(name);
-
-                // Remove from config
-                self.remove_mcp_server(name)
-                    .await
-                    .map_err(|e| ExtensionError::Config(e.to_string()))?;
-
-                Ok(format!(
-                    "Removed MCP server '{}' and {} tool(s)",
-                    name,
-                    tool_names.len()
-                ))
-            }
-            ExtensionKind::WasmTool => {
-                // Unregister from tool registry
-                self.tool_registry.unregister(name).await;
-
-                // Revoke credential mappings from the shared registry
-                let cap_path = self
-                    .wasm_tools_dir
-                    .join(format!("{}.capabilities.json", name));
-                self.revoke_credential_mappings(&cap_path, name).await;
-
-                // Unregister hooks registered from this plugin source.
-                let removed_hooks = self
-                    .unregister_hook_prefix(&format!("plugin.tool:{}::", name))
-                    .await
-                    + self
-                        .unregister_hook_prefix(&format!("plugin.dev_tool:{}::", name))
-                        .await;
-                if removed_hooks > 0 {
-                    tracing::info!(
-                        extension = name,
-                        removed_hooks = removed_hooks,
-                        "Removed plugin hooks for WASM tool"
-                    );
-                }
-
-                // Delete files
-                let wasm_path = self.wasm_tools_dir.join(format!("{}.wasm", name));
-
-                if wasm_path.exists() {
-                    tokio::fs::remove_file(&wasm_path)
-                        .await
-                        .map_err(|e| ExtensionError::Other(e.to_string()))?;
-                }
-                if cap_path.exists() {
-                    let _ = tokio::fs::remove_file(&cap_path).await;
-                }
-
-                Ok(format!("Removed WASM tool '{}'", name))
-            }
-            ExtensionKind::WasmChannel => {
-                // Remove from active set and persist
-                self.active_channel_names.write().await.remove(name);
-                self.persist_active_channels().await;
-
-                // Delete channel files
-                let wasm_path = self.wasm_channels_dir.join(format!("{}.wasm", name));
-                let cap_path = self
-                    .wasm_channels_dir
-                    .join(format!("{}.capabilities.json", name));
-
-                // Revoke credential mappings before deleting the capabilities file
-                self.revoke_credential_mappings(&cap_path, name).await;
-
-                if wasm_path.exists() {
-                    tokio::fs::remove_file(&wasm_path)
-                        .await
-                        .map_err(|e| ExtensionError::Other(e.to_string()))?;
-                }
-                if cap_path.exists() {
-                    let _ = tokio::fs::remove_file(&cap_path).await;
-                }
-
-                Ok(format!(
-                    "Removed channel '{}'. Restart IronClaw for the change to take effect.",
-                    name
-                ))
-            }
-            ExtensionKind::ChannelRelay => {
-                // Remove from installed set
-                self.installed_relay_extensions.write().await.remove(name);
-
-                // Remove from active channels
-                self.active_channel_names.write().await.remove(name);
-                self.persist_active_channels().await;
-
-                // Remove stored stream token
-                let _ = self
-                    .secrets
-                    .delete(&self.user_id, &format!("relay:{}:stream_token", name))
-                    .await;
-
-                // Shut down the channel (check both runtime paths for WASM+relay and relay-only modes)
-                self.shutdown_relay_channel(name).await;
-
-                Ok(format!("Removed channel relay '{}'", name))
-            }
+            ExtensionKind::McpServer => self.remove_mcp(name).await,
+            ExtensionKind::WasmTool => self.remove_wasm_tool(name).await,
+            ExtensionKind::WasmChannel => self.remove_wasm_channel(name).await,
+            ExtensionKind::ChannelRelay => self.remove_channel_relay(name).await,
         }
+    }
+
+    /// Remove an MCP server: unregister its tools, drop the client, and
+    /// delete the config entry.
+    async fn remove_mcp(&self, name: &str) -> Result<String, ExtensionError> {
+        // Unregister tools with this server's prefix
+        let tool_names: Vec<String> = self
+            .tool_registry
+            .list()
+            .await
+            .into_iter()
+            .filter(|t| t.starts_with(&format!("{}_", name)))
+            .collect();
+
+        for tool_name in &tool_names {
+            self.tool_registry.unregister(tool_name).await;
+        }
+
+        // Remove MCP client
+        self.mcp_clients.write().await.remove(name);
+
+        // Remove from config
+        self.remove_mcp_server(name)
+            .await
+            .map_err(|e| ExtensionError::Config(e.to_string()))?;
+
+        Ok(format!(
+            "Removed MCP server '{}' and {} tool(s)",
+            name,
+            tool_names.len()
+        ))
+    }
+
+    /// Remove a WASM tool: unregister it, revoke credentials and hooks, and
+    /// delete its files.
+    async fn remove_wasm_tool(&self, name: &str) -> Result<String, ExtensionError> {
+        // Unregister from tool registry
+        self.tool_registry.unregister(name).await;
+
+        // Revoke credential mappings from the shared registry
+        let cap_path = self
+            .wasm_tools_dir
+            .join(format!("{}.capabilities.json", name));
+        self.revoke_credential_mappings(&cap_path, name).await;
+
+        // Unregister hooks registered from this plugin source.
+        let removed_hooks = self
+            .unregister_hook_prefix(&format!("plugin.tool:{}::", name))
+            .await
+            + self
+                .unregister_hook_prefix(&format!("plugin.dev_tool:{}::", name))
+                .await;
+        if removed_hooks > 0 {
+            tracing::info!(
+                extension = name,
+                removed_hooks = removed_hooks,
+                "Removed plugin hooks for WASM tool"
+            );
+        }
+
+        // Delete files
+        let wasm_path = self.wasm_tools_dir.join(format!("{}.wasm", name));
+        Self::delete_extension_files(&wasm_path, &cap_path).await?;
+
+        Ok(format!("Removed WASM tool '{}'", name))
+    }
+
+    /// Remove a WASM channel: deactivate it, revoke credentials, and delete
+    /// its files.
+    async fn remove_wasm_channel(&self, name: &str) -> Result<String, ExtensionError> {
+        // Remove from active set and persist
+        self.active_channel_names.write().await.remove(name);
+        self.persist_active_channels().await;
+
+        // Delete channel files
+        let wasm_path = self.wasm_channels_dir.join(format!("{}.wasm", name));
+        let cap_path = self
+            .wasm_channels_dir
+            .join(format!("{}.capabilities.json", name));
+
+        // Revoke credential mappings before deleting the capabilities file
+        self.revoke_credential_mappings(&cap_path, name).await;
+
+        Self::delete_extension_files(&wasm_path, &cap_path).await?;
+
+        Ok(format!(
+            "Removed channel '{}'. Restart IronClaw for the change to take effect.",
+            name
+        ))
+    }
+
+    /// Remove a channel-relay extension: forget it, drop its token, and shut
+    /// the channel down.
+    async fn remove_channel_relay(&self, name: &str) -> Result<String, ExtensionError> {
+        // Remove from installed set
+        self.installed_relay_extensions.write().await.remove(name);
+
+        // Remove from active channels
+        self.active_channel_names.write().await.remove(name);
+        self.persist_active_channels().await;
+
+        // Remove stored stream token
+        let _ = self
+            .secrets
+            .delete(&self.user_id, &format!("relay:{}:stream_token", name))
+            .await;
+
+        // Shut down the channel (check both runtime paths for WASM+relay and relay-only modes)
+        self.shutdown_relay_channel(name).await;
+
+        Ok(format!("Removed channel relay '{}'", name))
+    }
+
+    /// Delete an extension's `.wasm` binary (errors are fatal) and its
+    /// capabilities file (best effort).
+    async fn delete_extension_files(
+        wasm_path: &std::path::Path,
+        cap_path: &std::path::Path,
+    ) -> Result<(), ExtensionError> {
+        if wasm_path.exists() {
+            tokio::fs::remove_file(wasm_path)
+                .await
+                .map_err(|e| ExtensionError::Other(e.to_string()))?;
+        }
+        if cap_path.exists() {
+            let _ = tokio::fs::remove_file(cap_path).await;
+        }
+        Ok(())
     }
 
     /// Shut down a relay channel, preferring the WASM channel runtime and

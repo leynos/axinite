@@ -6,19 +6,37 @@ use crate::tools::wasm::discover_tools;
 
 use super::ExtensionManager;
 
+/// Value of the tool's configured env var, when one is declared and set.
+fn env_var_token(auth: &crate::tools::wasm::AuthCapabilitySchema) -> Option<String> {
+    let env_var = auth.env_var.as_ref()?;
+    std::env::var(env_var).ok()
+}
+
+/// Instructions for manual token entry when a tool has no OAuth config.
+fn manual_token_prompt(name: &str, auth: crate::tools::wasm::AuthCapabilitySchema) -> AuthResult {
+    let display = auth.display_name.unwrap_or_else(|| name.to_string());
+    let instructions = auth
+        .instructions
+        .unwrap_or_else(|| format!("Please provide your {} API token/key.", display));
+
+    AuthResult::awaiting_token(name, ExtensionKind::WasmTool, instructions, auth.setup_url)
+}
+
 impl ExtensionManager {
-    pub(super) async fn auth_wasm_tool(
+    /// Read a WASM tool's auth configuration from its capabilities file.
+    ///
+    /// Returns `None` when the tool has no capabilities file or declares no
+    /// auth section; read and parse failures are propagated.
+    async fn load_tool_auth(
         &self,
         name: &str,
-        token: Option<&str>,
-    ) -> Result<AuthResult, ExtensionError> {
-        // Read the capabilities file to get auth config
+    ) -> Result<Option<crate::tools::wasm::AuthCapabilitySchema>, ExtensionError> {
         let cap_path = self
             .wasm_tools_dir
             .join(format!("{}.capabilities.json", name));
 
         if !cap_path.exists() {
-            return Ok(AuthResult::no_auth_required(name, ExtensionKind::WasmTool));
+            return Ok(None);
         }
 
         let cap_bytes = tokio::fs::read(&cap_path)
@@ -28,69 +46,110 @@ impl ExtensionManager {
         let cap_file = crate::tools::wasm::CapabilitiesFile::from_bytes(&cap_bytes)
             .map_err(|e| ExtensionError::Other(e.to_string()))?;
 
-        let auth = match cap_file.auth {
-            Some(auth) => auth,
-            None => {
-                return Ok(AuthResult::no_auth_required(name, ExtensionKind::WasmTool));
-            }
-        };
+        Ok(cap_file.auth)
+    }
 
-        // Check env var first
-        if let Some(ref env_var) = auth.env_var
-            && let Ok(value) = std::env::var(env_var)
-        {
-            // Store the env var value as a secret
-            let params =
-                CreateSecretParams::new(&auth.secret_name, &value).with_provider(name.to_string());
-            self.secrets
-                .create(&self.user_id, params)
-                .await
-                .map_err(|e| ExtensionError::AuthFailed(e.to_string()))?;
+    /// Store a credential value for the tool's secret name.
+    async fn store_tool_secret(
+        &self,
+        name: &str,
+        secret_name: &str,
+        value: &str,
+    ) -> Result<(), ExtensionError> {
+        let params = CreateSecretParams::new(secret_name, value).with_provider(name.to_string());
+        self.secrets
+            .create(&self.user_id, params)
+            .await
+            .map(|_| ())
+            .map_err(|e| ExtensionError::AuthFailed(e.to_string()))
+    }
 
-            return Ok(AuthResult::authenticated(name, ExtensionKind::WasmTool));
-        }
-
-        // Check if already authenticated (with scope expansion detection)
+    /// Whether a stored token exists and still covers all required OAuth
+    /// scopes (scope expansion forces re-auth).
+    async fn tool_token_valid(
+        &self,
+        name: &str,
+        auth: &crate::tools::wasm::AuthCapabilitySchema,
+    ) -> bool {
         let token_exists = self
             .secrets
             .exists(&self.user_id, &auth.secret_name)
             .await
             .unwrap_or(false);
+        if !token_exists {
+            return false;
+        }
 
-        if token_exists {
-            // If this tool has OAuth config, check whether new scopes are needed
-            let needs_reauth = if let Some(ref oauth) = auth.oauth {
-                let merged = self
-                    .collect_shared_scopes(&auth.secret_name, &oauth.scopes)
-                    .await;
-                let needs = self.needs_scope_expansion(&auth.secret_name, &merged).await;
-                tracing::debug!(
-                    tool = name,
-                    secret_name = %auth.secret_name,
-                    merged_scopes = ?merged,
-                    needs_reauth = needs,
-                    "Scope expansion check"
-                );
-                needs
-            } else {
-                false
-            };
+        // If this tool has OAuth config, check whether new scopes are needed
+        let Some(ref oauth) = auth.oauth else {
+            return true;
+        };
+        let merged = self
+            .collect_shared_scopes(&auth.secret_name, &oauth.scopes)
+            .await;
+        let needs = self.needs_scope_expansion(&auth.secret_name, &merged).await;
+        tracing::debug!(
+            tool = name,
+            secret_name = %auth.secret_name,
+            merged_scopes = ?merged,
+            needs_reauth = needs,
+            "Scope expansion check"
+        );
+        !needs
+    }
 
-            if !needs_reauth {
-                return Ok(AuthResult::authenticated(name, ExtensionKind::WasmTool));
-            }
-            // Fall through to OAuth branch for scope expansion
+    /// Start the browser-based OAuth flow, or report that client credentials
+    /// must be configured in the Setup tab first.
+    async fn oauth_or_needs_setup(
+        &self,
+        name: &str,
+        auth: &crate::tools::wasm::AuthCapabilitySchema,
+        oauth: &crate::tools::wasm::OAuthConfigSchema,
+    ) -> Result<AuthResult, ExtensionError> {
+        if self.needs_setup_credentials(name, auth, oauth).await {
+            let display = auth.display_name.as_deref().unwrap_or(name);
+            return Ok(AuthResult::needs_setup(
+                name,
+                ExtensionKind::WasmTool,
+                format!(
+                    "Configure OAuth credentials for {} in the Setup tab.",
+                    display
+                ),
+                auth.setup_url.clone(),
+            ));
+        }
+
+        self.start_wasm_oauth(name, auth, oauth)
+            .await
+            .map_err(|e| ExtensionError::AuthFailed(e.to_string()))
+    }
+
+    pub(super) async fn auth_wasm_tool(
+        &self,
+        name: &str,
+        token: Option<&str>,
+    ) -> Result<AuthResult, ExtensionError> {
+        let Some(auth) = self.load_tool_auth(name).await? else {
+            return Ok(AuthResult::no_auth_required(name, ExtensionKind::WasmTool));
+        };
+
+        // Check env var first: store its value as a secret
+        if let Some(value) = env_var_token(&auth) {
+            self.store_tool_secret(name, &auth.secret_name, &value)
+                .await?;
+            return Ok(AuthResult::authenticated(name, ExtensionKind::WasmTool));
+        }
+
+        // Check if already authenticated (with scope expansion detection);
+        // an expired scope set falls through to the OAuth branch below.
+        if self.tool_token_valid(name, &auth).await {
+            return Ok(AuthResult::authenticated(name, ExtensionKind::WasmTool));
         }
 
         // If a token was provided, store it
         if let Some(token_value) = token {
-            let params = CreateSecretParams::new(&auth.secret_name, token_value)
-                .with_provider(name.to_string());
-            self.secrets
-                .create(&self.user_id, params)
-                .await
-                .map_err(|e| ExtensionError::AuthFailed(e.to_string()))?;
-
+            self.store_tool_secret(name, &auth.secret_name, token_value)
+                .await?;
             return Ok(AuthResult::authenticated(name, ExtensionKind::WasmTool));
         }
 
@@ -98,37 +157,11 @@ impl ExtensionManager {
         // But only if credentials are available — if the tool has setup secrets
         // for client_id/secret that aren't configured yet, return needs_setup.
         if let Some(ref oauth) = auth.oauth {
-            if self.needs_setup_credentials(name, &auth, oauth).await {
-                let display = auth.display_name.as_deref().unwrap_or(name);
-                return Ok(AuthResult::needs_setup(
-                    name,
-                    ExtensionKind::WasmTool,
-                    format!(
-                        "Configure OAuth credentials for {} in the Setup tab.",
-                        display
-                    ),
-                    auth.setup_url.clone(),
-                ));
-            }
-
-            return self
-                .start_wasm_oauth(name, &auth, oauth)
-                .await
-                .map_err(|e| ExtensionError::AuthFailed(e.to_string()));
+            return self.oauth_or_needs_setup(name, &auth, oauth).await;
         }
 
         // Return instructions for manual token entry
-        let display = auth.display_name.unwrap_or_else(|| name.to_string());
-        let instructions = auth
-            .instructions
-            .unwrap_or_else(|| format!("Please provide your {} API token/key.", display));
-
-        Ok(AuthResult::awaiting_token(
-            name,
-            ExtensionKind::WasmTool,
-            instructions,
-            auth.setup_url,
-        ))
+        Ok(manual_token_prompt(name, auth))
     }
 
     /// Load and parse a WASM tool's capabilities file.

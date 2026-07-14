@@ -180,38 +180,39 @@ impl Scheduler {
 
     /// Clean up finished jobs and subtasks.
     pub async fn cleanup_finished(&self) {
-        // Clean up jobs
-        {
-            let mut jobs = self.jobs.write().await;
-            let mut finished = Vec::new();
+        self.cleanup_finished_jobs().await;
+        self.cleanup_finished_subtasks().await;
+    }
 
-            for (id, scheduled) in jobs.iter() {
-                if scheduled.handle.is_finished() && !scheduled.pending_cancel_persist {
-                    finished.push(*id);
-                }
-            }
+    /// Removes finished jobs that have no pending cancellation persistence.
+    async fn cleanup_finished_jobs(&self) {
+        let mut jobs = self.jobs.write().await;
+        let finished: Vec<Uuid> = jobs
+            .iter()
+            .filter(|(_, scheduled)| {
+                scheduled.handle.is_finished() && !scheduled.pending_cancel_persist
+            })
+            .map(|(id, _)| *id)
+            .collect();
 
-            for id in finished {
-                jobs.remove(&id);
-                tracing::debug!("Cleaned up finished job {}", id);
-            }
+        for id in finished {
+            jobs.remove(&id);
+            tracing::debug!("Cleaned up finished job {}", id);
         }
+    }
 
-        // Clean up subtasks
-        {
-            let mut subtasks = self.subtasks.write().await;
-            let mut finished = Vec::new();
+    /// Removes sub-tasks whose handles have finished.
+    async fn cleanup_finished_subtasks(&self) {
+        let mut subtasks = self.subtasks.write().await;
+        let finished: Vec<Uuid> = subtasks
+            .iter()
+            .filter(|(_, scheduled)| scheduled.handle.is_finished())
+            .map(|(id, _)| *id)
+            .collect();
 
-            for (id, scheduled) in subtasks.iter() {
-                if scheduled.handle.is_finished() {
-                    finished.push(*id);
-                }
-            }
-
-            for id in finished {
-                subtasks.remove(&id);
-                tracing::trace!("Cleaned up finished subtask {}", id);
-            }
+        for id in finished {
+            subtasks.remove(&id);
+            tracing::trace!("Cleaned up finished subtask {}", id);
         }
     }
 

@@ -204,15 +204,103 @@ fn is_cell_open_tag(tag: &str) -> bool {
     tag.starts_with("c ") || tag == "c"
 }
 
+/// Extract the `t="..."` type attribute from a cell open tag
+/// (`t="s"` means shared string).
+fn cell_type_attribute(tag: &str) -> String {
+    let Some(t_pos) = tag.find("t=\"") else {
+        return String::new();
+    };
+    let rest = &tag[t_pos + 3..];
+    match rest.find('"') {
+        Some(end) => rest[..end].to_string(),
+        None => String::new(),
+    }
+}
+
+/// Streaming state for the XLSX sheet cell parser: tracks the current row,
+/// the value being read, and the current cell's type.
+struct SheetParser<'a> {
+    shared_strings: &'a [String],
+    rows: Vec<Vec<String>>,
+    current_row: Vec<String>,
+    in_v: bool,
+    in_row: bool,
+    current_val: String,
+    cell_type: String,
+}
+
+impl<'a> SheetParser<'a> {
+    fn new(shared_strings: &'a [String]) -> Self {
+        Self {
+            shared_strings,
+            rows: Vec::new(),
+            current_row: Vec::new(),
+            in_v: false,
+            in_row: false,
+            current_val: String::new(),
+            cell_type: String::new(),
+        }
+    }
+
+    /// React to one complete XML tag.
+    fn handle_tag(&mut self, tag: &str) {
+        if tag == "row" || tag.starts_with("row ") {
+            self.in_row = true;
+            self.current_row.clear();
+        } else if tag == "/row" {
+            self.end_row();
+        } else if self.in_row && is_cell_open_tag(tag) {
+            self.cell_type = cell_type_attribute(tag);
+        } else if tag == "v" || tag.starts_with("v ") {
+            self.in_v = true;
+            self.current_val.clear();
+        } else if tag == "/v" {
+            self.end_value();
+        } else if tag == "/c" {
+            self.cell_type.clear();
+        }
+    }
+
+    /// Close the current row, keeping it only when it has cells.
+    fn end_row(&mut self) {
+        self.in_row = false;
+        if !self.current_row.is_empty() {
+            self.rows.push(std::mem::take(&mut self.current_row));
+        }
+    }
+
+    /// Close the current value, resolving shared-string references.
+    fn end_value(&mut self) {
+        self.in_v = false;
+        let val = if self.cell_type == "s" {
+            // Shared string reference
+            self.current_val
+                .trim()
+                .parse::<usize>()
+                .ok()
+                .and_then(|idx| self.shared_strings.get(idx))
+                .cloned()
+                .unwrap_or_default()
+        } else {
+            self.current_val.clone()
+        };
+        self.current_row.push(val);
+    }
+
+    /// Render the collected rows as tab-separated lines.
+    fn render(&self) -> String {
+        self.rows
+            .iter()
+            .map(|row| row.join("\t"))
+            .collect::<Vec<_>>()
+            .join("\n")
+    }
+}
+
 /// Parse XLSX sheet XML into tab-separated rows.
 fn parse_xlsx_sheet(xml: &str, shared_strings: &[String]) -> String {
     // Simple extraction: find <v> values in <c> cells, resolve shared string refs
-    let mut rows: Vec<Vec<String>> = Vec::new();
-    let mut current_row: Vec<String> = Vec::new();
-    let mut in_v = false;
-    let mut in_row = false;
-    let mut current_val = String::new();
-    let mut cell_type = String::new();
+    let mut parser = SheetParser::new(shared_strings);
     let mut in_tag = false;
     let mut tag_buf = String::new();
 
@@ -224,58 +312,17 @@ fn parse_xlsx_sheet(xml: &str, shared_strings: &[String]) -> String {
             }
             '>' => {
                 in_tag = false;
-                let tag = tag_buf.trim().to_string();
-                if tag == "row" || tag.starts_with("row ") {
-                    in_row = true;
-                    current_row.clear();
-                } else if tag == "/row" {
-                    in_row = false;
-                    if !current_row.is_empty() {
-                        rows.push(std::mem::take(&mut current_row));
-                    }
-                } else if in_row && is_cell_open_tag(&tag) {
-                    // Extract type attribute: t="s" means shared string
-                    cell_type.clear();
-                    if let Some(t_pos) = tag.find("t=\"") {
-                        let rest = &tag[t_pos + 3..];
-                        if let Some(end) = rest.find('"') {
-                            cell_type = rest[..end].to_string();
-                        }
-                    }
-                } else if tag == "v" || tag.starts_with("v ") {
-                    in_v = true;
-                    current_val.clear();
-                } else if tag == "/v" {
-                    in_v = false;
-                    let val = if cell_type == "s" {
-                        // Shared string reference
-                        current_val
-                            .trim()
-                            .parse::<usize>()
-                            .ok()
-                            .and_then(|idx| shared_strings.get(idx))
-                            .cloned()
-                            .unwrap_or_default()
-                    } else {
-                        current_val.clone()
-                    };
-                    current_row.push(val);
-                } else if tag == "/c" {
-                    cell_type.clear();
-                }
+                parser.handle_tag(tag_buf.trim());
             }
             _ if in_tag => {
                 tag_buf.push(ch);
             }
-            _ if in_v => {
-                current_val.push(ch);
+            _ if parser.in_v => {
+                parser.current_val.push(ch);
             }
             _ => {}
         }
     }
 
-    rows.iter()
-        .map(|row| row.join("\t"))
-        .collect::<Vec<_>>()
-        .join("\n")
+    parser.render()
 }

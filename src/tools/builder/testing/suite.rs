@@ -167,50 +167,63 @@ pub fn generate_basic_tests(name: &str, input_schema: &serde_json::Value) -> Tes
     // Test with empty input
     suite.add_error_test("empty_input", serde_json::json!({}), "");
 
-    // Test with null values for required fields
-    if let Some(required) = input_schema.get("required").and_then(|r| r.as_array()) {
-        let mut null_input = serde_json::Map::new();
-        for req in required {
-            if let Some(field_name) = req.as_str() {
-                null_input.insert(field_name.to_string(), serde_json::Value::Null);
-            }
-        }
-        suite.add_error_test(
-            "null_required_fields",
-            serde_json::Value::Object(null_input),
-            "",
-        );
-    }
-
-    // Test with valid minimal input (if we can construct it)
-    if let Some(properties) = input_schema.get("properties").and_then(|p| p.as_object()) {
-        let mut minimal_input = serde_json::Map::new();
-
-        for (name, prop) in properties {
-            if let Some(prop_type) = prop.get("type").and_then(|t| t.as_str()) {
-                let value = match prop_type {
-                    "string" => serde_json::Value::String("test".to_string()),
-                    "integer" | "number" => serde_json::Value::Number(0.into()),
-                    "boolean" => serde_json::Value::Bool(false),
-                    "array" => serde_json::Value::Array(vec![]),
-                    "object" => serde_json::Value::Object(serde_json::Map::new()),
-                    _ => continue,
-                };
-                minimal_input.insert(name.clone(), value);
-            }
-        }
-
-        suite.tests.push(TestCase {
-            name: "minimal_valid_input".to_string(),
-            description: Some("Test with minimal valid input".to_string()),
-            input: serde_json::Value::Object(minimal_input),
-            expected_output: None,
-            expected_fields: None,
-            expect_error: false,
-            error_contains: None,
-            timeout_ms: None,
-        });
-    }
+    add_null_required_fields_test(&mut suite, input_schema);
+    add_minimal_valid_input_test(&mut suite, input_schema);
 
     suite
+}
+
+/// Add a test that sets every required field to `null`, expecting an error.
+fn add_null_required_fields_test(suite: &mut TestSuite, input_schema: &serde_json::Value) {
+    let Some(required) = input_schema.get("required").and_then(|r| r.as_array()) else {
+        return;
+    };
+
+    let mut null_input = serde_json::Map::new();
+    for field_name in required.iter().filter_map(|req| req.as_str()) {
+        null_input.insert(field_name.to_string(), serde_json::Value::Null);
+    }
+    suite.add_error_test(
+        "null_required_fields",
+        serde_json::Value::Object(null_input),
+        "",
+    );
+}
+
+/// Add a test with placeholder values for every typed schema property.
+fn add_minimal_valid_input_test(suite: &mut TestSuite, input_schema: &serde_json::Value) {
+    let Some(properties) = input_schema.get("properties").and_then(|p| p.as_object()) else {
+        return;
+    };
+
+    let mut minimal_input = serde_json::Map::new();
+    for (name, prop) in properties {
+        let prop_type = prop.get("type").and_then(|t| t.as_str());
+        if let Some(value) = prop_type.and_then(placeholder_value) {
+            minimal_input.insert(name.clone(), value);
+        }
+    }
+
+    suite.tests.push(TestCase {
+        name: "minimal_valid_input".to_string(),
+        description: Some("Test with minimal valid input".to_string()),
+        input: serde_json::Value::Object(minimal_input),
+        expected_output: None,
+        expected_fields: None,
+        expect_error: false,
+        error_contains: None,
+        timeout_ms: None,
+    });
+}
+
+/// Produce a minimal placeholder JSON value for a schema `type` string.
+fn placeholder_value(prop_type: &str) -> Option<serde_json::Value> {
+    match prop_type {
+        "string" => Some(serde_json::Value::String("test".to_string())),
+        "integer" | "number" => Some(serde_json::Value::Number(0.into())),
+        "boolean" => Some(serde_json::Value::Bool(false)),
+        "array" => Some(serde_json::Value::Array(vec![])),
+        "object" => Some(serde_json::Value::Object(serde_json::Map::new())),
+        _ => None,
+    }
 }

@@ -29,13 +29,53 @@ impl ExtensionManager {
             ));
         }
 
-        // 50 MB cap to prevent disk-fill DoS
-        const MAX_DOWNLOAD_SIZE: usize = 50 * 1024 * 1024;
-
         let client = reqwest::Client::builder()
             .timeout(std::time::Duration::from_secs(60))
             .build()
             .map_err(|e| ExtensionError::DownloadFailed(e.to_string()))?;
+
+        let bytes = Self::fetch_extension_bytes(&client, name, url).await?;
+
+        // Ensure target directory exists
+        tokio::fs::create_dir_all(target_dir)
+            .await
+            .map_err(|e| ExtensionError::InstallFailed(e.to_string()))?;
+
+        let wasm_path = target_dir.join(format!("{}.wasm", name));
+        let caps_path = target_dir.join(format!("{}.capabilities.json", name));
+
+        // Detect format: gzip (tar.gz bundle) or bare WASM
+        if Self::is_gzip_payload(&bytes) {
+            // tar.gz bundle: extract {name}.wasm and {name}.capabilities.json
+            self.extract_wasm_tar_gz(name, &bytes, &wasm_path, &caps_path)?;
+        } else {
+            Self::write_bare_wasm(&bytes, &wasm_path).await?;
+
+            // Download capabilities separately if URL provided
+            if let Some(caps_url) = capabilities_url {
+                Self::download_capabilities(&client, name, caps_url, &caps_path).await;
+            }
+        }
+
+        tracing::info!(
+            "Installed WASM extension '{}' from {} to {}",
+            name,
+            url,
+            wasm_path.display()
+        );
+
+        Ok(())
+    }
+
+    /// Fetch the extension payload, enforcing HTTP success and a 50 MB size
+    /// cap (checked against Content-Length and the actual body).
+    async fn fetch_extension_bytes(
+        client: &reqwest::Client,
+        name: &str,
+        url: &str,
+    ) -> Result<bytes::Bytes, ExtensionError> {
+        // 50 MB cap to prevent disk-fill DoS
+        const MAX_DOWNLOAD_SIZE: usize = 50 * 1024 * 1024;
 
         let sanitized_url = sanitize_url_for_logging(url);
         tracing::debug!(extension = %name, url = %sanitized_url, "Downloading WASM extension");
@@ -81,76 +121,61 @@ impl ExtensionManager {
                 MAX_DOWNLOAD_SIZE
             )));
         }
+        Ok(bytes)
+    }
 
-        // Ensure target directory exists
-        tokio::fs::create_dir_all(target_dir)
-            .await
-            .map_err(|e| ExtensionError::InstallFailed(e.to_string()))?;
-
-        let wasm_path = target_dir.join(format!("{}.wasm", name));
-        let caps_path = target_dir.join(format!("{}.capabilities.json", name));
-
-        // Detect format: gzip (tar.gz bundle) or bare WASM
-        if Self::is_gzip_payload(&bytes) {
-            // tar.gz bundle: extract {name}.wasm and {name}.capabilities.json
-            self.extract_wasm_tar_gz(name, &bytes, &wasm_path, &caps_path)?;
-        } else {
-            // Bare WASM file: validate magic number
-            if bytes.len() < 4 || &bytes[..4] != b"\0asm" {
-                return Err(ExtensionError::InstallFailed(
-                    "Downloaded file is not a valid WASM binary (bad magic number)".to_string(),
-                ));
-            }
-
-            tokio::fs::write(&wasm_path, &bytes)
-                .await
-                .map_err(|e| ExtensionError::InstallFailed(e.to_string()))?;
-
-            // Download capabilities separately if URL provided
-            if let Some(caps_url) = capabilities_url {
-                const MAX_CAPS_SIZE: usize = 1024 * 1024; // 1 MB
-                match client.get(caps_url).send().await {
-                    Ok(resp) if resp.status().is_success() => match resp.bytes().await {
-                        Ok(caps_bytes) if caps_bytes.len() <= MAX_CAPS_SIZE => {
-                            if let Err(e) = tokio::fs::write(&caps_path, &caps_bytes).await {
-                                tracing::warn!(
-                                    "Failed to write capabilities for '{}': {}",
-                                    name,
-                                    e
-                                );
-                            }
-                        }
-                        Ok(caps_bytes) => {
-                            tracing::warn!(
-                                "Capabilities file for '{}' too large ({} bytes, max {})",
-                                name,
-                                caps_bytes.len(),
-                                MAX_CAPS_SIZE
-                            );
-                        }
-                        Err(e) => {
-                            tracing::warn!("Failed to download capabilities for '{}': {}", name, e);
-                        }
-                    },
-                    _ => {
-                        tracing::warn!(
-                            "Failed to download capabilities for '{}' from {}",
-                            name,
-                            caps_url
-                        );
-                    }
-                }
-            }
+    /// Validate the WASM magic number and write a bare `.wasm` payload.
+    async fn write_bare_wasm(
+        bytes: &[u8],
+        wasm_path: &std::path::Path,
+    ) -> Result<(), ExtensionError> {
+        if bytes.len() < 4 || &bytes[..4] != b"\0asm" {
+            return Err(ExtensionError::InstallFailed(
+                "Downloaded file is not a valid WASM binary (bad magic number)".to_string(),
+            ));
         }
 
-        tracing::info!(
-            "Installed WASM extension '{}' from {} to {}",
-            name,
-            url,
-            wasm_path.display()
-        );
+        tokio::fs::write(wasm_path, bytes)
+            .await
+            .map_err(|e| ExtensionError::InstallFailed(e.to_string()))
+    }
 
-        Ok(())
+    /// Best-effort download of the separate capabilities file (warns on any
+    /// failure rather than failing the install).
+    async fn download_capabilities(
+        client: &reqwest::Client,
+        name: &str,
+        caps_url: &str,
+        caps_path: &std::path::Path,
+    ) {
+        const MAX_CAPS_SIZE: usize = 1024 * 1024; // 1 MB
+        match client.get(caps_url).send().await {
+            Ok(resp) if resp.status().is_success() => match resp.bytes().await {
+                Ok(caps_bytes) if caps_bytes.len() <= MAX_CAPS_SIZE => {
+                    if let Err(e) = tokio::fs::write(caps_path, &caps_bytes).await {
+                        tracing::warn!("Failed to write capabilities for '{}': {}", name, e);
+                    }
+                }
+                Ok(caps_bytes) => {
+                    tracing::warn!(
+                        "Capabilities file for '{}' too large ({} bytes, max {})",
+                        name,
+                        caps_bytes.len(),
+                        MAX_CAPS_SIZE
+                    );
+                }
+                Err(e) => {
+                    tracing::warn!("Failed to download capabilities for '{}': {}", name, e);
+                }
+            },
+            _ => {
+                tracing::warn!(
+                    "Failed to download capabilities for '{}' from {}",
+                    name,
+                    caps_url
+                );
+            }
+        }
     }
 
     /// Extract a tar.gz bundle into the WASM tools directory.

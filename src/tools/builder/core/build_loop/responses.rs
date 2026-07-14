@@ -4,14 +4,25 @@
 use super::*;
 use crate::llm::ToolCall;
 
+/// Build-loop context threaded into text-response handling: the immutable
+/// loop inputs plus the mutable loop state and reasoning context.
+pub(super) struct TextResponseContext<'a> {
+    pub(super) inputs: &'a BuildLoopParams,
+    pub(super) state: &'a mut BuildLoopState,
+    pub(super) reason_ctx: &'a mut ReasoningContext,
+}
+
 impl LlmSoftwareBuilder {
     pub(super) async fn handle_text_response(
         &self,
         response: String,
-        inputs: &BuildLoopParams,
-        state: &mut BuildLoopState,
-        reason_ctx: &mut ReasoningContext,
+        ctx: TextResponseContext<'_>,
     ) -> std::ops::ControlFlow<BuildResult> {
+        let TextResponseContext {
+            inputs,
+            state,
+            reason_ctx,
+        } = ctx;
         reason_ctx.messages.push(ChatMessage::assistant(&response));
 
         if !state.tools_executed {

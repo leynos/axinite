@@ -21,54 +21,62 @@ pub(super) async fn discover_wasm_channels(
     };
 
     while let Ok(Some(entry)) = entries.next_entry().await {
-        let path = entry.path();
-
-        // Look for .capabilities.json files
-        let filename = path.file_name().and_then(|n| n.to_str()).unwrap_or("");
-
-        if !filename.ends_with(".capabilities.json") {
-            continue;
-        }
-
-        // Extract channel name
-        let name = filename.trim_end_matches(".capabilities.json").to_string();
-        if name.is_empty() {
-            continue;
-        }
-
-        // Check if corresponding .wasm file exists
-        let wasm_path = dir.join(format!("{}.wasm", name));
-        if !wasm_path.exists() {
-            continue;
-        }
-
-        // Parse capabilities file
-        match tokio::fs::read(&path).await {
-            Ok(bytes) => match ChannelCapabilitiesFile::from_bytes(&bytes) {
-                Ok(cap_file) => {
-                    channels.push((name, cap_file));
-                }
-                Err(e) => {
-                    tracing::warn!(
-                        path = %path.display(),
-                        error = %e,
-                        "Failed to parse channel capabilities file"
-                    );
-                }
-            },
-            Err(e) => {
-                tracing::warn!(
-                    path = %path.display(),
-                    error = %e,
-                    "Failed to read channel capabilities file"
-                );
-            }
+        if let Some(channel) = load_channel_entry(dir, &entry.path()).await {
+            channels.push(channel);
         }
     }
 
     // Sort by name for consistent ordering
     channels.sort_by(|a, b| a.0.cmp(&b.0));
     channels
+}
+
+/// Extract the channel name from a `.capabilities.json` path when the
+/// matching `.wasm` artifact exists alongside it.
+fn channel_name_for_capabilities(dir: &std::path::Path, path: &std::path::Path) -> Option<String> {
+    let filename = path.file_name().and_then(|n| n.to_str())?;
+    let name = filename.strip_suffix(".capabilities.json")?;
+    if name.is_empty() {
+        return None;
+    }
+    let wasm_path = dir.join(format!("{}.wasm", name));
+    if !wasm_path.exists() {
+        return None;
+    }
+    Some(name.to_string())
+}
+
+/// Load one directory entry as a channel, returning `None` (with a warning
+/// where appropriate) when the entry is not a valid channel.
+async fn load_channel_entry(
+    dir: &std::path::Path,
+    path: &std::path::Path,
+) -> Option<(String, ChannelCapabilitiesFile)> {
+    let name = channel_name_for_capabilities(dir, path)?;
+
+    let bytes = match tokio::fs::read(path).await {
+        Ok(bytes) => bytes,
+        Err(e) => {
+            tracing::warn!(
+                path = %path.display(),
+                error = %e,
+                "Failed to read channel capabilities file"
+            );
+            return None;
+        }
+    };
+
+    match ChannelCapabilitiesFile::from_bytes(&bytes) {
+        Ok(cap_file) => Some((name, cap_file)),
+        Err(e) => {
+            tracing::warn!(
+                path = %path.display(),
+                error = %e,
+                "Failed to parse channel capabilities file"
+            );
+            None
+        }
+    }
 }
 
 #[cfg(test)]
@@ -152,51 +160,69 @@ pub(super) async fn install_selected_registry_channels(
         if already_installed.contains(name) || bundled.contains(name.as_str()) {
             continue;
         }
-
-        // Check if already on disk (may have been installed between bundled and here)
-        let wasm_on_disk = channels_dir.join(format!("{}.wasm", name)).exists()
-            || channels_dir.join(format!("{}-channel.wasm", name)).exists();
-        if wasm_on_disk {
+        // Skip if already on disk (may have been installed between bundled and here)
+        if channel_wasm_on_disk(channels_dir, name) {
             continue;
         }
 
         // Look up in registry
-        let manifest = match catalog.get(&format!("channels/{}", name)) {
-            Some(m) => m,
-            None => continue,
+        let Some(manifest) = catalog.get(&format!("channels/{}", name)) else {
+            continue;
         };
 
-        let installer = crate::registry::installer::RegistryInstaller::new(
-            repo_root.clone(),
-            ironclaw_base_dir().join("tools"),
-            channels_dir.to_path_buf(),
-        );
-
-        match installer
-            .install_with_source_fallback(manifest, false)
-            .await
-        {
-            Ok(outcome) => {
-                for warning in &outcome.warnings {
-                    crate::setup::prompts::print_info(&format!("{}: {}", name, warning));
-                }
-                installed.push(name.clone());
-            }
-            Err(e) => {
-                tracing::warn!(
-                    channel = %name,
-                    error = %e,
-                    "Failed to install channel from registry"
-                );
-                crate::setup::prompts::print_error(&format!(
-                    "Failed to install channel '{}': {}",
-                    name, e
-                ));
-            }
+        if install_registry_channel(channels_dir, &repo_root, name, manifest).await {
+            installed.push(name.clone());
         }
     }
 
     installed
+}
+
+/// Report whether a channel's WASM artifact already exists on disk under
+/// either of its recognized filenames.
+fn channel_wasm_on_disk(channels_dir: &std::path::Path, name: &str) -> bool {
+    channels_dir.join(format!("{}.wasm", name)).exists()
+        || channels_dir.join(format!("{}-channel.wasm", name)).exists()
+}
+
+/// Install one registry channel, reporting warnings and failures to the user.
+///
+/// Returns `true` when the install succeeded.
+async fn install_registry_channel(
+    channels_dir: &std::path::Path,
+    repo_root: &std::path::Path,
+    name: &str,
+    manifest: &crate::registry::manifest::ExtensionManifest,
+) -> bool {
+    let installer = crate::registry::installer::RegistryInstaller::new(
+        repo_root.to_path_buf(),
+        ironclaw_base_dir().join("tools"),
+        channels_dir.to_path_buf(),
+    );
+
+    match installer
+        .install_with_source_fallback(manifest, false)
+        .await
+    {
+        Ok(outcome) => {
+            for warning in &outcome.warnings {
+                crate::setup::prompts::print_info(&format!("{}: {}", name, warning));
+            }
+            true
+        }
+        Err(e) => {
+            tracing::warn!(
+                channel = %name,
+                error = %e,
+                "Failed to install channel from registry"
+            );
+            crate::setup::prompts::print_error(&format!(
+                "Failed to install channel '{}': {}",
+                name, e
+            ));
+            false
+        }
+    }
 }
 
 /// Discover which tools are already installed in the tools directory.

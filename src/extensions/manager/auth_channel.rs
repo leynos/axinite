@@ -6,39 +6,34 @@ use crate::secrets::CreateSecretParams;
 use super::ExtensionManager;
 
 impl ExtensionManager {
-    pub(super) async fn auth_wasm_channel(
+    /// Load a WASM channel's capabilities file, returning `None` when the
+    /// channel has no capabilities file at all.
+    async fn load_channel_capabilities(
         &self,
         name: &str,
-        token: Option<&str>,
-    ) -> Result<AuthResult, ExtensionError> {
+    ) -> Result<Option<crate::channels::wasm::ChannelCapabilitiesFile>, ExtensionError> {
         let cap_path = self
             .wasm_channels_dir
             .join(format!("{}.capabilities.json", name));
 
         if !cap_path.exists() {
-            return Ok(AuthResult::no_auth_required(
-                name,
-                ExtensionKind::WasmChannel,
-            ));
+            return Ok(None);
         }
 
         let cap_bytes = tokio::fs::read(&cap_path)
             .await
             .map_err(|e| ExtensionError::Other(e.to_string()))?;
 
-        let cap_file = crate::channels::wasm::ChannelCapabilitiesFile::from_bytes(&cap_bytes)
-            .map_err(|e| ExtensionError::Other(e.to_string()))?;
+        crate::channels::wasm::ChannelCapabilitiesFile::from_bytes(&cap_bytes)
+            .map(Some)
+            .map_err(|e| ExtensionError::Other(e.to_string()))
+    }
 
-        // Get required secrets from the setup section
-        let required_secrets = &cap_file.setup.required_secrets;
-        if required_secrets.is_empty() {
-            return Ok(AuthResult::no_auth_required(
-                name,
-                ExtensionKind::WasmChannel,
-            ));
-        }
-
-        // Find the first non-optional secret that isn't yet stored
+    /// Collect the non-optional secrets that are not yet stored.
+    async fn missing_required_secrets<'s>(
+        &self,
+        required_secrets: &'s [crate::channels::wasm::SecretSetupSchema],
+    ) -> Vec<&'s crate::channels::wasm::SecretSetupSchema> {
         let mut missing = Vec::new();
         for secret in required_secrets {
             if secret.optional {
@@ -53,34 +48,73 @@ impl ExtensionManager {
                 missing.push(secret);
             }
         }
+        missing
+    }
 
+    /// Store the provided token for the first missing secret, then either
+    /// finish authentication or prompt for the next missing secret.
+    async fn store_channel_secret(
+        &self,
+        name: &str,
+        cap_file: &crate::channels::wasm::ChannelCapabilitiesFile,
+        missing: &[&crate::channels::wasm::SecretSetupSchema],
+        token_value: &str,
+    ) -> Result<AuthResult, ExtensionError> {
+        let secret = &missing[0];
+        let params =
+            CreateSecretParams::new(&secret.name, token_value).with_provider(name.to_string());
+        self.secrets
+            .create(&self.user_id, params)
+            .await
+            .map_err(|e| ExtensionError::AuthFailed(e.to_string()))?;
+
+        // Check if there are more missing secrets
+        if missing.len() <= 1 {
+            return Ok(AuthResult::authenticated(name, ExtensionKind::WasmChannel));
+        }
+
+        // More secrets needed; prompt for the next one
+        let next = &missing[1];
+        Ok(AuthResult::awaiting_token(
+            name,
+            ExtensionKind::WasmChannel,
+            next.prompt.clone(),
+            cap_file.setup.setup_url.clone(),
+        ))
+    }
+
+    pub(super) async fn auth_wasm_channel(
+        &self,
+        name: &str,
+        token: Option<&str>,
+    ) -> Result<AuthResult, ExtensionError> {
+        let Some(cap_file) = self.load_channel_capabilities(name).await? else {
+            return Ok(AuthResult::no_auth_required(
+                name,
+                ExtensionKind::WasmChannel,
+            ));
+        };
+
+        // Get required secrets from the setup section
+        let required_secrets = &cap_file.setup.required_secrets;
+        if required_secrets.is_empty() {
+            return Ok(AuthResult::no_auth_required(
+                name,
+                ExtensionKind::WasmChannel,
+            ));
+        }
+
+        // Find the non-optional secrets that aren't yet stored
+        let missing = self.missing_required_secrets(required_secrets).await;
         if missing.is_empty() {
             return Ok(AuthResult::authenticated(name, ExtensionKind::WasmChannel));
         }
 
         // If a token was provided, store it for the first missing secret
         if let Some(token_value) = token {
-            let secret = &missing[0];
-            let params =
-                CreateSecretParams::new(&secret.name, token_value).with_provider(name.to_string());
-            self.secrets
-                .create(&self.user_id, params)
-                .await
-                .map_err(|e| ExtensionError::AuthFailed(e.to_string()))?;
-
-            // Check if there are more missing secrets
-            if missing.len() <= 1 {
-                return Ok(AuthResult::authenticated(name, ExtensionKind::WasmChannel));
-            }
-
-            // More secrets needed; prompt for the next one
-            let next = &missing[1];
-            return Ok(AuthResult::awaiting_token(
-                name,
-                ExtensionKind::WasmChannel,
-                next.prompt.clone(),
-                cap_file.setup.setup_url.clone(),
-            ));
+            return self
+                .store_channel_secret(name, &cap_file, &missing, token_value)
+                .await;
         }
 
         // Prompt for the first missing secret

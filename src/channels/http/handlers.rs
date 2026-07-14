@@ -267,6 +267,82 @@ pub(super) async fn webhook_handler(
     process_message(state, msg, req.wait_for_response).await
 }
 
+/// Build a webhook error response with the given status code and message.
+fn error_response(
+    msg_id: Uuid,
+    code: StatusCode,
+    text: &str,
+) -> (StatusCode, Json<WebhookResponse>) {
+    (
+        code,
+        Json(WebhookResponse {
+            message_id: msg_id,
+            status: "error".to_string(),
+            response: Some(text.to_string()),
+        }),
+    )
+}
+
+/// Register a pending response channel for a synchronous request.
+///
+/// Fails with 429 when too many synchronous requests are already pending.
+async fn register_response_channel(
+    state: &HttpChannelState,
+    msg_id: Uuid,
+) -> Result<oneshot::Receiver<String>, (StatusCode, Json<WebhookResponse>)> {
+    if state.pending_responses.read().await.len() >= MAX_PENDING_RESPONSES {
+        return Err(error_response(
+            msg_id,
+            StatusCode::TOO_MANY_REQUESTS,
+            "Too many pending requests",
+        ));
+    }
+
+    let (tx, rx) = oneshot::channel();
+    state.pending_responses.write().await.insert(msg_id, tx);
+    Ok(rx)
+}
+
+/// Forward the message to the agent loop.
+async fn forward_to_agent(
+    state: &HttpChannelState,
+    msg: IncomingMessage,
+) -> Result<(), (StatusCode, Json<WebhookResponse>)> {
+    let msg_id = msg.id;
+    // Clone sender while holding read lock, then release lock before async send.
+    // This prevents blocking other webhook handlers during the async I/O.
+    let tx = {
+        let guard = state.tx.read().await;
+        guard.as_ref().cloned()
+    };
+
+    let Some(tx) = tx else {
+        return Err(error_response(
+            msg_id,
+            StatusCode::SERVICE_UNAVAILABLE,
+            "Channel not started",
+        ));
+    };
+    if tx.send(msg).await.is_err() {
+        return Err(error_response(
+            msg_id,
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "Channel closed",
+        ));
+    }
+    Ok(())
+}
+
+/// Await the agent's response with a 60-second timeout, mapping timeout and
+/// cancellation to explanatory text.
+async fn await_agent_response(rx: oneshot::Receiver<String>) -> String {
+    match tokio::time::timeout(std::time::Duration::from_secs(60), rx).await {
+        Ok(Ok(content)) => content,
+        Ok(Err(_)) => "Response cancelled".to_string(),
+        Err(_) => "Response timeout".to_string(),
+    }
+}
+
 async fn process_message(
     state: Arc<HttpChannelState>,
     msg: IncomingMessage,
@@ -276,62 +352,22 @@ async fn process_message(
 
     // Set up response channel if waiting
     let response_rx = if wait_for_response {
-        if state.pending_responses.read().await.len() >= MAX_PENDING_RESPONSES {
-            return (
-                StatusCode::TOO_MANY_REQUESTS,
-                Json(WebhookResponse {
-                    message_id: msg_id,
-                    status: "error".to_string(),
-                    response: Some("Too many pending requests".to_string()),
-                }),
-            );
+        match register_response_channel(&state, msg_id).await {
+            Ok(rx) => Some(rx),
+            Err(err) => return err,
         }
-
-        let (tx, rx) = oneshot::channel();
-        state.pending_responses.write().await.insert(msg_id, tx);
-        Some(rx)
     } else {
         None
     };
 
-    // Clone sender while holding read lock, then release lock before async send.
-    // This prevents blocking other webhook handlers during the async I/O.
-    let tx = {
-        let guard = state.tx.read().await;
-        guard.as_ref().cloned()
-    };
-
-    if let Some(tx) = tx {
-        if tx.send(msg).await.is_err() {
-            return (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                Json(WebhookResponse {
-                    message_id: msg_id,
-                    status: "error".to_string(),
-                    response: Some("Channel closed".to_string()),
-                }),
-            );
-        }
-    } else {
-        return (
-            StatusCode::SERVICE_UNAVAILABLE,
-            Json(WebhookResponse {
-                message_id: msg_id,
-                status: "error".to_string(),
-                response: Some("Channel not started".to_string()),
-            }),
-        );
+    if let Err(err) = forward_to_agent(&state, msg).await {
+        return err;
     }
 
     // Wait for response if requested
-    let response = if let Some(rx) = response_rx {
-        match tokio::time::timeout(std::time::Duration::from_secs(60), rx).await {
-            Ok(Ok(content)) => Some(content),
-            Ok(Err(_)) => Some("Response cancelled".to_string()),
-            Err(_) => Some("Response timeout".to_string()),
-        }
-    } else {
-        None
+    let response = match response_rx {
+        Some(rx) => Some(await_agent_response(rx).await),
+        None => None,
     };
 
     // Ensure pending response entry is cleaned up on timeout or cancellation

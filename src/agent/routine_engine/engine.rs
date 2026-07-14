@@ -28,6 +28,22 @@ pub(super) enum EventMatcher {
     System { routine: Routine },
 }
 
+/// Collaborator dependencies required to construct a [`RoutineEngine`].
+pub struct RoutineEngineDeps {
+    pub config: RoutineConfig,
+    pub store: Arc<dyn Database>,
+    pub llm: Arc<dyn LlmProvider>,
+    pub workspace: Arc<Workspace>,
+    /// Sender for notifications (routed to channel manager).
+    pub notify_tx: mpsc::Sender<OutgoingResponse>,
+    /// Scheduler for dispatching jobs (FullJob mode).
+    pub scheduler: Option<Arc<Scheduler>>,
+    /// Tool registry for lightweight routine tool execution.
+    pub tools: Arc<ToolRegistry>,
+    /// Safety layer for tool output sanitization.
+    pub safety: Arc<SafetyLayer>,
+}
+
 /// The routine execution engine.
 pub struct RoutineEngine {
     pub(super) config: RoutineConfig,
@@ -49,31 +65,33 @@ pub struct RoutineEngine {
 }
 
 impl RoutineEngine {
-    #[expect(
-        clippy::too_many_arguments,
-        reason = "requires multiple collaborator dependencies for engine initialization"
-    )]
-    pub fn new(
-        config: RoutineConfig,
-        store: Arc<dyn Database>,
-        llm: Arc<dyn LlmProvider>,
-        workspace: Arc<Workspace>,
-        notify_tx: mpsc::Sender<OutgoingResponse>,
-        scheduler: Option<Arc<Scheduler>>,
-        tools: Arc<ToolRegistry>,
-        safety: Arc<SafetyLayer>,
-    ) -> Self {
+    pub fn new(deps: RoutineEngineDeps) -> Self {
         Self {
-            config,
-            store,
-            llm,
-            workspace,
-            notify_tx,
+            config: deps.config,
+            store: deps.store,
+            llm: deps.llm,
+            workspace: deps.workspace,
+            notify_tx: deps.notify_tx,
             running_count: Arc::new(AtomicUsize::new(0)),
             event_cache: Arc::new(RwLock::new(Vec::new())),
-            scheduler,
-            tools,
-            safety,
+            scheduler: deps.scheduler,
+            tools: deps.tools,
+            safety: deps.safety,
+        }
+    }
+
+    /// Builds the shared execution context handed to spawned routine runs.
+    fn execution_context(&self) -> EngineContext {
+        EngineContext {
+            config: self.config.clone(),
+            store: self.store.clone(),
+            llm: self.llm.clone(),
+            workspace: self.workspace.clone(),
+            notify_tx: self.notify_tx.clone(),
+            running_count: self.running_count.clone(),
+            scheduler: self.scheduler.clone(),
+            tools: self.tools.clone(),
+            safety: self.safety.clone(),
         }
     }
 
@@ -137,17 +155,7 @@ impl RoutineEngine {
         })?;
 
         // Build engine context for execution.
-        let engine = EngineContext {
-            config: self.config.clone(),
-            store: self.store.clone(),
-            llm: self.llm.clone(),
-            workspace: self.workspace.clone(),
-            notify_tx: self.notify_tx.clone(),
-            running_count: self.running_count.clone(),
-            scheduler: self.scheduler.clone(),
-            tools: self.tools.clone(),
-            safety: self.safety.clone(),
-        };
+        let engine = self.execution_context();
 
         tokio::spawn(async move {
             execute_routine(engine, routine, run).await;
@@ -180,17 +188,7 @@ impl RoutineEngine {
             created_at: Utc::now(),
         };
 
-        let engine = EngineContext {
-            config: self.config.clone(),
-            store: self.store.clone(),
-            llm: self.llm.clone(),
-            workspace: self.workspace.clone(),
-            notify_tx: self.notify_tx.clone(),
-            running_count: self.running_count.clone(),
-            scheduler: self.scheduler.clone(),
-            tools: self.tools.clone(),
-            safety: self.safety.clone(),
-        };
+        let engine = self.execution_context();
 
         // Record the run in DB, then spawn execution
         let store = self.store.clone();

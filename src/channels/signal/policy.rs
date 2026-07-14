@@ -12,15 +12,21 @@ impl SignalChannel {
         entry.strip_prefix("uuid:").unwrap_or(entry)
     }
 
-    /// Check whether a sender is in the allowed users list.
-    pub(super) fn is_sender_allowed(&self, sender: &str) -> bool {
-        if self.config.allow_from.is_empty() {
+    /// Check whether a sender matches an allowlist entry (wildcard `*` or
+    /// normalized identifier equality). An empty list denies all senders.
+    fn sender_in_allowlist(list: &[String], sender: &str) -> bool {
+        if list.is_empty() {
             return false;
         }
-        self.config.allow_from.iter().any(|entry| {
+        list.iter().any(|entry| {
             entry == "*"
                 || Self::normalize_allow_entry(entry) == Self::normalize_allow_entry(sender)
         })
+    }
+
+    /// Check whether a sender is in the allowed users list.
+    pub(super) fn is_sender_allowed(&self, sender: &str) -> bool {
+        Self::sender_in_allowlist(&self.config.allow_from, sender)
     }
 
     /// Get effective group allow_from list (inherits from allow_from if empty).
@@ -49,14 +55,7 @@ impl SignalChannel {
 
     /// Check whether a sender is allowed for group messages.
     fn is_group_sender_allowed(&self, sender: &str) -> bool {
-        let effective_list = self.effective_group_allow_from();
-        if effective_list.is_empty() {
-            return false;
-        }
-        effective_list.iter().any(|entry| {
-            entry == "*"
-                || Self::normalize_allow_entry(entry) == Self::normalize_allow_entry(sender)
-        })
+        Self::sender_in_allowlist(self.effective_group_allow_from(), sender)
     }
 
     /// Return `true` when an attachment-only message must be dropped per config.

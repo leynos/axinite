@@ -9,7 +9,7 @@ use std::time::{Duration, Instant};
 
 use anyhow::Context;
 use ironclaw::agent::{Agent, AgentDeps};
-use ironclaw::app::{AppBuilder, AppBuilderFlags, AppComponents};
+use ironclaw::app::{AppBuilder, AppBuilderFlags, AppBuilderParams, AppComponents};
 use ironclaw::channels::web::log_layer::LogBroadcaster;
 use ironclaw::config::Config;
 use ironclaw::db::Database;

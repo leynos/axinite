@@ -78,39 +78,43 @@ impl AppBuilder {
         Ok(())
     }
 
+    /// Re-resolve only the LLM section of the config, logging (not
+    /// propagating) failures with the supplied context label.
+    async fn re_resolve_llm_config(&mut self, context: &str) {
+        let store: Option<&(dyn crate::db::SettingsStore + Sync)> =
+            self.db.as_ref().map(|db| db.as_ref() as _);
+        let toml_path = self.toml_path.as_deref();
+        if let Err(e) = self
+            .config
+            .re_resolve_llm(store, "default", toml_path)
+            .await
+        {
+            tracing::warn!("Failed to re-resolve LLM config after {context}: {e}");
+        }
+    }
+
+    /// Fallback for `init_secrets` when no master key is configured: loads
+    /// tokens from OS credential stores (e.g., Anthropic OAuth via Claude
+    /// Code's macOS Keychain / Linux ~/.claude/.credentials.json) instead.
+    async fn init_secrets_from_os_credentials(&mut self) {
+        crate::config::inject_os_credentials();
+
+        // Consume unused handles
+        self.handles.take();
+
+        // Re-resolve only the LLM config with OS credentials.
+        self.re_resolve_llm_config("OS credential injection").await;
+    }
+
     /// Phase 2: Create secrets store.
     ///
     /// Requires a master key and a backend-specific DB handle. After creating
     /// the store, injects any encrypted LLM API keys into the config overlay
     /// and re-resolves config.
     pub async fn init_secrets(&mut self) -> Result<(), anyhow::Error> {
-        let master_key = match self.config.secrets.master_key() {
-            Some(k) => k,
-            None => {
-                // No secrets DB available, but we can still load tokens from
-                // OS credential stores (e.g., Anthropic OAuth via Claude Code's
-                // macOS Keychain / Linux ~/.claude/.credentials.json).
-                crate::config::inject_os_credentials();
-
-                // Consume unused handles
-                self.handles.take();
-
-                // Re-resolve only the LLM config with OS credentials.
-                let store: Option<&(dyn crate::db::SettingsStore + Sync)> =
-                    self.db.as_ref().map(|db| db.as_ref() as _);
-                let toml_path = self.toml_path.as_deref();
-                if let Err(e) = self
-                    .config
-                    .re_resolve_llm(store, "default", toml_path)
-                    .await
-                {
-                    tracing::warn!(
-                        "Failed to re-resolve LLM config after OS credential injection: {e}"
-                    );
-                }
-
-                return Ok(());
-            }
+        let Some(master_key) = self.config.secrets.master_key() else {
+            self.init_secrets_from_os_credentials().await;
+            return Ok(());
         };
 
         let crypto = match crate::secrets::SecretsCrypto::new(master_key.clone()) {
@@ -133,16 +137,7 @@ impl AppBuilder {
             crate::config::inject_llm_keys_from_secrets(secrets.as_ref(), "default").await?;
 
             // Re-resolve only the LLM config with newly available keys.
-            let store: Option<&(dyn crate::db::SettingsStore + Sync)> =
-                self.db.as_ref().map(|db| db.as_ref() as _);
-            let toml_path = self.toml_path.as_deref();
-            if let Err(e) = self
-                .config
-                .re_resolve_llm(store, "default", toml_path)
-                .await
-            {
-                tracing::warn!("Failed to re-resolve LLM config after secret injection: {e}");
-            }
+            self.re_resolve_llm_config("secret injection").await;
         }
 
         self.secrets_store = store;
@@ -184,7 +179,35 @@ impl AppBuilder {
         let safety = Arc::new(SafetyLayer::new(&self.config.safety));
         tracing::debug!("Safety layer initialized");
 
-        // Initialize tool registry with credential injection support
+        let tools = self.build_tool_registry()?;
+
+        // Create embeddings provider using the unified method
+        let embeddings = self
+            .config
+            .embeddings
+            .create_provider(&self.config.llm.nearai.base_url, self.session.clone());
+
+        let workspace = self.init_workspace(&tools, &embeddings);
+
+        // Register image/vision tools if we have a workspace and LLM API credentials
+        if workspace.is_some() {
+            self.register_media_tools(&tools);
+        }
+
+        // Register builder tool if enabled
+        if self.builder_tool_permitted() {
+            tools
+                .register_builder_tool(llm.clone(), Some(self.config.builder.to_builder_config()))
+                .await?;
+            tracing::debug!("Builder mode enabled");
+        }
+
+        Ok((safety, tools, embeddings, workspace))
+    }
+
+    /// Create the tool registry with credential injection support, register
+    /// the built-in tools, and (when a secrets store exists) secrets tools.
+    fn build_tool_registry(&self) -> Result<Arc<ToolRegistry>, anyhow::Error> {
         let credential_registry = Arc::new(SharedCredentialRegistry::new());
         let tools = if let Some(ref ss) = self.secrets_store {
             Arc::new(
@@ -199,88 +222,83 @@ impl AppBuilder {
         if let Some(ref ss) = self.secrets_store {
             tools.register_secrets_tools(Arc::clone(ss));
         }
+        Ok(tools)
+    }
 
-        // Create embeddings provider using the unified method
-        let embeddings = self
-            .config
-            .embeddings
-            .create_provider(&self.config.llm.nearai.base_url, self.session.clone());
+    /// Create the workspace and register memory tools when a database is
+    /// available; returns `None` otherwise.
+    fn init_workspace(
+        &self,
+        tools: &Arc<ToolRegistry>,
+        embeddings: &Option<Arc<dyn EmbeddingProvider>>,
+    ) -> Option<Arc<Workspace>> {
+        let db = self.db.as_ref()?;
+        let mut ws = Workspace::new_with_db("default", db.clone());
+        if let Some(emb) = embeddings {
+            ws = ws.with_embeddings(emb.clone());
+        }
+        let ws = Arc::new(ws);
+        tools.register_memory_tools(Arc::clone(&ws));
+        Some(ws)
+    }
 
-        // Register memory tools if database is available
-        let workspace = if let Some(ref db) = self.db {
-            let mut ws = Workspace::new_with_db("default", db.clone());
-            if let Some(ref emb) = embeddings {
-                ws = ws.with_embeddings(emb.clone());
-            }
-            let ws = Arc::new(ws);
-            tools.register_memory_tools(Arc::clone(&ws));
-            Some(ws)
+    /// Resolve the API base URL and (optional) key used for image and vision
+    /// tools, preferring the explicit provider config over NEAR AI defaults.
+    fn media_api_credentials(&self) -> (String, Option<String>) {
+        use secrecy::ExposeSecret;
+        if let Some(ref provider) = self.config.llm.provider {
+            (
+                provider.base_url.clone(),
+                provider
+                    .api_key
+                    .as_ref()
+                    .map(|s| s.expose_secret().to_string()),
+            )
         } else {
-            None
+            (
+                self.config.llm.nearai.base_url.clone(),
+                self.config
+                    .llm
+                    .nearai
+                    .api_key
+                    .as_ref()
+                    .map(|s| s.expose_secret().to_string()),
+            )
+        }
+    }
+
+    /// Register image generation and vision tools when API credentials are
+    /// available.
+    fn register_media_tools(&self, tools: &Arc<ToolRegistry>) {
+        let (api_base, api_key_opt) = self.media_api_credentials();
+        let Some(api_key) = api_key_opt else {
+            return;
         };
 
-        // Register image/vision tools if we have a workspace and LLM API credentials
-        if workspace.is_some() {
-            let (api_base, api_key_opt) = if let Some(ref provider) = self.config.llm.provider {
-                (
-                    provider.base_url.clone(),
-                    provider.api_key.as_ref().map(|s| {
-                        use secrecy::ExposeSecret;
-                        s.expose_secret().to_string()
-                    }),
-                )
-            } else {
-                (
-                    self.config.llm.nearai.base_url.clone(),
-                    self.config.llm.nearai.api_key.as_ref().map(|s| {
-                        use secrecy::ExposeSecret;
-                        s.expose_secret().to_string()
-                    }),
-                )
-            };
+        // Check for image generation models
+        let model_name = self
+            .config
+            .llm
+            .provider
+            .as_ref()
+            .map(|p| p.model.clone())
+            .unwrap_or_else(|| self.config.llm.nearai.model.clone());
+        let models = vec![model_name.clone()];
+        let gen_model = crate::llm::image_models::suggest_image_model(&models)
+            .unwrap_or("flux-1.1-pro")
+            .to_string();
+        self.register_image_tools_default(tools, api_base.clone(), api_key.clone(), gen_model);
 
-            if let Some(api_key) = api_key_opt {
-                // Check for image generation models
-                let model_name = self
-                    .config
-                    .llm
-                    .provider
-                    .as_ref()
-                    .map(|p| p.model.clone())
-                    .unwrap_or_else(|| self.config.llm.nearai.model.clone());
-                let models = vec![model_name.clone()];
-                let gen_model = crate::llm::image_models::suggest_image_model(&models)
-                    .unwrap_or("flux-1.1-pro")
-                    .to_string();
-                self.register_image_tools_default(
-                    &tools,
-                    api_base.clone(),
-                    api_key.clone(),
-                    gen_model,
-                );
-
-                // Check for vision models
-                let vision_model = crate::llm::vision_models::suggest_vision_model(&models)
-                    .unwrap_or(&model_name)
-                    .to_string();
-                tools.register_vision_tools(VisionToolsRegistration {
-                    api_base_url: api_base,
-                    api_key,
-                    vision_model,
-                    base_dir: None,
-                });
-            }
-        }
-
-        // Register builder tool if enabled
-        if self.builder_tool_permitted() {
-            tools
-                .register_builder_tool(llm.clone(), Some(self.config.builder.to_builder_config()))
-                .await?;
-            tracing::debug!("Builder mode enabled");
-        }
-
-        Ok((safety, tools, embeddings, workspace))
+        // Check for vision models
+        let vision_model = crate::llm::vision_models::suggest_vision_model(&models)
+            .unwrap_or(&model_name)
+            .to_string();
+        tools.register_vision_tools(VisionToolsRegistration {
+            api_base_url: api_base,
+            api_key,
+            vision_model,
+            base_dir: None,
+        });
     }
 
     /// Return `true` when the builder tool is enabled and local tool

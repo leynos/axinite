@@ -207,6 +207,9 @@ where
     }
 }
 
+#[cfg(any(feature = "postgres", feature = "libsql"))]
+mod access;
+
 #[cfg(feature = "postgres")]
 mod postgres;
 

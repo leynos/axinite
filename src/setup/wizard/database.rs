@@ -170,25 +170,8 @@ impl SetupWizard {
     async fn step_database_postgres(&mut self) -> Result<(), SetupError> {
         self.settings.database_backend = Some("postgres".to_string());
 
-        let existing_url = std::env::var("DATABASE_URL")
-            .ok()
-            .or_else(|| self.settings.database_url.clone());
-
-        if let Some(ref url) = existing_url {
-            let display_url = mask_password_in_url(url);
-            print_info(&format!("Existing database URL: {}", display_url));
-
-            if confirm("Use this database?", true).map_err(SetupError::Io)? {
-                if let Err(e) = self.test_database_connection_postgres(url).await {
-                    print_error(&format!("Connection failed: {}", e));
-                    print_info("Let's configure a new database URL.");
-                } else {
-                    self.run_migrations_postgres().await?;
-                    print_success("Database connection successful");
-                    self.settings.database_url = Some(url.clone());
-                    return Ok(());
-                }
-            }
+        if self.try_reuse_existing_postgres_url().await? {
+            return Ok(());
         }
 
         println!();
@@ -196,6 +179,46 @@ impl SetupWizard {
         print_info("Format: postgres://user:password@host:port/database");
         println!();
 
+        self.prompt_postgres_url().await
+    }
+
+    /// Offer to reuse an existing PostgreSQL URL from the environment or
+    /// saved settings.
+    ///
+    /// Returns `true` when the existing URL was accepted and verified.
+    #[cfg(feature = "postgres")]
+    async fn try_reuse_existing_postgres_url(&mut self) -> Result<bool, SetupError> {
+        let existing_url = std::env::var("DATABASE_URL")
+            .ok()
+            .or_else(|| self.settings.database_url.clone());
+
+        let Some(url) = existing_url else {
+            return Ok(false);
+        };
+
+        let display_url = mask_password_in_url(&url);
+        print_info(&format!("Existing database URL: {}", display_url));
+
+        if !confirm("Use this database?", true).map_err(SetupError::Io)? {
+            return Ok(false);
+        }
+
+        if let Err(e) = self.test_database_connection_postgres(&url).await {
+            print_error(&format!("Connection failed: {}", e));
+            print_info("Let's configure a new database URL.");
+            return Ok(false);
+        }
+
+        self.run_migrations_postgres().await?;
+        print_success("Database connection successful");
+        self.settings.database_url = Some(url);
+        Ok(true)
+    }
+
+    /// Prompt for a PostgreSQL URL until a connection succeeds or the user
+    /// gives up.
+    #[cfg(feature = "postgres")]
+    async fn prompt_postgres_url(&mut self) -> Result<(), SetupError> {
         loop {
             let url = input("Database URL").map_err(SetupError::Io)?;
 
@@ -233,44 +256,8 @@ impl SetupWizard {
     async fn step_database_libsql(&mut self) -> Result<(), SetupError> {
         self.settings.database_backend = Some("libsql".to_string());
 
-        let default_path = crate::config::default_libsql_path();
-        let default_path_str = default_path.to_string_lossy().to_string();
-
-        // Check for existing configuration
-        let existing_path = std::env::var("LIBSQL_PATH")
-            .ok()
-            .or_else(|| self.settings.libsql_path.clone());
-
-        if let Some(ref path) = existing_path {
-            print_info(&format!("Existing database path: {}", path));
-            if confirm("Use this database?", true).map_err(SetupError::Io)? {
-                let turso_url = std::env::var("LIBSQL_URL")
-                    .ok()
-                    .or_else(|| self.settings.libsql_url.clone());
-                let turso_token = std::env::var("LIBSQL_AUTH_TOKEN").ok();
-
-                match self
-                    .test_database_connection_libsql(LibsqlConnParams {
-                        path: std::path::Path::new(path),
-                        turso_url: turso_url.as_deref(),
-                        turso_token: turso_token.as_deref(),
-                    })
-                    .await
-                {
-                    Ok(()) => {
-                        print_success("Database connection successful");
-                        self.settings.libsql_path = Some(path.clone());
-                        if let Some(url) = turso_url {
-                            self.settings.libsql_url = Some(url);
-                        }
-                        return Ok(());
-                    }
-                    Err(e) => {
-                        print_error(&format!("Connection failed: {}", e));
-                        print_info("Let's configure a new database path.");
-                    }
-                }
-            }
+        if self.try_reuse_existing_libsql_path().await? {
+            return Ok(());
         }
 
         println!();
@@ -278,42 +265,82 @@ impl SetupWizard {
         print_info("No external database server required.");
         println!();
 
+        let default_path_str = crate::config::default_libsql_path()
+            .to_string_lossy()
+            .to_string();
         let path_input = optional_input(
             "Database file path",
             Some(&format!("default: {}", default_path_str)),
         )
         .map_err(SetupError::Io)?;
 
-        let db_path = path_input.unwrap_or(default_path_str.clone());
+        let db_path = path_input.unwrap_or(default_path_str);
 
         // Ask about Turso cloud sync
         println!();
-        let use_turso =
-            confirm("Enable Turso cloud sync (remote replica)?", false).map_err(SetupError::Io)?;
+        let (turso_url, turso_token) = prompt_turso_sync()?;
 
-        let (turso_url, turso_token): (Option<String>, Option<String>) = if use_turso {
-            print_info("Enter your Turso database URL and auth token.");
-            print_info("Format: libsql://your-db.turso.io");
-            println!();
+        self.connect_new_libsql(db_path, turso_url, turso_token)
+            .await
+    }
 
-            let url = input("Turso URL").map_err(SetupError::Io)?;
-            if url.is_empty() {
-                print_error("Turso URL is required for cloud sync.");
-                (None, None)
-            } else {
-                let token_secret = secret_input("Auth token").map_err(SetupError::Io)?;
-                let token = token_secret.expose_secret().to_string();
-                if token.is_empty() {
-                    print_error("Auth token is required for cloud sync.");
-                    (None, None)
-                } else {
-                    (Some(url), Some(token))
-                }
-            }
-        } else {
-            (None, None)
+    /// Offer to reuse an existing libSQL path from the environment or saved
+    /// settings.
+    ///
+    /// Returns `true` when the existing configuration was accepted and verified.
+    #[cfg(feature = "libsql")]
+    async fn try_reuse_existing_libsql_path(&mut self) -> Result<bool, SetupError> {
+        let existing_path = std::env::var("LIBSQL_PATH")
+            .ok()
+            .or_else(|| self.settings.libsql_path.clone());
+
+        let Some(path) = existing_path else {
+            return Ok(false);
         };
 
+        print_info(&format!("Existing database path: {}", path));
+        if !confirm("Use this database?", true).map_err(SetupError::Io)? {
+            return Ok(false);
+        }
+
+        let turso_url = std::env::var("LIBSQL_URL")
+            .ok()
+            .or_else(|| self.settings.libsql_url.clone());
+        let turso_token = std::env::var("LIBSQL_AUTH_TOKEN").ok();
+
+        match self
+            .test_database_connection_libsql(LibsqlConnParams {
+                path: std::path::Path::new(&path),
+                turso_url: turso_url.as_deref(),
+                turso_token: turso_token.as_deref(),
+            })
+            .await
+        {
+            Ok(()) => {
+                print_success("Database connection successful");
+                self.settings.libsql_path = Some(path);
+                if let Some(url) = turso_url {
+                    self.settings.libsql_url = Some(url);
+                }
+                Ok(true)
+            }
+            Err(e) => {
+                print_error(&format!("Connection failed: {}", e));
+                print_info("Let's configure a new database path.");
+                Ok(false)
+            }
+        }
+    }
+
+    /// Verify a freshly configured libSQL database, run migrations, and save
+    /// the connection settings.
+    #[cfg(feature = "libsql")]
+    async fn connect_new_libsql(
+        &mut self,
+        db_path: String,
+        turso_url: Option<String>,
+        turso_token: Option<String>,
+    ) -> Result<(), SetupError> {
         print_info("Testing connection...");
         match self
             .test_database_connection_libsql(LibsqlConnParams {
@@ -338,4 +365,36 @@ impl SetupWizard {
             Err(e) => Err(SetupError::Database(format!("Connection failed: {}", e))),
         }
     }
+}
+
+/// Prompt for optional Turso cloud sync credentials.
+///
+/// Returns `(None, None)` when sync is declined or when the entered
+/// credentials are incomplete.
+#[cfg(feature = "libsql")]
+fn prompt_turso_sync() -> Result<(Option<String>, Option<String>), SetupError> {
+    let use_turso =
+        confirm("Enable Turso cloud sync (remote replica)?", false).map_err(SetupError::Io)?;
+    if !use_turso {
+        return Ok((None, None));
+    }
+
+    print_info("Enter your Turso database URL and auth token.");
+    print_info("Format: libsql://your-db.turso.io");
+    println!();
+
+    let url = input("Turso URL").map_err(SetupError::Io)?;
+    if url.is_empty() {
+        print_error("Turso URL is required for cloud sync.");
+        return Ok((None, None));
+    }
+
+    let token_secret = secret_input("Auth token").map_err(SetupError::Io)?;
+    let token = token_secret.expose_secret().to_string();
+    if token.is_empty() {
+        print_error("Auth token is required for cloud sync.");
+        return Ok((None, None));
+    }
+
+    Ok((Some(url), Some(token)))
 }

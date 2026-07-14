@@ -120,42 +120,8 @@ impl Worker {
         plan: &ActionPlan,
     ) -> Result<WorkerLoopOutcome, Error> {
         for (i, action) in plan.actions.iter().enumerate() {
-            // Check for stop signal and injected user messages
-            while let Ok(msg) = rx.try_recv() {
-                match msg {
-                    WorkerMessage::Stop => {
-                        tracing::debug!(
-                            "Worker for job {} received stop signal during plan execution",
-                            self.job_id
-                        );
-                        return Ok(WorkerLoopOutcome::Exited);
-                    }
-                    WorkerMessage::Ping => {
-                        tracing::trace!("Worker for job {} received ping", self.job_id);
-                    }
-                    WorkerMessage::Start => {}
-                    WorkerMessage::UserMessage(content) => {
-                        tracing::info!(
-                            job_id = %self.job_id,
-                            "User message received during plan execution, abandoning plan"
-                        );
-                        reason_ctx.messages.push(ChatMessage::user(&content));
-                        self.log_event(
-                            "message",
-                            serde_json::json!({
-                                "role": "user",
-                                "content": content,
-                            }),
-                        );
-                        self.log_event(
-                            "status",
-                            serde_json::json!({
-                                "message": "Plan interrupted by user message, re-evaluating...",
-                            }),
-                        );
-                        return Ok(WorkerLoopOutcome::ContinueDirectSelection);
-                    }
-                }
+            if let Some(outcome) = self.drain_plan_signals(rx, reason_ctx) {
+                return Ok(outcome);
             }
 
             tracing::debug!(
@@ -167,36 +133,109 @@ impl Worker {
                 action.reasoning
             );
 
-            let selection = ToolSelection {
-                tool_name: action.tool_name.clone(),
-                parameters: action.parameters.clone(),
-                reasoning: action.reasoning.clone(),
-                alternatives: vec![],
-                tool_call_id: format!("plan_{}_{}", self.job_id, i),
-            };
-
-            reason_ctx
-                .messages
-                .push(ChatMessage::assistant_with_tool_calls(
-                    None,
-                    vec![ToolCall {
-                        id: selection.tool_call_id.clone(),
-                        name: selection.tool_name.clone(),
-                        arguments: selection.parameters.clone(),
-                    }],
-                ));
-
-            let result = self
-                .execute_tool(&action.tool_name, &action.parameters)
-                .await;
-
-            self.process_tool_result_job(reason_ctx, &selection, result)
-                .await?;
+            self.execute_planned_action(reason_ctx, plan, i).await?;
 
             tokio::time::sleep(Duration::from_millis(100)).await;
         }
 
-        // Plan completed, check with LLM if job is done
+        self.confirm_plan_completion(reasoning, reason_ctx).await
+    }
+
+    /// Drain pending worker messages during plan execution.
+    ///
+    /// Returns `Some(outcome)` when the plan must be abandoned: `Exited` on a
+    /// stop signal, or `ContinueDirectSelection` when a user message arrives
+    /// (the message is injected into the reasoning context first). Returns
+    /// `None` when execution should proceed with the next planned action.
+    fn drain_plan_signals(
+        &self,
+        rx: &mut mpsc::Receiver<WorkerMessage>,
+        reason_ctx: &mut ReasoningContext,
+    ) -> Option<WorkerLoopOutcome> {
+        while let Ok(msg) = rx.try_recv() {
+            match msg {
+                WorkerMessage::Stop => {
+                    tracing::debug!(
+                        "Worker for job {} received stop signal during plan execution",
+                        self.job_id
+                    );
+                    return Some(WorkerLoopOutcome::Exited);
+                }
+                WorkerMessage::Ping => {
+                    tracing::trace!("Worker for job {} received ping", self.job_id);
+                }
+                WorkerMessage::Start => {}
+                WorkerMessage::UserMessage(content) => {
+                    tracing::info!(
+                        job_id = %self.job_id,
+                        "User message received during plan execution, abandoning plan"
+                    );
+                    reason_ctx.messages.push(ChatMessage::user(&content));
+                    self.log_event(
+                        "message",
+                        serde_json::json!({
+                            "role": "user",
+                            "content": content,
+                        }),
+                    );
+                    self.log_event(
+                        "status",
+                        serde_json::json!({
+                            "message": "Plan interrupted by user message, re-evaluating...",
+                        }),
+                    );
+                    return Some(WorkerLoopOutcome::ContinueDirectSelection);
+                }
+            }
+        }
+        None
+    }
+
+    /// Execute one planned action: record the tool call in the reasoning
+    /// context, run the tool, and process its result.
+    async fn execute_planned_action(
+        &self,
+        reason_ctx: &mut ReasoningContext,
+        plan: &ActionPlan,
+        index: usize,
+    ) -> Result<(), Error> {
+        let action = &plan.actions[index];
+        let selection = ToolSelection {
+            tool_name: action.tool_name.clone(),
+            parameters: action.parameters.clone(),
+            reasoning: action.reasoning.clone(),
+            alternatives: vec![],
+            tool_call_id: format!("plan_{}_{}", self.job_id, index),
+        };
+
+        reason_ctx
+            .messages
+            .push(ChatMessage::assistant_with_tool_calls(
+                None,
+                vec![ToolCall {
+                    id: selection.tool_call_id.clone(),
+                    name: selection.tool_name.clone(),
+                    arguments: selection.parameters.clone(),
+                }],
+            ));
+
+        let result = self
+            .execute_tool(&action.tool_name, &action.parameters)
+            .await;
+
+        self.process_tool_result_job(reason_ctx, &selection, result)
+            .await
+    }
+
+    /// Ask the LLM whether the completed plan finished the job.
+    ///
+    /// Returns `Completed` when the model signals completion, or
+    /// `ContinueDirectSelection` when more work remains.
+    async fn confirm_plan_completion(
+        &self,
+        reasoning: &Reasoning,
+        reason_ctx: &mut ReasoningContext,
+    ) -> Result<WorkerLoopOutcome, Error> {
         reason_ctx.messages.push(ChatMessage::user(
             "All planned actions have been executed. Is the job complete? If not, what else needs to be done?",
         ));
@@ -206,19 +245,18 @@ impl Worker {
 
         if crate::util::llm_signals_completion(&response) {
             return Ok(WorkerLoopOutcome::Completed);
-        } else {
-            tracing::info!(
-                "Job {} plan completed but work remains, falling back to direct selection",
-                self.job_id
-            );
-            self.log_event(
-                "status",
-                serde_json::json!({
-                    "message": "Plan completed but job needs more work, continuing...",
-                }),
-            );
         }
 
+        tracing::info!(
+            "Job {} plan completed but work remains, falling back to direct selection",
+            self.job_id
+        );
+        self.log_event(
+            "status",
+            serde_json::json!({
+                "message": "Plan completed but job needs more work, continuing...",
+            }),
+        );
         Ok(WorkerLoopOutcome::ContinueDirectSelection)
     }
 }

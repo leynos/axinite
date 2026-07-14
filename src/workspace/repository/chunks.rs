@@ -3,6 +3,7 @@
 use pgvector::Vector;
 use uuid::Uuid;
 
+use crate::db::InsertChunkParams;
 use crate::error::WorkspaceError;
 use crate::workspace::document::MemoryChunk;
 
@@ -28,26 +29,29 @@ impl Repository {
     /// Insert a chunk.
     pub async fn insert_chunk(
         &self,
-        document_id: Uuid,
-        chunk_index: u32,
-        content: &str,
-        embedding: Option<&[f32]>,
+        params: InsertChunkParams<'_>,
     ) -> Result<Uuid, WorkspaceError> {
         let conn = self.conn().await?;
         let id = Uuid::new_v4();
         let chunk_index =
-            i32::try_from(chunk_index).map_err(|_| WorkspaceError::ChunkingFailed {
+            i32::try_from(params.chunk_index).map_err(|_| WorkspaceError::ChunkingFailed {
                 reason: "chunk_index exceeds i32 range".to_string(),
             })?;
 
-        let embedding_vec = embedding.map(|e| Vector::from(e.to_vec()));
+        let embedding_vec = params.embedding.map(|e| Vector::from(e.to_vec()));
 
         conn.execute(
             r#"
             INSERT INTO memory_chunks (id, document_id, chunk_index, content, embedding)
             VALUES ($1, $2, $3, $4, $5)
             "#,
-            &[&id, &document_id, &chunk_index, &content, &embedding_vec],
+            &[
+                &id,
+                &params.document_id,
+                &chunk_index,
+                &params.content,
+                &embedding_vec,
+            ],
         )
         .await
         .map_err(|e| WorkspaceError::ChunkingFailed {

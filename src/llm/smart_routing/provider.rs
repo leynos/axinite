@@ -120,55 +120,22 @@ impl SmartRoutingProvider {
     ///
     /// Priority: explicit tier hints > pattern overrides > 13-dimension scorer.
     pub(super) fn classify(&self, request: &CompletionRequest) -> TaskComplexity {
-        let last_user_msg = request
-            .messages
-            .iter()
-            .rev()
-            .find(|m| m.role == Role::User)
-            .map(|m| m.content.as_str())
-            .unwrap_or("");
+        let last_user_msg = last_user_message(request);
 
-        // Normalize: trim whitespace so anchored regexes and token scoring are consistent.
-        let last_user_msg = last_user_msg.trim();
-
-        // Highest priority: explicit tier hints (e.g. "[tier:flash]")
-        if let Some(caps) = RE_TIER_HINT.captures(last_user_msg) {
-            // Group 1 always exists when the regex matches; an empty string
-            // falls through to the defensive branch below.
-            let tier_str = caps.get(1).map_or("", |m| m.as_str());
-            let tier = match tier_str.to_lowercase().as_str() {
-                "flash" => Tier::Flash,
-                "standard" => Tier::Standard,
-                "pro" => Tier::Pro,
-                "frontier" => Tier::Frontier,
-                other => {
-                    tracing::error!(tier = %other, "Unexpected tier in hint despite regex constraint");
-                    Tier::Standard
-                }
-            };
-            let complexity = TaskComplexity::from(tier);
-            tracing::trace!(
-                %tier,
-                ?complexity,
-                "Smart routing: explicit tier hint"
-            );
+        if let Some(complexity) = tier_hint_complexity(last_user_msg) {
             return complexity;
         }
 
-        // Fast-path: check pattern overrides
-        for po in DEFAULT_OVERRIDES.iter() {
-            if po.regex.is_match(last_user_msg) {
-                let complexity = TaskComplexity::from(po.tier);
-                tracing::trace!(
-                    tier = %po.tier,
-                    ?complexity,
-                    "Smart routing: pattern override matched"
-                );
-                return complexity;
-            }
+        if let Some(complexity) = pattern_override_complexity(last_user_msg) {
+            return complexity;
         }
 
-        // Full 13-dimension scoring (uses pre-compiled domain regex)
+        self.scored_complexity(last_user_msg)
+    }
+
+    /// Classify via the full 13-dimension scorer (uses the pre-compiled
+    /// domain regex built at construction time).
+    fn scored_complexity(&self, last_user_msg: &str) -> TaskComplexity {
         let breakdown = score_complexity_with_regex(
             last_user_msg,
             &self.scorer_config.weights,
@@ -222,6 +189,64 @@ impl SmartRoutingProvider {
 
         uncertainty_patterns.iter().any(|p| lower.contains(p))
     }
+}
+
+/// Extract the trimmed content of the last user message in a request.
+///
+/// Trimming keeps anchored regexes and token scoring consistent regardless
+/// of leading or trailing whitespace.
+fn last_user_message(request: &CompletionRequest) -> &str {
+    request
+        .messages
+        .iter()
+        .rev()
+        .find(|m| m.role == Role::User)
+        .map(|m| m.content.as_str())
+        .unwrap_or("")
+        .trim()
+}
+
+/// Classify from an explicit tier hint (e.g. "[tier:flash]"), if present.
+///
+/// Explicit hints take highest priority over pattern overrides and scoring.
+fn tier_hint_complexity(last_user_msg: &str) -> Option<TaskComplexity> {
+    let caps = RE_TIER_HINT.captures(last_user_msg)?;
+    // Group 1 always exists when the regex matches; an empty string
+    // falls through to the defensive branch below.
+    let tier_str = caps.get(1).map_or("", |m| m.as_str());
+    let tier = match tier_str.to_lowercase().as_str() {
+        "flash" => Tier::Flash,
+        "standard" => Tier::Standard,
+        "pro" => Tier::Pro,
+        "frontier" => Tier::Frontier,
+        other => {
+            tracing::error!(tier = %other, "Unexpected tier in hint despite regex constraint");
+            Tier::Standard
+        }
+    };
+    let complexity = TaskComplexity::from(tier);
+    tracing::trace!(
+        %tier,
+        ?complexity,
+        "Smart routing: explicit tier hint"
+    );
+    Some(complexity)
+}
+
+/// Classify from the fast-path pattern overrides, if any pattern matches.
+fn pattern_override_complexity(last_user_msg: &str) -> Option<TaskComplexity> {
+    for po in DEFAULT_OVERRIDES.iter() {
+        if po.regex.is_match(last_user_msg) {
+            let complexity = TaskComplexity::from(po.tier);
+            tracing::trace!(
+                tier = %po.tier,
+                ?complexity,
+                "Smart routing: pattern override matched"
+            );
+            return Some(complexity);
+        }
+    }
+    None
 }
 
 impl crate::llm::NativeLlmProvider for SmartRoutingProvider {

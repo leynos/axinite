@@ -28,6 +28,12 @@ pub enum ChannelSetupError {
 }
 
 /// Context for saving secrets during setup.
+///
+/// Methods here take secret names and user identifiers as plain `&str`
+/// deliberately: both are free-form identifiers originating from channel
+/// capability schemas and the authentication layer, with no invariants
+/// beyond non-emptiness that a newtype could enforce. Secret values are
+/// already typed as [`SecretString`].
 pub struct SecretsContext {
     store: Arc<dyn SecretsStore>,
     user_id: String,

@@ -141,40 +141,44 @@ pub(super) fn extract_host_from_url(url: &str) -> Option<String> {
     })
 }
 
-/// Resolve the URL's hostname and reject connections to private/internal IP addresses.
-/// This prevents DNS rebinding attacks where an attacker's domain resolves to an
-/// internal IP after passing the allowlist check.
-pub(super) fn reject_private_ip(url: &str) -> Result<(), String> {
+/// Parse and validate a URL for outbound requests (scheme and userinfo).
+fn parse_outbound_url(url: &str) -> Result<url::Url, String> {
     let parsed = url::Url::parse(url).map_err(|e| format!("Failed to parse URL: {e}"))?;
     if !matches!(parsed.scheme(), "http" | "https") {
         return Err(format!("Unsupported URL scheme: {}", parsed.scheme()));
     }
-    if !parsed.username().is_empty() || parsed.password().is_some() {
+    let has_userinfo = !parsed.username().is_empty() || parsed.password().is_some();
+    if has_userinfo {
         return Err("URL contains userinfo (@) which is not allowed".to_string());
     }
+    Ok(parsed)
+}
 
-    let host = parsed
+/// Extract the host from a parsed URL, stripping IPv6 brackets.
+fn outbound_url_host(parsed: &url::Url) -> Result<&str, String> {
+    parsed
         .host_str()
         .map(|h| {
             h.strip_prefix('[')
                 .and_then(|v| v.strip_suffix(']'))
                 .unwrap_or(h)
         })
-        .ok_or_else(|| "Failed to parse host from URL".to_string())?;
+        .ok_or_else(|| "Failed to parse host from URL".to_string())
+}
 
-    // If the host is already an IP, check it directly
-    if let Ok(ip) = host.parse::<std::net::IpAddr>() {
-        return if is_private_ip(ip) {
-            Err(format!(
-                "HTTP request to private/internal IP {} is not allowed",
-                ip
-            ))
-        } else {
-            Ok(())
-        };
+/// Reject an IP-literal host that falls in a private/internal range.
+fn reject_private_ip_literal(ip: std::net::IpAddr) -> Result<(), String> {
+    if is_private_ip(ip) {
+        return Err(format!(
+            "HTTP request to private/internal IP {} is not allowed",
+            ip
+        ));
     }
+    Ok(())
+}
 
-    // Resolve DNS and check all addresses
+/// Resolve a hostname and reject it if any resolved address is private.
+fn reject_private_resolved_addresses(host: &str) -> Result<(), String> {
     use std::net::ToSocketAddrs;
     // Port 0 is a placeholder; ToSocketAddrs needs host:port but the port
     // doesn't affect which IPs the hostname resolves to.
@@ -200,23 +204,49 @@ pub(super) fn reject_private_ip(url: &str) -> Result<(), String> {
     Ok(())
 }
 
+/// Resolve the URL's hostname and reject connections to private/internal IP addresses.
+/// This prevents DNS rebinding attacks where an attacker's domain resolves to an
+/// internal IP after passing the allowlist check.
+pub(super) fn reject_private_ip(url: &str) -> Result<(), String> {
+    let parsed = parse_outbound_url(url)?;
+    let host = outbound_url_host(&parsed)?;
+
+    // If the host is already an IP, check it directly; otherwise resolve DNS
+    // and check every address.
+    match host.parse::<std::net::IpAddr>() {
+        Ok(ip) => reject_private_ip_literal(ip),
+        Err(_) => reject_private_resolved_addresses(host),
+    }
+}
+
 /// Check if an IP address belongs to a private/internal range.
 pub(super) fn is_private_ip(ip: std::net::IpAddr) -> bool {
     match ip {
-        std::net::IpAddr::V4(v4) => {
-            v4.is_loopback()           // 127.0.0.0/8
-            || v4.is_private()         // 10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16
-            || v4.is_link_local()      // 169.254.0.0/16
-            || v4.is_unspecified()     // 0.0.0.0
-            || v4.octets()[0] == 100 && (v4.octets()[1] & 0xC0) == 64 // 100.64.0.0/10 (CGNAT)
-        }
-        std::net::IpAddr::V6(v6) => {
-            v6.is_loopback()           // ::1
-            || v6.is_unspecified()     // ::
-            // fc00::/7 (unique local)
-            || (v6.segments()[0] & 0xFE00) == 0xFC00
-            // fe80::/10 (link-local)
-            || (v6.segments()[0] & 0xFFC0) == 0xFE80
-        }
+        std::net::IpAddr::V4(v4) => is_private_ipv4(v4),
+        std::net::IpAddr::V6(v6) => is_private_ipv6(v6),
     }
+}
+
+/// Whether an IPv4 address falls in a private or internal range.
+fn is_private_ipv4(v4: std::net::Ipv4Addr) -> bool {
+    // 127.0.0.0/8; 10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16
+    if v4.is_loopback() || v4.is_private() {
+        return true;
+    }
+    // 169.254.0.0/16; 0.0.0.0
+    if v4.is_link_local() || v4.is_unspecified() {
+        return true;
+    }
+    // 100.64.0.0/10 (CGNAT)
+    v4.octets()[0] == 100 && (v4.octets()[1] & 0xC0) == 64
+}
+
+/// Whether an IPv6 address falls in a private or internal range.
+fn is_private_ipv6(v6: std::net::Ipv6Addr) -> bool {
+    // ::1; ::
+    if v6.is_loopback() || v6.is_unspecified() {
+        return true;
+    }
+    // fc00::/7 (unique local) or fe80::/10 (link-local)
+    (v6.segments()[0] & 0xFE00) == 0xFC00 || (v6.segments()[0] & 0xFFC0) == 0xFE80
 }

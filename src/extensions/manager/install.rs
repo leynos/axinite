@@ -110,66 +110,10 @@ impl ExtensionManager {
                 };
                 self.install_mcp_from_url(&entry.name, &url).await
             }
-            ExtensionKind::WasmTool => match source {
-                ExtensionSource::WasmDownload {
-                    wasm_url,
-                    capabilities_url,
-                } => {
-                    self.install_wasm_tool_from_url_with_caps(
-                        &entry.name,
-                        wasm_url,
-                        capabilities_url.as_deref(),
-                    )
+            ExtensionKind::WasmTool | ExtensionKind::WasmChannel => {
+                self.install_wasm_from_source(entry, source, entry.kind)
                     .await
-                }
-                ExtensionSource::WasmBuildable {
-                    build_dir,
-                    crate_name,
-                    ..
-                } => {
-                    self.install_wasm_from_buildable(
-                        &entry.name,
-                        build_dir.as_deref(),
-                        crate_name.as_deref(),
-                        &self.wasm_tools_dir,
-                        ExtensionKind::WasmTool,
-                    )
-                    .await
-                }
-                _ => Err(ExtensionError::InstallFailed(
-                    "WASM tool entry has no download URL or build info".to_string(),
-                )),
-            },
-            ExtensionKind::WasmChannel => match source {
-                ExtensionSource::WasmDownload {
-                    wasm_url,
-                    capabilities_url,
-                } => {
-                    self.install_wasm_channel_from_url(
-                        &entry.name,
-                        wasm_url,
-                        capabilities_url.as_deref(),
-                    )
-                    .await
-                }
-                ExtensionSource::WasmBuildable {
-                    build_dir,
-                    crate_name,
-                    ..
-                } => {
-                    self.install_wasm_from_buildable(
-                        &entry.name,
-                        build_dir.as_deref(),
-                        crate_name.as_deref(),
-                        &self.wasm_channels_dir,
-                        ExtensionKind::WasmChannel,
-                    )
-                    .await
-                }
-                _ => Err(ExtensionError::InstallFailed(
-                    "WASM channel entry has no download URL or build info".to_string(),
-                )),
-            },
+            }
             ExtensionKind::ChannelRelay => {
                 // No download needed — just mark as installed.
                 self.installed_relay_extensions
@@ -184,6 +128,69 @@ impl ExtensionManager {
                         entry.display_name
                     ),
                 })
+            }
+        }
+    }
+
+    /// Install a WASM extension (tool or channel) from its source, routing
+    /// to the download or buildable installer with the kind-appropriate
+    /// target directory.
+    async fn install_wasm_from_source(
+        &self,
+        entry: &RegistryEntry,
+        source: &ExtensionSource,
+        kind: ExtensionKind,
+    ) -> Result<InstallResult, ExtensionError> {
+        match source {
+            ExtensionSource::WasmDownload {
+                wasm_url,
+                capabilities_url,
+            } => {
+                if kind == ExtensionKind::WasmTool {
+                    self.install_wasm_tool_from_url_with_caps(
+                        &entry.name,
+                        wasm_url,
+                        capabilities_url.as_deref(),
+                    )
+                    .await
+                } else {
+                    self.install_wasm_channel_from_url(
+                        &entry.name,
+                        wasm_url,
+                        capabilities_url.as_deref(),
+                    )
+                    .await
+                }
+            }
+            ExtensionSource::WasmBuildable {
+                build_dir,
+                crate_name,
+                ..
+            } => {
+                let target_dir = if kind == ExtensionKind::WasmTool {
+                    &self.wasm_tools_dir
+                } else {
+                    &self.wasm_channels_dir
+                };
+                self.install_wasm_from_buildable(
+                    &entry.name,
+                    build_dir.as_deref(),
+                    crate_name.as_deref(),
+                    target_dir,
+                    kind,
+                )
+                .await
+            }
+            _ => {
+                let label = if kind == ExtensionKind::WasmTool {
+                    "WASM tool"
+                } else {
+                    "WASM channel"
+                };
+                Err(ExtensionError::InstallFailed(format!(
+                    "{} entry has no download URL or build info",
+                    label
+                )))
             }
         }
     }

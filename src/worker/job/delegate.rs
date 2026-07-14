@@ -75,6 +75,93 @@ impl<'a> JobDelegate<'a> {
             usage: crate::llm::TokenUsage::default(),
         })
     }
+
+    /// Reset the consecutive rate-limit counter after a successful LLM call.
+    fn reset_rate_limit_counter(&self) {
+        self.consecutive_rate_limits
+            .store(0, std::sync::atomic::Ordering::Relaxed);
+    }
+
+    /// Attempt tool selection via `select_tools`.
+    ///
+    /// Returns `Ok(Some(output))` when the loop has a usable response (either
+    /// tool calls or a rate-limit backoff placeholder), or `Ok(None)` when the
+    /// selection was empty and the caller should fall back to
+    /// `respond_with_tools`.
+    async fn try_select_tools(
+        &self,
+        reasoning: &Reasoning,
+        reason_ctx: &mut ReasoningContext,
+    ) -> Result<Option<crate::llm::RespondOutput>, crate::error::Error> {
+        match reasoning.select_tools(reason_ctx).await {
+            Ok(s) if !s.is_empty() => {
+                self.reset_rate_limit_counter();
+                let tool_calls: Vec<ToolCall> = selections_to_tool_calls(&s);
+                Ok(Some(crate::llm::RespondOutput {
+                    result: RespondResult::ToolCalls {
+                        tool_calls,
+                        content: None,
+                    },
+                    usage: crate::llm::TokenUsage::default(),
+                }))
+            }
+            Ok(_) => Ok(None), // empty selections, fall back
+            Err(crate::error::LlmError::RateLimited { retry_after, .. }) => self
+                .handle_rate_limit(retry_after, "tool selection")
+                .await
+                .map(Some),
+            Err(e) => Err(e.into()),
+        }
+    }
+
+    /// Charge the job's token budget for a completed `respond_with_tools` call.
+    ///
+    /// Fails the job when the budget update reports the limit as exceeded.
+    ///
+    /// NOTE: `select_tools()` also makes LLM calls but doesn't expose
+    /// `TokenUsage`; only `respond_with_tools()` usage is tracked here.
+    async fn track_token_budget(
+        &self,
+        usage: &crate::llm::TokenUsage,
+    ) -> Result<(), crate::error::Error> {
+        let total_tokens = usage.total() as u64;
+        if total_tokens == 0 {
+            return Ok(());
+        }
+        if let Err(msg) = self
+            .worker
+            .context_manager()
+            .update_context(self.worker.job_id, |ctx| ctx.add_tokens(total_tokens))
+            .await?
+        {
+            return Err(crate::error::JobError::Failed {
+                id: self.worker.job_id,
+                reason: msg,
+            }
+            .into());
+        }
+        Ok(())
+    }
+
+    /// Call `respond_with_tools`, tracking token usage and rate limits.
+    async fn respond_with_tools_tracked(
+        &self,
+        reasoning: &Reasoning,
+        reason_ctx: &mut ReasoningContext,
+    ) -> Result<crate::llm::RespondOutput, crate::error::Error> {
+        match reasoning.respond_with_tools(reason_ctx).await {
+            Ok(output) => {
+                self.reset_rate_limit_counter();
+                self.track_token_budget(&output.usage).await?;
+                Ok(output)
+            }
+            Err(crate::error::LlmError::RateLimited { retry_after, .. }) => {
+                self.handle_rate_limit(retry_after, "respond_with_tools")
+                    .await
+            }
+            Err(e) => Err(e.into()),
+        }
+    }
 }
 
 impl<'a> NativeLoopDelegate for JobDelegate<'a> {
@@ -175,60 +262,10 @@ impl<'a> NativeLoopDelegate for JobDelegate<'a> {
         _iteration: usize,
     ) -> Result<crate::llm::RespondOutput, crate::error::Error> {
         // Try select_tools first, fall back to respond_with_tools
-        match reasoning.select_tools(reason_ctx).await {
-            Ok(s) if !s.is_empty() => {
-                // Reset counter after a successful LLM call
-                self.consecutive_rate_limits
-                    .store(0, std::sync::atomic::Ordering::Relaxed);
-                let tool_calls: Vec<ToolCall> = selections_to_tool_calls(&s);
-                return Ok(crate::llm::RespondOutput {
-                    result: RespondResult::ToolCalls {
-                        tool_calls,
-                        content: None,
-                    },
-                    usage: crate::llm::TokenUsage::default(),
-                });
-            }
-            Ok(_) => {} // empty selections, fall through
-            Err(crate::error::LlmError::RateLimited { retry_after, .. }) => {
-                return self.handle_rate_limit(retry_after, "tool selection").await;
-            }
-            Err(e) => return Err(e.into()),
-        };
-
-        // Fall back to respond_with_tools
-        match reasoning.respond_with_tools(reason_ctx).await {
-            Ok(output) => {
-                // Reset counter after a successful LLM call
-                self.consecutive_rate_limits
-                    .store(0, std::sync::atomic::Ordering::Relaxed);
-
-                // Track token usage against the job budget.
-                // NOTE: select_tools() also makes LLM calls but doesn't expose
-                // TokenUsage; only respond_with_tools() usage is tracked here.
-                let total_tokens = output.usage.total() as u64;
-                if total_tokens > 0
-                    && let Err(msg) = self
-                        .worker
-                        .context_manager()
-                        .update_context(self.worker.job_id, |ctx| ctx.add_tokens(total_tokens))
-                        .await?
-                {
-                    return Err(crate::error::JobError::Failed {
-                        id: self.worker.job_id,
-                        reason: msg,
-                    }
-                    .into());
-                }
-
-                Ok(output)
-            }
-            Err(crate::error::LlmError::RateLimited { retry_after, .. }) => {
-                self.handle_rate_limit(retry_after, "respond_with_tools")
-                    .await
-            }
-            Err(e) => Err(e.into()),
+        if let Some(output) = self.try_select_tools(reasoning, reason_ctx).await? {
+            return Ok(output);
         }
+        self.respond_with_tools_tracked(reasoning, reason_ctx).await
     }
 
     async fn handle_text_response(

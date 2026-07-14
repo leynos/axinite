@@ -42,6 +42,26 @@ impl Reasoning {
         &self,
         context: &ReasoningContext,
     ) -> Result<RespondOutput, LlmError> {
+        let messages = self.build_conversation(context);
+
+        let effective_tools = if context.force_text {
+            Vec::new()
+        } else {
+            context.available_tools.clone()
+        };
+
+        // If we have tools, use tool completion mode
+        if effective_tools.is_empty() {
+            self.respond_via_completion(context, messages).await
+        } else {
+            self.respond_via_tool_completion(context, messages, effective_tools)
+                .await
+        }
+    }
+
+    /// Assemble the message list: the merged system prompt followed by the
+    /// context's non-system messages.
+    fn build_conversation(&self, context: &ReasoningContext) -> Vec<ChatMessage> {
         let system_prompt = match context.system_prompt {
             Some(ref prompt) => prompt.clone(),
             None => self.build_system_prompt_with_tools(&context.available_tools),
@@ -56,121 +76,124 @@ impl Reasoning {
                 .filter(|m| m.role != Role::System)
                 .cloned(),
         );
+        messages
+    }
 
-        let effective_tools = if context.force_text {
-            Vec::new()
-        } else {
-            context.available_tools.clone()
+    /// Tool-enabled completion: return structured tool calls, recover calls
+    /// hidden in content, or fall back to cleaned text.
+    async fn respond_via_tool_completion(
+        &self,
+        context: &ReasoningContext,
+        messages: Vec<ChatMessage>,
+        effective_tools: Vec<crate::llm::ToolDefinition>,
+    ) -> Result<RespondOutput, LlmError> {
+        let mut request = ToolCompletionRequest::new(messages, effective_tools)
+            .with_max_tokens(4096)
+            .with_temperature(0.7)
+            .with_tool_choice("auto");
+        request.metadata = context.metadata.clone();
+
+        let response = self.llm.complete_with_tools(request).await?;
+        let usage = TokenUsage {
+            input_tokens: response.input_tokens,
+            output_tokens: response.output_tokens,
+            cache_read_input_tokens: response.cache_read_input_tokens,
+            cache_creation_input_tokens: response.cache_creation_input_tokens,
         };
 
-        // If we have tools, use tool completion mode
-        if !effective_tools.is_empty() {
-            let mut request = ToolCompletionRequest::new(messages, effective_tools)
-                .with_max_tokens(4096)
-                .with_temperature(0.7)
-                .with_tool_choice("auto");
-            request.metadata = context.metadata.clone();
+        // If there were tool calls, return them for execution
+        if !response.tool_calls.is_empty() {
+            return Ok(RespondOutput {
+                result: RespondResult::ToolCalls {
+                    tool_calls: response.tool_calls,
+                    content: response.content.map(|c| cleaned_text(&c)),
+                },
+                usage,
+            });
+        }
 
-            let response = self.llm.complete_with_tools(request).await?;
-            let usage = TokenUsage {
+        let content = response
+            .content
+            .unwrap_or_else(|| "I'm not sure how to respond to that.".to_string());
+
+        // Some models (e.g. GLM-4.7) emit tool calls as XML tags in content
+        // instead of using the structured tool_calls field. Try to recover
+        // them before giving up and returning plain text.
+        // NOTE: Recovery runs on the raw content (before truncation) so it can
+        // parse tool-call JSON from the XML tags. Truncation only applies to the
+        // remaining *text* content returned alongside the recovered tool calls.
+        let recovered = recover_tool_calls_from_content(&content, &context.available_tools);
+        if !recovered.is_empty() {
+            let cleaned = cleaned_text(&content);
+            return Ok(RespondOutput {
+                result: RespondResult::ToolCalls {
+                    tool_calls: recovered,
+                    content: if cleaned.is_empty() {
+                        None
+                    } else {
+                        Some(cleaned)
+                    },
+                },
+                usage,
+            });
+        }
+
+        Ok(RespondOutput {
+            result: RespondResult::Text(cleaned_or_fallback(&content)),
+            usage,
+        })
+    }
+
+    /// No tools available: use simple completion and clean the text.
+    async fn respond_via_completion(
+        &self,
+        context: &ReasoningContext,
+        messages: Vec<ChatMessage>,
+    ) -> Result<RespondOutput, LlmError> {
+        let mut request = CompletionRequest::new(messages)
+            .with_max_tokens(4096)
+            .with_temperature(0.7);
+        request.metadata = context.metadata.clone();
+
+        let response = self.llm.complete(request).await?;
+        Ok(RespondOutput {
+            result: RespondResult::Text(cleaned_or_fallback(&response.content)),
+            usage: TokenUsage {
                 input_tokens: response.input_tokens,
                 output_tokens: response.output_tokens,
                 cache_read_input_tokens: response.cache_read_input_tokens,
                 cache_creation_input_tokens: response.cache_creation_input_tokens,
-            };
+            },
+        })
+    }
+}
 
-            // If there were tool calls, return them for execution
-            if !response.tool_calls.is_empty() {
-                return Ok(RespondOutput {
-                    result: RespondResult::ToolCalls {
-                        tool_calls: response.tool_calls,
-                        content: response.content.map(|c| {
-                            let pre_truncated = truncate_at_tool_tags(&c);
-                            clean_response(&pre_truncated)
-                        }),
-                    },
-                    usage,
-                });
-            }
+/// Truncate at tool tags, then clean the remaining response text.
+fn cleaned_text(content: &str) -> String {
+    let pre_truncated = truncate_at_tool_tags(content);
+    clean_response(&pre_truncated)
+}
 
-            let content = response
-                .content
-                .unwrap_or_else(|| "I'm not sure how to respond to that.".to_string());
-
-            // Some models (e.g. GLM-4.7) emit tool calls as XML tags in content
-            // instead of using the structured tool_calls field. Try to recover
-            // them before giving up and returning plain text.
-            // NOTE: Recovery runs on the raw content (before truncation) so it can
-            // parse tool-call JSON from the XML tags. Truncation only applies to the
-            // remaining *text* content returned alongside the recovered tool calls.
-            let recovered = recover_tool_calls_from_content(&content, &context.available_tools);
-            if !recovered.is_empty() {
-                let pre_truncated = truncate_at_tool_tags(&content);
-                let cleaned = clean_response(&pre_truncated);
-                return Ok(RespondOutput {
-                    result: RespondResult::ToolCalls {
-                        tool_calls: recovered,
-                        content: if cleaned.is_empty() {
-                            None
-                        } else {
-                            Some(cleaned)
-                        },
-                    },
-                    usage,
-                });
-            }
-
-            // Guard against empty text after cleaning. This can happen when:
-            // 1. Reasoning models (e.g. GLM-5) return chain-of-thought in
-            //    reasoning_content wrapped in <think> tags — clean_response
-            //    strips the think tags leaving an empty string.
-            // 2. Local models (Qwen3, DeepSeek) emit <tool_call> XML in text
-            //    responses even in force_text mode — strip_xml_tag discards
-            //    from unclosed opening tag onward (issue #789).
-            // Pre-truncate at tool tags to preserve text before the tag.
-            let pre_truncated = truncate_at_tool_tags(&content);
-            let cleaned = clean_response(&pre_truncated);
-            let final_text = if cleaned.trim().is_empty() {
-                tracing::warn!(
-                    "LLM response was empty after cleaning (original len={}), using fallback",
-                    content.len()
-                );
-                "I'm not sure how to respond to that.".to_string()
-            } else {
-                cleaned
-            };
-            Ok(RespondOutput {
-                result: RespondResult::Text(final_text),
-                usage,
-            })
-        } else {
-            // No tools, use simple completion
-            let mut request = CompletionRequest::new(messages)
-                .with_max_tokens(4096)
-                .with_temperature(0.7);
-            request.metadata = context.metadata.clone();
-
-            let response = self.llm.complete(request).await?;
-            let pre_truncated = truncate_at_tool_tags(&response.content);
-            let cleaned = clean_response(&pre_truncated);
-            let final_text = if cleaned.trim().is_empty() {
-                tracing::warn!(
-                    "LLM response was empty after cleaning (original len={}), using fallback",
-                    response.content.len()
-                );
-                "I'm not sure how to respond to that.".to_string()
-            } else {
-                cleaned
-            };
-            Ok(RespondOutput {
-                result: RespondResult::Text(final_text),
-                usage: TokenUsage {
-                    input_tokens: response.input_tokens,
-                    output_tokens: response.output_tokens,
-                    cache_read_input_tokens: response.cache_read_input_tokens,
-                    cache_creation_input_tokens: response.cache_creation_input_tokens,
-                },
-            })
-        }
+/// Clean the content, substituting a fallback line when nothing survives.
+///
+/// Cleaning can empty the text when:
+/// 1. Reasoning models (e.g. GLM-5) return chain-of-thought in
+///    reasoning_content wrapped in `<think>` tags — clean_response strips the
+///    think tags leaving an empty string.
+/// 2. Local models (Qwen3, DeepSeek) emit `<tool_call>` XML in text responses
+///    even in force_text mode — strip_xml_tag discards from the unclosed
+///    opening tag onward (issue #789).
+///
+/// Pre-truncating at tool tags preserves the text before the tag.
+fn cleaned_or_fallback(content: &str) -> String {
+    let cleaned = cleaned_text(content);
+    if cleaned.trim().is_empty() {
+        tracing::warn!(
+            "LLM response was empty after cleaning (original len={}), using fallback",
+            content.len()
+        );
+        "I'm not sure how to respond to that.".to_string()
+    } else {
+        cleaned
     }
 }

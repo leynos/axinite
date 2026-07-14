@@ -11,81 +11,116 @@ use crate::setup::prompts::{
 use super::secrets::ChannelSetupError;
 
 pub(super) async fn setup_tunnel_cloudflare() -> Result<TunnelSettings, ChannelSetupError> {
-    // Check if cloudflared binary is on PATH
-    let cloudflared_found = crate::skills::gating::binary_exists("cloudflared");
-
-    if !cloudflared_found {
-        print_error("cloudflared not found in PATH.");
-        print_info("Install it:");
-        print_info("  macOS:   brew install cloudflared");
-        print_info("  Ubuntu:  https://pkg.cloudflare.com/");
-        print_info(
-            "  Other:   https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/downloads/",
-        );
-        println!();
-        if !confirm(
-            "Continue anyway (you can install cloudflared later)?",
-            false,
-        )? {
-            return Err(ChannelSetupError::Validation(
-                "cloudflared binary not found. Install it and re-run setup.".to_string(),
-            ));
-        }
-    }
-
-    // Detect existing cloudflared services that may conflict
-    if let Some(warning) = detect_existing_cloudflared() {
-        print_warning(&warning);
-        if !confirm("Continue anyway?", true)? {
-            return Err(ChannelSetupError::Cancelled);
-        }
-        println!();
-    }
+    let cloudflared_found = ensure_cloudflared_installed()?;
+    confirm_no_conflicting_services()?;
 
     print_info("Get your tunnel token from the Cloudflare Zero Trust dashboard:");
     print_info("  https://one.dash.cloudflare.com/ > Networks > Tunnels");
     println!();
 
     let token = secret_input("Cloudflare tunnel token")?;
-
-    let token_valid = validate_cloudflare_token_format(token.expose_secret());
-
-    if !token_valid {
-        print_error("Token does not appear to be a valid Cloudflare tunnel token.");
-        print_info("Tokens are base64-encoded and contain account/tunnel identifiers.");
-        print_info(
-            "Copy the full token from: Zero Trust dashboard > Networks > Tunnels > your tunnel",
-        );
-        println!();
-        if !confirm("Save this token anyway?", false)? {
-            return Err(ChannelSetupError::Validation(
-                "Invalid Cloudflare tunnel token format.".to_string(),
-            ));
-        }
-    }
+    let token_valid = confirm_token_format(token.expose_secret())?;
 
     // Live-validate the token by briefly spawning cloudflared (if available)
     if cloudflared_found && token_valid {
-        print_info("Verifying token with cloudflared...");
-        match validate_cloudflare_token_live(token.expose_secret()).await {
-            Ok(()) => {
-                print_success("Token verified -- cloudflared connected successfully.");
-            }
-            Err(stderr_output) => {
-                print_error(&format!(
-                    "cloudflared rejected the token: {}",
-                    stderr_output
-                ));
-                println!();
-                if !confirm("Save this token anyway?", false)? {
-                    return Err(ChannelSetupError::Validation(
-                        "Cloudflare tunnel token failed live validation.".to_string(),
-                    ));
-                }
-            }
-        }
+        confirm_token_live(token.expose_secret()).await?;
     }
 
+    print_completion_notes(cloudflared_found);
+
+    Ok(TunnelSettings {
+        provider: Some("cloudflare".to_string()),
+        cf_token: Some(token.expose_secret().to_string()),
+        ..Default::default()
+    })
+}
+
+/// Check that the `cloudflared` binary is on `PATH`, offering to continue
+/// without it. Returns whether the binary was found.
+fn ensure_cloudflared_installed() -> Result<bool, ChannelSetupError> {
+    let cloudflared_found = crate::skills::gating::binary_exists("cloudflared");
+    if cloudflared_found {
+        return Ok(true);
+    }
+
+    print_error("cloudflared not found in PATH.");
+    print_info("Install it:");
+    print_info("  macOS:   brew install cloudflared");
+    print_info("  Ubuntu:  https://pkg.cloudflare.com/");
+    print_info(
+        "  Other:   https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/downloads/",
+    );
+    println!();
+    if !confirm(
+        "Continue anyway (you can install cloudflared later)?",
+        false,
+    )? {
+        return Err(ChannelSetupError::Validation(
+            "cloudflared binary not found. Install it and re-run setup.".to_string(),
+        ));
+    }
+    Ok(false)
+}
+
+/// Warn about existing cloudflared services and let the user abort setup.
+fn confirm_no_conflicting_services() -> Result<(), ChannelSetupError> {
+    let Some(warning) = detect_existing_cloudflared() else {
+        return Ok(());
+    };
+    print_warning(&warning);
+    if !confirm("Continue anyway?", true)? {
+        return Err(ChannelSetupError::Cancelled);
+    }
+    println!();
+    Ok(())
+}
+
+/// Check the token's format, offering to save an unrecognized token anyway.
+/// Returns whether the token matched the expected format.
+fn confirm_token_format(token: &str) -> Result<bool, ChannelSetupError> {
+    if validate_cloudflare_token_format(token) {
+        return Ok(true);
+    }
+
+    print_error("Token does not appear to be a valid Cloudflare tunnel token.");
+    print_info("Tokens are base64-encoded and contain account/tunnel identifiers.");
+    print_info("Copy the full token from: Zero Trust dashboard > Networks > Tunnels > your tunnel");
+    println!();
+    if !confirm("Save this token anyway?", false)? {
+        return Err(ChannelSetupError::Validation(
+            "Invalid Cloudflare tunnel token format.".to_string(),
+        ));
+    }
+    Ok(false)
+}
+
+/// Verify the token by briefly running cloudflared, offering to save a
+/// rejected token anyway.
+async fn confirm_token_live(token: &str) -> Result<(), ChannelSetupError> {
+    print_info("Verifying token with cloudflared...");
+    match validate_cloudflare_token_live(token).await {
+        Ok(()) => {
+            print_success("Token verified -- cloudflared connected successfully.");
+            Ok(())
+        }
+        Err(stderr_output) => {
+            print_error(&format!(
+                "cloudflared rejected the token: {}",
+                stderr_output
+            ));
+            println!();
+            if !confirm("Save this token anyway?", false)? {
+                return Err(ChannelSetupError::Validation(
+                    "Cloudflare tunnel token failed live validation.".to_string(),
+                ));
+            }
+            Ok(())
+        }
+    }
+}
+
+/// Print the final success message and instructions for starting the tunnel.
+fn print_completion_notes(cloudflared_found: bool) {
     print_success("Cloudflare tunnel token saved.");
     if cloudflared_found {
         print_info("Start the tunnel with: cloudflared tunnel --no-autoupdate run --token <token>");
@@ -95,12 +130,6 @@ pub(super) async fn setup_tunnel_cloudflare() -> Result<TunnelSettings, ChannelS
         print_info("After installing cloudflared, start the tunnel with:");
         print_info("  cloudflared tunnel --no-autoupdate run --token <token>");
     }
-
-    Ok(TunnelSettings {
-        provider: Some("cloudflare".to_string()),
-        cf_token: Some(token.expose_secret().to_string()),
-        ..Default::default()
-    })
 }
 
 /// Detect running cloudflared processes or managed services that could conflict
@@ -109,77 +138,14 @@ fn detect_existing_cloudflared() -> Option<String> {
     #[allow(unused_mut)]
     let mut conflicts: Vec<String> = Vec::new();
 
-    // Check for running cloudflared processes (all platforms)
     #[cfg(unix)]
-    {
-        let output = std::process::Command::new("pgrep")
-            .args(["-x", "cloudflared"])
-            .stdout(std::process::Stdio::piped())
-            .stderr(std::process::Stdio::null())
-            .output();
-        if let Ok(out) = output
-            && out.status.success()
-        {
-            let pids = String::from_utf8_lossy(&out.stdout);
-            let pids: Vec<&str> = pids.trim().lines().collect();
-            if !pids.is_empty() {
-                conflicts.push(format!(
-                    "Running cloudflared process(es): PID {}",
-                    pids.join(", ")
-                ));
-            }
-        }
-    }
+    detect_running_cloudflared_processes(&mut conflicts);
 
-    // macOS: check brew services
     #[cfg(target_os = "macos")]
-    {
-        let output = std::process::Command::new("brew")
-            .args(["services", "list"])
-            .stdout(std::process::Stdio::piped())
-            .stderr(std::process::Stdio::null())
-            .output();
-        if let Ok(out) = output {
-            let stdout = String::from_utf8_lossy(&out.stdout);
-            for line in stdout.lines() {
-                if line.contains("cloudflared") && line.contains("started") {
-                    conflicts.push("Homebrew service: cloudflared (started)".to_string());
-                    break;
-                }
-            }
-        }
+    detect_macos_cloudflared_services(&mut conflicts);
 
-        let output = std::process::Command::new("launchctl")
-            .args(["list"])
-            .stdout(std::process::Stdio::piped())
-            .stderr(std::process::Stdio::null())
-            .output();
-        if let Ok(out) = output {
-            let stdout = String::from_utf8_lossy(&out.stdout);
-            for line in stdout.lines() {
-                if line.contains("cloudflared") {
-                    conflicts.push("launchd service: cloudflared detected".to_string());
-                    break;
-                }
-            }
-        }
-    }
-
-    // Linux: check systemd
     #[cfg(target_os = "linux")]
-    {
-        let output = std::process::Command::new("systemctl")
-            .args(["is-active", "cloudflared"])
-            .stdout(std::process::Stdio::piped())
-            .stderr(std::process::Stdio::null())
-            .output();
-        if let Ok(out) = output {
-            let stdout = String::from_utf8_lossy(&out.stdout);
-            if stdout.trim() == "active" {
-                conflicts.push("systemd service: cloudflared (active)".to_string());
-            }
-        }
-    }
+    detect_linux_cloudflared_service(&mut conflicts);
 
     if conflicts.is_empty() {
         None
@@ -190,6 +156,69 @@ fn detect_existing_cloudflared() -> Option<String> {
              `sudo systemctl stop cloudflared`).",
             conflicts.join("\n  ")
         ))
+    }
+}
+
+/// Run a command with stderr suppressed, returning its output when it
+/// executed successfully (regardless of exit status).
+#[cfg(unix)]
+fn capture_command_output(program: &str, args: &[&str]) -> Option<std::process::Output> {
+    std::process::Command::new(program)
+        .args(args)
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::null())
+        .output()
+        .ok()
+}
+
+/// Record any running cloudflared processes reported by `pgrep`.
+#[cfg(unix)]
+fn detect_running_cloudflared_processes(conflicts: &mut Vec<String>) {
+    let Some(out) = capture_command_output("pgrep", &["-x", "cloudflared"]) else {
+        return;
+    };
+    if !out.status.success() {
+        return;
+    }
+    let pids = String::from_utf8_lossy(&out.stdout);
+    let pids: Vec<&str> = pids.trim().lines().collect();
+    if !pids.is_empty() {
+        conflicts.push(format!(
+            "Running cloudflared process(es): PID {}",
+            pids.join(", ")
+        ));
+    }
+}
+
+/// Record cloudflared services managed by Homebrew or launchd on macOS.
+#[cfg(target_os = "macos")]
+fn detect_macos_cloudflared_services(conflicts: &mut Vec<String>) {
+    if let Some(out) = capture_command_output("brew", &["services", "list"]) {
+        let stdout = String::from_utf8_lossy(&out.stdout);
+        if stdout
+            .lines()
+            .any(|line| line.contains("cloudflared") && line.contains("started"))
+        {
+            conflicts.push("Homebrew service: cloudflared (started)".to_string());
+        }
+    }
+
+    if let Some(out) = capture_command_output("launchctl", &["list"]) {
+        let stdout = String::from_utf8_lossy(&out.stdout);
+        if stdout.lines().any(|line| line.contains("cloudflared")) {
+            conflicts.push("launchd service: cloudflared detected".to_string());
+        }
+    }
+}
+
+/// Record an active cloudflared systemd service on Linux.
+#[cfg(target_os = "linux")]
+fn detect_linux_cloudflared_service(conflicts: &mut Vec<String>) {
+    if let Some(out) = capture_command_output("systemctl", &["is-active", "cloudflared"]) {
+        let stdout = String::from_utf8_lossy(&out.stdout);
+        if stdout.trim() == "active" {
+            conflicts.push("systemd service: cloudflared (active)".to_string());
+        }
     }
 }
 

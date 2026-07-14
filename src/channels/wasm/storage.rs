@@ -86,6 +86,42 @@ pub enum WasmChannelStoreError {
     InvalidData(String),
 }
 
+/// Metadata column list shared by both backends' SELECT statements.
+#[cfg(any(feature = "libsql", feature = "postgres"))]
+const CHANNEL_COLUMNS: &str = concat!(
+    "id, user_id, name, version, wit_version, description, ",
+    "capabilities_json, status, created_at, updated_at"
+);
+
+/// Column list including the binary payload, shared by both backends'
+/// `get_with_binary` queries.
+#[cfg(any(feature = "libsql", feature = "postgres"))]
+const CHANNEL_COLUMNS_WITH_BINARY: &str = concat!(
+    "id, user_id, name, version, wit_version, description, ",
+    "wasm_binary, binary_hash, ",
+    "capabilities_json, status, created_at, updated_at"
+);
+
+/// Verify a loaded binary against its stored hash, logging and returning
+/// `IntegrityCheckFailed` on mismatch.
+#[cfg(any(feature = "libsql", feature = "postgres"))]
+fn check_binary_integrity(
+    user_id: &str,
+    name: &str,
+    wasm_binary: &[u8],
+    binary_hash: &[u8],
+) -> Result<(), WasmChannelStoreError> {
+    if crate::tools::wasm::storage::verify_binary_integrity(wasm_binary, binary_hash) {
+        return Ok(());
+    }
+    tracing::error!(
+        user_id = user_id,
+        name = name,
+        "WASM channel binary integrity check failed"
+    );
+    Err(WasmChannelStoreError::IntegrityCheckFailed)
+}
+
 /// Trait for WASM channel storage.
 pub trait WasmChannelStore: Send + Sync {
     /// Use return-position `impl Future + Send` to preserve the implicit

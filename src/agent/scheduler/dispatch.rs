@@ -15,6 +15,15 @@ use crate::error::JobError;
 use crate::tools::ApprovalContext;
 use crate::worker::job::{Worker, WorkerDeps};
 
+/// Descriptor for a new job to dispatch: who it belongs to, how it is
+/// presented, and any initial metadata.
+pub struct JobRequest<'a> {
+    pub user_id: &'a str,
+    pub title: &'a str,
+    pub description: &'a str,
+    pub metadata: Option<serde_json::Value>,
+}
+
 impl Scheduler {
     /// Create, persist, and schedule a job in one shot.
     ///
@@ -26,15 +35,8 @@ impl Scheduler {
     /// 4. Schedules the job for worker execution
     ///
     /// Returns the new job ID.
-    pub async fn dispatch_job(
-        &self,
-        user_id: &str,
-        title: &str,
-        description: &str,
-        metadata: Option<serde_json::Value>,
-    ) -> Result<Uuid, JobError> {
-        self.dispatch_job_inner(user_id, title, description, metadata, None)
-            .await
+    pub async fn dispatch_job(&self, request: JobRequest<'_>) -> Result<Uuid, JobError> {
+        self.dispatch_job_inner(request, None).await
     }
 
     /// Dispatch a job with an explicit approval context for autonomous execution.
@@ -43,31 +45,25 @@ impl Scheduler {
     /// to determine which tools are pre-approved (instead of blocking all non-`Never` tools).
     pub async fn dispatch_job_with_context(
         &self,
-        user_id: &str,
-        title: &str,
-        description: &str,
-        metadata: Option<serde_json::Value>,
+        request: JobRequest<'_>,
         approval_context: ApprovalContext,
     ) -> Result<Uuid, JobError> {
-        self.dispatch_job_inner(
-            user_id,
-            title,
-            description,
-            metadata,
-            Some(approval_context),
-        )
-        .await
+        self.dispatch_job_inner(request, Some(approval_context))
+            .await
     }
 
     /// Shared implementation for `dispatch_job` and `dispatch_job_with_context`.
     async fn dispatch_job_inner(
         &self,
-        user_id: &str,
-        title: &str,
-        description: &str,
-        metadata: Option<serde_json::Value>,
+        request: JobRequest<'_>,
         approval_context: Option<ApprovalContext>,
     ) -> Result<Uuid, JobError> {
+        let JobRequest {
+            user_id,
+            title,
+            description,
+            metadata,
+        } = request;
         let job_id = self
             .context_manager
             .create_job_for_user(user_id, title, description)

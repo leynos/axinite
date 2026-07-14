@@ -33,6 +33,24 @@ fn next_line_start(text: &str, from: usize) -> Option<usize> {
     text[from..].find('\n').map(|nl| from + nl + 1)
 }
 
+/// Parse an opening fence at a line start: optional indentation then a run
+/// of 3+ identical backticks or tildes. Returns the fence character, the run
+/// length, and the index just past the run.
+fn parse_opening_fence(bytes: &[u8], line_start: usize) -> Option<(u8, usize, usize)> {
+    // Skip optional leading whitespace
+    let run_start = skip_spaces_and_tabs(bytes, line_start);
+    if run_start >= bytes.len() || !is_fence_char(bytes[run_start]) {
+        return None;
+    }
+    let fence_char = bytes[run_start];
+    let run_end = fence_run_end(bytes, run_start, fence_char);
+    let fence_len = run_end - run_start;
+    if fence_len < 3 {
+        return None;
+    }
+    Some((fence_char, fence_len, run_end))
+}
+
 /// Detect fenced code blocks: a line starting with 3+ backticks or tildes,
 /// closed by a matching fence line (or extending to EOF when unclosed).
 fn find_fenced_regions(text: &str) -> Vec<CodeRegion> {
@@ -40,49 +58,27 @@ fn find_fenced_regions(text: &str) -> Vec<CodeRegion> {
     let bytes = text.as_bytes();
     let mut i = 0;
     while i < bytes.len() {
-        // Must be at start of line (i==0 or previous char is \n)
-        if i > 0 && bytes[i - 1] != b'\n' {
+        // The scan is line-oriented: only look for a fence when `i` is at a
+        // line start (i==0 or previous char is \n).
+        let at_line_start = i == 0 || bytes[i - 1] == b'\n';
+        let opening = if at_line_start {
+            parse_opening_fence(bytes, i)
+        } else {
+            None
+        };
+
+        let Some((fence_char, fence_len, run_end)) = opening else {
+            // Not an opening fence line, skip to next line
             let Some(next) = next_line_start(text, i) else {
                 break;
             };
             i = next;
             continue;
-        }
-
-        // Skip optional leading whitespace
+        };
         let line_start = i;
-        while i < bytes.len() && is_space_or_tab(bytes[i]) {
-            i += 1;
-        }
-
-        let has_fence_char = i < bytes.len() && is_fence_char(bytes[i]);
-        if !has_fence_char {
-            // Not a fence line, skip to next line
-            let Some(next) = next_line_start(text, i) else {
-                break;
-            };
-            i = next;
-            continue;
-        }
-        let fence_char = bytes[i];
-
-        // Count fence chars
-        let fence_start = i;
-        while i < bytes.len() && bytes[i] == fence_char {
-            i += 1;
-        }
-        let fence_len = i - fence_start;
-        if fence_len < 3 {
-            // Not a real fence, skip to next line
-            let Some(next) = next_line_start(text, i) else {
-                break;
-            };
-            i = next;
-            continue;
-        }
 
         // Skip rest of opening fence line (info string)
-        let Some(next) = next_line_start(text, i) else {
+        let Some(next) = next_line_start(text, run_end) else {
             // Fence at EOF with no content — region extends to end
             regions.push(CodeRegion {
                 start: line_start,
@@ -90,23 +86,15 @@ fn find_fenced_regions(text: &str) -> Vec<CodeRegion> {
             });
             break;
         };
-        i = next;
 
-        // Find closing fence: line starting with >= fence_len of same char
-        if let Some(end) = find_closing_fence(text, i, fence_char, fence_len) {
-            regions.push(CodeRegion {
-                start: line_start,
-                end,
-            });
-            i = end;
-        } else {
-            // Unclosed fence extends to EOF
-            regions.push(CodeRegion {
-                start: line_start,
-                end: bytes.len(),
-            });
-            i = bytes.len();
-        }
+        // Find closing fence (a line starting with >= fence_len of the same
+        // char); an unclosed fence extends to EOF.
+        let end = find_closing_fence(text, next, fence_char, fence_len).unwrap_or(bytes.len());
+        regions.push(CodeRegion {
+            start: line_start,
+            end,
+        });
+        i = end;
     }
     regions
 }

@@ -15,7 +15,88 @@ fn format_count(n: u64, suffix: &str) -> String {
     }
 }
 
+/// Formats a single ClawHub catalog entry (with optional owner and stats)
+/// for the search output.
+fn format_catalog_entry(entry: &crate::skills::catalog::CatalogEntry) -> String {
+    let owner_str = entry
+        .owner
+        .as_deref()
+        .map(|o| format!("  by {}", o))
+        .unwrap_or_default();
+
+    let stats_parts: Vec<String> = [
+        entry.stars.map(|s| format!("{} stars", s)),
+        entry.downloads.map(|d| format_count(d, "downloads")),
+    ]
+    .into_iter()
+    .flatten()
+    .collect();
+    let stats_str = if stats_parts.is_empty() {
+        String::new()
+    } else {
+        format!("  {}", stats_parts.join("  "))
+    };
+
+    let mut line = format!(
+        "  {:<24} v{:<10}{}{}\n",
+        entry.name, entry.version, owner_str, stats_str,
+    );
+    if !entry.description.is_empty() {
+        line.push_str(&format!("    {}\n\n", entry.description));
+    }
+    line
+}
+
+/// Appends the ClawHub result section: entries when present, otherwise the
+/// registry error or a "no results" note.
+fn append_catalog_results(
+    out: &mut String,
+    entries: &[crate::skills::catalog::CatalogEntry],
+    error: Option<&str>,
+) {
+    if entries.is_empty() {
+        match error {
+            Some(err) => out.push_str(&format!("  (registry error: {})\n", err)),
+            None => out.push_str("  No results found.\n"),
+        }
+        return;
+    }
+    for entry in entries {
+        out.push_str(&format_catalog_entry(entry));
+    }
+}
+
 impl Agent {
+    /// Appends installed skills whose name or description matches the query.
+    fn append_installed_matches(&self, out: &mut String, query: &str) {
+        let Some(registry) = self.skill_registry() else {
+            return;
+        };
+        let Ok(guard) = registry.read() else {
+            return;
+        };
+        let query_lower = query.to_lowercase();
+        let matches: Vec<_> = guard
+            .skills()
+            .iter()
+            .filter(|s| {
+                s.manifest.name.to_lowercase().contains(&query_lower)
+                    || s.manifest.description.to_lowercase().contains(&query_lower)
+            })
+            .collect();
+
+        if matches.is_empty() {
+            return;
+        }
+        out.push_str(&format!("Installed skills matching \"{}\":\n", query));
+        for s in &matches {
+            out.push_str(&format!(
+                "  {:<24} v{:<10} [{}]\n",
+                s.manifest.name, s.manifest.version, s.trust,
+            ));
+        }
+    }
+
     /// List installed skills.
     pub(super) async fn handle_skills_list(&self) -> Result<SubmissionResult, Error> {
         let Some(registry) = self.skill_registry() else {
@@ -76,68 +157,10 @@ impl Agent {
         catalog.enrich_search_results(&mut entries, 5).await;
 
         let mut out = format!("ClawHub results for \"{}\":\n\n", query);
-
-        if entries.is_empty() {
-            if let Some(ref err) = outcome.error {
-                out.push_str(&format!("  (registry error: {})\n", err));
-            } else {
-                out.push_str("  No results found.\n");
-            }
-        } else {
-            for entry in &entries {
-                let owner_str = entry
-                    .owner
-                    .as_deref()
-                    .map(|o| format!("  by {}", o))
-                    .unwrap_or_default();
-
-                let stats_parts: Vec<String> = [
-                    entry.stars.map(|s| format!("{} stars", s)),
-                    entry.downloads.map(|d| format_count(d, "downloads")),
-                ]
-                .into_iter()
-                .flatten()
-                .collect();
-                let stats_str = if stats_parts.is_empty() {
-                    String::new()
-                } else {
-                    format!("  {}", stats_parts.join("  "))
-                };
-
-                out.push_str(&format!(
-                    "  {:<24} v{:<10}{}{}\n",
-                    entry.name, entry.version, owner_str, stats_str,
-                ));
-                if !entry.description.is_empty() {
-                    out.push_str(&format!("    {}\n\n", entry.description));
-                }
-            }
-        }
+        append_catalog_results(&mut out, &entries, outcome.error.as_deref());
 
         // Show matching installed skills
-        if let Some(registry) = self.skill_registry()
-            && let Ok(guard) = registry.read()
-        {
-            let query_lower = query.to_lowercase();
-            let matches: Vec<_> = guard
-                .skills()
-                .iter()
-                .filter(|s| {
-                    s.manifest.name.to_lowercase().contains(&query_lower)
-                        || s.manifest.description.to_lowercase().contains(&query_lower)
-                })
-                .collect();
-
-            if !matches.is_empty() {
-                out.push_str(&format!("Installed skills matching \"{}\":\n", query));
-                for s in &matches {
-                    out.push_str(&format!(
-                        "  {:<24} v{:<10} [{}]\n",
-                        s.manifest.name, s.manifest.version, s.trust,
-                    ));
-                }
-            }
-        }
+        self.append_installed_matches(&mut out, query);
 
         Ok(SubmissionResult::response(out))
     }

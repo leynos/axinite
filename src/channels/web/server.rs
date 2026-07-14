@@ -166,14 +166,10 @@ pub struct GatewayState {
     pub startup_time: std::time::Instant,
 }
 
-/// Start the gateway HTTP server.
-///
-/// Returns the actual bound `SocketAddr` (useful when binding to port 0).
-pub async fn start_server(
+/// Bind the TCP listener and resolve the actual bound address.
+async fn bind_listener(
     addr: SocketAddr,
-    state: Arc<GatewayState>,
-    auth_token: String,
-) -> Result<SocketAddr, crate::error::ChannelError> {
+) -> Result<(tokio::net::TcpListener, SocketAddr), crate::error::ChannelError> {
     let listener = tokio::net::TcpListener::bind(addr).await.map_err(|e| {
         crate::error::ChannelError::StartupFailed {
             name: "gateway".to_string(),
@@ -187,11 +183,13 @@ pub async fn start_server(
                 name: "gateway".to_string(),
                 reason: format!("Failed to get local addr: {}", e),
             })?;
+    Ok((listener, bound_addr))
+}
 
-    let public = oauth::public_routes().merge(static_files::public_routes());
-
+/// Compose the auth-protected route tree.
+fn protected_routes(auth_token: String) -> Router<Arc<GatewayState>> {
     let auth_state = AuthState { token: auth_token };
-    let protected = chat::routes()
+    chat::routes()
         .merge(memory::routes())
         .merge(jobs::routes())
         .merge(static_files::protected_routes())
@@ -208,10 +206,14 @@ pub async fn start_server(
         .route_layer(middleware::from_fn_with_state(
             auth_state.clone(),
             auth_middleware,
-        ));
+        ))
+}
 
-    // CORS: restrict to same-origin by default. Only localhost/127.0.0.1
-    // origins are allowed, since the gateway is a local-first service.
+/// Build the CORS layer.
+///
+/// CORS: restrict to same-origin by default. Only localhost/127.0.0.1
+/// origins are allowed, since the gateway is a local-first service.
+fn build_cors_layer(addr: SocketAddr) -> Result<CorsLayer, crate::error::ChannelError> {
     let parse_origin = |origin: String| {
         origin.parse::<header::HeaderValue>().map_err(|e| {
             crate::error::ChannelError::StartupFailed {
@@ -220,7 +222,7 @@ pub async fn start_server(
             }
         })
     };
-    let cors = CorsLayer::new()
+    Ok(CorsLayer::new()
         .allow_origin([
             parse_origin(format!("http://{}:{}", addr.ip(), addr.port()))?,
             parse_origin(format!("http://localhost:{}", addr.port()))?,
@@ -235,11 +237,16 @@ pub async fn start_server(
             header::CONTENT_TYPE,
             header::AUTHORIZATION,
         ]))
-        .allow_credentials(true);
+        .allow_credentials(true))
+}
 
-    let app = Router::new()
+/// Assemble the full application router with body limits, CORS, and
+/// security headers.
+fn build_app(state: Arc<GatewayState>, auth_token: String, cors: CorsLayer) -> Router {
+    let public = oauth::public_routes().merge(static_files::public_routes());
+    Router::new()
         .merge(public)
-        .merge(protected)
+        .merge(protected_routes(auth_token))
         .layer(DefaultBodyLimit::max(10 * 1024 * 1024)) // 10 MB max request body (image uploads)
         .layer(cors)
         .layer(SetResponseHeaderLayer::if_not_present(
@@ -250,7 +257,21 @@ pub async fn start_server(
             header::X_FRAME_OPTIONS,
             header::HeaderValue::from_static("DENY"),
         ))
-        .with_state(state.clone());
+        .with_state(state)
+}
+
+/// Start the gateway HTTP server.
+///
+/// Returns the actual bound `SocketAddr` (useful when binding to port 0).
+pub async fn start_server(
+    addr: SocketAddr,
+    state: Arc<GatewayState>,
+    auth_token: String,
+) -> Result<SocketAddr, crate::error::ChannelError> {
+    let (listener, bound_addr) = bind_listener(addr).await?;
+
+    let cors = build_cors_layer(addr)?;
+    let app = build_app(state.clone(), auth_token, cors);
 
     let (shutdown_tx, shutdown_rx) = oneshot::channel();
     *state.shutdown_tx.write().await = Some(shutdown_tx);

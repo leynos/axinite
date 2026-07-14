@@ -3,11 +3,11 @@
 use chrono::{DateTime, Utc};
 use uuid::Uuid;
 
-use crate::tools::wasm::storage::{compute_binary_hash, verify_binary_integrity};
+use crate::tools::wasm::storage::compute_binary_hash;
 
 use super::{
-    StoreChannelParams, StoredWasmChannel, StoredWasmChannelWithBinary, WasmChannelStore,
-    WasmChannelStoreError,
+    CHANNEL_COLUMNS, CHANNEL_COLUMNS_WITH_BINARY, StoreChannelParams, StoredWasmChannel,
+    StoredWasmChannelWithBinary, WasmChannelStore, WasmChannelStoreError, check_binary_integrity,
 };
 
 use super::LibSqlWasmChannelStore;
@@ -76,12 +76,9 @@ impl WasmChannelStore for LibSqlWasmChannelStore {
         // Read back the row within the same transaction
         let mut rows = tx
             .query(
-                r#"
-                SELECT id, user_id, name, version, wit_version, description,
-                       capabilities_json, status, created_at, updated_at
-                FROM wasm_channels
-                WHERE user_id = ?1 AND name = ?2
-                "#,
+                &format!(
+                    "SELECT {CHANNEL_COLUMNS} FROM wasm_channels WHERE user_id = ?1 AND name = ?2"
+                ),
                 libsql::params![params.user_id.as_str(), params.name.as_str()],
             )
             .await
@@ -112,12 +109,9 @@ impl WasmChannelStore for LibSqlWasmChannelStore {
         let conn = self.connect().await?;
         let mut rows = conn
             .query(
-                r#"
-                SELECT id, user_id, name, version, wit_version, description,
-                       capabilities_json, status, created_at, updated_at
-                FROM wasm_channels
-                WHERE user_id = ?1 AND name = ?2
-                "#,
+                &format!(
+                    "SELECT {CHANNEL_COLUMNS} FROM wasm_channels WHERE user_id = ?1 AND name = ?2"
+                ),
                 libsql::params![user_id, name],
             )
             .await
@@ -141,13 +135,9 @@ impl WasmChannelStore for LibSqlWasmChannelStore {
         let conn = self.connect().await?;
         let mut rows = conn
             .query(
-                r#"
-                SELECT id, user_id, name, version, wit_version, description,
-                       wasm_binary, binary_hash,
-                       capabilities_json, status, created_at, updated_at
-                FROM wasm_channels
-                WHERE user_id = ?1 AND name = ?2
-                "#,
+                &format!(
+                    "SELECT {CHANNEL_COLUMNS_WITH_BINARY} FROM wasm_channels WHERE user_id = ?1 AND name = ?2"
+                ),
                 libsql::params![user_id, name],
             )
             .await
@@ -166,16 +156,9 @@ impl WasmChannelStore for LibSqlWasmChannelStore {
                     .get(7)
                     .map_err(|e| WasmChannelStoreError::Database(e.to_string()))?;
 
-                if !verify_binary_integrity(&wasm_binary, &binary_hash) {
-                    tracing::error!(
-                        user_id = user_id,
-                        name = name,
-                        "WASM channel binary integrity check failed"
-                    );
-                    return Err(WasmChannelStoreError::IntegrityCheckFailed);
-                }
+                check_binary_integrity(user_id, name, &wasm_binary, &binary_hash)?;
 
-                let channel = libsql_row_to_channel_with_offset(&row)?;
+                let channel = libsql_row_to_channel_at(&row, 8)?;
 
                 Ok(StoredWasmChannelWithBinary {
                     channel,
@@ -191,13 +174,9 @@ impl WasmChannelStore for LibSqlWasmChannelStore {
         let conn = self.connect().await?;
         let mut rows = conn
             .query(
-                r#"
-                SELECT id, user_id, name, version, wit_version, description,
-                       capabilities_json, status, created_at, updated_at
-                FROM wasm_channels
-                WHERE user_id = ?1
-                ORDER BY name
-                "#,
+                &format!(
+                    "SELECT {CHANNEL_COLUMNS} FROM wasm_channels WHERE user_id = ?1 ORDER BY name"
+                ),
                 libsql::params![user_id],
             )
             .await
@@ -252,18 +231,25 @@ fn libsql_channel_parse_ts(s: &str) -> Result<DateTime<Utc>, WasmChannelStoreErr
     )))
 }
 
-/// Parse a channel row with standard column order (no binary columns).
-/// Columns: id(0), user_id(1), name(2), version(3), wit_version(4), description(5),
-///          capabilities_json(6), status(7), created_at(8), updated_at(9)
-fn libsql_row_to_channel(row: &libsql::Row) -> Result<StoredWasmChannel, WasmChannelStoreError> {
+/// Parse a channel row.
+///
+/// The first six columns are always `id(0)..description(5)`;
+/// `capabilities_idx` gives the index of `capabilities_json`, with
+/// `status`, `created_at`, and `updated_at` following consecutively.
+/// Metadata-only queries use index 6; queries that also select
+/// `wasm_binary`/`binary_hash` use index 8.
+fn libsql_row_to_channel_at(
+    row: &libsql::Row,
+    capabilities_idx: i32,
+) -> Result<StoredWasmChannel, WasmChannelStoreError> {
     let id_str: String = row
         .get(0)
         .map_err(|e| WasmChannelStoreError::Database(e.to_string()))?;
     let created_at_str: String = row
-        .get(8)
+        .get(capabilities_idx + 2)
         .map_err(|e| WasmChannelStoreError::Database(e.to_string()))?;
     let updated_at_str: String = row
-        .get(9)
+        .get(capabilities_idx + 3)
         .map_err(|e| WasmChannelStoreError::Database(e.to_string()))?;
 
     Ok(StoredWasmChannel {
@@ -286,59 +272,17 @@ fn libsql_row_to_channel(row: &libsql::Row) -> Result<StoredWasmChannel, WasmCha
             .get(5)
             .map_err(|e| WasmChannelStoreError::Database(e.to_string()))?,
         capabilities_json: row
-            .get(6)
+            .get(capabilities_idx)
             .map_err(|e| WasmChannelStoreError::Database(e.to_string()))?,
         status: row
-            .get(7)
+            .get(capabilities_idx + 1)
             .map_err(|e| WasmChannelStoreError::Database(e.to_string()))?,
         created_at: libsql_channel_parse_ts(&created_at_str)?,
         updated_at: libsql_channel_parse_ts(&updated_at_str)?,
     })
 }
 
-/// Parse a channel row when binary columns are present (get_with_binary query).
-/// Columns: id(0), user_id(1), name(2), version(3), wit_version(4), description(5),
-///          wasm_binary(6), binary_hash(7),
-///          capabilities_json(8), status(9), created_at(10), updated_at(11)
-fn libsql_row_to_channel_with_offset(
-    row: &libsql::Row,
-) -> Result<StoredWasmChannel, WasmChannelStoreError> {
-    let id_str: String = row
-        .get(0)
-        .map_err(|e| WasmChannelStoreError::Database(e.to_string()))?;
-    let created_at_str: String = row
-        .get(10)
-        .map_err(|e| WasmChannelStoreError::Database(e.to_string()))?;
-    let updated_at_str: String = row
-        .get(11)
-        .map_err(|e| WasmChannelStoreError::Database(e.to_string()))?;
-
-    Ok(StoredWasmChannel {
-        id: id_str
-            .parse()
-            .map_err(|e: uuid::Error| WasmChannelStoreError::InvalidData(e.to_string()))?,
-        user_id: row
-            .get(1)
-            .map_err(|e| WasmChannelStoreError::Database(e.to_string()))?,
-        name: row
-            .get(2)
-            .map_err(|e| WasmChannelStoreError::Database(e.to_string()))?,
-        version: row
-            .get(3)
-            .map_err(|e| WasmChannelStoreError::Database(e.to_string()))?,
-        wit_version: row
-            .get(4)
-            .map_err(|e| WasmChannelStoreError::Database(e.to_string()))?,
-        description: row
-            .get(5)
-            .map_err(|e| WasmChannelStoreError::Database(e.to_string()))?,
-        capabilities_json: row
-            .get(8)
-            .map_err(|e| WasmChannelStoreError::Database(e.to_string()))?,
-        status: row
-            .get(9)
-            .map_err(|e| WasmChannelStoreError::Database(e.to_string()))?,
-        created_at: libsql_channel_parse_ts(&created_at_str)?,
-        updated_at: libsql_channel_parse_ts(&updated_at_str)?,
-    })
+/// Parse a channel row from a metadata-only query.
+fn libsql_row_to_channel(row: &libsql::Row) -> Result<StoredWasmChannel, WasmChannelStoreError> {
+    libsql_row_to_channel_at(row, 6)
 }

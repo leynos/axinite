@@ -136,44 +136,15 @@ impl RoutineEngine {
                 continue;
             }
 
-            if let Some(uid) = user_id
-                && routine.user_id != uid
-            {
+            if !user_matches(routine, user_id) {
                 continue;
             }
 
-            let mut matched = true;
-            for (key, expected) in filters {
-                let Some(actual) = payload
-                    .get(key)
-                    .and_then(crate::agent::routine::json_value_as_filter_string)
-                else {
-                    tracing::debug!(routine = %routine.name, filter_key = %key, "Filter key not found in payload");
-                    matched = false;
-                    break;
-                };
-                if !actual.eq_ignore_ascii_case(expected) {
-                    matched = false;
-                    break;
-                }
-            }
-            if !matched {
+            if !filters_match(routine, filters, payload) {
                 continue;
             }
 
-            if !self.check_cooldown(routine) {
-                tracing::debug!(routine = %routine.name, "Skipped: cooldown active");
-                continue;
-            }
-
-            if !self.check_concurrent(routine).await {
-                tracing::debug!(routine = %routine.name, "Skipped: max concurrent reached");
-                continue;
-            }
-
-            // Global capacity check (atomic check-and-increment)
-            if !self.try_reserve_running_slot() {
-                tracing::warn!(routine = %routine.name, "Skipped: global max concurrent reached");
+            if !self.passes_system_event_guardrails(routine).await {
                 continue;
             }
 
@@ -183,6 +154,33 @@ impl RoutineEngine {
         }
 
         fired
+    }
+
+    /// Checks cooldown, per-routine concurrency, and global capacity for a
+    /// matched system-event routine.
+    ///
+    /// Returns `true` when a running slot has been reserved and the routine
+    /// may fire.
+    async fn passes_system_event_guardrails(
+        &self,
+        routine: &crate::agent::routine::Routine,
+    ) -> bool {
+        if !self.check_cooldown(routine) {
+            tracing::debug!(routine = %routine.name, "Skipped: cooldown active");
+            return false;
+        }
+
+        if !self.check_concurrent(routine).await {
+            tracing::debug!(routine = %routine.name, "Skipped: max concurrent reached");
+            return false;
+        }
+
+        // Global capacity check (atomic check-and-increment)
+        if !self.try_reserve_running_slot() {
+            tracing::warn!(routine = %routine.name, "Skipped: global max concurrent reached");
+            return false;
+        }
+        true
     }
 
     /// Check all due cron routines and fire them. Called by the cron ticker.
@@ -223,6 +221,37 @@ impl RoutineEngine {
             self.spawn_fire_reserved(routine, "cron", detail);
         }
     }
+}
+
+/// Returns `true` when the routine belongs to the emitting user, or when no
+/// user scoping was requested.
+fn user_matches(routine: &crate::agent::routine::Routine, user_id: Option<&str>) -> bool {
+    match user_id {
+        Some(uid) => routine.user_id == uid,
+        None => true,
+    }
+}
+
+/// Returns `true` when every trigger filter key is present in the payload
+/// and matches its expected value (case-insensitively).
+fn filters_match(
+    routine: &crate::agent::routine::Routine,
+    filters: &std::collections::HashMap<String, String>,
+    payload: &serde_json::Value,
+) -> bool {
+    for (key, expected) in filters {
+        let Some(actual) = payload
+            .get(key)
+            .and_then(crate::agent::routine::json_value_as_filter_string)
+        else {
+            tracing::debug!(routine = %routine.name, filter_key = %key, "Filter key not found in payload");
+            return false;
+        };
+        if !actual.eq_ignore_ascii_case(expected) {
+            return false;
+        }
+    }
+    true
 }
 
 fn truncate(s: &str, max: usize) -> String {

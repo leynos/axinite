@@ -142,6 +142,20 @@ pub(super) const SAFE_ENV_VARS: &[&str] = &[
     "WINDIR",
 ];
 
+/// Whether a lower-cased command contains an always-blocked pattern.
+pub(super) fn matches_blocked_command(lower: &str) -> bool {
+    BLOCKED_COMMANDS
+        .iter()
+        .any(|blocked| lower.contains(blocked))
+}
+
+/// Whether a lower-cased command contains a potentially dangerous pattern.
+pub(super) fn matches_dangerous_pattern(lower: &str) -> bool {
+    DANGEROUS_PATTERNS
+        .iter()
+        .any(|pattern| lower.contains(pattern))
+}
+
 /// Check whether a shell command contains patterns that must never be auto-approved.
 ///
 /// Even when the user has chosen "always approve" for the shell tool, these commands
@@ -168,41 +182,36 @@ pub fn detect_command_injection(cmd: &str) -> Option<&'static str> {
     }
 
     let lower = cmd.to_lowercase();
-
-    if is_base64_decode_to_shell(&lower) {
-        return Some("base64 decode piped to shell");
-    }
-
-    if is_encoded_escape_to_shell(&lower) {
-        return Some("encoded escape sequences piped to shell");
-    }
-
-    if is_binary_decode_to_shell(&lower) {
-        return Some("binary decode piped to shell");
-    }
-
-    if is_dns_exfiltration(&lower) {
-        return Some("potential DNS exfiltration via command substitution");
-    }
-
-    if is_netcat_piping(&lower) {
-        return Some("netcat with data piping");
-    }
-
-    if is_curl_file_post(&lower) {
-        return Some("curl posting file contents");
-    }
-
-    if lower.contains("wget") && lower.contains("--post-file") {
-        return Some("wget posting file contents");
-    }
-
-    if is_string_reversal_to_shell(&lower) {
-        return Some("string reversal piped to shell");
-    }
-
-    None
+    INJECTION_CHECKS
+        .iter()
+        .find(|(is_match, _)| is_match(&lower))
+        .map(|(_, reason)| *reason)
 }
+
+/// An injection/obfuscation predicate over the lower-cased command.
+type InjectionCheck = (fn(&str) -> bool, &'static str);
+
+/// Injection/obfuscation predicates paired with the reason reported when
+/// they match. Each predicate receives the lower-cased command.
+const INJECTION_CHECKS: &[InjectionCheck] = &[
+    (is_base64_decode_to_shell, "base64 decode piped to shell"),
+    (
+        is_encoded_escape_to_shell,
+        "encoded escape sequences piped to shell",
+    ),
+    (is_binary_decode_to_shell, "binary decode piped to shell"),
+    (
+        is_dns_exfiltration,
+        "potential DNS exfiltration via command substitution",
+    ),
+    (is_netcat_piping, "netcat with data piping"),
+    (is_curl_file_post, "curl posting file contents"),
+    (is_wget_file_post, "wget posting file contents"),
+    (
+        is_string_reversal_to_shell,
+        "string reversal piped to shell",
+    ),
+];
 
 /// Base64 decode piped to shell execution (obfuscation of arbitrary commands).
 fn is_base64_decode_to_shell(lower: &str) -> bool {
@@ -258,6 +267,11 @@ fn is_curl_file_post(lower: &str) -> bool {
     let upload = lower.contains("--data-binary @") || lower.contains("--upload-file");
     let posts_file = data_flag || upload;
     lower.contains("curl") && posts_file
+}
+
+/// wget posting file contents to a remote server.
+fn is_wget_file_post(lower: &str) -> bool {
+    lower.contains("wget") && lower.contains("--post-file")
 }
 
 /// Chained obfuscation: rev used to reconstruct hidden commands piped to shell.

@@ -32,66 +32,11 @@ pub(super) async fn execute_lightweight(
     context_paths: &[String],
     max_tokens: u32,
 ) -> Result<(RunStatus, Option<String>, Option<i32>), RoutineError> {
-    // Load context from workspace
-    let mut context_parts = Vec::new();
-    for path in context_paths {
-        match ctx.workspace.read(path).await {
-            Ok(doc) => {
-                context_parts.push(format!("## {}\n\n{}", path, doc.content));
-            }
-            Err(e) => {
-                tracing::debug!(
-                    routine = %routine.name,
-                    "Failed to read context path {}: {}", path, e
-                );
-            }
-        }
-    }
-
-    // Load routine state from workspace (name sanitized to prevent path traversal)
-    let safe_name = sanitize_routine_name(&routine.name);
-    let state_path = format!("routines/{safe_name}/state.md");
-    let state_content = match ctx.workspace.read(&state_path).await {
-        Ok(doc) => Some(doc.content),
-        Err(_) => None,
-    };
-
-    // Build the user-facing prompt
-    let mut full_prompt = String::new();
-    full_prompt.push_str(prompt);
-
-    if !context_parts.is_empty() {
-        full_prompt.push_str("\n\n---\n\n# Context\n\n");
-        full_prompt.push_str(&context_parts.join("\n\n"));
-    }
-
-    if let Some(state) = &state_content {
-        full_prompt.push_str("\n\n---\n\n# Previous State\n\n");
-        full_prompt.push_str(state);
-    }
-
-    full_prompt.push_str(
-        "\n\n---\n\nIf nothing needs attention, reply EXACTLY with: ROUTINE_OK\n\
-         If something needs attention, provide a concise summary.",
-    );
-
-    // Get system prompt
-    let system_prompt = match ctx.workspace.system_prompt().await {
-        Ok(p) => p,
-        Err(e) => {
-            tracing::warn!(routine = %routine.name, "Failed to get system prompt: {}", e);
-            String::new()
-        }
-    };
-
-    // Determine max_tokens from model metadata with fallback
-    let effective_max_tokens = match ctx.llm.model_metadata().await {
-        Ok(meta) => {
-            let from_api = meta.context_length.map(|ctx| ctx / 2).unwrap_or(max_tokens);
-            from_api.max(max_tokens)
-        }
-        Err(_) => max_tokens,
-    };
+    let context_parts = load_context_parts(ctx, routine, context_paths).await;
+    let state_content = load_routine_state(ctx, routine).await;
+    let full_prompt = build_lightweight_prompt(prompt, &context_parts, state_content.as_deref());
+    let system_prompt = load_system_prompt(ctx, routine).await;
+    let effective_max_tokens = resolve_max_tokens(ctx, max_tokens).await;
 
     // If tools are enabled, use the tool execution loop; otherwise, single LLM call
     if ctx.config.lightweight_tools_enabled {
@@ -115,6 +60,105 @@ pub(super) async fn execute_lightweight(
     }
 }
 
+/// Reads each context path from the workspace, skipping (and logging)
+/// unreadable paths.
+async fn load_context_parts(
+    ctx: &EngineContext,
+    routine: &Routine,
+    context_paths: &[String],
+) -> Vec<String> {
+    let mut context_parts = Vec::new();
+    for path in context_paths {
+        match ctx.workspace.read(path).await {
+            Ok(doc) => {
+                context_parts.push(format!("## {}\n\n{}", path, doc.content));
+            }
+            Err(e) => {
+                tracing::debug!(
+                    routine = %routine.name,
+                    "Failed to read context path {}: {}", path, e
+                );
+            }
+        }
+    }
+    context_parts
+}
+
+/// Loads the routine's persisted state from the workspace, if present.
+///
+/// The routine name is sanitized to prevent path traversal.
+async fn load_routine_state(ctx: &EngineContext, routine: &Routine) -> Option<String> {
+    let safe_name = sanitize_routine_name(&routine.name);
+    let state_path = format!("routines/{safe_name}/state.md");
+    match ctx.workspace.read(&state_path).await {
+        Ok(doc) => Some(doc.content),
+        Err(_) => None,
+    }
+}
+
+/// Assembles the user-facing prompt from the routine prompt, workspace
+/// context, previous state, and the ROUTINE_OK sentinel instructions.
+fn build_lightweight_prompt(
+    prompt: &str,
+    context_parts: &[String],
+    state_content: Option<&str>,
+) -> String {
+    let mut full_prompt = String::new();
+    full_prompt.push_str(prompt);
+
+    if !context_parts.is_empty() {
+        full_prompt.push_str("\n\n---\n\n# Context\n\n");
+        full_prompt.push_str(&context_parts.join("\n\n"));
+    }
+
+    if let Some(state) = state_content {
+        full_prompt.push_str("\n\n---\n\n# Previous State\n\n");
+        full_prompt.push_str(state);
+    }
+
+    full_prompt.push_str(
+        "\n\n---\n\nIf nothing needs attention, reply EXACTLY with: ROUTINE_OK\n\
+         If something needs attention, provide a concise summary.",
+    );
+    full_prompt
+}
+
+/// Fetches the workspace system prompt, falling back to empty on failure.
+async fn load_system_prompt(ctx: &EngineContext, routine: &Routine) -> String {
+    match ctx.workspace.system_prompt().await {
+        Ok(p) => p,
+        Err(e) => {
+            tracing::warn!(routine = %routine.name, "Failed to get system prompt: {}", e);
+            String::new()
+        }
+    }
+}
+
+/// Determines the effective max tokens from model metadata (half the context
+/// window), never dropping below the routine's configured value.
+async fn resolve_max_tokens(ctx: &EngineContext, max_tokens: u32) -> u32 {
+    match ctx.llm.model_metadata().await {
+        Ok(meta) => {
+            let from_api = meta.context_length.map(|ctx| ctx / 2).unwrap_or(max_tokens);
+            from_api.max(max_tokens)
+        }
+        Err(_) => max_tokens,
+    }
+}
+
+/// Builds the opening message list: the system prompt (when present)
+/// followed by the user prompt.
+pub(super) fn initial_messages(system_prompt: &str, full_prompt: &str) -> Vec<ChatMessage> {
+    if system_prompt.is_empty() {
+        vec![ChatMessage::user(full_prompt)]
+    } else {
+        vec![
+            ChatMessage::system(system_prompt),
+            ChatMessage::user(full_prompt),
+        ]
+    }
+}
+
 /// Execute a lightweight routine without tool support (original single-call behavior).
 async fn execute_lightweight_no_tools(
     ctx: &EngineContext,
@@ -123,14 +167,7 @@ async fn execute_lightweight_no_tools(
     full_prompt: &str,
     effective_max_tokens: u32,
 ) -> Result<(RunStatus, Option<String>, Option<i32>), RoutineError> {
-    let messages = if system_prompt.is_empty() {
-        vec![ChatMessage::user(full_prompt)]
-    } else {
-        vec![
-            ChatMessage::system(system_prompt),
-            ChatMessage::user(full_prompt),
-        ]
-    };
+    let messages = initial_messages(system_prompt, full_prompt);
 
     let request = CompletionRequest::new(messages)
         .with_max_tokens(effective_max_tokens)

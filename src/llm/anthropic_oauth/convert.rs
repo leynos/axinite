@@ -33,49 +33,10 @@ pub(super) fn convert_messages(
                 });
             }
             Role::Assistant => {
-                if let Some(tool_calls) = msg.tool_calls {
-                    // Assistant message with tool calls → content blocks
-                    let mut blocks: Vec<AnthropicContentBlock> = Vec::new();
-                    if !msg.content.is_empty() {
-                        blocks.push(AnthropicContentBlock::Text { text: msg.content });
-                    }
-                    for tc in tool_calls {
-                        blocks.push(AnthropicContentBlock::ToolUse {
-                            id: tc.id,
-                            name: tc.name,
-                            input: tc.arguments,
-                        });
-                    }
-                    anthropic_msgs.push(AnthropicMessage {
-                        role: "assistant".to_string(),
-                        content: AnthropicContent::Blocks(blocks),
-                    });
-                } else {
-                    anthropic_msgs.push(AnthropicMessage {
-                        role: "assistant".to_string(),
-                        content: AnthropicContent::Text(msg.content),
-                    });
-                }
+                anthropic_msgs.push(convert_assistant_message(msg));
             }
             Role::Tool => {
-                let Some(tool_call_id) = msg.tool_call_id else {
-                    tracing::warn!("Skipping Tool message without tool_call_id");
-                    continue;
-                };
-                // Tool results go into a user message with tool_result blocks
-                let block = AnthropicContentBlock::ToolResult {
-                    tool_use_id: tool_call_id,
-                    content: msg.content,
-                };
-                // Anthropic requires consecutive tool results in one user
-                // message, so append to a trailing user block message when
-                // present and start a new user message otherwise.
-                if let Some(block) = append_to_trailing_user_blocks(&mut anthropic_msgs, block) {
-                    anthropic_msgs.push(AnthropicMessage {
-                        role: "user".to_string(),
-                        content: AnthropicContent::Blocks(vec![block]),
-                    });
-                }
+                push_tool_result(&mut anthropic_msgs, msg);
             }
         }
     }
@@ -87,6 +48,58 @@ pub(super) fn convert_messages(
     };
 
     (system, anthropic_msgs)
+}
+
+/// Convert an assistant message: tool calls become content blocks, plain
+/// text stays a text message.
+fn convert_assistant_message(msg: ChatMessage) -> AnthropicMessage {
+    let Some(tool_calls) = msg.tool_calls else {
+        return AnthropicMessage {
+            role: "assistant".to_string(),
+            content: AnthropicContent::Text(msg.content),
+        };
+    };
+
+    // Assistant message with tool calls → content blocks
+    let mut blocks: Vec<AnthropicContentBlock> = Vec::new();
+    if !msg.content.is_empty() {
+        blocks.push(AnthropicContentBlock::Text { text: msg.content });
+    }
+    for tc in tool_calls {
+        blocks.push(AnthropicContentBlock::ToolUse {
+            id: tc.id,
+            name: tc.name,
+            input: tc.arguments,
+        });
+    }
+    AnthropicMessage {
+        role: "assistant".to_string(),
+        content: AnthropicContent::Blocks(blocks),
+    }
+}
+
+/// Convert a tool-result message into a user message with a `tool_result`
+/// block, merging consecutive results into one user message as Anthropic
+/// requires.
+fn push_tool_result(anthropic_msgs: &mut Vec<AnthropicMessage>, msg: ChatMessage) {
+    let Some(tool_call_id) = msg.tool_call_id else {
+        tracing::warn!("Skipping Tool message without tool_call_id");
+        return;
+    };
+    // Tool results go into a user message with tool_result blocks
+    let block = AnthropicContentBlock::ToolResult {
+        tool_use_id: tool_call_id,
+        content: msg.content,
+    };
+    // Anthropic requires consecutive tool results in one user message, so
+    // append to a trailing user block message when present and start a new
+    // user message otherwise.
+    if let Some(block) = append_to_trailing_user_blocks(anthropic_msgs, block) {
+        anthropic_msgs.push(AnthropicMessage {
+            role: "user".to_string(),
+            content: AnthropicContent::Blocks(vec![block]),
+        });
+    }
 }
 
 /// Append `block` to the last message when it is a user message carrying

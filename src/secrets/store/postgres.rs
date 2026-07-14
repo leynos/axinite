@@ -11,6 +11,7 @@ use crate::secrets::crypto::SecretsCrypto;
 use crate::secrets::types::{CreateSecretParams, DecryptedSecret, Secret, SecretError, SecretRef};
 
 use super::NativeSecretsStore;
+use super::access::{ensure_not_expired, is_secret_name_allowed};
 
 /// PostgreSQL implementation of SecretsStore.
 pub struct PostgresSecretsStore {
@@ -97,18 +98,7 @@ impl NativeSecretsStore for PostgresSecretsStore {
             .map_err(|e| SecretError::Database(e.to_string()))?;
 
         match row {
-            Some(r) => {
-                let secret = row_to_secret(&r);
-
-                // Check expiration
-                if let Some(expires_at) = secret.expires_at
-                    && expires_at < Utc::now()
-                {
-                    return Err(SecretError::Expired);
-                }
-
-                Ok(secret)
-            }
+            Some(r) => ensure_not_expired(row_to_secret(&r)),
             None => Err(SecretError::NotFound(name.to_string())),
         }
     }
@@ -219,23 +209,8 @@ impl NativeSecretsStore for PostgresSecretsStore {
             return Ok(false);
         }
 
-        // Check if secret is in the allowed list
-        // Supports glob patterns: "openai_*" matches "openai_api_key"
-        for pattern in allowed_secrets {
-            let pattern_lower = pattern.to_lowercase();
-            if pattern_lower == secret_name_lower {
-                return Ok(true);
-            }
-
-            // Simple glob: * matches any suffix
-            if let Some(prefix) = pattern_lower.strip_suffix('*')
-                && secret_name_lower.starts_with(prefix)
-            {
-                return Ok(true);
-            }
-        }
-
-        Ok(false)
+        // Check the allowed list (supports "openai_*"-style glob patterns)
+        Ok(is_secret_name_allowed(&secret_name_lower, allowed_secrets))
     }
 }
 

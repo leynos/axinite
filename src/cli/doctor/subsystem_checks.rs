@@ -112,40 +112,49 @@ pub(super) fn check_gateway_config(settings: &Settings) -> CheckResult {
 // ── MCP servers ─────────────────────────────────────────────
 
 pub(super) async fn check_mcp_config() -> CheckResult {
-    match crate::tools::mcp::config::load_mcp_servers().await {
-        Ok(file) => {
-            let servers: Vec<_> = file.enabled_servers().collect();
-            if servers.is_empty() {
-                return CheckResult::Skip("no MCP servers configured".into());
-            }
+    let file = match crate::tools::mcp::config::load_mcp_servers().await {
+        Ok(file) => file,
+        Err(e) => return mcp_load_failure(&e.to_string()),
+    };
 
-            let mut invalid = Vec::new();
-            for server in &servers {
-                if let Err(e) = server.validate() {
-                    invalid.push(format!("{}: {}", server.name, e));
-                }
-            }
+    let servers: Vec<_> = file.enabled_servers().collect();
+    if servers.is_empty() {
+        return CheckResult::Skip("no MCP servers configured".into());
+    }
+    validate_mcp_servers(&servers)
+}
 
-            if invalid.is_empty() {
-                CheckResult::Pass(format!("{} server(s) configured, all valid", servers.len()))
-            } else {
-                CheckResult::Fail(format!(
-                    "{} server(s), {} invalid: {}",
-                    servers.len(),
-                    invalid.len(),
-                    invalid.join("; ")
-                ))
-            }
-        }
-        Err(e) => {
-            // Distinguish no config from corrupted config
-            let msg = e.to_string();
-            if msg.contains("not found") || msg.contains("No such file") {
-                CheckResult::Skip("no MCP config file".into())
-            } else {
-                CheckResult::Fail(format!("config error: {e}"))
-            }
-        }
+/// Map an MCP config load error, distinguishing a missing config file
+/// (skip) from a corrupted one (fail).
+fn mcp_load_failure(msg: &str) -> CheckResult {
+    if msg.contains("not found") || msg.contains("No such file") {
+        CheckResult::Skip("no MCP config file".into())
+    } else {
+        CheckResult::Fail(format!("config error: {msg}"))
+    }
+}
+
+/// Validate each configured server, summarizing any invalid entries.
+fn validate_mcp_servers(servers: &[&crate::tools::mcp::config::McpServerConfig]) -> CheckResult {
+    let invalid: Vec<String> = servers
+        .iter()
+        .filter_map(|server| {
+            server
+                .validate()
+                .err()
+                .map(|e| format!("{}: {}", server.name, e))
+        })
+        .collect();
+
+    if invalid.is_empty() {
+        CheckResult::Pass(format!("{} server(s) configured, all valid", servers.len()))
+    } else {
+        CheckResult::Fail(format!(
+            "{} server(s), {} invalid: {}",
+            servers.len(),
+            invalid.len(),
+            invalid.join("; ")
+        ))
     }
 }
 

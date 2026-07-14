@@ -17,21 +17,27 @@ use super::detect_command_injection;
 use super::policy::{MAX_OUTPUT_SIZE, SAFE_ENV_VARS};
 use super::tool::ShellTool;
 
+/// A single shell command invocation: the command text, the resolved
+/// working directory, and the effective timeout.
+struct CommandSpec<'a> {
+    cmd: &'a str,
+    workdir: &'a Path,
+    timeout: Duration,
+}
+
 impl ShellTool {
     /// Execute a command through the sandbox.
     async fn execute_sandboxed(
         &self,
         sandbox: &SandboxManager,
-        cmd: &str,
-        workdir: &Path,
-        timeout: Duration,
+        spec: &CommandSpec<'_>,
     ) -> Result<(String, i64), ToolError> {
         // Override sandbox config timeout if needed
-        let result = tokio::time::timeout(timeout, async {
+        let result = tokio::time::timeout(spec.timeout, async {
             sandbox
                 .execute_with_policy(
-                    cmd,
-                    workdir,
+                    spec.cmd,
+                    spec.workdir,
                     self.sandbox_policy,
                     std::collections::HashMap::new(),
                 )
@@ -45,26 +51,24 @@ impl ShellTool {
                 Ok((combined, output.exit_code))
             }
             Ok(Err(e)) => Err(ToolError::ExecutionFailed(format!("Sandbox error: {}", e))),
-            Err(_) => Err(ToolError::Timeout(timeout)),
+            Err(_) => Err(ToolError::Timeout(spec.timeout)),
         }
     }
 
     /// Execute a command directly (fallback when sandbox unavailable).
     async fn execute_direct(
         &self,
-        cmd: &str,
-        workdir: &PathBuf,
-        timeout: Duration,
+        spec: &CommandSpec<'_>,
         extra_env: &HashMap<String, String>,
     ) -> Result<(String, i32), ToolError> {
         // Build command
         let mut command = if cfg!(target_os = "windows") {
             let mut c = Command::new("cmd");
-            c.args(["/C", cmd]);
+            c.args(["/C", spec.cmd]);
             c
         } else {
             let mut c = Command::new("sh");
-            c.args(["-c", cmd]);
+            c.args(["-c", spec.cmd]);
             c
         };
 
@@ -84,7 +88,7 @@ impl ShellTool {
         command.envs(extra_env);
 
         command
-            .current_dir(workdir)
+            .current_dir(spec.workdir)
             .stdin(Stdio::null())
             .stdout(Stdio::piped())
             .stderr(Stdio::piped());
@@ -101,7 +105,7 @@ impl ShellTool {
         let stdout_handle = child.stdout.take();
         let stderr_handle = child.stderr.take();
 
-        let result = tokio::time::timeout(timeout, async {
+        let result = tokio::time::timeout(spec.timeout, async {
             let stdout_fut = async {
                 if let Some(mut out) = stdout_handle {
                     let mut buf = Vec::new();
@@ -158,7 +162,7 @@ impl ShellTool {
             Err(_) => {
                 // Timeout - try to kill the process
                 let _ = child.kill().await;
-                Err(ToolError::Timeout(timeout))
+                Err(ToolError::Timeout(spec.timeout))
             }
         }
     }
@@ -202,20 +206,22 @@ impl ShellTool {
         // Determine timeout
         let timeout_duration = timeout.map(Duration::from_secs).unwrap_or(self.timeout);
 
+        let spec = CommandSpec {
+            cmd,
+            workdir: &cwd,
+            timeout: timeout_duration,
+        };
+
         // Use sandbox if configured; fail-closed (never silently fall through
         // to unsandboxed execution when sandbox was intended).
         if let Some(ref sandbox) = self.sandbox
             && sandbox_active(sandbox)
         {
-            return self
-                .execute_sandboxed(sandbox, cmd, &cwd, timeout_duration)
-                .await;
+            return self.execute_sandboxed(sandbox, &spec).await;
         }
 
         // Only execute directly when no sandbox was configured at all.
-        let (output, code) = self
-            .execute_direct(cmd, &cwd, timeout_duration, extra_env)
-            .await?;
+        let (output, code) = self.execute_direct(&spec, extra_env).await?;
         Ok((output, code as i64))
     }
 }

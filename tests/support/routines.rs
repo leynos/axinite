@@ -14,7 +14,7 @@ use tempfile::TempDir;
 use uuid::Uuid;
 
 use ironclaw::agent::routine::{NotifyConfig, Routine, RoutineAction, RoutineGuardrails, Trigger};
-use ironclaw::agent::routine_engine::RoutineEngine;
+use ironclaw::agent::routine_engine::{RoutineEngine, RoutineEngineDeps};
 use ironclaw::channels::IncomingMessage;
 use ironclaw::config::{RoutineConfig, SafetyConfig};
 use ironclaw::db::Database;
@@ -155,16 +155,16 @@ mod engine {
             max_output_length: 100_000,
             injection_check_enabled: true,
         }));
-        let engine = Arc::new(RoutineEngine::new(
-            RoutineConfig::default(),
-            db,
+        let engine = Arc::new(RoutineEngine::new(RoutineEngineDeps {
+            config: RoutineConfig::default(),
+            store: db,
             llm,
-            ws,
+            workspace: ws,
             notify_tx,
-            None,
+            scheduler: None,
             tools,
             safety,
-        ));
+        }));
         (engine, notify_rx)
     }
 }

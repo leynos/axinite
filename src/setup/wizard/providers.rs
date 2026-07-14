@@ -3,6 +3,56 @@
 use super::provider_flows::{ApiKeyProviderSpec, OpenAICompatSpec};
 use super::*;
 
+/// Human-readable display name for a provider id.
+fn provider_display_name(current: &str, registry: &crate::llm::ProviderRegistry) -> String {
+    if current == "nearai" {
+        "NEAR AI".to_string()
+    } else if let Some(def) = registry.find(current) {
+        def.setup
+            .as_ref()
+            .map(|s| s.display_name().to_string())
+            .unwrap_or_else(|| def.id.clone())
+    } else {
+        current.to_string()
+    }
+}
+
+/// Report whether the provider id names a supported provider.
+fn is_known_provider(current: &str, registry: &crate::llm::ProviderRegistry) -> bool {
+    matches!(current, "nearai" | "bedrock") || registry.is_known(current)
+}
+
+/// Build the provider menu: NearAI first, then all registry providers with
+/// setup hints, then Bedrock (native AWS SDK, not registry-based).
+///
+/// Returns parallel vectors of menu labels and provider ids.
+fn build_provider_menu(registry: &crate::llm::ProviderRegistry) -> (Vec<String>, Vec<String>) {
+    let selectable = registry.selectable();
+    let mut options: Vec<String> = Vec::with_capacity(2 + selectable.len());
+    let mut provider_ids: Vec<String> = Vec::with_capacity(2 + selectable.len());
+
+    options.push("NEAR AI          - multi-model access via NEAR account".to_string());
+    provider_ids.push("nearai".to_string());
+
+    for def in &selectable {
+        let label = format!(
+            "{:<17}- {}",
+            def.setup
+                .as_ref()
+                .map(|s| s.display_name())
+                .unwrap_or(&def.id),
+            def.description
+        );
+        options.push(label);
+        provider_ids.push(def.id.clone());
+    }
+
+    options.push("AWS Bedrock      - Claude & other models via AWS (IAM, SSO)".to_string());
+    provider_ids.push("bedrock".to_string());
+
+    (options, provider_ids)
+}
+
 impl SetupWizard {
     /// Step 3: Inference provider selection.
     ///
@@ -14,69 +64,18 @@ impl SetupWizard {
             crate::llm::ProviderRegistry::load().map_err(|e| SetupError::Config(e.to_string()))?;
 
         // Show current provider if already configured
-        if let Some(current) = self.settings.llm_backend.clone() {
-            let display = if current == "nearai" {
-                "NEAR AI".to_string()
-            } else if let Some(def) = registry.find(&current) {
-                def.setup
-                    .as_ref()
-                    .map(|s| s.display_name().to_string())
-                    .unwrap_or_else(|| def.id.clone())
-            } else {
-                current.clone()
-            };
-            print_info(&format!("Current provider: {}", display));
-            println!();
-
-            let is_known =
-                current == "nearai" || current == "bedrock" || registry.is_known(&current);
-
-            if is_known && confirm("Keep current provider?", true).map_err(SetupError::Io)? {
-                if current == "bedrock" {
-                    // Keeping the existing Bedrock config — no need to re-run
-                    // the full setup flow (region, auth, cross-region).
-                    print_info("Keeping existing AWS Bedrock configuration.");
-                    return Ok(());
-                }
-                return self.run_provider_setup(&current, &registry).await;
-            }
-
-            if !is_known {
-                print_info(&format!(
-                    "Unknown provider '{}', please select a supported provider.",
-                    current
-                ));
-            }
+        if let Some(current) = self.settings.llm_backend.clone()
+            && self
+                .offer_keep_current_provider(&current, &registry)
+                .await?
+        {
+            return Ok(());
         }
 
         print_info("Select your inference provider:");
         println!();
 
-        // Build menu: NearAI first, then all registry providers with setup hints, then Bedrock
-        let selectable = registry.selectable();
-        let mut options: Vec<String> = Vec::with_capacity(2 + selectable.len());
-        let mut provider_ids: Vec<String> = Vec::with_capacity(2 + selectable.len());
-
-        options.push("NEAR AI          - multi-model access via NEAR account".to_string());
-        provider_ids.push("nearai".to_string());
-
-        for def in &selectable {
-            let label = format!(
-                "{:<17}- {}",
-                def.setup
-                    .as_ref()
-                    .map(|s| s.display_name())
-                    .unwrap_or(&def.id),
-                def.description
-            );
-            options.push(label);
-            provider_ids.push(def.id.clone());
-        }
-
-        // Bedrock is a special case (native AWS SDK, not registry-based)
-        options.push("AWS Bedrock      - Claude & other models via AWS (IAM, SSO)".to_string());
-        provider_ids.push("bedrock".to_string());
-
+        let (options, provider_ids) = build_provider_menu(&registry);
         let option_refs: Vec<&str> = options.iter().map(|s| s.as_str()).collect();
         let choice = select_one("Provider:", &option_refs).map_err(SetupError::Io)?;
         let selected_id = &provider_ids[choice];
@@ -88,6 +87,44 @@ impl SetupWizard {
         }
 
         Ok(())
+    }
+
+    /// Offer to keep (and, where needed, re-configure) the currently
+    /// configured provider.
+    ///
+    /// Returns `true` when the current provider was kept.
+    async fn offer_keep_current_provider(
+        &mut self,
+        current: &str,
+        registry: &crate::llm::ProviderRegistry,
+    ) -> Result<bool, SetupError> {
+        print_info(&format!(
+            "Current provider: {}",
+            provider_display_name(current, registry)
+        ));
+        println!();
+
+        if !is_known_provider(current, registry) {
+            print_info(&format!(
+                "Unknown provider '{}', please select a supported provider.",
+                current
+            ));
+            return Ok(false);
+        }
+
+        if !confirm("Keep current provider?", true).map_err(SetupError::Io)? {
+            return Ok(false);
+        }
+
+        if current == "bedrock" {
+            // Keeping the existing Bedrock config — no need to re-run
+            // the full setup flow (region, auth, cross-region).
+            print_info("Keeping existing AWS Bedrock configuration.");
+            return Ok(true);
+        }
+
+        self.run_provider_setup(current, registry).await?;
+        Ok(true)
     }
 
     /// Run the setup flow for a specific provider.
