@@ -23,6 +23,7 @@ COPY Cargo.toml Cargo.lock ./
 # Copy source, build script, tests, and supporting directories
 COPY build.rs build.rs
 COPY src/ src/
+COPY crates/ crates/
 COPY tests/ tests/
 COPY migrations/ migrations/
 COPY registry/ registry/

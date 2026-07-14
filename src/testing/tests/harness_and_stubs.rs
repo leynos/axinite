@@ -4,7 +4,6 @@
 use std::sync::Arc;
 
 use crate::channels::{IncomingMessage, NativeChannel, OutgoingResponse};
-#[cfg(all(feature = "libsql", feature = "test-helpers"))]
 use crate::llm::{CompletionRequest, FinishReason, LlmProvider};
 #[cfg(all(feature = "libsql", feature = "test-helpers"))]
 use crate::testing::TestHarnessBuilder;

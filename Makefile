@@ -92,9 +92,12 @@ markdownlint:
 
 audit: rust-audit
 
+# crates/ holds root-workspace members; they share the root Cargo.lock and
+# are audited through the root manifest, so the per-directory sweep skips
+# them (cargo-audit needs a lockfile beside the manifest it audits).
 rust-audit:
 	find . \
-		\( -path '*/target/*' -o -path '*/node_modules/*' -o -path '*/.venv/*' \) -prune -o \
+		\( -path '*/target/*' -o -path '*/node_modules/*' -o -path '*/.venv/*' -o -path './crates/*' \) -prune -o \
 		-name Cargo.toml -exec sh -c 'set -e; for manifest do \
 			manifest_dir=$$(dirname "$$manifest"); \
 			printf "Auditing Rust manifest %s\n" "$$manifest"; \
