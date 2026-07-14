@@ -3,6 +3,9 @@
 //! Keeps extension-manager assembly and startup loading out of `src/app.rs`
 //! so application bootstrap can stay focused on phase orchestration.
 
+mod mcp_servers;
+mod wasm_tools;
+
 use std::sync::Arc;
 
 use anyhow::Context;
@@ -20,6 +23,10 @@ use crate::secrets::SecretsStore;
 use crate::tools::ToolRegistry;
 use crate::tools::mcp::{McpProcessManager, McpSessionManager};
 use crate::tools::wasm::WasmToolRuntime;
+
+pub use mcp_servers::LoadMcpServersParams;
+use mcp_servers::load_and_register_mcp_servers;
+use wasm_tools::load_wasm_tools;
 
 /// Return type for extension bootstrap.
 pub type ExtensionInitResult = (
@@ -56,16 +63,6 @@ pub struct BuildExtensionsParams<'a> {
     pub hooks: &'a Arc<HookRegistry>,
     pub relay_config: Option<crate::config::RelayConfig>,
     pub gateway_token: Option<String>,
-}
-
-/// Inputs needed to load and register MCP servers.
-pub struct LoadMcpServersParams<'a> {
-    pub db: Option<Arc<dyn Database>>,
-    pub secrets_store: Option<Arc<dyn SecretsStore + Send + Sync>>,
-    pub tools: &'a Arc<ToolRegistry>,
-    pub mcp_session_manager: &'a Arc<McpSessionManager>,
-    pub mcp_process_manager: &'a Arc<McpProcessManager>,
-    pub mcp_clients: McpClientsMap,
 }
 
 fn build_mcp_activation(
@@ -164,214 +161,6 @@ pub async fn build_extension_manager(
     params.tools.register_extension_tools(Arc::clone(&manager));
     tracing::debug!("Extension manager initialised with in-chat discovery tools");
     manager
-}
-
-async fn scan_tools_dir(loader: &crate::tools::wasm::WasmToolLoader, tools_dir: &std::path::Path) {
-    match loader.load_from_dir(tools_dir).await {
-        Ok(results) => {
-            if !results.loaded.is_empty() {
-                tracing::debug!(
-                    loaded = results.loaded.len(),
-                    dir = %tools_dir.display(),
-                    "Loaded WASM tools from directory"
-                );
-            }
-            for (path, err) in results.errors {
-                tracing::warn!(tool = %path.display(), error = %err, "Failed to load WASM tool");
-            }
-        }
-        Err(e) => {
-            tracing::warn!(dir = %tools_dir.display(), error = %e, "Failed to scan WASM tools directory");
-        }
-    }
-}
-
-async fn load_dev_wasm_tools(
-    loader: &crate::tools::wasm::WasmToolLoader,
-    tools_dir: &std::path::Path,
-) -> Vec<String> {
-    match crate::tools::wasm::load_dev_tools(loader, tools_dir).await {
-        Ok(results) => {
-            if !results.loaded.is_empty() {
-                tracing::debug!(
-                    loaded = results.loaded.len(),
-                    "Loaded dev WASM tools from build artefacts"
-                );
-            }
-            results.loaded
-        }
-        Err(e) => {
-            tracing::debug!(error = %e, "No dev WASM tools found");
-            Vec::new()
-        }
-    }
-}
-
-async fn load_wasm_tools(
-    config: &Config,
-    secrets_store: Option<Arc<dyn SecretsStore + Send + Sync>>,
-    tools: &Arc<ToolRegistry>,
-    wasm_tool_runtime: Option<Arc<WasmToolRuntime>>,
-) -> Vec<String> {
-    let Some(runtime) = wasm_tool_runtime else {
-        return Vec::new();
-    };
-
-    let mut loader = crate::tools::wasm::WasmToolLoader::new(
-        std::sync::Arc::clone(&runtime),
-        std::sync::Arc::clone(tools),
-    );
-    if let Some(ref s) = secrets_store {
-        loader = loader.with_secrets_store(std::sync::Arc::clone(s));
-    }
-
-    scan_tools_dir(&loader, &config.wasm.tools_dir).await;
-    load_dev_wasm_tools(&loader, &config.wasm.tools_dir).await
-}
-
-struct McpLoadCtx {
-    user_id: String,
-    tools: Arc<ToolRegistry>,
-    session: Arc<McpSessionManager>,
-    process: Arc<McpProcessManager>,
-    secrets: Option<Arc<dyn SecretsStore + Send + Sync>>,
-    clients: McpClientsMap,
-    db: Option<Arc<dyn Database>>,
-}
-
-async fn fetch_enabled_servers(
-    db: Option<&Arc<dyn Database>>,
-) -> Vec<crate::tools::mcp::config::McpServerConfig> {
-    use crate::tools::mcp::config::load_mcp_servers_from_db;
-
-    let servers_result = if let Some(db) = db {
-        load_mcp_servers_from_db(db.as_ref(), "default").await
-    } else {
-        crate::tools::mcp::config::load_mcp_servers().await
-    };
-
-    match servers_result {
-        Ok(s) => s.enabled_servers().cloned().collect(),
-        Err(e) => {
-            tracing::debug!("No MCP servers configured ({})", e);
-            Vec::new()
-        }
-    }
-}
-
-fn is_auth_error(err_str: &str) -> bool {
-    err_str.contains("401") || err_str.contains("authentication")
-}
-
-async fn register_tools_from_client(
-    client: &Arc<crate::tools::mcp::McpClient>,
-    tools: &Arc<ToolRegistry>,
-    server_name: &str,
-) {
-    match client.list_tools().await {
-        Ok(mcp_tools) => {
-            let tool_count = mcp_tools.len();
-            match client.create_tools().await {
-                Ok(tool_impls) => {
-                    for tool in tool_impls {
-                        tools.register(tool).await;
-                    }
-                    tracing::debug!(
-                        "Loaded {} tools from MCP server '{}'",
-                        tool_count,
-                        server_name
-                    );
-                }
-                Err(e) => {
-                    tracing::warn!(
-                        "Failed to create tools from MCP server '{}': {}",
-                        server_name,
-                        e
-                    );
-                }
-            }
-        }
-        Err(e) => {
-            let err_str = e.to_string();
-            if is_auth_error(&err_str) {
-                tracing::warn!(
-                    "MCP server '{}' requires authentication. \
-                     Run: ironclaw mcp auth {}",
-                    server_name,
-                    server_name
-                );
-            } else {
-                tracing::warn!("Failed to connect to MCP server '{}': {}", server_name, e);
-            }
-        }
-    }
-}
-
-async fn spawn_server_task(
-    ctx: Arc<McpLoadCtx>,
-    server: crate::tools::mcp::config::McpServerConfig,
-) {
-    let server_name = server.name.clone();
-    let client = match crate::tools::mcp::create_client_from_config(
-        server,
-        &ctx.session,
-        &ctx.process,
-        ctx.secrets.clone(),
-        &ctx.user_id,
-    )
-    .await
-    {
-        Ok(c) => Arc::new(c),
-        Err(e) => {
-            tracing::warn!("Failed to create MCP client for '{}': {}", server_name, e);
-            return;
-        }
-    };
-
-    let cell = Arc::new(tokio::sync::OnceCell::new());
-    let _ = cell.set(Arc::clone(&client));
-    ctx.clients.write().await.insert(server_name.clone(), cell);
-
-    register_tools_from_client(&client, &ctx.tools, &server_name).await;
-}
-
-async fn load_and_register_mcp_servers(params: LoadMcpServersParams<'_>) {
-    let LoadMcpServersParams {
-        db,
-        secrets_store,
-        tools,
-        mcp_session_manager,
-        mcp_process_manager,
-        mcp_clients,
-    } = params;
-
-    let ctx = Arc::new(McpLoadCtx {
-        user_id: "default".to_string(),
-        tools: Arc::clone(tools),
-        session: Arc::clone(mcp_session_manager),
-        process: Arc::clone(mcp_process_manager),
-        secrets: secrets_store,
-        clients: Arc::clone(&mcp_clients),
-        db,
-    });
-
-    let enabled = fetch_enabled_servers(ctx.db.as_ref()).await;
-    if enabled.is_empty() {
-        return;
-    }
-    tracing::debug!("Loading {} configured MCP server(s)...", enabled.len());
-
-    let mut join_set = tokio::task::JoinSet::new();
-    for server in enabled {
-        let ctx = Arc::clone(&ctx);
-        join_set.spawn(async move { spawn_server_task(ctx, server).await });
-    }
-
-    while let Some(result) = join_set.join_next().await {
-        if let Err(e) = result {
-            tracing::warn!("MCP server loading task panicked: {}", e);
-        }
-    }
 }
 
 fn load_catalog_entries() -> Vec<RegistryEntry> {
