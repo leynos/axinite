@@ -260,8 +260,8 @@ pub(super) async fn sse_listener(
         } else {
             serde_json::from_str::<SseEnvelope>(&current_data).ok()
         };
-        if let Some(sse) = &trailing
-            && let Some(ref envelope) = sse.envelope
+        let trailing_envelope = trailing.as_ref().and_then(|sse| sse.envelope.as_ref());
+        if let Some(envelope) = trailing_envelope
             && let Some((msg, target)) = channel.process_envelope(envelope)
         {
             reply_targets.write().await.put(msg.id, target);

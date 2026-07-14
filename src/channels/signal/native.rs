@@ -120,16 +120,15 @@ impl NativeChannel for SignalChannel {
         };
         // Filter/send status messages
         if let StatusUpdate::Status(msg) = &status
-            && let Some(target_str) = Self::signal_target(metadata)
-            && should_forward_status(msg)
+            && let Some(target_str) =
+                Self::signal_target(metadata).filter(|_| should_forward_status(msg))
         {
             self.send_status_message(target_str, msg).await;
         }
 
         // Send tool result previews to user (debug mode only)
         if let StatusUpdate::ToolResult { name, preview } = &status
-            && let Some(target_str) = Self::signal_target(metadata)
-            && self.is_debug()
+            && let Some(target_str) = self.debug_signal_target(metadata)
         {
             let truncated = if preview.chars().count() > 500 {
                 let s: String = preview.chars().take(500).collect();
@@ -143,8 +142,7 @@ impl NativeChannel for SignalChannel {
 
         // Send tool started notification (debug mode only)
         if let StatusUpdate::ToolStarted { name } = &status
-            && let Some(target_str) = Self::signal_target(metadata)
-            && self.is_debug()
+            && let Some(target_str) = self.debug_signal_target(metadata)
         {
             let message = format!("\u{25CB} Running tool: {}", name);
             self.send_status_message(target_str, &message).await;
@@ -152,8 +150,7 @@ impl NativeChannel for SignalChannel {
 
         // Send tool completed notification (debug mode only)
         if let StatusUpdate::ToolCompleted { name, success, .. } = &status
-            && let Some(target_str) = Self::signal_target(metadata)
-            && self.is_debug()
+            && let Some(target_str) = self.debug_signal_target(metadata)
         {
             let (icon, color) = if *success {
                 ("\u{25CF}", "success")

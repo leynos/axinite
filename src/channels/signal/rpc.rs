@@ -190,6 +190,17 @@ impl SignalChannel {
         metadata.get("signal_target").and_then(|v| v.as_str())
     }
 
+    /// Extract the Signal reply target, but only when debug mode is active.
+    ///
+    /// Debug-only notifications (tool lifecycle previews) route through this
+    /// so their conditions stay within the two-operand lint limit.
+    pub(super) fn debug_signal_target<'m>(
+        &self,
+        metadata: &'m serde_json::Value,
+    ) -> Option<&'m str> {
+        Self::signal_target(metadata).filter(|_| self.is_debug())
+    }
+
     /// Build JSON-RPC params for a send/typing call.
     pub(super) fn build_rpc_params(
         &self,
