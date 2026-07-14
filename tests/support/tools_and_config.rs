@@ -9,7 +9,6 @@ mod trace_types_patch;
 mod trace_types_recorded;
 mod trace_types_runtime;
 
-/// Narrowed trace-test facade for trace-format tests.
 pub mod trace_llm {
     //! Narrowed trace-test facade re-exporting trace-format types.
 

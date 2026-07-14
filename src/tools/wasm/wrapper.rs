@@ -80,11 +80,6 @@ pub struct OAuthRefreshConfig {
     pub provider: Option<String>,
 }
 
-/// Pre-resolved credential for host-based injection.
-///
-/// Built before each WASM execution by decrypting secrets from the store.
-/// Applied per-request by matching the URL host against `host_patterns`.
-
 /// A Tool implementation backed by a WASM component.
 ///
 /// Each call to `execute` creates a fresh instance for isolation.

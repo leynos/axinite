@@ -262,11 +262,10 @@ pub(super) async fn sse_listener(
         };
         if let Some(sse) = &trailing
             && let Some(ref envelope) = sse.envelope
+            && let Some((msg, target)) = channel.process_envelope(envelope)
         {
-            if let Some((msg, target)) = channel.process_envelope(envelope) {
-                reply_targets.write().await.put(msg.id, target);
-                let _ = tx.send(msg).await;
-            }
+            reply_targets.write().await.put(msg.id, target);
+            let _ = tx.send(msg).await;
         }
 
         tracing::debug!("Signal SSE stream ended, reconnecting with backoff...");

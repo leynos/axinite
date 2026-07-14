@@ -60,8 +60,6 @@ fn secret_redaction_variants(secret: &str) -> Vec<String> {
     variants
 }
 
-/// Maps an HTTP method string to the corresponding `reqwest::RequestBuilder`.
-
 impl StoreData {
     pub(super) fn new(
         memory_limit: u64,

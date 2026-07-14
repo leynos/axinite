@@ -121,51 +121,47 @@ impl NativeChannel for SignalChannel {
         // Filter/send status messages
         if let StatusUpdate::Status(msg) = &status
             && let Some(target_str) = Self::signal_target(metadata)
+            && should_forward_status(msg)
         {
-            if should_forward_status(msg) {
-                self.send_status_message(target_str, msg).await;
-            }
+            self.send_status_message(target_str, msg).await;
         }
 
         // Send tool result previews to user (debug mode only)
         if let StatusUpdate::ToolResult { name, preview } = &status
             && let Some(target_str) = Self::signal_target(metadata)
+            && self.is_debug()
         {
-            if self.is_debug() {
-                let truncated = if preview.chars().count() > 500 {
-                    let s: String = preview.chars().take(500).collect();
-                    format!("{s}...")
-                } else {
-                    preview.clone()
-                };
-                let message = format!("Tool '{}' result:\n{}", name, truncated);
-                self.send_status_message(target_str, &message).await;
-            }
+            let truncated = if preview.chars().count() > 500 {
+                let s: String = preview.chars().take(500).collect();
+                format!("{s}...")
+            } else {
+                preview.clone()
+            };
+            let message = format!("Tool '{}' result:\n{}", name, truncated);
+            self.send_status_message(target_str, &message).await;
         }
 
         // Send tool started notification (debug mode only)
         if let StatusUpdate::ToolStarted { name } = &status
             && let Some(target_str) = Self::signal_target(metadata)
+            && self.is_debug()
         {
-            if self.is_debug() {
-                let message = format!("\u{25CB} Running tool: {}", name);
-                self.send_status_message(target_str, &message).await;
-            }
+            let message = format!("\u{25CB} Running tool: {}", name);
+            self.send_status_message(target_str, &message).await;
         }
 
         // Send tool completed notification (debug mode only)
         if let StatusUpdate::ToolCompleted { name, success, .. } = &status
             && let Some(target_str) = Self::signal_target(metadata)
+            && self.is_debug()
         {
-            if self.is_debug() {
-                let (icon, color) = if *success {
-                    ("\u{25CF}", "success")
-                } else {
-                    ("\u{2717}", "failed")
-                };
-                let message = format!("{} Tool '{}' completed ({})", icon, name, color);
-                self.send_status_message(target_str, &message).await;
-            }
+            let (icon, color) = if *success {
+                ("\u{25CF}", "success")
+            } else {
+                ("\u{2717}", "failed")
+            };
+            let message = format!("{} Tool '{}' completed ({})", icon, name, color);
+            self.send_status_message(target_str, &message).await;
         }
 
         // Send job started notification (sandbox jobs)

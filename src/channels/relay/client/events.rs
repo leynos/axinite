@@ -5,9 +5,8 @@
 
 use serde::{Deserialize, Serialize};
 
-/// Known relay event types.
 pub mod event_types {
-    //! String constants naming the relay event types.
+    //! Known relay event types: string constants naming each event.
 
     pub const MESSAGE: &str = "message";
     pub const DIRECT_MESSAGE: &str = "direct_message";

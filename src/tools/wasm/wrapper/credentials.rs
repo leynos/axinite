@@ -149,13 +149,6 @@ async fn refresh_oauth_token(
 /// so that the synchronous WASM host function can inject credentials
 /// without needing async access to the secrets store.
 ///
-/// If an `OAuthRefreshConfig` is provided and the access token is expired
-/// (or within 5 minutes of expiry), attempts a transparent refresh first.
-///
-/// Silently skips credentials that can't be resolved (e.g., missing secrets).
-/// The tool will get a 401/403 from the API, which is the expected UX when
-/// auth hasn't been configured yet.
-
 /// Pre-resolve credentials for all HTTP capability mappings.
 ///
 /// Called once per tool execution (in async context, before spawn_blocking)

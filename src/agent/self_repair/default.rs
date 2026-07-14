@@ -121,7 +121,6 @@ impl DefaultSelfRepair {
     }
 }
 
-/// Extras module for self-repair functionality that is feature-gated.
 #[cfg(any(test, feature = "self_repair_extras"))]
 mod extras {
     //! Feature-gated builder helpers for automatic tool repair.

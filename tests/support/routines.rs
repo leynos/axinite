@@ -225,13 +225,14 @@ pub use engine::make_minimal_engine;
 #[cfg(feature = "libsql")]
 pub use registration::register_github_issue_routine;
 
-/// Deterministic synchronization helpers for tests that drive [`RoutineEngine`].
-///
-/// Scoped into their own inline module so that test binaries which do not exercise
-/// `RoutineEngine` (e.g. `heartbeat`) never reference these items, while
-/// compile-time type assertions in `support::mod` prove liveness for the rest.
 pub mod engine_sync {
-    //! Deterministic synchronization helpers for `RoutineEngine` tests.
+    //! Deterministic synchronization helpers for tests that drive
+    //! [`RoutineEngine`].
+    //!
+    //! Scoped into their own inline module so that test binaries which do
+    //! not exercise `RoutineEngine` (e.g. `heartbeat`) never reference these
+    //! items, while compile-time type assertions in `support::mod` prove
+    //! liveness for the rest.
 
     use std::sync::Arc;
     use std::time::Duration;

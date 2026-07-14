@@ -89,7 +89,6 @@ pub(crate) mod test_support;
 pub use config::Config;
 pub use error::{Error, Result};
 
-/// Re-export commonly used types.
 pub mod prelude {
     //! Re-exports of commonly used types for convenient glob imports.
 
