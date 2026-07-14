@@ -115,12 +115,16 @@ management.
       `--no-default-features --features libsql-test-helpers`
     - `cargo check --all --benches --tests --examples --all-features`
     - `cargo check --manifest-path tools-src/github/Cargo.toml --tests`
-  - `make lint`
-    - `cargo clippy --all --benches --tests --examples -- -D warnings`
-    - `cargo clippy --all --benches --tests --examples`
-      `--no-default-features --features libsql-test-helpers -- -D warnings`
-    - `cargo clippy --all --benches --tests --examples --all-features -- -D warnings`
-    - `cargo clippy --manifest-path tools-src/github/Cargo.toml --tests -- -D warnings`
+  - `make lint` (runs `make lint-clippy` then `make lint-whitaker`)
+    - `make lint-clippy`
+      - `cargo clippy --all --benches --tests --examples -- -D warnings`
+      - `cargo clippy --all --benches --tests --examples`
+        `--no-default-features --features libsql-test-helpers -- -D warnings`
+      - `cargo clippy --all --benches --tests --examples --all-features -- -D warnings`
+      - `cargo clippy --manifest-path tools-src/github/Cargo.toml --tests -- -D warnings`
+    - `make lint-whitaker` (the Whitaker Dylint suite with warnings denied)
+      - `RUSTFLAGS="-D warnings" whitaker --all -- --all-targets --all-features`
+      - `RUSTFLAGS="-D warnings" whitaker --all --manifest-path tools-src/github/Cargo.toml -- --tests`
   - `make test`
     - `make build-github-tool-wasm`
     - `cargo nextest run --workspace --profile $NEXTEST_PROFILE`
