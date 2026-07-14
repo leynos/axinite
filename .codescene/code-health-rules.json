@@ -1,0 +1,45 @@
+{
+  "usage": "Repository overrides for CodeScene code health scoring. Only test code is relaxed: table-driven and fixture-heavy Rust tests are inherently similar, so duplication- and size-oriented smells fire on healthy, intention-revealing test structure. Production code keeps the default rule set.",
+  "rule_sets": [
+    {
+      "matching_content_path": "tests/**",
+      "matching_content_path_doc": "Integration test crates: parameterized cases, fixture staging, and assertion tables are deliberately repetitive.",
+      "rules": [
+        { "name": "Code Duplication", "weight": 0.0 },
+        { "name": "Large Assertion Blocks", "weight": 0.0 },
+        { "name": "Duplicated Assertion Blocks", "weight": 0.0 },
+        { "name": "Large Method", "weight": 0.0 }
+      ]
+    },
+    {
+      "matching_content_path": "src/**/tests/**",
+      "matching_content_path_doc": "Unit test submodules split out of their parent modules; the same test-shape leniency as tests/**.",
+      "rules": [
+        { "name": "Code Duplication", "weight": 0.0 },
+        { "name": "Large Assertion Blocks", "weight": 0.0 },
+        { "name": "Duplicated Assertion Blocks", "weight": 0.0 },
+        { "name": "Large Method", "weight": 0.0 }
+      ]
+    },
+    {
+      "matching_content_path": "src/**/tests.rs",
+      "matching_content_path_doc": "Single-file unit test modules; the same test-shape leniency as tests/**.",
+      "rules": [
+        { "name": "Code Duplication", "weight": 0.0 },
+        { "name": "Large Assertion Blocks", "weight": 0.0 },
+        { "name": "Duplicated Assertion Blocks", "weight": 0.0 },
+        { "name": "Large Method", "weight": 0.0 }
+      ]
+    },
+    {
+      "matching_content_path": "src/**/*_tests.rs",
+      "matching_content_path_doc": "Suffix-named unit test files; the same test-shape leniency as tests/**.",
+      "rules": [
+        { "name": "Code Duplication", "weight": 0.0 },
+        { "name": "Large Assertion Blocks", "weight": 0.0 },
+        { "name": "Duplicated Assertion Blocks", "weight": 0.0 },
+        { "name": "Large Method", "weight": 0.0 }
+      ]
+    }
+  ]
+}
