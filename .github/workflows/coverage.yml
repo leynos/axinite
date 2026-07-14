@@ -31,6 +31,11 @@ name: Code Coverage
 "on":
   push:
     branches: [main]
+  # Allow the CodeScene upload to be re-run on demand. Merges performed
+  # by the automerge workflow's GITHUB_TOKEN do not fire push-event
+  # workflows, so automerged changes to main only receive a CodeScene
+  # upload via this manual dispatch.
+  workflow_dispatch:
 
 permissions:
   id-token: write
@@ -139,6 +144,25 @@ jobs:
           cargo llvm-cov ${{ matrix.flags }} --features test-helpers
           --workspace --lcov
           --output-path lcov.info
+
+      # Feed CodeScene's stored coverage from the analysed branch (main).
+      # Upload from ONE leg only (all-features, the broadest suite) so
+      # CodeScene receives a single report per commit. The guard skips
+      # the step when the project access token is absent (forks). The
+      # PR "Code Coverage" gate (mode: check) is deferred until the
+      # CodeScene project's gates configuration is enabled operator-side
+      # (project 77987 posts only Code Health Review today).
+      - name: Upload coverage to CodeScene
+        env:
+          CS_ACCESS_TOKEN: ${{ secrets.CS_ACCESS_TOKEN }}
+        if: matrix.name == 'all-features' && env.CS_ACCESS_TOKEN != ''
+        uses: leynos/shared-actions/.github/actions/upload-codescene-coverage@927edd45ae77be4251a8a18ca9eb5613a2e32cbd
+        with:
+          format: lcov
+          mode: upload
+          project-url: https://api.codescene.io/v2/projects/77987
+          access-token: ${{ env.CS_ACCESS_TOKEN }}
+          installer-checksum: ${{ vars.CODESCENE_CLI_SHA256 }}
 
       - name: Upload to Codecov
         uses: codecov/codecov-action@v5
