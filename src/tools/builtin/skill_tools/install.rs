@@ -58,6 +58,34 @@ impl SkillInstallTool {
             .unwrap_or_else(|| name_or_slug.to_string())
     }
 
+    async fn load_payload(
+        &self,
+        source: SelectedInstallSource<'_>,
+    ) -> Result<SkillInstallPayload, ToolError> {
+        match source {
+            SelectedInstallSource::Content(value) => {
+                Ok(SkillInstallPayload::Markdown(value.to_string()))
+            }
+            SelectedInstallSource::Url(value) => Ok(SkillInstallPayload::DownloadedBytes(
+                fetch_skill_bytes(value)
+                    .await
+                    .map_err(|error| ToolError::ExecutionFailed(error.to_string()))?,
+            )),
+            SelectedInstallSource::Name(value) => {
+                let slug = self.resolve_catalogue_slug(value).await;
+                let download_url = crate::skills::catalog::skill_download_url(
+                    self.catalogue.registry_url(),
+                    &slug,
+                );
+                Ok(SkillInstallPayload::DownloadedBytes(
+                    fetch_skill_bytes(&download_url)
+                        .await
+                        .map_err(|error| ToolError::ExecutionFailed(error.to_string()))?,
+                ))
+            }
+        }
+    }
+
     fn select_install_source<'a>(
         params: &'a serde_json::Value,
     ) -> Result<SelectedInstallSource<'a>, ToolError> {
@@ -131,29 +159,7 @@ impl NativeTool for SkillInstallTool {
     ) -> Result<ToolOutput, ToolError> {
         let start = std::time::Instant::now();
         let source = Self::select_install_source(&params)?;
-
-        let payload = match source {
-            SelectedInstallSource::Content(value) => {
-                SkillInstallPayload::Markdown(value.to_string())
-            }
-            SelectedInstallSource::Url(value) => SkillInstallPayload::DownloadedBytes(
-                fetch_skill_bytes(value)
-                    .await
-                    .map_err(|error| ToolError::ExecutionFailed(error.to_string()))?,
-            ),
-            SelectedInstallSource::Name(value) => {
-                let slug = self.resolve_catalogue_slug(value).await;
-                let download_url = crate::skills::catalog::skill_download_url(
-                    self.catalogue.registry_url(),
-                    &slug,
-                );
-                SkillInstallPayload::DownloadedBytes(
-                    fetch_skill_bytes(&download_url)
-                        .await
-                        .map_err(|error| ToolError::ExecutionFailed(error.to_string()))?,
-                )
-            }
-        };
+        let payload = self.load_payload(source).await?;
 
         let install_root = {
             let guard = self
