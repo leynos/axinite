@@ -147,20 +147,38 @@ pub async fn inject_llm_keys_from_secrets(
     secrets: &dyn crate::secrets::SecretsStore,
     user_id: &str,
 ) -> Result<(), ConfigError> {
-    let mut injected = HashMap::new();
-    inject_llm_keys_with(
+    let injected = collect_llm_key_injections(
         secrets,
         user_id,
         |env_var| matches!(std::env::var(env_var), Ok(val) if !val.is_empty()),
-        |env_var, value| {
-            injected.insert(env_var.to_string(), value);
-        },
     )
     .await?;
-
-    inject_os_credential_store_tokens(&mut injected);
     merge_injected_vars(injected);
     Ok(())
+}
+
+/// Gather the LLM credentials to inject, layering fresh OS credential-store
+/// tokens on top of the secrets-store values.
+///
+/// `has_value` reports whether the destination already holds a value for an
+/// env var; those keys are skipped so caller-supplied values keep priority.
+/// The caller decides where the returned map is applied (process-global
+/// overlay or an explicit [`EnvContext`]).
+async fn collect_llm_key_injections<HasValue>(
+    secrets: &dyn crate::secrets::SecretsStore,
+    user_id: &str,
+    has_value: HasValue,
+) -> Result<HashMap<String, String>, ConfigError>
+where
+    HasValue: FnMut(&str) -> bool,
+{
+    let mut injected = HashMap::new();
+    inject_llm_keys_with(secrets, user_id, has_value, |env_var, value| {
+        injected.insert(env_var.to_string(), value);
+    })
+    .await?;
+    inject_os_credential_store_tokens(&mut injected);
+    Ok(injected)
 }
 
 /// Inject decrypted LLM credentials into an explicit [`EnvContext`].
@@ -185,18 +203,9 @@ pub async fn inject_llm_keys_into_context(
     secrets: &dyn crate::secrets::SecretsStore,
     user_id: &str,
 ) -> Result<(), ConfigError> {
-    let mut injected = HashMap::new();
-    inject_llm_keys_with(
-        secrets,
-        user_id,
-        |env_var| ctx.get(env_var).is_some(),
-        |env_var, value| {
-            injected.insert(env_var.to_string(), value);
-        },
-    )
-    .await?;
+    let injected =
+        collect_llm_key_injections(secrets, user_id, |env_var| ctx.get(env_var).is_some()).await?;
     ctx.merge_secrets(injected);
-    inject_os_credentials_into_context(ctx);
     Ok(())
 }
 
@@ -206,9 +215,7 @@ pub async fn inject_llm_keys_into_context(
 /// is unavailable. This ensures OAuth tokens from `claude login` are available
 /// for config resolution.
 pub fn inject_os_credentials() {
-    let mut injected = HashMap::new();
-    inject_os_credential_store_tokens(&mut injected);
-    merge_injected_vars(injected);
+    merge_injected_vars(os_credential_injections());
 }
 
 /// Inject OAuth tokens from OS credential stores into an explicit context.
@@ -218,9 +225,14 @@ pub fn inject_os_credentials() {
 /// calling [`crate::config::Config::from_context`] or
 /// [`crate::config::Config::re_resolve_llm_from`].
 pub fn inject_os_credentials_into_context(ctx: &mut EnvContext) {
+    ctx.merge_secrets(os_credential_injections());
+}
+
+/// Collect OAuth tokens from OS credential stores into a fresh overlay map.
+fn os_credential_injections() -> HashMap<String, String> {
     let mut injected = HashMap::new();
     inject_os_credential_store_tokens(&mut injected);
-    ctx.merge_secrets(injected);
+    injected
 }
 
 /// Inject a single key-value pair into the overlay.

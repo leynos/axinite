@@ -13,15 +13,23 @@ use crate::channels::wasm::error::WasmChannelError;
 use super::guest_calls::{BroadcastPayload, RespondPayload};
 use super::{WasmChannel, status_to_wit};
 
+/// Borrowed view of an on_respond invocation, used for structured logging.
+struct RespondInvocation<'a> {
+    message_id: Uuid,
+    content: &'a str,
+    thread_id: Option<&'a str>,
+    attachments: &'a [String],
+}
+
 impl WasmChannel {
     /// Emit the invocation and credential-state logs for an on_respond call.
-    async fn log_respond_invocation(
-        &self,
-        message_id: Uuid,
-        content: &str,
-        thread_id: Option<&str>,
-        attachments: &[String],
-    ) {
+    async fn log_respond_invocation(&self, invocation: RespondInvocation<'_>) {
+        let RespondInvocation {
+            message_id,
+            content,
+            thread_id,
+            attachments,
+        } = invocation;
         tracing::info!(
             channel = %self.name,
             message_id = %message_id,
@@ -75,8 +83,13 @@ impl WasmChannel {
         metadata_json: &str,
         attachments: &[String],
     ) -> Result<(), WasmChannelError> {
-        self.log_respond_invocation(message_id, content, thread_id, attachments)
-            .await;
+        self.log_respond_invocation(RespondInvocation {
+            message_id,
+            content,
+            thread_id,
+            attachments,
+        })
+        .await;
 
         // If no WASM bytes, do nothing (for testing)
         if self.prepared.component().is_none() {

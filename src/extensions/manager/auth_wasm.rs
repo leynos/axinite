@@ -63,8 +63,6 @@ impl ExtensionManager {
     }
 
     /// Store a credential value for the tool's secret name.
-    // Tool name, secret name, and secret value are all free-form identifiers and opaque token text with no invariant a newtype could enforce.
-    // @codescene(disable:"String Heavy Function Arguments")
     async fn store_tool_secret(
         &self,
         name: &str,

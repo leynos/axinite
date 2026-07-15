@@ -10,6 +10,12 @@ use crate::secrets::types::{DecryptedSecret, Secret, SecretError};
 use super::NativeSecretsStore;
 use super::access::{ensure_not_expired, is_secret_name_allowed};
 
+/// The full `secrets` column list, in the positional order the backend row
+/// mappers consume. Shared by every backend's `SELECT`/`RETURNING` clause so the
+/// column set is written in exactly one place.
+pub(super) const SECRET_COLUMNS: &str = "id, user_id, name, encrypted_value, key_salt, provider, \
+     expires_at, last_used_at, usage_count, created_at, updated_at";
+
 /// Map a database driver error into [`SecretError::Database`].
 pub(super) fn db_err(error: impl std::fmt::Display) -> SecretError {
     SecretError::Database(error.to_string())

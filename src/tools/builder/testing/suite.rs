@@ -143,8 +143,7 @@ impl TestSuite {
     ) -> &mut Self {
         let mut test = TestCase::new(name, input);
         test.expected_output = Some(expected);
-        self.tests.push(test);
-        self
+        self.add_test(test)
     }
 
     /// Add a test that expects an error.
@@ -157,8 +156,7 @@ impl TestSuite {
         let mut test = TestCase::new(name, input);
         test.expect_error = true;
         test.error_contains = Some(error_contains.into());
-        self.tests.push(test);
-        self
+        self.add_test(test)
     }
 }
 
@@ -213,7 +211,7 @@ fn add_minimal_valid_input_test(suite: &mut TestSuite, input_schema: &serde_json
         serde_json::Value::Object(minimal_input),
     );
     test.description = Some("Test with minimal valid input".to_string());
-    suite.tests.push(test);
+    suite.add_test(test);
 }
 
 /// Produce a minimal placeholder JSON value for a schema `type` string.

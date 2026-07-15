@@ -8,6 +8,7 @@ mod auth_channel;
 mod auth_mcp;
 mod auth_wasm;
 mod channel_state;
+mod extension_info;
 mod install;
 mod listing;
 mod oauth_flow;

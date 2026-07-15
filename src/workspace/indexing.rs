@@ -2,6 +2,7 @@
 
 use uuid::Uuid;
 
+use crate::db::HybridSearchParams;
 use crate::error::WorkspaceError;
 
 use super::{ChunkConfig, SearchConfig, SearchResult, Workspace, chunk_document, embeddings};
@@ -41,13 +42,13 @@ impl Workspace {
         };
 
         self.storage
-            .hybrid_search(
-                &self.user_id,
-                self.agent_id,
+            .hybrid_search(HybridSearchParams {
+                user_id: &self.user_id,
+                agent_id: self.agent_id,
                 query,
-                embedding.as_deref(),
-                &config,
-            )
+                embedding: embedding.as_deref(),
+                config: &config,
+            })
             .await
     }
 

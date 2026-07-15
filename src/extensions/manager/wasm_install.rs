@@ -8,6 +8,21 @@ use super::sanitize_url_for_logging;
 /// 100 MB cap on a single decompressed tar entry to prevent decompression bombs.
 const MAX_TAR_ENTRY_SIZE: u64 = 100 * 1024 * 1024;
 
+/// Inputs for downloading and installing a WASM extension bundle.
+///
+/// Groups the extension name, download URLs, and install directory so the
+/// installer need not thread four positional arguments.
+pub(super) struct WasmDownloadRequest<'a> {
+    /// Logical extension name; determines the installed file basenames.
+    pub name: &'a str,
+    /// HTTPS URL of the `.wasm` file or tar.gz bundle to download.
+    pub url: &'a str,
+    /// Optional separate capabilities-file URL for bare `.wasm` downloads.
+    pub capabilities_url: Option<&'a str>,
+    /// Directory the extension artefacts are installed into.
+    pub target_dir: &'a std::path::Path,
+}
+
 /// Read a single tar entry (bounded by [`MAX_TAR_ENTRY_SIZE`]) and write it to
 /// `dest`, without preserving permissions or extended attributes.
 fn extract_tar_entry<R: std::io::Read>(
@@ -95,11 +110,14 @@ impl ExtensionManager {
     /// `.wasm` files. Validates HTTPS, size limits, and file format.
     pub(super) async fn download_and_install_wasm(
         &self,
-        name: &str,
-        url: &str,
-        capabilities_url: Option<&str>,
-        target_dir: &std::path::Path,
+        request: WasmDownloadRequest<'_>,
     ) -> Result<(), ExtensionError> {
+        let WasmDownloadRequest {
+            name,
+            url,
+            capabilities_url,
+            target_dir,
+        } = request;
         // Require HTTPS to prevent downgrade attacks
         if !url.starts_with("https://") {
             return Err(ExtensionError::InstallFailed(

@@ -44,8 +44,6 @@ struct Input<'a> {
 }
 
 /// Build a `SystemCommand` submission.
-// A slash-command name and its whitespace-split argument tokens are free-form user input with no invariant a newtype could enforce.
-// @codescene(disable:"String Heavy Function Arguments")
 fn system_command(command: &str, args: Vec<String>) -> Submission {
     Submission::SystemCommand {
         command: command.to_string(),

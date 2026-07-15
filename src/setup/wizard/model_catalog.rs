@@ -329,8 +329,6 @@ pub(super) async fn fetch_ollama_models(base_url: &str) -> Vec<(String, String)>
 /// Fetch models from a generic OpenAI-compatible /v1/models endpoint.
 ///
 /// Used for registry providers like Groq, NVIDIA NIM, etc.
-// The grouped base URL and cached API key are free-form provider configuration with no invariant a newtype could enforce.
-// @codescene(disable:"String Heavy Function Arguments")
 pub(super) async fn fetch_openai_compatible_models(
     req: OpenAICompatModelsRequest<'_>,
 ) -> Vec<(String, String)> {

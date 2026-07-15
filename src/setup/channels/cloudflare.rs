@@ -167,8 +167,6 @@ fn detect_existing_cloudflared() -> Option<String> {
 /// Run a command with stderr suppressed, returning its output when it
 /// executed successfully (regardless of exit status).
 #[cfg(unix)]
-// A program name and its argument vector are free-form command tokens with no invariant a newtype could enforce.
-// @codescene(disable:"String Heavy Function Arguments")
 fn capture_command_output(program: &str, args: &[&str]) -> Option<std::process::Output> {
     std::process::Command::new(program)
         .args(args)

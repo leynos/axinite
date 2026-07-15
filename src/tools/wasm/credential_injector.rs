@@ -112,8 +112,6 @@ impl CredentialInjector {
     /// Inject credentials for an HTTP request.
     ///
     /// Returns the headers and query params to add to the request.
-    // A user id and a request host are free-form identifiers with no invariant a newtype could enforce.
-    // @codescene(disable:"String Heavy Function Arguments")
     pub async fn inject(
         &self,
         user_id: &str,

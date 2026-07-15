@@ -10,7 +10,7 @@ use crate::error::WorkspaceError;
 
 #[cfg(feature = "postgres")]
 use super::Repository;
-use super::{MemoryChunk, MemoryDocument, SearchConfig, SearchResult, WorkspaceEntry};
+use super::{MemoryChunk, MemoryDocument, SearchResult, WorkspaceEntry};
 
 /// Internal storage abstraction for Workspace.
 ///
@@ -88,19 +88,8 @@ impl WorkspaceStorage {
 
     pub(super) async fn hybrid_search(
         &self,
-        user_id: &str,
-        agent_id: Option<Uuid>,
-        query: &str,
-        embedding: Option<&[f32]>,
-        config: &SearchConfig,
+        params: HybridSearchParams<'_>,
     ) -> Result<Vec<SearchResult>, WorkspaceError> {
-        let params = HybridSearchParams {
-            user_id,
-            agent_id,
-            query,
-            embedding,
-            config,
-        };
         dispatch!(self, hybrid_search(params))
     }
 }

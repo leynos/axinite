@@ -17,8 +17,6 @@ use super::types::AuthError;
 /// https://example.com/path + oauth-authorization-server
 ///   -> https://example.com/.well-known/oauth-authorization-server/path
 /// ```
-// A base URL and a well-known suffix are free-form strings per RFC 8414 / RFC 9728 with no invariant a newtype could enforce.
-// @codescene(disable:"String Heavy Function Arguments")
 pub fn build_well_known_uri(base_url: &str, suffix: &str) -> Result<String, AuthError> {
     let parsed = reqwest::Url::parse(base_url)
         .map_err(|e| AuthError::DiscoveryFailed(format!("Invalid URL: {}", e)))?;

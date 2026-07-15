@@ -75,19 +75,13 @@ impl ExtensionManager {
                 .await
                 .map(|e| e.display_name);
             extensions.push(InstalledExtension {
-                name: server.name.clone(),
-                kind: ExtensionKind::McpServer,
                 display_name,
                 description: server.description.clone(),
                 url: Some(server.url.clone()),
                 authenticated,
                 active,
                 tools,
-                needs_setup: false,
-                has_auth: false,
-                installed: true,
-                activation_error: None,
-                version: None,
+                ..base_installed(server.name.clone(), ExtensionKind::McpServer)
             });
         }
     }
@@ -118,19 +112,18 @@ impl ExtensionManager {
             )
             .await;
             extensions.push(InstalledExtension {
-                name: name.clone(),
-                kind: ExtensionKind::WasmTool,
                 display_name,
-                description: None,
-                url: None,
                 authenticated: auth_state == ToolAuthState::Ready,
                 active,
-                tools: if active { vec![name] } else { Vec::new() },
+                tools: if active {
+                    vec![name.clone()]
+                } else {
+                    Vec::new()
+                },
                 needs_setup: auth_state == ToolAuthState::NeedsSetup,
                 has_auth: auth_state != ToolAuthState::NoAuth,
-                installed: true,
-                activation_error: None,
                 version,
+                ..base_installed(name, ExtensionKind::WasmTool)
             });
         }
     }
@@ -164,19 +157,13 @@ impl ExtensionManager {
             )
             .await;
             extensions.push(InstalledExtension {
-                name,
-                kind: ExtensionKind::WasmChannel,
                 display_name,
-                description: None,
-                url: None,
                 authenticated: auth_state == ToolAuthState::Ready,
                 active,
-                tools: Vec::new(),
                 needs_setup: auth_state == ToolAuthState::NeedsSetup,
-                has_auth: false,
-                installed: true,
                 activation_error,
                 version,
+                ..base_installed(name, ExtensionKind::WasmChannel)
             });
         }
     }
@@ -199,19 +186,12 @@ impl ExtensionManager {
             let display_name = registry_entry.as_ref().map(|e| e.display_name.clone());
             let description = registry_entry.as_ref().map(|e| e.description.clone());
             extensions.push(InstalledExtension {
-                name: name.clone(),
-                kind: ExtensionKind::ChannelRelay,
                 display_name,
                 description,
-                url: None,
                 authenticated: has_token,
                 active,
-                tools: Vec::new(),
-                needs_setup: false,
                 has_auth: true,
-                installed: true,
-                activation_error: None,
-                version: None,
+                ..base_installed(name.clone(), ExtensionKind::ChannelRelay)
             });
         }
     }
@@ -237,19 +217,11 @@ impl ExtensionManager {
                 continue;
             }
             extensions.push(InstalledExtension {
-                name: entry.name,
-                kind: entry.kind,
                 display_name: Some(entry.display_name),
                 description: Some(entry.description),
-                url: None,
-                authenticated: false,
-                active: false,
-                tools: Vec::new(),
-                needs_setup: false,
-                has_auth: false,
                 installed: false,
-                activation_error: None,
                 version: entry.version,
+                ..base_installed(entry.name, entry.kind)
             });
         }
     }
@@ -287,99 +259,27 @@ impl ExtensionManager {
         };
         from_cap.or(registry_version)
     }
-
-    /// Get detailed info about an installed extension (version, wit_version, host compatibility).
-    pub async fn extension_info(&self, name: &str) -> Result<serde_json::Value, ExtensionError> {
-        Self::validate_extension_name(name)?;
-        let kind = self.determine_installed_kind(name).await?;
-
-        let info = match kind {
-            ExtensionKind::WasmTool => self.wasm_tool_info(name).await,
-            ExtensionKind::WasmChannel => self.wasm_channel_info(name).await,
-            ExtensionKind::McpServer => self.mcp_server_info(name).await,
-            ExtensionKind::ChannelRelay => self.channel_relay_info(name).await,
-        };
-        Ok(info)
-    }
-
-    /// Detailed info for an installed WASM tool.
-    async fn wasm_tool_info(&self, name: &str) -> serde_json::Value {
-        let cap_path = self
-            .wasm_tools_dir
-            .join(format!("{}.capabilities.json", name));
-        let wasm_path = self.wasm_tools_dir.join(format!("{}.wasm", name));
-
-        let mut info = serde_json::json!({
-            "name": name,
-            "kind": "wasm_tool",
-            "installed": wasm_path.exists(),
-        });
-
-        let versions = Self::load_capabilities(&cap_path, |bytes| {
-            crate::tools::wasm::CapabilitiesFile::from_bytes(bytes).ok()
-        })
-        .await
-        .map(|cap| (cap.version, cap.wit_version));
-        apply_wasm_versions(&mut info, versions);
-
-        info["host_wit_version"] = serde_json::json!(crate::tools::wasm::WIT_TOOL_VERSION);
-        info
-    }
-
-    /// Detailed info for an installed WASM channel.
-    async fn wasm_channel_info(&self, name: &str) -> serde_json::Value {
-        let cap_path = self
-            .wasm_channels_dir
-            .join(format!("{}.capabilities.json", name));
-        let wasm_path = self.wasm_channels_dir.join(format!("{}.wasm", name));
-
-        let mut info = serde_json::json!({
-            "name": name,
-            "kind": "wasm_channel",
-            "installed": wasm_path.exists(),
-            "active": self.active_channel_names.read().await.contains(name),
-        });
-
-        let versions = Self::load_capabilities(&cap_path, |bytes| {
-            crate::channels::wasm::ChannelCapabilitiesFile::from_bytes(bytes).ok()
-        })
-        .await
-        .map(|cap| (cap.version, cap.wit_version));
-        apply_wasm_versions(&mut info, versions);
-
-        info["host_wit_version"] = serde_json::json!(crate::tools::wasm::WIT_CHANNEL_VERSION);
-        info
-    }
-
-    /// Detailed info for an installed MCP server.
-    async fn mcp_server_info(&self, name: &str) -> serde_json::Value {
-        serde_json::json!({
-            "name": name,
-            "kind": "mcp_server",
-            "connected": self.mcp_clients.read().await.contains_key(name),
-        })
-    }
-
-    /// Detailed info for an installed channel-relay extension.
-    async fn channel_relay_info(&self, name: &str) -> serde_json::Value {
-        serde_json::json!({
-            "name": name,
-            "kind": "channel_relay",
-            "active": self.active_channel_names.read().await.contains(name),
-        })
-    }
 }
 
-/// Fill `version` and `wit_version` from a parsed capabilities file, defaulting
-/// to `"unknown"` when the file was present but a field was absent. Leaves the
-/// fields untouched when no capabilities file was found.
-fn apply_wasm_versions(
-    info: &mut serde_json::Value,
-    versions: Option<(Option<String>, Option<String>)>,
-) {
-    let Some((version, wit_version)) = versions else {
-        return;
-    };
-    info["version"] = serde_json::json!(version.unwrap_or_else(|| "unknown".into()));
-    info["wit_version"] = serde_json::json!(wit_version.unwrap_or_else(|| "unknown".into()));
+/// Base [`InstalledExtension`] for a locally installed entry: `name` and
+/// `kind` set, every other field at its "unset" default (`installed = true`).
+///
+/// Callers fill in the fields that differ per kind via struct-update syntax,
+/// keeping the shared field defaults in one place.
+fn base_installed(name: impl Into<String>, kind: ExtensionKind) -> InstalledExtension {
+    InstalledExtension {
+        name: name.into(),
+        kind,
+        display_name: None,
+        description: None,
+        url: None,
+        authenticated: false,
+        active: false,
+        tools: Vec::new(),
+        needs_setup: false,
+        has_auth: false,
+        installed: true,
+        activation_error: None,
+        version: None,
+    }
 }

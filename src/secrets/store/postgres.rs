@@ -11,7 +11,9 @@ use crate::secrets::crypto::SecretsCrypto;
 use crate::secrets::types::{CreateSecretParams, DecryptedSecret, Secret, SecretError, SecretRef};
 
 use super::NativeSecretsStore;
-use super::common::{db_err, get_decrypted_via, is_accessible_via, require_live_secret};
+use super::common::{
+    SECRET_COLUMNS, db_err, get_decrypted_via, is_accessible_via, require_live_secret,
+};
 
 /// PostgreSQL implementation of SecretsStore.
 pub struct PostgresSecretsStore {
@@ -43,7 +45,8 @@ impl NativeSecretsStore for PostgresSecretsStore {
 
         let row = client
             .query_one(
-                r#"
+                &format!(
+                    r#"
                 INSERT INTO secrets (id, user_id, name, encrypted_value, key_salt, provider, expires_at, created_at, updated_at)
                 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $8)
                 ON CONFLICT (user_id, name) DO UPDATE SET
@@ -52,9 +55,9 @@ impl NativeSecretsStore for PostgresSecretsStore {
                     provider = EXCLUDED.provider,
                     expires_at = EXCLUDED.expires_at,
                     updated_at = NOW()
-                RETURNING id, user_id, name, encrypted_value, key_salt, provider, expires_at,
-                          last_used_at, usage_count, created_at, updated_at
-                "#,
+                RETURNING {SECRET_COLUMNS}
+                "#
+                ),
                 &[
                     &id,
                     &user_id,
@@ -78,12 +81,7 @@ impl NativeSecretsStore for PostgresSecretsStore {
 
         let row = client
             .query_opt(
-                r#"
-                SELECT id, user_id, name, encrypted_value, key_salt, provider, expires_at,
-                       last_used_at, usage_count, created_at, updated_at
-                FROM secrets
-                WHERE user_id = $1 AND name = $2
-                "#,
+                &format!("SELECT {SECRET_COLUMNS} FROM secrets WHERE user_id = $1 AND name = $2"),
                 &[&user_id, &name],
             )
             .await

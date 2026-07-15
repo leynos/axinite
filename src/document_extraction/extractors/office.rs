@@ -39,14 +39,16 @@ where
 {
     let mut out = Vec::new();
     for name in names {
-        if let Ok(mut file) = archive.by_name(name) {
-            let mut xml = String::new();
-            if file.read_to_string(&mut xml).is_ok() {
-                let text = f(&xml);
-                if !text.is_empty() {
-                    out.push(text);
-                }
-            }
+        let Ok(mut file) = archive.by_name(name) else {
+            continue;
+        };
+        let mut xml = String::new();
+        if file.read_to_string(&mut xml).is_err() {
+            continue;
+        }
+        let text = f(&xml);
+        if !text.is_empty() {
+            out.push(text);
         }
     }
     out
@@ -237,9 +239,11 @@ pub(super) fn parse_xlsx_shared_strings(xml: &str) -> Vec<String> {
     strings
 }
 
-/// Return `true` when an XLSX sheet tag opens a cell (`<c>` or `<c ...>`).
-fn is_cell_open_tag(tag: &str) -> bool {
-    tag.starts_with("c ") || tag == "c"
+/// Return `true` when `tag` opens the element `name` — either the bare name
+/// (`<name>`) or the name followed by attributes (`<name ...>`).
+fn is_element_open(tag: &str, name: &str) -> bool {
+    tag.strip_prefix(name)
+        .is_some_and(|rest| rest.is_empty() || rest.starts_with(' '))
 }
 
 /// The structurally significant XLSX sheet tags the cell parser reacts to.
@@ -255,20 +259,14 @@ enum SheetTag {
 
 /// Classify a complete XLSX sheet tag into the kind the parser acts on.
 fn classify_sheet_tag(tag: &str) -> SheetTag {
-    if tag == "row" || tag.starts_with("row ") {
-        SheetTag::RowOpen
-    } else if tag == "/row" {
-        SheetTag::RowClose
-    } else if is_cell_open_tag(tag) {
-        SheetTag::CellOpen
-    } else if tag == "v" || tag.starts_with("v ") {
-        SheetTag::ValueOpen
-    } else if tag == "/v" {
-        SheetTag::ValueClose
-    } else if tag == "/c" {
-        SheetTag::CellClose
-    } else {
-        SheetTag::Other
+    match tag {
+        "/row" => SheetTag::RowClose,
+        "/v" => SheetTag::ValueClose,
+        "/c" => SheetTag::CellClose,
+        _ if is_element_open(tag, "row") => SheetTag::RowOpen,
+        _ if is_element_open(tag, "c") => SheetTag::CellOpen,
+        _ if is_element_open(tag, "v") => SheetTag::ValueOpen,
+        _ => SheetTag::Other,
     }
 }
 

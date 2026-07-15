@@ -1,9 +1,84 @@
 //! WASM extension upgrade flow (binary and capabilities replacement).
 
-use crate::extensions::{ExtensionError, ExtensionKind, UpgradeOutcome, UpgradeResult};
+use crate::extensions::{
+    ExtensionError, ExtensionKind, RegistryEntry, UpgradeOutcome, UpgradeResult,
+};
 use crate::tools::wasm::discover_tools;
 
 use super::ExtensionManager;
+
+/// Per-extension context shared by the phases of a single upgrade attempt.
+///
+/// Bundles the extension identity with its declared and host WIT versions so
+/// each phase can build its outcome without re-threading the same arguments.
+struct UpgradeContext<'a> {
+    name: &'a str,
+    kind: ExtensionKind,
+    declared_wit: Option<String>,
+    host_wit: &'a str,
+}
+
+impl UpgradeContext<'_> {
+    /// The declared WIT version, or `"unknown"` when the capabilities file was
+    /// absent or unreadable.
+    fn declared_or_unknown(&self) -> &str {
+        self.declared_wit.as_deref().unwrap_or("unknown")
+    }
+
+    /// Whether the declared WIT version is incompatible with the host and thus
+    /// warrants an upgrade.
+    fn needs_upgrade(&self) -> bool {
+        crate::tools::wasm::check_wit_version_compat(
+            self.name,
+            self.declared_wit.as_deref(),
+            self.host_wit,
+        )
+        .is_err()
+    }
+
+    fn up_to_date_outcome(&self) -> UpgradeOutcome {
+        outcome(
+            self.name,
+            self.kind,
+            "already_up_to_date",
+            format!(
+                "WIT {} matches host WIT {}",
+                self.declared_or_unknown(),
+                self.host_wit
+            ),
+        )
+    }
+
+    fn not_in_registry_outcome(&self) -> UpgradeOutcome {
+        outcome(
+            self.name,
+            self.kind,
+            "not_in_registry",
+            format!(
+                concat!(
+                    "Extension '{}' has outdated WIT {} (host: {}), ",
+                    "but is not in the registry. Reinstall manually with a URL."
+                ),
+                self.name,
+                self.declared_or_unknown(),
+                self.host_wit
+            ),
+        )
+    }
+
+    fn upgraded_outcome(&self) -> UpgradeOutcome {
+        outcome(
+            self.name,
+            self.kind,
+            "upgraded",
+            format!(
+                "Upgraded from WIT {} to host WIT {}. Restart to activate.",
+                self.declared_or_unknown(),
+                self.host_wit
+            ),
+        )
+    }
+}
 
 /// Discover installed WASM extensions of one kind as upgrade candidates.
 ///
@@ -159,102 +234,102 @@ impl ExtensionManager {
     }
 
     /// Upgrade a single WASM extension if its WIT version is outdated.
+    ///
+    /// The flow runs in named phases: resolve the target directory and host
+    /// WIT version, read the declared version, decide whether an upgrade is
+    /// needed, look up a registry entry, then reinstall while preserving
+    /// secrets.
     pub(super) async fn upgrade_one(&self, name: &str, kind: ExtensionKind) -> UpgradeOutcome {
-        let (cap_dir, host_wit) = match kind {
-            ExtensionKind::WasmTool => (&self.wasm_tools_dir, crate::tools::wasm::WIT_TOOL_VERSION),
-            ExtensionKind::WasmChannel => (
-                &self.wasm_channels_dir,
-                crate::tools::wasm::WIT_CHANNEL_VERSION,
-            ),
-            ExtensionKind::McpServer | ExtensionKind::ChannelRelay => {
-                return outcome(
-                    name,
-                    kind,
-                    "failed",
-                    "This extension type cannot be upgraded this way".to_string(),
-                );
-            }
-        };
-
-        // Read current WIT version from capabilities
-        let cap_path = cap_dir.join(format!("{}.capabilities.json", name));
-        let declared_wit = Self::declared_wit_version(&cap_path, kind).await;
-
-        // Check if upgrade is needed
-        let needs_upgrade =
-            crate::tools::wasm::check_wit_version_compat(name, declared_wit.as_deref(), host_wit)
-                .is_err();
-
-        if !needs_upgrade {
-            return outcome(
-                name,
-                kind,
-                "already_up_to_date",
-                format!(
-                    "WIT {} matches host WIT {}",
-                    declared_wit.as_deref().unwrap_or("unknown"),
-                    host_wit
-                ),
-            );
-        }
-
-        // Check registry for a newer version
-        let entry = self.registry.get_with_kind(name, Some(kind)).await;
-        let Some(entry) = entry else {
-            return outcome(
-                name,
-                kind,
-                "not_in_registry",
-                format!(
-                    "Extension '{}' has outdated WIT {} (host: {}), \
-                     but is not in the registry. Reinstall manually with a URL.",
-                    name,
-                    declared_wit.as_deref().unwrap_or("unknown"),
-                    host_wit
-                ),
-            );
-        };
-
-        // Delete old .wasm file (keep secrets intact)
-        let wasm_path = cap_dir.join(format!("{}.wasm", name));
-        if wasm_path.exists()
-            && let Err(e) = tokio::fs::remove_file(&wasm_path).await
-        {
+        let Some((cap_dir, host_wit)) = self.resolve_upgrade_target(kind) else {
             return outcome(
                 name,
                 kind,
                 "failed",
+                "This extension type cannot be upgraded this way".to_string(),
+            );
+        };
+
+        // Read the current WIT version from the capabilities file.
+        let cap_path = cap_dir.join(format!("{}.capabilities.json", name));
+        let declared_wit = Self::declared_wit_version(&cap_path, kind).await;
+
+        let ctx = UpgradeContext {
+            name,
+            kind,
+            declared_wit,
+            host_wit,
+        };
+
+        if !ctx.needs_upgrade() {
+            return ctx.up_to_date_outcome();
+        }
+
+        let Some(entry) = self.registry.get_with_kind(name, Some(kind)).await else {
+            return ctx.not_in_registry_outcome();
+        };
+
+        self.reinstall_upgraded(&ctx, cap_dir, &cap_path, &entry)
+            .await
+    }
+
+    /// Resolve the capabilities directory and host WIT version for an
+    /// upgradeable extension kind, or `None` for kinds without a WIT version.
+    fn resolve_upgrade_target(
+        &self,
+        kind: ExtensionKind,
+    ) -> Option<(&std::path::Path, &'static str)> {
+        match kind {
+            ExtensionKind::WasmTool => Some((
+                self.wasm_tools_dir.as_path(),
+                crate::tools::wasm::WIT_TOOL_VERSION,
+            )),
+            ExtensionKind::WasmChannel => Some((
+                self.wasm_channels_dir.as_path(),
+                crate::tools::wasm::WIT_CHANNEL_VERSION,
+            )),
+            ExtensionKind::McpServer | ExtensionKind::ChannelRelay => None,
+        }
+    }
+
+    /// Remove the stale `.wasm` (and capabilities) files and reinstall from the
+    /// registry entry, keeping authentication secrets intact.
+    async fn reinstall_upgraded(
+        &self,
+        ctx: &UpgradeContext<'_>,
+        cap_dir: &std::path::Path,
+        cap_path: &std::path::Path,
+        entry: &RegistryEntry,
+    ) -> UpgradeOutcome {
+        // Delete old .wasm file (keep secrets intact).
+        let wasm_path = cap_dir.join(format!("{}.wasm", ctx.name));
+        if wasm_path.exists()
+            && let Err(e) = tokio::fs::remove_file(&wasm_path).await
+        {
+            return outcome(
+                ctx.name,
+                ctx.kind,
+                "failed",
                 format!("Failed to remove old WASM binary: {}", e),
             );
         }
-        // Also remove old capabilities so install_from_entry can write the new one
+        // Also remove old capabilities so install_from_entry can write the new one.
         if cap_path.exists() {
-            let _ = tokio::fs::remove_file(&cap_path).await;
+            let _ = tokio::fs::remove_file(cap_path).await;
         }
 
-        // Reinstall from registry
-        match self.install_from_entry(&entry).await {
+        match self.install_from_entry(entry).await {
             Ok(_) => {
                 tracing::info!(
-                    extension = %name,
-                    old_wit = ?declared_wit,
-                    new_host_wit = %host_wit,
+                    extension = %ctx.name,
+                    old_wit = ?ctx.declared_wit,
+                    new_host_wit = %ctx.host_wit,
                     "Upgraded WASM extension"
                 );
-                outcome(
-                    name,
-                    kind,
-                    "upgraded",
-                    format!(
-                        "Upgraded from WIT {} to host WIT {}. Restart to activate.",
-                        declared_wit.as_deref().unwrap_or("unknown"),
-                        host_wit
-                    ),
-                )
+                ctx.upgraded_outcome()
             }
             Err(e) => outcome(
-                name,
-                kind,
+                ctx.name,
+                ctx.kind,
                 "failed",
                 format!("Reinstall failed: {}. Old files were removed.", e),
             ),

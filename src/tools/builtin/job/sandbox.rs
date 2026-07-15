@@ -45,6 +45,26 @@ impl ContainerJobView<'_> {
     }
 }
 
+/// Inputs for launching a sandboxed (container) job execution.
+///
+/// Groups the task prompt, working-directory override, wait/mode flags,
+/// credential grants, and job context so the entry point need not thread six
+/// positional arguments.
+pub(super) struct SandboxExecution<'a> {
+    /// Combined task prompt handed to the sub-agent.
+    pub task: &'a str,
+    /// Optional explicit project directory; resolved automatically when absent.
+    pub explicit_dir: Option<PathBuf>,
+    /// Whether to poll to completion (`true`) or return after start.
+    pub wait: bool,
+    /// Execution mode selecting the container job runner.
+    pub mode: JobMode,
+    /// Credential grants forwarded to the container job.
+    pub credential_grants: Vec<CredentialGrant>,
+    /// Ambient job context (user identity and channel wiring).
+    pub ctx: &'a JobContext,
+}
+
 /// Inputs for building a persisted sandbox job record.
 struct SandboxJobSpec<'a> {
     task: &'a str,
@@ -265,13 +285,16 @@ impl CreateJobTool {
     /// Execute via sandboxed Docker container.
     pub(super) async fn execute_sandbox(
         &self,
-        task: &str,
-        explicit_dir: Option<PathBuf>,
-        wait: bool,
-        mode: JobMode,
-        credential_grants: Vec<CredentialGrant>,
-        ctx: &JobContext,
+        exec: SandboxExecution<'_>,
     ) -> Result<ToolOutput, ToolError> {
+        let SandboxExecution {
+            task,
+            explicit_dir,
+            wait,
+            mode,
+            credential_grants,
+            ctx,
+        } = exec;
         let start = std::time::Instant::now();
         let jm = self
             .job_manager

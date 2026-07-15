@@ -81,8 +81,6 @@ fn secret_redaction_variants(secret: &str) -> Vec<String> {
 }
 
 /// Replace every encoding variant of `secret` in `text` with `replacement`.
-// The subject text, the secret needle, and its redaction placeholder are all free-form strings with no invariant a newtype could enforce.
-// @codescene(disable:"String Heavy Function Arguments")
 fn redact_secret_value(text: String, secret: &str, replacement: &str) -> String {
     let mut result = text;
     for variant in secret_redaction_variants(secret) {

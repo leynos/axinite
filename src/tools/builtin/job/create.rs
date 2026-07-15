@@ -373,8 +373,15 @@ impl NativeTool for CreateJobTool {
 
             // Combine title and description into the task prompt for the sub-agent.
             let task = format!("{}\n\n{}", title, description);
-            self.execute_sandbox(&task, explicit_dir, wait, mode, credential_grants, ctx)
-                .await
+            self.execute_sandbox(super::sandbox::SandboxExecution {
+                task: &task,
+                explicit_dir,
+                wait,
+                mode,
+                credential_grants,
+                ctx,
+            })
+            .await
         } else {
             self.execute_local(title, description, ctx).await
         }

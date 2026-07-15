@@ -8,6 +8,22 @@ use crate::tools::mcp::config::McpServerConfig;
 use super::ExtensionManager;
 use super::{FallbackDecision, combine_install_errors, fallback_decision};
 
+/// Route an MCP-config operation to the DB-backed variant when a secrets store
+/// is present, otherwise the on-disk variant.
+///
+/// The DB variant receives `(store, &user_id, ..args)`; the disk variant
+/// receives just `(..args)`. Both are awaited, so the two backends stay in one
+/// place instead of repeating the `if let Some(store)` boilerplate per method.
+macro_rules! mcp_store_or_disk {
+    ($self:expr, $db_fn:ident, $disk_fn:ident $(, $arg:expr)* $(,)?) => {
+        if let Some(ref store) = $self.store {
+            crate::tools::mcp::config::$db_fn(store.as_ref(), &$self.user_id $(, $arg)*).await
+        } else {
+            crate::tools::mcp::config::$disk_fn($($arg),*).await
+        }
+    };
+}
+
 impl ExtensionManager {
     // ── MCP config helpers (DB with disk fallback) ─────────────────────
 
@@ -15,11 +31,7 @@ impl ExtensionManager {
         &self,
     ) -> Result<crate::tools::mcp::config::McpServersFile, crate::tools::mcp::config::ConfigError>
     {
-        if let Some(ref store) = self.store {
-            crate::tools::mcp::config::load_mcp_servers_from_db(store.as_ref(), &self.user_id).await
-        } else {
-            crate::tools::mcp::config::load_mcp_servers().await
-        }
+        mcp_store_or_disk!(self, load_mcp_servers_from_db, load_mcp_servers)
     }
 
     pub(super) async fn get_mcp_server(
@@ -39,24 +51,14 @@ impl ExtensionManager {
         config: McpServerConfig,
     ) -> Result<(), crate::tools::mcp::config::ConfigError> {
         config.validate()?;
-        if let Some(ref store) = self.store {
-            crate::tools::mcp::config::add_mcp_server_db(store.as_ref(), &self.user_id, config)
-                .await
-        } else {
-            crate::tools::mcp::config::add_mcp_server(config).await
-        }
+        mcp_store_or_disk!(self, add_mcp_server_db, add_mcp_server, config)
     }
 
     pub(super) async fn remove_mcp_server(
         &self,
         name: &str,
     ) -> Result<(), crate::tools::mcp::config::ConfigError> {
-        if let Some(ref store) = self.store {
-            crate::tools::mcp::config::remove_mcp_server_db(store.as_ref(), &self.user_id, name)
-                .await
-        } else {
-            crate::tools::mcp::config::remove_mcp_server(name).await
-        }
+        mcp_store_or_disk!(self, remove_mcp_server_db, remove_mcp_server, name)
     }
 
     // ── Private helpers ──────────────────────────────────────────────────
@@ -279,8 +281,13 @@ impl ExtensionManager {
             )
         };
 
-        self.download_and_install_wasm(name, url, capabilities_url, target_dir)
-            .await?;
+        self.download_and_install_wasm(super::wasm_install::WasmDownloadRequest {
+            name,
+            url,
+            capabilities_url,
+            target_dir,
+        })
+        .await?;
 
         Ok(InstallResult {
             name: name.to_string(),

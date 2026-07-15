@@ -10,7 +10,9 @@ use crate::secrets::crypto::SecretsCrypto;
 use crate::secrets::types::{CreateSecretParams, DecryptedSecret, Secret, SecretError, SecretRef};
 
 use super::NativeSecretsStore;
-use super::common::{db_err, get_decrypted_via, is_accessible_via, require_live_secret};
+use super::common::{
+    SECRET_COLUMNS, db_err, get_decrypted_via, is_accessible_via, require_live_secret,
+};
 
 // ==================== libSQL implementation ====================
 
@@ -87,12 +89,7 @@ impl NativeSecretsStore for LibSqlSecretsStore {
         // Read back the row (may have been upserted)
         let mut rows = tx
             .query(
-                r#"
-                SELECT id, user_id, name, encrypted_value, key_salt, provider, expires_at,
-                       last_used_at, usage_count, created_at, updated_at
-                FROM secrets
-                WHERE user_id = ?1 AND name = ?2
-                "#,
+                &select_secret_by_user_name_sql(),
                 libsql::params![user_id, params.name.as_str()],
             )
             .await
@@ -115,12 +112,7 @@ impl NativeSecretsStore for LibSqlSecretsStore {
         let conn = self.connect().await?;
         let mut rows = conn
             .query(
-                r#"
-                SELECT id, user_id, name, encrypted_value, key_salt, provider, expires_at,
-                       last_used_at, usage_count, created_at, updated_at
-                FROM secrets
-                WHERE user_id = ?1 AND name = ?2
-                "#,
+                &select_secret_by_user_name_sql(),
                 libsql::params![user_id, name.as_str()],
             )
             .await
@@ -217,6 +209,13 @@ impl NativeSecretsStore for LibSqlSecretsStore {
     ) -> Result<bool, SecretError> {
         is_accessible_via(self, user_id, secret_name, allowed_secrets).await
     }
+}
+
+/// Build the "fetch a full secret row by user and name" statement, used by both
+/// the upsert read-back and `get`. The column list comes from the shared
+/// [`SECRET_COLUMNS`]; only the libSQL positional placeholders live here.
+fn select_secret_by_user_name_sql() -> String {
+    format!("SELECT {SECRET_COLUMNS} FROM secrets WHERE user_id = ?1 AND name = ?2")
 }
 
 fn libsql_opt_text(s: Option<&str>) -> libsql::Value {

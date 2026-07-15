@@ -58,8 +58,6 @@ impl SecretsContext {
     }
 
     /// Save a secret to the database.
-    // The secret name is a free-form identifier from a capability schema; the value is already a typed SecretString.
-    // @codescene(disable:"String Heavy Function Arguments")
     pub async fn save_secret(
         &self,
         name: &str,

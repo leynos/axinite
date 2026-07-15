@@ -12,6 +12,22 @@ use crate::error::ChannelError;
 
 use super::{GROUP_TARGET_PREFIX, MAX_HTTP_RESPONSE_SIZE, RecipientTarget, SignalChannel};
 
+/// Inputs for building a Signal send/typing JSON-RPC params object.
+///
+/// Groups the account and recipient identity with the optional message body
+/// and attachments so static callers need not thread four positional
+/// arguments.
+pub(super) struct SendRpcParams<'a> {
+    /// signal-cli account (registered phone number) issuing the send.
+    pub account: &'a str,
+    /// Parsed recipient target (direct number/UUID or group).
+    pub target: &'a RecipientTarget,
+    /// Optional message text; `None` for attachment-only or typing sends.
+    pub message: Option<&'a str>,
+    /// Optional attachment paths already validated against the sandbox.
+    pub attachments: Option<&'a [String]>,
+}
+
 impl SignalChannel {
     /// Build the channel error used for any failed Signal send/RPC step.
     fn send_failed(reason: String) -> ChannelError {
@@ -291,13 +307,13 @@ impl SignalChannel {
     }
 
     /// Build JSON-RPC params for a send/typing call (static version).
-    pub(super) fn build_rpc_params_static(
-        _http_url: &str,
-        account: &str,
-        target: &RecipientTarget,
-        message: Option<&str>,
-        attachments: Option<&[String]>,
-    ) -> serde_json::Value {
+    pub(super) fn build_rpc_params_static(params: SendRpcParams<'_>) -> serde_json::Value {
+        let SendRpcParams {
+            account,
+            target,
+            message,
+            attachments,
+        } = params;
         Self::rpc_params(account, target, message, attachments)
     }
 

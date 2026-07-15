@@ -194,8 +194,6 @@ impl ExtensionManager {
     /// The `name` parameter is the owner or extension name used to limit which
     /// mappings are removed, so removed extensions lose injection authority
     /// without affecting mappings owned by other extensions.
-    // A capabilities-file path and an owner/extension name are free-form identifiers with no invariant a newtype could enforce.
-    // @codescene(disable:"String Heavy Function Arguments")
     pub(super) async fn revoke_credential_mappings(&self, cap_path: &std::path::Path, name: &str) {
         if !cap_path.exists() {
             return;

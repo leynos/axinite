@@ -169,8 +169,6 @@ pub(super) fn strip_pipe_reasoning_tags(text: &str) -> String {
 
 /// Strip `<tag>...</tag>` and `<tag ...>...</tag>` blocks from text.
 /// Used for tool tags only (no code-awareness needed).
-// LLM response text and a tag name are free-form strings with no invariant a newtype could enforce.
-// @codescene(disable:"String Heavy Function Arguments")
 pub(super) fn strip_xml_tag(text: &str, tag: &str) -> String {
     let open_exact = format!("<{}>", tag);
     let open_prefix = format!("<{} ", tag); // for <tag attr="...">

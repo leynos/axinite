@@ -47,15 +47,36 @@ pub enum AuthStatus {
     },
 }
 
+mod wire {
+    //! Wire-format status tokens: the single source of truth shared by
+    //! [`AuthStatus::as_str`](super::AuthStatus::as_str) and the
+    //! [`AuthResult`](super::AuthResult) deserializer.
+
+    pub(super) const AUTHENTICATED: &str = "authenticated";
+    pub(super) const NO_AUTH_REQUIRED: &str = "no_auth_required";
+    pub(super) const AWAITING_AUTHORIZATION: &str = "awaiting_authorization";
+    pub(super) const AWAITING_TOKEN: &str = "awaiting_token";
+    pub(super) const NEEDS_SETUP: &str = "needs_setup";
+
+    /// Every wire status, in declaration order, for error reporting.
+    pub(super) const ALL: &[&str] = &[
+        AUTHENTICATED,
+        NO_AUTH_REQUIRED,
+        AWAITING_AUTHORIZATION,
+        AWAITING_TOKEN,
+        NEEDS_SETUP,
+    ];
+}
+
 impl AuthStatus {
     /// The wire-format status string (backward-compatible with JS consumers).
     pub fn as_str(&self) -> &'static str {
         match self {
-            AuthStatus::Authenticated => "authenticated",
-            AuthStatus::NoAuthRequired => "no_auth_required",
-            AuthStatus::AwaitingAuthorization { .. } => "awaiting_authorization",
-            AuthStatus::AwaitingToken { .. } => "awaiting_token",
-            AuthStatus::NeedsSetup { .. } => "needs_setup",
+            AuthStatus::Authenticated => wire::AUTHENTICATED,
+            AuthStatus::NoAuthRequired => wire::NO_AUTH_REQUIRED,
+            AuthStatus::AwaitingAuthorization { .. } => wire::AWAITING_AUTHORIZATION,
+            AuthStatus::AwaitingToken { .. } => wire::AWAITING_TOKEN,
+            AuthStatus::NeedsSetup { .. } => wire::NEEDS_SETUP,
         }
     }
 }
@@ -255,32 +276,36 @@ impl<'de> Deserialize<'de> for AuthResult {
         }
 
         let raw = Raw::deserialize(deserializer)?;
+        // The two token-bearing variants share instructions + setup_url; a
+        // constructor closure keeps their construction from repeating.
+        let with_instructions =
+            |to_status: fn(String, Option<String>) -> AuthStatus| -> AuthStatus {
+                to_status(
+                    raw.instructions.clone().unwrap_or_default(),
+                    raw.setup_url.clone(),
+                )
+            };
         let status = match raw.status.as_str() {
-            "authenticated" => AuthStatus::Authenticated,
-            "no_auth_required" => AuthStatus::NoAuthRequired,
-            "awaiting_authorization" => AuthStatus::AwaitingAuthorization {
+            wire::AUTHENTICATED => AuthStatus::Authenticated,
+            wire::NO_AUTH_REQUIRED => AuthStatus::NoAuthRequired,
+            wire::AWAITING_AUTHORIZATION => AuthStatus::AwaitingAuthorization {
                 auth_url: raw.auth_url.unwrap_or_default(),
                 callback_type: raw.callback_type.unwrap_or_default(),
             },
-            "awaiting_token" => AuthStatus::AwaitingToken {
-                instructions: raw.instructions.unwrap_or_default(),
-                setup_url: raw.setup_url,
-            },
-            "needs_setup" => AuthStatus::NeedsSetup {
-                instructions: raw.instructions.unwrap_or_default(),
-                setup_url: raw.setup_url,
-            },
+            wire::AWAITING_TOKEN => {
+                with_instructions(|instructions, setup_url| AuthStatus::AwaitingToken {
+                    instructions,
+                    setup_url,
+                })
+            }
+            wire::NEEDS_SETUP => {
+                with_instructions(|instructions, setup_url| AuthStatus::NeedsSetup {
+                    instructions,
+                    setup_url,
+                })
+            }
             other => {
-                return Err(serde::de::Error::unknown_variant(
-                    other,
-                    &[
-                        "authenticated",
-                        "no_auth_required",
-                        "awaiting_authorization",
-                        "awaiting_token",
-                        "needs_setup",
-                    ],
-                ));
+                return Err(serde::de::Error::unknown_variant(other, wire::ALL));
             }
         };
         Ok(AuthResult {

@@ -300,8 +300,6 @@ pub(super) fn contains_shell_pipe(lower: &str) -> bool {
 
 /// Check if the command pipes to a specific interpreter, with word boundary
 /// validation so "| shift" doesn't match "| sh".
-// A lower-cased shell command and an interpreter token are free-form text with no invariant a newtype could enforce.
-// @codescene(disable:"String Heavy Function Arguments")
 fn has_pipe_to(lower: &str, shell: &str) -> bool {
     for prefix in ["| ", "|"] {
         let pattern = format!("{prefix}{shell}");

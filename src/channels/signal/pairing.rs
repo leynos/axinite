@@ -105,7 +105,12 @@ impl SignalChannel {
             .map_err(|e| ChannelError::Http(e.to_string()))?;
 
         let target = Self::parse_recipient_target(recipient);
-        let params = Self::build_rpc_params_static(http_url, account, &target, Some(message), None);
+        let params = Self::build_rpc_params_static(super::rpc::SendRpcParams {
+            account,
+            target: &target,
+            message: Some(message),
+            attachments: None,
+        });
 
         let url = format!("{}/api/v1/rpc", http_url);
         let id = Uuid::new_v4().to_string();

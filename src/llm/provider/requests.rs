@@ -73,19 +73,39 @@ impl CompletionRequest {
 
 impl_sampling_params!(CompletionRequest);
 
-/// Response from a chat completion.
-#[derive(Debug, Clone, Default)]
-pub struct CompletionResponse {
-    pub content: String,
-    pub input_tokens: u32,
-    pub output_tokens: u32,
-    pub finish_reason: FinishReason,
-    /// Tokens read from the provider's server-side prompt cache (Anthropic).
-    /// Zero when caching is not supported or on a cache miss.
-    pub cache_read_input_tokens: u32,
-    /// Tokens written to the provider's server-side prompt cache (Anthropic).
-    /// Zero when caching is not supported or no new prefix was cached.
-    pub cache_creation_input_tokens: u32,
+/// Define a completion response struct carrying the token-usage and prompt-cache
+/// accounting fields common to plain and tool-augmented responses.
+///
+/// The caller supplies the response-specific leading fields (e.g. `content` or
+/// `tool_calls`); the shared usage/cache tail is emitted identically for each,
+/// keeping the accounting fields defined in exactly one place.
+macro_rules! completion_response {
+    (
+        $(#[$meta:meta])*
+        pub struct $name:ident { $($(#[$fmeta:meta])* pub $field:ident : $ty:ty,)* }
+    ) => {
+        $(#[$meta])*
+        #[derive(Debug, Clone, Default)]
+        pub struct $name {
+            $($(#[$fmeta])* pub $field: $ty,)*
+            pub input_tokens: u32,
+            pub output_tokens: u32,
+            pub finish_reason: FinishReason,
+            /// Tokens read from the provider's server-side prompt cache (Anthropic).
+            /// Zero when caching is not supported or on a cache miss.
+            pub cache_read_input_tokens: u32,
+            /// Tokens written to the provider's server-side prompt cache (Anthropic).
+            /// Zero when caching is not supported or no new prefix was cached.
+            pub cache_creation_input_tokens: u32,
+        }
+    };
+}
+
+completion_response! {
+    /// Response from a chat completion.
+    pub struct CompletionResponse {
+        pub content: String,
+    }
 }
 
 /// Why the completion finished.
@@ -162,20 +182,14 @@ impl ToolCompletionRequest {
 
 impl_sampling_params!(ToolCompletionRequest);
 
-/// Response from a completion with potential tool calls.
-#[derive(Debug, Clone, Default)]
-pub struct ToolCompletionResponse {
-    /// Text content (may be empty if tool calls are present).
-    pub content: Option<String>,
-    /// Tool calls requested by the model.
-    pub tool_calls: Vec<ToolCall>,
-    pub input_tokens: u32,
-    pub output_tokens: u32,
-    pub finish_reason: FinishReason,
-    /// Tokens read from the provider's server-side prompt cache (Anthropic).
-    pub cache_read_input_tokens: u32,
-    /// Tokens written to the provider's server-side prompt cache (Anthropic).
-    pub cache_creation_input_tokens: u32,
+completion_response! {
+    /// Response from a completion with potential tool calls.
+    pub struct ToolCompletionResponse {
+        /// Text content (may be empty if tool calls are present).
+        pub content: Option<String>,
+        /// Tool calls requested by the model.
+        pub tool_calls: Vec<ToolCall>,
+    }
 }
 
 /// Metadata about a model returned by the provider's API.

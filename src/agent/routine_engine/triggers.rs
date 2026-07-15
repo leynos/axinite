@@ -10,6 +10,28 @@ use crate::channels::IncomingMessage;
 
 use super::engine::{EventMatcher, RoutineEngine};
 
+/// Verbosity of the per-check "skipped" traces emitted while evaluating a
+/// routine's guardrails.
+///
+/// Message-event routines trace at `TRACE`; system-event routines at `DEBUG`.
+/// The level must be chosen at each call site because `tracing` fixes the
+/// event level at compile time.
+#[derive(Clone, Copy)]
+enum SkipLog {
+    Trace,
+    Debug,
+}
+
+impl SkipLog {
+    /// Emit the guardrail skip reason for `routine` at this verbosity.
+    fn emit(self, routine: &crate::agent::routine::Routine, reason: &str) {
+        match self {
+            SkipLog::Trace => tracing::trace!(routine = %routine.name, "{}", reason),
+            SkipLog::Debug => tracing::debug!(routine = %routine.name, "{}", reason),
+        }
+    }
+}
+
 impl RoutineEngine {
     /// Refresh the in-memory event trigger cache from DB.
     pub async fn refresh_event_cache(&self) {
@@ -67,7 +89,7 @@ impl RoutineEngine {
                 continue;
             }
 
-            if !self.passes_message_guardrails(routine).await {
+            if !self.passes_guardrails(routine, SkipLog::Trace).await {
                 continue;
             }
 
@@ -80,15 +102,23 @@ impl RoutineEngine {
     }
 
     /// Checks cooldown, per-routine concurrency, and global capacity for a
-    /// matched message-event routine, reserving a running slot on success.
-    async fn passes_message_guardrails(&self, routine: &crate::agent::routine::Routine) -> bool {
+    /// matched routine, reserving a running slot on success.
+    ///
+    /// Message-event and system-event routines share this logic; they differ
+    /// only in the verbosity of the per-check "skipped" traces, selected by
+    /// `skip`.
+    async fn passes_guardrails(
+        &self,
+        routine: &crate::agent::routine::Routine,
+        skip: SkipLog,
+    ) -> bool {
         if !self.check_cooldown(routine) {
-            tracing::trace!(routine = %routine.name, "Skipped: cooldown active");
+            skip.emit(routine, "Skipped: cooldown active");
             return false;
         }
 
         if !self.check_concurrent(routine).await {
-            tracing::trace!(routine = %routine.name, "Skipped: max concurrent reached");
+            skip.emit(routine, "Skipped: max concurrent reached");
             return false;
         }
 
@@ -129,7 +159,7 @@ impl RoutineEngine {
                 continue;
             }
 
-            if !self.passes_system_event_guardrails(routine).await {
+            if !self.passes_guardrails(routine, SkipLog::Debug).await {
                 continue;
             }
 
@@ -139,33 +169,6 @@ impl RoutineEngine {
         }
 
         fired
-    }
-
-    /// Checks cooldown, per-routine concurrency, and global capacity for a
-    /// matched system-event routine.
-    ///
-    /// Returns `true` when a running slot has been reserved and the routine
-    /// may fire.
-    async fn passes_system_event_guardrails(
-        &self,
-        routine: &crate::agent::routine::Routine,
-    ) -> bool {
-        if !self.check_cooldown(routine) {
-            tracing::debug!(routine = %routine.name, "Skipped: cooldown active");
-            return false;
-        }
-
-        if !self.check_concurrent(routine).await {
-            tracing::debug!(routine = %routine.name, "Skipped: max concurrent reached");
-            return false;
-        }
-
-        // Global capacity check (atomic check-and-increment)
-        if !self.try_reserve_running_slot() {
-            tracing::warn!(routine = %routine.name, "Skipped: global max concurrent reached");
-            return false;
-        }
-        true
     }
 
     /// Check all due cron routines and fire them. Called by the cron ticker.
