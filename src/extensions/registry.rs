@@ -69,37 +69,20 @@ impl ExtensionRegistry {
         }
 
         let mut scored: Vec<(SearchResult, u32)> = Vec::new();
+        collect_scored(
+            self.entries.as_slice(),
+            ResultSource::Registry,
+            &tokens,
+            &mut scored,
+        );
 
-        // Score built-in entries
-        for entry in &self.entries {
-            let score = score_entry(entry, &tokens);
-            if score > 0 {
-                scored.push((
-                    SearchResult {
-                        entry: entry.clone(),
-                        source: ResultSource::Registry,
-                        validated: true,
-                    },
-                    score,
-                ));
-            }
-        }
-
-        // Score cached discoveries
         let cache = self.discovery_cache.read().await;
-        for entry in cache.iter() {
-            let score = score_entry(entry, &tokens);
-            if score > 0 {
-                scored.push((
-                    SearchResult {
-                        entry: entry.clone(),
-                        source: ResultSource::Discovered,
-                        validated: true,
-                    },
-                    score,
-                ));
-            }
-        }
+        collect_scored(
+            cache.as_slice(),
+            ResultSource::Discovered,
+            &tokens,
+            &mut scored,
+        );
 
         scored.sort_by_key(|b| std::cmp::Reverse(b.1));
         scored.into_iter().map(|(r, _)| r).collect()
@@ -179,6 +162,29 @@ impl ExtensionRegistry {
 impl Default for ExtensionRegistry {
     fn default() -> Self {
         Self::new()
+    }
+}
+
+/// Score every entry in `entries` against `tokens`, appending the matches
+/// (score > 0) to `scored` tagged with their `source`.
+fn collect_scored(
+    entries: &[RegistryEntry],
+    source: ResultSource,
+    tokens: &[String],
+    scored: &mut Vec<(SearchResult, u32)>,
+) {
+    for entry in entries {
+        let score = score_entry(entry, tokens);
+        if score > 0 {
+            scored.push((
+                SearchResult {
+                    entry: entry.clone(),
+                    source,
+                    validated: true,
+                },
+                score,
+            ));
+        }
     }
 }
 

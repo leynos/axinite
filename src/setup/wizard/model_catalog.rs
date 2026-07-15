@@ -1,5 +1,12 @@
 //! Model listing helpers for provider APIs (Anthropic, OpenAI, Ollama,
 //! OpenAI-compatible), with static fallbacks.
+//!
+//! String parameters here are deliberate: model identifiers are free-form
+//! ids issued by remote provider APIs, base URLs come from user
+//! configuration, and cached API keys are forwarded verbatim as HTTP
+//! headers. None carries an invariant a newtype could enforce; typed
+//! grouping already exists where arguments clump
+//! ([`OpenAICompatModelsRequest`], [`AnthropicAuth`]).
 
 use super::*;
 

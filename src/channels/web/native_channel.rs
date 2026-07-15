@@ -16,6 +16,88 @@ use super::GatewayChannel;
 use super::server;
 use super::types::SseEvent;
 
+/// Translate a [`StatusUpdate`] into the matching [`SseEvent`], attaching the
+/// optional `thread_id` where the event carries one. Exactly one match arm
+/// runs, so `thread_id` is moved rather than cloned.
+fn status_to_sse_event(status: StatusUpdate, thread_id: Option<String>) -> SseEvent {
+    match status {
+        StatusUpdate::Thinking(msg) => SseEvent::Thinking {
+            message: msg,
+            thread_id,
+        },
+        StatusUpdate::ToolStarted { name } => SseEvent::ToolStarted { name, thread_id },
+        StatusUpdate::ToolCompleted {
+            name,
+            success,
+            error,
+            parameters,
+        } => SseEvent::ToolCompleted {
+            name,
+            success,
+            error,
+            parameters,
+            thread_id,
+        },
+        StatusUpdate::ToolResult { name, preview } => SseEvent::ToolResult {
+            name,
+            preview,
+            thread_id,
+        },
+        StatusUpdate::StreamChunk(content) => SseEvent::StreamChunk { content, thread_id },
+        StatusUpdate::Status(msg) => SseEvent::Status {
+            message: msg,
+            thread_id,
+        },
+        StatusUpdate::JobStarted {
+            job_id,
+            title,
+            browse_url,
+        } => SseEvent::JobStarted {
+            job_id,
+            title,
+            browse_url,
+        },
+        StatusUpdate::ApprovalNeeded {
+            request_id,
+            tool_name,
+            description,
+            parameters,
+        } => SseEvent::ApprovalNeeded {
+            request_id,
+            tool_name,
+            description,
+            parameters: serde_json::to_string_pretty(&parameters)
+                .unwrap_or_else(|_| parameters.to_string()),
+            thread_id,
+        },
+        StatusUpdate::AuthRequired {
+            extension_name,
+            instructions,
+            auth_url,
+            setup_url,
+        } => SseEvent::AuthRequired {
+            extension_name,
+            instructions,
+            auth_url,
+            setup_url,
+        },
+        StatusUpdate::AuthCompleted {
+            extension_name,
+            success,
+            message,
+        } => SseEvent::AuthCompleted {
+            extension_name,
+            success,
+            message,
+        },
+        StatusUpdate::ImageGenerated { data_url, path } => SseEvent::ImageGenerated {
+            data_url,
+            path,
+            thread_id,
+        },
+    }
+}
+
 impl GatewayChannel {
     /// Broadcast a response over SSE, skipping (with a warning naming the
     /// calling `operation`) when no thread ID is available — clients would
@@ -76,88 +158,7 @@ impl NativeChannel for GatewayChannel {
             .get("thread_id")
             .and_then(|v| v.as_str())
             .map(String::from);
-        let event = match status {
-            StatusUpdate::Thinking(msg) => SseEvent::Thinking {
-                message: msg,
-                thread_id: thread_id.clone(),
-            },
-            StatusUpdate::ToolStarted { name } => SseEvent::ToolStarted {
-                name,
-                thread_id: thread_id.clone(),
-            },
-            StatusUpdate::ToolCompleted {
-                name,
-                success,
-                error,
-                parameters,
-            } => SseEvent::ToolCompleted {
-                name,
-                success,
-                error,
-                parameters,
-                thread_id: thread_id.clone(),
-            },
-            StatusUpdate::ToolResult { name, preview } => SseEvent::ToolResult {
-                name,
-                preview,
-                thread_id: thread_id.clone(),
-            },
-            StatusUpdate::StreamChunk(content) => SseEvent::StreamChunk {
-                content,
-                thread_id: thread_id.clone(),
-            },
-            StatusUpdate::Status(msg) => SseEvent::Status {
-                message: msg,
-                thread_id: thread_id.clone(),
-            },
-            StatusUpdate::JobStarted {
-                job_id,
-                title,
-                browse_url,
-            } => SseEvent::JobStarted {
-                job_id,
-                title,
-                browse_url,
-            },
-            StatusUpdate::ApprovalNeeded {
-                request_id,
-                tool_name,
-                description,
-                parameters,
-            } => SseEvent::ApprovalNeeded {
-                request_id,
-                tool_name,
-                description,
-                parameters: serde_json::to_string_pretty(&parameters)
-                    .unwrap_or_else(|_| parameters.to_string()),
-                thread_id,
-            },
-            StatusUpdate::AuthRequired {
-                extension_name,
-                instructions,
-                auth_url,
-                setup_url,
-            } => SseEvent::AuthRequired {
-                extension_name,
-                instructions,
-                auth_url,
-                setup_url,
-            },
-            StatusUpdate::AuthCompleted {
-                extension_name,
-                success,
-                message,
-            } => SseEvent::AuthCompleted {
-                extension_name,
-                success,
-                message,
-            },
-            StatusUpdate::ImageGenerated { data_url, path } => SseEvent::ImageGenerated {
-                data_url,
-                path,
-                thread_id,
-            },
-        };
+        let event = status_to_sse_event(status, thread_id);
 
         self.state.sse.broadcast(event);
         Ok(())

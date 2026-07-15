@@ -241,14 +241,8 @@ impl ExtensionManager {
         url: &str,
         capabilities_url: Option<&str>,
     ) -> Result<InstallResult, ExtensionError> {
-        self.download_and_install_wasm(name, url, capabilities_url, &self.wasm_tools_dir)
-            .await?;
-
-        Ok(InstallResult {
-            name: name.to_string(),
-            kind: ExtensionKind::WasmTool,
-            message: format!("WASM tool '{}' installed. Run activate to load it.", name),
-        })
+        self.download_wasm_and_report(name, url, capabilities_url, ExtensionKind::WasmTool)
+            .await
     }
 
     pub(super) async fn install_wasm_channel_from_url(
@@ -257,16 +251,41 @@ impl ExtensionManager {
         url: &str,
         capabilities_url: Option<&str>,
     ) -> Result<InstallResult, ExtensionError> {
-        self.download_and_install_wasm(name, url, capabilities_url, &self.wasm_channels_dir)
+        self.download_wasm_and_report(name, url, capabilities_url, ExtensionKind::WasmChannel)
+            .await
+    }
+
+    /// Download and install a WASM extension into the kind-appropriate target
+    /// directory, then report success with the kind-specific message.
+    async fn download_wasm_and_report(
+        &self,
+        name: &str,
+        url: &str,
+        capabilities_url: Option<&str>,
+        kind: ExtensionKind,
+    ) -> Result<InstallResult, ExtensionError> {
+        let (target_dir, message) = if kind == ExtensionKind::WasmTool {
+            (
+                &self.wasm_tools_dir,
+                format!("WASM tool '{}' installed. Run activate to load it.", name),
+            )
+        } else {
+            (
+                &self.wasm_channels_dir,
+                format!(
+                    "WASM channel '{}' installed. Run activate to start it.",
+                    name
+                ),
+            )
+        };
+
+        self.download_and_install_wasm(name, url, capabilities_url, target_dir)
             .await?;
 
         Ok(InstallResult {
             name: name.to_string(),
-            kind: ExtensionKind::WasmChannel,
-            message: format!(
-                "WASM channel '{}' installed. Run activate to start it.",
-                name,
-            ),
+            kind,
+            message,
         })
     }
 }

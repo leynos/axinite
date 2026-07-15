@@ -95,31 +95,36 @@ pub(super) async fn check_database() -> CheckResult {
         .unwrap_or_else(|| "postgres".into());
 
     match backend.as_str() {
-        "libsql" | "turso" | "sqlite" => {
-            let path = std::env::var("LIBSQL_PATH")
-                .map(PathBuf::from)
-                .unwrap_or_else(|_| crate::config::default_libsql_path());
+        "libsql" | "turso" | "sqlite" => check_libsql_database(),
+        _ => check_postgres_database().await,
+    }
+}
 
-            if path.exists() {
-                CheckResult::Pass(format!("libSQL database exists ({})", path.display()))
-            } else {
-                CheckResult::Pass(format!(
-                    "libSQL database not found at {} (will be created on first run)",
-                    path.display()
-                ))
-            }
-        }
-        _ => {
-            if std::env::var("DATABASE_URL").is_ok() {
-                // Try to connect
-                match try_pg_connect().await {
-                    Ok(()) => CheckResult::Pass("PostgreSQL connected".into()),
-                    Err(e) => CheckResult::Fail(format!("PostgreSQL connection failed: {e}")),
-                }
-            } else {
-                CheckResult::Fail("DATABASE_URL not set".into())
-            }
-        }
+/// Report whether the configured libSQL database file already exists.
+fn check_libsql_database() -> CheckResult {
+    let path = std::env::var("LIBSQL_PATH")
+        .map(PathBuf::from)
+        .unwrap_or_else(|_| crate::config::default_libsql_path());
+
+    if path.exists() {
+        CheckResult::Pass(format!("libSQL database exists ({})", path.display()))
+    } else {
+        CheckResult::Pass(format!(
+            "libSQL database not found at {} (will be created on first run)",
+            path.display()
+        ))
+    }
+}
+
+/// Attempt a PostgreSQL connection, or report the missing `DATABASE_URL`.
+async fn check_postgres_database() -> CheckResult {
+    if std::env::var("DATABASE_URL").is_err() {
+        return CheckResult::Fail("DATABASE_URL not set".into());
+    }
+
+    match try_pg_connect().await {
+        Ok(()) => CheckResult::Pass("PostgreSQL connected".into()),
+        Err(e) => CheckResult::Fail(format!("PostgreSQL connection failed: {e}")),
     }
 }
 

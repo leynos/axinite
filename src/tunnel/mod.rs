@@ -209,11 +209,21 @@ pub fn create_tunnel(config: &TunnelProviderConfig) -> Result<Option<Box<dyn Tun
     }
 }
 
+/// Fetch a provider's config section, failing with a provider-specific hint
+/// naming the missing setting.
+fn require_provider_config<'a, T>(
+    section: Option<&'a T>,
+    provider: &str,
+    missing_setting: &str,
+) -> Result<&'a T> {
+    section.ok_or_else(|| {
+        anyhow::anyhow!("TUNNEL_PROVIDER={provider} but no {missing_setting} configured")
+    })
+}
+
 /// Build the Cloudflare tunnel, requiring a configured token.
 fn cloudflare_tunnel(config: &TunnelProviderConfig) -> Result<Box<dyn Tunnel>> {
-    let cf = config.cloudflare.as_ref().ok_or_else(|| {
-        anyhow::anyhow!("TUNNEL_PROVIDER=cloudflare but no TUNNEL_CF_TOKEN configured")
-    })?;
+    let cf = require_provider_config(config.cloudflare.as_ref(), "cloudflare", "TUNNEL_CF_TOKEN")?;
     Ok(Box::new(CloudflareTunnel::new(cf.token.clone())))
 }
 
@@ -225,9 +235,7 @@ fn tailscale_tunnel(config: &TunnelProviderConfig) -> Result<Box<dyn Tunnel>> {
 
 /// Build the ngrok tunnel, requiring a configured auth token.
 fn ngrok_tunnel(config: &TunnelProviderConfig) -> Result<Box<dyn Tunnel>> {
-    let ng = config.ngrok.as_ref().ok_or_else(|| {
-        anyhow::anyhow!("TUNNEL_PROVIDER=ngrok but no TUNNEL_NGROK_TOKEN configured")
-    })?;
+    let ng = require_provider_config(config.ngrok.as_ref(), "ngrok", "TUNNEL_NGROK_TOKEN")?;
     Ok(Box::new(NgrokTunnel::new(
         ng.auth_token.clone(),
         ng.domain.clone(),
@@ -236,9 +244,7 @@ fn ngrok_tunnel(config: &TunnelProviderConfig) -> Result<Box<dyn Tunnel>> {
 
 /// Build the custom-command tunnel, requiring a configured start command.
 fn custom_tunnel(config: &TunnelProviderConfig) -> Result<Box<dyn Tunnel>> {
-    let cu = config.custom.as_ref().ok_or_else(|| {
-        anyhow::anyhow!("TUNNEL_PROVIDER=custom but no TUNNEL_CUSTOM_COMMAND configured")
-    })?;
+    let cu = require_provider_config(config.custom.as_ref(), "custom", "TUNNEL_CUSTOM_COMMAND")?;
     Ok(Box::new(CustomTunnel::new(
         cu.start_command.clone(),
         cu.health_url.clone(),
@@ -267,18 +273,7 @@ pub async fn start_managed_tunnel(
         return (config, None);
     };
 
-    let gateway_port = config
-        .channels
-        .gateway
-        .as_ref()
-        .map(|g| g.port)
-        .unwrap_or(3000);
-    let gateway_host = config
-        .channels
-        .gateway
-        .as_ref()
-        .map(|g| g.host.clone())
-        .unwrap_or_else(|| "127.0.0.1".to_string());
+    let (gateway_host, gateway_port) = gateway_bind_address(&config);
 
     match create_tunnel(provider_config) {
         Ok(Some(tunnel)) => activate_tunnel(config, tunnel, &gateway_host, gateway_port).await,
@@ -288,6 +283,17 @@ pub async fn start_managed_tunnel(
             (config, None)
         }
     }
+}
+
+/// Resolve the gateway's bind host and port, applying the defaults
+/// (`127.0.0.1:3000`) when no gateway channel is configured.
+fn gateway_bind_address(config: &crate::config::Config) -> (String, u16) {
+    let gateway = config.channels.gateway.as_ref();
+    let host = gateway
+        .map(|g| g.host.clone())
+        .unwrap_or_else(|| "127.0.0.1".to_string());
+    let port = gateway.map(|g| g.port).unwrap_or(3000);
+    (host, port)
 }
 
 /// Start a freshly created tunnel and record its public URL on the config.

@@ -9,6 +9,16 @@ use crate::workspace::search::{RankedResult, SearchResult, reciprocal_rank_fusio
 
 use super::Repository;
 
+/// Ownership scope and result cap shared by the FTS and vector searches.
+struct SearchScope<'a> {
+    /// Owning user whose documents are searched.
+    user_id: &'a str,
+    /// Optional agent the documents are scoped to.
+    agent_id: Option<Uuid>,
+    /// Maximum number of ranked results to return (pre-fusion limit).
+    limit: usize,
+}
+
 impl Repository {
     /// Perform hybrid search combining FTS and vector similarity.
     pub async fn hybrid_search(
@@ -23,10 +33,14 @@ impl Repository {
             config,
         } = params;
 
+        let scope = SearchScope {
+            user_id,
+            agent_id,
+            limit: config.pre_fusion_limit,
+        };
+
         let fts_results = if config.use_fts {
-            let results = self
-                .fts_search(user_id, agent_id, query, config.pre_fusion_limit)
-                .await?;
+            let results = self.fts_search(&scope, query).await?;
             tracing::debug!(
                 "FTS search returned {} results (pre-fusion limit: {})",
                 results.len(),
@@ -39,9 +53,7 @@ impl Repository {
 
         let vector_results = if config.use_vector {
             if let Some(embedding) = embedding {
-                let results = self
-                    .vector_search(user_id, agent_id, embedding, config.pre_fusion_limit)
-                    .await?;
+                let results = self.vector_search(&scope, embedding).await?;
                 tracing::debug!(
                     "pgvector search returned {} results (pre-fusion limit: {})",
                     results.len(),
@@ -61,10 +73,8 @@ impl Repository {
     /// Full-text search using PostgreSQL ts_rank_cd.
     async fn fts_search(
         &self,
-        user_id: &str,
-        agent_id: Option<Uuid>,
+        scope: &SearchScope<'_>,
         query: &str,
-        limit: usize,
     ) -> Result<Vec<RankedResult>, WorkspaceError> {
         let conn = self.conn().await?;
 
@@ -80,7 +90,12 @@ impl Repository {
                 ORDER BY rank DESC
                 LIMIT $4
                 "#,
-                &[&user_id, &agent_id, &query, &(limit as i64)],
+                &[
+                    &scope.user_id,
+                    &scope.agent_id,
+                    &query,
+                    &(scope.limit as i64),
+                ],
             )
             .await
             .map_err(|e| WorkspaceError::SearchFailed {
@@ -103,10 +118,8 @@ impl Repository {
     /// Vector similarity search using pgvector cosine distance.
     async fn vector_search(
         &self,
-        user_id: &str,
-        agent_id: Option<Uuid>,
+        scope: &SearchScope<'_>,
         embedding: &[f32],
-        limit: usize,
     ) -> Result<Vec<RankedResult>, WorkspaceError> {
         let conn = self.conn().await?;
         let embedding_vec = Vector::from(embedding.to_vec());
@@ -123,7 +136,12 @@ impl Repository {
                 ORDER BY c.embedding <=> $3
                 LIMIT $4
                 "#,
-                &[&user_id, &agent_id, &embedding_vec, &(limit as i64)],
+                &[
+                    &scope.user_id,
+                    &scope.agent_id,
+                    &embedding_vec,
+                    &(scope.limit as i64),
+                ],
             )
             .await
             .map_err(|e| WorkspaceError::SearchFailed {

@@ -6,6 +6,16 @@ use super::*;
 use crate::channels::NativeChannel;
 use crate::channels::relay::client::{RelayClient, RelayError};
 
+/// Standard relay identity used across these tests.
+fn test_identity() -> RelayIdentity {
+    RelayIdentity {
+        stream_token: "token".into(),
+        team_id: "T123".into(),
+        instance_id: "inst1".into(),
+        user_id: "user1".into(),
+    }
+}
+
 fn test_client() -> Result<RelayClient, RelayError> {
     RelayClient::new(
         "http://localhost:3001".into(),
@@ -16,25 +26,13 @@ fn test_client() -> Result<RelayClient, RelayError> {
 
 #[test]
 fn relay_channel_name() {
-    let channel = RelayChannel::new(
-        test_client().expect("client"),
-        "token".into(),
-        "T123".into(),
-        "inst1".into(),
-        "user1".into(),
-    );
+    let channel = RelayChannel::new(test_client().expect("client"), test_identity());
     assert_eq!(channel.name(), DEFAULT_RELAY_NAME);
 }
 
 #[test]
 fn conversation_context_extracts_metadata() {
-    let channel = RelayChannel::new(
-        test_client().expect("client"),
-        "token".into(),
-        "T123".into(),
-        "inst1".into(),
-        "user1".into(),
-    );
+    let channel = RelayChannel::new(test_client().expect("client"), test_identity());
 
     let metadata = serde_json::json!({
         "sender_name": "bob",
@@ -74,14 +72,8 @@ fn metadata_shape_includes_event_type_and_sender_name() {
 
 #[test]
 fn with_timeouts_sets_values() {
-    let channel = RelayChannel::new(
-        test_client().expect("client"),
-        "token".into(),
-        "T123".into(),
-        "inst1".into(),
-        "user1".into(),
-    )
-    .with_timeouts(43200, 2000, 120000);
+    let channel = RelayChannel::new(test_client().expect("client"), test_identity())
+        .with_timeouts(43200, 2000, 120000);
 
     assert_eq!(channel.stream_timeout_secs, 43200);
     assert_eq!(channel.backoff_initial_ms, 2000);
@@ -90,13 +82,7 @@ fn with_timeouts_sets_values() {
 
 #[test]
 fn build_send_body_slack() {
-    let channel = RelayChannel::new(
-        test_client().expect("client"),
-        "token".into(),
-        "T123".into(),
-        "inst1".into(),
-        "user1".into(),
-    );
+    let channel = RelayChannel::new(test_client().expect("client"), test_identity());
     let (method, body) = channel.build_send_body("C456", "hello", Some("1234567.890"));
     assert_eq!(method, "chat.postMessage");
     assert_eq!(body["channel"], "C456");
@@ -106,13 +92,7 @@ fn build_send_body_slack() {
 
 #[test]
 fn parser_handle_is_shared_arc() {
-    let channel = RelayChannel::new(
-        test_client().expect("client"),
-        "token".into(),
-        "T123".into(),
-        "inst1".into(),
-        "user1".into(),
-    );
+    let channel = RelayChannel::new(test_client().expect("client"), test_identity());
     // parser_handle should be an Arc — cloning should give a second reference
     let handle_clone = Arc::clone(&channel.parser_handle);
     // Both point to the same allocation
@@ -121,27 +101,15 @@ fn parser_handle_is_shared_arc() {
 
 #[test]
 fn with_max_failures_sets_value() {
-    let channel = RelayChannel::new(
-        test_client().expect("client"),
-        "token".into(),
-        "T123".into(),
-        "inst1".into(),
-        "user1".into(),
-    )
-    .with_max_failures(10);
+    let channel =
+        RelayChannel::new(test_client().expect("client"), test_identity()).with_max_failures(10);
 
     assert_eq!(channel.max_consecutive_failures, 10);
 }
 
 #[test]
 fn default_max_failures_is_50() {
-    let channel = RelayChannel::new(
-        test_client().expect("client"),
-        "token".into(),
-        "T123".into(),
-        "inst1".into(),
-        "user1".into(),
-    );
+    let channel = RelayChannel::new(test_client().expect("client"), test_identity());
     assert_eq!(channel.max_consecutive_failures, 50);
 }
 
@@ -151,10 +119,10 @@ fn empty_team_id_accepted_at_construction() {
     // prevent channel construction or cause immediate shutdown.
     let channel = RelayChannel::new(
         test_client().expect("client"),
-        "token".into(),
-        String::new(), // empty team_id
-        "inst1".into(),
-        "user1".into(),
+        RelayIdentity {
+            team_id: String::new(), // empty team_id
+            ..test_identity()
+        },
     );
     assert_eq!(channel.team_id, "");
     // The reconnect loop now skips team validation when team_id is empty,

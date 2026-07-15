@@ -1,6 +1,7 @@
 //! Tests for registering channels and routing via the WASM router.
 
 use super::*;
+use ironclaw::channels::wasm::WebhookSecrets;
 
 #[tokio::test]
 async fn test_register_and_route_channel() {
@@ -21,7 +22,7 @@ async fn test_register_and_route_channel() {
     }];
 
     router
-        .register(channel.clone(), endpoints, None, None)
+        .register(channel.clone(), endpoints, WebhookSecrets::default())
         .await;
 
     // Verify channel is found by path
@@ -46,7 +47,14 @@ async fn test_secret_validation() {
     ));
 
     router
-        .register(channel, vec![], Some("my-secret-123".to_string()), None)
+        .register(
+            channel,
+            vec![],
+            WebhookSecrets {
+                secret: Some("my-secret-123".to_string()),
+                header: None,
+            },
+        )
         .await;
 
     // Correct secret validates
@@ -85,7 +93,9 @@ async fn test_unregister_channel() {
         require_secret: false,
     }];
 
-    router.register(channel, endpoints, None, None).await;
+    router
+        .register(channel, endpoints, WebhookSecrets::default())
+        .await;
 
     // Channel exists
     assert!(router.get_channel_for_path("/webhook/temp").await.is_some());
@@ -117,7 +127,9 @@ async fn test_multiple_channels() {
             require_secret: false,
         }];
 
-        router.register(channel, endpoints, None, None).await;
+        router
+            .register(channel, endpoints, WebhookSecrets::default())
+            .await;
     }
 
     // Verify all channels are registered

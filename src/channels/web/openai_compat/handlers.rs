@@ -5,12 +5,10 @@ use std::sync::Arc;
 
 use axum::{Json, extract::State, http::StatusCode, response::IntoResponse};
 
-use crate::llm::{CompletionRequest, ToolCompletionRequest};
-
 use super::convert::{
-    chat_completion_id, convert_messages, convert_tool_calls_to_openai, convert_tools,
-    finish_reason_str, map_llm_error, normalize_tool_choice, openai_error, parse_stop,
-    unix_timestamp, validate_model_name,
+    build_completion_request, build_tool_request, chat_completion_id, convert_messages,
+    convert_tool_calls_to_openai, finish_reason_str, map_llm_error, openai_error, unix_timestamp,
+    validate_model_name,
 };
 use super::streaming::handle_streaming;
 use super::types::{
@@ -72,19 +70,7 @@ pub async fn chat_completions_handler(
     let created = unix_timestamp();
 
     if has_tools {
-        let tools = convert_tools(req.tools.as_deref().unwrap_or(&[]));
-        let mut tool_req = ToolCompletionRequest::new(messages, tools).with_model(req.model);
-        if let Some(t) = req.temperature {
-            tool_req = tool_req.with_temperature(t);
-        }
-        if let Some(mt) = req.max_tokens {
-            tool_req = tool_req.with_max_tokens(mt);
-        }
-        if let Some(ref tc) = req.tool_choice
-            && let Some(choice) = normalize_tool_choice(tc)
-        {
-            tool_req = tool_req.with_tool_choice(choice);
-        }
+        let tool_req = build_tool_request(&req, messages);
 
         let resp = llm
             .complete_with_tools(tool_req)
@@ -123,16 +109,7 @@ pub async fn chat_completions_handler(
 
         Ok(Json(response).into_response())
     } else {
-        let mut comp_req = CompletionRequest::new(messages).with_model(req.model);
-        if let Some(t) = req.temperature {
-            comp_req = comp_req.with_temperature(t);
-        }
-        if let Some(mt) = req.max_tokens {
-            comp_req = comp_req.with_max_tokens(mt);
-        }
-        if let Some(ref stop_val) = req.stop {
-            comp_req.stop_sequences = parse_stop(stop_val);
-        }
+        let comp_req = build_completion_request(&req, messages);
 
         let resp = llm.complete(comp_req).await.map_err(map_llm_error)?;
         let model_name = llm.effective_model_name(Some(requested_model.as_str()));

@@ -22,8 +22,8 @@ pub use discovery::{
     discover_protected_resource, register_client,
 };
 pub use flow::{
-    authorize_mcp_server, build_authorization_url, exchange_code_for_token, find_available_port,
-    wait_for_authorization_callback,
+    TokenExchangeRequest, authorize_mcp_server, build_authorization_url, exchange_code_for_token,
+    find_available_port, wait_for_authorization_callback,
 };
 pub use tokens::{
     get_access_token, is_authenticated, refresh_access_token, store_client_id, store_tokens,

@@ -17,18 +17,30 @@ impl SubmissionParser {
     pub fn parse(content: &str) -> Submission {
         let trimmed = content.trim();
         let lower = trimmed.to_lowercase();
+        let input = Input {
+            trimmed,
+            lower: &lower,
+        };
         tracing::debug!("[SubmissionParser::parse] Parsing input: {:?}", trimmed);
 
-        parse_control_command(&lower)
-            .or_else(|| parse_system_command(trimmed, &lower))
-            .or_else(|| parse_job_command(&lower))
-            .or_else(|| parse_thread_command(&lower))
-            .or_else(|| parse_exec_approval(trimmed))
-            .or_else(|| parse_approval_response(&lower))
+        parse_control_command(&input)
+            .or_else(|| parse_system_command(&input))
+            .or_else(|| parse_job_command(&input))
+            .or_else(|| parse_thread_command(&input))
+            .or_else(|| parse_exec_approval(&input))
+            .or_else(|| parse_approval_response(&input))
             .unwrap_or_else(|| Submission::UserInput {
                 content: content.to_string(),
             })
     }
+}
+
+/// User input in the two forms the command parsers match against.
+struct Input<'a> {
+    /// Original input with surrounding whitespace removed.
+    trimmed: &'a str,
+    /// Lowercased form used for case-insensitive command matching.
+    lower: &'a str,
 }
 
 /// Build a `SystemCommand` submission.
@@ -49,7 +61,8 @@ fn command_args(trimmed: &str) -> Vec<String> {
 }
 
 /// Parse exact-match control commands (undo, redo, interrupt, and friends).
-fn parse_control_command(lower: &str) -> Option<Submission> {
+fn parse_control_command(input: &Input<'_>) -> Option<Submission> {
+    let lower = input.lower;
     let submission = match lower {
         "/undo" => Submission::Undo,
         "/redo" => Submission::Redo,
@@ -67,7 +80,8 @@ fn parse_control_command(lower: &str) -> Option<Submission> {
 }
 
 /// Parse system commands that bypass thread-state checks.
-fn parse_system_command(trimmed: &str, lower: &str) -> Option<Submission> {
+fn parse_system_command(input: &Input<'_>) -> Option<Submission> {
+    let Input { trimmed, lower } = *input;
     let simple = match lower {
         "/help" | "/?" => Some("help"),
         "/version" => Some("version"),
@@ -93,31 +107,31 @@ fn parse_system_command(trimmed: &str, lower: &str) -> Option<Submission> {
     None
 }
 
+/// Extract a non-empty, trimmed job id following one of the given prefixes.
+fn job_id_after(lower: &str, prefixes: &[&str]) -> Option<String> {
+    let rest = prefixes.iter().find_map(|p| lower.strip_prefix(p))?;
+    let id = rest.trim();
+    (!id.is_empty()).then(|| id.to_string())
+}
+
 /// Parse job status and cancellation commands.
-fn parse_job_command(lower: &str) -> Option<Submission> {
+fn parse_job_command(input: &Input<'_>) -> Option<Submission> {
+    let lower = input.lower;
     if matches!(lower, "/status" | "/progress" | "/list") {
         return Some(Submission::JobStatus { job_id: None });
     }
-    if let Some(rest) = lower
-        .strip_prefix("/status ")
-        .or_else(|| lower.strip_prefix("/progress "))
-    {
-        let id = rest.trim().to_string();
-        if !id.is_empty() {
-            return Some(Submission::JobStatus { job_id: Some(id) });
-        }
+    if let Some(id) = job_id_after(lower, &["/status ", "/progress "]) {
+        return Some(Submission::JobStatus { job_id: Some(id) });
     }
-    if let Some(rest) = lower.strip_prefix("/cancel ") {
-        let id = rest.trim().to_string();
-        if !id.is_empty() {
-            return Some(Submission::JobCancel { job_id: id });
-        }
+    if let Some(id) = job_id_after(lower, &["/cancel "]) {
+        return Some(Submission::JobCancel { job_id: id });
     }
     None
 }
 
 /// Parse thread switching and checkpoint resume commands.
-fn parse_thread_command(lower: &str) -> Option<Submission> {
+fn parse_thread_command(input: &Input<'_>) -> Option<Submission> {
+    let lower = input.lower;
     // /thread <uuid> - switch thread
     if let Some(rest) = lower.strip_prefix("/thread ") {
         let rest = rest.trim();
@@ -138,8 +152,8 @@ fn parse_thread_command(lower: &str) -> Option<Submission> {
 }
 
 /// Parse simple yes/no/always responses to pending approvals.
-fn parse_approval_response(lower: &str) -> Option<Submission> {
-    match lower {
+fn parse_approval_response(input: &Input<'_>) -> Option<Submission> {
+    match input.lower {
         "yes" | "y" | "approve" | "ok" | "/approve" | "/yes" | "/y" => {
             Some(Submission::ApprovalResponse {
                 approved: true,
@@ -169,10 +183,11 @@ fn is_quit_command(lower: &str) -> bool {
 
 /// Parse a structured JSON exec-approval submission, returning `None` for
 /// anything else so ordinary JSON-looking text falls through to user input.
-fn parse_exec_approval(input: &str) -> Option<Submission> {
-    if !input.starts_with('{') {
+fn parse_exec_approval(input: &Input<'_>) -> Option<Submission> {
+    let trimmed = input.trimmed;
+    if !trimmed.starts_with('{') {
         return None;
     }
-    let submission = serde_json::from_str::<Submission>(input).ok()?;
+    let submission = serde_json::from_str::<Submission>(trimmed).ok()?;
     matches!(submission, Submission::ExecApproval { .. }).then_some(submission)
 }

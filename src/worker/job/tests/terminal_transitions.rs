@@ -75,13 +75,28 @@ async fn get_call_counts(store: &CapturingStore) -> (usize, usize) {
     (status_count, event_count)
 }
 
+/// One rejected-transition scenario: the method to attempt, the terminal
+/// state already reached, and the persistence call counts recorded before
+/// the attempt.
+struct RejectedTransitionCase {
+    /// Terminal transition expected to be rejected.
+    rejected: TerminalMethod,
+    /// Terminal state the job is already in.
+    expected_state: JobState,
+    /// `(status_count, event_count)` captured before the attempt.
+    before: (usize, usize),
+}
+
 async fn assert_rejected_does_not_persist(
     worker: &Worker,
     store: &CapturingStore,
-    rejected: TerminalMethod,
-    expected_state: JobState,
-    before: (usize, usize),
+    case: RejectedTransitionCase,
 ) {
+    let RejectedTransitionCase {
+        rejected,
+        expected_state,
+        before,
+    } = case;
     let result = match rejected {
         TerminalMethod::Completed => worker.mark_completed().await,
         TerminalMethod::Failed(reason) => worker.mark_failed(reason).await,
@@ -132,7 +147,16 @@ async fn run_single_terminal_case(
         TerminalMethod::Failed("cross-terminal failure"),
         TerminalMethod::Stuck("cross-terminal stuck"),
     ] {
-        assert_rejected_does_not_persist(&worker, &store, rejected, expected_state, before).await;
+        assert_rejected_does_not_persist(
+            &worker,
+            &store,
+            RejectedTransitionCase {
+                rejected,
+                expected_state,
+                before,
+            },
+        )
+        .await;
     }
 
     Ok(())

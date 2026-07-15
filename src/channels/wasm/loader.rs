@@ -27,6 +27,96 @@ pub struct WasmChannelLoader {
     secrets_store: Option<Arc<dyn SecretsStore + Send + Sync>>,
 }
 
+/// Capabilities, config, and metadata resolved from a capabilities sidecar
+/// file (or defaults when no usable sidecar exists).
+struct ResolvedCapabilities {
+    capabilities: ChannelCapabilities,
+    config_json: String,
+    description: Option<String>,
+    cap_file: Option<ChannelCapabilitiesFile>,
+}
+
+/// Minimal default capabilities for a channel with no sidecar file.
+fn default_capabilities(name: &str) -> ResolvedCapabilities {
+    ResolvedCapabilities {
+        capabilities: ChannelCapabilities::for_channel(name),
+        config_json: "{}".to_string(),
+        description: None,
+        cap_file: None,
+    }
+}
+
+/// Resolve channel capabilities from the optional sidecar path, falling back
+/// to defaults when the path is absent or the file does not exist.
+async fn resolve_capabilities(
+    name: &str,
+    capabilities_path: Option<&Path>,
+) -> Result<ResolvedCapabilities, WasmChannelError> {
+    let Some(cap_path) = capabilities_path else {
+        return Ok(default_capabilities(name));
+    };
+    if !cap_path.exists() {
+        tracing::warn!(
+            path = %cap_path.display(),
+            "Capabilities file not found, using defaults"
+        );
+        return Ok(default_capabilities(name));
+    }
+    parse_capabilities_file(name, cap_path).await
+}
+
+/// Parse and validate a capabilities sidecar file, checking WIT version
+/// compatibility and logging the resulting capability grants.
+async fn parse_capabilities_file(
+    name: &str,
+    cap_path: &Path,
+) -> Result<ResolvedCapabilities, WasmChannelError> {
+    let cap_bytes = fs::read(cap_path).await?;
+    let cap_file = ChannelCapabilitiesFile::from_bytes(&cap_bytes)
+        .map_err(|e| WasmChannelError::InvalidCapabilities(e.to_string()))?;
+    cap_file.validate();
+
+    // Debug: log raw capabilities
+    tracing::debug!(
+        channel = name,
+        raw_capabilities = ?cap_file.capabilities,
+        "Parsed capabilities file"
+    );
+
+    // Check WIT version compatibility
+    crate::tools::wasm::loader::check_wit_version_compat(
+        name,
+        cap_file.wit_version.as_deref(),
+        crate::tools::wasm::WIT_CHANNEL_VERSION,
+    )
+    .map_err(|e| WasmChannelError::IncompatibleWitVersion(e.to_string()))?;
+
+    let caps = cap_file.to_capabilities();
+
+    // Debug: log resulting capabilities
+    tracing::info!(
+        channel = name,
+        http_allowed = caps.tool_capabilities.http.is_some(),
+        http_allowlist_count = caps
+            .tool_capabilities
+            .http
+            .as_ref()
+            .map(|h| h.allowlist.len())
+            .unwrap_or(0),
+        "Channel capabilities loaded"
+    );
+
+    let config_json = cap_file.config_json();
+    let description = cap_file.description.clone();
+
+    Ok(ResolvedCapabilities {
+        capabilities: caps,
+        config_json,
+        description,
+        cap_file: Some(cap_file),
+    })
+}
+
 /// Whether a channel name is empty or could escape the channel directory.
 ///
 /// Rejects names containing path separators or `..` traversal segments.
@@ -83,81 +173,20 @@ impl WasmChannelLoader {
         let wasm_bytes = fs::read(wasm_path).await?;
 
         // Read capabilities file
-        let (capabilities, config_json, description, cap_file) =
-            if let Some(cap_path) = capabilities_path {
-                if cap_path.exists() {
-                    let cap_bytes = fs::read(cap_path).await?;
-                    let cap_file = ChannelCapabilitiesFile::from_bytes(&cap_bytes)
-                        .map_err(|e| WasmChannelError::InvalidCapabilities(e.to_string()))?;
-                    cap_file.validate();
-
-                    // Debug: log raw capabilities
-                    tracing::debug!(
-                        channel = name,
-                        raw_capabilities = ?cap_file.capabilities,
-                        "Parsed capabilities file"
-                    );
-
-                    // Check WIT version compatibility
-                    crate::tools::wasm::loader::check_wit_version_compat(
-                        name,
-                        cap_file.wit_version.as_deref(),
-                        crate::tools::wasm::WIT_CHANNEL_VERSION,
-                    )
-                    .map_err(|e| WasmChannelError::IncompatibleWitVersion(e.to_string()))?;
-
-                    let caps = cap_file.to_capabilities();
-
-                    // Debug: log resulting capabilities
-                    tracing::info!(
-                        channel = name,
-                        http_allowed = caps.tool_capabilities.http.is_some(),
-                        http_allowlist_count = caps
-                            .tool_capabilities
-                            .http
-                            .as_ref()
-                            .map(|h| h.allowlist.len())
-                            .unwrap_or(0),
-                        "Channel capabilities loaded"
-                    );
-
-                    let config = cap_file.config_json();
-                    let desc = cap_file.description.clone();
-
-                    (caps, config, desc, Some(cap_file))
-                } else {
-                    tracing::warn!(
-                        path = %cap_path.display(),
-                        "Capabilities file not found, using defaults"
-                    );
-                    (
-                        ChannelCapabilities::for_channel(name),
-                        "{}".to_string(),
-                        None,
-                        None,
-                    )
-                }
-            } else {
-                (
-                    ChannelCapabilities::for_channel(name),
-                    "{}".to_string(),
-                    None,
-                    None,
-                )
-            };
+        let resolved = resolve_capabilities(name, capabilities_path).await?;
 
         // Prepare the module
         let prepared = self
             .runtime
-            .prepare(name, &wasm_bytes, None, description)
+            .prepare(name, &wasm_bytes, None, resolved.description)
             .await?;
 
         // Create the channel
         let mut channel = WasmChannel::new(
             self.runtime.clone(),
             prepared,
-            capabilities,
-            config_json,
+            resolved.capabilities,
+            resolved.config_json,
             self.pairing_store.clone(),
             self.settings_store.clone(),
         );
@@ -173,7 +202,7 @@ impl WasmChannelLoader {
 
         Ok(LoadedChannel {
             channel,
-            capabilities_file: cap_file,
+            capabilities_file: resolved.cap_file,
         })
     }
 

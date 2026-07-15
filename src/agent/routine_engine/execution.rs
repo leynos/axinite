@@ -35,36 +35,44 @@ pub(super) struct EngineContext {
     pub(super) safety: Arc<SafetyLayer>,
 }
 
+/// Outcome of a routine action: final status, optional summary, and the
+/// number of tokens the run consumed (when known).
+pub(super) struct RunOutcome {
+    pub(super) status: RunStatus,
+    pub(super) summary: Option<String>,
+    pub(super) tokens: Option<i32>,
+}
+
 /// Execute a routine run. Handles both lightweight and full_job modes.
 ///
 /// Note: The caller must pre-increment `running_count` before spawning this task.
 /// This ensures the counter is >0 from the moment the task is queued.
 pub(super) async fn execute_routine(ctx: EngineContext, routine: Routine, run: RoutineRun) {
-    let result = run_action(&ctx, &routine, &run).await;
-
-    // Process result
-    let (status, summary, tokens) = match result {
-        Ok(execution) => execution,
+    let outcome = match run_action(&ctx, &routine, &run).await {
+        Ok(outcome) => outcome,
         Err(e) => {
             tracing::error!(routine = %routine.name, "Execution failed: {}", e);
-            (RunStatus::Failed, Some(e.to_string()), None)
+            RunOutcome {
+                status: RunStatus::Failed,
+                summary: Some(e.to_string()),
+                tokens: None,
+            }
         }
     };
 
-    complete_run_record(&ctx, &routine, &run, status, summary.as_deref(), tokens).await;
-    update_runtime_state(&ctx, &routine, status).await;
-    let thread_id = persist_run_message(&ctx, &routine, &run, status, summary.as_deref()).await;
-
-    // Send notifications based on config
-    send_notification(
-        &ctx.notify_tx,
-        &routine.notify,
-        &routine.name,
-        status,
-        summary.as_deref(),
-        thread_id.as_deref(),
+    complete_run_record(&ctx, &routine, &run, &outcome).await;
+    update_runtime_state(&ctx, &routine, outcome.status).await;
+    let thread_id = persist_run_message(
+        &ctx,
+        &routine,
+        &run,
+        outcome.status,
+        outcome.summary.as_deref(),
     )
     .await;
+
+    // Send notifications based on config
+    send_notification(&ctx.notify_tx, &routine, &outcome, thread_id.as_deref()).await;
 
     // Decrement running count after all finalization steps are complete.
     ctx.running_count.fetch_sub(1, Ordering::Relaxed);
@@ -75,13 +83,24 @@ async fn run_action(
     ctx: &EngineContext,
     routine: &Routine,
     run: &RoutineRun,
-) -> Result<(RunStatus, Option<String>, Option<i32>), RoutineError> {
+) -> Result<RunOutcome, RoutineError> {
     match &routine.action {
         RoutineAction::Lightweight {
             prompt,
             context_paths,
             max_tokens,
-        } => execute_lightweight(ctx, routine, prompt, context_paths, *max_tokens).await,
+        } => {
+            execute_lightweight(
+                ctx,
+                routine,
+                &super::lightweight::LightweightSpec {
+                    prompt,
+                    context_paths,
+                    max_tokens: *max_tokens,
+                },
+            )
+            .await
+        }
         RoutineAction::FullJob {
             title,
             description,
@@ -92,10 +111,12 @@ async fn run_action(
                 ctx,
                 routine,
                 run,
-                title,
-                description,
-                *max_iterations,
-                tool_permissions,
+                &FullJobSpec {
+                    title,
+                    description,
+                    max_iterations: *max_iterations,
+                    tool_permissions,
+                },
             )
             .await
         }
@@ -108,17 +129,15 @@ async fn complete_run_record(
     ctx: &EngineContext,
     routine: &Routine,
     run: &RoutineRun,
-    status: RunStatus,
-    summary: Option<&str>,
-    tokens: Option<i32>,
+    outcome: &RunOutcome,
 ) {
     if let Err(e) = ctx
         .store
         .complete_routine_run(RoutineRunCompletion {
             id: run.id,
-            status,
-            result_summary: summary,
-            tokens_used: tokens,
+            status: outcome.status,
+            result_summary: outcome.summary.as_deref(),
+            tokens_used: outcome.tokens,
         })
         .await
     {
@@ -203,6 +222,15 @@ async fn persist_run_message(
     Some(conv_id.to_string())
 }
 
+/// Parameters of a full-job routine action, as declared on the routine.
+#[derive(Clone, Copy)]
+struct FullJobSpec<'a> {
+    title: &'a str,
+    description: &'a str,
+    max_iterations: u32,
+    tool_permissions: &'a [String],
+}
+
 /// Execute a full-job routine by dispatching to the scheduler.
 ///
 /// Fire-and-forget: creates a job via `Scheduler::dispatch_job` (which handles
@@ -213,11 +241,14 @@ async fn execute_full_job(
     ctx: &EngineContext,
     routine: &Routine,
     run: &RoutineRun,
-    title: &str,
-    description: &str,
-    max_iterations: u32,
-    tool_permissions: &[String],
-) -> Result<(RunStatus, Option<String>, Option<i32>), RoutineError> {
+    spec: &FullJobSpec<'_>,
+) -> Result<RunOutcome, RoutineError> {
+    let FullJobSpec {
+        title,
+        description,
+        max_iterations,
+        tool_permissions,
+    } = *spec;
     let scheduler = ctx
         .scheduler
         .as_ref()
@@ -266,26 +297,35 @@ async fn execute_full_job(
     let summary = format!(
         "Dispatched job {job_id} for full execution with tool access (max_iterations: {max_iterations})"
     );
-    Ok((RunStatus::Ok, Some(summary), None))
+    Ok(RunOutcome {
+        status: RunStatus::Ok,
+        summary: Some(summary),
+        tokens: None,
+    })
+}
+
+/// Returns `true` when the notify config requests a message for this status.
+fn should_notify(notify: &NotifyConfig, status: RunStatus) -> bool {
+    match status {
+        RunStatus::Ok => notify.on_success,
+        RunStatus::Attention => notify.on_attention,
+        RunStatus::Failed => notify.on_failure,
+        RunStatus::Running => false,
+    }
 }
 
 /// Send a notification based on the routine's notify config and run status.
 async fn send_notification(
     tx: &mpsc::Sender<OutgoingResponse>,
-    notify: &NotifyConfig,
-    routine_name: &str,
-    status: RunStatus,
-    summary: Option<&str>,
+    routine: &Routine,
+    outcome: &RunOutcome,
     thread_id: Option<&str>,
 ) {
-    let should_notify = match status {
-        RunStatus::Ok => notify.on_success,
-        RunStatus::Attention => notify.on_attention,
-        RunStatus::Failed => notify.on_failure,
-        RunStatus::Running => false,
-    };
+    let notify = &routine.notify;
+    let routine_name = routine.name.as_str();
+    let status = outcome.status;
 
-    if !should_notify {
+    if !should_notify(notify, status) {
         return;
     }
 
@@ -296,7 +336,7 @@ async fn send_notification(
         RunStatus::Running => "⏳",
     };
 
-    let message = match summary {
+    let message = match outcome.summary.as_deref() {
         Some(s) => format!("{} *Routine '{}'*: {}\n\n{}", icon, routine_name, status, s),
         None => format!("{} *Routine '{}'*: {}", icon, routine_name, status),
     };

@@ -31,18 +31,39 @@ fn format_error_chain(e: &reqwest::Error) -> String {
     chain
 }
 
+/// A fully resolved outbound HTTP request, ready to send.
+///
+/// Groups the request parts (method, URL, headers, body, timeout) that
+/// travel together from preparation to execution.
+pub(super) struct OutboundHttpRequest {
+    /// HTTP method (e.g. "GET").
+    pub(super) method: String,
+    /// Request URL with all credentials injected.
+    pub(super) url: String,
+    /// Request headers with all credentials injected.
+    pub(super) headers: HashMap<String, String>,
+    /// Optional request body.
+    pub(super) body: Option<Vec<u8>>,
+    /// Caller-specified timeout in milliseconds, when given.
+    pub(super) timeout_ms: Option<u32>,
+}
+
 /// Executes the outbound HTTP request and returns the normalised response.
 ///
 /// Includes per-request DNS rebinding protection via `reject_private_ip`.
 pub(super) async fn send_http_request(
-    method: &str,
-    url: String,
-    headers: HashMap<String, String>,
-    body: Option<Vec<u8>>,
-    timeout_ms: Option<u32>,
+    outbound: OutboundHttpRequest,
     max_response_bytes: usize,
     leak_detector: &LeakDetector,
 ) -> Result<near::agent::host::HttpResponse, String> {
+    let OutboundHttpRequest {
+        method,
+        url,
+        headers,
+        body,
+        timeout_ms,
+    } = outbound;
+
     // Reject private/internal IPs to prevent DNS rebinding attacks.
     // Must run inside the runtime so DNS resolution can be performed asynchronously
     // when the host is a domain name; the sync outer path already called
@@ -55,7 +76,7 @@ pub(super) async fn send_http_request(
         .build()
         .map_err(|e| format!("Failed to build HTTP client: {e}"))?;
 
-    let mut request = build_http_client_request(&client, method, &url)?;
+    let mut request = build_http_client_request(&client, &method, &url)?;
 
     for (key, value) in headers {
         request = request.header(&key, &value);

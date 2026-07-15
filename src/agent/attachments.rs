@@ -68,14 +68,34 @@ fn escape_xml_text(s: &str) -> String {
         .replace('>', "&gt;")
 }
 
+/// Pre-escaped attachment metadata shared by the per-kind format helpers.
+struct AttachmentMeta {
+    /// One-based position of the attachment within the message.
+    index: usize,
+    /// XML-attribute-escaped filename (or "unknown").
+    filename: String,
+    /// XML-attribute-escaped MIME type.
+    mime: String,
+}
+
+impl AttachmentMeta {
+    /// Builds escaped metadata for an attachment at the given position.
+    fn new(index: usize, att: &IncomingAttachment) -> Self {
+        Self {
+            index,
+            filename: escape_xml_attr(att.filename.as_deref().unwrap_or("unknown")),
+            mime: escape_xml_attr(&att.mime_type),
+        }
+    }
+}
+
 fn format_attachment(index: usize, att: &IncomingAttachment) -> String {
-    let filename = escape_xml_attr(att.filename.as_deref().unwrap_or("unknown"));
-    let mime = escape_xml_attr(&att.mime_type);
+    let meta = AttachmentMeta::new(index, att);
 
     match &att.kind {
-        AttachmentKind::Audio => format_audio_attachment(index, att, &filename),
-        AttachmentKind::Image => format_image_attachment(index, att, &filename, &mime),
-        AttachmentKind::Document => format_document_attachment(index, att, &filename, &mime),
+        AttachmentKind::Audio => format_audio_attachment(att, &meta),
+        AttachmentKind::Image => format_image_attachment(att, &meta),
+        AttachmentKind::Document => format_document_attachment(att, &meta),
     }
 }
 
@@ -87,7 +107,10 @@ fn size_attr(att: &IncomingAttachment) -> String {
 }
 
 /// Render an audio attachment element, embedding the transcript when available.
-fn format_audio_attachment(index: usize, att: &IncomingAttachment, filename: &str) -> String {
+fn format_audio_attachment(att: &IncomingAttachment, meta: &AttachmentMeta) -> String {
+    let AttachmentMeta {
+        index, filename, ..
+    } = meta;
     let duration_attr = att
         .duration_secs
         .map(|d| format!(" duration=\"{d}s\""))
@@ -106,12 +129,12 @@ fn format_audio_attachment(index: usize, att: &IncomingAttachment, filename: &st
 }
 
 /// Render an image attachment element, noting whether visual data accompanies it.
-fn format_image_attachment(
-    index: usize,
-    att: &IncomingAttachment,
-    filename: &str,
-    mime: &str,
-) -> String {
+fn format_image_attachment(att: &IncomingAttachment, meta: &AttachmentMeta) -> String {
+    let AttachmentMeta {
+        index,
+        filename,
+        mime,
+    } = meta;
     let size_attr = size_attr(att);
 
     let body = if att.data.is_empty() {
@@ -128,12 +151,12 @@ fn format_image_attachment(
 }
 
 /// Render a document attachment element, embedding extracted text when available.
-fn format_document_attachment(
-    index: usize,
-    att: &IncomingAttachment,
-    filename: &str,
-    mime: &str,
-) -> String {
+fn format_document_attachment(att: &IncomingAttachment, meta: &AttachmentMeta) -> String {
+    let AttachmentMeta {
+        index,
+        filename,
+        mime,
+    } = meta;
     let size_attr = size_attr(att);
 
     let body: String = match &att.extracted_text {

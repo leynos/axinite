@@ -102,6 +102,8 @@ mod channel_catalog;
 mod channels;
 mod database;
 mod database_ops;
+#[cfg(feature = "libsql")]
+mod database_prompts;
 mod extensions;
 mod lifecycle;
 mod model_catalog;

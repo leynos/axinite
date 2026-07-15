@@ -11,7 +11,7 @@ use crate::secrets::crypto::SecretsCrypto;
 use crate::secrets::types::{CreateSecretParams, DecryptedSecret, Secret, SecretError, SecretRef};
 
 use super::NativeSecretsStore;
-use super::access::{ensure_not_expired, is_secret_name_allowed};
+use super::common::{db_err, get_decrypted_via, is_accessible_via, require_live_secret};
 
 /// PostgreSQL implementation of SecretsStore.
 pub struct PostgresSecretsStore {
@@ -32,11 +32,7 @@ impl NativeSecretsStore for PostgresSecretsStore {
         user_id: &'a str,
         params: CreateSecretParams,
     ) -> Result<Secret, SecretError> {
-        let client = self
-            .pool
-            .get()
-            .await
-            .map_err(|e| SecretError::Database(e.to_string()))?;
+        let client = self.pool.get().await.map_err(db_err)?;
 
         // Encrypt the secret value
         let plaintext = params.value.expose_secret().as_bytes();
@@ -71,18 +67,14 @@ impl NativeSecretsStore for PostgresSecretsStore {
                 ],
             )
             .await
-            .map_err(|e| SecretError::Database(e.to_string()))?;
+            .map_err(db_err)?;
 
         Ok(row_to_secret(&row))
     }
 
     async fn get<'a>(&'a self, user_id: &'a str, name: &'a str) -> Result<Secret, SecretError> {
         let name = name.to_lowercase();
-        let client = self
-            .pool
-            .get()
-            .await
-            .map_err(|e| SecretError::Database(e.to_string()))?;
+        let client = self.pool.get().await.map_err(db_err)?;
 
         let row = client
             .query_opt(
@@ -95,12 +87,9 @@ impl NativeSecretsStore for PostgresSecretsStore {
                 &[&user_id, &name],
             )
             .await
-            .map_err(|e| SecretError::Database(e.to_string()))?;
+            .map_err(db_err)?;
 
-        match row {
-            Some(r) => ensure_not_expired(row_to_secret(&r)),
-            None => Err(SecretError::NotFound(name.to_string())),
-        }
+        require_live_secret(row.map(|r| row_to_secret(&r)), &name)
     }
 
     async fn get_decrypted<'a>(
@@ -108,18 +97,12 @@ impl NativeSecretsStore for PostgresSecretsStore {
         user_id: &'a str,
         name: &'a str,
     ) -> Result<DecryptedSecret, SecretError> {
-        let secret = NativeSecretsStore::get(self, user_id, name).await?;
-        self.crypto
-            .decrypt(&secret.encrypted_value, &secret.key_salt)
+        get_decrypted_via(self, &self.crypto, user_id, name).await
     }
 
     async fn exists<'a>(&'a self, user_id: &'a str, name: &'a str) -> Result<bool, SecretError> {
         let name = name.to_lowercase();
-        let client = self
-            .pool
-            .get()
-            .await
-            .map_err(|e| SecretError::Database(e.to_string()))?;
+        let client = self.pool.get().await.map_err(db_err)?;
 
         let row = client
             .query_one(
@@ -127,17 +110,13 @@ impl NativeSecretsStore for PostgresSecretsStore {
                 &[&user_id, &name],
             )
             .await
-            .map_err(|e| SecretError::Database(e.to_string()))?;
+            .map_err(db_err)?;
 
         Ok(row.get(0))
     }
 
     async fn list<'a>(&'a self, user_id: &'a str) -> Result<Vec<SecretRef>, SecretError> {
-        let client = self
-            .pool
-            .get()
-            .await
-            .map_err(|e| SecretError::Database(e.to_string()))?;
+        let client = self.pool.get().await.map_err(db_err)?;
 
         let rows = client
             .query(
@@ -145,7 +124,7 @@ impl NativeSecretsStore for PostgresSecretsStore {
                 &[&user_id],
             )
             .await
-            .map_err(|e| SecretError::Database(e.to_string()))?;
+            .map_err(db_err)?;
 
         Ok(rows
             .into_iter()
@@ -158,11 +137,7 @@ impl NativeSecretsStore for PostgresSecretsStore {
 
     async fn delete<'a>(&'a self, user_id: &'a str, name: &'a str) -> Result<bool, SecretError> {
         let name = name.to_lowercase();
-        let client = self
-            .pool
-            .get()
-            .await
-            .map_err(|e| SecretError::Database(e.to_string()))?;
+        let client = self.pool.get().await.map_err(db_err)?;
 
         let result = client
             .execute(
@@ -170,17 +145,13 @@ impl NativeSecretsStore for PostgresSecretsStore {
                 &[&user_id, &name],
             )
             .await
-            .map_err(|e| SecretError::Database(e.to_string()))?;
+            .map_err(db_err)?;
 
         Ok(result > 0)
     }
 
     async fn record_usage(&self, secret_id: Uuid) -> Result<(), SecretError> {
-        let client = self
-            .pool
-            .get()
-            .await
-            .map_err(|e| SecretError::Database(e.to_string()))?;
+        let client = self.pool.get().await.map_err(db_err)?;
 
         client
             .execute(
@@ -192,7 +163,7 @@ impl NativeSecretsStore for PostgresSecretsStore {
                 &[&secret_id],
             )
             .await
-            .map_err(|e| SecretError::Database(e.to_string()))?;
+            .map_err(db_err)?;
 
         Ok(())
     }
@@ -203,14 +174,7 @@ impl NativeSecretsStore for PostgresSecretsStore {
         secret_name: &'a str,
         allowed_secrets: &'a [String],
     ) -> Result<bool, SecretError> {
-        let secret_name_lower = secret_name.to_lowercase();
-        // First check if the secret exists
-        if !NativeSecretsStore::exists(self, user_id, &secret_name_lower).await? {
-            return Ok(false);
-        }
-
-        // Check the allowed list (supports "openai_*"-style glob patterns)
-        Ok(is_secret_name_allowed(&secret_name_lower, allowed_secrets))
+        is_accessible_via(self, user_id, secret_name, allowed_secrets).await
     }
 }
 

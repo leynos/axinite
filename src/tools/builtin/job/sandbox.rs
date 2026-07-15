@@ -18,7 +18,32 @@ use crate::orchestrator::job_manager::{ContainerJobManager, JobMode};
 use crate::tools::tool::{ToolError, ToolOutput};
 
 use super::CreateJobTool;
+use super::create::StatusTransition;
 use super::project_dir::resolve_project_dir;
+
+/// Coordinates for one container job shared by the polling and completion
+/// handlers: the job manager, job id, project paths, and the tool start time.
+struct ContainerJobView<'a> {
+    jm: &'a ContainerJobManager,
+    job_id: Uuid,
+    project_dir_str: &'a str,
+    browse_id: &'a str,
+    start: std::time::Instant,
+}
+
+impl ContainerJobView<'_> {
+    /// Success output for a completed container job with the given message.
+    fn completed_output(&self, output: &str) -> ToolOutput {
+        let result = serde_json::json!({
+            "job_id": self.job_id.to_string(),
+            "status": "completed",
+            "output": output,
+            "project_dir": self.project_dir_str,
+            "browse_url": format!("/projects/{}", self.browse_id),
+        });
+        ToolOutput::success(result, self.start.elapsed())
+    }
+}
 
 impl CreateJobTool {
     /// Build a sandbox job record from the given parameters.
@@ -104,11 +129,7 @@ impl CreateJobTool {
     async fn handle_stopped_container(
         &self,
         handle: &crate::orchestrator::job_manager::ContainerHandle,
-        jm: &ContainerJobManager,
-        job_id: Uuid,
-        project_dir_str: &str,
-        browse_id: &str,
-        start: std::time::Instant,
+        view: &ContainerJobView<'_>,
     ) -> Result<ToolOutput, ToolError> {
         let message = handle
             .completion_result
@@ -120,36 +141,19 @@ impl CreateJobTool {
             .as_ref()
             .map(|r| r.success)
             .unwrap_or(true);
-        jm.cleanup_job(job_id).await;
+        view.jm.cleanup_job(view.job_id).await;
 
         let finished_at = Utc::now();
         if success {
-            self.update_status_sync(
-                job_id,
-                "completed",
-                Some(true),
-                None,
-                None,
-                Some(finished_at),
-            )
-            .await;
-            let result = serde_json::json!({
-                "job_id": job_id.to_string(),
-                "status": "completed",
-                "output": message,
-                "project_dir": project_dir_str,
-                "browse_url": format!("/projects/{}", browse_id),
-            });
-            Ok(ToolOutput::success(result, start.elapsed()))
+            self.update_status_sync(StatusTransition::completed(view.job_id, finished_at))
+                .await;
+            Ok(view.completed_output(&message))
         } else {
-            self.update_status_sync(
-                job_id,
-                "failed",
-                Some(false),
-                Some(message.clone()),
-                None,
-                Some(finished_at),
-            )
+            self.update_status_sync(StatusTransition::failed(
+                view.job_id,
+                message.clone(),
+                finished_at,
+            ))
             .await;
             Err(ToolError::ExecutionFailed(format!(
                 "container job failed: {}",
@@ -162,23 +166,19 @@ impl CreateJobTool {
     async fn handle_failed_container(
         &self,
         handle: &crate::orchestrator::job_manager::ContainerHandle,
-        jm: &ContainerJobManager,
-        job_id: Uuid,
+        view: &ContainerJobView<'_>,
     ) -> Result<ToolOutput, ToolError> {
         let message = handle
             .completion_result
             .as_ref()
             .and_then(|r| r.message.clone())
             .unwrap_or_else(|| "unknown failure".to_string());
-        jm.cleanup_job(job_id).await;
-        self.update_status_sync(
-            job_id,
-            "failed",
-            Some(false),
-            Some(message.clone()),
-            None,
-            Some(Utc::now()),
-        )
+        view.jm.cleanup_job(view.job_id).await;
+        self.update_status_sync(StatusTransition::failed(
+            view.job_id,
+            message.clone(),
+            Utc::now(),
+        ))
         .await;
         Err(ToolError::ExecutionFailed(format!(
             "container job failed: {}",
@@ -192,47 +192,26 @@ impl CreateJobTool {
     /// container finished before we could observe a terminal state.
     async fn handle_missing_container(
         &self,
-        job_id: Uuid,
-        project_dir_str: &str,
-        browse_id: &str,
-        start: std::time::Instant,
+        view: &ContainerJobView<'_>,
     ) -> Result<ToolOutput, ToolError> {
-        self.update_status_sync(
-            job_id,
-            "completed",
-            Some(true),
-            None,
-            None,
-            Some(Utc::now()),
-        )
-        .await;
-        let result = serde_json::json!({
-            "job_id": job_id.to_string(),
-            "status": "completed",
-            "output": "Container job completed",
-            "project_dir": project_dir_str,
-            "browse_url": format!("/projects/{}", browse_id),
-        });
-        Ok(ToolOutput::success(result, start.elapsed()))
+        self.update_status_sync(StatusTransition::completed(view.job_id, Utc::now()))
+            .await;
+        Ok(view.completed_output("Container job completed"))
     }
 
     /// Stop and clean up a container that exceeded the polling deadline,
     /// persisting the failed status before returning the timeout error.
     async fn handle_timed_out_container(
         &self,
-        jm: &ContainerJobManager,
-        job_id: Uuid,
+        view: &ContainerJobView<'_>,
     ) -> Result<ToolOutput, ToolError> {
-        let _ = jm.stop_job(job_id).await;
-        jm.cleanup_job(job_id).await;
-        self.update_status_sync(
-            job_id,
-            "failed",
-            Some(false),
-            Some("Timed out (10 minutes)".to_string()),
-            None,
-            Some(Utc::now()),
-        )
+        let _ = view.jm.stop_job(view.job_id).await;
+        view.jm.cleanup_job(view.job_id).await;
+        self.update_status_sync(StatusTransition::failed(
+            view.job_id,
+            "Timed out (10 minutes)",
+            Utc::now(),
+        ))
         .await;
         Err(ToolError::ExecutionFailed(
             "container execution timed out (10 minutes)".to_string(),
@@ -242,11 +221,7 @@ impl CreateJobTool {
     /// Poll container state until completion or timeout.
     async fn await_container_completion(
         &self,
-        jm: &ContainerJobManager,
-        job_id: Uuid,
-        project_dir_str: &str,
-        browse_id: &str,
-        start: std::time::Instant,
+        view: &ContainerJobView<'_>,
     ) -> Result<ToolOutput, ToolError> {
         use crate::orchestrator::job_manager::ContainerState;
 
@@ -256,13 +231,11 @@ impl CreateJobTool {
 
         loop {
             if tokio::time::Instant::now() > deadline {
-                return self.handle_timed_out_container(jm, job_id).await;
+                return self.handle_timed_out_container(view).await;
             }
 
-            let Some(handle) = jm.get_handle(job_id).await else {
-                return self
-                    .handle_missing_container(job_id, project_dir_str, browse_id, start)
-                    .await;
+            let Some(handle) = view.jm.get_handle(view.job_id).await else {
+                return self.handle_missing_container(view).await;
             };
 
             match handle.state {
@@ -270,19 +243,10 @@ impl CreateJobTool {
                     tokio::time::sleep(poll_interval).await;
                 }
                 ContainerState::Stopped => {
-                    return self
-                        .handle_stopped_container(
-                            &handle,
-                            jm,
-                            job_id,
-                            project_dir_str,
-                            browse_id,
-                            start,
-                        )
-                        .await;
+                    return self.handle_stopped_container(&handle, view).await;
                 }
                 ContainerState::Failed => {
-                    return self.handle_failed_container(&handle, jm, job_id).await;
+                    return self.handle_failed_container(&handle, view).await;
                 }
             }
         }
@@ -324,20 +288,12 @@ impl CreateJobTool {
             .create_job(job_id, task, Some(project_dir), mode, credential_grants)
             .await
             .map_err(|e| {
-                self.update_status(
-                    job_id,
-                    "failed",
-                    Some(false),
-                    Some(e.to_string()),
-                    None,
-                    Some(Utc::now()),
-                );
+                self.update_status(StatusTransition::failed(job_id, e.to_string(), Utc::now()));
                 ToolError::ExecutionFailed(format!("failed to create container: {}", e))
             })?;
 
         // Container started successfully.
-        let now = Utc::now();
-        self.update_status(job_id, "running", None, None, Some(now), None);
+        self.update_status(StatusTransition::running(job_id, Utc::now()));
 
         if !wait {
             // Spawn a background monitor that forwards Claude Code output
@@ -363,7 +319,13 @@ impl CreateJobTool {
             return Ok(ToolOutput::success(result, start.elapsed()));
         }
 
-        self.await_container_completion(jm, job_id, &project_dir_str, &browse_id, start)
-            .await
+        let view = ContainerJobView {
+            jm,
+            job_id,
+            project_dir_str: &project_dir_str,
+            browse_id: &browse_id,
+            start,
+        };
+        self.await_container_completion(&view).await
     }
 }

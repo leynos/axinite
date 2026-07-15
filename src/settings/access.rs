@@ -37,7 +37,8 @@ impl Settings {
         let final_key = *parts.last().unwrap();
         let obj = parent_object_mut(&mut json, &parts, path)?;
 
-        let new_value = coerce_value(obj.get(final_key), path, value)?;
+        let assignment = RawAssignment { path, value };
+        let new_value = coerce_value(obj.get(final_key), &assignment)?;
         obj.insert(final_key.to_string(), new_value);
 
         // Deserialize back to Settings
@@ -88,13 +89,21 @@ fn parent_object_mut<'a>(
         .ok_or_else(|| format!("Parent is not an object: {}", path))
 }
 
+/// A textual assignment to a dotted settings path, as received from the
+/// caller. Groups the path (used in error messages) with the raw value to
+/// be coerced.
+struct RawAssignment<'a> {
+    path: &'a str,
+    value: &'a str,
+}
+
 /// Coerce a textual value to a JSON value, inferring the target type from
 /// the existing value at the path (if any).
 fn coerce_value(
     existing: Option<&serde_json::Value>,
-    path: &str,
-    value: &str,
+    assignment: &RawAssignment<'_>,
 ) -> Result<serde_json::Value, String> {
+    let RawAssignment { path, value } = *assignment;
     let Some(existing) = existing else {
         // Key doesn't exist, try to parse as JSON or use string
         return Ok(
@@ -109,7 +118,7 @@ fn coerce_value(
                 .map_err(|_| format!("Expected boolean for {}, got '{}'", path, value))?;
             Ok(serde_json::Value::Bool(b))
         }
-        serde_json::Value::Number(n) => coerce_number(n, path, value),
+        serde_json::Value::Number(n) => coerce_number(n, assignment),
         serde_json::Value::Null => {
             // Could be Option<T>, try to parse as JSON or use string
             Ok(serde_json::from_str(value).unwrap_or(serde_json::Value::String(value.to_string())))
@@ -126,9 +135,9 @@ fn coerce_value(
 /// the existing number (unsigned, signed, or floating point).
 fn coerce_number(
     existing: &serde_json::Number,
-    path: &str,
-    value: &str,
+    assignment: &RawAssignment<'_>,
 ) -> Result<serde_json::Value, String> {
+    let RawAssignment { path, value } = *assignment;
     if existing.is_u64() {
         let n = value
             .parse::<u64>()

@@ -15,6 +15,17 @@ use crate::llm::{ActionPlan, ChatMessage, Reasoning, ReasoningContext, ToolCall,
 
 use super::{Worker, WorkerLoopOutcome};
 
+/// Mutable state threaded through plan execution: the worker's message
+/// receiver, the reasoning engine, and the accumulated reasoning context.
+struct PlanSession<'a> {
+    /// Channel receiving stop, ping, and user-message signals for the worker.
+    rx: &'a mut mpsc::Receiver<WorkerMessage>,
+    /// Reasoning engine used to confirm plan completion.
+    reasoning: &'a Reasoning,
+    /// Conversation context accumulated across the worker loop.
+    reason_ctx: &'a mut ReasoningContext,
+}
+
 impl Worker {
     /// Generate an execution plan when planning is enabled.
     ///
@@ -91,7 +102,12 @@ impl Worker {
             return Ok(None);
         };
 
-        match self.execute_plan(rx, reasoning, reason_ctx, &plan).await? {
+        let mut session = PlanSession {
+            rx,
+            reasoning,
+            reason_ctx,
+        };
+        match self.execute_plan(&mut session, &plan).await? {
             WorkerLoopOutcome::Completed => return Ok(Some(WorkerLoopOutcome::Completed)),
             WorkerLoopOutcome::Exited => return Ok(Some(WorkerLoopOutcome::Exited)),
             WorkerLoopOutcome::ContinueDirectSelection => {}
@@ -114,13 +130,11 @@ impl Worker {
     /// Execute a pre-generated plan.
     async fn execute_plan(
         &self,
-        rx: &mut mpsc::Receiver<WorkerMessage>,
-        reasoning: &Reasoning,
-        reason_ctx: &mut ReasoningContext,
+        session: &mut PlanSession<'_>,
         plan: &ActionPlan,
     ) -> Result<WorkerLoopOutcome, Error> {
         for (i, action) in plan.actions.iter().enumerate() {
-            if let Some(outcome) = self.drain_plan_signals(rx, reason_ctx) {
+            if let Some(outcome) = self.drain_plan_signals(session.rx, session.reason_ctx) {
                 return Ok(outcome);
             }
 
@@ -133,12 +147,14 @@ impl Worker {
                 action.reasoning
             );
 
-            self.execute_planned_action(reason_ctx, plan, i).await?;
+            self.execute_planned_action(session.reason_ctx, plan, i)
+                .await?;
 
             tokio::time::sleep(Duration::from_millis(100)).await;
         }
 
-        self.confirm_plan_completion(reasoning, reason_ctx).await
+        self.confirm_plan_completion(session.reasoning, session.reason_ctx)
+            .await
     }
 
     /// Drain pending worker messages during plan execution.

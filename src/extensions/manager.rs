@@ -11,6 +11,7 @@ mod channel_state;
 mod install;
 mod listing;
 mod oauth_flow;
+mod oauth_launch;
 mod ops;
 mod removal;
 mod setup_secrets;

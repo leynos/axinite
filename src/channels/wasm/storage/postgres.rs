@@ -7,8 +7,9 @@ use uuid::Uuid;
 use crate::tools::wasm::storage::compute_binary_hash;
 
 use super::{
-    CHANNEL_COLUMNS, CHANNEL_COLUMNS_WITH_BINARY, StoreChannelParams, StoredWasmChannel,
-    StoredWasmChannelWithBinary, WasmChannelStore, WasmChannelStoreError, check_binary_integrity,
+    CHANNEL_COLUMNS, CHANNEL_COLUMNS_WITH_BINARY, ChannelKey, StoreChannelParams,
+    StoredWasmChannel, StoredWasmChannelWithBinary, WasmChannelStore, WasmChannelStoreError,
+    check_binary_integrity,
 };
 
 use super::PostgresWasmChannelStore;
@@ -17,6 +18,14 @@ impl PostgresWasmChannelStore {
     pub fn new(pool: Pool) -> Self {
         Self { pool }
     }
+
+    /// Fetch a pooled client, mapping pool errors to store errors.
+    async fn client(&self) -> Result<deadpool_postgres::Object, WasmChannelStoreError> {
+        self.pool
+            .get()
+            .await
+            .map_err(|e| WasmChannelStoreError::Database(e.to_string()))
+    }
 }
 
 impl WasmChannelStore for PostgresWasmChannelStore {
@@ -24,11 +33,7 @@ impl WasmChannelStore for PostgresWasmChannelStore {
         &self,
         params: StoreChannelParams,
     ) -> Result<StoredWasmChannel, WasmChannelStoreError> {
-        let mut client = self
-            .pool
-            .get()
-            .await
-            .map_err(|e| WasmChannelStoreError::Database(e.to_string()))?;
+        let mut client = self.client().await?;
 
         let binary_hash = compute_binary_hash(&params.wasm_binary);
         let id = Uuid::new_v4();
@@ -87,16 +92,9 @@ impl WasmChannelStore for PostgresWasmChannelStore {
         Ok(channel)
     }
 
-    async fn get(
-        &self,
-        user_id: &str,
-        name: &str,
-    ) -> Result<StoredWasmChannel, WasmChannelStoreError> {
-        let client = self
-            .pool
-            .get()
-            .await
-            .map_err(|e| WasmChannelStoreError::Database(e.to_string()))?;
+    async fn get(&self, key: ChannelKey<'_>) -> Result<StoredWasmChannel, WasmChannelStoreError> {
+        let ChannelKey { user_id, name } = key;
+        let client = self.client().await?;
 
         let row = client
             .query_opt(
@@ -117,14 +115,10 @@ impl WasmChannelStore for PostgresWasmChannelStore {
 
     async fn get_with_binary(
         &self,
-        user_id: &str,
-        name: &str,
+        key: ChannelKey<'_>,
     ) -> Result<StoredWasmChannelWithBinary, WasmChannelStoreError> {
-        let client = self
-            .pool
-            .get()
-            .await
-            .map_err(|e| WasmChannelStoreError::Database(e.to_string()))?;
+        let ChannelKey { user_id, name } = key;
+        let client = self.client().await?;
 
         let row = client
             .query_opt(
@@ -142,7 +136,7 @@ impl WasmChannelStore for PostgresWasmChannelStore {
                 let wasm_binary: Vec<u8> = r.get("wasm_binary");
                 let binary_hash: Vec<u8> = r.get("binary_hash");
 
-                check_binary_integrity(user_id, name, &wasm_binary, &binary_hash)?;
+                check_binary_integrity(key, &wasm_binary, &binary_hash)?;
 
                 let channel = pg_row_to_channel(&r)?;
 
@@ -157,11 +151,7 @@ impl WasmChannelStore for PostgresWasmChannelStore {
     }
 
     async fn list(&self, user_id: &str) -> Result<Vec<StoredWasmChannel>, WasmChannelStoreError> {
-        let client = self
-            .pool
-            .get()
-            .await
-            .map_err(|e| WasmChannelStoreError::Database(e.to_string()))?;
+        let client = self.client().await?;
 
         let rows = client
             .query(
@@ -177,12 +167,9 @@ impl WasmChannelStore for PostgresWasmChannelStore {
         rows.into_iter().map(|r| pg_row_to_channel(&r)).collect()
     }
 
-    async fn delete(&self, user_id: &str, name: &str) -> Result<bool, WasmChannelStoreError> {
-        let client = self
-            .pool
-            .get()
-            .await
-            .map_err(|e| WasmChannelStoreError::Database(e.to_string()))?;
+    async fn delete(&self, key: ChannelKey<'_>) -> Result<bool, WasmChannelStoreError> {
+        let ChannelKey { user_id, name } = key;
+        let client = self.client().await?;
 
         let result = client
             .execute(

@@ -16,6 +16,24 @@ use crate::error::{Error, JobError};
 use crate::safety::SafetyLayer;
 use crate::tools::{ApprovalContext, ToolRegistry};
 
+/// Dependencies and identity for a scheduler tool sub-task execution.
+pub(crate) struct ToolTaskRequest {
+    /// Registry the tool is looked up in.
+    pub(crate) tools: Arc<ToolRegistry>,
+    /// Context manager the parent job context is fetched from.
+    pub(crate) context_manager: Arc<ContextManager>,
+    /// Safety layer applied to tool output.
+    pub(crate) safety: Arc<SafetyLayer>,
+    /// Approval context; `None` blocks any tool that requires approval.
+    pub(crate) approval_context: Option<ApprovalContext>,
+    /// Parent job the tool runs on behalf of.
+    pub(crate) job_id: Uuid,
+    /// Name of the tool to execute.
+    pub(crate) tool_name: String,
+    /// JSON parameters passed to the tool.
+    pub(crate) params: serde_json::Value,
+}
+
 impl Scheduler {
     /// Schedule a sub-task from within a worker.
     ///
@@ -76,15 +94,15 @@ impl Scheduler {
                 // TODO: propagate parent job's ApprovalContext here when subtasks
                 // are used in autonomous/routine paths (currently only used in tests).
                 Ok(tokio::spawn(async move {
-                    let result = Self::execute_tool_task(
+                    let result = Self::execute_tool_task(ToolTaskRequest {
                         tools,
                         context_manager,
                         safety,
-                        None,
-                        tool_parent_id,
-                        &tool_name,
+                        approval_context: None,
+                        job_id: tool_parent_id,
+                        tool_name,
                         params,
-                    )
+                    })
                     .await;
 
                     // Send result (ignore if receiver dropped)
@@ -214,15 +232,17 @@ impl Scheduler {
     ///
     /// Performs scheduler-specific checks (approval, cancellation) then
     /// delegates to the shared `execute_tool_with_safety` pipeline.
-    pub(super) async fn execute_tool_task(
-        tools: Arc<ToolRegistry>,
-        context_manager: Arc<ContextManager>,
-        safety: Arc<SafetyLayer>,
-        approval_context: Option<ApprovalContext>,
-        job_id: Uuid,
-        tool_name: &str,
-        params: serde_json::Value,
-    ) -> Result<TaskOutput, Error> {
+    pub(super) async fn execute_tool_task(request: ToolTaskRequest) -> Result<TaskOutput, Error> {
+        let ToolTaskRequest {
+            tools,
+            context_manager,
+            safety,
+            approval_context,
+            job_id,
+            tool_name,
+            params,
+        } = request;
+        let tool_name = tool_name.as_str();
         let start = std::time::Instant::now();
 
         // Get the tool for approval check

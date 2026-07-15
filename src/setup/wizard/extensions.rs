@@ -110,22 +110,35 @@ async fn install_selected_tools(
             continue; // Already installed, skip
         }
 
-        match installer.install_with_source_fallback(tool, false).await {
-            Ok(outcome) => {
-                print_success(&format!("Installed {}", outcome.name));
-                for warning in &outcome.warnings {
-                    print_info(&format!("{}: {}", outcome.name, warning));
-                }
-                installed_count += 1;
-                record_auth_hint(&mut auth_needed, tool);
-            }
-            Err(e) => {
-                print_error(&format!("Failed to install {}: {}", tool.display_name, e));
-            }
+        if install_one_tool(installer, tool, &mut auth_needed).await {
+            installed_count += 1;
         }
     }
 
     (installed_count, auth_needed)
+}
+
+/// Install a single tool, reporting the outcome and recording any
+/// post-setup authentication hint. Returns `true` on success.
+async fn install_one_tool(
+    installer: &crate::registry::installer::RegistryInstaller,
+    tool: &ExtensionManifest,
+    auth_needed: &mut Vec<String>,
+) -> bool {
+    let outcome = match installer.install_with_source_fallback(tool, false).await {
+        Ok(outcome) => outcome,
+        Err(e) => {
+            print_error(&format!("Failed to install {}: {}", tool.display_name, e));
+            return false;
+        }
+    };
+
+    print_success(&format!("Installed {}", outcome.name));
+    for warning in &outcome.warnings {
+        print_info(&format!("{}: {}", outcome.name, warning));
+    }
+    record_auth_hint(auth_needed, tool);
+    true
 }
 
 /// Record an authentication hint for a tool that needs post-setup auth,

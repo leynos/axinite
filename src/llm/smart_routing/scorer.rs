@@ -77,6 +77,28 @@ fn count_matches(re: &Regex, text: &str) -> usize {
     re.find_iter(text).count()
 }
 
+/// Mutable per-dimension scores and hints accumulated while scoring a prompt.
+///
+/// Groups the two output collections that every dimension scorer writes to,
+/// so helpers take one accumulator rather than a clump of string-keyed maps.
+#[derive(Default)]
+struct ScoreAccumulator {
+    components: HashMap<String, u32>,
+    hints: Vec<String>,
+}
+
+impl ScoreAccumulator {
+    /// Record the score for one dimension.
+    fn record(&mut self, dimension: &str, score: u32) {
+        self.components.insert(dimension.to_string(), score);
+    }
+
+    /// Add a human-readable hint about why the prompt scored as it did.
+    fn hint(&mut self, message: String) {
+        self.hints.push(message);
+    }
+}
+
 /// Score a prompt's complexity across 13 dimensions.
 ///
 /// Returns a `ScoreBreakdown` with a total score (0-100) and per-dimension breakdown.
@@ -119,17 +141,16 @@ fn score_complexity_internal(
         return breakdown;
     }
 
-    let mut hints = Vec::new();
-    let mut components = HashMap::new();
+    let mut acc = ScoreAccumulator::default();
 
-    score_token_estimate(prompt, &mut components, &mut hints);
-    score_keyword_dimensions(prompt, domain_regex, &mut components, &mut hints);
-    score_ambiguity(prompt, &mut components);
-    score_question_complexity(prompt, &mut components, &mut hints);
-    score_sentence_complexity(prompt, &mut components, &mut hints);
+    score_token_estimate(prompt, &mut acc);
+    score_keyword_dimensions(prompt, domain_regex, &mut acc);
+    score_ambiguity(prompt, &mut acc);
+    score_question_complexity(prompt, &mut acc);
+    score_sentence_complexity(prompt, &mut acc);
 
-    let total = weighted_total(&components, weights);
-    let total = apply_dimension_boost(total, &components, &mut hints);
+    let total = weighted_total(&acc.components, weights);
+    let total = apply_dimension_boost(total, &mut acc);
 
     // Clamp to 0-100
     let total = (total as u32).clamp(0, 100);
@@ -138,33 +159,24 @@ fn score_complexity_internal(
     ScoreBreakdown {
         total,
         tier,
-        components,
-        hints,
+        components: acc.components,
+        hints: acc.hints,
     }
 }
 
 /// Score token estimate from char count: <20 chars = 0, >=520 chars = 100.
-fn score_token_estimate(
-    prompt: &str,
-    components: &mut HashMap<String, u32>,
-    hints: &mut Vec<String>,
-) {
+fn score_token_estimate(prompt: &str, acc: &mut ScoreAccumulator) {
     let char_count = prompt.len();
     let token_score = ((char_count as i32 - 20).max(0) as f32 / 5.0).min(100.0) as u32;
-    components.insert("token_estimate".to_string(), token_score);
+    acc.record("token_estimate", token_score);
     if char_count > 200 {
-        hints.push(format!("Long prompt ({char_count} chars)"));
+        acc.hint(format!("Long prompt ({char_count} chars)"));
     }
 }
 
 /// Score all keyword-based dimensions: 50 points per match, hint at the
 /// dimension's threshold (dimensions without a threshold never hint).
-fn score_keyword_dimensions(
-    prompt: &str,
-    domain_regex: &Regex,
-    components: &mut HashMap<String, u32>,
-    hints: &mut Vec<String>,
-) {
+fn score_keyword_dimensions(prompt: &str, domain_regex: &Regex, acc: &mut ScoreAccumulator) {
     let keyword_dimensions: [(&str, &Regex, Option<usize>); 9] = [
         ("reasoning_words", &*RE_REASONING, Some(2)),
         ("multi_step", &*RE_MULTI_STEP, Some(2)),
@@ -177,15 +189,15 @@ fn score_keyword_dimensions(
         ("domain_specific", domain_regex, Some(2)),
     ];
     for (name, regex, hint_threshold) in keyword_dimensions {
-        score_keyword_dimension(prompt, name, regex, hint_threshold, components, hints);
+        score_keyword_dimension(prompt, name, regex, hint_threshold, acc);
     }
 }
 
 /// Score ambiguity from vague-pronoun density.
-fn score_ambiguity(prompt: &str, components: &mut HashMap<String, u32>) {
+fn score_ambiguity(prompt: &str, acc: &mut ScoreAccumulator) {
     let vague_count = count_matches(&RE_VAGUE, prompt);
     let ambiguity_score = (vague_count * 25).min(100) as u32;
-    components.insert("ambiguity".to_string(), ambiguity_score);
+    acc.record("ambiguity", ambiguity_score);
 }
 
 /// Combine per-dimension scores into a weighted total.
@@ -244,59 +256,46 @@ fn score_keyword_dimension(
     name: &str,
     regex: &Regex,
     hint_threshold: Option<usize>,
-    components: &mut HashMap<String, u32>,
-    hints: &mut Vec<String>,
+    acc: &mut ScoreAccumulator,
 ) {
     let count = count_matches(regex, prompt);
     let score = (count * 50).min(100) as u32;
-    components.insert(name.to_string(), score);
+    acc.record(name, score);
     if hint_threshold.is_some_and(|threshold| count >= threshold) {
-        hints.push(format!("{name}: {count} matches"));
+        acc.hint(format!("{name}: {count} matches"));
     }
 }
 
 /// Score question complexity from '?' density and open-ended phrasing.
-fn score_question_complexity(
-    prompt: &str,
-    components: &mut HashMap<String, u32>,
-    hints: &mut Vec<String>,
-) {
+fn score_question_complexity(prompt: &str, acc: &mut ScoreAccumulator) {
     let question_marks = prompt.matches('?').count();
     let open_ended_count = count_matches(&RE_OPEN_ENDED, prompt);
     let question_score = ((question_marks * 20) + (open_ended_count * 25)).min(100) as u32;
-    components.insert("question_complexity".to_string(), question_score);
+    acc.record("question_complexity", question_score);
     if question_marks >= 2 {
-        hints.push(format!("Multiple questions: {question_marks}"));
+        acc.hint(format!("Multiple questions: {question_marks}"));
     }
 }
 
 /// Score sentence complexity from commas, semicolons, and conjunctions.
-fn score_sentence_complexity(
-    prompt: &str,
-    components: &mut HashMap<String, u32>,
-    hints: &mut Vec<String>,
-) {
+fn score_sentence_complexity(prompt: &str, acc: &mut ScoreAccumulator) {
     let commas = prompt.matches(',').count();
     let semicolons = prompt.matches(';').count();
     let conjunctions = count_matches(&RE_CONJUNCTIONS, prompt);
     let clauses = commas + (semicolons * 2) + conjunctions;
     let sentence_score = (clauses * 12).min(100) as u32;
-    components.insert("sentence_complexity".to_string(), sentence_score);
+    acc.record("sentence_complexity", sentence_score);
     if clauses >= 5 {
-        hints.push(format!("Complex structure: {clauses} clauses"));
+        acc.hint(format!("Complex structure: {clauses} clauses"));
     }
 }
 
 /// Apply the multi-dimensional boost: +30% when 3+ dimensions fire above
 /// threshold, +15% when exactly 2 fire.
-fn apply_dimension_boost(
-    total: f32,
-    components: &HashMap<String, u32>,
-    hints: &mut Vec<String>,
-) -> f32 {
-    let triggered_dimensions = components.values().filter(|&&v| v > 20).count();
+fn apply_dimension_boost(total: f32, acc: &mut ScoreAccumulator) -> f32 {
+    let triggered_dimensions = acc.components.values().filter(|&&v| v > 20).count();
     if triggered_dimensions >= 3 {
-        hints.push(format!(
+        acc.hint(format!(
             "Multi-dimensional ({triggered_dimensions} triggers)"
         ));
         total * 1.3

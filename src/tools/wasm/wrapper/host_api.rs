@@ -1,8 +1,8 @@
 //! Implementation of the generated `near:agent/host` import interface
 //! for WASM tool stores.
 
-use super::http::{reject_private_ip, send_http_request};
-use super::store::{PreparedHttpRequest, StoreData};
+use super::http::{OutboundHttpRequest, reject_private_ip, send_http_request};
+use super::store::{HttpRequestInputs, PreparedHttpRequest, StoreData};
 use super::*;
 
 // This registers all 6 host functions under the `near:agent/host` namespace:
@@ -40,10 +40,12 @@ impl near::agent::host::Host for StoreData {
         } = params;
         let leak_detector = LeakDetector::new();
         let PreparedHttpRequest { url, headers } = self.prepare_http_request_with_detector(
-            &method,
-            &url,
-            &headers_json,
-            body.as_deref(),
+            &HttpRequestInputs {
+                method: &method,
+                url: &url,
+                headers_json: &headers_json,
+                body: body.as_deref(),
+            },
             &leak_detector,
         )?;
 
@@ -78,11 +80,13 @@ impl near::agent::host::Host for StoreData {
             .as_ref()
             .ok_or_else(|| "HTTP runtime unavailable after initialization".to_string())?;
         let result = rt.block_on(send_http_request(
-            &method,
-            url,
-            headers,
-            body,
-            timeout_ms,
+            OutboundHttpRequest {
+                method,
+                url,
+                headers,
+                body,
+                timeout_ms,
+            },
             max_response_bytes,
             &leak_detector,
         ));

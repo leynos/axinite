@@ -151,19 +151,66 @@ impl ExtensionManager {
         }
 
         if let Some(token) = token {
-            let _ = self.secrets.delete(&self.user_id, &token_key).await;
-            self.secrets
-                .create(
-                    &self.user_id,
-                    CreateSecretParams::new(&token_key, token).with_provider(name.to_string()),
-                )
-                .await
-                .map_err(|e| {
-                    ExtensionError::AuthFailed(format!("Failed to store relay token: {e}"))
-                })?;
-            return Ok(AuthResult::authenticated(name, ExtensionKind::ChannelRelay));
+            return self.store_relay_stream_token(name, &token_key, token).await;
         }
 
+        self.initiate_relay_oauth(name).await
+    }
+
+    /// Store the caller-provided relay stream token, replacing any stale copy,
+    /// and report the extension as authenticated.
+    async fn store_relay_stream_token(
+        &self,
+        name: &str,
+        token_key: &str,
+        token: &str,
+    ) -> Result<AuthResult, ExtensionError> {
+        let _ = self.secrets.delete(&self.user_id, token_key).await;
+        self.secrets
+            .create(
+                &self.user_id,
+                CreateSecretParams::new(token_key, token).with_provider(name.to_string()),
+            )
+            .await
+            .map_err(|e| ExtensionError::AuthFailed(format!("Failed to store relay token: {e}")))?;
+        Ok(AuthResult::authenticated(name, ExtensionKind::ChannelRelay))
+    }
+
+    /// Resolve the OAuth callback base URL, preferring the active tunnel, then
+    /// the relay's configured callback, then the gateway host/port env vars.
+    fn relay_callback_base(&self, relay_config: &crate::config::RelayConfig) -> String {
+        self.tunnel_url
+            .clone()
+            .or_else(|| relay_config.callback_url.clone())
+            .unwrap_or_else(|| {
+                let host = std::env::var("GATEWAY_HOST").unwrap_or_else(|_| "127.0.0.1".into());
+                let port = std::env::var("GATEWAY_PORT").unwrap_or_else(|_| "3001".into());
+                format!("http://{}:{}", host, port)
+            })
+    }
+
+    /// Persist a fresh CSRF nonce for the relay OAuth state parameter,
+    /// discarding any stale value first.
+    async fn store_relay_oauth_state(
+        &self,
+        name: &str,
+        state_nonce: &str,
+    ) -> Result<(), ExtensionError> {
+        let state_key = format!("relay:{}:oauth_state", name);
+        let _ = self.secrets.delete(&self.user_id, &state_key).await;
+        self.secrets
+            .create(
+                &self.user_id,
+                CreateSecretParams::new(&state_key, state_nonce),
+            )
+            .await
+            .map_err(|e| ExtensionError::AuthFailed(format!("Failed to store OAuth state: {e}")))?;
+        Ok(())
+    }
+
+    /// Begin the relay OAuth redirect flow: build the callback URL, persist a
+    /// CSRF nonce, and ask the relay for an authorization URL.
+    async fn initiate_relay_oauth(&self, name: &str) -> Result<AuthResult, ExtensionError> {
         // Use relay config captured at startup
         let relay_config = self.relay_config()?;
 
@@ -178,29 +225,11 @@ impl ExtensionManager {
         )
         .map_err(|e| ExtensionError::Config(e.to_string()))?;
 
-        // OAuth redirect flow
-        let callback_base = self
-            .tunnel_url
-            .clone()
-            .or_else(|| relay_config.callback_url.clone())
-            .unwrap_or_else(|| {
-                let host = std::env::var("GATEWAY_HOST").unwrap_or_else(|_| "127.0.0.1".into());
-                let port = std::env::var("GATEWAY_PORT").unwrap_or_else(|_| "3001".into());
-                format!("http://{}:{}", host, port)
-            });
+        let callback_base = self.relay_callback_base(relay_config);
 
         // Generate CSRF nonce for OAuth state parameter
         let state_nonce = uuid::Uuid::new_v4().to_string();
-        let state_key = format!("relay:{}:oauth_state", name);
-        // Delete any stale nonce before storing the new one
-        let _ = self.secrets.delete(&self.user_id, &state_key).await;
-        self.secrets
-            .create(
-                &self.user_id,
-                CreateSecretParams::new(&state_key, &state_nonce),
-            )
-            .await
-            .map_err(|e| ExtensionError::AuthFailed(format!("Failed to store OAuth state: {e}")))?;
+        self.store_relay_oauth_state(name, &state_nonce).await?;
 
         let callback_url = format!(
             "{}/oauth/slack/callback?state={}",

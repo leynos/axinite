@@ -1,6 +1,11 @@
 //! Safety policy for shell execution: blocked/dangerous command patterns,
 //! auto-approval exclusions, safe environment variables, and command
 //! injection/obfuscation detection.
+//!
+//! The predicates here take their inputs as plain `&str` deliberately: every
+//! argument is genuinely free-form text — a raw (lower-cased) shell command or
+//! a literal match token/interpreter name. There are no domain invariants a
+//! newtype could enforce, so wrapping them would add ceremony without clarity.
 
 use std::collections::HashSet;
 use std::sync::LazyLock;

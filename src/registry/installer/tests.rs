@@ -1,6 +1,6 @@
 //! Unit tests for registry manifest installation.
 
-use super::archive::extract_tar_gz;
+use super::archive::{TarGzExtraction, extract_tar_gz};
 use super::artifact::{is_gzip, verify_sha256};
 use super::validation::should_attempt_source_fallback;
 use super::*;
@@ -10,32 +10,36 @@ use std::path::PathBuf;
 use crate::registry::catalog::RegistryError;
 use crate::registry::manifest::{ArtifactSpec, ExtensionManifest, ManifestKind, SourceSpec};
 
+/// Build the optional wasm32-wasip2 artifact spec for a test manifest.
+/// Returns `None` when neither a URL nor a checksum is supplied.
+fn test_artifact(url: Option<&str>, sha256: Option<&str>) -> Option<ArtifactSpec> {
+    if url.is_none() && sha256.is_none() {
+        return None;
+    }
+    Some(ArtifactSpec {
+        url: url.map(ToString::to_string),
+        sha256: sha256.map(ToString::to_string),
+        capabilities_url: None,
+    })
+}
+
 fn test_manifest(
     name: &str,
     source_dir: &str,
-    artifact_url: Option<String>,
-    sha256: Option<&str>,
+    artifact: Option<ArtifactSpec>,
 ) -> ExtensionManifest {
-    test_manifest_with_kind(name, source_dir, artifact_url, sha256, ManifestKind::Tool)
+    test_manifest_with_kind(name, source_dir, artifact, ManifestKind::Tool)
 }
 
 fn test_manifest_with_kind(
     name: &str,
     source_dir: &str,
-    artifact_url: Option<String>,
-    sha256: Option<&str>,
+    artifact: Option<ArtifactSpec>,
     kind: ManifestKind,
 ) -> ExtensionManifest {
     let mut artifacts = HashMap::new();
-    if artifact_url.is_some() || sha256.is_some() {
-        artifacts.insert(
-            "wasm32-wasip2".to_string(),
-            ArtifactSpec {
-                url: artifact_url,
-                sha256: sha256.map(ToString::to_string),
-                capabilities_url: None,
-            },
-        );
+    if let Some(spec) = artifact {
+        artifacts.insert("wasm32-wasip2".to_string(), spec);
     }
 
     ExtensionManifest {
@@ -99,7 +103,7 @@ async fn test_install_from_source_rejects_path_traversal_name() {
         temp.path().join("channels"),
     );
 
-    let manifest = test_manifest("../evil", "tools-src/evil", None, None);
+    let manifest = test_manifest("../evil", "tools-src/evil", None);
 
     let result = installer.install_from_source(&manifest, false).await;
     match result {
@@ -122,8 +126,10 @@ async fn test_install_from_artifact_rejects_non_https_url() {
     let manifest = test_manifest(
         "demo",
         "tools-src/demo",
-        Some("http://github.com/nearai/ironclaw/releases/latest/download/demo.wasm".to_string()),
-        None,
+        test_artifact(
+            Some("http://github.com/nearai/ironclaw/releases/latest/download/demo.wasm"),
+            None,
+        ),
     );
 
     let result = installer.install_from_artifact(&manifest, false).await;
@@ -147,8 +153,7 @@ async fn test_install_from_artifact_rejects_disallowed_host() {
     let manifest = test_manifest(
         "demo",
         "tools-src/demo",
-        Some("https://169.254.169.254/latest/meta-data".to_string()),
-        None,
+        test_artifact(Some("https://169.254.169.254/latest/meta-data"), None),
     );
 
     let result = installer.install_from_artifact(&manifest, false).await;
@@ -173,11 +178,12 @@ async fn test_install_from_artifact_rejects_null_sha256() {
     let manifest = test_manifest(
         "demo",
         "tools-src/demo",
-        Some(
-            "https://github.com/nearai/ironclaw/releases/latest/download/demo-wasm32-wasip2.tar.gz"
-                .to_string(),
+        test_artifact(
+            Some(
+                "https://github.com/nearai/ironclaw/releases/latest/download/demo-wasm32-wasip2.tar.gz",
+            ),
+            None, // sha256 = null
         ),
-        None, // sha256 = null
     );
 
     let result = installer.install_from_artifact(&manifest, false).await;
@@ -252,7 +258,14 @@ fn test_extract_tar_gz() {
     let wasm_path = tmp.path().join("test.wasm");
     let caps_path = tmp.path().join("test.capabilities.json");
 
-    let result = extract_tar_gz(&gz_bytes, "test", &wasm_path, &caps_path, "test://url").unwrap();
+    let result = extract_tar_gz(&TarGzExtraction {
+        bytes: &gz_bytes,
+        name: "test",
+        target_wasm: &wasm_path,
+        target_caps: &caps_path,
+        url: "test://url",
+    })
+    .unwrap();
 
     assert!(wasm_path.exists());
     assert!(caps_path.exists());
@@ -272,7 +285,6 @@ async fn test_install_from_source_rejects_wrong_prefix_for_channel() {
     let manifest = test_manifest_with_kind(
         "telegram",
         "tools-src/telegram",
-        None,
         None,
         ManifestKind::Channel,
     );
@@ -301,7 +313,6 @@ async fn test_install_from_source_accepts_correct_channel_prefix() {
     let manifest = test_manifest_with_kind(
         "telegram",
         "channels-src/telegram",
-        None,
         None,
         ManifestKind::Channel,
     );
@@ -341,13 +352,13 @@ fn test_extract_tar_gz_missing_wasm() {
     let gz_bytes = encoder.finish().unwrap();
 
     let tmp = tempfile::tempdir().unwrap();
-    let result = extract_tar_gz(
-        &gz_bytes,
-        "test",
-        &tmp.path().join("test.wasm"),
-        &tmp.path().join("test.capabilities.json"),
-        "test://url",
-    );
+    let result = extract_tar_gz(&TarGzExtraction {
+        bytes: &gz_bytes,
+        name: "test",
+        target_wasm: &tmp.path().join("test.wasm"),
+        target_caps: &tmp.path().join("test.capabilities.json"),
+        url: "test://url",
+    });
 
     assert!(result.is_err());
 }

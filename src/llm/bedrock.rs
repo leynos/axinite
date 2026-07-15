@@ -79,6 +79,42 @@ impl BedrockProvider {
             }
         }
     }
+
+    /// Sanitize and convert `messages`, then start a Converse request builder
+    /// with the active model, system blocks, and messages set.
+    ///
+    /// Returns an error when no user or assistant message survives conversion,
+    /// a shape Bedrock rejects. Shared by [`Self::complete`] and
+    /// [`Self::complete_with_tools`].
+    fn prepare_converse(
+        &self,
+        mut messages: Vec<crate::llm::provider::ChatMessage>,
+    ) -> Result<
+        aws_sdk_bedrockruntime::operation::converse::builders::ConverseFluentBuilder,
+        LlmError,
+    > {
+        let model_id = self.current_model_id();
+        crate::llm::provider::sanitize_tool_messages(&mut messages);
+
+        let (system_blocks, bedrock_messages) = convert_messages(&messages)?;
+        if bedrock_messages.is_empty() {
+            return Err(LlmError::RequestFailed {
+                provider: "bedrock".to_string(),
+                reason: "Bedrock requires at least one user or assistant message".to_string(),
+            });
+        }
+
+        Ok(self
+            .client
+            .converse()
+            .model_id(&model_id)
+            .set_system(if system_blocks.is_empty() {
+                None
+            } else {
+                Some(system_blocks)
+            })
+            .set_messages(Some(bedrock_messages)))
+    }
 }
 
 impl NativeLlmProvider for BedrockProvider {
@@ -92,30 +128,7 @@ impl NativeLlmProvider for BedrockProvider {
     }
 
     async fn complete(&self, request: CompletionRequest) -> Result<CompletionResponse, LlmError> {
-        let model_id = self.current_model_id();
-
-        let mut messages = request.messages;
-        crate::llm::provider::sanitize_tool_messages(&mut messages);
-
-        let (system_blocks, bedrock_messages) = convert_messages(&messages)?;
-
-        if bedrock_messages.is_empty() {
-            return Err(LlmError::RequestFailed {
-                provider: "bedrock".to_string(),
-                reason: "Bedrock requires at least one user or assistant message".to_string(),
-            });
-        }
-
-        let mut builder = self
-            .client
-            .converse()
-            .model_id(&model_id)
-            .set_system(if system_blocks.is_empty() {
-                None
-            } else {
-                Some(system_blocks)
-            })
-            .set_messages(Some(bedrock_messages));
+        let mut builder = self.prepare_converse(request.messages)?;
 
         if let Some(config) = build_inference_config(
             request.temperature,
@@ -144,32 +157,9 @@ impl NativeLlmProvider for BedrockProvider {
         &self,
         request: ToolCompletionRequest,
     ) -> Result<ToolCompletionResponse, LlmError> {
-        let model_id = self.current_model_id();
-
-        let mut messages = request.messages;
-        crate::llm::provider::sanitize_tool_messages(&mut messages);
-
-        let (system_blocks, bedrock_messages) = convert_messages(&messages)?;
-
-        if bedrock_messages.is_empty() {
-            return Err(LlmError::RequestFailed {
-                provider: "bedrock".to_string(),
-                reason: "Bedrock requires at least one user or assistant message".to_string(),
-            });
-        }
-
         let tool_config = build_tool_config(&request.tools, request.tool_choice.as_deref())?;
 
-        let mut builder = self
-            .client
-            .converse()
-            .model_id(&model_id)
-            .set_system(if system_blocks.is_empty() {
-                None
-            } else {
-                Some(system_blocks)
-            })
-            .set_messages(Some(bedrock_messages));
+        let mut builder = self.prepare_converse(request.messages)?;
 
         if let Some(tc) = tool_config {
             builder = builder.tool_config(tc);

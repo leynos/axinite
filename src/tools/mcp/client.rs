@@ -16,6 +16,6 @@ mod wrapper;
 #[cfg(test)]
 mod tests;
 
-pub use self::core::McpClient;
+pub use self::core::{McpClient, TransportClientOptions};
 #[cfg(test)]
 pub(super) use wrapper::McpToolWrapper;

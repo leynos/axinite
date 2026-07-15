@@ -4,6 +4,52 @@
 use super::provider_flows::ApiKeyProviderSpec;
 use super::*;
 
+/// Provider spec for the Anthropic direct API key flow.
+fn anthropic_api_key_spec() -> ApiKeyProviderSpec<'static> {
+    ApiKeyProviderSpec {
+        backend: "anthropic",
+        env_var: "ANTHROPIC_API_KEY",
+        secret_name: "llm_anthropic_api_key",
+        prompt_label: "Anthropic API key",
+        hint_url: "https://console.anthropic.com/settings/keys",
+        override_display_name: None,
+    }
+}
+
+/// Look for an OAuth token from `claude login` credentials, offering one
+/// retry when none is found.
+///
+/// Returns `Ok(None)` when the user declines the found token, declines the
+/// retry, or no token appears after the retry; the caller then falls back
+/// to manual entry.
+fn discover_claude_login_token() -> Result<Option<String>, SetupError> {
+    if let Some(token) = crate::config::ClaudeCodeConfig::extract_oauth_token() {
+        print_info(&format!("Found OAuth token: {}", mask_api_key(&token)));
+        if confirm("Use this token?", true).map_err(SetupError::Io)? {
+            return Ok(Some(token));
+        }
+        return Ok(None);
+    }
+
+    print_info("No OAuth token found from `claude login`.");
+    print_info("Run `claude login` in a terminal to authenticate, then retry.");
+    println!();
+
+    if !confirm("Retry after running `claude login`?", true).map_err(SetupError::Io)? {
+        return Ok(None);
+    }
+
+    // Block until the user has run `claude login` in another terminal
+    input("Press Enter after running `claude login` in another terminal...")
+        .map_err(SetupError::Io)?;
+    let Some(token) = crate::config::ClaudeCodeConfig::extract_oauth_token() else {
+        print_error("Still no OAuth token found.");
+        return Ok(None);
+    };
+    print_info(&format!("Found OAuth token: {}", mask_api_key(&token)));
+    Ok(Some(token))
+}
+
 impl SetupWizard {
     /// NEAR AI provider setup (extracted from the old step_authentication).
     pub(super) async fn setup_nearai(&mut self) -> Result<(), SetupError> {
@@ -100,22 +146,15 @@ impl SetupWizard {
 
         if choice == 0 {
             // Standard API key flow
-            self.setup_api_key_provider(ApiKeyProviderSpec {
-                backend: "anthropic",
-                env_var: "ANTHROPIC_API_KEY",
-                secret_name: "llm_anthropic_api_key",
-                prompt_label: "Anthropic API key",
-                hint_url: "https://console.anthropic.com/settings/keys",
-                override_display_name: None,
-            })
-            .await
+            self.setup_api_key_provider(anthropic_api_key_spec()).await
         } else {
             // OAuth token flow
             self.setup_anthropic_oauth().await
         }
     }
 
-    /// Anthropic OAuth setup: extract token from `claude login` credentials.
+    /// Anthropic OAuth setup: extract token from `claude login` credentials,
+    /// falling back to manual entry.
     async fn setup_anthropic_oauth(&mut self) -> Result<(), SetupError> {
         // Clear model only when switching providers (old model may be invalid)
         if self.settings.llm_backend.as_deref() != Some("anthropic") {
@@ -123,46 +162,23 @@ impl SetupWizard {
         }
         self.settings.llm_backend = Some("anthropic".to_string());
 
-        // Try to extract existing OAuth token from Claude Code credentials
-        if let Some(token) = crate::config::ClaudeCodeConfig::extract_oauth_token() {
-            print_info(&format!("Found OAuth token: {}", mask_api_key(&token)));
-            if confirm("Use this token?", true).map_err(SetupError::Io)? {
-                return self.save_anthropic_oauth_token(&token).await;
-            }
-        } else {
-            print_info("No OAuth token found from `claude login`.");
-            print_info("Run `claude login` in a terminal to authenticate, then retry.");
-            println!();
-
-            if confirm("Retry after running `claude login`?", true).map_err(SetupError::Io)? {
-                // Block until the user has run `claude login` in another terminal
-                input("Press Enter after running `claude login` in another terminal...")
-                    .map_err(SetupError::Io)?;
-                if let Some(token) = crate::config::ClaudeCodeConfig::extract_oauth_token() {
-                    print_info(&format!("Found OAuth token: {}", mask_api_key(&token)));
-                    return self.save_anthropic_oauth_token(&token).await;
-                }
-                print_error("Still no OAuth token found.");
-            }
+        if let Some(token) = discover_claude_login_token()? {
+            return self.save_anthropic_oauth_token(&token).await;
         }
 
-        // Fallback: let user paste the token manually, or switch to API key
+        self.prompt_manual_oauth_token().await
+    }
+
+    /// Fall back to a manually pasted OAuth token, diverting to the API key
+    /// flow when the user enters nothing.
+    async fn prompt_manual_oauth_token(&mut self) -> Result<(), SetupError> {
         print_info("You can paste your OAuth token directly (starts with sk-ant-oat01-).");
         print_info("Or press Enter with no input to switch to the API key flow.");
         let token = secret_input("Anthropic OAuth token").map_err(SetupError::Io)?;
         let token_str = token.expose_secret();
         if token_str.is_empty() {
             print_info("Switching to API key flow...");
-            return self
-                .setup_api_key_provider(ApiKeyProviderSpec {
-                    backend: "anthropic",
-                    env_var: "ANTHROPIC_API_KEY",
-                    secret_name: "llm_anthropic_api_key",
-                    prompt_label: "Anthropic API key",
-                    hint_url: "https://console.anthropic.com/settings/keys",
-                    override_display_name: None,
-                })
-                .await;
+            return self.setup_api_key_provider(anthropic_api_key_spec()).await;
         }
         self.save_anthropic_oauth_token(token_str).await
     }

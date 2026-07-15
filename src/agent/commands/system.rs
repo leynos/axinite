@@ -5,6 +5,45 @@ use crate::agent::Agent;
 use crate::agent::submission::SubmissionResult;
 use crate::error::Error;
 
+/// Help text rendered for the `/help` command.
+const HELP_TEXT: &str = concat!(
+    "System:\n",
+    "  /help             Show this help\n",
+    "  /model [name]     Show or switch the active model\n",
+    "  /version          Show version info\n",
+    "  /tools            List available tools\n",
+    "  /debug            Toggle debug mode\n",
+    "  /ping             Connectivity check\n",
+    "\n",
+    "Jobs:\n",
+    "  /job <desc>       Create a new job\n",
+    "  /status [id]      Check job status\n",
+    "  /cancel <id>      Cancel a job\n",
+    "  /list             List all jobs\n",
+    "\n",
+    "Session:\n",
+    "  /undo             Undo last turn\n",
+    "  /redo             Redo undone turn\n",
+    "  /compact          Compress context window\n",
+    "  /clear            Clear current thread\n",
+    "  /interrupt        Stop current operation\n",
+    "  /new              New conversation thread\n",
+    "  /thread <id>      Switch to thread\n",
+    "  /resume <id>      Resume from checkpoint\n",
+    "\n",
+    "Skills:\n",
+    "  /skills             List installed skills\n",
+    "  /skills search <q>  Search ClawHub registry\n",
+    "\n",
+    "Agent:\n",
+    "  /heartbeat        Run heartbeat check\n",
+    "  /summarize        Summarize current thread\n",
+    "  /suggest          Suggest next steps\n",
+    "  /restart          Gracefully restart the process\n",
+    "\n",
+    "  /quit             Exit",
+);
+
 impl Agent {
     /// Handle system commands that bypass thread-state checks entirely.
     pub(in crate::agent) async fn handle_system_command(
@@ -14,43 +53,7 @@ impl Agent {
         channel: &str,
     ) -> Result<SubmissionResult, Error> {
         match command {
-            "help" => Ok(SubmissionResult::response(concat!(
-                "System:\n",
-                "  /help             Show this help\n",
-                "  /model [name]     Show or switch the active model\n",
-                "  /version          Show version info\n",
-                "  /tools            List available tools\n",
-                "  /debug            Toggle debug mode\n",
-                "  /ping             Connectivity check\n",
-                "\n",
-                "Jobs:\n",
-                "  /job <desc>       Create a new job\n",
-                "  /status [id]      Check job status\n",
-                "  /cancel <id>      Cancel a job\n",
-                "  /list             List all jobs\n",
-                "\n",
-                "Session:\n",
-                "  /undo             Undo last turn\n",
-                "  /redo             Redo undone turn\n",
-                "  /compact          Compress context window\n",
-                "  /clear            Clear current thread\n",
-                "  /interrupt        Stop current operation\n",
-                "  /new              New conversation thread\n",
-                "  /thread <id>      Switch to thread\n",
-                "  /resume <id>      Resume from checkpoint\n",
-                "\n",
-                "Skills:\n",
-                "  /skills             List installed skills\n",
-                "  /skills search <q>  Search ClawHub registry\n",
-                "\n",
-                "Agent:\n",
-                "  /heartbeat        Run heartbeat check\n",
-                "  /summarize        Summarize current thread\n",
-                "  /suggest          Suggest next steps\n",
-                "  /restart          Gracefully restart the process\n",
-                "\n",
-                "  /quit             Exit",
-            ))),
+            "help" => Ok(SubmissionResult::response(HELP_TEXT)),
 
             "ping" => Ok(SubmissionResult::response("pong!")),
 
@@ -62,13 +65,7 @@ impl Agent {
                 env!("CARGO_PKG_VERSION")
             ))),
 
-            "tools" => {
-                let tools = self.tools().list().await;
-                Ok(SubmissionResult::response(format!(
-                    "Available tools: {}",
-                    tools.join(", ")
-                )))
-            }
+            "tools" => Ok(self.list_tools_response().await),
 
             "debug" => {
                 // Debug toggle is handled client-side in the REPL.
@@ -80,18 +77,27 @@ impl Agent {
 
             "skills" => self.handle_skills_command(args).await,
 
-            "model" => {
-                if args.is_empty() {
-                    Ok(SubmissionResult::response(self.show_models().await))
-                } else {
-                    self.switch_model(&args[0]).await
-                }
-            }
+            "model" => self.handle_model_command(args).await,
 
             _ => Ok(SubmissionResult::error(format!(
                 "Unknown command: {}. Try /help",
                 command
             ))),
+        }
+    }
+
+    /// Render the `/tools` listing of available tool names.
+    async fn list_tools_response(&self) -> SubmissionResult {
+        let tools = self.tools().list().await;
+        SubmissionResult::response(format!("Available tools: {}", tools.join(", ")))
+    }
+
+    /// Handle `/model [name]`: show the model list or switch to a model.
+    async fn handle_model_command(&self, args: &[String]) -> Result<SubmissionResult, Error> {
+        if args.is_empty() {
+            Ok(SubmissionResult::response(self.show_models().await))
+        } else {
+            self.switch_model(&args[0]).await
         }
     }
 
@@ -258,24 +264,32 @@ impl Agent {
     /// Best-effort: logs warnings on failure but does not propagate errors,
     /// since the in-memory model switch already succeeded.
     async fn persist_selected_model(&self, model: &str) {
-        // 1. Persist to DB if available.
-        if let Some(store) = self.store() {
-            let value = serde_json::Value::String(model.to_string());
-            if let Err(e) = store
-                .set_setting(
-                    crate::db::UserId::from("default"),
-                    crate::db::SettingKey::from("selected_model"),
-                    &value,
-                )
-                .await
-            {
-                tracing::warn!("Failed to persist model to DB: {}", e);
-            }
-        }
+        self.persist_model_to_db(model).await;
+        Self::persist_model_to_toml(model).await;
+    }
 
-        // 2. Update TOML config file if it exists (sync I/O in spawn_blocking).
+    /// Persist the selected model to the settings store, if a DB is attached.
+    async fn persist_model_to_db(&self, model: &str) {
+        let Some(store) = self.store() else {
+            return;
+        };
+        let value = serde_json::Value::String(model.to_string());
+        if let Err(e) = store
+            .set_setting(
+                crate::db::UserId::from("default"),
+                crate::db::SettingKey::from("selected_model"),
+                &value,
+            )
+            .await
+        {
+            tracing::warn!("Failed to persist model to DB: {}", e);
+        }
+    }
+
+    /// Update the TOML config file, if one exists (sync I/O in spawn_blocking).
+    async fn persist_model_to_toml(model: &str) {
         let model_owned = model.to_string();
-        if let Err(e) = tokio::task::spawn_blocking(move || {
+        let result = tokio::task::spawn_blocking(move || {
             let toml_path = crate::settings::Settings::default_toml_path();
             match crate::settings::Settings::load_toml(&toml_path) {
                 Ok(Some(mut settings)) => {
@@ -292,8 +306,8 @@ impl Agent {
                 }
             }
         })
-        .await
-        {
+        .await;
+        if let Err(e) = result {
             tracing::warn!("Model TOML persistence task failed: {}", e);
         }
     }

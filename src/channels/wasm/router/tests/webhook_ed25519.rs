@@ -9,7 +9,7 @@ use ed25519_dalek::Signer;
 use tower::ServiceExt;
 
 use crate::channels::wasm::router::{
-    RegisteredEndpoint, WasmChannelRouter, create_wasm_channel_router,
+    RegisteredEndpoint, WasmChannelRouter, WebhookSecrets, create_wasm_channel_router,
 };
 
 use super::helpers::{create_test_channel, setup_discord_router, test_signing_key};
@@ -226,7 +226,14 @@ async fn test_webhook_sig_plus_secret() {
 
     // Register with BOTH secret and signature key
     wasm_router
-        .register(channel, endpoints, Some("my-secret".to_string()), None)
+        .register(
+            channel,
+            endpoints,
+            WebhookSecrets {
+                secret: Some("my-secret".to_string()),
+                header: None,
+            },
+        )
         .await;
 
     let signing_key = test_signing_key();

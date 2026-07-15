@@ -30,6 +30,39 @@ struct BuildLoopState {
     last_error: Option<String>,
 }
 
+impl BuildLoopState {
+    /// Initial loop state carrying the "Starting build process" log entry.
+    fn new(started_at: DateTime<Utc>) -> Self {
+        Self {
+            logs: vec![BuildLog {
+                timestamp: started_at,
+                phase: BuildPhase::Analyzing,
+                message: "Starting build process".into(),
+                details: None,
+            }],
+            iteration: 0,
+            current_phase: BuildPhase::Scaffolding,
+            tools_executed: false,
+            consecutive_text_responses: 0,
+            last_error: None,
+        }
+    }
+}
+
+/// Initial user directive that pushes the LLM straight into tool use rather
+/// than planning prose.
+fn initial_build_directive(inputs: &BuildLoopParams) -> ChatMessage {
+    ChatMessage::user(format!(
+        "Build the {} in directory: {}\n\n\
+         Requirements:\n- {}\n\n\
+         IMPORTANT: Use the write_file tool NOW to create Cargo.toml. \
+         Do not explain, plan, or output JSON—immediately call write_file.",
+        inputs.requirement.name,
+        inputs.project_dir.display(),
+        inputs.requirement.description
+    ))
+}
+
 struct ReasoningBundle {
     reasoning: Reasoning,
     ctx: ReasoningContext,
@@ -207,71 +240,76 @@ impl LlmSoftwareBuilder {
             requirement: requirement.clone(),
             project_dir: project_dir.to_path_buf(),
         };
-        let mut state = BuildLoopState {
-            logs: vec![BuildLog {
-                timestamp: inputs.started_at,
-                phase: BuildPhase::Analyzing,
-                message: "Starting build process".into(),
-                details: None,
-            }],
-            iteration: 0,
-            current_phase: BuildPhase::Scaffolding,
-            tools_executed: false,
-            consecutive_text_responses: 0,
-            last_error: None,
-        };
+        let mut state = BuildLoopState::new(inputs.started_at);
         let mut bundle = self.prepare_reasoning_context(&inputs).await;
-
-        // Add initial user message - directive to force immediate tool use
-        bundle.ctx.messages.push(ChatMessage::user(format!(
-            "Build the {} in directory: {}\n\n\
-             Requirements:\n- {}\n\n\
-             IMPORTANT: Use the write_file tool NOW to create Cargo.toml. \
-             Do not explain, plan, or output JSON—immediately call write_file.",
-            inputs.requirement.name,
-            inputs.project_dir.display(),
-            inputs.requirement.description
-        )));
+        bundle.ctx.messages.push(initial_build_directive(&inputs));
 
         loop {
-            state.iteration += 1;
-
-            if state.iteration > self.config.max_iterations {
-                return Ok(self.fail_max_iterations(&inputs, &mut state));
+            let outcome = self
+                .run_build_iteration(&inputs, &mut bundle, &mut state)
+                .await?;
+            if let std::ops::ControlFlow::Break(done) = outcome {
+                return Ok(done);
             }
+        }
+    }
 
-            // Refresh tool definitions each iteration
-            bundle.ctx.available_tools = self.get_build_tools().await;
+    /// Run one iteration of the build loop: enforce the iteration budget,
+    /// refresh tool definitions, obtain the next LLM response, and dispatch it
+    /// to the text or tool-call handler. Returns `Break` with the final build
+    /// result once the loop is finished.
+    async fn run_build_iteration(
+        &self,
+        inputs: &BuildLoopParams,
+        bundle: &mut ReasoningBundle,
+        state: &mut BuildLoopState,
+    ) -> Result<std::ops::ControlFlow<BuildResult>, AgentToolError> {
+        state.iteration += 1;
 
-            // Get response from LLM (may be text or tool calls)
-            let result = bundle
-                .reasoning
-                .respond_with_tools(&bundle.ctx)
-                .await
-                .map_err(|e| {
-                    AgentToolError::BuilderFailed(format!("LLM response failed: {}", e))
-                })?;
+        if state.iteration > self.config.max_iterations {
+            return Ok(std::ops::ControlFlow::Break(
+                self.fail_max_iterations(inputs, state),
+            ));
+        }
 
-            match result.result {
-                RespondResult::Text(response) => {
-                    let text_ctx = responses::TextResponseContext {
-                        inputs: &inputs,
-                        state: &mut state,
-                        reason_ctx: &mut bundle.ctx,
-                    };
-                    match self.handle_text_response(response, text_ctx).await {
-                        std::ops::ControlFlow::Break(done) => return Ok(done),
-                        std::ops::ControlFlow::Continue(()) => {}
-                    }
-                }
-                RespondResult::ToolCalls {
-                    tool_calls,
-                    content,
-                } => {
-                    state.tools_executed = true;
-                    self.handle_tool_calls(&inputs, &mut bundle, &mut state, tool_calls, content)
-                        .await;
-                }
+        // Refresh tool definitions each iteration
+        bundle.ctx.available_tools = self.get_build_tools().await;
+
+        // Get response from LLM (may be text or tool calls)
+        let result = bundle
+            .reasoning
+            .respond_with_tools(&bundle.ctx)
+            .await
+            .map_err(|e| AgentToolError::BuilderFailed(format!("LLM response failed: {}", e)))?;
+
+        match result.result {
+            RespondResult::Text(response) => {
+                let turn_ctx = responses::BuildTurnContext {
+                    inputs,
+                    state,
+                    reason_ctx: &mut bundle.ctx,
+                };
+                Ok(self.handle_text_response(response, turn_ctx).await)
+            }
+            RespondResult::ToolCalls {
+                tool_calls,
+                content,
+            } => {
+                state.tools_executed = true;
+                let turn_ctx = responses::BuildTurnContext {
+                    inputs,
+                    state,
+                    reason_ctx: &mut bundle.ctx,
+                };
+                self.handle_tool_calls(
+                    turn_ctx,
+                    responses::ToolCallTurn {
+                        tool_calls,
+                        content,
+                    },
+                )
+                .await;
+                Ok(std::ops::ControlFlow::Continue(()))
             }
         }
     }

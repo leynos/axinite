@@ -122,50 +122,63 @@ impl HeartbeatRunner {
                 continue;
             }
 
-            // Run memory hygiene in the background so it never delays the
-            // heartbeat checklist. Failures are logged inside run_if_due.
-            let hygiene_workspace = Arc::clone(&self.workspace);
-            let hygiene_config = self.hygiene_config.clone();
-            tokio::spawn(async move {
-                let report =
-                    crate::workspace::hygiene::run_if_due(&hygiene_workspace, &hygiene_config)
-                        .await;
-                if report.had_work() {
-                    tracing::info!(
-                        daily_logs_deleted = report.daily_logs_deleted,
-                        conversation_docs_deleted = report.conversation_docs_deleted,
-                        "heartbeat: memory hygiene deleted stale documents"
+            self.spawn_hygiene_task();
+
+            let result = self.check_heartbeat().await;
+            if !self.handle_result(result).await {
+                break;
+            }
+        }
+    }
+
+    /// Run memory hygiene in the background so it never delays the heartbeat
+    /// checklist. Failures are logged inside `run_if_due`.
+    fn spawn_hygiene_task(&self) {
+        let hygiene_workspace = Arc::clone(&self.workspace);
+        let hygiene_config = self.hygiene_config.clone();
+        tokio::spawn(async move {
+            let report =
+                crate::workspace::hygiene::run_if_due(&hygiene_workspace, &hygiene_config).await;
+            if report.had_work() {
+                tracing::info!(
+                    daily_logs_deleted = report.daily_logs_deleted,
+                    conversation_docs_deleted = report.conversation_docs_deleted,
+                    "heartbeat: memory hygiene deleted stale documents"
+                );
+            }
+        });
+    }
+
+    /// React to a heartbeat outcome, updating the failure counter and sending
+    /// any notification. Returns `false` when the loop should stop.
+    async fn handle_result(&mut self, result: HeartbeatResult) -> bool {
+        match result {
+            HeartbeatResult::Ok => {
+                tracing::trace!("Heartbeat OK");
+                self.consecutive_failures = 0;
+            }
+            HeartbeatResult::NeedsAttention(message) => {
+                tracing::info!("Heartbeat needs attention: {}", message);
+                self.consecutive_failures = 0;
+                self.send_notification(&message).await;
+            }
+            HeartbeatResult::Skipped => {
+                tracing::trace!("Heartbeat skipped");
+            }
+            HeartbeatResult::Failed(error) => {
+                tracing::error!("Heartbeat failed: {}", error);
+                self.consecutive_failures += 1;
+
+                if self.consecutive_failures >= self.config.max_failures {
+                    tracing::error!(
+                        "Heartbeat disabled after {} consecutive failures",
+                        self.consecutive_failures
                     );
-                }
-            });
-
-            match self.check_heartbeat().await {
-                HeartbeatResult::Ok => {
-                    tracing::trace!("Heartbeat OK");
-                    self.consecutive_failures = 0;
-                }
-                HeartbeatResult::NeedsAttention(message) => {
-                    tracing::info!("Heartbeat needs attention: {}", message);
-                    self.consecutive_failures = 0;
-                    self.send_notification(&message).await;
-                }
-                HeartbeatResult::Skipped => {
-                    tracing::trace!("Heartbeat skipped");
-                }
-                HeartbeatResult::Failed(error) => {
-                    tracing::error!("Heartbeat failed: {}", error);
-                    self.consecutive_failures += 1;
-
-                    if self.consecutive_failures >= self.config.max_failures {
-                        tracing::error!(
-                            "Heartbeat disabled after {} consecutive failures",
-                            self.consecutive_failures
-                        );
-                        break;
-                    }
+                    return false;
                 }
             }
         }
+        true
     }
 
     /// Run a single heartbeat check.
@@ -177,56 +190,8 @@ impl HeartbeatRunner {
             Err(e) => return HeartbeatResult::Failed(format!("Failed to read checklist: {}", e)),
         };
 
-        // Build the heartbeat prompt
-        let prompt = format!(
-            "Read the HEARTBEAT.md checklist below and follow it strictly. \
-             Do not infer or repeat old tasks. Check each item and report findings.\n\
-             \n\
-             If nothing needs attention, reply EXACTLY with: HEARTBEAT_OK\n\
-             \n\
-             If something needs attention, provide a concise summary of what needs action.\n\
-             \n\
-             ## HEARTBEAT.md\n\
-             \n\
-             {}",
-            checklist
-        );
-
-        // Get the system prompt for context
-        let system_prompt = match self.workspace.system_prompt().await {
-            Ok(p) => p,
-            Err(e) => {
-                tracing::warn!("Failed to get system prompt for heartbeat: {}", e);
-                String::new()
-            }
-        };
-
-        // Run the agent turn
-        let messages = if system_prompt.is_empty() {
-            vec![ChatMessage::user(&prompt)]
-        } else {
-            vec![
-                ChatMessage::system(&system_prompt),
-                ChatMessage::user(&prompt),
-            ]
-        };
-
-        // Use the model's context_length to set max_tokens. The API returns
-        // the total context window; we cap output at half of that (the rest is
-        // the prompt) with a floor of 4096.
-        let max_tokens = match self.llm.model_metadata().await {
-            Ok(meta) => {
-                let from_api = meta.context_length.map(|ctx| ctx / 2).unwrap_or(4096);
-                from_api.max(4096)
-            }
-            Err(e) => {
-                tracing::warn!(
-                    "Could not fetch model metadata, using default max_tokens: {}",
-                    e
-                );
-                4096
-            }
-        };
+        let messages = self.build_heartbeat_messages(&checklist).await;
+        let max_tokens = self.resolve_max_tokens().await;
 
         let request = CompletionRequest::new(messages)
             .with_max_tokens(max_tokens)
@@ -255,6 +220,59 @@ impl HeartbeatRunner {
         HeartbeatResult::NeedsAttention(content.to_string())
     }
 
+    /// Build the chat messages for a heartbeat turn: the checklist prompt,
+    /// preceded by the workspace system prompt when one is available.
+    async fn build_heartbeat_messages(&self, checklist: &str) -> Vec<ChatMessage> {
+        let prompt = format!(
+            "Read the HEARTBEAT.md checklist below and follow it strictly. \
+             Do not infer or repeat old tasks. Check each item and report findings.\n\
+             \n\
+             If nothing needs attention, reply EXACTLY with: HEARTBEAT_OK\n\
+             \n\
+             If something needs attention, provide a concise summary of what needs action.\n\
+             \n\
+             ## HEARTBEAT.md\n\
+             \n\
+             {}",
+            checklist
+        );
+
+        let system_prompt = match self.workspace.system_prompt().await {
+            Ok(p) => p,
+            Err(e) => {
+                tracing::warn!("Failed to get system prompt for heartbeat: {}", e);
+                String::new()
+            }
+        };
+
+        if system_prompt.is_empty() {
+            vec![ChatMessage::user(&prompt)]
+        } else {
+            vec![
+                ChatMessage::system(&system_prompt),
+                ChatMessage::user(&prompt),
+            ]
+        }
+    }
+
+    /// Derive `max_tokens` from the model's context length: half the context
+    /// window (the rest is the prompt), with a floor of 4096.
+    async fn resolve_max_tokens(&self) -> u32 {
+        match self.llm.model_metadata().await {
+            Ok(meta) => {
+                let from_api = meta.context_length.map(|ctx| ctx / 2).unwrap_or(4096);
+                from_api.max(4096)
+            }
+            Err(e) => {
+                tracing::warn!(
+                    "Could not fetch model metadata, using default max_tokens: {}",
+                    e
+                );
+                4096
+            }
+        }
+    }
+
     /// Send a notification about heartbeat findings.
     async fn send_notification(&self, message: &str) {
         let Some(ref tx) = self.response_tx else {
@@ -263,27 +281,7 @@ impl HeartbeatRunner {
         };
 
         let user_id = self.config.notify_user_id.as_deref().unwrap_or("default");
-
-        // Persist to heartbeat conversation and get thread_id
-        let thread_id = if let Some(ref store) = self.store {
-            match store.get_or_create_heartbeat_conversation(user_id).await {
-                Ok(conv_id) => {
-                    if let Err(e) = store
-                        .add_conversation_message(conv_id, "assistant", message)
-                        .await
-                    {
-                        tracing::error!("Failed to persist heartbeat message: {}", e);
-                    }
-                    Some(conv_id.to_string())
-                }
-                Err(e) => {
-                    tracing::error!("Failed to get heartbeat conversation: {}", e);
-                    None
-                }
-            }
-        } else {
-            None
-        };
+        let thread_id = self.persist_heartbeat_message(user_id, message).await;
 
         let response = OutgoingResponse {
             content: format!("🔔 *Heartbeat Alert*\n\n{}", message),
@@ -296,6 +294,27 @@ impl HeartbeatRunner {
 
         if let Err(e) = tx.send(response).await {
             tracing::error!("Failed to send heartbeat notification: {}", e);
+        }
+    }
+
+    /// Persist the message to the heartbeat conversation, returning its
+    /// thread identifier when a store is configured and the write succeeds.
+    async fn persist_heartbeat_message(&self, user_id: &str, message: &str) -> Option<String> {
+        let store = self.store.as_ref()?;
+        match store.get_or_create_heartbeat_conversation(user_id).await {
+            Ok(conv_id) => {
+                if let Err(e) = store
+                    .add_conversation_message(conv_id, "assistant", message)
+                    .await
+                {
+                    tracing::error!("Failed to persist heartbeat message: {}", e);
+                }
+                Some(conv_id.to_string())
+            }
+            Err(e) => {
+                tracing::error!("Failed to get heartbeat conversation: {}", e);
+                None
+            }
         }
     }
 }

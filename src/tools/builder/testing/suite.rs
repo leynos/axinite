@@ -53,6 +53,23 @@ pub struct TestCase {
     pub timeout_ms: Option<u64>,
 }
 
+impl TestCase {
+    /// Create a test case with the given name and input, no expectations,
+    /// and the suite's default timeout.
+    pub fn new(name: impl Into<String>, input: serde_json::Value) -> Self {
+        Self {
+            name: name.into(),
+            description: None,
+            input,
+            expected_output: None,
+            expected_fields: None,
+            expect_error: false,
+            error_contains: None,
+            timeout_ms: None,
+        }
+    }
+}
+
 /// An expected field in the output.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ExpectedField {
@@ -124,16 +141,9 @@ impl TestSuite {
         input: serde_json::Value,
         expected: serde_json::Value,
     ) -> &mut Self {
-        self.tests.push(TestCase {
-            name: name.into(),
-            description: None,
-            input,
-            expected_output: Some(expected),
-            expected_fields: None,
-            expect_error: false,
-            error_contains: None,
-            timeout_ms: None,
-        });
+        let mut test = TestCase::new(name, input);
+        test.expected_output = Some(expected);
+        self.tests.push(test);
         self
     }
 
@@ -144,16 +154,10 @@ impl TestSuite {
         input: serde_json::Value,
         error_contains: impl Into<String>,
     ) -> &mut Self {
-        self.tests.push(TestCase {
-            name: name.into(),
-            description: None,
-            input,
-            expected_output: None,
-            expected_fields: None,
-            expect_error: true,
-            error_contains: Some(error_contains.into()),
-            timeout_ms: None,
-        });
+        let mut test = TestCase::new(name, input);
+        test.expect_error = true;
+        test.error_contains = Some(error_contains.into());
+        self.tests.push(test);
         self
     }
 }
@@ -204,16 +208,12 @@ fn add_minimal_valid_input_test(suite: &mut TestSuite, input_schema: &serde_json
         }
     }
 
-    suite.tests.push(TestCase {
-        name: "minimal_valid_input".to_string(),
-        description: Some("Test with minimal valid input".to_string()),
-        input: serde_json::Value::Object(minimal_input),
-        expected_output: None,
-        expected_fields: None,
-        expect_error: false,
-        error_contains: None,
-        timeout_ms: None,
-    });
+    let mut test = TestCase::new(
+        "minimal_valid_input",
+        serde_json::Value::Object(minimal_input),
+    );
+    test.description = Some("Test with minimal valid input".to_string());
+    suite.tests.push(test);
 }
 
 /// Produce a minimal placeholder JSON value for a schema `type` string.

@@ -50,6 +50,25 @@ pub struct McpClient {
     pub(super) custom_headers: HashMap<String, String>,
 }
 
+/// Construction inputs for [`McpClient::new_with_transport`].
+///
+/// Groups the transport, identity, and optional auth collaborators so the
+/// constructor does not take an excess of positional arguments.
+pub struct TransportClientOptions {
+    /// Server name for logging and session management.
+    pub server_name: String,
+    /// Transport implementation (stdio, UDS, or other non-HTTP).
+    pub transport: Arc<dyn McpTransport>,
+    /// Shared session manager, when sessions are in use.
+    pub session_manager: Option<Arc<McpSessionManager>>,
+    /// Secrets store for retrieving access tokens, when authentication applies.
+    pub secrets: Option<Arc<dyn SecretsStore + Send + Sync>>,
+    /// User ID for secrets lookup.
+    pub user_id: String,
+    /// Server configuration, when one is available.
+    pub server_config: Option<McpServerConfig>,
+}
+
 /// Grouped construction inputs for [`McpClient`].
 ///
 /// Collects the fields that vary between constructors so each `new_*`
@@ -168,31 +187,26 @@ impl McpClient {
     /// Create a new MCP client with a custom transport.
     ///
     /// Use this for stdio, UDS, or other non-HTTP transports.
-    pub fn new_with_transport(
-        server_name: impl Into<String>,
-        transport: Arc<dyn McpTransport>,
-        session_manager: Option<Arc<McpSessionManager>>,
-        secrets: Option<Arc<dyn SecretsStore + Send + Sync>>,
-        user_id: impl Into<String>,
-        server_config: Option<McpServerConfig>,
-    ) -> Self {
-        let server_url = server_config
+    pub fn new_with_transport(options: TransportClientOptions) -> Self {
+        let server_url = options
+            .server_config
             .as_ref()
             .map(|c| c.url.clone())
             .unwrap_or_default();
-        let custom_headers = server_config
+        let custom_headers = options
+            .server_config
             .as_ref()
             .map(|c| c.headers.clone())
             .unwrap_or_default();
 
         McpClientParts {
-            transport,
+            transport: options.transport,
             server_url,
-            server_name: server_name.into(),
-            session_manager,
-            secrets,
-            user_id: user_id.into(),
-            server_config,
+            server_name: options.server_name,
+            session_manager: options.session_manager,
+            secrets: options.secrets,
+            user_id: options.user_id,
+            server_config: options.server_config,
             custom_headers,
         }
         .into()

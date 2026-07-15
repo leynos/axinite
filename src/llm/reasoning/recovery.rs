@@ -3,6 +3,14 @@
 
 use crate::llm::{ToolCall, ToolDefinition};
 
+/// A paired opening/closing tag delimiter enclosing an inline tool call,
+/// e.g. `<tool_call>` / `</tool_call>`.
+#[derive(Debug, Clone, Copy)]
+struct TagPair {
+    open: &'static str,
+    close: &'static str,
+}
+
 /// Try to extract tool calls from content text where the model emitted them
 /// as XML tags instead of using the structured tool_calls field.
 ///
@@ -21,13 +29,25 @@ pub(super) fn recover_tool_calls_from_content(
         available_tools.iter().map(|t| t.name.as_str()).collect();
     let mut calls = Vec::new();
 
-    for (open, close) in &[
-        ("<tool_call>", "</tool_call>"),
-        ("<|tool_call|>", "<|/tool_call|>"),
-        ("<function_call>", "</function_call>"),
-        ("<|function_call|>", "<|/function_call|>"),
+    for tags in &[
+        TagPair {
+            open: "<tool_call>",
+            close: "</tool_call>",
+        },
+        TagPair {
+            open: "<|tool_call|>",
+            close: "<|/tool_call|>",
+        },
+        TagPair {
+            open: "<function_call>",
+            close: "</function_call>",
+        },
+        TagPair {
+            open: "<|function_call|>",
+            close: "<|/function_call|>",
+        },
     ] {
-        recover_tagged_calls(content, open, close, &tool_names, &mut calls);
+        recover_tagged_calls(content, *tags, &tool_names, &mut calls);
     }
 
     recover_bracket_calls(content, &tool_names, &mut calls);
@@ -44,24 +64,23 @@ fn push_recovered_call(calls: &mut Vec<ToolCall>, name: &str, arguments: serde_j
     });
 }
 
-/// Recover calls delimited by one `open`/`close` tag pair: JSON payloads
+/// Recover calls delimited by one `tags` open/close pair: JSON payloads
 /// first, then bare tool names.
 fn recover_tagged_calls(
     content: &str,
-    open: &str,
-    close: &str,
+    tags: TagPair,
     tool_names: &std::collections::HashSet<&str>,
     calls: &mut Vec<ToolCall>,
 ) {
     let mut remaining = content;
-    while let Some(start) = remaining.find(open) {
-        let inner_start = start + open.len();
+    while let Some(start) = remaining.find(tags.open) {
+        let inner_start = start + tags.open.len();
         let after = &remaining[inner_start..];
-        let Some(end) = after.find(close) else {
+        let Some(end) = after.find(tags.close) else {
             break;
         };
         let inner = after[..end].trim();
-        remaining = &after[end + close.len()..];
+        remaining = &after[end + tags.close.len()..];
 
         if inner.is_empty() {
             continue;

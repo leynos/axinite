@@ -10,7 +10,7 @@ use crate::tools::mcp::protocol::{McpRequest, McpResponse};
 use crate::tools::mcp::transport::{McpTransport, NativeMcpTransport};
 use crate::tools::tool::ToolError;
 
-use super::core::{McpClient, extract_server_name};
+use super::core::{McpClient, TransportClientOptions, extract_server_name};
 use super::wrapper::strip_top_level_nulls;
 
 #[test]
@@ -271,8 +271,14 @@ async fn test_non_http_transport_skips_401_retry() {
         error: None,
     };
     let transport = Arc::new(MockTransport::new(false, vec![response]));
-    let client =
-        McpClient::new_with_transport("test-stdio", transport.clone(), None, None, "default", None);
+    let client = McpClient::new_with_transport(TransportClientOptions {
+        server_name: "test-stdio".to_string(),
+        transport: transport.clone(),
+        session_manager: None,
+        secrets: None,
+        user_id: "default".to_string(),
+        server_config: None,
+    });
     let result = client.list_tools().await;
     assert!(result.is_ok());
     assert_eq!(result.unwrap().len(), 0);

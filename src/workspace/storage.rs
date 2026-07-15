@@ -38,71 +38,45 @@ macro_rules! dispatch {
     };
 }
 
+/// Define `pub(super)` async wrappers that forward their arguments verbatim
+/// to the backend method of the same name via `dispatch!`.
+///
+/// Only methods whose wrapper is a pure pass-through belong here; wrappers
+/// that assemble parameter structs first are written out manually below.
+macro_rules! delegate {
+    ($($method:ident($($arg:ident: $ty:ty),* $(,)?) -> $ok:ty;)+) => {
+        $(
+            pub(super) async fn $method(&self, $($arg: $ty),*) -> Result<$ok, WorkspaceError> {
+                dispatch!(self, $method($($arg),*))
+            }
+        )+
+    };
+}
+
 impl WorkspaceStorage {
-    pub(super) async fn get_document_by_path(
-        &self,
-        user_id: &str,
-        agent_id: Option<Uuid>,
-        path: &str,
-    ) -> Result<MemoryDocument, WorkspaceError> {
-        dispatch!(self, get_document_by_path(user_id, agent_id, path))
-    }
-
-    pub(super) async fn get_document_by_id(
-        &self,
-        id: Uuid,
-    ) -> Result<MemoryDocument, WorkspaceError> {
-        dispatch!(self, get_document_by_id(id))
-    }
-
-    pub(super) async fn get_or_create_document_by_path(
-        &self,
-        user_id: &str,
-        agent_id: Option<Uuid>,
-        path: &str,
-    ) -> Result<MemoryDocument, WorkspaceError> {
-        dispatch!(
-            self,
-            get_or_create_document_by_path(user_id, agent_id, path)
-        )
-    }
-
-    pub(super) async fn update_document(
-        &self,
-        id: Uuid,
-        content: &str,
-    ) -> Result<(), WorkspaceError> {
-        dispatch!(self, update_document(id, content))
-    }
-
-    pub(super) async fn delete_document_by_path(
-        &self,
-        user_id: &str,
-        agent_id: Option<Uuid>,
-        path: &str,
-    ) -> Result<(), WorkspaceError> {
-        dispatch!(self, delete_document_by_path(user_id, agent_id, path))
-    }
-
-    pub(super) async fn list_directory(
-        &self,
-        user_id: &str,
-        agent_id: Option<Uuid>,
-        directory: &str,
-    ) -> Result<Vec<WorkspaceEntry>, WorkspaceError> {
-        dispatch!(self, list_directory(user_id, agent_id, directory))
-    }
-
-    pub(super) async fn list_all_paths(
-        &self,
-        user_id: &str,
-        agent_id: Option<Uuid>,
-    ) -> Result<Vec<String>, WorkspaceError> {
-        dispatch!(self, list_all_paths(user_id, agent_id))
-    }
-
-    pub(super) async fn delete_chunks(&self, document_id: Uuid) -> Result<(), WorkspaceError> {
-        dispatch!(self, delete_chunks(document_id))
+    delegate! {
+        get_document_by_path(user_id: &str, agent_id: Option<Uuid>, path: &str) -> MemoryDocument;
+        get_document_by_id(id: Uuid) -> MemoryDocument;
+        get_or_create_document_by_path(
+            user_id: &str,
+            agent_id: Option<Uuid>,
+            path: &str,
+        ) -> MemoryDocument;
+        update_document(id: Uuid, content: &str) -> ();
+        delete_document_by_path(user_id: &str, agent_id: Option<Uuid>, path: &str) -> ();
+        list_directory(
+            user_id: &str,
+            agent_id: Option<Uuid>,
+            directory: &str,
+        ) -> Vec<WorkspaceEntry>;
+        list_all_paths(user_id: &str, agent_id: Option<Uuid>) -> Vec<String>;
+        delete_chunks(document_id: Uuid) -> ();
+        update_chunk_embedding(chunk_id: Uuid, embedding: &[f32]) -> ();
+        get_chunks_without_embeddings(
+            user_id: &str,
+            agent_id: Option<Uuid>,
+            limit: usize,
+        ) -> Vec<MemoryChunk>;
     }
 
     pub(super) async fn insert_chunk(
@@ -119,26 +93,6 @@ impl WorkspaceStorage {
             embedding,
         };
         dispatch!(self, insert_chunk(params))
-    }
-
-    pub(super) async fn update_chunk_embedding(
-        &self,
-        chunk_id: Uuid,
-        embedding: &[f32],
-    ) -> Result<(), WorkspaceError> {
-        dispatch!(self, update_chunk_embedding(chunk_id, embedding))
-    }
-
-    pub(super) async fn get_chunks_without_embeddings(
-        &self,
-        user_id: &str,
-        agent_id: Option<Uuid>,
-        limit: usize,
-    ) -> Result<Vec<MemoryChunk>, WorkspaceError> {
-        dispatch!(
-            self,
-            get_chunks_without_embeddings(user_id, agent_id, limit)
-        )
     }
 
     pub(super) async fn hybrid_search(

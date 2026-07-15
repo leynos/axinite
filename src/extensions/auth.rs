@@ -80,6 +80,19 @@ impl AuthResult {
         }
     }
 
+    /// Shared constructor for the two statuses that carry `instructions` and an
+    /// optional `setup_url` (`AwaitingToken` and `NeedsSetup`); `to_status`
+    /// selects the variant.
+    fn with_instructions(
+        name: impl Into<String>,
+        kind: ExtensionKind,
+        instructions: String,
+        setup_url: Option<String>,
+        to_status: impl FnOnce(String, Option<String>) -> AuthStatus,
+    ) -> Self {
+        Self::with_status(name, kind, to_status(instructions, setup_url))
+    }
+
     pub fn authenticated(name: impl Into<String>, kind: ExtensionKind) -> Self {
         Self::with_status(name, kind, AuthStatus::Authenticated)
     }
@@ -110,10 +123,12 @@ impl AuthResult {
         instructions: String,
         setup_url: Option<String>,
     ) -> Self {
-        Self::with_status(
+        Self::with_instructions(
             name,
             kind,
-            AuthStatus::AwaitingToken {
+            instructions,
+            setup_url,
+            |instructions, setup_url| AuthStatus::AwaitingToken {
                 instructions,
                 setup_url,
             },
@@ -126,10 +141,12 @@ impl AuthResult {
         instructions: String,
         setup_url: Option<String>,
     ) -> Self {
-        Self::with_status(
+        Self::with_instructions(
             name,
             kind,
-            AuthStatus::NeedsSetup {
+            instructions,
+            setup_url,
+            |instructions, setup_url| AuthStatus::NeedsSetup {
                 instructions,
                 setup_url,
             },
@@ -193,22 +210,26 @@ impl Serialize for AuthResult {
 
         map.serialize_entry("name", &self.name)?;
         map.serialize_entry("kind", &self.kind)?;
-        if let Some(url) = self.auth_url() {
-            map.serialize_entry("auth_url", url)?;
-        }
-        if let Some(cb) = self.callback_type() {
-            map.serialize_entry("callback_type", cb)?;
-        }
-        if let Some(inst) = self.instructions() {
-            map.serialize_entry("instructions", inst)?;
-        }
-        if let Some(url) = self.setup_url() {
-            map.serialize_entry("setup_url", url)?;
-        }
+        serialize_opt_entry(&mut map, "auth_url", self.auth_url())?;
+        serialize_opt_entry(&mut map, "callback_type", self.callback_type())?;
+        serialize_opt_entry(&mut map, "instructions", self.instructions())?;
+        serialize_opt_entry(&mut map, "setup_url", self.setup_url())?;
         map.serialize_entry("awaiting_token", &self.is_awaiting_token())?;
         map.serialize_entry("status", self.status_str())?;
         map.end()
     }
+}
+
+/// Serialize an optional string field, emitting the entry only when present.
+fn serialize_opt_entry<M: SerializeMap>(
+    map: &mut M,
+    key: &'static str,
+    value: Option<&str>,
+) -> Result<(), M::Error> {
+    if let Some(v) = value {
+        map.serialize_entry(key, v)?;
+    }
+    Ok(())
 }
 
 /// Deserialize from the flat JSON shape back into the typed enum.

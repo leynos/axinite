@@ -11,6 +11,30 @@ use crate::tools::tool::{ApprovalRequirement, NativeTool, ToolError, ToolOutput,
 use super::output::{error_output, success_output};
 use super::resolve_job_id;
 
+/// JSON parameter schema for tools whose only parameter is a job id.
+fn job_id_parameters_schema() -> serde_json::Value {
+    serde_json::json!({
+        "type": "object",
+        "properties": {
+            "job_id": {
+                "type": "string",
+                "description": "The job ID (full UUID or short prefix, e.g. 'f2854dd8')"
+            }
+        },
+        "required": ["job_id"]
+    })
+}
+
+/// Extract the required `job_id` parameter and resolve it (full UUID or
+/// short prefix) to a concrete job id.
+async fn resolve_job_id_param(
+    params: &serde_json::Value,
+    context_manager: &ContextManager,
+) -> Result<uuid::Uuid, ToolError> {
+    let job_id_str = require_str(params, "job_id")?;
+    resolve_job_id(job_id_str, context_manager).await
+}
+
 /// Tool for listing jobs.
 pub struct ListJobsTool {
     context_manager: Arc<ContextManager>,
@@ -125,16 +149,7 @@ impl NativeTool for JobStatusTool {
     }
 
     fn parameters_schema(&self) -> serde_json::Value {
-        serde_json::json!({
-            "type": "object",
-            "properties": {
-                "job_id": {
-                    "type": "string",
-                    "description": "The job ID (full UUID or short prefix, e.g. 'f2854dd8')"
-                }
-            },
-            "required": ["job_id"]
-        })
+        job_id_parameters_schema()
     }
 
     async fn execute(
@@ -145,8 +160,7 @@ impl NativeTool for JobStatusTool {
         let start = std::time::Instant::now();
         let requester_id = ctx.user_id.clone();
 
-        let job_id_str = require_str(&params, "job_id")?;
-        let job_id = resolve_job_id(job_id_str, &self.context_manager).await?;
+        let job_id = resolve_job_id_param(&params, &self.context_manager).await?;
 
         match self.context_manager.get_context(job_id).await {
             Ok(job_ctx) => {
@@ -197,16 +211,7 @@ impl NativeTool for CancelJobTool {
     }
 
     fn parameters_schema(&self) -> serde_json::Value {
-        serde_json::json!({
-            "type": "object",
-            "properties": {
-                "job_id": {
-                    "type": "string",
-                    "description": "The job ID (full UUID or short prefix, e.g. 'f2854dd8')"
-                }
-            },
-            "required": ["job_id"]
-        })
+        job_id_parameters_schema()
     }
 
     async fn execute(
@@ -217,8 +222,7 @@ impl NativeTool for CancelJobTool {
         let start = std::time::Instant::now();
         let requester_id = ctx.user_id.clone();
 
-        let job_id_str = require_str(&params, "job_id")?;
-        let job_id = resolve_job_id(job_id_str, &self.context_manager).await?;
+        let job_id = resolve_job_id_param(&params, &self.context_manager).await?;
 
         // Transition to cancelled state
         match self

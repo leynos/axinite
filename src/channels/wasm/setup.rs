@@ -183,8 +183,10 @@ async fn register_channel(
         .register(
             Arc::clone(&channel_arc),
             endpoints,
-            webhook_secret.clone(),
-            secret_header,
+            crate::channels::wasm::router::WebhookSecrets {
+                secret: webhook_secret.clone(),
+                header: secret_header,
+            },
         )
         .await;
 

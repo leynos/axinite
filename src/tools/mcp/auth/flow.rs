@@ -177,14 +177,14 @@ pub async fn authorize_mcp_server(
     println!("  Exchanging code for token...");
 
     // Exchange code for token
-    let token = exchange_code_for_token(
-        &params.token_url,
-        &params.client_id,
-        &code,
-        &redirect_uri,
-        pkce.as_ref(),
-        Some(&resource),
-    )
+    let token = exchange_code_for_token(&TokenExchangeRequest {
+        token_url: &params.token_url,
+        client_id: &params.client_id,
+        code: &code,
+        redirect_uri: &redirect_uri,
+        pkce: pkce.as_ref(),
+        resource: Some(&resource),
+    })
     .await?;
 
     // Store the tokens
@@ -272,36 +272,47 @@ pub async fn wait_for_authorization_callback(
         })
 }
 
+/// Inputs for exchanging an authorization code for an access token.
+pub struct TokenExchangeRequest<'a> {
+    /// Token endpoint URL.
+    pub token_url: &'a str,
+    /// OAuth client identifier.
+    pub client_id: &'a str,
+    /// Authorization code received from the callback.
+    pub code: &'a str,
+    /// Redirect URI used during the authorization request.
+    pub redirect_uri: &'a str,
+    /// PKCE challenge, when PKCE is in use.
+    pub pkce: Option<&'a PkceChallenge>,
+    /// RFC 8707 resource indicator, when one applies.
+    pub resource: Option<&'a str>,
+}
+
 /// Exchange the authorization code for an access token.
 pub async fn exchange_code_for_token(
-    token_url: &str,
-    client_id: &str,
-    code: &str,
-    redirect_uri: &str,
-    pkce: Option<&PkceChallenge>,
-    resource: Option<&str>,
+    request: &TokenExchangeRequest<'_>,
 ) -> Result<AccessToken, AuthError> {
-    validate_url_safe(token_url).await?;
+    validate_url_safe(request.token_url).await?;
 
     let client = build_no_redirect_client(Duration::from_secs(30))?;
 
     let mut params = vec![
         ("grant_type", "authorization_code".to_string()),
-        ("code", code.to_string()),
-        ("redirect_uri", redirect_uri.to_string()),
-        ("client_id", client_id.to_string()),
+        ("code", request.code.to_string()),
+        ("redirect_uri", request.redirect_uri.to_string()),
+        ("client_id", request.client_id.to_string()),
     ];
 
-    if let Some(pkce) = pkce {
+    if let Some(pkce) = request.pkce {
         params.push(("code_verifier", pkce.verifier.clone()));
     }
 
-    if let Some(resource) = resource {
+    if let Some(resource) = request.resource {
         params.push(("resource", resource.to_string()));
     }
 
     let response = client
-        .post(token_url)
+        .post(request.token_url)
         .form(&params)
         .send()
         .await

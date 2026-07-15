@@ -69,39 +69,64 @@ impl ExtensionManager {
         &self,
         name: Option<&str>,
     ) -> Result<Vec<(String, ExtensionKind)>, ExtensionError> {
-        let mut candidates: Vec<(String, ExtensionKind)> = Vec::new();
+        let Some(name) = name else {
+            return Ok(self.discover_all_candidates().await);
+        };
+        self.resolve_named_candidate(name).await
+    }
 
-        if let Some(name) = name {
-            Self::validate_extension_name(name)?;
-            let kind = self.determine_installed_kind(name).await?;
-            if kind == ExtensionKind::McpServer {
-                return Err(ExtensionError::Other(
-                    "MCP servers don't have WIT versions and cannot be upgraded this way"
-                        .to_string(),
-                ));
-            }
-            candidates.push((name.to_string(), kind));
-            return Ok(candidates);
+    /// Validate a named extension and confirm it is upgradeable (not an MCP
+    /// server, which has no WIT version).
+    async fn resolve_named_candidate(
+        &self,
+        name: &str,
+    ) -> Result<Vec<(String, ExtensionKind)>, ExtensionError> {
+        Self::validate_extension_name(name)?;
+        let kind = self.determine_installed_kind(name).await?;
+        if kind == ExtensionKind::McpServer {
+            return Err(ExtensionError::Other(
+                "MCP servers don't have WIT versions and cannot be upgraded this way".to_string(),
+            ));
         }
+        Ok(vec![(name.to_string(), kind)])
+    }
 
-        // Discover all installed WASM tools
-        if self.wasm_tools_dir.exists()
-            && let Ok(tools) = discover_tools(&self.wasm_tools_dir).await
-        {
-            for (tool_name, _) in tools {
-                candidates.push((tool_name, ExtensionKind::WasmTool));
-            }
+    /// Discover every installed WASM tool and channel as an upgrade candidate.
+    async fn discover_all_candidates(&self) -> Vec<(String, ExtensionKind)> {
+        let mut candidates = self.discover_tool_candidates().await;
+        candidates.extend(self.discover_channel_candidates().await);
+        candidates
+    }
+
+    /// Discover installed WASM tools; empty when the directory is absent or
+    /// discovery fails.
+    async fn discover_tool_candidates(&self) -> Vec<(String, ExtensionKind)> {
+        if !self.wasm_tools_dir.exists() {
+            return Vec::new();
         }
-        // Discover all installed WASM channels
-        if self.wasm_channels_dir.exists()
-            && let Ok(channels) =
-                crate::channels::wasm::discover_channels(&self.wasm_channels_dir).await
-        {
-            for (ch_name, _) in channels {
-                candidates.push((ch_name, ExtensionKind::WasmChannel));
-            }
+        let Ok(tools) = discover_tools(&self.wasm_tools_dir).await else {
+            return Vec::new();
+        };
+        tools
+            .into_keys()
+            .map(|tool_name| (tool_name, ExtensionKind::WasmTool))
+            .collect()
+    }
+
+    /// Discover installed WASM channels; empty when the directory is absent or
+    /// discovery fails.
+    async fn discover_channel_candidates(&self) -> Vec<(String, ExtensionKind)> {
+        if !self.wasm_channels_dir.exists() {
+            return Vec::new();
         }
-        Ok(candidates)
+        let Ok(channels) = crate::channels::wasm::discover_channels(&self.wasm_channels_dir).await
+        else {
+            return Vec::new();
+        };
+        channels
+            .into_keys()
+            .map(|ch_name| (ch_name, ExtensionKind::WasmChannel))
+            .collect()
     }
 
     /// Read the WIT version declared in an extension's capabilities file.

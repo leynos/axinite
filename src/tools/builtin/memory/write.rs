@@ -67,6 +67,9 @@ impl MemoryWriteTool {
     }
 
     /// Write to curated long-term memory (MEMORY.md), returning the path.
+    ///
+    /// Appends go through the workspace's dedicated memory-append path;
+    /// replacements reuse the generic workspace write.
     async fn write_memory(&self, content: &str, append: bool) -> Result<String, ToolError> {
         if append {
             self.workspace
@@ -74,10 +77,7 @@ impl MemoryWriteTool {
                 .await
                 .map_err(write_failed)?;
         } else {
-            self.workspace
-                .write(paths::MEMORY, content)
-                .await
-                .map_err(write_failed)?;
+            self.write_or_append(paths::MEMORY, content, false).await?;
         }
         Ok(paths::MEMORY.to_string())
     }
@@ -99,20 +99,7 @@ impl MemoryWriteTool {
         content: &str,
         append: bool,
     ) -> Result<String, ToolError> {
-        // Protect identity files from LLM overwrites (prompt injection defence).
-        // These files are injected into the system prompt, so poisoning them
-        // would let an attacker rewrite the agent's core instructions.
-        let normalized = path.trim_start_matches('/');
-        if PROTECTED_IDENTITY_FILES
-            .iter()
-            .any(|p| normalized.eq_ignore_ascii_case(p))
-        {
-            return Err(ToolError::NotAuthorized(format!(
-                "writing to '{}' is not allowed (identity file protected from tool access)",
-                path
-            )));
-        }
-
+        ensure_not_protected(path)?;
         self.write_or_append(path, content, append).await?;
         Ok(path.to_string())
     }
@@ -121,6 +108,26 @@ impl MemoryWriteTool {
 /// Map a workspace failure into a tool execution error.
 fn write_failed(e: impl std::fmt::Display) -> ToolError {
     ToolError::ExecutionFailed(format!("Write failed: {}", e))
+}
+
+/// Reject writes to protected identity files (prompt injection defence).
+///
+/// These files are injected into the system prompt, so poisoning them would
+/// let an attacker rewrite the agent's core instructions. Paths are compared
+/// case-insensitively after trimming any leading slash so aliases such as
+/// `/IDENTITY.md` are also caught.
+fn ensure_not_protected(path: &str) -> Result<(), ToolError> {
+    let normalized = path.trim_start_matches('/');
+    if PROTECTED_IDENTITY_FILES
+        .iter()
+        .any(|p| normalized.eq_ignore_ascii_case(p))
+    {
+        return Err(ToolError::NotAuthorized(format!(
+            "writing to '{}' is not allowed (identity file protected from tool writes)",
+            path
+        )));
+    }
+    Ok(())
 }
 
 impl NativeTool for MemoryWriteTool {
@@ -189,12 +196,7 @@ impl NativeTool for MemoryWriteTool {
         // Reject writes to identity files that are loaded into the system prompt.
         // An attacker could use prompt injection to trick the agent into overwriting
         // these, poisoning future conversations.
-        if PROTECTED_IDENTITY_FILES.contains(&target) {
-            return Err(ToolError::NotAuthorized(format!(
-                "writing to '{}' is not allowed (identity file protected from tool writes)",
-                target,
-            )));
-        }
+        ensure_not_protected(target)?;
 
         let append = params
             .get("append")

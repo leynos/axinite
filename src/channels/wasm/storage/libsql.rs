@@ -6,8 +6,9 @@ use uuid::Uuid;
 use crate::tools::wasm::storage::compute_binary_hash;
 
 use super::{
-    CHANNEL_COLUMNS, CHANNEL_COLUMNS_WITH_BINARY, StoreChannelParams, StoredWasmChannel,
-    StoredWasmChannelWithBinary, WasmChannelStore, WasmChannelStoreError, check_binary_integrity,
+    CHANNEL_COLUMNS, CHANNEL_COLUMNS_WITH_BINARY, ChannelKey, StoreChannelParams,
+    StoredWasmChannel, StoredWasmChannelWithBinary, WasmChannelStore, WasmChannelStoreError,
+    check_binary_integrity,
 };
 
 use super::LibSqlWasmChannelStore;
@@ -101,11 +102,8 @@ impl WasmChannelStore for LibSqlWasmChannelStore {
         Ok(channel)
     }
 
-    async fn get(
-        &self,
-        user_id: &str,
-        name: &str,
-    ) -> Result<StoredWasmChannel, WasmChannelStoreError> {
+    async fn get(&self, key: ChannelKey<'_>) -> Result<StoredWasmChannel, WasmChannelStoreError> {
+        let ChannelKey { user_id, name } = key;
         let conn = self.connect().await?;
         let mut rows = conn
             .query(
@@ -129,9 +127,9 @@ impl WasmChannelStore for LibSqlWasmChannelStore {
 
     async fn get_with_binary(
         &self,
-        user_id: &str,
-        name: &str,
+        key: ChannelKey<'_>,
     ) -> Result<StoredWasmChannelWithBinary, WasmChannelStoreError> {
+        let ChannelKey { user_id, name } = key;
         let conn = self.connect().await?;
         let mut rows = conn
             .query(
@@ -156,7 +154,7 @@ impl WasmChannelStore for LibSqlWasmChannelStore {
                     .get(7)
                     .map_err(|e| WasmChannelStoreError::Database(e.to_string()))?;
 
-                check_binary_integrity(user_id, name, &wasm_binary, &binary_hash)?;
+                check_binary_integrity(key, &wasm_binary, &binary_hash)?;
 
                 let channel = libsql_row_to_channel_at(&row, 8)?;
 
@@ -193,7 +191,8 @@ impl WasmChannelStore for LibSqlWasmChannelStore {
         Ok(channels)
     }
 
-    async fn delete(&self, user_id: &str, name: &str) -> Result<bool, WasmChannelStoreError> {
+    async fn delete(&self, key: ChannelKey<'_>) -> Result<bool, WasmChannelStoreError> {
+        let ChannelKey { user_id, name } = key;
         let conn = self.connect().await?;
         let result = conn
             .execute(

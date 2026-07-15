@@ -37,24 +37,44 @@ pub(crate) fn validate_url(url: &str) -> Result<reqwest::Url, ToolError> {
     let parsed = reqwest::Url::parse(url)
         .map_err(|e| ToolError::InvalidParameters(format!("invalid URL: {}", e)))?;
 
-    if parsed.scheme() != "https" {
-        return Err(ToolError::NotAuthorized(
-            "only https URLs are allowed".to_string(),
-        ));
-    }
+    ensure_https(&parsed)?;
 
     let host = parsed
         .host_str()
         .ok_or_else(|| ToolError::InvalidParameters("URL missing host".to_string()))?;
 
+    ensure_not_localhost(host)?;
+    ensure_literal_ip_allowed(host)?;
+
+    let port = parsed.port_or_known_default().unwrap_or(443);
+    ensure_resolved_ips_allowed(host, port)?;
+
+    Ok(parsed)
+}
+
+/// Reject any URL whose scheme is not `https`.
+fn ensure_https(parsed: &reqwest::Url) -> Result<(), ToolError> {
+    if parsed.scheme() != "https" {
+        return Err(ToolError::NotAuthorized(
+            "only https URLs are allowed".to_string(),
+        ));
+    }
+    Ok(())
+}
+
+/// Reject `localhost` and any `.localhost` subdomain, case-insensitively.
+fn ensure_not_localhost(host: &str) -> Result<(), ToolError> {
     let host_lower = host.to_lowercase();
     if host_lower == "localhost" || host_lower.ends_with(".localhost") {
         return Err(ToolError::NotAuthorized(
             "localhost is not allowed".to_string(),
         ));
     }
+    Ok(())
+}
 
-    // Check literal IP addresses
+/// Reject hosts that are literal IP addresses on the SSRF blocklist.
+fn ensure_literal_ip_allowed(host: &str) -> Result<(), ToolError> {
     if let Ok(ip) = host.parse::<IpAddr>()
         && is_disallowed_ip(&ip)
     {
@@ -62,24 +82,27 @@ pub(crate) fn validate_url(url: &str) -> Result<reqwest::Url, ToolError> {
             "private or local IPs are not allowed".to_string(),
         ));
     }
+    Ok(())
+}
 
-    // Resolve hostname and check all resolved IPs against the blocklist.
-    // This prevents DNS rebinding where a hostname resolves to a private IP.
-    let port = parsed.port_or_known_default().unwrap_or(443);
+/// Resolve the hostname and reject it if any resolved address is on the SSRF
+/// blocklist. This prevents DNS rebinding where a hostname resolves to a
+/// private IP.
+fn ensure_resolved_ips_allowed(host: &str, port: u16) -> Result<(), ToolError> {
     let socket_addr = format!("{}:{}", host, port);
-    if let Ok(addrs) = socket_addr.to_socket_addrs() {
-        for addr in addrs {
-            if is_disallowed_ip(&addr.ip()) {
-                return Err(ToolError::NotAuthorized(format!(
-                    "hostname '{}' resolves to disallowed IP {}",
-                    host,
-                    addr.ip()
-                )));
-            }
+    let Ok(addrs) = socket_addr.to_socket_addrs() else {
+        return Ok(());
+    };
+    for addr in addrs {
+        if is_disallowed_ip(&addr.ip()) {
+            return Err(ToolError::NotAuthorized(format!(
+                "hostname '{}' resolves to disallowed IP {}",
+                host,
+                addr.ip()
+            )));
         }
     }
-
-    Ok(parsed)
+    Ok(())
 }
 
 pub(super) fn is_disallowed_ip(ip: &IpAddr) -> bool {

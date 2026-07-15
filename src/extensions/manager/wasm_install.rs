@@ -5,6 +5,26 @@ use crate::extensions::{ExtensionError, ExtensionKind, InstallResult};
 use super::ExtensionManager;
 use super::sanitize_url_for_logging;
 
+/// 100 MB cap on a single decompressed tar entry to prevent decompression bombs.
+const MAX_TAR_ENTRY_SIZE: u64 = 100 * 1024 * 1024;
+
+/// Read a single tar entry (bounded by [`MAX_TAR_ENTRY_SIZE`]) and write it to
+/// `dest`, without preserving permissions or extended attributes.
+fn extract_tar_entry<R: std::io::Read>(
+    entry: &mut tar::Entry<'_, R>,
+    dest: &std::path::Path,
+) -> Result<(), ExtensionError> {
+    use std::io::Read as _;
+
+    let mut data = Vec::with_capacity(entry.size() as usize);
+    entry
+        .by_ref()
+        .take(MAX_TAR_ENTRY_SIZE)
+        .read_to_end(&mut data)
+        .map_err(|e| ExtensionError::InstallFailed(e.to_string()))?;
+    ambient_fs::write(dest, &data).map_err(|e| ExtensionError::InstallFailed(e.to_string()))
+}
+
 impl ExtensionManager {
     /// Whether the payload begins with the gzip magic number (`0x1f 0x8b`).
     pub(super) fn is_gzip_payload(bytes: &[u8]) -> bool {
@@ -149,32 +169,45 @@ impl ExtensionManager {
         caps_path: &std::path::Path,
     ) {
         const MAX_CAPS_SIZE: usize = 1024 * 1024; // 1 MB
-        match client.get(caps_url).send().await {
-            Ok(resp) if resp.status().is_success() => match resp.bytes().await {
-                Ok(caps_bytes) if caps_bytes.len() <= MAX_CAPS_SIZE => {
-                    if let Err(e) = tokio::fs::write(caps_path, &caps_bytes).await {
-                        tracing::warn!("Failed to write capabilities for '{}': {}", name, e);
-                    }
-                }
-                Ok(caps_bytes) => {
-                    tracing::warn!(
-                        "Capabilities file for '{}' too large ({} bytes, max {})",
-                        name,
-                        caps_bytes.len(),
-                        MAX_CAPS_SIZE
-                    );
-                }
-                Err(e) => {
-                    tracing::warn!("Failed to download capabilities for '{}': {}", name, e);
-                }
-            },
-            _ => {
-                tracing::warn!(
-                    "Failed to download capabilities for '{}' from {}",
-                    name,
-                    caps_url
-                );
+
+        // A failed request or non-success status share the same "from URL" warning.
+        let Ok(resp) = client.get(caps_url).send().await else {
+            tracing::warn!(
+                "Failed to download capabilities for '{}' from {}",
+                name,
+                caps_url
+            );
+            return;
+        };
+        if !resp.status().is_success() {
+            tracing::warn!(
+                "Failed to download capabilities for '{}' from {}",
+                name,
+                caps_url
+            );
+            return;
+        }
+
+        let caps_bytes = match resp.bytes().await {
+            Ok(bytes) => bytes,
+            Err(e) => {
+                tracing::warn!("Failed to download capabilities for '{}': {}", name, e);
+                return;
             }
+        };
+
+        if caps_bytes.len() > MAX_CAPS_SIZE {
+            tracing::warn!(
+                "Capabilities file for '{}' too large ({} bytes, max {})",
+                name,
+                caps_bytes.len(),
+                MAX_CAPS_SIZE
+            );
+            return;
+        }
+
+        if let Err(e) = tokio::fs::write(caps_path, &caps_bytes).await {
+            tracing::warn!("Failed to write capabilities for '{}': {}", name, e);
         }
     }
 
@@ -189,17 +222,12 @@ impl ExtensionManager {
         use flate2::read::GzDecoder;
         use tar::Archive;
 
-        use std::io::Read as _;
-
         let decoder = GzDecoder::new(bytes);
         let mut archive = Archive::new(decoder);
         // Defense-in-depth: do not preserve permissions or extended attributes
         archive.set_preserve_permissions(false);
         #[cfg(any(unix, target_os = "redox"))]
         archive.set_unpack_xattrs(false);
-
-        // 100 MB cap on decompressed entry size to prevent decompression bombs
-        const MAX_ENTRY_SIZE: u64 = 100 * 1024 * 1024;
 
         let wasm_filename = format!("{}.wasm", name);
         let caps_filename = format!("{}.capabilities.json", name);
@@ -213,11 +241,11 @@ impl ExtensionManager {
             let mut entry = entry
                 .map_err(|e| ExtensionError::InstallFailed(format!("Bad tar.gz entry: {}", e)))?;
 
-            if entry.size() > MAX_ENTRY_SIZE {
+            if entry.size() > MAX_TAR_ENTRY_SIZE {
                 return Err(ExtensionError::InstallFailed(format!(
                     "Archive entry too large ({} bytes, max {} bytes)",
                     entry.size(),
-                    MAX_ENTRY_SIZE
+                    MAX_TAR_ENTRY_SIZE
                 )));
             }
 
@@ -234,18 +262,10 @@ impl ExtensionManager {
                 .unwrap_or("");
 
             if filename == wasm_filename {
-                let mut data = Vec::with_capacity(entry.size() as usize);
-                std::io::Read::read_to_end(&mut entry.by_ref().take(MAX_ENTRY_SIZE), &mut data)
-                    .map_err(|e| ExtensionError::InstallFailed(e.to_string()))?;
-                ambient_fs::write(target_wasm, &data)
-                    .map_err(|e| ExtensionError::InstallFailed(e.to_string()))?;
+                extract_tar_entry(&mut entry, target_wasm)?;
                 found_wasm = true;
             } else if filename == caps_filename {
-                let mut data = Vec::with_capacity(entry.size() as usize);
-                std::io::Read::read_to_end(&mut entry.by_ref().take(MAX_ENTRY_SIZE), &mut data)
-                    .map_err(|e| ExtensionError::InstallFailed(e.to_string()))?;
-                ambient_fs::write(target_caps, &data)
-                    .map_err(|e| ExtensionError::InstallFailed(e.to_string()))?;
+                extract_tar_entry(&mut entry, target_caps)?;
             }
         }
 

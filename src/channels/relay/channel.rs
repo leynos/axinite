@@ -35,6 +35,18 @@ impl RelayProvider {
     }
 }
 
+/// Identity and credentials binding a relay channel to one stream.
+pub struct RelayIdentity {
+    /// Token authorizing the SSE stream connection.
+    pub stream_token: String,
+    /// Workspace/team the relay is bound to.
+    pub team_id: String,
+    /// Relay instance identifier.
+    pub instance_id: String,
+    /// User the relay acts on behalf of.
+    pub user_id: String,
+}
+
 /// Channel implementation that connects to a channel-relay SSE stream.
 pub struct RelayChannel {
     client: RelayClient,
@@ -59,39 +71,23 @@ pub struct RelayChannel {
 
 impl RelayChannel {
     /// Create a new relay channel for Slack (default provider).
-    pub fn new(
-        client: RelayClient,
-        stream_token: String,
-        team_id: String,
-        instance_id: String,
-        user_id: String,
-    ) -> Self {
-        Self::new_with_provider(
-            client,
-            RelayProvider::Slack,
-            stream_token,
-            team_id,
-            instance_id,
-            user_id,
-        )
+    pub fn new(client: RelayClient, identity: RelayIdentity) -> Self {
+        Self::new_with_provider(client, RelayProvider::Slack, identity)
     }
 
     /// Create a new relay channel with a specific provider.
     pub fn new_with_provider(
         client: RelayClient,
         provider: RelayProvider,
-        stream_token: String,
-        team_id: String,
-        instance_id: String,
-        user_id: String,
+        identity: RelayIdentity,
     ) -> Self {
         Self {
             client,
             provider,
-            stream_token: Arc::new(RwLock::new(stream_token)),
-            team_id,
-            instance_id,
-            user_id,
+            stream_token: Arc::new(RwLock::new(identity.stream_token)),
+            team_id: identity.team_id,
+            instance_id: identity.instance_id,
+            user_id: identity.user_id,
             stream_timeout_secs: 86400,
             backoff_initial_ms: 1000,
             backoff_max_ms: 60000,

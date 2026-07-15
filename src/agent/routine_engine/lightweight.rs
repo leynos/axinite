@@ -5,8 +5,22 @@ use crate::agent::routine::{Routine, RunStatus};
 use crate::error::RoutineError;
 use crate::llm::{ChatMessage, CompletionRequest, FinishReason};
 
-use super::execution::EngineContext;
+use super::execution::{EngineContext, RunOutcome};
 use super::lightweight_tools::execute_lightweight_with_tools;
+
+/// Parameters of a lightweight routine action, as declared on the routine.
+pub(super) struct LightweightSpec<'a> {
+    pub(super) prompt: &'a str,
+    pub(super) context_paths: &'a [String],
+    pub(super) max_tokens: u32,
+}
+
+/// Fully assembled prompt inputs for a lightweight routine LLM call.
+pub(super) struct PreparedPrompt {
+    pub(super) system_prompt: String,
+    pub(super) full_prompt: String,
+    pub(super) max_tokens: u32,
+}
 
 /// Return `true` when a character is safe to appear in a workspace path.
 fn is_workspace_safe_char(c: char) -> bool {
@@ -28,35 +42,25 @@ pub(super) fn sanitize_routine_name(name: &str) -> String {
 pub(super) async fn execute_lightweight(
     ctx: &EngineContext,
     routine: &Routine,
-    prompt: &str,
-    context_paths: &[String],
-    max_tokens: u32,
-) -> Result<(RunStatus, Option<String>, Option<i32>), RoutineError> {
-    let context_parts = load_context_parts(ctx, routine, context_paths).await;
+    spec: &LightweightSpec<'_>,
+) -> Result<RunOutcome, RoutineError> {
+    let context_parts = load_context_parts(ctx, routine, spec.context_paths).await;
     let state_content = load_routine_state(ctx, routine).await;
-    let full_prompt = build_lightweight_prompt(prompt, &context_parts, state_content.as_deref());
-    let system_prompt = load_system_prompt(ctx, routine).await;
-    let effective_max_tokens = resolve_max_tokens(ctx, max_tokens).await;
+    let prepared = PreparedPrompt {
+        full_prompt: build_lightweight_prompt(
+            spec.prompt,
+            &context_parts,
+            state_content.as_deref(),
+        ),
+        system_prompt: load_system_prompt(ctx, routine).await,
+        max_tokens: resolve_max_tokens(ctx, spec.max_tokens).await,
+    };
 
     // If tools are enabled, use the tool execution loop; otherwise, single LLM call
     if ctx.config.lightweight_tools_enabled {
-        execute_lightweight_with_tools(
-            ctx,
-            routine,
-            &system_prompt,
-            &full_prompt,
-            effective_max_tokens,
-        )
-        .await
+        execute_lightweight_with_tools(ctx, routine, &prepared).await
     } else {
-        execute_lightweight_no_tools(
-            ctx,
-            routine,
-            &system_prompt,
-            &full_prompt,
-            effective_max_tokens,
-        )
-        .await
+        execute_lightweight_no_tools(ctx, &prepared).await
     }
 }
 
@@ -162,15 +166,12 @@ pub(super) fn initial_messages(system_prompt: &str, full_prompt: &str) -> Vec<Ch
 /// Execute a lightweight routine without tool support (original single-call behavior).
 async fn execute_lightweight_no_tools(
     ctx: &EngineContext,
-    _routine: &Routine,
-    system_prompt: &str,
-    full_prompt: &str,
-    effective_max_tokens: u32,
-) -> Result<(RunStatus, Option<String>, Option<i32>), RoutineError> {
-    let messages = initial_messages(system_prompt, full_prompt);
+    prepared: &PreparedPrompt,
+) -> Result<RunOutcome, RoutineError> {
+    let messages = initial_messages(&prepared.system_prompt, &prepared.full_prompt);
 
     let request = CompletionRequest::new(messages)
-        .with_max_tokens(effective_max_tokens)
+        .with_max_tokens(prepared.max_tokens)
         .with_temperature(0.3);
 
     let response = ctx
@@ -179,24 +180,12 @@ async fn execute_lightweight_no_tools(
         .await
         .map_err(RoutineError::from)?;
 
-    let content = response.content.trim();
-    let tokens_used = Some((response.input_tokens + response.output_tokens) as i32);
-
-    // Empty content guard
-    if content.is_empty() {
-        return if response.finish_reason == FinishReason::Length {
-            Err(RoutineError::TruncatedResponse)
-        } else {
-            Err(RoutineError::EmptyResponse)
-        };
-    }
-
-    // Check for the "nothing to do" sentinel
-    if content == "ROUTINE_OK" || content.contains("ROUTINE_OK") {
-        return Ok((RunStatus::Ok, None, tokens_used));
-    }
-
-    Ok((RunStatus::Attention, Some(content.to_string()), tokens_used))
+    handle_text_response(
+        &response.content,
+        response.finish_reason,
+        response.input_tokens,
+        response.output_tokens,
+    )
 }
 
 /// Handle a text-only LLM response in lightweight routine execution.
@@ -207,7 +196,7 @@ pub(super) fn handle_text_response(
     finish_reason: FinishReason,
     total_input_tokens: u32,
     total_output_tokens: u32,
-) -> Result<(RunStatus, Option<String>, Option<i32>), RoutineError> {
+) -> Result<RunOutcome, RoutineError> {
     let content = content.trim();
 
     // Empty content guard
@@ -219,16 +208,20 @@ pub(super) fn handle_text_response(
         };
     }
 
+    let total_tokens = Some((total_input_tokens + total_output_tokens) as i32);
+
     // Check for the "nothing to do" sentinel
     if content == "ROUTINE_OK" || content.contains("ROUTINE_OK") {
-        let total_tokens = Some((total_input_tokens + total_output_tokens) as i32);
-        return Ok((RunStatus::Ok, None, total_tokens));
+        return Ok(RunOutcome {
+            status: RunStatus::Ok,
+            summary: None,
+            tokens: total_tokens,
+        });
     }
 
-    let total_tokens = Some((total_input_tokens + total_output_tokens) as i32);
-    Ok((
-        RunStatus::Attention,
-        Some(content.to_string()),
-        total_tokens,
-    ))
+    Ok(RunOutcome {
+        status: RunStatus::Attention,
+        summary: Some(content.to_string()),
+        tokens: total_tokens,
+    })
 }

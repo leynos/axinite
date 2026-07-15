@@ -3,6 +3,7 @@
 use std::sync::Arc;
 
 use crate::channels::wasm::RegisteredEndpoint;
+use crate::channels::wasm::WebhookSecrets;
 use crate::extensions::{ActivateResult, ExtensionError, ExtensionKind};
 
 use super::credentials::inject_channel_credentials_from_secrets;
@@ -152,8 +153,10 @@ impl super::LiveWasmChannelActivation {
             .register(
                 channel,
                 endpoints,
-                params.webhook_secret.map(|secret| secret.0),
-                params.secret_header.map(|header| header.0),
+                WebhookSecrets {
+                    secret: params.webhook_secret.map(|secret| secret.0),
+                    header: params.secret_header.map(|header| header.0),
+                },
             )
             .await;
         tracing::info!(

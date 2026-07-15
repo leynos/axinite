@@ -41,22 +41,28 @@ fn record_round_tool_calls(iter: &mut MessageIter, turn: &mut Turn) {
 /// relative to the batch's base offset within `turn.tool_calls`.
 fn consume_tool_results(iter: &mut MessageIter, turn: &mut Turn, call_base_idx: usize) {
     let mut pos = 0;
-    while let Some(tr) = iter.peek() {
-        if tr.role != crate::llm::Role::Tool {
-            break;
-        }
+    while next_is_tool_result(iter) {
         if let Some(tool_msg) = iter.next() {
-            let idx = call_base_idx + pos;
-            if idx < turn.tool_calls.len() {
-                // Store as result — the error/success distinction
-                // is for the live turn only; restored context just
-                // needs the content the LLM originally saw.
-                turn.tool_calls[idx].result =
-                    Some(serde_json::Value::String(tool_msg.content.clone()));
-            }
+            record_tool_result(turn, call_base_idx + pos, &tool_msg);
         }
         pos += 1;
     }
+}
+
+/// Return `true` when the next message is a tool result.
+fn next_is_tool_result(iter: &mut MessageIter) -> bool {
+    iter.peek()
+        .is_some_and(|tr| tr.role == crate::llm::Role::Tool)
+}
+
+/// Store the tool result content on the matching recorded call, if any.
+fn record_tool_result(turn: &mut Turn, idx: usize, tool_msg: &ChatMessage) {
+    if idx >= turn.tool_calls.len() {
+        return;
+    }
+    // Store as result — the error/success distinction is for the live turn
+    // only; restored context just needs the content the LLM originally saw.
+    turn.tool_calls[idx].result = Some(serde_json::Value::String(tool_msg.content.clone()));
 }
 
 /// Complete the turn with the next message if it is the final assistant

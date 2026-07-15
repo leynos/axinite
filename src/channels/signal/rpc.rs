@@ -13,6 +13,14 @@ use crate::error::ChannelError;
 use super::{GROUP_TARGET_PREFIX, MAX_HTTP_RESPONSE_SIZE, RecipientTarget, SignalChannel};
 
 impl SignalChannel {
+    /// Build the channel error used for any failed Signal send/RPC step.
+    fn send_failed(reason: String) -> ChannelError {
+        ChannelError::SendFailed {
+            name: "signal".to_string(),
+            reason,
+        }
+    }
+
     /// Redact credentials from a URL for safe logging.
     ///
     /// Replaces any embedded username/password with `**REDACTED**` and returns
@@ -78,9 +86,11 @@ impl SignalChannel {
             .json(&body)
             .send()
             .await
-            .map_err(|e| ChannelError::SendFailed {
-                name: "signal".to_string(),
-                reason: format!("RPC request failed to {}: {e}", Self::redact_url(&url)),
+            .map_err(|e| {
+                Self::send_failed(format!(
+                    "RPC request failed to {}: {e}",
+                    Self::redact_url(&url)
+                ))
             })?;
 
         // 201 = success with no body (e.g. typing indicators).
@@ -92,13 +102,10 @@ impl SignalChannel {
         if let Some(len) = resp.content_length()
             && len as usize > MAX_HTTP_RESPONSE_SIZE
         {
-            return Err(ChannelError::SendFailed {
-                name: "signal".to_string(),
-                reason: format!(
-                    "RPC response Content-Length too large: {} bytes (max {})",
-                    len, MAX_HTTP_RESPONSE_SIZE
-                ),
-            });
+            return Err(Self::send_failed(format!(
+                "RPC response Content-Length too large: {} bytes (max {})",
+                len, MAX_HTTP_RESPONSE_SIZE
+            )));
         }
 
         let status = resp.status();
@@ -107,21 +114,16 @@ impl SignalChannel {
         let mut body = Vec::new();
 
         while let Some(chunk) = stream.next().await {
-            let chunk = chunk.map_err(|e| ChannelError::SendFailed {
-                name: "signal".to_string(),
-                reason: format!("Failed to read RPC response: {e}"),
-            })?;
+            let chunk = chunk
+                .map_err(|e| Self::send_failed(format!("Failed to read RPC response: {e}")))?;
             let chunk_len = chunk.len();
             total_bytes += chunk_len;
 
             if total_bytes > MAX_HTTP_RESPONSE_SIZE {
-                return Err(ChannelError::SendFailed {
-                    name: "signal".to_string(),
-                    reason: format!(
-                        "RPC response too large: {} bytes (max {})",
-                        total_bytes, MAX_HTTP_RESPONSE_SIZE
-                    ),
-                });
+                return Err(Self::send_failed(format!(
+                    "RPC response too large: {} bytes (max {})",
+                    total_bytes, MAX_HTTP_RESPONSE_SIZE
+                )));
             }
 
             body.extend_from_slice(&chunk);
@@ -137,17 +139,15 @@ impl SignalChannel {
         if !status.is_success() {
             let truncated_len = std::cmp::min(bytes.len(), 512);
             let truncated_body = String::from_utf8_lossy(&bytes[..truncated_len]);
-            return Err(ChannelError::SendFailed {
-                name: "signal".to_string(),
-                reason: format!("HTTP error {}: {}", status.as_u16(), truncated_body),
-            });
+            return Err(Self::send_failed(format!(
+                "HTTP error {}: {}",
+                status.as_u16(),
+                truncated_body
+            )));
         }
 
-        let parsed: serde_json::Value =
-            serde_json::from_slice(&bytes).map_err(|e| ChannelError::SendFailed {
-                name: "signal".to_string(),
-                reason: format!("Invalid RPC response JSON: {e}"),
-            })?;
+        let parsed: serde_json::Value = serde_json::from_slice(&bytes)
+            .map_err(|e| Self::send_failed(format!("Invalid RPC response JSON: {e}")))?;
 
         if let Some(err) = parsed.get("error") {
             let code = err.get("code").and_then(|c| c.as_i64()).unwrap_or(-1);
@@ -155,10 +155,7 @@ impl SignalChannel {
                 .get("message")
                 .and_then(|m| m.as_str())
                 .unwrap_or("unknown");
-            return Err(ChannelError::SendFailed {
-                name: "signal".to_string(),
-                reason: format!("Signal RPC error {code}: {msg}"),
-            });
+            return Err(Self::send_failed(format!("Signal RPC error {code}: {msg}")));
         }
 
         Ok(parsed.get("result").cloned())
@@ -215,6 +212,18 @@ impl SignalChannel {
         }
     }
 
+    /// Build JSON-RPC params for a send/typing call on the given account.
+    fn rpc_params(
+        account: &str,
+        target: &RecipientTarget,
+        message: Option<&str>,
+        attachments: Option<&[String]>,
+    ) -> serde_json::Value {
+        let mut params = Self::base_rpc_params(account, target);
+        Self::apply_message_params(&mut params, message, attachments);
+        params
+    }
+
     /// Build JSON-RPC params for a send/typing call.
     pub(super) fn build_rpc_params(
         &self,
@@ -222,9 +231,7 @@ impl SignalChannel {
         message: Option<&str>,
         attachments: Option<&[String]>,
     ) -> serde_json::Value {
-        let mut params = Self::base_rpc_params(&self.config.account, target);
-        Self::apply_message_params(&mut params, message, attachments);
-        params
+        Self::rpc_params(&self.config.account, target, message, attachments)
     }
 
     /// Validate that attachment paths are safe and within the sandbox.
@@ -278,9 +285,7 @@ impl SignalChannel {
         message: Option<&str>,
         attachments: Option<&[String]>,
     ) -> serde_json::Value {
-        let mut params = Self::base_rpc_params(account, target);
-        Self::apply_message_params(&mut params, message, attachments);
-        params
+        Self::rpc_params(account, target, message, attachments)
     }
 
     pub(super) async fn send_status_message(&self, target: &str, message: &str) {

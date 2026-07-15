@@ -81,7 +81,13 @@ impl NativeTool for ListDirTool {
         let path = validate_path(path_str, self.base_dir.as_deref())?;
 
         let mut entries = Vec::new();
-        list_dir_inner(&path, &path, recursive, max_depth, 0, &mut entries).await?;
+        let mut walk = DirWalk {
+            base: &path,
+            recursive,
+            max_depth,
+            entries: &mut entries,
+        };
+        list_dir_inner(&mut walk, &path, 0).await?;
 
         // Sort entries
         entries.sort_by(|a, b| {
@@ -122,16 +128,22 @@ impl NativeTool for ListDirTool {
     }
 }
 
-/// Recursively list directory contents.
-async fn list_dir_inner(
-    base: &Path,
-    path: &Path,
+/// Shared settings and output buffer for one directory walk: the listing
+/// root, recursion policy, and the accumulated entry lines.
+struct DirWalk<'a> {
+    base: &'a Path,
     recursive: bool,
     max_depth: usize,
+    entries: &'a mut Vec<String>,
+}
+
+/// Recursively list directory contents.
+async fn list_dir_inner(
+    walk: &mut DirWalk<'_>,
+    path: &Path,
     current_depth: usize,
-    entries: &mut Vec<String>,
 ) -> Result<(), ToolError> {
-    if entries.len() >= MAX_DIR_ENTRIES {
+    if walk.entries.len() >= MAX_DIR_ENTRIES {
         return Ok(());
     }
 
@@ -144,7 +156,7 @@ async fn list_dir_inner(
         .await
         .map_err(|e| ToolError::ExecutionFailed(format!("Failed to read entry: {}", e)))?
     {
-        if entries.len() >= MAX_DIR_ENTRIES {
+        if walk.entries.len() >= MAX_DIR_ENTRIES {
             break;
         }
 
@@ -156,23 +168,20 @@ async fn list_dir_inner(
             .map(ambient_fs::Metadata::from_std);
         let is_dir = metadata.as_ref().is_some_and(|m| m.is_dir());
 
-        entries.push(render_entry(base, &entry_path, metadata.as_ref(), is_dir));
+        walk.entries.push(render_entry(
+            walk.base,
+            &entry_path,
+            metadata.as_ref(),
+            is_dir,
+        ));
 
-        if !should_recurse(recursive, is_dir, current_depth, max_depth) {
+        if !should_recurse(walk.recursive, is_dir, current_depth, walk.max_depth) {
             continue;
         }
         if is_excluded_dir(&entry.file_name()) {
             continue;
         }
-        Box::pin(list_dir_inner(
-            base,
-            &entry_path,
-            recursive,
-            max_depth,
-            current_depth + 1,
-            entries,
-        ))
-        .await?;
+        Box::pin(list_dir_inner(walk, &entry_path, current_depth + 1)).await?;
     }
 
     Ok(())

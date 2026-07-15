@@ -10,7 +10,7 @@ use crate::secrets::crypto::SecretsCrypto;
 use crate::secrets::types::{CreateSecretParams, DecryptedSecret, Secret, SecretError, SecretRef};
 
 use super::NativeSecretsStore;
-use super::access::{ensure_not_expired, is_secret_name_allowed};
+use super::common::{db_err, get_decrypted_via, is_accessible_via, require_live_secret};
 
 // ==================== libSQL implementation ====================
 
@@ -57,10 +57,7 @@ impl NativeSecretsStore for LibSqlSecretsStore {
 
         // Start transaction for atomic upsert + read-back
         let conn = self.connect().await?;
-        let tx = conn
-            .transaction()
-            .await
-            .map_err(|e| SecretError::Database(e.to_string()))?;
+        let tx = conn.transaction().await.map_err(db_err)?;
 
         tx.execute(
                 r#"
@@ -85,7 +82,7 @@ impl NativeSecretsStore for LibSqlSecretsStore {
                 ],
             )
             .await
-            .map_err(|e| SecretError::Database(e.to_string()))?;
+            .map_err(db_err)?;
 
         // Read back the row (may have been upserted)
         let mut rows = tx
@@ -99,19 +96,16 @@ impl NativeSecretsStore for LibSqlSecretsStore {
                 libsql::params![user_id, params.name.as_str()],
             )
             .await
-            .map_err(|e| SecretError::Database(e.to_string()))?;
+            .map_err(db_err)?;
 
-        let row = rows
-            .next()
-            .await
-            .map_err(|e| SecretError::Database(e.to_string()))?
-            .ok_or_else(|| SecretError::Database("Insert succeeded but row not found".into()))?;
+        let row =
+            rows.next().await.map_err(db_err)?.ok_or_else(|| {
+                SecretError::Database("Insert succeeded but row not found".into())
+            })?;
 
         let secret = libsql_row_to_secret(&row)?;
 
-        tx.commit()
-            .await
-            .map_err(|e| SecretError::Database(e.to_string()))?;
+        tx.commit().await.map_err(db_err)?;
 
         Ok(secret)
     }
@@ -130,16 +124,15 @@ impl NativeSecretsStore for LibSqlSecretsStore {
                 libsql::params![user_id, name.as_str()],
             )
             .await
-            .map_err(|e| SecretError::Database(e.to_string()))?;
+            .map_err(db_err)?;
 
-        match rows
+        let secret = rows
             .next()
             .await
-            .map_err(|e| SecretError::Database(e.to_string()))?
-        {
-            Some(row) => ensure_not_expired(libsql_row_to_secret(&row)?),
-            None => Err(SecretError::NotFound(name.to_string())),
-        }
+            .map_err(db_err)?
+            .map(|row| libsql_row_to_secret(&row))
+            .transpose()?;
+        require_live_secret(secret, &name)
     }
 
     async fn get_decrypted<'a>(
@@ -147,9 +140,7 @@ impl NativeSecretsStore for LibSqlSecretsStore {
         user_id: &'a str,
         name: &'a str,
     ) -> Result<DecryptedSecret, SecretError> {
-        let secret = NativeSecretsStore::get(self, user_id, name).await?;
-        self.crypto
-            .decrypt(&secret.encrypted_value, &secret.key_salt)
+        get_decrypted_via(self, &self.crypto, user_id, name).await
     }
 
     async fn exists<'a>(&'a self, user_id: &'a str, name: &'a str) -> Result<bool, SecretError> {
@@ -161,13 +152,9 @@ impl NativeSecretsStore for LibSqlSecretsStore {
                 libsql::params![user_id, name.as_str()],
             )
             .await
-            .map_err(|e| SecretError::Database(e.to_string()))?;
+            .map_err(db_err)?;
 
-        Ok(rows
-            .next()
-            .await
-            .map_err(|e| SecretError::Database(e.to_string()))?
-            .is_some())
+        Ok(rows.next().await.map_err(db_err)?.is_some())
     }
 
     async fn list<'a>(&'a self, user_id: &'a str) -> Result<Vec<SecretRef>, SecretError> {
@@ -178,14 +165,10 @@ impl NativeSecretsStore for LibSqlSecretsStore {
                 libsql::params![user_id],
             )
             .await
-            .map_err(|e| SecretError::Database(e.to_string()))?;
+            .map_err(db_err)?;
 
         let mut refs = Vec::new();
-        while let Some(row) = rows
-            .next()
-            .await
-            .map_err(|e| SecretError::Database(e.to_string()))?
-        {
+        while let Some(row) = rows.next().await.map_err(db_err)? {
             refs.push(SecretRef {
                 name: row.get::<String>(0).unwrap_or_default(),
                 provider: row.get::<String>(1).ok(),
@@ -203,7 +186,7 @@ impl NativeSecretsStore for LibSqlSecretsStore {
                 libsql::params![user_id, name.as_str()],
             )
             .await
-            .map_err(|e| SecretError::Database(e.to_string()))?;
+            .map_err(db_err)?;
 
         Ok(affected > 0)
     }
@@ -221,7 +204,7 @@ impl NativeSecretsStore for LibSqlSecretsStore {
             libsql::params![now.as_str(), secret_id.to_string()],
         )
         .await
-        .map_err(|e| SecretError::Database(e.to_string()))?;
+        .map_err(db_err)?;
 
         Ok(())
     }
@@ -232,12 +215,7 @@ impl NativeSecretsStore for LibSqlSecretsStore {
         secret_name: &'a str,
         allowed_secrets: &'a [String],
     ) -> Result<bool, SecretError> {
-        let secret_name_lower = secret_name.to_lowercase();
-        if !NativeSecretsStore::exists(self, user_id, &secret_name_lower).await? {
-            return Ok(false);
-        }
-
-        Ok(is_secret_name_allowed(&secret_name_lower, allowed_secrets))
+        is_accessible_via(self, user_id, secret_name, allowed_secrets).await
     }
 }
 
@@ -265,21 +243,11 @@ fn libsql_parse_timestamp(s: &str) -> Result<chrono::DateTime<Utc>, SecretError>
 }
 
 fn libsql_row_to_secret(row: &libsql::Row) -> Result<Secret, SecretError> {
-    let id_str: String = row
-        .get(0)
-        .map_err(|e| SecretError::Database(e.to_string()))?;
-    let user_id: String = row
-        .get(1)
-        .map_err(|e| SecretError::Database(e.to_string()))?;
-    let name: String = row
-        .get(2)
-        .map_err(|e| SecretError::Database(e.to_string()))?;
-    let encrypted_value: Vec<u8> = row
-        .get(3)
-        .map_err(|e| SecretError::Database(e.to_string()))?;
-    let key_salt: Vec<u8> = row
-        .get(4)
-        .map_err(|e| SecretError::Database(e.to_string()))?;
+    let id_str: String = row.get(0).map_err(db_err)?;
+    let user_id: String = row.get(1).map_err(db_err)?;
+    let name: String = row.get(2).map_err(db_err)?;
+    let encrypted_value: Vec<u8> = row.get(3).map_err(db_err)?;
+    let key_salt: Vec<u8> = row.get(4).map_err(db_err)?;
     let provider: Option<String> = row.get::<String>(5).ok().filter(|s| !s.is_empty());
     let expires_at = row
         .get::<String>(6)
@@ -292,12 +260,8 @@ fn libsql_row_to_secret(row: &libsql::Row) -> Result<Secret, SecretError> {
         .filter(|s| !s.is_empty())
         .and_then(|s| libsql_parse_timestamp(&s).ok());
     let usage_count: i64 = row.get::<i64>(8).unwrap_or(0);
-    let created_at_str: String = row
-        .get(9)
-        .map_err(|e| SecretError::Database(e.to_string()))?;
-    let updated_at_str: String = row
-        .get(10)
-        .map_err(|e| SecretError::Database(e.to_string()))?;
+    let created_at_str: String = row.get(9).map_err(db_err)?;
+    let updated_at_str: String = row.get(10).map_err(db_err)?;
 
     Ok(Secret {
         id: id_str

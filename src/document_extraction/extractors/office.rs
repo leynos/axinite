@@ -1,9 +1,55 @@
 //! Extraction for Office Open XML archives (DOCX, PPTX, XLSX).
 
-use std::io::Read;
+use std::io::{Read, Seek};
 
 pub(super) fn extract_docx(data: &[u8]) -> Result<String, String> {
     extract_office_xml(data, "word/document.xml")
+}
+
+/// Collect archive entry names matching `prefix`/`suffix`, sorted so slide and
+/// sheet ordering is deterministic.
+fn collect_entry_names<R: Read + Seek>(
+    archive: &mut zip::ZipArchive<R>,
+    prefix: &str,
+    suffix: &str,
+) -> Vec<String> {
+    let mut names: Vec<String> = Vec::new();
+    for i in 0..archive.len() {
+        if let Ok(file) = archive.by_index(i) {
+            let name = file.name().to_string();
+            if name.starts_with(prefix) && name.ends_with(suffix) {
+                names.push(name);
+            }
+        }
+    }
+    names.sort();
+    names
+}
+
+/// Read each named entry to a string, apply `f`, and collect the non-empty
+/// results. Unreadable entries are skipped.
+fn read_entry_texts<R, F>(
+    archive: &mut zip::ZipArchive<R>,
+    names: &[String],
+    mut f: F,
+) -> Vec<String>
+where
+    R: Read + Seek,
+    F: FnMut(&str) -> String,
+{
+    let mut out = Vec::new();
+    for name in names {
+        if let Ok(mut file) = archive.by_name(name) {
+            let mut xml = String::new();
+            if file.read_to_string(&mut xml).is_ok() {
+                let text = f(&xml);
+                if !text.is_empty() {
+                    out.push(text);
+                }
+            }
+        }
+    }
+    out
 }
 
 pub(super) fn extract_pptx(data: &[u8]) -> Result<String, String> {
@@ -12,29 +58,8 @@ pub(super) fn extract_pptx(data: &[u8]) -> Result<String, String> {
         zip::ZipArchive::new(cursor).map_err(|e| format!("invalid PPTX archive: {e}"))?;
 
     // Collect slide filenames (ppt/slides/slide1.xml, slide2.xml, ...)
-    let mut slide_names: Vec<String> = Vec::new();
-    for i in 0..archive.len() {
-        if let Ok(file) = archive.by_index(i) {
-            let name = file.name().to_string();
-            if name.starts_with("ppt/slides/slide") && name.ends_with(".xml") {
-                slide_names.push(name);
-            }
-        }
-    }
-    slide_names.sort();
-
-    let mut all_text = Vec::new();
-    for name in &slide_names {
-        if let Ok(mut file) = archive.by_name(name) {
-            let mut xml = String::new();
-            if file.read_to_string(&mut xml).is_ok() {
-                let text = strip_xml_tags(&xml);
-                if !text.is_empty() {
-                    all_text.push(text);
-                }
-            }
-        }
-    }
+    let slide_names = collect_entry_names(&mut archive, "ppt/slides/slide", ".xml");
+    let all_text = read_entry_texts(&mut archive, &slide_names, strip_xml_tags);
 
     if all_text.is_empty() {
         return Err("no text found in PPTX slides".to_string());
@@ -42,55 +67,49 @@ pub(super) fn extract_pptx(data: &[u8]) -> Result<String, String> {
     Ok(all_text.join("\n\n---\n\n"))
 }
 
+/// Read the workbook shared-strings table, returning an empty table when the
+/// entry is absent.
+fn read_xlsx_shared_strings<R: Read + Seek>(
+    archive: &mut zip::ZipArchive<R>,
+) -> Result<Vec<String>, String> {
+    let Ok(mut file) = archive.by_name("xl/sharedStrings.xml") else {
+        return Ok(Vec::new());
+    };
+    let mut xml = String::new();
+    file.read_to_string(&mut xml)
+        .map_err(|e| format!("failed to read shared strings: {e}"))?;
+    Ok(parse_xlsx_shared_strings(&xml))
+}
+
+/// Combine extracted sheet text with the shared-strings fallback, or report an
+/// error when the workbook yields no text at all.
+fn finalize_xlsx_text(
+    all_text: Vec<String>,
+    shared_strings: Vec<String>,
+) -> Result<String, String> {
+    if all_text.is_empty() && !shared_strings.is_empty() {
+        // Fallback: just return shared strings
+        return Ok(shared_strings.join("\n"));
+    }
+    if all_text.is_empty() {
+        return Err("no text found in XLSX".to_string());
+    }
+    Ok(all_text.join("\n\n"))
+}
+
 pub(super) fn extract_xlsx(data: &[u8]) -> Result<String, String> {
     let cursor = std::io::Cursor::new(data);
     let mut archive =
         zip::ZipArchive::new(cursor).map_err(|e| format!("invalid XLSX archive: {e}"))?;
 
-    // Read shared strings (xl/sharedStrings.xml)
-    let shared_strings = if let Ok(mut file) = archive.by_name("xl/sharedStrings.xml") {
-        let mut xml = String::new();
-        file.read_to_string(&mut xml)
-            .map_err(|e| format!("failed to read shared strings: {e}"))?;
-        parse_xlsx_shared_strings(&xml)
-    } else {
-        Vec::new()
-    };
+    let shared_strings = read_xlsx_shared_strings(&mut archive)?;
 
-    // Read sheet data
-    let mut sheet_names: Vec<String> = Vec::new();
-    for i in 0..archive.len() {
-        if let Ok(file) = archive.by_index(i) {
-            let name = file.name().to_string();
-            if name.starts_with("xl/worksheets/sheet") && name.ends_with(".xml") {
-                sheet_names.push(name);
-            }
-        }
-    }
-    sheet_names.sort();
+    let sheet_names = collect_entry_names(&mut archive, "xl/worksheets/sheet", ".xml");
+    let all_text = read_entry_texts(&mut archive, &sheet_names, |xml| {
+        parse_xlsx_sheet(xml, &shared_strings)
+    });
 
-    let mut all_text = Vec::new();
-    for name in &sheet_names {
-        if let Ok(mut file) = archive.by_name(name) {
-            let mut xml = String::new();
-            if file.read_to_string(&mut xml).is_ok() {
-                let text = parse_xlsx_sheet(&xml, &shared_strings);
-                if !text.is_empty() {
-                    all_text.push(text);
-                }
-            }
-        }
-    }
-
-    if all_text.is_empty() && !shared_strings.is_empty() {
-        // Fallback: just return shared strings
-        return Ok(shared_strings.join("\n"));
-    }
-
-    if all_text.is_empty() {
-        return Err("no text found in XLSX".to_string());
-    }
-    Ok(all_text.join("\n\n"))
+    finalize_xlsx_text(all_text, shared_strings)
 }
 
 fn extract_office_xml(data: &[u8], content_path: &str) -> Result<String, String> {

@@ -45,6 +45,21 @@ pub(super) struct PreparedHttpRequest {
     pub(super) headers: HashMap<String, String>,
 }
 
+/// Borrowed view of an outbound HTTP request awaiting preparation.
+///
+/// Groups the WASM-supplied request parts so the prepare functions do not
+/// take an excess of positional arguments.
+pub(super) struct HttpRequestInputs<'a> {
+    /// HTTP method (e.g. "GET").
+    pub(super) method: &'a str,
+    /// Request URL, possibly containing credential placeholders.
+    pub(super) url: &'a str,
+    /// JSON-encoded map of request headers.
+    pub(super) headers_json: &'a str,
+    /// Optional request body.
+    pub(super) body: Option<&'a [u8]>,
+}
+
 /// Compute the encoding variants of a secret that must all be redacted.
 ///
 /// Covers the raw value, its percent-encoded form, and the `+`-for-space
@@ -72,6 +87,15 @@ fn redact_secret_value(text: String, secret: &str, replacement: &str) -> String 
         result = result.replace(&variant, replacement);
     }
     result
+}
+
+/// Redact one secret value from `text`, leaving it untouched when the
+/// secret is empty (an empty needle would match everywhere).
+fn redact_nonempty_secret(text: String, secret: &str, replacement: &str) -> String {
+    if secret.is_empty() {
+        return text;
+    }
+    redact_secret_value(text, secret, replacement)
 }
 
 impl StoreData {
@@ -124,21 +148,15 @@ impl StoreData {
     /// error from an injected-URL request will contain the raw credential
     /// unless we scrub it.
     pub(super) fn redact_credentials(&self, text: &str) -> String {
-        let mut result = text.to_string();
-        for (name, value) in &self.credentials {
-            if value.is_empty() {
-                continue;
-            }
-            let replacement = format!("[REDACTED:{}]", name);
-            result = redact_secret_value(result, value, &replacement);
-        }
-        for cred in &self.host_credentials {
-            if cred.secret_value.is_empty() {
-                continue;
-            }
-            result = redact_secret_value(result, &cred.secret_value, "[REDACTED:host_credential]");
-        }
-        result
+        let redacted = self
+            .credentials
+            .iter()
+            .fold(text.to_string(), |acc, (name, value)| {
+                redact_nonempty_secret(acc, value, &format!("[REDACTED:{}]", name))
+            });
+        self.host_credentials.iter().fold(redacted, |acc, cred| {
+            redact_nonempty_secret(acc, &cred.secret_value, "[REDACTED:host_credential]")
+        })
     }
 
     /// Inject pre-resolved host credentials into the request.
@@ -196,31 +214,25 @@ impl StoreData {
     #[cfg(test)]
     pub(super) fn prepare_http_request(
         &mut self,
-        method: &str,
-        url: &str,
-        headers_json: &str,
-        body: Option<&[u8]>,
+        request: &HttpRequestInputs<'_>,
     ) -> Result<PreparedHttpRequest, String> {
         let leak_detector = LeakDetector::new();
-        self.prepare_http_request_with_detector(method, url, headers_json, body, &leak_detector)
+        self.prepare_http_request_with_detector(request, &leak_detector)
     }
 
     pub(super) fn prepare_http_request_with_detector(
         &mut self,
-        method: &str,
-        url: &str,
-        headers_json: &str,
-        body: Option<&[u8]>,
+        request: &HttpRequestInputs<'_>,
         leak_detector: &LeakDetector,
     ) -> Result<PreparedHttpRequest, String> {
         // Preserve the raw request for leak scanning before any host-side
         // placeholder resolution. WASM only sees placeholders, not real secrets.
-        let raw_url = url;
+        let raw_url = request.url;
         let injected_url = self.inject_credentials(raw_url, "url");
 
         // Check HTTP allowlist
         self.host_state
-            .check_http_allowed(&injected_url, method)
+            .check_http_allowed(&injected_url, request.method)
             .map_err(|e| format!("HTTP not allowed: {}", e))?;
 
         // Record for rate limiting
@@ -229,7 +241,7 @@ impl StoreData {
             .map_err(|e| format!("Rate limit exceeded: {}", e))?;
 
         // Parse the raw header values supplied by WASM.
-        let raw_headers: HashMap<String, String> = serde_json::from_str(headers_json)
+        let raw_headers: HashMap<String, String> = serde_json::from_str(request.headers_json)
             .map_err(|e| format!("invalid headers_json payload: {e}"))?;
 
         // Leak scan runs on WASM-provided values before any host-side
@@ -241,7 +253,7 @@ impl StoreData {
             .collect();
 
         leak_detector
-            .scan_http_request(raw_url, &raw_header_vec, body)
+            .scan_http_request(raw_url, &raw_header_vec, request.body)
             .map_err(|e| format!("Potential secret leak blocked: {}", e))?;
 
         let mut headers: HashMap<String, String> = raw_headers

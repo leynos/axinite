@@ -33,24 +33,27 @@ pub(super) fn validate_webhook_url(
     }
 
     if let Some(host) = parsed.host_str() {
-        let normalized_host = normalize_host(host);
-
-        if let Ok(ip) = normalized_host.parse::<IpAddr>() {
-            if is_forbidden_ip(ip) {
-                return Err(HookBundleError::ForbiddenWebhookHost {
-                    hook: hook_name.to_string(),
-                    host: normalized_host.to_string(),
-                });
-            }
-        } else if is_forbidden_webhook_host(normalized_host) {
-            return Err(HookBundleError::ForbiddenWebhookHost {
-                hook: hook_name.to_string(),
-                host: normalized_host.to_string(),
-            });
-        }
+        ensure_webhook_host_allowed(hook_name, host)?;
     }
 
     Ok(parsed)
+}
+
+/// Reject a webhook host that is either a forbidden IP literal or a forbidden
+/// hostname (loopback aliases, cloud metadata endpoints, and similar).
+fn ensure_webhook_host_allowed(hook_name: &str, host: &str) -> Result<(), HookBundleError> {
+    let normalized_host = normalize_host(host);
+    let forbidden = match normalized_host.parse::<IpAddr>() {
+        Ok(ip) => is_forbidden_ip(ip),
+        Err(_) => is_forbidden_webhook_host(normalized_host),
+    };
+    if forbidden {
+        return Err(HookBundleError::ForbiddenWebhookHost {
+            hook: hook_name.to_string(),
+            host: normalized_host.to_string(),
+        });
+    }
+    Ok(())
 }
 
 pub(super) async fn dispatch_client_for_target(

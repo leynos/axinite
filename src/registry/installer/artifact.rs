@@ -6,7 +6,7 @@ use tokio::fs;
 use crate::registry::catalog::RegistryError;
 use crate::registry::manifest::{ArtifactSpec, ExtensionManifest};
 
-use super::archive::extract_tar_gz;
+use super::archive::{TarGzExtraction, extract_tar_gz};
 use super::validation::{
     download_failure_reason, should_attempt_source_fallback, validate_artifact_url,
     validate_manifest_install_inputs,
@@ -104,12 +104,23 @@ impl RegistryInstaller {
         // Detect format and extract
         let has_capabilities = if is_gzip(&bytes) {
             // tar.gz bundle: extract {name}.wasm and {name}.capabilities.json
-            let extracted =
-                extract_tar_gz(&bytes, &manifest.name, &target_wasm, &target_caps, url)?;
+            let extracted = extract_tar_gz(&TarGzExtraction {
+                bytes: &bytes,
+                name: &manifest.name,
+                target_wasm: &target_wasm,
+                target_caps: &target_caps,
+                url,
+            })?;
             extracted.has_capabilities
         } else {
-            self.install_bare_wasm(manifest, artifact, &bytes, &target_wasm, &target_caps)
-                .await?
+            let install = BareWasmInstall {
+                manifest,
+                artifact,
+                bytes: &bytes,
+                target_wasm: &target_wasm,
+                target_caps: &target_caps,
+            };
+            self.install_bare_wasm(&install).await?
         };
 
         println!("  Installed to {}", target_wasm.display());
@@ -136,12 +147,15 @@ impl RegistryInstaller {
     /// source tree. Returns whether capabilities were installed.
     async fn install_bare_wasm(
         &self,
-        manifest: &ExtensionManifest,
-        artifact: &ArtifactSpec,
-        bytes: &[u8],
-        target_wasm: &std::path::Path,
-        target_caps: &std::path::Path,
+        install: &BareWasmInstall<'_>,
     ) -> Result<bool, RegistryError> {
+        let BareWasmInstall {
+            manifest,
+            artifact,
+            bytes,
+            target_wasm,
+            target_caps,
+        } = *install;
         fs::write(target_wasm, bytes)
             .await
             .map_err(RegistryError::Io)?;
@@ -180,6 +194,20 @@ impl RegistryInstaller {
             .map_err(RegistryError::Io)?;
         Ok(true)
     }
+}
+
+/// Inputs for installing one bare (non-archive) WASM artifact.
+struct BareWasmInstall<'a> {
+    /// Manifest of the extension being installed.
+    manifest: &'a ExtensionManifest,
+    /// Resolved wasm32-wasip2 artifact spec (for `capabilities_url`).
+    artifact: &'a ArtifactSpec,
+    /// Verified downloaded WASM bytes.
+    bytes: &'a [u8],
+    /// Destination path for the WASM binary.
+    target_wasm: &'a std::path::Path,
+    /// Destination path for the capabilities file.
+    target_caps: &'a std::path::Path,
 }
 
 /// Resolve the wasm32-wasip2 artifact for a manifest, validating its URL and

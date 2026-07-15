@@ -49,6 +49,7 @@ mod convert;
 mod credentials;
 mod dispatch;
 mod executor;
+mod guest_calls;
 mod lifecycle;
 mod metadata;
 mod outbound;

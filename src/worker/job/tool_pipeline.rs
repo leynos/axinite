@@ -102,18 +102,37 @@ pub(super) async fn check_tool_rate_limit(
     Ok(())
 }
 
+/// Inputs for the `BeforeToolCall` hook stage of the tool pipeline.
+pub(super) struct ToolCallHookArgs<'a> {
+    /// Shared worker dependencies (hook registry, tools, safety, ...).
+    pub(super) deps: &'a WorkerDeps,
+    /// The resolved tool, consulted for its sensitive parameter names.
+    pub(super) tool: &'a dyn Tool,
+    /// Name of the tool being invoked.
+    pub(super) tool_name: &'a str,
+    /// Raw parameters supplied for the tool call.
+    pub(super) params: &'a serde_json::Value,
+    /// Job context providing the acting user's identity.
+    pub(super) job_ctx: &'a JobContext,
+    /// Identifier of the job the tool call belongs to.
+    pub(super) job_id: Uuid,
+}
+
 /// Run the `BeforeToolCall` hook, returning the (possibly modified)
 /// parameters or an error when a hook rejects the call.
 pub(super) async fn apply_tool_call_hook(
-    deps: &WorkerDeps,
-    tool: &dyn Tool,
-    tool_name: &str,
-    params: &serde_json::Value,
-    job_ctx: &JobContext,
-    job_id: Uuid,
+    args: ToolCallHookArgs<'_>,
 ) -> Result<serde_json::Value, Error> {
     use crate::hooks::{HookError, HookEvent, HookOutcome};
 
+    let ToolCallHookArgs {
+        deps,
+        tool,
+        tool_name,
+        params,
+        job_ctx,
+        job_id,
+    } = args;
     let hook_params = redact_params(params, tool.sensitive_params());
     let event = HookEvent::ToolCall {
         tool_name: tool_name.to_string(),

@@ -14,6 +14,22 @@ use crate::error::JobError;
 
 const STOP_GRACE_PERIOD: Duration = Duration::from_millis(500);
 
+/// Removes and returns the keys of map entries matching `predicate`.
+fn remove_where<T>(
+    map: &mut std::collections::HashMap<Uuid, T>,
+    predicate: impl Fn(&T) -> bool,
+) -> Vec<Uuid> {
+    let matched: Vec<Uuid> = map
+        .iter()
+        .filter(|(_, value)| predicate(value))
+        .map(|(id, _)| *id)
+        .collect();
+    for id in &matched {
+        map.remove(id);
+    }
+    matched
+}
+
 impl Scheduler {
     async fn stop_in_memory(&self, job_id: Uuid, reason: &str) -> Result<(), JobError> {
         let tx = {
@@ -129,15 +145,12 @@ impl Scheduler {
         match self.transition_to_cancelled(job_id, reason).await {
             Ok(()) => {
                 self.pin_cancel_persist_and_abort(job_id).await;
-                if let Err(error) = self.persist_cancelled_status(job_id, reason).await {
-                    tracing::warn!(
-                        job_id = %job_id,
-                        %error,
-                        "Failed to persist cancellation after shutdown timeout"
-                    );
-                } else {
-                    self.finalize_stop(job_id).await;
-                }
+                self.persist_then_finalize(
+                    job_id,
+                    reason,
+                    "Failed to persist cancellation after shutdown timeout",
+                )
+                .await;
             }
             Err(JobError::InvalidTransition { from_state, .. })
                 if !Self::should_persist_cancelled_after_timeout(from_state) =>
@@ -155,6 +168,23 @@ impl Scheduler {
                     "Failed to cancel job after shutdown timeout"
                 );
             }
+        }
+    }
+
+    /// Persists the cancelled status and, on success, finalises the stop.
+    ///
+    /// Persistence failures are logged with `failure_message` rather than
+    /// propagated, leaving the job pinned for later persistence.
+    async fn persist_then_finalize(&self, job_id: Uuid, reason: &str, failure_message: &str) {
+        if let Err(error) = self.persist_cancelled_status(job_id, reason).await {
+            tracing::warn!(
+                job_id = %job_id,
+                %error,
+                "{}",
+                failure_message
+            );
+        } else {
+            self.finalize_stop(job_id).await;
         }
     }
 
@@ -187,16 +217,9 @@ impl Scheduler {
     /// Removes finished jobs that have no pending cancellation persistence.
     async fn cleanup_finished_jobs(&self) {
         let mut jobs = self.jobs.write().await;
-        let finished: Vec<Uuid> = jobs
-            .iter()
-            .filter(|(_, scheduled)| {
-                scheduled.handle.is_finished() && !scheduled.pending_cancel_persist
-            })
-            .map(|(id, _)| *id)
-            .collect();
-
-        for id in finished {
-            jobs.remove(&id);
+        for id in remove_where(&mut jobs, |scheduled| {
+            scheduled.handle.is_finished() && !scheduled.pending_cancel_persist
+        }) {
             tracing::debug!("Cleaned up finished job {}", id);
         }
     }
@@ -204,14 +227,7 @@ impl Scheduler {
     /// Removes sub-tasks whose handles have finished.
     async fn cleanup_finished_subtasks(&self) {
         let mut subtasks = self.subtasks.write().await;
-        let finished: Vec<Uuid> = subtasks
-            .iter()
-            .filter(|(_, scheduled)| scheduled.handle.is_finished())
-            .map(|(id, _)| *id)
-            .collect();
-
-        for id in finished {
-            subtasks.remove(&id);
+        for id in remove_where(&mut subtasks, |scheduled| scheduled.handle.is_finished()) {
             tracing::trace!("Cleaned up finished subtask {}", id);
         }
     }
@@ -231,15 +247,12 @@ impl Scheduler {
         for (job_id, result) in futures::future::join_all(stop_futures).await {
             match result {
                 Ok(Ok(())) => {
-                    if let Err(error) = self.persist_cancelled_status(job_id, stop_reason).await {
-                        tracing::warn!(
-                            job_id = %job_id,
-                            %error,
-                            "Failed to persist cancellation during shutdown"
-                        );
-                    } else {
-                        self.finalize_stop(job_id).await;
-                    }
+                    self.persist_then_finalize(
+                        job_id,
+                        stop_reason,
+                        "Failed to persist cancellation during shutdown",
+                    )
+                    .await;
                 }
                 Ok(Err(error)) => {
                     tracing::warn!(job_id = %job_id, %error, "Failed to stop job during shutdown");

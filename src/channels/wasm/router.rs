@@ -40,6 +40,15 @@ pub struct RegisteredEndpoint {
     pub require_secret: bool,
 }
 
+/// Webhook secret configuration supplied when registering a channel.
+#[derive(Debug, Default, Clone)]
+pub struct WebhookSecrets {
+    /// Shared secret value expected on incoming webhooks.
+    pub secret: Option<String>,
+    /// HTTP header carrying the secret (defaults to "X-Webhook-Secret").
+    pub header: Option<String>,
+}
+
 /// Router for WASM channel HTTP endpoints.
 pub struct WasmChannelRouter {
     /// Registered channels by name.
@@ -74,16 +83,19 @@ impl WasmChannelRouter {
     /// # Arguments
     /// * `channel` - The WASM channel to register
     /// * `endpoints` - HTTP endpoints to register for this channel
-    /// * `secret` - Optional webhook secret for validation
-    /// * `secret_header` - Optional HTTP header name for secret validation
-    ///   (e.g., "X-Telegram-Bot-Api-Secret-Token"). Defaults to "X-Webhook-Secret".
+    /// * `secrets` - Optional webhook secret and the header carrying it
+    ///   (e.g., "X-Telegram-Bot-Api-Secret-Token"; defaults to
+    ///   "X-Webhook-Secret").
     pub async fn register(
         &self,
         channel: Arc<WasmChannel>,
         endpoints: Vec<RegisteredEndpoint>,
-        secret: Option<String>,
-        secret_header: Option<String>,
+        secrets: WebhookSecrets,
     ) {
+        let WebhookSecrets {
+            secret,
+            header: secret_header,
+        } = secrets;
         let name = channel.channel_name().to_string();
 
         // Store the channel

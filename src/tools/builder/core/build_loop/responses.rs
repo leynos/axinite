@@ -4,21 +4,27 @@
 use super::*;
 use crate::llm::ToolCall;
 
-/// Build-loop context threaded into text-response handling: the immutable
+/// Build-loop context threaded into per-turn response handling: the immutable
 /// loop inputs plus the mutable loop state and reasoning context.
-pub(super) struct TextResponseContext<'a> {
+pub(super) struct BuildTurnContext<'a> {
     pub(super) inputs: &'a BuildLoopParams,
     pub(super) state: &'a mut BuildLoopState,
     pub(super) reason_ctx: &'a mut ReasoningContext,
+}
+
+/// The tool calls (and optional accompanying text) returned by one LLM turn.
+pub(super) struct ToolCallTurn {
+    pub(super) tool_calls: Vec<ToolCall>,
+    pub(super) content: Option<String>,
 }
 
 impl LlmSoftwareBuilder {
     pub(super) async fn handle_text_response(
         &self,
         response: String,
-        ctx: TextResponseContext<'_>,
+        ctx: BuildTurnContext<'_>,
     ) -> std::ops::ControlFlow<BuildResult> {
-        let TextResponseContext {
+        let BuildTurnContext {
             inputs,
             state,
             reason_ctx,
@@ -50,23 +56,20 @@ impl LlmSoftwareBuilder {
         std::ops::ControlFlow::Continue(())
     }
 
-    pub(super) async fn handle_tool_calls(
-        &self,
-        inputs: &BuildLoopParams,
-        bundle: &mut ReasoningBundle,
-        state: &mut BuildLoopState,
-        tool_calls: Vec<ToolCall>,
-        content: Option<String>,
-    ) {
-        bundle
-            .ctx
+    pub(super) async fn handle_tool_calls(&self, ctx: BuildTurnContext<'_>, turn: ToolCallTurn) {
+        let BuildTurnContext {
+            inputs,
+            state,
+            reason_ctx,
+        } = ctx;
+        reason_ctx
             .messages
             .push(ChatMessage::assistant_with_tool_calls(
-                content,
-                tool_calls.clone(),
+                turn.content,
+                turn.tool_calls.clone(),
             ));
 
-        for tc in tool_calls {
+        for tc in turn.tool_calls {
             state.logs.push(BuildLog {
                 timestamp: Utc::now(),
                 phase: state.current_phase,
@@ -82,7 +85,7 @@ impl LlmSoftwareBuilder {
                     let output_str =
                         serde_json::to_string_pretty(&output.result).unwrap_or_default();
 
-                    bundle.ctx.messages.push(ChatMessage::tool_result(
+                    reason_ctx.messages.push(ChatMessage::tool_result(
                         &tc.id,
                         &tc.name,
                         output_str.clone(),
@@ -101,7 +104,7 @@ impl LlmSoftwareBuilder {
                     let error_msg = format!("Tool error: {}", e);
                     state.last_error = Some(error_msg.clone());
 
-                    bundle.ctx.messages.push(ChatMessage::tool_result(
+                    reason_ctx.messages.push(ChatMessage::tool_result(
                         &tc.id,
                         &tc.name,
                         format!("Error: {}", e),

@@ -3,11 +3,14 @@
 
 use axum::{Json, http::StatusCode};
 
-use crate::llm::{ChatMessage, FinishReason, Role, ToolCall, ToolDefinition};
+use crate::llm::{
+    ChatMessage, CompletionRequest, FinishReason, Role, ToolCall, ToolCompletionRequest,
+    ToolDefinition,
+};
 
 use super::types::{
-    OpenAiErrorDetail, OpenAiErrorResponse, OpenAiMessage, OpenAiTool, OpenAiToolCall,
-    OpenAiToolCallFunction,
+    OpenAiChatRequest, OpenAiErrorDetail, OpenAiErrorResponse, OpenAiMessage, OpenAiTool,
+    OpenAiToolCall, OpenAiToolCallFunction,
 };
 
 pub(super) const MAX_MODEL_NAME_BYTES: usize = 256;
@@ -240,4 +243,47 @@ pub(super) fn parse_stop(val: &serde_json::Value) -> Option<Vec<String>> {
         }
         _ => None,
     }
+}
+
+/// Build the tool-enabled completion request from the OpenAI-shaped request.
+///
+/// Shared by the streaming and non-streaming chat-completion paths.
+pub(super) fn build_tool_request(
+    req: &OpenAiChatRequest,
+    messages: Vec<ChatMessage>,
+) -> ToolCompletionRequest {
+    let tools = convert_tools(req.tools.as_deref().unwrap_or(&[]));
+    let mut tool_req = ToolCompletionRequest::new(messages, tools).with_model(req.model.clone());
+    if let Some(t) = req.temperature {
+        tool_req = tool_req.with_temperature(t);
+    }
+    if let Some(mt) = req.max_tokens {
+        tool_req = tool_req.with_max_tokens(mt);
+    }
+    if let Some(ref tc) = req.tool_choice
+        && let Some(choice) = normalize_tool_choice(tc)
+    {
+        tool_req = tool_req.with_tool_choice(choice);
+    }
+    tool_req
+}
+
+/// Build the plain completion request from the OpenAI-shaped request.
+///
+/// Shared by the streaming and non-streaming chat-completion paths.
+pub(super) fn build_completion_request(
+    req: &OpenAiChatRequest,
+    messages: Vec<ChatMessage>,
+) -> CompletionRequest {
+    let mut comp_req = CompletionRequest::new(messages).with_model(req.model.clone());
+    if let Some(t) = req.temperature {
+        comp_req = comp_req.with_temperature(t);
+    }
+    if let Some(mt) = req.max_tokens {
+        comp_req = comp_req.with_max_tokens(mt);
+    }
+    if let Some(ref stop_val) = req.stop {
+        comp_req.stop_sequences = parse_stop(stop_val);
+    }
+    comp_req
 }

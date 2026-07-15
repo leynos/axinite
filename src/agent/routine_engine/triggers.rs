@@ -112,6 +112,12 @@ impl RoutineEngine {
         payload: &serde_json::Value,
         user_id: Option<&str>,
     ) -> usize {
+        let event = SystemEventRef {
+            source,
+            event_type,
+            payload,
+            user_id,
+        };
         let cache = self.event_cache.read().await;
         let mut fired = 0;
 
@@ -121,26 +127,7 @@ impl RoutineEngine {
                 EventMatcher::Message { .. } => continue,
             };
 
-            let Trigger::SystemEvent {
-                source: expected_source,
-                event_type: expected_event,
-                filters,
-            } = &routine.trigger
-            else {
-                continue;
-            };
-
-            if !expected_source.eq_ignore_ascii_case(source)
-                || !expected_event.eq_ignore_ascii_case(event_type)
-            {
-                continue;
-            }
-
-            if !user_matches(routine, user_id) {
-                continue;
-            }
-
-            if !filters_match(routine, filters, payload) {
+            if !matches_system_event(routine, &event) {
                 continue;
             }
 
@@ -221,6 +208,41 @@ impl RoutineEngine {
             self.spawn_fire_reserved(routine, "cron", detail);
         }
     }
+}
+
+/// Borrowed view of an emitted system event, as delivered to the matcher.
+struct SystemEventRef<'a> {
+    source: &'a str,
+    event_type: &'a str,
+    payload: &'a serde_json::Value,
+    user_id: Option<&'a str>,
+}
+
+/// Returns `true` when the routine's system-event trigger matches the
+/// emitted event's source, type, user scope, and payload filters.
+fn matches_system_event(
+    routine: &crate::agent::routine::Routine,
+    event: &SystemEventRef<'_>,
+) -> bool {
+    let Trigger::SystemEvent {
+        source: expected_source,
+        event_type: expected_event,
+        filters,
+    } = &routine.trigger
+    else {
+        return false;
+    };
+
+    if !expected_source.eq_ignore_ascii_case(event.source) {
+        return false;
+    }
+    if !expected_event.eq_ignore_ascii_case(event.event_type) {
+        return false;
+    }
+    if !user_matches(routine, event.user_id) {
+        return false;
+    }
+    filters_match(routine, filters, event.payload)
 }
 
 /// Returns `true` when the routine belongs to the emitting user, or when no

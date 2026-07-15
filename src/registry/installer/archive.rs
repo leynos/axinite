@@ -16,6 +16,20 @@ pub(super) struct ExtractResult {
     pub(super) has_capabilities: bool,
 }
 
+/// Inputs for extracting one downloaded tar.gz artifact bundle.
+pub(super) struct TarGzExtraction<'a> {
+    /// Raw downloaded archive bytes.
+    pub(super) bytes: &'a [u8],
+    /// Extension name; the archive must contain `{name}.wasm`.
+    pub(super) name: &'a str,
+    /// Destination path for the extracted WASM binary.
+    pub(super) target_wasm: &'a Path,
+    /// Destination path for the extracted capabilities file.
+    pub(super) target_caps: &'a Path,
+    /// Source URL, used for error reporting.
+    pub(super) url: &'a str,
+}
+
 /// Build a `DownloadFailed` error for the given URL and reason.
 fn download_err(url: &str, reason: String) -> RegistryError {
     RegistryError::DownloadFailed {
@@ -74,12 +88,15 @@ fn write_entry_to<R: std::io::Read>(
 
 /// Extract a tar.gz archive, looking for `{name}.wasm` and `{name}.capabilities.json`.
 pub(super) fn extract_tar_gz(
-    bytes: &[u8],
-    name: &str,
-    target_wasm: &Path,
-    target_caps: &Path,
-    url: &str,
+    extraction: &TarGzExtraction<'_>,
 ) -> Result<ExtractResult, RegistryError> {
+    let TarGzExtraction {
+        bytes,
+        name,
+        target_wasm,
+        target_caps,
+        url,
+    } = *extraction;
     let mut archive = open_archive(bytes);
 
     let wasm_filename = format!("{}.wasm", name);

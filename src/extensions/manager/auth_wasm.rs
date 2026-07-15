@@ -6,6 +6,19 @@ use crate::tools::wasm::discover_tools;
 
 use super::ExtensionManager;
 
+/// Candidate sources for a single OAuth credential, tried in priority order:
+/// secrets store → inline → env var → builtin default.
+pub(super) struct OAuthCredentialSources<'a> {
+    /// Setup-tab secret name to look up in the secrets store first.
+    pub setup_secret_name: Option<&'a str>,
+    /// Inline value from `capabilities.json`.
+    pub inline_value: &'a Option<String>,
+    /// Runtime environment variable name.
+    pub env_var_name: &'a Option<String>,
+    /// Built-in default value.
+    pub builtin_value: Option<&'a str>,
+}
+
 /// Value of the tool's configured env var, when one is declared and set.
 fn env_var_token(auth: &crate::tools::wasm::AuthCapabilitySchema) -> Option<String> {
     let env_var = auth.env_var.as_ref()?;
@@ -325,7 +338,12 @@ impl ExtensionManager {
                 continue;
             }
             let resolved = self
-                .resolve_oauth_credential(inline, env, fallback, Some(setup_name))
+                .resolve_oauth_credential(OAuthCredentialSources {
+                    setup_secret_name: Some(setup_name),
+                    inline_value: inline,
+                    env_var_name: env,
+                    builtin_value: fallback,
+                })
                 .await
                 .is_some();
             if !resolved {
@@ -341,13 +359,10 @@ impl ExtensionManager {
     /// may have been entered via the Setup tab (stored as setup secrets).
     pub(super) async fn resolve_oauth_credential(
         &self,
-        inline_value: &Option<String>,
-        env_var_name: &Option<String>,
-        builtin_value: Option<&str>,
-        setup_secret_name: Option<&str>,
+        sources: OAuthCredentialSources<'_>,
     ) -> Option<String> {
         // 1. Check secrets store (entered via Setup tab)
-        if let Some(secret_name) = setup_secret_name
+        if let Some(secret_name) = sources.setup_secret_name
             && let Ok(secret) = self.secrets.get_decrypted(&self.user_id, secret_name).await
         {
             let val = secret.expose();
@@ -357,18 +372,18 @@ impl ExtensionManager {
         }
 
         // 2. Inline value from capabilities.json
-        if let Some(val) = inline_value {
+        if let Some(val) = sources.inline_value {
             return Some(val.clone());
         }
 
         // 3. Runtime environment variable
-        if let Some(env) = env_var_name
+        if let Some(env) = sources.env_var_name
             && let Ok(val) = std::env::var(env)
         {
             return Some(val);
         }
 
         // 4. Built-in defaults
-        builtin_value.map(String::from)
+        sources.builtin_value.map(String::from)
     }
 }

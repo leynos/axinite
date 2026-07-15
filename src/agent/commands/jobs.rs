@@ -32,6 +32,23 @@ fn format_job_details(ctx: &JobContext) -> String {
     )
 }
 
+/// Wraps a command outcome as a submission result, prefixing any error.
+fn to_submission(result: Result<String, Error>, error_prefix: &str) -> SubmissionResult {
+    match result {
+        Ok(text) => SubmissionResult::response(text),
+        Err(e) => SubmissionResult::error(format!("{error_prefix}: {e}")),
+    }
+}
+
+/// Renders formatted job lines under the "Jobs:" heading.
+fn render_job_list(lines: Vec<String>) -> String {
+    let mut output = String::from("Jobs:\n");
+    for line in lines {
+        output.push_str(&line);
+    }
+    output
+}
+
 /// Aggregated job counts rendered in the "Jobs summary" line.
 #[derive(Default)]
 struct JobTotals {
@@ -242,14 +259,16 @@ impl Agent {
             return "No jobs found.".to_string();
         }
 
-        let mut output = String::from("Jobs:\n");
-        for j in &agent_jobs {
-            output.push_str(&format!("  {} - {} ({})\n", j.id, j.title, j.status));
-        }
-        for j in &sandbox_jobs {
-            output.push_str(&format!("  {} - {} ({})\n", j.id, j.task, j.status));
-        }
-        output
+        let mut lines: Vec<String> = agent_jobs
+            .iter()
+            .map(|j| format!("  {} - {} ({})\n", j.id, j.title, j.status))
+            .collect();
+        lines.extend(
+            sandbox_jobs
+                .iter()
+                .map(|j| format!("  {} - {} ({})\n", j.id, j.task, j.status)),
+        );
+        render_job_list(lines)
     }
 
     /// Lists jobs from the in-memory context manager (no-DB fallback).
@@ -259,13 +278,13 @@ impl Agent {
             return "No jobs found.".to_string();
         }
 
-        let mut output = String::from("Jobs:\n");
+        let mut lines = Vec::new();
         for job_id in jobs {
             if let Ok(ctx) = self.context_manager.get_context(job_id).await {
-                output.push_str(&format!("  {} - {} ({:?})\n", job_id, ctx.title, ctx.state));
+                lines.push(format!("  {} - {} ({:?})\n", job_id, ctx.title, ctx.state));
             }
         }
-        output
+        render_job_list(lines)
     }
 
     async fn handle_list_jobs(
@@ -318,13 +337,10 @@ impl Agent {
         user_id: &str,
         job_id: Option<&str>,
     ) -> Result<SubmissionResult, Error> {
-        match self
+        let result = self
             .handle_check_status(user_id, job_id.map(|s| s.to_string()))
-            .await
-        {
-            Ok(text) => Ok(SubmissionResult::response(text)),
-            Err(e) => Ok(SubmissionResult::error(format!("Job status error: {}", e))),
-        }
+            .await;
+        Ok(to_submission(result, "Job status error"))
     }
 
     /// Cancel a job by ID.
@@ -333,9 +349,9 @@ impl Agent {
         user_id: &str,
         job_id: &str,
     ) -> Result<SubmissionResult, Error> {
-        match self.handle_cancel_job(user_id, job_id).await {
-            Ok(text) => Ok(SubmissionResult::response(text)),
-            Err(e) => Ok(SubmissionResult::error(format!("Cancel error: {}", e))),
-        }
+        Ok(to_submission(
+            self.handle_cancel_job(user_id, job_id).await,
+            "Cancel error",
+        ))
     }
 }

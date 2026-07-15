@@ -50,6 +50,17 @@ struct PatternInfo {
     description: String,
 }
 
+impl PatternInfo {
+    /// Build a literal injection pattern with its severity and description.
+    fn new(pattern: &str, severity: Severity, description: &str) -> Self {
+        Self {
+            pattern: pattern.to_string(),
+            severity,
+            description: description.to_string(),
+        }
+    }
+}
+
 struct RegexPattern {
     regex: Regex,
     name: String,
@@ -57,151 +68,132 @@ struct RegexPattern {
     description: String,
 }
 
+impl RegexPattern {
+    /// Build a named regex injection pattern with its severity and
+    /// description. Panics on an invalid pattern; all patterns are
+    /// compile-time constants exercised by unit tests.
+    fn new(pattern: &str, name: &str, severity: Severity, description: &str) -> Self {
+        Self {
+            regex: Regex::new(pattern).unwrap(),
+            name: name.to_string(),
+            severity,
+            description: description.to_string(),
+        }
+    }
+}
+
+/// Default literal injection patterns matched case-insensitively.
+fn default_literal_patterns() -> Vec<PatternInfo> {
+    use Severity::{Critical, High, Medium};
+    vec![
+        // Direct instruction injection
+        PatternInfo::new(
+            "ignore previous",
+            High,
+            "Attempt to override previous instructions",
+        ),
+        PatternInfo::new(
+            "ignore all previous",
+            Critical,
+            "Attempt to override all previous instructions",
+        ),
+        PatternInfo::new("disregard", Medium, "Potential instruction override"),
+        PatternInfo::new("forget everything", High, "Attempt to reset context"),
+        // Role manipulation
+        PatternInfo::new("you are now", High, "Attempt to change assistant role"),
+        PatternInfo::new("act as", Medium, "Potential role manipulation"),
+        PatternInfo::new("pretend to be", Medium, "Potential role manipulation"),
+        // System message injection
+        PatternInfo::new("system:", Critical, "Attempt to inject system message"),
+        PatternInfo::new("assistant:", High, "Attempt to inject assistant response"),
+        PatternInfo::new("user:", High, "Attempt to inject user message"),
+        // Special tokens
+        PatternInfo::new("<|", Critical, "Potential special token injection"),
+        PatternInfo::new("|>", Critical, "Potential special token injection"),
+        PatternInfo::new("[INST]", Critical, "Potential instruction token injection"),
+        PatternInfo::new("[/INST]", Critical, "Potential instruction token injection"),
+        // New instructions
+        PatternInfo::new(
+            "new instructions",
+            High,
+            "Attempt to provide new instructions",
+        ),
+        PatternInfo::new(
+            "updated instructions",
+            High,
+            "Attempt to update instructions",
+        ),
+        // Code/command injection markers
+        PatternInfo::new(
+            "```system",
+            High,
+            "Potential code block instruction injection",
+        ),
+        PatternInfo::new(
+            "```bash\nsudo",
+            Medium,
+            "Potential dangerous command injection",
+        ),
+    ]
+}
+
+/// Default regex patterns for more complex injection detection.
+fn default_regex_patterns() -> Vec<RegexPattern> {
+    use Severity::{Critical, High, Medium};
+    vec![
+        RegexPattern::new(
+            r"(?i)base64[:\s]+[A-Za-z0-9+/=]{50,}",
+            "base64_payload",
+            Medium,
+            "Potential encoded payload",
+        ),
+        RegexPattern::new(
+            r"(?i)eval\s*\(",
+            "eval_call",
+            High,
+            "Potential code evaluation attempt",
+        ),
+        RegexPattern::new(
+            r"(?i)exec\s*\(",
+            "exec_call",
+            High,
+            "Potential code execution attempt",
+        ),
+        RegexPattern::new(
+            r"\x00",
+            "null_byte",
+            Critical,
+            "Null byte injection attempt",
+        ),
+    ]
+}
+
+/// Build the case-insensitive Aho-Corasick matcher over the literal patterns.
+///
+/// Building from the small compile-time constant pattern list cannot exceed
+/// aho-corasick's limits; log loudly rather than panic if that invariant is
+/// ever broken so degraded matching is never silent.
+fn build_pattern_matcher(patterns: &[PatternInfo]) -> Option<AhoCorasick> {
+    let pattern_strings: Vec<&str> = patterns.iter().map(|p| p.pattern.as_str()).collect();
+    AhoCorasick::builder()
+        .ascii_case_insensitive(true)
+        .build(&pattern_strings)
+        .map_err(|error| {
+            tracing::error!(
+                %error,
+                "Failed to build pattern matcher; literal injection-pattern \
+                 detection is disabled"
+            );
+        })
+        .ok()
+}
+
 impl Sanitizer {
     /// Create a new sanitizer with default patterns.
     pub fn new() -> Self {
-        let patterns = vec![
-            // Direct instruction injection
-            PatternInfo {
-                pattern: "ignore previous".to_string(),
-                severity: Severity::High,
-                description: "Attempt to override previous instructions".to_string(),
-            },
-            PatternInfo {
-                pattern: "ignore all previous".to_string(),
-                severity: Severity::Critical,
-                description: "Attempt to override all previous instructions".to_string(),
-            },
-            PatternInfo {
-                pattern: "disregard".to_string(),
-                severity: Severity::Medium,
-                description: "Potential instruction override".to_string(),
-            },
-            PatternInfo {
-                pattern: "forget everything".to_string(),
-                severity: Severity::High,
-                description: "Attempt to reset context".to_string(),
-            },
-            // Role manipulation
-            PatternInfo {
-                pattern: "you are now".to_string(),
-                severity: Severity::High,
-                description: "Attempt to change assistant role".to_string(),
-            },
-            PatternInfo {
-                pattern: "act as".to_string(),
-                severity: Severity::Medium,
-                description: "Potential role manipulation".to_string(),
-            },
-            PatternInfo {
-                pattern: "pretend to be".to_string(),
-                severity: Severity::Medium,
-                description: "Potential role manipulation".to_string(),
-            },
-            // System message injection
-            PatternInfo {
-                pattern: "system:".to_string(),
-                severity: Severity::Critical,
-                description: "Attempt to inject system message".to_string(),
-            },
-            PatternInfo {
-                pattern: "assistant:".to_string(),
-                severity: Severity::High,
-                description: "Attempt to inject assistant response".to_string(),
-            },
-            PatternInfo {
-                pattern: "user:".to_string(),
-                severity: Severity::High,
-                description: "Attempt to inject user message".to_string(),
-            },
-            // Special tokens
-            PatternInfo {
-                pattern: "<|".to_string(),
-                severity: Severity::Critical,
-                description: "Potential special token injection".to_string(),
-            },
-            PatternInfo {
-                pattern: "|>".to_string(),
-                severity: Severity::Critical,
-                description: "Potential special token injection".to_string(),
-            },
-            PatternInfo {
-                pattern: "[INST]".to_string(),
-                severity: Severity::Critical,
-                description: "Potential instruction token injection".to_string(),
-            },
-            PatternInfo {
-                pattern: "[/INST]".to_string(),
-                severity: Severity::Critical,
-                description: "Potential instruction token injection".to_string(),
-            },
-            // New instructions
-            PatternInfo {
-                pattern: "new instructions".to_string(),
-                severity: Severity::High,
-                description: "Attempt to provide new instructions".to_string(),
-            },
-            PatternInfo {
-                pattern: "updated instructions".to_string(),
-                severity: Severity::High,
-                description: "Attempt to update instructions".to_string(),
-            },
-            // Code/command injection markers
-            PatternInfo {
-                pattern: "```system".to_string(),
-                severity: Severity::High,
-                description: "Potential code block instruction injection".to_string(),
-            },
-            PatternInfo {
-                pattern: "```bash\nsudo".to_string(),
-                severity: Severity::Medium,
-                description: "Potential dangerous command injection".to_string(),
-            },
-        ];
-
-        let pattern_strings: Vec<&str> = patterns.iter().map(|p| p.pattern.as_str()).collect();
-        // Building from the small compile-time constant pattern list cannot
-        // exceed aho-corasick's limits; log loudly rather than panic if that
-        // invariant is ever broken so degraded matching is never silent.
-        let pattern_matcher = AhoCorasick::builder()
-            .ascii_case_insensitive(true)
-            .build(&pattern_strings)
-            .map_err(|error| {
-                tracing::error!(
-                    %error,
-                    "Failed to build pattern matcher; literal injection-pattern \
-                     detection is disabled"
-                );
-            })
-            .ok();
-
-        // Regex patterns for more complex detection
-        let regex_patterns = vec![
-            RegexPattern {
-                regex: Regex::new(r"(?i)base64[:\s]+[A-Za-z0-9+/=]{50,}").unwrap(),
-                name: "base64_payload".to_string(),
-                severity: Severity::Medium,
-                description: "Potential encoded payload".to_string(),
-            },
-            RegexPattern {
-                regex: Regex::new(r"(?i)eval\s*\(").unwrap(),
-                name: "eval_call".to_string(),
-                severity: Severity::High,
-                description: "Potential code evaluation attempt".to_string(),
-            },
-            RegexPattern {
-                regex: Regex::new(r"(?i)exec\s*\(").unwrap(),
-                name: "exec_call".to_string(),
-                severity: Severity::High,
-                description: "Potential code execution attempt".to_string(),
-            },
-            RegexPattern {
-                regex: Regex::new(r"\x00").unwrap(),
-                name: "null_byte".to_string(),
-                severity: Severity::Critical,
-                description: "Null byte injection attempt".to_string(),
-            },
-        ];
+        let patterns = default_literal_patterns();
+        let pattern_matcher = build_pattern_matcher(&patterns);
+        let regex_patterns = default_regex_patterns();
 
         Self {
             pattern_matcher,

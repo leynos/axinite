@@ -278,42 +278,7 @@ impl Workspace {
                 }
             };
 
-            let path = entry.path();
-            // Only import .md files
-            if path.extension() != Some(std::ffi::OsStr::new("md")) {
-                continue;
-            }
-
-            let Some(file_name) = path.file_name().and_then(|n| n.to_str()) else {
-                continue;
-            };
-
-            // Skip if already exists in DB (never overwrite user edits)
-            match self.read(file_name).await {
-                Ok(_) => continue,
-                Err(WorkspaceError::DocumentNotFound { .. }) => {}
-                Err(e) => {
-                    tracing::trace!("Failed to check {}: {}", file_name, e);
-                    continue;
-                }
-            }
-
-            let content = match ambient_fs::read_to_string(&path) {
-                Ok(c) => c,
-                Err(e) => {
-                    tracing::warn!("Failed to read import file {}: {}", path.display(), e);
-                    continue;
-                }
-            };
-
-            if content.trim().is_empty() {
-                continue;
-            }
-
-            if let Err(e) = self.write(file_name, &content).await {
-                tracing::warn!("Failed to import {}: {}", file_name, e);
-            } else {
-                tracing::info!("Imported workspace file from disk: {}", file_name);
+            if self.import_markdown_file(&entry.path()).await {
                 count += 1;
             }
         }
@@ -327,4 +292,71 @@ impl Workspace {
         }
         Ok(count)
     }
+
+    /// Import a single markdown file into the workspace database.
+    ///
+    /// Skips non-markdown paths, files already present in the database
+    /// (never overwrite user edits), unreadable files, and files whose
+    /// content is effectively empty. Returns `true` when the file was
+    /// imported.
+    async fn import_markdown_file(&self, path: &std::path::Path) -> bool {
+        // Only import .md files
+        if path.extension() != Some(std::ffi::OsStr::new("md")) {
+            return false;
+        }
+
+        let Some(file_name) = path.file_name().and_then(|n| n.to_str()) else {
+            return false;
+        };
+
+        if !self.is_new_document(file_name).await {
+            return false;
+        }
+
+        let Some(content) = read_non_empty_file(path) else {
+            return false;
+        };
+
+        match self.write(file_name, &content).await {
+            Ok(_) => {
+                tracing::info!("Imported workspace file from disk: {}", file_name);
+                true
+            }
+            Err(e) => {
+                tracing::warn!("Failed to import {}: {}", file_name, e);
+                false
+            }
+        }
+    }
+
+    /// Whether no document with this name exists in the workspace database.
+    ///
+    /// Read failures other than "not found" are logged and treated as
+    /// "already present" so the import never overwrites user edits.
+    async fn is_new_document(&self, file_name: &str) -> bool {
+        match self.read(file_name).await {
+            Ok(_) => false,
+            Err(WorkspaceError::DocumentNotFound { .. }) => true,
+            Err(e) => {
+                tracing::trace!("Failed to check {}: {}", file_name, e);
+                false
+            }
+        }
+    }
+}
+
+/// Read a file from disk, returning `None` when it is unreadable or its
+/// content is blank after trimming.
+fn read_non_empty_file(path: &std::path::Path) -> Option<String> {
+    let content = match ambient_fs::read_to_string(path) {
+        Ok(c) => c,
+        Err(e) => {
+            tracing::warn!("Failed to read import file {}: {}", path.display(), e);
+            return None;
+        }
+    };
+    if content.trim().is_empty() {
+        return None;
+    }
+    Some(content)
 }

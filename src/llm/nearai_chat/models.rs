@@ -67,25 +67,34 @@ fn entries_to_models(entries: Vec<ModelEntry>) -> Vec<ModelInfo> {
         .collect()
 }
 
+/// Return the models unless the list is empty, so callers can fall through to
+/// the next candidate response shape.
+fn non_empty_models(models: Vec<ModelInfo>) -> Option<Vec<ModelInfo>> {
+    (!models.is_empty()).then_some(models)
+}
+
+/// Parse the `{models: [...]}` / `{data: [...]}` wrapper shape, yielding named
+/// models when present.
+fn models_from_wrapper(response_text: &str) -> Option<Vec<ModelInfo>> {
+    let resp = serde_json::from_str::<ModelsResponse>(response_text).ok()?;
+    let entries = resp.models.or(resp.data)?;
+    non_empty_models(entries_to_models(entries))
+}
+
+/// Parse the plain top-level array shape, yielding named models when present.
+fn models_from_array(response_text: &str) -> Option<Vec<ModelInfo>> {
+    let entries = serde_json::from_str::<Vec<ModelEntry>>(response_text).ok()?;
+    non_empty_models(entries_to_models(entries))
+}
+
 /// Parse a models response body, trying `{models: [...]}`, `{data: [...]}`,
 /// and plain-array shapes in turn.
 fn parse_models_response(response_text: &str) -> Result<Vec<ModelInfo>, LlmError> {
-    // Try {models: [...]} or {data: [...]} format
-    if let Ok(resp) = serde_json::from_str::<ModelsResponse>(response_text)
-        && let Some(entries) = resp.models.or(resp.data)
-    {
-        let models = entries_to_models(entries);
-        if !models.is_empty() {
-            return Ok(models);
-        }
+    if let Some(models) = models_from_wrapper(response_text) {
+        return Ok(models);
     }
-
-    // Try direct array format
-    if let Ok(entries) = serde_json::from_str::<Vec<ModelEntry>>(response_text) {
-        let models = entries_to_models(entries);
-        if !models.is_empty() {
-            return Ok(models);
-        }
+    if let Some(models) = models_from_array(response_text) {
+        return Ok(models);
     }
 
     // Couldn't find model names in response

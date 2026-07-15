@@ -2,6 +2,8 @@
 //! existing database.
 
 use super::database_ops::LibsqlConnParams;
+#[cfg(feature = "libsql")]
+use super::database_prompts::prompt_turso_sync;
 use super::*;
 
 impl SetupWizard {
@@ -49,15 +51,20 @@ impl SetupWizard {
 
         // Load existing settings from DB, then restore connection fields that
         // may not be persisted in the settings map.
-        if let Some(persistence) = self.default_settings_persistence()
-            && let Ok(map) = persistence.get_all_settings_map().await
-        {
-            self.settings = Settings::from_db_map(&map);
+        if let Some(saved) = self.load_persisted_settings().await {
+            self.settings = saved;
             self.settings.database_backend = Some("postgres".to_string());
             self.settings.database_url = Some(url);
         }
 
         Ok(())
+    }
+
+    /// Load the settings map persisted in the connected database, if any.
+    async fn load_persisted_settings(&self) -> Option<Settings> {
+        let persistence = self.default_settings_persistence()?;
+        let map = persistence.get_all_settings_map().await.ok()?;
+        Some(Settings::from_db_map(&map))
     }
 
     /// Reconnect to an existing libSQL database and load settings.
@@ -78,26 +85,26 @@ impl SetupWizard {
         })
         .await?;
 
-        self.settings.database_backend = Some("libsql".to_string());
-        self.settings.libsql_path = Some(path.clone());
-        if let Some(ref url) = turso_url {
-            self.settings.libsql_url = Some(url.clone());
-        }
+        self.apply_libsql_settings(&path, turso_url.as_deref());
 
         // Load existing settings from DB, then restore connection fields that
         // may not be persisted in the settings map.
-        if let Some(persistence) = self.default_settings_persistence()
-            && let Ok(map) = persistence.get_all_settings_map().await
-        {
-            self.settings = Settings::from_db_map(&map);
-            self.settings.database_backend = Some("libsql".to_string());
-            self.settings.libsql_path = Some(path);
-            if let Some(url) = turso_url {
-                self.settings.libsql_url = Some(url);
-            }
+        if let Some(saved) = self.load_persisted_settings().await {
+            self.settings = saved;
+            self.apply_libsql_settings(&path, turso_url.as_deref());
         }
 
         Ok(())
+    }
+
+    /// Record the libSQL connection fields on the wizard settings.
+    #[cfg(feature = "libsql")]
+    fn apply_libsql_settings(&mut self, path: &str, turso_url: Option<&str>) {
+        self.settings.database_backend = Some("libsql".to_string());
+        self.settings.libsql_path = Some(path.to_string());
+        if let Some(url) = turso_url {
+            self.settings.libsql_url = Some(url.to_string());
+        }
     }
 
     /// Step 1: Database connection.
@@ -107,48 +114,11 @@ impl SetupWizard {
         #[cfg(all(feature = "postgres", feature = "libsql"))]
         {
             // Check if a backend is already pinned via env var
-            let env_backend = std::env::var("DATABASE_BACKEND").ok();
-
-            if let Some(ref backend) = env_backend {
-                if is_libsql_backend(backend) {
-                    return self.step_database_libsql().await;
-                }
-                if !is_postgres_backend(backend) {
-                    print_info(&format!(
-                        "Unknown DATABASE_BACKEND '{}', defaulting to PostgreSQL",
-                        backend
-                    ));
-                }
-                return self.step_database_postgres().await;
+            if let Ok(backend) = std::env::var("DATABASE_BACKEND") {
+                return self.step_database_from_env(&backend).await;
             }
 
-            // Interactive selection
-            let pre_selected = self.settings.database_backend.as_deref().map(|b| match b {
-                "libsql" | "turso" | "sqlite" => 1,
-                _ => 0,
-            });
-
-            print_info("Which database backend would you like to use?");
-            println!();
-
-            let options = &[
-                "PostgreSQL  - production-grade, requires a running server",
-                "libSQL      - embedded SQLite, zero dependencies, optional Turso cloud sync",
-            ];
-            let choice =
-                select_one("Select a database backend:", options).map_err(SetupError::Io)?;
-
-            // If the user picked something different from what was pre-selected, clear
-            // stale connection settings so the next step starts fresh.
-            if let Some(prev) = pre_selected
-                && prev != choice
-            {
-                self.settings.database_url = None;
-                self.settings.libsql_path = None;
-                self.settings.libsql_url = None;
-            }
-
-            match choice {
+            match self.choose_database_backend()? {
                 1 => return self.step_database_libsql().await,
                 _ => return self.step_database_postgres().await,
             }
@@ -163,6 +133,55 @@ impl SetupWizard {
         {
             return self.step_database_libsql().await;
         }
+    }
+
+    /// Dispatch to the backend pinned by `DATABASE_BACKEND`, defaulting to
+    /// PostgreSQL for unknown values.
+    #[cfg(all(feature = "postgres", feature = "libsql"))]
+    async fn step_database_from_env(&mut self, backend: &str) -> Result<(), SetupError> {
+        if is_libsql_backend(backend) {
+            return self.step_database_libsql().await;
+        }
+        if !is_postgres_backend(backend) {
+            print_info(&format!(
+                "Unknown DATABASE_BACKEND '{}', defaulting to PostgreSQL",
+                backend
+            ));
+        }
+        self.step_database_postgres().await
+    }
+
+    /// Ask the user to pick a database backend, clearing stale connection
+    /// settings when the choice differs from the previously saved backend.
+    ///
+    /// Returns the selected option index (0 = PostgreSQL, 1 = libSQL).
+    #[cfg(all(feature = "postgres", feature = "libsql"))]
+    fn choose_database_backend(&mut self) -> Result<usize, SetupError> {
+        let pre_selected = self.settings.database_backend.as_deref().map(|b| match b {
+            "libsql" | "turso" | "sqlite" => 1,
+            _ => 0,
+        });
+
+        print_info("Which database backend would you like to use?");
+        println!();
+
+        let options = &[
+            "PostgreSQL  - production-grade, requires a running server",
+            "libSQL      - embedded SQLite, zero dependencies, optional Turso cloud sync",
+        ];
+        let choice = select_one("Select a database backend:", options).map_err(SetupError::Io)?;
+
+        // If the user picked something different from what was pre-selected, clear
+        // stale connection settings so the next step starts fresh.
+        if let Some(prev) = pre_selected
+            && prev != choice
+        {
+            self.settings.database_url = None;
+            self.settings.libsql_path = None;
+            self.settings.libsql_url = None;
+        }
+
+        Ok(choice)
     }
 
     /// Step 1 (postgres): Database connection via PostgreSQL URL.
@@ -227,28 +246,36 @@ impl SetupWizard {
                 continue;
             }
 
-            print_info("Testing connection...");
-            match self.test_database_connection_postgres(&url).await {
-                Ok(()) => {
-                    print_success("Database connection successful");
-
-                    if confirm("Run database migrations?", true).map_err(SetupError::Io)? {
-                        self.run_migrations_postgres().await?;
-                    }
-
-                    self.settings.database_url = Some(url);
-                    return Ok(());
-                }
-                Err(e) => {
-                    print_error(&format!("Connection failed: {}", e));
-                    if !confirm("Try again?", true).map_err(SetupError::Io)? {
-                        return Err(SetupError::Database(
-                            "Database connection failed".to_string(),
-                        ));
-                    }
-                }
+            if self.try_postgres_url(&url).await? {
+                return Ok(());
             }
         }
+    }
+
+    /// Test one candidate PostgreSQL URL, running migrations and saving the
+    /// URL on success.
+    ///
+    /// Returns `Ok(true)` when the URL was accepted, `Ok(false)` to prompt
+    /// again, and `Err` when the user gives up after a failed connection.
+    #[cfg(feature = "postgres")]
+    async fn try_postgres_url(&mut self, url: &str) -> Result<bool, SetupError> {
+        print_info("Testing connection...");
+        if let Err(e) = self.test_database_connection_postgres(url).await {
+            print_error(&format!("Connection failed: {}", e));
+            if confirm("Try again?", true).map_err(SetupError::Io)? {
+                return Ok(false);
+            }
+            return Err(SetupError::Database(
+                "Database connection failed".to_string(),
+            ));
+        }
+
+        print_success("Database connection successful");
+        if confirm("Run database migrations?", true).map_err(SetupError::Io)? {
+            self.run_migrations_postgres().await?;
+        }
+        self.settings.database_url = Some(url.to_string());
+        Ok(true)
     }
 
     /// Step 1 (libsql): Database connection via local file or Turso remote replica.
@@ -365,36 +392,4 @@ impl SetupWizard {
             Err(e) => Err(SetupError::Database(format!("Connection failed: {}", e))),
         }
     }
-}
-
-/// Prompt for optional Turso cloud sync credentials.
-///
-/// Returns `(None, None)` when sync is declined or when the entered
-/// credentials are incomplete.
-#[cfg(feature = "libsql")]
-fn prompt_turso_sync() -> Result<(Option<String>, Option<String>), SetupError> {
-    let use_turso =
-        confirm("Enable Turso cloud sync (remote replica)?", false).map_err(SetupError::Io)?;
-    if !use_turso {
-        return Ok((None, None));
-    }
-
-    print_info("Enter your Turso database URL and auth token.");
-    print_info("Format: libsql://your-db.turso.io");
-    println!();
-
-    let url = input("Turso URL").map_err(SetupError::Io)?;
-    if url.is_empty() {
-        print_error("Turso URL is required for cloud sync.");
-        return Ok((None, None));
-    }
-
-    let token_secret = secret_input("Auth token").map_err(SetupError::Io)?;
-    let token = token_secret.expose_secret().to_string();
-    if token.is_empty() {
-        print_error("Auth token is required for cloud sync.");
-        return Ok((None, None));
-    }
-
-    Ok((Some(url), Some(token)))
 }

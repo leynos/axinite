@@ -101,7 +101,9 @@ pub use loader::{
     DiscoveredChannel, LoadResults, LoadedChannel, WasmChannelLoader, default_channels_dir,
     discover_channels,
 };
-pub use router::{RegisteredEndpoint, WasmChannelRouter, create_wasm_channel_router};
+pub use router::{
+    RegisteredEndpoint, WasmChannelRouter, WebhookSecrets, create_wasm_channel_router,
+};
 pub use runtime::{PreparedChannelModule, WasmChannelRuntime, WasmChannelRuntimeConfig};
 pub use schema::{
     ChannelCapabilitiesFile, ChannelConfig, SecretSetupSchema, SetupSchema, WebhookSchema,

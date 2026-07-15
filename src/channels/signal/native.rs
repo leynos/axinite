@@ -99,6 +99,92 @@ fn format_auth_completed(extension_name: &str, success: bool, msg: &str) -> Stri
     message
 }
 
+impl SignalChannel {
+    /// Send a Signal typing indicator to the reply target, when known.
+    async fn send_typing_indicator(&self, metadata: &serde_json::Value) {
+        if let Some(target_str) = Self::signal_target(metadata) {
+            let target = Self::parse_recipient_target(target_str);
+            let params = self.build_rpc_params(&target, None, None);
+            let _ = self.rpc_request("sendTyping", params).await;
+        }
+    }
+
+    /// Resolve the reply target and rendered text for a status update.
+    ///
+    /// Returns `None` for updates that should not be forwarded: unknown
+    /// target, filtered status text, debug-only updates outside debug mode,
+    /// or update kinds Signal does not surface.
+    fn render_status<'m>(
+        &self,
+        status: &StatusUpdate,
+        metadata: &'m serde_json::Value,
+    ) -> Option<(&'m str, String)> {
+        match status {
+            StatusUpdate::ApprovalNeeded {
+                request_id,
+                tool_name,
+                description: _,
+                parameters,
+            } => Some((
+                Self::signal_target(metadata)?,
+                format_approval_prompt(request_id, tool_name, parameters),
+            )),
+
+            StatusUpdate::Status(msg) => Some((
+                Self::signal_target(metadata).filter(|_| should_forward_status(msg))?,
+                msg.clone(),
+            )),
+
+            // Tool lifecycle previews are debug mode only.
+            StatusUpdate::ToolResult { name, preview } => Some((
+                self.debug_signal_target(metadata)?,
+                format_tool_result(name, preview),
+            )),
+            StatusUpdate::ToolStarted { name } => Some((
+                self.debug_signal_target(metadata)?,
+                format!("\u{25CB} Running tool: {}", name),
+            )),
+            StatusUpdate::ToolCompleted { name, success, .. } => Some((
+                self.debug_signal_target(metadata)?,
+                format_tool_completed(name, *success),
+            )),
+
+            StatusUpdate::JobStarted {
+                job_id,
+                title,
+                browse_url,
+            } => Some((
+                Self::signal_target(metadata)?,
+                format!(
+                    "\u{1F680} Job started: {}\nID: {}\nURL: {}",
+                    title, job_id, browse_url
+                ),
+            )),
+
+            StatusUpdate::AuthRequired {
+                extension_name,
+                instructions,
+                auth_url,
+                setup_url,
+            } => Some((
+                Self::signal_target(metadata)?,
+                format_auth_required(extension_name, instructions, auth_url, setup_url),
+            )),
+
+            StatusUpdate::AuthCompleted {
+                extension_name,
+                success,
+                message: msg,
+            } => Some((
+                Self::signal_target(metadata)?,
+                format_auth_completed(extension_name, *success, msg),
+            )),
+
+            _ => None,
+        }
+    }
+}
+
 impl NativeChannel for SignalChannel {
     fn name(&self) -> &str {
         "signal"
@@ -165,106 +251,15 @@ impl NativeChannel for SignalChannel {
         status: StatusUpdate,
         metadata: &serde_json::Value,
     ) -> Result<(), ChannelError> {
-        match &status {
-            // Send typing indicator for thinking status.
-            StatusUpdate::Thinking(_) => {
-                if let Some(target_str) = Self::signal_target(metadata) {
-                    let target = Self::parse_recipient_target(target_str);
-                    let params = self.build_rpc_params(&target, None, None);
-                    let _ = self.rpc_request("sendTyping", params).await;
-                }
-            }
-
-            // Send approval prompt to user
-            StatusUpdate::ApprovalNeeded {
-                request_id,
-                tool_name,
-                description: _,
-                parameters,
-            } => {
-                if let Some(target_str) = Self::signal_target(metadata) {
-                    let message = format_approval_prompt(request_id, tool_name, parameters);
-                    self.send_status_message(target_str, &message).await;
-                }
-            }
-
-            // Filter/send status messages
-            StatusUpdate::Status(msg) => {
-                if let Some(target_str) =
-                    Self::signal_target(metadata).filter(|_| should_forward_status(msg))
-                {
-                    self.send_status_message(target_str, msg).await;
-                }
-            }
-
-            // Send tool result previews to user (debug mode only)
-            StatusUpdate::ToolResult { name, preview } => {
-                if let Some(target_str) = self.debug_signal_target(metadata) {
-                    let message = format_tool_result(name, preview);
-                    self.send_status_message(target_str, &message).await;
-                }
-            }
-
-            // Send tool started notification (debug mode only)
-            StatusUpdate::ToolStarted { name } => {
-                if let Some(target_str) = self.debug_signal_target(metadata) {
-                    let message = format!("\u{25CB} Running tool: {}", name);
-                    self.send_status_message(target_str, &message).await;
-                }
-            }
-
-            // Send tool completed notification (debug mode only)
-            StatusUpdate::ToolCompleted { name, success, .. } => {
-                if let Some(target_str) = self.debug_signal_target(metadata) {
-                    let message = format_tool_completed(name, *success);
-                    self.send_status_message(target_str, &message).await;
-                }
-            }
-
-            // Send job started notification (sandbox jobs)
-            StatusUpdate::JobStarted {
-                job_id,
-                title,
-                browse_url,
-            } => {
-                if let Some(target_str) = Self::signal_target(metadata) {
-                    let message = format!(
-                        "\u{1F680} Job started: {}\nID: {}\nURL: {}",
-                        title, job_id, browse_url
-                    );
-                    self.send_status_message(target_str, &message).await;
-                }
-            }
-
-            // Send auth required notification
-            StatusUpdate::AuthRequired {
-                extension_name,
-                instructions,
-                auth_url,
-                setup_url,
-            } => {
-                if let Some(target_str) = Self::signal_target(metadata) {
-                    let message =
-                        format_auth_required(extension_name, instructions, auth_url, setup_url);
-                    self.send_status_message(target_str, &message).await;
-                }
-            }
-
-            // Send auth completed notification
-            StatusUpdate::AuthCompleted {
-                extension_name,
-                success,
-                message: msg,
-            } => {
-                if let Some(target_str) = Self::signal_target(metadata) {
-                    let message = format_auth_completed(extension_name, *success, msg);
-                    self.send_status_message(target_str, &message).await;
-                }
-            }
-
-            _ => {}
+        // Thinking maps to a typing indicator, not a message.
+        if matches!(status, StatusUpdate::Thinking(_)) {
+            self.send_typing_indicator(metadata).await;
+            return Ok(());
         }
 
+        if let Some((target_str, message)) = self.render_status(&status, metadata) {
+            self.send_status_message(target_str, &message).await;
+        }
         Ok(())
     }
 

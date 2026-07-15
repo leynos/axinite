@@ -1,4 +1,9 @@
 //! Cloudflare Tunnel setup flow, conflict detection, and token validation.
+//!
+//! Command names, command arguments, and `cloudflared` log lines are handled
+//! as plain strings throughout: they are free-form external text with no
+//! domain invariants a newtype could enforce. Tunnel tokens are carried as
+//! [`secrecy::SecretString`] and only exposed at the point of use.
 
 use base64::Engine;
 use secrecy::ExposeSecret;
@@ -19,11 +24,11 @@ pub(super) async fn setup_tunnel_cloudflare() -> Result<TunnelSettings, ChannelS
     println!();
 
     let token = secret_input("Cloudflare tunnel token")?;
-    let token_valid = confirm_token_format(token.expose_secret())?;
+    let token_valid = confirm_token_format(&token)?;
 
     // Live-validate the token by briefly spawning cloudflared (if available)
     if cloudflared_found && token_valid {
-        confirm_token_live(token.expose_secret()).await?;
+        confirm_token_live(&token).await?;
     }
 
     print_completion_notes(cloudflared_found);
@@ -77,8 +82,8 @@ fn confirm_no_conflicting_services() -> Result<(), ChannelSetupError> {
 
 /// Check the token's format, offering to save an unrecognized token anyway.
 /// Returns whether the token matched the expected format.
-fn confirm_token_format(token: &str) -> Result<bool, ChannelSetupError> {
-    if validate_cloudflare_token_format(token) {
+fn confirm_token_format(token: &secrecy::SecretString) -> Result<bool, ChannelSetupError> {
+    if validate_cloudflare_token_format(token.expose_secret()) {
         return Ok(true);
     }
 
@@ -96,7 +101,7 @@ fn confirm_token_format(token: &str) -> Result<bool, ChannelSetupError> {
 
 /// Verify the token by briefly running cloudflared, offering to save a
 /// rejected token anyway.
-async fn confirm_token_live(token: &str) -> Result<(), ChannelSetupError> {
+async fn confirm_token_live(token: &secrecy::SecretString) -> Result<(), ChannelSetupError> {
     print_info("Verifying token with cloudflared...");
     match validate_cloudflare_token_live(token).await {
         Ok(()) => {
@@ -193,22 +198,35 @@ fn detect_running_cloudflared_processes(conflicts: &mut Vec<String>) {
 /// Record cloudflared services managed by Homebrew or launchd on macOS.
 #[cfg(target_os = "macos")]
 fn detect_macos_cloudflared_services(conflicts: &mut Vec<String>) {
-    if let Some(out) = capture_command_output("brew", &["services", "list"]) {
-        let stdout = String::from_utf8_lossy(&out.stdout);
-        if stdout
-            .lines()
-            .any(|line| line.contains("cloudflared") && line.contains("started"))
-        {
-            conflicts.push("Homebrew service: cloudflared (started)".to_string());
-        }
+    if brew_reports_cloudflared_started() {
+        conflicts.push("Homebrew service: cloudflared (started)".to_string());
     }
+    if launchd_lists_cloudflared() {
+        conflicts.push("launchd service: cloudflared detected".to_string());
+    }
+}
 
-    if let Some(out) = capture_command_output("launchctl", &["list"]) {
-        let stdout = String::from_utf8_lossy(&out.stdout);
-        if stdout.lines().any(|line| line.contains("cloudflared")) {
-            conflicts.push("launchd service: cloudflared detected".to_string());
-        }
-    }
+/// Return `true` when `brew services list` reports a started cloudflared
+/// service.
+#[cfg(target_os = "macos")]
+fn brew_reports_cloudflared_started() -> bool {
+    let Some(out) = capture_command_output("brew", &["services", "list"]) else {
+        return false;
+    };
+    String::from_utf8_lossy(&out.stdout)
+        .lines()
+        .any(|line| line.contains("cloudflared") && line.contains("started"))
+}
+
+/// Return `true` when `launchctl list` mentions a cloudflared service.
+#[cfg(target_os = "macos")]
+fn launchd_lists_cloudflared() -> bool {
+    let Some(out) = capture_command_output("launchctl", &["list"]) else {
+        return false;
+    };
+    String::from_utf8_lossy(&out.stdout)
+        .lines()
+        .any(|line| line.contains("cloudflared"))
 }
 
 /// Record an active cloudflared systemd service on Linux.
@@ -227,7 +245,7 @@ fn detect_linux_cloudflared_service(conflicts: &mut Vec<String>) {
 /// Spawns `cloudflared tunnel run` with a dummy local URL and watches stderr
 /// for up to 10 seconds. If a connection URL appears, the token is valid.
 /// If error indicators appear first, returns the error message.
-async fn validate_cloudflare_token_live(token: &str) -> Result<(), String> {
+async fn validate_cloudflare_token_live(token: &secrecy::SecretString) -> Result<(), String> {
     use tokio::io::AsyncBufReadExt;
     use tokio::process::Command;
 
@@ -237,7 +255,7 @@ async fn validate_cloudflare_token_live(token: &str) -> Result<(), String> {
             "--no-autoupdate",
             "run",
             "--token",
-            token,
+            token.expose_secret(),
             "--url",
             "http://localhost:1",
         ])

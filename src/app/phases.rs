@@ -20,16 +20,6 @@ use crate::workspace::{EmbeddingProvider, Workspace};
 use super::builder::AppBuilder;
 
 impl AppBuilder {
-    fn register_image_tools_default(
-        &self,
-        tools: &ToolRegistry,
-        api_base: String,
-        api_key: String,
-        gen_model: String,
-    ) {
-        tools.register_image_tools(ImageToolsRegistration::new(api_base, api_key, gen_model));
-    }
-
     /// Phase 1: Initialize database backend.
     ///
     /// Creates the database connection, runs migrations, reloads config
@@ -287,7 +277,11 @@ impl AppBuilder {
         let gen_model = crate::llm::image_models::suggest_image_model(&models)
             .unwrap_or("flux-1.1-pro")
             .to_string();
-        self.register_image_tools_default(tools, api_base.clone(), api_key.clone(), gen_model);
+        tools.register_image_tools(ImageToolsRegistration::new(
+            api_base.clone(),
+            api_key.clone(),
+            gen_model,
+        ));
 
         // Check for vision models
         let vision_model = crate::llm::vision_models::suggest_vision_model(&models)

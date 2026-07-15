@@ -7,7 +7,7 @@ use ed25519_dalek::SigningKey;
 
 use crate::channels::wasm::capabilities::ChannelCapabilities;
 use crate::channels::wasm::router::{
-    RegisteredEndpoint, WasmChannelRouter, create_wasm_channel_router,
+    RegisteredEndpoint, WasmChannelRouter, WebhookSecrets, create_wasm_channel_router,
 };
 use crate::channels::wasm::runtime::{
     PreparedChannelModule, WasmChannelRuntime, WasmChannelRuntimeConfig,
@@ -52,7 +52,9 @@ pub(super) async fn setup_discord_router() -> (Arc<WasmChannelRouter>, AxumRoute
         require_secret: false,
     }];
 
-    wasm_router.register(channel, endpoints, None, None).await;
+    wasm_router
+        .register(channel, endpoints, WebhookSecrets::default())
+        .await;
 
     let app = create_wasm_channel_router(wasm_router.clone(), None);
     (wasm_router, app)
@@ -79,7 +81,9 @@ pub(super) async fn setup_slack_router() -> (Arc<WasmChannelRouter>, AxumRouter)
         require_secret: false,
     }];
 
-    wasm_router.register(channel, endpoints, None, None).await;
+    wasm_router
+        .register(channel, endpoints, WebhookSecrets::default())
+        .await;
 
     let app = create_wasm_channel_router(wasm_router.clone(), None);
     (wasm_router, app)

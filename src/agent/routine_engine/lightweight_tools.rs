@@ -3,14 +3,14 @@
 
 use uuid::Uuid;
 
-use crate::agent::routine::{Routine, RunStatus};
+use crate::agent::routine::Routine;
 use crate::context::JobContext;
 use crate::error::RoutineError;
 use crate::llm::{ChatMessage, CompletionRequest, ToolCall, ToolCompletionRequest};
 use crate::tools::{ApprovalRequirement, ToolError};
 
-use super::execution::EngineContext;
-use super::lightweight::{handle_text_response, initial_messages};
+use super::execution::{EngineContext, RunOutcome};
+use super::lightweight::{PreparedPrompt, handle_text_response, initial_messages};
 
 /// Running token totals accumulated across loop iterations.
 #[derive(Default)]
@@ -49,11 +49,9 @@ fn routine_job_context(routine: &Routine) -> JobContext {
 pub(super) async fn execute_lightweight_with_tools(
     ctx: &EngineContext,
     routine: &Routine,
-    system_prompt: &str,
-    full_prompt: &str,
-    effective_max_tokens: u32,
-) -> Result<(RunStatus, Option<String>, Option<i32>), RoutineError> {
-    let mut messages = initial_messages(system_prompt, full_prompt);
+    prepared: &PreparedPrompt,
+) -> Result<RunOutcome, RoutineError> {
+    let mut messages = initial_messages(&prepared.system_prompt, &prepared.full_prompt);
     let max_iterations = ctx.config.lightweight_max_iterations.min(5);
     let mut totals = TokenTotals::default();
     let job_ctx = routine_job_context(routine);
@@ -65,7 +63,7 @@ pub(super) async fn execute_lightweight_with_tools(
             ctx,
             &job_ctx,
             &mut messages,
-            effective_max_tokens,
+            prepared.max_tokens,
             &mut totals,
         )
         .await?;
@@ -74,7 +72,7 @@ pub(super) async fn execute_lightweight_with_tools(
         }
     }
 
-    final_text_iteration(ctx, messages, effective_max_tokens, &totals).await
+    final_text_iteration(ctx, messages, prepared.max_tokens, &totals).await
 }
 
 /// Runs the forced text-only final iteration (no tools offered).
@@ -83,7 +81,7 @@ async fn final_text_iteration(
     messages: Vec<ChatMessage>,
     effective_max_tokens: u32,
     totals: &TokenTotals,
-) -> Result<(RunStatus, Option<String>, Option<i32>), RoutineError> {
+) -> Result<RunOutcome, RoutineError> {
     let request = CompletionRequest::new(messages)
         .with_max_tokens(effective_max_tokens)
         .with_temperature(0.3);
@@ -113,7 +111,7 @@ async fn tool_iteration(
     messages: &mut Vec<ChatMessage>,
     effective_max_tokens: u32,
     totals: &mut TokenTotals,
-) -> Result<Option<(RunStatus, Option<String>, Option<i32>)>, RoutineError> {
+) -> Result<Option<RunOutcome>, RoutineError> {
     let tool_defs = ctx.tools.tool_definitions().await;
 
     let request = ToolCompletionRequest::new(messages.clone(), tool_defs)

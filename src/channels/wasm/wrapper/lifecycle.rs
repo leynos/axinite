@@ -8,13 +8,30 @@
 use std::collections::HashMap;
 use std::sync::Arc;
 
+use crate::channels::wasm::capabilities::ChannelCapabilities;
 use crate::channels::wasm::error::WasmChannelError;
+use crate::channels::wasm::host::{ChannelHostState, ChannelWorkspaceStore};
+use crate::channels::wasm::runtime::{PreparedChannelModule, WasmChannelRuntime};
 use crate::channels::wasm::schema::ChannelConfig;
+use crate::pairing::PairingStore;
 
+use super::types::SecretValue;
 use super::{
-    HttpResponse, WasmChannel, convert_channel_config, convert_http_response,
-    resolve_channel_host_credentials, wit_channel,
+    HttpResponse, ResolvedHostCredential, WasmChannel, convert_channel_config,
+    convert_http_response, resolve_channel_host_credentials, wit_channel,
 };
+
+/// Snapshot of the collaborators the on_start guest call moves into its
+/// blocking task.
+struct OnStartEnv {
+    runtime: Arc<WasmChannelRuntime>,
+    prepared: Arc<PreparedChannelModule>,
+    capabilities: ChannelCapabilities,
+    credentials: HashMap<String, SecretValue>,
+    host_credentials: Vec<ResolvedHostCredential>,
+    pairing_store: Arc<PairingStore>,
+    workspace_store: Arc<ChannelWorkspaceStore>,
+}
 
 impl WasmChannel {
     /// Default configuration returned when no WASM module is present
@@ -45,6 +62,68 @@ impl WasmChannel {
         }
     }
 
+    /// Capture the shared collaborators the on_start callback moves into its
+    /// blocking task.
+    async fn on_start_env(&self) -> OnStartEnv {
+        OnStartEnv {
+            runtime: Arc::clone(&self.runtime),
+            prepared: Arc::clone(&self.prepared),
+            capabilities: Self::inject_workspace_reader(&self.capabilities, &self.workspace_store),
+            credentials: self.credentials.read().await.clone(),
+            host_credentials: resolve_channel_host_credentials(
+                &self.capabilities,
+                self.secrets_store.as_deref(),
+            )
+            .await,
+            pairing_store: self.pairing_store.clone(),
+            workspace_store: self.workspace_store.clone(),
+        }
+    }
+
+    /// Blocking body of the on_start guest call: create a fresh instance,
+    /// invoke the guest export, convert the returned configuration, and commit
+    /// pending workspace writes.
+    fn run_on_start_guest(
+        env: OnStartEnv,
+        config_json: String,
+    ) -> Result<(ChannelConfig, ChannelHostState), WasmChannelError> {
+        let mut store = Self::create_store(
+            &env.runtime,
+            &env.prepared,
+            &env.capabilities,
+            env.credentials,
+            env.host_credentials,
+            env.pairing_store,
+        )?;
+        let instance = Self::instantiate_component(&env.runtime, &env.prepared, &mut store)?;
+
+        // Call on_start using the generated typed interface
+        let channel_iface = instance.near_agent_channel();
+        let wasm_result = channel_iface
+            .call_on_start(&mut store, &config_json)
+            .map_err(|e| Self::map_wasm_error(e, &env.prepared.name, env.prepared.limits.fuel))?;
+
+        // Convert the result
+        let config = match wasm_result {
+            Ok(wit_config) => convert_channel_config(wit_config),
+            Err(err_msg) => {
+                return Err(WasmChannelError::CallbackFailed {
+                    name: env.prepared.name.clone(),
+                    reason: err_msg,
+                });
+            }
+        };
+
+        let mut host_state =
+            Self::extract_host_state(&mut store, &env.prepared.name, &env.capabilities);
+
+        // Commit pending workspace writes to the persistent store
+        let pending_writes = host_state.take_pending_writes();
+        env.workspace_store.commit_writes(&pending_writes);
+
+        Ok((config, host_state))
+    }
+
     /// Execute the on_start callback.
     ///
     /// Returns the channel configuration for HTTP endpoint registration.
@@ -63,63 +142,19 @@ impl WasmChannel {
             return Ok(self.default_start_config());
         }
 
-        let runtime = Arc::clone(&self.runtime);
-        let prepared = Arc::clone(&self.prepared);
-        let capabilities = Self::inject_workspace_reader(&self.capabilities, &self.workspace_store);
+        let env = self.on_start_env().await;
         let config_json = self.config_json.read().await.clone();
         let timeout = self.runtime.config().callback_timeout;
         let channel_name = self.name.clone();
-        let credentials = self.credentials.read().await.clone();
-        let host_credentials =
-            resolve_channel_host_credentials(&self.capabilities, self.secrets_store.as_deref())
-                .await;
-        let pairing_store = self.pairing_store.clone();
-        let workspace_store = self.workspace_store.clone();
 
         // Execute in blocking task with timeout
         let result = tokio::time::timeout(timeout, async move {
-            tokio::task::spawn_blocking(move || {
-                let mut store = Self::create_store(
-                    &runtime,
-                    &prepared,
-                    &capabilities,
-                    credentials,
-                    host_credentials,
-                    pairing_store,
-                )?;
-                let instance = Self::instantiate_component(&runtime, &prepared, &mut store)?;
-
-                // Call on_start using the generated typed interface
-                let channel_iface = instance.near_agent_channel();
-                let wasm_result = channel_iface
-                    .call_on_start(&mut store, &config_json)
-                    .map_err(|e| Self::map_wasm_error(e, &prepared.name, prepared.limits.fuel))?;
-
-                // Convert the result
-                let config = match wasm_result {
-                    Ok(wit_config) => convert_channel_config(wit_config),
-                    Err(err_msg) => {
-                        return Err(WasmChannelError::CallbackFailed {
-                            name: prepared.name.clone(),
-                            reason: err_msg,
-                        });
-                    }
-                };
-
-                let mut host_state =
-                    Self::extract_host_state(&mut store, &prepared.name, &capabilities);
-
-                // Commit pending workspace writes to the persistent store
-                let pending_writes = host_state.take_pending_writes();
-                workspace_store.commit_writes(&pending_writes);
-
-                Ok((config, host_state))
-            })
-            .await
-            .map_err(|e| WasmChannelError::ExecutionPanicked {
-                name: channel_name.clone(),
-                reason: e.to_string(),
-            })?
+            tokio::task::spawn_blocking(move || Self::run_on_start_guest(env, config_json))
+                .await
+                .map_err(|e| WasmChannelError::ExecutionPanicked {
+                    name: channel_name.clone(),
+                    reason: e.to_string(),
+                })?
         })
         .await;
 

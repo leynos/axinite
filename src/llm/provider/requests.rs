@@ -8,6 +8,42 @@ use serde::{Deserialize, Serialize};
 
 use super::ChatMessage;
 
+/// Generate the sampling-parameter builder setters and the [`TunableParams`]
+/// impl shared by [`CompletionRequest`] and [`ToolCompletionRequest`], which
+/// hold the same `model`, `max_tokens`, and `temperature` fields.
+macro_rules! impl_sampling_params {
+    ($t:ty) => {
+        impl $t {
+            /// Set model override.
+            pub fn with_model(mut self, model: impl Into<String>) -> Self {
+                self.model = Some(model.into());
+                self
+            }
+
+            /// Set max tokens.
+            pub fn with_max_tokens(mut self, max_tokens: u32) -> Self {
+                self.max_tokens = Some(max_tokens);
+                self
+            }
+
+            /// Set temperature.
+            pub fn with_temperature(mut self, temperature: f32) -> Self {
+                self.temperature = Some(temperature);
+                self
+            }
+        }
+
+        impl TunableParams for $t {
+            fn clear_temperature(&mut self) {
+                self.temperature = None;
+            }
+            fn clear_max_tokens(&mut self) {
+                self.max_tokens = None;
+            }
+        }
+    };
+}
+
 /// Request for a chat completion.
 #[derive(Debug, Clone)]
 pub struct CompletionRequest {
@@ -33,25 +69,9 @@ impl CompletionRequest {
             metadata: std::collections::HashMap::new(),
         }
     }
-
-    /// Set model override.
-    pub fn with_model(mut self, model: impl Into<String>) -> Self {
-        self.model = Some(model.into());
-        self
-    }
-
-    /// Set max tokens.
-    pub fn with_max_tokens(mut self, max_tokens: u32) -> Self {
-        self.max_tokens = Some(max_tokens);
-        self
-    }
-
-    /// Set temperature.
-    pub fn with_temperature(mut self, temperature: f32) -> Self {
-        self.temperature = Some(temperature);
-        self
-    }
 }
+
+impl_sampling_params!(CompletionRequest);
 
 /// Response from a chat completion.
 #[derive(Debug, Clone, Default)]
@@ -133,30 +153,14 @@ impl ToolCompletionRequest {
         }
     }
 
-    /// Set model override.
-    pub fn with_model(mut self, model: impl Into<String>) -> Self {
-        self.model = Some(model.into());
-        self
-    }
-
-    /// Set max tokens.
-    pub fn with_max_tokens(mut self, max_tokens: u32) -> Self {
-        self.max_tokens = Some(max_tokens);
-        self
-    }
-
-    /// Set temperature.
-    pub fn with_temperature(mut self, temperature: f32) -> Self {
-        self.temperature = Some(temperature);
-        self
-    }
-
     /// Set tool choice mode.
     pub fn with_tool_choice(mut self, choice: impl Into<String>) -> Self {
         self.tool_choice = Some(choice.into());
         self
     }
 }
+
+impl_sampling_params!(ToolCompletionRequest);
 
 /// Response from a completion with potential tool calls.
 #[derive(Debug, Clone, Default)]
@@ -205,27 +209,11 @@ impl UnsupportedParam {
 }
 
 /// Mutable access to the sampling parameters shared by both request types.
+///
+/// Implemented for each request type by [`impl_sampling_params`].
 trait TunableParams {
     fn clear_temperature(&mut self);
     fn clear_max_tokens(&mut self);
-}
-
-impl TunableParams for CompletionRequest {
-    fn clear_temperature(&mut self) {
-        self.temperature = None;
-    }
-    fn clear_max_tokens(&mut self) {
-        self.max_tokens = None;
-    }
-}
-
-impl TunableParams for ToolCompletionRequest {
-    fn clear_temperature(&mut self) {
-        self.temperature = None;
-    }
-    fn clear_max_tokens(&mut self) {
-        self.max_tokens = None;
-    }
 }
 
 /// Strip the sampling parameters common to both request types.

@@ -19,20 +19,27 @@ use super::url_safety::{build_well_known_uri, validate_url_safe};
 // ---------------------------------------------------------------------------
 
 /// Parse the resource_metadata URL from a WWW-Authenticate header value.
+///
+/// Tries comma-separated parameters first, then whitespace-separated tokens
+/// (e.g. `Bearer resource_metadata="url"`). A malformed match in the comma
+/// pass stops the search without falling through to the whitespace pass,
+/// matching the original behaviour.
 pub(super) fn parse_resource_metadata_url(www_authenticate: &str) -> Option<String> {
-    // Try comma-separated parameters first
-    for part in www_authenticate.split(',') {
-        if let Some(value) = metadata_param_value(part.trim(), false) {
-            return value;
-        }
+    if let Some(value) = find_metadata_param(www_authenticate.split(','), false) {
+        return value;
     }
-    // Also try whitespace-separated tokens (e.g. Bearer resource_metadata="url")
-    for part in www_authenticate.split_whitespace() {
-        if let Some(value) = metadata_param_value(part, true) {
-            return value;
-        }
-    }
-    None
+    find_metadata_param(www_authenticate.split_whitespace(), true).flatten()
+}
+
+/// Scan header tokens for the first `resource_metadata=` parameter.
+///
+/// Returns `None` when no token matches, and the (possibly malformed, hence
+/// inner `None`) parsed value of the first matching token otherwise.
+fn find_metadata_param<'a>(
+    mut parts: impl Iterator<Item = &'a str>,
+    from_whitespace_split: bool,
+) -> Option<Option<String>> {
+    parts.find_map(|part| metadata_param_value(part.trim(), from_whitespace_split))
 }
 
 /// Extract the value from a single `resource_metadata=` header token.

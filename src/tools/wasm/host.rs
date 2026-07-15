@@ -114,13 +114,8 @@ impl HostState {
     /// Create a new host state with user context.
     pub fn new_with_user(capabilities: Capabilities, user_id: impl Into<String>) -> Self {
         Self {
-            logs: Vec::new(),
-            logging_enabled: true,
-            capabilities,
-            logs_dropped: 0,
             user_id: Some(user_id.into()),
-            http_request_count: 0,
-            tool_invoke_count: 0,
+            ..Self::new(capabilities)
         }
     }
 
@@ -167,10 +162,7 @@ impl HostState {
             message
         };
 
-        let timestamp_millis = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .map(|d| d.as_millis() as u64)
-            .unwrap_or(0);
+        let timestamp_millis = self.now_millis();
 
         self.logs.push(LogEntry {
             level,
@@ -299,36 +291,28 @@ impl HostState {
             .as_ref()
             .ok_or_else(|| "HTTP capability not granted".to_string())?;
 
-        self.http_request_count += 1;
-
         // Simple per-execution rate limit (additional to global rate limiter)
         // This prevents a single execution from making too many requests
         const MAX_REQUESTS_PER_EXECUTION: u32 = 50;
-        if self.http_request_count > MAX_REQUESTS_PER_EXECUTION {
-            return Err(format!(
-                "Too many HTTP requests in single execution (max {})",
-                MAX_REQUESTS_PER_EXECUTION
-            ));
-        }
-
-        Ok(())
+        self.http_request_count += 1;
+        check_execution_budget(
+            self.http_request_count,
+            MAX_REQUESTS_PER_EXECUTION,
+            "HTTP requests",
+        )
     }
 
     /// Increment tool invoke counter and check rate limit.
     ///
     /// Returns error if rate limit exceeded.
     pub fn record_tool_invoke(&mut self) -> Result<(), String> {
-        self.tool_invoke_count += 1;
-
         const MAX_INVOKES_PER_EXECUTION: u32 = 20;
-        if self.tool_invoke_count > MAX_INVOKES_PER_EXECUTION {
-            return Err(format!(
-                "Too many tool invocations in single execution (max {})",
-                MAX_INVOKES_PER_EXECUTION
-            ));
-        }
-
-        Ok(())
+        self.tool_invoke_count += 1;
+        check_execution_budget(
+            self.tool_invoke_count,
+            MAX_INVOKES_PER_EXECUTION,
+            "tool invocations",
+        )
     }
 
     /// Get HTTP request count for this execution.
@@ -340,6 +324,20 @@ impl HostState {
     pub fn tool_invoke_count(&self) -> u32 {
         self.tool_invoke_count
     }
+}
+
+/// Enforce a per-execution budget on a side-effect counter.
+///
+/// Returns an error naming the exceeded budget (`what` is the plural noun,
+/// e.g. "HTTP requests") once `count` passes `max`.
+fn check_execution_budget(count: u32, max: u32, what: &str) -> Result<(), String> {
+    if count > max {
+        return Err(format!(
+            "Too many {} in single execution (max {})",
+            what, max
+        ));
+    }
+    Ok(())
 }
 
 mod paths;

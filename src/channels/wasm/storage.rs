@@ -59,6 +59,16 @@ pub struct StoredWasmChannelWithBinary {
     pub binary_hash: Vec<u8>,
 }
 
+/// Identifies a stored channel by owner and name.
+///
+/// Mirrors `crate::tools::wasm::storage::ToolKey` so both WASM stores share
+/// the same lookup-key shape.
+#[derive(Clone, Copy)]
+pub struct ChannelKey<'a> {
+    pub user_id: &'a str,
+    pub name: &'a str,
+}
+
 /// Parameters for storing a new WASM channel.
 pub struct StoreChannelParams {
     pub user_id: String,
@@ -106,8 +116,7 @@ const CHANNEL_COLUMNS_WITH_BINARY: &str = concat!(
 /// `IntegrityCheckFailed` on mismatch.
 #[cfg(any(feature = "libsql", feature = "postgres"))]
 fn check_binary_integrity(
-    user_id: &str,
-    name: &str,
+    key: ChannelKey<'_>,
     wasm_binary: &[u8],
     binary_hash: &[u8],
 ) -> Result<(), WasmChannelStoreError> {
@@ -115,8 +124,8 @@ fn check_binary_integrity(
         return Ok(());
     }
     tracing::error!(
-        user_id = user_id,
-        name = name,
+        user_id = key.user_id,
+        name = key.name,
         "WASM channel binary integrity check failed"
     );
     Err(WasmChannelStoreError::IntegrityCheckFailed)
@@ -135,15 +144,13 @@ pub trait WasmChannelStore: Send + Sync {
     /// Get channel metadata (without binary).
     fn get(
         &self,
-        user_id: &str,
-        name: &str,
+        key: ChannelKey<'_>,
     ) -> impl Future<Output = Result<StoredWasmChannel, WasmChannelStoreError>> + Send;
 
     /// Get channel with binary (verifies integrity).
     fn get_with_binary(
         &self,
-        user_id: &str,
-        name: &str,
+        key: ChannelKey<'_>,
     ) -> impl Future<Output = Result<StoredWasmChannelWithBinary, WasmChannelStoreError>> + Send;
 
     /// List all channels for a user.
@@ -155,7 +162,6 @@ pub trait WasmChannelStore: Send + Sync {
     /// Delete a channel.
     fn delete(
         &self,
-        user_id: &str,
-        name: &str,
+        key: ChannelKey<'_>,
     ) -> impl Future<Output = Result<bool, WasmChannelStoreError>> + Send;
 }

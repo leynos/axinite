@@ -19,6 +19,35 @@ fn print_docker_unavailable_hints(
     println!();
 }
 
+/// Report whether an Anthropic API key is available.
+///
+/// Uses `optional_env()`, which reads both real environment variables and
+/// the injected overlay (secrets DB, wizard-set values).
+fn has_anthropic_api_key() -> bool {
+    crate::config::helpers::optional_env(crate::config::helpers::EnvKey("ANTHROPIC_API_KEY"))
+        .ok()
+        .flatten()
+        .is_some_and(|v| !v.is_empty() && v != OAUTH_PLACEHOLDER)
+}
+
+/// Report whether an Anthropic OAuth token is available from `claude login`
+/// credentials or the environment overlay.
+fn has_anthropic_oauth_token() -> bool {
+    if crate::config::ClaudeCodeConfig::extract_oauth_token().is_some() {
+        return true;
+    }
+    crate::config::helpers::optional_env(crate::config::helpers::EnvKey("ANTHROPIC_OAUTH_TOKEN"))
+        .ok()
+        .flatten()
+        .is_some_and(|v| !v.is_empty())
+}
+
+/// Report whether any Anthropic credential (API key or OAuth token) is
+/// present.
+fn anthropic_credentials_present() -> bool {
+    has_anthropic_api_key() || has_anthropic_oauth_token()
+}
+
 impl SetupWizard {
     /// Step 8: Docker Sandbox -- check Docker installation and availability.
     pub(super) async fn step_docker_sandbox(&mut self) -> Result<(), SetupError> {
@@ -74,32 +103,42 @@ impl SetupWizard {
             "Retry after starting Docker?"
         };
         if !confirm(retry_prompt, false).map_err(SetupError::Io)? {
-            self.settings.sandbox.enabled = false;
-            print_info(if not_installed {
-                "Sandbox disabled. Install Docker and set SANDBOX_ENABLED=true later."
-            } else {
-                "Sandbox disabled. Start Docker and set SANDBOX_ENABLED=true later."
-            });
+            self.decline_docker_retry(not_installed);
             return Ok(());
         }
 
         let retry = crate::sandbox::detect::check_docker().await;
-        if retry.status.is_ok() {
-            self.settings.sandbox.enabled = true;
+        self.apply_docker_retry_outcome(retry.status.is_ok(), not_installed);
+        Ok(())
+    }
+
+    /// Disable the sandbox after the user declines the Docker retry.
+    fn decline_docker_retry(&mut self, not_installed: bool) {
+        self.settings.sandbox.enabled = false;
+        print_info(if not_installed {
+            "Sandbox disabled. Install Docker and set SANDBOX_ENABLED=true later."
+        } else {
+            "Sandbox disabled. Start Docker and set SANDBOX_ENABLED=true later."
+        });
+    }
+
+    /// Record the Docker retry result, enabling the sandbox when Docker is
+    /// now available.
+    fn apply_docker_retry_outcome(&mut self, available: bool, not_installed: bool) {
+        self.settings.sandbox.enabled = available;
+        if available {
             print_success(if not_installed {
                 "Docker is now available. Sandbox enabled."
             } else {
                 "Docker is now running. Sandbox enabled."
             });
         } else {
-            self.settings.sandbox.enabled = false;
             print_info(if not_installed {
                 "Docker still not available. Sandbox disabled for now."
             } else {
                 "Docker still not responding. Sandbox disabled for now."
             });
         }
-        Ok(())
     }
 
     /// Claude Code sandbox sub-step: enable Claude CLI inside Docker containers.
@@ -114,52 +153,41 @@ impl SetupWizard {
             return Ok(());
         }
 
-        // Check for Anthropic credentials (API key or OAuth token).
-        // Uses `optional_env()` which reads both real env vars and the
-        // injected overlay (secrets DB, wizard-set values).
-        let has_credentials = || {
-            let has_api_key = crate::config::helpers::optional_env(crate::config::helpers::EnvKey(
-                "ANTHROPIC_API_KEY",
-            ))
-            .ok()
-            .flatten()
-            .is_some_and(|v| !v.is_empty() && v != OAUTH_PLACEHOLDER);
-            let has_oauth = crate::config::ClaudeCodeConfig::extract_oauth_token().is_some()
-                || crate::config::helpers::optional_env(crate::config::helpers::EnvKey(
-                    "ANTHROPIC_OAUTH_TOKEN",
-                ))
-                .ok()
-                .flatten()
-                .is_some_and(|v| !v.is_empty());
-            has_api_key || has_oauth
-        };
-
-        if has_credentials() {
-            self.settings.sandbox.claude_code_enabled = true;
-            print_success("Claude Code sandbox enabled");
-        } else {
-            print_error("No Anthropic credentials found.");
-            print_info(
-                "Claude Code needs ANTHROPIC_API_KEY or an OAuth token from `claude login`.",
-            );
-            println!();
-
-            if confirm("Retry after setting up credentials?", false).map_err(SetupError::Io)? {
-                if has_credentials() {
-                    self.settings.sandbox.claude_code_enabled = true;
-                    print_success("Claude Code sandbox enabled");
-                } else {
-                    self.settings.sandbox.claude_code_enabled = false;
-                    print_info("No credentials found. Claude Code disabled for now.");
-                    print_info("Set ANTHROPIC_API_KEY or run `claude login` and enable later.");
-                }
-            } else {
-                self.settings.sandbox.claude_code_enabled = false;
-                print_info("Claude Code disabled. Enable with CLAUDE_CODE_ENABLED=true later.");
-            }
+        if anthropic_credentials_present() {
+            self.enable_claude_code();
+            return Ok(());
         }
 
+        print_error("No Anthropic credentials found.");
+        print_info("Claude Code needs ANTHROPIC_API_KEY or an OAuth token from `claude login`.");
+        println!();
+
+        if !confirm("Retry after setting up credentials?", false).map_err(SetupError::Io)? {
+            self.settings.sandbox.claude_code_enabled = false;
+            print_info("Claude Code disabled. Enable with CLAUDE_CODE_ENABLED=true later.");
+            return Ok(());
+        }
+
+        self.retry_claude_code_credentials();
         Ok(())
+    }
+
+    /// Enable Claude Code sandbox mode and report success.
+    fn enable_claude_code(&mut self) {
+        self.settings.sandbox.claude_code_enabled = true;
+        print_success("Claude Code sandbox enabled");
+    }
+
+    /// Re-check credentials after the user set them up, enabling Claude Code
+    /// only when they are now present.
+    fn retry_claude_code_credentials(&mut self) {
+        if anthropic_credentials_present() {
+            self.enable_claude_code();
+            return;
+        }
+        self.settings.sandbox.claude_code_enabled = false;
+        print_info("No credentials found. Claude Code disabled for now.");
+        print_info("Set ANTHROPIC_API_KEY or run `claude login` and enable later.");
     }
 
     /// Step 9: Heartbeat configuration.

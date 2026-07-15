@@ -210,6 +210,9 @@ where
 #[cfg(any(feature = "postgres", feature = "libsql"))]
 mod access;
 
+#[cfg(any(feature = "postgres", feature = "libsql"))]
+mod common;
+
 #[cfg(feature = "postgres")]
 mod postgres;
 

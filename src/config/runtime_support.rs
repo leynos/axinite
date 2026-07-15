@@ -228,27 +228,24 @@ pub fn inject_os_credentials_into_context(ctx: &mut EnvContext) {
 /// Used by the setup wizard to make credentials available to `optional_env()`
 /// without calling `unsafe { std::env::set_var }`.
 pub fn inject_single_var(key: &str, value: &str) {
-    match INJECTED_VARS.lock() {
-        Ok(mut map) => {
-            map.insert(key.to_string(), value.to_string());
-        }
-        Err(poisoned) => {
-            poisoned
-                .into_inner()
-                .insert(key.to_string(), value.to_string());
-        }
-    }
+    with_injected_vars(|map| {
+        map.insert(key.to_string(), value.to_string());
+    });
 }
 
 /// Remove a single key from the overlay.
 pub fn remove_single_var(key: &str) {
+    with_injected_vars(|map| {
+        map.remove(key);
+    });
+}
+
+/// Run `f` against the global injected-vars overlay, recovering the map even
+/// when the lock has been poisoned by a panicking holder.
+fn with_injected_vars<R>(f: impl FnOnce(&mut HashMap<String, String>) -> R) -> R {
     match INJECTED_VARS.lock() {
-        Ok(mut map) => {
-            map.remove(key);
-        }
-        Err(poisoned) => {
-            poisoned.into_inner().remove(key);
-        }
+        Ok(mut map) => f(&mut map),
+        Err(poisoned) => f(&mut poisoned.into_inner()),
     }
 }
 
@@ -284,10 +281,7 @@ fn merge_injected_vars(new_entries: HashMap<String, String>) {
     if new_entries.is_empty() {
         return;
     }
-    match INJECTED_VARS.lock() {
-        Ok(mut map) => map.extend(new_entries),
-        Err(poisoned) => poisoned.into_inner().extend(new_entries),
-    }
+    with_injected_vars(|map| map.extend(new_entries));
 }
 
 /// Shared helper: extract tokens from OS credential stores into the overlay map.

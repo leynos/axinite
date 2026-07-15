@@ -124,14 +124,14 @@ impl Worker {
 
         tool_pipeline::check_tool_rate_limit(deps, tool.as_ref(), &job_ctx, tool_name).await?;
 
-        let params = tool_pipeline::apply_tool_call_hook(
+        let params = tool_pipeline::apply_tool_call_hook(tool_pipeline::ToolCallHookArgs {
             deps,
-            tool.as_ref(),
+            tool: tool.as_ref(),
             tool_name,
             params,
-            &job_ctx,
+            job_ctx: &job_ctx,
             job_id,
-        )
+        })
         .await?;
 
         if job_ctx.state == JobState::Cancelled {

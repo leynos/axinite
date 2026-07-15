@@ -15,6 +15,31 @@ struct TagScan {
     in_tag: bool,
 }
 
+impl TagScan {
+    /// Start a scan over `text` with capacity reserved for the survivors.
+    fn new(text: &str) -> Self {
+        Self {
+            result: String::with_capacity(text.len()),
+            tail_start: 0,
+            in_tag: false,
+        }
+    }
+
+    /// Advance the scan over one non-code tag match: outside a tag pair,
+    /// keep the preceding text and enter on an opening tag; inside, leave
+    /// on a closing tag. Text between the pair is dropped.
+    fn step(&mut self, text: &str, re: &regex::Regex, m: &regex::Match<'_>) {
+        let is_close = tag_is_close(re, &text[m.start()..]);
+        if !self.in_tag {
+            self.result.push_str(&text[self.tail_start..m.start()]);
+            self.in_tag = !is_close;
+        } else if is_close {
+            self.in_tag = false;
+        }
+        self.tail_start = m.end();
+    }
+}
+
 /// Whether the regex match at the start of `at` is a closing tag (its first
 /// capture group is "/").
 fn tag_is_close(re: &regex::Regex, at: &str) -> bool {
@@ -26,38 +51,14 @@ fn tag_is_close(re: &regex::Regex, at: &str) -> bool {
 /// Drop the regions between open/close tag pairs (outside code regions),
 /// returning the surviving text and the state at end of scan.
 fn strip_tag_pairs(text: &str, re: &regex::Regex, code_regions: &[CodeRegion]) -> TagScan {
-    let mut result = String::with_capacity(text.len());
-    let mut last_index = 0;
-    let mut in_tag = false;
-
+    let mut scan = TagScan::new(text);
     for m in re.find_iter(text) {
-        let idx = m.start();
-
-        if is_inside_code(idx, code_regions) {
+        if is_inside_code(m.start(), code_regions) {
             continue;
         }
-
-        // Check if this is a close tag by looking at the capture group
-        let is_close = tag_is_close(re, &text[idx..]);
-
-        if !in_tag {
-            // Append text before this tag
-            result.push_str(&text[last_index..idx]);
-            if !is_close {
-                in_tag = true;
-            }
-        } else if is_close {
-            in_tag = false;
-        }
-
-        last_index = m.end();
+        scan.step(text, re, &m);
     }
-
-    TagScan {
-        result,
-        tail_start: last_index,
-        in_tag,
-    }
+    scan
 }
 
 /// Strip thinking/reasoning tags using regex, respecting code regions.
@@ -92,46 +93,57 @@ pub(super) fn strip_thinking_tags_regex(text: &str, code_regions: &[CodeRegion])
 pub(super) fn extract_final_content(text: &str, code_regions: &[CodeRegion]) -> Option<String> {
     // Fallback: with no usable regex, report no <final> tags.
     let final_tag_re = FINAL_TAG_RE.as_ref()?;
-    let mut parts: Vec<&str> = Vec::new();
-    let mut in_final = false;
-    let mut last_index = 0;
-    let mut found_any = false;
+    let mut scan = FinalScan::default();
 
     for m in final_tag_re.find_iter(text) {
-        let idx = m.start();
-
-        if is_inside_code(idx, code_regions) {
+        if is_inside_code(m.start(), code_regions) {
             continue;
         }
+        scan.step(text, final_tag_re, &m);
+    }
 
-        let caps = final_tag_re.captures(&text[idx..]);
-        let is_close = caps
-            .and_then(|c| c.get(1))
-            .is_some_and(|g| g.as_str() == "/");
+    scan.finish(text)
+}
 
-        if !in_final && !is_close {
+/// Scanner state while collecting the content of `<final>...</final>` pairs.
+#[derive(Default)]
+struct FinalScan<'a> {
+    parts: Vec<&'a str>,
+    in_final: bool,
+    last_index: usize,
+    found_any: bool,
+}
+
+impl<'a> FinalScan<'a> {
+    /// Advance the scan over one non-code tag match: an opening `<final>`
+    /// starts collecting; a matching `</final>` captures the enclosed text.
+    /// Mismatched tags (a close with no open, or a nested open) are ignored.
+    fn step(&mut self, text: &'a str, re: &regex::Regex, m: &regex::Match<'_>) {
+        let is_close = tag_is_close(re, &text[m.start()..]);
+        if !self.in_final && !is_close {
             // Opening <final>
-            in_final = true;
-            found_any = true;
-            last_index = m.end();
-        } else if in_final && is_close {
+            self.in_final = true;
+            self.found_any = true;
+            self.last_index = m.end();
+        } else if self.in_final && is_close {
             // Closing </final>
-            parts.push(&text[last_index..idx]);
-            in_final = false;
-            last_index = m.end();
+            self.parts.push(&text[self.last_index..m.start()]);
+            self.in_final = false;
+            self.last_index = m.end();
         }
     }
 
-    if !found_any {
-        return None;
+    /// Join the collected parts, treating an unclosed `<final>` as running
+    /// to the end of `text`. Returns `None` if no `<final>` tag was seen.
+    fn finish(mut self, text: &'a str) -> Option<String> {
+        if !self.found_any {
+            return None;
+        }
+        if self.in_final {
+            self.parts.push(&text[self.last_index..]);
+        }
+        Some(self.parts.join(""))
     }
-
-    // Unclosed <final> — include trailing content
-    if in_final {
-        parts.push(&text[last_index..]);
-    }
-
-    Some(parts.join(""))
 }
 
 /// Strip pipe-delimited reasoning tags, respecting code regions.

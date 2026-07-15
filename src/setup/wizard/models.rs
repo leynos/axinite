@@ -254,16 +254,18 @@ impl SetupWizard {
             return Ok(());
         }
 
-        let backend = self.settings.llm_backend.as_deref().unwrap_or("nearai");
-        let has_openai_key = std::env::var("OPENAI_API_KEY").is_ok()
-            || (backend == "openai" && self.llm_api_key.is_some());
+        let backend = self
+            .settings
+            .llm_backend
+            .as_deref()
+            .unwrap_or("nearai")
+            .to_string();
+        let has_openai_key = self.has_openai_embeddings_key(&backend);
         let has_nearai = backend == "nearai" || self.session_manager.is_some();
 
         // If the LLM backend is OpenAI and we already have a key, default to OpenAI embeddings
         if backend == "openai" && has_openai_key {
-            self.settings.embeddings.enabled = true;
-            self.settings.embeddings.provider = "openai".to_string();
-            self.settings.embeddings.model = "text-embedding-3-small".to_string();
+            self.enable_embeddings("openai");
             print_success("Embeddings enabled via OpenAI (using existing API key)");
             return Ok(());
         }
@@ -276,6 +278,24 @@ impl SetupWizard {
             return Ok(());
         }
 
+        self.choose_embeddings_provider(has_nearai, has_openai_key)
+    }
+
+    /// Report whether an OpenAI API key is available for embeddings, either
+    /// from the environment or cached from the OpenAI provider setup.
+    fn has_openai_embeddings_key(&self, backend: &str) -> bool {
+        if std::env::var("OPENAI_API_KEY").is_ok() {
+            return true;
+        }
+        backend == "openai" && self.llm_api_key.is_some()
+    }
+
+    /// Ask which embeddings provider to use and record the choice.
+    fn choose_embeddings_provider(
+        &mut self,
+        has_nearai: bool,
+        has_openai_key: bool,
+    ) -> Result<(), SetupError> {
         let mut options = Vec::new();
         if has_nearai {
             options.push("NEAR AI (uses same auth, no extra cost)");
@@ -284,32 +304,25 @@ impl SetupWizard {
 
         let choice = select_one("Select embeddings provider:", &options).map_err(SetupError::Io)?;
 
-        // Map choice back to provider name
-        let provider = if has_nearai && choice == 0 {
-            "nearai"
-        } else {
-            "openai"
-        };
-
-        match provider {
-            "nearai" => {
-                self.settings.embeddings.enabled = true;
-                self.settings.embeddings.provider = "nearai".to_string();
-                self.settings.embeddings.model = "text-embedding-3-small".to_string();
-                print_success("Embeddings enabled via NEAR AI");
-            }
-            _ => {
-                if !has_openai_key {
-                    print_info("OPENAI_API_KEY not set in environment.");
-                    print_info("Add it to your .env file or environment to enable embeddings.");
-                }
-                self.settings.embeddings.enabled = true;
-                self.settings.embeddings.provider = "openai".to_string();
-                self.settings.embeddings.model = "text-embedding-3-small".to_string();
-                print_success("Embeddings configured for OpenAI");
-            }
+        if has_nearai && choice == 0 {
+            self.enable_embeddings("nearai");
+            print_success("Embeddings enabled via NEAR AI");
+            return Ok(());
         }
 
+        if !has_openai_key {
+            print_info("OPENAI_API_KEY not set in environment.");
+            print_info("Add it to your .env file or environment to enable embeddings.");
+        }
+        self.enable_embeddings("openai");
+        print_success("Embeddings configured for OpenAI");
         Ok(())
+    }
+
+    /// Enable embeddings for `provider` with the default embedding model.
+    fn enable_embeddings(&mut self, provider: &str) {
+        self.settings.embeddings.enabled = true;
+        self.settings.embeddings.provider = provider.to_string();
+        self.settings.embeddings.model = "text-embedding-3-small".to_string();
     }
 }

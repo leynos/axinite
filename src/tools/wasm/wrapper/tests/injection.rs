@@ -3,6 +3,7 @@
 
 use crate::testing::credentials::TEST_BEARER_TOKEN_123;
 use crate::tools::wasm::capabilities::Capabilities;
+use crate::tools::wasm::wrapper::store::HttpRequestInputs;
 
 #[test]
 fn test_inject_host_credentials_bearer() {
@@ -174,12 +175,12 @@ fn test_prepare_http_request_allows_host_injected_github_pat() {
     );
 
     let prepared = store_data
-        .prepare_http_request(
-            "GET",
-            &format!("https://{host}/repos/leynos/mxd"),
-            "{}",
-            None,
-        )
+        .prepare_http_request(&HttpRequestInputs {
+            method: "GET",
+            url: &format!("https://{host}/repos/leynos/mxd"),
+            headers_json: "{}",
+            body: None,
+        })
         .expect("host-injected PAT should not trip leak scanning");
 
     assert_eq!(
@@ -208,12 +209,12 @@ fn test_prepare_http_request_blocks_wasm_supplied_github_pat() {
     })
     .to_string();
 
-    let err = match store_data.prepare_http_request(
-        "GET",
-        &format!("https://{host}/repos/leynos/mxd"),
-        &headers_json,
-        None,
-    ) {
+    let err = match store_data.prepare_http_request(&HttpRequestInputs {
+        method: "GET",
+        url: &format!("https://{host}/repos/leynos/mxd"),
+        headers_json: &headers_json,
+        body: None,
+    }) {
         Ok(_) => panic!("WASM-supplied PAT must still be blocked"),
         Err(err) => err,
     };
@@ -247,12 +248,12 @@ fn test_prepare_http_request_allows_placeholder_header_injection() {
     .to_string();
 
     let prepared = store_data
-        .prepare_http_request(
-            "GET",
-            &format!("https://{host}/api/chat.postMessage"),
-            &headers_json,
-            None,
-        )
+        .prepare_http_request(&HttpRequestInputs {
+            method: "GET",
+            url: &format!("https://{host}/api/chat.postMessage"),
+            headers_json: &headers_json,
+            body: None,
+        })
         .expect("placeholder-based auth header should pass leak scanning");
 
     assert_eq!(

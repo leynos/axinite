@@ -1,7 +1,7 @@
 //! Tests for channel registration, path lookup, secret validation,
 //! unregistration, and secret header configuration.
 
-use crate::channels::wasm::router::{RegisteredEndpoint, WasmChannelRouter};
+use crate::channels::wasm::router::{RegisteredEndpoint, WasmChannelRouter, WebhookSecrets};
 
 use super::helpers::create_test_channel;
 
@@ -18,7 +18,14 @@ async fn test_router_register_and_lookup() {
     }];
 
     router
-        .register(channel, endpoints, Some("secret123".to_string()), None)
+        .register(
+            channel,
+            endpoints,
+            WebhookSecrets {
+                secret: Some("secret123".to_string()),
+                header: None,
+            },
+        )
         .await;
 
     // Should find channel by path
@@ -37,7 +44,14 @@ async fn test_router_secret_validation() {
     let channel = create_test_channel("slack");
 
     router
-        .register(channel, vec![], Some("secret123".to_string()), None)
+        .register(
+            channel,
+            vec![],
+            WebhookSecrets {
+                secret: Some("secret123".to_string()),
+                header: None,
+            },
+        )
         .await;
 
     // Correct secret
@@ -48,7 +62,9 @@ async fn test_router_secret_validation() {
 
     // Channel without secret always validates
     let channel2 = create_test_channel("telegram");
-    router.register(channel2, vec![], None, None).await;
+    router
+        .register(channel2, vec![], WebhookSecrets::default())
+        .await;
     assert!(router.validate_secret("telegram", "anything").await);
 }
 
@@ -64,7 +80,9 @@ async fn test_router_unregister() {
         require_secret: false,
     }];
 
-    router.register(channel, endpoints, None, None).await;
+    router
+        .register(channel, endpoints, WebhookSecrets::default())
+        .await;
 
     // Should exist
     assert!(
@@ -93,8 +111,12 @@ async fn test_router_list_channels() {
     let channel1 = create_test_channel("slack");
     let channel2 = create_test_channel("telegram");
 
-    router.register(channel1, vec![], None, None).await;
-    router.register(channel2, vec![], None, None).await;
+    router
+        .register(channel1, vec![], WebhookSecrets::default())
+        .await;
+    router
+        .register(channel2, vec![], WebhookSecrets::default())
+        .await;
 
     let channels = router.list_channels().await;
     assert_eq!(channels.len(), 2);
@@ -112,8 +134,10 @@ async fn test_router_secret_header() {
         .register(
             channel,
             vec![],
-            Some("secret123".to_string()),
-            Some("X-Telegram-Bot-Api-Secret-Token".to_string()),
+            WebhookSecrets {
+                secret: Some("secret123".to_string()),
+                header: Some("X-Telegram-Bot-Api-Secret-Token".to_string()),
+            },
         )
         .await;
 
@@ -126,7 +150,14 @@ async fn test_router_secret_header() {
     // Channel without custom header should use default
     let channel2 = create_test_channel("slack");
     router
-        .register(channel2, vec![], Some("secret456".to_string()), None)
+        .register(
+            channel2,
+            vec![],
+            WebhookSecrets {
+                secret: Some("secret456".to_string()),
+                header: None,
+            },
+        )
         .await;
     assert_eq!(router.get_secret_header("slack").await, "X-Webhook-Secret");
 }

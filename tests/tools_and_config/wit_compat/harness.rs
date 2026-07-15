@@ -62,37 +62,49 @@ pub(super) fn discover_extensions() -> Vec<DiscoveredExtension> {
                 continue;
             }
 
-            let content = std::fs::read_to_string(&path).expect("failed to read manifest");
-            let manifest: serde_json::Value =
-                serde_json::from_str(&content).expect("failed to parse manifest");
-
-            let name = manifest["name"].as_str().unwrap_or("unknown").to_string();
-            let kind = match manifest["kind"].as_str() {
-                Some("tool") => ExtensionKind::Tool,
-                Some("channel") => ExtensionKind::Channel,
-                _ => continue,
-            };
-            let source_dir = manifest["source"]["dir"]
-                .as_str()
-                .map(|d| repo_root.join(d));
-            let crate_name = manifest["source"]["crate_name"]
-                .as_str()
-                .map(|s| s.to_string());
-
-            if let (Some(source_dir), Some(crate_name)) = (source_dir, crate_name)
-                && source_dir.exists()
-            {
-                extensions.push(DiscoveredExtension {
-                    name,
-                    source_dir,
-                    crate_name,
-                    kind,
-                });
+            if let Some(extension) = parse_extension_manifest(&path, &repo_root) {
+                extensions.push(extension);
             }
         }
     }
 
     extensions
+}
+
+/// Parse one registry manifest into a discovered extension.
+///
+/// Returns `None` when the manifest's kind is not a recognised tool or
+/// channel, when the source directory or crate name is missing, or when
+/// the source directory does not exist on disk.
+fn parse_extension_manifest(
+    path: &std::path::Path,
+    repo_root: &std::path::Path,
+) -> Option<DiscoveredExtension> {
+    let content = std::fs::read_to_string(path).expect("failed to read manifest");
+    let manifest: serde_json::Value =
+        serde_json::from_str(&content).expect("failed to parse manifest");
+
+    let name = manifest["name"].as_str().unwrap_or("unknown").to_string();
+    let kind = match manifest["kind"].as_str() {
+        Some("tool") => ExtensionKind::Tool,
+        Some("channel") => ExtensionKind::Channel,
+        _ => return None,
+    };
+    let source_dir = manifest["source"]["dir"]
+        .as_str()
+        .map(|d| repo_root.join(d))?;
+    let crate_name = manifest["source"]["crate_name"].as_str()?.to_string();
+
+    if !source_dir.exists() {
+        return None;
+    }
+
+    Some(DiscoveredExtension {
+        name,
+        source_dir,
+        crate_name,
+        kind,
+    })
 }
 
 pub(super) fn compile_component(
