@@ -19,6 +19,8 @@ pub(super) struct MockProvider {
 }
 
 impl MockProvider {
+    // A mock provider name and its canned response body are free-form test fixtures with no invariant a newtype could enforce.
+    // @codescene(disable:"String Heavy Function Arguments")
     pub(super) fn succeeding(name: &str, content: &str) -> Self {
         Self {
             name: name.to_string(),

@@ -62,14 +62,7 @@ pub(super) async fn execute_routine(ctx: EngineContext, routine: Routine, run: R
 
     complete_run_record(&ctx, &routine, &run, &outcome).await;
     update_runtime_state(&ctx, &routine, outcome.status).await;
-    let thread_id = persist_run_message(
-        &ctx,
-        &routine,
-        &run,
-        outcome.status,
-        outcome.summary.as_deref(),
-    )
-    .await;
+    let thread_id = persist_run_message(&ctx, &routine, &run, &outcome).await;
 
     // Send notifications based on config
     send_notification(&ctx.notify_tx, &routine, &outcome, thread_id.as_deref()).await;
@@ -187,9 +180,10 @@ async fn persist_run_message(
     ctx: &EngineContext,
     routine: &Routine,
     run: &RoutineRun,
-    status: RunStatus,
-    summary: Option<&str>,
+    outcome: &RunOutcome,
 ) -> Option<String> {
+    let status = outcome.status;
+    let summary = outcome.summary.as_deref();
     let conv_id = match ctx
         .store
         .get_or_create_routine_conversation(routine.id, &routine.name, &routine.user_id)

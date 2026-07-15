@@ -25,6 +25,64 @@ fn extract_tar_entry<R: std::io::Read>(
     ambient_fs::write(dest, &data).map_err(|e| ExtensionError::InstallFailed(e.to_string()))
 }
 
+/// Enforce the per-entry size cap and resolve the entry's base filename.
+///
+/// Returns an empty string when the entry has no valid UTF-8 filename, which
+/// simply fails to match the bundle's expected names.
+fn tar_entry_filename<R: std::io::Read>(
+    entry: &mut tar::Entry<'_, R>,
+) -> Result<String, ExtensionError> {
+    if entry.size() > MAX_TAR_ENTRY_SIZE {
+        return Err(ExtensionError::InstallFailed(format!(
+            "Archive entry too large ({} bytes, max {} bytes)",
+            entry.size(),
+            MAX_TAR_ENTRY_SIZE
+        )));
+    }
+
+    let entry_path = entry
+        .path()
+        .map_err(|e| ExtensionError::InstallFailed(format!("Invalid path in tar.gz: {}", e)))?
+        .to_path_buf();
+
+    Ok(entry_path
+        .file_name()
+        .and_then(|n| n.to_str())
+        .unwrap_or("")
+        .to_string())
+}
+
+/// Resolve the source build directory: an absolute override is used as-is, a
+/// relative one is joined to the manifest directory, and `None` falls back to
+/// the manifest directory itself.
+fn resolve_build_dir(
+    build_dir: Option<&str>,
+    manifest_dir: &std::path::Path,
+) -> std::path::PathBuf {
+    match build_dir {
+        Some(dir) => {
+            let p = std::path::Path::new(dir);
+            if p.is_absolute() {
+                p.to_path_buf()
+            } else {
+                manifest_dir.join(dir)
+            }
+        }
+        None => manifest_dir.to_path_buf(),
+    }
+}
+
+/// Human-readable label for an extension kind, used in install log lines and
+/// result messages.
+fn extension_kind_label(kind: ExtensionKind) -> &'static str {
+    match kind {
+        ExtensionKind::WasmTool => "WASM tool",
+        ExtensionKind::WasmChannel => "WASM channel",
+        ExtensionKind::McpServer => "MCP server",
+        ExtensionKind::ChannelRelay => "channel relay",
+    }
+}
+
 impl ExtensionManager {
     /// Whether the payload begins with the gzip magic number (`0x1f 0x8b`).
     pub(super) fn is_gzip_payload(bytes: &[u8]) -> bool {
@@ -241,25 +299,7 @@ impl ExtensionManager {
             let mut entry = entry
                 .map_err(|e| ExtensionError::InstallFailed(format!("Bad tar.gz entry: {}", e)))?;
 
-            if entry.size() > MAX_TAR_ENTRY_SIZE {
-                return Err(ExtensionError::InstallFailed(format!(
-                    "Archive entry too large ({} bytes, max {} bytes)",
-                    entry.size(),
-                    MAX_TAR_ENTRY_SIZE
-                )));
-            }
-
-            let entry_path = entry
-                .path()
-                .map_err(|e| {
-                    ExtensionError::InstallFailed(format!("Invalid path in tar.gz: {}", e))
-                })?
-                .to_path_buf();
-
-            let filename = entry_path
-                .file_name()
-                .and_then(|n| n.to_str())
-                .unwrap_or("");
+            let filename = tar_entry_filename(&mut entry)?;
 
             if filename == wasm_filename {
                 extract_tar_entry(&mut entry, target_wasm)?;
@@ -293,19 +333,7 @@ impl ExtensionManager {
         kind: ExtensionKind,
     ) -> Result<InstallResult, ExtensionError> {
         let manifest_dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
-
-        // Resolve build directory
-        let resolved_dir = match build_dir {
-            Some(dir) => {
-                let p = std::path::Path::new(dir);
-                if p.is_absolute() {
-                    p.to_path_buf()
-                } else {
-                    manifest_dir.join(dir)
-                }
-            }
-            None => manifest_dir.to_path_buf(),
-        };
+        let resolved_dir = resolve_build_dir(build_dir, manifest_dir);
 
         // Determine the binary name to look for
         let binary_name = crate_name.unwrap_or(name);
@@ -333,12 +361,7 @@ impl ExtensionManager {
         .await
         .map_err(|e| ExtensionError::InstallFailed(e.to_string()))?;
 
-        let kind_label = match kind {
-            ExtensionKind::WasmTool => "WASM tool",
-            ExtensionKind::WasmChannel => "WASM channel",
-            ExtensionKind::McpServer => "MCP server",
-            ExtensionKind::ChannelRelay => "channel relay",
-        };
+        let kind_label = extension_kind_label(kind);
 
         tracing::info!(
             "Installed {} '{}' from build artifacts at {}",

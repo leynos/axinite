@@ -98,6 +98,14 @@ impl SignalChannel {
             return Ok(None);
         }
 
+        let status = resp.status();
+        let bytes = Self::read_capped_body(resp).await?;
+        Self::parse_rpc_response(status, &bytes)
+    }
+
+    /// Read the RPC response body, rejecting payloads larger than
+    /// `MAX_HTTP_RESPONSE_SIZE` (both by Content-Length and while streaming).
+    async fn read_capped_body(resp: reqwest::Response) -> Result<Vec<u8>, ChannelError> {
         // Reject obviously oversized responses before buffering.
         if let Some(len) = resp.content_length()
             && len as usize > MAX_HTTP_RESPONSE_SIZE
@@ -108,7 +116,6 @@ impl SignalChannel {
             )));
         }
 
-        let status = resp.status();
         let mut stream = resp.bytes_stream();
         let mut total_bytes = 0usize;
         let mut body = Vec::new();
@@ -116,8 +123,7 @@ impl SignalChannel {
         while let Some(chunk) = stream.next().await {
             let chunk = chunk
                 .map_err(|e| Self::send_failed(format!("Failed to read RPC response: {e}")))?;
-            let chunk_len = chunk.len();
-            total_bytes += chunk_len;
+            total_bytes += chunk.len();
 
             if total_bytes > MAX_HTTP_RESPONSE_SIZE {
                 return Err(Self::send_failed(format!(
@@ -129,8 +135,15 @@ impl SignalChannel {
             body.extend_from_slice(&chunk);
         }
 
-        let bytes = body;
+        Ok(body)
+    }
 
+    /// Interpret a buffered RPC response: map non-success statuses and JSON
+    /// `error` objects to channel errors, returning the `result` field.
+    fn parse_rpc_response(
+        status: reqwest::StatusCode,
+        bytes: &[u8],
+    ) -> Result<Option<serde_json::Value>, ChannelError> {
         if bytes.is_empty() {
             return Ok(None);
         }
@@ -146,7 +159,7 @@ impl SignalChannel {
             )));
         }
 
-        let parsed: serde_json::Value = serde_json::from_slice(&bytes)
+        let parsed: serde_json::Value = serde_json::from_slice(bytes)
             .map_err(|e| Self::send_failed(format!("Invalid RPC response JSON: {e}")))?;
 
         if let Some(err) = parsed.get("error") {

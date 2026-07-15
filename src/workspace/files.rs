@@ -54,6 +54,8 @@ impl Workspace {
     /// ```ignore
     /// workspace.write("projects/alpha/README.md", "# Project Alpha\n\nDescription here.").await?;
     /// ```
+    // A workspace path and its document content are free-form text with no invariant a newtype could enforce.
+    // @codescene(disable:"String Heavy Function Arguments")
     pub async fn write(&self, path: &str, content: &str) -> Result<MemoryDocument, WorkspaceError> {
         let path = normalize_path(path);
         let doc = self

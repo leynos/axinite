@@ -174,22 +174,66 @@ fn score_token_estimate(prompt: &str, acc: &mut ScoreAccumulator) {
     }
 }
 
+/// A keyword-based scoring dimension: its name, matching regex, and the
+/// optional match count above which a hint is emitted.
+struct KeywordDimension<'a> {
+    name: &'a str,
+    regex: &'a Regex,
+    hint_threshold: Option<usize>,
+}
+
 /// Score all keyword-based dimensions: 50 points per match, hint at the
 /// dimension's threshold (dimensions without a threshold never hint).
 fn score_keyword_dimensions(prompt: &str, domain_regex: &Regex, acc: &mut ScoreAccumulator) {
-    let keyword_dimensions: [(&str, &Regex, Option<usize>); 9] = [
-        ("reasoning_words", &*RE_REASONING, Some(2)),
-        ("multi_step", &*RE_MULTI_STEP, Some(2)),
-        ("creativity", &*RE_CREATIVITY, Some(2)),
-        ("precision", &*RE_PRECISION, None),
-        ("code_indicators", &*RE_CODE, Some(2)),
-        ("tool_likelihood", &*RE_TOOL, None),
-        ("safety_sensitivity", &*RE_SAFETY, Some(1)),
-        ("context_dependency", &*RE_CONTEXT, None),
-        ("domain_specific", domain_regex, Some(2)),
+    let keyword_dimensions: [KeywordDimension; 9] = [
+        KeywordDimension {
+            name: "reasoning_words",
+            regex: &RE_REASONING,
+            hint_threshold: Some(2),
+        },
+        KeywordDimension {
+            name: "multi_step",
+            regex: &RE_MULTI_STEP,
+            hint_threshold: Some(2),
+        },
+        KeywordDimension {
+            name: "creativity",
+            regex: &RE_CREATIVITY,
+            hint_threshold: Some(2),
+        },
+        KeywordDimension {
+            name: "precision",
+            regex: &RE_PRECISION,
+            hint_threshold: None,
+        },
+        KeywordDimension {
+            name: "code_indicators",
+            regex: &RE_CODE,
+            hint_threshold: Some(2),
+        },
+        KeywordDimension {
+            name: "tool_likelihood",
+            regex: &RE_TOOL,
+            hint_threshold: None,
+        },
+        KeywordDimension {
+            name: "safety_sensitivity",
+            regex: &RE_SAFETY,
+            hint_threshold: Some(1),
+        },
+        KeywordDimension {
+            name: "context_dependency",
+            regex: &RE_CONTEXT,
+            hint_threshold: None,
+        },
+        KeywordDimension {
+            name: "domain_specific",
+            regex: domain_regex,
+            hint_threshold: Some(2),
+        },
     ];
-    for (name, regex, hint_threshold) in keyword_dimensions {
-        score_keyword_dimension(prompt, name, regex, hint_threshold, acc);
+    for dimension in keyword_dimensions {
+        score_keyword_dimension(prompt, &dimension, acc);
     }
 }
 
@@ -251,18 +295,15 @@ fn explicit_tier_breakdown(prompt: &str) -> Option<ScoreBreakdown> {
 ///
 /// Records a "{name}: {count} matches" hint once `hint_threshold` matches
 /// fire; dimensions with no threshold never hint.
-fn score_keyword_dimension(
-    prompt: &str,
-    name: &str,
-    regex: &Regex,
-    hint_threshold: Option<usize>,
-    acc: &mut ScoreAccumulator,
-) {
-    let count = count_matches(regex, prompt);
+fn score_keyword_dimension(prompt: &str, dimension: &KeywordDimension, acc: &mut ScoreAccumulator) {
+    let count = count_matches(dimension.regex, prompt);
     let score = (count * 50).min(100) as u32;
-    acc.record(name, score);
-    if hint_threshold.is_some_and(|threshold| count >= threshold) {
-        acc.hint(format!("{name}: {count} matches"));
+    acc.record(dimension.name, score);
+    if dimension
+        .hint_threshold
+        .is_some_and(|threshold| count >= threshold)
+    {
+        acc.hint(format!("{}: {count} matches", dimension.name));
     }
 }
 

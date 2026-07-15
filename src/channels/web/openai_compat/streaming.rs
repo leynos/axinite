@@ -128,14 +128,7 @@ impl ChunkEmitter {
     /// and the `[DONE]` sentinel.
     async fn emit(self, llm_result: LlmResult) {
         // Send initial chunk with role
-        let role_chunk = self.chunk(
-            OpenAiDelta {
-                role: Some("assistant".to_string()),
-                content: None,
-                tool_calls: None,
-            },
-            None,
-        );
+        let role_chunk = self.chunk(OpenAiDelta::with_role("assistant"), None);
         let _ = self.send_chunk(role_chunk).await;
 
         match llm_result {
@@ -183,14 +176,7 @@ impl ChunkEmitter {
 
     /// Send one content delta chunk; returns `false` when the receiver hung up.
     async fn send_content_chunk(&self, content: String) -> bool {
-        let chunk = self.chunk(
-            OpenAiDelta {
-                role: None,
-                content: Some(content),
-                tool_calls: None,
-            },
-            None,
-        );
+        let chunk = self.chunk(OpenAiDelta::with_content(content), None);
         self.send_chunk(chunk).await
     }
 
@@ -210,27 +196,13 @@ impl ChunkEmitter {
             })
             .collect();
 
-        let chunk = self.chunk(
-            OpenAiDelta {
-                role: None,
-                content: None,
-                tool_calls: Some(deltas),
-            },
-            None,
-        );
+        let chunk = self.chunk(OpenAiDelta::with_tool_calls(deltas), None);
         let _ = self.send_chunk(chunk).await;
     }
 
     /// Send the final chunk carrying the finish reason.
     async fn send_finish_chunk(&self, reason: FinishReason) {
-        let chunk = self.chunk(
-            OpenAiDelta {
-                role: None,
-                content: None,
-                tool_calls: None,
-            },
-            Some(finish_reason_str(reason)),
-        );
+        let chunk = self.chunk(OpenAiDelta::empty(), Some(finish_reason_str(reason)));
         let _ = self.send_chunk(chunk).await;
     }
 }

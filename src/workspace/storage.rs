@@ -81,17 +81,8 @@ impl WorkspaceStorage {
 
     pub(super) async fn insert_chunk(
         &self,
-        document_id: Uuid,
-        chunk_index: u32,
-        content: &str,
-        embedding: Option<&[f32]>,
+        params: InsertChunkParams<'_>,
     ) -> Result<Uuid, WorkspaceError> {
-        let params = InsertChunkParams {
-            document_id,
-            chunk_index,
-            content,
-            embedding,
-        };
         dispatch!(self, insert_chunk(params))
     }
 

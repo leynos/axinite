@@ -132,42 +132,61 @@ fn extract_office_xml(data: &[u8], content_path: &str) -> Result<String, String>
     Ok(text)
 }
 
+/// Accumulates the text content stripped from between XML tags, collapsing
+/// runs of whitespace (and tag boundaries) into single separating spaces.
+struct StrippedText {
+    result: String,
+    last_was_space: bool,
+}
+
+impl StrippedText {
+    fn with_capacity(capacity: usize) -> Self {
+        Self {
+            result: String::with_capacity(capacity),
+            last_was_space: true,
+        }
+    }
+
+    /// Emit a single separating space at a tag boundary, unless the previous
+    /// character was already a space or nothing has been emitted yet.
+    fn separate(&mut self) {
+        if !self.last_was_space && !self.result.is_empty() {
+            self.result.push(' ');
+            self.last_was_space = true;
+        }
+    }
+
+    /// Append one character of text content, collapsing whitespace runs.
+    fn push_char(&mut self, ch: char) {
+        if !ch.is_whitespace() {
+            self.result.push(ch);
+            self.last_was_space = false;
+        } else {
+            self.separate();
+        }
+    }
+}
+
 /// Strip XML tags and return just the text content.
 pub(super) fn strip_xml_tags(xml: &str) -> String {
-    let mut result = String::with_capacity(xml.len() / 2);
+    let mut text = StrippedText::with_capacity(xml.len() / 2);
     let mut in_tag = false;
-    let mut last_was_space = true;
 
     for ch in xml.chars() {
         match ch {
-            '<' => {
-                in_tag = true;
-            }
+            '<' => in_tag = true,
             '>' => {
                 in_tag = false;
-                // Add space between tag-delimited text runs
-                if !last_was_space && !result.is_empty() {
-                    result.push(' ');
-                    last_was_space = true;
-                }
+                // Add space between tag-delimited text runs.
+                text.separate();
             }
-            _ if !in_tag => {
-                if ch.is_whitespace() {
-                    if !last_was_space {
-                        result.push(' ');
-                        last_was_space = true;
-                    }
-                } else {
-                    result.push(ch);
-                    last_was_space = false;
-                }
-            }
+            _ if !in_tag => text.push_char(ch),
             _ => {}
         }
     }
 
     // Decode common XML entities
-    result
+    text.result
         .replace("&amp;", "&")
         .replace("&lt;", "<")
         .replace("&gt;", ">")
@@ -223,6 +242,36 @@ fn is_cell_open_tag(tag: &str) -> bool {
     tag.starts_with("c ") || tag == "c"
 }
 
+/// The structurally significant XLSX sheet tags the cell parser reacts to.
+enum SheetTag {
+    RowOpen,
+    RowClose,
+    CellOpen,
+    ValueOpen,
+    ValueClose,
+    CellClose,
+    Other,
+}
+
+/// Classify a complete XLSX sheet tag into the kind the parser acts on.
+fn classify_sheet_tag(tag: &str) -> SheetTag {
+    if tag == "row" || tag.starts_with("row ") {
+        SheetTag::RowOpen
+    } else if tag == "/row" {
+        SheetTag::RowClose
+    } else if is_cell_open_tag(tag) {
+        SheetTag::CellOpen
+    } else if tag == "v" || tag.starts_with("v ") {
+        SheetTag::ValueOpen
+    } else if tag == "/v" {
+        SheetTag::ValueClose
+    } else if tag == "/c" {
+        SheetTag::CellClose
+    } else {
+        SheetTag::Other
+    }
+}
+
 /// Extract the `t="..."` type attribute from a cell open tag
 /// (`t="s"` means shared string).
 fn cell_type_attribute(tag: &str) -> String {
@@ -263,20 +312,22 @@ impl<'a> SheetParser<'a> {
 
     /// React to one complete XML tag.
     fn handle_tag(&mut self, tag: &str) {
-        if tag == "row" || tag.starts_with("row ") {
-            self.in_row = true;
-            self.current_row.clear();
-        } else if tag == "/row" {
-            self.end_row();
-        } else if self.in_row && is_cell_open_tag(tag) {
-            self.cell_type = cell_type_attribute(tag);
-        } else if tag == "v" || tag.starts_with("v ") {
-            self.in_v = true;
-            self.current_val.clear();
-        } else if tag == "/v" {
-            self.end_value();
-        } else if tag == "/c" {
-            self.cell_type.clear();
+        match classify_sheet_tag(tag) {
+            SheetTag::RowOpen => {
+                self.in_row = true;
+                self.current_row.clear();
+            }
+            SheetTag::RowClose => self.end_row(),
+            SheetTag::CellOpen if self.in_row => {
+                self.cell_type = cell_type_attribute(tag);
+            }
+            SheetTag::ValueOpen => {
+                self.in_v = true;
+                self.current_val.clear();
+            }
+            SheetTag::ValueClose => self.end_value(),
+            SheetTag::CellClose => self.cell_type.clear(),
+            _ => {}
         }
     }
 

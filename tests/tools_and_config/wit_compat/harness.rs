@@ -51,24 +51,32 @@ pub(super) fn discover_extensions() -> Vec<DiscoveredExtension> {
 
     for dir in &["registry/tools", "registry/channels"] {
         let registry_dir = repo_root.join(dir);
-        if !registry_dir.exists() {
-            continue;
-        }
-
-        for entry in std::fs::read_dir(&registry_dir).expect("failed to read registry dir") {
-            let entry = entry.expect("failed to read directory entry");
-            let path = entry.path();
-            if path.extension().and_then(|e| e.to_str()) != Some("json") {
-                continue;
-            }
-
-            if let Some(extension) = parse_extension_manifest(&path, &repo_root) {
-                extensions.push(extension);
-            }
+        if registry_dir.exists() {
+            extensions.extend(discover_extensions_in_dir(&registry_dir, &repo_root));
         }
     }
 
     extensions
+}
+
+/// Discover extensions from the JSON manifests directly under one registry
+/// directory.
+fn discover_extensions_in_dir(
+    registry_dir: &std::path::Path,
+    repo_root: &std::path::Path,
+) -> Vec<DiscoveredExtension> {
+    let mut found = Vec::new();
+    for entry in std::fs::read_dir(registry_dir).expect("failed to read registry dir") {
+        let entry = entry.expect("failed to read directory entry");
+        let path = entry.path();
+        if path.extension().and_then(|e| e.to_str()) != Some("json") {
+            continue;
+        }
+        if let Some(extension) = parse_extension_manifest(&path, repo_root) {
+            found.push(extension);
+        }
+    }
+    found
 }
 
 /// Parse one registry manifest into a discovered extension.

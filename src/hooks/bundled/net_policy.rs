@@ -9,6 +9,8 @@ use reqwest::header::{HeaderMap, HeaderName, HeaderValue};
 
 use super::config::HookBundleError;
 
+// A hook name and an outbound webhook URL are free-form text with no invariant a newtype could enforce.
+// @codescene(disable:"String Heavy Function Arguments")
 pub(super) fn validate_webhook_url(
     hook_name: &str,
     url: &str,

@@ -48,6 +48,74 @@ pub(super) struct OutboundHttpRequest {
     pub(super) timeout_ms: Option<u32>,
 }
 
+/// Build the `reqwest` request for an outbound call: fresh redirect-disabled
+/// client, method dispatch, and injected headers and body.
+fn build_outbound_request(
+    method: &str,
+    url: &str,
+    headers: HashMap<String, String>,
+    body: Option<Vec<u8>>,
+) -> Result<reqwest::RequestBuilder, String> {
+    let client = reqwest::Client::builder()
+        .connect_timeout(Duration::from_secs(10))
+        .redirect(reqwest::redirect::Policy::none())
+        .build()
+        .map_err(|e| format!("Failed to build HTTP client: {e}"))?;
+
+    let mut request = build_http_client_request(&client, method, url)?;
+    for (key, value) in headers {
+        request = request.header(&key, &value);
+    }
+    if let Some(body_bytes) = body {
+        request = request.body(body_bytes);
+    }
+    Ok(request)
+}
+
+/// Serialise the response headers into the JSON string the guest expects.
+fn collect_response_headers(response: &reqwest::Response) -> String {
+    let response_headers: HashMap<String, String> = response
+        .headers()
+        .iter()
+        .filter_map(|(k, v)| {
+            v.to_str()
+                .ok()
+                .map(|v| (k.as_str().to_string(), v.to_string()))
+        })
+        .collect();
+    serde_json::to_string(&response_headers).unwrap_or_default()
+}
+
+/// Read the response body, rejecting it if it exceeds `max_response_bytes`
+/// (by Content-Length before buffering, then again after reading).
+async fn read_response_body_within_limit(
+    response: reqwest::Response,
+    max_response_bytes: usize,
+) -> Result<Vec<u8>, String> {
+    let too_large = |size: usize| {
+        format!(
+            "Response body too large: {} bytes exceeds limit of {} bytes",
+            size, max_response_bytes
+        )
+    };
+
+    // Early rejection on Content-Length to avoid streaming large bodies.
+    if let Some(cl) = response.content_length()
+        && cl as usize > max_response_bytes
+    {
+        return Err(too_large(cl as usize));
+    }
+
+    let body = response
+        .bytes()
+        .await
+        .map_err(|e| format!("Failed to read response body: {}", e))?;
+    if body.len() > max_response_bytes {
+        return Err(too_large(body.len()));
+    }
+    Ok(body.to_vec())
+}
+
 /// Executes the outbound HTTP request and returns the normalised response.
 ///
 /// Includes per-request DNS rebinding protection via `reject_private_ip`.
@@ -70,21 +138,7 @@ pub(super) async fn send_http_request(
     // `reject_private_ip` but this second check catches any race.
     reject_private_ip(&url)?;
 
-    let client = reqwest::Client::builder()
-        .connect_timeout(Duration::from_secs(10))
-        .redirect(reqwest::redirect::Policy::none())
-        .build()
-        .map_err(|e| format!("Failed to build HTTP client: {e}"))?;
-
-    let mut request = build_http_client_request(&client, &method, &url)?;
-
-    for (key, value) in headers {
-        request = request.header(&key, &value);
-    }
-
-    if let Some(body_bytes) = body {
-        request = request.body(body_bytes);
-    }
+    let request = build_outbound_request(&method, &url, headers, body)?;
 
     // Caller-specified timeout (default 30s, max 5min).
     let timeout_ms = timeout_ms.unwrap_or(30_000).min(300_000) as u64;
@@ -96,39 +150,8 @@ pub(super) async fn send_http_request(
         .map_err(|e| format_error_chain(&e))?;
 
     let status = response.status().as_u16();
-    let response_headers: HashMap<String, String> = response
-        .headers()
-        .iter()
-        .filter_map(|(k, v)| {
-            v.to_str()
-                .ok()
-                .map(|v| (k.as_str().to_string(), v.to_string()))
-        })
-        .collect();
-    let headers_json = serde_json::to_string(&response_headers).unwrap_or_default();
-
-    // Early rejection on Content-Length to avoid streaming large bodies.
-    if let Some(cl) = response.content_length()
-        && cl as usize > max_response_bytes
-    {
-        return Err(format!(
-            "Response body too large: {} bytes exceeds limit of {} bytes",
-            cl, max_response_bytes
-        ));
-    }
-
-    let body = response
-        .bytes()
-        .await
-        .map_err(|e| format!("Failed to read response body: {}", e))?;
-    if body.len() > max_response_bytes {
-        return Err(format!(
-            "Response body too large: {} bytes exceeds limit of {} bytes",
-            body.len(),
-            max_response_bytes
-        ));
-    }
-    let body = body.to_vec();
+    let headers_json = collect_response_headers(&response);
+    let body = read_response_body_within_limit(response, max_response_bytes).await?;
 
     // Leak detection on response body (best-effort).
     if let Ok(body_str) = std::str::from_utf8(&body) {

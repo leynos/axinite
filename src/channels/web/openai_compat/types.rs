@@ -127,6 +127,44 @@ pub struct OpenAiDelta {
     pub tool_calls: Option<Vec<OpenAiToolCallDelta>>,
 }
 
+impl OpenAiDelta {
+    /// A delta carrying only the assistant role marker (opening chunk).
+    pub(super) fn with_role(role: impl Into<String>) -> Self {
+        Self {
+            role: Some(role.into()),
+            content: None,
+            tool_calls: None,
+        }
+    }
+
+    /// A delta carrying a single content fragment.
+    pub(super) fn with_content(content: String) -> Self {
+        Self {
+            role: None,
+            content: Some(content),
+            tool_calls: None,
+        }
+    }
+
+    /// A delta carrying tool-call fragments.
+    pub(super) fn with_tool_calls(tool_calls: Vec<OpenAiToolCallDelta>) -> Self {
+        Self {
+            role: None,
+            content: None,
+            tool_calls: Some(tool_calls),
+        }
+    }
+
+    /// An empty delta, used by the terminal finish-reason chunk.
+    pub(super) fn empty() -> Self {
+        Self {
+            role: None,
+            content: None,
+            tool_calls: None,
+        }
+    }
+}
+
 #[derive(Debug, Serialize)]
 pub struct OpenAiToolCallDelta {
     pub index: u32,

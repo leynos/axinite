@@ -72,6 +72,8 @@ impl RegexPattern {
     /// Build a named regex injection pattern with its severity and
     /// description. Panics on an invalid pattern; all patterns are
     /// compile-time constants exercised by unit tests.
+    // The regex source, its name, and its human-readable description are free-form literals with no invariant a newtype could enforce.
+    // @codescene(disable:"String Heavy Function Arguments")
     fn new(pattern: &str, name: &str, severity: Severity, description: &str) -> Self {
         Self {
             regex: Regex::new(pattern).unwrap(),

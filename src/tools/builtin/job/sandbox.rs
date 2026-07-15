@@ -45,15 +45,25 @@ impl ContainerJobView<'_> {
     }
 }
 
+/// Inputs for building a persisted sandbox job record.
+struct SandboxJobSpec<'a> {
+    task: &'a str,
+    job_id: Uuid,
+    user_id: crate::db::UserId,
+    project_dir_str: String,
+    credential_grants: &'a [CredentialGrant],
+}
+
 impl CreateJobTool {
     /// Build a sandbox job record from the given parameters.
-    fn build_sandbox_job_record(
-        task: &str,
-        job_id: Uuid,
-        user_id: crate::db::UserId,
-        project_dir_str: String,
-        credential_grants: &[CredentialGrant],
-    ) -> SandboxJobRecord {
+    fn build_sandbox_job_record(spec: SandboxJobSpec<'_>) -> SandboxJobRecord {
+        let SandboxJobSpec {
+            task,
+            job_id,
+            user_id,
+            project_dir_str,
+            credential_grants,
+        } = spec;
         // Serialize credential grants so restarts can reload them.
         let credential_grants_json = match serde_json::to_string(credential_grants) {
             Ok(json) => json,
@@ -273,13 +283,13 @@ impl CreateJobTool {
         let project_dir_str = project_dir.display().to_string();
 
         // Build the job record and persist synchronously before creating the container.
-        let record = Self::build_sandbox_job_record(
+        let record = Self::build_sandbox_job_record(SandboxJobSpec {
             task,
             job_id,
-            crate::db::UserId::from(ctx.user_id.clone()),
-            project_dir_str.clone(),
-            &credential_grants,
-        );
+            user_id: crate::db::UserId::from(ctx.user_id.clone()),
+            project_dir_str: project_dir_str.clone(),
+            credential_grants: &credential_grants,
+        });
 
         self.persist_sandbox_job(&record, mode).await?;
 

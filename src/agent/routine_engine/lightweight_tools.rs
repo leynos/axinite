@@ -27,6 +27,13 @@ impl TokenTotals {
     }
 }
 
+/// Immutable per-run context shared across tool-loop iterations.
+struct ToolLoopContext<'a> {
+    ctx: &'a EngineContext,
+    job_ctx: &'a JobContext,
+    max_tokens: u32,
+}
+
 /// Builds a minimal job context for routine tool execution with a unique
 /// run ID.
 fn routine_job_context(routine: &Routine) -> JobContext {
@@ -55,18 +62,16 @@ pub(super) async fn execute_lightweight_with_tools(
     let max_iterations = ctx.config.lightweight_max_iterations.min(5);
     let mut totals = TokenTotals::default();
     let job_ctx = routine_job_context(routine);
+    let loop_ctx = ToolLoopContext {
+        ctx,
+        job_ctx: &job_ctx,
+        max_tokens: prepared.max_tokens,
+    };
 
     // Tool-enabled iterations; the final iteration is reserved for a
     // text-only response.
     for _ in 1..max_iterations {
-        let outcome = tool_iteration(
-            ctx,
-            &job_ctx,
-            &mut messages,
-            prepared.max_tokens,
-            &mut totals,
-        )
-        .await?;
+        let outcome = tool_iteration(&loop_ctx, &mut messages, &mut totals).await?;
         if let Some(result) = outcome {
             return Ok(result);
         }
@@ -106,16 +111,16 @@ async fn final_text_iteration(
 /// finished), or `None` after executing the requested tool calls (the loop
 /// should continue).
 async fn tool_iteration(
-    ctx: &EngineContext,
-    job_ctx: &JobContext,
+    loop_ctx: &ToolLoopContext<'_>,
     messages: &mut Vec<ChatMessage>,
-    effective_max_tokens: u32,
     totals: &mut TokenTotals,
 ) -> Result<Option<RunOutcome>, RoutineError> {
+    let ctx = loop_ctx.ctx;
+    let job_ctx = loop_ctx.job_ctx;
     let tool_defs = ctx.tools.tool_definitions().await;
 
     let request = ToolCompletionRequest::new(messages.clone(), tool_defs)
-        .with_max_tokens(effective_max_tokens)
+        .with_max_tokens(loop_ctx.max_tokens)
         .with_temperature(0.3);
 
     let response = ctx

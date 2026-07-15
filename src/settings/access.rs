@@ -25,6 +25,8 @@ impl Settings {
     /// Set a setting value by dotted path.
     ///
     /// Returns error if path is invalid or value cannot be parsed.
+    // A dotted settings path and its textual value are free-form strings with no invariant a newtype could enforce.
+    // @codescene(disable:"String Heavy Function Arguments")
     pub fn set(&mut self, path: &str, value: &str) -> Result<(), String> {
         let mut json = serde_json::to_value(&self)
             .map_err(|e| format!("Failed to serialize settings: {}", e))?;

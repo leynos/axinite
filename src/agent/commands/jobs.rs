@@ -40,6 +40,13 @@ fn to_submission(result: Result<String, Error>, error_prefix: &str) -> Submissio
     }
 }
 
+/// User-supplied parameters for creating a new job.
+struct NewJobRequest {
+    title: String,
+    description: String,
+    category: Option<String>,
+}
+
 /// Renders formatted job lines under the "Jobs:" heading.
 fn render_job_list(lines: Vec<String>) -> String {
     let mut output = String::from("Jobs:\n");
@@ -112,8 +119,15 @@ impl Agent {
                 description,
                 category,
             } => {
-                self.handle_create_job(&message.user_id, title, description, category)
-                    .await?
+                self.handle_create_job(
+                    &message.user_id,
+                    NewJobRequest {
+                        title,
+                        description,
+                        category,
+                    },
+                )
+                .await?
             }
             MessageIntent::CheckJobStatus { job_id } => {
                 self.handle_check_status(&message.user_id, job_id).await?
@@ -144,10 +158,13 @@ impl Agent {
     async fn handle_create_job(
         &self,
         user_id: &str,
-        title: String,
-        description: String,
-        category: Option<String>,
+        request: NewJobRequest,
     ) -> Result<String, Error> {
+        let NewJobRequest {
+            title,
+            description,
+            category,
+        } = request;
         let job_id = self
             .scheduler
             .dispatch_job(crate::agent::scheduler::JobRequest {

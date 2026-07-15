@@ -49,22 +49,24 @@ fn find_metadata_param<'a>(
 /// Whitespace-split tokens may carry a trailing comma, which is stripped.
 fn metadata_param_value(part: &str, from_whitespace_split: bool) -> Option<Option<String>> {
     if let Some(rest) = part.strip_prefix("resource_metadata=\"") {
-        let rest = if from_whitespace_split {
-            rest.trim_end_matches(',')
-        } else {
-            rest
-        };
+        let rest = strip_trailing_comma(rest, from_whitespace_split);
         return Some(rest.strip_suffix('"').map(|s| s.to_string()));
     }
     if let Some(rest) = part.strip_prefix("resource_metadata=") {
-        let val = if from_whitespace_split {
-            rest.trim_matches('"').trim_end_matches(',')
-        } else {
-            rest.trim_matches('"')
-        };
-        return Some(Some(val.to_string()));
+        let rest = strip_trailing_comma(rest.trim_matches('"'), from_whitespace_split);
+        return Some(Some(rest.to_string()));
     }
     None
+}
+
+/// Strip a single trailing comma from a whitespace-split token, which may
+/// carry one; comma-split tokens never do, so pass them through unchanged.
+fn strip_trailing_comma(value: &str, from_whitespace_split: bool) -> &str {
+    if from_whitespace_split {
+        value.trim_end_matches(',')
+    } else {
+        value
+    }
 }
 
 /// Build a reqwest client with the given timeout and redirects disabled.

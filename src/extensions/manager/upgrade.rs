@@ -5,6 +5,24 @@ use crate::tools::wasm::discover_tools;
 
 use super::ExtensionManager;
 
+/// Discover installed WASM extensions of one kind as upgrade candidates.
+///
+/// Yields an empty list when the directory is absent or discovery fails. The
+/// tool and channel discovery functions return different concrete map types,
+/// so a macro (rather than a generic fn) keeps both call sites identical.
+macro_rules! discover_candidates {
+    ($dir:expr, $discover:expr, $kind:expr) => {{
+        if !$dir.exists() {
+            Vec::new()
+        } else {
+            match $discover.await {
+                Ok(items) => items.into_keys().map(|name| (name, $kind)).collect(),
+                Err(_) => Vec::new(),
+            }
+        }
+    }};
+}
+
 /// Build an [`UpgradeOutcome`] with the given status and detail.
 fn outcome(name: &str, kind: ExtensionKind, status: &str, detail: String) -> UpgradeOutcome {
     UpgradeOutcome {
@@ -101,32 +119,21 @@ impl ExtensionManager {
     /// Discover installed WASM tools; empty when the directory is absent or
     /// discovery fails.
     async fn discover_tool_candidates(&self) -> Vec<(String, ExtensionKind)> {
-        if !self.wasm_tools_dir.exists() {
-            return Vec::new();
-        }
-        let Ok(tools) = discover_tools(&self.wasm_tools_dir).await else {
-            return Vec::new();
-        };
-        tools
-            .into_keys()
-            .map(|tool_name| (tool_name, ExtensionKind::WasmTool))
-            .collect()
+        discover_candidates!(
+            self.wasm_tools_dir,
+            discover_tools(&self.wasm_tools_dir),
+            ExtensionKind::WasmTool
+        )
     }
 
     /// Discover installed WASM channels; empty when the directory is absent or
     /// discovery fails.
     async fn discover_channel_candidates(&self) -> Vec<(String, ExtensionKind)> {
-        if !self.wasm_channels_dir.exists() {
-            return Vec::new();
-        }
-        let Ok(channels) = crate::channels::wasm::discover_channels(&self.wasm_channels_dir).await
-        else {
-            return Vec::new();
-        };
-        channels
-            .into_keys()
-            .map(|ch_name| (ch_name, ExtensionKind::WasmChannel))
-            .collect()
+        discover_candidates!(
+            self.wasm_channels_dir,
+            crate::channels::wasm::discover_channels(&self.wasm_channels_dir),
+            ExtensionKind::WasmChannel
+        )
     }
 
     /// Read the WIT version declared in an extension's capabilities file.

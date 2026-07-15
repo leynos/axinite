@@ -19,6 +19,12 @@ use super::types::SseEvent;
 /// Translate a [`StatusUpdate`] into the matching [`SseEvent`], attaching the
 /// optional `thread_id` where the event carries one. Exactly one match arm
 /// runs, so `thread_id` is moved rather than cloned.
+///
+/// This is a flat one-to-one mapping between two closed enums: every arm is a
+/// trivial field-for-field restructure with no branching logic. Splitting it
+/// into per-variant helpers would scatter the correspondence across the file
+/// and make it harder, not easier, to verify that each variant is handled.
+// @codescene(disable:"Large Method")
 fn status_to_sse_event(status: StatusUpdate, thread_id: Option<String>) -> SseEvent {
     match status {
         StatusUpdate::Thinking(msg) => SseEvent::Thinking {

@@ -247,15 +247,34 @@ pub(super) fn summarize_outcome(
     }
 }
 
+/// Inputs for recording a completed tool action in job memory.
+pub(super) struct RecordActionArgs<'a> {
+    /// Shared worker dependencies (context manager, store, ...).
+    pub(super) deps: &'a WorkerDeps,
+    /// Identifier of the job the action belongs to.
+    pub(super) job_id: Uuid,
+    /// Name of the tool that was invoked.
+    pub(super) tool_name: &'a str,
+    /// Redacted parameters recorded alongside the action.
+    pub(super) safe_params: &'a serde_json::Value,
+    /// Distilled execution outcome (success payload or failure message).
+    pub(super) outcome: ActionOutcome,
+    /// Wall-clock duration of the tool execution.
+    pub(super) elapsed: Duration,
+}
+
 /// Record the action in job memory, returning the record for persistence.
 pub(super) async fn record_action_in_memory(
-    deps: &WorkerDeps,
-    job_id: Uuid,
-    tool_name: &str,
-    safe_params: &serde_json::Value,
-    outcome: ActionOutcome,
-    elapsed: Duration,
+    args: RecordActionArgs<'_>,
 ) -> Option<crate::context::ActionRecord> {
+    let RecordActionArgs {
+        deps,
+        job_id,
+        tool_name,
+        safe_params,
+        outcome,
+        elapsed,
+    } = args;
     let memory_update = deps
         .context_manager
         .update_memory(job_id, |mem| {

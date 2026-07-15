@@ -222,16 +222,7 @@ impl Workspace {
         if self.read(paths::BOOTSTRAP).await.is_ok() {
             return false;
         }
-
-        let identity_reads = tokio::join!(
-            self.read(paths::AGENTS),
-            self.read(paths::SOUL),
-            self.read(paths::USER),
-        );
-        let is_fresh_workspace = [&identity_reads.0, &identity_reads.1, &identity_reads.2]
-            .into_iter()
-            .all(|res| matches!(res, Err(WorkspaceError::DocumentNotFound { .. })));
-        if !is_fresh_workspace {
+        if !self.is_fresh_workspace().await {
             return false;
         }
 
@@ -242,6 +233,19 @@ impl Workspace {
                 false
             }
         }
+    }
+
+    /// Whether the workspace is truly fresh: none of the core identity files
+    /// (AGENTS, SOUL, USER) exist yet.
+    async fn is_fresh_workspace(&self) -> bool {
+        let identity_reads = tokio::join!(
+            self.read(paths::AGENTS),
+            self.read(paths::SOUL),
+            self.read(paths::USER),
+        );
+        [&identity_reads.0, &identity_reads.1, &identity_reads.2]
+            .into_iter()
+            .all(|res| matches!(res, Err(WorkspaceError::DocumentNotFound { .. })))
     }
 
     /// Import markdown files from a directory on disk into the workspace DB.

@@ -207,6 +207,8 @@ pub async fn find_available_port() -> Result<(TcpListener, u16), AuthError> {
 }
 
 /// Build the authorization URL with all required parameters.
+// The base URL, client id, redirect URI, and resource indicator are free-form OAuth strings; this is stable public API reached from outside the crate.
+// @codescene(disable:"String Heavy Function Arguments")
 pub fn build_authorization_url(
     base_url: &str,
     client_id: &str,

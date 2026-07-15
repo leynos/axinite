@@ -85,7 +85,12 @@ impl Workspace {
             };
 
             self.storage
-                .insert_chunk(document_id, chunk_index, &content, embedding.as_deref())
+                .insert_chunk(crate::db::InsertChunkParams {
+                    document_id,
+                    chunk_index,
+                    content: &content,
+                    embedding: embedding.as_deref(),
+                })
                 .await?;
         }
 

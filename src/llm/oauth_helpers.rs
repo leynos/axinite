@@ -169,6 +169,8 @@ struct CallbackSpec {
 /// rejected with an error page.
 ///
 /// Times out after 5 minutes.
+// The path prefix, parameter name, display label, and CSRF state are all free-form HTTP/branding strings with no invariant a newtype could enforce.
+// @codescene(disable:"String Heavy Function Arguments")
 pub async fn wait_for_callback(
     listener: TcpListener,
     path_prefix: &str,

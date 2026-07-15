@@ -5,6 +5,14 @@ use crate::secrets::CreateSecretParams;
 
 use super::ExtensionManager;
 
+/// The inputs needed to store the next missing secret for a WASM channel.
+struct ChannelSecretRequest<'a> {
+    name: &'a str,
+    cap_file: &'a crate::channels::wasm::ChannelCapabilitiesFile,
+    missing: &'a [&'a crate::channels::wasm::SecretSetupSchema],
+    token_value: &'a str,
+}
+
 impl ExtensionManager {
     /// Load a WASM channel's capabilities file, returning `None` when the
     /// channel has no capabilities file at all.
@@ -55,11 +63,14 @@ impl ExtensionManager {
     /// finish authentication or prompt for the next missing secret.
     async fn store_channel_secret(
         &self,
-        name: &str,
-        cap_file: &crate::channels::wasm::ChannelCapabilitiesFile,
-        missing: &[&crate::channels::wasm::SecretSetupSchema],
-        token_value: &str,
+        request: ChannelSecretRequest<'_>,
     ) -> Result<AuthResult, ExtensionError> {
+        let ChannelSecretRequest {
+            name,
+            cap_file,
+            missing,
+            token_value,
+        } = request;
         let secret = &missing[0];
         let params =
             CreateSecretParams::new(&secret.name, token_value).with_provider(name.to_string());
@@ -113,7 +124,12 @@ impl ExtensionManager {
         // If a token was provided, store it for the first missing secret
         if let Some(token_value) = token {
             return self
-                .store_channel_secret(name, &cap_file, &missing, token_value)
+                .store_channel_secret(ChannelSecretRequest {
+                    name,
+                    cap_file: &cap_file,
+                    missing: &missing,
+                    token_value,
+                })
                 .await;
         }
 

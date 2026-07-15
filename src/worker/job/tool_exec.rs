@@ -166,14 +166,14 @@ impl Worker {
 
         // Record action in memory and persist it (fire-and-forget)
         let outcome = tool_pipeline::summarize_outcome(deps, tool_name, &result);
-        let action = tool_pipeline::record_action_in_memory(
+        let action = tool_pipeline::record_action_in_memory(tool_pipeline::RecordActionArgs {
             deps,
             job_id,
             tool_name,
-            &safe_params,
+            safe_params: &safe_params,
             outcome,
             elapsed,
-        )
+        })
         .await;
         if let (Some(action), Some(store)) = (action, deps.store.clone()) {
             tokio::spawn(async move {

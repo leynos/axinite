@@ -14,17 +14,14 @@ use super::guest_calls::{BroadcastPayload, RespondPayload};
 use super::{WasmChannel, status_to_wit};
 
 impl WasmChannel {
-    /// Execute the on_respond callback.
-    ///
-    /// Called when the agent has a response to send back.
-    pub async fn call_on_respond(
+    /// Emit the invocation and credential-state logs for an on_respond call.
+    async fn log_respond_invocation(
         &self,
         message_id: Uuid,
         content: &str,
         thread_id: Option<&str>,
-        metadata_json: &str,
         attachments: &[String],
-    ) -> Result<(), WasmChannelError> {
+    ) {
         tracing::info!(
             channel = %self.name,
             message_id = %message_id,
@@ -41,6 +38,45 @@ impl WasmChannel {
             credential_names = ?creds.keys().collect::<Vec<_>>(),
             "Credentials available for on_respond"
         );
+    }
+
+    /// Interpret the outcome of a timed guest callback, mapping join panics and
+    /// timeouts to the corresponding channel errors and logging completion.
+    fn interpret_callback_result(
+        &self,
+        result: Result<Result<(), WasmChannelError>, tokio::time::error::Elapsed>,
+        callback: &str,
+    ) -> Result<(), WasmChannelError> {
+        match result {
+            Ok(Ok(())) => {
+                tracing::debug!(
+                    channel = %self.name,
+                    callback = callback,
+                    "WASM channel callback completed"
+                );
+                Ok(())
+            }
+            Ok(Err(e)) => Err(e),
+            Err(_) => Err(WasmChannelError::Timeout {
+                name: self.name.clone(),
+                callback: callback.to_string(),
+            }),
+        }
+    }
+
+    /// Execute the on_respond callback.
+    ///
+    /// Called when the agent has a response to send back.
+    pub async fn call_on_respond(
+        &self,
+        message_id: Uuid,
+        content: &str,
+        thread_id: Option<&str>,
+        metadata_json: &str,
+        attachments: &[String],
+    ) -> Result<(), WasmChannelError> {
+        self.log_respond_invocation(message_id, content, thread_id, attachments)
+            .await;
 
         // If no WASM bytes, do nothing (for testing)
         if self.prepared.component().is_none() {
@@ -81,22 +117,7 @@ impl WasmChannel {
         })
         .await;
 
-        let channel_name = self.name.clone();
-        match result {
-            Ok(Ok(())) => {
-                tracing::debug!(
-                    channel = %channel_name,
-                    message_id = %message_id,
-                    "WASM channel on_respond completed"
-                );
-                Ok(())
-            }
-            Ok(Err(e)) => Err(e),
-            Err(_) => Err(WasmChannelError::Timeout {
-                name: channel_name,
-                callback: "on_respond".to_string(),
-            }),
-        }
+        self.interpret_callback_result(result, "on_respond")
     }
 
     /// Execute the on_broadcast callback.
@@ -147,21 +168,7 @@ impl WasmChannel {
         })
         .await;
 
-        let channel_name = self.name.clone();
-        match result {
-            Ok(Ok(())) => {
-                tracing::debug!(
-                    channel = %channel_name,
-                    "WASM channel on_broadcast completed"
-                );
-                Ok(())
-            }
-            Ok(Err(e)) => Err(e),
-            Err(_) => Err(WasmChannelError::Timeout {
-                name: channel_name,
-                callback: "on_broadcast".to_string(),
-            }),
-        }
+        self.interpret_callback_result(result, "on_broadcast")
     }
 
     /// Execute the on_status callback.
@@ -213,19 +220,6 @@ impl WasmChannel {
         })
         .await;
 
-        match result {
-            Ok(Ok(())) => {
-                tracing::debug!(
-                    channel = %self.name,
-                    "WASM channel on_status completed"
-                );
-                Ok(())
-            }
-            Ok(Err(e)) => Err(e),
-            Err(_) => Err(WasmChannelError::Timeout {
-                name: self.name.clone(),
-                callback: "on_status".to_string(),
-            }),
-        }
+        self.interpret_callback_result(result, "on_status")
     }
 }

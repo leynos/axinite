@@ -181,25 +181,31 @@ impl Agent {
     async fn show_models(&self) -> String {
         let current = self.llm().active_model_name();
         let mut out = format!("Active model: {}\n", current);
+        out.push_str(&self.render_available_models(&current).await);
+        out
+    }
+
+    /// Render the "Available models" section for `/model`, or a fallback
+    /// hint when the list could not be fetched.
+    async fn render_available_models(&self, current: &str) -> String {
         match self.llm().list_models().await {
-            Ok(models) if !models.is_empty() => {
-                out.push_str("\nAvailable models:\n");
-                for m in &models {
-                    let marker = if *m == current { " (active)" } else { "" };
-                    out.push_str(&format!("  {}{}\n", m, marker));
-                }
-                out.push_str("\nUse /model <name> to switch.");
-            }
-            Ok(_) => {
-                out.push_str("\nCould not fetch model list. Use /model <name> to switch.");
-            }
-            Err(e) => {
-                out.push_str(&format!(
-                    "\nCould not fetch models: {}. Use /model <name> to switch.",
-                    e
-                ));
-            }
+            Ok(models) if !models.is_empty() => Self::format_model_list(&models, current),
+            Ok(_) => "\nCould not fetch model list. Use /model <name> to switch.".to_string(),
+            Err(e) => format!(
+                "\nCould not fetch models: {}. Use /model <name> to switch.",
+                e
+            ),
         }
+    }
+
+    /// Format a non-empty model list, marking the active model.
+    fn format_model_list(models: &[String], current: &str) -> String {
+        let mut out = String::from("\nAvailable models:\n");
+        for m in models {
+            let marker = if m == current { " (active)" } else { "" };
+            out.push_str(&format!("  {}{}\n", m, marker));
+        }
+        out.push_str("\nUse /model <name> to switch.");
         out
     }
 

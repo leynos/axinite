@@ -140,6 +140,8 @@ impl WasmChannelRouter {
     ///
     /// This is used when credentials are saved after a channel was registered
     /// without a secret (e.g., loaded at startup before the user configured it).
+    // A channel name and its webhook secret are free-form identifiers and opaque token text with no invariant a newtype could enforce.
+    // @codescene(disable:"String Heavy Function Arguments")
     pub async fn update_secret(&self, channel_name: &str, secret: String) {
         self.secrets
             .write()

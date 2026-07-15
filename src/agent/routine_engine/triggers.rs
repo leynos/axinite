@@ -62,35 +62,12 @@ impl RoutineEngine {
                 EventMatcher::Message { routine, regex } => (routine, regex),
                 EventMatcher::System { .. } => continue,
             };
-            // Channel filter
-            if let Trigger::Event {
-                channel: Some(ch), ..
-            } = &routine.trigger
-                && ch != &message.channel
-            {
+
+            if !message_matches(routine, re, message) {
                 continue;
             }
 
-            // Regex match
-            if !re.is_match(&message.content) {
-                continue;
-            }
-
-            // Cooldown check
-            if !self.check_cooldown(routine) {
-                tracing::trace!(routine = %routine.name, "Skipped: cooldown active");
-                continue;
-            }
-
-            // Concurrent run check
-            if !self.check_concurrent(routine).await {
-                tracing::trace!(routine = %routine.name, "Skipped: max concurrent reached");
-                continue;
-            }
-
-            // Global capacity check (atomic check-and-increment)
-            if !self.try_reserve_running_slot() {
-                tracing::warn!(routine = %routine.name, "Skipped: global max concurrent reached");
+            if !self.passes_message_guardrails(routine).await {
                 continue;
             }
 
@@ -100,6 +77,27 @@ impl RoutineEngine {
         }
 
         fired
+    }
+
+    /// Checks cooldown, per-routine concurrency, and global capacity for a
+    /// matched message-event routine, reserving a running slot on success.
+    async fn passes_message_guardrails(&self, routine: &crate::agent::routine::Routine) -> bool {
+        if !self.check_cooldown(routine) {
+            tracing::trace!(routine = %routine.name, "Skipped: cooldown active");
+            return false;
+        }
+
+        if !self.check_concurrent(routine).await {
+            tracing::trace!(routine = %routine.name, "Skipped: max concurrent reached");
+            return false;
+        }
+
+        // Global capacity check (atomic check-and-increment)
+        if !self.try_reserve_running_slot() {
+            tracing::warn!(routine = %routine.name, "Skipped: global max concurrent reached");
+            return false;
+        }
+        true
     }
 
     /// Emit a structured event to system-event routines.
@@ -208,6 +206,23 @@ impl RoutineEngine {
             self.spawn_fire_reserved(routine, "cron", detail);
         }
     }
+}
+
+/// Returns `true` when the incoming message satisfies the routine's channel
+/// filter (if any) and its event regex.
+fn message_matches(
+    routine: &crate::agent::routine::Routine,
+    re: &Regex,
+    message: &IncomingMessage,
+) -> bool {
+    if let Trigger::Event {
+        channel: Some(ch), ..
+    } = &routine.trigger
+        && ch != &message.channel
+    {
+        return false;
+    }
+    re.is_match(&message.content)
 }
 
 /// Borrowed view of an emitted system event, as delivered to the matcher.

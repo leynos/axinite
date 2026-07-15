@@ -110,15 +110,13 @@ impl ExtensionManager {
                 .await;
             let display_name = registry_entry.as_ref().map(|e| e.display_name.clone());
             let auth_state = self.check_tool_auth_status(&name).await;
-            let version = match discovered.capabilities_path {
-                Some(ref cap_path) => Self::load_capabilities(cap_path, |bytes| {
-                    crate::tools::wasm::CapabilitiesFile::from_bytes(bytes).ok()
-                })
-                .await
-                .and_then(|cap| cap.version),
-                None => None,
-            };
-            let version = version.or_else(|| registry_entry.and_then(|e| e.version.clone()));
+            let version = Self::capability_version(
+                discovered.capabilities_path.as_deref(),
+                |bytes| crate::tools::wasm::CapabilitiesFile::from_bytes(bytes).ok(),
+                |cap| cap.version,
+                registry_entry.and_then(|e| e.version.clone()),
+            )
+            .await;
             extensions.push(InstalledExtension {
                 name: name.clone(),
                 kind: ExtensionKind::WasmTool,
@@ -158,15 +156,13 @@ impl ExtensionManager {
                 .get_with_kind(&name, Some(ExtensionKind::WasmChannel))
                 .await;
             let display_name = registry_entry.as_ref().map(|e| e.display_name.clone());
-            let version = match discovered.capabilities_path {
-                Some(ref cap_path) => Self::load_capabilities(cap_path, |bytes| {
-                    crate::channels::wasm::ChannelCapabilitiesFile::from_bytes(bytes).ok()
-                })
-                .await
-                .and_then(|cap| cap.version),
-                None => None,
-            };
-            let version = version.or_else(|| registry_entry.and_then(|e| e.version.clone()));
+            let version = Self::capability_version(
+                discovered.capabilities_path.as_deref(),
+                |bytes| crate::channels::wasm::ChannelCapabilitiesFile::from_bytes(bytes).ok(),
+                |cap| cap.version,
+                registry_entry.and_then(|e| e.version.clone()),
+            )
+            .await;
             extensions.push(InstalledExtension {
                 name,
                 kind: ExtensionKind::WasmChannel,
@@ -269,6 +265,27 @@ impl ExtensionManager {
         }
         let bytes = tokio::fs::read(cap_path).await.ok()?;
         parse(&bytes)
+    }
+
+    /// Resolve the display version for a discovered WASM extension: prefer the
+    /// version declared in its capabilities file, then fall back to the
+    /// registry entry's version.
+    ///
+    /// Shared by the tool and channel listers, whose capabilities files parse
+    /// to different types but expose the version the same way.
+    async fn capability_version<T>(
+        cap_path: Option<&std::path::Path>,
+        parse: impl FnOnce(&[u8]) -> Option<T>,
+        to_version: impl FnOnce(T) -> Option<String>,
+        registry_version: Option<String>,
+    ) -> Option<String> {
+        let from_cap = match cap_path {
+            Some(path) => Self::load_capabilities(path, parse)
+                .await
+                .and_then(to_version),
+            None => None,
+        };
+        from_cap.or(registry_version)
     }
 
     /// Get detailed info about an installed extension (version, wit_version, host compatibility).
