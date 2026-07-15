@@ -2,16 +2,6 @@
   "usage": "Repository overrides for CodeScene code health scoring. Test code is relaxed for inherently similar test structure, and one repo-wide false positive (String Heavy Function Arguments) is disabled with its rationale below. Production code keeps every other rule at default weight.",
   "rule_sets": [
     {
-      "matching_content_path": "**",
-      "matching_content_path_doc": "String Heavy Function Arguments is disabled repo-wide: after two refactor rounds extracted every genuine parameter clump into structs and newtypes, the remaining flagged parameters are paths, URLs, user-supplied text, secret names, shell command tokens, and SQL fragments, which are idiomatically &str in Rust. The smell fires as a systematic false positive here.",
-      "rules": [
-        {
-          "name": "String Heavy Function Arguments",
-          "weight": 0.0
-        }
-      ]
-    },
-    {
       "matching_content_path": "tests/**",
       "matching_content_path_doc": "Integration test crates: parameterized cases, fixture staging, and assertion tables are deliberately repetitive.",
       "rules": [
@@ -29,6 +19,10 @@
         },
         {
           "name": "Large Method",
+          "weight": 0.0
+        },
+        {
+          "name": "String Heavy Function Arguments",
           "weight": 0.0
         }
       ]
@@ -52,6 +46,10 @@
         {
           "name": "Large Method",
           "weight": 0.0
+        },
+        {
+          "name": "String Heavy Function Arguments",
+          "weight": 0.0
         }
       ]
     },
@@ -74,6 +72,10 @@
         {
           "name": "Large Method",
           "weight": 0.0
+        },
+        {
+          "name": "String Heavy Function Arguments",
+          "weight": 0.0
         }
       ]
     },
@@ -95,6 +97,20 @@
         },
         {
           "name": "Large Method",
+          "weight": 0.0
+        },
+        {
+          "name": "String Heavy Function Arguments",
+          "weight": 0.0
+        }
+      ]
+    },
+    {
+      "matching_content_path": "**",
+      "matching_content_path_doc": "String Heavy Function Arguments is disabled repo-wide: after the refactor rounds extracted every genuine parameter clump into structs and newtypes, the remaining flagged parameters are paths, URLs, user-supplied text, secret names, shell command tokens, and SQL fragments, which are idiomatically &str in Rust. The smell fires as a systematic false positive here. This general rule set is listed last so the more specific test-scoped sets above take precedence.",
+      "rules": [
+        {
+          "name": "String Heavy Function Arguments",
           "weight": 0.0
         }
       ]
