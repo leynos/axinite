@@ -146,7 +146,7 @@ impl NativeTool for ToolUpgradeTool {
             .map_err(|e| ToolError::ExecutionFailed(e.to_string()))?;
 
         let output = serde_json::to_value(&result).map_err(|e| {
-            ToolError::ExecutionFailed(format!("failed to serialise upgrade result: {e}"))
+            ToolError::ExecutionFailed(format!("failed to serialize upgrade result: {e}"))
         })?;
 
         Ok(ToolOutput::success(output, start.elapsed()))

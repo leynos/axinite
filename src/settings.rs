@@ -96,7 +96,7 @@ pub struct Settings {
     pub heartbeat: HeartbeatSettings,
 
     // === Advanced Settings (not asked during setup, editable via CLI) ===
-    /// Agent behavior configuration.
+    /// Agent behaviour configuration.
     #[serde(default)]
     pub agent: AgentSettings,
 
@@ -339,7 +339,7 @@ impl Default for HeartbeatSettings {
     }
 }
 
-/// Agent behavior configuration.
+/// Agent behaviour configuration.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AgentSettings {
     /// Agent name.
@@ -617,7 +617,7 @@ pub struct BuilderSettings {
     #[serde(default = "default_true")]
     pub enabled: bool,
 
-    /// Directory for build artifacts.
+    /// Directory for build artefacts.
     #[serde(default)]
     pub build_dir: Option<PathBuf>,
 

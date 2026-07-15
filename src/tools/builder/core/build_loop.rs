@@ -168,7 +168,7 @@ impl LlmSoftwareBuilder {
         });
 
         let artifact_path = self
-            .find_artifact(&inputs.requirement, &inputs.project_dir)
+            .find_artefact(&inputs.requirement, &inputs.project_dir)
             .await;
 
         BuildResult {
@@ -415,8 +415,8 @@ impl LlmSoftwareBuilder {
         }
     }
 
-    /// Find the build artifact based on project type.
-    async fn find_artifact(&self, requirement: &BuildRequirement, project_dir: &Path) -> PathBuf {
+    /// Find the build artefact based on project type.
+    async fn find_artefact(&self, requirement: &BuildRequirement, project_dir: &Path) -> PathBuf {
         match (&requirement.software_type, &requirement.language) {
             (SoftwareType::WasmTool, Language::Rust) => {
                 // WASM output location

@@ -3842,7 +3842,7 @@ function searchClawHub() {
       resultsDiv.appendChild(warning);
     }
 
-    // Show catalog results
+    // Show catalogue results
     if (data.catalog && data.catalog.length > 0) {
       // Build a set of installed skill names for quick lookup
       var installedNames = {};
@@ -3853,7 +3853,7 @@ function searchClawHub() {
       }
 
       for (var i = 0; i < data.catalog.length; i++) {
-        var card = renderCatalogSkillCard(data.catalog[i], installedNames);
+        var card = renderCatalogueSkillCard(data.catalog[i], installedNames);
         card.style.animationDelay = (i * 0.06) + 's';
         resultsDiv.appendChild(card);
       }
@@ -3877,7 +3877,7 @@ function searchClawHub() {
   });
 }
 
-function renderCatalogSkillCard(entry, installedNames) {
+function renderCatalogueSkillCard(entry, installedNames) {
   var card = document.createElement('div');
   card.className = 'ext-card ext-available skill-search-result';
 

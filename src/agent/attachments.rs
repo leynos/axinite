@@ -261,7 +261,7 @@ mod tests {
         att.mime_type = "text/csv".to_string();
         att.size_bytes = Some(1024);
 
-        let result = augment_with_attachments("analyze", &[att]).unwrap();
+        let result = augment_with_attachments("analyse", &[att]).unwrap();
         assert!(result.text.contains("type=\"document\""));
         assert!(result.text.contains("mime=\"text/csv\""));
         assert!(

@@ -1,6 +1,6 @@
-//! Unified WASM artifact resolution: find, build, and install WASM components.
+//! Unified WASM artefact resolution: find, build, and install WASM components.
 //!
-//! This module consolidates all WASM artifact logic that was previously duplicated
+//! This module consolidates all WASM artefact logic that was previously duplicated
 //! across `cli/tool.rs`, `registry/installer.rs`, `extensions/manager.rs`,
 //! `channels/wasm/bundled.rs`, and `tools/wasm/loader.rs`.
 //!
@@ -83,7 +83,7 @@ pub fn resolve_target_dir(crate_dir: &Path) -> PathBuf {
     crate_dir.join("target")
 }
 
-/// Find a compiled WASM artifact by searching across all target triples.
+/// Find a compiled WASM artefact by searching across all target triples.
 ///
 /// Tries exact name match first (with hyphen-to-underscore normalization),
 /// then falls back to searching in whichever target directory exists.
@@ -136,7 +136,7 @@ pub fn find_any_wasm_artifact(crate_dir: &Path, profile: &str) -> Option<PathBuf
 
 /// Build a WASM component using `cargo-component` (async).
 ///
-/// Streams build output to the terminal. Returns the path to the built artifact.
+/// Streams build output to the terminal. Returns the path to the built artefact.
 pub async fn build_wasm_component(
     source_dir: &Path,
     crate_name: &str,
@@ -192,7 +192,7 @@ pub async fn build_wasm_component(
 
 /// Build a WASM component using `cargo-component` (sync, for CLI use).
 ///
-/// Returns the path to the built artifact.
+/// Returns the path to the built artefact.
 pub fn build_wasm_component_sync(source_dir: &Path, release: bool) -> anyhow::Result<PathBuf> {
     use std::process::Command;
 
@@ -231,7 +231,7 @@ pub fn build_wasm_component_sync(source_dir: &Path, release: bool) -> anyhow::Re
 
     let profile = if release { "release" } else { "debug" };
 
-    // Find the built artifact
+    // Find the built artefact
     find_any_wasm_artifact(source_dir, profile).ok_or_else(|| {
         anyhow::anyhow!(
             "No .wasm file found after build in {}/target/*/{}",

@@ -7,7 +7,7 @@ use crate::near::agent::host;
 /// DC names indexed by dc_id (1-based). DC1=pluto, DC2=venus, etc.
 const DC_NAMES: &[&str] = &["", "pluto", "venus", "aurora", "vesta", "flora"];
 
-/// Build the HTTPS URL for a Telegram data center's web transport endpoint.
+/// Build the HTTPS URL for a Telegram data centre's web transport endpoint.
 pub fn dc_url(dc_id: u8) -> Result<String, String> {
     let idx = dc_id as usize;
     if idx == 0 || idx >= DC_NAMES.len() {

@@ -6,7 +6,7 @@ use crate::support::trace_types::load_trace_with_mutation;
 use rstest::rstest;
 
 #[derive(Clone, Copy)]
-enum MutationBehavior {
+enum MutationBehaviour {
     SetsFlag,
     MutatesModelName,
 }
@@ -14,33 +14,33 @@ enum MutationBehavior {
 #[rstest]
 #[case::sets_flag(
     r#"{"model_name":"test-model","steps":[]}"#,
-    MutationBehavior::SetsFlag
+    MutationBehaviour::SetsFlag
 )]
 #[case::mutates_model_name(
     r#"{"model_name":"original","steps":[]}"#,
-    MutationBehavior::MutatesModelName
+    MutationBehaviour::MutatesModelName
 )]
 #[tokio::test]
 async fn mutation_happy_paths(
     #[case] initial_json: &str,
-    #[case] behavior: MutationBehavior,
+    #[case] behaviour: MutationBehaviour,
 ) -> anyhow::Result<()> {
     let tmp = write_tmp_trace(initial_json)?;
     let mut was_called = false;
 
-    let trace = load_trace_with_mutation(tmp.path(), |value| match behavior {
-        MutationBehavior::SetsFlag => was_called = true,
-        MutationBehavior::MutatesModelName => value["model_name"] = serde_json::json!("mutated"),
+    let trace = load_trace_with_mutation(tmp.path(), |value| match behaviour {
+        MutationBehaviour::SetsFlag => was_called = true,
+        MutationBehaviour::MutatesModelName => value["model_name"] = serde_json::json!("mutated"),
     })
     .await?;
 
-    match behavior {
-        MutationBehavior::SetsFlag => {
+    match behaviour {
+        MutationBehaviour::SetsFlag => {
             assert!(was_called, "mutation closure must be invoked");
             assert_eq!(trace.model_name, "test-model");
             assert!(trace.steps.is_empty());
         }
-        MutationBehavior::MutatesModelName => {
+        MutationBehaviour::MutatesModelName => {
             assert_eq!(trace.model_name, "mutated");
         }
     }

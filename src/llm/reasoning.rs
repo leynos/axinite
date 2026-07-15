@@ -1874,7 +1874,7 @@ That's my plan."#;
 
     #[test]
     fn test_strip_reasoning_tags() {
-        let input = "<reasoning>Analyzing the request...</reasoning>\n\nHere's what I found.";
+        let input = "<reasoning>Analysing the request...</reasoning>\n\nHere's what I found.";
         assert_eq!(clean_response(input), "Here's what I found.");
     }
 
@@ -2838,7 +2838,7 @@ That's my plan."#;
         let reasoning = Reasoning::new(llm);
 
         let mut context =
-            ReasoningContext::new().with_message(ChatMessage::user("analyze the code"));
+            ReasoningContext::new().with_message(ChatMessage::user("analyse the code"));
         context.force_text = true;
 
         let output = reasoning.respond_with_tools(&context).await.unwrap();

@@ -66,7 +66,7 @@ impl LogBroadcaster {
 
     pub fn send(&self, mut entry: LogEntry) {
         // Scrub secrets from the message before it reaches any subscriber.
-        // This is defense-in-depth: even if code elsewhere accidentally logs
+        // This is defence-in-depth: even if code elsewhere accidentally logs
         // a secret, it won't be broadcast to SSE clients.
         entry.message = self
             .leak_detector
@@ -170,7 +170,7 @@ impl LogLevelHandle {
     }
 }
 
-/// Initialise the tracing subscriber with a reloadable `EnvFilter`.
+/// Initialize the tracing subscriber with a reloadable `EnvFilter`.
 ///
 /// Returns the `LogLevelHandle` so callers can swap the filter at runtime.
 /// The fmt layer and `WebLogLayer` are attached alongside the reloadable filter.

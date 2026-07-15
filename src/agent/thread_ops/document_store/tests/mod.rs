@@ -7,7 +7,7 @@ use crate::workspace::Workspace;
 
 use super::{
     PathParts, build_document_path, get_valid_document_text, is_usable_extracted_text,
-    sanitise_filename, store_extracted_documents,
+    sanitize_filename, store_extracted_documents,
 };
 
 fn make_incoming_attachment(
@@ -130,19 +130,19 @@ fn is_usable_extracted_text_accepts_valid_text(#[case] text: &str) {
 }
 
 #[test]
-fn sanitise_filename_removes_parent_traversal_segments() {
-    let filename = sanitise_filename("foo/../secret");
+fn sanitize_filename_removes_parent_traversal_segments() {
+    let filename = sanitize_filename("foo/../secret");
     assert!(!filename.contains(".."));
 }
 
 #[test]
-fn sanitise_filename_replaces_confusable_slashes() {
-    assert_eq!(sanitise_filename("foo/\u{2215}bar"), "foo__bar");
+fn sanitize_filename_replaces_confusable_slashes() {
+    assert_eq!(sanitize_filename("foo/\u{2215}bar"), "foo__bar");
 }
 
 #[test]
-fn sanitise_filename_hardens_leading_traversal() {
-    let filename = sanitise_filename("../etc/passwd");
+fn sanitize_filename_hardens_leading_traversal() {
+    let filename = sanitize_filename("../etc/passwd");
     assert!(!filename.contains(".."));
     assert!(!filename.contains('/'));
     assert!(!filename.contains('\\'));
@@ -150,20 +150,20 @@ fn sanitise_filename_hardens_leading_traversal() {
 }
 
 #[test]
-fn sanitise_filename_preserves_normal_filenames() {
-    assert_eq!(sanitise_filename("report.txt"), "report.txt");
+fn sanitize_filename_preserves_normal_filenames() {
+    assert_eq!(sanitize_filename("report.txt"), "report.txt");
 }
 
 #[test]
-fn sanitise_filename_defaults_when_empty() {
-    assert_eq!(sanitise_filename(""), "unnamed_document");
+fn sanitize_filename_defaults_when_empty() {
+    assert_eq!(sanitize_filename(""), "unnamed_document");
 }
 
 #[test]
 fn build_document_path_uses_sanitized_id_and_filename() {
     let date = chrono::NaiveDate::from_ymd_opt(2026, 4, 3).expect("2026-04-03 is a valid date");
-    let sanitized_id = sanitise_filename("abc/../123");
-    let sanitized_filename = sanitise_filename("../report.pdf");
+    let sanitized_id = sanitize_filename("abc/../123");
+    let sanitized_filename = sanitize_filename("../report.pdf");
     let path = build_document_path(&PathParts {
         date,
         index: 7,

@@ -1,4 +1,4 @@
-"""Scenario 6: Tool approval overlay UI behavior."""
+"""Scenario 6: Tool approval overlay UI behaviour."""
 
 import pytest
 from helpers import SEL

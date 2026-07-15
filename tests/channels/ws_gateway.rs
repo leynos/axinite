@@ -179,7 +179,7 @@ async fn test_ws_thinking_event() {
     tokio::time::sleep(Duration::from_millis(50)).await;
 
     state.sse.broadcast(SseEvent::Thinking {
-        message: "analyzing...".to_string(),
+        message: "analysing...".to_string(),
         thread_id: None,
     });
 
@@ -187,7 +187,7 @@ async fn test_ws_thinking_event() {
     let parsed: serde_json::Value = serde_json::from_str(&text).unwrap();
     assert_eq!(parsed["type"], "event");
     assert_eq!(parsed["event_type"], "thinking");
-    assert_eq!(parsed["data"]["message"], "analyzing...");
+    assert_eq!(parsed["data"]["message"], "analysing...");
 
     ws.close(None).await.unwrap();
 }
@@ -361,7 +361,7 @@ async fn test_session_lock_not_held_during_api_operations() {
     let session_manager = Arc::new(SessionManager::new());
 
     // Note: We can't directly modify state.session_manager in the test due to its type.
-    // Instead, we test the session manager directly in isolation to verify lock behavior.
+    // Instead, we test the session manager directly in isolation to verify lock behaviour.
 
     // Spawn concurrent operations simulating API handler + agent loop interaction
     let mut handles = vec![];

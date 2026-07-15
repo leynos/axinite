@@ -48,7 +48,7 @@ pub struct WorkerDeps {
     /// SSE broadcast sender for live job event streaming to the web gateway.
     pub sse_tx: Option<tokio::sync::broadcast::Sender<SseEvent>>,
     /// Approval context for tool execution. When `None`, all non-`Never` tools are
-    /// blocked (legacy behavior). When `Some`, the context determines which tools
+    /// blocked (legacy behaviour). When `Some`, the context determines which tools
     /// are pre-approved for autonomous execution.
     pub approval_context: Option<ApprovalContext>,
     /// HTTP interceptor for trace recording/replay (propagated to JobContext).
@@ -2057,7 +2057,7 @@ mod tests {
     }
 
     // -----------------------------------------------------------------------
-    // Terminal job-state persistence characterisation tests
+    // Terminal job-state persistence characterization tests
     // -----------------------------------------------------------------------
 
     #[rstest::rstest]
@@ -2086,7 +2086,7 @@ mod tests {
         }
     )]
     #[tokio::test]
-    async fn test_terminal_state_characterises_persistence(
+    async fn test_terminal_state_characterizes_persistence(
         #[case] case: TerminalTestCase,
     ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         let (worker, store) = make_worker_with_capturing_store(vec![]).await?;
@@ -2115,7 +2115,7 @@ mod tests {
         Ok(())
     }
 
-    /// Test case structure for parameterised terminal state tests.
+    /// Test case structure for parameterized terminal state tests.
     struct TerminalTestCase {
         method: TerminalMethod,
         expected_state: JobState,

@@ -13,7 +13,7 @@ pub struct Session {
     pub first_salt: i64,
     /// Time offset from server, in seconds.
     pub time_offset: i32,
-    /// Telegram data center ID (1-5).
+    /// Telegram data centre ID (1-5).
     pub dc_id: u8,
     /// Telegram API ID from my.telegram.org.
     pub api_id: i32,
@@ -66,7 +66,7 @@ impl Session {
     }
 }
 
-/// Load session from workspace (returns None if not found or unparseable).
+/// Load session from workspace (returns None if not found or unparsable).
 pub fn load_session() -> Option<Session> {
     let data = crate::near::agent::host::workspace_read("telegram/session.json")?;
     serde_json::from_str(&data).ok()

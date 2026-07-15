@@ -649,7 +649,7 @@ impl Scheduler {
     /// `stop_all`.
     ///
     /// Attempts to force the job to `Cancelled` via
-    /// `transition_to_cancelled`, then persists and finalises if the
+    /// `transition_to_cancelled`, then persists and finalizes if the
     /// transition succeeds. Logs an appropriate warning for each failure
     /// mode.
     async fn handle_stop_timeout(

@@ -57,7 +57,7 @@ Returns paginated conversation history for a thread.
 | 400 | `thread_id` is not a valid UUID | `Invalid thread_id` |
 | 404 | No `thread_id` provided and no active thread | `No active thread` |
 | 404 | Thread not owned by this user and not in-memory | `Thread not found` |
-| 500 | Internal database or serialisation error | Error description |
+| 500 | Internal database or serialization error | Error description |
 
 ### 1.2 Other chat endpoints
 

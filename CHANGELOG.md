@@ -14,7 +14,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Merge pull request #907 from nearai/staging-promote/b0214fef-22930316561
 - promote staging to main (2026-03-10 15:19 UTC) ([#865](https://github.com/nearai/ironclaw/pull/865))
 - Merge pull request #830 from nearai/staging-promote/3a2989d0-22888378864
-- update WASM artifact SHA256 checksums [skip ci] ([#876](https://github.com/nearai/ironclaw/pull/876))
+- update WASM artefact SHA256 checksums [skip ci] ([#876](https://github.com/nearai/ironclaw/pull/876))
 
 ## [0.17.0](https://github.com/nearai/ironclaw/compare/v0.16.1...v0.17.0) - 2026-03-10
 
@@ -84,7 +84,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Fix single-message mode to exit after one turn when background channels are enabled ([#719](https://github.com/nearai/ironclaw/pull/719))
 - remove dead code ([#648](https://github.com/nearai/ironclaw/pull/648)) ([#703](https://github.com/nearai/ironclaw/pull/703))
 - add reviewer-feedback guardrails (CLAUDE.md, pre-commit hook, skill) ([#665](https://github.com/nearai/ironclaw/pull/665))
-- update WASM artifact SHA256 checksums [skip ci] ([#631](https://github.com/nearai/ironclaw/pull/631))
+- update WASM artefact SHA256 checksums [skip ci] ([#631](https://github.com/nearai/ironclaw/pull/631))
 - add explanatory comments to coverage workflow ([#610](https://github.com/nearai/ironclaw/pull/610))
 - build system prompt once per turn, skip tools on force-text ([#583](https://github.com/nearai/ironclaw/pull/583))
 - add comprehensive subdirectory CLAUDE.md files and update root ([#589](https://github.com/nearai/ironclaw/pull/589))
@@ -99,7 +99,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
-- revert WASM artifact SHA256 checksums to null ([#627](https://github.com/nearai/ironclaw/pull/627))
+- revert WASM artefact SHA256 checksums to null ([#627](https://github.com/nearai/ironclaw/pull/627))
 
 ## [0.16.0](https://github.com/nearai/ironclaw/compare/v0.15.0...v0.16.0) - 2026-03-06
 
@@ -128,7 +128,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - *(llm)* complete response cache — set_model invalidation, stats logging, sync mutex ([#290](https://github.com/nearai/ironclaw/pull/290))
 - add 29 E2E trace tests for issues #571-575 ([#593](https://github.com/nearai/ironclaw/pull/593))
 - add 26 tests for multi-thread safety, db CRUD, concurrency, errors ([#442](https://github.com/nearai/ironclaw/pull/442))
-- update WASM artifact SHA256 checksums [skip ci] ([#560](https://github.com/nearai/ironclaw/pull/560))
+- update WASM artefact SHA256 checksums [skip ci] ([#560](https://github.com/nearai/ironclaw/pull/560))
 - add WIT compatibility tests for WASM extensions ([#586](https://github.com/nearai/ironclaw/pull/586))
 - Trajectory benchmarks and e2e trace test rig ([#553](https://github.com/nearai/ironclaw/pull/553))
 
@@ -249,7 +249,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - correct MCP registry URLs and remove non-existent Google endpoints ([#370](https://github.com/nearai/ironclaw/pull/370))
 - resolve_thread adopts existing session threads by UUID ([#377](https://github.com/nearai/ironclaw/pull/377))
 - resolve telegram/slack name collision between tool and channel registries ([#346](https://github.com/nearai/ironclaw/pull/346))
-- make onboarding installs prefer release artifacts with source fallback ([#323](https://github.com/nearai/ironclaw/pull/323))
+- make onboarding installs prefer release artefacts with source fallback ([#323](https://github.com/nearai/ironclaw/pull/323))
 - copy missing files in Dockerfile to fix build ([#322](https://github.com/nearai/ironclaw/pull/322))
 - fall back to build-from-source when extension download fails ([#312](https://github.com/nearai/ironclaw/pull/312))
 
@@ -284,10 +284,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - update dashboard favicon ([#309](https://github.com/nearai/ironclaw/pull/309))
 - add web UI test skill for Chrome extension ([#302](https://github.com/nearai/ironclaw/pull/302))
 - implement FullJob routine mode with scheduler dispatch ([#288](https://github.com/nearai/ironclaw/pull/288))
-- hot-activate WASM channels, channel-first prompts, unified artifact resolution ([#297](https://github.com/nearai/ironclaw/pull/297))
+- hot-activate WASM channels, channel-first prompts, unified artefact resolution ([#297](https://github.com/nearai/ironclaw/pull/297))
 - add pairing/permission system to all WASM channels and fix extension registry ([#286](https://github.com/nearai/ironclaw/pull/286))
 - group chat privacy, channel-aware prompts, and safety hardening ([#285](https://github.com/nearai/ironclaw/pull/285))
-- embedded registry catalog and WASM bundle install pipeline ([#283](https://github.com/nearai/ironclaw/pull/283))
+- embedded registry catalogue and WASM bundle install pipeline ([#283](https://github.com/nearai/ironclaw/pull/283))
 - show token usage and cost tracker in gateway status popover ([#284](https://github.com/nearai/ironclaw/pull/284))
 - support custom HTTP headers for OpenAI-compatible provider ([#269](https://github.com/nearai/ironclaw/pull/269))
 - add smart routing provider for cost-optimized model selection ([#281](https://github.com/nearai/ironclaw/pull/281))
@@ -329,7 +329,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- extension registry with metadata catalog and onboarding integration ([#238](https://github.com/nearai/ironclaw/pull/238))
+- extension registry with metadata catalogue and onboarding integration ([#238](https://github.com/nearai/ironclaw/pull/238))
 - *(models)* add GPT-5.3 Codex, full GPT-5.x family, Claude 4.x series, o4-mini ([#197](https://github.com/nearai/ironclaw/pull/197))
 - wire memory hygiene into the heartbeat loop ([#195](https://github.com/nearai/ironclaw/pull/195))
 
@@ -345,7 +345,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Other
 
-- add automated PR labeling system ([#253](https://github.com/nearai/ironclaw/pull/253))
+- add automated PR labelling system ([#253](https://github.com/nearai/ironclaw/pull/253))
 - update CLAUDE.md for recently merged features ([#183](https://github.com/nearai/ironclaw/pull/183))
 
 ## [0.7.0](https://github.com/nearai/ironclaw/compare/ironclaw-v0.6.0...ironclaw-v0.7.0) - 2026-02-19
@@ -454,8 +454,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Other
 
-- Explicitly enable cargo-dist caching for binary artifacts building
-- Skip building binary artifacts on every PR
+- Explicitly enable cargo-dist caching for binary artefacts building
+- Skip building binary artefacts on every PR
 - add module specification rules to CLAUDE.md
 - add setup/onboarding specification (src/setup/README.md)
 - deduplicate tool code and remove dead stubs ([#98](https://github.com/nearai/ironclaw/pull/98))

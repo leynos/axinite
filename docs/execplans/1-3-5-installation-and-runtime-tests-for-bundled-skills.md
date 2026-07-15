@@ -27,7 +27,7 @@ LoadedSkill whose `skill_root()` contains every archive entry with
 identical bytes; a download-payload install does the same; the matching
 `skill_read_file` reads return either UTF-8 text inline or the typed
 `non_inline_asset`/`file_too_large` payload depending on entry; and at
-least one parameterised case per RFC denial code returns the documented
+least one parameterized case per RFC denial code returns the documented
 HTTP error and leaves no staged temp directories behind. A property test
 covers the round-trip invariant over arbitrary valid bundle shapes, and a
 behavioural test names the lazy-read journey in a `.feature` file so the
@@ -113,7 +113,7 @@ Existing implementation entry points the new tests will exercise:
 
 Relevant existing test bases to consult and extend rather than duplicate:
 
-- `src/skills/bundle/tests.rs`: validator unit and parameterised
+- `src/skills/bundle/tests.rs`: validator unit and parameterized
   negative cases. Already extensive.
 - `src/skills/registry/tests/install.rs`: install pipeline lifecycle,
   with `BundleInstallFixture` and `build_bundle_archive`.
@@ -189,7 +189,7 @@ Relevant docs to consult during design:
   `reqwest` are already available.
 - New test-only dependencies require a short decision-log entry
   explaining why existing crates are insufficient.
-- Use `rstest` fixtures for shared setup and `#[rstest]` parameterised
+- Use `rstest` fixtures for shared setup and `#[rstest]` parameterized
   cases for table-driven coverage. Use `rstest-bdd` (Rust) for
   behavioural scenarios. Do not add `pytest-bdd` to the Python e2e
   package for this milestone.
@@ -261,7 +261,7 @@ document the conflict in `Decision Log`, and ask for direction.
   Likelihood: medium.
   Mitigation: keep generators narrow (one root, bounded entry count,
   bounded content size, ASCII-only file stems), prefer combinator
-  composition over hand-written `Strategy::new`, and assert on a
+  composition over handwritten `Strategy::new`, and assert on a
   concrete map of `relative_path -> bytes` rather than ordering.
 
 - Risk: tests that span install plus runtime read end up duplicating
@@ -317,7 +317,7 @@ document the conflict in `Decision Log`, and ask for direction.
   Likelihood: low.
   Mitigation: keep snapshot coverage scoped to the variants this
   milestone needs, and rely on the existing
-  `snapshot_skill_read_file_response_shapes` parameterisation for
+  `snapshot_skill_read_file_response_shapes` parameterization for
   per-variant churn.
 
 ## Progress
@@ -364,7 +364,7 @@ document the conflict in `Decision Log`, and ask for direction.
 - Observation: the 2026-06-12 implementation pass confirmed the
   earlier gap analysis still matches the current tree. Registry
   bundle tests preserve a small three-file archive; file-read tests
-  read hand-written tempdir fixtures; tool tests register a bundle by
+  read handwritten tempdir fixtures; tool tests register a bundle by
   constructing `LoadedSkillLocation` directly; and the upload
   integration test still has one happy path only.
   Evidence: `src/skills/registry/tests/install.rs`,
@@ -434,8 +434,8 @@ document the conflict in `Decision Log`, and ask for direction.
   malformed `.skill` uploads. The single existing integration test
   asserts only the happy path.
   Evidence: `tests/channels/skills_upload.rs` contains one test
-  case and no parameterised negatives.
-  Impact: a small `#[rstest]` parameterisation can cover each
+  case and no parameterized negatives.
+  Impact: a small `#[rstest]` parameterization can cover each
   bundle-validator negative through the gateway and confirm both the
   HTTP status code and the absence of leaked install-root entries.
 
@@ -559,7 +559,7 @@ document the conflict in `Decision Log`, and ask for direction.
   cannot host it.
   Rationale: `rstest-bdd` features earn their keep when the
   scenario is genuinely externally observable. Per-case
-  parameterisation belongs in `#[rstest]` cases.
+  parameterization belongs in `#[rstest]` cases.
   Date/Author: 2026-06-02 / Codex.
 
 - Decision: keep the install→read journey in table-driven
@@ -685,13 +685,13 @@ tests in the registry test module. Note: the existing
 `src/skills/registry/tests/install.rs:34-97` already exercises
 both `DownloadedBytes` and `ArchiveBytes` payload variants on a
 basic happy-path bundle. This stage adds a strictly stronger
-regression test parameterised on the same transports, plus the
+regression test parameterized on the same transports, plus the
 round-trip property test. Do not duplicate the existing happy-path
 case.
 
 - `test_install_preserves_references_and_assets_regression_rfc0003`:
   the named regression test for the bug the RFC fixes (the prior
-  installer dropped ancillary files). Parameterise via `#[rstest]`
+  installer dropped ancillary files). Parameterize via `#[rstest]`
   on `SkillInstallPayload::DownloadedBytes` and `ArchiveBytes` so
   both transports share one assertion body. The bundle contains
   each archive-validator-accepted entry class (`SKILL.md`,
@@ -758,7 +758,7 @@ enum MalformedKind {
 ```
 
 - `multipart_skill_bundle_upload_rejects_malformed_bundles`: an
-  `#[rstest]` parameterised case over `MalformedKind` that builds a
+  `#[rstest]` parameterized case over `MalformedKind` that builds a
   one-violation-per-case archive through a shared
   `build_malformed_archive(kind)` helper. Each case asserts HTTP
   `400 Bad Request`, an `invalid_skill_bundle` substring in the
@@ -777,7 +777,7 @@ enum MalformedKind {
   MIME type. Gate the read assertions on `target_os = "linux"`.
 
 Stage E adds the behavioural coverage. The install→read journey is
-table-shaped and belongs in `#[rstest]` parameterisation rather
+table-shaped and belongs in `#[rstest]` parameterization rather
 than Gherkin (see Decision Log entry on this), so the only new
 behavioural scenario in this milestone is the
 progressive-disclosure assertion, and it lives next to the
@@ -813,7 +813,7 @@ For the install→read journey itself, add table-driven
 `src/tools/builtin/skill_tools/tests.rs`:
 
 - `test_skill_read_file_tool_after_install_returns_each_documented_entry`:
-  parameterised over the manifest of documented bundled paths
+  parameterized over the manifest of documented bundled paths
   (`SKILL.md`, `references/usage.md`,
   `references/nested/api.md`, `assets/note.txt`). Each case
   installs the shared fixture, drives `SkillReadFileTool::execute`
@@ -982,7 +982,7 @@ The milestone is accepted when all of the following are true:
   manifest, with a doc comment citing RFC 0003 and the
   dropped-files bug.
 - The install→read journey is exercised through table-driven
-  `#[rstest] #[case]` parameterisation in
+  `#[rstest] #[case]` parameterization in
   `src/tools/builtin/skill_tools/tests.rs`, not through Gherkin.
 - `docs/roadmap.md` marks `1.3.5` done, and
   `docs/agent-skills-support.md` plus `docs/developers-guide.md`
@@ -1094,7 +1094,7 @@ crate::tools::builtin::skill_tools::SkillReadFileTool::new(
 No new runtime dependencies. New test-only dependencies must be
 recorded in `Decision Log` with a one-line justification.
 
-## Artifacts and notes
+## Artefacts and notes
 
 - `/tmp/focused-registry-stage-b-1-3-5-rerun-axinite-1-3-5-installation-and-runtime-tests-for-bundled-skills.out`:
   `3 tests run: 3 passed`, covering
@@ -1196,13 +1196,13 @@ explicit atomicity observation under `Surprises & Discoveries`.
 2026-06-02 (Logisphere expert review revisions): dropped the
 duplicate `test_install_preserves_all_documented_entries` and
 `test_uploaded_archive_preserves_all_documented_entries` cases
-in favour of one parameterised regression test; resolved the
+in favour of one parameterized regression test; resolved the
 property-test case-count contradiction (32 cases with bounded
 shrinking); added a uniqueness invariant to the proptest
 generator and switched to `CompressionMethod::Stored`; relocated
 the progressive-disclosure scenario to the dispatcher BDD module;
 demoted the install→read journey from a `.feature` scenario to
-`#[rstest] #[case]` parameterisation; renamed the non-Linux
+`#[rstest] #[case]` parameterization; renamed the non-Linux
 fallthrough test for clarity; added Decision Log entries for the
 fixture ownership model, the BDD/rstest split, and the
 scenario placement; recorded the RFC §3 collision-handling gap as

@@ -1,4 +1,4 @@
-//! Install-artifact materialisation for staged skill installs.
+//! Install-artefact materialization for staged skill installs.
 
 use std::path::{Path, PathBuf};
 
@@ -10,36 +10,36 @@ use crate::skills::bundle::{
 use crate::skills::normalize_line_endings;
 use crate::skills::parser::{SkillParseError, parse_skill_md};
 
-pub(super) struct InstallArtifact {
+pub(super) struct InstallArtefact {
     pub(super) install_dir_name: String,
     pub(super) package_kind: SkillPackageKind,
     pub(super) files: Vec<(PathBuf, Vec<u8>)>,
 }
 
-pub(super) fn materialize_install_artifact(
+pub(super) fn materialize_install_artefact(
     payload: SkillInstallPayload,
-) -> Result<InstallArtifact, SkillRegistryError> {
+) -> Result<InstallArtefact, SkillRegistryError> {
     match payload {
-        SkillInstallPayload::Markdown(content) => build_markdown_artifact(content),
+        SkillInstallPayload::Markdown(content) => build_markdown_artefact(content),
         SkillInstallPayload::DownloadedBytes(bytes) => {
             if looks_like_skill_archive(&bytes) {
-                Ok(build_bundle_artifact(validate_skill_archive(&bytes)?))
+                Ok(build_bundle_artefact(validate_skill_archive(&bytes)?))
             } else {
                 let content = String::from_utf8(bytes).map_err(|error| {
                     SkillRegistryError::InvalidContent {
                         reason: format!("downloaded skill content is not valid UTF-8: {error}"),
                     }
                 })?;
-                build_markdown_artifact(content)
+                build_markdown_artefact(content)
             }
         }
         SkillInstallPayload::ArchiveBytes(bytes) => {
-            Ok(build_bundle_artifact(validate_skill_archive(&bytes)?))
+            Ok(build_bundle_artefact(validate_skill_archive(&bytes)?))
         }
     }
 }
 
-fn build_markdown_artifact(content: String) -> Result<InstallArtifact, SkillRegistryError> {
+fn build_markdown_artefact(content: String) -> Result<InstallArtefact, SkillRegistryError> {
     let normalized_content = normalize_line_endings(&content);
     let parsed = parse_skill_md(&normalized_content).map_err(|e: SkillParseError| match e {
         SkillParseError::InvalidName { ref name } => SkillRegistryError::ParseError {
@@ -52,14 +52,14 @@ fn build_markdown_artifact(content: String) -> Result<InstallArtifact, SkillRegi
         },
     })?;
 
-    Ok(InstallArtifact {
+    Ok(InstallArtefact {
         install_dir_name: parsed.manifest.name,
         package_kind: SkillPackageKind::SingleFile,
         files: vec![(PathBuf::from("SKILL.md"), normalized_content.into_bytes())],
     })
 }
 
-fn build_bundle_artifact(bundle: ValidatedSkillBundle) -> InstallArtifact {
+fn build_bundle_artefact(bundle: ValidatedSkillBundle) -> InstallArtefact {
     let files = bundle
         .entries()
         .iter()
@@ -71,18 +71,18 @@ fn build_bundle_artifact(bundle: ValidatedSkillBundle) -> InstallArtifact {
         })
         .collect();
 
-    InstallArtifact {
+    InstallArtefact {
         install_dir_name: bundle.skill_name().to_string(),
         package_kind: SkillPackageKind::Bundle,
         files,
     }
 }
 
-pub(super) async fn write_install_artifact(
+pub(super) async fn write_install_artefact(
     staged_dir: &Path,
-    artifact: &InstallArtifact,
+    artefact: &InstallArtefact,
 ) -> Result<(), SkillRegistryError> {
-    for (relative_path, contents) in &artifact.files {
+    for (relative_path, contents) in &artefact.files {
         let file_path = staged_dir.join(relative_path);
         if let Some(parent) = file_path.parent() {
             tokio::fs::create_dir_all(parent).await.map_err(|e| {

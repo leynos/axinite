@@ -2,7 +2,7 @@
 //!
 //! Keeps the top-level phase ordering in one place while sibling modules own
 //! turn preparation, context compaction/checkpointing, and result
-//! finalisation.
+//! finalization.
 
 use crate::agent::Agent;
 use crate::agent::submission::SubmissionResult;
@@ -273,7 +273,7 @@ mod tests {
         assert_eq!(
             thread.state,
             ThreadState::Idle,
-            "successful processing should finalise the thread back to idle"
+            "successful processing should finalize the thread back to idle"
         );
     }
 }

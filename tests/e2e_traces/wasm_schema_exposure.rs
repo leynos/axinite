@@ -79,7 +79,7 @@ impl NativeLlmProvider for CapturingToolLlm {
 }
 
 /// rstest fixture that builds and returns a [`GithubWasmFixture`] backed
-/// by the shared GitHub WASM test artifact.
+/// by the shared GitHub WASM test artefact.
 #[fixture]
 async fn github_wasm_fixture() -> anyhow::Result<GithubWasmFixture> {
     let wrapper = github_wasm_wrapper()

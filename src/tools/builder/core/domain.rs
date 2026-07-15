@@ -13,7 +13,7 @@ use std::pin::Pin;
 
 use serde::de::Error as _;
 
-/// Validated identifier used for builder project directories and artifact names.
+/// Validated identifier used for builder project directories and artefact names.
 #[derive(Debug, Clone, Serialize, PartialEq, Eq, Hash)]
 #[serde(transparent)]
 pub struct ProjectName(String);
@@ -212,7 +212,7 @@ pub struct BuildResult {
     pub build_id: Uuid,
     /// The requirement that was built.
     pub requirement: BuildRequirement,
-    /// Path to the output artifact.
+    /// Path to the output artefact.
     pub artifact_path: PathBuf,
     /// Build logs.
     pub logs: Vec<BuildLog>,
@@ -313,7 +313,7 @@ pub type SoftwareBuilderFuture<'a, T> = Pin<Box<dyn Future<Output = T> + Send + 
 /// [`NativeSoftwareBuilder`] instead; the blanket adapter below bridges those
 /// native futures into this boxed-future surface.
 pub trait SoftwareBuilder: Send + Sync {
-    /// Analyze a natural language description and extract a structured requirement.
+    /// Analyse a natural language description and extract a structured requirement.
     fn analyze<'a>(
         &'a self,
         description: &'a str,
@@ -344,7 +344,7 @@ pub trait SoftwareBuilder: Send + Sync {
 /// `LlmSoftwareBuilder` implements `NativeSoftwareBuilder`, while callers that
 /// need dynamic dispatch continue to use `SoftwareBuilder`.
 pub trait NativeSoftwareBuilder: Send + Sync {
-    /// Analyze a natural language description and extract a structured requirement.
+    /// Analyse a natural language description and extract a structured requirement.
     fn analyze<'a>(
         &'a self,
         description: &'a str,

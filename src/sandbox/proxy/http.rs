@@ -219,7 +219,7 @@ async fn handle_request(
         .request_count
         .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
 
-    // Handle CONNECT method for HTTPS tunneling
+    // Handle CONNECT method for HTTPS tunnelling
     if req.method() == Method::CONNECT {
         return Ok(handle_connect(req, state).await);
     }
@@ -254,7 +254,7 @@ async fn handle_request(
     }
 }
 
-/// Handle CONNECT method for HTTPS tunneling.
+/// Handle CONNECT method for HTTPS tunnelling.
 ///
 /// Establishes a bidirectional TCP tunnel between the client and the target host.
 /// Returns 200 OK to signal the client to begin TLS over the upgraded connection.

@@ -66,20 +66,20 @@ pub async fn skills_search_handler(
         "Skills system not enabled".to_string(),
     ))?;
 
-    let catalog = state.skill_catalog.as_ref().ok_or((
+    let catalogue = state.skill_catalog.as_ref().ok_or((
         StatusCode::NOT_IMPLEMENTED,
-        "Skill catalog not available".to_string(),
+        "Skill catalogue not available".to_string(),
     ))?;
 
-    // Search ClawHub catalog
-    let catalog_outcome = catalog.search(&req.query).await;
-    let catalog_error = catalog_outcome.error.clone();
+    // Search ClawHub catalogue
+    let catalogue_outcome = catalogue.search(&req.query).await;
+    let catalog_error = catalogue_outcome.error.clone();
 
     // Enrich top results with detail data (stars, downloads, owner)
-    let mut entries = catalog_outcome.results;
-    catalog.enrich_search_results(&mut entries, 5).await;
+    let mut entries = catalogue_outcome.results;
+    catalogue.enrich_search_results(&mut entries, 5).await;
 
-    let catalog_json: Vec<serde_json::Value> = entries
+    let catalogue_json: Vec<serde_json::Value> = entries
         .into_iter()
         .map(|e| {
             serde_json::json!({
@@ -124,9 +124,9 @@ pub async fn skills_search_handler(
     };
 
     Ok(Json(SkillSearchResponse {
-        catalog: catalog_json,
+        catalog: catalogue_json,
         installed,
-        registry_url: catalog.registry_url().to_string(),
+        registry_url: catalogue.registry_url().to_string(),
         catalog_error,
     }))
 }

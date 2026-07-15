@@ -89,15 +89,15 @@ files to inspect are:
   speculative migration to a new WIT package version or a new `wit-bindgen`
   major.
 - Keep compatibility enforcement honest. Do not weaken
-  `check_wit_version_compat` merely to silence stale installed artifacts.
-- Only bump extension artifact versions if files inside the extension source or
+  `check_wit_version_compat` merely to silence stale installed artefacts.
+- Only bump extension artefact versions if files inside the extension source or
   shipped metadata actually change. If the audit proves an extension is already
   correct, avoid unnecessary churn in its `version`.
 - Preserve the difference between genuinely historical installed extensions and
   defaults used for newly created records. Historical compatibility handling
   may still need to understand old values, but new default records should not
   imply the host is still on `0.1.0`.
-- Keep release packaging truthful. If any extension artifacts or registry
+- Keep release packaging truthful. If any extension artefacts or registry
   metadata change, rebuild bundles and refresh checksums from the rebuilt
   archives.
 - Use the repository’s existing validation style: prefer the top-level
@@ -111,12 +111,12 @@ files to inspect are:
   Narrow the implementation to stale runtime defaults, tests, and docs.
 - If any curated extension or channel still advertises a pre-`0.3.0` WIT
   version, expand the scope to that specific extension set and bump its regular
-  artifact version together with the WIT metadata fix.
+  artefact version together with the WIT metadata fix.
 - If the user intended sibling repositories such as external plugins outside
   this repo, stop after completing the IronClaw-host plan and ask for the exact
   repos to include. This plan only has direct authority over the current
   repository.
-- If release checksums cannot be regenerated from local artifacts after any
+- If release checksums cannot be regenerated from local artefacts after any
   extension metadata change, leave the work partial and call out the exact
   missing bundle paths.
 
@@ -134,7 +134,7 @@ files to inspect are:
 - The compatibility checker treats `0.x` minors as breaking. That is correct
   for `0.3.0`, but the audit must confirm the tests still describe the current
   rule clearly.
-- Registry manifests include release artifact checksums. If any shipped
+- Registry manifests include release artefact checksums. If any shipped
   extension metadata changes and the checksums are not refreshed, installs from
   the curated registry will drift.
 
@@ -193,11 +193,11 @@ The implementation goal is narrow:
 
 1. Replace stale `0.1.0` defaults when they describe newly created rows or
    newly reported host expectations.
-2. Keep compatibility handling for genuinely older installed artifacts intact.
+2. Keep compatibility handling for genuinely older installed artefacts intact.
 3. Update tests so host-facing info and upgrade flows consistently describe the
    current contract as `0.3.0`.
 
-Be careful here. A stored historical artifact may still legitimately contain
+Be careful here. A stored historical artefact may still legitimately contain
 `0.1.0`, but a fresh record created under the current host should not default
 to that value unless there is a documented backward-compatibility reason.
 
@@ -223,7 +223,7 @@ test fixes.
 
 ## Milestone 3: Refresh operator and contributor guidance
 
-After runtime behavior is truthful, make the human-facing guidance match the
+After runtime behaviour is truthful, make the human-facing guidance match the
 actual current contract.
 
 Files to review:
@@ -240,7 +240,7 @@ target WIT `0.3.0`.
 
 If the audit in Milestone 1 found zero extension-matrix drift, this milestone
 may be mostly wording and evidence updates. If Milestone 2 changed no
-extension-side artifacts, do not republish or checksum-bump bundles just to
+extension-side artefacts, do not republish or checksum-bump bundles just to
 create motion.
 
 Suggested commands:
@@ -261,7 +261,7 @@ set -o pipefail && \
 Commit boundary after this milestone: one docs-and-tests commit if files
 changed.
 
-## Milestone 4: Rebuild and republish only if extension artifacts changed
+## Milestone 4: Rebuild and republish only if extension artefacts changed
 
 This milestone is conditional. Only execute it if Milestone 1 or Milestone 2
 required edits inside extension source directories, sidecar capabilities files,
@@ -273,7 +273,7 @@ If that happens:
 2. Refresh all affected registry `sha256` values from the rebuilt archives.
 3. Verify `.github/workflows/release.yml` still packages the same bundle names.
 
-If no shipped extension artifacts changed, explicitly record that this
+If no shipped extension artefacts changed, explicitly record that this
 milestone was skipped because the curated matrix was already at WIT `0.3.0`.
 
 Suggested commands:
@@ -285,7 +285,7 @@ set -o pipefail && \
   tee /tmp/build-release-bundles-ironclaw-${BRANCH}.out
 ```
 
-Commit boundary after this milestone: one release-artifact sync commit if and
+Commit boundary after this milestone: one release-artefact sync commit if and
 only if shipped bundles or registry manifests changed.
 
 ## Validation and acceptance evidence
@@ -301,7 +301,7 @@ following:
 4. `cargo test --all-features --test wit_compat -- --nocapture` succeeds.
 5. Any stale host-default or info-path `0.1.0` values that were misleading for
    new records have been removed or documented.
-6. If any shipped extension artifacts changed, the registry checksums come from
+6. If any shipped extension artefacts changed, the registry checksums come from
    rebuilt archives.
 
 Record the exact log paths in the final implementation summary.
@@ -412,7 +412,7 @@ Record the exact log paths in the final implementation summary.
 - 2026-03-09T16:50:14+00:00: Keep the extension-matrix scope repo-local unless
   the user later names external plugin repositories explicitly.
 - 2026-03-09T16:50:14+00:00: Only rebuild and republish bundles if extension
-  artifacts or registry manifests actually change during the alignment work.
+  artefacts or registry manifests actually change during the alignment work.
 - 2026-03-09T17:08:00+00:00: Treat the current implementation scope as three
   coordinated deliverables: truthful WIT defaults and migration behaviour,
   red-green unit plus behavioural coverage for those application changes, and
@@ -448,4 +448,4 @@ Implementation is complete.
   `/tmp/markdownlint-ironclaw-use-wit-v3-in-extensions.out`
   captured markdown lint passing for the updated plan and imported guide.
 - Release bundles were correctly left unchanged because no shipped extension
-  artifact inputs changed.
+  artefact inputs changed.

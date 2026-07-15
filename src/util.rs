@@ -160,7 +160,7 @@ mod tests {
             "Let me finish the remaining steps."
         ));
         assert!(!llm_signals_completion(
-            "I'm done analyzing, now let me fix it."
+            "I'm done analysing, now let me fix it."
         ));
         assert!(!llm_signals_completion(
             "I completed step 1 but step 2 remains."

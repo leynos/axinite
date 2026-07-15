@@ -1,7 +1,7 @@
 //! HTTP endpoint allowlist validation.
 //!
 //! Validates that HTTP requests from WASM tools only go to allowed endpoints.
-//! This is the first line of defense against unauthorized API access.
+//! This is the first line of defence against unauthorized API access.
 //!
 //! # Validation Flow
 //!

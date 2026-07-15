@@ -196,6 +196,6 @@ async fn process_runnable_tool_records_non_json_results_as_strings() {
     assert_eq!(
         recorded,
         serde_json::Value::String(expected_wrapped),
-        "non-JSON output should remain a string after sanitisation"
+        "non-JSON output should remain a string after sanitization"
     );
 }

@@ -38,7 +38,7 @@ same branch.
 ### Required before opening a PR
 
 1. Review the relevant parity rows in `FEATURE_PARITY.md`.
-2. Update status/notes if behavior changed.
+2. Update status/notes if behaviour changed.
 3. Include the `FEATURE_PARITY.md` diff in your commit when applicable.
 
 ## Review Tracks

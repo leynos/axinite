@@ -1,34 +1,34 @@
-//! Serialisation round-trip tests for shared orchestrator–worker transport types.
+//! Serialization round-trip tests for shared orchestrator–worker transport types.
 
 use std::sync::Arc;
 
-use super::super::remote_tools::hosted_remote_tool_catalog;
+use super::super::remote_tools::hosted_remote_tool_catalogue;
 use super::fixtures::remote_tool_mocks::complex_tool_stub;
 use crate::llm::ChatMessage;
 use crate::tools::ToolRegistry;
 
 #[tokio::test]
-async fn orchestrator_catalog_response_round_trips_through_worker_shared_types() {
+async fn orchestrator_catalogue_response_round_trips_through_worker_shared_types() {
     let registry = Arc::new(ToolRegistry::new());
     registry.register(Arc::new(complex_tool_stub())).await;
 
-    let (tools, instructions, version) = hosted_remote_tool_catalog(&registry).await;
+    let (tools, instructions, version) = hosted_remote_tool_catalogue(&registry).await;
 
-    let catalog_response = crate::worker::api::RemoteToolCatalogResponse {
+    let catalogue_response = crate::worker::api::RemoteToolCatalogResponse {
         tools: tools.clone(),
         toolset_instructions: instructions.clone(),
         catalog_version: version,
     };
 
-    let serialized = serde_json::to_string(&catalog_response)
-        .expect("serialize orchestrator-built catalog response");
+    let serialized = serde_json::to_string(&catalogue_response)
+        .expect("serialize orchestrator-built catalogue response");
     let deserialized: crate::worker::api::RemoteToolCatalogResponse =
         serde_json::from_str(&serialized)
             .expect("orchestrator response must deserialize into shared type");
 
     assert_eq!(
-        deserialized, catalog_response,
-        "catalog response must round-trip without field loss"
+        deserialized, catalogue_response,
+        "catalogue response must round-trip without field loss"
     );
 }
 
@@ -78,7 +78,7 @@ async fn orchestrator_execution_response_round_trips_through_worker_shared_types
 async fn worker_tool_completion_request_round_trips_through_shared_types() {
     let registry = Arc::new(ToolRegistry::new());
     registry.register(Arc::new(complex_tool_stub())).await;
-    let (tools, _instructions, _version) = hosted_remote_tool_catalog(&registry).await;
+    let (tools, _instructions, _version) = hosted_remote_tool_catalogue(&registry).await;
 
     let completion_request = crate::worker::api::ProxyToolCompletionRequest {
         messages: vec![

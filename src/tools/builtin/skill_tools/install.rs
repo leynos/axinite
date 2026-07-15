@@ -14,7 +14,7 @@ use crate::tools::tool::{
 /// Install skills from inline content, a URL, or a catalogue lookup.
 pub struct SkillInstallTool {
     registry: Arc<std::sync::RwLock<SkillRegistry>>,
-    catalog: Arc<SkillCatalog>,
+    catalogue: Arc<SkillCatalog>,
 }
 
 enum SelectedInstallSource<'a> {
@@ -27,17 +27,20 @@ impl SkillInstallTool {
     /// Create a skill installer backed by the shared registry and catalogue.
     pub fn new(
         registry: Arc<std::sync::RwLock<SkillRegistry>>,
-        catalog: Arc<SkillCatalog>,
+        catalogue: Arc<SkillCatalog>,
     ) -> Self {
-        Self { registry, catalog }
+        Self {
+            registry,
+            catalogue,
+        }
     }
 
-    async fn resolve_catalog_slug(&self, name_or_slug: &str) -> String {
+    async fn resolve_catalogue_slug(&self, name_or_slug: &str) -> String {
         if name_or_slug.contains('/') {
             return name_or_slug.to_string();
         }
 
-        self.catalog
+        self.catalogue
             .search(name_or_slug)
             .await
             .results
@@ -93,7 +96,7 @@ impl NativeTool for SkillInstallTool {
     }
 
     fn description(&self) -> &str {
-        "Install a skill from SKILL.md content, a URL, or by name from the ClawHub catalog."
+        "Install a skill from SKILL.md content, a URL, or by name from the ClawHub catalogue."
     }
 
     fn parameters_schema(&self) -> serde_json::Value {
@@ -139,9 +142,11 @@ impl NativeTool for SkillInstallTool {
                     .map_err(|error| ToolError::ExecutionFailed(error.to_string()))?,
             ),
             SelectedInstallSource::Name(value) => {
-                let slug = self.resolve_catalog_slug(value).await;
-                let download_url =
-                    crate::skills::catalog::skill_download_url(self.catalog.registry_url(), &slug);
+                let slug = self.resolve_catalogue_slug(value).await;
+                let download_url = crate::skills::catalog::skill_download_url(
+                    self.catalogue.registry_url(),
+                    &slug,
+                );
                 SkillInstallPayload::DownloadedBytes(
                     fetch_skill_bytes(&download_url)
                         .await

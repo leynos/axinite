@@ -69,7 +69,7 @@ fn default_base_dir() -> PathBuf {
 ///
 /// Thread-safe: the value is computed once and cached in a `LazyLock`.
 ///
-/// # Environment Variable Behavior
+/// # Environment Variable Behaviour
 /// - If `IRONCLAW_BASE_DIR` is set to a non-empty path, that path is used.
 /// - If `IRONCLAW_BASE_DIR` is set to an empty string, it is treated as unset.
 /// - If `IRONCLAW_BASE_DIR` contains null bytes, a warning is printed and the default is used.

@@ -593,7 +593,7 @@ fn libsql_channel_parse_ts(s: &str) -> Result<DateTime<Utc>, WasmChannelStoreErr
         return Ok(ndt.and_utc());
     }
     Err(WasmChannelStoreError::InvalidData(format!(
-        "unparseable timestamp: {:?}",
+        "unparsable timestamp: {:?}",
         s
     )))
 }

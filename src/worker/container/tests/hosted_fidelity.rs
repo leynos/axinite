@@ -25,7 +25,7 @@ use crate::worker::container::{WorkerConfig, WorkerRuntime};
 
 /// Test harness containing a [`WorkerRuntime`] configured with remote tools
 /// and the server join handle for shutdown.
-pub struct HostedCatalogHarness {
+pub struct HostedCatalogueHarness {
     /// The worker runtime with remote tools registered.
     pub runtime: WorkerRuntime,
     /// Join handle for the background test server.
@@ -52,8 +52,8 @@ fn complex_orchestrator_wasm_tool_definition() -> ToolDefinition {
 /// Axum handler that returns a catalogue containing
 /// [`complex_orchestrator_wasm_tool_definition`] for the remote-tool
 /// catalogue route.
-async fn remote_tool_catalog_with_complex_tool(
-    State(_): State<HostedCatalogTestState>,
+async fn remote_tool_catalogue_with_complex_tool(
+    State(_): State<HostedCatalogueTestState>,
     Path(_job_id): Path<Uuid>,
 ) -> Json<RemoteToolCatalogResponse> {
     Json(RemoteToolCatalogResponse {
@@ -66,14 +66,14 @@ async fn remote_tool_catalog_with_complex_tool(
 /// Shared Axum state holding the buffer of captured proxied LLM
 /// tool-completion requests.
 #[derive(Clone, Default)]
-struct HostedCatalogTestState {
+struct HostedCatalogueTestState {
     captured_requests: Arc<Mutex<Vec<ProxyToolCompletionRequest>>>,
 }
 
 /// Axum handler that records each incoming [`ProxyToolCompletionRequest`]
 /// into shared state and returns a deterministic stub completion response.
 async fn capture_llm_complete_with_tools(
-    State(state): State<HostedCatalogTestState>,
+    State(state): State<HostedCatalogueTestState>,
     Path(_job_id): Path<Uuid>,
     Json(request): Json<ProxyToolCompletionRequest>,
 ) -> Json<ProxyToolCompletionResponse> {
@@ -95,7 +95,7 @@ async fn capture_llm_complete_with_tools(
 ///
 /// Returns the base URL, a handle to the captured-requests buffer, and the
 /// server join handle.
-async fn spawn_hosted_catalog_server() -> Result<
+async fn spawn_hosted_catalogue_server() -> Result<
     (
         String,
         Arc<Mutex<Vec<ProxyToolCompletionRequest>>>,
@@ -103,14 +103,14 @@ async fn spawn_hosted_catalog_server() -> Result<
     ),
     anyhow::Error,
 > {
-    let state = HostedCatalogTestState::default();
+    let state = HostedCatalogueTestState::default();
     let captured_requests = Arc::clone(&state.captured_requests);
     let listener = TcpListener::bind("127.0.0.1:0").await?;
     let addr = listener.local_addr()?;
     let router = Router::new()
         .route(
             crate::worker::api::REMOTE_TOOL_CATALOG_ROUTE,
-            get(remote_tool_catalog_with_complex_tool),
+            get(remote_tool_catalogue_with_complex_tool),
         )
         .route(
             LLM_COMPLETE_WITH_TOOLS_ROUTE,
@@ -129,8 +129,8 @@ async fn spawn_hosted_catalog_server() -> Result<
 /// rstest fixture that starts a [`spawn_hosted_catalog_server`] instance
 /// and builds a [`HostedCatalogHarness`] wired to it.
 #[fixture]
-async fn hosted_catalog_harness() -> Result<HostedCatalogHarness, Box<dyn std::error::Error>> {
-    let (base_url, captured_requests, server) = spawn_hosted_catalog_server().await?;
+async fn hosted_catalogue_harness() -> Result<HostedCatalogueHarness, Box<dyn std::error::Error>> {
+    let (base_url, captured_requests, server) = spawn_hosted_catalogue_server().await?;
 
     let client = Arc::new(
         WorkerHttpClient::new(base_url.clone(), Uuid::nil(), "test".to_string())
@@ -146,7 +146,7 @@ async fn hosted_catalog_harness() -> Result<HostedCatalogHarness, Box<dyn std::e
     )
     .context("test runtime should build")?;
 
-    Ok(HostedCatalogHarness {
+    Ok(HostedCatalogueHarness {
         runtime,
         server,
         captured_requests,
@@ -156,11 +156,11 @@ async fn hosted_catalog_harness() -> Result<HostedCatalogHarness, Box<dyn std::e
 #[rstest]
 #[tokio::test]
 async fn hosted_worker_proxy_definition_matches_orchestrator_canonical_definition(
-    #[future] hosted_catalog_harness: Result<HostedCatalogHarness, Box<dyn std::error::Error>>,
+    #[future] hosted_catalogue_harness: Result<HostedCatalogueHarness, Box<dyn std::error::Error>>,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    let HostedCatalogHarness {
+    let HostedCatalogueHarness {
         runtime, server, ..
-    } = hosted_catalog_harness.await?;
+    } = hosted_catalogue_harness.await?;
 
     runtime.register_remote_tools().await?;
 
@@ -191,13 +191,13 @@ async fn hosted_worker_proxy_definition_matches_orchestrator_canonical_definitio
 #[rstest]
 #[tokio::test]
 async fn hosted_worker_first_llm_request_forwards_wasm_schema_on_first_call(
-    #[future] hosted_catalog_harness: Result<HostedCatalogHarness, Box<dyn std::error::Error>>,
+    #[future] hosted_catalogue_harness: Result<HostedCatalogueHarness, Box<dyn std::error::Error>>,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    let HostedCatalogHarness {
+    let HostedCatalogueHarness {
         runtime,
         server,
         captured_requests,
-    } = hosted_catalog_harness.await?;
+    } = hosted_catalogue_harness.await?;
 
     runtime.register_remote_tools().await?;
 

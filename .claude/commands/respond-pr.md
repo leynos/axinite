@@ -45,7 +45,7 @@ For each unique issue raised in the comments:
 
 1. **Check if already addressed** - Read the current code at the referenced location. If a prior commit already fixed it, note it as "already resolved".
 2. **Assess validity** - Determine if the comment identifies a real problem or is a false positive. Be honest about false positives but explain why.
-3. **Classify severity** - Critical (security/data loss), High (bugs/broken behavior), Medium (correctness/robustness), Low (style/naming/nits).
+3. **Classify severity** - Critical (security/data loss), High (bugs/broken behaviour), Medium (correctness/robustness), Low (style/naming/nits).
 4. **Plan the fix** - For each valid unresolved issue, describe the specific code change needed.
 
 Present the plan as a table to the user:

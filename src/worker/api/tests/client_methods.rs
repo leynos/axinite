@@ -51,7 +51,7 @@ async fn spawn_test_server(
 ///
 /// The caller supplies a closure that receives the shared `ClientMethodTestState`
 /// and returns a fully configured `Router`. This avoids repeating state
-/// construction and client initialisation in every test body.
+/// construction and client initialization in every test body.
 async fn setup_for_test(
     make_router: impl FnOnce(Arc<ClientMethodTestState>) -> Router,
 ) -> anyhow::Result<(

@@ -1,6 +1,6 @@
 //! Shared environment-reading helpers for configuration resolution.
 //!
-//! This module centralises the small pieces of policy that sit between raw
+//! This module centralizes the small pieces of policy that sit between raw
 //! process environment access and the higher-level `resolve_from(...)`
 //! routines in `crate::config`.
 //!

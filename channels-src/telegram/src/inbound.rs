@@ -364,10 +364,10 @@ fn emit_agent_message(emission: AgentMessageEmission) {
     );
 }
 
-/// Extract the authorised sender from a message.
+/// Extract the authorized sender from a message.
 ///
 /// Returns `None` if the message has no sender, the sender is a bot,
-/// or the sender is not authorised to interact with the agent.
+/// or the sender is not authorized to interact with the agent.
 fn resolve_authorized_sender(message: &TelegramMessage) -> Option<SenderContext<'_>> {
     let from = message.from.as_ref()?;
 

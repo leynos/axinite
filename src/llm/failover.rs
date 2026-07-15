@@ -24,7 +24,7 @@ use crate::llm::provider::{
 
 use crate::llm::retry::is_retryable;
 
-/// Configuration for per-provider cooldown behavior.
+/// Configuration for per-provider cooldown behaviour.
 ///
 /// When a provider accumulates `failure_threshold` consecutive retryable
 /// failures, it enters cooldown for `cooldown_duration`. During cooldown
@@ -1327,7 +1327,7 @@ mod tests {
             "sole provider should be retried despite cooldown"
         );
 
-        // Third call: same behavior, no state corruption.
+        // Third call: same behaviour, no state corruption.
         let result = failover2.complete(make_request()).await;
         assert!(result.is_err());
         assert_eq!(solo2.call_count(), 3);

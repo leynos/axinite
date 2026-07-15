@@ -1048,7 +1048,7 @@ fn libsql_wasm_parse_ts(s: &str) -> Result<DateTime<Utc>, WasmStorageError> {
         return Ok(ndt.and_utc());
     }
     Err(WasmStorageError::InvalidData(format!(
-        "unparseable timestamp: {:?}",
+        "unparsable timestamp: {:?}",
         s
     )))
 }

@@ -2,7 +2,7 @@
 //!
 //! Each test round-trips a DTO through JSON serialization and asserts the
 //! wire shape via `insta` snapshot macros, so changes produce a single
-//! diffable artifact.
+//! diffable artefact.
 
 use ironclaw::llm::ChatMessage;
 use ironclaw::worker::api::{
@@ -120,14 +120,14 @@ fn job_description_from_fixture() {
 }
 
 #[test]
-fn remote_tool_catalog_response_from_fixture() {
+fn remote_tool_catalogue_response_from_fixture() {
     let fixture = serde_json::json!({
         "tools": [{"name": "t", "description": "d", "parameters": {"type": "object"}}],
         "toolset_instructions": ["Use bash carefully"],
         "catalog_version": 7
     });
     let parsed: RemoteToolCatalogResponse = serde_json::from_value(fixture).expect("parse");
-    insta::assert_json_snapshot!("remote_tool_catalog_response", &parsed);
+    insta::assert_json_snapshot!("remote_tool_catalogue_response", &parsed);
     assert_eq!(parsed.catalog_version, 7);
 
     let re = serde_json::to_string(&parsed).expect("serialize");

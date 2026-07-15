@@ -47,7 +47,7 @@ If the issue is unclear or ambiguous, list the open questions. These will be add
 Before planning, gather context:
 
 1. **Find relevant code** - Search for files, functions, types, and patterns mentioned in the issue. Read them in full.
-2. **Trace the flow** - If the issue is about a specific behavior, trace the code path from the entry point (route handler, CLI command, etc.) through to the relevant logic.
+2. **Trace the flow** - If the issue is about a specific behaviour, trace the code path from the entry point (route handler, CLI command, etc.) through to the relevant logic.
 3. **Check existing tests** - Find tests related to the affected code. Understand what's already covered.
 4. **Check for prior art** - Look for similar patterns in the codebase that solve analogous problems. Prefer consistency with existing patterns.
 

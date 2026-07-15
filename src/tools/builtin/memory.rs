@@ -257,7 +257,7 @@ impl NativeTool for MemoryWriteTool {
                 paths::HEARTBEAT.to_string()
             }
             path => {
-                // Protect identity files from LLM overwrites (prompt injection defense).
+                // Protect identity files from LLM overwrites (prompt injection defence).
                 // These files are injected into the system prompt, so poisoning them
                 // would let an attacker rewrite the agent's core instructions.
                 let normalized = path.trim_start_matches('/');

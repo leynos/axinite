@@ -527,7 +527,7 @@ async fn test_failover_chain_under_chaos() {
     //
     // Use a high cooldown threshold (100) so the flakey provider doesn't
     // enter cooldown during this test -- we want to test pure failover
-    // behavior, not cooldown.
+    // behaviour, not cooldown.
     let flakey: Arc<dyn LlmProvider> =
         Arc::new(FlakeyProvider::new(3, "flakey recovered").with_name("flakey-primary"));
     let reliable: Arc<dyn LlmProvider> =

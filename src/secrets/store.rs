@@ -739,7 +739,7 @@ fn libsql_parse_timestamp(s: &str) -> Result<chrono::DateTime<Utc>, SecretError>
         return Ok(ndt.and_utc());
     }
     Err(SecretError::Database(format!(
-        "unparseable timestamp: {:?}",
+        "unparsable timestamp: {:?}",
         s
     )))
 }

@@ -17,7 +17,7 @@
 //! - `insert_text`: Insert text at a position (or append at end)
 //! - `delete_content`: Delete text in a range
 //! - `replace_text`: Find and replace all occurrences
-//! - `format_text`: Format text (bold, italic, font, color, size)
+//! - `format_text`: Format text (bold, italic, font, colour, size)
 //! - `format_paragraph`: Set heading level, alignment, spacing
 //! - `insert_table`: Insert a table at a position
 //! - `create_list`: Create bulleted/numbered list from paragraphs

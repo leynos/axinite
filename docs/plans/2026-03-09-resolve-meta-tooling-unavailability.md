@@ -282,7 +282,7 @@ If the hosted-worker feature harness proves too complex, do not discard the regr
 
 If a proxy endpoint is partially implemented and tests become confusing, revert only the incomplete endpoint-specific edits, keep the registration and inventory tests, and rerun the red test to verify the regression is still visible before continuing.
 
-## Artifacts and notes
+## Artefacts and notes
 
 Current evidence for the regression:
 

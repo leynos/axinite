@@ -2,7 +2,7 @@
 
 This document is the authoritative specification for IronClaw's onboarding
 wizard. Any code change to `src/setup/` **must** keep this document in sync.
-If a future contributor or coding agent modifies setup behavior, update this
+If a future contributor or coding agent modifies setup behaviour, update this
 file first, then adjust the code to match.
 
 ---
@@ -172,7 +172,7 @@ system dialogs:
 1. "Enter your password to unlock the keychain" (keychain locked)
 2. "Allow ironclaw to access this keychain item" (per-app authorization)
 
-This is OS-level behavior we cannot prevent. To minimize pain:
+This is OS-level behaviour we cannot prevent. To minimize pain:
 
 - **Use `get_master_key()` not `has_master_key()`** in step 2. Both call
   the same underlying API, but `get_master_key()` returns the key bytes
@@ -349,7 +349,7 @@ key first, then falls back to the standard env var.
 **Flow:**
 1. Load `RegistryCatalog` from `registry/` directory
 2. If registry not found, print info and skip
-3. List all tool manifests from the catalog
+3. List all tool manifests from the catalogue
 4. Discover already-installed tools in `~/.ironclaw/tools/`
 5. Multi-select: show all registry tools with display name, auth method,
    and description. Pre-check tools tagged `"default"` and already installed.
@@ -593,9 +593,9 @@ anthropic_api_key     → encrypted API key
 | `confirm(label, default)` | `[Y/n]` or `[y/N]` prompt |
 | `print_header(text)` | Bold section header with underline |
 | `print_step(n, total, text)` | `[1/7] Step Name` |
-| `print_success(text)` | Green `✓` prefix (ANSI color), message in default color |
-| `print_error(text)` | Red `✗` prefix (ANSI color), message in default color |
-| `print_info(text)` | Blue `ℹ` prefix (ANSI color), message in default color |
+| `print_success(text)` | Green `✓` prefix (ANSI colour), message in default colour |
+| `print_error(text)` | Red `✗` prefix (ANSI colour), message in default colour |
+| `print_info(text)` | Blue `ℹ` prefix (ANSI colour), message in default colour |
 
 `select_many` uses `crossterm` raw mode for arrow key navigation.
 Must properly restore terminal state on all exit paths.
@@ -682,7 +682,7 @@ cargo test --lib -- bootstrap
 
 When changing the onboarding flow:
 
-1. Update this README first with the intended behavior change
+1. Update this README first with the intended behaviour change
 2. If adding a new wizard step:
    - Add to the step enum in `run()`, adjust `total_steps`
    - Add corresponding settings fields to `Settings`
@@ -694,7 +694,7 @@ When changing the onboarding flow:
    - Add model fetcher with static fallback + 5s timeout
 4. If touching keychain:
    - Cache the result, never call `get_master_key()` twice
-   - Test on macOS (dialog behavior differs from Linux)
+   - Test on macOS (dialog behaviour differs from Linux)
 5. If touching secrets:
    - Ensure `init_secrets_context()` respects the selected database backend
    - Test with both postgres and libsql features

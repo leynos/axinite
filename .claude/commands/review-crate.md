@@ -164,7 +164,7 @@ IronClaw convention: use `crate::` imports, not `super::`. Flag any `super::` im
 
 - Are there old patterns coexisting with new patterns?
 - Are there renamed types/functions where some call sites still use the old name via a compatibility alias?
-- Are there comments referencing behavior that no longer exists?
+- Are there comments referencing behaviour that no longer exists?
 
 ### 7b. Trait implementation gaps
 
@@ -178,11 +178,11 @@ IronClaw key traits: `Database` (~60 methods), `Channel`, `Tool`, `LlmProvider`,
 
 - Are there public functions without any test?
 - Are there error paths without tests?
-- Are there recently-changed functions where the tests still assert old behavior?
+- Are there recently-changed functions where the tests still assert old behaviour?
 
 ### 7d. Documentation drift
 
-- Do doc comments match actual function behavior?
+- Do doc comments match actual function behaviour?
 - Are examples in doc comments still valid and compilable?
 
 ## Step 8: Dependency audit
@@ -217,7 +217,7 @@ Concrete suggestion with code if applicable.
 ### Severity levels
 
 - **Critical**: Security vulnerability, data loss, or crash in production
-- **High**: Bug that causes incorrect behavior, `todo!()`/`unimplemented!()` in prod code, or missing validation on trust boundaries
+- **High**: Bug that causes incorrect behaviour, `todo!()`/`unimplemented!()` in prod code, or missing validation on trust boundaries
 - **Medium**: Inconsistency, duplicate code, incomplete error handling, missing tests for important paths
 - **Low**: Naming inconsistency, unnecessary complexity, documentation drift, minor dead code
 - **Nit**: Style preference, optional improvement

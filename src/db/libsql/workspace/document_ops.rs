@@ -18,7 +18,7 @@ use super::super::{
 use crate::db::NativeWorkspaceStore;
 use crate::error::WorkspaceError;
 use crate::workspace::{MemoryDocument, WorkspaceEntry};
-use listing::{dir_like_pattern, merge_entry, normalise_dir_prefix, resolve_entry};
+use listing::{dir_like_pattern, merge_entry, normalize_dir_prefix, resolve_entry};
 
 /// Identifies the user/agent context for a workspace document query.
 ///
@@ -258,7 +258,7 @@ pub(super) async fn list_directory(
         .map_err(|e| WorkspaceError::SearchFailed {
             reason: e.to_string(),
         })?;
-    let dir = normalise_dir_prefix(directory);
+    let dir = normalize_dir_prefix(directory);
 
     let agent_id_str = scope.agent_id.map(|id| id.to_string());
     let pattern = dir_like_pattern(&dir);

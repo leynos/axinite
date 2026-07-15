@@ -2,7 +2,7 @@
 //!
 //! Provides Telegram integration operating from the **user's personal account**,
 //! not a bot. This tool sends encrypted MTProto messages directly to Telegram's
-//! data centers via HTTPS POST, using the grammers crate for the Sans-IO
+//! data centres via HTTPS POST, using the grammers crate for the Sans-IO
 //! protocol implementation.
 //!
 //! # Architecture

@@ -242,7 +242,7 @@ mod tests {
 
         let crypto = Arc::new(
             SecretsCrypto::new(SecretString::from(TEST_CRYPTO_KEY.to_string()))
-                .expect("test crypto should initialise"),
+                .expect("test crypto should initialize"),
         );
         let store: Arc<dyn SecretsStore + Send + Sync> =
             Arc::new(InMemorySecretsStore::new(crypto));

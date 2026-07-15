@@ -227,7 +227,7 @@ impl Guest for TelegramChannel {
         if !req.secret_validated {
             // This means require_secret was set but the secret didn't match
             // We still check the field even though the host should have already rejected invalid requests
-            // This is defense in depth
+            // This is defence in depth
             channel_host::log(
                 channel_host::LogLevel::Warn,
                 "Webhook request with invalid or missing secret token",

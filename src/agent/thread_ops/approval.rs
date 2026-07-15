@@ -504,7 +504,7 @@ impl Agent {
     }
 
     /// Record sanitized primary tool result and return content with error flag.
-    async fn record_sanitised_primary_result(
+    async fn record_sanitized_primary_result(
         &self,
         scope: &TurnScope,
         pending: &PendingApproval,
@@ -1269,7 +1269,7 @@ impl Agent {
 
         // f) Record result and check for auth intercept
         let (result_content, _) = self
-            .record_sanitised_primary_result(&scope, &pending, &tool_result)
+            .record_sanitized_primary_result(&scope, &pending, &tool_result)
             .await;
         if let Some(res) = self
             .maybe_auth_intercept_after_primary(&scope, &pending, &tool_result)

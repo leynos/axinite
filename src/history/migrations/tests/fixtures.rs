@@ -1,7 +1,7 @@
 //! Released PostgreSQL migration-history fixtures used by repair tests.
 
 #[cfg(feature = "postgres")]
-/// Released tuples that must still be recognised for rewrite planning even
+/// Released tuples that must still be recognized for rewrite planning even
 /// though they cannot all coexist in `refinery_schema_history` because version
 /// `12` appears twice.
 ///

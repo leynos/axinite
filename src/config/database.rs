@@ -194,7 +194,7 @@ const _: () = {
 impl SslMode {
     /// Read from `DATABASE_SSLMODE` env var, defaulting to `Prefer`.
     ///
-    /// Silently falls back to `Prefer` on missing or unparseable values.
+    /// Silently falls back to `Prefer` on missing or unparsable values.
     /// Used by lightweight CLI tools (status, doctor) that don't run the
     /// full config pipeline.
     pub fn from_env() -> Self {

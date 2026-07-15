@@ -701,7 +701,7 @@ async fn execute_full_job(
 /// Execute a lightweight routine with optional tool support.
 ///
 /// If tools are enabled, this runs a simplified agentic loop (max 3-5 iterations).
-/// If tools are disabled, this does a single LLM call (original behavior).
+/// If tools are disabled, this does a single LLM call (original behaviour).
 async fn execute_lightweight(
     ctx: &EngineContext,
     routine: &Routine,
@@ -792,7 +792,7 @@ async fn execute_lightweight(
     }
 }
 
-/// Execute a lightweight routine without tool support (original single-call behavior).
+/// Execute a lightweight routine without tool support (original single-call behaviour).
 async fn execute_lightweight_no_tools(
     ctx: &EngineContext,
     _routine: &Routine,

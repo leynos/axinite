@@ -1,6 +1,6 @@
 //! Docker connection discovery and feature-gated fallbacks.
 //!
-//! This module centralises Docker daemon discovery for sandbox execution. With
+//! This module centralizes Docker daemon discovery for sandbox execution. With
 //! the `docker` feature enabled it probes the default client settings first and
 //! then checks user-owned Unix sockets in this order:
 //! `~/.docker/run/docker.sock`, `~/.colima/default/docker.sock`,
@@ -57,7 +57,7 @@ async fn connect_docker_inner() -> Result<DockerConnection> {
     #[cfg(unix)]
     {
         // Try well-known user-owned socket locations for desktop and rootless runtimes.
-        // Docker Desktop 4.13+ (stabilised in 4.18) stopped creating the
+        // Docker Desktop 4.13+ (stabilized in 4.18) stopped creating the
         // /var/run/docker.sock symlink by default and moved the API socket
         // to ~/.docker/run/docker.sock.
         for sock in unix_socket_candidates() {

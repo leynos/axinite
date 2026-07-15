@@ -32,7 +32,7 @@ Observable success has four parts:
    path, with any exceptions documented instead of hidden.
 1. Normal host compilation stops paying packaging costs such as
    Telegram channel builds unless the user explicitly requests those
-   artifacts.
+   artefacts.
 1. CI stops rebuilding the same WASM and Rust surfaces across multiple
    jobs when a compile-once, fan-out model would work.
 
@@ -107,7 +107,7 @@ wrong, but they are part of the compile volume.
 - Cross-platform support must stay explicit. Linux and WSL can rely on
   `mold`; Windows and macOS must continue to build without requiring
   it.
-- No change in this effort may alter released WASM artifact formats,
+- No change in this effort may alter released WASM artefact formats,
   registry manifest semantics, or runtime feature behaviour unless that
   change is separately documented and approved.
 - `cargo-nextest` adoption must preserve the semantic coverage of the
@@ -133,9 +133,9 @@ wrong, but they are part of the compile volume.
   tests failing or unsupported after targeted fixes and clear grouping,
   stop and document the incompatibilities before changing the default
   runner.
-- Topology: if sharing extension build artifacts requires moving
+- Topology: if sharing extension build artefacts requires moving
   standalone WASM crates back into the root workspace and that breaks
-  release packaging or artifact paths, stop and compare that approach
+  release packaging or artefact paths, stop and compare that approach
   against a shared `CARGO_TARGET_DIR`.
 - Portability: if a local `mold` setup cannot be documented in a way
   that cleanly degrades on unsupported platforms, stop and split the
@@ -150,7 +150,7 @@ wrong, but they are part of the compile volume.
   Severity: high
   Likelihood: medium
   Mitigation: remove the coupling only after tracing all callers and
-  replacing it with an explicit artifact-producing workflow.
+  replacing it with an explicit artefact-producing workflow.
 
 - Risk: `cargo-nextest` may expose tests that rely on global state,
   environment mutation, or serialized execution.
@@ -165,7 +165,7 @@ wrong, but they are part of the compile volume.
   Severity: medium
   Likelihood: medium
   Mitigation: evaluate a shared `CARGO_TARGET_DIR` before workspace
-  reunification, and validate artifact discovery after each change.
+  reunification, and validate artefact discovery after each change.
 
 - Risk: a local-only `mold` setup in shell profiles can drift from CI if
   it is not documented precisely.
@@ -253,13 +253,13 @@ new explicit `make nextest`.
 
 ## Milestone 2: Remove packaging work from normal compilation
 
-Make host compilation stop rebuilding Telegram channel artifacts unless
-the user is intentionally producing those artifacts.
+Make host compilation stop rebuilding Telegram channel artefacts unless
+the user is intentionally producing those artefacts.
 
 The current `build.rs` builds Telegram WASM during normal crate
 compilation. That cost leaks into `cargo check`, `cargo test`, Docker
 builds, and release jobs even though `src/channels/wasm/bundled.rs`
-describes channels as separately compiled artifacts. This milestone must
+describes channels as separately compiled artefacts. This milestone must
 replace the hidden build-script side effect with an explicit packaging
 path.
 
@@ -268,7 +268,7 @@ Implementation steps:
 1. Trace every consumer of `channels-src/telegram/telegram.wasm` and
    every assumption that the file already exists.
 1. Introduce a narrow gate so normal host compilation skips Telegram
-   artifact production unless explicitly requested.
+   artefact production unless explicitly requested.
 1. Move the required Telegram or channel build into explicit commands
    such as `scripts/build-all.sh`, release packaging, or onboarding
    preparation.
@@ -277,7 +277,7 @@ Implementation steps:
 
 Acceptance evidence should include before-and-after
 `cargo check --timings` runs and a proof that the explicit channel build
-path still produces the expected artifacts.
+path still produces the expected artefacts.
 
 ## Milestone 3: Share more work across extension builds
 
@@ -293,7 +293,7 @@ preserves release behaviour:
 1. Keep standalone crates, but set a shared `CARGO_TARGET_DIR` for
    `scripts/build-wasm-extensions.sh` and related CI jobs.
 1. Move some or all extension crates into the root workspace while
-   preserving artifact discovery and packaging semantics.
+   preserving artefact discovery and packaging semantics.
 
 The preferred order is to try shared target directories first because it
 is lower risk.
@@ -316,16 +316,16 @@ Change CI from repeated independent builds to compile-once, fan-out
 where practical.
 
 The most obvious duplication today is that Linux tests, coverage, and
-release packaging all rebuild channel artifacts, and some workflows
+release packaging all rebuild channel artefacts, and some workflows
 rebuild the same Rust target shapes independently. Use the end-to-end
-(E2E) workflow as the model: build the binary or WASM artifacts once,
+(E2E) workflow as the model: build the binary or WASM artefacts once,
 upload them, and
-run downstream jobs from those artifacts when the downstream jobs do not
+run downstream jobs from those artefacts when the downstream jobs do not
 need to recompile.
 
 Implementation steps:
 
-1. Build channel artifacts once per relevant Linux workflow and upload
+1. Build channel artefacts once per relevant Linux workflow and upload
    them.
 1. Remove redundant per-matrix channel rebuild steps.
 1. Revisit the PR matrix so broader feature combinations move to
@@ -384,7 +384,7 @@ Work from the repository root.
    before updating `Makefile` or CI.
 1. Remove or gate the hidden Telegram build from `build.rs`, then
    remeasure.
-1. Evaluate shared extension build artifacts, then remeasure.
+1. Evaluate shared extension build artefacts, then remeasure.
 1. Simplify CI and Docker only after the local fast path has been
    improved and documented.
 
@@ -435,14 +435,14 @@ Work from the repository root.
   finished in `1:25.45`, peaked at `2351212` KB RSS, and wrote
   `target/cargo-timings/cargo-timing-20260312T111017.842651318Z.html`
   without triggering a nested channel build.
-- [x] 2026-03-12 11:30Z: Proved the explicit artifact path still works
+- [x] 2026-03-12 11:30Z: Proved the explicit artefact path still works
   with `./scripts/build-wasm-extensions.sh --channels`, which rebuilt
   `discord`, `slack`, `telegram`, and `whatsapp` successfully after the
-  clean. Re-ran the full gate set afterward, including `make test`,
+  clean. Re-ran the full gate set afterwards, including `make test`,
   with all tests still passing.
 - [x] 2026-03-12 11:53Z: Switched
   `./scripts/build-wasm-extensions.sh` to a shared
-  `target/wasm-extensions/` target dir and taught the artifact resolver
+  `target/wasm-extensions/` target dir and taught the artefact resolver
   plus local override sync script to find that cache without requiring
   `CARGO_TARGET_DIR` to stay exported in later shells.
 - [x] 2026-03-12 11:53Z: Measured the shared extension cache directly.
@@ -461,10 +461,10 @@ Work from the repository root.
   or ad hoc shell checks.
 - [x] 2026-03-12 11:57Z: Updated the release WASM packaging job to use
   the shared `target/wasm-extensions/` cache when resolving built
-  artifacts, while keeping a legacy per-crate `target/` fallback so the
+  artefacts, while keeping a legacy per-crate `target/` fallback so the
   workflow stays compatible during the transition.
 - [x] 2026-03-12 13:31Z: Applied review follow-up fixes across the
-  artifact resolver, local override sync script, `Makefile`, and docs.
+  artefact resolver, local override sync script, `Makefile`, and docs.
   The follow-up now treats an empty `CARGO_TARGET_DIR` as unset, uses
   an `rstest` fixture for the shared target-dir tests, keeps the shell
   sync logic DRY, and aligns the plan and developer guide with acronym,
@@ -486,10 +486,10 @@ Work from the repository root.
   WASM tool crate.
 - `cargo-nextest` did not require targeted fixes for the root crate on
   this branch. Both the `libsql` slice and the default-feature
-  `make test` path passed cleanly once the GitHub WASM artifact was
+  `make test` path passed cleanly once the GitHub WASM artefact was
   prebuilt.
 - `src/channels/wasm/bundled.rs` already treats channels as explicit
-  on-disk artifacts and falls back to the normal build tree. The flat
+  on-disk artefacts and falls back to the normal build tree. The flat
   `channels-src/telegram/telegram.wasm` file from `build.rs` was not
   required for normal host compilation.
 - The representative `libsql` timing path still spends significant time
@@ -509,17 +509,17 @@ Work from the repository root.
   roughly flat, which implies the win is mostly removed build work
   rather than lower memory pressure.
 - A shared extension target dir only helps if the discovery side can
-  find it later. The artifact resolver and local override sync script
+  find it later. The artefact resolver and local override sync script
   both needed to learn about `target/wasm-extensions/` before the build
   script change would be durable outside the build shell.
 - The lookup order now checks `CARGO_TARGET_DIR` first, then the
   repo-shared `target/wasm-extensions/` cache, then the per-crate
   `target/` tree. That matches the current resolver behaviour and keeps
-  fresh shared-cache outputs ahead of stale crate-local artifacts.
+  fresh shared-cache outputs ahead of stale crate-local artefacts.
 - CI had the same problem in a different form: the release packaging job
   still searched only `source_dir/target/...` even after the bulk build
   path moved to a shared target dir. Tool-install consistency and
-  artifact lookup consistency have to move together.
+  artefact lookup consistency have to move together.
 
 ## Decision Log
 
@@ -556,16 +556,16 @@ Work from the repository root.
 - 2026-03-12 11:30Z: Removed the Telegram build from `build.rs`
   entirely instead of hiding it behind a new env var or feature gate.
   Rationale: the runtime, CI, and release paths already consume explicit
-  channel artifacts, so keeping any implicit build-script packaging path
+  channel artefacts, so keeping any implicit build-script packaging path
   would preserve the wrong default and the wrong rebuild triggers.
 - 2026-03-12 11:30Z: Changed `scripts/build-all.sh` to call
   `./scripts/build-wasm-extensions.sh --channels` instead of a
   Telegram-only helper. Rationale: once the build script no longer
-  manufactures a flat Telegram artifact, the explicit release-oriented
+  manufactures a flat Telegram artefact, the explicit release-oriented
   path should rebuild the registered channels consistently.
 - 2026-03-12 11:53Z: Adopted `target/wasm-extensions/` as the default
   shared target dir for `./scripts/build-wasm-extensions.sh`, while
-  still honoring an explicit `CARGO_TARGET_DIR` override. Rationale:
+  still honouring an explicit `CARGO_TARGET_DIR` override. Rationale:
   this captures cross-crate dependency reuse without moving the
   standalone extension crates back into the root workspace.
 - 2026-03-12 11:53Z: Initially kept crate-local `target/` lookup ahead
@@ -598,7 +598,7 @@ setup, install the agreed measurement tools, and adopt
 `cargo-nextest` in a controlled way. That migration is now in place for
 the root crate host path and the main Linux test workflow. After that,
 the hidden packaging work in `build.rs` was removed, which turned the
-Telegram channel back into an explicit artifact concern and cut the
+Telegram channel back into an explicit artefact concern and cut the
 representative `libsql` check path materially. Extension builds now
 also share a repo-local target cache, which cut the cold channel-build
 path materially and made the warm rerun effectively instant. The next

@@ -232,7 +232,7 @@ pub(super) async fn process_runnable_tool(
 
     let auth_instructions = handle_auth_barrier(delegate, tc, &tool_result).await;
 
-    // Stash raw `output` by `tc.id` for auditing/debugging while the LLM sees a separately sanitised form.
+    // Stash raw `output` by `tc.id` for auditing/debugging while the LLM sees a separately sanitized form.
     delegate
         .job_ctx
         .tool_output_stash

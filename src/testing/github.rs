@@ -5,7 +5,7 @@
 
 /// Assert that the given parameters match the expected real GitHub schema.
 ///
-/// This helper centralises the schema expectations for the GitHub WASM tool
+/// This helper centralizes the schema expectations for the GitHub WASM tool
 /// to avoid duplication between registry and loader tests.
 ///
 /// # Example

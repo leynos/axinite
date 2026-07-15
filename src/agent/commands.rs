@@ -720,18 +720,18 @@ impl Agent {
 
     /// Search ClawHub for skills.
     async fn handle_skills_search(&self, query: &str) -> Result<SubmissionResult, Error> {
-        let catalog = match self.skill_catalog() {
+        let catalogue = match self.skill_catalog() {
             Some(c) => c,
             None => {
-                return Ok(SubmissionResult::error("Skill catalog not available."));
+                return Ok(SubmissionResult::error("Skill catalogue not available."));
             }
         };
 
-        let outcome = catalog.search(query).await;
+        let outcome = catalogue.search(query).await;
 
         // Enrich top results with detail data (stars, downloads, owner)
         let mut entries = outcome.results;
-        catalog.enrich_search_results(&mut entries, 5).await;
+        catalogue.enrich_search_results(&mut entries, 5).await;
 
         let mut out = format!("ClawHub results for \"{}\":\n\n", query);
 

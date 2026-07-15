@@ -10,7 +10,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let root = PathBuf::from(&manifest_dir);
 
     // ── Embed registry manifests ────────────────────────────────────────
-    embed_registry_catalog(&root)?;
+    embed_registry_catalogue(&root)?;
     Ok(())
 }
 
@@ -20,7 +20,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 /// ```json
 /// { "tools": [...], "channels": [...], "bundles": {...} }
 /// ```
-fn embed_registry_catalog(root: &Path) -> Result<(), Box<dyn std::error::Error>> {
+fn embed_registry_catalogue(root: &Path) -> Result<(), Box<dyn std::error::Error>> {
     let registry_dir = root.join("registry");
 
     // Always watch the registry paths themselves so Cargo reruns when the
@@ -32,10 +32,10 @@ fn embed_registry_catalog(root: &Path) -> Result<(), Box<dyn std::error::Error>>
     println!("cargo:rerun-if-changed=registry/_bundles.json");
 
     let out_dir = PathBuf::from(env::var("OUT_DIR")?);
-    let out_path = out_dir.join("embedded_catalog.json");
+    let out_path = out_dir.join("embedded_catalogue.json");
 
     if !registry_dir.is_dir() {
-        // No registry dir: write empty catalog
+        // No registry dir: write empty catalogue
         fs::write(
             &out_path,
             r#"{"tools":[],"channels":[],"bundles":{"bundles":{}}}"#,
@@ -69,14 +69,14 @@ fn embed_registry_catalog(root: &Path) -> Result<(), Box<dyn std::error::Error>>
     };
 
     // Build the combined JSON
-    let catalog = format!(
+    let catalogue = format!(
         r#"{{"tools":[{}],"channels":[{}],"bundles":{}}}"#,
         tools.join(","),
         channels.join(","),
         bundles_raw,
     );
 
-    fs::write(&out_path, catalog)?;
+    fs::write(&out_path, catalogue)?;
     Ok(())
 }
 

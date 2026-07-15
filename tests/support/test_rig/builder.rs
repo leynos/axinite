@@ -218,12 +218,12 @@ impl TestRigBuilder {
             ironclaw::skills::SkillRegistry::new(components.config.skills.local_dir.clone())
                 .with_installed_dir(components.config.skills.installed_dir.clone()),
         ));
-        let catalog = ironclaw::skills::catalog::shared_catalog();
+        let catalogue = ironclaw::skills::catalog::shared_catalog();
         components
             .tools
-            .register_skill_tools(Arc::clone(&registry), Arc::clone(&catalog));
+            .register_skill_tools(Arc::clone(&registry), Arc::clone(&catalogue));
         components.skill_registry = Some(registry);
-        components.skill_catalog = Some(catalog);
+        components.skill_catalog = Some(catalogue);
     }
 
     async fn register_extra_tools(&self, components: &mut AppComponents) {

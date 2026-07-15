@@ -1,7 +1,7 @@
 //! Placeholder metadata defaults, guest export recovery, and fallback-guidance
 //! helpers for WASM tool wrappers.
 //!
-//! This module centralises the metadata path used while a wrapper is being
+//! This module centralizes the metadata path used while a wrapper is being
 //! constructed: placeholder description/schema values, recovery of the guest's
 //! exported `description()` and `schema()`, and generation of compact
 //! fallback guidance for schema-aware failures.
@@ -378,7 +378,7 @@ mod tests {
 
     #[rstest]
     #[tokio::test]
-    async fn wasm_tool_wrapper_reports_wasm_catalog_source(
+    async fn wasm_tool_wrapper_reports_wasm_catalogue_source(
         #[future] github_wrapper: anyhow::Result<WasmToolWrapper>,
     ) -> anyhow::Result<()> {
         let wrapper = github_wrapper.await?;

@@ -29,7 +29,7 @@ impl crate::tools::NativeTool for SecretTool {
     }
 }
 
-/// Test parameters for StatusUpdate::tool_completed behavior.
+/// Test parameters for StatusUpdate::tool_completed behaviour.
 struct ToolCompletedTestCase {
     tool_name: &'static str,
     params: serde_json::Value,
@@ -42,7 +42,7 @@ struct ToolCompletedTestCase {
     additional_check: Option<&'static str>,
 }
 
-/// Parameterized tests for StatusUpdate::tool_completed behavior.
+/// Parameterized tests for StatusUpdate::tool_completed behaviour.
 #[rstest]
 #[case::failure_with_redaction(ToolCompletedTestCase {
     tool_name: "secret_save",

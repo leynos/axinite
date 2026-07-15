@@ -272,9 +272,9 @@ Create `my-channel.capabilities.json`:
 because the binary in a PR may not match the source. IronClaw builds
 channels from source:
 
-- `cargo build` no longer builds channel artifacts implicitly
+- `cargo build` no longer builds channel artefacts implicitly
 - run `./scripts/build-wasm-extensions.sh --channels` or a
-  channel-specific build script when channel artifacts are required
+  channel-specific build script when channel artefacts are required
 - The built binary is in `.gitignore` and is not committed
 - CI should run explicit channel build steps (or
   `./scripts/build-all.sh`) before packaging releases
@@ -304,7 +304,7 @@ cp channels-src/telegram/telegram.wasm channels-src/telegram/telegram.capabiliti
 
 **Note**: The main IronClaw binary no longer bundles `telegram.wasm`.
 When modifying Telegram channel source, rebuild the channel explicitly
-before onboarding or packaging so the updated artifact is available on
+before onboarding or packaging so the updated artefact is available on
 disk.
 
 ### Other Channels

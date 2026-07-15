@@ -1,4 +1,4 @@
-//! End-to-end trace tests covering agent behaviors, tools, memory,
+//! End-to-end trace tests covering agent behaviours, tools, memory,
 //! scheduling, and error paths.
 
 // Keep fixture helpers local to this harness so unrelated integration

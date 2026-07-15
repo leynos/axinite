@@ -191,7 +191,7 @@ struct ProviderKeySpec<'a> {
     backend: &'a str,
 }
 
-/// Owned provider definition resolved from the registry or synthesised as a fallback.
+/// Owned provider definition resolved from the registry or synthesized as a fallback.
 struct ProviderSpec {
     canonical_id: String,
     protocol: ProviderProtocol,

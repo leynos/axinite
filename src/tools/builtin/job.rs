@@ -683,7 +683,7 @@ impl CreateJobTool {
 }
 
 /// The base directory where all project directories must live.
-/// Env var names that could be abused to hijack process behavior.
+/// Env var names that could be abused to hijack process behaviour.
 const DANGEROUS_ENV_VARS: &[&str] = &[
     // Dynamic linker hijacking
     "LD_PRELOAD",
@@ -691,7 +691,7 @@ const DANGEROUS_ENV_VARS: &[&str] = &[
     "LD_AUDIT",
     "DYLD_INSERT_LIBRARIES",
     "DYLD_LIBRARY_PATH",
-    // Shell behavior
+    // Shell behaviour
     "BASH_ENV",
     "ENV",
     "CDPATH",
@@ -735,7 +735,7 @@ fn validate_env_var_name(name: &str) -> Result<(), ToolError> {
 
     if DANGEROUS_ENV_VARS.contains(&name) {
         return Err(ToolError::InvalidParameters(format!(
-            "env var '{}' is on the denylist (could hijack process behavior)",
+            "env var '{}' is on the denylist (could hijack process behaviour)",
             name
         )));
     }
@@ -1114,7 +1114,7 @@ impl NativeTool for JobStatusTool {
     }
 }
 
-/// Tool for canceling a job.
+/// Tool for cancelling a job.
 pub struct CancelJobTool {
     context_manager: Arc<ContextManager>,
 }

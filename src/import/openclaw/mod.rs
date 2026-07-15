@@ -158,7 +158,7 @@ impl OpenClawImporter {
     /// - All configuration reading is done before any writes
     /// - Writes are grouped by type (settings, credentials, documents, chunks, conversations)
     /// - Conversations are handled atomically: creation + all messages added together
-    /// - Errors are logged but don't stop the entire import (fail-safe behavior)
+    /// - Errors are logged but don't stop the entire import (fail-safe behaviour)
     pub async fn import(&self) -> Result<ImportStats, ImportError> {
         let mut stats = ImportStats::default();
 

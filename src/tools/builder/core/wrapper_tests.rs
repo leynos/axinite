@@ -9,7 +9,7 @@ use super::*;
 use insta::assert_snapshot;
 use rstest::rstest;
 
-type AnalyzeResult = dyn Fn() -> Result<BuildRequirement, AgentToolError> + Send + Sync;
+type AnalyseResult = dyn Fn() -> Result<BuildRequirement, AgentToolError> + Send + Sync;
 type BuildResultFn = dyn Fn(&BuildRequirement) -> Result<BuildResult, AgentToolError> + Send + Sync;
 
 fn assert_invalid_parameters<T: std::fmt::Debug>(result: Result<T, ToolError>, expected_msg: &str) {
@@ -27,7 +27,7 @@ fn assert_execution_failed<T: std::fmt::Debug>(result: Result<T, ToolError>, exp
 }
 
 async fn execute_override_error(override_key: &str, override_value: &str, expected_msg: &str) {
-    let builder = FakeSoftwareBuilder::always_analyze(test_requirement());
+    let builder = FakeSoftwareBuilder::always_analyse(test_requirement());
     let tool = BuildSoftwareTool::new(Arc::new(builder));
     let mut params = serde_json::json!({"description": "x"});
     params[override_key] = override_value.into();
@@ -36,10 +36,10 @@ async fn execute_override_error(override_key: &str, override_value: &str, expect
 }
 
 async fn execute_capturing_requirement(params: serde_json::Value) -> BuildRequirement {
-    let analyzed = test_requirement();
-    let build_result = test_build_result(analyzed.clone());
+    let analysed = test_requirement();
+    let build_result = test_build_result(analysed.clone());
     let (builder, captured_requirement) =
-        FakeSoftwareBuilder::success_with_capture(analyzed, build_result);
+        FakeSoftwareBuilder::success_with_capture(analysed, build_result);
     let tool = BuildSoftwareTool::new(Arc::new(builder));
 
     tool.execute(params, &JobContext::default())
@@ -54,35 +54,35 @@ async fn execute_capturing_requirement(params: serde_json::Value) -> BuildRequir
 }
 
 struct FakeSoftwareBuilder {
-    analyze_result: Arc<AnalyzeResult>,
+    analyse_result: Arc<AnalyseResult>,
     build_result: Arc<BuildResultFn>,
 }
 
 impl FakeSoftwareBuilder {
-    fn analyze_error(message: &'static str) -> Self {
+    fn analyse_error(message: &'static str) -> Self {
         Self {
-            analyze_result: Arc::new(move || Err(AgentToolError::BuilderFailed(message.into()))),
+            analyse_result: Arc::new(move || Err(AgentToolError::BuilderFailed(message.into()))),
             build_result: Arc::new(|_| panic!("build not expected")),
         }
     }
 
-    fn always_analyze(req: BuildRequirement) -> Self {
+    fn always_analyse(req: BuildRequirement) -> Self {
         Self {
-            analyze_result: Arc::new(move || Ok(req.clone())),
+            analyse_result: Arc::new(move || Ok(req.clone())),
             build_result: Arc::new(|_| panic!("build not expected")),
         }
     }
 
     fn build_error(req: BuildRequirement, message: &'static str) -> Self {
         Self {
-            analyze_result: Arc::new(move || Ok(req.clone())),
+            analyse_result: Arc::new(move || Ok(req.clone())),
             build_result: Arc::new(move |_| Err(AgentToolError::BuilderFailed(message.into()))),
         }
     }
 
     fn success(req: BuildRequirement, result: BuildResult) -> Self {
         Self {
-            analyze_result: Arc::new(move || Ok(req.clone())),
+            analyse_result: Arc::new(move || Ok(req.clone())),
             build_result: Arc::new(move |requirement| {
                 assert_eq!(requirement.name, result.requirement.name);
                 assert_eq!(requirement.description, result.requirement.description);
@@ -100,7 +100,7 @@ impl FakeSoftwareBuilder {
         let captured = Arc::new(Mutex::new(None));
         let build_capture = Arc::clone(&captured);
         let builder = Self {
-            analyze_result: Arc::new(move || Ok(req.clone())),
+            analyse_result: Arc::new(move || Ok(req.clone())),
             build_result: Arc::new(move |requirement| {
                 *build_capture
                     .lock()
@@ -118,7 +118,7 @@ impl SoftwareBuilder for FakeSoftwareBuilder {
         &'a self,
         _description: &'a str,
     ) -> SoftwareBuilderFuture<'a, Result<BuildRequirement, AgentToolError>> {
-        let res = (self.analyze_result)();
+        let res = (self.analyse_result)();
         Box::pin(async move { res })
     }
 
@@ -226,7 +226,7 @@ async fn execute_valid_language_overrides_are_applied(
 
 #[tokio::test]
 async fn execute_missing_description_returns_error() {
-    let builder = FakeSoftwareBuilder::always_analyze(test_requirement());
+    let builder = FakeSoftwareBuilder::always_analyse(test_requirement());
     let tool = BuildSoftwareTool::new(Arc::new(builder));
 
     let result = tool
@@ -251,8 +251,8 @@ async fn execute_failure_returns_execution_failed(
 }
 
 #[tokio::test]
-async fn execute_analyze_failure_returns_execution_failed() {
-    let builder = FakeSoftwareBuilder::analyze_error("analysis exploded");
+async fn execute_analyse_failure_returns_execution_failed() {
+    let builder = FakeSoftwareBuilder::analyse_error("analysis exploded");
     execute_failure_returns_execution_failed(
         Arc::new(builder),
         "Analysis failed: Tool builder failed: analysis exploded",
@@ -363,10 +363,10 @@ async fn execute_success_output_matches_snapshot() {
 
 #[tokio::test]
 async fn execute_valid_overrides_are_applied_before_build() {
-    let analyzed = test_requirement();
+    let analysed = test_requirement();
     let expected = expected_requirement(SoftwareType::WasmTool, Language::TypeScript);
     let (builder, captured_requirement) =
-        FakeSoftwareBuilder::success_with_capture(analyzed, test_build_result(expected));
+        FakeSoftwareBuilder::success_with_capture(analysed, test_build_result(expected));
     let tool = BuildSoftwareTool::new(Arc::new(builder));
 
     let output = tool

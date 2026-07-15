@@ -104,7 +104,7 @@ normal contract for active WASM tools.
 Learning opportunity: verify how much provider-specific schema shaping can be
 done without losing guest-defined semantics.
 
-Dependencies: depends on 1.1 for the shared remote-catalog shape and informs 2.3
+Dependencies: depends on 1.1 for the shared remote-catalogue shape and informs 2.3
 by tightening the contract around active WASM tools.
 
 - [x] 1.2.1. Audit and fix WASM registration paths so every active tool

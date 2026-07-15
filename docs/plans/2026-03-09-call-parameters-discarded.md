@@ -89,7 +89,7 @@ There is also a later comparison point that narrows blast radius. Storage-backed
 Begin with the user-visible failure mode, not a synthetic schema object.
 
 1. Load a real WASM tool through the file-loader path, ideally the in-tree
-   `GitHub` tool artifact or a minimal fixture WASM tool that exports a
+   `GitHub` tool artefact or a minimal fixture WASM tool that exports a
    required `action` field.
 2. Call `ToolRegistry::tool_definitions()` and inspect the published `parameters` for that tool.
 3. Assert that the current code exposes the placeholder shape from `extract_tool_schema(...)`:
@@ -211,7 +211,7 @@ Work from the repository root `/data/leynos/Projects/ironclaw`.
 - [x] Implement the metadata-plumbing fix.
 - [x] Add the remaining unit and behavioural tests.
 - [x] Run targeted validation and update outcomes.
-- [x] 2026-03-09 22:06Z: Added the first real regression in `tests/tool_schema_validation.rs` for `WasmToolLoader::load_from_files(...)` plus a real GitHub WASM artifact. With the old code, registration failed to expose the guest schema and the test reproduced the “no parameters” symptom.
+- [x] 2026-03-09 22:06Z: Added the first real regression in `tests/tool_schema_validation.rs` for `WasmToolLoader::load_from_files(...)` plus a real GitHub WASM artefact. With the old code, registration failed to expose the guest schema and the test reproduced the “no parameters” symptom.
 - [x] 2026-03-09 22:15Z: Tried the most direct fix first by extracting `description()` and `schema()` during `WasmToolRuntime::prepare(...)`. This turned out to be the wrong repair point for the real GitHub component: direct metadata calls against a minimal metadata host were brittle and did not provide a stable fix.
 - [x] 2026-03-09 22:24Z: Pivoted to the narrower registration-side fix. `ToolRegistry::register_wasm(...)` now asks the newly created `WasmToolWrapper` for exported metadata when explicit overrides are absent, then applies the recovered description/schema before publishing the tool.
 - [x] 2026-03-09 22:29Z: Added wrapper-level unit coverage for real metadata extraction from the GitHub component and a parser unit test for the fallback hint path.

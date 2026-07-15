@@ -162,7 +162,7 @@ model:
 
 ### 4.1 Static shell plus runtime Document Object Model (DOM) construction
 
-The browser interface is a hand-written SPA assembled from three checked-in
+The browser interface is a handwritten SPA assembled from three checked-in
 files:
 
 - `index.html` defines the shell, tab layout, modals, placeholders, and the
@@ -543,7 +543,7 @@ The current front-end architecture makes several deliberate trade-offs.
 
 - The front end is tightly coupled to the host binary release cadence because
   the assets are embedded at compile time.
-- The SPA is hand-written and DOM-oriented, which keeps dependencies low but
+- The SPA is handwritten and DOM-oriented, which keeps dependencies low but
   makes large UI refactors more manual.
 - SSE delivery is best-effort rather than durable; reconnect recovery depends
   on history and detail APIs.

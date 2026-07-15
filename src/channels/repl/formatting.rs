@@ -15,7 +15,7 @@ pub(super) struct ToolApprovalRequest<'a> {
     pub description: &'a str,
 }
 
-/// Build a termimad skin with our color scheme.
+/// Build a termimad skin with our colour scheme.
 pub(super) fn make_skin() -> MadSkin {
     let mut skin = MadSkin::default();
     skin.set_headers_fg(termimad::crossterm::style::Color::Yellow);

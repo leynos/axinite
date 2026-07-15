@@ -13,7 +13,7 @@ if ! command -v gh &>/dev/null; then
 fi
 
 create() {
-  local name="$1" color="$2" description="$3"
+  local name="$1" colour="$2" description="$3"
   gh label create "$name" --color "$color" --description "$description" --force
 }
 
@@ -44,7 +44,7 @@ create "scope: tool/builder"  "42A5F5" "Dynamic tool builder"
 create "scope: db"            "4A148C" "Database trait / abstraction"
 create "scope: db/postgres"   "6A1B9A" "PostgreSQL backend"
 create "scope: db/libsql"     "7B1FA2" "libSQL / Turso backend"
-create "scope: safety"        "880E4F" "Prompt injection defense"
+create "scope: safety"        "880E4F" "Prompt injection defence"
 create "scope: llm"           "4527A0" "LLM integration"
 create "scope: workspace"     "283593" "Persistent memory / workspace"
 create "scope: orchestrator"  "0D47A1" "Container orchestrator"
