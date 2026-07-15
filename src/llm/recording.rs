@@ -136,7 +136,7 @@ pub struct TraceToolCall {
 ///
 /// During replay, after tools execute and before returning the canned LLM
 /// response, the test harness should compare actual `Role::Tool` messages
-/// against these entries. A content mismatch indicates a tool behavior change.
+/// against these entries. A content mismatch indicates a tool behaviour change.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ExpectedToolResult {
     pub tool_call_id: String,

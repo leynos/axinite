@@ -5,10 +5,27 @@ TEST_FEATURES ?= --features test-helpers
 NEXTEST_PROFILE ?= default
 MARKDOWNLINT_BASE ?= origin/main
 CARGO_AUDIT ?= $(CARGO) audit
+NIXIE ?= nixie
+UV ?= uv
+UV_ENV = UV_CACHE_DIR=.uv-cache UV_TOOL_DIR=.uv-tools
+RUFF_VERSION ?= 0.15.12
+PATHSPEC_VERSION ?= 1.1.1
+TYPOS_VERSION ?= 1.48.0
+TYPOS_CONFIG_BUILDER_COMMIT := d6da92f02240a79a945c835f69bdd08a888da1d0
+TYPOS_CONFIG_BUILDER_SOURCE := git+https://github.com/leynos/typos-config-builder.git@$(TYPOS_CONFIG_BUILDER_COMMIT)
+TYPOS_CONFIG_BUILDER := $(UV_ENV) $(UV) tool run --python 3.14 \
+	--from "$(TYPOS_CONFIG_BUILDER_SOURCE)" typos-config-builder
+SPELLING_PY_SRCS := \
+	scripts/typos_rollout_check.py scripts/tests/test_typos_rollout_check.py
+SPELLING_PY_TESTS := scripts/tests/test_typos_rollout_check.py
+SPELLING_COVERAGE_ARGS := --cov=typos_rollout_check --cov-fail-under=90
+SPELLING_HELPER_PYTEST = PYTHONPATH=scripts $(UV_ENV) $(UV) run --no-project \
+	--python 3.14 --with pathspec==$(PATHSPEC_VERSION) --with pytest==9.0.2 \
+	--with pytest-cov==7.0.0 python -m pytest
 WASM_SHARED_TARGET_DIR ?= $(if $(CARGO_TARGET_DIR),$(CARGO_TARGET_DIR),target/wasm-extensions)
 GITHUB_TOOL_MANIFEST := tools-src/github/Cargo.toml
 GITHUB_TOOL_WASM_TARGET := wasm32-wasip2
-# Keep audit ignores centralised and remove each one as soon as the triggering
+# Keep audit ignores centralized and remove each one as soon as the triggering
 # transitive dependency is upgraded.
 # RUSTSEC-2026-0049: affected crate rustls-webpki 0.102.8, via libsql
 # 0.9.30 -> hyper-rustls 0.25 -> rustls 0.22. CRL distribution point matching
@@ -48,9 +65,9 @@ AUDIT_FLAGS ?= \
 	--ignore RUSTSEC-2024-0370 \
 	--ignore RUSTSEC-2025-0134
 
-.PHONY: all install install-with-overrides sync-local-wasm-overrides build-github-tool-wasm check-fmt typecheck lint markdownlint audit rust-audit test test-cargo test-matrix test-matrix-cargo test-workflow-contracts clean
+.PHONY: all install install-with-overrides sync-local-wasm-overrides build-github-tool-wasm check-fmt typecheck lint markdownlint spelling spelling-phrase-check spelling-config spelling-config-write spelling-helper-test nixie audit rust-audit test test-cargo test-matrix test-matrix-cargo test-workflow-contracts clean
 
-all: check-fmt lint test
+all: check-fmt lint test spelling
 
 install:
 	./scripts/build-wasm-extensions.sh
@@ -80,8 +97,31 @@ lint:
 	$(CARGO) clippy --all --benches --tests --examples --all-features $(TEST_FEATURES) -- -D warnings
 	$(CARGO) clippy --manifest-path $(GITHUB_TOOL_MANIFEST) --tests -- -D warnings
 
-markdownlint:
+markdownlint: spelling
 	MARKDOWNLINT_BASE="$(MARKDOWNLINT_BASE)" ./scripts/lint-changed-markdown.sh "$(BUNX)"
+
+spelling: spelling-phrase-check
+	@git ls-files -z | xargs -0 -r env $(UV_ENV) \
+		$(UV) tool run typos@$(TYPOS_VERSION) --config typos.toml --force-exclude --hidden
+
+spelling-phrase-check: spelling-config
+	@PYTHONPATH=scripts $(UV_ENV) $(UV) run --no-project --python 3.14 \
+		scripts/typos_rollout_check.py --repository .
+
+spelling-config: spelling-helper-test
+	@git ls-files --error-unmatch typos.toml >/dev/null
+	@$(TYPOS_CONFIG_BUILDER) --repository . --check
+
+spelling-config-write: spelling-helper-test
+	@$(TYPOS_CONFIG_BUILDER) --repository .
+
+spelling-helper-test:
+	@$(UV_ENV) $(UV) tool run ruff@$(RUFF_VERSION) format --isolated --target-version py313 --check $(SPELLING_PY_SRCS)
+	@$(UV_ENV) $(UV) tool run ruff@$(RUFF_VERSION) check --isolated --target-version py313 $(SPELLING_PY_SRCS)
+	@$(SPELLING_HELPER_PYTEST) $(SPELLING_PY_TESTS) -c /dev/null --rootdir=. -p no:cacheprovider $(SPELLING_COVERAGE_ARGS)
+
+nixie:
+	$(NIXIE) --no-sandbox
 
 audit: rust-audit
 
@@ -125,4 +165,4 @@ test-workflow-contracts:
 clean:
 	$(CARGO) clean
 	$(CARGO) clean --manifest-path $(GITHUB_TOOL_MANIFEST)
-	rm -rf $(WASM_SHARED_TARGET_DIR)
+	rm -rf $(WASM_SHARED_TARGET_DIR) .uv-cache .uv-tools

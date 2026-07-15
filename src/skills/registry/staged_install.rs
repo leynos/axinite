@@ -3,7 +3,7 @@
 use std::path::{Path, PathBuf};
 
 use super::loading::{SkillLocationContext, load_and_validate_skill};
-use super::materialize::{materialize_install_artifact, write_install_artifact};
+use super::materialize::{materialize_install_artefact, write_install_artefact};
 use super::{LoadedSkill, SkillRegistry, SkillRegistryError, SkillSource, SkillTrust};
 use uuid::Uuid;
 
@@ -135,7 +135,7 @@ pub(super) async fn prepare_install_to_disk(
             reason: e.to_string(),
         })?;
 
-    let install_artifact = materialize_install_artifact(payload)?;
+    let install_artefact = materialize_install_artefact(payload)?;
     let staged_dir = install_root.join(format!(".skill-install-{}", Uuid::new_v4()));
     tokio::fs::create_dir_all(&staged_dir)
         .await
@@ -144,8 +144,8 @@ pub(super) async fn prepare_install_to_disk(
             reason: e.to_string(),
         })?;
 
-    let final_dir = install_root.join(&install_artifact.install_dir_name);
-    if let Err(error) = write_install_artifact(&staged_dir, &install_artifact).await {
+    let final_dir = install_root.join(&install_artefact.install_dir_name);
+    if let Err(error) = write_install_artefact(&staged_dir, &install_artefact).await {
         cleanup_staged_dir(&staged_dir).await;
         return Err(error);
     }
@@ -158,7 +158,7 @@ pub(super) async fn prepare_install_to_disk(
         source,
         SkillLocationContext {
             root: &final_dir,
-            package_kind: install_artifact.package_kind,
+            package_kind: install_artefact.package_kind,
         },
     )
     .await

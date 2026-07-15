@@ -382,7 +382,7 @@ make all 2>&1 | tee /tmp/make-all-axinite-${BRANCH}.out
 set -o pipefail
 BRANCH=$(git branch --show-current | tr '/' '-')
 bunx markdownlint-cli2 \
-  docs/execplans/1-1-1-worker-orchestrator-transport-for-remote-tool-catalog-fetch.md \
+  docs/execplans/1-1-1-worker-orchestrator-transport-for-remote-tool-catalogue-fetch.md \
   docs/rfcs/0001-expose-mcp-tool-definitions.md \
   docs/axinite-architecture-overview.md \
   docs/users-guide.md \

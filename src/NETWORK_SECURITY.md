@@ -1,6 +1,6 @@
 # IronClaw Network Security Reference
 
-This document catalogs every network-facing surface in IronClaw, its authentication mechanism, bind address, security controls, and known findings. Use this as the authoritative reference during code reviews that touch network-facing code.
+This document catalogues every network-facing surface in IronClaw, its authentication mechanism, bind address, security controls, and known findings. Use this as the authoritative reference during code reviews that touch network-facing code.
 
 **Last updated:** 2026-02-18
 
@@ -87,7 +87,7 @@ The `/api/chat/ws` endpoint has two layers of protection:
 
 1. **Bearer token auth** — the route is inside the `protected` router with `route_layer`, so `auth_middleware` runs before the handler. The token is passed via the `Authorization: Bearer` header on the HTTP upgrade request (not via query parameter).
 
-2. **Origin header validation** (inside the handler) as a defense-in-depth guard against cross-site WebSocket hijacking (CSWSH):
+2. **Origin header validation** (inside the handler) as a defence-in-depth guard against cross-site WebSocket hijacking (CSWSH):
    - Origin header is **required** — missing Origin returns 403 (browsers always send it for WS upgrades; absence implies a non-browser client)
    - Origin host is extracted by stripping scheme and port, then compared **exactly** against `localhost`, `127.0.0.1`, and `[::1]`
    - Partial matches like `localhost.evil.com` are rejected because the check extracts the host portion before the first `:` or `/`
@@ -328,9 +328,9 @@ All requests are validated against a domain allowlist before being forwarded:
 
 **Reference:** `src/sandbox/proxy/allowlist.rs` — `DomainAllowlist` struct, `is_allowed()` method
 
-### HTTPS Tunneling (CONNECT)
+### HTTPS Tunnelling (CONNECT)
 
-- CONNECT requests for HTTPS tunneling are subject to the same allowlist
+- CONNECT requests for HTTPS tunnelling are subject to the same allowlist
 - **30-minute timeout** on established tunnels to prevent indefinite holds
 - **No MITM**: the proxy cannot inspect or inject credentials into HTTPS traffic (by design — containers that need credentials must use the orchestrator's `/worker/{job_id}/credentials` endpoint)
 
@@ -356,7 +356,7 @@ The proxy strips hop-by-hop headers to prevent header-based attacks: `connection
 
 ### Docker Container Security
 
-Containers that use the proxy are configured with defense-in-depth:
+Containers that use the proxy are configured with defence-in-depth:
 
 | Control | Setting | Reference |
 |---------|---------|-----------|

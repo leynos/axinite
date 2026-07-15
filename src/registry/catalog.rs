@@ -1,4 +1,4 @@
-//! Registry catalog: loads manifests from disk, provides list/search/resolve operations.
+//! Registry catalogue: loads manifests from disk, provides list/search/resolve operations.
 
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
@@ -28,9 +28,9 @@ pub enum RegistryError {
     },
 
     // `url` is stored for programmatic access (logs, retries) but intentionally
-    // omitted from the Display message to avoid leaking internal artifact URLs
+    // omitted from the Display message to avoid leaking internal artefact URLs
     // to end users.
-    #[error("Artifact download failed: {reason}")]
+    #[error("Artefact download failed: {reason}")]
     DownloadFailed { url: String, reason: String },
 
     #[error("Invalid extension manifest for '{name}' field '{field}': {reason}")]
@@ -47,11 +47,11 @@ pub enum RegistryError {
         actual_sha256: String,
     },
 
-    #[error("Missing SHA256 checksum for '{name}' artifact. Use --build to build from source.")]
+    #[error("Missing SHA256 checksum for '{name}' artefact. Use --build to build from source.")]
     MissingChecksum { name: String },
 
     #[error(
-        "Source fallback unavailable for '{name}' after artifact install failed. Retry artifact download or run from a repository checkout."
+        "Source fallback unavailable for '{name}' after artefact install failed. Retry artefact download or run from a repository checkout."
     )]
     SourceFallbackUnavailable {
         name: String,
@@ -59,7 +59,7 @@ pub enum RegistryError {
         artifact_error: Box<RegistryError>,
     },
 
-    #[error("Artifact install and source fallback both failed for '{name}'.")]
+    #[error("Artefact install and source fallback both failed for '{name}'.")]
     InstallFallbackFailed {
         name: String,
         artifact_error: Box<RegistryError>,
@@ -87,7 +87,7 @@ pub enum RegistryError {
     Io(#[from] std::io::Error),
 }
 
-/// Central catalog loaded from the `registry/` directory.
+/// Central catalogue loaded from the `registry/` directory.
 #[derive(Debug, Clone)]
 pub struct RegistryCatalog {
     /// All loaded manifests, keyed by "<kind>/<name>" (e.g. "tools/github").
@@ -147,12 +147,12 @@ impl RegistryCatalog {
             return Self::load(&dir);
         }
 
-        // Fall back to embedded catalog
+        // Fall back to embedded catalogue
         let manifests = embedded::load_embedded();
         let bundles = embedded::load_embedded_bundles();
 
         tracing::info!(
-            "Loaded embedded registry catalog ({} extensions, {} bundles)",
+            "Loaded embedded registry catalogue ({} extensions, {} bundles)",
             manifests.len(),
             bundles.len()
         );
@@ -164,7 +164,7 @@ impl RegistryCatalog {
         })
     }
 
-    /// Load the catalog from a registry directory.
+    /// Load the catalogue from a registry directory.
     ///
     /// Expects the structure:
     /// ```text
@@ -253,7 +253,7 @@ impl RegistryCatalog {
         Ok(())
     }
 
-    /// The root directory this catalog was loaded from.
+    /// The root directory this catalogue was loaded from.
     pub fn root(&self) -> &Path {
         &self.root
     }
@@ -560,12 +560,12 @@ mod tests {
     }
 
     #[test]
-    fn test_load_catalog() {
+    fn test_load_catalogue() {
         let tmp = tempfile::tempdir().unwrap();
         create_test_registry(tmp.path());
 
-        let catalog = RegistryCatalog::load(tmp.path()).unwrap();
-        assert_eq!(catalog.all().len(), 3);
+        let catalogue = RegistryCatalog::load(tmp.path()).unwrap();
+        assert_eq!(catalogue.all().len(), 3);
     }
 
     #[test]
@@ -573,11 +573,11 @@ mod tests {
         let tmp = tempfile::tempdir().unwrap();
         create_test_registry(tmp.path());
 
-        let catalog = RegistryCatalog::load(tmp.path()).unwrap();
-        let tools = catalog.list(Some(ManifestKind::Tool), None);
+        let catalogue = RegistryCatalog::load(tmp.path()).unwrap();
+        let tools = catalogue.list(Some(ManifestKind::Tool), None);
         assert_eq!(tools.len(), 2);
 
-        let channels = catalog.list(Some(ManifestKind::Channel), None);
+        let channels = catalogue.list(Some(ManifestKind::Channel), None);
         assert_eq!(channels.len(), 1);
     }
 
@@ -586,11 +586,11 @@ mod tests {
         let tmp = tempfile::tempdir().unwrap();
         create_test_registry(tmp.path());
 
-        let catalog = RegistryCatalog::load(tmp.path()).unwrap();
-        let defaults = catalog.list(None, Some("default"));
+        let catalogue = RegistryCatalog::load(tmp.path()).unwrap();
+        let defaults = catalogue.list(None, Some("default"));
         assert_eq!(defaults.len(), 2);
 
-        let messaging = catalog.list(None, Some("messaging"));
+        let messaging = catalogue.list(None, Some("messaging"));
         assert_eq!(messaging.len(), 2); // slack (tool) and telegram (channel) both have "messaging" tag
     }
 
@@ -599,17 +599,17 @@ mod tests {
         let tmp = tempfile::tempdir().unwrap();
         create_test_registry(tmp.path());
 
-        let catalog = RegistryCatalog::load(tmp.path()).unwrap();
+        let catalogue = RegistryCatalog::load(tmp.path()).unwrap();
 
         // Full key
-        assert!(catalog.get("tools/slack").is_some());
+        assert!(catalogue.get("tools/slack").is_some());
 
         // Bare name
-        assert!(catalog.get("slack").is_some());
-        assert!(catalog.get("telegram").is_some());
+        assert!(catalogue.get("slack").is_some());
+        assert!(catalogue.get("telegram").is_some());
 
         // Missing
-        assert!(catalog.get("nonexistent").is_none());
+        assert!(catalogue.get("nonexistent").is_none());
     }
 
     #[test]
@@ -617,16 +617,16 @@ mod tests {
         let tmp = tempfile::tempdir().unwrap();
         create_test_registry(tmp.path());
 
-        let catalog = RegistryCatalog::load(tmp.path()).unwrap();
+        let catalogue = RegistryCatalog::load(tmp.path()).unwrap();
 
-        let results = catalog.search("slack");
+        let results = catalogue.search("slack");
         assert_eq!(results.len(), 1);
         assert_eq!(results[0].name, "slack");
 
-        let results = catalog.search("messaging");
+        let results = catalogue.search("messaging");
         assert!(!results.is_empty());
 
-        let results = catalog.search("nonexistent query");
+        let results = catalogue.search("nonexistent query");
         assert!(results.is_empty());
     }
 
@@ -635,13 +635,13 @@ mod tests {
         let tmp = tempfile::tempdir().unwrap();
         create_test_registry(tmp.path());
 
-        let catalog = RegistryCatalog::load(tmp.path()).unwrap();
+        let catalogue = RegistryCatalog::load(tmp.path()).unwrap();
 
-        let (manifests, missing) = catalog.resolve_bundle("default").unwrap();
+        let (manifests, missing) = catalogue.resolve_bundle("default").unwrap();
         assert_eq!(manifests.len(), 3);
         assert!(missing.is_empty());
 
-        assert!(catalog.resolve_bundle("nonexistent").is_err());
+        assert!(catalogue.resolve_bundle("nonexistent").is_err());
     }
 
     #[test]
@@ -649,15 +649,15 @@ mod tests {
         let tmp = tempfile::tempdir().unwrap();
         create_test_registry(tmp.path());
 
-        let catalog = RegistryCatalog::load(tmp.path()).unwrap();
+        let catalogue = RegistryCatalog::load(tmp.path()).unwrap();
 
         // Single extension
-        let (manifests, bundle) = catalog.resolve("slack").unwrap();
+        let (manifests, bundle) = catalogue.resolve("slack").unwrap();
         assert_eq!(manifests.len(), 1);
         assert!(bundle.is_none());
 
         // Bundle
-        let (manifests, bundle) = catalog.resolve("default").unwrap();
+        let (manifests, bundle) = catalogue.resolve("default").unwrap();
         assert_eq!(manifests.len(), 3);
         assert!(bundle.is_some());
     }
@@ -667,8 +667,8 @@ mod tests {
         let tmp = tempfile::tempdir().unwrap();
         create_test_registry(tmp.path());
 
-        let catalog = RegistryCatalog::load(tmp.path()).unwrap();
-        let names = catalog.bundle_names();
+        let catalogue = RegistryCatalog::load(tmp.path()).unwrap();
+        let names = catalogue.bundle_names();
         assert_eq!(names, vec!["default", "messaging"]);
     }
 
@@ -681,18 +681,18 @@ mod tests {
     #[test]
     fn test_load_or_embedded_succeeds() {
         // Should always succeed: either finds registry/ on disk or falls back to embedded
-        let catalog = RegistryCatalog::load_or_embedded().unwrap();
-        // At minimum, the embedded catalog from the repo should have entries
-        assert!(!catalog.all().is_empty() || !catalog.bundle_names().is_empty());
+        let catalogue = RegistryCatalog::load_or_embedded().unwrap();
+        // At minimum, the embedded catalogue from the repo should have entries
+        assert!(!catalogue.all().is_empty() || !catalogue.bundle_names().is_empty());
     }
 
     #[test]
     fn test_bundle_entries_resolve_against_real_registry() {
         // Load the actual registry/ directory (catches stale bundle refs after renames)
-        let catalog = RegistryCatalog::load_or_embedded().unwrap();
+        let catalogue = RegistryCatalog::load_or_embedded().unwrap();
 
-        for bundle_name in catalog.bundle_names() {
-            let (manifests, missing) = catalog.resolve_bundle(bundle_name).unwrap();
+        for bundle_name in catalogue.bundle_names() {
+            let (manifests, missing) = catalogue.resolve_bundle(bundle_name).unwrap();
             assert!(
                 missing.is_empty(),
                 "Bundle '{}' has unresolved entries: {:?}. \

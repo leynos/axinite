@@ -72,7 +72,7 @@ A minimal async HTTP server that speaks the OpenAI Chat Completions API.
 
 **Endpoint:** `POST /v1/chat/completions`
 
-**Behavior:**
+**Behaviour:**
 - Parses the `messages` array from the request body
 - Pattern-matches the last user message content to select a canned response
 - Returns a well-formed `ChatCompletionResponse` with `id`, `choices[0].message`, `usage`
@@ -351,4 +351,4 @@ Not in initial scope. Design accommodates it via:
 2. All 3 scenarios (connection, chat, skills) exercise real browser interactions
 3. Mock LLM provides deterministic responses (no flaky tests from LLM randomness)
 4. CI workflow runs on web gateway changes and weekly schedule
-5. Test failures produce clear error messages with screenshot artifacts
+5. Test failures produce clear error messages with screenshot artefacts

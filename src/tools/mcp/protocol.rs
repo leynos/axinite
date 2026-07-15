@@ -45,7 +45,7 @@ fn default_input_schema() -> serde_json::Value {
     serde_json::json!({"type": "object", "properties": {}})
 }
 
-/// Annotations for an MCP tool that provide hints about its behavior.
+/// Annotations for an MCP tool that provide hints about its behaviour.
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct McpToolAnnotations {
     /// Hint that this tool performs destructive operations that cannot be undone.

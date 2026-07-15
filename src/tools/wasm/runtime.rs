@@ -424,7 +424,7 @@ mod tests {
         assert_ne!(dir_a, dir_b);
     }
 
-    /// The WASM runtime (Wasmtime engine) must initialise successfully even
+    /// The WASM runtime (Wasmtime engine) must initialize successfully even
     /// when no tools directory exists on disk. The engine only configures the
     /// compiler and epoch ticker — loading modules from a directory is a
     /// separate step. Regression test for a bug where the runtime was gated

@@ -584,7 +584,7 @@ async def test_skills_lifecycle(browser_agent):
     # Should not have the test skill installed
 ```
 
-#### Scenario 5: HTML Injection Defense
+#### Scenario 5: HTML Injection Defence
 
 ```python
 async def test_html_injection_sanitized(browser_agent):

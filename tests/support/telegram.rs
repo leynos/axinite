@@ -8,12 +8,12 @@ use ironclaw::channels::wasm::{
     PreparedChannelModule, WasmChannelRuntime, WasmChannelRuntimeConfig,
 };
 
-/// Resolve the Telegram channel WASM artifact used by integration tests.
+/// Resolve the Telegram channel WASM artefact used by integration tests.
 pub fn telegram_wasm_path() -> Result<PathBuf, String> {
     let channel_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("channels-src/telegram");
 
-    // `build.rs` writes a flat component artifact for the host to load. Prefer
-    // that output, then fall back to the raw build artifact across shared or
+    // `build.rs` writes a flat component artefact for the host to load. Prefer
+    // that output, then fall back to the raw build artefact across shared or
     // per-crate target directories.
     let bundled_component = channel_dir.join("telegram.wasm");
     if bundled_component.exists() {

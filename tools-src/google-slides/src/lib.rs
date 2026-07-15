@@ -21,7 +21,7 @@
 //! - `replace_all_text`: Find and replace text across the presentation
 //! - `create_shape`: Create a text box or shape on a slide
 //! - `insert_image`: Insert an image on a slide
-//! - `format_text`: Format text (bold, italic, font, color, size)
+//! - `format_text`: Format text (bold, italic, font, colour, size)
 //! - `format_paragraph`: Set paragraph alignment
 //! - `replace_shapes_with_image`: Replace placeholder shapes with an image
 //! - `batch_update`: Execute multiple raw Slides API operations atomically

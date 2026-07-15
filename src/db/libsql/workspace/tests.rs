@@ -140,12 +140,12 @@ fn test_embedding_to_vector_json_formats_floats_as_json_array() {
     // The negative float must be preserved faithfully.
     assert!(
         result.contains("-2.5") || result.contains("-2."),
-        "must serialise the negative float, got: {result}"
+        "must serialize the negative float, got: {result}"
     );
 
     // An empty slice must produce "[]".
     let empty = embedding_to_vector_json(&[]);
-    assert_eq!(empty, "[]", "empty embedding must serialise as '[]'");
+    assert_eq!(empty, "[]", "empty embedding must serialize as '[]'");
 }
 
 #[tokio::test]

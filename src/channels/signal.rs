@@ -345,7 +345,7 @@ impl SignalChannel {
     /// Redact credentials from a URL for safe logging.
     ///
     /// Replaces any embedded username/password with `**REDACTED**` and returns
-    /// the sanitised string. Returns `"<invalid-url>"` when parsing fails.
+    /// the sanitized string. Returns `"<invalid-url>"` when parsing fails.
     pub fn redact_url(url: &str) -> String {
         reqwest::Url::parse(url)
             .map(|mut u| {
@@ -988,12 +988,12 @@ impl NativeChannel for SignalChannel {
             && let StatusUpdate::ToolCompleted { name, success, .. } = &status
             && let Some(target_str) = metadata.get("signal_target").and_then(|v| v.as_str())
         {
-            let (icon, color) = if *success {
+            let (icon, colour) = if *success {
                 ("\u{25CF}", "success")
             } else {
                 ("\u{2717}", "failed")
             };
-            let message = format!("{} Tool '{}' completed ({})", icon, name, color);
+            let message = format!("{} Tool '{}' completed ({})", icon, name, colour);
             self.send_status_message(target_str, &message).await;
         }
 
@@ -2699,7 +2699,7 @@ mod tests {
         Ok(())
     }
 
-    // ── stories behavior tests ──────────────────────────────────────
+    // ── stories behaviour tests ──────────────────────────────────────
 
     #[test]
     fn process_envelope_stories_not_skipped_when_disabled() -> Result<(), ChannelError> {

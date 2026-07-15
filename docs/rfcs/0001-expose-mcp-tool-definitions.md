@@ -7,7 +7,7 @@
 - **Created:** 2026-03-11
 - **Implementation status:** Roadmap items `1.1.1`, `1.1.2`, `1.1.3`, and
   `1.1.4` are complete. The implementation includes the shared `src/worker/api/`
-  transport types, the worker catalog-fetch startup path, the orchestrator
+  transport types, the worker catalogue-fetch startup path, the orchestrator
   generic remote-tool execution endpoint, the canonical `ToolRegistry`-owned
   hosted-visible filter for active MCP tools, the explicit worker-side merged
   reasoning surface used both at context build and later refresh, and the
@@ -185,7 +185,7 @@ decisions; it is not exposed to the LLM.
 
 The important implementation constraint is that this route and its payload
 types should be introduced through one shared worker-orchestrator transport
-module or equivalent typed boundary. The hosted-catalog fix should not add a
+module or equivalent typed boundary. The hosted-catalogue fix should not add a
 second copy of route strings, request bodies, and response bodies that must be
 kept in sync by convention alone.
 
@@ -443,9 +443,9 @@ The change needs both transport tests and behavioural tests.
 
 ### Unit tests
 
-1. Catalog construction returns orchestrator-owned active MCP tool definitions
+1. Catalogue construction returns orchestrator-owned active MCP tool definitions
    with original descriptions and schemas.
-2. Catalog filtering excludes approval-gated or otherwise uncallable tools.
+2. Catalogue filtering excludes approval-gated or otherwise uncallable tools.
 3. Worker proxy registration preserves the orchestrator-provided
    `ToolDefinition` exactly.
 4. Generic remote execution dispatches to the requested orchestrator-owned tool.

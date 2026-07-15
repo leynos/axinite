@@ -2369,7 +2369,7 @@ body {
   text-overflow: unset;
 }
 
-/* Log level coloring */
+/* Log level colouring */
 .log-entry.level-ERROR .log-level { color: var(--danger); }
 .log-entry.level-ERROR .log-msg { color: var(--danger); }
 .log-entry.level-WARN .log-level { color: var(--warning); }

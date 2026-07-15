@@ -232,7 +232,7 @@ pub(crate) struct TelegramMessageMetadata {
 ///
 /// The host injects runtime values like tunnel_url and webhook_secret.
 /// The channel doesn't need to know about polling vs webhook mode - it just
-/// checks if tunnel_url is set to determine behavior.
+/// checks if tunnel_url is set to determine behaviour.
 #[derive(Debug, Deserialize)]
 pub(crate) struct TelegramConfig {
     /// Bot username (without @) for mention detection in groups.

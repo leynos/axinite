@@ -135,7 +135,7 @@ mod tests {
     // ── Category 2: Ed25519 Signature Verification ──────────────────────
 
     /// Existing tests pass `now_secs` matching their hardcoded timestamp
-    /// so they continue testing crypto-only behavior.
+    /// so they continue testing crypto-only behaviour.
     const TEST_TS: i64 = 1234567890;
 
     #[test]

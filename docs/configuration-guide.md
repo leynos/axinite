@@ -478,7 +478,7 @@ Table 23. WASM, sandbox, and development-override environment variables.
 | `IRONCLAW_TOOLS_SRC` | Override the development `tools-src/` directory. | Intended for development or packaging flows, not normal runtime configuration. |
 | `IRONCLAW_CHANNELS_SRC` | Override the development `channels-src/` directory. | Intended for development or packaging flows, not normal runtime configuration. |
 | `CARGO_TARGET_DIR` | Override the shared Cargo target directory used when locating dev-built WASM artefacts. | Development-only. |
-| `CLAWHUB_REGISTRY` | Override the skill-catalog registry base URL. | Development or staging override. |
+| `CLAWHUB_REGISTRY` | Override the skill-catalogue registry base URL. | Development or staging override. |
 | `CLAWDHUB_REGISTRY` | Legacy fallback for `CLAWHUB_REGISTRY`. | Kept for backward compatibility. |
 
 ### 4.8 OAuth, tracing, relay quirks, and internal-only switches

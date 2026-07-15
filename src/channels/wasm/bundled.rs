@@ -1,4 +1,4 @@
-//! Known WASM channels that can be installed from build artifacts.
+//! Known WASM channels that can be installed from build artefacts.
 //!
 //! Instead of embedding WASM binaries in the host binary via include_bytes!,
 //! channels are compiled separately and installed from their build output
@@ -16,7 +16,7 @@ use tokio::fs;
 /// Compile-time project root, used to locate channels-src/ in dev builds.
 const CARGO_MANIFEST_DIR: &str = env!("CARGO_MANIFEST_DIR");
 
-/// Known channel names and their crate names (for locating build artifacts).
+/// Known channel names and their crate names (for locating build artefacts).
 const KNOWN_CHANNELS: &[(&str, &str)] = &[
     ("telegram", "telegram_channel"),
     ("slack", "slack_channel"),
@@ -41,14 +41,14 @@ fn channels_src_dir() -> PathBuf {
     PathBuf::from(CARGO_MANIFEST_DIR).join("channels-src")
 }
 
-/// Locate the build artifacts for a channel.
+/// Locate the build artefacts for a channel.
 ///
 /// Checks two layouts:
 /// 1. **Flat** (Docker/packaged): `<channels_src>/<name>/<name>.wasm`
 /// 2. **Build tree** (dev): `<channels_src>/<name>/target/wasm32-wasip2/release/<crate_name>.wasm`
 ///
 /// Returns (wasm_path, capabilities_path) or an error if files are missing.
-fn locate_channel_artifacts(name: &str) -> Result<(PathBuf, PathBuf), String> {
+fn locate_channel_artefacts(name: &str) -> Result<(PathBuf, PathBuf), String> {
     let (_, crate_name) = KNOWN_CHANNELS
         .iter()
         .find(|(n, _)| *n == name)
@@ -91,13 +91,13 @@ fn locate_channel_artifacts(name: &str) -> Result<(PathBuf, PathBuf), String> {
     ))
 }
 
-/// Install a channel from build artifacts into the channels directory.
+/// Install a channel from build artefacts into the channels directory.
 pub async fn install_bundled_channel(
     name: &str,
     target_dir: &Path,
     force: bool,
 ) -> Result<(), String> {
-    let (wasm_src, caps_src) = locate_channel_artifacts(name)?;
+    let (wasm_src, caps_src) = locate_channel_artefacts(name)?;
 
     fs::create_dir_all(target_dir)
         .await
@@ -125,11 +125,11 @@ pub async fn install_bundled_channel(
     Ok(())
 }
 
-/// Check which known channels have build artifacts available.
+/// Check which known channels have build artefacts available.
 pub fn available_channel_names() -> Vec<&'static str> {
     KNOWN_CHANNELS
         .iter()
-        .filter(|(name, _)| locate_channel_artifacts(name).is_ok())
+        .filter(|(name, _)| locate_channel_artefacts(name).is_ok())
         .map(|(name, _)| *name)
         .collect()
 }
@@ -158,7 +158,7 @@ mod tests {
 
     #[test]
     fn test_locate_unknown_channel_errors() {
-        assert!(locate_channel_artifacts("nonexistent").is_err());
+        assert!(locate_channel_artefacts("nonexistent").is_err());
     }
 
     #[tokio::test]
@@ -168,7 +168,7 @@ mod tests {
         fs::write(&wasm_path, b"custom").await.unwrap();
 
         let result = install_bundled_channel("telegram", dir.path(), false).await;
-        // Either fails because artifacts missing OR because file exists
+        // Either fails because artefacts missing OR because file exists
         assert!(result.is_err());
 
         // Original file should be untouched

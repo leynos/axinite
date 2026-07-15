@@ -31,7 +31,7 @@ fn test_registry() -> TestRegistryHandle {
 }
 
 #[fixture]
-fn test_catalog() -> Arc<SkillCatalog> {
+fn test_catalogue() -> Arc<SkillCatalog> {
     Arc::new(SkillCatalog::with_url("http://127.0.0.1:1"))
 }
 
@@ -129,13 +129,13 @@ fn test_skill_list_schema(test_registry: TestRegistryHandle) {
 )]
 fn test_skill_tool_schema(
     test_registry: TestRegistryHandle,
-    test_catalog: Arc<SkillCatalog>,
+    test_catalogue: Arc<SkillCatalog>,
     #[case] make_tool: impl Fn(&TestRegistryHandle, Arc<SkillCatalog>) -> Box<dyn Tool>,
     #[case] expected_name: &str,
     #[case] expected_approval: ApprovalRequirement,
     #[case] expected_keys: &[&str],
 ) {
-    let tool = make_tool(&test_registry, Arc::clone(&test_catalog));
+    let tool = make_tool(&test_registry, Arc::clone(&test_catalogue));
     assert_tool_schema(&*tool, expected_name, expected_approval, expected_keys);
 }
 
@@ -150,7 +150,7 @@ fn skill_read_file_schema_is_strict(test_registry: TestRegistryHandle) {
 
 #[rstest]
 fn skill_install_schema_does_not_require_catalogue_name(test_registry: TestRegistryHandle) {
-    let tool = SkillInstallTool::new(Arc::clone(&test_registry.registry), test_catalog());
+    let tool = SkillInstallTool::new(Arc::clone(&test_registry.registry), test_catalogue());
 
     assert_schema_required_fields(&tool, &[]);
     assert!(
@@ -222,7 +222,7 @@ fn skill_search_matches_query_checks_name_description_and_keywords(
 #[rstest]
 #[tokio::test]
 async fn skill_install_tool_installs_inline_content(test_registry: TestRegistryHandle) {
-    let tool = SkillInstallTool::new(Arc::clone(&test_registry.registry), test_catalog());
+    let tool = SkillInstallTool::new(Arc::clone(&test_registry.registry), test_catalogue());
     let output = NativeTool::execute(
         &tool,
         serde_json::json!({
@@ -246,7 +246,7 @@ async fn skill_install_tool_installs_inline_content(test_registry: TestRegistryH
 #[rstest]
 #[tokio::test]
 async fn skill_install_tool_rejects_duplicate_inline_install(test_registry: TestRegistryHandle) {
-    let tool = SkillInstallTool::new(Arc::clone(&test_registry.registry), test_catalog());
+    let tool = SkillInstallTool::new(Arc::clone(&test_registry.registry), test_catalogue());
     let params = serde_json::json!({
         "content": skill_markdown("deploy-docs"),
     });
@@ -286,7 +286,7 @@ async fn skill_install_tool_rejects_ambiguous_sources(
     test_registry: TestRegistryHandle,
     #[case] params: serde_json::Value,
 ) {
-    let tool = SkillInstallTool::new(Arc::clone(&test_registry.registry), test_catalog());
+    let tool = SkillInstallTool::new(Arc::clone(&test_registry.registry), test_catalogue());
 
     let error = NativeTool::execute(&tool, params, &JobContext::default())
         .await

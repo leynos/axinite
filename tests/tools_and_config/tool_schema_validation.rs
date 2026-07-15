@@ -272,7 +272,7 @@ async fn all_core_tools_work_in_multi_thread_runtime() {
 async fn file_loaded_github_wasm_tool_definitions_publish_real_schema() {
     let source_dir = crate::support::github_tool_source_dir();
     let wasm_path =
-        crate::support::github_wasm_artifact().expect("build or find github WASM artifact");
+        crate::support::github_wasm_artifact().expect("build or find github WASM artefact");
     let caps_path = source_dir.join("github-tool.capabilities.json");
     assert!(
         caps_path.exists(),

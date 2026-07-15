@@ -60,7 +60,7 @@ impl DefaultSelfRepair {
                     "Tool name: {}\n",
                     "Previous error: {}\n",
                     "Failure count: {}\n\n",
-                    "Analyze the error, fix the implementation, and rebuild."
+                    "Analyse the error, fix the implementation, and rebuild."
                 ),
                 tool.name,
                 tool.last_error.as_deref().unwrap_or("Unknown error"),

@@ -300,14 +300,14 @@ to existing or missing coverage:
 
 **Unit tests (RFC 0001 §Testing Strategy):**
 
-1. "Catalog construction returns orchestrator-owned active MCP tool
+1. "Catalogue construction returns orchestrator-owned active MCP tool
    definitions with original descriptions and schemas."
    Gap: existing tests check that the catalogue includes eligible tools and
    excludes ineligible ones, but do not assert that every `ToolDefinition`
    field survives the catalogue journey unchanged. A full-payload fidelity
    assertion is needed.
 
-2. "Catalog filtering excludes approval-gated or otherwise uncallable
+2. "Catalogue filtering excludes approval-gated or otherwise uncallable
    tools."
    Gap: covered by existing
    `remote_tool_catalog_excludes_ineligible_tools` and

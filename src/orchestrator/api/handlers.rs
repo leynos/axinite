@@ -13,7 +13,7 @@ use uuid::Uuid;
 
 use super::OrchestratorState;
 use super::remote_tools::{
-    HostedRemoteToolRequest, execute_hosted_remote_tool, hosted_remote_tool_catalog,
+    HostedRemoteToolRequest, execute_hosted_remote_tool, hosted_remote_tool_catalogue,
 };
 use crate::channels::web::types::SseEvent;
 use crate::llm::{CompletionRequest, ToolCompletionRequest};
@@ -112,7 +112,7 @@ pub(super) async fn get_remote_tool_catalog(
     Path(_job_id): Path<Uuid>,
 ) -> Result<Json<RemoteToolCatalogResponse>, StatusCode> {
     let (tools, toolset_instructions, catalog_version) =
-        hosted_remote_tool_catalog(&state.tools).await;
+        hosted_remote_tool_catalogue(&state.tools).await;
 
     Ok(Json(RemoteToolCatalogResponse {
         tools,

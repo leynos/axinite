@@ -4,7 +4,7 @@ use std::sync::Arc;
 
 use rstest::rstest;
 
-use super::super::remote_tools::hosted_remote_tool_catalog;
+use super::super::remote_tools::hosted_remote_tool_catalogue;
 use super::fixtures::remote_tool_helpers::execute_remote_tool_status;
 use super::fixtures::remote_tool_mocks::{
     ErrorTool, ExecuteErrorKind, JobAwareTool, StubOutput, StubTool, ToolFixture,
@@ -20,21 +20,21 @@ use crate::worker::api::{REMOTE_TOOL_CATALOG_ROUTE, REMOTE_TOOL_EXECUTE_ROUTE};
 /// Registers one hosted-safe tool, two protected tools (`create_job`,
 /// `job_events`), one approval-gated tool, and one container-only tool,
 /// covering every filtering branch exercised by the catalogue visibility tests.
-async fn populate_catalog_visibility_fixtures(tools: &ToolRegistry) {
+async fn populate_catalogue_visibility_fixtures(tools: &ToolRegistry) {
     tools
-        .register(build_tool_fixture(ToolFixture::CatalogAlpha))
+        .register(build_tool_fixture(ToolFixture::CatalogueAlpha))
         .await;
     tools
-        .register(build_tool_fixture(ToolFixture::CatalogWasm))
+        .register(build_tool_fixture(ToolFixture::CatalogueWasm))
         .await;
     tools
         .register(Arc::new(StubTool {
-            name: "hosted_extension_catalog_builtin",
+            name: "hosted_extension_catalogue_builtin",
             description: "Hosted-safe extension-management built-in".to_string(),
             catalog_source: None,
             output: StubOutput::Fixed(serde_json::json!({"extensions": []})),
             ..StubTool::hosted(
-                "hosted_extension_catalog_builtin",
+                "hosted_extension_catalogue_builtin",
                 "",
                 serde_json::json!({"type": "object", "properties": {}}),
             )
@@ -72,7 +72,7 @@ async fn populate_catalog_visibility_fixtures(tools: &ToolRegistry) {
         .await;
 }
 
-fn make_catalog_fixture_definition(
+fn make_catalogue_fixture_definition(
     name: &str,
     description: &str,
     param_name: &str,
@@ -89,19 +89,19 @@ fn make_catalog_fixture_definition(
     }
 }
 
-fn expected_catalog_fixture_definition() -> crate::llm::ToolDefinition {
-    make_catalog_fixture_definition(
-        "remote_tool_catalog_fixture",
-        "Hosted-safe tool for catalog tests",
+fn expected_catalogue_fixture_definition() -> crate::llm::ToolDefinition {
+    make_catalogue_fixture_definition(
+        "remote_tool_catalogue_fixture",
+        "Hosted-safe tool for catalogue tests",
         "query",
         "search query",
     )
 }
 
-fn expected_catalog_wasm_fixture_definition() -> crate::llm::ToolDefinition {
-    make_catalog_fixture_definition(
-        "remote_tool_catalog_fixture_wasm",
-        "Hosted-safe WASM tool for catalog tests",
+fn expected_catalogue_wasm_fixture_definition() -> crate::llm::ToolDefinition {
+    make_catalogue_fixture_definition(
+        "remote_tool_catalogue_fixture_wasm",
+        "Hosted-safe WASM tool for catalogue tests",
         "repository",
         "repository name",
     )
@@ -109,8 +109,8 @@ fn expected_catalog_wasm_fixture_definition() -> crate::llm::ToolDefinition {
 
 #[rstest]
 #[tokio::test]
-async fn remote_tool_catalog_returns_hosted_safe_tool_definitions(test_state: OrchestratorState) {
-    populate_catalog_visibility_fixtures(&test_state.tools).await;
+async fn remote_tool_catalogue_returns_hosted_safe_tool_definitions(test_state: OrchestratorState) {
+    populate_catalogue_visibility_fixtures(&test_state.tools).await;
     let job_id = Uuid::new_v4();
     let token = test_state.token_store.create_token(job_id).await;
     let router = OrchestratorApi::router(test_state);
@@ -120,45 +120,45 @@ async fn remote_tool_catalog_returns_hosted_safe_tool_definitions(test_state: Or
         .uri(REMOTE_TOOL_CATALOG_ROUTE.replace("{job_id}", &job_id.to_string()))
         .header("Authorization", format!("Bearer {}", token))
         .body(Body::empty())
-        .expect("build hosted remote-tool catalog request");
+        .expect("build hosted remote-tool catalogue request");
 
     let resp = router
         .oneshot(req)
         .await
-        .expect("send hosted remote-tool catalog request");
+        .expect("send hosted remote-tool catalogue request");
     assert_eq!(resp.status(), StatusCode::OK);
 
     let body = axum::body::to_bytes(resp.into_body(), 4096)
         .await
-        .expect("read hosted remote-tool catalog response body");
-    let catalog: crate::worker::api::RemoteToolCatalogResponse =
-        serde_json::from_slice(&body).expect("parse hosted remote-tool catalog response");
+        .expect("read hosted remote-tool catalogue response body");
+    let catalogue: crate::worker::api::RemoteToolCatalogResponse =
+        serde_json::from_slice(&body).expect("parse hosted remote-tool catalogue response");
 
-    assert_eq!(catalog.toolset_instructions, Vec::<String>::new());
-    assert_ne!(catalog.catalog_version, 0);
-    assert_eq!(catalog.tools.len(), 2);
+    assert_eq!(catalogue.toolset_instructions, Vec::<String>::new());
+    assert_ne!(catalogue.catalog_version, 0);
+    assert_eq!(catalogue.tools.len(), 2);
     let expected = vec![
-        expected_catalog_fixture_definition(),
-        expected_catalog_wasm_fixture_definition(),
+        expected_catalogue_fixture_definition(),
+        expected_catalogue_wasm_fixture_definition(),
     ];
-    assert_eq!(catalog.tools, expected);
+    assert_eq!(catalogue.tools, expected);
 }
 
-async fn assert_catalog_excludes_stub(excluded_stub: StubTool) {
+async fn assert_catalogue_excludes_stub(excluded_stub: StubTool) {
     let registry = Arc::new(ToolRegistry::new());
     registry
-        .register(build_tool_fixture(ToolFixture::CatalogAlpha))
+        .register(build_tool_fixture(ToolFixture::CatalogueAlpha))
         .await;
     registry.register(Arc::new(excluded_stub)).await;
 
-    let (tools, _instructions, _version) = hosted_remote_tool_catalog(&registry).await;
+    let (tools, _instructions, _version) = hosted_remote_tool_catalogue(&registry).await;
 
     assert_eq!(
         tools
             .iter()
             .map(|tool| tool.name.as_str())
             .collect::<Vec<_>>(),
-        vec!["remote_tool_catalog_fixture"]
+        vec!["remote_tool_catalogue_fixture"]
     );
 }
 
@@ -170,19 +170,19 @@ async fn assert_catalog_excludes_stub(excluded_stub: StubTool) {
     serde_json::json!({"events": []})
 )]
 #[case(
-    "hosted_extension_catalog_builtin",
+    "hosted_extension_catalogue_builtin",
     "Hosted-safe extension-management built-in",
     None,
     serde_json::json!({"extensions": []})
 )]
 #[tokio::test]
-async fn remote_tool_catalog_excludes_ineligible_tools(
+async fn remote_tool_catalogue_excludes_ineligible_tools(
     #[case] name: &'static str,
     #[case] description: &'static str,
     #[case] catalog_source: Option<HostedToolCatalogSource>,
     #[case] output: serde_json::Value,
 ) {
-    assert_catalog_excludes_stub(StubTool {
+    assert_catalogue_excludes_stub(StubTool {
         name,
         description: description.to_string(),
         catalog_source,
@@ -197,38 +197,38 @@ async fn remote_tool_catalog_excludes_ineligible_tools(
 }
 
 #[tokio::test]
-async fn remote_tool_catalog_sorts_tools_before_versioning() {
+async fn remote_tool_catalogue_sorts_tools_before_versioning() {
     let registry_a = Arc::new(ToolRegistry::new());
     registry_a
-        .register(build_tool_fixture(ToolFixture::CatalogBeta))
+        .register(build_tool_fixture(ToolFixture::CatalogueBeta))
         .await;
     registry_a
-        .register(build_tool_fixture(ToolFixture::CatalogAlpha))
+        .register(build_tool_fixture(ToolFixture::CatalogueAlpha))
         .await;
 
     let registry_b = Arc::new(ToolRegistry::new());
     registry_b
-        .register(build_tool_fixture(ToolFixture::CatalogAlpha))
+        .register(build_tool_fixture(ToolFixture::CatalogueAlpha))
         .await;
     registry_b
-        .register(build_tool_fixture(ToolFixture::CatalogBeta))
+        .register(build_tool_fixture(ToolFixture::CatalogueBeta))
         .await;
 
-    let (tools_a, instructions_a, version_a) = hosted_remote_tool_catalog(&registry_a).await;
-    let (tools_b, instructions_b, version_b) = hosted_remote_tool_catalog(&registry_b).await;
+    let (tools_a, instructions_a, version_a) = hosted_remote_tool_catalogue(&registry_a).await;
+    let (tools_b, instructions_b, version_b) = hosted_remote_tool_catalogue(&registry_b).await;
 
     assert_eq!(
         tools_a.iter().map(|t| t.name.as_str()).collect::<Vec<_>>(),
         vec![
-            "remote_tool_catalog_fixture",
-            "remote_tool_catalog_fixture_beta"
+            "remote_tool_catalogue_fixture",
+            "remote_tool_catalogue_fixture_beta"
         ]
     );
     assert_eq!(
         tools_b.iter().map(|t| t.name.as_str()).collect::<Vec<_>>(),
         vec![
-            "remote_tool_catalog_fixture",
-            "remote_tool_catalog_fixture_beta"
+            "remote_tool_catalogue_fixture",
+            "remote_tool_catalogue_fixture_beta"
         ]
     );
     assert_eq!(instructions_a, instructions_b);
@@ -265,7 +265,7 @@ async fn remote_tool_execute_rejects_unknown_tools(test_state: OrchestratorState
 
 #[rstest]
 #[tokio::test]
-async fn remote_tool_execute_rejects_non_catalog_tools(test_state: OrchestratorState) {
+async fn remote_tool_execute_rejects_non_catalogue_tools(test_state: OrchestratorState) {
     let status = execute_remote_tool_status(
         test_state,
         build_tool_fixture(ToolFixture::ContainerOnly),
@@ -313,8 +313,8 @@ async fn remote_tool_execute_rejects_approval_gated_tools(test_state: Orchestrat
 async fn remote_tool_execute_allows_hosted_wasm_tools(test_state: OrchestratorState) {
     let status = execute_remote_tool_status(
         test_state,
-        build_tool_fixture(ToolFixture::CatalogWasm),
-        "remote_tool_catalog_fixture_wasm",
+        build_tool_fixture(ToolFixture::CatalogueWasm),
+        "remote_tool_catalogue_fixture_wasm",
     )
     .await;
     assert_eq!(status, StatusCode::OK);

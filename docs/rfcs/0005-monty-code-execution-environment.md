@@ -702,7 +702,7 @@ Only after upstream REPL support and crash behaviour have stabilized:
 ## Open Questions
 
 1. Should saved scripts live only in the per-user workspace, or should there
-   also be an admin-controlled global script catalog?
+   also be an admin-controlled global script catalogue?
 2. Should `save_script` type-check and compile eagerly, or should compile happen
    only at first run?
 3. How much schema fidelity is worth encoding into generated Python stubs before

@@ -359,7 +359,7 @@ fn log_response_body(body: &[u8]) {
     }
 }
 
-/// Executes the outbound HTTP request and returns the normalised response.
+/// Executes the outbound HTTP request and returns the normalized response.
 async fn send_http_request(
     method: HttpMethod,
     url: String,

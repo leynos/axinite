@@ -148,7 +148,7 @@ pub async fn make_worker_with_store(
     Ok((Worker::new(job_id, deps), store, dir))
 }
 
-/// Build a Worker with a capturing store for characterisation tests.
+/// Build a Worker with a capturing store for characterization tests.
 pub async fn make_worker_with_capturing_store(
     tools: Vec<Arc<dyn Tool>>,
 ) -> anyhow::Result<(Worker, Arc<CapturingStore>)> {

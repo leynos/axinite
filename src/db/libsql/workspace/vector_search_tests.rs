@@ -7,7 +7,7 @@ use super::super::LibSqlBackend;
 use super::*;
 
 #[test]
-fn embedding_to_vector_json_serialises_embeddings_in_index_format() {
+fn embedding_to_vector_json_serializes_embeddings_in_index_format() {
     assert_eq!(
         embedding_to_vector_json(&[1.0, -2.5, 0.25]),
         "[1,-2.5,0.25]"

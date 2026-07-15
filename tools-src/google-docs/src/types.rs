@@ -65,7 +65,7 @@ pub enum GoogleDocsAction {
         match_case: bool,
     },
 
-    /// Format text in a range (bold, italic, font size, color, etc.).
+    /// Format text in a range (bold, italic, font size, colour, etc.).
     FormatText {
         /// The document ID.
         document_id: String,
@@ -91,10 +91,10 @@ pub enum GoogleDocsAction {
         /// Font family name (e.g., "Arial", "Times New Roman").
         #[serde(default)]
         font_family: Option<String>,
-        /// Text color as hex (e.g., "#FF0000").
+        /// Text colour as hex (e.g., "#FF0000").
         #[serde(default)]
         foreground_color: Option<String>,
-        /// Text background color as hex.
+        /// Text background colour as hex.
         #[serde(default)]
         background_color: Option<String>,
     },

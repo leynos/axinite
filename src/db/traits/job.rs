@@ -82,7 +82,7 @@ pub trait JobStore: Send + Sync {
     ///
     /// Ordering is backend-defined but is typically newest first.
     fn list_agent_jobs<'a>(&'a self) -> DbFuture<'a, Result<Vec<AgentJobRecord>, DatabaseError>>;
-    /// Summarise agent-job counts grouped by persisted status buckets.
+    /// Summarize agent-job counts grouped by persisted status buckets.
     fn agent_job_summary<'a>(&'a self) -> DbFuture<'a, Result<AgentJobSummary, DatabaseError>>;
     /// Get the failure reason for a single agent job (O(1) lookup).
     fn get_agent_job_failure_reason<'a>(
@@ -155,7 +155,7 @@ pub trait NativeJobStore: Send + Sync {
     fn list_agent_jobs<'a>(
         &'a self,
     ) -> impl Future<Output = Result<Vec<AgentJobRecord>, DatabaseError>> + Send + 'a;
-    /// Summarise agent-job counts grouped by persisted status buckets.
+    /// Summarize agent-job counts grouped by persisted status buckets.
     fn agent_job_summary<'a>(
         &'a self,
     ) -> impl Future<Output = Result<AgentJobSummary, DatabaseError>> + Send + 'a;

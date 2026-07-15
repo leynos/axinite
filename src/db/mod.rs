@@ -70,7 +70,7 @@ pub(crate) use delegate_async;
 /// This is the shared helper for CLI commands and other call sites that need
 /// a simple `Arc<dyn Database>` without retaining backend-specific handles
 /// (e.g., `pg_pool` or `libsql_conn` for the secrets store).  The main agent
-/// startup in `main.rs` uses its own initialisation block because it also
+/// startup in `main.rs` uses its own initialization block because it also
 /// captures those backend-specific handles.
 pub async fn connect_from_config(
     config: &crate::config::DatabaseConfig,

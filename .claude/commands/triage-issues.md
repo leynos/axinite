@@ -38,14 +38,14 @@ Remove any issue whose number appears in this list.
 Read each issue's title, body, and labels to classify it into one of these categories:
 
 ### Bugs
-Issues that describe **broken existing behavior** — something that worked or should work but doesn't. Signals:
+Issues that describe **broken existing behaviour** — something that worked or should work but doesn't. Signals:
 - Labels: `bug`, `defect`, `regression`, `crash`, `error`
-- Title/body keywords: "broken", "fails", "crash", "panic", "error", "regression", "doesn't work", "unexpected behavior"
+- Title/body keywords: "broken", "fails", "crash", "panic", "error", "regression", "doesn't work", "unexpected behaviour"
 - Includes reproduction steps or error output
 - References existing functionality not working as documented
 
 ### Feature Requests
-Issues that describe **new or enhanced behavior** — something that doesn't exist yet. Signals:
+Issues that describe **new or enhanced behaviour** — something that doesn't exist yet. Signals:
 - Labels: `enhancement`, `feature`, `feature-request`, `improvement`, `proposal`
 - Title/body keywords: "add", "support", "implement", "would be nice", "proposal", "RFC", "new"
 - Describes a capability the project doesn't have
@@ -60,7 +60,7 @@ For each issue, assess how well-specified it is on a 3-tier scale:
 
 | Detail Level | Criteria |
 |-------------|----------|
-| **Well-specified** | Has clear description of what/why, reproduction steps (bugs) or user story (features), acceptance criteria or expected behavior, and enough context to start working immediately |
+| **Well-specified** | Has clear description of what/why, reproduction steps (bugs) or user story (features), acceptance criteria or expected behaviour, and enough context to start working immediately |
 | **Adequate** | Describes the problem or request clearly, but missing some detail — no repro steps, vague acceptance criteria, or unclear scope. Needs 1-2 clarifying questions before work can start |
 | **Under-specified** | Vague title-only or single-sentence body, no context on why it matters, no clear definition of done. Needs significant discussion before it's actionable |
 
@@ -101,7 +101,7 @@ Score each bug on these dimensions and compute an overall severity rank:
 
 Apply a one-time +2 boost if any of the following are true (max 16):
 - Has a linked PR already (someone is working on it — fast-track review)
-- Is labeled `security`
+- Is labelled `security`
 - Is a regression (worked before, broken now)
 
 ## Step 5: Rank features by opportunity

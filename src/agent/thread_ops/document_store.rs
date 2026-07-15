@@ -82,7 +82,7 @@ pub(crate) fn build_document_path(parts: &PathParts) -> String {
 }
 
 /// Replace characters that are unsafe in file-system paths with an underscore.
-pub(crate) fn sanitise_filename_char(c: char) -> char {
+pub(crate) fn sanitize_filename_char(c: char) -> char {
     if matches!(
         c,
         '/' | '\\' | '\0' | '\u{2215}' | '\u{2216}' | '\u{29F5}' | '\u{FF0F}' | '\u{FF3C}'
@@ -108,8 +108,8 @@ pub(crate) fn get_valid_document_text(attachment: &IncomingAttachment) -> Option
     }
 }
 
-pub(crate) fn sanitise_filename(raw_name: &str) -> String {
-    let filename: String = raw_name.chars().map(sanitise_filename_char).collect();
+pub(crate) fn sanitize_filename(raw_name: &str) -> String {
+    let filename: String = raw_name.chars().map(sanitize_filename_char).collect();
     let filename = filename.replace("..", "__");
     let filename = filename.trim_start_matches('.');
     if filename.is_empty() {
@@ -147,7 +147,7 @@ pub(super) async fn store_extracted_documents(
     message: &IncomingMessage,
 ) {
     let today = chrono::Utc::now().date_naive();
-    let message_id = sanitise_filename(&message.id.to_string());
+    let message_id = sanitize_filename(&message.id.to_string());
 
     for (index, attachment) in message.attachments.iter().enumerate() {
         if attachment.kind != crate::channels::AttachmentKind::Document {
@@ -158,8 +158,8 @@ pub(super) async fn store_extracted_documents(
         };
 
         let filename =
-            sanitise_filename(attachment.filename.as_deref().unwrap_or("unnamed_document"));
-        let sanitized_id = sanitise_filename(if attachment.id.is_empty() {
+            sanitize_filename(attachment.filename.as_deref().unwrap_or("unnamed_document"));
+        let sanitized_id = sanitize_filename(if attachment.id.is_empty() {
             "unnamed_id"
         } else {
             &attachment.id

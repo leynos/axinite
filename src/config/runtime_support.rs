@@ -1,7 +1,7 @@
 //! Shared runtime helpers for configuration assembly.
 //!
 //! These helpers keep `config::mod` focused on composing resolved sections
-//! while centralising TOML overlays, test contexts, and credential injection.
+//! while centralizing TOML overlays, test contexts, and credential injection.
 
 use std::collections::HashMap;
 

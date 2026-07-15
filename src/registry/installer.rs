@@ -1,4 +1,4 @@
-//! Install extensions from the registry: build-from-source or download pre-built artifacts.
+//! Install extensions from the registry: build-from-source or download pre-built artefacts.
 
 use std::net::IpAddr;
 use std::path::{Component, Path, PathBuf};
@@ -12,7 +12,7 @@ use crate::registry::manifest::{BundleDefinition, ExtensionManifest, ManifestKin
 // GitHub-only by design. New trusted hosts (e.g. a NEAR AI CDN) must be
 // explicitly added here; unknown hosts fall back to source build with a
 // warning rather than surfacing a clear "host not allowed" error.
-const ALLOWED_ARTIFACT_HOSTS: &[&str] = &[
+const ALLOWED_ARTEFACT_HOSTS: &[&str] = &[
     "github.com",
     "objects.githubusercontent.com",
     "github-releases.githubusercontent.com",
@@ -32,20 +32,20 @@ fn should_attempt_source_fallback(err: &RegistryError) -> bool {
             url.contains("github.com/nearai/ironclaw/releases/latest/")
         }
         // Never fall back for these — they signal a structural problem or a
-        // deliberate "already done" state, not a transient artifact issue.
+        // deliberate "already done" state, not a transient artefact issue.
         RegistryError::AlreadyInstalled { .. } | RegistryError::InvalidManifest { .. } => false,
         _ => true,
     }
 }
 
-fn is_allowed_artifact_host(host: &str) -> bool {
-    ALLOWED_ARTIFACT_HOSTS
+fn is_allowed_artefact_host(host: &str) -> bool {
+    ALLOWED_ARTEFACT_HOSTS
         .iter()
         .any(|allowed| host.eq_ignore_ascii_case(allowed))
         || host.ends_with(".githubusercontent.com")
 }
 
-fn validate_artifact_url(
+fn validate_artefact_url(
     manifest_name: &str,
     field: &'static str,
     url: &str,
@@ -72,7 +72,7 @@ fn validate_artifact_url(
             reason: "URL host is missing".to_string(),
         })?;
 
-    if host.parse::<IpAddr>().is_ok() || !is_allowed_artifact_host(host) {
+    if host.parse::<IpAddr>().is_ok() || !is_allowed_artefact_host(host) {
         return Err(RegistryError::InvalidManifest {
             name: manifest_name.to_string(),
             field,
@@ -296,13 +296,13 @@ impl RegistryInstaller {
         // catch it first.
         validate_manifest_install_inputs(manifest)?;
 
-        let has_artifact = manifest
+        let has_artefact = manifest
             .artifacts
             .get("wasm32-wasip2")
             .and_then(|a| a.url.as_ref())
             .is_some();
 
-        if !has_artifact {
+        if !has_artefact {
             return self.install_from_source(manifest, force).await;
         }
 
@@ -310,36 +310,36 @@ impl RegistryInstaller {
 
         match self.install_from_artifact(manifest, force).await {
             Ok(outcome) => Ok(outcome),
-            Err(artifact_err) => {
-                if !should_attempt_source_fallback(&artifact_err) {
-                    return Err(artifact_err);
+            Err(artefact_err) => {
+                if !should_attempt_source_fallback(&artefact_err) {
+                    return Err(artefact_err);
                 }
 
                 if !source_dir.is_dir() {
                     return Err(RegistryError::SourceFallbackUnavailable {
                         name: manifest.name.clone(),
                         source_dir,
-                        artifact_error: Box::new(artifact_err),
+                        artifact_error: Box::new(artefact_err),
                     });
                 }
 
                 tracing::warn!(
                     extension = %manifest.name,
-                    error = %artifact_err,
-                    "Artifact install failed; falling back to build-from-source"
+                    error = %artefact_err,
+                    "Artefact install failed; falling back to build-from-source"
                 );
 
                 match self.install_from_source(manifest, force).await {
                     Ok(mut outcome) => {
                         outcome.warnings.push(format!(
-                            "Artifact install failed ({}); installed via source fallback.",
-                            artifact_err
+                            "Artefact install failed ({}); installed via source fallback.",
+                            artefact_err
                         ));
                         Ok(outcome)
                     }
                     Err(source_err) => Err(RegistryError::InstallFallbackFailed {
                         name: manifest.name.clone(),
-                        artifact_error: Box::new(artifact_err),
+                        artifact_error: Box::new(artefact_err),
                         source_error: Box::new(source_err),
                     }),
                 }
@@ -347,7 +347,7 @@ impl RegistryInstaller {
         }
     }
 
-    /// Download and install a pre-built artifact.
+    /// Download and install a pre-built artefact.
     ///
     /// Supports two formats:
     /// - **tar.gz bundle**: Contains `{name}.wasm` + `{name}.capabilities.json`
@@ -359,21 +359,21 @@ impl RegistryInstaller {
     ) -> Result<InstallOutcome, RegistryError> {
         validate_manifest_install_inputs(manifest)?;
 
-        let artifact = manifest.artifacts.get("wasm32-wasip2").ok_or_else(|| {
+        let artefact = manifest.artifacts.get("wasm32-wasip2").ok_or_else(|| {
             RegistryError::ExtensionNotFound(format!(
-                "No wasm32-wasip2 artifact for '{}'",
+                "No wasm32-wasip2 artefact for '{}'",
                 manifest.name
             ))
         })?;
 
-        let url = artifact.url.as_ref().ok_or_else(|| {
+        let url = artefact.url.as_ref().ok_or_else(|| {
             RegistryError::ExtensionNotFound(format!(
-                "No artifact URL for '{}'. Use --build to build from source.",
+                "No artefact URL for '{}'. Use --build to build from source.",
                 manifest.name
             ))
         })?;
 
-        validate_artifact_url(&manifest.name, "artifacts.wasm32-wasip2.url", url)?;
+        validate_artefact_url(&manifest.name, "artifacts.wasm32-wasip2.url", url)?;
 
         // Require SHA256 — refuse to install unverified binaries. Check before
         // downloading to avoid wasting bandwidth on manifests that are missing
@@ -381,7 +381,7 @@ impl RegistryInstaller {
         // install_with_source_fallback can fall back to building from source
         // when checksums haven't been populated yet (bootstrapping).
         let expected_sha =
-            artifact
+            artefact
                 .sha256
                 .as_ref()
                 .ok_or_else(|| RegistryError::MissingChecksum {
@@ -411,7 +411,7 @@ impl RegistryInstaller {
             "Downloading {} '{}'...",
             manifest.kind, manifest.display_name
         );
-        let bytes = download_artifact(url).await?;
+        let bytes = download_artefact(url).await?;
         verify_sha256(&bytes, expected_sha, url)?;
 
         let target_caps = target_dir.join(format!("{}.capabilities.json", manifest.name));
@@ -429,16 +429,16 @@ impl RegistryInstaller {
                 .map_err(RegistryError::Io)?;
 
             // Try to get capabilities from:
-            // 1. Separate capabilities_url in the artifact
+            // 1. Separate capabilities_url in the artefact
             // 2. Source tree (legacy, requires repo)
-            if let Some(ref caps_url) = artifact.capabilities_url {
-                validate_artifact_url(
+            if let Some(ref caps_url) = artefact.capabilities_url {
+                validate_artefact_url(
                     &manifest.name,
                     "artifacts.wasm32-wasip2.capabilities_url",
                     caps_url,
                 )?;
                 const MAX_CAPS_SIZE: usize = 1024 * 1024; // 1 MB
-                match download_artifact(caps_url).await {
+                match download_artefact(caps_url).await {
                     Ok(caps_bytes) if caps_bytes.len() <= MAX_CAPS_SIZE => {
                         fs::write(&target_caps, &caps_bytes)
                             .await
@@ -494,20 +494,20 @@ impl RegistryInstaller {
         })
     }
 
-    /// Install a single manifest, choosing build vs download based on artifact availability and flags.
+    /// Install a single manifest, choosing build vs download based on artefact availability and flags.
     pub async fn install(
         &self,
         manifest: &ExtensionManifest,
         force: bool,
         prefer_build: bool,
     ) -> Result<InstallOutcome, RegistryError> {
-        let has_artifact = manifest
+        let has_artefact = manifest
             .artifacts
             .get("wasm32-wasip2")
             .and_then(|a| a.url.as_ref())
             .is_some();
 
-        if prefer_build || !has_artifact {
+        if prefer_build || !has_artefact {
             self.install_from_source(manifest, force).await
         } else {
             self.install_with_source_fallback(manifest, force).await
@@ -577,8 +577,8 @@ impl RegistryInstaller {
     }
 }
 
-/// Download an artifact from a URL.
-async fn download_artifact(url: &str) -> Result<bytes::Bytes, RegistryError> {
+/// Download an artefact from a URL.
+async fn download_artefact(url: &str) -> Result<bytes::Bytes, RegistryError> {
     let response = reqwest::get(url)
         .await
         .map_err(|e| RegistryError::DownloadFailed {
@@ -648,7 +648,7 @@ fn extract_tar_gz(
 
     let decoder = GzDecoder::new(bytes);
     let mut archive = Archive::new(decoder);
-    // Defense-in-depth: do not preserve permissions or extended attributes
+    // Defence-in-depth: do not preserve permissions or extended attributes
     archive.set_preserve_permissions(false);
     #[cfg(any(unix, target_os = "redox"))]
     archive.set_unpack_xattrs(false);
@@ -745,25 +745,25 @@ mod tests {
     fn test_manifest(
         name: &str,
         source_dir: &str,
-        artifact_url: Option<String>,
+        artefact_url: Option<String>,
         sha256: Option<&str>,
     ) -> ExtensionManifest {
-        test_manifest_with_kind(name, source_dir, artifact_url, sha256, ManifestKind::Tool)
+        test_manifest_with_kind(name, source_dir, artefact_url, sha256, ManifestKind::Tool)
     }
 
     fn test_manifest_with_kind(
         name: &str,
         source_dir: &str,
-        artifact_url: Option<String>,
+        artefact_url: Option<String>,
         sha256: Option<&str>,
         kind: ManifestKind,
     ) -> ExtensionManifest {
-        let mut artifacts = HashMap::new();
-        if artifact_url.is_some() || sha256.is_some() {
-            artifacts.insert(
+        let mut artefacts = HashMap::new();
+        if artefact_url.is_some() || sha256.is_some() {
+            artefacts.insert(
                 "wasm32-wasip2".to_string(),
                 ArtifactSpec {
-                    url: artifact_url,
+                    url: artefact_url,
                     sha256: sha256.map(ToString::to_string),
                     capabilities_url: None,
                 },
@@ -782,7 +782,7 @@ mod tests {
                 capabilities: format!("{}.capabilities.json", name),
                 crate_name: name.to_string(),
             },
-            artifacts,
+            artifacts: artefacts,
             auth_summary: None,
             tags: Vec::new(),
         }
@@ -843,7 +843,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_install_from_artifact_rejects_non_https_url() {
+    async fn test_install_from_artefact_rejects_non_https_url() {
         let temp = tempfile::tempdir().expect("tempdir");
         let installer = RegistryInstaller::new(
             temp.path().to_path_buf(),
@@ -870,7 +870,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_install_from_artifact_rejects_disallowed_host() {
+    async fn test_install_from_artefact_rejects_disallowed_host() {
         let temp = tempfile::tempdir().expect("tempdir");
         let installer = RegistryInstaller::new(
             temp.path().to_path_buf(),
@@ -895,7 +895,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_install_from_artifact_rejects_null_sha256() {
+    async fn test_install_from_artefact_rejects_null_sha256() {
         let temp = tempfile::tempdir().expect("tempdir");
         let installer = RegistryInstaller::new(
             temp.path().to_path_buf(),

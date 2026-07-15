@@ -251,7 +251,7 @@ Mermaid architecture diagram:
 ```mermaid
 flowchart LR
   subgraph IC[IronClaw process]
-    Tools[Built-in tools\n(memory_search/write/read)]
+    Tools["Built-in tools\n(memory_search/write/read)"]
     DB[(PostgreSQL)]
     Outbox[(memory_outbox)]
     Cap[Capability minting]
@@ -263,12 +263,12 @@ flowchart LR
   end
 
   subgraph MD[memoryd sidecar]
-    UDSS[UDS server\nRPC methods]
+    UDSS["UDS server\nRPC methods"]
     OC[Outbox consumer]
-    WQ[Apalis workers\n(consolidation/reconcile)]
-    KG[Oxigraph store\n(named graphs)]
-    VDB[Qdrant\n(episodes, concepts)]
-    LLM[Ollama\n(structured extraction + embeddings)]
+    WQ["Apalis workers\n(consolidation/reconcile)"]
+    KG["Oxigraph store\n(named graphs)"]
+    VDB["Qdrant\n(episodes, concepts)"]
+    LLM["Ollama\n(structured extraction + embeddings)"]
     UDSS --> WQ
     OC --> WQ
     WQ --> KG

@@ -168,7 +168,7 @@ pub trait Tool: Send + Sync {
         ApprovalRequirement::Never
     }
 
-    /// Whether hosted workers may advertise this tool in the remote catalog.
+    /// Whether hosted workers may advertise this tool in the remote catalogue.
     ///
     /// This must not infer visibility from placeholder params because some
     /// tools decide approval based on real invocation data. Override this when
@@ -289,7 +289,7 @@ pub trait NativeTool: Send + Sync {
         ApprovalRequirement::Never
     }
 
-    /// Whether hosted workers may advertise this tool in the remote catalog.
+    /// Whether hosted workers may advertise this tool in the remote catalogue.
     fn hosted_tool_eligibility(&self) -> HostedToolEligibility {
         HostedToolEligibility::Eligible
     }

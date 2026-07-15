@@ -172,7 +172,7 @@ macro_rules! delegate_methods {
 /// Strategy trait — each consumer implements this to customize I/O and lifecycle.
 ///
 /// The shared loop calls these methods at well-defined points. Consumers
-/// implement only the behavior that differs between chat, job, and container
+/// implement only the behaviour that differs between chat, job, and container
 /// contexts. The loop itself handles the common logic: tool intent nudge,
 /// iteration counting, tool definition refresh, and the respond → execute → process cycle.
 pub trait LoopDelegate: Send + Sync {
@@ -252,7 +252,7 @@ where
 /// Run the unified agentic loop.
 ///
 /// This is the single implementation used by all three consumers (chat, job, container).
-/// The `delegate` provides consumer-specific behavior via the `LoopDelegate` trait.
+/// The `delegate` provides consumer-specific behaviour via the `LoopDelegate` trait.
 pub async fn run_agentic_loop(
     delegate: &dyn LoopDelegate,
     reasoning: &Reasoning,

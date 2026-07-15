@@ -1,4 +1,4 @@
-//! Curated in-memory catalog of known extensions with fuzzy search.
+//! Curated in-memory catalogue of known extensions with fuzzy search.
 //!
 //! The registry holds well-known channels, tools, and MCP servers that can be
 //! installed via conversational commands. Online discoveries are cached here too.
@@ -26,7 +26,7 @@ impl ExtensionRegistry {
         }
     }
 
-    /// Create a new registry merging builtin entries with catalog-provided entries.
+    /// Create a new registry merging builtin entries with catalogue-provided entries.
     ///
     /// Deduplicates by `(name, kind)` pair -- a builtin MCP "slack" and a registry
     /// WASM "slack" can coexist since they're different kinds.
@@ -421,8 +421,8 @@ pub fn builtin_entries_with_relay(relay_url: Option<String>) -> Vec<RegistryEntr
             version: None,
         },
         // WASM channels (telegram, slack, discord, whatsapp) come from the embedded
-        // registry catalog (registry/channels/*.json) with WasmDownload URLs pointing
-        // to GitHub release artifacts. See new_with_catalog() for merging.
+        // registry catalogue (registry/channels/*.json) with WasmDownload URLs pointing
+        // to GitHub release artefacts. See new_with_catalogue() for merging.
     ];
 
     // Conditionally add channel-relay entries when relay URL is configured
@@ -641,7 +641,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_new_with_catalog() {
+    async fn test_new_with_catalogue() {
         let catalog_entries = vec![
             RegistryEntry {
                 name: "telegram".to_string(),
@@ -680,10 +680,10 @@ mod tests {
 
         // Should find the new telegram entry
         let results = registry.search("telegram").await;
-        assert!(!results.is_empty(), "Should find telegram from catalog");
+        assert!(!results.is_empty(), "Should find telegram from catalogue");
         assert_eq!(results[0].entry.name, "telegram");
 
-        // Should have both builtin MCP slack-mcp and catalog WASM slack-mcp
+        // Should have both builtin MCP slack-mcp and catalogue WASM slack-mcp
         let results = registry.search("slack").await;
         let slack_mcp = results
             .iter()
@@ -692,12 +692,12 @@ mod tests {
             .iter()
             .any(|r| r.entry.name == "slack-mcp" && r.entry.kind == ExtensionKind::WasmTool);
         assert!(slack_mcp, "Should have builtin MCP slack-mcp");
-        assert!(slack_wasm, "Should have catalog WASM slack-mcp");
+        assert!(slack_wasm, "Should have catalogue WASM slack-mcp");
     }
 
     #[tokio::test]
-    async fn test_new_with_catalog_dedup_same_kind() {
-        // A catalog entry with same name AND kind as a builtin should be skipped
+    async fn test_new_with_catalogue_dedup_same_kind() {
+        // A catalogue entry with same name AND kind as a builtin should be skipped
         let catalog_entries = vec![RegistryEntry {
             name: "slack-mcp".to_string(),
             display_name: "Slack MCP Override".to_string(),
@@ -852,8 +852,8 @@ mod tests {
         assert_eq!(entry.unwrap().display_name, "Cached Tool");
     }
 
-    // Channel tests (telegram, slack, discord, whatsapp) require the embedded catalog
-    // to be loaded via new_with_catalog(). See test_new_with_catalog for catalog coverage.
+    // Channel tests (telegram, slack, discord, whatsapp) require the embedded catalogue
+    // to be loaded via new_with_catalogue(). See test_new_with_catalogue for catalogue coverage.
 
     // === QA Plan P2 - 2.4: Extension registry collision tests ===
 
@@ -962,7 +962,7 @@ mod tests {
         // get() is name-only, returns first match.
         let entry = registry.get("myext").await;
         assert!(entry.is_some());
-        // The first catalog entry added is the channel.
+        // The first catalogue entry added is the channel.
         assert_eq!(entry.unwrap().kind, ExtensionKind::WasmChannel);
     }
 

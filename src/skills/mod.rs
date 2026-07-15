@@ -1,7 +1,7 @@
 //! OpenClaw SKILL.md-based skills system for IronClaw.
 //!
 //! Skills are SKILL.md files (YAML frontmatter + markdown prompt) that extend the
-//! agent's behavior through prompt-level instructions. Unlike code-level tools
+//! agent's behaviour through prompt-level instructions. Unlike code-level tools
 //! (WASM/MCP), skills operate in the LLM context and are subject to trust-based
 //! authority attenuation.
 //!
@@ -21,7 +21,7 @@ pub mod escape;
 /// Read-only, skill-scoped access to bundled skill resources (references and assets).
 pub mod file_read;
 pub mod gating;
-/// Shared source-field normalisation helpers for skill install adapters.
+/// Shared source-field normalization helpers for skill install adapters.
 pub(crate) mod install_source;
 pub mod parser;
 pub mod registry;
@@ -462,7 +462,7 @@ pub(crate) fn validate_location_matches_manifest(
     // Defence-in-depth: `LoadedSkillLocation::new` already enforces
     // entrypoint relativity at construction, so a location that reaches
     // this point should always be bundle-relative.  The check remains
-    // to guard against any future construction or deserialisation path
+    // to guard against any future construction or deserialization path
     // that might bypass `LoadedSkillLocation::new`.
     if !location.entrypoint().is_relative() {
         return Err(LoadedSkillLocationError::new(

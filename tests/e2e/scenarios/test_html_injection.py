@@ -1,4 +1,4 @@
-"""Scenario 5: HTML injection defense in chat messages."""
+"""Scenario 5: HTML injection defence in chat messages."""
 
 import pytest
 from helpers import SEL

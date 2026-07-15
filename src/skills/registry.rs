@@ -324,7 +324,7 @@ impl SkillRegistry {
     ///
     /// Performs validation without modifying state. Callers can then do async
     /// filesystem cleanup without holding the registry lock, and call
-    /// `commit_remove` afterward.
+    /// `commit_remove` afterwards.
     pub fn validate_remove(&self, name: &str) -> Result<PathBuf, SkillRegistryError> {
         removal::validate_remove(self, name)
     }

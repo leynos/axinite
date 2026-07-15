@@ -91,7 +91,7 @@ mod tests {
     }
 
     #[cfg(feature = "postgres")]
-    mod behavioral {
+    mod behavioural {
         //! Behavioural tests for `NativeSandboxStore` on `PgBackend`.
         //!
         //! These verify field pass-through and method delegation work

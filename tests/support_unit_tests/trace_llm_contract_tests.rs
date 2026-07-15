@@ -1,4 +1,4 @@
-//! Trace LLM request-hint and deserialisation contract tests.
+//! Trace LLM request-hint and deserialization contract tests.
 
 use crate::support::trace_provider::TraceLlm;
 use crate::support::trace_types::LlmTrace;

@@ -1,8 +1,8 @@
 # LLM Trace Fixtures
 
-Trace fixtures are JSON files that script LLM behavior for deterministic E2E testing. The `TraceLlm` provider (`tests/support/trace_llm.rs`) replays these canned responses in order, allowing tests to exercise the full agent loop -- tool dispatch, safety layer, context accumulation -- without calling a real LLM.
+Trace fixtures are JSON files that script LLM behaviour for deterministic E2E testing. The `TraceLlm` provider (`tests/support/trace_llm.rs`) replays these canned responses in order, allowing tests to exercise the full agent loop -- tool dispatch, safety layer, context accumulation -- without calling a real LLM.
 
-Traces can be **hand-written** or **recorded** from a live session using the `RecordingLlm` wrapper (`src/llm/recording.rs`). Recorded traces include additional fields (memory snapshots, HTTP exchanges, expected tool results) that enable fully deterministic replay.
+Traces can be **handwritten** or **recorded** from a live session using the `RecordingLlm` wrapper (`src/llm/recording.rs`). Recorded traces include additional fields (memory snapshots, HTTP exchanges, expected tool results) that enable fully deterministic replay.
 
 ## Trace Format
 
@@ -217,7 +217,7 @@ When present on a step, `expected_tool_results` lists the tool output that appea
 | `name` | string | The tool name. |
 | `content` | string | The full tool result content as it appeared in the message context. |
 
-During replay, after tools execute and before returning the canned LLM response, the test harness should compare actual tool results against these entries. A content mismatch indicates a tool behavior change (regression).
+During replay, after tools execute and before returning the canned LLM response, the test harness should compare actual tool results against these entries. A content mismatch indicates a tool behaviour change (regression).
 
 ### Expects fields
 
@@ -466,7 +466,7 @@ Run the agent normally, interact with it, then quit. The trace file is written o
 
 ### Using a recorded trace for replay
 
-A recorded trace is a superset of the hand-written format. To use it:
+A recorded trace is a superset of the handwritten format. To use it:
 
 1. The replay provider (`TraceLlm`) must skip `user_input` steps -- they are metadata markers, not LLM responses.
 2. If `memory_snapshot` is present, restore workspace documents before running the trace.
@@ -520,4 +520,4 @@ A recorded trace is a superset of the hand-written format. To use it:
 
 ### Backward compatibility
 
-Recorded traces are backward-compatible with hand-written traces. All new fields (`memory_snapshot`, `http_exchanges`, `expected_tool_results`, `user_input` steps) are optional and default to empty. Existing hand-written traces work unchanged.
+Recorded traces are backward-compatible with handwritten traces. All new fields (`memory_snapshot`, `http_exchanges`, `expected_tool_results`, `user_input` steps) are optional and default to empty. Existing handwritten traces work unchanged.

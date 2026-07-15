@@ -63,24 +63,24 @@ fn test_truncate_mixed_multibyte_and_ascii() {
 
 #[test]
 fn test_truncate_large_whitespace_run_does_not_hide_content() {
-    // "A" followed by 101 newlines then "B": after normalisation this is "A B" (3 chars).
+    // "A" followed by 101 newlines then "B": after normalization this is "A B" (3 chars).
     let input = format!("A{}\nB", "\n".repeat(100));
     assert_eq!(truncate_for_preview(&input, 3), "A B");
 }
 
 #[test]
 fn test_truncate_large_whitespace_run_truncates_correctly() {
-    // 100 newlines between words: normalise to "A B C", cap at 3 → "A B..."
+    // 100 newlines between words: normalize to "A B C", cap at 3 → "A B..."
     let input = format!("A{}B{}C", "\n".repeat(100), "\n".repeat(100));
     let result = truncate_for_preview(&input, 3);
     assert_eq!(result, "A B...");
 }
 
 #[test]
-fn truncate_for_preview_snapshot_normalisation() {
+fn truncate_for_preview_snapshot_normalization() {
     let input = "Line 1\n\n   Line   2\t\twith  spaces\n\nLine 3";
     let out = crate::agent::dispatcher::types::truncate_for_preview(input, 32);
-    assert_snapshot!("truncate_normalise_32", out);
+    assert_snapshot!("truncate_normalize_32", out);
 }
 
 #[test]

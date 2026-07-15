@@ -1,5 +1,5 @@
 //! Tests for `normalize_schema_strict`, including GitHub-shaped fixtures and
-//! OpenAI strict-mode normalisation behaviour across merged schema variants.
+//! OpenAI strict-mode normalization behaviour across merged schema variants.
 
 use rstest::rstest;
 use serde_json::Value as JsonValue;

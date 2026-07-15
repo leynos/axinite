@@ -97,7 +97,7 @@ pub enum GoogleSheetsAction {
         title: String,
     },
 
-    /// Format cells in a range (bold, colors, number format, borders, alignment).
+    /// Format cells in a range (bold, colours, number format, borders, alignment).
     FormatCells {
         /// The spreadsheet ID.
         spreadsheet_id: String,
@@ -120,10 +120,10 @@ pub enum GoogleSheetsAction {
         /// Font size.
         #[serde(default)]
         font_size: Option<i64>,
-        /// Text color as hex (e.g., "#FF0000").
+        /// Text colour as hex (e.g., "#FF0000").
         #[serde(default)]
         text_color: Option<String>,
-        /// Background color as hex (e.g., "#FFFF00").
+        /// Background colour as hex (e.g., "#FFFF00").
         #[serde(default)]
         background_color: Option<String>,
         /// Horizontal alignment: "LEFT", "CENTER", "RIGHT".

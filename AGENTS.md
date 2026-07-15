@@ -328,11 +328,16 @@ management.
 
 ## Markdown Guidance
 
-- Validate changed Markdown files with `bunx markdownlint-cli2 <paths>` unless
-  the repository later grows a dedicated Make target for Markdown linting.
+- Validate Markdown files with `make markdownlint`. This target also enforces
+  en-GB-oxendict spelling with the pinned `typos` release.
+- The spelling configuration `typos.toml` is generated. Edit
+  `typos.local.toml` for narrow repository terminology, then regenerate it
+  with `make spelling-config-write`; never edit generated entries by hand.
+- Quoted APIs and identifiers retain upstream spelling. Put them in backticks
+  or fenced code blocks where possible, or add a narrowly scoped local pattern
+  when executable syntax cannot be quoted.
 - Run `git diff --check` after documentation edits.
-- When Mermaid diagrams are introduced or modified, validate them with `nixie`
-  if available in the environment.
+- Validate Mermaid diagrams with `make nixie`, which uses Nixie 1.1.0 in CI.
 - Markdown paragraphs and bullet points should be wrapped at 80 columns.
 - Code blocks should be wrapped at 120 columns.
 - Tables and headings should not be wrapped.

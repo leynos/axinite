@@ -261,7 +261,7 @@ property suite.[^20]
 
 This code validates and combines several classes of attacker-controlled input:
 
-- artifact URLs must be HTTPS;
+- artefact URLs must be HTTPS;
 - hosts must be in the allowed set;
 - IP literals are rejected;
 - `source.dir` must stay within expected relative prefixes and avoid traversal
@@ -278,7 +278,7 @@ as:
 - valid-looking URLs with surprising hosts;
 - source directories that are almost but not quite safe;
 - archives with duplicate names, deep prefixes, or oversized entries;
-- pinned and unpinned artifact URLs with fallback behaviour;
+- pinned and unpinned artefact URLs with fallback behaviour;
 - manifests that are partly valid and partly malicious.
 
 **Proptest** should start here before Kani is considered for any extracted pure

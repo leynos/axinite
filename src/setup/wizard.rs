@@ -2102,7 +2102,7 @@ impl SetupWizard {
         // Install selected channels that aren't already on disk
         let mut any_installed = false;
 
-        // Try bundled channels first (pre-compiled artifacts from channels-src/)
+        // Try bundled channels first (pre-compiled artefacts from channels-src/)
         if let Some(installed) = install_selected_bundled_channels(
             &channels_dir,
             &selected_wasm_channels,
@@ -2242,7 +2242,7 @@ impl SetupWizard {
 
     /// Step 7: Extensions (tools) installation from registry.
     async fn step_extensions(&mut self) -> Result<(), SetupError> {
-        let catalog = match load_registry_catalog() {
+        let catalogue = match load_registry_catalogue() {
             Some(c) => c,
             None => {
                 print_info("Extension registry not found. Skipping tool installation.");
@@ -2251,7 +2251,7 @@ impl SetupWizard {
             }
         };
 
-        let tools: Vec<_> = catalog
+        let tools: Vec<_> = catalogue
             .list(Some(crate::registry::manifest::ManifestKind::Tool), None)
             .into_iter()
             .cloned()
@@ -2304,7 +2304,7 @@ impl SetupWizard {
         }
 
         // Install selected tools that aren't already on disk
-        let repo_root = catalog.root().parent().unwrap_or(catalog.root());
+        let repo_root = catalogue.root().parent().unwrap_or(catalogue.root());
         let installer = crate::registry::installer::RegistryInstaller::new(
             repo_root.to_path_buf(),
             tools_dir.clone(),
@@ -3420,7 +3420,7 @@ async fn install_missing_bundled_channels(
     Ok(installed)
 }
 
-/// Build channel options from discovered channels + bundled + registry catalog.
+/// Build channel options from discovered channels + bundled + registry catalogue.
 ///
 /// Returns a deduplicated, sorted list of channel names available for selection.
 fn build_channel_options(discovered: &[(String, ChannelCapabilitiesFile)]) -> Vec<String> {
@@ -3434,8 +3434,9 @@ fn build_channel_options(discovered: &[(String, ChannelCapabilitiesFile)]) -> Ve
     }
 
     // Add registry channels
-    if let Some(catalog) = load_registry_catalog() {
-        for manifest in catalog.list(Some(crate::registry::manifest::ManifestKind::Channel), None) {
+    if let Some(catalogue) = load_registry_catalogue() {
+        for manifest in catalogue.list(Some(crate::registry::manifest::ManifestKind::Channel), None)
+        {
             if !names.iter().any(|n| n == &manifest.name) {
                 names.push(manifest.name.clone());
             }
@@ -3446,9 +3447,9 @@ fn build_channel_options(discovered: &[(String, ChannelCapabilitiesFile)]) -> Ve
     names
 }
 
-/// Try to load the registry catalog. Falls back to embedded manifests when
+/// Try to load the registry catalogue. Falls back to embedded manifests when
 /// the `registry/` directory cannot be found (e.g. running from an installed binary).
-fn load_registry_catalog() -> Option<crate::registry::catalog::RegistryCatalog> {
+fn load_registry_catalogue() -> Option<crate::registry::catalog::RegistryCatalog> {
     crate::registry::catalog::RegistryCatalog::load_or_embedded().ok()
 }
 
@@ -3459,15 +3460,15 @@ async fn install_selected_registry_channels(
     selected_channels: &[String],
     already_installed: &HashSet<String>,
 ) -> Vec<String> {
-    let catalog = match load_registry_catalog() {
+    let catalogue = match load_registry_catalogue() {
         Some(c) => c,
         None => return Vec::new(),
     };
 
-    let repo_root = catalog
+    let repo_root = catalogue
         .root()
         .parent()
-        .unwrap_or(catalog.root())
+        .unwrap_or(catalogue.root())
         .to_path_buf();
 
     let bundled: HashSet<&str> = available_channel_names().iter().copied().collect();
@@ -3487,7 +3488,7 @@ async fn install_selected_registry_channels(
         }
 
         // Look up in registry
-        let manifest = match catalog.get(&format!("channels/{}", name)) {
+        let manifest = match catalogue.get(&format!("channels/{}", name)) {
             Some(m) => m,
             None => continue,
         };
@@ -3647,10 +3648,10 @@ mod tests {
 
     #[tokio::test]
     async fn test_install_missing_bundled_channels_installs_telegram() {
-        // WASM artifacts only exist in dev builds (not CI). Skip gracefully
+        // WASM artefacts only exist in dev builds (not CI). Skip gracefully
         // rather than fail when the telegram channel hasn't been compiled.
         if !available_channel_names().contains(&"telegram") {
-            eprintln!("skipping: telegram WASM artifacts not built");
+            eprintln!("skipping: telegram WASM artefacts not built");
             return;
         }
 

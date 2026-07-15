@@ -68,12 +68,12 @@ async fn multi_turn_state() {
 // -----------------------------------------------------------------------
 // Test 2: thread_interruption -- DEFERRED
 // -----------------------------------------------------------------------
-// Needs interrupt signaling infrastructure in TestChannel.
+// Needs interrupt signalling infrastructure in TestChannel.
 
 #[test]
 #[ignore]
 fn thread_interruption() {
-    // TODO: implement once interrupt signaling infrastructure is added to TestChannel
+    // TODO: implement once interrupt signalling infrastructure is added to TestChannel
 }
 
 // -----------------------------------------------------------------------

@@ -221,7 +221,7 @@ impl GatewayChannel {
         self
     }
 
-    /// Inject the skill catalog for skill search API.
+    /// Inject the skill catalogue for skill search API.
     pub fn with_skill_catalog(mut self, sc: Arc<SkillCatalog>) -> Self {
         self.rebuild_state(|s| s.skill_catalog = Some(sc));
         self
@@ -233,7 +233,7 @@ impl GatewayChannel {
         self
     }
 
-    /// Inject registry catalog entries for the available extensions API.
+    /// Inject registry catalogue entries for the available extensions API.
     pub fn with_registry_entries(mut self, entries: Vec<crate::extensions::RegistryEntry>) -> Self {
         self.rebuild_state(|s| s.registry_entries = entries);
         self

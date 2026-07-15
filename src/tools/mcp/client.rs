@@ -762,7 +762,7 @@ mod tests {
         assert!(!tool.requires_approval());
     }
 
-    /// Mock transport for testing transport abstraction behavior.
+    /// Mock transport for testing transport abstraction behaviour.
     struct MockTransport {
         supports_http: bool,
         responses: std::sync::Mutex<Vec<McpResponse>>,

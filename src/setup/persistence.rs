@@ -30,7 +30,7 @@ impl DefaultSettingsPersistence {
     ///
     /// Upserts each setting individually via `backend.set_setting` to merge
     /// defaults without deleting existing custom settings. This preserves
-    /// user customisations while ensuring all required defaults are present.
+    /// user customizations while ensuring all required defaults are present.
     ///
     /// Note: Writes are incremental and partial commits may occur if a later
     /// `set_setting` fails. Callers that require atomicity should use a

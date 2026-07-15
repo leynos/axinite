@@ -288,10 +288,10 @@ flows.
 - It can be triggered by `workflow_call`, by a path-filtered pull request on
   `src/channels/web/**` or `tests/e2e/**`, by weekly schedule, and by manual
   dispatch.
-- It compiles the binary once, uploads it as an artifact, and then fans test
+- It compiles the binary once, uploads it as an artefact, and then fans test
   slices out in parallel.
 - The scenario groups are currently `core`, `features`, and `extensions`.
-- Failure screenshots are uploaded as artifacts for debugging.
+- Failure screenshots are uploaded as artefacts for debugging.
 
 ### 4.5 Regression enforcement
 

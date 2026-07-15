@@ -396,8 +396,8 @@ pub fn rename_sheet(
     })
 }
 
-/// Parse a hex color like "#FF0000" into Sheets API color (0.0-1.0 floats).
-fn parse_hex_color(hex: &str) -> Option<serde_json::Value> {
+/// Parse a hex colour like "#FF0000" into Sheets API colour (0.0-1.0 floats).
+fn parse_hex_colour(hex: &str) -> Option<serde_json::Value> {
     let hex = hex.strip_prefix('#').unwrap_or(hex);
     if hex.len() != 6 {
         return None;
@@ -451,8 +451,8 @@ pub fn format_cells(opts: FormatOptions<'_>) -> Result<FormatResult, String> {
         text_format["fontSize"] = serde_json::json!(size);
         has_text_format = true;
     }
-    if let Some(color) = opts.text_color {
-        if let Some(c) = parse_hex_color(color) {
+    if let Some(colour) = opts.text_color {
+        if let Some(c) = parse_hex_colour(colour) {
             text_format["foregroundColor"] = c;
             has_text_format = true;
         }
@@ -463,9 +463,9 @@ pub fn format_cells(opts: FormatOptions<'_>) -> Result<FormatResult, String> {
         fields.push("userEnteredFormat.textFormat");
     }
 
-    // Background color
-    if let Some(color) = opts.background_color {
-        if let Some(c) = parse_hex_color(color) {
+    // Background colour
+    if let Some(colour) = opts.background_color {
+        if let Some(c) = parse_hex_colour(colour) {
             format["backgroundColor"] = c;
             fields.push("userEnteredFormat.backgroundColor");
         }

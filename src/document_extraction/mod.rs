@@ -182,7 +182,7 @@ mod tests {
     #[tokio::test]
     async fn extracts_csv() {
         let middleware = DocumentExtractionMiddleware::new();
-        let mut msg = IncomingMessage::new("test", "user1", "analyze").with_attachments(vec![
+        let mut msg = IncomingMessage::new("test", "user1", "analyse").with_attachments(vec![
             doc_attachment("text/csv", "data.csv", b"name,age\nAlice,30".to_vec()),
         ]);
 

@@ -5,7 +5,7 @@
 #
 # This is useful when you have already installed a local override and want to
 # refresh it from the latest build output without touching extensions that are
-# not currently installed. The script prefers `wasm32-wasip2` release artifacts
+# not currently installed. The script prefers `wasm32-wasip2` release artefacts
 # and falls back to `wasm32-wasip1`, replaces only matching installed
 # overrides, and updates the adjacent capabilities manifests at the same time so
 # the host metadata stays aligned with the deployed WASM binary.
@@ -49,7 +49,7 @@ resolve_source_capabilities() {
     printf '%s\n' "$source_capabilities"
 }
 
-sync_wasm_artifact() {
+sync_wasm_artefact() {
     local -n synced_items_ref="$1"
     local kind_dir="$2"
     local source_root="$3"
@@ -86,7 +86,7 @@ sync_wasm_artifact() {
     synced_items_ref["$item_name"]=1
 }
 
-sync_matching_wasm_artifacts() {
+sync_matching_wasm_artefacts() {
     local kind_dir="$1"
     local source_root="$2"
     local suffix="$3"
@@ -97,7 +97,7 @@ sync_matching_wasm_artifacts() {
 
     for target_name in wasm32-wasip2 wasm32-wasip1; do
         for wasm_path in "${SHARED_WASM_TARGET_DIR}/${target_name}/release/"*"${suffix}.wasm"; do
-            sync_wasm_artifact \
+            sync_wasm_artefact \
                 synced_items \
                 "$kind_dir" \
                 "$source_root" \
@@ -107,7 +107,7 @@ sync_matching_wasm_artifacts() {
                 "$wasm_path"
         done
         for wasm_path in "${source_root}"/*/target/"${target_name}"/release/*"${suffix}.wasm"; do
-            sync_wasm_artifact \
+            sync_wasm_artefact \
                 synced_items \
                 "$kind_dir" \
                 "$source_root" \
@@ -120,13 +120,13 @@ sync_matching_wasm_artifacts() {
 }
 
 sync_tools() {
-    sync_matching_wasm_artifacts "tools" "tools-src" "_tool" \
+    sync_matching_wasm_artefacts "tools" "tools-src" "_tool" \
         "-tool.capabilities.json" \
         ".capabilities.json"
 }
 
 sync_channels() {
-    sync_matching_wasm_artifacts "channels" "channels-src" "_channel" \
+    sync_matching_wasm_artefacts "channels" "channels-src" "_channel" \
         "-channel.capabilities.json" \
         ".capabilities.json"
 }

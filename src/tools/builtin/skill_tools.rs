@@ -140,15 +140,18 @@ impl NativeTool for SkillListTool {
 
 pub struct SkillSearchTool {
     registry: Arc<std::sync::RwLock<SkillRegistry>>,
-    catalog: Arc<SkillCatalog>,
+    catalogue: Arc<SkillCatalog>,
 }
 
 impl SkillSearchTool {
     pub fn new(
         registry: Arc<std::sync::RwLock<SkillRegistry>>,
-        catalog: Arc<SkillCatalog>,
+        catalogue: Arc<SkillCatalog>,
     ) -> Self {
-        Self { registry, catalog }
+        Self {
+            registry,
+            catalogue,
+        }
     }
 
     fn parse_search_query(params: &serde_json::Value) -> Result<String, ToolError> {
@@ -254,7 +257,7 @@ impl NativeTool for SkillSearchTool {
     }
 
     fn description(&self) -> &str {
-        "Search for skills in the ClawHub catalog and among locally loaded skills."
+        "Search for skills in the ClawHub catalogue and among locally loaded skills."
     }
 
     fn parameters_schema(&self) -> serde_json::Value {
@@ -277,23 +280,23 @@ impl NativeTool for SkillSearchTool {
         let start = std::time::Instant::now();
         let query = Self::parse_search_query(&params)?;
 
-        let catalog_outcome = self.catalog.search(&query).await;
-        let catalog_error = catalog_outcome.error.clone();
+        let catalogue_outcome = self.catalogue.search(&query).await;
+        let catalog_error = catalogue_outcome.error.clone();
 
-        let mut catalog_entries = catalog_outcome.results;
-        self.catalog
+        let mut catalog_entries = catalogue_outcome.results;
+        self.catalogue
             .enrich_search_results(&mut catalog_entries, 5)
             .await;
 
         let (installed, local_matches) = Self::compute_search_context(&self.registry, &query)?;
-        let catalog_json = Self::format_search_results(catalog_entries, &installed);
+        let catalogue_json = Self::format_search_results(catalog_entries, &installed);
 
         let mut output = serde_json::json!({
-            "catalog": catalog_json,
-            "catalog_count": catalog_json.as_array().map_or(0, Vec::len),
+            "catalogue": catalogue_json,
+            "catalogue_count": catalogue_json.as_array().map_or(0, Vec::len),
             "installed": local_matches,
             "installed_count": local_matches.len(),
-            "registry_url": self.catalog.registry_url(),
+            "registry_url": self.catalogue.registry_url(),
         });
         if let Some(err) = catalog_error {
             output["catalog_error"] = serde_json::Value::String(err);

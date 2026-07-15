@@ -26,12 +26,12 @@ pub enum WorkspaceError {
     #[error("Document chunking failed: {reason}")]
     ChunkingFailed { reason: String },
 
-    /// Raised when the supplied `doc_type` is not recognised by the workspace
+    /// Raised when the supplied `doc_type` is not recognized by the workspace
     /// layer.
     #[error("Invalid document type: {doc_type}")]
     InvalidDocType { doc_type: String },
 
-    /// Raised when workspace state for `user_id` has not been initialised
+    /// Raised when workspace state for `user_id` has not been initialized
     /// before use.
     #[error("Workspace not initialized")]
     NotInitialized { user_id: String },

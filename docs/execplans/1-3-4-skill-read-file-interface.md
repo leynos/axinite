@@ -881,7 +881,7 @@ The final code should expose these concepts through named Rust types rather
 than open-coded JSON fragments wherever practical. The adapter may serialize
 the final response with `serde_json::json!` only at the boundary.
 
-## Artifacts and notes
+## Artefacts and notes
 
 Firecrawl research used during planning:
 

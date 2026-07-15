@@ -92,7 +92,7 @@ In addition to the general lenses below, check IronClaw conventions (see CLAUDE.
 - Is every new public function/method tested?
 - Are error paths tested (not just happy paths)?
 - Are edge cases covered (empty input, boundary values, concurrent access)?
-- Do existing tests still make sense with the new changes, or do they assert stale behavior?
+- Do existing tests still make sense with the new changes, or do they assert stale behaviour?
 - Are there integration/e2e tests for the full flow?
 - If a test is missing, describe exactly what test should be written.
 
@@ -120,7 +120,7 @@ Summarize findings to the user as a table:
 
 Severity levels:
 - **Critical**: Security vulnerability, data loss, or financial exploit
-- **High**: Bug that will cause incorrect behavior in production
+- **High**: Bug that will cause incorrect behaviour in production
 - **Medium**: Robustness issue, missing validation, or incomplete error handling
 - **Low**: Style, naming, documentation, or minor improvement
 - **Nit**: Optional suggestion, take-it-or-leave-it

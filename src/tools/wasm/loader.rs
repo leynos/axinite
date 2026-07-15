@@ -2,7 +2,7 @@
 //!
 //! This module provides a way to load WASM tools dynamically at runtime from:
 //! - A directory containing `<name>.wasm` and `<name>.capabilities.json`
-//! - Build artifacts in `tools-src/` (dev mode, auto-detected)
+//! - Build artefacts in `tools-src/` (dev mode, auto-detected)
 //! - Database storage (via [`WasmToolStore`])
 //!
 //! # Example: Loading from Directory
@@ -23,7 +23,7 @@
 //! # Dev Mode
 //!
 //! When `load_dev_tools()` is called, the loader scans `tools-src/*/` for build
-//! artifacts. Tools found there are loaded directly from the build output,
+//! artefacts. Tools found there are loaded directly from the build output,
 //! skipping the install directory. This means during development you just
 //! rebuild the WASM and restart the host, no manual copy step needed.
 //!
@@ -479,7 +479,7 @@ pub fn resolve_wasm_target_dir(crate_dir: &Path) -> PathBuf {
     crate::registry::artifacts::resolve_target_dir(crate_dir)
 }
 
-/// Return the expected path to a compiled WASM artifact for a given crate.
+/// Return the expected path to a compiled WASM artefact for a given crate.
 ///
 /// Combines [`resolve_wasm_target_dir`] with the `wasm32-wasip2/release/` subdirectory
 /// and the binary name without extension (e.g. `slack_tool`).
@@ -507,7 +507,7 @@ fn tools_src_dir() -> PathBuf {
     PathBuf::from(CARGO_MANIFEST_DIR).join("tools-src")
 }
 
-/// Discover WASM tools available as build artifacts in `tools-src/`.
+/// Discover WASM tools available as build artefacts in `tools-src/`.
 ///
 /// Scans each subdirectory for:
 /// - `tools-src/<name>/target/wasm32-wasip2/release/<crate_name>_tool.wasm`
@@ -562,10 +562,10 @@ pub async fn discover_dev_tools() -> Result<HashMap<String, DiscoveredTool>, std
     Ok(tools)
 }
 
-/// Load WASM tools from build artifacts in `tools-src/`.
+/// Load WASM tools from build artefacts in `tools-src/`.
 ///
 /// In dev mode, tools can be loaded directly from their build output without
-/// needing to install them to `~/.ironclaw/tools/` first. Build artifacts
+/// needing to install them to `~/.ironclaw/tools/` first. Build artefacts
 /// that are newer than installed copies take priority.
 ///
 /// Set `IRONCLAW_TOOLS_SRC` env var to override the source directory.
@@ -581,10 +581,10 @@ pub async fn load_dev_tools(
     }
 
     for (name, discovered) in &dev_tools {
-        // Check if the build artifact is newer than the installed copy
+        // Check if the build artefact is newer than the installed copy
         let installed_path = install_dir.join(format!("{}.wasm", name));
         let should_load = if installed_path.exists() {
-            // Compare modification times: prefer fresher build artifact
+            // Compare modification times: prefer fresher build artefact
             match (
                 fs::metadata(&discovered.wasm_path).await,
                 fs::metadata(&installed_path).await,
@@ -607,7 +607,7 @@ pub async fn load_dev_tools(
         tracing::info!(
             name = name,
             wasm_path = %discovered.wasm_path.display(),
-            "Loading dev tool from build artifacts (newer than installed)"
+            "Loading dev tool from build artefacts (newer than installed)"
         );
 
         match loader
@@ -636,7 +636,7 @@ pub async fn load_dev_tools(
         tracing::info!(
             count = results.loaded.len(),
             tools = ?results.loaded,
-            "Loaded dev tools from build artifacts"
+            "Loaded dev tools from build artefacts"
         );
     }
 
@@ -815,9 +815,9 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_discover_dev_tools_finds_build_artifacts() {
+    async fn test_discover_dev_tools_finds_build_artefacts() {
         // This test relies on the actual tools-src/ directory in the repo.
-        // If build artifacts exist, they should be discovered.
+        // If build artefacts exist, they should be discovered.
         let tools = super::discover_dev_tools().await.unwrap();
 
         // If any tools have been built, they should appear with "-tool" suffix
@@ -1078,7 +1078,7 @@ mod tests {
         let tools = discover_tools(dir.path()).await.unwrap();
 
         // The current implementation discovers ALL .wasm files including dotfiles.
-        // This test documents the current behavior: .hidden.wasm IS discovered
+        // This test documents the current behaviour: .hidden.wasm IS discovered
         // with the stem ".hidden". A future hardening pass could add dotfile
         // filtering, at which point this assertion should be updated.
         assert!(
@@ -1135,7 +1135,7 @@ mod tests {
 
     #[tokio::test]
     async fn load_from_files_publishes_guest_schema_in_tool_definitions() {
-        let wasm_path = github_wasm_artifact().expect("build or find github WASM artifact");
+        let wasm_path = github_wasm_artifact().expect("build or find github WASM artefact");
         let capabilities_path = github_tool_source_dir().join("github-tool.capabilities.json");
         let (loader, registry) = make_metadata_loader();
 
@@ -1156,7 +1156,7 @@ mod tests {
 
     #[tokio::test]
     async fn load_dev_tools_publishes_guest_schema_in_tool_definitions() {
-        github_wasm_artifact().expect("build or find github WASM artifact");
+        github_wasm_artifact().expect("build or find github WASM artefact");
         let install_dir = TempDir::new().expect("create install dir");
         let (loader, registry) = make_metadata_loader();
 
@@ -1166,7 +1166,7 @@ mod tests {
 
         assert!(
             results.loaded.iter().any(|name| name == "github-tool"),
-            "expected github-tool to load from dev artifacts: {:?}",
+            "expected github-tool to load from dev artefacts: {:?}",
             results.loaded
         );
 

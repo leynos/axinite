@@ -1,5 +1,5 @@
 // Generated WIT bindings and Telegram API DTOs intentionally include fields
-// that are deserialised for compatibility but not read by every module.
+// that are deserialized for compatibility but not read by every module.
 #![allow(dead_code)]
 
 wit_bindgen::generate!({

@@ -21,7 +21,7 @@
 //! - `add_sheet`: Add a new sheet (tab)
 //! - `delete_sheet`: Delete a sheet (tab)
 //! - `rename_sheet`: Rename a sheet (tab)
-//! - `format_cells`: Format cells (bold, colors, alignment, number format)
+//! - `format_cells`: Format cells (bold, colours, alignment, number format)
 //!
 //! # Tips
 //!

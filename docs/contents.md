@@ -126,7 +126,7 @@
   - [Roll out ADR 006 across the remaining dyn-backed async trait families](execplans/adr-006-broad-rollout.md)
     records the completed broad refactor that scaled the ADR 006 pilot
     pattern across all remaining async interfaces.
-  - [Worker-orchestrator transport for hosted remote tool catalogue fetch](execplans/1-1-1-worker-orchestrator-transport-for-remote-tool-catalog-fetch.md)
+  - [Worker-orchestrator transport for hosted remote tool catalogue fetch](execplans/1-1-1-worker-orchestrator-transport-for-remote-tool-catalogue-fetch.md)
     plans roadmap item `1.1.1` for the shared hosted remote-tool transport.
   - [Filter the hosted-visible catalogue from the canonical ToolRegistry](execplans/1-1-2-filter-the-hosted-visible-catalogue.md)
     plans roadmap item `1.1.2` for canonical hosted-visible tool filtering.

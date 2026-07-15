@@ -20,7 +20,7 @@ objects used as a baseline for running tests. The primary purpose of a fixture
 is to ensure that a well-known, controlled environment exists before tests run,
 so the results remain repeatable. Test dependencies, such as database
 connections, user objects, or specific configurations, often require careful
-setup before a test executes and, sometimes, teardown afterward. Managing this
+setup before a test executes and, sometimes, teardown afterwards. Managing this
 setup, together with the teardown logic, within each test function can lead to
 considerable boilerplate and repetition, making tests harder to read, maintain,
 and extend.

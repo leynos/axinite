@@ -38,7 +38,7 @@ pub enum RegistryCommand {
         #[arg(short, long)]
         force: bool,
 
-        /// Build from source instead of downloading pre-built artifact
+        /// Build from source instead of downloading pre-built artefact
         #[arg(long)]
         build: bool,
     },
@@ -49,7 +49,7 @@ pub enum RegistryCommand {
         #[arg(short, long)]
         force: bool,
 
-        /// Build from source instead of downloading pre-built artifact
+        /// Build from source instead of downloading pre-built artefact
         #[arg(long)]
         build: bool,
     },
@@ -60,7 +60,7 @@ pub async fn run_registry_command(cmd: RegistryCommand) -> anyhow::Result<()> {
     // For install commands that need to build from source, a disk registry is required.
     // For list/info, embedded manifests suffice.
     let registry_dir = RegistryCatalog::find_dir();
-    let catalog = if let Some(ref dir) = registry_dir {
+    let catalogue = if let Some(ref dir) = registry_dir {
         RegistryCatalog::load(dir)?
     } else {
         RegistryCatalog::load_or_embedded()?
@@ -74,20 +74,20 @@ pub async fn run_registry_command(cmd: RegistryCommand) -> anyhow::Result<()> {
 
     match cmd {
         RegistryCommand::List { kind, tag, verbose } => {
-            cmd_list(&catalog, kind.as_deref(), tag.as_deref(), verbose)
+            cmd_list(&catalogue, kind.as_deref(), tag.as_deref(), verbose)
         }
-        RegistryCommand::Info { name } => cmd_info(&catalog, &name),
+        RegistryCommand::Info { name } => cmd_info(&catalogue, &name),
         RegistryCommand::Install { name, force, build } => {
-            cmd_install(&catalog, &repo_root, &name, force, build).await
+            cmd_install(&catalogue, &repo_root, &name, force, build).await
         }
         RegistryCommand::InstallDefaults { force, build } => {
-            cmd_install(&catalog, &repo_root, "default", force, build).await
+            cmd_install(&catalogue, &repo_root, "default", force, build).await
         }
     }
 }
 
 fn cmd_list(
-    catalog: &RegistryCatalog,
+    catalogue: &RegistryCatalog,
     kind: Option<&str>,
     tag: Option<&str>,
     verbose: bool,
@@ -99,7 +99,7 @@ fn cmd_list(
         None => None,
     };
 
-    let manifests = catalog.list(kind_filter, tag);
+    let manifests = catalogue.list(kind_filter, tag);
 
     if manifests.is_empty() {
         println!("No extensions found matching the criteria.");
@@ -137,7 +137,7 @@ fn cmd_list(
     println!("\n{} extension(s) found.", manifests.len());
 
     // Show bundles hint
-    let bundle_names = catalog.bundle_names();
+    let bundle_names = catalogue.bundle_names();
     if !bundle_names.is_empty() {
         println!("\nBundles available: {}", bundle_names.join(", "));
         println!("Use `ironclaw registry info <bundle>` for details.");
@@ -146,16 +146,16 @@ fn cmd_list(
     Ok(())
 }
 
-fn cmd_info(catalog: &RegistryCatalog, name: &str) -> anyhow::Result<()> {
+fn cmd_info(catalogue: &RegistryCatalog, name: &str) -> anyhow::Result<()> {
     // Check if it's a bundle
-    if let Some(bundle) = catalog.get_bundle(name) {
+    if let Some(bundle) = catalogue.get_bundle(name) {
         println!("Bundle: {}", bundle.display_name);
         if let Some(desc) = &bundle.description {
             println!("  {}", desc);
         }
         println!("\nExtensions:");
         for ext_key in &bundle.extensions {
-            if let Some(m) = catalog.get(ext_key) {
+            if let Some(m) = catalogue.get(ext_key) {
                 println!("  {} - {} ({})", ext_key, m.description, m.kind);
             } else {
                 println!("  {} (not found in registry)", ext_key);
@@ -168,7 +168,7 @@ fn cmd_info(catalog: &RegistryCatalog, name: &str) -> anyhow::Result<()> {
     }
 
     // Single extension (use get_strict to surface ambiguous bare names)
-    let manifest = catalog
+    let manifest = catalogue
         .get_strict(name)
         .map_err(|e| anyhow::anyhow!("{}", e))?;
 
@@ -185,13 +185,13 @@ fn cmd_info(catalog: &RegistryCatalog, name: &str) -> anyhow::Result<()> {
     println!("  Crate: {}", manifest.source.crate_name);
     println!("  Capabilities: {}", manifest.source.capabilities);
 
-    if let Some(artifact) = manifest.artifacts.get("wasm32-wasip2") {
+    if let Some(artefact) = manifest.artifacts.get("wasm32-wasip2") {
         println!("\nArtifact (wasm32-wasip2):");
-        match &artifact.url {
+        match &artefact.url {
             Some(url) => println!("  URL: {}", url),
             None => println!("  URL: (not yet published)"),
         }
-        match &artifact.sha256 {
+        match &artefact.sha256 {
             Some(sha) => println!("  SHA256: {}", sha),
             None => println!("  SHA256: (not yet computed)"),
         }
@@ -224,7 +224,7 @@ fn cmd_info(catalog: &RegistryCatalog, name: &str) -> anyhow::Result<()> {
 }
 
 async fn cmd_install(
-    catalog: &RegistryCatalog,
+    catalogue: &RegistryCatalog,
     repo_root: &std::path::Path,
     name: &str,
     force: bool,
@@ -232,7 +232,7 @@ async fn cmd_install(
 ) -> anyhow::Result<()> {
     let installer = RegistryInstaller::with_defaults(repo_root.to_path_buf());
 
-    let (manifests, bundle) = catalog.resolve(name)?;
+    let (manifests, bundle) = catalogue.resolve(name)?;
 
     if manifests.is_empty() {
         anyhow::bail!("No extensions found for '{}'.", name);

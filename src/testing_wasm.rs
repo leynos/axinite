@@ -35,7 +35,7 @@ pub fn github_tool_source_dir() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tools-src/github")
 }
 
-/// Locate the GitHub WASM artifact, building it on demand for tests.
+/// Locate the GitHub WASM artefact, building it on demand for tests.
 pub fn github_wasm_artifact() -> anyhow::Result<PathBuf> {
     static BUILD_LOCK: Mutex<()> = Mutex::new(());
 
@@ -67,7 +67,7 @@ pub fn github_wasm_artifact() -> anyhow::Result<PathBuf> {
 
     if !status.success() {
         anyhow::bail!(
-            "failed to build GitHub WASM artifact via cargo build (status: {})",
+            "failed to build GitHub WASM artefact via cargo build (status: {})",
             status
         );
     }
@@ -75,7 +75,7 @@ pub fn github_wasm_artifact() -> anyhow::Result<PathBuf> {
     crate::registry::artifacts::find_wasm_artifact(&source_dir, "github-tool", "release")
         .ok_or_else(|| {
             anyhow::anyhow!(
-                "GitHub WASM artifact still missing after build in {}",
+                "GitHub WASM artefact still missing after build in {}",
                 source_dir.display()
             )
         })

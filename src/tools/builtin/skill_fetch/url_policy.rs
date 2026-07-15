@@ -62,7 +62,7 @@ pub(super) fn redact_url(url: &reqwest::Url) -> String {
     redacted.to_string()
 }
 
-/// Return `true` when the lowercased, normalised hostname is known to resolve
+/// Return `true` when the lowercased, normalized hostname is known to resolve
 /// to an internal or metadata endpoint that must not be fetched.
 fn is_blocked_hostname(host: &NormalizedDomain) -> bool {
     host.as_str() == "localhost"

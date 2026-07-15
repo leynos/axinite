@@ -390,7 +390,7 @@ mod tests {
     }
 
     /// Assert that a tokens_used value results in a Serialization error.
-    async fn assert_tokens_used_serialisation_error(tokens: i64) {
+    async fn assert_tokens_used_serialization_error(tokens: i64) {
         let row = mock_routine_run_row_with_tokens(Some(tokens), None)
             .await
             .expect("failed to create mock row");
@@ -403,11 +403,11 @@ mod tests {
 
     #[tokio::test]
     async fn test_tokens_used_out_of_range_returns_serialization_error() {
-        assert_tokens_used_serialisation_error(i64::from(i32::MAX) + 1).await;
+        assert_tokens_used_serialization_error(i64::from(i32::MAX) + 1).await;
     }
 
     #[tokio::test]
     async fn test_tokens_used_negative_returns_serialization_error() {
-        assert_tokens_used_serialisation_error(-1).await;
+        assert_tokens_used_serialization_error(-1).await;
     }
 }

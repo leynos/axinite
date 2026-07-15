@@ -1,7 +1,7 @@
-//! Extension registry: metadata catalog for tools and channels.
+//! Extension registry: metadata catalogue for tools and channels.
 //!
 //! The registry provides a central index of all available extensions (WASM tools
-//! and channels) with their source locations, build artifacts, authentication
+//! and channels) with their source locations, build artefacts, authentication
 //! requirements, and grouping via bundles.
 //!
 //! ```text

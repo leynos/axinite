@@ -3,7 +3,7 @@
 use super::super::{check_auth_required, parse_auth_result};
 use super::*;
 
-/// Serialise `json` as a successful `Result<String, Error>` and call
+/// Serialize `json` as a successful `Result<String, Error>` and call
 /// `check_auth_required`. Eliminates the repeated two-line setup in every
 /// auth detection test.
 fn check_auth_json(tool_name: &str, json: serde_json::Value) -> Option<(String, String)> {

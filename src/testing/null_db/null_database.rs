@@ -6,7 +6,7 @@
 //! [`next_synthetic_uuid`](NullDatabase::next_synthetic_uuid)) and cache
 //! entries are stable per-key, ensuring reproducible test results.
 //! Use this as a baseline for test doubles that need to override only
-//! specific methods while delegating the rest to null behavior.
+//! specific methods while delegating the rest to null behaviour.
 
 use std::collections::HashMap;
 use std::hash::Hash;
@@ -48,7 +48,7 @@ pub(super) struct AssistantConvKey {
 /// [`next_synthetic_uuid`](NullDatabase::next_synthetic_uuid)) and cache
 /// entries are stable per-key, ensuring reproducible test results.
 /// Use this as a baseline for test doubles that need to override only
-/// specific methods while delegating the rest to null behavior.
+/// specific methods while delegating the rest to null behaviour.
 #[derive(Debug, Default)]
 pub struct NullDatabase {
     /// Stable UUIDs for routine conversations, keyed by (routine_id, user_id).

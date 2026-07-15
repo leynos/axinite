@@ -249,7 +249,7 @@ mod unit_tests {
     use super::*;
     use rstest::rstest;
 
-    /// Parameterised test for `classify_result_content` precedence ordering:
+    /// Parameterized test for `classify_result_content` precedence ordering:
     /// error > result > result_preview > Ok.
     #[rstest]
     #[case::error_over_result(

@@ -1,4 +1,4 @@
-//! Transport type serialisation fidelity tests.
+//! Transport type serialization fidelity tests.
 
 use rstest::rstest;
 use serde::Serialize;
@@ -12,16 +12,16 @@ use crate::worker::api::{
 };
 
 use super::fixtures::{
-    sample_catalog_response, sample_execution_request, sample_execution_response,
+    sample_catalogue_response, sample_execution_request, sample_execution_response,
 };
 
-/// Serialise `value` to JSON and immediately deserialise it back, asserting that the round-trip produces an equal value without field loss.
+/// Serialize `value` to JSON and immediately deserialize it back, asserting that the round-trip produces an equal value without field loss.
 fn assert_round_trips<T>(value: T)
 where
     T: Serialize + DeserializeOwned + Debug + PartialEq,
 {
-    let serialized = serde_json::to_string(&value).expect("serialise");
-    let deserialized: T = serde_json::from_str(&serialized).expect("deserialise");
+    let serialized = serde_json::to_string(&value).expect("serialize");
+    let deserialized: T = serde_json::from_str(&serialized).expect("deserialize");
     assert_eq!(
         deserialized, value,
         "value must round-trip without field loss"
@@ -74,15 +74,15 @@ fn worker_and_orchestrator_share_remote_tool_route_constants() {
     // segments so route parity holds by construction, not just by expansion.
     assert!(
         REMOTE_TOOL_CATALOG_ROUTE.contains("{job_id}"),
-        "catalog route constant must contain the {{job_id}} placeholder"
+        "catalogue route constant must contain the {{job_id}} placeholder"
     );
     assert!(
         REMOTE_TOOL_CATALOG_ROUTE.contains("/worker/"),
-        "catalog route constant must include the /worker/ prefix"
+        "catalogue route constant must include the /worker/ prefix"
     );
     assert!(
         REMOTE_TOOL_CATALOG_ROUTE.contains("/tools/catalog"),
-        "catalog route constant must include the /tools/catalog segment"
+        "catalogue route constant must include the /tools/catalog segment"
     );
     assert!(
         REMOTE_TOOL_EXECUTE_ROUTE.contains("{job_id}"),
@@ -99,13 +99,13 @@ fn worker_and_orchestrator_share_remote_tool_route_constants() {
 
     let job_id = "12345678-1234-1234-1234-123456789012";
 
-    let catalog_route = REMOTE_TOOL_CATALOG_ROUTE.replace("{job_id}", job_id);
+    let catalogue_route = REMOTE_TOOL_CATALOG_ROUTE.replace("{job_id}", job_id);
     let execute_route = REMOTE_TOOL_EXECUTE_ROUTE.replace("{job_id}", job_id);
 
     assert_eq!(
-        catalog_route,
+        catalogue_route,
         format!("/worker/{}/tools/catalog", job_id),
-        "catalog route must expand job_id parameter correctly"
+        "catalogue route must expand job_id parameter correctly"
     );
     assert_eq!(
         execute_route,
@@ -115,10 +115,10 @@ fn worker_and_orchestrator_share_remote_tool_route_constants() {
 }
 
 #[rstest]
-fn remote_tool_catalog_response_round_trip_without_field_loss(
-    sample_catalog_response: RemoteToolCatalogResponse,
+fn remote_tool_catalogue_response_round_trip_without_field_loss(
+    sample_catalogue_response: RemoteToolCatalogResponse,
 ) {
-    assert_round_trips(sample_catalog_response);
+    assert_round_trips(sample_catalogue_response);
 }
 
 #[rstest]

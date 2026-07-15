@@ -291,8 +291,8 @@ pub fn replace_text(
     })
 }
 
-/// Parse a hex color like "#FF0000" into Docs API color format.
-fn parse_hex_color(hex: &str) -> Option<serde_json::Value> {
+/// Parse a hex colour like "#FF0000" into Docs API colour format.
+fn parse_hex_colour(hex: &str) -> Option<serde_json::Value> {
     let hex = hex.strip_prefix('#').unwrap_or(hex);
     if hex.len() != 6 {
         return None;
@@ -302,7 +302,7 @@ fn parse_hex_color(hex: &str) -> Option<serde_json::Value> {
     let b = u8::from_str_radix(&hex[4..6], 16).ok()?;
     Some(serde_json::json!({
         "color": {
-            "rgbColor": {
+            "rgbColour": {
                 "red": r as f64 / 255.0,
                 "green": g as f64 / 255.0,
                 "blue": b as f64 / 255.0,
@@ -355,14 +355,14 @@ pub fn format_text(opts: FormatTextOptions<'_>) -> Result<UpdateResult, String> 
         style["weightedFontFamily"] = serde_json::json!({ "fontFamily": family });
         fields.push("weightedFontFamily");
     }
-    if let Some(color) = opts.foreground_color {
-        if let Some(c) = parse_hex_color(color) {
+    if let Some(colour) = opts.foreground_color {
+        if let Some(c) = parse_hex_colour(colour) {
             style["foregroundColor"] = c;
             fields.push("foregroundColor");
         }
     }
-    if let Some(color) = opts.background_color {
-        if let Some(c) = parse_hex_color(color) {
+    if let Some(colour) = opts.background_color {
+        if let Some(c) = parse_hex_colour(colour) {
             style["backgroundColor"] = c;
             fields.push("backgroundColor");
         }

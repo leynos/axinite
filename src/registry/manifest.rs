@@ -1,7 +1,7 @@
 //! Serde structs for extension registry manifests.
 //!
 //! Each manifest describes a single extension (tool or channel) with its source
-//! location, build artifacts, authentication requirements, and tags.
+//! location, build artefacts, authentication requirements, and tags.
 
 use serde::{Deserialize, Serialize};
 
@@ -32,7 +32,7 @@ pub struct ExtensionManifest {
     /// Source code location and build info.
     pub source: SourceSpec,
 
-    /// Pre-built binary artifacts keyed by target triple.
+    /// Pre-built binary artefacts keyed by target triple.
     #[serde(default)]
     pub artifacts: std::collections::HashMap<String, ArtifactSpec>,
 
@@ -84,7 +84,7 @@ pub struct SourceSpec {
     pub crate_name: String,
 }
 
-/// A pre-built binary artifact.
+/// A pre-built binary artefact.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ArtifactSpec {
     /// Download URL (null until release).
@@ -92,7 +92,7 @@ pub struct ArtifactSpec {
     /// `{name}.wasm` and `{name}.capabilities.json`.
     pub url: Option<String>,
 
-    /// Hex SHA256 of the downloaded artifact (null until release).
+    /// Hex SHA256 of the downloaded artefact (null until release).
     pub sha256: Option<String>,
 
     /// Optional separate download URL for the capabilities file.
@@ -160,15 +160,15 @@ impl ExtensionManifest {
             crate_name: Some(self.source.crate_name.clone()),
         };
 
-        // Prefer pre-built artifact download when a URL is available,
+        // Prefer pre-built artefact download when a URL is available,
         // with build-from-source as fallback in case the download fails (e.g., 404).
-        let (source, fallback_source) = if let Some(artifact) = self.artifacts.get("wasm32-wasip2")
+        let (source, fallback_source) = if let Some(artefact) = self.artifacts.get("wasm32-wasip2")
         {
-            if let Some(ref url) = artifact.url {
+            if let Some(ref url) = artefact.url {
                 (
                     ExtensionSource::WasmDownload {
                         wasm_url: url.clone(),
-                        capabilities_url: artifact.capabilities_url.clone(),
+                        capabilities_url: artefact.capabilities_url.clone(),
                     },
                     Some(Box::new(buildable)),
                 )
@@ -298,7 +298,7 @@ mod tests {
         assert_eq!(ManifestKind::Channel.to_string(), "channel");
     }
 
-    /// When a manifest has a download URL in artifacts, to_registry_entry()
+    /// When a manifest has a download URL in artefacts, to_registry_entry()
     /// should set WasmDownload as primary source and WasmBuildable as fallback.
     #[test]
     fn test_manifest_with_download_url_has_buildable_fallback() {
@@ -351,7 +351,7 @@ mod tests {
         }
     }
 
-    /// When a manifest has null URL in artifacts, the primary source should be
+    /// When a manifest has null URL in artefacts, the primary source should be
     /// WasmBuildable with no fallback.
     #[test]
     fn test_manifest_with_null_url_no_fallback() {
@@ -386,9 +386,9 @@ mod tests {
         );
     }
 
-    /// When a manifest has no artifacts section, should use WasmBuildable with no fallback.
+    /// When a manifest has no artefacts section, should use WasmBuildable with no fallback.
     #[test]
-    fn test_manifest_no_artifacts_no_fallback() {
+    fn test_manifest_no_artefacts_no_fallback() {
         let json = r#"{
             "name": "custom",
             "display_name": "Custom",
@@ -409,7 +409,7 @@ mod tests {
 
         assert!(
             matches!(&entry.source, ExtensionSource::WasmBuildable { .. }),
-            "Should use WasmBuildable when no artifacts"
+            "Should use WasmBuildable when no artefacts"
         );
         assert!(
             entry.fallback_source.is_none(),

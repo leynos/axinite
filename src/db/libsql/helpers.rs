@@ -32,7 +32,7 @@ pub(crate) fn parse_timestamp(s: &str) -> Result<DateTime<Utc>, String> {
         );
         return Ok(ndt.and_utc());
     }
-    Err(format!("unparseable timestamp: {:?}", s))
+    Err(format!("unparsable timestamp: {:?}", s))
 }
 
 /// Format a `DateTime<Utc>` for SQLite storage (RFC 3339 with millisecond precision).

@@ -258,7 +258,7 @@ interface channel {
         require-secret: bool,
     }
 
-    /// Configuration for polling behavior.
+    /// Configuration for polling behaviour.
     record poll-config {
         /// Polling interval in milliseconds (minimum 30000).
         interval-ms: u32,
@@ -373,7 +373,7 @@ interface channel {
     /// Initialize the channel.
     ///
     /// Called once when the channel is loaded. Returns configuration
-    /// describing HTTP endpoints and polling behavior.
+    /// describing HTTP endpoints and polling behaviour.
     ///
     /// Arguments:
     /// - config-json: Channel configuration from the capabilities file.
