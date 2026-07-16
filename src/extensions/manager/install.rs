@@ -6,6 +6,7 @@ use crate::extensions::{
 use crate::tools::mcp::config::McpServerConfig;
 
 use super::ExtensionManager;
+use super::install_requests::BuildableInstall;
 use super::{FallbackDecision, combine_install_errors, fallback_decision};
 
 /// Route an MCP-config operation to the DB-backed variant when a secrets store
@@ -169,12 +170,12 @@ impl ExtensionManager {
                 crate_name,
                 ..
             } => {
-                self.install_wasm_from_buildable(
-                    &entry.name,
-                    build_dir.as_deref(),
-                    crate_name.as_deref(),
+                self.install_wasm_from_buildable(BuildableInstall {
+                    name: &entry.name,
+                    build_dir: build_dir.as_deref(),
+                    crate_name: crate_name.as_deref(),
                     kind,
-                )
+                })
                 .await
             }
             _ => {
@@ -237,7 +238,7 @@ impl ExtensionManager {
         url: &str,
         capabilities_url: Option<&str>,
     ) -> Result<InstallResult, ExtensionError> {
-        self.download_wasm_and_report(super::wasm_install::WasmDownloadRequest {
+        self.download_wasm_and_report(super::install_requests::WasmDownloadRequest {
             name,
             url,
             capabilities_url,
@@ -252,7 +253,7 @@ impl ExtensionManager {
         url: &str,
         capabilities_url: Option<&str>,
     ) -> Result<InstallResult, ExtensionError> {
-        self.download_wasm_and_report(super::wasm_install::WasmDownloadRequest {
+        self.download_wasm_and_report(super::install_requests::WasmDownloadRequest {
             name,
             url,
             capabilities_url,
@@ -265,7 +266,7 @@ impl ExtensionManager {
     /// directory, then report success with the kind-specific message.
     async fn download_wasm_and_report(
         &self,
-        request: super::wasm_install::WasmDownloadRequest<'_>,
+        request: super::install_requests::WasmDownloadRequest<'_>,
     ) -> Result<InstallResult, ExtensionError> {
         let name = request.name.to_string();
         let kind = request.kind;

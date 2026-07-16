@@ -10,6 +10,7 @@ mod auth_wasm;
 mod channel_state;
 mod extension_info;
 mod install;
+mod install_requests;
 mod listing;
 mod oauth_flow;
 mod oauth_launch;

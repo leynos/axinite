@@ -2,6 +2,7 @@
 
 use crate::extensions::{ExtensionError, ExtensionKind, InstallResult};
 
+use super::install_requests::{BuildableInstall, WasmDownloadRequest};
 use super::{ExtensionManager, sanitize_url_for_logging};
 
 /// 100 MB cap on a single decompressed tar entry to prevent decompression bombs.
@@ -15,21 +16,6 @@ fn download_too_large(len: usize) -> ExtensionError {
     ExtensionError::InstallFailed(format!(
         "Download too large ({len} bytes, max {MAX_DOWNLOAD_SIZE} bytes)"
     ))
-}
-
-/// Inputs for downloading and installing a WASM extension bundle.
-///
-/// Groups the extension name, download URLs, and install directory so the
-/// installer need not thread four positional arguments.
-pub(super) struct WasmDownloadRequest<'a> {
-    /// Logical extension name; determines the installed file basenames.
-    pub name: &'a str,
-    /// HTTPS URL of the `.wasm` file or tar.gz bundle to download.
-    pub url: &'a str,
-    /// Optional separate capabilities-file URL for bare `.wasm` downloads.
-    pub capabilities_url: Option<&'a str>,
-    /// Extension kind, selecting the install directory and result message.
-    pub kind: ExtensionKind,
 }
 
 /// Read a single tar entry (bounded by [`MAX_TAR_ENTRY_SIZE`]) and write it to
@@ -344,11 +330,14 @@ impl ExtensionManager {
     /// to the install directory. Falls back to an error if artifacts don't exist.
     pub(super) async fn install_wasm_from_buildable(
         &self,
-        name: &str,
-        build_dir: Option<&str>,
-        crate_name: Option<&str>,
-        kind: ExtensionKind,
+        spec: BuildableInstall<'_>,
     ) -> Result<InstallResult, ExtensionError> {
+        let BuildableInstall {
+            name,
+            build_dir,
+            crate_name,
+            kind,
+        } = spec;
         let target_dir = self.wasm_target_dir(kind);
         let manifest_dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
         let resolved_dir = resolve_build_dir(build_dir, manifest_dir);
