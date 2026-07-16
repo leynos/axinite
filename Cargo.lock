@@ -3949,7 +3949,7 @@ dependencies = [
  "wasmparser 0.220.1",
  "wasmtime",
  "wasmtime-wasi",
- "zbus 5.16.0",
+ "zbus 5.17.0",
  "zip",
 ]
 
@@ -9806,9 +9806,9 @@ dependencies = [
 
 [[package]]
 name = "zbus"
-version = "5.16.0"
+version = "5.17.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "eee682d202a77e4a9f3b2c2bdf48a7b28af5c08c34ddf66f98c93e5e39464285"
+checksum = "a28b97f866896a4be7aefd2b5a8e01bb6773d19a775d54ab28b4d094b9a4480e"
 dependencies = [
  "async-broadcast",
  "async-executor",
