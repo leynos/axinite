@@ -70,7 +70,7 @@ metrics = { version = "0.22", optional = true }
 
 # Configuration
 dotenvy = "0.15"
-toml = "0.8"
+toml = "1.1"
 
 # Core types
 uuid = { version = "1", features = ["v4", "v5", "serde"] }
