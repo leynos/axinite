@@ -27,7 +27,7 @@ jobs:
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
       - name: Install cargo-audit
-        uses: taiki-e/install-action@v2
+        uses: taiki-e/install-action@v2.83.0
         with:
           tool: cargo-audit
       - name: Audit dependencies
@@ -78,7 +78,7 @@ jobs:
       - name: Install cargo-nextest
         uses: taiki-e/install-action@cargo-nextest
       - name: Install cargo-component
-        uses: taiki-e/install-action@v2
+        uses: taiki-e/install-action@v2.83.0
         with:
           tool: cargo-component
       - name: Build GitHub WASM tool (for metadata/schema tests)
@@ -173,7 +173,7 @@ jobs:
         with:
           key: wasm-extensions
       - name: Install cargo-component
-        uses: taiki-e/install-action@v2
+        uses: taiki-e/install-action@v2.83.0
         with:
           tool: cargo-component
       - name: Build all WASM extensions against current WIT
