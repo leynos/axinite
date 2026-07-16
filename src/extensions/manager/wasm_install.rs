@@ -347,9 +347,9 @@ impl ExtensionManager {
         name: &str,
         build_dir: Option<&str>,
         crate_name: Option<&str>,
-        target_dir: &std::path::Path,
         kind: ExtensionKind,
     ) -> Result<InstallResult, ExtensionError> {
+        let target_dir = self.wasm_target_dir(kind);
         let manifest_dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
         let resolved_dir = resolve_build_dir(build_dir, manifest_dir);
 

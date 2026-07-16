@@ -135,18 +135,15 @@ impl WasmChannel {
     /// Execute the on_broadcast callback.
     ///
     /// Called to send a proactive message to a user without a prior incoming message.
-    pub async fn call_on_broadcast(
+    pub(super) async fn call_on_broadcast(
         &self,
-        user_id: &str,
-        content: &str,
-        thread_id: Option<&str>,
-        attachments: &[String],
+        payload: BroadcastPayload,
     ) -> Result<(), WasmChannelError> {
         tracing::info!(
             channel = %self.name,
-            user_id = %user_id,
-            content_len = content.len(),
-            attachment_count = attachments.len(),
+            user_id = %payload.user_id,
+            content_len = payload.content.len(),
+            attachment_count = payload.attachments.len(),
             "call_on_broadcast invoked"
         );
 
@@ -162,13 +159,6 @@ impl WasmChannel {
         let env = self.guest_call_env().await;
         let timeout = self.runtime.config().callback_timeout;
         let channel_name = self.name.clone();
-
-        let payload = BroadcastPayload {
-            user_id: user_id.to_string(),
-            content: content.to_string(),
-            thread_id: thread_id.map(|s| s.to_string()),
-            attachments: attachments.to_vec(),
-        };
 
         let result = tokio::time::timeout(timeout, async move {
             tokio::task::spawn_blocking(move || Self::run_broadcast_guest(env, payload))

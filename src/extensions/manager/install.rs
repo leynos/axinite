@@ -169,16 +169,10 @@ impl ExtensionManager {
                 crate_name,
                 ..
             } => {
-                let target_dir = if kind == ExtensionKind::WasmTool {
-                    &self.wasm_tools_dir
-                } else {
-                    &self.wasm_channels_dir
-                };
                 self.install_wasm_from_buildable(
                     &entry.name,
                     build_dir.as_deref(),
                     crate_name.as_deref(),
-                    target_dir,
                     kind,
                 )
                 .await

@@ -17,6 +17,7 @@ use crate::channels::{
 use crate::error::ChannelError;
 
 use super::WasmChannel;
+use super::guest_calls::BroadcastPayload;
 
 impl NativeChannel for WasmChannel {
     fn name(&self) -> &str {
@@ -140,12 +141,12 @@ impl NativeChannel for WasmChannel {
         response: OutgoingResponse,
     ) -> Result<(), ChannelError> {
         self.cancel_typing_task().await;
-        self.call_on_broadcast(
-            user_id,
-            &response.content,
-            response.thread_id.as_deref(),
-            &response.attachments,
-        )
+        self.call_on_broadcast(BroadcastPayload {
+            user_id: user_id.to_string(),
+            content: response.content.clone(),
+            thread_id: response.thread_id.clone(),
+            attachments: response.attachments.clone(),
+        })
         .await
         .map_err(|e| ChannelError::SendFailed {
             name: self.name.clone(),
