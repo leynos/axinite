@@ -1,6 +1,6 @@
 //! Relay event and connection data models.
 //!
-//! Deserialisable types matching the channel-relay wire format: parsed SSE
+//! Deserializable types matching the channel-relay wire format: parsed SSE
 //! channel events, known event-type constants, and connection listings.
 
 use serde::{Deserialize, Serialize};

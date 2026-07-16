@@ -80,6 +80,41 @@ example, the
 `print_startup_info_matches_snapshot` test in `src/startup/boot.rs`. The crate
 is compiled only when running tests and has no effect on the production binary.
 
+### Workflow pins and Dependabot
+
+Dependabot owns the upgrade of GitHub Actions and reusable workflows,
+including calls into `leynos/shared-actions`. Contract tests that assert a
+caller's exact commit SHA create a lockstep dependency: every time Dependabot
+opens a bump PR, the test fails until a human edits the pinned constant to
+match. That defeats the purpose of automated dependency updates and turns a
+routine bump into a manual chore.
+
+Contract tests may still verify the *shape* of a reusable-workflow caller.
+They must not verify the specific SHA value.
+
+- Do assert the workflow references the correct reusable workflow path.
+- Do assert the ref is pinned to a full 40-character commit SHA, not a
+  mutable branch such as `main` or `rolling`.
+- Do assert the expected `on:` triggers, least-privilege `permissions:`, and
+  the inputs the caller relies on.
+- Do not hard-code the current SHA value as an expected string. Match it with
+  a pattern instead.
+- Do not fail a test purely because Dependabot bumped the pinned SHA.
+
+```python
+import re
+
+SHA_RE = re.compile(r"^[0-9a-f]{40}$")
+
+def test_uses_pinned_full_sha(caller_step):
+    ref = caller_step["uses"].split("@")[-1]
+    assert SHA_RE.match(ref), f"expected a 40-hex commit SHA, got {ref!r}"
+```
+
+If a workflow's behaviour genuinely depends on a feature only present from a
+particular commit onwards, express that as a comment or a changelog note, not
+as a test assertion on the SHA string.
+
 ## 6. Optional tools by workflow
 
 These tools are not required for every contributor, but they are needed
@@ -976,7 +1011,7 @@ playwright install --with-deps chromium
 ```
 
 The CI E2E workflow currently builds the binary once, uploads it, and
-fans test slices out from that artifact. That is the closest existing
+fans test slices out from that artefact. That is the closest existing
 example of the faster compile-once, fan-out pattern the compile-time
 reduction effort should reuse elsewhere.
 
@@ -1081,7 +1116,7 @@ is the Rust host crate. Common explicit commands are:
   channels; by default it reuses the shared
   `target/wasm-extensions/` target dir,
 - `./channels-src/telegram/build.sh` for a deployable Telegram channel
-  artifact with `telegram.wasm`.
+  artefact with `telegram.wasm`.
 
 For host-side tests that need a real GitHub WASM component instead of a
 hand-built fixture, use the shared helper in `src/testing/mod.rs`:
@@ -1089,7 +1124,7 @@ hand-built fixture, use the shared helper in `src/testing/mod.rs`:
 
 This helper:
 
-- builds a `WasmToolWrapper` around the shared GitHub test artifact,
+- builds a `WasmToolWrapper` around the shared GitHub test artefact,
 - recovers the exported description and schema before returning, so the
   wrapper exposes the same advertised contract used by runtime
   fallback-guidance tests,
@@ -1508,7 +1543,7 @@ Pass the capturing LLM into `TestRigBuilder::with_llm(…)` and inspect
 `requests` after the first response to assert schema fidelity before any
 tool execution occurs.
 
-### HostedCatalogHarness — hosted schema verification
+### HostedCatalogueHarness — hosted schema verification
 
 For the hosted (worker-proxied) path, `HostedCatalogHarness` in
 `src/worker/container/tests/hosted_fidelity.rs` spins up a real Axum
@@ -1616,7 +1651,7 @@ For the rationale behind consolidating the rename helpers, see
 This guide documents the environment as of the current branch. The
 compile-time reduction plan is still expected to change some of the
 standard commands further, especially around shared extension build
-artifacts and CI duplication.
+artefacts and CI duplication.
 
 When those changes land, this guide must be updated in the same branch
 so local setup instructions stay truthful.
@@ -1728,7 +1763,7 @@ project's four-argument limit:
 | File | Responsibility |
 | --- | --- |
 | `mod.rs` | `ChatDelegate<'a>` struct plus thin `NativeLoopDelegate` wiring for the stage helpers |
-| `llm_hooks.rs` | Signal checking, pre-LLM call preparation, LLM invocation with context-length retry, text-response sanitisation, and message compaction |
+| `llm_hooks.rs` | Signal checking, pre-LLM call preparation, LLM invocation with context-length retry, text-response sanitization, and message compaction |
 | `loops.rs` | Shared agentic-loop orchestration glue that hands each stage off to the focused helpers |
 | `tool_exec/mod.rs` | Tool preflight classification, parallel or sequential execution, post-flight result folding, approval detection, and auth handling |
 | `tool_exec/preflight.rs` | Hook dispatch, approval gating, and runnable-batch construction |
@@ -1744,7 +1779,7 @@ project's four-argument limit:
 | `turn_execution.rs` | Per-turn orchestration shell that sequences state checks, safety, compaction, checkpointing, preparation, agentic-loop execution, and result handling |
 | `turn_preparation.rs` | Thread-state guard, safety validation, turn creation, and durable user-message persistence |
 | `turn_compaction_checkpointing.rs` | Automatic compaction and undo-checkpoint helpers run before each turn |
-| `turn_result_finalisation.rs` | Loop-result handling, response-transform hooks, assistant-response persistence, and failure finalisation |
+| `turn_result_finalization.rs` | Loop-result handling, response-transform hooks, assistant-response persistence, and failure finalization |
 | `control.rs` | Thread lifecycle commands: undo, redo, interrupt, compact, clear, new-thread, switch-thread, and resume |
 | `hydration.rs` | Lazy thread hydration from the backing store when a known external thread ID is first referenced |
 | `persistence.rs` | Durable write helpers for user messages, assistant responses, and tool-call summaries |
@@ -1836,7 +1871,7 @@ subsequent phases can assume a fully valid environment.
 | File | Responsibility |
 | --- | --- |
 | `mod.rs` | `validate_skill_archive` — validates a raw `&[u8]` ZIP payload and returns a `ValidatedSkillBundle`; `looks_like_skill_archive` — fast ZIP magic-byte probe |
-| `path.rs` | `ParsedBundlePath::parse` — normalises a raw ZIP entry name into `(root_name, relative_path, is_dir)` while enforcing RFC 0003 shape constraints |
+| `path.rs` | `ParsedBundlePath::parse` — normalizes a raw ZIP entry name into `(root_name, relative_path, is_dir)` while enforcing RFC 0003 shape constraints |
 
 `ValidatedSkillBundle` carries `skill_name: String` and a
 `Vec<ValidatedBundleEntry>`, where each entry exposes
@@ -1854,9 +1889,9 @@ subsequent phases can assume a fully valid environment.
 | --- | --- |
 | `mod.rs` | `SkillRegistry` struct; public surface: `new`, `with_workspace_dir`, `with_installed_dir`, `discover_all`, `install_skill`, `prepare_install_to_disk`, `commit_install`, `commit_loaded_skill`, `cleanup_prepared_install`, `remove_skill`, `reload`, `has`, `find_by_name`, `count`, `skills`, `install_target_dir` |
 | `discovery.rs` | `discover_from_dir` — async directory scan with symlink rejection, cap enforcement, and load-failure tolerance |
-| `loading.rs` | `load_and_validate_skill` — reads, validates, normalises, gates, and constructs a `LoadedSkill`; also exports `compute_hash` and `check_gating` |
-| `materialize.rs` | `materialize_install_artifact` — converts a `SkillInstallPayload` into an `InstallArtifact` (list of `(relative_path, bytes)` pairs); `write_install_artifact` — writes the artifact into a staging directory |
-| `staged_install.rs` | `prepare_install_to_disk` — creates a hidden staging directory, writes and validates the artifact, returns `PreparedSkillInstall`; `commit_install` — duplicate check then atomic rename; `cleanup_prepared_install` — removes the staging directory |
+| `loading.rs` | `load_and_validate_skill` — reads, validates, normalizes, gates, and constructs a `LoadedSkill`; also exports `compute_hash` and `check_gating` |
+| `materialize.rs` | `materialize_install_artifact` — converts a `SkillInstallPayload` into an `InstallArtifact` (list of `(relative_path, bytes)` pairs); `write_install_artifact` — writes the artefact into a staging directory |
+| `staged_install.rs` | `prepare_install_to_disk` — creates a hidden staging directory, writes and validates the artefact, returns `PreparedSkillInstall`; `commit_install` — duplicate check then atomic rename; `cleanup_prepared_install` — removes the staging directory |
 | `removal.rs` | `validate_remove`, `delete_skill_files`, `commit_remove` |
 
 ##### Skill location metadata (roadmap 1.3.3)
@@ -2010,7 +2045,7 @@ the full implementation history.
 
 - `Markdown(String)` is for already decoded inline `SKILL.md` text.
 - `DownloadedBytes(Vec<u8>)` is for bytes fetched from HTTPS URLs and may
-  materialise as either raw `SKILL.md` content or a validated `.skill` bundle.
+  materialize as either raw `SKILL.md` content or a validated `.skill` bundle.
 - `ArchiveBytes(Vec<u8>)` is for transports that have already committed to the
   `.skill` upload contract. It bypasses the raw-Markdown fallback, so a renamed
   Markdown file cannot be accepted as a browser bundle upload.
@@ -2127,3 +2162,27 @@ when descending into nested schema nodes.
 
 These types are re-exported from `src/tools/mod.rs` and are publicly available
 as `crate::tools::{ParamName, SchemaPath, ToolName}`.
+
+## 35. Spelling policy
+
+The `make spelling` gate enforces en-GB-oxendict spelling across tracked text.
+It runs Typos 1.48.0 and a phrase checker that rejects the hyphenated form in
+favour of `handwritten`. `make markdownlint` depends on the same spelling gate.
+
+The tracked `typos.toml` is generated from the shared Oxford dictionary and the
+repository-specific `typos.local.toml` overlay. The generator is the focused
+`typos-config-builder` command pinned to commit
+`d6da92f02240a79a945c835f69bdd08a888da1d0`. It refreshes the untracked
+`.typos-oxendict-base.toml` cache only when the authority is newer than the
+local copy; `.typos-oxendict-base.json` records refresh metadata.
+
+Use `make spelling-config-write` after changing `typos.local.toml`, and use
+`make spelling-config` to check deterministic output. Never edit `typos.toml`
+directly. Keep repository exceptions narrow: preserve external APIs, formal
+names, wire values and immutable fixtures without adding ordinary bare-word
+exceptions.
+
+The standalone phrase helper and its tests use Python 3.14 at runtime,
+Pathspec 1.1.1 and a Python 3.13 Ruff compatibility target. Continuous
+integration installs Nixie 1.1.0 and Merman CLI 0.7.0 before validating the
+repository's Mermaid diagrams with `make nixie`.

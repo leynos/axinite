@@ -106,7 +106,7 @@ async fn spot_chain_write_read() {
 }
 
 // -----------------------------------------------------------------------
-// Robustness tests -- correct behavior under constraints
+// Robustness tests -- correct behaviour under constraints
 // -----------------------------------------------------------------------
 
 spot_test!(

@@ -6,7 +6,7 @@
 
 ## What
 
-Automatic model selection based on request complexity. The router analyzes each user message and selects an appropriate model tier (flash/standard/pro/frontier), then maps that tier to a configured model.
+Automatic model selection based on request complexity. The router analyses each user message and selects an appropriate model tier (flash/standard/pro/frontier), then maps that tier to a configured model.
 
 ## Why
 
@@ -73,7 +73,7 @@ Each dimension produces a 0-100 score. Weighted sum determines total.
 
 | Score | Tier | Typical Use Case |
 |-------|------|------------------|
-| 0-15 | flash | Greetings, acknowledgments, quick lookups |
+| 0-15 | flash | Greetings, acknowledgements, quick lookups |
 | 16-40 | standard | Writing, comparisons, defined tasks |
 | 41-65 | pro | Multi-step analysis, code review |
 | 66+ | frontier | Critical decisions, security audits |

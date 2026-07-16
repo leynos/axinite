@@ -36,7 +36,7 @@ async fn test_respond_with_tools_force_text_truncates_tool_tags() {
     let llm = Arc::new(StubLlm::new(response));
     let reasoning = Reasoning::new(llm);
 
-    let mut context = ReasoningContext::new().with_message(ChatMessage::user("analyze the code"));
+    let mut context = ReasoningContext::new().with_message(ChatMessage::user("analyse the code"));
     context.force_text = true;
 
     let output = reasoning.respond_with_tools(&context).await.unwrap();

@@ -67,12 +67,12 @@ impl File {
         self.0.set_permissions(perm.into_std())
     }
 
-    /// Synchronises all in-memory data and metadata to disk.
+    /// Synchronizes all in-memory data and metadata to disk.
     pub fn sync_all(&self) -> io::Result<()> {
         self.0.sync_all()
     }
 
-    /// Synchronises in-memory data (not necessarily metadata) to disk.
+    /// Synchronizes in-memory data (not necessarily metadata) to disk.
     pub fn sync_data(&self) -> io::Result<()> {
         self.0.sync_data()
     }

@@ -10,7 +10,7 @@ pub(super) struct BuildableInstall<'a> {
     pub build_dir: Option<&'a str>,
     /// Crate name when it differs from the extension name.
     pub crate_name: Option<&'a str>,
-    /// Whether the artifact is a tool or a channel.
+    /// Whether the artefact is a tool or a channel.
     pub kind: ExtensionKind,
 }
 

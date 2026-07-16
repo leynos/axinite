@@ -1,13 +1,13 @@
 //! Trust-based tool filtering (authority attenuation).
 //!
-//! The core defense mechanism: the minimum trust level of any active skill
+//! The core defence mechanism: the minimum trust level of any active skill
 //! determines a *tool ceiling* -- tools above the ceiling are removed from
 //! the LLM's tool list entirely. The LLM cannot be manipulated into calling
 //! a tool it doesn't know exists.
 //!
 //! | Trust State        | Tool Ceiling                                      |
 //! |--------------------|---------------------------------------------------|
-//! | No skills active   | All tools (normal behavior)                       |
+//! | No skills active   | All tools (normal behaviour)                       |
 //! | Trusted only       | All tools (user placed these, full trust)         |
 //! | Installed present  | Read-only tools ONLY                              |
 

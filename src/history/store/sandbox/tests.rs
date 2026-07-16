@@ -19,7 +19,7 @@ fn test_valid_json_array_passes_through() {
 #[test]
 fn test_malformed_legacy_plaintext_passes_through() {
     // Legacy rows with plaintext descriptions from before the column was
-    // repurposed should pass through unchanged. Normalisation happens at
+    // repurposed should pass through unchanged. Normalization happens at
     // restart time via `normalize_credential_grants_json`.
     assert_eq!(
         credential_grants_from_description(Some("Build a web server".to_string())),
@@ -30,6 +30,6 @@ fn test_malformed_legacy_plaintext_passes_through() {
 #[test]
 fn test_empty_string_passes_through() {
     // The libSQL backend returns "" for NULL columns. This should pass
-    // through at this layer; normalisation occurs at restart.
+    // through at this layer; normalization occurs at restart.
     assert_eq!(credential_grants_from_description(Some(String::new())), "");
 }

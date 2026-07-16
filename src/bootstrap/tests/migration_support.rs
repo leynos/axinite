@@ -5,7 +5,7 @@
 //!
 //! ## Filesystem fixtures
 //!
-//! [`RenameSetup`] is an enum that parameterises the filesystem state before
+//! [`RenameSetup`] is an enum that parameterizes the filesystem state before
 //! a rename operation: [`ExistingFile`](RenameSetup::ExistingFile) writes the
 //! source file, [`MissingFile`](RenameSetup::MissingFile) leaves it absent,
 //! and the Unix-only [`ReadOnlyDirectory`](RenameSetup::ReadOnlyDirectory)

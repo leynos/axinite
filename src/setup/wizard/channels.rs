@@ -1,6 +1,6 @@
 //! Step 6: channel configuration.
 
-use super::channel_catalog::{
+use super::channel_catalogue::{
     build_channel_options, discover_wasm_channels, install_selected_bundled_channels,
     install_selected_registry_channels,
 };
@@ -231,7 +231,7 @@ fn selected_wasm_names(wasm_channel_names: &[String], selected: &[usize]) -> Vec
 }
 
 /// Install the selected channels that aren't already on disk, trying
-/// bundled artifacts first and the registry second.
+/// bundled artefacts first and the registry second.
 ///
 /// Returns `true` when at least one channel was installed.
 async fn install_selected_channels(
@@ -241,7 +241,7 @@ async fn install_selected_channels(
 ) -> Result<bool, SetupError> {
     let mut any_installed = false;
 
-    // Try bundled channels first (pre-compiled artifacts from channels-src/)
+    // Try bundled channels first (pre-compiled artefacts from channels-src/)
     if let Some(installed) =
         install_selected_bundled_channels(channels_dir, selected_wasm_channels, installed_names)
             .await?

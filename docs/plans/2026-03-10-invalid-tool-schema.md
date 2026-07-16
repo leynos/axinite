@@ -229,18 +229,18 @@ cargo fmt --all --check \
   exact investigation files and verified that they were directly related
   to this task rather than unrelated user edits.
 - [x] 2026-03-10 09:57Z: Confirmed the current red state. The new
-  rig-adapter unit test already passed, but the real GitHub artifact
+  rig-adapter unit test already passed, but the real GitHub artefact
   still failed both `test_exported_metadata_from_real_github_component`
   and `file_loaded_github_wasm_tool_definitions_publish_real_schema`
-  because the built WASM artifact still exported the old top-level
+  because the built WASM artefact still exported the old top-level
   `oneOf` schema.
 - [x] 2026-03-10 09:59Z: Verified the source-level fix in
   `tools-src/github/src/lib.rs` with
   `test_exported_schema_is_openai_root_compatible`.
-- [x] 2026-03-10 10:00Z: Rebuilt the GitHub WASM artifact with
+- [x] 2026-03-10 10:00Z: Rebuilt the GitHub WASM artefact with
   `cargo build --manifest-path tools-src/github/Cargo.toml --release --target wasm32-wasip2`.
-- [x] 2026-03-10 10:01Z: Re-ran the artifact-backed metadata and
-  behavioural regressions; both passed once the rebuilt artifact matched
+- [x] 2026-03-10 10:01Z: Re-ran the artefact-backed metadata and
+  behavioural regressions; both passed once the rebuilt artefact matched
   the updated source schema and the resolver preferred `wasm32-wasip2`.
 - [x] 2026-03-10 10:04Z: Cleared `cargo fmt --all --check`,
   `cargo fmt --manifest-path tools-src/github/Cargo.toml --all -- --check`,
@@ -248,7 +248,7 @@ cargo fmt --all --check \
   and `cargo clippy --manifest-path tools-src/github/Cargo.toml --tests -- -D warnings`.
 - [x] 2026-03-10 10:14Z: Verified and adopted the
   `src/registry/artifacts.rs` follow-up that prefers `wasm32-wasip2`
-  artifacts over `wasm32-wasip1`, with a dedicated regression test.
+  artefacts over `wasm32-wasip1`, with a dedicated regression test.
 - [x] 2026-03-10 10:15Z: Re-ran `cargo test rig_adapter --lib` and
   `cargo test test_top_level_one_of_fails --lib -- --nocapture`; the
   provider-bound guard and strict-validator regression both passed.
@@ -260,8 +260,8 @@ cargo fmt --all --check \
   project in the `Projects` workspace, so follow-up code exploration can
   use semantic search again instead of the earlier exact-text fallback.
 - [x] 2026-03-10 17:58Z: Verified the latest review comments against
-  current `HEAD`. The registry artifact test complaint is stale because
-  the test already fails explicitly when the GitHub WASM artifact is
+  current `HEAD`. The registry artefact test complaint is stale because
+  the test already fails explicitly when the GitHub WASM artefact is
   missing, but follow-up work is still needed for the duplicated
   metadata-test helper, the remaining normalization panic/refactor
   issues, the shallow nested-schema merge behaviour, the metadata-only
@@ -347,8 +347,8 @@ cargo fmt --all --check \
 - [x] 2026-03-11 00:42Z: Closed the cold-tree regression uncovered by
   the new `clean` behaviour. After `make clean`, `make test` failed
   because two metadata/registry tests still depended on a prebuilt
-  GitHub release artifact under the standalone tool manifest. The root
-  `Makefile` now rebuilds the GitHub WASM artifact before both `test`
+  GitHub release artefact under the standalone tool manifest. The root
+  `Makefile` now rebuilds the GitHub WASM artefact before both `test`
   and `test-matrix`, so the user-facing test entry points remain
   green after a full clean.
 - [x] 2026-03-11 10:18Z: Verified the latest structure-and-doc review
@@ -404,7 +404,7 @@ cargo fmt --all --check \
   boundary defensively flattens root-level combinators in
   `src/llm/rig_adapter.rs`, but the real GitHub tool source was also
   updated to export a flat top-level schema directly. The latter matters
-  because users can still hit stale artifacts or other non-rig schema
+  because users can still hit stale artefacts or other non-rig schema
   consumers.
 - The follow-up review confirmed that “strict” cannot mean “rewrite
   every object into a closed record.” Some tool parameters are genuine
@@ -412,12 +412,12 @@ cargo fmt --all --check \
   provider-bound normalizer has to preserve those map contracts instead
   of flattening them into empty closed objects.
 - The decisive red/green pivot was not a source-code logic change inside
-  the host. It was rebuilding the GitHub WASM artifact after updating
+  the host. It was rebuilding the GitHub WASM artefact after updating
   the tool’s `SCHEMA` constant, which proved that the stale built
-  artifact was still exporting the old `oneOf` shape.
-- Artifact lookup order is part of the fix. Preferring `wasm32-wasip2`
+  artefact was still exporting the old `oneOf` shape.
+- Artefact lookup order is part of the fix. Preferring `wasm32-wasip2`
   over `wasm32-wasip1` removes a second failure mode where a freshly
-  rebuilt `wasip2` artifact could still be masked by an older `wasip1`
+  rebuilt `wasip2` artefact could still be masked by an older `wasip1`
   build on disk.
 - The follow-up review clarified another provider-boundary rule:
   OpenAI’s keyword restriction is only about the exported schema root.
@@ -489,7 +489,7 @@ originating from the GitHub WASM tool’s real exported schema. Commit
 action-specific parameter sets. Commit `91b18ea` later corrected a
 different bug by recovering guest-exported metadata for file-loaded WASM
 tools, which exposed that older schema directly to the host. The
-provider error appeared when the stale built GitHub artifact still
+provider error appeared when the stale built GitHub artefact still
 exported that old `oneOf` shape.
 
 The fix is intentionally layered. `tools-src/github/src/lib.rs` now
@@ -500,7 +500,7 @@ before strict normalization so other external schemas do not reproduce
 the same provider failure. `src/tools/schema_validator.rs`,
 `src/tools/wasm/wrapper/metadata.rs`,
 `tests/tool_schema_validation.rs`, and `src/registry/artifacts.rs` now
-enforce the root-safe contract with both unit and artifact-backed
+enforce the root-safe contract with both unit and artefact-backed
 behavioural coverage.
 
 Validation evidence:

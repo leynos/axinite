@@ -227,7 +227,7 @@ After derivation, the installer must normalize the name:
 Duplicate handling must also be deterministic:
 
 1. If the canonical `skill-name` does not exist, install normally.
-2. If it exists and the incoming artifact has a higher semantic version, or the
+2. If it exists and the incoming artefact has a higher semantic version, or the
    same version with an explicit `upgrade: true` flag, perform an in-place
    upgrade by replacing files and updating stored metadata.
 3. If the name collides without upgrade intent, reject the install with a

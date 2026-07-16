@@ -151,7 +151,7 @@ async fn load_from_dir_returns_empty_when_dir_missing() {
 
 #[tokio::test]
 async fn load_from_files_publishes_guest_schema_in_tool_definitions() {
-    let wasm_path = github_wasm_artifact().expect("build or find github WASM artifact");
+    let wasm_path = github_wasm_artifact().expect("build or find github WASM artefact");
     let capabilities_path = github_tool_source_dir().join("github-tool.capabilities.json");
     let (loader, registry) =
         make_metadata_loader().expect("failed to create metadata loader for test");
@@ -173,7 +173,7 @@ async fn load_from_files_publishes_guest_schema_in_tool_definitions() {
 
 #[tokio::test]
 async fn load_dev_tools_publishes_guest_schema_in_tool_definitions() {
-    github_wasm_artifact().expect("build or find github WASM artifact");
+    github_wasm_artifact().expect("build or find github WASM artefact");
     let install_dir = TempDir::new().expect("create install dir");
     let (loader, registry) =
         make_metadata_loader().expect("failed to create metadata loader for test");
@@ -184,7 +184,7 @@ async fn load_dev_tools_publishes_guest_schema_in_tool_definitions() {
 
     assert!(
         results.loaded.iter().any(|name| name == "github-tool"),
-        "expected github-tool to load from dev artifacts: {:?}",
+        "expected github-tool to load from dev artefacts: {:?}",
         results.loaded
     );
 

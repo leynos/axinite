@@ -11,7 +11,7 @@ use super::*;
 /// then stores the new access token (with expiry) and rotated refresh token
 /// (if the provider returns one).
 ///
-/// SSRF defense: `token_url` originates from a tool's capabilities JSON, so
+/// SSRF defence: `token_url` originates from a tool's capabilities JSON, so
 /// a malicious tool could point it at an internal service to exfiltrate the
 /// refresh token. We require HTTPS, reject private/loopback IPs (including
 /// DNS-resolved), and disable redirects.
@@ -22,7 +22,7 @@ async fn refresh_oauth_token(
     user_id: &str,
     config: &OAuthRefreshConfig,
 ) -> bool {
-    // SSRF defense: token_url comes from the tool's capabilities file.
+    // SSRF defence: token_url comes from the tool's capabilities file.
     if !config.token_url.starts_with("https://") {
         tracing::warn!(
             token_url = %config.token_url,

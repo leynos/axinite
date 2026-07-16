@@ -11,7 +11,7 @@ use crate::tools::tool::{
     ApprovalRequirement, HostedToolEligibility, NativeTool, ToolError, ToolOutput,
 };
 
-/// Tool for analyzing images using a vision-capable model.
+/// Tool for analysing images using a vision-capable model.
 pub struct ImageAnalyzeTool {
     /// API base URL.
     api_base_url: String,

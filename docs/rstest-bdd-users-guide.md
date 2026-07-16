@@ -1128,8 +1128,7 @@ sequenceDiagram
     ScenarioSync-->>TestRunner: scenario_result()
     TestRunner-->>Tester: report_result()
 
-    Note over ScenarioSync,TokioFallbackRuntime:
-      Nested runtimes in async scenarios are guarded and will fail
+    Note over ScenarioSync,TokioFallbackRuntime: Nested runtimes in async scenarios are guarded and will fail
 ```
 
 *Figure: Per-step Tokio fallback flow when a synchronous scenario reaches an

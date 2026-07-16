@@ -688,7 +688,7 @@ If Markdown lint fails on pre-existing unrelated lines, do not rewrite unrelated
 documents broadly. Record the failure, fix only changed lines where possible,
 and escalate if the gate cannot be made meaningful without unrelated churn.
 
-## Artifacts and notes
+## Artefacts and notes
 
 Wyvern planning reconnaissance found:
 

@@ -35,7 +35,7 @@
                       variable value and "<CARGO_PROFILE>" is replaced with the
                       value from the "CargoProfile" variable. This can also
                       be overridden manually with the "target-bin-dir" flag.
-  CargoTargetDir    = The path to the directory for the build artifacts, i.e.
+  CargoTargetDir    = The path to the directory for the build artefacts, i.e.
                       "target".
   CargoProfile      = The cargo profile used to build the binaries
                       (usually "debug" or "release").

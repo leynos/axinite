@@ -15,9 +15,9 @@ fn format_count(n: u64, suffix: &str) -> String {
     }
 }
 
-/// Formats a single ClawHub catalog entry (with optional owner and stats)
+/// Formats a single ClawHub catalogue entry (with optional owner and stats)
 /// for the search output.
-fn format_catalog_entry(entry: &crate::skills::catalog::CatalogEntry) -> String {
+fn format_catalogue_entry(entry: &crate::skills::catalog::CatalogEntry) -> String {
     let owner_str = entry
         .owner
         .as_deref()
@@ -49,7 +49,7 @@ fn format_catalog_entry(entry: &crate::skills::catalog::CatalogEntry) -> String 
 
 /// Appends the ClawHub result section: entries when present, otherwise the
 /// registry error or a "no results" note.
-fn append_catalog_results(
+fn append_catalogue_results(
     out: &mut String,
     entries: &[crate::skills::catalog::CatalogEntry],
     error: Option<&str>,
@@ -62,7 +62,7 @@ fn append_catalog_results(
         return;
     }
     for entry in entries {
-        out.push_str(&format_catalog_entry(entry));
+        out.push_str(&format_catalogue_entry(entry));
     }
 }
 
@@ -143,21 +143,21 @@ impl Agent {
         &self,
         query: &str,
     ) -> Result<SubmissionResult, Error> {
-        let catalog = match self.skill_catalog() {
+        let catalogue = match self.skill_catalog() {
             Some(c) => c,
             None => {
-                return Ok(SubmissionResult::error("Skill catalog not available."));
+                return Ok(SubmissionResult::error("Skill catalogue not available."));
             }
         };
 
-        let outcome = catalog.search(query).await;
+        let outcome = catalogue.search(query).await;
 
         // Enrich top results with detail data (stars, downloads, owner)
         let mut entries = outcome.results;
-        catalog.enrich_search_results(&mut entries, 5).await;
+        catalogue.enrich_search_results(&mut entries, 5).await;
 
         let mut out = format!("ClawHub results for \"{}\":\n\n", query);
-        append_catalog_results(&mut out, &entries, outcome.error.as_deref());
+        append_catalogue_results(&mut out, &entries, outcome.error.as_deref());
 
         // Show matching installed skills
         self.append_installed_matches(&mut out, query);

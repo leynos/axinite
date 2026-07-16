@@ -1,5 +1,5 @@
 //! Outbound HTTP for WASM tools: request construction, private-IP
-//! (DNS-rebinding) guards, and response normalisation.
+//! (DNS-rebinding) guards, and response normalization.
 
 use super::*;
 
@@ -72,7 +72,7 @@ fn build_outbound_request(
     Ok(request)
 }
 
-/// Serialise the response headers into the JSON string the guest expects.
+/// Serialize the response headers into the JSON string the guest expects.
 fn collect_response_headers(response: &reqwest::Response) -> String {
     let response_headers: HashMap<String, String> = response
         .headers()
@@ -116,7 +116,7 @@ async fn read_response_body_within_limit(
     Ok(body.to_vec())
 }
 
-/// Executes the outbound HTTP request and returns the normalised response.
+/// Executes the outbound HTTP request and returns the normalized response.
 ///
 /// Includes per-request DNS rebinding protection via `reject_private_ip`.
 pub(super) async fn send_http_request(

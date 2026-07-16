@@ -89,7 +89,7 @@ mod tests {
     async fn record_llm_call_persists_expected_values(
         #[future] store: anyhow::Result<Option<Store>>,
     ) {
-        let Some(store) = store.await.expect("store fixture should initialise") else {
+        let Some(store) = store.await.expect("store fixture should initialize") else {
             return;
         };
         let job_id = Uuid::new_v4();

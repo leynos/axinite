@@ -114,7 +114,7 @@ For example:
 }
 ```
 
-Historical artifacts may still declare older values, and IronClaw's
+Historical artefacts may still declare older values, and IronClaw's
 compatibility tests intentionally keep some legacy coverage. That is not a
 licence to ship new sidecars with `0.1.0` or `0.2.0`.
 
@@ -123,10 +123,10 @@ One subtle point from the repository tests:
 - new extensions should target versioned package imports such as
   `near:agent/host@0.3.0` and `near:agent/channel-host@0.3.0`
 - the host-side `wit_compat` tests still register both versioned and
-  unversioned interface paths so genuinely old artifacts can instantiate during
+  unversioned interface paths so genuinely old artefacts can instantiate during
   migration windows
 
-That compatibility shim exists for old artifacts. It is not the target format
+That compatibility shim exists for old artefacts. It is not the target format
 for new ones.
 
 ## Capability Reality Beats ABI Theory
@@ -162,7 +162,7 @@ must inspect directly.
 
 ## Packaging Contract
 
-The installable artifact is a `.tar.gz` bundle containing files whose basenames
+The installable artefact is a `.tar.gz` bundle containing files whose basenames
 match the extension name.
 
 For a tool named `example-tool`, the bundle should contain:

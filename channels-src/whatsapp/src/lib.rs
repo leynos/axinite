@@ -381,7 +381,7 @@ impl Guest for WhatsAppChannel {
 
         // Handle incoming messages (POST request)
         if req.method == "POST" {
-            // Defense in depth: check secret validation
+            // Defence in depth: check secret validation
             // Host validates the verify token, but we double-check the flag
             if !req.secret_validated {
                 channel_host::log(

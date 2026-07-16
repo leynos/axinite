@@ -1,6 +1,6 @@
 //! Steps 4 and 5: model selection and embeddings configuration.
 
-use super::model_catalog::{
+use super::model_catalogue::{
     OpenAICompatModelsRequest, fetch_anthropic_models, fetch_ollama_models,
     fetch_openai_compatible_models, fetch_openai_models,
 };

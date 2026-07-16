@@ -59,7 +59,7 @@ async fn execute_valid_language_overrides_are_applied(
 #[tokio::test]
 async fn execute_missing_description_returns_error() {
     let requirement = test_requirement().expect("test requirement should build");
-    let builder = FakeSoftwareBuilder::always_analyze(requirement);
+    let builder = FakeSoftwareBuilder::always_analyse(requirement);
     let tool = BuildSoftwareTool::new(Arc::new(builder));
 
     let result = tool
@@ -84,8 +84,8 @@ async fn execute_failure_returns_execution_failed(
 }
 
 #[tokio::test]
-async fn execute_analyze_failure_returns_execution_failed() {
-    let builder = FakeSoftwareBuilder::analyze_error("analysis exploded");
+async fn execute_analyse_failure_returns_execution_failed() {
+    let builder = FakeSoftwareBuilder::analyse_error("analysis exploded");
     execute_failure_returns_execution_failed(
         Arc::new(builder),
         "Analysis failed: Tool builder failed: analysis exploded",
@@ -172,11 +172,11 @@ async fn execute_valid_params_returns_success_output() {
 
 #[tokio::test]
 async fn execute_valid_overrides_are_applied_before_build() {
-    let analyzed = test_requirement().expect("test requirement should build");
+    let analysed = test_requirement().expect("test requirement should build");
     let expected = expected_requirement(SoftwareType::WasmTool, Language::TypeScript)
         .expect("expected requirement should build");
     let (builder, captured_requirement) =
-        FakeSoftwareBuilder::success_with_capture(analyzed, test_build_result(expected));
+        FakeSoftwareBuilder::success_with_capture(analysed, test_build_result(expected));
     let tool = BuildSoftwareTool::new(Arc::new(builder));
 
     let output = tool

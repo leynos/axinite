@@ -58,7 +58,7 @@ pub struct LiveWasmChannelActivationConfig {
     pub relay_config: Option<crate::config::RelayConfig>,
     /// Gateway authentication token for platform token exchange proxy.
     pub gateway_token: Option<String>,
-    /// Installed channel-relay extensions (no on-disk artifact, tracked in memory).
+    /// Installed channel-relay extensions (no on-disk artefact, tracked in memory).
     pub installed_relay_extensions: Arc<RwLock<HashSet<String>>>,
 }
 

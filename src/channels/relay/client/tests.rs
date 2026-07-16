@@ -1,4 +1,4 @@
-//! Unit tests for relay event deserialisation and client helpers.
+//! Unit tests for relay event deserialization and client helpers.
 
 use tokio::sync::mpsc;
 

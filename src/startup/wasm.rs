@@ -166,7 +166,7 @@ async fn validate_wasm_channels_dir(config: &Config) -> bool {
     true
 }
 
-/// Initialises WASM channels from the configured directory.
+/// Initializes WASM channels from the configured directory.
 ///
 /// Returns an empty [`WasmChannelsInit`] (with `runtime_state: None`) when WASM
 /// channels are disabled or the configured directory does not exist.

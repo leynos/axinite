@@ -1,5 +1,5 @@
 //! Unit tests for WASM tool discovery from directories and dev build
-//! artifacts.
+//! artefacts.
 
 use std::io::Write;
 
@@ -65,9 +65,9 @@ fn test_tools_src_dir_default() {
 }
 
 #[tokio::test]
-async fn test_discover_dev_tools_finds_build_artifacts() {
+async fn test_discover_dev_tools_finds_build_artefacts() {
     // This test relies on the actual tools-src/ directory in the repo.
-    // If build artifacts exist, they should be discovered.
+    // If build artefacts exist, they should be discovered.
     let tools = discover_dev_tools().await.unwrap();
 
     // If any tools have been built, they should appear with "-tool" suffix
@@ -96,7 +96,7 @@ async fn test_discover_skips_dotfiles() {
     let tools = discover_tools(dir.path()).await.unwrap();
 
     // The current implementation discovers ALL .wasm files including dotfiles.
-    // This test documents the current behavior: .hidden.wasm IS discovered
+    // This test documents the current behaviour: .hidden.wasm IS discovered
     // with the stem ".hidden". A future hardening pass could add dotfile
     // filtering, at which point this assertion should be updated.
     assert!(

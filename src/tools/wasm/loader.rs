@@ -2,7 +2,7 @@
 //!
 //! This module provides a way to load WASM tools dynamically at runtime from:
 //! - A directory containing `<name>.wasm` and `<name>.capabilities.json`
-//! - Build artifacts in `tools-src/` (dev mode, auto-detected)
+//! - Build artefacts in `tools-src/` (dev mode, auto-detected)
 //! - Database storage (via [`WasmToolStore`](crate::tools::wasm::WasmToolStore))
 //!
 //! # Example: Loading from Directory
@@ -23,7 +23,7 @@
 //! # Dev Mode
 //!
 //! When `load_dev_tools()` is called, the loader scans `tools-src/*/` for build
-//! artifacts. Tools found there are loaded directly from the build output,
+//! artefacts. Tools found there are loaded directly from the build output,
 //! skipping the install directory. This means during development you just
 //! rebuild the WASM and restart the host, no manual copy step needed.
 //!

@@ -1,6 +1,6 @@
 //! Smart routing provider that routes requests to cheap or primary models based on task complexity.
 //!
-//! Uses a 13-dimension complexity scorer (from PR #208 by @onlyamicrowave) to analyze prompts
+//! Uses a 13-dimension complexity scorer (from PR #208 by @onlyamicrowave) to analyse prompts
 //! across reasoning, code, multi-step, domain-specific, creativity, precision, safety, and other
 //! dimensions. Pattern overrides provide fast-path routing for obvious cases (greetings → cheap,
 //! security audits → primary).

@@ -46,4 +46,4 @@ fn test_sandbox_job_status_update_destructuring() {
 }
 
 #[cfg(feature = "postgres")]
-mod behavioral;
+mod behavioural;

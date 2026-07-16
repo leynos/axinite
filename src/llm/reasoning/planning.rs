@@ -37,7 +37,7 @@ impl Reasoning {
 
         let response = self.llm.complete(request).await?;
 
-        // Clean reasoning model artifacts before parsing JSON.
+        // Clean reasoning model artefacts before parsing JSON.
         // Pre-truncate at tool tags to avoid strip_xml_tag discarding
         // content after unclosed tags (issue #789).
         let pre_truncated = truncate_at_tool_tags(&response.content);
@@ -99,7 +99,7 @@ impl Reasoning {
     ) -> Result<SuccessEvaluation, LlmError> {
         let system_prompt = r#"You are an evaluation assistant. Your job is to determine if a task was completed successfully.
 
-Analyze the task description and the result, then provide:
+Analyse the task description and the result, then provide:
 1. Whether the task was successful (true/false)
 2. A confidence score (0-1)
 3. Detailed reasoning
@@ -135,7 +135,7 @@ Respond in JSON format:
 
         let response = self.llm.complete(request).await?;
 
-        // Clean reasoning model artifacts before parsing JSON.
+        // Clean reasoning model artefacts before parsing JSON.
         // Pre-truncate at tool tags to avoid strip_xml_tag discarding
         // content after unclosed tags (issue #789).
         let pre_truncated = truncate_at_tool_tags(&response.content);

@@ -436,7 +436,7 @@ _arguments "${_arguments_options[@]}" : \
 '--config=[Configuration file path (optional, uses env vars by default)]:CONFIG:_files' \
 '-f[Force overwrite if already installed]' \
 '--force[Force overwrite if already installed]' \
-'--build[Build from source instead of downloading pre-built artifact]' \
+'--build[Build from source instead of downloading pre-built artefact]' \
 '--cli-only[Run in interactive CLI mode only (disable other channels)]' \
 '--no-db[Skip database connection (for testing)]' \
 '--no-onboard[Skip first-run onboarding check]' \
@@ -453,7 +453,7 @@ _arguments "${_arguments_options[@]}" : \
 '--config=[Configuration file path (optional, uses env vars by default)]:CONFIG:_files' \
 '-f[Force overwrite if already installed]' \
 '--force[Force overwrite if already installed]' \
-'--build[Build from source instead of downloading pre-built artifact]' \
+'--build[Build from source instead of downloading pre-built artefact]' \
 '--cli-only[Run in interactive CLI mode only (disable other channels)]' \
 '--no-db[Skip database connection (for testing)]' \
 '--no-onboard[Skip first-run onboarding check]' \

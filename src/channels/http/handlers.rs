@@ -117,7 +117,7 @@ pub(super) async fn webhook_handler(
     let _ = req.user_id.as_ref().map(|user_id| {
         tracing::debug!(
             provided_user_id = %user_id,
-            "HTTP webhook request provided user_id, ignoring in favor of configured user_id"
+            "HTTP webhook request provided user_id, ignoring in favour of configured user_id"
         );
     });
 

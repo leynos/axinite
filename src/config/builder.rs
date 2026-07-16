@@ -14,7 +14,7 @@ use crate::error::ConfigError;
 pub struct BuilderModeConfig {
     /// Whether the software builder tool is enabled.
     pub enabled: bool,
-    /// Directory for build artifacts (default: temp dir).
+    /// Directory for build artefacts (default: temp dir).
     pub build_dir: Option<PathBuf>,
     /// Maximum iterations for the build loop.
     pub max_iterations: u32,

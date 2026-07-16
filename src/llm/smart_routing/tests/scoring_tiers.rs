@@ -63,7 +63,7 @@ fn score_complex_analysis_is_at_least_standard() {
 #[test]
 fn score_security_audit_prompt_is_at_least_standard() {
     let result = score_complexity(
-        "Analyze this Solidity contract for reentrancy vulnerabilities, \
+        "Analyse this Solidity contract for reentrancy vulnerabilities, \
          check for authentication bypass, and provide a security audit report.",
     );
     assert!(
@@ -94,7 +94,7 @@ fn score_reasoning_dimension() {
 #[test]
 fn score_multi_step_dimension() {
     let result = score_complexity(
-        "First, read the file at src/auth.ts. Then analyze it for security issues. \
+        "First, read the file at src/auth.ts. Then analyse it for security issues. \
          After that, write a detailed report.",
     );
     let multi_step = result.components.get("multi_step").copied().unwrap_or(0);

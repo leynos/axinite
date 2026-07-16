@@ -3,7 +3,7 @@
 use std::sync::atomic::{AtomicU32, AtomicU64, Ordering};
 use std::time::Duration;
 
-/// Configuration for per-provider cooldown behavior.
+/// Configuration for per-provider cooldown behaviour.
 ///
 /// When a provider accumulates `failure_threshold` consecutive retryable
 /// failures, it enters cooldown for `cooldown_duration`. During cooldown

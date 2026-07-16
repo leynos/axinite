@@ -116,7 +116,7 @@ This document tracks feature parity between IronClaw (Rust implementation) and O
 | Feature | OpenClaw | IronClaw | Notes |
 |---------|----------|----------|-------|
 | Streaming draft replies | ✅ | ❌ | Partial replies via draft message updates |
-| Configurable stream modes | ✅ | ❌ | Per-channel stream behavior |
+| Configurable stream modes | ✅ | ❌ | Per-channel stream behaviour |
 | Thread ownership | ✅ | ❌ | Thread-level ownership tracking plus reply participation memory |
 | Download-file action | ✅ | ❌ | On-demand attachment downloads via message actions |
 
@@ -207,7 +207,7 @@ This document tracks feature parity between IronClaw (Rust implementation) and O
 | Post-compaction read audit | ✅ | ❌ | Layer 3: workspace rules appended to summaries |
 | Post-compaction context injection | ✅ | ❌ | Workspace context as system event |
 | Custom system prompts | ✅ | ✅ | Template variables, safety guardrails |
-| Skills (modular capabilities) | ✅ | ✅ | Prompt-based skills with trust gating, attenuation, activation criteria, catalog, selector, loaded bundle-root metadata, and scoped bundled-file reads |
+| Skills (modular capabilities) | ✅ | ✅ | Prompt-based skills with trust gating, attenuation, activation criteria, catalogue, selector, loaded bundle-root metadata, and scoped bundled-file reads |
 | Skill routing blocks | ✅ | 🚧 | ActivationCriteria (keywords, patterns, tags) but no "Use when / Don't use when" blocks |
 | Skill path compaction | ✅ | ❌ | ~ prefix to reduce prompt tokens |
 | Thinking modes (off/minimal/low/medium/high/xhigh/adaptive) | ✅ | ❌ | Configurable reasoning depth |
@@ -489,12 +489,12 @@ This document tracks feature parity between IronClaw (Rust implementation) and O
 | Safe bins allowlist | ✅ | ❌ | Hardened path trust |
 | LD*/DYLD* validation | ✅ | ❌ | |
 | Path traversal prevention | ✅ | ✅ | Including config includes (OC-06) + workspace-only tool mounts |
-| Credential theft via env injection | ✅ | 🚧 | Shell env scrubbing + command injection detection; no full OC-09 defense |
+| Credential theft via env injection | ✅ | 🚧 | Shell env scrubbing + command injection detection; no full OC-09 defence |
 | Session file permissions (0o600) | ✅ | ✅ | Session token file set to 0o600 in llm/session.rs |
 | Skill download path restriction | ✅ | ❌ | Validated download roots prevent arbitrary write targets |
 | Webhook signature verification | ✅ | ✅ | |
 | Media URL validation | ✅ | ❌ | |
-| Prompt injection defense | ✅ | ✅ | Pattern detection, sanitization |
+| Prompt injection defence | ✅ | ✅ | Pattern detection, sanitization |
 | Leak detection | ✅ | ✅ | Secret exfiltration |
 | Dangerous tool re-enable warning | ✅ | ❌ | Warn when gateway.tools.allow re-enables HTTP tools |
 
@@ -536,7 +536,7 @@ This document tracks feature parity between IronClaw (Rust implementation) and O
 - ✅ DM pairing (ironclaw pairing list/approve, host APIs)
 - ✅ WASM tool sandbox
 - ✅ Workspace/memory with hybrid search + embeddings batching
-- ✅ Prompt injection defense
+- ✅ Prompt injection defence
 - ✅ Heartbeat system
 - ✅ Session management
 - ✅ Context compaction

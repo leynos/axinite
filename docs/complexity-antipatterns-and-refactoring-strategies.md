@@ -111,7 +111,7 @@ Thresholds and Implications:
 
 Code with high Cognitive Complexity is harder to read, understand, test, and
 modify.[^8] SonarQube, for example, raises issues when a function's Cognitive
-Complexity exceeds a certain threshold, signaling that the code should likely be
+Complexity exceeds a certain threshold, signalling that the code should likely be
 refactored into smaller, more manageable pieces.[^8] The primary impact of high
 Cognitive Complexity is a slowdown in development and an increase in maintenance
 costs.[^8]
@@ -860,7 +860,7 @@ efficient, and genuinely enjoyable for the team to evolve and maintain.
 
 [^14]:
     Command Query Responsibility Segregation pattern — Azure Architecture
-    Center | Microsoft Learn,
+    Centre | Microsoft Learn,
     <https://learn.microsoft.com/en-us/azure/architecture/patterns/cqrs>
 
 [^15]:
@@ -881,7 +881,7 @@ efficient, and genuinely enjoyable for the team to evolve and maintain.
     <https://en.wikipedia.org/wiki/Separation_of_concerns>
 
 [^19]:
-    Command Query Responsibility Segregation pattern — Azure Architecture Center
+    Command Query Responsibility Segregation pattern — Azure Architecture Centre
     | Microsoft Learn,
     <https://learn.microsoft.com/en-us/azure/architecture/patterns/cqrs>
 

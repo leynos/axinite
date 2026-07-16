@@ -4,7 +4,7 @@ use std::collections::HashMap;
 
 use crate::workspace::WorkspaceEntry;
 
-pub(super) fn normalise_dir_prefix(directory: &str) -> String {
+pub(super) fn normalize_dir_prefix(directory: &str) -> String {
     if !directory.is_empty() && !directory.ends_with('/') {
         format!("{}/", directory)
     } else {

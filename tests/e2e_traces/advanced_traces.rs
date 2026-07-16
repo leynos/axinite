@@ -1,4 +1,4 @@
-//! Advanced E2E trace tests that exercise deeper agent behaviors:
+//! Advanced E2E trace tests that exercise deeper agent behaviours:
 //! multi-turn memory, tool error recovery, long chains, workspace search,
 //! iteration limits, and prompt injection resilience.
 

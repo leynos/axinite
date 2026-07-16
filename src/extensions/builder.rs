@@ -54,7 +54,7 @@ pub struct BuildExtensionManagerParams<'a> {
     pub gateway_token: Option<String>,
 }
 
-/// Inputs needed to initialise all extension runtime components.
+/// Inputs needed to initialize all extension runtime components.
 pub struct BuildExtensionsParams<'a> {
     pub config: &'a Config,
     pub db: Option<Arc<dyn Database>>,
@@ -159,26 +159,26 @@ pub async fn build_extension_manager(
     }));
 
     params.tools.register_extension_tools(Arc::clone(&manager));
-    tracing::debug!("Extension manager initialised with in-chat discovery tools");
+    tracing::debug!("Extension manager initialized with in-chat discovery tools");
     manager
 }
 
 fn load_catalog_entries() -> Vec<RegistryEntry> {
     let mut entries = match crate::registry::RegistryCatalog::load_or_embedded() {
-        Ok(catalog) => {
-            let entries: Vec<_> = catalog
+        Ok(catalogue) => {
+            let entries: Vec<_> = catalogue
                 .all()
                 .iter()
                 .map(|manifest| manifest.to_registry_entry())
                 .collect();
             tracing::debug!(
                 count = entries.len(),
-                "Loaded registry catalog entries for extension discovery"
+                "Loaded registry catalogue entries for extension discovery"
             );
             entries
         }
         Err(e) => {
-            tracing::warn!("Failed to load registry catalog: {}", e);
+            tracing::warn!("Failed to load registry catalogue: {}", e);
             Vec::new()
         }
     };

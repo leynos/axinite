@@ -89,7 +89,7 @@ impl ClaudeBridgeRuntime {
                 }
             };
 
-        self.finalise_session_result(&mut child, stderr_handle, session_id, seen_terminal_result)
+        self.finalize_session_result(&mut child, stderr_handle, session_id, seen_terminal_result)
             .await
     }
 
@@ -229,7 +229,7 @@ impl ClaudeBridgeRuntime {
         Ok((session_id, seen_terminal_result))
     }
 
-    async fn finalise_session_result(
+    async fn finalize_session_result(
         &self,
         child: &mut Child,
         stderr_handle: JoinHandle<()>,

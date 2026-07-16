@@ -58,7 +58,7 @@ impl NativeSoftwareBuilder for LlmSoftwareBuilder {
             Reasoning::new(self.llm.clone()).with_model_name(self.llm.active_model_name());
 
         let prompt = format!(
-            r#"Analyze this software requirement and extract structured information.
+            r#"Analyse this software requirement and extract structured information.
 
 Description: {}
 

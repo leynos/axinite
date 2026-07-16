@@ -109,7 +109,7 @@ async fn test_get_returns_first_match_regardless_of_kind() {
     // get() is name-only, returns first match.
     let entry = registry.get("myext").await;
     assert!(entry.is_some());
-    // The first catalog entry added is the channel.
+    // The first catalogue entry added is the channel.
     assert_eq!(entry.unwrap().kind, ExtensionKind::WasmChannel);
 }
 

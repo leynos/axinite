@@ -247,17 +247,17 @@ impl ToolRegistry {
     pub fn register_skill_tools(
         &self,
         registry: Arc<std::sync::RwLock<SkillRegistry>>,
-        catalog: Arc<SkillCatalog>,
+        catalogue: Arc<SkillCatalog>,
     ) {
         self.register_sync(Arc::new(SkillListTool::new(Arc::clone(&registry))));
         self.register_sync(Arc::new(SkillSearchTool::new(
             Arc::clone(&registry),
-            Arc::clone(&catalog),
+            Arc::clone(&catalogue),
         )));
         self.register_sync(Arc::new(SkillReadFileTool::new(Arc::clone(&registry))));
         self.register_sync(Arc::new(SkillInstallTool::new(
             Arc::clone(&registry),
-            Arc::clone(&catalog),
+            Arc::clone(&catalogue),
         )));
         self.register_sync(Arc::new(SkillRemoveTool::new(registry)));
         tracing::debug!("Registered 5 skill management tools");
@@ -349,7 +349,7 @@ impl ToolRegistry {
 
     /// Register vision/image analysis tools.
     ///
-    /// These tools allow the LLM to analyze images using a vision-capable model.
+    /// These tools allow the LLM to analyse images using a vision-capable model.
     pub fn register_vision_tools(&self, req: VisionToolsRegistration) {
         let VisionToolsRegistration {
             api_base_url,

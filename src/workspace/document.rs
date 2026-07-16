@@ -16,7 +16,7 @@ pub mod paths {
     pub const IDENTITY: &str = "IDENTITY.md";
     /// Core values and principles.
     pub const SOUL: &str = "SOUL.md";
-    /// Behavior instructions.
+    /// Behaviour instructions.
     pub const AGENTS: &str = "AGENTS.md";
     /// User context (name, preferences).
     pub const USER: &str = "USER.md";

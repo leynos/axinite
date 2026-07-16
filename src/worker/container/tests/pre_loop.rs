@@ -119,7 +119,7 @@ async fn assert_startup_failure(state: &RuntimeTestState) {
     assert_eq!(
         failed_status.message.as_deref(),
         Some("pre-loop failure"),
-        "expected a sanitised pre-loop failure message, got {failed_status:?}"
+        "expected a sanitized pre-loop failure message, got {failed_status:?}"
     );
     drop(statuses);
 
@@ -211,7 +211,7 @@ async fn worker_runtime_emits_failed_status_for_initial_status_rejections() -> a
     assert_eq!(
         statuses[1].message.as_deref(),
         Some("pre-loop failure"),
-        "expected a sanitised pre-loop failure status payload, got {:?}",
+        "expected a sanitized pre-loop failure status payload, got {:?}",
         statuses[1]
     );
     drop(statuses);
@@ -258,7 +258,7 @@ async fn worker_runtime_sanitizes_failure_messages(
     assert_eq!(result_event["success"], false);
     assert!(
         result_event.to_string().contains(expected_message),
-        "expected result payload to contain the sanitised message"
+        "expected result payload to contain the sanitized message"
     );
     assert!(
         !result_event.to_string().contains("secret-123"),

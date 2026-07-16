@@ -6,7 +6,7 @@ use std::sync::{Arc, Mutex};
 use super::super::super::domain::SoftwareBuilderFuture;
 use super::super::*;
 
-type AnalyzeResult = dyn Fn() -> Result<BuildRequirement, AgentToolError> + Send + Sync;
+type AnalyseResult = dyn Fn() -> Result<BuildRequirement, AgentToolError> + Send + Sync;
 type BuildResultFn = dyn Fn(&BuildRequirement) -> Result<BuildResult, AgentToolError> + Send + Sync;
 
 pub(super) fn assert_invalid_parameters<T: std::fmt::Debug>(
@@ -34,7 +34,7 @@ pub(super) async fn execute_override_error(
     override_value: &str,
     expected_msg: &str,
 ) -> anyhow::Result<()> {
-    let builder = FakeSoftwareBuilder::always_analyze(test_requirement()?);
+    let builder = FakeSoftwareBuilder::always_analyse(test_requirement()?);
     let tool = BuildSoftwareTool::new(Arc::new(builder));
     let mut params = serde_json::json!({"description": "x"});
     params[override_key] = override_value.into();
@@ -48,10 +48,10 @@ pub(super) async fn execute_capturing_requirement(
 ) -> anyhow::Result<BuildRequirement> {
     use anyhow::Context as _;
 
-    let analyzed = test_requirement()?;
-    let build_result = test_build_result(analyzed.clone());
+    let analysed = test_requirement()?;
+    let build_result = test_build_result(analysed.clone());
     let (builder, captured_requirement) =
-        FakeSoftwareBuilder::success_with_capture(analyzed, build_result);
+        FakeSoftwareBuilder::success_with_capture(analysed, build_result);
     let tool = BuildSoftwareTool::new(Arc::new(builder));
 
     tool.execute(params, &JobContext::default())
@@ -66,35 +66,35 @@ pub(super) async fn execute_capturing_requirement(
 }
 
 pub(super) struct FakeSoftwareBuilder {
-    analyze_result: Arc<AnalyzeResult>,
+    analyse_result: Arc<AnalyseResult>,
     build_result: Arc<BuildResultFn>,
 }
 
 impl FakeSoftwareBuilder {
-    pub(super) fn analyze_error(message: &'static str) -> Self {
+    pub(super) fn analyse_error(message: &'static str) -> Self {
         Self {
-            analyze_result: Arc::new(move || Err(AgentToolError::BuilderFailed(message.into()))),
+            analyse_result: Arc::new(move || Err(AgentToolError::BuilderFailed(message.into()))),
             build_result: Arc::new(|_| panic!("build not expected")),
         }
     }
 
-    pub(super) fn always_analyze(req: BuildRequirement) -> Self {
+    pub(super) fn always_analyse(req: BuildRequirement) -> Self {
         Self {
-            analyze_result: Arc::new(move || Ok(req.clone())),
+            analyse_result: Arc::new(move || Ok(req.clone())),
             build_result: Arc::new(|_| panic!("build not expected")),
         }
     }
 
     pub(super) fn build_error(req: BuildRequirement, message: &'static str) -> Self {
         Self {
-            analyze_result: Arc::new(move || Ok(req.clone())),
+            analyse_result: Arc::new(move || Ok(req.clone())),
             build_result: Arc::new(move |_| Err(AgentToolError::BuilderFailed(message.into()))),
         }
     }
 
     pub(super) fn success(req: BuildRequirement, result: BuildResult) -> Self {
         Self {
-            analyze_result: Arc::new(move || Ok(req.clone())),
+            analyse_result: Arc::new(move || Ok(req.clone())),
             build_result: Arc::new(move |requirement| {
                 assert_eq!(requirement.name, result.requirement.name);
                 assert_eq!(requirement.description, result.requirement.description);
@@ -112,7 +112,7 @@ impl FakeSoftwareBuilder {
         let captured = Arc::new(Mutex::new(None));
         let build_capture = Arc::clone(&captured);
         let builder = Self {
-            analyze_result: Arc::new(move || Ok(req.clone())),
+            analyse_result: Arc::new(move || Ok(req.clone())),
             build_result: Arc::new(move |requirement| {
                 *build_capture
                     .lock()
@@ -129,7 +129,7 @@ impl SoftwareBuilder for FakeSoftwareBuilder {
         &'a self,
         _description: &'a str,
     ) -> SoftwareBuilderFuture<'a, Result<BuildRequirement, AgentToolError>> {
-        let res = (self.analyze_result)();
+        let res = (self.analyse_result)();
         Box::pin(async move { res })
     }
 

@@ -1,10 +1,10 @@
-//! Tests for catalog merging and kind-aware entry lookup.
+//! Tests for catalogue merging and kind-aware entry lookup.
 
 use crate::extensions::registry::ExtensionRegistry;
 use crate::extensions::{AuthHint, ExtensionKind, ExtensionSource, RegistryEntry};
 
 #[tokio::test]
-async fn test_new_with_catalog() {
+async fn test_new_with_catalogue() {
     let catalog_entries = vec![
         RegistryEntry {
             name: "telegram".to_string(),
@@ -43,10 +43,10 @@ async fn test_new_with_catalog() {
 
     // Should find the new telegram entry
     let results = registry.search("telegram").await;
-    assert!(!results.is_empty(), "Should find telegram from catalog");
+    assert!(!results.is_empty(), "Should find telegram from catalogue");
     assert_eq!(results[0].entry.name, "telegram");
 
-    // Should have both builtin MCP slack-mcp and catalog WASM slack-mcp
+    // Should have both builtin MCP slack-mcp and catalogue WASM slack-mcp
     let results = registry.search("slack").await;
     let slack_mcp = results
         .iter()
@@ -55,12 +55,12 @@ async fn test_new_with_catalog() {
         .iter()
         .any(|r| r.entry.name == "slack-mcp" && r.entry.kind == ExtensionKind::WasmTool);
     assert!(slack_mcp, "Should have builtin MCP slack-mcp");
-    assert!(slack_wasm, "Should have catalog WASM slack-mcp");
+    assert!(slack_wasm, "Should have catalogue WASM slack-mcp");
 }
 
 #[tokio::test]
-async fn test_new_with_catalog_dedup_same_kind() {
-    // A catalog entry with same name AND kind as a builtin should be skipped
+async fn test_new_with_catalogue_dedup_same_kind() {
+    // A catalogue entry with same name AND kind as a builtin should be skipped
     let catalog_entries = vec![RegistryEntry {
         name: "slack-mcp".to_string(),
         display_name: "Slack MCP Override".to_string(),
@@ -215,5 +215,5 @@ async fn test_get_with_kind_discovery_cache() {
     assert_eq!(entry.unwrap().display_name, "Cached Tool");
 }
 
-// Channel tests (telegram, slack, discord, whatsapp) require the embedded catalog
-// to be loaded via new_with_catalog(). See test_new_with_catalog for catalog coverage.
+// Channel tests (telegram, slack, discord, whatsapp) require the embedded catalogue
+// to be loaded via new_with_catalog(). See test_new_with_catalogue for catalogue coverage.

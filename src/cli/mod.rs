@@ -52,7 +52,7 @@ use clap::{ColorChoice, Parser, Subcommand};
     long_about = "IronClaw is a secure AI assistant. Use 'ironclaw <subcommand> --help' for details.\nExamples:\n  ironclaw run  # Start the agent\n  ironclaw config list  # List configs"
 )]
 #[command(version)]
-#[command(color = ColorChoice::Auto)] // Enable auto-color for help (if the terminal supports it)
+#[command(color = ColorChoice::Auto)] // Enable auto-colour for help (if the terminal supports it)
 pub struct Cli {
     #[command(subcommand)]
     pub command: Option<Command>,
@@ -236,7 +236,7 @@ pub enum Command {
 }
 
 impl Cli {
-    /// Check if we should run the agent (default behavior or explicit `run` command).
+    /// Check if we should run the agent (default behaviour or explicit `run` command).
     pub fn should_run_agent(&self) -> bool {
         matches!(self.command, None | Some(Command::Run))
     }

@@ -1,7 +1,7 @@
 //! OpenClaw SKILL.md-based skills system for IronClaw.
 //!
 //! Skills are SKILL.md files (YAML frontmatter + markdown prompt) that extend the
-//! agent's behavior through prompt-level instructions. Unlike code-level tools
+//! agent's behaviour through prompt-level instructions. Unlike code-level tools
 //! (WASM/MCP), skills operate in the LLM context and are subject to trust-based
 //! authority attenuation.
 //!
@@ -21,7 +21,7 @@ pub mod escape;
 /// Read-only, skill-scoped access to bundled skill resources (references and assets).
 pub mod file_read;
 pub mod gating;
-/// Shared source-field normalisation helpers for skill install adapters.
+/// Shared source-field normalization helpers for skill install adapters.
 pub(crate) mod install_source;
 mod loaded_skill;
 pub mod parser;

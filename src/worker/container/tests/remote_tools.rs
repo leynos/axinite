@@ -1,4 +1,4 @@
-//! Tests for remote tool catalog registration and toolset instruction merging.
+//! Tests for remote tool catalogue registration and toolset instruction merging.
 
 use std::sync::Arc;
 
@@ -34,7 +34,7 @@ fn make_tool_definition(
 fn expected_remote_tool_definition() -> ToolDefinition {
     make_tool_definition(
         "hosted_worker_remote_tool_fixture",
-        "Remote tool from orchestrator catalog",
+        "Remote tool from orchestrator catalogue",
         serde_json::json!({
             "type": "object",
             "properties": {
@@ -48,7 +48,7 @@ fn expected_remote_tool_definition() -> ToolDefinition {
 fn expected_remote_wasm_tool_definition() -> ToolDefinition {
     make_tool_definition(
         "hosted_worker_remote_wasm_tool_fixture",
-        "Remote WASM tool from orchestrator catalog",
+        "Remote WASM tool from orchestrator catalogue",
         serde_json::json!({
             "type": "object",
             "properties": {
@@ -78,7 +78,7 @@ fn expected_local_tool_names() -> Vec<String> {
     ]
 }
 
-async fn remote_tool_catalog(
+async fn remote_tool_catalogue(
     State(_state): State<TestState>,
     Path(_job_id): Path<Uuid>,
 ) -> Json<RemoteToolCatalogResponse> {
@@ -92,21 +92,21 @@ async fn remote_tool_catalog(
     })
 }
 
-async fn remote_tool_catalog_error(
+async fn remote_tool_catalogue_error(
     State(_state): State<TestState>,
     Path(_job_id): Path<Uuid>,
 ) -> (axum::http::StatusCode, &'static str) {
     (
         axum::http::StatusCode::INTERNAL_SERVER_ERROR,
-        "catalog offline",
+        "catalogue offline",
     )
 }
 
-/// Minimal shared Axum state for test catalog routers.
+/// Minimal shared Axum state for test catalogue routers.
 #[derive(Clone)]
 pub(super) struct TestState;
 
-/// Spawns an ephemeral Axum server that serves the remote-tool catalog route.
+/// Spawns an ephemeral Axum server that serves the remote-tool catalogue route.
 ///
 /// `H` is any Axum handler compatible with [`TestState`], and `T` is its
 /// extractor tuple. Returns the `http://host:port` base URL and a join
@@ -131,9 +131,9 @@ where
     Ok((format!("http://{addr}"), server))
 }
 
-async fn spawn_hosted_guidance_catalog_server()
+async fn spawn_hosted_guidance_catalogue_server()
 -> Result<(String, tokio::task::JoinHandle<()>), anyhow::Error> {
-    spawn_test_server(remote_tool_catalog).await
+    spawn_test_server(remote_tool_catalogue).await
 }
 
 async fn build_runtime_with_remote_tools(
@@ -158,9 +158,9 @@ async fn build_runtime_with_remote_tools(
 
 #[rstest]
 #[tokio::test]
-async fn hosted_worker_remote_tool_catalog_registers_remote_tools()
+async fn hosted_worker_remote_tool_catalogue_registers_remote_tools()
 -> Result<(), Box<dyn std::error::Error>> {
-    let (base_url, server) = spawn_hosted_guidance_catalog_server().await?;
+    let (base_url, server) = spawn_hosted_guidance_catalogue_server().await?;
     let (runtime, _client) = build_runtime_with_remote_tools(&base_url).await?;
 
     let definitions: Vec<crate::llm::ToolDefinition> = runtime.tools.tool_definitions().await;
@@ -199,7 +199,7 @@ async fn hosted_worker_remote_tool_catalog_registers_remote_tools()
 #[tokio::test]
 async fn worker_runtime_build_reasoning_context_merges_local_and_remote_tools()
 -> Result<(), Box<dyn std::error::Error>> {
-    let (base_url, server) = spawn_hosted_guidance_catalog_server().await?;
+    let (base_url, server) = spawn_hosted_guidance_catalogue_server().await?;
     let (runtime, _client) = build_runtime_with_remote_tools(&base_url).await?;
 
     let reason_ctx = runtime
@@ -259,7 +259,7 @@ async fn worker_runtime_build_reasoning_context_merges_local_and_remote_tools()
 #[tokio::test]
 async fn worker_runtime_refresh_keeps_merged_tools_without_duplicate_guidance()
 -> Result<(), Box<dyn std::error::Error>> {
-    let (base_url, server) = spawn_hosted_guidance_catalog_server().await?;
+    let (base_url, server) = spawn_hosted_guidance_catalogue_server().await?;
     let (runtime, client) = build_runtime_with_remote_tools(&base_url).await?;
 
     let mut reason_ctx = runtime
@@ -319,11 +319,11 @@ async fn worker_runtime_refresh_keeps_merged_tools_without_duplicate_guidance()
 
 #[rstest]
 #[tokio::test]
-async fn hosted_worker_remote_tool_catalog_degraded_startup_keeps_local_tools()
+async fn hosted_worker_remote_tool_catalogue_degraded_startup_keeps_local_tools()
 -> Result<(), Box<dyn std::error::Error>> {
-    let (base_url, server) = spawn_test_server(remote_tool_catalog_error)
+    let (base_url, server) = spawn_test_server(remote_tool_catalogue_error)
         .await
-        .context("spawning test server in hosted_worker_remote_tool_catalog_degraded_startup_keeps_local_tools")?;
+        .context("spawning test server in hosted_worker_remote_tool_catalogue_degraded_startup_keeps_local_tools")?;
 
     let client = Arc::new(
         WorkerHttpClient::new(base_url.clone(), Uuid::nil(), "test".to_string())

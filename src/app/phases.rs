@@ -326,9 +326,9 @@ impl AppBuilder {
             tracing::debug!("Loaded {} skill(s): {}", loaded.len(), loaded.join(", "));
         }
         let registry = Arc::new(std::sync::RwLock::new(registry));
-        let catalog = crate::skills::catalog::shared_catalog();
-        tools.register_skill_tools(Arc::clone(&registry), Arc::clone(&catalog));
-        Ok((Some(registry), Some(catalog)))
+        let catalogue = crate::skills::catalog::shared_catalog();
+        tools.register_skill_tools(Arc::clone(&registry), Arc::clone(&catalogue));
+        Ok((Some(registry), Some(catalogue)))
     }
 
     /// Phase 6: Load WASM tools, MCP servers, and create extension manager.

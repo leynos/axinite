@@ -106,7 +106,7 @@ pub struct Settings {
     pub heartbeat: HeartbeatSettings,
 
     // === Advanced Settings (not asked during setup, editable via CLI) ===
-    /// Agent behavior configuration.
+    /// Agent behaviour configuration.
     #[serde(default)]
     pub agent: AgentSettings,
 

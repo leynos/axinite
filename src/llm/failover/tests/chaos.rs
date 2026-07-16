@@ -160,7 +160,7 @@ async fn test_failover_with_single_provider_failing() {
         "sole provider should be retried despite cooldown"
     );
 
-    // Third call: same behavior, no state corruption.
+    // Third call: same behaviour, no state corruption.
     let result = failover2.complete(make_request()).await;
     assert!(result.is_err());
     assert_eq!(solo2.call_count(), 3);

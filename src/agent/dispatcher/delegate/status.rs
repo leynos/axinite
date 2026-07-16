@@ -1,6 +1,6 @@
 //! Status helpers for dispatcher tool execution.
 //! Emits tool lifecycle updates, validates image sentinel broadcasts, and
-//! sanitises previews for UI delivery while swallowing status-send failures.
+//! sanitizes previews for UI delivery while swallowing status-send failures.
 
 use crate::channels::StatusUpdate;
 use crate::error::Error;

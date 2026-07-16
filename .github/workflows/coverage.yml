@@ -31,6 +31,11 @@ name: Code Coverage
 "on":
   push:
     branches: [main]
+  # Allow the CodeScene upload to be re-run on demand. Merges performed
+  # by the automerge workflow's GITHUB_TOKEN do not fire push-event
+  # workflows, so automerged changes to main only receive a CodeScene
+  # upload via this manual dispatch.
+  workflow_dispatch:
 
 permissions:
   id-token: write
@@ -90,6 +95,12 @@ jobs:
           components: llvm-tools-preview
           targets: wasm32-wasip2
 
+      # The free-disk-space step above removes large apt packages,
+      # including the clang the CARGO_..._LINKER env demands. Reinstall
+      # it (as test.yml does) so the host build scripts link.
+      - name: Install clang
+        run: sudo apt-get update && sudo apt-get install -y clang
+
       - name: Install mold
         uses: rui314/setup-mold@v1
 
@@ -99,6 +110,9 @@ jobs:
 
       - name: Install cargo-llvm-cov
         uses: taiki-e/install-action@cargo-llvm-cov
+
+      - name: Install cargo-nextest
+        uses: taiki-e/install-action@cargo-nextest
 
       - name: Install cargo-component
         uses: taiki-e/install-action@v2
@@ -134,11 +148,40 @@ jobs:
           database_url="postgres://postgres:postgres@localhost/ironclaw_test"
           echo "DATABASE_URL=${database_url}" >> "$GITHUB_ENV"
 
+      # Instrument with nextest, not plain `cargo test`: the startup
+      # boot-screen snapshot test captures stdout at file-descriptor
+      # level (gag) and needs nextest's process-per-test isolation, so
+      # the `cargo test` baseline llvm-cov drives otherwise fails
+      # (issue #237). nextest also skips doctests; the default profile
+      # additionally drops the slow trybuild binaries.
       - name: Generate coverage
         run: >-
-          cargo llvm-cov ${{ matrix.flags }} --features test-helpers
+          cargo llvm-cov nextest ${{ matrix.flags }} --features test-helpers
           --workspace --lcov
           --output-path lcov.info
+
+      # Feed CodeScene's stored coverage from the analysed branch (main).
+      # Upload from ONE leg only so CodeScene receives a single report
+      # per commit. The libsql-only leg is chosen because it is the leg
+      # that reliably builds a coverage report: the postgres-bearing legs
+      # (default, all-features) currently fail their Postgres integration
+      # tests for pre-existing reasons unrelated to coverage wiring (see
+      # the PR description). The guard skips the step when the project
+      # access token is absent (forks). The PR "Code Coverage" gate
+      # (mode: check) is deferred until the CodeScene project's gates
+      # configuration is enabled operator-side (project 77987 posts only
+      # Code Health Review today).
+      - name: Upload coverage to CodeScene
+        env:
+          CS_ACCESS_TOKEN: ${{ secrets.CS_ACCESS_TOKEN }}
+        if: matrix.name == 'libsql-only' && env.CS_ACCESS_TOKEN != ''
+        uses: leynos/shared-actions/.github/actions/upload-codescene-coverage@927edd45ae77be4251a8a18ca9eb5613a2e32cbd
+        with:
+          format: lcov
+          mode: upload
+          project-url: https://api.codescene.io/v2/projects/77987
+          access-token: ${{ env.CS_ACCESS_TOKEN }}
+          installer-checksum: ${{ vars.CODESCENE_CLI_SHA256 }}
 
       - name: Upload to Codecov
         uses: codecov/codecov-action@v5

@@ -1,4 +1,4 @@
-//! Unit tests for tool metrics collection and error categorisation.
+//! Unit tests for tool metrics collection and error categorization.
 
 use super::*;
 use rust_decimal_macros::dec;

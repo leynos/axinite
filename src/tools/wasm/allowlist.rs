@@ -1,7 +1,7 @@
 //! HTTP endpoint allowlist validation.
 //!
 //! Validates that HTTP requests from WASM tools only go to allowed endpoints.
-//! This is the first line of defense against unauthorized API access.
+//! This is the first line of defence against unauthorized API access.
 //!
 //! # Validation Flow
 //!
@@ -234,8 +234,8 @@ fn normalize_path(path: &str) -> Result<String, String> {
     Ok(result)
 }
 
-/// Whether the normalised path must have the original's trailing slash
-/// restored (the original had one and normalisation dropped it).
+/// Whether the normalized path must have the original's trailing slash
+/// restored (the original had one and normalization dropped it).
 fn needs_trailing_slash(path: &str, result: &str) -> bool {
     let had_trailing_slash = path.len() > 1 && path.ends_with('/');
     had_trailing_slash && !result.ends_with('/')

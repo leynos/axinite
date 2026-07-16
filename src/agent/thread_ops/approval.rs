@@ -38,7 +38,7 @@
 //! - `deferred_preflight`: Hook checks and approval gating for deferred tool calls
 //! - `deferred_exec`: Inline and parallel execution of runnable deferred tools
 //! - `deferred_flow`: Orchestration of the deferred-tools continuation
-//! - `turn_flow`: Turn finalisation, rejection, and loop continuation
+//! - `turn_flow`: Turn finalization, rejection, and loop continuation
 //! - `auth`: Auth intercepts and the `process_auth_token` entry point
 
 mod auth;

@@ -1,4 +1,4 @@
-//! Result finalisation helpers for completed user turns.
+//! Result finalization helpers for completed user turns.
 
 use std::sync::Arc;
 
@@ -174,7 +174,7 @@ impl Agent {
 
 #[cfg(all(test, feature = "libsql"))]
 mod tests {
-    //! Unit tests for turn result finalisation and persistence.
+    //! Unit tests for turn result finalization and persistence.
 
     use std::sync::Arc;
 
@@ -241,7 +241,7 @@ mod tests {
                 Ok(AgenticLoopResult::Response("done".to_string())),
             )
             .await
-            .expect("response finalisation should succeed");
+            .expect("response finalization should succeed");
 
         assert!(
             matches!(result, SubmissionResult::Response { ref content } if content == "done"),
@@ -313,7 +313,7 @@ mod tests {
                 Ok(AgenticLoopResult::NeedApproval { pending }),
             )
             .await
-            .expect("approval finalisation should succeed");
+            .expect("approval finalization should succeed");
 
         assert!(
             is_expected_need_approval(
@@ -332,7 +332,7 @@ mod tests {
         let thread = sess
             .threads
             .get(&thread_id)
-            .expect("thread should still exist after approval finalisation");
+            .expect("thread should still exist after approval finalization");
         assert_eq!(thread.state, ThreadState::AwaitingApproval);
         assert!(
             thread.pending_approval.is_some(),
@@ -360,7 +360,7 @@ mod tests {
                 Err(Error::from(crate::error::DatabaseError::Query(inner_error))),
             )
             .await
-            .expect("error finalisation should succeed");
+            .expect("error finalization should succeed");
 
         assert!(
             matches!(
@@ -374,7 +374,7 @@ mod tests {
         let thread = sess
             .threads
             .get(&thread_id)
-            .expect("thread should still exist after error finalisation");
+            .expect("thread should still exist after error finalization");
         assert_eq!(thread.state, ThreadState::Idle);
         assert!(
             thread

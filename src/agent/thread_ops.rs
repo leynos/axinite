@@ -14,7 +14,7 @@
 //! - `turn_compaction_checkpointing`: Pre-turn compaction and undo checkpoints
 //! - `turn_execution`: User turn execution and agentic loop orchestration
 //! - `turn_preparation`: Thread-state checks, safety validation, and turn setup
-//! - `turn_result_finalisation`: Loop-result handling and response persistence
+//! - `turn_result_finalization`: Loop-result handling and response persistence
 
 pub(crate) mod approval;
 mod control;
@@ -28,7 +28,7 @@ mod test_support;
 mod turn_compaction_checkpointing;
 mod turn_execution;
 mod turn_preparation;
-mod turn_result_finalisation;
+mod turn_result_finalization;
 
 pub(super) use persistence::TurnPersistContext;
 pub(super) use turn_preparation::{PrepareTurnResult, UserTurnRequest};

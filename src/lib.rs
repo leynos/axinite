@@ -35,7 +35,7 @@
 //! - **Parallel job execution** - Run multiple jobs with isolated contexts
 //! - **Pluggable tools** - MCP, 3rd party services, dynamic tools
 //! - **Self-repair** - Detect and fix stuck jobs and broken tools
-//! - **Prompt injection defense** - Sanitize all external data
+//! - **Prompt injection defence** - Sanitize all external data
 //! - **Continuous learning** - Improve estimates from historical data
 
 pub mod agent;

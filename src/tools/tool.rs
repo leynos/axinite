@@ -4,7 +4,7 @@
 //! agent framework:
 //!
 //! * [`Tool`] / [`NativeTool`] — traits implemented by every tool, covering
-//!   schema declaration, execution, approval requirements, and sanitisation.
+//!   schema declaration, execution, approval requirements, and sanitization.
 //! * [`ToolError`] / [`ToolOutput`] — the standard result types returned by
 //!   tool execution.
 //! * [`ToolDomain`] / [`ToolRateLimitConfig`] — metadata used by the

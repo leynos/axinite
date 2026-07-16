@@ -453,7 +453,7 @@ external side effects:
 
 1. **Build the record** — `build_sandbox_job_record` constructs a
    `SandboxJobRecord` in status `"creating"` with serialized
-   `credential_grants_json`. If serialisation fails, it logs a warning and
+   `credential_grants_json`. If serialization fails, it logs a warning and
    falls back to `"[]"`.
 2. **Persist synchronously** — `persist_sandbox_job` awaits
    `store.save_sandbox_job(&record)` and, when `mode == ClaudeCode`, also

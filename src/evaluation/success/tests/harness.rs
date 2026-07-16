@@ -49,7 +49,7 @@ struct ActionStats {
     failures: u32,
 }
 
-/// Summarise action outcomes. Callers guarantee `actions` is non-empty, so the
+/// Summarize action outcomes. Callers guarantee `actions` is non-empty, so the
 /// success-rate division is well-defined.
 fn summarize_actions(actions: &[ActionRecord]) -> ActionStats {
     let successful = actions.iter().filter(|a| a.success).count();

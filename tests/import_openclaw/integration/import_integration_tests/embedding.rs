@@ -5,7 +5,7 @@ use ironclaw::import::openclaw::reader::OpenClawReader;
 use tempfile::TempDir;
 use uuid::Uuid;
 
-use super::helpers::{create_test_openclaw, ensure_libsql_initialised, libsql_test_mutex};
+use super::helpers::{create_test_openclaw, ensure_libsql_initialized, libsql_test_mutex};
 
 // ────────────────────────────────────────────────────────────────────
 // Integration Test 5: Embedding Dimension Mismatch Handling
@@ -13,7 +13,7 @@ use super::helpers::{create_test_openclaw, ensure_libsql_initialised, libsql_tes
 
 #[tokio::test]
 async fn test_embedding_dimension_mismatch_queues_reembedding() {
-    ensure_libsql_initialised().await;
+    ensure_libsql_initialized().await;
     let _guard = libsql_test_mutex().lock().await;
     let (_openclaw_temp, openclaw_path) = create_test_openclaw().expect("OpenClaw creation failed");
 
@@ -134,7 +134,7 @@ async fn test_embedding_dimension_mismatch_queues_reembedding() {
 
 #[tokio::test]
 async fn test_embedding_same_dimension_no_reembedding() {
-    ensure_libsql_initialised().await;
+    ensure_libsql_initialized().await;
     let _guard = libsql_test_mutex().lock().await;
     let temp_dir = TempDir::new().expect("temp dir failed");
     let openclaw_path = temp_dir.path().to_path_buf();

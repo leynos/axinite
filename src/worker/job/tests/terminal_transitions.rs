@@ -1,4 +1,4 @@
-//! Characterisation tests for terminal job-state transitions and duplicates.
+//! Characterization tests for terminal job-state transitions and duplicates.
 
 use crate::context::JobState;
 use crate::testing::CapturingStore;
@@ -31,7 +31,7 @@ use crate::worker::job::Worker;
     }
 )]
 #[tokio::test]
-async fn test_terminal_state_characterises_persistence(
+async fn test_terminal_state_characterizes_persistence(
     #[case] case: TerminalTestCase,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let (worker, store) = make_worker_with_capturing_store(vec![]).await?;
@@ -60,7 +60,7 @@ async fn test_terminal_state_characterises_persistence(
     Ok(())
 }
 
-/// Test case structure for parameterised terminal state tests.
+/// Test case structure for parameterized terminal state tests.
 struct TerminalTestCase {
     method: TerminalMethod,
     expected_state: JobState,

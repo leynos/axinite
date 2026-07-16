@@ -5,7 +5,7 @@ use ironclaw::import::openclaw::reader::OpenClawReader;
 use ironclaw::import::{ImportOptions, ImportStats};
 
 use super::helpers::{
-    create_test_db, create_test_openclaw, ensure_libsql_initialised, libsql_test_mutex,
+    create_test_db, create_test_openclaw, ensure_libsql_initialized, libsql_test_mutex,
 };
 
 // ────────────────────────────────────────────────────────────────────
@@ -14,7 +14,7 @@ use super::helpers::{
 
 #[tokio::test]
 async fn test_full_import_with_database_writes() {
-    ensure_libsql_initialised().await;
+    ensure_libsql_initialized().await;
     let _guard = libsql_test_mutex().lock().await;
     let (db, _db_temp) = create_test_db().await.expect("DB creation failed");
     let (_openclaw_temp, openclaw_path) = create_test_openclaw().expect("OpenClaw creation failed");
@@ -62,7 +62,7 @@ async fn test_full_import_with_database_writes() {
 
 #[tokio::test]
 async fn test_import_command_execution() {
-    ensure_libsql_initialised().await;
+    ensure_libsql_initialized().await;
     let _guard = libsql_test_mutex().lock().await;
     let (_openclaw_temp, openclaw_path) = create_test_openclaw().expect("OpenClaw creation failed");
     let (_db, _db_temp) = create_test_db().await.expect("DB creation failed");
@@ -92,7 +92,7 @@ async fn test_import_command_execution() {
 
 #[tokio::test]
 async fn test_dry_run_prevents_database_writes() {
-    ensure_libsql_initialised().await;
+    ensure_libsql_initialized().await;
     let _guard = libsql_test_mutex().lock().await;
     let (db, _db_temp) = create_test_db().await.expect("DB creation failed");
     let (_openclaw_temp, openclaw_path) = create_test_openclaw().expect("OpenClaw creation failed");
@@ -137,7 +137,7 @@ async fn test_dry_run_prevents_database_writes() {
 
 #[tokio::test]
 async fn test_import_idempotency_no_duplicates_on_reimport() {
-    ensure_libsql_initialised().await;
+    ensure_libsql_initialized().await;
     let _guard = libsql_test_mutex().lock().await;
     let (_db, _db_temp) = create_test_db().await.expect("DB creation failed");
     let (_openclaw_temp, openclaw_path) = create_test_openclaw().expect("OpenClaw creation failed");

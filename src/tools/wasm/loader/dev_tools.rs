@@ -1,5 +1,5 @@
 //! Dev-mode tool loading: discover and load WASM tools directly from
-//! build artifacts in `tools-src/`.
+//! build artefacts in `tools-src/`.
 
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
@@ -21,7 +21,7 @@ pub fn resolve_wasm_target_dir(crate_dir: &Path) -> PathBuf {
     crate::registry::artifacts::resolve_target_dir(crate_dir)
 }
 
-/// Return the expected path to a compiled WASM artifact for a given crate.
+/// Return the expected path to a compiled WASM artefact for a given crate.
 ///
 /// Combines [`resolve_wasm_target_dir`] with the `wasm32-wasip2/release/` subdirectory
 /// and the binary name without extension (e.g. `slack_tool`).
@@ -49,7 +49,7 @@ pub(super) fn tools_src_dir() -> PathBuf {
     PathBuf::from(CARGO_MANIFEST_DIR).join("tools-src")
 }
 
-/// Discover WASM tools available as build artifacts in `tools-src/`.
+/// Discover WASM tools available as build artefacts in `tools-src/`.
 ///
 /// Scans each subdirectory for:
 /// - `tools-src/<name>/target/wasm32-wasip2/release/<crate_name>_tool.wasm`
@@ -104,10 +104,10 @@ pub async fn discover_dev_tools() -> Result<HashMap<String, DiscoveredTool>, std
     Ok(tools)
 }
 
-/// Load WASM tools from build artifacts in `tools-src/`.
+/// Load WASM tools from build artefacts in `tools-src/`.
 ///
 /// In dev mode, tools can be loaded directly from their build output without
-/// needing to install them to `~/.ironclaw/tools/` first. Build artifacts
+/// needing to install them to `~/.ironclaw/tools/` first. Build artefacts
 /// that are newer than installed copies take priority.
 ///
 /// Set `IRONCLAW_TOOLS_SRC` env var to override the source directory.
@@ -123,10 +123,10 @@ pub async fn load_dev_tools(
     }
 
     for (name, discovered) in &dev_tools {
-        // Check if the build artifact is newer than the installed copy
+        // Check if the build artefact is newer than the installed copy
         let installed_path = install_dir.join(format!("{}.wasm", name));
         let should_load = if installed_path.exists() {
-            // Compare modification times: prefer fresher build artifact
+            // Compare modification times: prefer fresher build artefact
             match (
                 fs::metadata(&discovered.wasm_path)
                     .await
@@ -153,7 +153,7 @@ pub async fn load_dev_tools(
         tracing::info!(
             name = name,
             wasm_path = %discovered.wasm_path.display(),
-            "Loading dev tool from build artifacts (newer than installed)"
+            "Loading dev tool from build artefacts (newer than installed)"
         );
 
         match loader
@@ -182,7 +182,7 @@ pub async fn load_dev_tools(
         tracing::info!(
             count = results.loaded.len(),
             tools = ?results.loaded,
-            "Loaded dev tools from build artifacts"
+            "Loaded dev tools from build artefacts"
         );
     }
 

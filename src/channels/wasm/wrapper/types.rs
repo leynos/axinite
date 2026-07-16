@@ -6,7 +6,7 @@
 pub(super) struct HostPattern(String);
 
 impl HostPattern {
-    /// Constructs a `HostPattern`, normalising to lowercase.
+    /// Constructs a `HostPattern`, normalizing to lowercase.
     /// Returns `None` if `s` is empty.
     pub(super) fn new(s: impl Into<String>) -> Option<Self> {
         let s = s.into().to_lowercase();

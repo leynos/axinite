@@ -61,7 +61,7 @@ fn test_strip_thoughts_tags() {
 
 #[test]
 fn test_strip_reasoning_tags() {
-    let input = "<reasoning>Analyzing the request...</reasoning>\n\nHere's what I found.";
+    let input = "<reasoning>Analysing the request...</reasoning>\n\nHere's what I found.";
     assert_eq!(clean_response(input), "Here's what I found.");
 }
 

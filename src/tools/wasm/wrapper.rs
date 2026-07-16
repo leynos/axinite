@@ -5,7 +5,7 @@
 //! correct `near:agent/host` namespace.
 //!
 //! Each execution creates a fresh instance (NEAR pattern) to ensure
-//! isolation and deterministic behavior.
+//! isolation and deterministic behaviour.
 
 use std::collections::HashMap;
 use std::sync::Arc;

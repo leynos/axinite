@@ -132,7 +132,7 @@ pub(crate) fn validate_location_matches_manifest(
     // Defence-in-depth: `LoadedSkillLocation::new` already enforces
     // entrypoint relativity at construction, so a location that reaches
     // this point should always be bundle-relative.  The check remains
-    // to guard against any future construction or deserialisation path
+    // to guard against any future construction or deserialization path
     // that might bypass `LoadedSkillLocation::new`.
     if !location.entrypoint().is_relative() {
         return Err(LoadedSkillLocationError::new(

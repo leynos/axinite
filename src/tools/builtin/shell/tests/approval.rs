@@ -103,7 +103,7 @@ fn test_requires_approval_safe_command() {
 #[test]
 fn test_requires_approval_string_encoded_args() {
     let tool = ShellTool::new();
-    // When arguments are string-encoded JSON (rare LLM behavior).
+    // When arguments are string-encoded JSON (rare LLM behaviour).
     let args = serde_json::Value::String(r#"{"command": "rm -rf /tmp/stuff"}"#.to_string());
     assert_eq!(tool.requires_approval(&args), ApprovalRequirement::Always);
 }

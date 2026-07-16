@@ -1,5 +1,5 @@
 //! Shared dispatcher types and utilities: text preview, skill selection,
-//! auth parsing, message compaction and error-text sanitisation, plus simple
+//! auth parsing, message compaction and error-text sanitization, plus simple
 //! execution helpers.
 
 use std::sync::Arc;

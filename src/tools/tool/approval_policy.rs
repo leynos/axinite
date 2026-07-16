@@ -62,7 +62,7 @@ impl ApprovalContext {
 
     /// Check whether a tool is blocked given an optional context.
     ///
-    /// When `None`, falls back to legacy behavior: all non-`Never` tools are blocked.
+    /// When `None`, falls back to legacy behaviour: all non-`Never` tools are blocked.
     pub fn is_blocked_or_default(
         context: &Option<Self>,
         tool_name: &str,
@@ -120,7 +120,7 @@ pub enum ToolDomain {
     Container,
 }
 
-/// Hosted-worker catalog eligibility for a tool.
+/// Hosted-worker catalogue eligibility for a tool.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum HostedToolEligibility {
     /// The tool may be advertised to hosted workers.

@@ -190,7 +190,7 @@ impl NativeTool for JobStatusTool {
     }
 }
 
-/// Tool for canceling a job.
+/// Tool for cancelling a job.
 pub struct CancelJobTool {
     context_manager: Arc<ContextManager>,
 }

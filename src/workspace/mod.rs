@@ -165,7 +165,7 @@ fn normalize_directory(path: &str) -> String {
 
 #[cfg(test)]
 mod tests {
-    //! Unit tests for workspace path and directory normalisation.
+    //! Unit tests for workspace path and directory normalization.
 
     use super::*;
 

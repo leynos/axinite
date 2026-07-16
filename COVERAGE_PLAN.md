@@ -131,7 +131,7 @@ activate, remove), config parsing, and state transitions.
 - `test_extension_install_from_manifest` -- parse manifest, create extension record
 - `test_extension_auth_flow` -- OAuth token setup, credential storage
 - `test_extension_activate_deactivate` -- state transitions, tool registration
-- `test_extension_remove_cleanup` -- remove extension, clean up artifacts
+- `test_extension_remove_cleanup` -- remove extension, clean up artefacts
 - `test_extension_config_validation` -- reject invalid configs, handle defaults
 - `test_extension_list_filtering` -- filter by status, type, search query
 - `test_extension_capability_check` -- verify required capabilities before activation
@@ -820,7 +820,7 @@ Smaller files that each need a handful of additional tests.
 | `src/tools/builtin/skill_tools.rs` | 110 | skill_list, skill_search, skill_install, skill_remove |
 | `src/hooks/bundled.rs` | 115 | bundled hook execution, hook discovery |
 | `src/registry/installer.rs` | 272 | package download, verification, installation |
-| `src/registry/artifacts.rs` | 72 | artifact packaging, checksums |
+| `src/registry/artifacts.rs` | 72 | artefact packaging, checksums |
 | `src/orchestrator/job_manager.rs` | 249 | container lifecycle, job routing |
 | `src/orchestrator/api.rs` | 125 | LLM proxy, event dispatch endpoints |
 | `src/app.rs` | 137 | AppBuilder configuration, startup sequence |

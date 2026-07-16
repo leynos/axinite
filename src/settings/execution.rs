@@ -7,7 +7,7 @@ use serde::{Deserialize, Serialize};
 
 use super::default_true;
 
-/// Agent behavior configuration.
+/// Agent behaviour configuration.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AgentSettings {
     /// Agent name.
@@ -281,7 +281,7 @@ pub struct BuilderSettings {
     #[serde(default = "default_true")]
     pub enabled: bool,
 
-    /// Directory for build artifacts.
+    /// Directory for build artefacts.
     #[serde(default)]
     pub build_dir: Option<PathBuf>,
 

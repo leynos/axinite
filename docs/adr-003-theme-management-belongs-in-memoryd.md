@@ -26,7 +26,7 @@ Three facts shape the decision:
 - xMemory's theme layer is more than clustering labels. It includes attach,
   split, merge, balancing, and high-level navigation policy.[^4]
 - Chutoro labels are not stable theme IDs and should not become the source of
-  truth for browseable memory structure.[^3]
+  truth for browsable memory structure.[^3]
 - `memoryd` already owns workspace isolation, provenance, retractions, and
   the retrieval surface from RFC 0007 and RFC 0015.[^1][^5]
 

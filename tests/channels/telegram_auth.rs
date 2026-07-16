@@ -229,7 +229,7 @@ async fn test_group_message_with_owner_id_set() {
     assert_eq!(response.status, 200);
 
     // REGRESSION TEST: Non-owner messages are dropped when owner_id is set
-    // This behavior is consistent and not affected by the fix
+    // This behaviour is consistent and not affected by the fix
 }
 
 #[tokio::test]

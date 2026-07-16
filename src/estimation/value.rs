@@ -23,7 +23,7 @@ impl ValueEstimator {
     /// Estimate value for a job based on description and cost.
     pub fn estimate(&self, _description: &str, estimated_cost: Decimal) -> Decimal {
         // Simple formula: value = cost + margin
-        // In practice, this would analyze the description to estimate complexity
+        // In practice, this would analyse the description to estimate complexity
         let margin = estimated_cost * self.target_margin;
         estimated_cost + margin
     }
@@ -228,7 +228,7 @@ mod tests {
         //
         // price = -10, cost = 5: margin = (-10 - 5) / -10 = 1.5 >= 0.1
         // The formula says "profitable" even though the scenario is nonsensical.
-        // We document the current behavior here; a guard for negative prices
+        // We document the current behaviour here; a guard for negative prices
         // could be added in a future hardening pass.
         assert!(estimator.is_profitable(dec!(-10.0), dec!(5.0)));
 

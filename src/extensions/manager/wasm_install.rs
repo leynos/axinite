@@ -1,4 +1,4 @@
-//! WASM artifact download, gzip extraction, and build-from-source installation.
+//! WASM artefact download, gzip extraction, and build-from-source installation.
 
 use crate::extensions::{ExtensionError, ExtensionKind, InstallResult};
 
@@ -284,7 +284,7 @@ impl ExtensionManager {
 
         let decoder = GzDecoder::new(bytes);
         let mut archive = Archive::new(decoder);
-        // Defense-in-depth: do not preserve permissions or extended attributes
+        // Defence-in-depth: do not preserve permissions or extended attributes
         archive.set_preserve_permissions(false);
         #[cfg(any(unix, target_os = "redox"))]
         archive.set_unpack_xattrs(false);
@@ -323,11 +323,11 @@ impl ExtensionManager {
         Ok(())
     }
 
-    /// Install a WASM extension from local build artifacts (WasmBuildable source).
+    /// Install a WASM extension from local build artefacts (WasmBuildable source).
     ///
     /// Resolves the build directory (relative to `CARGO_MANIFEST_DIR` or absolute),
-    /// looks for the compiled WASM artifact, and copies it (plus capabilities.json)
-    /// to the install directory. Falls back to an error if artifacts don't exist.
+    /// looks for the compiled WASM artefact, and copies it (plus capabilities.json)
+    /// to the install directory. Falls back to an error if artefacts don't exist.
     pub(super) async fn install_wasm_from_buildable(
         &self,
         spec: BuildableInstall<'_>,
@@ -349,7 +349,7 @@ impl ExtensionManager {
             crate::registry::artifacts::find_wasm_artifact(&resolved_dir, binary_name, "release")
                 .ok_or_else(|| {
                 ExtensionError::InstallFailed(format!(
-                    "'{}' requires building from source. Build artifact not found. \
+                    "'{}' requires building from source. Build artefact not found. \
                          Run `cargo component build --release` in {} first, \
                          or use `ironclaw registry install {}`.",
                     name,
@@ -371,7 +371,7 @@ impl ExtensionManager {
         let kind_label = extension_kind_label(kind);
 
         tracing::info!(
-            "Installed {} '{}' from build artifacts at {}",
+            "Installed {} '{}' from build artefacts at {}",
             kind_label,
             name,
             wasm_dst.display(),
@@ -381,7 +381,7 @@ impl ExtensionManager {
             name: name.to_string(),
             kind,
             message: format!(
-                "{} '{}' installed from local build artifacts. Run activate to load it.",
+                "{} '{}' installed from local build artefacts. Run activate to load it.",
                 kind_label, name,
             ),
         })

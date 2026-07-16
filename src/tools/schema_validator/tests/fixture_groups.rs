@@ -78,17 +78,17 @@ fn skill_tool_schemas() -> Vec<(String, serde_json::Value)> {
     let dir = tempfile::tempdir().expect("tempdir");
     let path = dir.path().to_path_buf();
     let registry = Arc::new(std::sync::RwLock::new(SkillRegistry::new(path)));
-    let catalog = Arc::new(SkillCatalog::with_url("http://127.0.0.1:1"));
+    let catalogue = Arc::new(SkillCatalog::with_url("http://127.0.0.1:1"));
 
     let tools: Vec<Box<dyn Tool>> = vec![
         Box::new(SkillListTool::new(Arc::clone(&registry))),
         Box::new(SkillSearchTool::new(
             Arc::clone(&registry),
-            Arc::clone(&catalog),
+            Arc::clone(&catalogue),
         )),
         Box::new(SkillInstallTool::new(
             Arc::clone(&registry),
-            Arc::clone(&catalog),
+            Arc::clone(&catalogue),
         )),
         Box::new(SkillRemoveTool::new(Arc::clone(&registry))),
     ];

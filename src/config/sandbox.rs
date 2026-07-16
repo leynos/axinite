@@ -134,7 +134,7 @@ pub struct ClaudeCodeConfig {
     /// Allowed tool patterns for Claude Code permission settings.
     ///
     /// Written to `/workspace/.claude/settings.json` before spawning the CLI.
-    /// Provides defense-in-depth: only explicitly listed tools are auto-approved.
+    /// Provides defence-in-depth: only explicitly listed tools are auto-approved.
     /// Any new/unknown tools would require interactive approval (which times out
     /// in the non-interactive container, failing safely).
     ///
@@ -146,7 +146,7 @@ pub struct ClaudeCodeConfig {
 ///
 /// These cover all standard Claude Code tools needed for autonomous operation.
 /// The Docker container provides the primary security boundary; this allowlist
-/// provides defense-in-depth by preventing any future unknown tools from being
+/// provides defence-in-depth by preventing any future unknown tools from being
 /// silently auto-approved.
 fn default_claude_code_allowed_tools() -> Vec<String> {
     [

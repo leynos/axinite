@@ -6,9 +6,9 @@
 # CI that:
 #
 # * checks for a Git Tag that looks like a release
-# * builds artifacts with dist (archives, installers, hashes)
-# * uploads those artifacts to temporary workflow zip
-# * on success, uploads the artifacts to a GitHub Release
+# * builds artefacts with dist (archives, installers, hashes)
+# * uploads those artefacts to temporary workflow zip
+# * on success, uploads the artefacts to a GitHub Release
 #
 # Note that the GitHub Release will be created with a generated
 # title/body based on your changelogs.
@@ -90,7 +90,7 @@ jobs:
   build-local-artifacts:
     name: build-local-artifacts (${{ join(matrix.targets, ', ') }})
     # Wait for WASM extensions so we can patch manifests with SHA256 checksums
-    # before build.rs bakes them into the embedded catalog.
+    # before build.rs bakes them into the embedded catalogue.
     needs:
       - plan
       - build-wasm-extensions
@@ -138,8 +138,8 @@ jobs:
       - name: Install dist
         run: ${{ matrix.install_dist.run }}
       # Get the dist-manifest
-      - name: Fetch local artifacts
-        uses: actions/download-artifact@v4
+      - name: Fetch local artefacts
+        uses: actions/download-artifact@v8
         with:
           pattern: artifacts-*
           path: target/distrib/
@@ -176,7 +176,7 @@ jobs:
       - name: Install dependencies
         run: |
           ${{ matrix.packages_install }}
-      - name: Build artifacts
+      - name: Build artefacts
         run: |
           # Actually do builds and make zips and whatnot
           dist build ${{ needs.plan.outputs.tag-flag }} --print=linkage --output-format=json ${{ matrix.dist_args }} > dist-manifest.json
@@ -194,7 +194,7 @@ jobs:
           echo "EOF" >> "$GITHUB_OUTPUT"
 
           cp dist-manifest.json "$BUILD_MANIFEST_NAME"
-      - name: "Upload artifacts"
+      - name: "Upload artefacts"
         uses: actions/upload-artifact@v7
         with:
           name: artifacts-build-local-${{ join(matrix.targets, '_') }}
@@ -217,14 +217,14 @@ jobs:
           persist-credentials: false
           submodules: recursive
       - name: Install cached dist
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: cargo-dist-cache
           path: ~/.cargo/bin/
       - run: chmod +x ~/.cargo/bin/dist
-      # Get all the local artifacts for the global tasks to use (for e.g. checksums)
-      - name: Fetch local artifacts
-        uses: actions/download-artifact@v4
+      # Get all the local artefacts for the global tasks to use (for e.g. checksums)
+      - name: Fetch local artefacts
+        uses: actions/download-artifact@v8
         with:
           pattern: artifacts-*
           path: target/distrib/
@@ -241,7 +241,7 @@ jobs:
           echo "EOF" >> "$GITHUB_OUTPUT"
 
           cp dist-manifest.json "$BUILD_MANIFEST_NAME"
-      - name: "Upload artifacts"
+      - name: "Upload artefacts"
         uses: actions/upload-artifact@v7
         with:
           name: artifacts-build-global
@@ -302,7 +302,7 @@ jobs:
 
             # Skip rebuild if this exact version was already built and checksummed.
             # Checks that (1) the manifest already has a sha256, and (2) the version
-            # embedded in the existing artifact URL matches the current manifest version.
+            # embedded in the existing artefact URL matches the current manifest version.
             # This ensures stable checksums: only rebuild when the source version changes.
             existing_sha=$(jq -r '.artifacts["wasm32-wasip2"].sha256 // ""' "$manifest")
             existing_url=$(jq -r '.artifacts["wasm32-wasip2"].url // ""' "$manifest")
@@ -321,12 +321,12 @@ jobs:
               continue
             }
 
-            # Find the built WASM file (Cargo uses underscores in artifact names)
-            wasm_artifact="${crate_name//-/_}"
+            # Find the built WASM file (Cargo uses underscores in artefact names)
+            wasm_artefact="${crate_name//-/_}"
             wasm_path=""
             for target_dir in wasm32-wasip2 wasm32-wasip1 wasm32-wasi; do
-              shared_candidate="$CARGO_TARGET_DIR/$target_dir/release/${wasm_artifact}.wasm"
-              legacy_candidate="$source_dir/target/$target_dir/release/${wasm_artifact}.wasm"
+              shared_candidate="$CARGO_TARGET_DIR/$target_dir/release/${wasm_artefact}.wasm"
+              legacy_candidate="$source_dir/target/$target_dir/release/${wasm_artefact}.wasm"
               if [ -f "$shared_candidate" ]; then
                 wasm_path="$shared_candidate"
                 break
@@ -402,14 +402,14 @@ jobs:
           persist-credentials: false
           submodules: recursive
       - name: Install cached dist
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: cargo-dist-cache
           path: ~/.cargo/bin/
       - run: chmod +x ~/.cargo/bin/dist
-      # Fetch artifacts from scratch-storage
-      - name: Fetch artifacts
-        uses: actions/download-artifact@v4
+      # Fetch artefacts from scratch-storage
+      - name: Fetch artefacts
+        uses: actions/download-artifact@v8
         with:
           pattern: artifacts-*
           path: target/distrib/
@@ -418,7 +418,7 @@ jobs:
         shell: bash
         run: |
           dist host ${{ needs.plan.outputs.tag-flag }} --steps=upload --steps=release --output-format=json > dist-manifest.json
-          echo "artifacts uploaded and released successfully"
+          echo "artefacts uploaded and released successfully"
           cat dist-manifest.json
           echo "manifest=$(jq -c "." dist-manifest.json)" >> "$GITHUB_OUTPUT"
       - name: "Upload dist-manifest.json"
@@ -429,7 +429,7 @@ jobs:
           path: dist-manifest.json
       # Create a GitHub Release while uploading all files to it
       - name: "Download GitHub Artifacts"
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           pattern: artifacts-*
           path: artifacts
@@ -451,7 +451,7 @@ jobs:
           gh release create "${{ needs.plan.outputs.tag }}" --target "$RELEASE_COMMIT" $PRERELEASE_FLAG --title "$ANNOUNCEMENT_TITLE" --notes-file "$RUNNER_TEMP/notes.txt" artifacts/*
 
   # Commit patched manifest SHA256 checksums back to main so the repo
-  # stays in sync with the released artifacts.
+  # stays in sync with the released artefacts.
   update-registry-checksums:
     needs:
       - plan
@@ -469,7 +469,7 @@ jobs:
         with:
           ref: main
       - name: Fetch WASM checksums
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: artifacts-wasm-extensions
           path: target/wasm-bundles/
@@ -511,11 +511,11 @@ jobs:
           else
             BRANCH="chore/update-checksums-$(date +%s)"
             git checkout -b "$BRANCH"
-            git commit -m "chore: update WASM artifact SHA256 checksums [skip ci]"
+            git commit -m "chore: update WASM artefact SHA256 checksums [skip ci]"
             git push origin "$BRANCH"
             gh pr create \
-              --title "chore: update WASM artifact checksums and version-pinned URLs" \
-              --body "Auto-generated by release CI. Updates SHA256 checksums and version-pinned artifact URLs in registry manifests to match the released WASM artifacts. Only extensions whose version changed since the last release are included." \
+              --title "chore: update WASM artefact checksums and version-pinned URLs" \
+              --body "Auto-generated by release CI. Updates SHA256 checksums and version-pinned artefact URLs in registry manifests to match the released WASM artefacts. Only extensions whose version changed since the last release are included." \
               --base main \
               --head "$BRANCH"
           fi

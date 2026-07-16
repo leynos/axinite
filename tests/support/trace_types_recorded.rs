@@ -7,9 +7,9 @@ use super::trace_types::LlmTrace;
 impl LlmTrace {
     /// Return only the playable steps from recorded traces.
     ///
-    /// Recorded flat traces are normalised into turns during deserialisation,
+    /// Recorded flat traces are normalized into turns during deserialization,
     /// so prefer turn-owned steps and fall back to raw steps only for manually
-    /// constructed traces that have not been normalised.
+    /// constructed traces that have not been normalized.
     ///
     /// # Examples
     ///

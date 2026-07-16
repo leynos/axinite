@@ -162,7 +162,7 @@ Table 2. AppBuilder phases and the state they add.
 | Secrets | Creates the encrypted secrets store when a master key is available, injects stored provider credentials into the config overlay, and falls back to operating system credentials when no encrypted store is available | LLM credential resolution intentionally happens more than once |
 | LLM | Builds the provider chain and any recording wrapper used for tracing | The chain is responsible for retry, failover, and routing decorators |
 | Tools and workspace | Creates the safety layer, tool registry, embedding provider, workspace memory, and optional image or builder tools | Workspace memory only exists when a database backend is active |
-| Skills | [`init_skills()`](./developers-guide.md#init_skills) discovers local and installed skills, records canonical runtime roots and `SKILL.md` entrypoints in `LoadedSkill`, wires skill tools into the `ToolRegistry`, and exposes the registry and catalog handles used by the shared staged install path for raw `SKILL.md` content, validated passive `.skill` bundles, and scoped bundled-file reads | Runs during construction only; `RuntimeSideEffects` does not load skills. Active-skill prompts expose logical bundle-relative metadata, not private host filesystem roots. `skill_read_file` resolves only bundle-relative paths through `src/skills/file_read.rs` rather than the generic filesystem tools |
+| Skills | [`init_skills()`](./developers-guide.md#init_skills) discovers local and installed skills, records canonical runtime roots and `SKILL.md` entrypoints in `LoadedSkill`, wires skill tools into the `ToolRegistry`, and exposes the registry and catalogue handles used by the shared staged install path for raw `SKILL.md` content, validated passive `.skill` bundles, and scoped bundled-file reads | Runs during construction only; `RuntimeSideEffects` does not load skills. Active-skill prompts expose logical bundle-relative metadata, not private host filesystem roots. `skill_read_file` resolves only bundle-relative paths through `src/skills/file_read.rs` rather than the generic filesystem tools |
 | Extensions | Starts MCP session and process managers, creates the WASM runtime, loads runtime extensions, loads registry metadata, and creates the extension manager | The extension manager is registered back into the tool system so the agent can discover and manage extensions in chat |
 <!-- markdownlint-enable MD013 MD060 -->
 
@@ -265,7 +265,7 @@ the agent can start.
 dependencies are used once a normalized chat message enters the agent loop.
 `docs/jobs-and-routines.md` covers the scheduler, job model, routines engine,
 heartbeat runner, and the shared jobs and routines control surfaces.
-`docs/agent-skills-support.md` covers how skill artifacts are loaded, selected,
+`docs/agent-skills-support.md` covers how skill artefacts are loaded, selected,
 attenuated, and injected into model context on the interactive chat path.
 
 ### 4.3 Persistence, configuration, and memory
@@ -315,7 +315,7 @@ three distinct runtime kinds:
 The extension manager exists so the agent can discover, install, authenticate,
 and activate these runtime kinds without requiring separate CLI-only workflows.
 At bootstrap, `AppBuilder` loads configured MCP servers, scans the WASM tools
-directory, optionally loads development build artefacts, loads registry catalog
+directory, optionally loads development build artefacts, loads registry catalogue
 entries, and constructs the manager with access to hooks, secrets, tool
 registration, and optional channel runtime wiring.
 
@@ -346,7 +346,7 @@ hosted-visible orchestrator-owned tools through
 `POST /worker/{job_id}/tools/execute`. Workers run the same binary through the
 hidden `ironclaw worker` or `ironclaw claude-bridge` subcommands, but with a
 restricted runtime that proxies language model access, fetches the remote-tool
-catalog during startup, and reports status back to the orchestrator.
+catalogue during startup, and reports status back to the orchestrator.
 
 The worker-orchestrator seam now owns its hosted remote-tool route fragments
 and payload shapes in one shared transport module under `src/worker/api/`.

@@ -2,7 +2,7 @@
 //!
 //! This module provides a runtime for executing WASM-based channels using a
 //! Host-Managed Event Loop pattern. The host (Rust) manages infrastructure
-//! (HTTP server, polling), while WASM modules define channel behavior through
+//! (HTTP server, polling), while WASM modules define channel behaviour through
 //! callbacks.
 //!
 //! # Architecture
@@ -45,7 +45,7 @@
 //!
 //! 1. **Fresh Instance Per Callback** (NEAR Pattern) - Full isolation, no shared mutable state
 //! 2. **Host Manages Infrastructure** - HTTP server, polling, timing in Rust
-//! 3. **WASM Defines Behavior** - Callbacks for events, message parsing, response handling
+//! 3. **WASM Defines Behaviour** - Callbacks for events, message parsing, response handling
 //! 4. **Reuse Tool Runtime** - Share Wasmtime engine, extend capabilities
 //!
 //! # Security Model

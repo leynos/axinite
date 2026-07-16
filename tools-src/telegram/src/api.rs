@@ -1,6 +1,6 @@
 //! Telegram MTProto API implementation.
 //!
-//! Sends encrypted RPC requests directly to Telegram's data centers via
+//! Sends encrypted RPC requests directly to Telegram's data centres via
 //! HTTP POST to `https://{dc}.web.telegram.org/apiw`. Uses grammers-mtproto
 //! (Sans-IO) for message framing and encryption; no TDLib/TDLight needed.
 

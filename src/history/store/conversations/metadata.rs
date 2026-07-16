@@ -79,7 +79,7 @@ mod tests {
     #[rstest]
     #[tokio::test]
     async fn conversation_metadata_round_trips(#[future] store: anyhow::Result<Option<Store>>) {
-        let Some(store) = store.await.expect("store fixture should initialise") else {
+        let Some(store) = store.await.expect("store fixture should initialize") else {
             return;
         };
         let conversation_id = seed_conversation(&store)

@@ -40,7 +40,7 @@ impl SignalChannel {
     /// Redact credentials from a URL for safe logging.
     ///
     /// Replaces any embedded username/password with `**REDACTED**` and returns
-    /// the sanitised string. Returns `"<invalid-url>"` when parsing fails.
+    /// the sanitized string. Returns `"<invalid-url>"` when parsing fails.
     pub fn redact_url(url: &str) -> String {
         reqwest::Url::parse(url)
             .map(|mut u| {

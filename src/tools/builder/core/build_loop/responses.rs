@@ -1,5 +1,5 @@
 //! Response handling for the software builder's build loop: text and
-//! tool-call handling, build tool execution, and artifact discovery.
+//! tool-call handling, build tool execution, and artefact discovery.
 
 use super::*;
 use crate::llm::ToolCall;
@@ -163,8 +163,8 @@ impl LlmSoftwareBuilder {
         }
     }
 
-    /// Find the build artifact based on project type.
-    pub(super) async fn find_artifact(
+    /// Find the build artefact based on project type.
+    pub(super) async fn find_artefact(
         &self,
         requirement: &BuildRequirement,
         project_dir: &Path,

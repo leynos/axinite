@@ -3,7 +3,7 @@
 //! These tests pin the released version/name/checksum tuples that
 //! `migration_history_rewrites`, `plan_migration_history_rewrites`,
 //! `stage_migration_history_rewrites`, `finalize_migration_history_rewrites`,
-//! and `repair_postgres_refinery_history` must continue to recognise and
+//! and `repair_postgres_refinery_history` must continue to recognize and
 //! repair. They cover exact rewrite-set planning plus the staged, finalized,
 //! and end-to-end PostgreSQL `refinery_schema_history` repair flow.
 

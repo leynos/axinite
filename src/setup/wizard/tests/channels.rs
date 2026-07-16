@@ -4,17 +4,17 @@ use std::collections::HashSet;
 
 use tempfile::tempdir;
 
-use super::super::channel_catalog::{
+use super::super::channel_catalogue::{
     build_channel_options, discover_wasm_channels, install_missing_bundled_channels,
 };
 use super::super::*;
 
 #[tokio::test]
 async fn test_install_missing_bundled_channels_installs_telegram() {
-    // WASM artifacts only exist in dev builds (not CI). Skip gracefully
+    // WASM artefacts only exist in dev builds (not CI). Skip gracefully
     // rather than fail when the telegram channel hasn't been compiled.
     if !available_channel_names().contains(&"telegram") {
-        eprintln!("skipping: telegram WASM artifacts not built");
+        eprintln!("skipping: telegram WASM artefacts not built");
         return;
     }
 

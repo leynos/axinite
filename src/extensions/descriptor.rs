@@ -72,7 +72,7 @@ pub enum ExtensionSource {
         source_dir: String,
         #[serde(default)]
         build_dir: Option<String>,
-        /// Crate name used to locate the build artifact binary.
+        /// Crate name used to locate the build artefact binary.
         #[serde(default)]
         crate_name: Option<String>,
     },

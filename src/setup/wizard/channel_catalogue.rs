@@ -1,5 +1,5 @@
 //! Discovery and installation helpers for WASM channels and the
-//! extension registry catalog.
+//! extension registry catalogue.
 
 use super::*;
 
@@ -32,7 +32,7 @@ pub(super) async fn discover_wasm_channels(
 }
 
 /// Extract the channel name from a `.capabilities.json` path when the
-/// matching `.wasm` artifact exists alongside it.
+/// matching `.wasm` artefact exists alongside it.
 fn channel_name_for_capabilities(dir: &std::path::Path, path: &std::path::Path) -> Option<String> {
     let filename = path.file_name().and_then(|n| n.to_str())?;
     let name = filename.strip_suffix(".capabilities.json")?;
@@ -100,7 +100,7 @@ pub(super) async fn install_missing_bundled_channels(
     Ok(installed)
 }
 
-/// Build channel options from discovered channels + bundled + registry catalog.
+/// Build channel options from discovered channels + bundled + registry catalogue.
 ///
 /// Returns a deduplicated, sorted list of channel names available for selection.
 pub(super) fn build_channel_options(
@@ -116,8 +116,9 @@ pub(super) fn build_channel_options(
     }
 
     // Add registry channels
-    if let Some(catalog) = load_registry_catalog() {
-        for manifest in catalog.list(Some(crate::registry::manifest::ManifestKind::Channel), None) {
+    if let Some(catalogue) = load_registry_catalogue() {
+        for manifest in catalogue.list(Some(crate::registry::manifest::ManifestKind::Channel), None)
+        {
             if !names.iter().any(|n| n == &manifest.name) {
                 names.push(manifest.name.clone());
             }
@@ -128,9 +129,9 @@ pub(super) fn build_channel_options(
     names
 }
 
-/// Try to load the registry catalog. Falls back to embedded manifests when
+/// Try to load the registry catalogue. Falls back to embedded manifests when
 /// the `registry/` directory cannot be found (e.g. running from an installed binary).
-pub(super) fn load_registry_catalog() -> Option<crate::registry::catalog::RegistryCatalog> {
+pub(super) fn load_registry_catalogue() -> Option<crate::registry::catalog::RegistryCatalog> {
     crate::registry::catalog::RegistryCatalog::load_or_embedded().ok()
 }
 
@@ -141,15 +142,15 @@ pub(super) async fn install_selected_registry_channels(
     selected_channels: &[String],
     already_installed: &HashSet<String>,
 ) -> Vec<String> {
-    let catalog = match load_registry_catalog() {
+    let catalogue = match load_registry_catalogue() {
         Some(c) => c,
         None => return Vec::new(),
     };
 
-    let repo_root = catalog
+    let repo_root = catalogue
         .root()
         .parent()
-        .unwrap_or(catalog.root())
+        .unwrap_or(catalogue.root())
         .to_path_buf();
 
     let bundled: HashSet<&str> = available_channel_names().iter().copied().collect();
@@ -166,7 +167,7 @@ pub(super) async fn install_selected_registry_channels(
         }
 
         // Look up in registry
-        let Some(manifest) = catalog.get(&format!("channels/{}", name)) else {
+        let Some(manifest) = catalogue.get(&format!("channels/{}", name)) else {
             continue;
         };
 
@@ -178,7 +179,7 @@ pub(super) async fn install_selected_registry_channels(
     installed
 }
 
-/// Report whether a channel's WASM artifact already exists on disk under
+/// Report whether a channel's WASM artefact already exists on disk under
 /// either of its recognized filenames.
 fn channel_wasm_on_disk(channels_dir: &std::path::Path, name: &str) -> bool {
     channels_dir.join(format!("{}.wasm", name)).exists()

@@ -397,7 +397,7 @@ contract is an object with optional source properties plus explicit runtime
 validation.
 
 2026-04-24: Keep source-selection control flow local to each adapter, but share
-the small string-normalisation helpers in `src/skills/install_source.rs`. This
+the small string-normalization helpers in `src/skills/install_source.rs`. This
 avoids a larger enum abstraction while keeping web, multipart, and tool
 definitions of blank source fields aligned.
 

@@ -3,7 +3,7 @@
 //! Models with native thinking support produce structured chain-of-thought
 //! via `reasoning_content` fields or built-in `<think>` tags. Injecting
 //! IronClaw's own `<think>/<final>` format instructions into the system
-//! prompt collides with these models' native behavior, causing:
+//! prompt collides with these models' native behaviour, causing:
 //! - Thinking-only responses with no visible content
 //! - Double-wrapped thinking tags that confuse response cleaning
 //!
@@ -57,12 +57,12 @@ const NATIVE_THINKING_PATTERNS: &[&str] = &[
 ///
 /// Models that return `true` should NOT have IronClaw's `<think>/<final>`
 /// format instructions injected into their system prompt, as this collides
-/// with their built-in reasoning behavior.
+/// with their built-in reasoning behaviour.
 ///
 /// Note: this is a best-effort heuristic based on model name. Some models
 /// support toggling thinking at runtime (e.g. Qwen3's `enable_thinking`),
 /// which we cannot detect here. We default to assuming thinking is ON for
-/// models that have it, since that's the default behavior.
+/// models that have it, since that's the default behaviour.
 pub fn has_native_thinking(model: &str) -> bool {
     let lower = model.to_ascii_lowercase();
     NATIVE_THINKING_PATTERNS.iter().any(|p| lower.contains(p))

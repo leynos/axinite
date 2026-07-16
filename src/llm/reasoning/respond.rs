@@ -24,7 +24,7 @@ impl Reasoning {
             RespondResult::ToolCalls {
                 tool_calls: calls, ..
             } => {
-                // Format tool calls as text (legacy behavior for non-agentic callers)
+                // Format tool calls as text (legacy behaviour for non-agentic callers)
                 let tool_info: Vec<String> = calls
                     .iter()
                     .map(|tc| format!("`{}({})`", tc.name, tc.arguments))

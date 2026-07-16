@@ -67,9 +67,9 @@ impl TestGatewayBuilder {
         self
     }
 
-    /// Set the skill catalog used by Skills API tests.
-    pub fn skill_catalog(mut self, catalog: Arc<crate::skills::catalog::SkillCatalog>) -> Self {
-        self.skill_catalog = Some(catalog);
+    /// Set the skill catalogue used by Skills API tests.
+    pub fn skill_catalog(mut self, catalogue: Arc<crate::skills::catalog::SkillCatalog>) -> Self {
+        self.skill_catalog = Some(catalogue);
         self
     }
 

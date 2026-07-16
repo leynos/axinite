@@ -56,12 +56,12 @@ fn format_tool_result(name: &str, preview: &str) -> String {
 
 /// Format a tool completion notification with a success/failure icon.
 fn format_tool_completed(name: &str, success: bool) -> String {
-    let (icon, color) = if success {
+    let (icon, colour) = if success {
         ("\u{25CF}", "success")
     } else {
         ("\u{2717}", "failed")
     };
-    format!("{} Tool '{}' completed ({})", icon, name, color)
+    format!("{} Tool '{}' completed ({})", icon, name, colour)
 }
 
 /// Format an authentication-required notification with optional details.

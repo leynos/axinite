@@ -22,7 +22,7 @@ pub(crate) async fn select_json_install_source(
 ) -> Result<SkillInstallPayload, (StatusCode, String)> {
     let content = non_blank(req.content.as_deref());
     let url = trimmed_non_empty(req.url.as_deref());
-    let catalog_key =
+    let catalogue_key =
         trimmed_non_empty(req.slug.as_deref()).or_else(|| trimmed_non_empty(req.name.as_deref()));
 
     let mut selected = 0;
@@ -32,7 +32,7 @@ pub(crate) async fn select_json_install_source(
     if url.is_some() {
         selected += 1;
     }
-    if catalog_key.is_some() {
+    if catalogue_key.is_some() {
         selected += 1;
     }
 
@@ -51,12 +51,12 @@ pub(crate) async fn select_json_install_source(
             .map_err(|e| (StatusCode::BAD_REQUEST, e.to_string()));
     }
 
-    let catalog_key = catalog_key.ok_or_else(exactly_one_install_source_error)?;
-    let catalog = state.skill_catalog.as_ref().ok_or((
+    let catalogue_key = catalogue_key.ok_or_else(exactly_one_install_source_error)?;
+    let catalogue = state.skill_catalog.as_ref().ok_or((
         StatusCode::NOT_IMPLEMENTED,
-        "Skill catalog not available".to_string(),
+        "Skill catalogue not available".to_string(),
     ))?;
-    let url = crate::skills::catalog::skill_download_url(catalog.registry_url(), catalog_key);
+    let url = crate::skills::catalog::skill_download_url(catalogue.registry_url(), catalogue_key);
     crate::tools::builtin::skill_fetch::fetch_skill_bytes(&url)
         .await
         .map(SkillInstallPayload::DownloadedBytes)

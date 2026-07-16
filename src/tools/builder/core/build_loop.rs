@@ -204,7 +204,7 @@ impl LlmSoftwareBuilder {
         });
 
         let artifact_path = self
-            .find_artifact(&inputs.requirement, &inputs.project_dir)
+            .find_artefact(&inputs.requirement, &inputs.project_dir)
             .await;
 
         BuildResult {

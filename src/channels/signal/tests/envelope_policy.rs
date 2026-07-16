@@ -226,7 +226,7 @@ fn process_envelope_group_not_in_allow_from_groups() -> Result<(), ChannelError>
     Ok(())
 }
 
-// ── stories behavior tests ──────────────────────────────────────
+// ── stories behaviour tests ──────────────────────────────────────
 
 #[test]
 fn process_envelope_stories_not_skipped_when_disabled() -> Result<(), ChannelError> {

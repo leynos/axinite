@@ -150,7 +150,7 @@ impl NativeTool for BuildSoftwareTool {
 
         let start = self.clock.now();
 
-        // Analyze the requirement
+        // Analyse the requirement
         let mut requirement = self
             .builder
             .analyze(description)

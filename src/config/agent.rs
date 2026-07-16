@@ -25,7 +25,7 @@ fn resolve_default_timezone(ctx: &EnvContext, settings: &Settings) -> Result<Str
     Ok(tz)
 }
 
-/// Agent behavior configuration.
+/// Agent behaviour configuration.
 #[derive(Debug, Clone)]
 pub struct AgentConfig {
     pub name: String,

@@ -7,7 +7,7 @@
 //! Prerequisites: build WASM extensions first with:
 //!   ./scripts/build-wasm-extensions.sh
 //!
-//! The tests are skipped (not failed) when no WASM artifacts are found,
+//! The tests are skipped (not failed) when no WASM artefacts are found,
 //! so `cargo test` still passes without building extensions first.
 //! CI runs the build script before these tests.
 
@@ -48,7 +48,7 @@ fn wit_compat_tool_components_compile_and_instantiate() {
             Some(p) => p,
             None => {
                 eprintln!(
-                    "  SKIP {}: no built WASM artifact (run ./scripts/build-wasm-extensions.sh)",
+                    "  SKIP {}: no built WASM artefact (run ./scripts/build-wasm-extensions.sh)",
                     ext.name
                 );
                 continue;
@@ -77,7 +77,7 @@ fn wit_compat_tool_components_compile_and_instantiate() {
     }
 
     if !found_any {
-        eprintln!("SKIP: no WASM artifacts found (build extensions first)");
+        eprintln!("SKIP: no WASM artefacts found (build extensions first)");
         return;
     }
 
@@ -115,7 +115,7 @@ fn wit_compat_channel_components_compile_and_instantiate() {
             Some(p) => p,
             None => {
                 eprintln!(
-                    "  SKIP {}: no built WASM artifact (run ./scripts/build-wasm-extensions.sh)",
+                    "  SKIP {}: no built WASM artefact (run ./scripts/build-wasm-extensions.sh)",
                     ext.name
                 );
                 continue;
@@ -144,7 +144,7 @@ fn wit_compat_channel_components_compile_and_instantiate() {
     }
 
     if !found_any {
-        eprintln!("SKIP: no WASM artifacts found (build extensions first)");
+        eprintln!("SKIP: no WASM artefacts found (build extensions first)");
         return;
     }
 

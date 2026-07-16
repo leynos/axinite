@@ -44,13 +44,13 @@ mod management;
 
 pub use management::{ExtensionInfoTool, ToolListTool, ToolRemoveTool, ToolUpgradeTool};
 
-/// Serialise a tool result to JSON, logging and returning a fallback error
-/// payload if serialisation fails so the agent loop still receives output.
+/// Serialize a tool result to JSON, logging and returning a fallback error
+/// payload if serialization fails so the agent loop still receives output.
 fn to_json_output<T: serde::Serialize>(result: &T) -> serde_json::Value {
     match serde_json::to_value(result) {
         Ok(value) => value,
         Err(error) => {
-            tracing::warn!(%error, "Failed to serialise extension tool result");
+            tracing::warn!(%error, "Failed to serialize extension tool result");
             serde_json::json!({"error": "serialization failed"})
         }
     }

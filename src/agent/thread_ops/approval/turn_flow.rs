@@ -1,4 +1,4 @@
-//! Turn lifecycle handling for approval flows: finalisation, rejection,
+//! Turn lifecycle handling for approval flows: finalization, rejection,
 //! failure, and agentic-loop continuation after tool execution.
 
 use crate::agent::Agent;

@@ -204,7 +204,7 @@ impl ClaudeBridgeRuntime {
             };
 
             if prompt.done {
-                tracing::info!(job_id = %self.config.job_id, "Orchestrator signaled done");
+                tracing::info!(job_id = %self.config.job_id, "Orchestrator signalled done");
                 return Ok(iteration);
             }
 

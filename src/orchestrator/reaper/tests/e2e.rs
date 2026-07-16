@@ -18,7 +18,7 @@ async fn connect_or_skip() -> Result<crate::sandbox::container::DockerConnection
         .map_err(|e| anyhow!("Docker unavailable: {e}"))
 }
 
-async fn create_labeled_container(
+async fn create_labelled_container(
     docker: &crate::sandbox::container::DockerConnection,
     name: &str,
     job_id: Uuid,
@@ -63,7 +63,7 @@ async fn e2e_reaper_lists_ironclaw_containers() {
     let job_id = Uuid::new_v4();
     let test_name = format!("ironclaw-reaper-test-{}", &job_id.to_string()[..8]);
     let container_id =
-        create_labeled_container(&docker, &test_name, job_id, chrono::Duration::hours(1))
+        create_labelled_container(&docker, &test_name, job_id, chrono::Duration::hours(1))
             .await
             .expect("e2e requires labelled container creation to succeed");
 
@@ -110,7 +110,7 @@ async fn e2e_reaper_removes_orphaned_containers() {
 
     let orphaned_job_id = Uuid::new_v4();
     let test_name = format!("ironclaw-orphan-test-{}", &orphaned_job_id.to_string()[..8]);
-    let container_id = create_labeled_container(
+    let container_id = create_labelled_container(
         &docker,
         &test_name,
         orphaned_job_id,
@@ -168,7 +168,7 @@ async fn e2e_reaper_respects_age_threshold() {
     let recent_name = format!("ironclaw-recent-test-{}", &recent_job_id.to_string()[..8]);
     let old_name = format!("ironclaw-old-test-{}", &old_job_id.to_string()[..8]);
 
-    let recent_container_id = create_labeled_container(
+    let recent_container_id = create_labelled_container(
         &docker,
         &recent_name,
         recent_job_id,
@@ -178,7 +178,7 @@ async fn e2e_reaper_respects_age_threshold() {
     .expect("e2e requires recent labelled container creation to succeed");
 
     let old_container_id =
-        create_labeled_container(&docker, &old_name, old_job_id, chrono::Duration::hours(2))
+        create_labelled_container(&docker, &old_name, old_job_id, chrono::Duration::hours(2))
             .await
             .expect("e2e requires old labelled container creation to succeed");
 

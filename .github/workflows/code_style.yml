@@ -7,6 +7,8 @@ jobs:
   format:
     name: Formatting
     runs-on: ubuntu-latest
+    env:
+      MERMAN_CLI_VERSION: '0.7.0'
     steps:
       - name: Checkout repository
         uses: actions/checkout@v6
@@ -19,8 +21,25 @@ jobs:
       - name: Setup uv
         uses: astral-sh/setup-uv@fac544c07dec837d0ccb6301d7b5580bf5edae39
         with:
-          python-version: '3.13'
+          python-version: '3.14'
           enable-cache: true
+      - name: Set up Rust for Merman
+        run: rustup toolchain install 1.95.0 --profile minimal
+      - name: Cache Merman CLI
+        id: cache-merman-cli
+        uses: actions/cache@cdf6c1fa76f9f475f3d7449005a359c84ca0f306
+        with:
+          path: ~/.cargo/bin/merman-cli
+          key: merman-cli-${{ runner.os }}-${{ runner.arch }}-${{ env.MERMAN_CLI_VERSION }}
+      - name: Install Merman CLI
+        if: steps.cache-merman-cli.outputs.cache-hit != 'true'
+        run: cargo +1.95.0 install merman-cli --version "=${MERMAN_CLI_VERSION}" --locked
+      - name: Install Nixie
+        run: uv tool install --python 3.14 nixie-cli==1.1.0
+      - name: Enforce en-GB-oxendict spelling
+        run: make spelling
+      - name: Validate Mermaid diagrams
+        run: make nixie
       - name: Workflow contract tests
         run: make test-workflow-contracts
 

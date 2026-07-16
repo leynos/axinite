@@ -1,6 +1,6 @@
 //! Tests for provider model listing helpers and their fallbacks.
 
-use super::super::model_catalog::{
+use super::super::model_catalogue::{
     AnthropicAuth, fetch_anthropic_models, fetch_ollama_models, fetch_openai_models,
     is_openai_chat_model, resolve_anthropic_auth, sort_openai_models,
 };

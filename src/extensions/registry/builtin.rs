@@ -33,8 +33,8 @@ impl McpEntrySpec {
 /// Curated MCP servers that ship with ironclaw.
 ///
 /// WASM channels (telegram, slack, discord, whatsapp) come from the embedded
-/// registry catalog (registry/channels/*.json) with WasmDownload URLs pointing
-/// to GitHub release artifacts. See new_with_catalog() for merging.
+/// registry catalogue (registry/channels/*.json) with WasmDownload URLs pointing
+/// to GitHub release artefacts. See new_with_catalog() for merging.
 const MCP_SERVERS: &[McpEntrySpec] = &[
     McpEntrySpec {
         name: "notion",

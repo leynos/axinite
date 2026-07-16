@@ -44,7 +44,7 @@ pub struct WorkerDeps {
     /// SSE broadcast sender for live job event streaming to the web gateway.
     pub sse_tx: Option<tokio::sync::broadcast::Sender<SseEvent>>,
     /// Approval context for tool execution. When `None`, all non-`Never` tools are
-    /// blocked (legacy behavior). When `Some`, the context determines which tools
+    /// blocked (legacy behaviour). When `Some`, the context determines which tools
     /// are pre-approved for autonomous execution.
     pub approval_context: Option<ApprovalContext>,
     /// HTTP interceptor for trace recording/replay (propagated to JobContext).

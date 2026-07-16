@@ -1,5 +1,5 @@
 //! Recording and post-flight phase for `ChatDelegate`.
-//! Persists tool outcomes to the active thread, emits sanitised previews, and
+//! Persists tool outcomes to the active thread, emits sanitized previews, and
 //! folds ordered tool results back into reasoning context without panicking.
 
 use crate::channels::StatusUpdate;

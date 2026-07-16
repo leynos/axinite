@@ -69,7 +69,7 @@ async fn save_action_round_trips_via_get_job_actions(
 ) {
     let Some((store, job_id)) = seeded_store
         .await
-        .expect("seeded store fixture should initialise")
+        .expect("seeded store fixture should initialize")
     else {
         return;
     };
@@ -117,7 +117,7 @@ async fn save_action_rejects_duration_that_exceeds_i32_millis(
 ) {
     let Some((store, job_id)) = seeded_store
         .await
-        .expect("seeded store fixture should initialise")
+        .expect("seeded store fixture should initialize")
     else {
         return;
     };
@@ -144,7 +144,7 @@ async fn save_action_rejects_sequence_that_exceeds_i32(
 ) {
     let Some((store, job_id)) = seeded_store
         .await
-        .expect("seeded store fixture should initialise")
+        .expect("seeded store fixture should initialize")
     else {
         return;
     };
@@ -171,7 +171,7 @@ async fn get_job_actions_rejects_negative_duration(
 ) {
     let Some((store, job_id)) = seeded_store
         .await
-        .expect("seeded store fixture should initialise")
+        .expect("seeded store fixture should initialize")
     else {
         return;
     };
@@ -227,7 +227,7 @@ async fn get_job_actions_rejects_negative_sequence_num(
 ) {
     let Some((store, job_id)) = seeded_store
         .await
-        .expect("seeded store fixture should initialise")
+        .expect("seeded store fixture should initialize")
     else {
         return;
     };
@@ -283,7 +283,7 @@ async fn get_job_actions_treats_null_warnings_as_empty_vec(
 ) {
     let Some((store, job_id)) = seeded_store
         .await
-        .expect("seeded store fixture should initialise")
+        .expect("seeded store fixture should initialize")
     else {
         return;
     };
@@ -338,7 +338,7 @@ async fn get_job_actions_rejects_invalid_warning_payload_shape(
 ) {
     let Some((store, job_id)) = seeded_store
         .await
-        .expect("seeded store fixture should initialise")
+        .expect("seeded store fixture should initialize")
     else {
         return;
     };

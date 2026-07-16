@@ -81,7 +81,7 @@ fn discover_extensions_in_dir(
 
 /// Parse one registry manifest into a discovered extension.
 ///
-/// Returns `None` when the manifest's kind is not a recognised tool or
+/// Returns `None` when the manifest's kind is not a recognized tool or
 /// channel, when the source directory or crate name is missing, or when
 /// the source directory does not exist on disk.
 fn parse_extension_manifest(
@@ -176,7 +176,7 @@ pub(super) fn instantiate_tool_component(
     // If the WIT added/removed/renamed a function, stub registration
     // or instantiation will fail.
     // Register stubs for both versioned (0.3.0+) and unversioned (pre-0.3.0) interface
-    // paths so that both old and new WASM artifacts can instantiate.
+    // paths so that both old and new WASM artefacts can instantiate.
     for interface in &["near:agent/host", "near:agent/host@0.3.0"] {
         let mut root = linker.root();
         if let Ok(mut host) = root.instance(interface) {
@@ -214,7 +214,7 @@ pub(super) fn instantiate_channel_component(
         .map_err(|e| format!("WASI linker failed: {e}"))?;
 
     // Register stubs for both versioned (0.3.0+) and unversioned (pre-0.3.0) interface
-    // paths so that both old and new WASM artifacts can instantiate.
+    // paths so that both old and new WASM artefacts can instantiate.
     // Register stubs under both versioned and unversioned interface paths.
     // This helper avoids repeating the stub registration code.
     fn stub_channel_host(

@@ -1,4 +1,4 @@
-//! Curated in-memory catalog of known extensions with fuzzy search.
+//! Curated in-memory catalogue of known extensions with fuzzy search.
 //!
 //! The registry holds well-known channels, tools, and MCP servers that can be
 //! installed via conversational commands. Online discoveries are cached here too.
@@ -24,7 +24,7 @@ impl ExtensionRegistry {
         }
     }
 
-    /// Create a new registry merging builtin entries with catalog-provided entries.
+    /// Create a new registry merging builtin entries with catalogue-provided entries.
     ///
     /// Deduplicates by `(name, kind)` pair -- a builtin MCP "slack" and a registry
     /// WASM "slack" can coexist since they're different kinds.

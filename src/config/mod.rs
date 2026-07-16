@@ -69,7 +69,7 @@ pub use crate::llm::session::SessionConfig;
 ///
 /// Uses `Mutex<HashMap>` instead of `OnceLock` so that both
 /// `inject_os_credentials()` and `inject_llm_keys_from_secrets()` can merge
-/// their data. Whichever runs first initialises the map; the second merges in.
+/// their data. Whichever runs first initializes the map; the second merges in.
 static INJECTED_VARS: LazyLock<Mutex<HashMap<String, String>>> =
     LazyLock::new(|| Mutex::new(HashMap::new()));
 

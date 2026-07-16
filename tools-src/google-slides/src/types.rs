@@ -125,7 +125,7 @@ pub enum GoogleSlidesAction {
         height: f64,
     },
 
-    /// Format text in a shape (bold, italic, font, color, size).
+    /// Format text in a shape (bold, italic, font, colour, size).
     FormatText {
         /// The presentation ID.
         presentation_id: String,
@@ -152,7 +152,7 @@ pub enum GoogleSlidesAction {
         /// Font family name (e.g., "Arial").
         #[serde(default)]
         font_family: Option<String>,
-        /// Text color as hex (e.g., "#FF0000").
+        /// Text colour as hex (e.g., "#FF0000").
         #[serde(default)]
         foreground_color: Option<String>,
     },

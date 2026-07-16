@@ -87,7 +87,7 @@ const CORE_SEED_FILES: &[(&str, &str)] = &[
                  ## Structure\n\n\
                  - `MEMORY.md` - Long-term curated notes (loaded into system prompt)\n\
                  - `IDENTITY.md` - Agent name, vibe, personality\n\
-                 - `SOUL.md` - Core values and behavioral boundaries\n\
+                 - `SOUL.md` - Core values and behavioural boundaries\n\
                  - `AGENTS.md` - Session routine and operational instructions\n\
                  - `USER.md` - Information about you (the user)\n\
                  - `TOOLS.md` - Environment-specific tool notes\n\

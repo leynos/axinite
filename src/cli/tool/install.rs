@@ -49,7 +49,7 @@ fn wasm_file_tool_name(path: &Path) -> anyhow::Result<String> {
         .ok_or_else(|| anyhow::anyhow!("WASM filename is not valid UTF-8: {}", path.display()))
 }
 
-async fn find_existing_wasm_artifact(
+async fn find_existing_wasm_artefact(
     path: &Path,
     tool_name: &str,
     profile: &str,
@@ -61,11 +61,11 @@ async fn find_existing_wasm_artifact(
         crate::registry::artifacts::find_wasm_artifact(&path, &tool_name, &profile)
             .or_else(|| crate::registry::artifacts::find_any_wasm_artifact(&path, &profile))
             .ok_or_else(|| {
-                anyhow::anyhow!("No .wasm artifact found. Run without --skip-build to build first.")
+                anyhow::anyhow!("No .wasm artefact found. Run without --skip-build to build first.")
             })
     })
     .await
-    .map_err(|e| anyhow::anyhow!("tool artifact lookup task failed: {e}"))?
+    .map_err(|e| anyhow::anyhow!("tool artefact lookup task failed: {e}"))?
 }
 
 async fn resolve_directory_install(
@@ -89,7 +89,7 @@ async fn resolve_directory_install(
     };
     let profile = if release { "release" } else { "debug" };
     let wasm_path = if skip_build {
-        find_existing_wasm_artifact(path, &tool_name, profile).await?
+        find_existing_wasm_artefact(path, &tool_name, profile).await?
     } else {
         let source_dir = path.to_path_buf();
         tokio::task::spawn_blocking(move || {

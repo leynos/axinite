@@ -121,10 +121,12 @@ management.
       - `cargo clippy --all --benches --tests --examples`
         `--no-default-features --features libsql-test-helpers -- -D warnings`
       - `cargo clippy --all --benches --tests --examples --all-features -- -D warnings`
-      - `cargo clippy --manifest-path tools-src/github/Cargo.toml --tests -- -D warnings`
+      - `cargo clippy --manifest-path tools-src/github/Cargo.toml --tests \
+        -- -D warnings`
     - `make lint-whitaker` (the Whitaker Dylint suite with warnings denied)
       - `RUSTFLAGS="-D warnings" whitaker --all -- --all-targets --all-features`
-      - `RUSTFLAGS="-D warnings" whitaker --all --manifest-path tools-src/github/Cargo.toml -- --tests`
+      - `RUSTFLAGS="-D warnings" whitaker --all \
+        --manifest-path tools-src/github/Cargo.toml -- --tests`
   - `make test`
     - `make build-github-tool-wasm`
     - `cargo nextest run --workspace --profile $NEXTEST_PROFILE`
@@ -332,11 +334,16 @@ management.
 
 ## Markdown Guidance
 
-- Validate changed Markdown files with `bunx markdownlint-cli2 <paths>` unless
-  the repository later grows a dedicated Make target for Markdown linting.
+- Validate Markdown files with `make markdownlint`. This target also enforces
+  en-GB-oxendict spelling with the pinned `typos` release.
+- The spelling configuration `typos.toml` is generated. Edit
+  `typos.local.toml` for narrow repository terminology, then regenerate it
+  with `make spelling-config-write`; never edit generated entries by hand.
+- Quoted APIs and identifiers retain upstream spelling. Put them in backticks
+  or fenced code blocks where possible, or add a narrowly scoped local pattern
+  when executable syntax cannot be quoted.
 - Run `git diff --check` after documentation edits.
-- When Mermaid diagrams are introduced or modified, validate them with `nixie`
-  if available in the environment.
+- Validate Mermaid diagrams with `make nixie`, which uses Nixie 1.1.0 in CI.
 - Markdown paragraphs and bullet points should be wrapped at 80 columns.
 - Code blocks should be wrapped at 120 columns.
 - Tables and headings should not be wrapped.

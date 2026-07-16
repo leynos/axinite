@@ -44,10 +44,10 @@ fn test_render_multiple_replacements_of_same_variable() {
 #[test]
 fn test_set_overwrites_existing_variable() {
     let mut engine = TemplateEngine::new();
-    engine.set("color", "red");
-    assert_eq!(engine.render("{{color}}"), "red");
-    engine.set("color", "blue");
-    assert_eq!(engine.render("{{color}}"), "blue");
+    engine.set("colour", "red");
+    assert_eq!(engine.render("{{colour}}"), "red");
+    engine.set("colour", "blue");
+    assert_eq!(engine.render("{{colour}}"), "blue");
 }
 
 #[test]

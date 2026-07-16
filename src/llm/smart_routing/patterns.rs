@@ -86,7 +86,7 @@ pub(super) struct PatternOverride {
 /// Default pattern overrides, compiled once.
 pub(super) static DEFAULT_OVERRIDES: LazyLock<Vec<PatternOverride>> = LazyLock::new(|| {
     vec![
-        // Flash tier: greetings and acknowledgments
+        // Flash tier: greetings and acknowledgements
         PatternOverride {
             regex: Regex::clone(regex!(
                 r"(?i)^(hi|hello|hey|thanks|ok|sure|yes|no|yep|nope|cool|nice|great|got it)$"
@@ -108,7 +108,7 @@ pub(super) static DEFAULT_OVERRIDES: LazyLock<Vec<PatternOverride>> = LazyLock::
         },
         PatternOverride {
             regex: Regex::clone(regex!(
-                r"(?i)vulnerabilit(y|ies).*(review|scan|check|audit)"
+                r"(?i)vulnerability(y|ies).*(review|scan|check|audit)"
             )),
             tier: Tier::Frontier,
         },

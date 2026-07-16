@@ -194,16 +194,16 @@ Mermaid overview:
 
 ```mermaid
 graph TD
-  A[AgenticLoop] --> B[LoopDelegate.call_llm()]
+  A[AgenticLoop] --> B["LoopDelegate.call_llm()"]
   B --> C[ResponsesWsSession]
-  C --> D[WS Client: wss /v1/responses]
+  C --> D["WS Client: wss /v1/responses"]
   D --> C
-  C --> E[Event Parser / State Machine]
-  E --> F[TurnResult: text + tool_calls + output_items]
-  B --> G[Tool Runner / Sandbox]
+  C --> E["Event Parser / State Machine"]
+  E --> F["TurnResult: text + tool_calls + output_items"]
+  B --> G["Tool Runner / Sandbox"]
   G --> C
-  C --> H[(DB / Persistence)]
-  B --> I[Axinite Thread/Turn Model]
+  C --> H[("DB / Persistence")]
+  B --> I["Axinite Thread/Turn Model"]
 ```
 
 Design intent:

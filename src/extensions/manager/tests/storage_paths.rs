@@ -1,4 +1,4 @@
-//! Tests that tool and channel artifacts occupy separate filesystem paths.
+//! Tests that tool and channel artefacts occupy separate filesystem paths.
 
 // === QA Plan P2 - 2.4: Extension registry collision tests (filesystem) ===
 

@@ -1,6 +1,6 @@
 //! Step 7: extensions (tools) installation from the registry.
 
-use super::channel_catalog::{discover_installed_tools, load_registry_catalog};
+use super::channel_catalogue::{discover_installed_tools, load_registry_catalogue};
 use super::*;
 
 use crate::registry::manifest::ExtensionManifest;
@@ -8,13 +8,13 @@ use crate::registry::manifest::ExtensionManifest;
 impl SetupWizard {
     /// Step 7: Extensions (tools) installation from registry.
     pub(super) async fn step_extensions(&mut self) -> Result<(), SetupError> {
-        let Some(catalog) = load_registry_catalog() else {
+        let Some(catalogue) = load_registry_catalogue() else {
             print_info("Extension registry not found. Skipping tool installation.");
             print_info("Install tools manually with: ironclaw tool install <path>");
             return Ok(());
         };
 
-        let tools: Vec<ExtensionManifest> = catalog
+        let tools: Vec<ExtensionManifest> = catalogue
             .list(Some(crate::registry::manifest::ManifestKind::Tool), None)
             .into_iter()
             .cloned()
@@ -41,7 +41,7 @@ impl SetupWizard {
         }
 
         // Install selected tools that aren't already on disk
-        let repo_root = catalog.root().parent().unwrap_or(catalog.root());
+        let repo_root = catalogue.root().parent().unwrap_or(catalogue.root());
         let installer = crate::registry::installer::RegistryInstaller::new(
             repo_root.to_path_buf(),
             tools_dir.clone(),

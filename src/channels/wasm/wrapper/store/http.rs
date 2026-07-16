@@ -1,5 +1,5 @@
 //! Outbound HTTP dispatch for WASM channels: request building, execution,
-//! response normalisation, and error-chain formatting.
+//! response normalization, and error-chain formatting.
 
 use std::collections::HashMap;
 use std::error::Error;
@@ -51,7 +51,7 @@ pub(super) fn log_response_body(body: &[u8]) {
     }
 }
 
-/// Executes the outbound HTTP request and returns the normalised response.
+/// Executes the outbound HTTP request and returns the normalized response.
 pub(super) async fn send_http_request(
     method: HttpMethod,
     url: String,

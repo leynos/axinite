@@ -78,7 +78,7 @@ pub(crate) const HOSTED_GUIDANCE_HEADING: &str = "Hosted remote-tool guidance";
 /// Canonical merge of every tool the worker can offer to the LLM.
 ///
 /// Currently a pass-through to `ToolRegistry::tool_definitions`, but
-/// centralised here so the reasoning layer has a single call site to
+/// centralized here so the reasoning layer has a single call site to
 /// extend with sorting, filtering, or deduplication if merge policy
 /// evolves.
 async fn available_tool_definitions(tools: &ToolRegistry) -> Vec<crate::llm::ToolDefinition> {
@@ -305,20 +305,20 @@ Work independently to complete this job. Report when done."#,
     }
 
     async fn register_remote_tools(&self) -> Result<Vec<String>, WorkerError> {
-        let remote_catalog = self.client.get_remote_tool_catalog().await?;
-        let remote_tool_count = remote_catalog.tools.len();
-        let catalog_version = remote_catalog.catalog_version;
-        let toolset_instructions = remote_catalog.toolset_instructions;
+        let remote_catalogue = self.client.get_remote_tool_catalog().await?;
+        let remote_tool_count = remote_catalogue.tools.len();
+        let catalog_version = remote_catalogue.catalog_version;
+        let toolset_instructions = remote_catalogue.toolset_instructions;
         register_worker_remote_tool_proxies(
             &self.tools,
             Arc::clone(&self.client),
-            remote_catalog.tools,
+            remote_catalogue.tools,
         );
         tracing::info!(
             job_id = %self.config.job_id,
             catalog_version,
             remote_tool_count,
-            "Registered hosted remote tools from orchestrator catalog"
+            "Registered hosted remote tools from orchestrator catalogue"
         );
         Ok(toolset_instructions)
     }

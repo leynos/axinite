@@ -232,8 +232,8 @@ async fn register_wasm_persists_credentials_only_after_successful_registration()
 fn github_wasm_bytes() -> anyhow::Result<Vec<u8>> {
     use anyhow::Context as _;
 
-    let wasm_path = github_wasm_artifact().context("build or find github WASM artifact")?;
-    ambient_fs::read(wasm_path).context("read github wasm artifact")
+    let wasm_path = github_wasm_artifact().context("build or find github WASM artefact")?;
+    ambient_fs::read(wasm_path).context("read github wasm artefact")
 }
 
 struct CredentialSpec<'a> {

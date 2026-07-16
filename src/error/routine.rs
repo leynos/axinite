@@ -22,7 +22,7 @@ pub enum RoutineError {
     #[error("Invalid cron expression: {reason}")]
     InvalidCron { reason: String },
 
-    /// Returned when a stored routine run-state string is not recognised.
+    /// Returned when a stored routine run-state string is not recognized.
     #[error("Unknown run status: {status}")]
     UnknownRunStatus { status: String },
 

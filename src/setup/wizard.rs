@@ -98,7 +98,7 @@ pub struct SetupWizard {
     llm_api_key: Option<SecretString>,
 }
 
-mod channel_catalog;
+mod channel_catalogue;
 mod channels;
 mod database;
 mod database_ops;
@@ -106,7 +106,7 @@ mod database_ops;
 mod database_prompts;
 mod extensions;
 mod lifecycle;
-mod model_catalog;
+mod model_catalogue;
 mod models;
 mod persist;
 mod provider_flows;

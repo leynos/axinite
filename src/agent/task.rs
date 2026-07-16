@@ -123,7 +123,7 @@ where
 /// A task that can be scheduled for execution.
 #[derive(Clone)]
 pub enum Task {
-    /// Full LLM-driven job (current Worker behavior).
+    /// Full LLM-driven job (current Worker behaviour).
     Job {
         id: Uuid,
         title: String,

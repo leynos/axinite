@@ -111,7 +111,7 @@ pub struct ExtensionManager {
     /// Wrapped in `Arc` so the live channel activation adapter can share
     /// this set with the manager.
     active_channel_names: Arc<RwLock<HashSet<String>>>,
-    /// Installed channel-relay extensions (no on-disk artifact, tracked in memory).
+    /// Installed channel-relay extensions (no on-disk artefact, tracked in memory).
     installed_relay_extensions: Arc<RwLock<HashSet<String>>>,
     /// Last activation error for each WASM channel (ephemeral, cleared on success).
     activation_errors: Arc<RwLock<HashMap<String, String>>>,
@@ -173,7 +173,7 @@ pub struct ExtensionManagerConfig {
     pub user_id: String,
     /// Database store for persistence (optional).
     pub store: Option<Arc<dyn crate::db::Database>>,
-    /// Catalog entries for built-in and discovered extensions (required, may be empty).
+    /// Catalogue entries for built-in and discovered extensions (required, may be empty).
     pub catalog_entries: Vec<RegistryEntry>,
 }
 
@@ -226,7 +226,7 @@ impl ExtensionManager {
     /// - `wasm_tools_dir` — Directory containing installed WASM tools.
     /// - `wasm_channels_dir` — Directory containing installed WASM channels.
     /// - `user_id` — User identifier for namespacing secrets and configuration.
-    /// - `catalog_entries` — Catalog entries for built-in and discovered extensions
+    /// - `catalog_entries` — Catalogue entries for built-in and discovered extensions
     ///   (may be empty).
     ///
     /// ## Optional fields

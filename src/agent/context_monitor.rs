@@ -157,7 +157,7 @@ pub struct ContextBreakdown {
 }
 
 impl ContextBreakdown {
-    /// Analyze a list of messages.
+    /// Analyse a list of messages.
     pub fn analyze(messages: &[ChatMessage]) -> Self {
         let mut breakdown = Self {
             total_tokens: 0,

@@ -147,7 +147,7 @@ pub struct GatewayState {
     pub llm_provider: Option<Arc<dyn crate::llm::LlmProvider>>,
     /// Skill registry for skill management API.
     pub skill_registry: Option<Arc<std::sync::RwLock<crate::skills::SkillRegistry>>>,
-    /// Skill catalog for searching the ClawHub registry.
+    /// Skill catalogue for searching the ClawHub registry.
     pub skill_catalog: Option<Arc<crate::skills::catalog::SkillCatalog>>,
     /// Scheduler for sending follow-up messages to running agent jobs.
     pub scheduler: Option<crate::tools::builtin::SchedulerSlot>,
@@ -155,7 +155,7 @@ pub struct GatewayState {
     pub chat_rate_limiter: RateLimiter,
     /// Rate limiter for OAuth callback endpoints (10 requests per 60 seconds).
     pub oauth_rate_limiter: RateLimiter,
-    /// Registry catalog entries for the available extensions API.
+    /// Registry catalogue entries for the available extensions API.
     /// Populated at startup from `registry/` manifests, independent of extension manager.
     pub registry_entries: Vec<crate::extensions::RegistryEntry>,
     /// Cost guard for token/cost tracking.

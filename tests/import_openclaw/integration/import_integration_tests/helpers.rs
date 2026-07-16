@@ -1,4 +1,4 @@
-//! Shared fixtures: libSQL serialisation guard, test database setup,
+//! Shared fixtures: libSQL serialization guard, test database setup,
 //! and synthetic OpenClaw directory/agent-database builders.
 
 use std::path::PathBuf;
@@ -15,7 +15,7 @@ pub(super) fn libsql_test_mutex() -> &'static Mutex<()> {
     LIBSQL_TEST_MUTEX.get_or_init(|| Mutex::new(()))
 }
 
-pub(super) async fn ensure_libsql_initialised() {
+pub(super) async fn ensure_libsql_initialized() {
     static LIBSQL_INIT: OnceCell<()> = OnceCell::const_new();
     LIBSQL_INIT
         .get_or_init(|| async {

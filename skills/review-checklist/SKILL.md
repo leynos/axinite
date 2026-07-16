@@ -46,9 +46,9 @@ Before merging, verify these items. They represent the most common issues caught
 - [ ] Temporary files/dirs use `tempfile` crate, no hardcoded `/tmp/` paths
 - [ ] Tests don't mutate global statics without synchronization (use per-test state or `serial_test`)
 - [ ] Tests don't make real network requests (use mocks, stubs, or RFC 5737 TEST-NET IPs like 192.0.2.1)
-- [ ] Test names and comments match actual test behavior and assertions
+- [ ] Test names and comments match actual test behaviour and assertions
 
 ## Comments & Documentation
-- [ ] Code comments match actual behavior (especially route paths, tool names, function semantics)
-- [ ] Spec/README files updated if module behavior changed
+- [ ] Code comments match actual behaviour (especially route paths, tool names, function semantics)
+- [ ] Spec/README files updated if module behaviour changed
 - [ ] Error messages are clear and non-redundant (don't nest tool name inside tool error that already contains it)

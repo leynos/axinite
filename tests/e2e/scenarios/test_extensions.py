@@ -586,7 +586,7 @@ async def test_configure_modal_backdrop_click_closes(page):
     # Click the overlay element itself (outside the modal box)
     overlay = page.locator(SEL["configure_overlay"])
     box = await overlay.bounding_box()
-    # Click at the very top-left corner of the overlay, outside the centered modal
+    # Click at the very top-left corner of the overlay, outside the centred modal
     await page.mouse.click(box["x"] + 5, box["y"] + 5)
     await overlay.wait_for(state="hidden", timeout=3000)
 

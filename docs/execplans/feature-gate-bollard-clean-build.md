@@ -314,10 +314,10 @@ $ git push
   build-script probes.
 - 2026-03-21: The ambient `RUSTC_WRAPPER` in this environment returns success
   for an unstable-feature probe that direct `rustc` correctly rejects on
-  stable. That makes dependency build scripts mis-detect nightly support.
+  stable. That makes dependency build scripts misdetect nightly support.
 - 2026-03-21: Merely changing the wrapper configuration is not enough for
   validation. These build scripts only rerun when their own inputs change, so
-  stale target artifacts can preserve the bad cfg state until the affected
+  stale target artefacts can preserve the bad cfg state until the affected
   crates are cleaned and rebuilt.
 - 2026-03-21: Cargo config was not sufficient to override the ambient
   `RUSTC_WRAPPER` for plain `cargo` commands in this environment. Command-line

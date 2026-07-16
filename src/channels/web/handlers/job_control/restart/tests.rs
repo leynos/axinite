@@ -1,4 +1,4 @@
-//! Unit tests for normalising credential grant JSON on job restart.
+//! Unit tests for normalizing credential grant JSON on job restart.
 
 use super::*;
 

@@ -70,7 +70,7 @@ pub struct JobEventRecord {
 
 /// Map the `description` column value to a `credential_grants_json` string.
 ///
-/// The `description` column was repurposed to store serialised credential
+/// The `description` column was repurposed to store serialized credential
 /// grant JSON. When the column is NULL (e.g. rows created before this
 /// repurposing), the function falls back to an empty JSON array.
 #[cfg(any(feature = "postgres", test))]

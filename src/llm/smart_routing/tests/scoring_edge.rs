@@ -161,7 +161,7 @@ fn score_all_dimensions_have_entries() {
 fn score_is_clamped_to_100() {
     // Trigger every dimension hard
     let prompt = "First, explain why the kubernetes docker terraform deployment on aws fails. \
-         Then analyze the security vulnerability and compare the trade-offs. \
+         Then analyse the security vulnerability and compare the trade-offs. \
          After that, write a detailed blog post report with code examples: \
          ```rust\nfn main() {}\n``` \
          Calculate exactly how many steps are needed? Why? How? \

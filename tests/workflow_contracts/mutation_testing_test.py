@@ -7,13 +7,17 @@ PyYAML and pin the contract it must uphold, so drift (repointing the pin
 at a branch, widening permissions, or losing the root-crate scoping that
 keeps the vendored grammers-crypto patch crate and the out-of-workspace
 tools-src/ and channels-src/ crates out of mutation) fails CI on the
-pull request rather than surfacing in a scheduled or manual run.
+pull request rather than surfacing in a scheduled or manual run. The
+caller must reference the correct reusable workflow at a commit SHA;
+Dependabot owns the SHA value, so these tests assert the shape of the
+pin rather than the exact commit.
 
 Run via ``make test-workflow-contracts``.
 """
 
 from __future__ import annotations
 
+import re
 from pathlib import Path
 
 import pytest
@@ -29,14 +33,11 @@ pytestmark = pytest.mark.skipif(
     "inside a mutation-testing sandbox that does not copy .github/)",
 )
 
-#: The pinned commit of leynos/shared-actions carrying the
-#: setup-commands input, the python-version fail-fast guard, and
-#: step-level timeout artefact preservation. Bump the caller and this
-#: test together.
-PINNED_SHA = "859416a90eb3987b46a57682c5d6b8964ad3f0a6"
-
-EXPECTED_USES = (
-    "leynos/shared-actions/.github/workflows/mutation-cargo.yml@" + PINNED_SHA
+#: Matches the mutation-cargo caller pinned to a full 40-hex commit SHA.
+#: Dependabot owns the SHA value; this asserts the workflow path and
+#: pin shape only, not which commit is pinned.
+USES_RE = re.compile(
+    r"^leynos/shared-actions/\.github/workflows/mutation-cargo\.yml@[0-9a-f]{40}$"
 )
 
 #: Test-support scaffolding compiled into non-test builds; mutants
@@ -83,25 +84,15 @@ def _mutation_job(workflow: dict[str, object]) -> dict[str, object]:
     return jobs["mutation"]
 
 
-def test_uses_reference_is_pinned_to_the_documented_sha() -> None:
-    """The job must call the shared workflow at the exact documented SHA."""
+def test_uses_reference_is_pinned_to_a_commit_sha() -> None:
+    """The job must call mutation-cargo.yml pinned to a full commit SHA."""
     uses = _mutation_job(_load()).get("uses")
     assert uses is not None, "jobs.mutation.uses is missing"
-    path, _, ref = uses.partition("@")
-    assert path == "leynos/shared-actions/.github/workflows/mutation-cargo.yml", (
-        f"jobs.mutation.uses must reference mutation-cargo.yml, got {path!r}"
-    )
-    assert len(ref) == 40, (
-        f"jobs.mutation.uses must pin a full 40-character commit SHA, "
-        f"not a branch or tag: {ref!r}"
-    )
-    assert all(c in "0123456789abcdef" for c in ref), (
-        f"jobs.mutation.uses must pin a lowercase hex commit SHA, "
-        f"not a branch or tag: {ref!r}"
-    )
-    assert uses == EXPECTED_USES, (
-        f"jobs.mutation.uses pins {ref!r}; this test documents {PINNED_SHA!r} — "
-        "bump the test and the workflow together"
+    assert USES_RE.match(uses), (
+        f"jobs.mutation.uses must reference "
+        "leynos/shared-actions/.github/workflows/mutation-cargo.yml "
+        f"pinned to a full 40-character lowercase-hex commit SHA (not a "
+        f"branch or tag), got {uses!r}"
     )
 
 
