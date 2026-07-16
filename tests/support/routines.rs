@@ -210,7 +210,12 @@ mod assertions {
         msg: &str,
     ) {
         let fired = engine
-            .emit_system_event(spec.source, spec.event_type, &spec.payload, Some("default"))
+            .emit_system_event(ironclaw::agent::routine_engine::SystemEventRef {
+                source: spec.source,
+                event_type: spec.event_type,
+                payload: &spec.payload,
+                user_id: Some("default"),
+            })
             .await;
         assert_eq!(fired, expected, "{msg}");
     }

@@ -202,7 +202,13 @@ impl WasmChannel {
         let metadata_json = serde_json::to_string(ctx.metadata).unwrap_or_default();
 
         if let Err(e) = self
-            .call_on_respond(uuid::Uuid::new_v4(), &prompt, None, &metadata_json, &[])
+            .call_on_respond(super::RespondInvocation {
+                message_id: uuid::Uuid::new_v4(),
+                content: &prompt,
+                thread_id: None,
+                metadata_json: &metadata_json,
+                attachments: &[],
+            })
             .await
         {
             tracing::warn!(

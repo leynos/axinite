@@ -89,6 +89,32 @@ pub struct AuthResult {
     pub status: AuthStatus,
 }
 
+/// Generate an `AuthResult` constructor for one of the two token-bearing
+/// statuses, which differ only in the [`AuthStatus`] variant they build from
+/// the shared `instructions` + `setup_url` pair.
+macro_rules! instruction_ctor {
+    ($(#[$meta:meta])* $ctor:ident, $variant:ident) => {
+        $(#[$meta])*
+        pub fn $ctor(
+            name: impl Into<String>,
+            kind: ExtensionKind,
+            instructions: String,
+            setup_url: Option<String>,
+        ) -> Self {
+            Self::with_instructions(
+                name,
+                kind,
+                instructions,
+                setup_url,
+                |instructions, setup_url| AuthStatus::$variant {
+                    instructions,
+                    setup_url,
+                },
+            )
+        }
+    };
+}
+
 impl AuthResult {
     // ── Constructors ──────────────────────────────────────────────────
 
@@ -138,41 +164,17 @@ impl AuthResult {
         )
     }
 
-    pub fn awaiting_token(
-        name: impl Into<String>,
-        kind: ExtensionKind,
-        instructions: String,
-        setup_url: Option<String>,
-    ) -> Self {
-        Self::with_instructions(
-            name,
-            kind,
-            instructions,
-            setup_url,
-            |instructions, setup_url| AuthStatus::AwaitingToken {
-                instructions,
-                setup_url,
-            },
-        )
-    }
+    instruction_ctor!(
+        /// Await a manually provided token or key.
+        awaiting_token,
+        AwaitingToken
+    );
 
-    pub fn needs_setup(
-        name: impl Into<String>,
-        kind: ExtensionKind,
-        instructions: String,
-        setup_url: Option<String>,
-    ) -> Self {
-        Self::with_instructions(
-            name,
-            kind,
-            instructions,
-            setup_url,
-            |instructions, setup_url| AuthStatus::NeedsSetup {
-                instructions,
-                setup_url,
-            },
-        )
-    }
+    instruction_ctor!(
+        /// Await OAuth client-credential configuration before auth can proceed.
+        needs_setup,
+        NeedsSetup
+    );
 
     // ── Accessors ─────────────────────────────────────────────────────
 

@@ -2,11 +2,20 @@
 
 use crate::extensions::{ExtensionError, ExtensionKind, InstallResult};
 
-use super::ExtensionManager;
-use super::sanitize_url_for_logging;
+use super::{ExtensionManager, sanitize_url_for_logging};
 
 /// 100 MB cap on a single decompressed tar entry to prevent decompression bombs.
 const MAX_TAR_ENTRY_SIZE: u64 = 100 * 1024 * 1024;
+
+/// 50 MB cap on a downloaded extension payload to prevent disk-fill DoS.
+const MAX_DOWNLOAD_SIZE: usize = 50 * 1024 * 1024;
+
+/// Error for a download whose size exceeds [`MAX_DOWNLOAD_SIZE`].
+fn download_too_large(len: usize) -> ExtensionError {
+    ExtensionError::InstallFailed(format!(
+        "Download too large ({len} bytes, max {MAX_DOWNLOAD_SIZE} bytes)"
+    ))
+}
 
 /// Inputs for downloading and installing a WASM extension bundle.
 ///
@@ -19,8 +28,8 @@ pub(super) struct WasmDownloadRequest<'a> {
     pub url: &'a str,
     /// Optional separate capabilities-file URL for bare `.wasm` downloads.
     pub capabilities_url: Option<&'a str>,
-    /// Directory the extension artefacts are installed into.
-    pub target_dir: &'a std::path::Path,
+    /// Extension kind, selecting the install directory and result message.
+    pub kind: ExtensionKind,
 }
 
 /// Read a single tar entry (bounded by [`MAX_TAR_ENTRY_SIZE`]) and write it to
@@ -74,16 +83,14 @@ fn resolve_build_dir(
     build_dir: Option<&str>,
     manifest_dir: &std::path::Path,
 ) -> std::path::PathBuf {
-    match build_dir {
-        Some(dir) => {
-            let p = std::path::Path::new(dir);
-            if p.is_absolute() {
-                p.to_path_buf()
-            } else {
-                manifest_dir.join(dir)
-            }
-        }
-        None => manifest_dir.to_path_buf(),
+    let Some(dir) = build_dir else {
+        return manifest_dir.to_path_buf();
+    };
+    let p = std::path::Path::new(dir);
+    if p.is_absolute() {
+        p.to_path_buf()
+    } else {
+        manifest_dir.join(dir)
     }
 }
 
@@ -104,6 +111,15 @@ impl ExtensionManager {
         bytes.starts_with(&[0x1f, 0x8b])
     }
 
+    /// The install directory for a WASM extension of the given `kind`.
+    pub(super) fn wasm_target_dir(&self, kind: ExtensionKind) -> &std::path::Path {
+        if kind == ExtensionKind::WasmTool {
+            &self.wasm_tools_dir
+        } else {
+            &self.wasm_channels_dir
+        }
+    }
+
     /// Download a WASM extension (tool or channel) from URL and install to target directory.
     ///
     /// Handles both tar.gz bundles (containing `.wasm` + `.capabilities.json`) and bare
@@ -116,8 +132,9 @@ impl ExtensionManager {
             name,
             url,
             capabilities_url,
-            target_dir,
+            kind,
         } = request;
+        let target_dir = self.wasm_target_dir(kind);
         // Require HTTPS to prevent downgrade attacks
         if !url.starts_with("https://") {
             return Err(ExtensionError::InstallFailed(
@@ -143,7 +160,7 @@ impl ExtensionManager {
         // Detect format: gzip (tar.gz bundle) or bare WASM
         if Self::is_gzip_payload(&bytes) {
             // tar.gz bundle: extract {name}.wasm and {name}.capabilities.json
-            self.extract_wasm_tar_gz(name, &bytes, &wasm_path, &caps_path)?;
+            self.extract_wasm_tar_gz(name, &bytes, target_dir)?;
         } else {
             Self::write_bare_wasm(&bytes, &wasm_path).await?;
 
@@ -153,12 +170,8 @@ impl ExtensionManager {
             }
         }
 
-        tracing::info!(
-            "Installed WASM extension '{}' from {} to {}",
-            name,
-            url,
-            wasm_path.display()
-        );
+        let installed = wasm_path.display();
+        tracing::info!("Installed WASM extension '{name}' from {url} to {installed}");
 
         Ok(())
     }
@@ -170,9 +183,6 @@ impl ExtensionManager {
         name: &str,
         url: &str,
     ) -> Result<bytes::Bytes, ExtensionError> {
-        // 50 MB cap to prevent disk-fill DoS
-        const MAX_DOWNLOAD_SIZE: usize = 50 * 1024 * 1024;
-
         let sanitized_url = sanitize_url_for_logging(url);
         tracing::debug!(extension = %name, url = %sanitized_url, "Downloading WASM extension");
 
@@ -190,8 +200,7 @@ impl ExtensionManager {
                 "Download returned non-success HTTP status"
             );
             return Err(ExtensionError::DownloadFailed(format!(
-                "HTTP {} from {}",
-                status, url
+                "HTTP {status} from {url}"
             )));
         }
 
@@ -199,10 +208,7 @@ impl ExtensionManager {
         if let Some(len) = response.content_length()
             && len as usize > MAX_DOWNLOAD_SIZE
         {
-            return Err(ExtensionError::InstallFailed(format!(
-                "Download too large ({} bytes, max {} bytes)",
-                len, MAX_DOWNLOAD_SIZE
-            )));
+            return Err(download_too_large(len as usize));
         }
 
         let bytes = response
@@ -211,11 +217,7 @@ impl ExtensionManager {
             .map_err(|e| ExtensionError::DownloadFailed(e.to_string()))?;
 
         if bytes.len() > MAX_DOWNLOAD_SIZE {
-            return Err(ExtensionError::InstallFailed(format!(
-                "Download too large ({} bytes, max {} bytes)",
-                bytes.len(),
-                MAX_DOWNLOAD_SIZE
-            )));
+            return Err(download_too_large(bytes.len()));
         }
         Ok(bytes)
     }
@@ -247,7 +249,13 @@ impl ExtensionManager {
         const MAX_CAPS_SIZE: usize = 1024 * 1024; // 1 MB
 
         // A failed request or non-success status share the same "from URL" warning.
-        let Ok(resp) = client.get(caps_url).send().await else {
+        let resp = client
+            .get(caps_url)
+            .send()
+            .await
+            .ok()
+            .filter(|r| r.status().is_success());
+        let Some(resp) = resp else {
             tracing::warn!(
                 "Failed to download capabilities for '{}' from {}",
                 name,
@@ -255,14 +263,6 @@ impl ExtensionManager {
             );
             return;
         };
-        if !resp.status().is_success() {
-            tracing::warn!(
-                "Failed to download capabilities for '{}' from {}",
-                name,
-                caps_url
-            );
-            return;
-        }
 
         let caps_bytes = match resp.bytes().await {
             Ok(bytes) => bytes,
@@ -273,11 +273,9 @@ impl ExtensionManager {
         };
 
         if caps_bytes.len() > MAX_CAPS_SIZE {
+            let len = caps_bytes.len();
             tracing::warn!(
-                "Capabilities file for '{}' too large ({} bytes, max {})",
-                name,
-                caps_bytes.len(),
-                MAX_CAPS_SIZE
+                "Capabilities file for '{name}' too large ({len} bytes, max {MAX_CAPS_SIZE})"
             );
             return;
         }
@@ -287,13 +285,13 @@ impl ExtensionManager {
         }
     }
 
-    /// Extract a tar.gz bundle into the WASM tools directory.
+    /// Extract a tar.gz bundle into `target_dir`, writing `{name}.wasm` and
+    /// `{name}.capabilities.json`.
     pub(super) fn extract_wasm_tar_gz(
         &self,
         name: &str,
         bytes: &[u8],
-        target_wasm: &std::path::Path,
-        target_caps: &std::path::Path,
+        target_dir: &std::path::Path,
     ) -> Result<(), ExtensionError> {
         use flate2::read::GzDecoder;
         use tar::Archive;
@@ -307,6 +305,8 @@ impl ExtensionManager {
 
         let wasm_filename = format!("{}.wasm", name);
         let caps_filename = format!("{}.capabilities.json", name);
+        let target_wasm = target_dir.join(&wasm_filename);
+        let target_caps = target_dir.join(&caps_filename);
         let mut found_wasm = false;
 
         let entries = archive
@@ -320,10 +320,10 @@ impl ExtensionManager {
             let filename = tar_entry_filename(&mut entry)?;
 
             if filename == wasm_filename {
-                extract_tar_entry(&mut entry, target_wasm)?;
+                extract_tar_entry(&mut entry, &target_wasm)?;
                 found_wasm = true;
             } else if filename == caps_filename {
-                extract_tar_entry(&mut entry, target_caps)?;
+                extract_tar_entry(&mut entry, &target_caps)?;
             }
         }
 

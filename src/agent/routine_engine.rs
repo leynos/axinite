@@ -23,6 +23,7 @@ mod lightweight_tools;
 mod triggers;
 
 pub use engine::{RoutineEngine, RoutineEngineDeps, spawn_cron_ticker};
+pub use triggers::SystemEventRef;
 
 #[cfg(test)]
 mod tests;

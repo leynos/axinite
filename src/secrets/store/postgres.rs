@@ -26,6 +26,14 @@ impl PostgresSecretsStore {
     pub fn new(pool: Pool, crypto: Arc<SecretsCrypto>) -> Self {
         Self { pool, crypto }
     }
+
+    /// Check out a pooled client, mapping pool errors to [`SecretError`].
+    ///
+    /// Shared scaffolding for every query method, which otherwise repeat the
+    /// same `pool.get().await.map_err(db_err)` prelude.
+    async fn client(&self) -> Result<deadpool_postgres::Client, SecretError> {
+        self.pool.get().await.map_err(db_err)
+    }
 }
 
 impl NativeSecretsStore for PostgresSecretsStore {
@@ -34,7 +42,7 @@ impl NativeSecretsStore for PostgresSecretsStore {
         user_id: &'a str,
         params: CreateSecretParams,
     ) -> Result<Secret, SecretError> {
-        let client = self.pool.get().await.map_err(db_err)?;
+        let client = self.client().await?;
 
         // Encrypt the secret value
         let plaintext = params.value.expose_secret().as_bytes();
@@ -77,7 +85,7 @@ impl NativeSecretsStore for PostgresSecretsStore {
 
     async fn get<'a>(&'a self, user_id: &'a str, name: &'a str) -> Result<Secret, SecretError> {
         let name = name.to_lowercase();
-        let client = self.pool.get().await.map_err(db_err)?;
+        let client = self.client().await?;
 
         let row = client
             .query_opt(
@@ -100,7 +108,7 @@ impl NativeSecretsStore for PostgresSecretsStore {
 
     async fn exists<'a>(&'a self, user_id: &'a str, name: &'a str) -> Result<bool, SecretError> {
         let name = name.to_lowercase();
-        let client = self.pool.get().await.map_err(db_err)?;
+        let client = self.client().await?;
 
         let row = client
             .query_one(
@@ -114,7 +122,7 @@ impl NativeSecretsStore for PostgresSecretsStore {
     }
 
     async fn list<'a>(&'a self, user_id: &'a str) -> Result<Vec<SecretRef>, SecretError> {
-        let client = self.pool.get().await.map_err(db_err)?;
+        let client = self.client().await?;
 
         let rows = client
             .query(
@@ -135,7 +143,7 @@ impl NativeSecretsStore for PostgresSecretsStore {
 
     async fn delete<'a>(&'a self, user_id: &'a str, name: &'a str) -> Result<bool, SecretError> {
         let name = name.to_lowercase();
-        let client = self.pool.get().await.map_err(db_err)?;
+        let client = self.client().await?;
 
         let result = client
             .execute(
@@ -149,7 +157,7 @@ impl NativeSecretsStore for PostgresSecretsStore {
     }
 
     async fn record_usage(&self, secret_id: Uuid) -> Result<(), SecretError> {
-        let client = self.pool.get().await.map_err(db_err)?;
+        let client = self.client().await?;
 
         client
             .execute(

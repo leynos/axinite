@@ -118,13 +118,13 @@ impl NativeChannel for WasmChannel {
         let metadata_json = serde_json::to_string(&msg.metadata).unwrap_or_default();
         // Store for broadcast routing (chat_id etc.)
         self.update_broadcast_metadata(&metadata_json).await;
-        self.call_on_respond(
-            msg.id,
-            &response.content,
-            response.thread_id.as_deref(),
-            &metadata_json,
-            &response.attachments,
-        )
+        self.call_on_respond(super::RespondInvocation {
+            message_id: msg.id,
+            content: &response.content,
+            thread_id: response.thread_id.as_deref(),
+            metadata_json: &metadata_json,
+            attachments: &response.attachments,
+        })
         .await
         .map_err(|e| ChannelError::SendFailed {
             name: self.name.clone(),

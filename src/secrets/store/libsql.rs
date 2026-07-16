@@ -39,6 +39,28 @@ impl LibSqlSecretsStore {
             .map_err(|e| SecretError::Database(format!("Connection failed: {}", e)))?;
         Ok(conn)
     }
+
+    /// Run a read query on a fresh connection, mapping driver errors to
+    /// [`SecretError`]. Shared scaffolding for `get`, `exists`, and `list`.
+    async fn query_rows(
+        &self,
+        sql: &str,
+        params: impl libsql::params::IntoParams,
+    ) -> Result<libsql::Rows, SecretError> {
+        let conn = self.connect().await?;
+        conn.query(sql, params).await.map_err(db_err)
+    }
+
+    /// Run a write statement on a fresh connection, returning the affected row
+    /// count. Shared scaffolding for `delete` and `record_usage`.
+    async fn run_execute(
+        &self,
+        sql: &str,
+        params: impl libsql::params::IntoParams,
+    ) -> Result<u64, SecretError> {
+        let conn = self.connect().await?;
+        conn.execute(sql, params).await.map_err(db_err)
+    }
 }
 
 impl NativeSecretsStore for LibSqlSecretsStore {
@@ -109,14 +131,12 @@ impl NativeSecretsStore for LibSqlSecretsStore {
 
     async fn get<'a>(&'a self, user_id: &'a str, name: &'a str) -> Result<Secret, SecretError> {
         let name = name.to_lowercase();
-        let conn = self.connect().await?;
-        let mut rows = conn
-            .query(
+        let mut rows = self
+            .query_rows(
                 &select_secret_by_user_name_sql(),
                 libsql::params![user_id, name.as_str()],
             )
-            .await
-            .map_err(db_err)?;
+            .await?;
 
         let secret = rows
             .next()
@@ -137,27 +157,23 @@ impl NativeSecretsStore for LibSqlSecretsStore {
 
     async fn exists<'a>(&'a self, user_id: &'a str, name: &'a str) -> Result<bool, SecretError> {
         let name = name.to_lowercase();
-        let conn = self.connect().await?;
-        let mut rows = conn
-            .query(
+        let mut rows = self
+            .query_rows(
                 "SELECT 1 FROM secrets WHERE user_id = ?1 AND name = ?2",
                 libsql::params![user_id, name.as_str()],
             )
-            .await
-            .map_err(db_err)?;
+            .await?;
 
         Ok(rows.next().await.map_err(db_err)?.is_some())
     }
 
     async fn list<'a>(&'a self, user_id: &'a str) -> Result<Vec<SecretRef>, SecretError> {
-        let conn = self.connect().await?;
-        let mut rows = conn
-            .query(
+        let mut rows = self
+            .query_rows(
                 "SELECT name, provider FROM secrets WHERE user_id = ?1 ORDER BY name",
                 libsql::params![user_id],
             )
-            .await
-            .map_err(db_err)?;
+            .await?;
 
         let mut refs = Vec::new();
         while let Some(row) = rows.next().await.map_err(db_err)? {
@@ -171,23 +187,19 @@ impl NativeSecretsStore for LibSqlSecretsStore {
 
     async fn delete<'a>(&'a self, user_id: &'a str, name: &'a str) -> Result<bool, SecretError> {
         let name = name.to_lowercase();
-        let conn = self.connect().await?;
-        let affected = conn
-            .execute(
+        let affected = self
+            .run_execute(
                 "DELETE FROM secrets WHERE user_id = ?1 AND name = ?2",
                 libsql::params![user_id, name.as_str()],
             )
-            .await
-            .map_err(db_err)?;
+            .await?;
 
         Ok(affected > 0)
     }
 
     async fn record_usage(&self, secret_id: Uuid) -> Result<(), SecretError> {
         let now = Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Millis, true);
-        let conn = self.connect().await?;
-
-        conn.execute(
+        self.run_execute(
             r#"
                 UPDATE secrets
                 SET last_used_at = ?1, usage_count = usage_count + 1
@@ -195,8 +207,7 @@ impl NativeSecretsStore for LibSqlSecretsStore {
                 "#,
             libsql::params![now.as_str(), secret_id.to_string()],
         )
-        .await
-        .map_err(db_err)?;
+        .await?;
 
         Ok(())
     }

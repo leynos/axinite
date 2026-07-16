@@ -243,8 +243,13 @@ impl ExtensionManager {
         url: &str,
         capabilities_url: Option<&str>,
     ) -> Result<InstallResult, ExtensionError> {
-        self.download_wasm_and_report(name, url, capabilities_url, ExtensionKind::WasmTool)
-            .await
+        self.download_wasm_and_report(super::wasm_install::WasmDownloadRequest {
+            name,
+            url,
+            capabilities_url,
+            kind: ExtensionKind::WasmTool,
+        })
+        .await
     }
 
     pub(super) async fn install_wasm_channel_from_url(
@@ -253,44 +258,37 @@ impl ExtensionManager {
         url: &str,
         capabilities_url: Option<&str>,
     ) -> Result<InstallResult, ExtensionError> {
-        self.download_wasm_and_report(name, url, capabilities_url, ExtensionKind::WasmChannel)
-            .await
+        self.download_wasm_and_report(super::wasm_install::WasmDownloadRequest {
+            name,
+            url,
+            capabilities_url,
+            kind: ExtensionKind::WasmChannel,
+        })
+        .await
     }
 
     /// Download and install a WASM extension into the kind-appropriate target
     /// directory, then report success with the kind-specific message.
     async fn download_wasm_and_report(
         &self,
-        name: &str,
-        url: &str,
-        capabilities_url: Option<&str>,
-        kind: ExtensionKind,
+        request: super::wasm_install::WasmDownloadRequest<'_>,
     ) -> Result<InstallResult, ExtensionError> {
-        let (target_dir, message) = if kind == ExtensionKind::WasmTool {
-            (
-                &self.wasm_tools_dir,
-                format!("WASM tool '{}' installed. Run activate to load it.", name),
-            )
+        let name = request.name.to_string();
+        let kind = request.kind;
+
+        self.download_and_install_wasm(request).await?;
+
+        let message = if kind == ExtensionKind::WasmTool {
+            format!("WASM tool '{}' installed. Run activate to load it.", name)
         } else {
-            (
-                &self.wasm_channels_dir,
-                format!(
-                    "WASM channel '{}' installed. Run activate to start it.",
-                    name
-                ),
+            format!(
+                "WASM channel '{}' installed. Run activate to start it.",
+                name
             )
         };
 
-        self.download_and_install_wasm(super::wasm_install::WasmDownloadRequest {
-            name,
-            url,
-            capabilities_url,
-            target_dir,
-        })
-        .await?;
-
         Ok(InstallResult {
-            name: name.to_string(),
+            name,
             kind,
             message,
         })

@@ -44,17 +44,38 @@ macro_rules! impl_sampling_params {
     };
 }
 
-/// Request for a chat completion.
-#[derive(Debug, Clone)]
-pub struct CompletionRequest {
-    pub messages: Vec<ChatMessage>,
-    /// Optional per-request model override.
-    pub model: Option<String>,
-    pub max_tokens: Option<u32>,
-    pub temperature: Option<f32>,
-    pub stop_sequences: Option<Vec<String>>,
-    /// Opaque metadata passed through to the provider (e.g. thread_id for chaining).
-    pub metadata: std::collections::HashMap<String, String>,
+/// Define a completion-request struct carrying the `messages` and sampling
+/// fields (`model`, `max_tokens`, `temperature`, `metadata`) common to the
+/// plain and tool-augmented requests.
+///
+/// The caller supplies only the request-specific fields (e.g. `stop_sequences`
+/// or `tools`); the shared block is emitted identically for each, keeping those
+/// fields defined in exactly one place.
+macro_rules! completion_request {
+    (
+        $(#[$meta:meta])*
+        pub struct $name:ident { $($(#[$fmeta:meta])* pub $field:ident : $ty:ty,)* }
+    ) => {
+        $(#[$meta])*
+        #[derive(Debug, Clone)]
+        pub struct $name {
+            pub messages: Vec<ChatMessage>,
+            $($(#[$fmeta])* pub $field: $ty,)*
+            /// Optional per-request model override.
+            pub model: Option<String>,
+            pub max_tokens: Option<u32>,
+            pub temperature: Option<f32>,
+            /// Opaque metadata passed through to the provider (e.g. thread_id for chaining).
+            pub metadata: std::collections::HashMap<String, String>,
+        }
+    };
+}
+
+completion_request! {
+    /// Request for a chat completion.
+    pub struct CompletionRequest {
+        pub stop_sequences: Option<Vec<String>>,
+    }
 }
 
 impl CompletionRequest {
@@ -144,19 +165,13 @@ pub struct ToolResult {
     pub is_error: bool,
 }
 
-/// Request for a completion with tool use.
-#[derive(Debug, Clone)]
-pub struct ToolCompletionRequest {
-    pub messages: Vec<ChatMessage>,
-    pub tools: Vec<ToolDefinition>,
-    /// Optional per-request model override.
-    pub model: Option<String>,
-    pub max_tokens: Option<u32>,
-    pub temperature: Option<f32>,
-    /// How to handle tool use: "auto", "required", or "none".
-    pub tool_choice: Option<String>,
-    /// Opaque metadata passed through to the provider (e.g. thread_id for chaining).
-    pub metadata: std::collections::HashMap<String, String>,
+completion_request! {
+    /// Request for a completion with tool use.
+    pub struct ToolCompletionRequest {
+        pub tools: Vec<ToolDefinition>,
+        /// How to handle tool use: "auto", "required", or "none".
+        pub tool_choice: Option<String>,
+    }
 }
 
 impl ToolCompletionRequest {

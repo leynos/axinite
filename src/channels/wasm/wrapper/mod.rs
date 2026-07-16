@@ -73,6 +73,7 @@ use types::SecretValue;
 pub use shared::SharedWasmChannel;
 
 pub use convert::HttpResponse;
+pub use outbound::RespondInvocation;
 #[cfg(test)]
 use store::{ChannelStoreData, ResolvedHostCredential};
 

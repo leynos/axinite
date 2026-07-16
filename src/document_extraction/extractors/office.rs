@@ -59,7 +59,6 @@ pub(super) fn extract_pptx(data: &[u8]) -> Result<String, String> {
     let mut archive =
         zip::ZipArchive::new(cursor).map_err(|e| format!("invalid PPTX archive: {e}"))?;
 
-    // Collect slide filenames (ppt/slides/slide1.xml, slide2.xml, ...)
     let slide_names = collect_entry_names(&mut archive, "ppt/slides/slide", ".xml");
     let all_text = read_entry_texts(&mut archive, &slide_names, strip_xml_tags);
 
@@ -90,7 +89,7 @@ fn finalize_xlsx_text(
     shared_strings: Vec<String>,
 ) -> Result<String, String> {
     if all_text.is_empty() && !shared_strings.is_empty() {
-        // Fallback: just return shared strings
+        // Fall back to the raw shared-strings table.
         return Ok(shared_strings.join("\n"));
     }
     if all_text.is_empty() {
@@ -157,6 +156,13 @@ impl StrippedText {
             self.last_was_space = true;
         }
     }
+}
+
+impl XmlTagScanner for StrippedText {
+    /// A tag boundary separates adjacent text runs with a single space.
+    fn handle_tag(&mut self, _tag: &str) {
+        self.separate();
+    }
 
     /// Append one character of text content, collapsing whitespace runs.
     fn push_char(&mut self, ch: char) {
@@ -172,22 +178,8 @@ impl StrippedText {
 /// Strip XML tags and return just the text content.
 pub(super) fn strip_xml_tags(xml: &str) -> String {
     let mut text = StrippedText::with_capacity(xml.len() / 2);
-    let mut in_tag = false;
-
-    for ch in xml.chars() {
-        match ch {
-            '<' => in_tag = true,
-            '>' => {
-                in_tag = false;
-                // Add space between tag-delimited text runs.
-                text.separate();
-            }
-            _ if !in_tag => text.push_char(ch),
-            _ => {}
-        }
-    }
-
-    // Decode common XML entities
+    scan_xml_tags(xml, &mut text);
+    // Decode common XML entities.
     text.result
         .replace("&amp;", "&")
         .replace("&lt;", "<")
@@ -198,45 +190,75 @@ pub(super) fn strip_xml_tags(xml: &str) -> String {
         .to_string()
 }
 
-/// Parse XLSX shared strings XML into a Vec of strings.
-pub(super) fn parse_xlsx_shared_strings(xml: &str) -> Vec<String> {
-    // Shared strings are in <si><t>text</t></si> elements
-    let mut strings = Vec::new();
-    let mut in_t = false;
-    let mut current = String::new();
+/// Scanner fed by [`scan_xml_tags`]: reacts to complete tags and to the text
+/// characters between them.
+trait XmlTagScanner {
+    /// React to one complete XML tag, already trimmed and free of `<`/`>`.
+    fn handle_tag(&mut self, tag: &str);
+    /// Consume one character of inter-tag text content.
+    fn push_char(&mut self, ch: char);
+}
+
+/// Drive a `<tag>text` scan over `xml`, dispatching each complete tag to
+/// [`XmlTagScanner::handle_tag`] and every text character to
+/// [`XmlTagScanner::push_char`].
+fn scan_xml_tags(xml: &str, scanner: &mut impl XmlTagScanner) {
     let mut in_tag = false;
-    let mut tag_name = String::new();
+    let mut tag_buf = String::new();
 
     for ch in xml.chars() {
         match ch {
             '<' => {
                 in_tag = true;
-                tag_name.clear();
+                tag_buf.clear();
             }
             '>' => {
                 in_tag = false;
-                let tag = tag_name.trim().to_string();
-                if tag == "t" || tag.starts_with("t ") {
-                    in_t = true;
-                    current.clear();
-                } else if tag == "/t" {
-                    in_t = false;
-                    strings.push(std::mem::take(&mut current));
-                } else if tag == "/si" {
-                    in_t = false;
-                }
+                scanner.handle_tag(tag_buf.trim());
             }
-            _ if in_tag => {
-                tag_name.push(ch);
-            }
-            _ if in_t => {
-                current.push(ch);
-            }
-            _ => {}
+            _ if in_tag => tag_buf.push(ch),
+            _ => scanner.push_char(ch),
+        }
+    }
+}
+
+/// Streaming state for the shared-strings parser: tracks whether a `<t>` text
+/// run is open and accumulates its content.
+struct SharedStringsParser {
+    strings: Vec<String>,
+    in_t: bool,
+    current: String,
+}
+
+impl XmlTagScanner for SharedStringsParser {
+    fn handle_tag(&mut self, tag: &str) {
+        if tag == "/t" {
+            self.in_t = false;
+            self.strings.push(std::mem::take(&mut self.current));
+        } else if tag == "/si" {
+            self.in_t = false;
+        } else if is_element_open(tag, "t") {
+            self.in_t = true;
+            self.current.clear();
         }
     }
 
-    strings
+    fn push_char(&mut self, ch: char) {
+        if self.in_t {
+            self.current.push(ch);
+        }
+    }
+}
+
+/// Parse XLSX shared strings XML into a Vec of strings.
+pub(super) fn parse_xlsx_shared_strings(xml: &str) -> Vec<String> {
+    let mut parser = SharedStringsParser {
+        strings: Vec::new(),
+        in_t: false,
+        current: String::new(),
+    };
+    scan_xml_tags(xml, &mut parser);
+    parser.strings
 }
 
 /// Return `true` when `tag` opens the element `name` — either the bare name
@@ -273,14 +295,11 @@ fn classify_sheet_tag(tag: &str) -> SheetTag {
 /// Extract the `t="..."` type attribute from a cell open tag
 /// (`t="s"` means shared string).
 fn cell_type_attribute(tag: &str) -> String {
-    let Some(t_pos) = tag.find("t=\"") else {
+    let Some((_, rest)) = tag.split_once("t=\"") else {
         return String::new();
     };
-    let rest = &tag[t_pos + 3..];
-    match rest.find('"') {
-        Some(end) => rest[..end].to_string(),
-        None => String::new(),
-    }
+    rest.split_once('"')
+        .map_or_else(String::new, |(value, _)| value.to_string())
 }
 
 /// Streaming state for the XLSX sheet cell parser: tracks the current row,
@@ -305,27 +324,6 @@ impl<'a> SheetParser<'a> {
             in_row: false,
             current_val: String::new(),
             cell_type: String::new(),
-        }
-    }
-
-    /// React to one complete XML tag.
-    fn handle_tag(&mut self, tag: &str) {
-        match classify_sheet_tag(tag) {
-            SheetTag::RowOpen => {
-                self.in_row = true;
-                self.current_row.clear();
-            }
-            SheetTag::RowClose => self.end_row(),
-            SheetTag::CellOpen if self.in_row => {
-                self.cell_type = cell_type_attribute(tag);
-            }
-            SheetTag::ValueOpen => {
-                self.in_v = true;
-                self.current_val.clear();
-            }
-            SheetTag::ValueClose => self.end_value(),
-            SheetTag::CellClose => self.cell_type.clear(),
-            _ => {}
         }
     }
 
@@ -365,32 +363,38 @@ impl<'a> SheetParser<'a> {
     }
 }
 
-/// Parse XLSX sheet XML into tab-separated rows.
-fn parse_xlsx_sheet(xml: &str, shared_strings: &[String]) -> String {
-    // Simple extraction: find <v> values in <c> cells, resolve shared string refs
-    let mut parser = SheetParser::new(shared_strings);
-    let mut in_tag = false;
-    let mut tag_buf = String::new();
-
-    for ch in xml.chars() {
-        match ch {
-            '<' => {
-                in_tag = true;
-                tag_buf.clear();
+impl XmlTagScanner for SheetParser<'_> {
+    fn handle_tag(&mut self, tag: &str) {
+        match classify_sheet_tag(tag) {
+            SheetTag::RowOpen => {
+                self.in_row = true;
+                self.current_row.clear();
             }
-            '>' => {
-                in_tag = false;
-                parser.handle_tag(tag_buf.trim());
+            SheetTag::RowClose => self.end_row(),
+            SheetTag::CellOpen if self.in_row => {
+                self.cell_type = cell_type_attribute(tag);
             }
-            _ if in_tag => {
-                tag_buf.push(ch);
+            SheetTag::ValueOpen => {
+                self.in_v = true;
+                self.current_val.clear();
             }
-            _ if parser.in_v => {
-                parser.current_val.push(ch);
-            }
+            SheetTag::ValueClose => self.end_value(),
+            SheetTag::CellClose => self.cell_type.clear(),
             _ => {}
         }
     }
 
+    fn push_char(&mut self, ch: char) {
+        if self.in_v {
+            self.current_val.push(ch);
+        }
+    }
+}
+
+/// Parse XLSX sheet XML into tab-separated rows.
+fn parse_xlsx_sheet(xml: &str, shared_strings: &[String]) -> String {
+    // Resolve <v> values in <c> cells, dereferencing shared strings.
+    let mut parser = SheetParser::new(shared_strings);
+    scan_xml_tags(xml, &mut parser);
     parser.render()
 }

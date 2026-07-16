@@ -36,10 +36,14 @@ impl UpgradeContext<'_> {
         .is_err()
     }
 
+    /// Build an [`UpgradeOutcome`] for this extension, tagging the shared name
+    /// and kind so each phase supplies only its status and detail.
+    fn make_outcome(&self, status: &str, detail: String) -> UpgradeOutcome {
+        outcome(self.name, self.kind, status, detail)
+    }
+
     fn up_to_date_outcome(&self) -> UpgradeOutcome {
-        outcome(
-            self.name,
-            self.kind,
+        self.make_outcome(
             "already_up_to_date",
             format!(
                 "WIT {} matches host WIT {}",
@@ -50,9 +54,7 @@ impl UpgradeContext<'_> {
     }
 
     fn not_in_registry_outcome(&self) -> UpgradeOutcome {
-        outcome(
-            self.name,
-            self.kind,
+        self.make_outcome(
             "not_in_registry",
             format!(
                 concat!(
@@ -67,9 +69,7 @@ impl UpgradeContext<'_> {
     }
 
     fn upgraded_outcome(&self) -> UpgradeOutcome {
-        outcome(
-            self.name,
-            self.kind,
+        self.make_outcome(
             "upgraded",
             format!(
                 "Upgraded from WIT {} to host WIT {}. Restart to activate.",
@@ -77,6 +77,11 @@ impl UpgradeContext<'_> {
                 self.host_wit
             ),
         )
+    }
+
+    /// Build a `"failed"` outcome with a human-readable reason.
+    fn failed_outcome(&self, detail: String) -> UpgradeOutcome {
+        self.make_outcome("failed", detail)
     }
 }
 
@@ -305,12 +310,7 @@ impl ExtensionManager {
         if wasm_path.exists()
             && let Err(e) = tokio::fs::remove_file(&wasm_path).await
         {
-            return outcome(
-                ctx.name,
-                ctx.kind,
-                "failed",
-                format!("Failed to remove old WASM binary: {}", e),
-            );
+            return ctx.failed_outcome(format!("Failed to remove old WASM binary: {}", e));
         }
         // Also remove old capabilities so install_from_entry can write the new one.
         if cap_path.exists() {
@@ -327,12 +327,9 @@ impl ExtensionManager {
                 );
                 ctx.upgraded_outcome()
             }
-            Err(e) => outcome(
-                ctx.name,
-                ctx.kind,
-                "failed",
-                format!("Reinstall failed: {}. Old files were removed.", e),
-            ),
+            Err(e) => {
+                ctx.failed_outcome(format!("Reinstall failed: {}. Old files were removed.", e))
+            }
         }
     }
 }

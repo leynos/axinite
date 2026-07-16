@@ -13,29 +13,30 @@ use crate::channels::wasm::error::WasmChannelError;
 use super::guest_calls::{BroadcastPayload, RespondPayload};
 use super::{WasmChannel, status_to_wit};
 
-/// Borrowed view of an on_respond invocation, used for structured logging.
-struct RespondInvocation<'a> {
-    message_id: Uuid,
-    content: &'a str,
-    thread_id: Option<&'a str>,
-    attachments: &'a [String],
+/// Borrowed view of an on_respond invocation: the sole parameter to
+/// [`WasmChannel::call_on_respond`], also used for its structured logging.
+pub struct RespondInvocation<'a> {
+    /// Identifier of the incoming message being replied to.
+    pub message_id: Uuid,
+    /// Reply body forwarded to the guest.
+    pub content: &'a str,
+    /// Optional thread identifier for reply chaining.
+    pub thread_id: Option<&'a str>,
+    /// Channel-specific routing metadata (JSON), taken from the original message.
+    pub metadata_json: &'a str,
+    /// Attachment references sent alongside the reply.
+    pub attachments: &'a [String],
 }
 
 impl WasmChannel {
     /// Emit the invocation and credential-state logs for an on_respond call.
-    async fn log_respond_invocation(&self, invocation: RespondInvocation<'_>) {
-        let RespondInvocation {
-            message_id,
-            content,
-            thread_id,
-            attachments,
-        } = invocation;
+    async fn log_respond_invocation(&self, invocation: &RespondInvocation<'_>) {
         tracing::info!(
             channel = %self.name,
-            message_id = %message_id,
-            content_len = content.len(),
-            thread_id = ?thread_id,
-            attachment_count = attachments.len(),
+            message_id = %invocation.message_id,
+            content_len = invocation.content.len(),
+            thread_id = ?invocation.thread_id,
+            attachment_count = invocation.attachments.len(),
             "call_on_respond invoked"
         );
 
@@ -77,19 +78,17 @@ impl WasmChannel {
     /// Called when the agent has a response to send back.
     pub async fn call_on_respond(
         &self,
-        message_id: Uuid,
-        content: &str,
-        thread_id: Option<&str>,
-        metadata_json: &str,
-        attachments: &[String],
+        invocation: RespondInvocation<'_>,
     ) -> Result<(), WasmChannelError> {
-        self.log_respond_invocation(RespondInvocation {
+        self.log_respond_invocation(&invocation).await;
+
+        let RespondInvocation {
             message_id,
             content,
             thread_id,
+            metadata_json,
             attachments,
-        })
-        .await;
+        } = invocation;
 
         // If no WASM bytes, do nothing (for testing)
         if self.prepared.component().is_none() {

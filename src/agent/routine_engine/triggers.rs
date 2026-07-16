@@ -133,19 +133,7 @@ impl RoutineEngine {
     /// Emit a structured event to system-event routines.
     ///
     /// Returns the number of routines that were fired.
-    pub async fn emit_system_event(
-        &self,
-        source: &str,
-        event_type: &str,
-        payload: &serde_json::Value,
-        user_id: Option<&str>,
-    ) -> usize {
-        let event = SystemEventRef {
-            source,
-            event_type,
-            payload,
-            user_id,
-        };
+    pub async fn emit_system_event(&self, event: SystemEventRef<'_>) -> usize {
         let cache = self.event_cache.read().await;
         let mut fired = 0;
 
@@ -163,7 +151,7 @@ impl RoutineEngine {
                 continue;
             }
 
-            let detail = truncate(&format!("{source}:{event_type}"), 200);
+            let detail = truncate(&format!("{}:{}", event.source, event.event_type), 200);
             self.spawn_fire_reserved(routine.clone(), "system_event", Some(detail));
             fired += 1;
         }
@@ -228,12 +216,17 @@ fn message_matches(
     re.is_match(&message.content)
 }
 
-/// Borrowed view of an emitted system event, as delivered to the matcher.
-struct SystemEventRef<'a> {
-    source: &'a str,
-    event_type: &'a str,
-    payload: &'a serde_json::Value,
-    user_id: Option<&'a str>,
+/// Borrowed view of an emitted system event, as delivered to the matcher and
+/// to [`RoutineEngine::emit_system_event`].
+pub struct SystemEventRef<'a> {
+    /// Identifier of the subsystem that raised the event.
+    pub source: &'a str,
+    /// Event discriminator within the source.
+    pub event_type: &'a str,
+    /// Structured payload matched against a routine's trigger filters.
+    pub payload: &'a serde_json::Value,
+    /// Owning user, or `None` when the event is unscoped.
+    pub user_id: Option<&'a str>,
 }
 
 /// Returns `true` when the routine's system-event trigger matches the

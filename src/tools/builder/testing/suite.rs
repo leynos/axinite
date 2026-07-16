@@ -134,6 +134,19 @@ impl TestSuite {
         self
     }
 
+    /// Build a [`TestCase`] from `name` and `input`, apply `configure`, and add
+    /// it to the suite. Shared scaffolding for the typed `add_*` helpers.
+    fn add_configured(
+        &mut self,
+        name: impl Into<String>,
+        input: serde_json::Value,
+        configure: impl FnOnce(&mut TestCase),
+    ) -> &mut Self {
+        let mut test = TestCase::new(name, input);
+        configure(&mut test);
+        self.add_test(test)
+    }
+
     /// Add a simple input/output test.
     pub fn add_io_test(
         &mut self,
@@ -141,9 +154,9 @@ impl TestSuite {
         input: serde_json::Value,
         expected: serde_json::Value,
     ) -> &mut Self {
-        let mut test = TestCase::new(name, input);
-        test.expected_output = Some(expected);
-        self.add_test(test)
+        self.add_configured(name, input, |test| {
+            test.expected_output = Some(expected);
+        })
     }
 
     /// Add a test that expects an error.
@@ -153,10 +166,10 @@ impl TestSuite {
         input: serde_json::Value,
         error_contains: impl Into<String>,
     ) -> &mut Self {
-        let mut test = TestCase::new(name, input);
-        test.expect_error = true;
-        test.error_contains = Some(error_contains.into());
-        self.add_test(test)
+        self.add_configured(name, input, |test| {
+            test.expect_error = true;
+            test.error_contains = Some(error_contains.into());
+        })
     }
 }
 

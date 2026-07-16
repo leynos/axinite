@@ -109,4 +109,4 @@ pub use schema::{
     ChannelCapabilitiesFile, ChannelConfig, SecretSetupSchema, SetupSchema, WebhookSchema,
 };
 pub use setup::{WasmChannelSetup, inject_channel_credentials, setup_wasm_channels};
-pub use wrapper::{HttpResponse, SharedWasmChannel, WasmChannel};
+pub use wrapper::{HttpResponse, RespondInvocation, SharedWasmChannel, WasmChannel};
