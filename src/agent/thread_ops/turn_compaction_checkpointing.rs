@@ -122,6 +122,9 @@ impl Agent {
 
 #[cfg(test)]
 mod tests {
+    //! Unit tests for turn compaction checkpointing during thread
+    //! operations.
+
     use rstest::rstest;
 
     use super::*;

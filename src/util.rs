@@ -72,6 +72,8 @@ pub fn llm_signals_completion(response: &str) -> bool {
 
 #[cfg(test)]
 mod tests {
+    //! Unit tests for character boundary and completion-signal helpers.
+
     use crate::util::{floor_char_boundary, llm_signals_completion};
 
     // ── floor_char_boundary ──

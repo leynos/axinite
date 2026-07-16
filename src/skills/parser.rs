@@ -117,6 +117,8 @@ fn find_closing_delimiter(content: &str) -> Option<usize> {
 
 #[cfg(test)]
 mod tests {
+    //! Unit tests for parsing skill front matter and metadata.
+
     use super::*;
 
     #[test]

@@ -95,6 +95,8 @@ mod platform {
 
 #[cfg(target_os = "linux")]
 mod platform {
+    //! Linux master-key storage via the freedesktop secret service.
+
     use secret_service::{EncryptionType, SecretService};
 
     use super::*;
@@ -282,6 +284,8 @@ fn hex_to_bytes(hex: &str) -> Result<Vec<u8>, SecretError> {
 
 #[cfg(test)]
 mod tests {
+    //! Unit tests for master-key generation and hex encoding.
+
     use super::*;
 
     #[test]

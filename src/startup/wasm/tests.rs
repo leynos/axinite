@@ -4,7 +4,7 @@ use std::collections::HashSet;
 use std::sync::Arc;
 
 use ironclaw::{
-    app::{AppBuilder, AppBuilderFlags, AppComponents},
+    app::{AppBuilder, AppBuilderFlags, AppBuilderParams, AppComponents},
     channels::web::log_layer::LogBroadcaster,
     channels::{
         ChannelManager,
@@ -29,16 +29,16 @@ async fn build_test_components(config: Config, no_db: bool) -> anyhow::Result<Ap
     let tempdir = tempfile::tempdir()?;
     let session = create_session_manager(config.llm.session.clone()).await;
     let log_broadcaster = Arc::new(LogBroadcaster::new());
-    let (components, _side_effects) = AppBuilder::new(
+    let (components, _side_effects) = AppBuilder::new(AppBuilderParams {
         config,
-        AppBuilderFlags {
+        flags: AppBuilderFlags {
             no_db,
             ..Default::default()
         },
-        Some(tempdir.path().join("test.toml")),
+        toml_path: Some(tempdir.path().join("test.toml")),
         session,
         log_broadcaster,
-    )
+    })
     .build_components()
     .await?;
     Ok(components)
@@ -191,8 +191,9 @@ impl WasmWiringFixture {
         wire_wasm_channel_runtime(&wiring, runtime_state, loaded_wasm_channel_names).await;
     }
 
-    fn manager(&self) -> &Arc<FakeRuntimeManager> {
-        self.extension_manager.as_ref().expect("manager present")
+    fn manager(&self) -> anyhow::Result<&Arc<FakeRuntimeManager>> {
+        use anyhow::Context as _;
+        self.extension_manager.as_ref().context("manager present")
     }
 }
 
@@ -275,7 +276,7 @@ async fn wire_wasm_channel_runtime_skips_relay_channels() -> anyhow::Result<()> 
         .insert("relay".to_string());
     let (fixture, runtime_state) = wire_with(manager, &[]).await?;
 
-    let manager = fixture.manager();
+    let manager = fixture.manager()?;
     assert!(runtime_state.is_none());
     assert!(manager.wasm_activation_calls.lock().await.is_empty());
     assert_eq!(*manager.runtime_wire_count.lock().await, 1);
@@ -291,7 +292,7 @@ async fn wire_wasm_channel_runtime_skips_channels_that_started_active() -> anyho
     let loaded = vec!["already-active".to_string()];
     fixture.wire(&mut runtime_state, &loaded).await;
 
-    let manager = fixture.manager();
+    let manager = fixture.manager()?;
     assert!(runtime_state.is_none());
     assert!(manager.wasm_activation_calls.lock().await.is_empty());
     assert_eq!(
@@ -311,7 +312,7 @@ async fn wire_wasm_channel_runtime_logs_activation_failures() -> anyhow::Result<
         .insert("new-channel".to_string());
     let (fixture, _runtime_state) = wire_with(manager, &[]).await?;
 
-    let manager = fixture.manager();
+    let manager = fixture.manager()?;
     assert_eq!(
         manager.wasm_activation_calls.lock().await.as_slice(),
         ["new-channel"]
@@ -329,6 +330,6 @@ async fn wire_wasm_channel_runtime_registers_sse_sender() -> anyhow::Result<()> 
     let loaded = Vec::new();
     fixture.wire(&mut runtime_state, &loaded).await;
 
-    assert!(fixture.manager().sse_sender.lock().await.is_some());
+    assert!(fixture.manager()?.sse_sender.lock().await.is_some());
     Ok(())
 }

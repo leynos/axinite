@@ -116,9 +116,7 @@ impl TestGatewayBuilder {
         auth_token: &str,
     ) -> Result<(SocketAddr, Arc<GatewayState>), crate::error::ChannelError> {
         let state = self.build();
-        let addr: SocketAddr = "127.0.0.1:0"
-            .parse()
-            .expect("hard-coded address must parse");
+        let addr = SocketAddr::from(([127, 0, 0, 1], 0));
         let bound = start_server(addr, state.clone(), auth_token.to_string()).await?;
         Ok((bound, state))
     }

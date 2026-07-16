@@ -112,6 +112,7 @@ pub async fn job_files_list_handler(
         let is_dir = entry
             .file_type()
             .await
+            .map(ambient_fs::FileType::from_std)
             .map_err(|e| {
                 (
                     StatusCode::INTERNAL_SERVER_ERROR,

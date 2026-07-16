@@ -57,6 +57,8 @@ impl Default for TimeEstimator {
 
 #[cfg(test)]
 mod tests {
+    //! Unit tests for tool and LLM response time estimation.
+
     use super::*;
 
     #[test]

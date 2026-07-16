@@ -232,7 +232,7 @@ impl WorkerHttpClient {
         })
     }
 
-    /// Fetch the hosted-visible orchestrator-owned remote tool catalogue.
+    /// Fetch the hosted-visible orchestrator-owned remote tool catalog.
     pub async fn get_remote_tool_catalog(&self) -> Result<RemoteToolCatalogResponse, WorkerError> {
         self.get_json(REMOTE_TOOL_CATALOG_PATH, "GET /tools/catalog")
             .await

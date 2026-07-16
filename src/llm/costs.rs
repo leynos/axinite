@@ -12,7 +12,7 @@ use rust_decimal_macros::dec;
 pub fn model_cost(model_id: &str) -> Option<(Decimal, Decimal)> {
     // OpenRouter free-tier models: `:free` suffix or the `openrouter/free` router
     // should always report zero cost (see #463).
-    if model_id.ends_with(":free") || model_id == "openrouter/free" || model_id == "free" {
+    if is_free_model(model_id) {
         return Some((Decimal::ZERO, Decimal::ZERO));
     }
 
@@ -80,6 +80,12 @@ pub fn model_cost(model_id: &str) -> Option<(Decimal, Decimal)> {
     }
 }
 
+/// OpenRouter free-tier models: `:free` suffix or the free router aliases
+/// should always report zero cost (see #463).
+fn is_free_model(model_id: &str) -> bool {
+    model_id.ends_with(":free") || matches!(model_id, "openrouter/free" | "free")
+}
+
 /// Default cost for unknown models.
 pub fn default_cost() -> (Decimal, Decimal) {
     // Conservative estimate: roughly GPT-4o pricing
@@ -106,6 +112,8 @@ fn is_local_model(model_id: &str) -> bool {
 
 #[cfg(test)]
 mod tests {
+    //! Unit tests for per-model cost lookup and free local models.
+
     use super::*;
 
     #[test]
@@ -187,8 +195,9 @@ mod tests {
             "microsoft/phi-4:free",
             "nousresearch/deephermes-3-llama-3-8b-preview:free",
         ] {
-            let (input, output) =
-                model_cost(model).unwrap_or_else(|| panic!("{model} should return Some"));
+            let Some((input, output)) = model_cost(model) else {
+                panic!("{model} should return Some");
+            };
             assert_eq!(input, Decimal::ZERO, "{model} input cost should be zero");
             assert_eq!(output, Decimal::ZERO, "{model} output cost should be zero");
         }

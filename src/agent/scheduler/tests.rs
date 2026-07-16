@@ -4,13 +4,16 @@
 
 use super::*;
 use crate::config::SafetyConfig;
+use crate::context::{JobContext, JobState};
 use crate::llm::{
     CompletionRequest, CompletionResponse, LlmError, LlmProvider, ToolCompletionRequest,
     ToolCompletionResponse,
 };
 use crate::safety::SafetyLayer;
+use crate::tools::ApprovalContext;
 use rstest::rstest;
 use rust_decimal_macros::dec;
+use std::time::Duration;
 
 /// Minimal LLM provider stub for scheduler tests that don't exercise LLM calls.
 struct StubLlm;
@@ -100,7 +103,12 @@ async fn test_dispatch_job_token_budget(
 ) {
     let sched = make_test_scheduler(max_tokens_per_job);
     let job_id = sched
-        .dispatch_job("user1", "test", "desc", meta)
+        .dispatch_job(JobRequest {
+            user_id: "user1",
+            title: "test",
+            description: "desc",
+            metadata: meta,
+        })
         .await
         .expect("dispatch_job should succeed");
     let ctx = sched
@@ -119,7 +127,12 @@ async fn test_dispatch_job_atomic_metadata_and_tokens() {
         "custom_key": "custom_value"
     });
     let job_id = sched
-        .dispatch_job("user1", "test", "desc", Some(meta))
+        .dispatch_job(JobRequest {
+            user_id: "user1",
+            title: "test",
+            description: "desc",
+            metadata: Some(meta),
+        })
         .await
         .expect("dispatch_job failed for metadata test");
 

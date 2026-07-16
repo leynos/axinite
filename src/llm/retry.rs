@@ -214,6 +214,8 @@ impl crate::llm::NativeLlmProvider for RetryProvider {
 
 #[cfg(test)]
 mod tests {
+    //! Unit tests for retry backoff delays and retry wrapper behaviour.
+
     use super::*;
 
     use crate::testing::StubLlm;

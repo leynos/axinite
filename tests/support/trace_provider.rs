@@ -200,19 +200,19 @@ impl TraceLlm {
         }
     }
 
-    /// Increments the hint-mismatch counter.
+    /// Increments the hint-mismatch counter, saturating at `usize::MAX`.
     ///
-    /// # Panics
-    ///
-    /// Panics if the counter would overflow `usize::MAX`. Test-scale usage
-    /// should never approach this limit; overflow indicates runaway
+    /// Test-scale usage never approaches the limit; saturating instead of
+    /// panicking keeps the counter meaningful even under runaway
     /// hint-mismatch accumulation.
     pub(super) fn increment_hint_mismatches(&self) {
-        self.hint_mismatches
-            .fetch_update(Ordering::Relaxed, Ordering::Relaxed, |current| {
-                current.checked_add(1)
-            })
-            .unwrap_or_else(|_| panic!("hint_mismatches overflowed"));
+        // The closure always returns `Some`, so `fetch_update` cannot fail
+        // and the returned previous value is not needed.
+        let _ =
+            self.hint_mismatches
+                .fetch_update(Ordering::Relaxed, Ordering::Relaxed, |current| {
+                    Some(current.saturating_add(1))
+                });
     }
 }
 

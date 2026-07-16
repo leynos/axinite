@@ -4,6 +4,7 @@
 //! file-size guideline.  See `escape.rs` for the escaping helpers that were
 //! factored out alongside this module.
 
+use super::loaded_skill::validate_location_matches_manifest;
 use super::*;
 use rstest::{fixture, rstest};
 
@@ -238,8 +239,11 @@ fn test_loaded_skill_name_version() {
     assert_eq!(skill.version(), "1.0.0");
 }
 
-fn make_skill_parts(manifest_name: &str, location_name: &str) -> LoadedSkillParts {
-    LoadedSkillParts {
+fn make_skill_parts(
+    manifest_name: &str,
+    location_name: &str,
+) -> Result<LoadedSkillParts, LoadedSkillLocationError> {
+    Ok(LoadedSkillParts {
         manifest: SkillManifest {
             name: manifest_name.to_string(),
             version: "1.0.0".to_string(),
@@ -255,19 +259,20 @@ fn make_skill_parts(manifest_name: &str, location_name: &str) -> LoadedSkillPart
             PathBuf::from("/tmp"),
             PathBuf::from("SKILL.md"),
             SkillPackageKind::SingleFile,
-        )
-        .expect("test entrypoint is bundle-relative"),
+        )?,
         content_hash: String::new(),
         compiled_patterns: vec![],
         lowercased_keywords: vec![],
         lowercased_exclude_keywords: vec![],
         lowercased_tags: vec![],
-    }
+    })
 }
 
 #[test]
 fn test_loaded_skill_new_rejects_mismatched_location_identifier() {
-    let result = LoadedSkill::new(make_skill_parts("correct-name", "wrong-name"));
+    let parts =
+        make_skill_parts("correct-name", "wrong-name").expect("test entrypoint is bundle-relative");
+    let result = LoadedSkill::new(parts);
     assert!(result.is_err());
     let msg = result
         .expect_err("mismatched location identifier should fail")
@@ -284,8 +289,9 @@ fn test_loaded_skill_new_rejects_mismatched_location_identifier() {
 
 #[test]
 fn test_set_location_rejects_mismatched_identifier() {
-    let mut skill = LoadedSkill::new(make_skill_parts("my-skill", "my-skill"))
-        .expect("initial skill should be valid");
+    let parts =
+        make_skill_parts("my-skill", "my-skill").expect("test entrypoint is bundle-relative");
+    let mut skill = LoadedSkill::new(parts).expect("initial skill should be valid");
     let result = skill.set_location(
         LoadedSkillLocation::new(
             "other-skill",

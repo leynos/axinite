@@ -91,36 +91,43 @@ impl Router {
                 let job_id = parts.get(1).map(|s| s.to_string());
                 MessageIntent::CheckJobStatus { job_id }
             }
-            Some("cancel") => {
-                if let Some(job_id) = parts.get(1) {
-                    MessageIntent::CancelJob {
-                        job_id: job_id.to_string(),
-                    }
-                } else {
-                    MessageIntent::Unknown
-                }
-            }
+            Some("cancel") => cancel_intent(&parts),
             Some("list") | Some("jobs") => {
                 let filter = parts.get(1).map(|s| s.to_string());
                 MessageIntent::ListJobs { filter }
             }
-            Some("help") => {
-                if let Some(job_id) = parts.get(1) {
-                    MessageIntent::HelpJob {
-                        job_id: job_id.to_string(),
-                    }
-                } else {
-                    MessageIntent::Command {
-                        command: "help".to_string(),
-                        args: vec![],
-                    }
-                }
-            }
+            Some("help") => help_intent(&parts),
             Some(cmd) => MessageIntent::Command {
                 command: cmd.to_string(),
                 args: parts[1..].iter().map(|s| s.to_string()).collect(),
             },
             None => MessageIntent::Unknown,
+        }
+    }
+}
+
+/// Build the intent for a `cancel` command; a job identifier is required.
+fn cancel_intent(parts: &[&str]) -> MessageIntent {
+    if let Some(job_id) = parts.get(1) {
+        MessageIntent::CancelJob {
+            job_id: job_id.to_string(),
+        }
+    } else {
+        MessageIntent::Unknown
+    }
+}
+
+/// Build the intent for a `help` command: job-specific help when a job
+/// identifier follows, otherwise the general help command.
+fn help_intent(parts: &[&str]) -> MessageIntent {
+    if let Some(job_id) = parts.get(1) {
+        MessageIntent::HelpJob {
+            job_id: job_id.to_string(),
+        }
+    } else {
+        MessageIntent::Command {
+            command: "help".to_string(),
+            args: vec![],
         }
     }
 }
@@ -133,6 +140,8 @@ impl Default for Router {
 
 #[cfg(test)]
 mod tests {
+    //! Unit tests for slash-command routing and command detection.
+
     use super::*;
 
     #[test]

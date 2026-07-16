@@ -81,6 +81,8 @@ impl Default for ValueEstimator {
 
 #[cfg(test)]
 mod tests {
+    //! Unit tests for job value estimation.
+
     use super::*;
 
     #[test]

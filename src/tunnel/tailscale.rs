@@ -141,6 +141,8 @@ impl NativeTunnel for TailscaleTunnel {
 
 #[cfg(test)]
 mod tests {
+    //! Unit tests for the Tailscale tunnel provider.
+
     use super::*;
 
     #[test]

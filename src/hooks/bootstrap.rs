@@ -128,6 +128,25 @@ pub async fn register_plugin_bundle_from_capabilities_file(
     }
 }
 
+/// Whether a tool is active and was loaded from the bundled WASM directory
+/// rather than the dev-tools override.
+fn is_active_bundled_tool(
+    active_tools: &HashSet<&str>,
+    dev_loaded_tools: &HashSet<&str>,
+    name: &str,
+) -> bool {
+    active_tools.contains(name) && !dev_loaded_tools.contains(name)
+}
+
+/// Whether a tool is active and was loaded via the dev-tools override.
+fn is_active_dev_tool(
+    active_tools: &HashSet<&str>,
+    dev_loaded_tools: &HashSet<&str>,
+    name: &str,
+) -> bool {
+    active_tools.contains(name) && dev_loaded_tools.contains(name)
+}
+
 async fn collect_plugin_capability_files(
     wasm_tools_dir: &Path,
     wasm_channels_dir: &Path,
@@ -147,8 +166,7 @@ async fn collect_plugin_capability_files(
             Ok(tools) => {
                 for (name, tool) in tools {
                     if let Some(path) = tool.capabilities_path
-                        && active_tools.contains(name.as_str())
-                        && !dev_loaded_tools.contains(name.as_str())
+                        && is_active_bundled_tool(&active_tools, &dev_loaded_tools, name.as_str())
                     {
                         insert_unique(&mut files, &mut seen, format!("plugin.tool:{}", name), path);
                     }
@@ -168,8 +186,7 @@ async fn collect_plugin_capability_files(
         Ok(dev_tools) => {
             for (name, tool) in dev_tools {
                 if let Some(path) = tool.capabilities_path
-                    && active_tools.contains(name.as_str())
-                    && dev_loaded_tools.contains(name.as_str())
+                    && is_active_dev_tool(&active_tools, &dev_loaded_tools, name.as_str())
                 {
                     insert_unique(
                         &mut files,
@@ -322,6 +339,8 @@ fn is_workspace_hook_file(path: &str) -> bool {
 
 #[cfg(test)]
 mod tests {
+    //! Unit tests for extracting hook sections from capability manifests.
+
     use super::*;
 
     #[test]

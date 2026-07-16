@@ -5,6 +5,7 @@ TEST_FEATURES ?= --features test-helpers
 NEXTEST_PROFILE ?= default
 MARKDOWNLINT_BASE ?= origin/main
 CARGO_AUDIT ?= $(CARGO) audit
+WHITAKER ?= whitaker
 NIXIE ?= nixie
 UV ?= uv
 UV_ENV = UV_CACHE_DIR=.uv-cache UV_TOOL_DIR=.uv-tools
@@ -65,7 +66,7 @@ AUDIT_FLAGS ?= \
 	--ignore RUSTSEC-2024-0370 \
 	--ignore RUSTSEC-2025-0134
 
-.PHONY: all install install-with-overrides sync-local-wasm-overrides build-github-tool-wasm check-fmt typecheck lint markdownlint spelling spelling-phrase-check spelling-config spelling-config-write spelling-helper-test nixie audit rust-audit test test-cargo test-matrix test-matrix-cargo test-workflow-contracts clean
+.PHONY: all install install-with-overrides sync-local-wasm-overrides build-github-tool-wasm check-fmt typecheck lint lint-clippy lint-whitaker markdownlint spelling spelling-phrase-check spelling-config spelling-config-write spelling-helper-test nixie audit rust-audit test test-cargo test-matrix test-matrix-cargo test-workflow-contracts clean
 
 all: check-fmt lint test spelling
 
@@ -91,11 +92,17 @@ typecheck:
 	$(CARGO) check --all --benches --tests --examples --all-features $(TEST_FEATURES)
 	$(CARGO) check --manifest-path $(GITHUB_TOOL_MANIFEST) --tests
 
-lint:
+lint: lint-clippy lint-whitaker
+
+lint-clippy:
 	$(CARGO) clippy --all --benches --tests --examples $(TEST_FEATURES) -- -D warnings
 	$(CARGO) clippy --all --benches --tests --examples --no-default-features --features libsql-test-helpers -- -D warnings
 	$(CARGO) clippy --all --benches --tests --examples --all-features $(TEST_FEATURES) -- -D warnings
 	$(CARGO) clippy --manifest-path $(GITHUB_TOOL_MANIFEST) --tests -- -D warnings
+
+lint-whitaker:
+	RUSTFLAGS="-D warnings" $(WHITAKER) --all -- --all-targets --all-features
+	RUSTFLAGS="-D warnings" $(WHITAKER) --all --manifest-path $(GITHUB_TOOL_MANIFEST) -- --tests
 
 markdownlint: spelling
 	MARKDOWNLINT_BASE="$(MARKDOWNLINT_BASE)" ./scripts/lint-changed-markdown.sh "$(BUNX)"
@@ -125,9 +132,12 @@ nixie:
 
 audit: rust-audit
 
+# crates/ holds root-workspace members; they share the root Cargo.lock and
+# are audited through the root manifest, so the per-directory sweep skips
+# them (cargo-audit needs a lockfile beside the manifest it audits).
 rust-audit:
 	find . \
-		\( -path '*/target/*' -o -path '*/node_modules/*' -o -path '*/.venv/*' \) -prune -o \
+		\( -path '*/target/*' -o -path '*/node_modules/*' -o -path '*/.venv/*' -o -path './crates/*' \) -prune -o \
 		-name Cargo.toml -exec sh -c 'set -e; for manifest do \
 			manifest_dir=$$(dirname "$$manifest"); \
 			printf "Auditing Rust manifest %s\n" "$$manifest"; \
@@ -165,4 +175,4 @@ test-workflow-contracts:
 clean:
 	$(CARGO) clean
 	$(CARGO) clean --manifest-path $(GITHUB_TOOL_MANIFEST)
-	rm -rf $(WASM_SHARED_TARGET_DIR) .uv-cache .uv-tools
+	rm -rf $(WASM_SHARED_TARGET_DIR)

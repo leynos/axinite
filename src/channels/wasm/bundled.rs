@@ -136,6 +136,8 @@ pub fn available_channel_names() -> Vec<&'static str> {
 
 #[cfg(test)]
 mod tests {
+    //! Unit tests for bundled WASM channel discovery and extraction.
+
     use tempfile::tempdir;
     use tokio::fs;
 

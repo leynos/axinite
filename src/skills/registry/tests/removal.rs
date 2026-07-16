@@ -1,4 +1,6 @@
-use std::fs;
+//! Tests for skill removal across flat and nested registry layouts.
+
+use ambient_fs as fs;
 
 use super::super::*;
 

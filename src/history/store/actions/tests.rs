@@ -2,6 +2,7 @@
 
 use std::time::Duration;
 
+use anyhow::Context as _;
 use chrono::Utc;
 use rstest::{fixture, rstest};
 use rust_decimal::Decimal;
@@ -12,10 +13,13 @@ use crate::context::JobContext;
 use crate::testing::postgres::try_test_pg_db;
 
 #[fixture]
-async fn seeded_store() -> Option<(Store, Uuid)> {
-    let backend = try_test_pg_db()
+async fn seeded_store() -> anyhow::Result<Option<(Store, Uuid)>> {
+    let Some(backend) = try_test_pg_db()
         .await
-        .expect("unexpected Postgres test setup error")?;
+        .context("unexpected Postgres test setup error")?
+    else {
+        return Ok(None);
+    };
     let store = Store::from_pool(backend.pool());
     let ctx = JobContext::with_user(
         format!("actions-test-{}", Uuid::new_v4()),
@@ -23,18 +27,22 @@ async fn seeded_store() -> Option<(Store, Uuid)> {
         "job action fixture",
     );
     let job_id = ctx.job_id;
-    store.save_job(&ctx).await.expect("save_job should succeed");
-    Some((store, job_id))
+    store
+        .save_job(&ctx)
+        .await
+        .context("save_job should succeed")?;
+    Ok(Some((store, job_id)))
 }
 
-async fn cleanup_job(store: &Store, job_id: Uuid) {
-    let conn = store.conn().await.expect("conn should succeed");
+async fn cleanup_job(store: &Store, job_id: Uuid) -> anyhow::Result<()> {
+    let conn = store.conn().await.context("conn should succeed")?;
     conn.execute("DELETE FROM job_actions WHERE job_id = $1", &[&job_id])
         .await
-        .expect("delete job_actions should succeed");
+        .context("delete job_actions should succeed")?;
     conn.execute("DELETE FROM agent_jobs WHERE id = $1", &[&job_id])
         .await
-        .expect("delete agent_jobs should succeed");
+        .context("delete agent_jobs should succeed")?;
+    Ok(())
 }
 
 fn sample_action() -> ActionRecord {
@@ -57,9 +65,12 @@ fn sample_action() -> ActionRecord {
 #[rstest]
 #[tokio::test]
 async fn save_action_round_trips_via_get_job_actions(
-    #[future] seeded_store: Option<(Store, Uuid)>,
+    #[future] seeded_store: anyhow::Result<Option<(Store, Uuid)>>,
 ) {
-    let Some((store, job_id)) = seeded_store.await else {
+    let Some((store, job_id)) = seeded_store
+        .await
+        .expect("seeded store fixture should initialize")
+    else {
         return;
     };
     let action = sample_action();
@@ -94,15 +105,20 @@ async fn save_action_round_trips_via_get_job_actions(
         action.executed_at.timestamp_millis()
     );
 
-    cleanup_job(&store, job_id).await;
+    cleanup_job(&store, job_id)
+        .await
+        .expect("cleanup_job should succeed");
 }
 
 #[rstest]
 #[tokio::test]
 async fn save_action_rejects_duration_that_exceeds_i32_millis(
-    #[future] seeded_store: Option<(Store, Uuid)>,
+    #[future] seeded_store: anyhow::Result<Option<(Store, Uuid)>>,
 ) {
-    let Some((store, job_id)) = seeded_store.await else {
+    let Some((store, job_id)) = seeded_store
+        .await
+        .expect("seeded store fixture should initialize")
+    else {
         return;
     };
     let mut action = sample_action();
@@ -116,15 +132,20 @@ async fn save_action_rejects_duration_that_exceeds_i32_millis(
             if message.contains("duration exceeds i32")
     ));
 
-    cleanup_job(&store, job_id).await;
+    cleanup_job(&store, job_id)
+        .await
+        .expect("cleanup_job should succeed");
 }
 
 #[rstest]
 #[tokio::test]
 async fn save_action_rejects_sequence_that_exceeds_i32(
-    #[future] seeded_store: Option<(Store, Uuid)>,
+    #[future] seeded_store: anyhow::Result<Option<(Store, Uuid)>>,
 ) {
-    let Some((store, job_id)) = seeded_store.await else {
+    let Some((store, job_id)) = seeded_store
+        .await
+        .expect("seeded store fixture should initialize")
+    else {
         return;
     };
     let mut action = sample_action();
@@ -138,13 +159,20 @@ async fn save_action_rejects_sequence_that_exceeds_i32(
             if message.contains("sequence exceeds i32")
     ));
 
-    cleanup_job(&store, job_id).await;
+    cleanup_job(&store, job_id)
+        .await
+        .expect("cleanup_job should succeed");
 }
 
 #[rstest]
 #[tokio::test]
-async fn get_job_actions_rejects_negative_duration(#[future] seeded_store: Option<(Store, Uuid)>) {
-    let Some((store, job_id)) = seeded_store.await else {
+async fn get_job_actions_rejects_negative_duration(
+    #[future] seeded_store: anyhow::Result<Option<(Store, Uuid)>>,
+) {
+    let Some((store, job_id)) = seeded_store
+        .await
+        .expect("seeded store fixture should initialize")
+    else {
         return;
     };
     let conn = store.conn().await.expect("conn should succeed");
@@ -187,15 +215,20 @@ async fn get_job_actions_rejects_negative_duration(#[future] seeded_store: Optio
             if message.contains("duration_ms must be non-negative")
     ));
 
-    cleanup_job(&store, job_id).await;
+    cleanup_job(&store, job_id)
+        .await
+        .expect("cleanup_job should succeed");
 }
 
 #[rstest]
 #[tokio::test]
 async fn get_job_actions_rejects_negative_sequence_num(
-    #[future] seeded_store: Option<(Store, Uuid)>,
+    #[future] seeded_store: anyhow::Result<Option<(Store, Uuid)>>,
 ) {
-    let Some((store, job_id)) = seeded_store.await else {
+    let Some((store, job_id)) = seeded_store
+        .await
+        .expect("seeded store fixture should initialize")
+    else {
         return;
     };
     let conn = store.conn().await.expect("conn should succeed");
@@ -238,15 +271,20 @@ async fn get_job_actions_rejects_negative_sequence_num(
             if message.contains("sequence_num must be non-negative")
     ));
 
-    cleanup_job(&store, job_id).await;
+    cleanup_job(&store, job_id)
+        .await
+        .expect("cleanup_job should succeed");
 }
 
 #[rstest]
 #[tokio::test]
 async fn get_job_actions_treats_null_warnings_as_empty_vec(
-    #[future] seeded_store: Option<(Store, Uuid)>,
+    #[future] seeded_store: anyhow::Result<Option<(Store, Uuid)>>,
 ) {
-    let Some((store, job_id)) = seeded_store.await else {
+    let Some((store, job_id)) = seeded_store
+        .await
+        .expect("seeded store fixture should initialize")
+    else {
         return;
     };
     let conn = store.conn().await.expect("conn should succeed");
@@ -288,15 +326,20 @@ async fn get_job_actions_treats_null_warnings_as_empty_vec(
     assert_eq!(actions.len(), 1);
     assert!(actions[0].sanitization_warnings.is_empty());
 
-    cleanup_job(&store, job_id).await;
+    cleanup_job(&store, job_id)
+        .await
+        .expect("cleanup_job should succeed");
 }
 
 #[rstest]
 #[tokio::test]
 async fn get_job_actions_rejects_invalid_warning_payload_shape(
-    #[future] seeded_store: Option<(Store, Uuid)>,
+    #[future] seeded_store: anyhow::Result<Option<(Store, Uuid)>>,
 ) {
-    let Some((store, job_id)) = seeded_store.await else {
+    let Some((store, job_id)) = seeded_store
+        .await
+        .expect("seeded store fixture should initialize")
+    else {
         return;
     };
     let conn = store.conn().await.expect("conn should succeed");
@@ -339,5 +382,7 @@ async fn get_job_actions_rejects_invalid_warning_payload_shape(
             if message.contains("invalid sanitization_warnings payload")
     ));
 
-    cleanup_job(&store, job_id).await;
+    cleanup_job(&store, job_id)
+        .await
+        .expect("cleanup_job should succeed");
 }

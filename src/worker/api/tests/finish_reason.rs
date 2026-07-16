@@ -1,4 +1,4 @@
-//! Finish reason deserialization and conversion tests.
+//! Finish reason deserialisation and conversion tests.
 
 use rstest::rstest;
 use serde_json::json;

@@ -63,6 +63,9 @@ impl Store {
 
 #[cfg(all(test, feature = "postgres"))]
 mod tests {
+    //! Unit tests for persisting LLM call records to Postgres.
+
+    use anyhow::Context as _;
     use rstest::{fixture, rstest};
 
     use super::{LlmCallRecord, Store};
@@ -71,17 +74,24 @@ mod tests {
     use uuid::Uuid;
 
     #[fixture]
-    async fn store() -> Option<Store> {
-        let backend = try_test_pg_db()
+    async fn store() -> anyhow::Result<Option<Store>> {
+        let Some(backend) = try_test_pg_db()
             .await
-            .expect("unexpected Postgres test setup error")?;
-        Some(Store::from_pool(backend.pool()))
+            .context("unexpected Postgres test setup error")?
+        else {
+            return Ok(None);
+        };
+        Ok(Some(Store::from_pool(backend.pool())))
     }
 
     #[rstest]
     #[tokio::test]
-    async fn record_llm_call_persists_expected_values(#[future] store: Option<Store>) {
-        let Some(store) = store.await else { return };
+    async fn record_llm_call_persists_expected_values(
+        #[future] store: anyhow::Result<Option<Store>>,
+    ) {
+        let Some(store) = store.await.expect("store fixture should initialize") else {
+            return;
+        };
         let job_id = Uuid::new_v4();
         let conversation_id = Uuid::new_v4();
         let record = LlmCallRecord {

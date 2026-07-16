@@ -87,6 +87,8 @@ pub fn extract_credentials(config: &OpenClawConfig) -> Vec<(String, SecretString
 
 #[cfg(test)]
 mod tests {
+    //! Unit tests for mapping OpenClaw settings to native configuration.
+
     use super::*;
     use crate::import::openclaw::reader::{OpenClawConfig, OpenClawLlmConfig};
 

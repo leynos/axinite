@@ -277,6 +277,8 @@ impl std::fmt::Debug for WasmChannelRuntime {
 
 #[cfg(test)]
 mod tests {
+    //! Unit tests for WASM channel runtime configuration defaults and limits.
+
     use crate::channels::wasm::runtime::{WasmChannelRuntime, WasmChannelRuntimeConfig};
 
     #[test]

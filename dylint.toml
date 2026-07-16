@@ -1,0 +1,29 @@
+# Configuration for the Whitaker Dylint suite (`make lint-whitaker`).
+#
+# Exclusions are limited to the categories sanctioned by the Whitaker
+# user's guide (build scripts, test-support and fixture-staging crates,
+# and ambient-by-design code). Every entry must carry a rationale.
+
+[no_std_fs_operations]
+excluded_crates = [
+    # The build script embeds registry manifests into OUT_DIR before any
+    # runtime capability context exists; Cargo's build-script protocol is
+    # inherently ambient, so cap-std handles cannot apply here.
+    "build_script_build",
+    # The deliberately-ambient filesystem boundary crate; it confines the
+    # host's ambient access (user-scoped configuration and data
+    # directories, PID locks, workspace roots, extension staging) behind
+    # one auditable seam. See crates/ambient-fs/src/lib.rs.
+    "ambient_fs",
+    # Integration test crates below stage fixtures (temporary workspaces,
+    # captured artefacts, imported configuration trees) with ambient
+    # tempdir access, which the Whitaker user's guide sanctions for test
+    # support utilities. Add new test crates deliberately when they need
+    # ambient fixture I/O.
+    "channels",
+    "e2e_traces",
+    "html_to_markdown",
+    "import_openclaw",
+    "support_unit_tests",
+    "tools_and_config",
+]

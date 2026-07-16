@@ -1,3 +1,5 @@
+//! Tool builder mode configuration parsed from the environment.
+
 use std::path::PathBuf;
 use std::time::Duration;
 

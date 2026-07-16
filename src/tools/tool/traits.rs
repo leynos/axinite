@@ -1,3 +1,6 @@
+//! Core tool trait, error types, and future aliases for tool
+//! execution.
+
 use core::future::Future;
 use core::pin::Pin;
 use std::time::Duration;

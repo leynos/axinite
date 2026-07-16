@@ -1,10 +1,11 @@
-//! Registry catalogue: loads manifests from disk, provides list/search/resolve operations.
+//! Registry catalog: loads manifests from disk, provides list/search/resolve operations.
 
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
-use crate::registry::embedded;
-use crate::registry::manifest::{BundleDefinition, BundlesFile, ExtensionManifest, ManifestKind};
+use crate::registry::manifest::{BundleDefinition, ExtensionManifest, ManifestKind};
+
+mod load;
 
 /// Error type for registry operations.
 #[derive(Debug, thiserror::Error)]
@@ -28,9 +29,9 @@ pub enum RegistryError {
     },
 
     // `url` is stored for programmatic access (logs, retries) but intentionally
-    // omitted from the Display message to avoid leaking internal artefact URLs
+    // omitted from the Display message to avoid leaking internal artifact URLs
     // to end users.
-    #[error("Artefact download failed: {reason}")]
+    #[error("Artifact download failed: {reason}")]
     DownloadFailed { url: String, reason: String },
 
     #[error("Invalid extension manifest for '{name}' field '{field}': {reason}")]
@@ -47,11 +48,11 @@ pub enum RegistryError {
         actual_sha256: String,
     },
 
-    #[error("Missing SHA256 checksum for '{name}' artefact. Use --build to build from source.")]
+    #[error("Missing SHA256 checksum for '{name}' artifact. Use --build to build from source.")]
     MissingChecksum { name: String },
 
     #[error(
-        "Source fallback unavailable for '{name}' after artefact install failed. Retry artefact download or run from a repository checkout."
+        "Source fallback unavailable for '{name}' after artifact install failed. Retry artifact download or run from a repository checkout."
     )]
     SourceFallbackUnavailable {
         name: String,
@@ -59,7 +60,7 @@ pub enum RegistryError {
         artifact_error: Box<RegistryError>,
     },
 
-    #[error("Artefact install and source fallback both failed for '{name}'.")]
+    #[error("Artifact install and source fallback both failed for '{name}'.")]
     InstallFallbackFailed {
         name: String,
         artifact_error: Box<RegistryError>,
@@ -87,7 +88,7 @@ pub enum RegistryError {
     Io(#[from] std::io::Error),
 }
 
-/// Central catalogue loaded from the `registry/` directory.
+/// Central catalog loaded from the `registry/` directory.
 #[derive(Debug, Clone)]
 pub struct RegistryCatalog {
     /// All loaded manifests, keyed by "<kind>/<name>" (e.g. "tools/github").
@@ -101,159 +102,7 @@ pub struct RegistryCatalog {
 }
 
 impl RegistryCatalog {
-    /// Find the `registry/` directory by searching relative to cwd, the executable,
-    /// and `CARGO_MANIFEST_DIR`. Returns `None` if the directory cannot be found
-    /// (non-fatal at startup).
-    pub fn find_dir() -> Option<PathBuf> {
-        // Try relative to current directory (for dev usage)
-        if let Ok(cwd) = std::env::current_dir() {
-            let candidate = cwd.join("registry");
-            if candidate.is_dir() {
-                return Some(candidate);
-            }
-        }
-
-        // Try relative to executable (covers installed binary, target/debug/, target/release/)
-        if let Ok(exe) = std::env::current_exe()
-            && let Some(parent) = exe.parent()
-        {
-            // Walk up to 3 levels: exe dir, parent (target/release -> target), grandparent (-> repo root)
-            let mut dir = Some(parent);
-            for _ in 0..3 {
-                if let Some(d) = dir {
-                    let candidate = d.join("registry");
-                    if candidate.is_dir() {
-                        return Some(candidate);
-                    }
-                    dir = d.parent();
-                }
-            }
-        }
-
-        // Try CARGO_MANIFEST_DIR (compile-time, works in dev builds)
-        let manifest_dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
-        let candidate = manifest_dir.join("registry");
-        if candidate.is_dir() {
-            return Some(candidate);
-        }
-
-        None
-    }
-
-    /// Try to load from disk; if `registry/` cannot be found, fall back to
-    /// manifests embedded into the binary at compile time.
-    pub fn load_or_embedded() -> Result<Self, RegistryError> {
-        if let Some(dir) = Self::find_dir() {
-            return Self::load(&dir);
-        }
-
-        // Fall back to embedded catalogue
-        let manifests = embedded::load_embedded();
-        let bundles = embedded::load_embedded_bundles();
-
-        tracing::info!(
-            "Loaded embedded registry catalogue ({} extensions, {} bundles)",
-            manifests.len(),
-            bundles.len()
-        );
-
-        Ok(Self {
-            manifests,
-            bundles,
-            root: PathBuf::new(),
-        })
-    }
-
-    /// Load the catalogue from a registry directory.
-    ///
-    /// Expects the structure:
-    /// ```text
-    /// registry/
-    /// ├── tools/*.json
-    /// ├── channels/*.json
-    /// └── _bundles.json
-    /// ```
-    pub fn load(registry_dir: &Path) -> Result<Self, RegistryError> {
-        if !registry_dir.exists() {
-            return Err(RegistryError::DirectoryNotFound(registry_dir.to_path_buf()));
-        }
-
-        let mut manifests = HashMap::new();
-
-        // Load tools
-        let tools_dir = registry_dir.join("tools");
-        if tools_dir.is_dir() {
-            Self::load_manifests_from_dir(&tools_dir, "tools", &mut manifests)?;
-        }
-
-        // Load channels
-        let channels_dir = registry_dir.join("channels");
-        if channels_dir.is_dir() {
-            Self::load_manifests_from_dir(&channels_dir, "channels", &mut manifests)?;
-        }
-
-        // Load bundles
-        let bundles_path = registry_dir.join("_bundles.json");
-        let bundles = if bundles_path.is_file() {
-            let content = std::fs::read_to_string(&bundles_path).map_err(|e| {
-                RegistryError::BundlesRead(format!("{}: {}", bundles_path.display(), e))
-            })?;
-            let bundles_file: BundlesFile = serde_json::from_str(&content).map_err(|e| {
-                RegistryError::BundlesRead(format!("{}: {}", bundles_path.display(), e))
-            })?;
-            bundles_file.bundles
-        } else {
-            HashMap::new()
-        };
-
-        Ok(Self {
-            manifests,
-            bundles,
-            root: registry_dir.to_path_buf(),
-        })
-    }
-
-    fn load_manifests_from_dir(
-        dir: &Path,
-        kind_prefix: &str,
-        manifests: &mut HashMap<String, ExtensionManifest>,
-    ) -> Result<(), RegistryError> {
-        let entries = std::fs::read_dir(dir).map_err(|e| RegistryError::ManifestRead {
-            path: dir.to_path_buf(),
-            reason: e.to_string(),
-        })?;
-
-        for entry in entries {
-            let entry = entry.map_err(|e| RegistryError::ManifestRead {
-                path: dir.to_path_buf(),
-                reason: e.to_string(),
-            })?;
-
-            let path = entry.path();
-            if !path.is_file() || path.extension().and_then(|e| e.to_str()) != Some("json") {
-                continue;
-            }
-
-            let content =
-                std::fs::read_to_string(&path).map_err(|e| RegistryError::ManifestRead {
-                    path: path.clone(),
-                    reason: e.to_string(),
-                })?;
-
-            let manifest: ExtensionManifest =
-                serde_json::from_str(&content).map_err(|e| RegistryError::ManifestParse {
-                    path: path.clone(),
-                    reason: e.to_string(),
-                })?;
-
-            let key = format!("{}/{}", kind_prefix, manifest.name);
-            manifests.insert(key, manifest);
-        }
-
-        Ok(())
-    }
-
-    /// The root directory this catalogue was loaded from.
+    /// The root directory this catalog was loaded from.
     pub fn root(&self) -> &Path {
         &self.root
     }
@@ -469,242 +318,4 @@ impl RegistryCatalog {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-    use std::fs;
-
-    fn create_test_registry(dir: &Path) {
-        let tools_dir = dir.join("tools");
-        let channels_dir = dir.join("channels");
-        fs::create_dir_all(&tools_dir).unwrap();
-        fs::create_dir_all(&channels_dir).unwrap();
-
-        fs::write(
-            tools_dir.join("slack.json"),
-            r#"{
-                "name": "slack",
-                "display_name": "Slack",
-                "kind": "tool",
-                "version": "0.1.0",
-                "description": "Post messages via Slack API",
-                "keywords": ["messaging", "chat"],
-                "source": {
-                    "dir": "tools-src/slack",
-                    "capabilities": "slack-tool.capabilities.json",
-                    "crate_name": "slack-tool"
-                },
-                "auth_summary": {
-                    "method": "oauth",
-                    "provider": "Slack",
-                    "secrets": ["slack_bot_token"]
-                },
-                "tags": ["default", "messaging"]
-            }"#,
-        )
-        .unwrap();
-
-        fs::write(
-            tools_dir.join("github.json"),
-            r#"{
-                "name": "github",
-                "display_name": "GitHub",
-                "kind": "tool",
-                "version": "0.1.0",
-                "description": "GitHub integration for issues and PRs",
-                "keywords": ["code", "git"],
-                "source": {
-                    "dir": "tools-src/github",
-                    "capabilities": "github-tool.capabilities.json",
-                    "crate_name": "github-tool"
-                },
-                "tags": ["default", "development"]
-            }"#,
-        )
-        .unwrap();
-
-        fs::write(
-            channels_dir.join("telegram.json"),
-            r#"{
-                "name": "telegram",
-                "display_name": "Telegram",
-                "kind": "channel",
-                "version": "0.1.0",
-                "description": "Telegram Bot API channel",
-                "source": {
-                    "dir": "channels-src/telegram",
-                    "capabilities": "telegram.capabilities.json",
-                    "crate_name": "telegram-channel"
-                },
-                "tags": ["messaging"]
-            }"#,
-        )
-        .unwrap();
-
-        fs::write(
-            dir.join("_bundles.json"),
-            r#"{
-                "bundles": {
-                    "default": {
-                        "display_name": "Recommended",
-                        "extensions": ["tools/slack", "tools/github", "channels/telegram"]
-                    },
-                    "messaging": {
-                        "display_name": "Messaging",
-                        "extensions": ["tools/slack", "channels/telegram"],
-                        "shared_auth": null
-                    }
-                }
-            }"#,
-        )
-        .unwrap();
-    }
-
-    #[test]
-    fn test_load_catalogue() {
-        let tmp = tempfile::tempdir().unwrap();
-        create_test_registry(tmp.path());
-
-        let catalogue = RegistryCatalog::load(tmp.path()).unwrap();
-        assert_eq!(catalogue.all().len(), 3);
-    }
-
-    #[test]
-    fn test_list_by_kind() {
-        let tmp = tempfile::tempdir().unwrap();
-        create_test_registry(tmp.path());
-
-        let catalogue = RegistryCatalog::load(tmp.path()).unwrap();
-        let tools = catalogue.list(Some(ManifestKind::Tool), None);
-        assert_eq!(tools.len(), 2);
-
-        let channels = catalogue.list(Some(ManifestKind::Channel), None);
-        assert_eq!(channels.len(), 1);
-    }
-
-    #[test]
-    fn test_list_by_tag() {
-        let tmp = tempfile::tempdir().unwrap();
-        create_test_registry(tmp.path());
-
-        let catalogue = RegistryCatalog::load(tmp.path()).unwrap();
-        let defaults = catalogue.list(None, Some("default"));
-        assert_eq!(defaults.len(), 2);
-
-        let messaging = catalogue.list(None, Some("messaging"));
-        assert_eq!(messaging.len(), 2); // slack (tool) and telegram (channel) both have "messaging" tag
-    }
-
-    #[test]
-    fn test_get_by_name() {
-        let tmp = tempfile::tempdir().unwrap();
-        create_test_registry(tmp.path());
-
-        let catalogue = RegistryCatalog::load(tmp.path()).unwrap();
-
-        // Full key
-        assert!(catalogue.get("tools/slack").is_some());
-
-        // Bare name
-        assert!(catalogue.get("slack").is_some());
-        assert!(catalogue.get("telegram").is_some());
-
-        // Missing
-        assert!(catalogue.get("nonexistent").is_none());
-    }
-
-    #[test]
-    fn test_search() {
-        let tmp = tempfile::tempdir().unwrap();
-        create_test_registry(tmp.path());
-
-        let catalogue = RegistryCatalog::load(tmp.path()).unwrap();
-
-        let results = catalogue.search("slack");
-        assert_eq!(results.len(), 1);
-        assert_eq!(results[0].name, "slack");
-
-        let results = catalogue.search("messaging");
-        assert!(!results.is_empty());
-
-        let results = catalogue.search("nonexistent query");
-        assert!(results.is_empty());
-    }
-
-    #[test]
-    fn test_resolve_bundle() {
-        let tmp = tempfile::tempdir().unwrap();
-        create_test_registry(tmp.path());
-
-        let catalogue = RegistryCatalog::load(tmp.path()).unwrap();
-
-        let (manifests, missing) = catalogue.resolve_bundle("default").unwrap();
-        assert_eq!(manifests.len(), 3);
-        assert!(missing.is_empty());
-
-        assert!(catalogue.resolve_bundle("nonexistent").is_err());
-    }
-
-    #[test]
-    fn test_resolve_single_or_bundle() {
-        let tmp = tempfile::tempdir().unwrap();
-        create_test_registry(tmp.path());
-
-        let catalogue = RegistryCatalog::load(tmp.path()).unwrap();
-
-        // Single extension
-        let (manifests, bundle) = catalogue.resolve("slack").unwrap();
-        assert_eq!(manifests.len(), 1);
-        assert!(bundle.is_none());
-
-        // Bundle
-        let (manifests, bundle) = catalogue.resolve("default").unwrap();
-        assert_eq!(manifests.len(), 3);
-        assert!(bundle.is_some());
-    }
-
-    #[test]
-    fn test_bundle_names() {
-        let tmp = tempfile::tempdir().unwrap();
-        create_test_registry(tmp.path());
-
-        let catalogue = RegistryCatalog::load(tmp.path()).unwrap();
-        let names = catalogue.bundle_names();
-        assert_eq!(names, vec!["default", "messaging"]);
-    }
-
-    #[test]
-    fn test_directory_not_found() {
-        let result = RegistryCatalog::load(Path::new("/nonexistent/path"));
-        assert!(result.is_err());
-    }
-
-    #[test]
-    fn test_load_or_embedded_succeeds() {
-        // Should always succeed: either finds registry/ on disk or falls back to embedded
-        let catalogue = RegistryCatalog::load_or_embedded().unwrap();
-        // At minimum, the embedded catalogue from the repo should have entries
-        assert!(!catalogue.all().is_empty() || !catalogue.bundle_names().is_empty());
-    }
-
-    #[test]
-    fn test_bundle_entries_resolve_against_real_registry() {
-        // Load the actual registry/ directory (catches stale bundle refs after renames)
-        let catalogue = RegistryCatalog::load_or_embedded().unwrap();
-
-        for bundle_name in catalogue.bundle_names() {
-            let (manifests, missing) = catalogue.resolve_bundle(bundle_name).unwrap();
-            assert!(
-                missing.is_empty(),
-                "Bundle '{}' has unresolved entries: {:?}. \
-                 Check that _bundles.json entries match manifest name fields.",
-                bundle_name,
-                missing
-            );
-            assert!(
-                !manifests.is_empty(),
-                "Bundle '{}' resolved to zero manifests",
-                bundle_name
-            );
-        }
-    }
-}
+mod tests;

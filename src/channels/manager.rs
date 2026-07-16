@@ -249,6 +249,9 @@ impl Default for ChannelManager {
 
 #[cfg(test)]
 mod tests {
+    //! Unit tests for channel registration, stream merging, and response
+    //! routing.
+
     use super::*;
     use crate::channels::IncomingMessage;
     use crate::testing::StubChannel;

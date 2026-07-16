@@ -80,16 +80,19 @@ impl NativeSelfRepair for BlockingSelfRepair {
 
     async fn repair_stuck_job<'a>(
         &'a self,
-        _job: &'a StuckJob,
+        job: &'a StuckJob,
     ) -> Result<RepairResult, RepairError> {
         if let Some(tx) = self
             .repair_started_tx
             .lock()
-            .expect("repair-started sender lock should not be poisoned")
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
             .take()
         {
-            tx.send(())
-                .expect("repair-started signal should send successfully");
+            tx.send(()).map_err(|()| RepairError::Failed {
+                target_type: "job".to_string(),
+                target_id: job.job_id,
+                reason: "repair-started signal should send successfully".to_string(),
+            })?;
         }
         tokio::time::sleep(Duration::from_secs(60)).await;
         Ok(RepairResult::Success {

@@ -174,6 +174,8 @@ impl Agent {
 
 #[cfg(all(test, feature = "libsql"))]
 mod tests {
+    //! Unit tests for turn result finalization and persistence.
+
     use std::sync::Arc;
 
     use anyhow::Result;
@@ -259,6 +261,36 @@ mod tests {
         Ok(())
     }
 
+    /// Expected identity and display details of a `NeedApproval` result.
+    struct ExpectedApproval<'a> {
+        request_id: Uuid,
+        tool_name: &'a str,
+        description: &'a str,
+        parameters: &'a serde_json::Value,
+    }
+
+    /// Confirms the submission result is `NeedApproval` carrying the expected
+    /// request identity and display details.
+    fn is_expected_need_approval(
+        result: &SubmissionResult,
+        expected: &ExpectedApproval<'_>,
+    ) -> bool {
+        let SubmissionResult::NeedApproval {
+            request_id: actual_request_id,
+            tool_name: actual_tool_name,
+            description: actual_description,
+            parameters: actual_parameters,
+        } = result
+        else {
+            return false;
+        };
+        let identity_matches =
+            *actual_request_id == expected.request_id && actual_tool_name == expected.tool_name;
+        let details_match =
+            actual_description == expected.description && actual_parameters == expected.parameters;
+        identity_matches && details_match
+    }
+
     #[rstest]
     #[tokio::test]
     async fn handle_loop_result_need_approval_returns_submission_result(
@@ -284,17 +316,14 @@ mod tests {
             .expect("approval finalization should succeed");
 
         assert!(
-            matches!(
-                result,
-                SubmissionResult::NeedApproval {
-                    request_id: actual_request_id,
-                    tool_name: ref actual_tool_name,
-                    description: ref actual_description,
-                    parameters: ref actual_parameters
-                } if actual_request_id == request_id
-                    && actual_tool_name == &expected_tool_name
-                    && actual_description == &expected_description
-                    && actual_parameters == &expected_parameters
+            is_expected_need_approval(
+                &result,
+                &ExpectedApproval {
+                    request_id,
+                    tool_name: &expected_tool_name,
+                    description: &expected_description,
+                    parameters: &expected_parameters,
+                },
             ),
             "expected need-approval submission result"
         );

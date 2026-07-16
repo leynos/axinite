@@ -147,6 +147,8 @@ impl DocumentExtractionMiddleware {
 
 #[cfg(test)]
 mod tests {
+    //! Unit tests for extracting text from document attachments.
+
     use super::*;
     use crate::channels::IncomingAttachment;
 

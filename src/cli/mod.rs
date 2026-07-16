@@ -52,7 +52,7 @@ use clap::{ColorChoice, Parser, Subcommand};
     long_about = "IronClaw is a secure AI assistant. Use 'ironclaw <subcommand> --help' for details.\nExamples:\n  ironclaw run  # Start the agent\n  ironclaw config list  # List configs"
 )]
 #[command(version)]
-#[command(color = ColorChoice::Auto)] // Enable automatic colour for help (if the terminal supports it)
+#[command(color = ColorChoice::Auto)] // Enable auto-colour for help (if the terminal supports it)
 pub struct Cli {
     #[command(subcommand)]
     pub command: Option<Command>,
@@ -281,6 +281,8 @@ pub async fn run_memory_command(mem_cmd: &MemoryCommand) -> anyhow::Result<()> {
 
 #[cfg(test)]
 mod tests {
+    //! Unit tests for CLI argument parsing and version output.
+
     use super::*;
     use clap::CommandFactory;
     use insta::assert_snapshot;

@@ -9,6 +9,7 @@ use super::*;
 use crate::config::SafetyConfig;
 use crate::history::ConversationMessage;
 use crate::safety::SafetyLayer;
+use anyhow::Context as _;
 use rstest::{fixture, rstest};
 
 fn make_db_msg(role: &str, content: &str) -> ConversationMessage {
@@ -120,7 +121,10 @@ fn assert_tool_result_message(
 
 /// Asserts that `msg` is an [`crate::llm::Role::Assistant`] message with
 /// `tool_calls` populated, and returns a reference to the inner slice.
-fn assert_assistant_with_tool_calls(msg: &ChatMessage) -> &[crate::llm::ToolCall] {
+///
+/// Returns an error rather than panicking so callers inside tests can decide
+/// how to surface the failure.
+fn assert_assistant_with_tool_calls(msg: &ChatMessage) -> anyhow::Result<&[crate::llm::ToolCall]> {
     assert_eq!(
         msg.role,
         crate::llm::Role::Assistant,
@@ -128,7 +132,7 @@ fn assert_assistant_with_tool_calls(msg: &ChatMessage) -> &[crate::llm::ToolCall
     );
     msg.tool_calls
         .as_deref()
-        .expect("expected tool_calls to be Some on assistant message")
+        .context("expected tool_calls to be Some on assistant message")
 }
 
 #[rstest]
@@ -170,7 +174,8 @@ fn test_rebuild_chat_messages_with_enriched_tool_calls(test_safety_layer: Safety
     assert_eq!(result.len(), 5);
     assert_eq!(result[0].role, crate::llm::Role::User);
 
-    let tcs = assert_assistant_with_tool_calls(&result[1]);
+    let tcs = assert_assistant_with_tool_calls(&result[1])
+        .expect("expected tool_calls to be Some on assistant message");
     assert_eq!(tcs.len(), 2);
     assert_eq!(tcs[0].name, "memory_search");
     assert_eq!(tcs[0].id, "call_0");
@@ -202,122 +207,6 @@ fn test_rebuild_chat_messages_empty(test_safety_layer: SafetyLayer) {
 }
 
 #[rstest]
-fn test_rebuild_chat_messages_malformed_tool_calls_json(test_safety_layer: SafetyLayer) {
-    let safety = test_safety_layer;
-    let messages = vec![
-        make_db_msg("user", "Hi"),
-        make_db_msg("tool_calls", "not valid json"),
-        make_db_msg("assistant", "Done"),
-    ];
-    let result = rebuild_chat_messages_from_db(&messages, &safety);
-    // Malformed JSON is skipped with a warning (logs message_id and parse error)
-    assert_user_assistant_with_content(&result, "Hi", "Done");
-}
-
-#[rstest]
-#[case::object(r#"{"name":"search"}"#)]
-#[case::number("42")]
-#[case::null("null")]
-fn test_rebuild_chat_messages_non_array_tool_calls_json(
-    test_safety_layer: SafetyLayer,
-    #[case] non_array_json: &str,
-) {
-    let safety = test_safety_layer;
-    let messages = vec![
-        make_db_msg("user", "Hi"),
-        make_db_msg("tool_calls", non_array_json),
-        make_db_msg("assistant", "Done"),
-    ];
-    let result = rebuild_chat_messages_from_db(&messages, &safety);
-    // Non-array JSON for tool_calls is skipped (expecting an array)
-    assert_only_user_and_assistant(&result);
-    // Also verify message content wasn't modified
-    assert_eq!(result[0].content, "Hi");
-    assert_eq!(result[1].content, "Done");
-}
-
-#[rstest]
-#[case::leading(
-    {
-        let tool_json = serde_json::json!([
-            {"name": "echo", "result_preview": "hello"}
-        ]);
-        vec![
-            make_db_msg("tool_calls", &tool_json.to_string()),
-            make_db_msg("assistant", "Done"),
-        ]
-    },
-    vec![crate::llm::Role::Assistant],
-    vec!["Done"]
-)]
-#[case::trailing(
-    {
-        let tool_json = serde_json::json!([
-            {"name": "echo", "result_preview": "hello"}
-        ]);
-        vec![
-            make_db_msg("user", "Hi"),
-            make_db_msg("tool_calls", &tool_json.to_string()),
-        ]
-    },
-    vec![crate::llm::Role::User],
-    vec!["Hi"]
-)]
-fn test_rebuild_chat_messages_malformed_tool_calls_boundary(
-    test_safety_layer: SafetyLayer,
-    #[case] messages: Vec<ConversationMessage>,
-    #[case] expected_roles: Vec<crate::llm::Role>,
-    #[case] expected_contents: Vec<&str>,
-) {
-    assert_malformed_tool_calls_boundary(
-        &test_safety_layer,
-        messages,
-        &expected_roles,
-        &expected_contents,
-    );
-}
-
-/// Regression tests for malformed tool_calls entries that must be skipped.
-/// Before fixes, these were silently processed with fallback values or partial
-/// data.
-#[rstest]
-#[case::missing_name(serde_json::json!([
-    {"call_id": "call_0", "parameters": {"q": "x"}, "result": "ok"}
-]))]
-#[case::mixed_valid_invalid(serde_json::json!([
-    {"name": "search", "call_id": "call_0", "parameters": {}, "result": "found"},
-    {"name": "write", "parameters": {"path": "a.txt"}, "result": "ok"}
-]))]
-#[case::null_fields(serde_json::json!([
-    {"name": null, "call_id": "call_0", "parameters": {}, "result": "ok"}
-]))]
-#[case::empty_call_id(serde_json::json!([
-    {"name": "search", "call_id": "", "parameters": {}, "result": "ok"}
-]))]
-#[case::empty_name(serde_json::json!([
-    {"name": "", "call_id": "call_0", "parameters": {}, "result": "ok"}
-]))]
-#[case::whitespace_call_id(serde_json::json!([
-    {"name": "search", "call_id": "   ", "parameters": {}, "result": "ok"}
-]))]
-#[case::whitespace_name(serde_json::json!([
-    {"name": "  \t  ", "call_id": "call_0", "parameters": {}, "result": "ok"}
-]))]
-// Partial enrichment: one entry has call_id, another doesn't - reject entire row
-#[case::partial_enrichment(serde_json::json!([
-    {"name": "search", "call_id": "call_0", "parameters": {}, "result": "found"},
-    {"name": "echo", "parameters": {}, "result": "hello"}
-]))]
-// Empty array fast path: should be skipped without processing
-#[case::empty_array_skip(serde_json::json!([]))]
-fn test_rebuild_skips_malformed_tool_calls(
-    test_safety_layer: SafetyLayer,
-    #[case] malformed_json: serde_json::Value,
-) {
-    assert_malformed_tool_calls_skipped(&test_safety_layer, malformed_json);
-}
-
-#[rstest]
 fn test_rebuild_chat_messages_multi_turn_with_tools(test_safety_layer: SafetyLayer) {
     let safety = test_safety_layer;
     let tool_json_1 = serde_json::json!([
@@ -343,7 +232,8 @@ fn test_rebuild_chat_messages_multi_turn_with_tools(test_safety_layer: SafetyLay
     assert_eq!(result[0].content, "Find X");
 
     assert_eq!(result[1].role, crate::llm::Role::Assistant);
-    let first_turn_tool_calls = assert_assistant_with_tool_calls(&result[1]);
+    let first_turn_tool_calls = assert_assistant_with_tool_calls(&result[1])
+        .expect("expected tool_calls to be Some on assistant message");
     assert_eq!(first_turn_tool_calls.len(), 1);
     assert_eq!(first_turn_tool_calls[0].id, "call_0");
     assert_eq!(first_turn_tool_calls[0].name, "search");
@@ -358,7 +248,8 @@ fn test_rebuild_chat_messages_multi_turn_with_tools(test_safety_layer: SafetyLay
     assert_eq!(result[4].content, "Write it");
 
     assert_eq!(result[5].role, crate::llm::Role::Assistant);
-    let second_turn_tool_calls = assert_assistant_with_tool_calls(&result[5]);
+    let second_turn_tool_calls = assert_assistant_with_tool_calls(&result[5])
+        .expect("expected tool_calls to be Some on assistant message");
     assert_eq!(second_turn_tool_calls.len(), 1);
     assert_eq!(second_turn_tool_calls[0].id, "call_1");
     assert_eq!(second_turn_tool_calls[0].name, "write");
@@ -414,7 +305,8 @@ fn test_tool_result_content_fallbacks(
     let result = rebuild_chat_messages_from_db(&messages, &test_safety_layer);
 
     assert_eq!(result.len(), 4);
-    let tcs = assert_assistant_with_tool_calls(&result[1]);
+    let tcs = assert_assistant_with_tool_calls(&result[1])
+        .expect("expected tool_calls to be Some on assistant message");
     assert_eq!(tcs.len(), 1);
     assert_eq!(tcs[0].id, expected_call_id);
     assert_eq!(tcs[0].name, expected_tool_name);
@@ -425,6 +317,9 @@ fn test_tool_result_content_fallbacks(
         &[expected_fragment],
     );
 }
+
+#[path = "message_rebuild_malformed_tests.rs"]
+mod malformed_tool_calls;
 
 #[cfg(test)]
 #[path = "message_rebuild_property_tests.rs"]

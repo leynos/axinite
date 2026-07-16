@@ -17,8 +17,8 @@ use crate::channels::IncomingMessage;
 use crate::llm::{ChatMessage, LlmProvider};
 use crate::testing::StubLlm;
 
-fn serialize_messages(messages: &[ChatMessage]) -> serde_json::Value {
-    serde_json::to_value(messages).expect("chat messages should serialize for test assertions")
+fn serialize_messages(messages: &[ChatMessage]) -> serde_json::Result<serde_json::Value> {
+    serde_json::to_value(messages)
 }
 
 fn test_message() -> IncomingMessage {
@@ -168,9 +168,12 @@ async fn process_undo_restores_checkpoint(
 
     let sess = session.lock().await;
     let restored_messages = sess.threads[&thread_id].messages();
+    let restored = serialize_messages(&restored_messages)
+        .expect("chat messages should serialize for test assertions");
+    let expected = serialize_messages(&checkpoint_messages)
+        .expect("chat messages should serialize for test assertions");
     assert_eq!(
-        serialize_messages(&restored_messages),
-        serialize_messages(&checkpoint_messages),
+        restored, expected,
         "undo should restore the checkpoint snapshot"
     );
 }
@@ -235,9 +238,12 @@ async fn process_redo_restores_after_undo(
 
     let sess = session.lock().await;
     let restored_messages = sess.threads[&thread_id].messages();
+    let restored = serialize_messages(&restored_messages)
+        .expect("chat messages should serialize for test assertions");
+    let expected = serialize_messages(&messages_before_undo)
+        .expect("chat messages should serialize for test assertions");
     assert_eq!(
-        serialize_messages(&restored_messages),
-        serialize_messages(&messages_before_undo),
+        restored, expected,
         "redo should restore the pre-undo thread messages"
     );
 }

@@ -84,6 +84,8 @@ pub async fn import_conversation_atomic(
 
 #[cfg(test)]
 mod tests {
+    //! Unit tests for OpenClaw conversation history import structures.
+
     use super::*;
     use crate::import::openclaw::reader::OpenClawMessage;
 

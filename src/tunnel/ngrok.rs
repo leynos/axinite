@@ -116,6 +116,8 @@ impl NativeTunnel for NgrokTunnel {
 
 #[cfg(test)]
 mod tests {
+    //! Unit tests for ngrok tunnel construction and URL state.
+
     use super::*;
 
     #[test]

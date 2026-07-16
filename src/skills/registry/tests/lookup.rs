@@ -1,5 +1,8 @@
-use std::fs;
+//! Unit tests for skill registry lookup by name.
+
 use std::path::PathBuf;
+
+use ambient_fs as fs;
 
 use super::super::*;
 

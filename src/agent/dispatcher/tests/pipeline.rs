@@ -140,10 +140,10 @@ async fn make_pipeline_agent(
     tools: Vec<Arc<dyn crate::tools::Tool>>,
     max_tool_iterations: usize,
     auto_approve_tools: bool,
-) -> (Agent, Arc<std::sync::Mutex<Vec<StatusUpdate>>>) {
+) -> anyhow::Result<(Agent, Arc<std::sync::Mutex<Vec<StatusUpdate>>>)> {
     let (channels, statuses) = make_stubbed_channels("test-chan").await;
     let deps = make_agent_deps(provider, false);
-    deps.tools.register_builtin_tools();
+    deps.tools.register_builtin_tools()?;
     for tool in tools {
         let _ = deps.tools.register(tool).await;
     }
@@ -159,7 +159,7 @@ async fn make_pipeline_agent(
         None,
     );
 
-    (agent, statuses)
+    Ok((agent, statuses))
 }
 
 async fn build_run_loop_ctx(
@@ -241,7 +241,9 @@ async fn pipeline_runs_inline_for_single_tool() {
         observed_tool_message_counts: Arc::clone(&observed_tool_message_counts),
     });
     let tools: Vec<Arc<dyn crate::tools::Tool>> = Vec::new();
-    let (agent, statuses) = make_pipeline_agent(provider, tools, 6, false).await;
+    let (agent, statuses) = make_pipeline_agent(provider, tools, 6, false)
+        .await
+        .expect("make_pipeline_agent should build");
     let (_session, _thread_id, message, ctx) = build_run_loop_ctx("run echo").await;
 
     let result = agent
@@ -298,7 +300,9 @@ async fn pipeline_runs_parallel_for_multiple_tools() {
         output_text: "second result",
         approval_requirement: ApprovalRequirement::Never,
     })];
-    let (agent, statuses) = make_pipeline_agent(provider, tools, 6, false).await;
+    let (agent, statuses) = make_pipeline_agent(provider, tools, 6, false)
+        .await
+        .expect("make_pipeline_agent should build");
     let (session, thread_id, message, ctx) = build_run_loop_ctx("run both tools").await;
 
     let result = agent
@@ -368,7 +372,9 @@ async fn pipeline_blocks_on_approval() {
         output_text: "approval result",
         approval_requirement: ApprovalRequirement::Always,
     })];
-    let (agent, _statuses) = make_pipeline_agent(provider, tools, 6, false).await;
+    let (agent, _statuses) = make_pipeline_agent(provider, tools, 6, false)
+        .await
+        .expect("make_pipeline_agent should build");
     let (_session, _thread_id, message, ctx) = build_run_loop_ctx("run approval tool").await;
 
     let result = agent

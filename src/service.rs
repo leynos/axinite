@@ -55,12 +55,12 @@ fn install() -> Result<()> {
 fn install_macos() -> Result<()> {
     let file = macos_plist_path()?;
     if let Some(parent) = file.parent() {
-        std::fs::create_dir_all(parent)?;
+        ambient_fs::create_dir_all(parent)?;
     }
 
     let exe = std::env::current_exe().context("failed to resolve current executable")?;
     let logs_dir = ironclaw_logs_dir();
-    std::fs::create_dir_all(&logs_dir)?;
+    ambient_fs::create_dir_all(&logs_dir)?;
 
     let stdout = logs_dir.join("daemon.stdout.log");
     let stderr = logs_dir.join("daemon.stderr.log");
@@ -94,7 +94,7 @@ fn install_macos() -> Result<()> {
         stderr = xml_escape(&stderr.display().to_string()),
     );
 
-    std::fs::write(&file, plist)?;
+    ambient_fs::write(&file, plist)?;
     println!("Installed launchd service: {}", file.display());
     println!("  Start with: ironclaw service start");
     Ok(())
@@ -103,7 +103,7 @@ fn install_macos() -> Result<()> {
 fn install_linux() -> Result<()> {
     let file = linux_unit_path()?;
     if let Some(parent) = file.parent() {
-        std::fs::create_dir_all(parent)?;
+        ambient_fs::create_dir_all(parent)?;
     }
 
     let exe = std::env::current_exe().context("failed to resolve current executable")?;
@@ -123,7 +123,7 @@ fn install_linux() -> Result<()> {
         exe = exe.display(),
     );
 
-    std::fs::write(&file, unit)?;
+    ambient_fs::write(&file, unit)?;
     run_checked(Command::new("systemctl").args(["--user", "daemon-reload"])).ok();
     run_checked(Command::new("systemctl").args(["--user", "enable", SYSTEMD_UNIT])).ok();
     println!("Installed systemd user service: {}", file.display());
@@ -212,25 +212,38 @@ fn uninstall() -> Result<()> {
     stop().ok();
 
     if cfg!(target_os = "macos") {
-        let file = macos_plist_path()?;
-        if file.exists() {
-            std::fs::remove_file(&file)
-                .with_context(|| format!("failed to remove {}", file.display()))?;
-        }
-        println!("Service uninstalled ({})", file.display());
-        Ok(())
+        uninstall_macos()
     } else if cfg!(target_os = "linux") {
-        let file = linux_unit_path()?;
-        if file.exists() {
-            std::fs::remove_file(&file)
-                .with_context(|| format!("failed to remove {}", file.display()))?;
-        }
-        run_checked(Command::new("systemctl").args(["--user", "daemon-reload"])).ok();
-        println!("Service uninstalled ({})", file.display());
-        Ok(())
+        uninstall_linux()
     } else {
         bail!("Service management is only supported on macOS and Linux");
     }
+}
+
+/// Remove the macOS launchd plist, if present.
+fn uninstall_macos() -> Result<()> {
+    let file = macos_plist_path()?;
+    remove_unit_file(&file)?;
+    println!("Service uninstalled ({})", file.display());
+    Ok(())
+}
+
+/// Remove the Linux systemd user unit, if present, and reload systemd.
+fn uninstall_linux() -> Result<()> {
+    let file = linux_unit_path()?;
+    remove_unit_file(&file)?;
+    run_checked(Command::new("systemctl").args(["--user", "daemon-reload"])).ok();
+    println!("Service uninstalled ({})", file.display());
+    Ok(())
+}
+
+/// Delete a service unit file when it exists; absent files are not an error.
+fn remove_unit_file(file: &std::path::Path) -> Result<()> {
+    if file.exists() {
+        ambient_fs::remove_file(file)
+            .with_context(|| format!("failed to remove {}", file.display()))?;
+    }
+    Ok(())
 }
 
 // ── Path helpers ────────────────────────────────────────────────
@@ -288,6 +301,8 @@ fn xml_escape(raw: &str) -> String {
 
 #[cfg(test)]
 mod tests {
+    //! Unit tests for XML escaping and service command execution helpers.
+
     use crate::service::*;
 
     #[test]

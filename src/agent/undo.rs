@@ -228,6 +228,8 @@ impl Default for UndoManager {
 
 #[cfg(test)]
 mod tests {
+    //! Unit tests for checkpoint creation and undo/redo navigation.
+
     use super::*;
 
     #[test]

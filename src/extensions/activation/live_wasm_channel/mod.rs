@@ -121,34 +121,6 @@ impl LiveWasmChannelActivation {
     }
 }
 
-#[cfg(test)]
-impl Default for LiveWasmChannelActivation {
-    fn default() -> Self {
-        // Create default empty configuration for testing
-        use crate::secrets::{InMemorySecretsStore, SecretsCrypto};
-        use secrecy::SecretString;
-
-        let master_key = SecretString::from(crate::secrets::keychain::generate_master_key_hex());
-        let crypto = Arc::new(SecretsCrypto::new(master_key).expect("ephemeral crypto"));
-
-        Self {
-            active_channel_names: Arc::new(RwLock::new(HashSet::new())),
-            activation_errors: Arc::new(RwLock::new(HashMap::new())),
-            sse_sender: Arc::new(RwLock::new(None)),
-            wasm_channels_dir: PathBuf::new(),
-            secrets: Arc::new(InMemorySecretsStore::new(crypto)),
-            channel_runtime: Arc::new(RwLock::new(None)),
-            relay_channel_manager: Arc::new(RwLock::new(None)),
-            tunnel_url: None,
-            user_id: "default".to_string(),
-            store: None,
-            relay_config: None,
-            gateway_token: None,
-            installed_relay_extensions: Arc::new(RwLock::new(HashSet::new())),
-        }
-    }
-}
-
 impl WasmChannelActivationPort for LiveWasmChannelActivation {
     fn activate_wasm_channel<'a>(&'a self, name: &'a str) -> ActivationFuture<'a> {
         let name = name.to_owned();

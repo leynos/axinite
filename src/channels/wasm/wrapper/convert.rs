@@ -1,3 +1,5 @@
+//! Conversion helpers between host channel types and generated WIT types.
+
 use std::collections::HashMap;
 
 use crate::channels::StatusUpdate;

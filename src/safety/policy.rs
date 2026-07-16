@@ -54,20 +54,25 @@ pub struct PolicyRule {
 
 impl PolicyRule {
     /// Create a new policy rule.
+    ///
+    /// # Errors
+    ///
+    /// Returns the underlying [`regex::Error`] when `pattern` is not a valid
+    /// regular expression (previously reported as "Invalid policy regex").
     pub fn new(
         id: impl Into<String>,
         description: impl Into<String>,
         pattern: &str,
         severity: Severity,
         action: PolicyAction,
-    ) -> Self {
-        Self {
+    ) -> Result<Self, regex::Error> {
+        Ok(Self {
             id: id.into(),
             description: description.into(),
             severity,
-            pattern: Regex::new(pattern).expect("Invalid policy regex"),
+            pattern: Regex::new(pattern)?,
             action,
-        }
+        })
     }
 
     /// Check if content matches this rule.
@@ -105,6 +110,28 @@ impl Policy {
         self.rules.push(rule);
     }
 
+    /// Add a built-in rule, logging instead of panicking when the pattern is
+    /// invalid.
+    ///
+    /// The default patterns are compile-time constants exercised by the unit
+    /// tests below, so a failure here indicates a programming error; the rule
+    /// is skipped with an error log rather than aborting the process.
+    fn add_default_rule(
+        &mut self,
+        id: &str,
+        description: &str,
+        pattern: &str,
+        severity: Severity,
+        action: PolicyAction,
+    ) {
+        match PolicyRule::new(id, description, pattern, severity, action) {
+            Ok(rule) => self.add_rule(rule),
+            Err(error) => {
+                tracing::error!("Invalid policy regex for default rule '{id}': {error}");
+            }
+        }
+    }
+
     /// Check content against all rules.
     pub fn check(&self, content: &str) -> Vec<&PolicyRule> {
         self.rules
@@ -133,69 +160,69 @@ impl Default for Policy {
         // Add default rules
 
         // Block attempts to access system files
-        policy.add_rule(PolicyRule::new(
+        policy.add_default_rule(
             "system_file_access",
             "Attempt to access system files",
             r"(?i)(/etc/passwd|/etc/shadow|\.ssh/|\.aws/credentials)",
             Severity::Critical,
             PolicyAction::Block,
-        ));
+        );
 
         // Block cryptocurrency private key patterns
-        policy.add_rule(PolicyRule::new(
+        policy.add_default_rule(
             "crypto_private_key",
             "Potential cryptocurrency private key",
             r"(?i)(private.?key|seed.?phrase|mnemonic).{0,20}[0-9a-f]{64}",
             Severity::Critical,
             PolicyAction::Block,
-        ));
+        );
 
         // Warn on SQL-like patterns
-        policy.add_rule(PolicyRule::new(
+        policy.add_default_rule(
             "sql_pattern",
             "SQL-like pattern detected",
             r"(?i)(DROP\s+TABLE|DELETE\s+FROM|INSERT\s+INTO|UPDATE\s+\w+\s+SET)",
             Severity::Medium,
             PolicyAction::Warn,
-        ));
+        );
 
         // Block shell command injection patterns.
         // Only match actual dangerous command sequences, NOT backticked content
         // (backticks are standard markdown code formatting, not shell injection).
-        policy.add_rule(PolicyRule::new(
+        policy.add_default_rule(
             "shell_injection",
             "Potential shell command injection",
             r"(?i)(;\s*rm\s+-rf|;\s*curl\s+.*\|\s*sh)",
             Severity::Critical,
             PolicyAction::Block,
-        ));
+        );
 
         // Warn on excessive URLs
-        policy.add_rule(PolicyRule::new(
+        policy.add_default_rule(
             "excessive_urls",
             "Excessive number of URLs detected",
             r"(https?://[^\s]+\s*){10,}",
             Severity::Low,
             PolicyAction::Warn,
-        ));
+        );
 
         // Block encoded payloads that look like exploits
-        policy.add_rule(PolicyRule::new(
+        policy.add_default_rule(
             "encoded_exploit",
             "Potential encoded exploit payload",
             r"(?i)(base64_decode|eval\s*\(\s*base64|atob\s*\()",
             Severity::High,
             PolicyAction::Sanitize,
-        ));
+        );
 
         // Warn on very long strings without spaces (potential obfuscation)
-        policy.add_rule(PolicyRule::new(
+        policy.add_default_rule(
             "obfuscated_string",
             "Potential obfuscated content",
             r"[^\s]{500,}",
             Severity::Medium,
             PolicyAction::Warn,
-        ));
+        );
 
         policy
     }
@@ -203,7 +230,16 @@ impl Default for Policy {
 
 #[cfg(test)]
 mod tests {
+    //! Unit tests for the default safety policy's blocking rules.
+
     use super::*;
+
+    #[test]
+    fn test_default_policy_compiles_every_rule() {
+        // Guards the add_default_rule fallback: every built-in pattern must
+        // compile, so no rule may be skipped.
+        assert_eq!(Policy::default().rules().len(), 7);
+    }
 
     #[test]
     fn test_default_policy_blocks_system_files() {

@@ -70,6 +70,8 @@ pub fn has_native_thinking(model: &str) -> bool {
 
 #[cfg(test)]
 mod tests {
+    //! Unit tests for detecting models with native thinking support.
+
     use super::*;
 
     #[test]

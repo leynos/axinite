@@ -1,4 +1,4 @@
-//! Embedded registry catalogue compiled into the binary at build time.
+//! Embedded registry catalog compiled into the binary at build time.
 //!
 //! When IronClaw is distributed as a pre-built binary without a source tree,
 //! the `registry/` directory is unavailable. This module provides the same
@@ -23,20 +23,20 @@ struct EmbeddedCatalogRaw {
     bundles: BundlesFile,
 }
 
-/// Parsed catalogue cached across calls.
-struct ParsedCatalogue {
+/// Parsed catalog cached across calls.
+struct ParsedCatalog {
     manifests: HashMap<String, ExtensionManifest>,
     bundles: HashMap<String, BundleDefinition>,
 }
 
-fn parsed_catalogue() -> &'static ParsedCatalogue {
-    static CACHE: OnceLock<ParsedCatalogue> = OnceLock::new();
+fn parsed_catalog() -> &'static ParsedCatalog {
+    static CACHE: OnceLock<ParsedCatalog> = OnceLock::new();
     CACHE.get_or_init(|| {
         let raw: EmbeddedCatalogRaw = match serde_json::from_str(EMBEDDED_CATALOG) {
             Ok(v) => v,
             Err(e) => {
-                tracing::warn!("Failed to parse embedded catalogue: {}", e);
-                return ParsedCatalogue {
+                tracing::warn!("Failed to parse embedded catalog: {}", e);
+                return ParsedCatalog {
                     manifests: HashMap::new(),
                     bundles: HashMap::new(),
                 };
@@ -53,7 +53,7 @@ fn parsed_catalogue() -> &'static ParsedCatalogue {
             manifests.insert(key, m);
         }
 
-        ParsedCatalogue {
+        ParsedCatalog {
             manifests,
             bundles: raw.bundles.bundles,
         }
@@ -62,16 +62,18 @@ fn parsed_catalogue() -> &'static ParsedCatalogue {
 
 /// Load all embedded extension manifests, keyed by `"tools/<name>"` or `"channels/<name>"`.
 pub fn load_embedded() -> HashMap<String, ExtensionManifest> {
-    parsed_catalogue().manifests.clone()
+    parsed_catalog().manifests.clone()
 }
 
 /// Load embedded bundle definitions.
 pub fn load_embedded_bundles() -> HashMap<String, BundleDefinition> {
-    parsed_catalogue().bundles.clone()
+    parsed_catalog().bundles.clone()
 }
 
 #[cfg(test)]
 mod tests {
+    //! Unit tests for parsing the embedded registry catalogue.
+
     use super::*;
 
     #[test]
@@ -81,7 +83,7 @@ mod tests {
         // (empty is also valid for minimal builds without registry/)
         assert!(
             manifests.is_empty() || manifests.contains_key("tools/github"),
-            "Expected either empty catalogue or github tool, got {} entries",
+            "Expected either empty catalog or github tool, got {} entries",
             manifests.len()
         );
     }

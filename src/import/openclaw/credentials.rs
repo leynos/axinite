@@ -5,6 +5,8 @@
 
 #[cfg(test)]
 mod tests {
+    //! Unit tests ensuring imported credential secrets are never logged.
+
     use crate::secrets::CreateSecretParams;
     use secrecy::SecretString;
 

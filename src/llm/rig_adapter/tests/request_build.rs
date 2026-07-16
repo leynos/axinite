@@ -19,9 +19,8 @@ fn test_build_rig_request_cache_control(
         None,
         retention,
     )
-    .unwrap_or_else(|_| {
-        panic!("build_rig_request should succeed for cache retention {retention:?}")
-    });
+    // The rstest case name identifies the retention variant on failure.
+    .expect("build_rig_request should succeed for this cache retention");
 
     match retention {
         CacheRetention::None => assert!(
@@ -29,9 +28,9 @@ fn test_build_rig_request_cache_control(
             "additional_params should be None when cache is disabled"
         ),
         CacheRetention::Short | CacheRetention::Long => {
-            let params = req.additional_params.unwrap_or_else(|| {
-                panic!("should have additional_params for cache retention {retention:?}")
-            });
+            let params = req
+                .additional_params
+                .expect("should have additional_params for this cache retention");
             assert_eq!(params["cache_control"]["type"], "ephemeral");
 
             if let Some(expected_ttl) = expected_ttl {

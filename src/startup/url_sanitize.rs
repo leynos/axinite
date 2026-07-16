@@ -126,6 +126,8 @@ fn should_redact_query_key(key: &str) -> bool {
 
 #[cfg(test)]
 mod tests {
+    //! Property tests for sanitizing sensitive URL query parameters.
+
     use std::borrow::Cow;
 
     use proptest::{prelude::*, strategy::Strategy};
@@ -177,17 +179,40 @@ mod tests {
         ]
     }
 
+    /// Equivalent to the regex `[A-Za-z0-9._~-]{1,16}`, constructed without a
+    /// fallible regex parse.
     fn safe_value_strategy() -> impl Strategy<Value = String> {
-        prop::string::string_regex("[A-Za-z0-9._~-]{1,16}").expect("value regex should compile")
+        let safe_chars: Vec<char> = ('A'..='Z')
+            .chain('a'..='z')
+            .chain('0'..='9')
+            .chain(['.', '_', '~', '-'])
+            .collect();
+        proptest::collection::vec(prop::sample::select(safe_chars), 1..=16)
+            .prop_map(|chars| chars.into_iter().collect())
     }
 
     fn optional_safe_value_strategy() -> impl Strategy<Value = Option<String>> {
         prop_oneof![Just(None), safe_value_strategy().prop_map(Some),]
     }
 
+    /// A lowercase ASCII label of one to ten letters, matching `[a-z]{1,10}`.
+    fn lowercase_label_strategy() -> impl Strategy<Value = String> {
+        let letters: Vec<char> = ('a'..='z').collect();
+        proptest::collection::vec(prop::sample::select(letters), 1..=10)
+            .prop_map(|chars| chars.into_iter().collect())
+    }
+
+    /// Equivalent to the regex `[a-z]{1,10}(?:-[a-z]{1,10})?\.example\.test`,
+    /// constructed without a fallible regex parse.
     fn host_strategy() -> impl Strategy<Value = String> {
-        prop::string::string_regex("[a-z]{1,10}(?:-[a-z]{1,10})?\\.example\\.test")
-            .expect("host regex should compile")
+        (
+            lowercase_label_strategy(),
+            prop::option::of(lowercase_label_strategy()),
+        )
+            .prop_map(|(first, second)| match second {
+                Some(second) => format!("{first}-{second}.example.test"),
+                None => format!("{first}.example.test"),
+            })
     }
 
     fn noise_pairs_strategy() -> impl Strategy<Value = Vec<(Cow<'static, str>, Cow<'static, str>)>>

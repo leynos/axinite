@@ -68,6 +68,8 @@ impl DefaultSettingsPersistence {
 
 #[cfg(test)]
 mod tests {
+    //! Unit tests for persisting setup settings without clobbering tokens.
+
     use super::*;
     use crate::db::Database;
 

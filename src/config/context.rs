@@ -117,7 +117,8 @@ impl EnvContext {
 
 #[cfg(any(test, feature = "test-helpers"))]
 fn capture_ambient_inputs() -> (HashMap<String, String>, HashMap<String, String>) {
-    let _env_lock = ENV_MUTEX.lock().expect("env mutex poisoned");
+    // EnvMutex::lock is infallible, so the Ok pattern is irrefutable.
+    let Ok(_env_lock) = ENV_MUTEX.lock();
     let env_vars = collect_utf8_env_vars(std::env::vars_os());
     let secrets = match INJECTED_VARS.lock() {
         Ok(map) => map.clone(),
@@ -169,6 +170,8 @@ fn resolve_base_dir_snapshot(env_vars: &HashMap<String, String>) -> PathBuf {
 
 #[cfg(test)]
 mod tests {
+    //! Unit tests for `EnvContext` environment and secret lookup precedence.
+
     use super::EnvContext;
     use std::collections::HashMap;
     use std::path::PathBuf;

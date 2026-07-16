@@ -54,6 +54,8 @@ pub fn suggest_vision_model(models: &[String]) -> Option<&str> {
 
 #[cfg(test)]
 mod tests {
+    //! Unit tests for detecting vision-capable models by name.
+
     use super::*;
 
     #[test]

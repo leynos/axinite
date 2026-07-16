@@ -65,28 +65,34 @@ impl NativeLlmProvider for ProxyLlmProvider {
 
 #[cfg(test)]
 mod tests {
+    //! Unit tests for the worker proxy LLM client.
+
+    use anyhow::Context as _;
+
     use super::*;
 
-    fn test_client() -> Arc<WorkerHttpClient> {
-        Arc::new(
+    fn test_client() -> anyhow::Result<Arc<WorkerHttpClient>> {
+        Ok(Arc::new(
             WorkerHttpClient::new(
                 "http://localhost:50051".to_string(),
                 uuid::Uuid::nil(),
                 "test".to_string(),
             )
-            .expect("test client should build"),
-        )
+            .context("test client should build")?,
+        ))
     }
 
     #[test]
     fn test_proxy_model_name() {
-        let provider = ProxyLlmProvider::new(test_client(), "test-model".to_string());
+        let client = test_client().expect("test client should build");
+        let provider = ProxyLlmProvider::new(client, "test-model".to_string());
         assert_eq!(provider.model_name(), "test-model");
     }
 
     #[test]
     fn test_proxy_cost_is_zero() {
-        let provider = ProxyLlmProvider::new(test_client(), "test-model".to_string());
+        let client = test_client().expect("test client should build");
+        let provider = ProxyLlmProvider::new(client, "test-model".to_string());
         let (input, output) = provider.cost_per_token();
         assert_eq!(input, Decimal::ZERO);
         assert_eq!(output, Decimal::ZERO);

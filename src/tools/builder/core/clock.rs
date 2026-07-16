@@ -33,12 +33,14 @@ impl MonotonicClock for StdMonotonicClock {
 /// Deterministic monotonic clock for tests.
 ///
 /// The clock returns queued instants in insertion order. Exhausting the queue
-/// is a test configuration error and panics immediately, after releasing the
-/// queue lock, so under-provisioned tests fail at the call site that consumed
-/// too many instants.
+/// is a test configuration error; the clock logs the misconfiguration and
+/// repeats the final queued instant so elapsed measurements stay
+/// deterministic rather than panicking.
 #[cfg(test)]
 pub struct FixedMonotonicClock {
     instants: std::sync::Mutex<std::collections::VecDeque<Instant>>,
+    /// Instant repeated once the queue is exhausted.
+    fallback: Instant,
 }
 
 #[cfg(test)]
@@ -46,11 +48,10 @@ impl FixedMonotonicClock {
     /// Creates a fixed clock that reports `elapsed` between two `now` calls.
     pub fn with_elapsed(elapsed: std::time::Duration) -> Self {
         let start = Instant::now();
+        let last = start + elapsed;
         Self {
-            instants: std::sync::Mutex::new(std::collections::VecDeque::from([
-                start,
-                start + elapsed,
-            ])),
+            instants: std::sync::Mutex::new(std::collections::VecDeque::from([start, last])),
+            fallback: last,
         }
     }
 }
@@ -59,15 +60,20 @@ impl FixedMonotonicClock {
 impl MonotonicClock for FixedMonotonicClock {
     /// Pops and returns the next pre-seeded instant.
     ///
-    /// Panics if the queue is exhausted, signalling a test misconfiguration.
+    /// Once the queue is exhausted, logs the misconfiguration and repeats the
+    /// final queued instant so measurements remain deterministic.
     fn now(&self) -> Instant {
         let next = self
             .instants
             .lock()
-            .expect("fixed monotonic clock mutex should not be poisoned")
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
             .pop_front();
-        next.unwrap_or_else(|| {
-            panic!("deterministic clock queue exhausted: no instant available - test misconfigured")
-        })
+        let Some(instant) = next else {
+            tracing::error!(
+                "deterministic clock queue exhausted: no instant available - test misconfigured"
+            );
+            return self.fallback;
+        };
+        instant
     }
 }

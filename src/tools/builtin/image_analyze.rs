@@ -187,6 +187,8 @@ impl NativeTool for ImageAnalyzeTool {
 
 #[cfg(test)]
 mod tests {
+    //! Unit tests for image media-type detection and analysis inputs.
+
     use super::super::media_type_from_path;
     use super::*;
     use tempfile::TempDir;

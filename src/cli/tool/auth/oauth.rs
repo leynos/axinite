@@ -30,13 +30,8 @@ pub(super) async fn combine_provider_scopes(
                 continue;
             }
 
-            if let Ok(content) = tokio::fs::read_to_string(&path).await
-                && let Ok(caps) = CapabilitiesFile::from_json(&content)
-                && let Some(auth) = &caps.auth
-                && auth.secret_name == secret_name
-                && let Some(oauth) = &auth.oauth
-            {
-                all_scopes.extend(oauth.scopes.iter().cloned());
+            if let Some(scopes) = matching_oauth_scopes(&path, secret_name).await {
+                all_scopes.extend(scopes);
             }
         }
     }
@@ -45,6 +40,19 @@ pub(super) async fn combine_provider_scopes(
     combined.scopes = all_scopes.into_iter().collect();
     combined.scopes.sort();
     combined
+}
+
+/// Read a capabilities file and return its OAuth scopes when its auth entry
+/// targets `secret_name`; `None` for unreadable, unparsable, or unrelated
+/// files.
+async fn matching_oauth_scopes(path: &Path, secret_name: &str) -> Option<Vec<String>> {
+    let content = tokio::fs::read_to_string(path).await.ok()?;
+    let caps = CapabilitiesFile::from_json(&content).ok()?;
+    let auth = caps.auth?;
+    if auth.secret_name != secret_name {
+        return None;
+    }
+    Some(auth.oauth?.scopes)
 }
 
 pub(super) async fn auth_tool_oauth(

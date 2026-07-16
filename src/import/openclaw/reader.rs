@@ -118,7 +118,7 @@ impl OpenClawReader {
             });
         }
 
-        let content = std::fs::read_to_string(&config_path).map_err(ImportError::Io)?;
+        let content = ambient_fs::read_to_string(&config_path).map_err(ImportError::Io)?;
 
         #[cfg(feature = "import")]
         {
@@ -202,7 +202,7 @@ impl OpenClawReader {
         }
 
         let mut dbs = Vec::new();
-        for entry in std::fs::read_dir(&agents_dir).map_err(ImportError::Io)? {
+        for entry in ambient_fs::read_dir(&agents_dir).map_err(ImportError::Io)? {
             let entry = entry.map_err(ImportError::Io)?;
             let path = entry.path();
             if path.extension().and_then(|s| s.to_str()) == Some("sqlite") {
@@ -356,7 +356,7 @@ impl OpenClawReader {
         }
 
         let mut count = 0;
-        if let Ok(entries) = std::fs::read_dir(&workspace_dir) {
+        if let Ok(entries) = ambient_fs::read_dir(&workspace_dir) {
             for entry in entries.flatten() {
                 if let Some(ext) = entry.path().extension()
                     && ext == "md"
@@ -371,54 +371,4 @@ impl OpenClawReader {
 }
 
 #[cfg(test)]
-mod security_tests {
-    use super::*;
-
-    #[test]
-    fn test_llm_config_debug_redacts_api_key() {
-        let config = OpenClawLlmConfig {
-            provider: Some("openai".to_string()),
-            model: Some("gpt-4".to_string()),
-            api_key: Some(SecretString::new("sk-secret-key-12345".into())),
-            base_url: Some("https://api.openai.com".to_string()),
-        };
-
-        let debug_output = format!("{:?}", config);
-
-        // Verify the actual API key is never exposed in debug output
-        assert!(!debug_output.contains("sk-secret-key-12345"));
-        // Verify the redaction marker is present
-        assert!(debug_output.contains("***REDACTED***"));
-    }
-
-    #[test]
-    fn test_embeddings_config_debug_redacts_api_key() {
-        let config = OpenClawEmbeddingsConfig {
-            model: Some("text-embedding-3-large".to_string()),
-            api_key: Some(SecretString::new("sk-embed-secret-67890".into())),
-            provider: Some("openai".to_string()),
-        };
-
-        let debug_output = format!("{:?}", config);
-
-        // Verify the actual API key is never exposed in debug output
-        assert!(!debug_output.contains("sk-embed-secret-67890"));
-        // Verify the redaction marker is present
-        assert!(debug_output.contains("***REDACTED***"));
-    }
-
-    #[test]
-    fn test_llm_config_without_api_key() {
-        let config = OpenClawLlmConfig {
-            provider: Some("openai".to_string()),
-            model: Some("gpt-4".to_string()),
-            api_key: None,
-            base_url: None,
-        };
-
-        let debug_output = format!("{:?}", config);
-
-        // Should show None for missing API key
-        assert!(debug_output.contains("api_key: None"));
-    }
-}
+mod security_tests;

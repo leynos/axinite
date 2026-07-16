@@ -50,9 +50,10 @@ fn test_save_and_load_database_url() {
     let parse_error = format!("parse dotenv from {}", env_path.display());
 
     let url = "postgres://localhost:5432/ironclaw_test";
-    std::fs::write(&env_path, format!("DATABASE_URL=\"{}\"\n", url)).expect(write_error.as_str());
+    ambient_fs::write(&env_path, format!("DATABASE_URL=\"{}\"\n", url))
+        .expect(write_error.as_str());
 
-    let content = std::fs::read_to_string(&env_path).expect(read_error.as_str());
+    let content = ambient_fs::read_to_string(&env_path).expect(read_error.as_str());
     assert_eq!(
         content,
         "DATABASE_URL=\"postgres://localhost:5432/ironclaw_test\"\n"
@@ -73,7 +74,7 @@ fn test_save_database_url_with_hash_in_password() {
     let env_path = dir.path().join(".env");
     let url = "postgres://user:p%23ss@localhost:5432/ironclaw";
 
-    std::fs::write(&env_path, format!("DATABASE_URL=\"{}\"\n", url))
+    ambient_fs::write(&env_path, format!("DATABASE_URL=\"{}\"\n", url))
         .expect("write .env for hash-in-password test");
 
     let parsed: Vec<(String, String)> = dotenvy::from_path_iter(&env_path)
@@ -92,11 +93,11 @@ fn test_save_database_url_creates_parent_dirs() {
     let env_path = nested.join(".env");
 
     assert!(!nested.exists());
-    std::fs::create_dir_all(&nested).expect("create nested directory for .env");
-    std::fs::write(&env_path, "DATABASE_URL=postgres://test\n").expect("write nested .env");
+    ambient_fs::create_dir_all(&nested).expect("create nested directory for .env");
+    ambient_fs::write(&env_path, "DATABASE_URL=postgres://test\n").expect("write nested .env");
 
     assert!(env_path.exists());
-    let content = std::fs::read_to_string(&env_path).expect("read nested .env");
+    let content = ambient_fs::read_to_string(&env_path).expect("read nested .env");
     assert!(content.contains("DATABASE_URL=postgres://test"));
 }
 
@@ -108,7 +109,7 @@ fn test_save_bootstrap_env_escapes_quotes() {
 INJECTED="pwned"#;
     let escaped = malicious.replace('\\', "\\\\").replace('"', "\\\"");
     let content = format!("LLM_BASE_URL=\"{}\"\n", escaped);
-    std::fs::write(&env_path, &content).expect("write escaped bootstrap env");
+    ambient_fs::write(&env_path, &content).expect("write escaped bootstrap env");
 
     let parsed: Vec<(String, String)> = dotenvy::from_path_iter(&env_path)
         .expect("parse escaped bootstrap env")
@@ -132,14 +133,14 @@ fn test_save_bootstrap_env_multiple_vars() {
         ("LIBSQL_PATH", "/home/user/.ironclaw/ironclaw.db"),
     ];
 
-    std::fs::create_dir_all(env_path.parent().expect("env_path has parent"))
+    ambient_fs::create_dir_all(env_path.parent().expect("env_path has parent"))
         .expect("create nested env parent");
 
     let mut content = String::new();
     for (key, value) in &vars {
         content.push_str(&format!("{}=\"{}\"\n", key, value));
     }
-    std::fs::write(&env_path, &content).expect("write multi-var bootstrap env");
+    ambient_fs::write(&env_path, &content).expect("write multi-var bootstrap env");
 
     let parsed: Vec<(String, String)> = dotenvy::from_path_iter(&env_path)
         .expect("parse multi-var bootstrap env")
@@ -164,10 +165,10 @@ fn test_save_bootstrap_env_overwrites_previous() {
     let dir = tempdir().expect("create temp dir for overwrite bootstrap env");
     let env_path = dir.path().join(".env");
 
-    std::fs::write(&env_path, "DATABASE_URL=\"postgres://old\"\n")
+    ambient_fs::write(&env_path, "DATABASE_URL=\"postgres://old\"\n")
         .expect("write initial bootstrap env");
     let content = "DATABASE_BACKEND=\"libsql\"\nLIBSQL_PATH=\"/new/path.db\"\n";
-    std::fs::write(&env_path, content).expect("overwrite bootstrap env");
+    ambient_fs::write(&env_path, content).expect("overwrite bootstrap env");
 
     let parsed: Vec<(String, String)> = dotenvy::from_path_iter(&env_path)
         .expect("parse overwritten bootstrap env")
@@ -195,7 +196,7 @@ fn bootstrap_env_special_chars_in_url() {
     let url = "postgres://user:p%23ss@host:5432/db?sslmode=require";
     let escaped = url.replace('\\', "\\\\").replace('"', "\\\"");
     let content = format!("DATABASE_URL=\"{}\"\n", escaped);
-    std::fs::write(&env_path, &content).expect("write special-char URL env");
+    ambient_fs::write(&env_path, &content).expect("write special-char URL env");
 
     let parsed: Vec<(String, String)> = dotenvy::from_path_iter(&env_path)
         .expect("parse special-char URL env")
@@ -212,14 +213,15 @@ fn upsert_bootstrap_var_preserves_existing() {
     let env_path = dir.path().join(".env");
     let initial = "DATABASE_BACKEND=\"libsql\"\nONBOARD_COMPLETED=\"true\"\n";
 
-    std::fs::write(&env_path, initial).expect("write initial env for single upsert test");
+    ambient_fs::write(&env_path, initial).expect("write initial env for single upsert test");
 
-    let content = std::fs::read_to_string(&env_path).expect("read initial env for single upsert");
+    let content =
+        ambient_fs::read_to_string(&env_path).expect("read initial env for single upsert");
     let new_line = "LLM_BACKEND=\"anthropic\"";
     let mut result = content.clone();
     result.push_str(new_line);
     result.push('\n');
-    std::fs::write(&env_path, &result).expect("write single upsert env");
+    ambient_fs::write(&env_path, &result).expect("write single upsert env");
 
     let parsed: Vec<(String, String)> = dotenvy::from_path_iter(&env_path)
         .expect("parse single upsert env")
@@ -264,7 +266,7 @@ fn bootstrap_env_all_wizard_vars_round_trip() {
         let escaped = value.replace('\\', "\\\\").replace('"', "\\\"");
         content.push_str(&format!("{}=\"{}\"\n", key, escaped));
     }
-    std::fs::write(&env_path, &content).expect("write full wizard round-trip env");
+    ambient_fs::write(&env_path, &content).expect("write full wizard round-trip env");
 
     let parsed: Vec<(String, String)> = dotenvy::from_path_iter(&env_path)
         .expect("parse full wizard round-trip env")
@@ -289,7 +291,7 @@ fn upsert_bootstrap_vars_preserves_unknown_keys() {
     let env_path = dir.path().join(".env");
     let initial = "HTTP_HOST=\"0.0.0.0\"\nDATABASE_BACKEND=\"postgres\"\nCUSTOM_VAR=\"keep_me\"\n";
 
-    std::fs::write(&env_path, initial).expect("write initial env for preserve test");
+    ambient_fs::write(&env_path, initial).expect("write initial env for preserve test");
 
     let vars = [("DATABASE_BACKEND", "libsql"), ("LLM_BACKEND", "openai")];
     upsert_bootstrap_vars_to(&env_path, &vars).expect("upsert wizard vars");

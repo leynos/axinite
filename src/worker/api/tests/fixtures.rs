@@ -30,8 +30,8 @@ pub struct TestState;
 /// remote-tool client.
 #[derive(Clone, Copy)]
 pub enum RemoteToolFailureRoute {
-    /// Returns `403 Forbidden` on the catalogue endpoint.
-    Catalogue,
+    /// Returns `403 Forbidden` on the catalog endpoint.
+    Catalog,
     /// Returns `400 Bad Request` on the execute endpoint.
     ExecuteBadRequest,
     /// Returns `403 Forbidden` on the execute endpoint.
@@ -81,8 +81,8 @@ pub fn remote_tool_failure_server() -> RemoteToolFailureServerFactory {
             let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await?;
             let addr = listener.local_addr()?;
             let router = match route {
-                RemoteToolFailureRoute::Catalogue => Router::new()
-                    .route(REMOTE_TOOL_CATALOG_ROUTE, get(reject_catalogue))
+                RemoteToolFailureRoute::Catalog => Router::new()
+                    .route(REMOTE_TOOL_CATALOG_ROUTE, get(reject_catalog))
                     .with_state(TestState),
                 RemoteToolFailureRoute::ExecuteBadRequest => Router::new()
                     .route(REMOTE_TOOL_EXECUTE_ROUTE, post(reject_execute))
@@ -116,7 +116,7 @@ pub fn remote_tool_failure_server() -> RemoteToolFailureServerFactory {
 }
 
 #[fixture]
-pub fn sample_catalogue_response() -> RemoteToolCatalogResponse {
+pub fn sample_catalog_response() -> RemoteToolCatalogResponse {
     RemoteToolCatalogResponse {
         tools: vec![crate::test_support::build_complex_tool_definition(
             "test_tool",
@@ -153,7 +153,7 @@ pub fn sample_execution_response() -> crate::worker::api::RemoteToolExecutionRes
     }
 }
 
-async fn reject_catalogue(
+async fn reject_catalog(
     State(_state): State<TestState>,
     Path(_job_id): Path<Uuid>,
 ) -> (StatusCode, &'static str) {

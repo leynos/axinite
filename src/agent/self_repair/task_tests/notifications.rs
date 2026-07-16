@@ -3,6 +3,7 @@
 use std::sync::Arc;
 use std::time::Duration;
 
+use anyhow::Context as _;
 use chrono::Utc;
 use rstest::rstest;
 use tokio::sync::{mpsc, oneshot};
@@ -69,14 +70,15 @@ struct NotificationHarness {
 }
 
 impl NotificationHarness {
-    async fn shutdown(self) {
+    async fn shutdown(self) -> anyhow::Result<()> {
         self.shutdown_tx
             .send(())
-            .expect("shutdown signal should send successfully");
+            .map_err(|()| anyhow::anyhow!("shutdown signal should send successfully"))?;
         tokio::time::timeout(Duration::from_secs(1), self.handle)
             .await
-            .expect("repair task should stop promptly")
-            .expect("repair task should join cleanly");
+            .context("repair task should stop promptly")?
+            .context("repair task should join cleanly")?;
+        Ok(())
     }
 }
 
@@ -109,14 +111,15 @@ struct SingleNotificationExpectation<'a> {
 async fn assert_single_notification(
     mut harness: NotificationHarness,
     expectation: SingleNotificationExpectation<'_>,
-) {
+) -> anyhow::Result<()> {
     let notification = tokio::time::timeout(Duration::from_secs(1), harness.notification_rx.recv())
         .await
-        .expect(expectation.await_failure_msg)
-        .expect("notification channel should remain open");
-    harness.shutdown().await;
+        .with_context(|| expectation.await_failure_msg.to_owned())?
+        .context("notification channel should remain open")?;
+    harness.shutdown().await?;
     assert_eq!(notification.message, expectation.expected_message);
     assert_eq!(&notification.route, expectation.expected_route);
+    Ok(())
 }
 
 /// Expectations for manual-required deduplication assertion.
@@ -130,18 +133,18 @@ struct ManualDedupExpectation<'a> {
 async fn assert_manual_required_deduplication(
     mut harness: NotificationHarness,
     expectation: ManualDedupExpectation<'_>,
-) {
+) -> anyhow::Result<()> {
     // First capture both receive outcomes into local variables
     let notification = tokio::time::timeout(Duration::from_secs(1), harness.notification_rx.recv())
         .await
-        .expect(expectation.await_failure_msg)
-        .expect("notification channel should remain open");
+        .with_context(|| expectation.await_failure_msg.to_owned())?
+        .context("notification channel should remain open")?;
 
     let second_recv_result =
         tokio::time::timeout(Duration::from_millis(50), harness.notification_rx.recv()).await;
 
     // Then shutdown
-    harness.shutdown().await;
+    harness.shutdown().await?;
 
     // Only after shutdown, perform the assertions
     assert!(
@@ -151,6 +154,7 @@ async fn assert_manual_required_deduplication(
     );
     assert_eq!(notification.message, expectation.expected_message);
     assert_eq!(&notification.route, expectation.expected_route);
+    Ok(())
 }
 
 /// Test case parameters for repair notification tests.
@@ -321,7 +325,8 @@ async fn repair_task_sends_notification(
                 dedup_failure_msg: "manual notification should be deduplicated",
             },
         )
-        .await;
+        .await
+        .expect("manual-required deduplication assertion should complete");
     } else {
         assert_single_notification(
             harness,
@@ -331,6 +336,7 @@ async fn repair_task_sends_notification(
                 await_failure_msg: await_msg,
             },
         )
-        .await;
+        .await
+        .expect("single-notification assertion should complete");
     }
 }

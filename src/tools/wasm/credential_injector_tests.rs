@@ -49,7 +49,11 @@ struct InjectionSpec<'a> {
     target_host: &'a str,
 }
 
-async fn run_single_mapping_injection(spec: InjectionSpec<'_>) -> HashMap<String, String> {
+async fn run_single_mapping_injection(
+    spec: InjectionSpec<'_>,
+) -> anyhow::Result<HashMap<String, String>> {
+    use anyhow::Context as _;
+
     let store = test_store();
     store
         .create(
@@ -57,7 +61,7 @@ async fn run_single_mapping_injection(spec: InjectionSpec<'_>) -> HashMap<String
             CreateSecretParams::new(spec.secret_name, spec.secret_value),
         )
         .await
-        .expect("create secret failed for spec.secret_name");
+        .context("create secret failed for spec.secret_name")?;
 
     let mut mappings = HashMap::new();
     mappings.insert(
@@ -70,11 +74,11 @@ async fn run_single_mapping_injection(spec: InjectionSpec<'_>) -> HashMap<String
     );
 
     let injector = CredentialInjector::new(mappings, vec![spec.secret_name.to_string()]);
-    injector
+    Ok(injector
         .inject("user1", spec.target_host, &store)
         .await
-        .expect("inject failed for target host")
-        .headers
+        .context("inject failed for target host")?
+        .headers)
 }
 
 #[tokio::test]
@@ -87,7 +91,8 @@ async fn test_inject_bearer() {
         host_pattern: "api.openai.com",
         target_host: "api.openai.com",
     })
-    .await;
+    .await
+    .expect("single-mapping injection should succeed");
     assert_eq!(
         headers.get("Authorization"),
         Some(&format!("Bearer {TEST_OPENAI_API_KEY}"))
@@ -107,7 +112,8 @@ async fn test_inject_custom_header() {
         host_pattern: "*.example.com",
         target_host: "api.example.com",
     })
-    .await;
+    .await
+    .expect("single-mapping injection should succeed");
     assert_eq!(headers.get("X-API-Key"), Some(&"secret123".to_string()));
 }
 
@@ -123,7 +129,8 @@ async fn test_inject_basic_auth() {
         host_pattern: "api.service.com",
         target_host: "api.service.com",
     })
-    .await;
+    .await
+    .expect("single-mapping injection should succeed");
     let expected = format!("Basic {}", base64_encode(b"myuser:mypassword"));
     assert_eq!(headers.get("Authorization"), Some(&expected));
 }

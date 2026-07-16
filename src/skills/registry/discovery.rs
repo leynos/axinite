@@ -73,7 +73,7 @@ where
 
 /// Returns the file name as `&str` when `path` is a regular file
 /// named exactly `SKILL.md`.
-fn flat_skill_md_name<'a>(meta: &std::fs::Metadata, path: &'a Path) -> Option<&'a str> {
+fn flat_skill_md_name<'a>(meta: &ambient_fs::Metadata, path: &'a Path) -> Option<&'a str> {
     if !meta.is_file() {
         return None;
     }
@@ -93,7 +93,7 @@ where
 {
     let path = entry.path();
     let meta = match tokio::fs::symlink_metadata(&path).await {
-        Ok(meta) => meta,
+        Ok(meta) => ambient_fs::Metadata::from_std(meta),
         Err(error) => {
             tracing::debug!("Failed to stat {:?}: {}", path, error);
             return EntryLoadResult::NotASkill;
@@ -223,7 +223,7 @@ async fn detect_package_kind(root: &Path) -> std::io::Result<SkillPackageKind> {
 
 async fn is_existing_dir(path: &Path) -> std::io::Result<bool> {
     match tokio::fs::metadata(path).await {
-        Ok(metadata) => Ok(metadata.is_dir()),
+        Ok(metadata) => Ok(ambient_fs::Metadata::from_std(metadata).is_dir()),
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(false),
         Err(e) => Err(e),
     }

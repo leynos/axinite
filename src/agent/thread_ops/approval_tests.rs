@@ -10,9 +10,11 @@ use std::time::Duration;
 use rstest::{fixture, rstest};
 use tokio::sync::Mutex;
 
-use super::*;
+use super::TurnScope;
+use super::deferred_preflight::DeferredPreflightOutcome;
 use crate::agent::cost_guard::{CostGuard, CostGuardConfig};
-use crate::agent::{AgentDeps, SessionManager};
+use crate::agent::session::Session;
+use crate::agent::{Agent, AgentDeps, SessionManager};
 use crate::channels::{ChannelManager, IncomingMessage};
 use crate::config::{AgentConfig, SafetyConfig, SkillsConfig};
 use crate::context::JobContext;

@@ -165,6 +165,8 @@ impl fmt::Display for TrapCode {
 
 #[cfg(test)]
 mod tests {
+    //! Unit tests for WASM error display and trap codes.
+
     use crate::tools::wasm::error::{TrapCode, TrapInfo, WasmError};
 
     #[test]

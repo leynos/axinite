@@ -1,5 +1,7 @@
 //! LibSQL conversation integration tests.
 
+use anyhow::Context as _;
+
 use super::*;
 use crate::db::Database;
 
@@ -8,22 +10,24 @@ struct BackendFixture {
     backend: LibSqlBackend,
 }
 
-async fn create_backend(db_name: &str) -> BackendFixture {
-    let dir = tempfile::tempdir().expect("create tempdir for libsql conversation test");
+async fn create_backend(db_name: &str) -> anyhow::Result<BackendFixture> {
+    let dir = tempfile::tempdir().context("create tempdir for libsql conversation test")?;
     let db_path = dir.path().join(db_name);
     let backend = LibSqlBackend::new_local(&db_path)
         .await
-        .expect("create libsql backend");
+        .context("create libsql backend")?;
     backend
         .run_migrations()
         .await
-        .expect("run libsql migrations");
-    BackendFixture { _dir: dir, backend }
+        .context("run libsql migrations")?;
+    Ok(BackendFixture { _dir: dir, backend })
 }
 
 #[tokio::test]
 async fn test_get_or_create_routine_conversation_is_idempotent() {
-    let fixture = create_backend("test_routine_conv.db").await;
+    let fixture = create_backend("test_routine_conv.db")
+        .await
+        .expect("create backend fixture");
     let backend = &fixture.backend;
     let routine_id = Uuid::new_v4();
     let user_id = "test_user";
@@ -56,7 +60,9 @@ async fn test_get_or_create_routine_conversation_is_idempotent() {
 
 #[tokio::test]
 async fn test_routine_conversation_persists_across_messages() {
-    let fixture = create_backend("test_routine_persist.db").await;
+    let fixture = create_backend("test_routine_persist.db")
+        .await
+        .expect("create backend fixture");
     let backend = &fixture.backend;
     let routine_id = Uuid::new_v4();
     let user_id = "test_user";
@@ -96,7 +102,9 @@ async fn test_routine_conversation_persists_across_messages() {
 
 #[tokio::test]
 async fn test_get_or_create_heartbeat_conversation_is_idempotent() {
-    let fixture = create_backend("test_heartbeat_conv.db").await;
+    let fixture = create_backend("test_heartbeat_conv.db")
+        .await
+        .expect("create backend fixture");
     let backend = &fixture.backend;
     let user_id = "test_user";
 

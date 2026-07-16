@@ -270,17 +270,26 @@ impl TestSkillBuilder {
         self
     }
 
-    pub fn build(self) -> LoadedSkill {
+    /// Build the [`LoadedSkill`] described by this builder.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when the default location cannot be constructed or
+    /// when the assembled skill parts are inconsistent.
+    pub fn build(self) -> anyhow::Result<LoadedSkill> {
+        use anyhow::Context as _;
+
         let root = self.root;
-        let location = self.location.unwrap_or_else(|| {
-            LoadedSkillLocation::new(
+        let location = match self.location {
+            Some(location) => location,
+            None => LoadedSkillLocation::new(
                 &self.name,
                 root,
                 PathBuf::from("SKILL.md"),
                 SkillPackageKind::SingleFile,
             )
-            .expect("test skill builder produces bundle-relative entrypoint")
-        });
+            .context("test skill builder produces bundle-relative entrypoint")?,
+        };
         let compiled = LoadedSkill::compile_patterns(&self.patterns);
         let lowercased_keywords = self.keywords.iter().map(|k| k.to_lowercase()).collect();
         let lowercased_exclude_keywords = self
@@ -313,6 +322,6 @@ impl TestSkillBuilder {
             lowercased_exclude_keywords,
             lowercased_tags,
         })
-        .expect("test skill builder produced inconsistent location metadata")
+        .context("test skill builder produced inconsistent location metadata")
     }
 }

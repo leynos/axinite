@@ -45,19 +45,19 @@ fn test_copy_dir_recursive() {
     let src = tempfile::tempdir().expect("create src tempdir");
     let dst = tempfile::tempdir().expect("create dst tempdir");
 
-    std::fs::write(src.path().join("auth.json"), r#"{"token":"abc"}"#).expect("write auth file");
-    std::fs::create_dir_all(src.path().join("subdir")).expect("create subdir");
-    std::fs::write(src.path().join("subdir").join("nested.txt"), "nested")
+    ambient_fs::write(src.path().join("auth.json"), r#"{"token":"abc"}"#).expect("write auth file");
+    ambient_fs::create_dir_all(src.path().join("subdir")).expect("create subdir");
+    ambient_fs::write(src.path().join("subdir").join("nested.txt"), "nested")
         .expect("write nested file");
 
     let copied = copy_dir_recursive(src.path(), dst.path()).expect("copy directory tree");
     assert_eq!(copied, 2);
     assert_eq!(
-        std::fs::read_to_string(dst.path().join("auth.json")).expect("read copied auth file"),
+        ambient_fs::read_to_string(dst.path().join("auth.json")).expect("read copied auth file"),
         r#"{"token":"abc"}"#
     );
     assert_eq!(
-        std::fs::read_to_string(dst.path().join("subdir").join("nested.txt"))
+        ambient_fs::read_to_string(dst.path().join("subdir").join("nested.txt"))
             .expect("read copied nested file"),
         "nested"
     );
@@ -87,10 +87,10 @@ fn test_copy_dir_recursive_propagates_destination_errors() {
     let src = tempfile::tempdir().expect("create src tempdir");
     let dst = tempfile::tempdir().expect("create dst tempdir");
 
-    std::fs::create_dir_all(src.path().join("subdir")).expect("create source subdir");
-    std::fs::write(src.path().join("subdir").join("nested.txt"), "nested")
+    ambient_fs::create_dir_all(src.path().join("subdir")).expect("create source subdir");
+    ambient_fs::write(src.path().join("subdir").join("nested.txt"), "nested")
         .expect("write nested source file");
-    std::fs::write(dst.path().join("subdir"), "not a directory")
+    ambient_fs::write(dst.path().join("subdir"), "not a directory")
         .expect("block destination subdir path");
 
     let error = copy_dir_recursive(src.path(), dst.path())

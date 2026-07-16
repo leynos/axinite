@@ -98,6 +98,8 @@ pub(crate) fn binary_exists(name: &str) -> bool {
 
 #[cfg(test)]
 mod tests {
+    //! Unit tests for skill gating requirement checks.
+
     use super::*;
 
     #[test]

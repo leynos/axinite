@@ -114,6 +114,8 @@ impl NativeTunnel for CloudflareTunnel {
 
 #[cfg(test)]
 mod tests {
+    //! Unit tests for Cloudflare tunnel lifecycle and health checks.
+
     use super::*;
 
     #[test]

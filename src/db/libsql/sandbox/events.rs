@@ -144,6 +144,8 @@ pub(super) async fn list_job_events(
 
 #[cfg(test)]
 mod tests {
+    //! Unit tests for persisting and querying sandbox job events.
+
     use chrono::Utc;
     use tempfile::TempDir;
     use tempfile::tempdir;
@@ -152,21 +154,27 @@ mod tests {
     use super::*;
     use crate::db::NativeDatabase;
 
-    async fn backend() -> (TempDir, LibSqlBackend) {
-        let dir = tempdir().expect("tempdir should be created");
+    async fn backend() -> Result<(TempDir, LibSqlBackend), Box<dyn std::error::Error>> {
+        let dir = tempdir().map_err(|e| format!("tempdir should be created: {e}"))?;
         let db_path = dir.path().join("sandbox-events.db");
         let backend = LibSqlBackend::new_local(&db_path)
             .await
-            .expect("backend should be created");
+            .map_err(|e| format!("backend should be created: {e}"))?;
         backend
             .run_migrations()
             .await
-            .expect("migrations should succeed");
-        (dir, backend)
+            .map_err(|e| format!("migrations should succeed: {e}"))?;
+        Ok((dir, backend))
     }
 
-    async fn seed_sandbox_job(backend: &LibSqlBackend, job_id: Uuid) {
-        let conn = backend.connect().await.expect("connection should succeed");
+    async fn seed_sandbox_job(
+        backend: &LibSqlBackend,
+        job_id: Uuid,
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        let conn = backend
+            .connect()
+            .await
+            .map_err(|e| format!("connection should succeed: {e}"))?;
         conn.execute(
             r#"
             INSERT INTO agent_jobs (
@@ -184,7 +192,8 @@ mod tests {
             ],
         )
         .await
-        .expect("sandbox job should seed");
+        .map_err(|e| format!("sandbox job should seed: {e}"))?;
+        Ok(())
     }
 
     fn assert_positional_params(
@@ -240,9 +249,11 @@ mod tests {
 
     #[tokio::test]
     async fn list_job_events_returns_ordered_limited_results() {
-        let (_dir, backend) = backend().await;
+        let (_dir, backend) = backend().await.expect("backend should be created");
         let job_id = Uuid::new_v4();
-        seed_sandbox_job(&backend, job_id).await;
+        seed_sandbox_job(&backend, job_id)
+            .await
+            .expect("sandbox job should seed");
 
         save_job_event(
             &backend,
@@ -296,7 +307,7 @@ mod tests {
 
     #[tokio::test]
     async fn list_job_events_rejects_non_positive_limit() {
-        let (_dir, backend) = backend().await;
+        let (_dir, backend) = backend().await.expect("backend should be created");
         let result = list_job_events(&backend, Uuid::new_v4(), None, Some(0)).await;
 
         assert!(matches!(
@@ -308,7 +319,7 @@ mod tests {
 
     #[tokio::test]
     async fn list_job_events_rejects_non_positive_before_id() {
-        let (_dir, backend) = backend().await;
+        let (_dir, backend) = backend().await.expect("backend should be created");
         let result = list_job_events(&backend, Uuid::new_v4(), Some(0), None).await;
 
         assert!(matches!(
@@ -320,10 +331,12 @@ mod tests {
 
     #[tokio::test]
     async fn list_job_events_returns_serialization_error_for_invalid_json_payload() {
-        let (_dir, backend) = backend().await;
+        let (_dir, backend) = backend().await.expect("backend should be created");
         let conn = backend.connect().await.expect("connection should succeed");
         let job_id = Uuid::new_v4();
-        seed_sandbox_job(&backend, job_id).await;
+        seed_sandbox_job(&backend, job_id)
+            .await
+            .expect("sandbox job should seed");
 
         conn.execute(
             "INSERT INTO job_events (job_id, event_type, data) VALUES (?1, ?2, ?3)",

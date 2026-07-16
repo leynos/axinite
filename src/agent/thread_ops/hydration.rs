@@ -145,6 +145,8 @@ impl Agent {
 
 #[cfg(all(test, feature = "libsql", feature = "test-helpers"))]
 mod tests {
+    //! Unit tests for hydrating agent session state from the database.
+
     use std::sync::Arc;
 
     use uuid::Uuid;
@@ -161,16 +163,18 @@ mod tests {
     use crate::testing::StubLlm;
     use crate::tools::ToolRegistry;
 
-    async fn local_backend() -> (Arc<LibSqlBackend>, tempfile::TempDir) {
-        let tempdir = tempfile::tempdir().expect("tempdir should be created");
+    async fn local_backend() -> anyhow::Result<(Arc<LibSqlBackend>, tempfile::TempDir)> {
+        use anyhow::Context as _;
+
+        let tempdir = tempfile::tempdir().context("tempdir should be created")?;
         let db_path = tempdir.path().join("hydration-test.db");
         let backend = LibSqlBackend::new_local(&db_path)
             .await
-            .expect("local backend creation should succeed");
+            .context("local backend creation should succeed")?;
         NativeDatabase::run_migrations(&backend)
             .await
-            .expect("migrations should succeed");
-        (Arc::new(backend), tempdir)
+            .context("migrations should succeed")?;
+        Ok((Arc::new(backend), tempdir))
     }
 
     fn make_agent(store: Option<Arc<dyn Database>>, session_manager: Arc<SessionManager>) -> Agent {
@@ -216,7 +220,9 @@ mod tests {
 
     #[tokio::test]
     async fn maybe_hydrate_thread_skips_non_uuid_thread_ids() {
-        let (backend, _tempdir) = local_backend().await;
+        let (backend, _tempdir) = local_backend()
+            .await
+            .expect("local backend should be created");
         let session_manager = Arc::new(SessionManager::new());
         let agent = make_agent(
             Some(Arc::clone(&backend) as Arc<dyn Database>),
@@ -232,7 +238,9 @@ mod tests {
 
     #[tokio::test]
     async fn maybe_hydrate_thread_skips_existing_in_memory_threads() {
-        let (backend, _tempdir) = local_backend().await;
+        let (backend, _tempdir) = local_backend()
+            .await
+            .expect("local backend should be created");
         let session_manager = Arc::new(SessionManager::new());
         let agent = make_agent(
             Some(Arc::clone(&backend) as Arc<dyn Database>),
@@ -259,7 +267,9 @@ mod tests {
 
     #[tokio::test]
     async fn maybe_hydrate_thread_loads_messages_and_registers_thread() {
-        let (backend, _tempdir) = local_backend().await;
+        let (backend, _tempdir) = local_backend()
+            .await
+            .expect("local backend should be created");
         let session_manager = Arc::new(SessionManager::new());
         let agent = make_agent(
             Some(Arc::clone(&backend) as Arc<dyn Database>),
@@ -310,7 +320,9 @@ mod tests {
 
     #[tokio::test]
     async fn maybe_hydrate_thread_propagates_scoped_not_found() {
-        let (backend, _tempdir) = local_backend().await;
+        let (backend, _tempdir) = local_backend()
+            .await
+            .expect("local backend should be created");
         let session_manager = Arc::new(SessionManager::new());
         let agent = make_agent(
             Some(Arc::clone(&backend) as Arc<dyn Database>),

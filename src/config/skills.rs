@@ -1,3 +1,6 @@
+//! Skills system configuration: directories, trust levels, and limits on
+//! active skills and their context token budget.
+
 use std::path::PathBuf;
 
 use crate::bootstrap::ironclaw_base_dir;

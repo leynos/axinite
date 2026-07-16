@@ -118,34 +118,41 @@ impl Store {
 
 #[cfg(all(test, feature = "postgres"))]
 mod tests {
+    //! Postgres-backed tests for tool failure recording and upserts.
+
     use chrono::Utc;
     use rstest::{fixture, rstest};
 
     use super::Store;
+    use crate::error::DatabaseError;
     use crate::testing::postgres::try_test_pg_db;
 
     #[fixture]
-    async fn store() -> Option<Store> {
-        let backend = try_test_pg_db()
-            .await
-            .expect("unexpected Postgres test setup error")?;
-        Some(Store::from_pool(backend.pool()))
+    async fn store() -> Result<Option<Store>, DatabaseError> {
+        let Some(backend) = try_test_pg_db().await? else {
+            return Ok(None);
+        };
+        Ok(Some(Store::from_pool(backend.pool())))
     }
 
-    async fn cleanup_tool(store: &Store, tool_name: &str) {
-        let conn = store.conn().await.expect("conn should succeed");
+    async fn cleanup_tool(store: &Store, tool_name: &str) -> Result<(), DatabaseError> {
+        let conn = store.conn().await?;
         conn.execute(
             "DELETE FROM tool_failures WHERE tool_name = $1",
             &[&tool_name],
         )
-        .await
-        .expect("delete tool_failures should succeed");
+        .await?;
+        Ok(())
     }
 
     #[rstest]
     #[tokio::test]
-    async fn record_tool_failure_inserts_and_upserts(#[future] store: Option<Store>) {
-        let Some(store) = store.await else { return };
+    async fn record_tool_failure_inserts_and_upserts(
+        #[future] store: Result<Option<Store>, DatabaseError>,
+    ) {
+        let Some(store) = store.await.expect("unexpected Postgres test setup error") else {
+            return;
+        };
         let tool_name = format!("broken-tool-{}", uuid::Uuid::new_v4());
 
         store
@@ -173,13 +180,19 @@ mod tests {
             None
         );
 
-        cleanup_tool(&store, &tool_name).await;
+        cleanup_tool(&store, &tool_name)
+            .await
+            .expect("delete tool_failures should succeed");
     }
 
     #[rstest]
     #[tokio::test]
-    async fn get_broken_tools_filters_by_threshold_and_repaired_at(#[future] store: Option<Store>) {
-        let Some(store) = store.await else { return };
+    async fn get_broken_tools_filters_by_threshold_and_repaired_at(
+        #[future] store: Result<Option<Store>, DatabaseError>,
+    ) {
+        let Some(store) = store.await.expect("unexpected Postgres test setup error") else {
+            return;
+        };
         let eligible_tool = format!("eligible-tool-{}", uuid::Uuid::new_v4());
         let repaired_tool = format!("repaired-tool-{}", uuid::Uuid::new_v4());
         let below_threshold_tool = format!("below-tool-{}", uuid::Uuid::new_v4());
@@ -215,17 +228,25 @@ mod tests {
         assert_eq!(broken.len(), 1);
         assert_eq!(broken[0].name, eligible_tool);
 
-        cleanup_tool(&store, &eligible_tool).await;
-        cleanup_tool(&store, &repaired_tool).await;
-        cleanup_tool(&store, &below_threshold_tool).await;
+        cleanup_tool(&store, &eligible_tool)
+            .await
+            .expect("delete tool_failures should succeed");
+        cleanup_tool(&store, &repaired_tool)
+            .await
+            .expect("delete tool_failures should succeed");
+        cleanup_tool(&store, &below_threshold_tool)
+            .await
+            .expect("delete tool_failures should succeed");
     }
 
     #[rstest]
     #[tokio::test]
     async fn mark_tool_repaired_sets_repaired_at_and_resets_error_count(
-        #[future] store: Option<Store>,
+        #[future] store: Result<Option<Store>, DatabaseError>,
     ) {
-        let Some(store) = store.await else { return };
+        let Some(store) = store.await.expect("unexpected Postgres test setup error") else {
+            return;
+        };
         let tool_name = format!("repairable-tool-{}", uuid::Uuid::new_v4());
 
         store
@@ -252,13 +273,19 @@ mod tests {
                 .is_some()
         );
 
-        cleanup_tool(&store, &tool_name).await;
+        cleanup_tool(&store, &tool_name)
+            .await
+            .expect("delete tool_failures should succeed");
     }
 
     #[rstest]
     #[tokio::test]
-    async fn increment_repair_attempts_increments_by_one(#[future] store: Option<Store>) {
-        let Some(store) = store.await else { return };
+    async fn increment_repair_attempts_increments_by_one(
+        #[future] store: Result<Option<Store>, DatabaseError>,
+    ) {
+        let Some(store) = store.await.expect("unexpected Postgres test setup error") else {
+            return;
+        };
         let tool_name = format!("repair-attempt-tool-{}", uuid::Uuid::new_v4());
 
         store
@@ -281,6 +308,8 @@ mod tests {
 
         assert_eq!(row.get::<_, i32>("repair_attempts"), 1);
 
-        cleanup_tool(&store, &tool_name).await;
+        cleanup_tool(&store, &tool_name)
+            .await
+            .expect("delete tool_failures should succeed");
     }
 }

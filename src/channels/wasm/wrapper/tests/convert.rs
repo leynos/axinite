@@ -1,3 +1,5 @@
+//! Unit tests for converting channel status updates to WIT types.
+
 use rstest::rstest;
 
 use crate::channels::StatusUpdate;

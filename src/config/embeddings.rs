@@ -1,3 +1,6 @@
+//! Embeddings provider configuration resolved from settings and
+//! environment variables.
+
 use std::sync::Arc;
 
 use secrecy::{ExposeSecret, SecretString};
@@ -181,6 +184,8 @@ const _: () = {
 
 #[cfg(test)]
 mod tests {
+    //! Unit tests for embeddings configuration resolution and overrides.
+
     use super::*;
     use crate::config::helpers::ENV_MUTEX;
     use crate::settings::{EmbeddingsSettings, Settings};

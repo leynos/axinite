@@ -101,10 +101,12 @@ pub use loader::{
     DiscoveredChannel, LoadResults, LoadedChannel, WasmChannelLoader, default_channels_dir,
     discover_channels,
 };
-pub use router::{RegisteredEndpoint, WasmChannelRouter, create_wasm_channel_router};
+pub use router::{
+    RegisteredEndpoint, WasmChannelRouter, WebhookSecrets, create_wasm_channel_router,
+};
 pub use runtime::{PreparedChannelModule, WasmChannelRuntime, WasmChannelRuntimeConfig};
 pub use schema::{
     ChannelCapabilitiesFile, ChannelConfig, SecretSetupSchema, SetupSchema, WebhookSchema,
 };
 pub use setup::{WasmChannelSetup, inject_channel_credentials, setup_wasm_channels};
-pub use wrapper::{HttpResponse, SharedWasmChannel, WasmChannel};
+pub use wrapper::{HttpResponse, RespondInvocation, SharedWasmChannel, WasmChannel};

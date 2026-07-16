@@ -9,7 +9,7 @@ use std::collections::HashMap;
 use std::time::Duration;
 
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
-use tokio::net::TcpListener;
+use tokio::net::{TcpListener, TcpStream};
 
 mod oauth_landing;
 
@@ -145,6 +145,19 @@ async fn bind_callback_listener_for_host(host: &str) -> Result<TcpListener, OAut
     }
 }
 
+/// What a `wait_for_callback` listener should match and how it should brand its
+/// landing pages.
+struct CallbackSpec {
+    /// Request path the callback must start with (e.g. "/callback").
+    path_prefix: String,
+    /// Query parameter whose value is returned (e.g. "code" or "token").
+    param_name: String,
+    /// Provider name shown on the branded landing page.
+    display_name: String,
+    /// Expected CSRF `state`; when set, mismatches are rejected.
+    expected_state: Option<String>,
+}
+
 /// Wait for an OAuth callback and extract a query parameter value.
 ///
 /// Listens for a GET request matching `path_prefix` (e.g., "/callback" or "/auth/callback"),
@@ -163,110 +176,144 @@ pub async fn wait_for_callback(
     display_name: &str,
     expected_state: Option<&str>,
 ) -> Result<String, OAuthCallbackError> {
-    let path_prefix = path_prefix.to_string();
-    let param_name = param_name.to_string();
-    let display_name = display_name.to_string();
-    let expected_state = expected_state.map(String::from);
+    let spec = CallbackSpec {
+        path_prefix: path_prefix.to_string(),
+        param_name: param_name.to_string(),
+        display_name: display_name.to_string(),
+        expected_state: expected_state.map(String::from),
+    };
 
     tokio::time::timeout(Duration::from_secs(300), async move {
         loop {
-            let (mut socket, _) = listener
-                .accept()
-                .await
-                .map_err(|e| OAuthCallbackError::Io(e.to_string()))?;
-
-            let mut reader = BufReader::new(&mut socket);
-            let mut request_line = String::new();
-            reader
-                .read_line(&mut request_line)
-                .await
-                .map_err(|e| OAuthCallbackError::Io(e.to_string()))?;
-
-            if let Some(path) = request_line.split_whitespace().nth(1)
-                && path.starts_with(&path_prefix)
-                && let Some(query) = path.split('?').nth(1)
-            {
-                // Check for error first
-                if query.contains("error=") {
-                    let html = landing_html(&display_name, false);
-                    let response = format!(
-                        "HTTP/1.1 400 Bad Request\r\n\
-                         Content-Type: text/html; charset=utf-8\r\n\
-                         Connection: close\r\n\
-                         \r\n\
-                         {}",
-                        html
-                    );
-                    let _ = socket.write_all(response.as_bytes()).await;
-                    return Err(OAuthCallbackError::Denied);
-                }
-
-                // Parse all query params into a map for validation
-                let params: HashMap<&str, String> = query
-                    .split('&')
-                    .filter_map(|p| {
-                        let mut parts = p.splitn(2, '=');
-                        let key = parts.next()?;
-                        let val = parts.next().unwrap_or("");
-                        Some((
-                            key,
-                            urlencoding::decode(val)
-                                .unwrap_or_else(|_| val.into())
-                                .into_owned(),
-                        ))
-                    })
-                    .collect();
-
-                // Validate CSRF state parameter
-                if let Some(ref expected) = expected_state {
-                    let actual = params.get("state").cloned().unwrap_or_default();
-                    if actual != *expected {
-                        let html = landing_html(&display_name, false);
-                        let response = format!(
-                            "HTTP/1.1 403 Forbidden\r\n\
-                             Content-Type: text/html; charset=utf-8\r\n\
-                             Connection: close\r\n\
-                             \r\n\
-                             {}",
-                            html
-                        );
-                        let _ = socket.write_all(response.as_bytes()).await;
-                        return Err(OAuthCallbackError::StateMismatch {
-                            expected: expected.clone(),
-                            actual,
-                        });
-                    }
-                }
-
-                // Look for the target parameter
-                if let Some(value) = params.get(param_name.as_str()) {
-                    let html = landing_html(&display_name, true);
-                    let response = format!(
-                        "HTTP/1.1 200 OK\r\n\
-                         Content-Type: text/html; charset=utf-8\r\n\
-                         Connection: close\r\n\
-                         \r\n\
-                         {}",
-                        html
-                    );
-                    let _ = socket.write_all(response.as_bytes()).await;
-                    let _ = socket.shutdown().await;
-
-                    return Ok(value.clone());
-                }
+            if let Some(value) = serve_one_callback(&listener, &spec).await? {
+                return Ok(value);
             }
-
-            // Not the callback we're looking for
-            let response = "HTTP/1.1 404 Not Found\r\nConnection: close\r\n\r\n";
-            let _ = socket.write_all(response.as_bytes()).await;
         }
     })
     .await
     .map_err(|_| OAuthCallbackError::Timeout)?
 }
 
+/// Accept and handle a single connection.
+///
+/// Returns `Ok(Some(value))` once the target parameter is captured, `Ok(None)`
+/// for requests that are not the awaited callback (a 404 is written and the
+/// caller keeps listening), and `Err` for user denial, CSRF mismatch, or IO
+/// failure.
+async fn serve_one_callback(
+    listener: &TcpListener,
+    spec: &CallbackSpec,
+) -> Result<Option<String>, OAuthCallbackError> {
+    let (mut socket, _) = listener
+        .accept()
+        .await
+        .map_err(|e| OAuthCallbackError::Io(e.to_string()))?;
+
+    let request_line = read_request_line(&mut socket).await?;
+
+    let Some(query) = callback_query(&request_line, &spec.path_prefix) else {
+        write_not_found(&mut socket).await;
+        return Ok(None);
+    };
+
+    if query.contains("error=") {
+        write_landing_page(&mut socket, "400 Bad Request", &spec.display_name, false).await;
+        return Err(OAuthCallbackError::Denied);
+    }
+
+    let params = parse_query_params(query);
+
+    if let Some(ref expected) = spec.expected_state {
+        let actual = params.get("state").cloned().unwrap_or_default();
+        if actual != *expected {
+            write_landing_page(&mut socket, "403 Forbidden", &spec.display_name, false).await;
+            return Err(OAuthCallbackError::StateMismatch {
+                expected: expected.clone(),
+                actual,
+            });
+        }
+    }
+
+    if let Some(value) = params.get(spec.param_name.as_str()) {
+        write_landing_page(&mut socket, "200 OK", &spec.display_name, true).await;
+        let _ = socket.shutdown().await;
+        return Ok(Some(value.clone()));
+    }
+
+    // Matched the path but not the target parameter — not our callback.
+    write_not_found(&mut socket).await;
+    Ok(None)
+}
+
+/// Read the HTTP request line (the first line) from `socket`.
+async fn read_request_line(socket: &mut TcpStream) -> Result<String, OAuthCallbackError> {
+    let mut reader = BufReader::new(socket);
+    let mut request_line = String::new();
+    reader
+        .read_line(&mut request_line)
+        .await
+        .map_err(|e| OAuthCallbackError::Io(e.to_string()))?;
+    Ok(request_line)
+}
+
+/// Decode an `&`-separated query string into a map, percent-decoding values.
+fn parse_query_params(query: &str) -> HashMap<&str, String> {
+    query
+        .split('&')
+        .filter_map(|p| {
+            let mut parts = p.splitn(2, '=');
+            let key = parts.next()?;
+            let val = parts.next().unwrap_or("");
+            Some((
+                key,
+                urlencoding::decode(val)
+                    .unwrap_or_else(|_| val.into())
+                    .into_owned(),
+            ))
+        })
+        .collect()
+}
+
+/// Write a branded landing page with the given HTTP status line.
+async fn write_landing_page(
+    socket: &mut TcpStream,
+    status_line: &str,
+    display_name: &str,
+    success: bool,
+) {
+    let html = landing_html(display_name, success);
+    let response = format!(
+        "HTTP/1.1 {}\r\n\
+         Content-Type: text/html; charset=utf-8\r\n\
+         Connection: close\r\n\
+         \r\n\
+         {}",
+        status_line, html
+    );
+    let _ = socket.write_all(response.as_bytes()).await;
+}
+
+/// Write a bare `404 Not Found` response for requests that are not the callback.
+async fn write_not_found(socket: &mut TcpStream) {
+    let response = "HTTP/1.1 404 Not Found\r\nConnection: close\r\n\r\n";
+    let _ = socket.write_all(response.as_bytes()).await;
+}
+
+/// Extract the query string from a request line whose path matches the
+/// expected callback prefix; `None` for any other request.
+fn callback_query<'a>(request_line: &'a str, path_prefix: &str) -> Option<&'a str> {
+    let path = request_line.split_whitespace().nth(1)?;
+    if !path.starts_with(path_prefix) {
+        return None;
+    }
+    path.split('?').nth(1)
+}
+
 #[cfg(test)]
 mod tests {
+    //! Unit tests for OAuth loopback detection and callback listener
+    //! binding.
+
     use rstest::rstest;
 
     use super::*;

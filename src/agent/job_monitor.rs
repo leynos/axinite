@@ -106,6 +106,8 @@ pub fn spawn_job_monitor(
 
 #[cfg(test)]
 mod tests {
+    //! Unit tests for job monitor event forwarding and message injection.
+
     use super::*;
 
     #[tokio::test]

@@ -320,6 +320,8 @@ impl ContainerRunner {
 
 #[cfg(test)]
 mod tests {
+    //! Unit tests for output truncation and container execution paths.
+
     use super::*;
 
     #[test]

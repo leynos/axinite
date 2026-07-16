@@ -347,7 +347,7 @@ async fn apply_wasm_overrides_applies_each_optional_field(
     );
     assert_eq!(
         wrapper.parameters_schema(),
-        schema.unwrap_or_else(|| serde_json::json!({"type": "object"}))
+        schema.unwrap_or(serde_json::json!({"type": "object"}))
     );
     assert_eq!(wrapper.secrets_store().is_some(), include_secrets_store);
     assert_eq!(wrapper.oauth_refresh().is_some(), include_oauth_refresh);

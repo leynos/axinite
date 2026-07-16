@@ -46,6 +46,8 @@ pub async fn import_chunk(
 
 #[cfg(test)]
 mod tests {
+    //! Unit tests for OpenClaw memory chunk import and validation.
+
     use super::*;
 
     #[test]

@@ -135,6 +135,8 @@ impl Store {
 
 #[cfg(all(test, feature = "postgres"))]
 mod tests {
+    //! Unit tests for sandbox event persistence against PostgreSQL.
+
     use chrono::Utc;
     use rstest::{fixture, rstest};
     use uuid::Uuid;
@@ -145,14 +147,14 @@ mod tests {
     use crate::testing::postgres::try_test_pg_db;
 
     #[fixture]
-    async fn store() -> Option<Store> {
-        let backend = try_test_pg_db()
-            .await
-            .expect("unexpected Postgres test setup error")?;
-        Some(Store::from_pool(backend.pool()))
+    async fn store() -> Result<Option<Store>, DatabaseError> {
+        let Some(backend) = try_test_pg_db().await? else {
+            return Ok(None);
+        };
+        Ok(Some(Store::from_pool(backend.pool())))
     }
 
-    async fn seed_sandbox_job(store: &Store, job_id: Uuid) {
+    async fn seed_sandbox_job(store: &Store, job_id: Uuid) -> Result<(), DatabaseError> {
         let job = SandboxJobRecord {
             id: job_id,
             task: "sandbox event test".to_string(),
@@ -166,20 +168,17 @@ mod tests {
             completed_at: None,
             credential_grants_json: "{}".to_string(),
         };
-        store
-            .save_sandbox_job(&job)
-            .await
-            .expect("sandbox job should seed");
+        store.save_sandbox_job(&job).await?;
+        Ok(())
     }
 
-    async fn cleanup_job(store: &Store, job_id: Uuid) {
-        let conn = store.conn().await.expect("connection should succeed");
+    async fn cleanup_job(store: &Store, job_id: Uuid) -> Result<(), DatabaseError> {
+        let conn = store.conn().await?;
         conn.execute("DELETE FROM job_events WHERE job_id = $1", &[&job_id])
-            .await
-            .expect("job events should delete");
+            .await?;
         conn.execute("DELETE FROM agent_jobs WHERE id = $1", &[&job_id])
-            .await
-            .expect("sandbox job should delete");
+            .await?;
+        Ok(())
     }
 
     #[rstest]
@@ -187,11 +186,13 @@ mod tests {
     #[case(Some(-1), "list_job_events limit must be greater than 0")]
     #[tokio::test]
     async fn list_job_events_with_non_positive_limit_errors(
-        #[future] store: Option<Store>,
+        #[future] store: Result<Option<Store>, DatabaseError>,
         #[case] limit: Option<i64>,
         #[case] expected: &str,
     ) {
-        let Some(store) = store.await else { return };
+        let Some(store) = store.await.expect("unexpected Postgres test setup error") else {
+            return;
+        };
         let result = store.list_job_events(Uuid::new_v4(), None, limit).await;
         assert!(matches!(
             result,
@@ -204,11 +205,13 @@ mod tests {
     #[case(Some(-1), "list_job_events before_id must be greater than 0")]
     #[tokio::test]
     async fn list_job_events_with_non_positive_before_id_errors(
-        #[future] store: Option<Store>,
+        #[future] store: Result<Option<Store>, DatabaseError>,
         #[case] before_id: Option<i64>,
         #[case] expected: &str,
     ) {
-        let Some(store) = store.await else { return };
+        let Some(store) = store.await.expect("unexpected Postgres test setup error") else {
+            return;
+        };
         let result = store.list_job_events(Uuid::new_v4(), before_id, None).await;
         assert!(matches!(
             result,
@@ -218,10 +221,16 @@ mod tests {
 
     #[rstest]
     #[tokio::test]
-    async fn list_job_events_with_valid_inputs_succeeds(#[future] store: Option<Store>) {
-        let Some(store) = store.await else { return };
+    async fn list_job_events_with_valid_inputs_succeeds(
+        #[future] store: Result<Option<Store>, DatabaseError>,
+    ) {
+        let Some(store) = store.await.expect("unexpected Postgres test setup error") else {
+            return;
+        };
         let job_id = Uuid::new_v4();
-        seed_sandbox_job(&store, job_id).await;
+        seed_sandbox_job(&store, job_id)
+            .await
+            .expect("sandbox job should seed");
 
         for message in ["one", "two", "three"] {
             store
@@ -257,6 +266,8 @@ mod tests {
         assert!(before.iter().all(|event| event.id < all[2].id));
         assert!(before.windows(2).all(|pair| pair[0].id < pair[1].id));
 
-        cleanup_job(&store, job_id).await;
+        cleanup_job(&store, job_id)
+            .await
+            .expect("job cleanup should succeed");
     }
 }

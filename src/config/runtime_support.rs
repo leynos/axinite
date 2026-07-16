@@ -23,23 +23,36 @@ pub(crate) async fn inject_llm_keys_with<HasValue, SetValue>(
     user_id: &str,
     mut has_value: HasValue,
     mut set_value: SetValue,
-) where
+) -> Result<(), ConfigError>
+where
     HasValue: FnMut(&str) -> bool,
     SetValue: FnMut(&str, String),
 {
-    for (secret_name, env_var) in secret_mappings() {
+    for (secret_name, env_var) in secret_mappings()? {
         if has_value(&env_var) {
             continue;
         }
-        if let Ok(decrypted) = secrets.get_decrypted(user_id, &secret_name).await {
-            let value = decrypted.expose().to_string();
-            if value.trim().is_empty() {
-                continue;
-            }
+        if let Some(value) = decrypted_secret(secrets, user_id, &secret_name).await {
             set_value(&env_var, value);
             tracing::debug!("Loaded secret '{}' for env var '{}'", secret_name, env_var);
         }
     }
+    Ok(())
+}
+
+/// Fetch and expose a decrypted secret, returning `None` when it is absent
+/// or blank.
+async fn decrypted_secret(
+    secrets: &dyn crate::secrets::SecretsStore,
+    user_id: &str,
+    secret_name: &str,
+) -> Option<String> {
+    let decrypted = secrets.get_decrypted(user_id, secret_name).await.ok()?;
+    let value = decrypted.expose().to_string();
+    if value.trim().is_empty() {
+        return None;
+    }
+    Some(value)
 }
 
 #[cfg(feature = "libsql")]
@@ -133,20 +146,39 @@ fn apply_toml_overlay_at(
 pub async fn inject_llm_keys_from_secrets(
     secrets: &dyn crate::secrets::SecretsStore,
     user_id: &str,
-) {
-    let mut injected = HashMap::new();
-    inject_llm_keys_with(
+) -> Result<(), ConfigError> {
+    let injected = collect_llm_key_injections(
         secrets,
         user_id,
         |env_var| matches!(std::env::var(env_var), Ok(val) if !val.is_empty()),
-        |env_var, value| {
-            injected.insert(env_var.to_string(), value);
-        },
     )
-    .await;
-
-    inject_os_credential_store_tokens(&mut injected);
+    .await?;
     merge_injected_vars(injected);
+    Ok(())
+}
+
+/// Gather the LLM credentials to inject, layering fresh OS credential-store
+/// tokens on top of the secrets-store values.
+///
+/// `has_value` reports whether the destination already holds a value for an
+/// env var; those keys are skipped so caller-supplied values keep priority.
+/// The caller decides where the returned map is applied (process-global
+/// overlay or an explicit [`EnvContext`]).
+async fn collect_llm_key_injections<HasValue>(
+    secrets: &dyn crate::secrets::SecretsStore,
+    user_id: &str,
+    has_value: HasValue,
+) -> Result<HashMap<String, String>, ConfigError>
+where
+    HasValue: FnMut(&str) -> bool,
+{
+    let mut injected = HashMap::new();
+    inject_llm_keys_with(secrets, user_id, has_value, |env_var, value| {
+        injected.insert(env_var.to_string(), value);
+    })
+    .await?;
+    inject_os_credential_store_tokens(&mut injected);
+    Ok(injected)
 }
 
 /// Inject decrypted LLM credentials into an explicit [`EnvContext`].
@@ -160,28 +192,21 @@ pub async fn inject_llm_keys_from_secrets(
 /// ```no_run
 /// # async fn example(
 /// #     secrets: &dyn ironclaw::secrets::SecretsStore,
-/// # ) {
+/// # ) -> Result<(), ironclaw::error::ConfigError> {
 /// let mut ctx = ironclaw::config::EnvContext::default();
-/// ironclaw::config::inject_llm_keys_into_context(&mut ctx, secrets, "user-123").await;
+/// ironclaw::config::inject_llm_keys_into_context(&mut ctx, secrets, "user-123").await?;
+/// # Ok(())
 /// # }
 /// ```
 pub async fn inject_llm_keys_into_context(
     ctx: &mut EnvContext,
     secrets: &dyn crate::secrets::SecretsStore,
     user_id: &str,
-) {
-    let mut injected = HashMap::new();
-    inject_llm_keys_with(
-        secrets,
-        user_id,
-        |env_var| ctx.get(env_var).is_some(),
-        |env_var, value| {
-            injected.insert(env_var.to_string(), value);
-        },
-    )
-    .await;
+) -> Result<(), ConfigError> {
+    let injected =
+        collect_llm_key_injections(secrets, user_id, |env_var| ctx.get(env_var).is_some()).await?;
     ctx.merge_secrets(injected);
-    inject_os_credentials_into_context(ctx);
+    Ok(())
 }
 
 /// Load tokens from OS credential stores (no DB required).
@@ -190,9 +215,7 @@ pub async fn inject_llm_keys_into_context(
 /// is unavailable. This ensures OAuth tokens from `claude login` are available
 /// for config resolution.
 pub fn inject_os_credentials() {
-    let mut injected = HashMap::new();
-    inject_os_credential_store_tokens(&mut injected);
-    merge_injected_vars(injected);
+    merge_injected_vars(os_credential_injections());
 }
 
 /// Inject OAuth tokens from OS credential stores into an explicit context.
@@ -202,9 +225,14 @@ pub fn inject_os_credentials() {
 /// calling [`crate::config::Config::from_context`] or
 /// [`crate::config::Config::re_resolve_llm_from`].
 pub fn inject_os_credentials_into_context(ctx: &mut EnvContext) {
+    ctx.merge_secrets(os_credential_injections());
+}
+
+/// Collect OAuth tokens from OS credential stores into a fresh overlay map.
+fn os_credential_injections() -> HashMap<String, String> {
     let mut injected = HashMap::new();
     inject_os_credential_store_tokens(&mut injected);
-    ctx.merge_secrets(injected);
+    injected
 }
 
 /// Inject a single key-value pair into the overlay.
@@ -212,31 +240,28 @@ pub fn inject_os_credentials_into_context(ctx: &mut EnvContext) {
 /// Used by the setup wizard to make credentials available to `optional_env()`
 /// without calling `unsafe { std::env::set_var }`.
 pub fn inject_single_var(key: &str, value: &str) {
-    match INJECTED_VARS.lock() {
-        Ok(mut map) => {
-            map.insert(key.to_string(), value.to_string());
-        }
-        Err(poisoned) => {
-            poisoned
-                .into_inner()
-                .insert(key.to_string(), value.to_string());
-        }
-    }
+    with_injected_vars(|map| {
+        map.insert(key.to_string(), value.to_string());
+    });
 }
 
 /// Remove a single key from the overlay.
 pub fn remove_single_var(key: &str) {
+    with_injected_vars(|map| {
+        map.remove(key);
+    });
+}
+
+/// Run `f` against the global injected-vars overlay, recovering the map even
+/// when the lock has been poisoned by a panicking holder.
+fn with_injected_vars<R>(f: impl FnOnce(&mut HashMap<String, String>) -> R) -> R {
     match INJECTED_VARS.lock() {
-        Ok(mut map) => {
-            map.remove(key);
-        }
-        Err(poisoned) => {
-            poisoned.into_inner().remove(key);
-        }
+        Ok(mut map) => f(&mut map),
+        Err(poisoned) => f(&mut poisoned.into_inner()),
     }
 }
 
-fn secret_mappings() -> Vec<(String, String)> {
+fn secret_mappings() -> Result<Vec<(String, String)>, ConfigError> {
     let mut mappings: Vec<(String, String)> = vec![
         (
             "llm_nearai_api_key".to_string(),
@@ -248,7 +273,7 @@ fn secret_mappings() -> Vec<(String, String)> {
         ),
     ];
 
-    let registry = crate::llm::ProviderRegistry::load();
+    let registry = crate::llm::ProviderRegistry::load()?;
     mappings.extend(registry.selectable().iter().filter_map(|def| {
         def.api_key_env.as_ref().and_then(|env_var| {
             def.setup
@@ -257,7 +282,7 @@ fn secret_mappings() -> Vec<(String, String)> {
                 .map(|secret_name| (secret_name.to_string(), env_var.clone()))
         })
     }));
-    mappings
+    Ok(mappings)
 }
 
 /// Merge new entries into the global injected-vars overlay.
@@ -268,10 +293,7 @@ fn merge_injected_vars(new_entries: HashMap<String, String>) {
     if new_entries.is_empty() {
         return;
     }
-    match INJECTED_VARS.lock() {
-        Ok(mut map) => map.extend(new_entries),
-        Err(poisoned) => poisoned.into_inner().extend(new_entries),
-    }
+    with_injected_vars(|map| map.extend(new_entries));
 }
 
 /// Shared helper: extract tokens from OS credential stores into the overlay map.

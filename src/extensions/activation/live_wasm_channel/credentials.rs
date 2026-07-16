@@ -155,6 +155,9 @@ fn allowed_credential_keys(channel: &Arc<crate::channels::wasm::WasmChannel>) ->
 
 #[cfg(test)]
 mod tests {
+    //! Unit tests for WASM channel credential injection and prefix
+    //! checks.
+
     use super::*;
     use std::collections::HashMap;
 

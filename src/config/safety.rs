@@ -1,3 +1,5 @@
+//! Safety configuration: output length limits and injection checking.
+
 use crate::config::EnvContext;
 use crate::config::helpers::{EnvKey, parse_bool_env_from, parse_optional_env_from};
 use crate::error::ConfigError;

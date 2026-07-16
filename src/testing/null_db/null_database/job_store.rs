@@ -83,6 +83,8 @@ impl crate::db::NativeJobStore for NullDatabase {
 
 #[cfg(test)]
 mod tests {
+    //! Unit tests for the null database job store stubs.
+
     use super::*;
     use crate::db::NativeJobStore;
     use crate::history::LlmCallRecord;

@@ -4,11 +4,12 @@ use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
-/// Well-known document paths.
-///
-/// These are conventional paths that have special meaning in the workspace.
-/// Agents can create arbitrary paths beyond these.
 pub mod paths {
+    //! Well-known workspace document file names.
+    //!
+    //! These are conventional paths that have special meaning in the
+    //! workspace. Agents can create arbitrary paths beyond these.
+
     /// Long-term curated memory.
     pub const MEMORY: &str = "MEMORY.md";
     /// Agent identity (name, nature, vibe).
@@ -163,6 +164,8 @@ impl MemoryChunk {
 
 #[cfg(test)]
 mod tests {
+    //! Unit tests for memory document construction and updates.
+
     use super::*;
 
     #[test]

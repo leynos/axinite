@@ -1,4 +1,4 @@
-//! Remote tool catalogue fetching tests.
+//! Remote tool catalog fetching tests.
 
 use rstest::rstest;
 use uuid::Uuid;
@@ -13,10 +13,10 @@ use super::fixtures::{
 
 #[rstest]
 #[tokio::test]
-async fn remote_tool_catalogue_reports_non_success_statuses(
+async fn remote_tool_catalog_reports_non_success_statuses(
     remote_tool_failure_server: RemoteToolFailureServerFactory,
 ) -> anyhow::Result<()> {
-    let server = remote_tool_failure_server(RemoteToolFailureRoute::Catalogue).await?;
+    let server = remote_tool_failure_server(RemoteToolFailureRoute::Catalog).await?;
 
     let client = WorkerHttpClient::new(
         server.base_url.clone(),
@@ -28,7 +28,7 @@ async fn remote_tool_catalogue_reports_non_success_statuses(
     let err = client
         .get_remote_tool_catalog()
         .await
-        .expect_err("catalogue fetch should fail on non-success status");
+        .expect_err("catalog fetch should fail on non-success status");
 
     match err {
         WorkerError::OrchestratorRejected { reason, .. } => {

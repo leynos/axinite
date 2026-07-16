@@ -133,7 +133,7 @@ impl DefaultPolicyDecider {
         self.credential_mappings.iter().find(|m| {
             m.host_patterns
                 .iter()
-                .any(|pattern| host_matches_pattern(&host_lower, pattern))
+                .any(|pattern| HostPattern(pattern).matches(&host_lower))
         })
     }
 }
@@ -161,25 +161,38 @@ impl NativeNetworkPolicyDecider for DefaultPolicyDecider {
     }
 }
 
-/// Check if a host matches a pattern (supports `*.example.com` wildcards).
-fn host_matches_pattern(host: &str, pattern: &str) -> bool {
-    let pattern_lower = pattern.to_lowercase();
-    if pattern_lower == host {
-        return true;
-    }
+/// A credential-mapping host pattern: an exact hostname or a
+/// `*.example.com` wildcard, matched case-insensitively.
+struct HostPattern<'a>(&'a str);
 
-    // Support wildcard: *.example.com matches sub.example.com
-    if let Some(suffix) = pattern_lower.strip_prefix("*.")
-        && host.ends_with(suffix)
-        && host.len() > suffix.len()
-    {
-        let prefix = &host[..host.len() - suffix.len()];
-        if prefix.ends_with('.') || prefix.is_empty() {
+impl HostPattern<'_> {
+    /// Check whether the pattern matches `host` (exact or wildcard).
+    fn matches(&self, host: &str) -> bool {
+        let pattern_lower = self.0.to_lowercase();
+        if pattern_lower == host {
             return true;
         }
+
+        // Support wildcard: *.example.com matches sub.example.com
+        if let Some(suffix) = pattern_lower.strip_prefix("*.")
+            && Self::wildcard_suffix_matches(host, suffix)
+        {
+            return true;
+        }
+
+        false
     }
 
-    false
+    /// Whether `host` ends with the wildcard `suffix` at a label boundary
+    /// (e.g. `sub.example.com` matches suffix `example.com`, whereas
+    /// `notexample.com` does not).
+    fn wildcard_suffix_matches(host: &str, suffix: &str) -> bool {
+        if !host.ends_with(suffix) || host.len() <= suffix.len() {
+            return false;
+        }
+        let prefix = &host[..host.len() - suffix.len()];
+        prefix.ends_with('.') || prefix.is_empty()
+    }
 }
 
 /// A policy decider that allows everything (use with FullAccess policy).
@@ -214,6 +227,8 @@ impl NativeNetworkPolicyDecider for DenyAllDecider {
 
 #[cfg(test)]
 mod tests {
+    //! Unit tests for network request parsing and domain allowlist policy.
+
     use super::*;
 
     #[test]
@@ -312,14 +327,14 @@ mod tests {
     }
 
     #[test]
-    fn test_host_matches_pattern_exact() {
-        assert!(host_matches_pattern("api.openai.com", "api.openai.com"));
-        assert!(!host_matches_pattern("api.openai.com", "evil.com"));
+    fn test_host_pattern_matches_exact() {
+        assert!(HostPattern("api.openai.com").matches("api.openai.com"));
+        assert!(!HostPattern("evil.com").matches("api.openai.com"));
     }
 
     #[test]
-    fn test_host_matches_pattern_wildcard() {
-        assert!(host_matches_pattern("api.example.com", "*.example.com"));
-        assert!(!host_matches_pattern("example.com", "*.example.com"));
+    fn test_host_pattern_matches_wildcard() {
+        assert!(HostPattern("*.example.com").matches("api.example.com"));
+        assert!(!HostPattern("*.example.com").matches("example.com"));
     }
 }

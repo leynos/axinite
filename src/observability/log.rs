@@ -105,6 +105,8 @@ impl Observer for LogObserver {
 
 #[cfg(test)]
 mod tests {
+    //! Unit tests for the log observer.
+
     use std::time::Duration;
 
     use crate::observability::log::LogObserver;

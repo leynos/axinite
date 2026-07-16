@@ -43,6 +43,8 @@ impl Observer for MultiObserver {
 
 #[cfg(test)]
 mod tests {
+    //! Unit tests for fan-out of events and metrics to multiple observers.
+
     use std::sync::Arc;
     use std::sync::atomic::{AtomicUsize, Ordering};
     use std::time::Duration;

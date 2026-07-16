@@ -137,7 +137,7 @@ fn empty_wasm_channels_init() -> WasmChannelsInit {
 
 async fn validate_wasm_channels_dir(config: &Config) -> bool {
     let metadata = match tokio::fs::metadata(&config.channels.wasm_channels_dir).await {
-        Ok(metadata) => metadata,
+        Ok(metadata) => ambient_fs::Metadata::from_std(metadata),
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
             tracing::warn!(
                 path = %config.channels.wasm_channels_dir.display(),

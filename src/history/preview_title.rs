@@ -38,6 +38,8 @@ pub(crate) fn preview_title_from_metadata(
 
 #[cfg(test)]
 mod tests {
+    //! Unit tests for deriving conversation preview titles from metadata.
+
     use rstest::rstest;
     use serde_json::json;
 

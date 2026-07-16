@@ -5,6 +5,7 @@ use std::sync::Arc;
 use axum::{Json, http::StatusCode};
 use uuid::Uuid;
 
+use crate::agent::scheduler::JobRequest;
 use crate::channels::web::server::GatewayState;
 use crate::db::{Database, SandboxJobStatusUpdate};
 
@@ -317,7 +318,12 @@ pub(super) async fn restart_agent_job(
     let title = retry_label(&old_job.title, &failure_reason);
 
     let new_job_id = scheduler
-        .dispatch_job(&old_job.user_id, &title, &old_job.description, None)
+        .dispatch_job(JobRequest {
+            user_id: &old_job.user_id,
+            title: &title,
+            description: &old_job.description,
+            metadata: None,
+        })
         .await
         .map_err(|e| internal_error("Failed to restart agent job", e))?;
 
@@ -363,54 +369,4 @@ async fn mark_sandbox_restart_failed(
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_normalize_credential_grants_json_valid_array() {
-        let valid_array = r#"[{"tool": "test", "credential": "secret"}]"#;
-        assert_eq!(normalize_credential_grants_json(valid_array), valid_array);
-    }
-
-    #[test]
-    fn test_normalize_credential_grants_json_empty_array() {
-        assert_eq!(normalize_credential_grants_json("[]"), "[]");
-    }
-
-    #[test]
-    fn test_normalize_credential_grants_json_malformed_plaintext() {
-        // Legacy sandbox rows may have malformed/plaintext credential_grants_json
-        // This should normalize to empty array
-        assert_eq!(normalize_credential_grants_json("not valid json"), "[]");
-    }
-
-    #[test]
-    fn test_normalize_credential_grants_json_non_array_object() {
-        // JSON object (not array) should normalize to empty array
-        assert_eq!(
-            normalize_credential_grants_json(r#"{"tool": "test"}"#),
-            "[]"
-        );
-    }
-
-    #[test]
-    fn test_normalize_credential_grants_json_non_array_string() {
-        // JSON string (not array) should normalize to empty array
-        assert_eq!(
-            normalize_credential_grants_json("\"plaintext string\""),
-            "[]"
-        );
-    }
-
-    #[test]
-    fn test_normalize_credential_grants_json_non_array_number() {
-        // JSON number (not array) should normalize to empty array
-        assert_eq!(normalize_credential_grants_json("42"), "[]");
-    }
-
-    #[test]
-    fn test_normalize_credential_grants_json_non_array_null() {
-        // JSON null (not array) should normalize to empty array
-        assert_eq!(normalize_credential_grants_json("null"), "[]");
-    }
-}
+mod tests;

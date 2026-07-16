@@ -95,6 +95,8 @@ impl RelayConfig {
 
 #[cfg(test)]
 mod tests {
+    //! Unit tests for relay configuration parsing from the environment.
+
     use super::*;
 
     #[test]

@@ -1,3 +1,5 @@
+//! Approval requirements governing tool invocation.
+
 /// How much approval a specific tool invocation requires.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ApprovalRequirement {

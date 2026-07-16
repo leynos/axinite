@@ -246,6 +246,8 @@ pub(super) fn rebuild_chat_messages_from_db(
 
 #[cfg(test)]
 mod unit_tests {
+    //! Unit tests for tool-result classification during message rebuild.
+
     use super::*;
     use rstest::rstest;
 

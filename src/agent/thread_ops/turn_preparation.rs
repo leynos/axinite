@@ -171,6 +171,8 @@ impl Agent {
 
 #[cfg(test)]
 mod tests {
+    //! Unit tests for turn preparation and thread-state gating.
+
     use rstest::rstest;
 
     use super::*;

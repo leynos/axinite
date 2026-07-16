@@ -1,7 +1,7 @@
 //! Hosted remote-tool policy and execution helpers for worker requests.
 //!
 //! This module keeps the hosted-worker remote-tool predicate separate from the
-//! HTTP adapter so the catalogue and execute endpoints share one policy surface.
+//! HTTP adapter so the catalog and execute endpoints share one policy surface.
 
 use std::collections::hash_map::DefaultHasher;
 use std::hash::{Hash, Hasher};
@@ -36,7 +36,7 @@ pub(super) struct HostedRemoteToolRequest {
 /// Returns the hosted-visible tool definitions, any toolset instructions that
 /// should be injected into the worker prompt, and the deterministic catalogue
 /// version hash for that tool/instruction set.
-pub(super) async fn hosted_remote_tool_catalogue(
+pub(super) async fn hosted_remote_tool_catalog(
     tools: &Arc<ToolRegistry>,
 ) -> (Vec<ToolDefinition>, Vec<String>, u64) {
     let mut hosted_tools = tools

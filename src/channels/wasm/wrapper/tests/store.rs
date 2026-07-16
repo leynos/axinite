@@ -1,3 +1,5 @@
+//! Tests for channel store credential redaction and resolution.
+
 use std::sync::Arc;
 
 use crate::channels::wasm::capabilities::ChannelCapabilities;

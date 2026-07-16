@@ -1,3 +1,6 @@
+//! Shell completion generation for the ironclaw CLI, including a zsh
+//! compdef guard so scripts source cleanly before compinit runs.
+
 use clap::{CommandFactory, Parser};
 use clap_complete::{Shell, generate};
 use std::io::{self, Write};
@@ -39,6 +42,8 @@ impl Completion {
 
 #[cfg(test)]
 mod tests {
+    //! Unit tests for completion script generation and the zsh compdef guard.
+
     use super::*;
     use clap::CommandFactory;
 

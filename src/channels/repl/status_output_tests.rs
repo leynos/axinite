@@ -2,6 +2,9 @@
 
 use insta::assert_snapshot;
 
+use super::auth::{
+    AuthCompletedInfo, AuthRequiredInfo, render_auth_completed, render_auth_required_lines,
+};
 use super::*;
 
 #[test]
@@ -36,18 +39,20 @@ fn tool_output_section() -> String {
     .join("\n")
 }
 
-fn job_status_section() -> String {
-    [
+fn job_status_section() -> anyhow::Result<String> {
+    use anyhow::Context as _;
+
+    Ok([
         render_job_started(&JobStartedInfo {
             job_id: "job_123",
             title: "Inspect docs",
             browse_url: "https://example.test/job/123",
         }),
-        render_status(true, "status for debug").expect("debug status should render"),
+        render_status(true, "status for debug").context("debug status should render")?,
         render_status(false, "Approval required for write_file")
-            .expect("approval status should render"),
+            .context("approval status should render")?,
     ]
-    .join("\n")
+    .join("\n"))
 }
 
 fn approval_section() -> String {
@@ -92,7 +97,7 @@ fn auth_image_section() -> String {
 fn status_output_stderr_snapshot() {
     let stderr = [
         tool_output_section(),
-        job_status_section(),
+        job_status_section().expect("job status section should render"),
         approval_section(),
         auth_image_section(),
     ]

@@ -27,15 +27,15 @@ impl ToolGatingFixture {
         approval_ctx: Option<ApprovalContext>,
         tool_name: &'static str,
     ) -> Result<TaskOutput, Error> {
-        Scheduler::execute_tool_task(
-            self.tools.clone(),
-            self.cm.clone(),
-            self.safety.clone(),
-            approval_ctx,
-            self.job_id,
-            tool_name,
-            serde_json::json!({}),
-        )
+        Scheduler::execute_tool_task(crate::agent::scheduler::subtasks::ToolTaskRequest {
+            tools: self.tools.clone(),
+            context_manager: self.cm.clone(),
+            safety: self.safety.clone(),
+            approval_context: approval_ctx,
+            job_id: self.job_id,
+            tool_name: tool_name.to_string(),
+            params: serde_json::json!({}),
+        })
         .await
     }
 }

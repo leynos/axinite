@@ -44,6 +44,18 @@ mod management;
 
 pub use management::{ExtensionInfoTool, ToolListTool, ToolRemoveTool, ToolUpgradeTool};
 
+/// Serialize a tool result to JSON, logging and returning a fallback error
+/// payload if serialization fails so the agent loop still receives output.
+fn to_json_output<T: serde::Serialize>(result: &T) -> serde_json::Value {
+    match serde_json::to_value(result) {
+        Ok(value) => value,
+        Err(error) => {
+            tracing::warn!(%error, "Failed to serialize extension tool result");
+            serde_json::json!({"error": "serialization failed"})
+        }
+    }
+}
+
 // ── tool_search ──────────────────────────────────────────────────────────
 
 pub struct ToolSearchTool {
@@ -130,8 +142,7 @@ impl NativeTool for ToolInstallTool {
             .await
             .map_err(|e| ToolError::ExecutionFailed(e.to_string()))?;
 
-        let output = serde_json::to_value(&result)
-            .unwrap_or_else(|_| serde_json::json!({"error": "serialization failed"}));
+        let output = to_json_output(&result);
 
         Ok(ToolOutput::success(output, start.elapsed()))
     }
@@ -199,8 +210,7 @@ impl NativeTool for ToolAuthTool {
             }
         }
 
-        let output = serde_json::to_value(&result)
-            .unwrap_or_else(|_| serde_json::json!({"error": "serialization failed"}));
+        let output = to_json_output(&result);
 
         Ok(ToolOutput::success(output, start.elapsed()))
     }
@@ -232,8 +242,7 @@ impl NativeTool for ToolActivateTool {
 
         match self.manager.activate(name).await {
             Ok(result) => {
-                let output = serde_json::to_value(&result)
-                    .unwrap_or_else(|_| serde_json::json!({"error": "serialization failed"}));
+                let output = to_json_output(&result);
                 Ok(ToolOutput::success(output, start.elapsed()))
             }
             Err(activate_err) => {
@@ -257,17 +266,13 @@ impl NativeTool for ToolActivateTool {
                             .activate(name)
                             .await
                             .map_err(|e| ToolError::ExecutionFailed(e.to_string()))?;
-                        let output = serde_json::to_value(&result).unwrap_or_else(
-                            |_| serde_json::json!({"error": "serialization failed"}),
-                        );
+                        let output = to_json_output(&result);
                         Ok(ToolOutput::success(output, start.elapsed()))
                     }
                     Ok(auth_result) => {
                         // Auth needs user input (awaiting_token). Return the auth
                         // result so detect_auth_awaiting picks it up.
-                        let output = serde_json::to_value(&auth_result).unwrap_or_else(
-                            |_| serde_json::json!({"error": "serialization failed"}),
-                        );
+                        let output = to_json_output(&auth_result);
                         Ok(ToolOutput::success(output, start.elapsed()))
                     }
                     Err(auth_err) => Err(ToolError::ExecutionFailed(format!(

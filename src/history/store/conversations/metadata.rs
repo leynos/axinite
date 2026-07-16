@@ -39,6 +39,9 @@ impl Store {
 
 #[cfg(all(test, feature = "postgres"))]
 mod tests {
+    //! Postgres-backed tests for conversation metadata round-tripping.
+
+    use anyhow::Context as _;
     use rstest::{fixture, rstest};
     use uuid::Uuid;
 
@@ -46,32 +49,42 @@ mod tests {
     use crate::testing::postgres::try_test_pg_db;
 
     #[fixture]
-    async fn store() -> Option<Store> {
-        let backend = try_test_pg_db()
+    async fn store() -> anyhow::Result<Option<Store>> {
+        let Some(backend) = try_test_pg_db()
             .await
-            .expect("unexpected Postgres test setup error")?;
-        Some(Store::from_pool(backend.pool()))
+            .context("unexpected Postgres test setup error")?
+        else {
+            return Ok(None);
+        };
+        Ok(Some(Store::from_pool(backend.pool())))
     }
 
-    async fn seed_conversation(store: &Store) -> Uuid {
+    async fn seed_conversation(store: &Store) -> Result<Uuid, DatabaseError> {
         store
             .create_conversation("gateway", "metadata-user", None)
             .await
-            .expect("conversation should be created")
     }
 
-    async fn cleanup(store: &Store, id: Uuid) {
-        let conn = store.conn().await.expect("connection should be available");
+    async fn cleanup(store: &Store, id: Uuid) -> anyhow::Result<()> {
+        let conn = store
+            .conn()
+            .await
+            .context("connection should be available")?;
         conn.execute("DELETE FROM conversations WHERE id = $1", &[&id])
             .await
-            .expect("conversation should be deleted");
+            .context("conversation should be deleted")?;
+        Ok(())
     }
 
     #[rstest]
     #[tokio::test]
-    async fn conversation_metadata_round_trips(#[future] store: Option<Store>) {
-        let Some(store) = store.await else { return };
-        let conversation_id = seed_conversation(&store).await;
+    async fn conversation_metadata_round_trips(#[future] store: anyhow::Result<Option<Store>>) {
+        let Some(store) = store.await.expect("store fixture should initialize") else {
+            return;
+        };
+        let conversation_id = seed_conversation(&store)
+            .await
+            .expect("conversation should be created");
 
         store
             .update_conversation_metadata_field(
@@ -98,6 +111,8 @@ mod tests {
         assert_eq!(metadata["thread_type"], "assistant");
         assert_eq!(metadata["routine_name"], "daily-standup");
 
-        cleanup(&store, conversation_id).await;
+        cleanup(&store, conversation_id)
+            .await
+            .expect("cleanup should succeed");
     }
 }

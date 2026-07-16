@@ -190,6 +190,8 @@ pub async fn ensure_docker_responsive(docker: &DockerConnection) -> Result<()> {
 
 #[cfg(all(test, unix))]
 mod tests {
+    //! Unit tests for Unix socket candidate discovery.
+
     use std::path::PathBuf;
 
     use super::unix_socket_candidates_from_env;

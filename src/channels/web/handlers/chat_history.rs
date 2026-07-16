@@ -75,6 +75,11 @@ async fn load_stored_history(
     })
 }
 
+/// Return `true` when an in-memory thread has renderable content.
+fn thread_has_content(thread: &crate::agent::session::Thread) -> bool {
+    !thread.turns.is_empty() || thread.pending_approval.is_some()
+}
+
 pub async fn chat_history_handler(
     State(state): State<Arc<GatewayState>>,
     Query(query): Query<HistoryQuery>,
@@ -150,7 +155,7 @@ pub async fn chat_history_handler(
     }
 
     if let Some(thread) = session_thread.as_ref()
-        && (!thread.turns.is_empty() || thread.pending_approval.is_some())
+        && thread_has_content(thread)
     {
         let turns = thread
             .turns

@@ -1,8 +1,9 @@
-#![allow(dead_code)]
 //! InstrumentedLlm -- an LLM provider wrapper that captures per-call metrics.
 //!
 //! Wraps any `Arc<dyn LlmProvider>` and transparently intercepts `complete()`
 //! and `complete_with_tools()` to record timing, token counts, and call metadata.
+
+#![allow(dead_code)]
 
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU32, Ordering};

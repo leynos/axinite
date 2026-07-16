@@ -3,6 +3,7 @@
 use std::sync::Arc;
 use std::time::Duration;
 
+use anyhow::Context as _;
 use chrono::Utc;
 use rstest::rstest;
 use tokio::sync::Barrier;
@@ -108,7 +109,7 @@ fn build_concurrent_repair_fixture() -> (Arc<DefaultSelfRepair>, Arc<CapturingSt
 async fn run_concurrent_repairs(
     repair: Arc<DefaultSelfRepair>,
     broken: Arc<BrokenTool>,
-) -> [RepairResult; 2] {
+) -> anyhow::Result<[RepairResult; 2]> {
     let first_repair = Arc::clone(&repair);
     let first_broken = Arc::clone(&broken);
     let first = tokio::spawn(async move {
@@ -120,14 +121,13 @@ async fn run_concurrent_repairs(
         NativeSelfRepair::repair_broken_tool(second_repair.as_ref(), second_broken.as_ref()).await
     });
 
-    let (first, second) = tokio::join!(
-        async { first.await.expect("first repair task should complete") },
-        async { second.await.expect("second repair task should complete") },
-    );
-    [
-        first.expect("first repair_broken_tool call should not error"),
-        second.expect("second repair_broken_tool call should not error"),
-    ]
+    let (first, second) = tokio::join!(first, second);
+    let first = first.context("first repair task should complete")?;
+    let second = second.context("second repair task should complete")?;
+    Ok([
+        first.context("first repair_broken_tool call should not error")?,
+        second.context("second repair_broken_tool call should not error")?,
+    ])
 }
 
 #[cfg(any(test, feature = "self_repair_extras"))]
@@ -145,7 +145,9 @@ async fn repair_broken_tool_allows_one_concurrent_repair_for_same_tool() {
         repair_attempts: 0,
     });
 
-    let results = run_concurrent_repairs(repair, broken).await;
+    let results = run_concurrent_repairs(repair, broken)
+        .await
+        .expect("concurrent repairs should complete without error");
 
     assert_eq!(
         results

@@ -124,6 +124,8 @@ const _: () = {
 
 #[cfg(test)]
 mod tests {
+    //! Unit tests for tunnel configuration defaults and provider parsing.
+
     use crate::config::tunnel::TunnelConfig;
     use crate::tunnel::{
         CloudflareTunnelConfig, CustomTunnelConfig, NgrokTunnelConfig, TailscaleTunnelConfig,

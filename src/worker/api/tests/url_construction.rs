@@ -45,12 +45,12 @@ fn test_url_construction_with_trailing_slash(#[case] path: &str) {
             Uuid::nil(),
             path
         ),
-        "trailing slash in base URL must be normalized away"
+        "trailing slash in base URL must be normalised away"
     );
 }
 
 #[test]
-fn remote_tool_catalogue_url_construction() {
+fn remote_tool_catalog_url_construction() {
     let client = WorkerHttpClient::new(
         "http://host.docker.internal:50051".to_string(),
         Uuid::nil(),

@@ -5,13 +5,11 @@
 //! - `<name>.wasm` - The compiled WASM component
 //! - `<name>.capabilities.json` - Channel capabilities and configuration
 
-use std::collections::HashMap;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::sync::Arc;
 
 use tokio::fs;
 
-use crate::bootstrap::ironclaw_base_dir;
 use crate::channels::wasm::capabilities::ChannelCapabilities;
 use crate::channels::wasm::error::WasmChannelError;
 use crate::channels::wasm::runtime::WasmChannelRuntime;
@@ -27,6 +25,106 @@ pub struct WasmChannelLoader {
     pairing_store: Arc<PairingStore>,
     settings_store: Option<Arc<dyn SettingsStore>>,
     secrets_store: Option<Arc<dyn SecretsStore + Send + Sync>>,
+}
+
+/// Capabilities, config, and metadata resolved from a capabilities sidecar
+/// file (or defaults when no usable sidecar exists).
+struct ResolvedCapabilities {
+    capabilities: ChannelCapabilities,
+    config_json: String,
+    description: Option<String>,
+    cap_file: Option<ChannelCapabilitiesFile>,
+}
+
+/// Minimal default capabilities for a channel with no sidecar file.
+fn default_capabilities(name: &str) -> ResolvedCapabilities {
+    ResolvedCapabilities {
+        capabilities: ChannelCapabilities::for_channel(name),
+        config_json: "{}".to_string(),
+        description: None,
+        cap_file: None,
+    }
+}
+
+/// Resolve channel capabilities from the optional sidecar path, falling back
+/// to defaults when the path is absent or the file does not exist.
+async fn resolve_capabilities(
+    name: &str,
+    capabilities_path: Option<&Path>,
+) -> Result<ResolvedCapabilities, WasmChannelError> {
+    let Some(cap_path) = capabilities_path else {
+        return Ok(default_capabilities(name));
+    };
+    if !cap_path.exists() {
+        tracing::warn!(
+            path = %cap_path.display(),
+            "Capabilities file not found, using defaults"
+        );
+        return Ok(default_capabilities(name));
+    }
+    parse_capabilities_file(name, cap_path).await
+}
+
+/// Parse and validate a capabilities sidecar file, checking WIT version
+/// compatibility and logging the resulting capability grants.
+async fn parse_capabilities_file(
+    name: &str,
+    cap_path: &Path,
+) -> Result<ResolvedCapabilities, WasmChannelError> {
+    let cap_bytes = fs::read(cap_path).await?;
+    let cap_file = ChannelCapabilitiesFile::from_bytes(&cap_bytes)
+        .map_err(|e| WasmChannelError::InvalidCapabilities(e.to_string()))?;
+    cap_file.validate();
+
+    // Debug: log raw capabilities
+    tracing::debug!(
+        channel = name,
+        raw_capabilities = ?cap_file.capabilities,
+        "Parsed capabilities file"
+    );
+
+    // Check WIT version compatibility
+    crate::tools::wasm::loader::check_wit_version_compat(
+        name,
+        cap_file.wit_version.as_deref(),
+        crate::tools::wasm::WIT_CHANNEL_VERSION,
+    )
+    .map_err(|e| WasmChannelError::IncompatibleWitVersion(e.to_string()))?;
+
+    let caps = cap_file.to_capabilities();
+
+    // Debug: log resulting capabilities
+    tracing::info!(
+        channel = name,
+        http_allowed = caps.tool_capabilities.http.is_some(),
+        http_allowlist_count = caps
+            .tool_capabilities
+            .http
+            .as_ref()
+            .map(|h| h.allowlist.len())
+            .unwrap_or(0),
+        "Channel capabilities loaded"
+    );
+
+    let config_json = cap_file.config_json();
+    let description = cap_file.description.clone();
+
+    Ok(ResolvedCapabilities {
+        capabilities: caps,
+        config_json,
+        description,
+        cap_file: Some(cap_file),
+    })
+}
+
+/// Whether a channel name is empty or could escape the channel directory.
+///
+/// Rejects names containing path separators or `..` traversal segments.
+fn is_invalid_channel_name(name: &str) -> bool {
+    if name.is_empty() {
+        return true;
+    }
+    crate::tools::wasm::loader::contains_path_separator(name) || name.contains("..")
 }
 
 impl WasmChannelLoader {
@@ -64,7 +162,7 @@ impl WasmChannelLoader {
         capabilities_path: Option<&Path>,
     ) -> Result<LoadedChannel, WasmChannelError> {
         // Validate name
-        if name.is_empty() || name.contains('/') || name.contains('\\') || name.contains("..") {
+        if is_invalid_channel_name(name) {
             return Err(WasmChannelError::InvalidName(name.to_string()));
         }
 
@@ -75,81 +173,20 @@ impl WasmChannelLoader {
         let wasm_bytes = fs::read(wasm_path).await?;
 
         // Read capabilities file
-        let (capabilities, config_json, description, cap_file) =
-            if let Some(cap_path) = capabilities_path {
-                if cap_path.exists() {
-                    let cap_bytes = fs::read(cap_path).await?;
-                    let cap_file = ChannelCapabilitiesFile::from_bytes(&cap_bytes)
-                        .map_err(|e| WasmChannelError::InvalidCapabilities(e.to_string()))?;
-                    cap_file.validate();
-
-                    // Debug: log raw capabilities
-                    tracing::debug!(
-                        channel = name,
-                        raw_capabilities = ?cap_file.capabilities,
-                        "Parsed capabilities file"
-                    );
-
-                    // Check WIT version compatibility
-                    crate::tools::wasm::loader::check_wit_version_compat(
-                        name,
-                        cap_file.wit_version.as_deref(),
-                        crate::tools::wasm::WIT_CHANNEL_VERSION,
-                    )
-                    .map_err(|e| WasmChannelError::IncompatibleWitVersion(e.to_string()))?;
-
-                    let caps = cap_file.to_capabilities();
-
-                    // Debug: log resulting capabilities
-                    tracing::info!(
-                        channel = name,
-                        http_allowed = caps.tool_capabilities.http.is_some(),
-                        http_allowlist_count = caps
-                            .tool_capabilities
-                            .http
-                            .as_ref()
-                            .map(|h| h.allowlist.len())
-                            .unwrap_or(0),
-                        "Channel capabilities loaded"
-                    );
-
-                    let config = cap_file.config_json();
-                    let desc = cap_file.description.clone();
-
-                    (caps, config, desc, Some(cap_file))
-                } else {
-                    tracing::warn!(
-                        path = %cap_path.display(),
-                        "Capabilities file not found, using defaults"
-                    );
-                    (
-                        ChannelCapabilities::for_channel(name),
-                        "{}".to_string(),
-                        None,
-                        None,
-                    )
-                }
-            } else {
-                (
-                    ChannelCapabilities::for_channel(name),
-                    "{}".to_string(),
-                    None,
-                    None,
-                )
-            };
+        let resolved = resolve_capabilities(name, capabilities_path).await?;
 
         // Prepare the module
         let prepared = self
             .runtime
-            .prepare(name, &wasm_bytes, None, description)
+            .prepare(name, &wasm_bytes, None, resolved.description)
             .await?;
 
         // Create the channel
         let mut channel = WasmChannel::new(
             self.runtime.clone(),
             prepared,
-            capabilities,
-            config_json,
+            resolved.capabilities,
+            resolved.config_json,
             self.pairing_store.clone(),
             self.settings_store.clone(),
         );
@@ -165,7 +202,7 @@ impl WasmChannelLoader {
 
         Ok(LoadedChannel {
             channel,
-            capabilities_file: cap_file,
+            capabilities_file: resolved.cap_file,
         })
     }
 
@@ -184,7 +221,7 @@ impl WasmChannelLoader {
     /// └── telegram.capabilities.json
     /// ```
     pub async fn load_from_dir(&self, dir: &Path) -> Result<LoadResults, WasmChannelError> {
-        match fs::metadata(dir).await {
+        match fs::metadata(dir).await.map(ambient_fs::Metadata::from_std) {
             Ok(meta) if meta.is_dir() => {}
             Ok(_) => {
                 return Err(WasmChannelError::Io(std::io::Error::new(
@@ -269,252 +306,11 @@ impl WasmChannelLoader {
         Ok(results)
     }
 }
-
-/// A loaded WASM channel with its capabilities file.
-pub struct LoadedChannel {
-    /// The loaded channel.
-    pub channel: WasmChannel,
-
-    /// The parsed capabilities file (if present).
-    pub capabilities_file: Option<ChannelCapabilitiesFile>,
-}
-
-impl LoadedChannel {
-    /// Get the channel name.
-    pub fn name(&self) -> &str {
-        self.channel.channel_name()
-    }
-
-    /// Get the webhook secret header name from capabilities.
-    pub fn webhook_secret_header(&self) -> Option<&str> {
-        self.capabilities_file
-            .as_ref()
-            .and_then(|f| f.webhook_secret_header())
-    }
-
-    /// Get the signature verification key secret name from capabilities.
-    pub fn signature_key_secret_name(&self) -> Option<String> {
-        self.capabilities_file
-            .as_ref()
-            .and_then(|f| f.signature_key_secret_name().map(|s| s.to_string()))
-    }
-
-    /// Get the HMAC-SHA256 signing secret name from capabilities.
-    pub fn hmac_secret_name(&self) -> Option<String> {
-        self.capabilities_file
-            .as_ref()
-            .and_then(|f| f.hmac_secret_name().map(|s| s.to_string()))
-    }
-
-    /// Get the webhook secret name from capabilities.
-    pub fn webhook_secret_name(&self) -> String {
-        self.capabilities_file
-            .as_ref()
-            .map(|f| f.webhook_secret_name())
-            .unwrap_or_else(|| format!("{}_webhook_secret", self.channel.channel_name()))
-    }
-}
-
-/// Results from loading multiple channels.
-#[derive(Default)]
-pub struct LoadResults {
-    /// Successfully loaded channels with their capabilities.
-    pub loaded: Vec<LoadedChannel>,
-
-    /// Errors encountered (path, error).
-    pub errors: Vec<(PathBuf, WasmChannelError)>,
-}
-
-impl LoadResults {
-    /// Check if all channels loaded successfully.
-    pub fn all_succeeded(&self) -> bool {
-        self.errors.is_empty()
-    }
-
-    /// Get the count of successfully loaded channels.
-    pub fn success_count(&self) -> usize {
-        self.loaded.len()
-    }
-
-    /// Get the count of failed channels.
-    pub fn error_count(&self) -> usize {
-        self.errors.len()
-    }
-
-    /// Take ownership of loaded channels (extracts just the WasmChannel).
-    pub fn take_channels(self) -> Vec<WasmChannel> {
-        self.loaded.into_iter().map(|l| l.channel).collect()
-    }
-}
-
-/// Discover WASM channel files in a directory without loading them.
-///
-/// Returns a map of channel name -> (wasm_path, capabilities_path).
-#[allow(dead_code)]
-pub async fn discover_channels(
-    dir: &Path,
-) -> Result<HashMap<String, DiscoveredChannel>, std::io::Error> {
-    let mut channels = HashMap::new();
-
-    if !dir.is_dir() {
-        return Ok(channels);
-    }
-
-    let mut entries = fs::read_dir(dir).await?;
-
-    while let Some(entry) = entries.next_entry().await? {
-        let path = entry.path();
-
-        if path.extension().and_then(|e| e.to_str()) != Some("wasm") {
-            continue;
-        }
-
-        let name = match path.file_stem().and_then(|s| s.to_str()) {
-            Some(n) => n.to_string(),
-            None => continue,
-        };
-
-        let cap_path = path.with_extension("capabilities.json");
-
-        channels.insert(
-            name,
-            DiscoveredChannel {
-                wasm_path: path,
-                capabilities_path: if cap_path.exists() {
-                    Some(cap_path)
-                } else {
-                    None
-                },
-            },
-        );
-    }
-
-    Ok(channels)
-}
-
-/// A discovered WASM channel (not yet loaded).
-#[derive(Debug)]
-pub struct DiscoveredChannel {
-    /// Path to the WASM file.
-    pub wasm_path: PathBuf,
-
-    /// Path to the capabilities file (if present).
-    pub capabilities_path: Option<PathBuf>,
-}
-
-/// Get the default channels directory path.
-///
-/// Returns ~/.ironclaw/channels/
-#[allow(dead_code)]
-pub fn default_channels_dir() -> PathBuf {
-    ironclaw_base_dir().join("channels")
-}
+mod discovery;
+mod results;
 
 #[cfg(test)]
-mod tests {
-    use std::io::Write;
+mod tests;
 
-    use tempfile::TempDir;
-
-    use crate::channels::wasm::loader::{WasmChannelLoader, discover_channels};
-    use crate::channels::wasm::runtime::{WasmChannelRuntime, WasmChannelRuntimeConfig};
-    use crate::pairing::PairingStore;
-    use std::sync::Arc;
-
-    #[tokio::test]
-    async fn test_discover_channels_empty_dir() {
-        let dir = TempDir::new().unwrap();
-        let channels = discover_channels(dir.path()).await.unwrap();
-        assert!(channels.is_empty());
-    }
-
-    #[tokio::test]
-    async fn test_discover_channels_with_wasm() {
-        let dir = TempDir::new().unwrap();
-
-        // Create a fake .wasm file
-        let wasm_path = dir.path().join("slack.wasm");
-        std::fs::File::create(&wasm_path).unwrap();
-
-        let channels = discover_channels(dir.path()).await.unwrap();
-        assert_eq!(channels.len(), 1);
-        assert!(channels.contains_key("slack"));
-        assert!(channels["slack"].capabilities_path.is_none());
-    }
-
-    #[tokio::test]
-    async fn test_discover_channels_with_capabilities() {
-        let dir = TempDir::new().unwrap();
-
-        // Create wasm and capabilities files
-        std::fs::File::create(dir.path().join("telegram.wasm")).unwrap();
-        let mut cap_file =
-            std::fs::File::create(dir.path().join("telegram.capabilities.json")).unwrap();
-        cap_file.write_all(b"{}").unwrap();
-
-        let channels = discover_channels(dir.path()).await.unwrap();
-        assert_eq!(channels.len(), 1);
-        assert!(channels["telegram"].capabilities_path.is_some());
-    }
-
-    #[tokio::test]
-    async fn test_discover_channels_ignores_non_wasm() {
-        let dir = TempDir::new().unwrap();
-
-        // Create non-wasm files
-        std::fs::File::create(dir.path().join("readme.md")).unwrap();
-        std::fs::File::create(dir.path().join("config.json")).unwrap();
-        std::fs::File::create(dir.path().join("channel.wasm")).unwrap();
-
-        let channels = discover_channels(dir.path()).await.unwrap();
-        assert_eq!(channels.len(), 1);
-        assert!(channels.contains_key("channel"));
-    }
-
-    #[test]
-    fn test_loaded_channel_signature_key_none_without_caps() {
-        // We can't easily construct a WasmChannel without a runtime, so test
-        // the delegation logic directly: when capabilities_file is None, the
-        // chain returns None (same logic as LoadedChannel::signature_key_secret_name).
-        let cap_file: Option<crate::channels::wasm::schema::ChannelCapabilitiesFile> = None;
-        let result = cap_file
-            .as_ref()
-            .and_then(|f| f.signature_key_secret_name().map(|s| s.to_string()));
-        assert_eq!(result, None);
-    }
-
-    #[tokio::test]
-    async fn test_loader_invalid_name() {
-        let config = WasmChannelRuntimeConfig::for_testing();
-        let runtime = Arc::new(WasmChannelRuntime::new(config).unwrap());
-        let loader = WasmChannelLoader::new(runtime, Arc::new(PairingStore::new()), None);
-
-        let dir = TempDir::new().unwrap();
-        let wasm_path = dir.path().join("test.wasm");
-
-        // Invalid name with path separator
-        let result = loader.load_from_files("../escape", &wasm_path, None).await;
-        assert!(result.is_err());
-
-        // Empty name
-        let result = loader.load_from_files("", &wasm_path, None).await;
-        assert!(result.is_err());
-    }
-
-    #[tokio::test]
-    async fn load_from_dir_returns_empty_when_dir_missing() {
-        let config = WasmChannelRuntimeConfig::for_testing();
-        let runtime = Arc::new(WasmChannelRuntime::new(config).unwrap());
-        let loader = WasmChannelLoader::new(runtime, Arc::new(PairingStore::new()), None);
-
-        let dir = TempDir::new().unwrap();
-        let missing = dir.path().join("nonexistent_channels_dir");
-
-        let results = loader.load_from_dir(&missing).await;
-
-        // Must succeed with empty results, not error
-        let results = results.expect("missing dir should return Ok, not Err");
-        assert!(results.loaded.is_empty());
-        assert!(results.errors.is_empty());
-    }
-}
+pub use discovery::{DiscoveredChannel, default_channels_dir, discover_channels};
+pub use results::{LoadResults, LoadedChannel};

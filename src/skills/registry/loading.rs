@@ -101,7 +101,7 @@ async fn read_skill_bytes(path: &Path) -> Result<Vec<u8>, SkillRegistryError> {
                 reason: e.to_string(),
             })?;
 
-    if file_meta.is_symlink() {
+    if ambient_fs::Metadata::from_std(file_meta).is_symlink() {
         return Err(SkillRegistryError::SymlinkDetected {
             path: path.display().to_string(),
         });

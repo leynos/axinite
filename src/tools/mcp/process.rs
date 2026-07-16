@@ -184,6 +184,8 @@ impl Default for McpProcessManager {
 
 #[cfg(test)]
 mod tests {
+    //! Unit tests for MCP process manager lifecycle basics.
+
     use super::*;
 
     #[test]

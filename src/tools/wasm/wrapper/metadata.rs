@@ -10,6 +10,7 @@ use wasmtime::Store;
 use wasmtime::component::{HasSelf, Linker};
 use wasmtime_wasi::{ResourceTable, WasiCtx, WasiCtxBuilder, WasiCtxView, WasiView};
 
+use super::store::StoreData;
 use super::*;
 
 /// Return the placeholder description used until real guest metadata is recovered.
@@ -248,6 +249,8 @@ pub(super) fn build_fallback_guidance(
 
 #[cfg(test)]
 mod tests {
+    //! Unit tests for WASM tool metadata and placeholder-schema handling.
+
     use insta::assert_snapshot;
     use rstest::{fixture, rstest};
 

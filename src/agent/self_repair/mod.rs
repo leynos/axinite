@@ -20,6 +20,8 @@ const _: Option<SelfRepairFuture<'static, ()>> = None;
 
 #[cfg(test)]
 mod tests {
+    //! Unit tests for self-repair results and stuck-job handling.
+
     use std::sync::Arc;
     use std::time::Duration;
 

@@ -130,6 +130,8 @@ impl crate::db::NativeDatabase for NullDatabase {
 
 #[cfg(test)]
 mod tests {
+    //! Unit tests for the null database's synthetic UUID generation.
+
     use super::*;
 
     #[test]

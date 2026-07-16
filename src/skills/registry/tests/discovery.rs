@@ -1,6 +1,8 @@
-use std::fs;
+//! Tests for skill discovery in the skill registry.
+
 use std::path::PathBuf;
 
+use ambient_fs as fs;
 use rstest::rstest;
 
 use super::super::*;
@@ -40,22 +42,20 @@ async fn test_discover_nonexistent_dir() {
 #[cfg(unix)]
 #[tokio::test]
 async fn test_discover_unreadable_dir_returns_empty() {
-    use std::os::unix::fs::PermissionsExt;
-
     struct PermissionsGuard<'a> {
         path: &'a std::path::Path,
     }
 
     impl Drop for PermissionsGuard<'_> {
         fn drop(&mut self) {
-            std::fs::set_permissions(self.path, std::fs::Permissions::from_mode(0o755))
+            fs::set_permissions(self.path, fs::Permissions::from_mode(0o755))
                 .expect("permissions should be restored after test");
         }
     }
 
     let dir = tempfile::tempdir().expect("temp dir should be created for test");
     // Make the directory unreadable so read_dir will fail.
-    std::fs::set_permissions(dir.path(), std::fs::Permissions::from_mode(0o000))
+    fs::set_permissions(dir.path(), fs::Permissions::from_mode(0o000))
         .expect("permissions should be set for test");
     let _permissions_guard = PermissionsGuard { path: dir.path() };
 
@@ -107,7 +107,7 @@ async fn test_load_skill_layout(
     assert_single_skill_loaded(&mut registry, skill_name, content_fragment).await;
     let skill = registry
         .find_by_name(skill_name)
-        .unwrap_or_else(|| panic!("{skill_name} should remain loaded"));
+        .expect("skill under test should remain loaded");
     assert_eq!(skill.skill_identifier(), skill_name);
     assert_eq!(skill.skill_root(), expected_root.as_path());
     assert_eq!(skill.skill_entrypoint(), std::path::Path::new("SKILL.md"));
@@ -246,14 +246,13 @@ async fn test_bundle_layout_records_bundle_package_kind(
         "---\nname: bundle-skill\n---\n\nBundle prompt.\n",
     );
     let marker_path = dir.path().join("bundle-skill").join(marker_file);
-    std::fs::create_dir_all(
+    fs::create_dir_all(
         marker_path
             .parent()
             .expect("marker path should have a parent dir"),
     )
     .expect("marker directory should be created for test");
-    std::fs::write(&marker_path, b"marker content")
-        .expect("marker file should be written for test");
+    fs::write(&marker_path, b"marker content").expect("marker file should be written for test");
 
     registry.discover_all().await;
 
@@ -282,7 +281,7 @@ async fn test_bundle_marker_files_do_not_change_package_kind(
         "plain-skill",
         "---\nname: plain-skill\n---\n\nPlain prompt.\n",
     );
-    std::fs::write(
+    fs::write(
         dir.path().join("plain-skill").join(marker_name),
         "not a directory\n",
     )

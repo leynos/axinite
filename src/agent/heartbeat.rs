@@ -24,7 +24,6 @@
 //! if action is needed.
 
 use std::sync::Arc;
-use std::time::Duration;
 
 use tokio::sync::mpsc;
 
@@ -34,82 +33,12 @@ use crate::llm::{ChatMessage, CompletionRequest, LlmProvider, Reasoning};
 use crate::workspace::Workspace;
 use crate::workspace::hygiene::HygieneConfig;
 
-/// Configuration for the heartbeat runner.
-#[derive(Debug, Clone)]
-pub struct HeartbeatConfig {
-    /// Interval between heartbeat checks.
-    pub interval: Duration,
-    /// Whether heartbeat is enabled.
-    pub enabled: bool,
-    /// Maximum consecutive failures before disabling.
-    pub max_failures: u32,
-    /// User ID to notify on heartbeat findings.
-    pub notify_user_id: Option<String>,
-    /// Channel to notify on heartbeat findings.
-    pub notify_channel: Option<String>,
-    /// Hour (0-23) when quiet hours start.
-    pub quiet_hours_start: Option<u32>,
-    /// Hour (0-23) when quiet hours end.
-    pub quiet_hours_end: Option<u32>,
-    /// Timezone for quiet hours evaluation (IANA name).
-    pub timezone: Option<String>,
-}
+mod checklist;
+mod config;
 
-impl Default for HeartbeatConfig {
-    fn default() -> Self {
-        Self {
-            interval: Duration::from_secs(30 * 60), // 30 minutes
-            enabled: true,
-            max_failures: 3,
-            notify_user_id: None,
-            notify_channel: None,
-            quiet_hours_start: None,
-            quiet_hours_end: None,
-            timezone: None,
-        }
-    }
-}
+pub use config::HeartbeatConfig;
 
-impl HeartbeatConfig {
-    /// Create a config with a specific interval.
-    pub fn with_interval(mut self, interval: Duration) -> Self {
-        self.interval = interval;
-        self
-    }
-
-    /// Disable heartbeat.
-    pub fn disabled(mut self) -> Self {
-        self.enabled = false;
-        self
-    }
-
-    /// Check whether the current time falls within configured quiet hours.
-    pub fn is_quiet_hours(&self) -> bool {
-        use chrono::Timelike;
-        let (Some(start), Some(end)) = (self.quiet_hours_start, self.quiet_hours_end) else {
-            return false;
-        };
-        let tz = self
-            .timezone
-            .as_deref()
-            .and_then(crate::timezone::parse_timezone)
-            .unwrap_or(chrono_tz::UTC);
-        let now_hour = crate::timezone::now_in_tz(tz).hour();
-        if start <= end {
-            now_hour >= start && now_hour < end
-        } else {
-            // Wraps midnight, e.g. 22..06
-            now_hour >= start || now_hour < end
-        }
-    }
-
-    /// Set the notification target.
-    pub fn with_notify(mut self, user_id: impl Into<String>, channel: impl Into<String>) -> Self {
-        self.notify_user_id = Some(user_id.into());
-        self.notify_channel = Some(channel.into());
-        self
-    }
-}
+use checklist::is_effectively_empty;
 
 /// Result of a heartbeat check.
 #[derive(Debug)]
@@ -193,50 +122,63 @@ impl HeartbeatRunner {
                 continue;
             }
 
-            // Run memory hygiene in the background so it never delays the
-            // heartbeat checklist. Failures are logged inside run_if_due.
-            let hygiene_workspace = Arc::clone(&self.workspace);
-            let hygiene_config = self.hygiene_config.clone();
-            tokio::spawn(async move {
-                let report =
-                    crate::workspace::hygiene::run_if_due(&hygiene_workspace, &hygiene_config)
-                        .await;
-                if report.had_work() {
-                    tracing::info!(
-                        daily_logs_deleted = report.daily_logs_deleted,
-                        conversation_docs_deleted = report.conversation_docs_deleted,
-                        "heartbeat: memory hygiene deleted stale documents"
+            self.spawn_hygiene_task();
+
+            let result = self.check_heartbeat().await;
+            if !self.handle_result(result).await {
+                break;
+            }
+        }
+    }
+
+    /// Run memory hygiene in the background so it never delays the heartbeat
+    /// checklist. Failures are logged inside `run_if_due`.
+    fn spawn_hygiene_task(&self) {
+        let hygiene_workspace = Arc::clone(&self.workspace);
+        let hygiene_config = self.hygiene_config.clone();
+        tokio::spawn(async move {
+            let report =
+                crate::workspace::hygiene::run_if_due(&hygiene_workspace, &hygiene_config).await;
+            if report.had_work() {
+                tracing::info!(
+                    daily_logs_deleted = report.daily_logs_deleted,
+                    conversation_docs_deleted = report.conversation_docs_deleted,
+                    "heartbeat: memory hygiene deleted stale documents"
+                );
+            }
+        });
+    }
+
+    /// React to a heartbeat outcome, updating the failure counter and sending
+    /// any notification. Returns `false` when the loop should stop.
+    async fn handle_result(&mut self, result: HeartbeatResult) -> bool {
+        match result {
+            HeartbeatResult::Ok => {
+                tracing::trace!("Heartbeat OK");
+                self.consecutive_failures = 0;
+            }
+            HeartbeatResult::NeedsAttention(message) => {
+                tracing::info!("Heartbeat needs attention: {}", message);
+                self.consecutive_failures = 0;
+                self.send_notification(&message).await;
+            }
+            HeartbeatResult::Skipped => {
+                tracing::trace!("Heartbeat skipped");
+            }
+            HeartbeatResult::Failed(error) => {
+                tracing::error!("Heartbeat failed: {}", error);
+                self.consecutive_failures += 1;
+
+                if self.consecutive_failures >= self.config.max_failures {
+                    tracing::error!(
+                        "Heartbeat disabled after {} consecutive failures",
+                        self.consecutive_failures
                     );
-                }
-            });
-
-            match self.check_heartbeat().await {
-                HeartbeatResult::Ok => {
-                    tracing::trace!("Heartbeat OK");
-                    self.consecutive_failures = 0;
-                }
-                HeartbeatResult::NeedsAttention(message) => {
-                    tracing::info!("Heartbeat needs attention: {}", message);
-                    self.consecutive_failures = 0;
-                    self.send_notification(&message).await;
-                }
-                HeartbeatResult::Skipped => {
-                    tracing::trace!("Heartbeat skipped");
-                }
-                HeartbeatResult::Failed(error) => {
-                    tracing::error!("Heartbeat failed: {}", error);
-                    self.consecutive_failures += 1;
-
-                    if self.consecutive_failures >= self.config.max_failures {
-                        tracing::error!(
-                            "Heartbeat disabled after {} consecutive failures",
-                            self.consecutive_failures
-                        );
-                        break;
-                    }
+                    return false;
                 }
             }
         }
+        true
     }
 
     /// Run a single heartbeat check.
@@ -248,56 +190,8 @@ impl HeartbeatRunner {
             Err(e) => return HeartbeatResult::Failed(format!("Failed to read checklist: {}", e)),
         };
 
-        // Build the heartbeat prompt
-        let prompt = format!(
-            "Read the HEARTBEAT.md checklist below and follow it strictly. \
-             Do not infer or repeat old tasks. Check each item and report findings.\n\
-             \n\
-             If nothing needs attention, reply EXACTLY with: HEARTBEAT_OK\n\
-             \n\
-             If something needs attention, provide a concise summary of what needs action.\n\
-             \n\
-             ## HEARTBEAT.md\n\
-             \n\
-             {}",
-            checklist
-        );
-
-        // Get the system prompt for context
-        let system_prompt = match self.workspace.system_prompt().await {
-            Ok(p) => p,
-            Err(e) => {
-                tracing::warn!("Failed to get system prompt for heartbeat: {}", e);
-                String::new()
-            }
-        };
-
-        // Run the agent turn
-        let messages = if system_prompt.is_empty() {
-            vec![ChatMessage::user(&prompt)]
-        } else {
-            vec![
-                ChatMessage::system(&system_prompt),
-                ChatMessage::user(&prompt),
-            ]
-        };
-
-        // Use the model's context_length to set max_tokens. The API returns
-        // the total context window; we cap output at half of that (the rest is
-        // the prompt) with a floor of 4096.
-        let max_tokens = match self.llm.model_metadata().await {
-            Ok(meta) => {
-                let from_api = meta.context_length.map(|ctx| ctx / 2).unwrap_or(4096);
-                from_api.max(4096)
-            }
-            Err(e) => {
-                tracing::warn!(
-                    "Could not fetch model metadata, using default max_tokens: {}",
-                    e
-                );
-                4096
-            }
-        };
+        let messages = self.build_heartbeat_messages(&checklist).await;
+        let max_tokens = self.resolve_max_tokens().await;
 
         let request = CompletionRequest::new(messages)
             .with_max_tokens(max_tokens)
@@ -326,6 +220,59 @@ impl HeartbeatRunner {
         HeartbeatResult::NeedsAttention(content.to_string())
     }
 
+    /// Build the chat messages for a heartbeat turn: the checklist prompt,
+    /// preceded by the workspace system prompt when one is available.
+    async fn build_heartbeat_messages(&self, checklist: &str) -> Vec<ChatMessage> {
+        let prompt = format!(
+            "Read the HEARTBEAT.md checklist below and follow it strictly. \
+             Do not infer or repeat old tasks. Check each item and report findings.\n\
+             \n\
+             If nothing needs attention, reply EXACTLY with: HEARTBEAT_OK\n\
+             \n\
+             If something needs attention, provide a concise summary of what needs action.\n\
+             \n\
+             ## HEARTBEAT.md\n\
+             \n\
+             {}",
+            checklist
+        );
+
+        let system_prompt = match self.workspace.system_prompt().await {
+            Ok(p) => p,
+            Err(e) => {
+                tracing::warn!("Failed to get system prompt for heartbeat: {}", e);
+                String::new()
+            }
+        };
+
+        if system_prompt.is_empty() {
+            vec![ChatMessage::user(&prompt)]
+        } else {
+            vec![
+                ChatMessage::system(&system_prompt),
+                ChatMessage::user(&prompt),
+            ]
+        }
+    }
+
+    /// Derive `max_tokens` from the model's context length: half the context
+    /// window (the rest is the prompt), with a floor of 4096.
+    async fn resolve_max_tokens(&self) -> u32 {
+        match self.llm.model_metadata().await {
+            Ok(meta) => {
+                let from_api = meta.context_length.map(|ctx| ctx / 2).unwrap_or(4096);
+                from_api.max(4096)
+            }
+            Err(e) => {
+                tracing::warn!(
+                    "Could not fetch model metadata, using default max_tokens: {}",
+                    e
+                );
+                4096
+            }
+        }
+    }
+
     /// Send a notification about heartbeat findings.
     async fn send_notification(&self, message: &str) {
         let Some(ref tx) = self.response_tx else {
@@ -334,27 +281,7 @@ impl HeartbeatRunner {
         };
 
         let user_id = self.config.notify_user_id.as_deref().unwrap_or("default");
-
-        // Persist to heartbeat conversation and get thread_id
-        let thread_id = if let Some(ref store) = self.store {
-            match store.get_or_create_heartbeat_conversation(user_id).await {
-                Ok(conv_id) => {
-                    if let Err(e) = store
-                        .add_conversation_message(conv_id, "assistant", message)
-                        .await
-                    {
-                        tracing::error!("Failed to persist heartbeat message: {}", e);
-                    }
-                    Some(conv_id.to_string())
-                }
-                Err(e) => {
-                    tracing::error!("Failed to get heartbeat conversation: {}", e);
-                    None
-                }
-            }
-        } else {
-            None
-        };
+        let thread_id = self.persist_heartbeat_message(user_id, message).await;
 
         let response = OutgoingResponse {
             content: format!("🔔 *Heartbeat Alert*\n\n{}", message),
@@ -369,45 +296,27 @@ impl HeartbeatRunner {
             tracing::error!("Failed to send heartbeat notification: {}", e);
         }
     }
-}
 
-/// Check if heartbeat content is effectively empty.
-///
-/// Returns true if the content contains only:
-/// - Whitespace
-/// - Markdown headers (lines starting with #)
-/// - HTML comments (`<!-- ... -->`)
-/// - Empty list items (`- [ ]`, `- [x]`, `-`, `*`)
-///
-/// This skips the LLM call when the user hasn't added real tasks yet,
-/// saving API costs.
-fn is_effectively_empty(content: &str) -> bool {
-    let without_comments = strip_html_comments(content);
-
-    without_comments.lines().all(|line| {
-        let trimmed = line.trim();
-        trimmed.is_empty()
-            || trimmed.starts_with('#')
-            || trimmed == "- [ ]"
-            || trimmed == "- [x]"
-            || trimmed == "-"
-            || trimmed == "*"
-    })
-}
-
-/// Remove HTML comments from content.
-fn strip_html_comments(content: &str) -> String {
-    let mut result = String::with_capacity(content.len());
-    let mut rest = content;
-    while let Some(start) = rest.find("<!--") {
-        result.push_str(&rest[..start]);
-        match rest[start..].find("-->") {
-            Some(end) => rest = &rest[start + end + 3..],
-            None => return result, // unclosed comment, treat rest as comment
+    /// Persist the message to the heartbeat conversation, returning its
+    /// thread identifier when a store is configured and the write succeeds.
+    async fn persist_heartbeat_message(&self, user_id: &str, message: &str) -> Option<String> {
+        let store = self.store.as_ref()?;
+        match store.get_or_create_heartbeat_conversation(user_id).await {
+            Ok(conv_id) => {
+                if let Err(e) = store
+                    .add_conversation_message(conv_id, "assistant", message)
+                    .await
+                {
+                    tracing::error!("Failed to persist heartbeat message: {}", e);
+                }
+                Some(conv_id.to_string())
+            }
+            Err(e) => {
+                tracing::error!("Failed to get heartbeat conversation: {}", e);
+                None
+            }
         }
     }
-    result.push_str(rest);
-    result
 }
 
 /// Spawn the heartbeat runner as a background task.
@@ -435,225 +344,4 @@ pub fn spawn_heartbeat(
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_heartbeat_config_defaults() {
-        let config = HeartbeatConfig::default();
-        assert!(config.enabled);
-        assert_eq!(config.interval, Duration::from_secs(30 * 60));
-        assert_eq!(config.max_failures, 3);
-    }
-
-    #[test]
-    fn test_heartbeat_config_builders() {
-        let config = HeartbeatConfig::default()
-            .with_interval(Duration::from_secs(60))
-            .with_notify("user1", "telegram");
-
-        assert_eq!(config.interval, Duration::from_secs(60));
-        assert_eq!(config.notify_user_id, Some("user1".to_string()));
-        assert_eq!(config.notify_channel, Some("telegram".to_string()));
-
-        let disabled = HeartbeatConfig::default().disabled();
-        assert!(!disabled.enabled);
-    }
-
-    // ==================== strip_html_comments ====================
-
-    #[test]
-    fn test_strip_html_comments_no_comments() {
-        assert_eq!(strip_html_comments("hello world"), "hello world");
-    }
-
-    #[test]
-    fn test_strip_html_comments_single() {
-        assert_eq!(
-            strip_html_comments("before<!-- gone -->after"),
-            "beforeafter"
-        );
-    }
-
-    #[test]
-    fn test_strip_html_comments_multiple() {
-        let input = "a<!-- 1 -->b<!-- 2 -->c";
-        assert_eq!(strip_html_comments(input), "abc");
-    }
-
-    #[test]
-    fn test_strip_html_comments_multiline() {
-        let input = "# Title\n<!-- multi\nline\ncomment -->\nreal content";
-        assert_eq!(strip_html_comments(input), "# Title\n\nreal content");
-    }
-
-    #[test]
-    fn test_strip_html_comments_unclosed() {
-        let input = "before<!-- never closed";
-        assert_eq!(strip_html_comments(input), "before");
-    }
-
-    // ==================== is_effectively_empty ====================
-
-    #[test]
-    fn test_effectively_empty_empty_string() {
-        assert!(is_effectively_empty(""));
-    }
-
-    #[test]
-    fn test_effectively_empty_whitespace() {
-        assert!(is_effectively_empty("   \n\n  \n  "));
-    }
-
-    #[test]
-    fn test_effectively_empty_headers_only() {
-        assert!(is_effectively_empty("# Title\n## Subtitle\n### Section"));
-    }
-
-    #[test]
-    fn test_effectively_empty_html_comments_only() {
-        assert!(is_effectively_empty("<!-- this is a comment -->"));
-    }
-
-    #[test]
-    fn test_effectively_empty_empty_checkboxes() {
-        assert!(is_effectively_empty("# Checklist\n- [ ]\n- [x]"));
-    }
-
-    #[test]
-    fn test_effectively_empty_bare_list_markers() {
-        assert!(is_effectively_empty("-\n*\n-"));
-    }
-
-    #[test]
-    fn test_effectively_empty_seeded_template() {
-        let template = "\
-# Heartbeat Checklist
-
-<!-- Keep this file empty to skip heartbeat API calls.
-     Add tasks below when you want the agent to check something periodically.
-
-     Example:
-     - [ ] Check for unread emails needing a reply
-     - [ ] Review today's calendar for upcoming meetings
-     - [ ] Check CI build status for main branch
--->";
-        assert!(is_effectively_empty(template));
-    }
-
-    #[test]
-    fn test_effectively_empty_real_checklist() {
-        let content = "\
-# Heartbeat Checklist
-
-- [ ] Check for unread emails needing a reply
-- [ ] Review today's calendar for upcoming meetings";
-        assert!(!is_effectively_empty(content));
-    }
-
-    #[test]
-    fn test_effectively_empty_mixed_real_and_headers() {
-        let content = "# Title\n\nDo something important";
-        assert!(!is_effectively_empty(content));
-    }
-
-    #[test]
-    fn test_effectively_empty_comment_plus_real_content() {
-        let content = "<!-- comment -->\nActual task here";
-        assert!(!is_effectively_empty(content));
-    }
-
-    // ==================== quiet hours ====================
-
-    #[test]
-    fn test_quiet_hours_inside() {
-        use chrono::{Timelike, Utc};
-
-        let now_utc = Utc::now();
-        let hour = now_utc.hour();
-        let start = hour;
-        let end = (hour + 1) % 24;
-
-        let config = HeartbeatConfig {
-            quiet_hours_start: Some(start),
-            quiet_hours_end: Some(end),
-            timezone: Some("UTC".to_string()),
-            ..HeartbeatConfig::default()
-        };
-        // Current UTC hour is inside [start, end) by construction
-        assert!(config.is_quiet_hours());
-    }
-
-    #[test]
-    fn test_quiet_hours_outside() {
-        use chrono::{Timelike, Utc};
-
-        let now_utc = Utc::now();
-        let hour = now_utc.hour();
-        let start = (hour + 1) % 24;
-        let end = (hour + 2) % 24;
-
-        let config = HeartbeatConfig {
-            quiet_hours_start: Some(start),
-            quiet_hours_end: Some(end),
-            timezone: Some("UTC".to_string()),
-            ..HeartbeatConfig::default()
-        };
-        // Current UTC hour is outside [start, end) by construction
-        assert!(!config.is_quiet_hours());
-    }
-
-    #[test]
-    fn test_quiet_hours_wraparound_excludes_now() {
-        use chrono::{Timelike, Utc};
-
-        let now_utc = Utc::now();
-        let hour = now_utc.hour();
-        // Window covers all hours except the current one
-        let start = (hour + 1) % 24;
-        let end = hour;
-
-        let config = HeartbeatConfig {
-            quiet_hours_start: Some(start),
-            quiet_hours_end: Some(end),
-            timezone: Some("UTC".to_string()),
-            ..HeartbeatConfig::default()
-        };
-        assert!(!config.is_quiet_hours());
-    }
-
-    #[test]
-    fn test_quiet_hours_none_configured() {
-        let config = HeartbeatConfig::default();
-        assert!(!config.is_quiet_hours());
-    }
-
-    #[test]
-    fn test_quiet_hours_same_start_end() {
-        let config = HeartbeatConfig {
-            quiet_hours_start: Some(10),
-            quiet_hours_end: Some(10),
-            timezone: Some("UTC".to_string()),
-            ..HeartbeatConfig::default()
-        };
-        // start == end means zero-width window, should be false
-        assert!(!config.is_quiet_hours());
-    }
-
-    #[test]
-    fn test_spawn_heartbeat_accepts_store_param() {
-        // Regression: spawn_heartbeat must accept an optional Database store
-        // for persisting heartbeat notifications to a dedicated conversation.
-        // Compile-time check: the 7th parameter is `Option<Arc<dyn Database>>`.
-        #[allow(clippy::type_complexity)]
-        let _fn_ptr: fn(
-            HeartbeatConfig,
-            HygieneConfig,
-            Arc<crate::workspace::Workspace>,
-            Arc<dyn crate::llm::LlmProvider>,
-            Option<tokio::sync::mpsc::Sender<crate::channels::OutgoingResponse>>,
-            Option<Arc<dyn crate::db::Database>>,
-        ) -> tokio::task::JoinHandle<()> = spawn_heartbeat;
-        let _ = _fn_ptr;
-    }
-}
+mod tests;

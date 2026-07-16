@@ -179,6 +179,8 @@ fn query_json(data: &serde_json::Value, path: &str) -> Result<serde_json::Value,
 
 #[cfg(test)]
 mod tests {
+    //! Unit tests for JSON path querying and input parsing.
+
     use super::*;
 
     #[test]

@@ -30,7 +30,7 @@ async fn scan_installed_tools(tools_dir: &PathBuf) -> anyhow::Result<Vec<Install
                 .to_string();
             let caps_path = path.with_extension("capabilities.json");
             let has_caps = fs::try_exists(&caps_path).await?;
-            let size = fs::metadata(&path).await?.len();
+            let size = ambient_fs::Metadata::from_std(fs::metadata(&path).await?).len();
             tools.push(InstalledToolSummary {
                 name,
                 path,

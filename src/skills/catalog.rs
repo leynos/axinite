@@ -1,7 +1,7 @@
-//! Runtime skill catalogue backed by ClawHub's public registry.
+//! Runtime skill catalog backed by ClawHub's public registry.
 //!
 //! Fetches skill listings from the ClawHub API (`/api/v1/search`) at runtime,
-//! caching results in memory. No compile-time entries -- the catalogue is always
+//! caching results in memory. No compile-time entries -- the catalog is always
 //! up-to-date with the registry.
 //!
 //! Configuration:
@@ -10,7 +10,6 @@
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
-use serde::{Deserialize, Serialize};
 use tokio::sync::RwLock;
 
 /// Default ClawHub registry URL.
@@ -25,119 +24,16 @@ const CACHE_TTL: Duration = Duration::from_secs(300);
 /// Maximum number of results to return from a search.
 const MAX_RESULTS: usize = 25;
 
-/// HTTP request timeout for catalogue queries.
+/// HTTP request timeout for catalog queries.
 const REQUEST_TIMEOUT: Duration = Duration::from_secs(10);
 
-/// Result of a catalogue search, carrying both results and any error that occurred.
-#[derive(Debug, Clone)]
-pub struct CatalogSearchOutcome {
-    /// Skill entries returned by the search (empty on error).
-    pub results: Vec<CatalogEntry>,
-    /// If the registry was unreachable or returned an error, a human-readable message.
-    pub error: Option<String>,
-}
+mod model;
 
-/// A skill entry from the ClawHub catalogue.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct CatalogEntry {
-    /// Skill slug (unique identifier, e.g. "owner/skill-name").
-    pub slug: String,
-    /// Display name.
-    pub name: String,
-    /// Short description.
-    #[serde(default)]
-    pub description: String,
-    /// Skill version (semver).
-    #[serde(default)]
-    pub version: String,
-    /// Relevance score from the search API.
-    #[serde(default)]
-    pub score: f64,
-    /// Last updated timestamp (epoch milliseconds from registry).
-    #[serde(default)]
-    pub updated_at: Option<u64>,
-    /// Star count (populated via detail enrichment).
-    #[serde(default)]
-    pub stars: Option<u64>,
-    /// Total download count (populated via detail enrichment).
-    #[serde(default)]
-    pub downloads: Option<u64>,
-    /// Current install count (populated via detail enrichment).
-    #[serde(default)]
-    pub installs_current: Option<u64>,
-    /// Owner handle (populated via detail enrichment).
-    #[serde(default)]
-    pub owner: Option<String>,
-}
+#[cfg(test)]
+mod tests;
 
-/// Top-level wrapper from the ClawHub `/api/v1/skills/{slug}` response.
-///
-/// The API returns `{"skill": {...}, "owner": {...}, "latestVersion": {...}}`.
-#[derive(Debug, Clone, Deserialize)]
-struct SkillDetailResponse {
-    skill: SkillDetailInner,
-    #[serde(default)]
-    owner: Option<SkillOwner>,
-}
-
-/// Inner `skill` object within `SkillDetailResponse`.
-#[derive(Debug, Clone, Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct SkillDetailInner {
-    pub slug: String,
-    #[serde(default)]
-    pub display_name: Option<String>,
-    #[serde(default)]
-    pub summary: Option<String>,
-    #[serde(default)]
-    pub stats: Option<SkillStats>,
-    #[serde(default)]
-    pub updated_at: Option<u64>,
-}
-
-/// Detailed skill information from the ClawHub `/api/v1/skills/{slug}` endpoint.
-#[derive(Debug, Clone, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct SkillDetail {
-    pub slug: String,
-    #[serde(default)]
-    pub display_name: Option<String>,
-    #[serde(default)]
-    pub summary: Option<String>,
-    #[serde(default)]
-    pub version: Option<String>,
-    #[serde(default)]
-    pub stats: Option<SkillStats>,
-    #[serde(default)]
-    pub owner: Option<SkillOwner>,
-    #[serde(default)]
-    pub updated_at: Option<u64>,
-}
-
-/// Statistics for a skill from the ClawHub detail endpoint.
-#[derive(Debug, Clone, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct SkillStats {
-    #[serde(default)]
-    pub stars: Option<u64>,
-    #[serde(default)]
-    pub downloads: Option<u64>,
-    #[serde(default)]
-    pub installs_current: Option<u64>,
-    #[serde(default)]
-    pub installs_all_time: Option<u64>,
-    #[serde(default)]
-    pub versions: Option<u64>,
-}
-
-/// Owner information for a skill.
-#[derive(Debug, Clone, Deserialize)]
-pub struct SkillOwner {
-    #[serde(default)]
-    pub handle: Option<String>,
-    #[serde(default, rename = "displayName")]
-    pub display_name: Option<String>,
-}
+pub use model::{CatalogEntry, CatalogSearchOutcome, SkillDetail, SkillOwner, SkillStats};
+use model::{CatalogSearchEnvelope, CatalogSearchResult, SkillDetailResponse};
 
 /// Cached search result with TTL.
 struct CachedSearch {
@@ -146,7 +42,7 @@ struct CachedSearch {
     fetched_at: Instant,
 }
 
-/// Runtime skill catalogue that queries ClawHub's API.
+/// Runtime skill catalog that queries ClawHub's API.
 pub struct SkillCatalog {
     /// Base URL for the registry.
     registry_url: String,
@@ -157,7 +53,7 @@ pub struct SkillCatalog {
 }
 
 impl SkillCatalog {
-    /// Create a new catalogue.
+    /// Create a new catalog.
     ///
     /// Reads `CLAWHUB_REGISTRY` (or legacy `CLAWDHUB_REGISTRY`) from the
     /// environment, falling back to the Convex backend.
@@ -179,7 +75,7 @@ impl SkillCatalog {
         }
     }
 
-    /// Create a catalogue with a custom registry URL (for testing).
+    /// Create a catalog with a custom registry URL (for testing).
     #[cfg(test)]
     pub fn with_url(url: &str) -> Self {
         let client = reqwest::Client::builder()
@@ -195,11 +91,11 @@ impl SkillCatalog {
         }
     }
 
-    /// Search for skills in the catalogue.
+    /// Search for skills in the catalog.
     ///
     /// First checks the in-memory cache. If not cached or expired, fetches
     /// from the ClawHub API. Returns a [`CatalogSearchOutcome`] that carries
-    /// both results and any error that occurred (catalogue search is best-effort,
+    /// both results and any error that occurred (catalog search is best-effort,
     /// never blocks the agent).
     pub async fn search(&self, query: &str) -> CatalogSearchOutcome {
         let query_lower = query.to_lowercase();
@@ -243,7 +139,7 @@ impl SkillCatalog {
         let response = match self.client.get(&url).query(&[("q", query)]).send().await {
             Ok(resp) => resp,
             Err(e) => {
-                tracing::warn!("Catalogue search failed (network): {}", e);
+                tracing::warn!("Catalog search failed (network): {}", e);
                 return CatalogSearchOutcome {
                     results: Vec::new(),
                     error: Some("Registry unreachable".to_string()),
@@ -254,7 +150,7 @@ impl SkillCatalog {
         if !response.status().is_success() {
             let status = response.status();
             tracing::debug!(
-                "Catalogue search returned status {}: {}",
+                "Catalog search returned status {}: {}",
                 status,
                 response
                     .text()
@@ -271,7 +167,7 @@ impl SkillCatalog {
         let body = match response.text().await {
             Ok(b) => b,
             Err(e) => {
-                tracing::debug!("Catalogue search: failed to read response body: {}", e);
+                tracing::debug!("Catalog search: failed to read response body: {}", e);
                 return CatalogSearchOutcome {
                     results: Vec::new(),
                     error: Some("Failed to read registry response".to_string()),
@@ -281,19 +177,19 @@ impl SkillCatalog {
 
         // Try wrapped format first: {"results": [...]}
         // Then fall back to bare array: [...]
-        let raw_results =
-            if let Ok(envelope) = serde_json::from_str::<CatalogueSearchEnvelope>(&body) {
-                envelope.results
-            } else if let Ok(arr) = serde_json::from_str::<Vec<CatalogueSearchResult>>(&body) {
-                arr
-            } else {
-                let preview = body.get(..200).unwrap_or(&body);
-                tracing::debug!("Catalogue search: failed to parse response: {}", preview);
-                return CatalogSearchOutcome {
-                    results: Vec::new(),
-                    error: Some("Invalid response from registry".to_string()),
-                };
+        let raw_results = if let Ok(envelope) = serde_json::from_str::<CatalogSearchEnvelope>(&body)
+        {
+            envelope.results
+        } else if let Ok(arr) = serde_json::from_str::<Vec<CatalogSearchResult>>(&body) {
+            arr
+        } else {
+            let preview = body.get(..200).unwrap_or(&body);
+            tracing::debug!("Catalog search: failed to parse response: {}", preview);
+            return CatalogSearchOutcome {
+                results: Vec::new(),
+                error: Some("Invalid response from registry".to_string()),
             };
+        };
 
         CatalogSearchOutcome {
             results: raw_results
@@ -350,7 +246,7 @@ impl SkillCatalog {
         })
     }
 
-    /// Enrich catalogue entries with detail data (stars, downloads, owner).
+    /// Enrich catalog entries with detail data (stars, downloads, owner).
     ///
     /// Fetches detail for up to `max` entries in parallel. Best-effort: entries
     /// that fail to enrich keep their `None` values.
@@ -398,29 +294,6 @@ impl Default for SkillCatalog {
     }
 }
 
-/// Wrapper for ClawHub's `{"results": [...]}` envelope.
-#[derive(Debug, Deserialize)]
-struct CatalogueSearchEnvelope {
-    results: Vec<CatalogueSearchResult>,
-}
-
-/// Internal type matching ClawHub's `/api/v1/search` response items.
-#[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct CatalogueSearchResult {
-    slug: String,
-    #[serde(default)]
-    display_name: Option<String>,
-    #[serde(default)]
-    version: Option<String>,
-    #[serde(default)]
-    summary: Option<String>,
-    #[serde(default)]
-    score: Option<f64>,
-    #[serde(default)]
-    updated_at: Option<u64>,
-}
-
 /// Construct the download URL for a skill's SKILL.md from the registry.
 ///
 /// The slug is URL-encoded to prevent query string injection via special
@@ -433,170 +306,7 @@ pub fn skill_download_url(registry_url: &str, slug: &str) -> String {
     )
 }
 
-/// Convenience wrapper for creating a shared catalogue.
+/// Convenience wrapper for creating a shared catalog.
 pub fn shared_catalog() -> Arc<SkillCatalog> {
     Arc::new(SkillCatalog::new())
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_default_registry_url() {
-        // When CLAWHUB_REGISTRY is not set, should use default
-        let catalogue = SkillCatalog::with_url(DEFAULT_REGISTRY_URL);
-        assert_eq!(catalogue.registry_url(), DEFAULT_REGISTRY_URL);
-    }
-
-    #[test]
-    fn test_custom_registry_url() {
-        let catalogue = SkillCatalog::with_url("https://custom.registry.example");
-        assert_eq!(catalogue.registry_url(), "https://custom.registry.example");
-    }
-
-    #[tokio::test]
-    async fn test_search_returns_error_on_network_failure() {
-        // Use RFC 5737 TEST-NET-1 (192.0.2.0/24) for reliable failure even behind proxies.
-        let catalogue = SkillCatalog::with_url("http://192.0.2.1:9999");
-        let outcome = catalogue.search("test").await;
-        assert!(outcome.results.is_empty());
-        assert!(outcome.error.is_some());
-        let error = outcome.error.unwrap();
-        assert!(
-            error.contains("Registry unreachable")
-                || error.contains("connect")
-                || error.contains("502")
-                || error.contains("503")
-                || error.contains("504"),
-            "Expected connection or gateway error, got: {error}",
-        );
-    }
-
-    #[tokio::test]
-    async fn test_cache_is_populated_after_search() {
-        let catalogue = SkillCatalog::with_url("http://127.0.0.1:1");
-
-        // First search populates cache (even with empty results)
-        catalogue.search("cached-query").await;
-
-        let cache = catalogue.cache.read().await;
-        assert!(cache.iter().any(|c| c.query == "cached-query"));
-    }
-
-    #[tokio::test]
-    async fn test_clear_cache() {
-        let catalogue = SkillCatalog::with_url("http://127.0.0.1:1");
-        catalogue.search("something").await;
-
-        catalogue.clear_cache().await;
-        let cache = catalogue.cache.read().await;
-        assert!(cache.is_empty());
-    }
-
-    #[test]
-    fn test_skill_download_url() {
-        let url = skill_download_url("https://clawhub.ai", "owner/my-skill");
-        assert_eq!(
-            url,
-            "https://clawhub.ai/api/v1/download?slug=owner%2Fmy-skill"
-        );
-    }
-
-    #[test]
-    fn test_skill_download_url_encodes_special_chars() {
-        let url = skill_download_url("https://clawhub.ai", "foo&bar=baz#frag");
-        assert!(url.contains("slug=foo%26bar%3Dbaz%23frag"));
-    }
-
-    #[test]
-    fn test_parse_wrapped_response() {
-        // ClawHub returns {"results": [...]} format
-        let json = r#"{"results":[{"slug":"markdown","displayName":"Markdown","summary":"A skill","version":"1.0.0","score":3.5}]}"#;
-        let envelope: CatalogueSearchEnvelope = serde_json::from_str(json).unwrap();
-        assert_eq!(envelope.results.len(), 1);
-        assert_eq!(envelope.results[0].slug, "markdown");
-        assert_eq!(
-            envelope.results[0].display_name.as_deref(),
-            Some("Markdown")
-        );
-    }
-
-    #[test]
-    fn test_parse_bare_array_response() {
-        // Fallback: bare array format
-        let json = r#"[{"slug":"markdown","displayName":"Markdown","summary":"A skill","version":"1.0.0","score":3.5}]"#;
-        let results: Vec<CatalogueSearchResult> = serde_json::from_str(json).unwrap();
-        assert_eq!(results.len(), 1);
-        assert_eq!(results[0].slug, "markdown");
-    }
-
-    #[test]
-    fn test_parse_skill_detail() {
-        // Response format matches the actual ClawHub API: {"skill": {...}, "owner": {...}}
-        let json = r#"{
-            "skill": {
-                "slug": "steipete/markdown-writer",
-                "displayName": "Markdown Writer",
-                "summary": "Write markdown docs",
-                "stats": {
-                    "stars": 142,
-                    "downloads": 8400,
-                    "installsCurrent": 55,
-                    "installsAllTime": 200,
-                    "versions": 5
-                },
-                "updatedAt": 1700000000000
-            },
-            "owner": {
-                "handle": "steipete",
-                "displayName": "Peter S."
-            },
-            "latestVersion": {
-                "version": "1.2.3",
-                "createdAt": 1700000000000,
-                "changelog": ""
-            }
-        }"#;
-
-        let wrapper: SkillDetailResponse = serde_json::from_str(json).unwrap();
-        let inner = &wrapper.skill;
-        assert_eq!(inner.slug, "steipete/markdown-writer");
-        assert_eq!(inner.display_name.as_deref(), Some("Markdown Writer"));
-
-        let stats = inner.stats.as_ref().unwrap();
-        assert_eq!(stats.stars, Some(142));
-        assert_eq!(stats.downloads, Some(8400));
-        assert_eq!(stats.installs_current, Some(55));
-
-        let owner = wrapper.owner.as_ref().unwrap();
-        assert_eq!(owner.handle.as_deref(), Some("steipete"));
-    }
-
-    #[tokio::test]
-    async fn test_fetch_skill_detail_returns_none_on_error() {
-        let catalogue = SkillCatalog::with_url("http://127.0.0.1:1");
-        let result = catalogue.fetch_skill_detail("nonexistent/skill").await;
-        assert!(result.is_none());
-    }
-
-    #[test]
-    fn test_catalogue_entry_serde() {
-        let entry = CatalogEntry {
-            slug: "test/skill".to_string(),
-            name: "Test Skill".to_string(),
-            description: "A test".to_string(),
-            version: "1.0.0".to_string(),
-            score: 0.95,
-            updated_at: Some(1700000000000),
-            stars: Some(42),
-            downloads: Some(1000),
-            installs_current: None,
-            owner: Some("tester".to_string()),
-        };
-        let json = serde_json::to_string(&entry).unwrap();
-        let parsed: CatalogEntry = serde_json::from_str(&json).unwrap();
-        assert_eq!(parsed.slug, "test/skill");
-        assert_eq!(parsed.name, "Test Skill");
-    }
 }

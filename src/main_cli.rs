@@ -266,6 +266,8 @@ async fn dispatch_worker_subcommand(
 
 #[cfg(test)]
 mod test_support {
+    //! Hooks for intercepting CLI dispatch in unit tests.
+
     use std::cell::{Cell, RefCell};
     use std::sync::{Arc, OnceLock};
 

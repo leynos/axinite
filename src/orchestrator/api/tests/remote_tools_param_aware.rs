@@ -8,7 +8,7 @@ use rstest::rstest;
 use tower::ServiceExt;
 use uuid::Uuid;
 
-use super::super::remote_tools::hosted_remote_tool_catalogue;
+use super::super::remote_tools::hosted_remote_tool_catalog;
 use super::fixtures::remote_tool_mocks::ParamAwareHostedTool;
 use super::fixtures::test_state;
 use super::*;
@@ -16,11 +16,11 @@ use crate::worker::api::REMOTE_TOOL_EXECUTE_ROUTE;
 
 #[rstest]
 #[tokio::test]
-async fn remote_tool_catalogue_uses_explicit_hosted_eligibility() {
+async fn remote_tool_catalog_uses_explicit_hosted_eligibility() {
     let registry = Arc::new(ToolRegistry::new());
     registry.register(Arc::new(ParamAwareHostedTool)).await;
 
-    let (tools, _instructions, _version) = hosted_remote_tool_catalogue(&registry).await;
+    let (tools, _instructions, _version) = hosted_remote_tool_catalog(&registry).await;
 
     assert_eq!(
         tools

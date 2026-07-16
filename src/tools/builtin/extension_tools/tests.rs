@@ -6,7 +6,7 @@ use super::*;
 
 #[test]
 fn test_tool_search_schema() {
-    let tool = ToolSearchTool::new(test_manager_stub());
+    let tool = ToolSearchTool::new(test_manager_stub().expect("manager stub should be created"));
     assert_eq!(tool.name(), "tool_search");
     let schema = tool.parameters_schema();
     assert!(schema.get("properties").is_some());
@@ -16,7 +16,7 @@ fn test_tool_search_schema() {
 #[test]
 fn test_tool_install_schema() {
     use crate::tools::tool::ApprovalRequirement;
-    let tool = ToolInstallTool::new(test_manager_stub());
+    let tool = ToolInstallTool::new(test_manager_stub().expect("manager stub should be created"));
     assert_eq!(tool.name(), "tool_install");
     assert_eq!(
         tool.requires_approval(&serde_json::json!({})),
@@ -30,7 +30,7 @@ fn test_tool_install_schema() {
 #[test]
 fn test_tool_auth_schema() {
     use crate::tools::tool::ApprovalRequirement;
-    let tool = ToolAuthTool::new(test_manager_stub());
+    let tool = ToolAuthTool::new(test_manager_stub().expect("manager stub should be created"));
     assert_eq!(tool.name(), "tool_auth");
     assert_eq!(
         tool.requires_approval(&serde_json::json!({})),
@@ -47,7 +47,7 @@ fn test_tool_auth_schema() {
 #[test]
 fn test_tool_activate_schema() {
     use crate::tools::tool::ApprovalRequirement;
-    let tool = ToolActivateTool::new(test_manager_stub());
+    let tool = ToolActivateTool::new(test_manager_stub().expect("manager stub should be created"));
     assert_eq!(tool.name(), "tool_activate");
     assert_eq!(
         tool.requires_approval(&serde_json::json!({})),
@@ -58,7 +58,7 @@ fn test_tool_activate_schema() {
 #[test]
 fn test_tool_list_schema() {
     use crate::tools::tool::ApprovalRequirement;
-    let tool = ToolListTool::new(test_manager_stub());
+    let tool = ToolListTool::new(test_manager_stub().expect("manager stub should be created"));
     assert_eq!(tool.name(), "tool_list");
     assert_eq!(
         tool.requires_approval(&serde_json::json!({})),
@@ -71,7 +71,7 @@ fn test_tool_list_schema() {
 #[test]
 fn test_tool_remove_schema() {
     use crate::tools::tool::ApprovalRequirement;
-    let tool = ToolRemoveTool::new(test_manager_stub());
+    let tool = ToolRemoveTool::new(test_manager_stub().expect("manager stub should be created"));
     assert_eq!(tool.name(), "tool_remove");
     assert_eq!(
         tool.requires_approval(&serde_json::json!({})),
@@ -82,7 +82,7 @@ fn test_tool_remove_schema() {
 #[test]
 fn tool_remove_always_requires_approval_regardless_of_params() {
     use crate::tools::tool::ApprovalRequirement;
-    let tool = ToolRemoveTool::new(test_manager_stub());
+    let tool = ToolRemoveTool::new(test_manager_stub().expect("manager stub should be created"));
 
     let test_cases = vec![
         ("no params", serde_json::json!({})),
@@ -108,7 +108,7 @@ fn tool_remove_always_requires_approval_regardless_of_params() {
 #[test]
 fn test_tool_upgrade_schema() {
     use crate::tools::tool::ApprovalRequirement;
-    let tool = ToolUpgradeTool::new(test_manager_stub());
+    let tool = ToolUpgradeTool::new(test_manager_stub().expect("manager stub should be created"));
     assert_eq!(tool.name(), "tool_upgrade");
     assert_eq!(
         tool.requires_approval(&serde_json::json!({})),
@@ -124,7 +124,7 @@ fn test_tool_upgrade_schema() {
 
 #[test]
 fn test_extension_info_schema() {
-    let tool = ExtensionInfoTool::new(test_manager_stub());
+    let tool = ExtensionInfoTool::new(test_manager_stub().expect("manager stub should be created"));
     assert_eq!(tool.name(), "extension_info");
     let schema = tool.parameters_schema();
     assert!(schema["properties"].get("name").is_some());
@@ -173,16 +173,18 @@ fn hosted_worker_proxy_safety_is_explicit() {
 }
 
 /// Create a stub manager for schema tests (these don't call execute).
-fn test_manager_stub() -> Arc<ExtensionManager> {
+fn test_manager_stub() -> anyhow::Result<Arc<ExtensionManager>> {
+    use anyhow::Context as _;
+
     use crate::secrets::{InMemorySecretsStore, SecretsCrypto};
     use crate::testing::credentials::TEST_CRYPTO_KEY;
     use crate::tools::ToolRegistry;
 
     let master_key = secrecy::SecretString::from(TEST_CRYPTO_KEY.to_string());
-    let crypto = Arc::new(SecretsCrypto::new(master_key).expect("create secrets crypto"));
+    let crypto = Arc::new(SecretsCrypto::new(master_key).context("create secrets crypto")?);
     let mcp_clients = crate::extensions::McpClientsMap::default();
 
-    Arc::new(ExtensionManager::new(
+    Ok(Arc::new(ExtensionManager::new(
         crate::extensions::ExtensionManagerConfig {
             shared_state: crate::extensions::LiveWasmChannelSharedState::default(),
             discovery: Arc::new(crate::extensions::NoOpDiscovery),
@@ -202,5 +204,5 @@ fn test_manager_stub() -> Arc<ExtensionManager> {
             store: None,
             catalog_entries: Vec::new(),
         },
-    ))
+    )))
 }

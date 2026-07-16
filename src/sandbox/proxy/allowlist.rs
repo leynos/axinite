@@ -158,6 +158,8 @@ pub fn extract_host(url: &str) -> Option<String> {
 
 #[cfg(test)]
 mod tests {
+    //! Unit tests for domain allowlist pattern matching.
+
     use super::*;
 
     #[test]

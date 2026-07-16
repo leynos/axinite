@@ -118,6 +118,8 @@ impl Store {
 
 #[cfg(all(test, feature = "postgres"))]
 mod tests {
+    //! Unit tests for idempotent singleton conversation upserts.
+
     use rstest::{fixture, rstest};
     use uuid::Uuid;
 
@@ -125,11 +127,10 @@ mod tests {
     use crate::testing::postgres::try_test_pg_db;
 
     #[fixture]
-    async fn store() -> Option<Store> {
-        let backend = try_test_pg_db()
-            .await
-            .expect("unexpected Postgres test setup error")?;
-        Some(Store::from_pool(backend.pool()))
+    async fn store() -> Result<Option<Store>, DatabaseError> {
+        Ok(try_test_pg_db()
+            .await?
+            .map(|backend| Store::from_pool(backend.pool())))
     }
 
     async fn cleanup_user(store: &Store, user_id: &str) -> Result<(), DatabaseError> {
@@ -141,8 +142,12 @@ mod tests {
 
     #[rstest]
     #[tokio::test]
-    async fn routine_singleton_is_idempotent(#[future] store: Option<Store>) {
-        let Some(store) = store.await else { return };
+    async fn routine_singleton_is_idempotent(
+        #[future] store: Result<Option<Store>, DatabaseError>,
+    ) {
+        let Some(store) = store.await.expect("unexpected Postgres test setup error") else {
+            return;
+        };
         let user_id = format!("routine-singleton-{}", Uuid::new_v4());
         let routine_id = Uuid::new_v4();
 
@@ -173,8 +178,12 @@ mod tests {
 
     #[rstest]
     #[tokio::test]
-    async fn assistant_singleton_is_idempotent_per_channel(#[future] store: Option<Store>) {
-        let Some(store) = store.await else { return };
+    async fn assistant_singleton_is_idempotent_per_channel(
+        #[future] store: Result<Option<Store>, DatabaseError>,
+    ) {
+        let Some(store) = store.await.expect("unexpected Postgres test setup error") else {
+            return;
+        };
         let user_id = format!("assistant-singleton-{}", Uuid::new_v4());
 
         let first = store
@@ -200,8 +209,12 @@ mod tests {
 
     #[rstest]
     #[tokio::test]
-    async fn heartbeat_singleton_is_idempotent(#[future] store: Option<Store>) {
-        let Some(store) = store.await else { return };
+    async fn heartbeat_singleton_is_idempotent(
+        #[future] store: Result<Option<Store>, DatabaseError>,
+    ) {
+        let Some(store) = store.await.expect("unexpected Postgres test setup error") else {
+            return;
+        };
         let user_id = format!("heartbeat-singleton-{}", Uuid::new_v4());
 
         let first = store

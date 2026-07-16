@@ -89,6 +89,8 @@ pub enum ObserverMetric {
 
 #[cfg(test)]
 mod tests {
+    //! Unit tests for observer event construction.
+
     use crate::observability::traits::*;
 
     #[test]

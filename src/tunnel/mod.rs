@@ -199,44 +199,57 @@ pub struct TunnelProviderConfig {
 pub fn create_tunnel(config: &TunnelProviderConfig) -> Result<Option<Box<dyn Tunnel>>> {
     match config.provider.as_str() {
         "none" | "" => Ok(None),
-
-        "cloudflare" => {
-            let cf = config.cloudflare.as_ref().ok_or_else(|| {
-                anyhow::anyhow!("TUNNEL_PROVIDER=cloudflare but no TUNNEL_CF_TOKEN configured")
-            })?;
-            Ok(Some(Box::new(CloudflareTunnel::new(cf.token.clone()))))
-        }
-
-        "tailscale" => {
-            let ts = config.tailscale.as_ref().cloned().unwrap_or_default();
-            Ok(Some(Box::new(TailscaleTunnel::new(ts.funnel, ts.hostname))))
-        }
-
-        "ngrok" => {
-            let ng = config.ngrok.as_ref().ok_or_else(|| {
-                anyhow::anyhow!("TUNNEL_PROVIDER=ngrok but no TUNNEL_NGROK_TOKEN configured")
-            })?;
-            Ok(Some(Box::new(NgrokTunnel::new(
-                ng.auth_token.clone(),
-                ng.domain.clone(),
-            ))))
-        }
-
-        "custom" => {
-            let cu = config.custom.as_ref().ok_or_else(|| {
-                anyhow::anyhow!("TUNNEL_PROVIDER=custom but no TUNNEL_CUSTOM_COMMAND configured")
-            })?;
-            Ok(Some(Box::new(CustomTunnel::new(
-                cu.start_command.clone(),
-                cu.health_url.clone(),
-                cu.url_pattern.clone(),
-            ))))
-        }
-
+        "cloudflare" => cloudflare_tunnel(config).map(Some),
+        "tailscale" => tailscale_tunnel(config).map(Some),
+        "ngrok" => ngrok_tunnel(config).map(Some),
+        "custom" => custom_tunnel(config).map(Some),
         other => bail!(
             "Unknown tunnel provider: \"{other}\". Valid: none, cloudflare, tailscale, ngrok, custom"
         ),
     }
+}
+
+/// Fetch a provider's config section, failing with a provider-specific hint
+/// naming the missing setting.
+fn require_provider_config<'a, T>(
+    section: Option<&'a T>,
+    provider: &str,
+    missing_setting: &str,
+) -> Result<&'a T> {
+    section.ok_or_else(|| {
+        anyhow::anyhow!("TUNNEL_PROVIDER={provider} but no {missing_setting} configured")
+    })
+}
+
+/// Build the Cloudflare tunnel, requiring a configured token.
+fn cloudflare_tunnel(config: &TunnelProviderConfig) -> Result<Box<dyn Tunnel>> {
+    let cf = require_provider_config(config.cloudflare.as_ref(), "cloudflare", "TUNNEL_CF_TOKEN")?;
+    Ok(Box::new(CloudflareTunnel::new(cf.token.clone())))
+}
+
+/// Build the Tailscale tunnel; missing config falls back to defaults.
+fn tailscale_tunnel(config: &TunnelProviderConfig) -> Result<Box<dyn Tunnel>> {
+    let ts = config.tailscale.as_ref().cloned().unwrap_or_default();
+    Ok(Box::new(TailscaleTunnel::new(ts.funnel, ts.hostname)))
+}
+
+/// Build the ngrok tunnel, requiring a configured auth token.
+fn ngrok_tunnel(config: &TunnelProviderConfig) -> Result<Box<dyn Tunnel>> {
+    let ng = require_provider_config(config.ngrok.as_ref(), "ngrok", "TUNNEL_NGROK_TOKEN")?;
+    Ok(Box::new(NgrokTunnel::new(
+        ng.auth_token.clone(),
+        ng.domain.clone(),
+    )))
+}
+
+/// Build the custom-command tunnel, requiring a configured start command.
+fn custom_tunnel(config: &TunnelProviderConfig) -> Result<Box<dyn Tunnel>> {
+    let cu = require_provider_config(config.custom.as_ref(), "custom", "TUNNEL_CUSTOM_COMMAND")?;
+    Ok(Box::new(CustomTunnel::new(
+        cu.start_command.clone(),
+        cu.health_url.clone(),
+        cu.url_pattern.clone(),
+    )))
 }
 
 // ── Managed tunnel startup ───────────────────────────────────────
@@ -246,7 +259,7 @@ pub fn create_tunnel(config: &TunnelProviderConfig) -> Result<Option<Box<dyn Tun
 /// Returns the (potentially mutated) config with `tunnel.public_url` set,
 /// plus the active tunnel handle (if one was started) for later shutdown.
 pub async fn start_managed_tunnel(
-    mut config: crate::config::Config,
+    config: crate::config::Config,
 ) -> (crate::config::Config, Option<Box<dyn Tunnel>>) {
     if config.tunnel.public_url.is_some() {
         tracing::info!(
@@ -260,39 +273,10 @@ pub async fn start_managed_tunnel(
         return (config, None);
     };
 
-    let gateway_port = config
-        .channels
-        .gateway
-        .as_ref()
-        .map(|g| g.port)
-        .unwrap_or(3000);
-    let gateway_host = config
-        .channels
-        .gateway
-        .as_ref()
-        .map(|g| g.host.as_str())
-        .unwrap_or("127.0.0.1");
+    let (gateway_host, gateway_port) = gateway_bind_address(&config);
 
     match create_tunnel(provider_config) {
-        Ok(Some(tunnel)) => {
-            tracing::info!(
-                "Starting {} tunnel on {}:{}...",
-                tunnel.name(),
-                gateway_host,
-                gateway_port
-            );
-            match tunnel.start(gateway_host, gateway_port).await {
-                Ok(url) => {
-                    tracing::info!("Tunnel started: {}", url);
-                    config.tunnel.public_url = Some(url);
-                    (config, Some(tunnel))
-                }
-                Err(e) => {
-                    tracing::error!("Failed to start tunnel: {}", e);
-                    (config, None)
-                }
-            }
-        }
+        Ok(Some(tunnel)) => activate_tunnel(config, tunnel, &gateway_host, gateway_port).await,
         Ok(None) => (config, None),
         Err(e) => {
             tracing::error!("Failed to create tunnel: {}", e);
@@ -301,151 +285,47 @@ pub async fn start_managed_tunnel(
     }
 }
 
+/// Resolve the gateway's bind host and port, applying the defaults
+/// (`127.0.0.1:3000`) when no gateway channel is configured.
+fn gateway_bind_address(config: &crate::config::Config) -> (String, u16) {
+    let gateway = config.channels.gateway.as_ref();
+    let host = gateway
+        .map(|g| g.host.clone())
+        .unwrap_or_else(|| "127.0.0.1".to_string());
+    let port = gateway.map(|g| g.port).unwrap_or(3000);
+    (host, port)
+}
+
+/// Start a freshly created tunnel and record its public URL on the config.
+///
+/// A startup failure is logged and tolerated: the gateway continues without
+/// external exposure rather than aborting.
+async fn activate_tunnel(
+    mut config: crate::config::Config,
+    tunnel: Box<dyn Tunnel>,
+    gateway_host: &str,
+    gateway_port: u16,
+) -> (crate::config::Config, Option<Box<dyn Tunnel>>) {
+    tracing::info!(
+        "Starting {} tunnel on {}:{}...",
+        tunnel.name(),
+        gateway_host,
+        gateway_port
+    );
+    match tunnel.start(gateway_host, gateway_port).await {
+        Ok(url) => {
+            tracing::info!("Tunnel started: {}", url);
+            config.tunnel.public_url = Some(url);
+            (config, Some(tunnel))
+        }
+        Err(e) => {
+            tracing::error!("Failed to start tunnel: {}", e);
+            (config, None)
+        }
+    }
+}
+
 // ── Tests ────────────────────────────────────────────────────────
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-    use tokio::process::Command;
-
-    fn assert_tunnel_err(cfg: &TunnelProviderConfig, needle: &str) {
-        match create_tunnel(cfg) {
-            Err(e) => assert!(
-                e.to_string().contains(needle),
-                "Expected error containing \"{needle}\", got: {e}"
-            ),
-            Ok(_) => panic!("Expected error containing \"{needle}\", but got Ok"),
-        }
-    }
-
-    #[test]
-    fn factory_none_returns_none() {
-        let cfg = TunnelProviderConfig::default();
-        assert!(create_tunnel(&cfg).unwrap().is_none());
-    }
-
-    #[test]
-    fn factory_empty_returns_none() {
-        let cfg = TunnelProviderConfig {
-            provider: String::new(),
-            ..Default::default()
-        };
-        assert!(create_tunnel(&cfg).unwrap().is_none());
-    }
-
-    #[test]
-    fn factory_unknown_provider_errors() {
-        let cfg = TunnelProviderConfig {
-            provider: "wireguard".into(),
-            ..Default::default()
-        };
-        assert_tunnel_err(&cfg, "Unknown tunnel provider");
-    }
-
-    #[test]
-    fn factory_cloudflare_missing_config_errors() {
-        let cfg = TunnelProviderConfig {
-            provider: "cloudflare".into(),
-            ..Default::default()
-        };
-        assert_tunnel_err(&cfg, "TUNNEL_CF_TOKEN");
-    }
-
-    #[test]
-    fn factory_cloudflare_with_config_ok() {
-        use crate::testing::credentials::TEST_BEARER_TOKEN;
-        let cfg = TunnelProviderConfig {
-            provider: "cloudflare".into(),
-            cloudflare: Some(CloudflareTunnelConfig {
-                token: TEST_BEARER_TOKEN.into(),
-            }),
-            ..Default::default()
-        };
-        let t = create_tunnel(&cfg).unwrap().unwrap();
-        assert_eq!(t.name(), "cloudflare");
-    }
-
-    #[test]
-    fn factory_tailscale_defaults_ok() {
-        let cfg = TunnelProviderConfig {
-            provider: "tailscale".into(),
-            ..Default::default()
-        };
-        let t = create_tunnel(&cfg).unwrap().unwrap();
-        assert_eq!(t.name(), "tailscale");
-    }
-
-    #[test]
-    fn factory_ngrok_missing_config_errors() {
-        let cfg = TunnelProviderConfig {
-            provider: "ngrok".into(),
-            ..Default::default()
-        };
-        assert_tunnel_err(&cfg, "TUNNEL_NGROK_TOKEN");
-    }
-
-    #[test]
-    fn factory_ngrok_with_config_ok() {
-        let cfg = TunnelProviderConfig {
-            provider: "ngrok".into(),
-            ngrok: Some(NgrokTunnelConfig {
-                auth_token: "tok".into(),
-                domain: None,
-            }),
-            ..Default::default()
-        };
-        let t = create_tunnel(&cfg).unwrap().unwrap();
-        assert_eq!(t.name(), "ngrok");
-    }
-
-    #[test]
-    fn factory_custom_missing_config_errors() {
-        let cfg = TunnelProviderConfig {
-            provider: "custom".into(),
-            ..Default::default()
-        };
-        assert_tunnel_err(&cfg, "TUNNEL_CUSTOM_COMMAND");
-    }
-
-    #[test]
-    fn factory_custom_with_config_ok() {
-        let cfg = TunnelProviderConfig {
-            provider: "custom".into(),
-            custom: Some(CustomTunnelConfig {
-                start_command: "echo tunnel".into(),
-                health_url: None,
-                url_pattern: None,
-            }),
-            ..Default::default()
-        };
-        let t = create_tunnel(&cfg).unwrap().unwrap();
-        assert_eq!(t.name(), "custom");
-    }
-
-    #[tokio::test]
-    async fn kill_shared_no_process_is_ok() {
-        let proc = new_shared_process();
-        assert!(kill_shared(&proc).await.is_ok());
-        assert!(proc.lock().await.is_none());
-    }
-
-    #[tokio::test]
-    async fn kill_shared_terminates_child() {
-        let proc = new_shared_process();
-
-        let child = Command::new("sleep")
-            .arg("30")
-            .stdout(std::process::Stdio::null())
-            .stderr(std::process::Stdio::null())
-            .spawn()
-            .expect("sleep should spawn");
-
-        {
-            let mut guard = proc.lock().await;
-            *guard = Some(TunnelProcess { child });
-        }
-
-        kill_shared(&proc).await.unwrap();
-        assert!(proc.lock().await.is_none());
-    }
-}
+mod tests;

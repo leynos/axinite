@@ -9,6 +9,8 @@
 
 #[cfg(feature = "import")]
 mod idempotency_tests {
+    //! Idempotency and dry-run behaviour tests for OpenClaw import.
+
     use std::path::PathBuf;
     use tempfile::TempDir;
     use uuid::Uuid;

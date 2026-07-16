@@ -206,7 +206,7 @@ fn migration_history_rewrites() -> Result<Vec<MigrationHistoryRewrite>, Database
     ]
     .into_iter()
     .enumerate()
-    .map(|(index, (from, to))| migration_history_rewrite(from, to, staging_version(index)))
+    .map(|(index, (from, to))| migration_history_rewrite(from, to, staging_version(index)?))
     .collect()
 }
 
@@ -231,10 +231,15 @@ fn migration_history_rewrite(
 }
 
 #[cfg(feature = "postgres")]
-fn staging_version(index: usize) -> i32 {
+fn staging_version(index: usize) -> Result<i32, DatabaseError> {
     // Reserve an internal staging range in the negative i32 space so rewrites
     // cannot collide with released positive migration versions.
-    i32::MIN + i32::try_from(index).expect("rewrite index fits in i32")
+    let offset = i32::try_from(index).map_err(|e| {
+        DatabaseError::Migration(format!(
+            "rewrite index fits in i32: {index} out of range: {e}"
+        ))
+    })?;
+    Ok(i32::MIN + offset)
 }
 
 #[cfg(feature = "postgres")]

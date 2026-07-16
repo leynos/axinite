@@ -175,6 +175,8 @@ impl Default for McpSessionManager {
 
 #[cfg(test)]
 mod tests {
+    //! Unit tests for MCP session state management.
+
     use super::*;
 
     #[test]

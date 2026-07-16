@@ -1,9 +1,10 @@
-#![allow(dead_code)]
 //! Metrics types for test instrumentation.
 //!
 //! These types were previously in the `ironclaw::benchmark::metrics` module.
 //! They now live directly in the test support crate to keep benchmark-specific
 //! types out of the main library.
+
+#![allow(dead_code)]
 
 use serde::{Deserialize, Serialize};
 

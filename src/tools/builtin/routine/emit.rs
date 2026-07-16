@@ -81,7 +81,12 @@ impl NativeTool for EventEmitTool {
 
         let fired = self
             .engine
-            .emit_system_event(source, event_type, &payload, Some(&ctx.user_id))
+            .emit_system_event(crate::agent::routine_engine::SystemEventRef {
+                source,
+                event_type,
+                payload: &payload,
+                user_id: Some(&ctx.user_id),
+            })
             .await;
 
         let result = serde_json::json!({

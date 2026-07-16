@@ -172,21 +172,49 @@ fn test_stuck_since_returns_latest_stuck_transition() {
     assert_eq!(ctx.stuck_since(), Some(second_stuck_at));
 }
 
-/// Simulate random `JobContext` and `JobState` transitions with `StdRng`; the `_` branch intentionally ignores random choices that are invalid for the current `JobState`.
-fn apply_random_step(ctx: &mut JobContext, rng: &mut StdRng, case_idx: usize, step: usize) {
-    match rng.gen_range(0..4) {
-        0 if matches!(ctx.state, JobState::Pending) => {
-            ctx.transition_to(JobState::InProgress, None)
-                .expect("failed to transition to InProgress");
-        }
-        1 if matches!(ctx.state, JobState::InProgress) => {
-            ctx.mark_stuck(format!("stall-{case_idx}-{step}"))
-                .expect("failed to mark context as stuck");
-        }
-        2 if matches!(ctx.state, JobState::Stuck) => {
-            ctx.attempt_recovery().expect("failed to attempt recovery");
-        }
-        _ => {}
+/// A randomly chosen, state-valid transition for the simulation below.
+enum RandomStep {
+    Start,
+    Stall,
+    Recover,
+}
+
+/// Map a random choice to a transition valid for the current state.
+///
+/// Choices that are invalid for the current `JobState` map to `None` and
+/// are intentionally skipped by the caller.
+fn choose_random_step(choice: u8, state: &JobState) -> Option<RandomStep> {
+    match (choice, state) {
+        (0, JobState::Pending) => Some(RandomStep::Start),
+        (1, JobState::InProgress) => Some(RandomStep::Stall),
+        (2, JobState::Stuck) => Some(RandomStep::Recover),
+        _ => None,
+    }
+}
+
+/// Simulate random `JobContext` and `JobState` transitions with `StdRng`.
+fn apply_random_step(
+    ctx: &mut JobContext,
+    rng: &mut StdRng,
+    case_idx: usize,
+    step: usize,
+) -> anyhow::Result<()> {
+    let Some(step_kind) = choose_random_step(rng.gen_range(0..4), &ctx.state) else {
+        return Ok(());
+    };
+    match step_kind {
+        RandomStep::Start => ctx
+            .transition_to(JobState::InProgress, None)
+            .map(|_| ())
+            .map_err(|e| anyhow::anyhow!("failed to transition to InProgress: {e}")),
+        RandomStep::Stall => ctx
+            .mark_stuck(format!("stall-{case_idx}-{step}"))
+            .map(|_| ())
+            .map_err(|e| anyhow::anyhow!("failed to mark context as stuck: {e}")),
+        RandomStep::Recover => ctx
+            .attempt_recovery()
+            .map(|_| ())
+            .map_err(|e| anyhow::anyhow!("failed to attempt recovery: {e}")),
     }
 }
 
@@ -199,7 +227,8 @@ fn test_stuck_since_matches_latest_stuck_transition_across_bounded_sequences() {
             let mut ctx = JobContext::new("Test", "Randomized stuck_since test");
 
             for step in 0..sequence_len {
-                apply_random_step(&mut ctx, &mut rng, case_idx, step);
+                apply_random_step(&mut ctx, &mut rng, case_idx, step)
+                    .expect("random step should apply a valid transition");
             }
 
             let expected = ctx

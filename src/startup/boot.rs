@@ -86,6 +86,8 @@ fn build_boot_info(
 
 #[cfg(test)]
 mod tests {
+    //! Unit tests for boot-phase status output and snapshot rendering.
+
     use std::io::Read;
 
     use gag::BufferRedirect;

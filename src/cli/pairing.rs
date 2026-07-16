@@ -102,6 +102,8 @@ fn run_approve(store: &PairingStore, channel: &str, code: &str) -> Result<(), St
 
 #[cfg(test)]
 mod tests {
+    //! Unit tests for pairing store CLI operations.
+
     use super::*;
     use tempfile::TempDir;
 

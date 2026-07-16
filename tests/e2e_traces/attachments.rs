@@ -36,22 +36,26 @@ fn make_attachment(kind: AttachmentKind) -> IncomingAttachment {
     }
 }
 
-async fn build_rig(subdir: &str, fixture: &str) -> (LlmTrace, TestRig) {
+async fn build_rig(subdir: &str, fixture: &str) -> anyhow::Result<(LlmTrace, TestRig)> {
+    use anyhow::Context as _;
+
     let trace = LlmTrace::from_file_async(fixture_path(subdir, fixture))
         .await
-        .unwrap_or_else(|_| panic!("failed to load fixture: {subdir}/{fixture}"));
+        .with_context(|| format!("failed to load fixture: {subdir}/{fixture}"))?;
     let rig = TestRigBuilder::new()
         .with_trace(trace.clone())
         .build()
         .await
-        .expect("failed to build test rig");
-    (trace, rig)
+        .context("failed to build test rig")?;
+    Ok((trace, rig))
 }
 
 /// Audio attachment with transcript reaches the LLM as augmented text.
 #[tokio::test]
 async fn attachment_audio_transcript_reaches_llm() {
-    let (trace, rig) = build_rig("spot", "attachment_audio_transcript.json").await;
+    let (trace, rig) = build_rig("spot", "attachment_audio_transcript.json")
+        .await
+        .expect("test rig should build");
 
     // Build a message with an audio attachment containing a transcript
     let mut att = make_attachment(AttachmentKind::Audio);
@@ -108,7 +112,9 @@ async fn attachment_audio_transcript_reaches_llm() {
 /// Image attachment with data reaches the LLM with multimodal content parts.
 #[tokio::test]
 async fn attachment_image_produces_content_parts() {
-    let (trace, rig) = build_rig("spot", "attachment_image.json").await;
+    let (trace, rig) = build_rig("spot", "attachment_image.json")
+        .await
+        .expect("test rig should build");
 
     // Build a message with an image attachment that has raw data
     let mut att = make_attachment(AttachmentKind::Image);
@@ -169,7 +175,9 @@ async fn attachment_image_produces_content_parts() {
 /// Message without attachments should have no content_parts and no augmentation.
 #[tokio::test]
 async fn no_attachments_no_augmentation() {
-    let (trace, rig) = build_rig("spot", "smoke_greeting.json").await;
+    let (trace, rig) = build_rig("spot", "smoke_greeting.json")
+        .await
+        .expect("test rig should build");
 
     rig.send_message("Hello! Introduce yourself briefly.").await;
     let responses = rig.wait_for_responses(1, DEFAULT_TIMEOUT).await;

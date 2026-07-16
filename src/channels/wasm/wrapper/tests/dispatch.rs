@@ -1,3 +1,5 @@
+//! Unit tests for WASM channel dispatch context wiring and settings writes.
+
 use std::sync::Arc;
 
 use super::super::dispatch::DispatchContext;

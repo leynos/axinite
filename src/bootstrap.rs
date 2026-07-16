@@ -152,7 +152,7 @@ pub fn save_bootstrap_env(vars: &[(&str, &str)]) -> std::io::Result<()> {
 /// shell-special characters are preserved by dotenvy.
 pub fn save_bootstrap_env_to(path: &std::path::Path, vars: &[(&str, &str)]) -> std::io::Result<()> {
     if let Some(parent) = path.parent() {
-        std::fs::create_dir_all(parent)?;
+        ambient_fs::create_dir_all(parent)?;
     }
     let mut content = String::new();
     for (key, value) in vars {
@@ -161,7 +161,7 @@ pub fn save_bootstrap_env_to(path: &std::path::Path, vars: &[(&str, &str)]) -> s
         let escaped = value.replace('\\', "\\\\").replace('"', "\\\"");
         content.push_str(&format!("{}=\"{}\"\n", key, escaped));
     }
-    std::fs::write(path, &content)?;
+    ambient_fs::write(path, &content)?;
     restrict_file_permissions(path)?;
     Ok(())
 }
@@ -181,13 +181,13 @@ pub fn upsert_bootstrap_vars_to(
     vars: &[(&str, &str)],
 ) -> std::io::Result<()> {
     if let Some(parent) = path.parent() {
-        std::fs::create_dir_all(parent)?;
+        ambient_fs::create_dir_all(parent)?;
     }
 
     let keys_being_written: std::collections::HashSet<&str> =
         vars.iter().map(|(k, _)| *k).collect();
 
-    let existing = match std::fs::read_to_string(path) {
+    let existing = match ambient_fs::read_to_string(path) {
         Ok(contents) => contents,
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => String::new(),
         Err(e) => return Err(e),
@@ -213,7 +213,7 @@ pub fn upsert_bootstrap_vars_to(
         result.push_str(&format!("{}=\"{}\"\n", key, escaped));
     }
 
-    std::fs::write(path, &result)?;
+    ambient_fs::write(path, &result)?;
     restrict_file_permissions(path)?;
     Ok(())
 }
@@ -235,14 +235,14 @@ pub fn upsert_bootstrap_var_to(
     value: &str,
 ) -> std::io::Result<()> {
     if let Some(parent) = path.parent() {
-        std::fs::create_dir_all(parent)?;
+        ambient_fs::create_dir_all(parent)?;
     }
 
     let escaped = value.replace('\\', "\\\\").replace('"', "\\\"");
     let new_line = format!("{}=\"{}\"", key, escaped);
     let prefix = format!("{}=", key);
 
-    let existing = std::fs::read_to_string(path).unwrap_or_default();
+    let existing = ambient_fs::read_to_string(path).unwrap_or_default();
 
     let mut found = false;
     let mut result = String::new();
@@ -265,7 +265,7 @@ pub fn upsert_bootstrap_var_to(
         result.push('\n');
     }
 
-    std::fs::write(path, result)?;
+    ambient_fs::write(path, result)?;
     restrict_file_permissions(path)?;
     Ok(())
 }
@@ -277,9 +277,8 @@ pub fn upsert_bootstrap_var_to(
 fn restrict_file_permissions(_path: &std::path::Path) -> std::io::Result<()> {
     #[cfg(unix)]
     {
-        use std::os::unix::fs::PermissionsExt;
-        let perms = std::fs::Permissions::from_mode(0o600);
-        std::fs::set_permissions(_path, perms)?;
+        let perms = ambient_fs::Permissions::from_mode(0o600);
+        ambient_fs::set_permissions(_path, perms)?;
     }
     Ok(())
 }

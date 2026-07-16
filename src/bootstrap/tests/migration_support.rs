@@ -50,8 +50,6 @@
 use std::collections::HashMap;
 use std::sync::Mutex;
 
-#[cfg(unix)]
-use std::os::unix::fs::PermissionsExt;
 use tempfile::{TempDir, tempdir};
 
 use crate::db::{DbFuture, SettingKey, SettingsStore, UserId};
@@ -70,7 +68,7 @@ pub(super) struct RenameFixture {
     pub(super) dir: TempDir,
     pub(super) path: std::path::PathBuf,
     #[cfg(unix)]
-    original_dir_permissions: Option<std::fs::Permissions>,
+    original_dir_permissions: Option<ambient_fs::Permissions>,
 }
 
 #[derive(Debug, Default)]
@@ -200,17 +198,17 @@ impl RenameFixture {
     }
 
     fn write_legacy_file(&self) {
-        std::fs::write(&self.path, "{}").expect("write legacy settings file");
+        ambient_fs::write(&self.path, "{}").expect("write legacy settings file");
     }
 
     #[cfg(unix)]
     fn make_dir_read_only(&mut self) {
         self.original_dir_permissions = Some(
-            std::fs::metadata(self.dir.path())
+            ambient_fs::metadata(self.dir.path())
                 .expect("read directory metadata")
                 .permissions(),
         );
-        std::fs::set_permissions(self.dir.path(), std::fs::Permissions::from_mode(0o555))
+        ambient_fs::set_permissions(self.dir.path(), ambient_fs::Permissions::from_mode(0o555))
             .expect("make directory read-only");
     }
 
@@ -225,7 +223,7 @@ impl RenameFixture {
 impl Drop for RenameFixture {
     fn drop(&mut self) {
         if let Some(permissions) = self.original_dir_permissions.take() {
-            let _ = std::fs::set_permissions(self.dir.path(), permissions);
+            let _ = ambient_fs::set_permissions(self.dir.path(), permissions);
         }
     }
 }
@@ -243,7 +241,7 @@ pub(super) fn rename_fixture() -> RenameFixture {
 
 pub(super) fn write_legacy_settings(dir: &TempDir) -> std::path::PathBuf {
     let settings_path = dir.path().join("settings.json");
-    std::fs::write(
+    ambient_fs::write(
         &settings_path,
         serde_json::json!({
             "onboard_completed": true,

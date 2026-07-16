@@ -108,10 +108,11 @@ async fn read_file_contents(target: OpenedTarget) -> Result<Vec<u8>, SkillReadFi
 
 #[cfg(target_os = "linux")]
 async fn metadata_for_opened_file(file: &tokio::fs::File) -> Result<u64, SkillReadFileError> {
-    let metadata = file
-        .metadata()
-        .await
-        .map_err(|_| io_error("File is not available for reading"))?;
+    let metadata = ambient_fs::Metadata::from_std(
+        file.metadata()
+            .await
+            .map_err(|_| io_error("File is not available for reading"))?,
+    );
     if !metadata.is_file() {
         return Err(path_not_readable());
     }
@@ -172,20 +173,18 @@ async fn open_relative_to_root(
 
     // SAFETY: `fd` was returned by a successful `openat2` call above and has
     // not been transferred elsewhere.
-    let file = std::fs::File::from(unsafe { OwnedFd::from_raw_fd(fd as libc::c_int) });
-    let file = tokio::fs::File::from_std(file);
+    let file = ambient_fs::File::from(unsafe { OwnedFd::from_raw_fd(fd as libc::c_int) });
+    let file = tokio::fs::File::from_std(file.into_std());
     let size = metadata_for_opened_file(&file).await?;
 
     Ok(OpenedTarget { file, size })
 }
 
 #[cfg(target_os = "linux")]
-async fn open_root_directory(root: &Path) -> Result<std::fs::File, SkillReadFileError> {
-    use std::os::unix::fs::OpenOptionsExt;
-
+async fn open_root_directory(root: &Path) -> Result<ambient_fs::File, SkillReadFileError> {
     let root = root.to_path_buf();
     tokio::task::spawn_blocking(move || {
-        std::fs::OpenOptions::new()
+        ambient_fs::OpenOptions::new()
             .read(true)
             .custom_flags(libc::O_CLOEXEC | libc::O_DIRECTORY | libc::O_NOFOLLOW)
             .open(root)

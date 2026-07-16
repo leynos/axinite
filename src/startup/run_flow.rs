@@ -47,6 +47,8 @@ where
 
 #[cfg(test)]
 mod tests {
+    //! Unit tests for start, run, and shutdown coordination.
+
     use std::sync::{
         Arc,
         atomic::{AtomicUsize, Ordering},

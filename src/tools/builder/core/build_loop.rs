@@ -1,5 +1,8 @@
+//! Iterative build loop for the software builder, tracking phases and
+//! detecting completion or failure signals in LLM responses.
+
 use super::*;
-use crate::llm::ToolCall;
+mod responses;
 
 const PLANNING_TEXT_LIMIT: u32 = 2;
 const COMPLETION_MARKERS: [&str; 5] = [
@@ -25,6 +28,39 @@ struct BuildLoopState {
     tools_executed: bool,
     consecutive_text_responses: u32,
     last_error: Option<String>,
+}
+
+impl BuildLoopState {
+    /// Initial loop state carrying the "Starting build process" log entry.
+    fn new(started_at: DateTime<Utc>) -> Self {
+        Self {
+            logs: vec![BuildLog {
+                timestamp: started_at,
+                phase: BuildPhase::Analyzing,
+                message: "Starting build process".into(),
+                details: None,
+            }],
+            iteration: 0,
+            current_phase: BuildPhase::Scaffolding,
+            tools_executed: false,
+            consecutive_text_responses: 0,
+            last_error: None,
+        }
+    }
+}
+
+/// Initial user directive that pushes the LLM straight into tool use rather
+/// than planning prose.
+fn initial_build_directive(inputs: &BuildLoopParams) -> ChatMessage {
+    ChatMessage::user(format!(
+        "Build the {} in directory: {}\n\n\
+         Requirements:\n- {}\n\n\
+         IMPORTANT: Use the write_file tool NOW to create Cargo.toml. \
+         Do not explain, plan, or output JSON—immediately call write_file.",
+        inputs.requirement.name,
+        inputs.project_dir.display(),
+        inputs.requirement.description
+    ))
 }
 
 struct ReasoningBundle {
@@ -192,110 +228,6 @@ impl LlmSoftwareBuilder {
         }
     }
 
-    async fn handle_text_response(
-        &self,
-        response: String,
-        inputs: &BuildLoopParams,
-        state: &mut BuildLoopState,
-        reason_ctx: &mut ReasoningContext,
-    ) -> std::ops::ControlFlow<BuildResult> {
-        reason_ctx.messages.push(ChatMessage::assistant(&response));
-
-        if !state.tools_executed {
-            state.consecutive_text_responses += 1;
-
-            if state.consecutive_text_responses >= PLANNING_TEXT_LIMIT {
-                return std::ops::ControlFlow::Break(self.fail_planning_stuck(inputs, state));
-            }
-
-            Self::push_force_tool_use(reason_ctx, state.consecutive_text_responses);
-            return std::ops::ControlFlow::Continue(());
-        }
-
-        state.consecutive_text_responses = 0;
-
-        if is_completion_signal(&response.to_lowercase()) {
-            return std::ops::ControlFlow::Break(
-                self.build_success_result(inputs, state, response).await,
-            );
-        }
-
-        reason_ctx
-            .messages
-            .push(ChatMessage::user("Continue with the next step."));
-        std::ops::ControlFlow::Continue(())
-    }
-
-    async fn handle_tool_calls(
-        &self,
-        inputs: &BuildLoopParams,
-        bundle: &mut ReasoningBundle,
-        state: &mut BuildLoopState,
-        tool_calls: Vec<ToolCall>,
-        content: Option<String>,
-    ) {
-        bundle
-            .ctx
-            .messages
-            .push(ChatMessage::assistant_with_tool_calls(
-                content,
-                tool_calls.clone(),
-            ));
-
-        for tc in tool_calls {
-            state.logs.push(BuildLog {
-                timestamp: Utc::now(),
-                phase: state.current_phase,
-                message: format!("Executing: {}", tc.name),
-                details: Some(format!("{:?}", tc.arguments)),
-            });
-
-            match self
-                .execute_build_tool(&tc.name, &tc.arguments, &inputs.project_dir)
-                .await
-            {
-                Ok(output) => {
-                    let output_str =
-                        serde_json::to_string_pretty(&output.result).unwrap_or_default();
-
-                    bundle.ctx.messages.push(ChatMessage::tool_result(
-                        &tc.id,
-                        &tc.name,
-                        output_str.clone(),
-                    ));
-
-                    state.current_phase =
-                        infer_phase_from_tool(tc.name.as_str(), &tc.arguments, state.current_phase);
-
-                    let output_lower = output_str.to_lowercase();
-                    if has_failure_marker(&output_lower) {
-                        state.last_error = Some(output_str);
-                        state.current_phase = BuildPhase::Fixing;
-                    }
-                }
-                Err(e) => {
-                    let error_msg = format!("Tool error: {}", e);
-                    state.last_error = Some(error_msg.clone());
-
-                    bundle.ctx.messages.push(ChatMessage::tool_result(
-                        &tc.id,
-                        &tc.name,
-                        format!("Error: {}", e),
-                    ));
-
-                    state.logs.push(BuildLog {
-                        timestamp: Utc::now(),
-                        phase: BuildPhase::Fixing,
-                        message: "Tool execution failed".into(),
-                        details: Some(error_msg),
-                    });
-
-                    state.current_phase = BuildPhase::Fixing;
-                }
-            }
-        }
-    }
-
     /// Execute the build loop.
     pub(super) async fn execute_build_loop(
         &self,
@@ -308,134 +240,77 @@ impl LlmSoftwareBuilder {
             requirement: requirement.clone(),
             project_dir: project_dir.to_path_buf(),
         };
-        let mut state = BuildLoopState {
-            logs: vec![BuildLog {
-                timestamp: inputs.started_at,
-                phase: BuildPhase::Analyzing,
-                message: "Starting build process".into(),
-                details: None,
-            }],
-            iteration: 0,
-            current_phase: BuildPhase::Scaffolding,
-            tools_executed: false,
-            consecutive_text_responses: 0,
-            last_error: None,
-        };
+        let mut state = BuildLoopState::new(inputs.started_at);
         let mut bundle = self.prepare_reasoning_context(&inputs).await;
-
-        // Add initial user message - directive to force immediate tool use
-        bundle.ctx.messages.push(ChatMessage::user(format!(
-            "Build the {} in directory: {}\n\n\
-             Requirements:\n- {}\n\n\
-             IMPORTANT: Use the write_file tool NOW to create Cargo.toml. \
-             Do not explain, plan, or output JSON—immediately call write_file.",
-            inputs.requirement.name,
-            inputs.project_dir.display(),
-            inputs.requirement.description
-        )));
+        bundle.ctx.messages.push(initial_build_directive(&inputs));
 
         loop {
-            state.iteration += 1;
-
-            if state.iteration > self.config.max_iterations {
-                return Ok(self.fail_max_iterations(&inputs, &mut state));
-            }
-
-            // Refresh tool definitions each iteration
-            bundle.ctx.available_tools = self.get_build_tools().await;
-
-            // Get response from LLM (may be text or tool calls)
-            let result = bundle
-                .reasoning
-                .respond_with_tools(&bundle.ctx)
-                .await
-                .map_err(|e| {
-                    AgentToolError::BuilderFailed(format!("LLM response failed: {}", e))
-                })?;
-
-            match result.result {
-                RespondResult::Text(response) => {
-                    match self
-                        .handle_text_response(response, &inputs, &mut state, &mut bundle.ctx)
-                        .await
-                    {
-                        std::ops::ControlFlow::Break(done) => return Ok(done),
-                        std::ops::ControlFlow::Continue(()) => {}
-                    }
-                }
-                RespondResult::ToolCalls {
-                    tool_calls,
-                    content,
-                } => {
-                    state.tools_executed = true;
-                    self.handle_tool_calls(&inputs, &mut bundle, &mut state, tool_calls, content)
-                        .await;
-                }
+            let outcome = self
+                .run_build_iteration(&inputs, &mut bundle, &mut state)
+                .await?;
+            if let std::ops::ControlFlow::Break(done) = outcome {
+                return Ok(done);
             }
         }
     }
 
-    /// Execute a build tool.
-    async fn execute_build_tool(
+    /// Run one iteration of the build loop: enforce the iteration budget,
+    /// refresh tool definitions, obtain the next LLM response, and dispatch it
+    /// to the text or tool-call handler. Returns `Break` with the final build
+    /// result once the loop is finished.
+    async fn run_build_iteration(
         &self,
-        tool_name: &str,
-        params: &serde_json::Value,
-        project_dir: &Path,
-    ) -> Result<ToolOutput, ToolError> {
-        let ctx = JobContext::default();
-        let project_root = project_dir.to_path_buf();
+        inputs: &BuildLoopParams,
+        bundle: &mut ReasoningBundle,
+        state: &mut BuildLoopState,
+    ) -> Result<std::ops::ControlFlow<BuildResult>, AgentToolError> {
+        state.iteration += 1;
 
-        match tool_name {
-            "read_file" => {
-                let tool = crate::tools::builtin::ReadFileTool::new().with_base_dir(project_root);
-                crate::tools::NativeTool::execute(&tool, params.clone(), &ctx).await
-            }
-            "write_file" => {
-                let tool = crate::tools::builtin::WriteFileTool::new().with_base_dir(project_root);
-                crate::tools::NativeTool::execute(&tool, params.clone(), &ctx).await
-            }
-            "list_dir" => {
-                let tool = crate::tools::builtin::ListDirTool::new().with_base_dir(project_root);
-                crate::tools::NativeTool::execute(&tool, params.clone(), &ctx).await
-            }
-            "apply_patch" => {
-                let tool = crate::tools::builtin::ApplyPatchTool::new().with_base_dir(project_root);
-                crate::tools::NativeTool::execute(&tool, params.clone(), &ctx).await
-            }
-            "shell" => {
-                let tool = crate::tools::builtin::ShellTool::new().with_working_dir(project_root);
-                crate::tools::NativeTool::execute(&tool, params.clone(), &ctx).await
-            }
-            _ => {
-                let tool = self.tools.get(tool_name).await.ok_or_else(|| {
-                    ToolError::ExecutionFailed(format!("Tool not found: {}", tool_name))
-                })?;
-                tool.execute(params.clone(), &ctx).await
-            }
+        if state.iteration > self.config.max_iterations {
+            return Ok(std::ops::ControlFlow::Break(
+                self.fail_max_iterations(inputs, state),
+            ));
         }
-    }
 
-    /// Find the build artefact based on project type.
-    async fn find_artefact(&self, requirement: &BuildRequirement, project_dir: &Path) -> PathBuf {
-        match (&requirement.software_type, &requirement.language) {
-            (SoftwareType::WasmTool, Language::Rust) => {
-                // WASM output location
-                crate::tools::wasm::wasm_artifact_path(
-                    project_dir,
-                    &requirement.name.to_string().replace('-', "_"),
+        // Refresh tool definitions each iteration
+        bundle.ctx.available_tools = self.get_build_tools().await;
+
+        // Get response from LLM (may be text or tool calls)
+        let result = bundle
+            .reasoning
+            .respond_with_tools(&bundle.ctx)
+            .await
+            .map_err(|e| AgentToolError::BuilderFailed(format!("LLM response failed: {}", e)))?;
+
+        match result.result {
+            RespondResult::Text(response) => {
+                let turn_ctx = responses::BuildTurnContext {
+                    inputs,
+                    state,
+                    reason_ctx: &mut bundle.ctx,
+                };
+                Ok(self.handle_text_response(response, turn_ctx).await)
+            }
+            RespondResult::ToolCalls {
+                tool_calls,
+                content,
+            } => {
+                state.tools_executed = true;
+                let turn_ctx = responses::BuildTurnContext {
+                    inputs,
+                    state,
+                    reason_ctx: &mut bundle.ctx,
+                };
+                self.handle_tool_calls(
+                    turn_ctx,
+                    responses::ToolCallTurn {
+                        tool_calls,
+                        content,
+                    },
                 )
+                .await;
+                Ok(std::ops::ControlFlow::Continue(()))
             }
-            (SoftwareType::CliBinary, Language::Rust) => project_dir.join(format!(
-                "target/release/{}",
-                requirement.name.to_string().replace('-', "_")
-            )),
-            (SoftwareType::Script, Language::Python) => {
-                project_dir.join(format!("{}.py", requirement.name))
-            }
-            (SoftwareType::Script, Language::Bash) => {
-                project_dir.join(format!("{}.sh", requirement.name))
-            }
-            _ => project_dir.to_path_buf(),
         }
     }
 }

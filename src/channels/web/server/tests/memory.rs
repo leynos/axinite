@@ -29,12 +29,12 @@ struct TestWorkspaceFactory;
 
 #[cfg(all(feature = "libsql", feature = "test-helpers"))]
 impl TestWorkspaceFactory {
-    async fn build(self) -> TestWorkspaceFixture {
-        let (db, temp_dir) = crate::testing::test_db().await;
-        (
+    async fn build(self) -> anyhow::Result<TestWorkspaceFixture> {
+        let (db, temp_dir) = crate::testing::test_db().await?;
+        Ok((
             std::sync::Arc::new(Workspace::new_with_db("test", db)),
             temp_dir,
-        )
+        ))
     }
 }
 
@@ -51,7 +51,10 @@ async fn test_memory_search_results_round_trip_via_read_path(
     test_gateway_state: TestGatewayStateFactory,
     test_workspace: TestWorkspaceFactory,
 ) {
-    let (workspace, _temp_dir) = test_workspace.build().await;
+    let (workspace, _temp_dir) = test_workspace
+        .build()
+        .await
+        .expect("test_db should provision a database");
     workspace
         .write("notes/test.md", "alpha needle beta")
         .await
@@ -116,7 +119,10 @@ async fn test_memory_tree_honours_depth_query(
     test_gateway_state: TestGatewayStateFactory,
     test_workspace: TestWorkspaceFactory,
 ) {
-    let (workspace, _temp_dir) = test_workspace.build().await;
+    let (workspace, _temp_dir) = test_workspace
+        .build()
+        .await
+        .expect("test_db should provision a database");
     workspace
         .write("notes/deep/test.md", "nested content")
         .await

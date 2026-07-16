@@ -3,6 +3,7 @@
 //! These tests exercise `Store` CRUD, run-history, and due-cron lease
 //! behaviour against the `try_test_pg_db` integration database.
 
+use anyhow::Context as _;
 use chrono::Utc;
 use rstest::{fixture, rstest};
 use uuid::Uuid;
@@ -70,31 +71,36 @@ fn sample_run(routine_id: Uuid) -> RoutineRun {
     }
 }
 
-async fn cleanup(store: &Store, routine_id: Uuid) {
-    let conn = store.conn().await.expect("conn should succeed");
+async fn cleanup(store: &Store, routine_id: Uuid) -> anyhow::Result<()> {
+    let conn = store.conn().await.context("conn should succeed")?;
     conn.execute(
         "DELETE FROM routine_runs WHERE routine_id = $1",
         &[&routine_id],
     )
     .await
-    .expect("delete routine_runs should succeed");
+    .context("delete routine_runs should succeed")?;
     conn.execute("DELETE FROM routines WHERE id = $1", &[&routine_id])
         .await
-        .expect("delete routines should succeed");
+        .context("delete routines should succeed")?;
+    Ok(())
 }
 
 #[fixture]
-async fn store() -> Option<Store> {
-    let backend = try_test_pg_db()
+async fn store() -> anyhow::Result<Option<Store>> {
+    let Some(backend) = try_test_pg_db()
         .await
-        .expect("unexpected Postgres test setup error")?;
-    Some(Store::from_pool(backend.pool()))
+        .context("unexpected Postgres test setup error")?
+    else {
+        return Ok(None);
+    };
+    Ok(Some(Store::from_pool(backend.pool())))
 }
 
 #[rstest]
 #[tokio::test]
-async fn routine_crud_and_run_history_round_trip(#[future] store: Option<Store>) {
-    let Some(store) = store.await else { return };
+async fn routine_crud_and_run_history_round_trip(#[future] store: anyhow::Result<Option<Store>>) {
+    let store = store.await.expect("unexpected Postgres test setup error");
+    let Some(store) = store else { return };
     let mut routine = sample_routine();
 
     store
@@ -165,8 +171,11 @@ async fn routine_crud_and_run_history_round_trip(#[future] store: Option<Store>)
 
 #[rstest]
 #[tokio::test]
-async fn list_due_cron_routines_claims_and_defers_next_fire_at(#[future] store: Option<Store>) {
-    let Some(store) = store.await else { return };
+async fn list_due_cron_routines_claims_and_defers_next_fire_at(
+    #[future] store: anyhow::Result<Option<Store>>,
+) {
+    let store = store.await.expect("unexpected Postgres test setup error");
+    let Some(store) = store else { return };
     let mut routine = sample_routine();
     routine.next_fire_at = Some(Utc::now() - chrono::Duration::minutes(1));
 
@@ -191,5 +200,7 @@ async fn list_due_cron_routines_claims_and_defers_next_fire_at(#[future] store: 
         .expect("claimed routine should retain a recoverable lease time");
     assert!(leased_until > Utc::now());
 
-    cleanup(&store, routine.id).await;
+    cleanup(&store, routine.id)
+        .await
+        .expect("cleanup should succeed");
 }

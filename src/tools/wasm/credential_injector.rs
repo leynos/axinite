@@ -217,8 +217,7 @@ pub(crate) fn host_matches_pattern(host: &str, pattern: &str) -> bool {
 
     // Support wildcard: *.example.com matches sub.example.com
     if let Some(suffix) = pattern.strip_prefix("*.")
-        && host.ends_with(suffix)
-        && host.len() > suffix.len()
+        && has_wildcard_suffix(host, suffix)
     {
         let prefix = &host[..host.len() - suffix.len()];
         if prefix.ends_with('.') || prefix.is_empty() {
@@ -227,6 +226,12 @@ pub(crate) fn host_matches_pattern(host: &str, pattern: &str) -> bool {
     }
 
     false
+}
+
+/// Whether `host` ends with the wildcard suffix and leaves room for a
+/// subdomain label before it.
+fn has_wildcard_suffix(host: &str, suffix: &str) -> bool {
+    host.ends_with(suffix) && host.len() > suffix.len()
 }
 
 /// Simple base64 encoding (avoids extra dependency).

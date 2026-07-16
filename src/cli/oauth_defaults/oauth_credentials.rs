@@ -1,3 +1,6 @@
+//! Built-in OAuth client credentials bundled with the CLI, with
+//! compile-time environment overrides for provider defaults.
+
 /// Built-in OAuth credentials bundled with the CLI for desktop-style flows.
 pub struct OAuthCredentials {
     pub client_id: &'static str,

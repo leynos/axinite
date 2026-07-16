@@ -7,7 +7,9 @@ use std::sync::Arc;
 
 use crate::secrets::SecretsStore;
 use crate::tools::mcp::config::{EffectiveTransport, McpServerConfig};
-use crate::tools::mcp::{McpClient, McpProcessManager, McpSessionManager, McpTransport};
+use crate::tools::mcp::{
+    McpClient, McpProcessManager, McpSessionManager, McpTransport, TransportClientOptions,
+};
 
 /// Error returned when MCP client creation fails.
 #[derive(Debug, thiserror::Error)]
@@ -41,14 +43,14 @@ pub async fn create_client_from_config(
                     reason: e.to_string(),
                 })?;
 
-            Ok(McpClient::new_with_transport(
-                &server_name,
-                transport as Arc<dyn McpTransport>,
-                None,
+            Ok(McpClient::new_with_transport(TransportClientOptions {
+                server_name,
+                transport: transport as Arc<dyn McpTransport>,
+                session_manager: None,
                 secrets,
-                user_id,
-                Some(server),
-            ))
+                user_id: user_id.to_string(),
+                server_config: Some(server),
+            }))
         }
         #[cfg(unix)]
         EffectiveTransport::Unix { socket_path } => {
@@ -62,14 +64,14 @@ pub async fn create_client_from_config(
                 reason: e.to_string(),
             })?;
 
-            Ok(McpClient::new_with_transport(
-                &server_name,
-                Arc::new(transport) as Arc<dyn McpTransport>,
-                None,
+            Ok(McpClient::new_with_transport(TransportClientOptions {
+                server_name,
+                transport: Arc::new(transport) as Arc<dyn McpTransport>,
+                session_manager: None,
                 secrets,
-                user_id,
-                Some(server),
-            ))
+                user_id: user_id.to_string(),
+                server_config: Some(server),
+            }))
         }
         #[cfg(not(unix))]
         EffectiveTransport::Unix { .. } => {

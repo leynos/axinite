@@ -59,10 +59,12 @@ impl super::LiveWasmChannelActivation {
         Ok(RelayChannel::new_with_provider(
             client,
             crate::channels::relay::channel::RelayProvider::Slack,
-            stream_token.to_string(),
-            team_id.unwrap_or("").to_string(),
-            instance_id.to_string(),
-            self.user_id.clone(),
+            crate::channels::relay::channel::RelayIdentity {
+                stream_token: stream_token.to_string(),
+                team_id: team_id.unwrap_or("").to_string(),
+                instance_id: instance_id.to_string(),
+                user_id: self.user_id.clone(),
+            },
         )
         .with_timeouts(
             cfg.stream_timeout_secs,

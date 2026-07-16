@@ -149,6 +149,8 @@ fn extract_url(line: &str) -> Option<String> {
 
 #[cfg(test)]
 mod tests {
+    //! Unit tests for custom tunnel start-up and URL extraction.
+
     use super::*;
 
     #[tokio::test]

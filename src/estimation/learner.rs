@@ -156,6 +156,8 @@ impl Default for EstimationLearner {
 
 #[cfg(test)]
 mod tests {
+    //! Unit tests for estimation learning and adjustment factors.
+
     use super::*;
     use rust_decimal_macros::dec;
 

@@ -18,6 +18,8 @@ pub use crate::db::traits::workspace::{HybridSearchParams, InsertChunkParams};
 
 #[cfg(test)]
 mod tests {
+    //! Unit tests for database parameter newtype conversions.
+
     use rstest::rstest;
 
     use super::{SandboxEventType, SandboxJobStatus, SandboxMode, SettingKey, UserId};

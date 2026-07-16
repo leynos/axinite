@@ -22,7 +22,7 @@ pub(crate) enum StubOutput {
     Panic(&'static str),
 }
 
-/// General-purpose parameterized stub implementing [`Tool`].
+/// General-purpose parameterised stub implementing [`Tool`].
 pub(crate) struct StubTool {
     pub(crate) name: &'static str,
     pub(crate) description: String,
@@ -117,10 +117,10 @@ impl NativeTool for StubTool {
 /// `CatalogWasm` model hosted-safe catalogue entries. `ApprovalGated` models
 /// a hosted tool that must never execute without approval.
 pub(crate) enum ToolFixture {
-    CatalogueAlpha,
-    CatalogueAlphaWithDifferentPayload,
-    CatalogueBeta,
-    CatalogueWasm,
+    CatalogAlpha,
+    CatalogAlphaWithDifferentPayload,
+    CatalogBeta,
+    CatalogWasm,
     ApprovalGated,
     ContainerOnly,
 }
@@ -131,18 +131,18 @@ pub(crate) enum ToolFixture {
 /// and panic messages used throughout the remote-tool test suite.
 pub(crate) fn build_tool_fixture(kind: ToolFixture) -> Arc<dyn Tool> {
     match kind {
-        ToolFixture::CatalogueAlpha => Arc::new(StubTool::hosted(
-            "remote_tool_catalogue_fixture",
-            "Hosted-safe tool for catalogue tests",
+        ToolFixture::CatalogAlpha => Arc::new(StubTool::hosted(
+            "remote_tool_catalog_fixture",
+            "Hosted-safe tool for catalog tests",
             serde_json::json!({
                 "type":"object",
                 "properties":{"query":{"type":"string","description":"search query"}},
                 "required":["query"]
             }),
         )) as Arc<dyn Tool>,
-        ToolFixture::CatalogueAlphaWithDifferentPayload => Arc::new(StubTool::hosted(
-            "remote_tool_catalogue_fixture",
-            "Hosted-safe tool for catalogue tests with updated payload",
+        ToolFixture::CatalogAlphaWithDifferentPayload => Arc::new(StubTool::hosted(
+            "remote_tool_catalog_fixture",
+            "Hosted-safe tool for catalog tests with updated payload",
             serde_json::json!({
                 "type":"object",
                 "properties":{
@@ -152,18 +152,18 @@ pub(crate) fn build_tool_fixture(kind: ToolFixture) -> Arc<dyn Tool> {
                 "required":["query", "limit"]
             }),
         )) as Arc<dyn Tool>,
-        ToolFixture::CatalogueBeta => Arc::new(StubTool::hosted(
-            "remote_tool_catalogue_fixture_beta",
-            "Second hosted-safe tool for catalogue tests",
+        ToolFixture::CatalogBeta => Arc::new(StubTool::hosted(
+            "remote_tool_catalog_fixture_beta",
+            "Second hosted-safe tool for catalog tests",
             serde_json::json!({
                 "type":"object",
                 "properties":{"path":{"type":"string"}},
                 "required":["path"]
             }),
         )) as Arc<dyn Tool>,
-        ToolFixture::CatalogueWasm => Arc::new(StubTool::hosted_wasm(
-            "remote_tool_catalogue_fixture_wasm",
-            "Hosted-safe WASM tool for catalogue tests",
+        ToolFixture::CatalogWasm => Arc::new(StubTool::hosted_wasm(
+            "remote_tool_catalog_fixture_wasm",
+            "Hosted-safe WASM tool for catalog tests",
             serde_json::json!({
                 "type":"object",
                 "properties":{"repository":{"type":"string","description":"repository name"}},

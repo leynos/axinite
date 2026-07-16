@@ -19,162 +19,9 @@ use crossterm::{
 use secrecy::SecretString;
 
 mod render;
+mod selection;
 
-/// Display a numbered menu and get user selection.
-///
-/// Returns the index (0-based) of the selected option.
-/// Pressing Enter without input selects the first option (index 0).
-///
-/// # Example
-///
-/// ```ignore
-/// let choice = select_one("Choose an option:", &["Option A", "Option B"]);
-/// ```
-pub fn select_one(prompt: &str, options: &[&str]) -> io::Result<usize> {
-    let mut stdout = io::stdout();
-
-    // Print prompt
-    writeln!(stdout, "{}", prompt)?;
-    writeln!(stdout)?;
-
-    // Print options
-    for (i, option) in options.iter().enumerate() {
-        writeln!(stdout, "  [{}] {}", i + 1, option)?;
-    }
-    writeln!(stdout)?;
-
-    loop {
-        print!("> ");
-        stdout.flush()?;
-
-        let mut input = String::new();
-        io::stdin().read_line(&mut input)?;
-        let input = input.trim();
-
-        // Handle empty input as first option
-        if input.is_empty() {
-            return Ok(0);
-        }
-
-        // Parse number
-        if let Ok(num) = input.parse::<usize>()
-            && num >= 1
-            && num <= options.len()
-        {
-            return Ok(num - 1);
-        }
-
-        writeln!(
-            stdout,
-            "Invalid choice. Please enter a number 1-{}.",
-            options.len()
-        )?;
-    }
-}
-
-/// Multi-select with space to toggle, enter to confirm.
-///
-/// `options` is a slice of (label, initially_selected) tuples.
-/// Returns indices of selected options.
-///
-/// # Example
-///
-/// ```ignore
-/// let selected = select_many("Select channels:", &[
-///     ("CLI/TUI", true),
-///     ("HTTP webhook", false),
-///     ("Telegram", false),
-/// ])?;
-/// ```
-pub fn select_many(prompt: &str, options: &[(&str, bool)]) -> io::Result<Vec<usize>> {
-    if options.is_empty() {
-        return Ok(vec![]);
-    }
-
-    let mut stdout = io::stdout();
-    let mut selected: Vec<bool> = options.iter().map(|(_, s)| *s).collect();
-    let mut cursor_pos = 0;
-
-    terminal::enable_raw_mode()?;
-    execute!(stdout, cursor::Hide)?;
-
-    let result = (|| {
-        loop {
-            // Clear and redraw
-            execute!(stdout, cursor::MoveToColumn(0))?;
-
-            writeln!(stdout, "{}\r", prompt)?;
-            writeln!(stdout, "\r")?;
-            writeln!(
-                stdout,
-                "  (Use arrow keys to navigate, space to toggle, enter to confirm)\r"
-            )?;
-            writeln!(stdout, "\r")?;
-
-            for (i, (label, _)) in options.iter().enumerate() {
-                let checkbox = if selected[i] { "[x]" } else { "[ ]" };
-                let prefix = if i == cursor_pos { ">" } else { " " };
-
-                if i == cursor_pos {
-                    execute!(stdout, SetForegroundColor(Color::Cyan))?;
-                    writeln!(stdout, "  {} {} {}\r", prefix, checkbox, label)?;
-                    execute!(stdout, ResetColor)?;
-                } else {
-                    writeln!(stdout, "  {} {} {}\r", prefix, checkbox, label)?;
-                }
-            }
-
-            stdout.flush()?;
-
-            // Read key
-            if let Event::Key(KeyEvent {
-                code, modifiers, ..
-            }) = event::read()?
-            {
-                match code {
-                    KeyCode::Up => {
-                        cursor_pos = cursor_pos.saturating_sub(1);
-                    }
-                    KeyCode::Down if cursor_pos < options.len() - 1 => {
-                        cursor_pos += 1;
-                    }
-                    KeyCode::Down => {}
-                    KeyCode::Char(' ') => {
-                        selected[cursor_pos] = !selected[cursor_pos];
-                    }
-                    KeyCode::Enter => {
-                        break;
-                    }
-                    KeyCode::Char('c') if modifiers.contains(KeyModifiers::CONTROL) => {
-                        return Err(io::Error::new(io::ErrorKind::Interrupted, "Ctrl-C"));
-                    }
-                    _ => {}
-                }
-
-                // Move cursor up to redraw
-                execute!(
-                    stdout,
-                    cursor::MoveUp((options.len() + 4) as u16),
-                    terminal::Clear(ClearType::FromCursorDown)
-                )?;
-            }
-        }
-        Ok(())
-    })();
-
-    // Cleanup
-    execute!(stdout, cursor::Show)?;
-    terminal::disable_raw_mode()?;
-    writeln!(stdout)?;
-
-    result?;
-
-    Ok(selected
-        .iter()
-        .enumerate()
-        .filter_map(|(i, &s)| if s { Some(i) } else { None })
-        .collect())
-}
+pub use selection::{select_many, select_one};
 
 /// Password/secret input with hidden characters.
 ///
@@ -359,17 +206,18 @@ fn apply_secret_input_effect<W: Write>(
     effect: &SecretInputEffect,
 ) -> io::Result<()> {
     match effect {
-        SecretInputEffect::Backspace => {
-            execute!(stdout, Print("\x08 \x08"))?;
-            stdout.flush()?;
+        SecretInputEffect::Backspace => print_and_flush(stdout, "\x08 \x08"),
+        SecretInputEffect::MaskChar => print_and_flush(stdout, "*"),
+        SecretInputEffect::None | SecretInputEffect::Submit | SecretInputEffect::Interrupt => {
+            Ok(())
         }
-        SecretInputEffect::MaskChar => {
-            execute!(stdout, Print('*'))?;
-            stdout.flush()?;
-        }
-        SecretInputEffect::None | SecretInputEffect::Submit | SecretInputEffect::Interrupt => {}
     }
-    Ok(())
+}
+
+/// Print `text` and flush immediately so masked input feedback is visible.
+fn print_and_flush<W: Write>(stdout: &mut W, text: &str) -> io::Result<()> {
+    execute!(stdout, Print(text))?;
+    stdout.flush()
 }
 
 fn apply_secret_key_event(

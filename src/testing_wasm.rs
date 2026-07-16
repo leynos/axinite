@@ -46,9 +46,11 @@ pub fn github_wasm_artifact() -> anyhow::Result<PathBuf> {
         return Ok(path);
     }
 
+    // A poisoned lock only means a previous builder panicked; the build is
+    // idempotent, so recover the guard and retry rather than propagating.
     let _guard = BUILD_LOCK
         .lock()
-        .expect("github wasm build lock should not be poisoned");
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
 
     if let Some(path) =
         crate::registry::artifacts::find_wasm_artifact(&source_dir, "github-tool", "release")

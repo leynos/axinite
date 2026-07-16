@@ -194,6 +194,8 @@ impl NativeMcpTransport for StdioMcpTransport {
 
 #[cfg(test)]
 mod tests {
+    //! Unit tests for spawning MCP servers over stdio transport.
+
     use super::*;
 
     #[tokio::test]

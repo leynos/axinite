@@ -131,11 +131,7 @@ impl ClaudeBridgeRuntime {
     }
 
     fn warn_if_missing_auth(&self, env: &HashMap<String, String>, copied_auth_present: bool) {
-        let has_api_key =
-            env.contains_key("ANTHROPIC_API_KEY") || std::env::var("ANTHROPIC_API_KEY").is_ok();
-        let has_oauth = env.contains_key("CLAUDE_CODE_OAUTH_TOKEN")
-            || std::env::var("CLAUDE_CODE_OAUTH_TOKEN").is_ok();
-        if has_api_key || has_oauth || copied_auth_present {
+        if has_claude_credentials(env) || copied_auth_present {
             return;
         }
         tracing::warn!(
@@ -242,4 +238,14 @@ impl ClaudeBridgeRuntime {
             }
         }
     }
+}
+
+/// Return `true` when the child environment or the process environment
+/// carries Claude Code credentials (API key or OAuth token).
+fn has_claude_credentials(env: &HashMap<String, String>) -> bool {
+    let has_api_key =
+        env.contains_key("ANTHROPIC_API_KEY") || std::env::var("ANTHROPIC_API_KEY").is_ok();
+    let has_oauth = env.contains_key("CLAUDE_CODE_OAUTH_TOKEN")
+        || std::env::var("CLAUDE_CODE_OAUTH_TOKEN").is_ok();
+    has_api_key || has_oauth
 }

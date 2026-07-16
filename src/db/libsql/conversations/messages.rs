@@ -201,6 +201,8 @@ pub(super) async fn list_conversation_messages_scoped(
 
 #[cfg(test)]
 mod tests {
+    //! Unit tests for storing and listing conversation messages in libSQL.
+
     use rstest::rstest;
     use uuid::Uuid;
 
@@ -208,14 +210,16 @@ mod tests {
     use crate::db::{Database, NativeConversationStore};
     use crate::error::DatabaseError;
 
-    async fn local_backend() -> (LibSqlBackend, tempfile::TempDir) {
-        let tempdir = tempfile::tempdir().expect("tempdir should be created");
+    async fn local_backend() -> anyhow::Result<(LibSqlBackend, tempfile::TempDir)> {
+        use anyhow::Context as _;
+
+        let tempdir = tempfile::tempdir().context("tempdir should be created")?;
         let db_path = tempdir.path().join("messages-test.db");
         let backend = LibSqlBackend::new_local(&db_path)
             .await
-            .expect("local backend creation");
-        backend.run_migrations().await.expect("migrations");
-        (backend, tempdir)
+            .context("local backend creation")?;
+        backend.run_migrations().await.context("migrations")?;
+        Ok((backend, tempdir))
     }
 
     #[rstest]
@@ -224,7 +228,9 @@ mod tests {
     #[case::i64_overflow(i64::MAX as usize, "overflow")]
     #[tokio::test]
     async fn test_invalid_limits_rejected(#[case] limit: usize, #[case] expected_fragment: &str) {
-        let (backend, _tempdir) = local_backend().await;
+        let (backend, _tempdir) = local_backend()
+            .await
+            .expect("local backend should be created");
 
         let err =
             super::list_conversation_messages_paginated(&backend, Uuid::new_v4(), None, limit)
@@ -241,30 +247,36 @@ mod tests {
         backend: &LibSqlBackend,
         user_id: &str,
         channel: &str,
-    ) -> (Uuid, Vec<super::ConversationMessage>) {
+    ) -> anyhow::Result<(Uuid, Vec<super::ConversationMessage>)> {
+        use anyhow::Context as _;
+
         let conversation_id = backend
             .create_conversation(channel, user_id, None)
             .await
-            .expect("conversation should be created");
+            .context("conversation should be created")?;
         backend
             .add_conversation_message(conversation_id, "user", "hello")
             .await
-            .expect("user message should be added");
+            .context("user message should be added")?;
         backend
             .add_conversation_message(conversation_id, "assistant", "world")
             .await
-            .expect("assistant message should be added");
+            .context("assistant message should be added")?;
 
         let expected = super::list_conversation_messages(backend, conversation_id)
             .await
-            .expect("conversation messages should load");
-        (conversation_id, expected)
+            .context("conversation messages should load")?;
+        Ok((conversation_id, expected))
     }
 
     #[tokio::test]
     async fn test_list_conversation_messages_scoped_returns_expected_messages() {
-        let (backend, _tempdir) = local_backend().await;
-        let (conversation_id, expected) = seed_conversation(&backend, "user-1", "web").await;
+        let (backend, _tempdir) = local_backend()
+            .await
+            .expect("local backend should be created");
+        let (conversation_id, expected) = seed_conversation(&backend, "user-1", "web")
+            .await
+            .expect("conversation should be seeded");
 
         let actual =
             super::list_conversation_messages_scoped(&backend, conversation_id, "user-1", "web")
@@ -288,8 +300,12 @@ mod tests {
         #[case] user_id: &str,
         #[case] channel: &str,
     ) {
-        let (backend, _tempdir) = local_backend().await;
-        let (conversation_id, _) = seed_conversation(&backend, "user-1", "web").await;
+        let (backend, _tempdir) = local_backend()
+            .await
+            .expect("local backend should be created");
+        let (conversation_id, _) = seed_conversation(&backend, "user-1", "web")
+            .await
+            .expect("conversation should be seeded");
 
         let err =
             super::list_conversation_messages_scoped(&backend, conversation_id, user_id, channel)
@@ -305,7 +321,9 @@ mod tests {
 
     #[tokio::test]
     async fn test_list_conversation_messages_scoped_rejects_missing_conversation() {
-        let (backend, _tempdir) = local_backend().await;
+        let (backend, _tempdir) = local_backend()
+            .await
+            .expect("local backend should be created");
         let conversation_id = Uuid::new_v4();
 
         let err =

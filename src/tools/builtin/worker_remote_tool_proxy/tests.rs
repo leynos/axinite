@@ -78,7 +78,7 @@ async fn proxy_test_server() -> anyhow::Result<ProxyTestServer> {
 
 #[rstest]
 #[tokio::test]
-async fn remote_tool_execute_round_trips_catalogue_tools(
+async fn remote_tool_execute_round_trips_catalog_tools(
     #[future] proxy_test_server: anyhow::Result<ProxyTestServer>,
 ) -> anyhow::Result<()> {
     let ProxyTestServer {

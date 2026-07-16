@@ -20,7 +20,7 @@ pub fn pid_lock_path() -> PathBuf {
 pub struct PidLock {
     path: PathBuf,
     /// Held open to maintain the OS-level exclusive lock.
-    _file: std::fs::File,
+    _file: ambient_fs::File,
 }
 
 /// Errors from PID lock acquisition.
@@ -45,12 +45,12 @@ impl PidLock {
 
     /// Acquire at a specific path (for testing).
     pub(super) fn acquire_at(path: PathBuf) -> Result<Self, PidLockError> {
-        use fs4::FileExt;
-        use std::fs::OpenOptions;
         use std::io::Write;
 
+        use ambient_fs::OpenOptions;
+
         if let Some(parent) = path.parent() {
-            std::fs::create_dir_all(parent)?;
+            ambient_fs::create_dir_all(parent)?;
         }
 
         let mut file = OpenOptions::new()
@@ -62,7 +62,7 @@ impl PidLock {
 
         if let Err(error) = file.try_lock_exclusive() {
             if error.kind() == std::io::ErrorKind::WouldBlock {
-                let pid = std::fs::read_to_string(&path)
+                let pid = ambient_fs::read_to_string(&path)
                     .ok()
                     .and_then(|contents| contents.trim().parse::<u32>().ok())
                     .unwrap_or(0);
@@ -80,6 +80,6 @@ impl PidLock {
 
 impl Drop for PidLock {
     fn drop(&mut self) {
-        let _ = std::fs::remove_file(&self.path);
+        let _ = ambient_fs::remove_file(&self.path);
     }
 }

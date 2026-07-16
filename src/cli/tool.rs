@@ -143,6 +143,8 @@ async fn init_secrets_store() -> anyhow::Result<Arc<dyn SecretsStore + Send + Sy
 
 #[cfg(test)]
 mod tests {
+    //! Unit tests for size formatting and the default tools directory.
+
     use super::*;
 
     #[test]
