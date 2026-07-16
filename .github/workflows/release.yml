@@ -267,7 +267,7 @@ jobs:
         with:
           targets: wasm32-wasip2
       - name: Install cargo-component
-        uses: taiki-e/install-action@v2
+        uses: taiki-e/install-action@v2.83.0
         with:
           tool: cargo-component
       - uses: swatinem/rust-cache@v2

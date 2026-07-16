@@ -55,7 +55,7 @@ jobs:
         uses: taiki-e/install-action@cargo-nextest
 
       - name: Install cargo-component
-        uses: taiki-e/install-action@v2
+        uses: taiki-e/install-action@v2.83.0
         with:
           tool: cargo-component
 
