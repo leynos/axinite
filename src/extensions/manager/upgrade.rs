@@ -273,8 +273,7 @@ impl ExtensionManager {
             return ctx.not_in_registry_outcome();
         };
 
-        self.reinstall_upgraded(&ctx, cap_dir, &cap_path, &entry)
-            .await
+        self.reinstall_upgraded(&ctx, cap_dir, &entry).await
     }
 
     /// Resolve the capabilities directory and host WIT version for an
@@ -302,10 +301,10 @@ impl ExtensionManager {
         &self,
         ctx: &UpgradeContext<'_>,
         cap_dir: &std::path::Path,
-        cap_path: &std::path::Path,
         entry: &RegistryEntry,
     ) -> UpgradeOutcome {
         // Delete old .wasm file (keep secrets intact).
+        let cap_path = cap_dir.join(format!("{}.capabilities.json", ctx.name));
         let wasm_path = cap_dir.join(format!("{}.wasm", ctx.name));
         if wasm_path.exists()
             && let Err(e) = tokio::fs::remove_file(&wasm_path).await
@@ -314,7 +313,7 @@ impl ExtensionManager {
         }
         // Also remove old capabilities so install_from_entry can write the new one.
         if cap_path.exists() {
-            let _ = tokio::fs::remove_file(cap_path).await;
+            let _ = tokio::fs::remove_file(&cap_path).await;
         }
 
         match self.install_from_entry(entry).await {
