@@ -27,7 +27,7 @@ jobs:
         run: rustup toolchain install 1.95.0 --profile minimal
       - name: Cache Merman CLI
         id: cache-merman-cli
-        uses: actions/cache@cdf6c1fa76f9f475f3d7449005a359c84ca0f306
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9
         with:
           path: ~/.cargo/bin/merman-cli
           key: merman-cli-${{ runner.os }}-${{ runner.arch }}-${{ env.MERMAN_CLI_VERSION }}
@@ -87,7 +87,7 @@ jobs:
           -- -D warnings
       - name: Cache Whitaker installer
         if: matrix.whitaker
-        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830  # v4.3.0
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9  # v6.1.0
         with:
           path: |
             ~/.cargo/bin/whitaker-installer
