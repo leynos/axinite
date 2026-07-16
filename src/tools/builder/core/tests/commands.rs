@@ -2,38 +2,37 @@
 
 use std::path::Path;
 
+use pretty_assertions::assert_eq;
+use rstest::rstest;
+
 use super::super::Language;
 
-#[test]
-fn test_language_extension_all_variants() {
-    assert_eq!(Language::Rust.extension(), "rs");
-    assert_eq!(Language::Python.extension(), "py");
-    assert_eq!(Language::TypeScript.extension(), "ts");
-    assert_eq!(Language::JavaScript.extension(), "js");
-    assert_eq!(Language::Go.extension(), "go");
-    assert_eq!(Language::Bash.extension(), "sh");
+#[rstest]
+#[case(Language::Rust, "rs")]
+#[case(Language::Python, "py")]
+#[case(Language::TypeScript, "ts")]
+#[case(Language::JavaScript, "js")]
+#[case(Language::Go, "go")]
+#[case(Language::Bash, "sh")]
+fn test_language_extension_all_variants(#[case] language: Language, #[case] expected_ext: &str) {
+    assert_eq!(language.extension(), expected_ext);
 }
 
-#[test]
-fn test_language_build_command_compiled_returns_some() {
+#[rstest]
+#[case(Language::Rust, "cargo", vec!["build", "--release"])]
+#[case(Language::TypeScript, "npm", vec!["run", "build"])]
+#[case(Language::Go, "go", vec!["build", "./..."])]
+fn test_language_build_command_compiled_returns_some(
+    #[case] language: Language,
+    #[case] expected_program: &str,
+    #[case] expected_args: Vec<&str>,
+) {
     let dir = Path::new("/tmp/project");
-    let rust_cmd = Language::Rust.build_command(dir);
-    assert!(rust_cmd.is_some());
-    let rust_cmd = rust_cmd.expect("rust build command");
-    assert_eq!(rust_cmd.program, "cargo");
-    assert_eq!(rust_cmd.args, vec!["build", "--release"]);
-
-    let ts_cmd = Language::TypeScript.build_command(dir);
-    assert!(ts_cmd.is_some());
-    let ts_cmd = ts_cmd.expect("typescript build command");
-    assert_eq!(ts_cmd.program, "npm");
-    assert_eq!(ts_cmd.args, vec!["run", "build"]);
-
-    let go_cmd = Language::Go.build_command(dir);
-    assert!(go_cmd.is_some());
-    let go_cmd = go_cmd.expect("go build command");
-    assert_eq!(go_cmd.program, "go");
-    assert_eq!(go_cmd.args, vec!["build", "./..."]);
+    let cmd = language.build_command(dir);
+    assert!(cmd.is_some());
+    let cmd = cmd.expect("compiled language build command");
+    assert_eq!(cmd.program, expected_program);
+    assert_eq!(cmd.args, expected_args);
 }
 
 #[test]
@@ -87,16 +86,20 @@ fn test_language_test_command_all_variants_non_empty() {
     }
 }
 
-#[test]
-fn test_language_test_command_specific_tools() {
+#[rstest]
+#[case(Language::Rust, "cargo", vec!["test"])]
+#[case(Language::Python, "python", vec!["-m", "pytest"])]
+#[case(Language::TypeScript, "npm", vec!["test"])]
+#[case(Language::JavaScript, "npm", vec!["test"])]
+#[case(Language::Go, "go", vec!["test", "./..."])]
+#[case(Language::Bash, "sh", vec!["-c", "shellcheck *.sh"])]
+fn test_language_test_command_specific_tools(
+    #[case] language: Language,
+    #[case] expected_program: &str,
+    #[case] expected_args: Vec<&str>,
+) {
     let dir = Path::new("/tmp/p");
-    assert_eq!(Language::Rust.test_command(dir).program, "cargo");
-    assert_eq!(
-        Language::Python.test_command(dir).args,
-        vec!["-m", "pytest"]
-    );
-    assert_eq!(Language::TypeScript.test_command(dir).program, "npm");
-    assert_eq!(Language::JavaScript.test_command(dir).program, "npm");
-    assert_eq!(Language::Go.test_command(dir).args, vec!["test", "./..."]);
-    assert_eq!(Language::Bash.test_command(dir).program, "sh");
+    let cmd = language.test_command(dir);
+    assert_eq!(cmd.program, expected_program);
+    assert_eq!(cmd.args, expected_args);
 }

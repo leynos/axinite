@@ -76,31 +76,7 @@ fn test_build_requirement_serde_roundtrip() {
         dependencies: vec!["serde".into(), "reqwest".into()],
         capabilities: vec!["http".into(), "workspace".into()],
     };
-    let json = serde_json::to_string(&req).expect("serialize BuildRequirement");
-    let deserialized: BuildRequirement =
-        serde_json::from_str(&json).expect("deserialize BuildRequirement");
-    assert_eq!(
-        (
-            deserialized.name,
-            deserialized.description,
-            deserialized.software_type,
-            deserialized.language,
-            deserialized.input_spec,
-            deserialized.output_spec,
-            deserialized.dependencies,
-            deserialized.capabilities,
-        ),
-        (
-            req.name,
-            req.description,
-            req.software_type,
-            req.language,
-            req.input_spec,
-            req.output_spec,
-            req.dependencies,
-            req.capabilities,
-        )
-    );
+    super::assertions::assert_build_requirement_roundtrip(&req);
 }
 
 #[test]
@@ -118,32 +94,13 @@ fn test_build_requirement_serde_optional_fields_none() {
     let json = serde_json::to_string(&req).expect("serialize BuildRequirement");
     let deserialized: BuildRequirement =
         serde_json::from_str(&json).expect("deserialize BuildRequirement");
-    assert!(deserialized.input_spec.is_none() && deserialized.output_spec.is_none());
-    assert!(deserialized.dependencies.is_empty() && deserialized.capabilities.is_empty());
+    super::assertions::assert_optional_fields_none(&deserialized);
 }
 
 #[test]
 fn test_builder_config_default_sensible_values() {
     let config = BuilderConfig::default();
-    assert!(
-        config.max_iterations > 0 && !config.timeout.is_zero() && config.timeout.as_secs() >= 60,
-        "defaults should provide a positive iteration cap and non-trivial timeout"
-    );
-    assert!(
-        config.validate_wasm && config.run_tests && config.auto_register,
-        "validation, tests, and registration should default to enabled"
-    );
-    assert!(
-        !config.cleanup_on_failure && config.wasm_output_dir.is_none(),
-        "cleanup should stay disabled and wasm_output_dir should default to None"
-    );
-    assert!(
-        config
-            .build_dir
-            .to_string_lossy()
-            .contains("ironclaw-builds"),
-        "build_dir should contain 'ironclaw-builds'"
-    );
+    super::assertions::assert_builder_config_defaults(&config);
 }
 
 #[test]
