@@ -40,7 +40,7 @@ The key requirement is that policy evaluation must be:
 
 ## Decision drivers
 
-- Axinite already uses WebAssembly (WASM) (via `wasmtime`) as a core
+- IronClaw already uses WebAssembly (WASM) (via `wasmtime`) as a core
   isolation boundary for tool execution. [^1] Adding WASM-compiled policy
   evaluation reuses the same runtime dependency and operational model.
 - RFC 0006 explicitly recommends Rego over Starlark for enforcement,
@@ -75,7 +75,7 @@ Rust integration is available through multiple paths:
   coverage of OPA v1.2.0, ~10x faster than OPA Go on benchmarks),
   MIT-licensed. Does not require WASM compilation. [^8]
 - **Direct `wasmtime` integration**: load the OPA-compiled WASM module
-  directly via Axinite's existing `wasmtime` infrastructure.
+  directly via IronClaw's existing `wasmtime` infrastructure.
 
 ### Option B: Starlark
 
@@ -93,7 +93,7 @@ control (RBAC) and attribute-based access control (ABAC) but is less
 flexible for the kinds of structured-input policy evaluation that
 intent contracts require (e.g. provenance-label checks, sink-promotion
 constraints). Cedar's Rust SDK is well-maintained but adds a new
-dependency with a different operational model from Axinite's existing
+dependency with a different operational model from IronClaw's existing
 WASM infrastructure. [^9]
 
 ### Option D: Custom Rust DSL
