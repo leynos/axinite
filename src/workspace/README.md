@@ -1,8 +1,7 @@
 # Workspace & Memory System
 
 Inspired by [OpenClaw](https://github.com/openclaw/openclaw), the workspace
-provides persistent memory for agents with a flexible filesystem-like
-structure.
+provides persistent memory for agents with a flexible filesystem-like structure.
 
 ## Key Principles
 
@@ -86,8 +85,8 @@ Combines full-text search and vector similarity using Reciprocal Rank Fusion:
 score(d) = Σ 1/(k + rank(d)) for each method where d appears
 ```
 
-Default k=60. Results from both methods are combined, with documents
-appearing in both getting boosted scores.
+Default k=60. Results from both methods are combined, with documents appearing
+in both getting boosted scores.
 
 **Backend differences:**
 

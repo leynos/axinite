@@ -57,14 +57,14 @@ The repository uses several recurring test forms.
 Table 1. Main test forms and where they fit.
 
 <!-- markdownlint-disable MD013 -->
-| Test form | Typical location | Primary purpose |
-| --------- | ---------------- | --------------- |
-| Unit tests | inline `#[cfg(test)]` modules under `src/` | Verify small behaviour, invariants, and edge cases close to the implementation |
-| Integration tests | `tests/*.rs` | Exercise public runtime behaviour across modules |
-| Feature-gated integration tests | `tests/*.rs` with PostgreSQL or other external dependencies | Exercise paths that require backend-specific or service-specific setup |
-| Browser E2E tests | `tests/e2e/` | Validate the web gateway and user-visible flows against a live binary |
-| Trace-driven end-to-end tests | Rust tests backed by `tests/fixtures/llm_traces/` | Replay deterministic agent loops without calling a live large language model (LLM) |
-| Channel/tool-specific tests | standalone crates such as `channels-src/telegram/` | Verify extension and channel behaviour outside the root crate |
+| Test form                       | Typical location                                            | Primary purpose                                                                    |
+| ------------------------------- | ----------------------------------------------------------- | ---------------------------------------------------------------------------------- |
+| Unit tests                      | inline `#[cfg(test)]` modules under `src/`                  | Verify small behaviour, invariants, and edge cases close to the implementation     |
+| Integration tests               | `tests/*.rs`                                                | Exercise public runtime behaviour across modules                                   |
+| Feature-gated integration tests | `tests/*.rs` with PostgreSQL or other external dependencies | Exercise paths that require backend-specific or service-specific setup             |
+| Browser E2E tests               | `tests/e2e/`                                                | Validate the web gateway and user-visible flows against a live binary              |
+| Trace-driven end-to-end tests   | Rust tests backed by `tests/fixtures/llm_traces/`           | Replay deterministic agent loops without calling a live large language model (LLM) |
+| Channel/tool-specific tests     | standalone crates such as `channels-src/telegram/`          | Verify extension and channel behaviour outside the root crate                      |
 <!-- markdownlint-enable MD013 -->
 
 ### 2.4 Determinism-first test assets
@@ -85,9 +85,9 @@ provider.
 ### 2.6 Routine and heartbeat test helpers
 
 The `tests/support/routines.rs` module provides shared helpers for E2E tests
-that exercise the routine engine and heartbeat runner. These helpers are
-gated behind the `libsql` feature and use `TraceLlm` for deterministic
-execution without live LLM calls.
+that exercise the routine engine and heartbeat runner. These helpers are gated
+behind the `libsql` feature and use `TraceLlm` for deterministic execution
+without live LLM calls.
 
 #### `create_test_db() -> Result<(Arc<dyn Database>, TempDir), Box<dyn std::error::Error>>`
 
@@ -109,25 +109,24 @@ All guardrails use permissive defaults (no cooldown, max 5 concurrent).
 
 #### `make_test_incoming_message(content: &str) -> IncomingMessage`
 
-Builds a minimal `IncomingMessage` for event-trigger tests. The message has
-a unique ID, default user/channel values, and the provided content.
+Builds a minimal `IncomingMessage` for event-trigger tests. The message has a
+unique ID, default user/channel values, and the provided content.
 
 #### `make_minimal_engine(trace: LlmTrace, db: Arc<dyn Database>, ws: Arc<Workspace>) -> (Arc<RoutineEngine>, Receiver<OutgoingResponse>)`
 
-Builds a minimal `RoutineEngine` from a `TraceLlm` and returns both the
-engine and the notification receiver. This allows tests to receive routine
-completion notifications without duplicating engine construction.
+Builds a minimal `RoutineEngine` from a `TraceLlm` and returns both the engine
+and the notification receiver. This allows tests to receive routine completion
+notifications without duplicating engine construction.
 
 #### `SystemEventSpec<'a>`
 
 Describes a system event to be emitted in tests. Used with
-`assert_system_event_count` to verify that system event triggers fire
-correctly.
+`assert_system_event_count` to verify that system event triggers fire correctly.
 
 #### `register_github_issue_routine(db: &Arc<dyn Database>, engine: &RoutineEngine) -> Routine`
 
-Helper for system event tests that registers a GitHub issue-opened routine
-with a filter for the `nearai/ironclaw` repository.
+Helper for system event tests that registers a GitHub issue-opened routine with
+a filter for the `nearai/ironclaw` repository.
 
 #### `assert_system_event_count(engine: &RoutineEngine, spec: SystemEventSpec<'_>, expected: usize, msg: &str)`
 
@@ -186,16 +185,16 @@ The `Makefile` is the primary local execution surface.
 Table 2. Core local validation commands.
 
 <!-- markdownlint-disable MD013 -->
-| Command | Purpose |
-| ------- | ------- |
-| `make check-fmt` | Check Rust formatting for the root workspace and the GitHub WebAssembly (WASM) tool crate |
-| `make typecheck` | Run `cargo check` across default, libSQL-only, and all-features host configurations |
-| `make lint` | Run `cargo clippy` with warnings denied across the same feature matrix |
-| `make test` | Build the GitHub WASM tool, run `cargo nextest run --workspace`, and run the GitHub tool crate tests |
-| `make all` | Run `check-fmt`, `typecheck`, `lint`, and `test` together |
-| `make test-matrix` | Run a broader host test matrix, including default, libSQL-only, and explicit `postgres,libsql,html-to-markdown` coverage |
-| `make test-cargo` | Use plain `cargo test` instead of `cargo-nextest` for harness comparison |
-| `make test-matrix-cargo` | Run the broader matrix with `cargo test` rather than `cargo-nextest` |
+| Command                  | Purpose                                                                                                                  |
+| ------------------------ | ------------------------------------------------------------------------------------------------------------------------ |
+| `make check-fmt`         | Check Rust formatting for the root workspace and the GitHub WebAssembly (WASM) tool crate                                |
+| `make typecheck`         | Run `cargo check` across default, libSQL-only, and all-features host configurations                                      |
+| `make lint`              | Run `cargo clippy` with warnings denied across the same feature matrix                                                   |
+| `make test`              | Build the GitHub WASM tool, run `cargo nextest run --workspace`, and run the GitHub tool crate tests                     |
+| `make all`               | Run `check-fmt`, `typecheck`, `lint`, and `test` together                                                                |
+| `make test-matrix`       | Run a broader host test matrix, including default, libSQL-only, and explicit `postgres,libsql,html-to-markdown` coverage |
+| `make test-cargo`        | Use plain `cargo test` instead of `cargo-nextest` for harness comparison                                                 |
+| `make test-matrix-cargo` | Run the broader matrix with `cargo test` rather than `cargo-nextest`                                                     |
 <!-- markdownlint-enable MD013 -->
 
 The developer guide remains the canonical reference for prerequisites and
@@ -327,8 +326,7 @@ the main PR gates.
 
 ### 6.1 Coverage helper
 
-`scripts/coverage.sh` provides a local coverage path based on
-`cargo-llvm-cov`.
+`scripts/coverage.sh` provides a local coverage path based on `cargo-llvm-cov`.
 
 - By default, it runs library tests only for speed.
 - It can filter to specific tests or modules.
@@ -373,14 +371,14 @@ The intended workflow is layered.
 Table 3. Suggested validation depth by change type.
 
 <!-- markdownlint-disable MD013 -->
-| Change type | Recommended local path |
-| ----------- | ---------------------- |
-| Small Rust logic change with no feature impact | `make check-fmt`, `make lint`, targeted Rust test, then `make test` if broader impact exists |
-| Backend or feature-flag change | `make all` or at minimum `make typecheck`, `make lint`, and `make test-matrix` |
-| WIT, WASM tool, or channel work | relevant local Rust tests plus `make build-github-tool-wasm`, channel build scripts, and WIT compatibility checks |
-| Web gateway work | relevant Rust tests plus `pytest tests/e2e/` or a narrowed E2E scenario set |
-| Bug fix | matching regression test plus the normal validation path for the touched subsystem |
-| Coverage investigation | `scripts/coverage.sh` or the CI coverage workflow model |
+| Change type                                    | Recommended local path                                                                                            |
+| ---------------------------------------------- | ----------------------------------------------------------------------------------------------------------------- |
+| Small Rust logic change with no feature impact | `make check-fmt`, `make lint`, targeted Rust test, then `make test` if broader impact exists                      |
+| Backend or feature-flag change                 | `make all` or at minimum `make typecheck`, `make lint`, and `make test-matrix`                                    |
+| WIT, WASM tool, or channel work                | relevant local Rust tests plus `make build-github-tool-wasm`, channel build scripts, and WIT compatibility checks |
+| Web gateway work                               | relevant Rust tests plus `pytest tests/e2e/` or a narrowed E2E scenario set                                       |
+| Bug fix                                        | matching regression test plus the normal validation path for the touched subsystem                                |
+| Coverage investigation                         | `scripts/coverage.sh` or the CI coverage workflow model                                                           |
 <!-- markdownlint-enable MD013 -->
 
 The important pattern is not "run everything, every time". The strategy is to

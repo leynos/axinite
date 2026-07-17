@@ -1,9 +1,8 @@
 # Demote schema-bearing retry hints to fallback diagnostics
 
-This ExecPlan (execution plan) is a living document. The sections
-`Constraints`, `Tolerances`, `Risks`, `Progress`,
-`Surprises & Discoveries`, `Decision Log`, and
-`Outcomes & Retrospective` must be kept up to date as work proceeds.
+This ExecPlan (execution plan) is a living document. The sections `Constraints`,
+`Tolerances`, `Risks`, `Progress`, `Surprises & Discoveries`, `Decision Log`,
+and `Outcomes & Retrospective` must be kept up to date as work proceeds.
 
 Status: COMPLETED
 
@@ -39,26 +38,25 @@ consume that policy rather than each inventing their own rule.
 - Plan approved
   Acceptance criteria: the implementation stays within roadmap item `1.2.3`,
   treats this as a contract-semantics change rather than a new transport
-  feature, and does not alter the canonical `ToolDefinition` shape.
-  Sign-off: human reviewer approves this ExecPlan before implementation begins.
+  feature, and does not alter the canonical `ToolDefinition` shape. Sign-off:
+  human reviewer approves this ExecPlan before implementation begins.
 
 - Implementation complete
   Acceptance criteria: retry hints are demoted to fallback diagnostics in code,
   tests, and documentation, while parse and validation failures still produce
-  actionable recovery guidance.
-  Sign-off: implementer marks all milestones complete before final validation.
+  actionable recovery guidance. Sign-off: implementer marks all milestones
+  complete before final validation.
 
 - Validation passed
   Acceptance criteria: targeted tests, `make all`, Markdown linting, and
-  `git diff --check` all pass with retained logs.
-  Sign-off: implementer records evidence immediately before commit.
+  `git diff --check` all pass with retained logs. Sign-off: implementer records
+  evidence immediately before commit.
 
 - Docs synced
   Acceptance criteria: `docs/roadmap.md`, RFC 0002, the user's guide, and the
   relevant internal architecture document describe the same fallback-only retry
-  hint contract.
-  Sign-off: implementer completes documentation updates as the final
-  pre-commit checkpoint.
+  hint contract. Sign-off: implementer completes documentation updates as the
+  final pre-commit checkpoint.
 
 ## Repository orientation
 
@@ -157,45 +155,36 @@ The following files are the important orientation points for this feature.
 
 - Risk: comments and error strings may be updated while helper behaviour still
   embeds the full schema indiscriminately, leaving code and docs inconsistent.
-  Severity: high
-  Likelihood: medium
-  Mitigation: centralize the fallback-diagnostic wording in one helper and
-  cover it with direct tests.
+  Severity: high Likelihood: medium Mitigation: centralize the
+  fallback-diagnostic wording in one helper and cover it with direct tests.
 
 - Risk: the implementation may over-correct and strip too much detail from
-  parse or validation failures, making retry guidance vague.
-  Severity: high
-  Likelihood: medium
-  Mitigation: add unhappy-path tests that assert both the original failure
-  reason and concrete recovery guidance remain present.
+  parse or validation failures, making retry guidance vague. Severity: high
+  Likelihood: medium Mitigation: add unhappy-path tests that assert both the
+  original failure reason and concrete recovery guidance remain present.
 
 - Risk: hosted-path tests may be skipped because this roadmap item looks local
   to the WASM wrapper, which would miss the cross-boundary contract guarantee.
-  Severity: medium
-  Likelihood: medium
-  Mitigation: keep at least one worker or orchestrator behavioural assertion in
-  scope to prove hosted flows still rely on proactive advertisement.
+  Severity: medium Likelihood: medium Mitigation: keep at least one worker or
+  orchestrator behavioural assertion in scope to prove hosted flows still rely
+  on proactive advertisement.
 
 - Risk: introducing `rstest-bdd` for the first time in this subsystem may add
-  more scaffolding than signal.
-  Severity: medium
-  Likelihood: high
-  Mitigation: perform an explicit proportionality check and document the
-  outcome in `Decision Log` before adding new BDD harness code.
+  more scaffolding than signal. Severity: medium Likelihood: high Mitigation:
+  perform an explicit proportionality check and document the outcome in
+  `Decision Log` before adding new BDD harness code.
 
 - Risk: documentation drift is likely because roadmap, RFC, user's guide, and
   architecture references all speak about adjacent parts of the same contract.
-  Severity: medium
-  Likelihood: high
-  Mitigation: treat documentation synchronization as its own milestone, not a
-  final cleanup task.
+  Severity: medium Likelihood: high Mitigation: treat documentation
+  synchronization as its own milestone, not a final cleanup task.
 
 ## Milestone 1: confirm the contract boundary and desired failure language
 
 Start by making the intended rule explicit in code-facing terms.
 
-1. Re-read RFC 0002 sections `Summary`, `Proposal` step 2, and `Migration
-   Plan` step 4 while examining the current `build_tool_hint()` and
+1. Re-read RFC 0002 sections `Summary`, `Proposal` step 2, and `Migration Plan`
+   step 4 while examining the current `build_tool_hint()` and
    `ToolReturnedError` wording.
 2. Record the exact before/after contract:
    proactive schema advertisement remains canonical, and the failure path only
@@ -242,9 +231,8 @@ Lock the new rule down with tests before wider refactoring.
 ### Unit and integration coverage with `rstest`
 
 1. Extend `src/tools/wasm/wrapper/metadata.rs` tests with direct assertions for
-   the fallback helper:
-   empty export case, truncated export case, and recovery wording that points
-   back to the advertised schema.
+   the fallback helper: empty export case, truncated export case, and recovery
+   wording that points back to the advertised schema.
 2. Extend `src/tools/wasm/error.rs` tests so the display string proves the
    label and wording now describe fallback guidance rather than the primary
    contract.
@@ -383,8 +371,8 @@ documentation all match the intended contract.
 
 - 2026-04-10T22:02:24+02:00 The user request referenced
   `docs/axinite-architecture-summary.md`, but this checkout contains
-  `docs/axinite-architecture-overview.md` instead. This plan therefore uses
-  the overview plus `docs/worker-orchestrator-contract.md` as the relevant
+  `docs/axinite-architecture-overview.md` instead. This plan therefore uses the
+  overview plus `docs/worker-orchestrator-contract.md` as the relevant
   architecture references.
 - 2026-04-10T22:02:24+02:00 `src/tools/wasm/wrapper.rs` already contains a
   comment stating the hint is supplemental recovery guidance, but
@@ -408,17 +396,16 @@ documentation all match the intended contract.
   regression, and synchronized documentation updates. No transport, WIT, or
   hosted-catalogue shape changes were required.
 - 2026-04-13T13:29:00+02:00 Review follow-up identified that the GitHub WASM
-  wrapper fixture had been duplicated across `wrapper.rs` and
-  `metadata.rs`, and that the malformed-call regression asserted too much of
-  the guest's exact validation wording.
+  wrapper fixture had been duplicated across `wrapper.rs` and `metadata.rs`,
+  and that the malformed-call regression asserted too much of the guest's exact
+  validation wording.
 
 ## Decision Log
 
 - 2026-04-10T22:02:24+02:00 Use the existing WASM wrapper plus metadata helper
-  as the inward policy boundary for fallback diagnostics.
-  Rationale: this keeps contract semantics close to the domain rule, avoids
-  adapter drift, and follows the narrow `hexagonal-architecture` guidance
-  requested for this task.
+  as the inward policy boundary for fallback diagnostics. Rationale: this keeps
+  contract semantics close to the domain rule, avoids adapter drift, and
+  follows the narrow `hexagonal-architecture` guidance requested for this task.
 - 2026-04-10T22:02:24+02:00 Treat `docs/worker-orchestrator-contract.md` as the
   primary internally facing document for this change, with
   `docs/axinite-architecture-overview.md` as the higher-level companion.
@@ -426,10 +413,10 @@ documentation all match the intended contract.
   boundary should say that failure hints are supplemental to advertised tool
   definitions.
 - 2026-04-10T22:02:24+02:00 Require an explicit proportionality check before
-  adding `rstest-bdd` scaffolding.
-  Rationale: the user asked for behavioural tests where applicable, but the
-  current subsystem has no visible BDD harness. The plan must preserve quality
-  without forcing a broader test-framework rollout into a narrow contract task.
+  adding `rstest-bdd` scaffolding. Rationale: the user asked for behavioural
+  tests where applicable, but the current subsystem has no visible BDD harness.
+  The plan must preserve quality without forcing a broader test-framework
+  rollout into a narrow contract task.
 - 2026-04-13T11:12:00+02:00 Keep behavioural coverage in the existing `rstest`
   suites and do not add `rstest-bdd` scaffolding for this roadmap item.
   Rationale: the workspace has no existing BDD harness, so introducing one
@@ -437,22 +424,20 @@ documentation all match the intended contract.
   semantics change.
 - 2026-04-13T12:54:00+02:00 Implement fallback guidance as a short imperative
   that points back to the advertised schema, then append truncated guest
-  metadata only as optional diagnostic context.
-  Rationale: this preserves actionable recovery for malformed first calls while
-  making the pre-advertised `ToolDefinition.parameters` contract unmistakably
-  primary.
+  metadata only as optional diagnostic context. Rationale: this preserves
+  actionable recovery for malformed first calls while making the pre-advertised
+  `ToolDefinition.parameters` contract unmistakably primary.
 - 2026-04-13T13:18:00+02:00 Keep the existing hosted behavioural assertions as
   the cross-boundary proof point and add one focused wrapper regression for the
-  malformed first-call path.
-  Rationale: the hosted catalogue tests already prove that workers and the
-  orchestrator advertise the canonical schema before execution, so this slice
-  only needed one local failure-path test to lock the fallback wording down.
+  malformed first-call path. Rationale: the hosted catalogue tests already
+  prove that workers and the orchestrator advertise the canonical schema before
+  execution, so this slice only needed one local failure-path test to lock the
+  fallback wording down.
 - 2026-04-13T13:29:00+02:00 Centralize the GitHub WASM wrapper test setup in
   `src/testing` and relax the malformed-call regression to assert contract
-  stability rather than the guest's precise validation string.
-  Rationale: this keeps fixture wiring from diverging between modules and
-  makes the regression resilient to future schema or guest-error wording
-  changes.
+  stability rather than the guest's precise validation string. Rationale: this
+  keeps fixture wiring from diverging between modules and makes the regression
+  resilient to future schema or guest-error wording changes.
 
 ## Outcomes & Retrospective
 

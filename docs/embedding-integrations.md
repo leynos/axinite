@@ -12,9 +12,9 @@
   workspace memory.
 - **Precedence:** The code in `src/workspace/`, `src/config/`, `src/app.rs`,
   `src/cli/`, and `src/db/` is the source of truth. The operator-facing
-  command-line and environment reference remains
-  `docs/configuration-guide.md`, and the backend-specific persistence reference
-  remains `docs/database-integrations.md`.
+  command-line and environment reference remains `docs/configuration-guide.md`,
+  and the backend-specific persistence reference remains
+  `docs/database-integrations.md`.
 
 ## 1. Design scope
 
@@ -103,13 +103,13 @@ The central interface is the `EmbeddingProvider` trait.
 
 Table 1. `EmbeddingProvider` surface and current meaning.
 
-| Method | Purpose | Current use in axinite |
-| -------- | --------- | ------------------------ |
-| `dimension()` | Reports the expected vector width. | Used for configuration coherence and provider metadata. |
-| `model_name()` | Reports the upstream model identifier. | Used for diagnostics and logging. |
-| `max_input_length()` | Reports the maximum accepted character length. | Enforced before each provider call. |
-| `embed(text)` | Generates one embedding for one text input. | Used by query-time search, document reindexing, and background backfill. |
-| `embed_batch(texts)` | Generates embeddings for multiple texts. | Implemented by real adapters, but not currently used by the live workspace paths. |
+| Method               | Purpose                                        | Current use in axinite                                                            |
+| -------------------- | ---------------------------------------------- | --------------------------------------------------------------------------------- |
+| `dimension()`        | Reports the expected vector width.             | Used for configuration coherence and provider metadata.                           |
+| `model_name()`       | Reports the upstream model identifier.         | Used for diagnostics and logging.                                                 |
+| `max_input_length()` | Reports the maximum accepted character length. | Enforced before each provider call.                                               |
+| `embed(text)`        | Generates one embedding for one text input.    | Used by query-time search, document reindexing, and background backfill.          |
+| `embed_batch(texts)` | Generates embeddings for multiple texts.       | Implemented by real adapters, but not currently used by the live workspace paths. |
 
 The trait is small on purpose. Axinite does not currently model provider-side
 batch sizing rules, token accounting, retry policies, or streaming behaviour as
@@ -122,13 +122,13 @@ All provider adapters normalize failures into `EmbeddingError`.
 
 Table 2. Shared embedding error model.
 
-| Variant | Meaning |
-| --------- | --------- |
-| `HttpError(String)` | Transport failure or non-success upstream response that is not promoted into a more specific variant. |
-| `InvalidResponse(String)` | The upstream response body did not match the expected schema or shape. |
-| `RateLimited { retry_after }` | The upstream service returned a throttling response and optionally exposed `retry-after`. |
-| `AuthFailed` | Authentication failed, usually because the upstream returned HTTP `401` or the NEAR AI session token could not be loaded. |
-| `TextTooLong { length, max }` | The input exceeded the provider's current maximum accepted character count. |
+| Variant                       | Meaning                                                                                                                   |
+| ----------------------------- | ------------------------------------------------------------------------------------------------------------------------- |
+| `HttpError(String)`           | Transport failure or non-success upstream response that is not promoted into a more specific variant.                     |
+| `InvalidResponse(String)`     | The upstream response body did not match the expected schema or shape.                                                    |
+| `RateLimited { retry_after }` | The upstream service returned a throttling response and optionally exposed `retry-after`.                                 |
+| `AuthFailed`                  | Authentication failed, usually because the upstream returned HTTP `401` or the NEAR AI session token could not be loaded. |
+| `TextTooLong { length, max }` | The input exceeded the provider's current maximum accepted character count.                                               |
 
 This shared error model is what lets the workspace treat provider failures as
 operational issues rather than as backend-specific control flow. The workspace
@@ -164,12 +164,12 @@ than a startup error.
 
 Table 3. Supported embedding providers in the current runtime.
 
-| Provider string | Adapter type | Default model | Default dimension | Auth shape | Endpoint shape |
-| ----------------- | -------------- | --------------- | ------------------- | ------------ | ---------------- |
-| `openai` | `OpenAiEmbeddings` | `text-embedding-3-small` | `1536` | `OPENAI_API_KEY` bearer token | `POST https://api.openai.com/v1/embeddings` |
-| `nearai` | `NearAiEmbeddings` | `text-embedding-3-small` | `1536` | Session token from `SessionManager` | `POST {base_url}/v1/embeddings` |
-| `ollama` | `OllamaEmbeddings` | `nomic-embed-text` | `768` | No separate credential in this layer | `POST {base_url}/api/embed` |
-| test-only | `MockEmbeddings` | none | caller supplied | none | no external HTTP call |
+| Provider string | Adapter type       | Default model            | Default dimension | Auth shape                           | Endpoint shape                              |
+| --------------- | ------------------ | ------------------------ | ----------------- | ------------------------------------ | ------------------------------------------- |
+| `openai`        | `OpenAiEmbeddings` | `text-embedding-3-small` | `1536`            | `OPENAI_API_KEY` bearer token        | `POST https://api.openai.com/v1/embeddings` |
+| `nearai`        | `NearAiEmbeddings` | `text-embedding-3-small` | `1536`            | Session token from `SessionManager`  | `POST {base_url}/v1/embeddings`             |
+| `ollama`        | `OllamaEmbeddings` | `nomic-embed-text`       | `768`             | No separate credential in this layer | `POST {base_url}/api/embed`                 |
+| test-only       | `MockEmbeddings`   | none                     | caller supplied   | none                                 | no external HTTP call                       |
 
 Only the first three rows are operator-facing runtime providers. The mock
 provider exists to support deterministic tests and should not be described as a
@@ -178,8 +178,8 @@ user-selectable deployment option.
 ### 4.2 OpenAI
 
 `OpenAiEmbeddings` is the direct adapter for OpenAI's embeddings API. It uses
-bearer authentication from `OPENAI_API_KEY` and posts one or more input texts
-to `https://api.openai.com/v1/embeddings`.
+bearer authentication from `OPENAI_API_KEY` and posts one or more input texts to
+`https://api.openai.com/v1/embeddings`.
 
 The implementation includes built-in constructors for:
 
@@ -213,13 +213,12 @@ the OpenAI adapter, it treats HTTP `401` as `AuthFailed` and HTTP `429` as
 
 `OllamaEmbeddings` is the local adapter for Ollama's embedding endpoint. It
 posts to `{base_url}/api/embed`, defaults to `nomic-embed-text` at dimension
-`768`, and supports custom model and dimension overrides through
-`with_model()`.
+`768`, and supports custom model and dimension overrides through `with_model()`.
 
 This adapter behaves slightly differently from the cloud-backed ones. After it
 parses the upstream response, it validates that every returned vector has the
-configured dimension. If any vector width differs, it returns
-`InvalidResponse` instead of storing potentially incompatible data.
+configured dimension. If any vector width differs, it returns `InvalidResponse`
+instead of storing potentially incompatible data.
 
 Ollama is also the only currently supported runtime path that does not require
 an external credential in the embedding config layer.
@@ -243,14 +242,14 @@ environment variables.
 
 Table 4. Embedding-specific config surface.
 
-| Setting | Meaning |
-| --------- | --------- |
-| `EMBEDDING_ENABLED` | Enables or disables embedding generation and query-time vector search. |
-| `EMBEDDING_PROVIDER` | Selects `openai`, `nearai`, or `ollama`. |
-| `EMBEDDING_MODEL` | Selects the embedding model identifier passed to the adapter. |
-| `EMBEDDING_DIMENSION` | Overrides the inferred vector width. |
-| `OLLAMA_BASE_URL` | Selects the Ollama base URL, and also serves other Ollama-backed subsystems. |
-| `OPENAI_API_KEY` | Supplies the OpenAI credential when the OpenAI path is used. |
+| Setting               | Meaning                                                                      |
+| --------------------- | ---------------------------------------------------------------------------- |
+| `EMBEDDING_ENABLED`   | Enables or disables embedding generation and query-time vector search.       |
+| `EMBEDDING_PROVIDER`  | Selects `openai`, `nearai`, or `ollama`.                                     |
+| `EMBEDDING_MODEL`     | Selects the embedding model identifier passed to the adapter.                |
+| `EMBEDDING_DIMENSION` | Overrides the inferred vector width.                                         |
+| `OLLAMA_BASE_URL`     | Selects the Ollama base URL, and also serves other Ollama-backed subsystems. |
+| `OPENAI_API_KEY`      | Supplies the OpenAI credential when the OpenAI path is used.                 |
 
 For the full CLI and environment reference, including precedence rules, see
 `docs/configuration-guide.md`.
@@ -301,8 +300,8 @@ Configuration validation is intentionally soft:
 - if that fallback OpenAI branch has no API key, provider creation returns
   `None` and logs a warning
 
-This makes the runtime resilient, but it also means mistyped provider names
-can silently degrade into "embeddings disabled in practice".
+This makes the runtime resilient, but it also means mistyped provider names can
+silently degrade into "embeddings disabled in practice".
 
 ## 6. Runtime usage in the application
 
@@ -326,16 +325,16 @@ Search is the main read-side sink for embeddings.
 
 Table 5. Query-time embedding consumers.
 
-| Caller | Path | Behaviour |
-| -------- | ------ | ----------- |
-| `memory_search` tool | Agent tool layer -> `Workspace::search()` | Generates a query vector when a provider exists, otherwise performs full-text search (FTS)-only search. |
-| Web memory API | `/api/memory/search` -> `Workspace::search()` | Reuses the same workspace search behaviour as the tool path. |
-| Memory CLI | `ironclaw memory ...` -> `Workspace` | Resolves the same provider config and attaches it to a CLI-local workspace. |
+| Caller               | Path                                          | Behaviour                                                                                               |
+| -------------------- | --------------------------------------------- | ------------------------------------------------------------------------------------------------------- |
+| `memory_search` tool | Agent tool layer -> `Workspace::search()`     | Generates a query vector when a provider exists, otherwise performs full-text search (FTS)-only search. |
+| Web memory API       | `/api/memory/search` -> `Workspace::search()` | Reuses the same workspace search behaviour as the tool path.                                            |
+| Memory CLI           | `ironclaw memory ...` -> `Workspace`          | Resolves the same provider config and attaches it to a CLI-local workspace.                             |
 
 The search layer defaults to hybrid retrieval. `SearchConfig::default()`
-enables both FTS and vector search, then combines ranked
-results through Reciprocal Rank Fusion (RRF). If no provider exists, the query
-embedding is `None`, so the backend receives only the FTS side of the request.
+enables both FTS and vector search, then combines ranked results through
+Reciprocal Rank Fusion (RRF). If no provider exists, the query embedding is
+`None`, so the backend receives only the FTS side of the request.
 
 ### 6.3 Write-side chunk indexing
 
@@ -362,9 +361,10 @@ the wider host startup path.
 
 ### 6.5 Import and externally supplied embeddings
 
-OpenClaw memory import is the main path that writes embeddings without calling a
-provider adapter. It inserts the chunk first and, if the import payload already
-contains an embedding, updates the stored chunk with that vector directly.
+OpenClaw memory import is the main path that writes embeddings without calling
+a provider adapter. It inserts the chunk first and, if the import payload
+already contains an embedding, updates the stored chunk with that vector
+directly.
 
 That means the workspace schema and search paths are not tied exclusively to
 vectors generated inside axinite. They can also consume imported embeddings,
@@ -391,10 +391,10 @@ The embedding providers are backend-agnostic, but search backends are not.
 
 Table 6. Backend-specific vector search behaviour.
 
-| Backend | Vector behaviour |
-| --------- | ------------------ |
-| PostgreSQL with `pgvector` | Uses the query embedding for vector ranking and fuses that ranking with FTS results through RRF. |
-| libSQL | Attempts `vector_top_k(...)`, but falls back to FTS-only when the vector index is unavailable after the flexible-dimension migration path. |
+| Backend                    | Vector behaviour                                                                                                                           |
+| -------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------ |
+| PostgreSQL with `pgvector` | Uses the query embedding for vector ranking and fuses that ranking with FTS results through RRF.                                           |
+| libSQL                     | Attempts `vector_top_k(...)`, but falls back to FTS-only when the vector index is unavailable after the flexible-dimension migration path. |
 
 The backend-specific details and trade-offs are covered in more depth in
 `docs/database-integrations.md`. The important point here is that "provider

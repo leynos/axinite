@@ -11,6 +11,14 @@
     "MD029": { "style": "ordered" }
   },
   "ignores": [
+    // Generated release history inherited from upstream (release-plz style);
+    // entries are historical records and are not reformatted.
+    "CHANGELOG.md",
+
+    // Expected-output fixtures for the html_to_markdown converter tests;
+    // their content mirrors converter output and must not be reformatted.
+    "tests/test-pages/**",
+
     // Local virtual environments and package installs
     "**/.venv/**",
     "**/node_modules/**",

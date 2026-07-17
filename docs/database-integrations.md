@@ -30,20 +30,20 @@ the current code paths.
 
 ### 2.1 Backend selection
 
-The runtime resolves the backend through `DatabaseConfig`, then connects
-through `crate::db::connect_with_handles()`.
+The runtime resolves the backend through `DatabaseConfig`, then connects through
+`crate::db::connect_with_handles()`.
 
 Table 1. Backend selection and startup rules.
 
-| Concern | Current implementation |
-| --------- | ------------------------ |
-| Default backend | `postgres` unless `DATABASE_BACKEND` says otherwise or bootstrap auto-detects a local libSQL file |
-| Accepted backend names | `postgres`, `postgresql`, `pg`, `libsql`, `turso`, and `sqlite` |
-| PostgreSQL bootstrap requirement | `DATABASE_URL` must be present |
-| libSQL bootstrap requirement | `DATABASE_URL` is replaced with an internal placeholder; `LIBSQL_PATH` defaults to `~/.ironclaw/ironclaw.db` |
-| libSQL remote sync requirement | `LIBSQL_URL` requires `LIBSQL_AUTH_TOKEN` |
-| Auto-detection | If `DATABASE_BACKEND` is unset and `~/.ironclaw/ironclaw.db` exists, bootstrap sets `DATABASE_BACKEND=libsql` before Tokio starts |
-| Feature flags | `Cargo.toml` enables both `postgres` and `libsql` by default; each backend still lives behind its own feature gate |
+| Concern                          | Current implementation                                                                                                            |
+| -------------------------------- | --------------------------------------------------------------------------------------------------------------------------------- |
+| Default backend                  | `postgres` unless `DATABASE_BACKEND` says otherwise or bootstrap auto-detects a local libSQL file                                 |
+| Accepted backend names           | `postgres`, `postgresql`, `pg`, `libsql`, `turso`, and `sqlite`                                                                   |
+| PostgreSQL bootstrap requirement | `DATABASE_URL` must be present                                                                                                    |
+| libSQL bootstrap requirement     | `DATABASE_URL` is replaced with an internal placeholder; `LIBSQL_PATH` defaults to `~/.ironclaw/ironclaw.db`                      |
+| libSQL remote sync requirement   | `LIBSQL_URL` requires `LIBSQL_AUTH_TOKEN`                                                                                         |
+| Auto-detection                   | If `DATABASE_BACKEND` is unset and `~/.ironclaw/ironclaw.db` exists, bootstrap sets `DATABASE_BACKEND=libsql` before Tokio starts |
+| Feature flags                    | `Cargo.toml` enables both `postgres` and `libsql` by default; each backend still lives behind its own feature gate                |
 
 The main host path uses `AppBuilder::init_database()` to connect, run
 migrations, migrate legacy disk settings into the database, reload
@@ -53,8 +53,8 @@ mostly talks to `Arc<dyn Database>` rather than to concrete backend types.
 
 ### 2.2 Shared abstraction boundary
 
-The central contract is the `Database` supertrait in `src/db/mod.rs`. It
-groups narrower traits for:
+The central contract is the `Database` supertrait in `src/db/mod.rs`. It groups
+narrower traits for:
 
 - conversations and durable chat history
 - agent jobs, job actions, and language model (LLM) call accounting
@@ -72,8 +72,8 @@ retain concrete backend handles:
   connections
 
 That is why `connect_with_handles()` returns both the trait object and a
-`DatabaseHandles` bundle containing either a PostgreSQL pool or a shared
-libSQL database handle.
+`DatabaseHandles` bundle containing either a PostgreSQL pool or a shared libSQL
+database handle.
 
 ## 3. PostgreSQL and pgvector integration
 
@@ -114,8 +114,8 @@ a connection string:
 2. `pgvector` available through `pg_available_extensions`
 
 That matches the current operator expectation in the code: PostgreSQL is not
-just "any SQL server", it is specifically a PostgreSQL deployment with
-pgvector installed.
+just "any SQL server", it is specifically a PostgreSQL deployment with pgvector
+installed.
 
 ### 3.3 Workspace search path
 
@@ -123,20 +123,21 @@ The PostgreSQL workspace repository is the richer search implementation.
 
 Table 2. PostgreSQL workspace search components.
 
-| Component | Implementation |
-| ----------- | ---------------- |
-| Document store | `memory_documents` table |
-| Chunk store | `memory_chunks` table |
-| Full-text search | Generated `content_tsv` column plus a GIN index |
-| Semantic search | pgvector `embedding` column queried with cosine distance |
-| Fusion strategy | Reciprocal Rank Fusion (RRF) in Rust after separate FTS and vector queries |
+| Component        | Implementation                                                             |
+| ---------------- | -------------------------------------------------------------------------- |
+| Document store   | `memory_documents` table                                                   |
+| Chunk store      | `memory_chunks` table                                                      |
+| Full-text search | Generated `content_tsv` column plus a GIN index                            |
+| Semantic search  | pgvector `embedding` column queried with cosine distance                   |
+| Fusion strategy  | Reciprocal Rank Fusion (RRF) in Rust after separate FTS and vector queries |
 
 There is, however, an important current-state caveat. The initial schema used
-`VECTOR(1536)` plus an HNSW index. Migration `V9__flexible_embedding_dimension.sql`
-changes the embedding column to unconstrained `vector` so different embedding
-models can coexist, and it drops the HNSW index because pgvector indexes need
-a fixed dimension. The current PostgreSQL path therefore still performs vector
-search, but it does so without the old approximate index.
+`VECTOR(1536)` plus an HNSW index. Migration
+`V9__flexible_embedding_dimension.sql` changes the embedding column to
+unconstrained `vector` so different embedding models can coexist, and it drops
+the HNSW index because pgvector indexes need a fixed dimension. The current
+PostgreSQL path therefore still performs vector search, but it does so without
+the old approximate index.
 
 That means the live PostgreSQL behaviour is:
 
@@ -146,16 +147,16 @@ That means the live PostgreSQL behaviour is:
 
 ### 3.4 Satellite stores on PostgreSQL
 
-PostgreSQL-specific integrations do not stop at the main `Database` trait.
-The backend pool is also reused for:
+PostgreSQL-specific integrations do not stop at the main `Database` trait. The
+backend pool is also reused for:
 
 - `PostgresSecretsStore`
 - `PostgresWasmToolStore`
 - the older `history::Store` and `workspace::Repository` wrappers that the
   backend still delegates to internally
 
-This is why the PostgreSQL backend owns both a `Store` and a `Repository`:
-the unified trait layer is intentionally thin over the earlier backend-native
+This is why the PostgreSQL backend owns both a `Store` and a `Repository`: the
+unified trait layer is intentionally thin over the earlier backend-native
 implementations.
 
 ## 4. libSQL integration
@@ -168,14 +169,14 @@ libSQL uses Turso's SQLite fork and supports three distinct modes in the code:
 - remote replica mode via `LibSqlBackend::new_remote_replica()`
 - in-memory mode via `LibSqlBackend::new_memory()` for tests
 
-Remote replica mode still uses a local file path. The backend opens an
-embedded replica at `LIBSQL_PATH`, then synchronizes it with `LIBSQL_URL`
-using `LIBSQL_AUTH_TOKEN`.
+Remote replica mode still uses a local file path. The backend opens an embedded
+replica at `LIBSQL_PATH`, then synchronizes it with `LIBSQL_URL` using
+`LIBSQL_AUTH_TOKEN`.
 
 ### 4.2 Connection model
 
-libSQL does not use a pool. `LibSqlBackend::connect()` opens a fresh
-connection per operation and applies two pragmatic safeguards:
+libSQL does not use a pool. `LibSqlBackend::connect()` opens a fresh connection
+per operation and applies two pragmatic safeguards:
 
 - `PRAGMA busy_timeout = 5000` on every connection so transient writer
   contention waits instead of failing immediately
@@ -227,25 +228,25 @@ explicit `BEGIN IMMEDIATE` block.
 ### 4.4 Workspace search path
 
 libSQL mirrors the same workspace concepts as PostgreSQL, but the vector path
-uses a different implementation strategy after the flexible-dimension
-migration.
+uses a different implementation strategy after the flexible-dimension migration.
 
 Table 3. libSQL workspace search components.
 
-| Component | Implementation |
-| ----------- | ---------------- |
-| Document store | `memory_documents` table |
-| Chunk store | `memory_chunks` table with `embedding BLOB` |
-| Full-text search | `memory_chunks_fts` FTS5 virtual table plus maintenance triggers |
-| Semantic search | `vector_top_k(...)` when a compatible index exists, otherwise brute-force cosine similarity in Rust |
-| Fusion strategy | RRF in Rust, same as PostgreSQL |
+| Component        | Implementation                                                                                      |
+| ---------------- | --------------------------------------------------------------------------------------------------- |
+| Document store   | `memory_documents` table                                                                            |
+| Chunk store      | `memory_chunks` table with `embedding BLOB`                                                         |
+| Full-text search | `memory_chunks_fts` FTS5 virtual table plus maintenance triggers                                    |
+| Semantic search  | `vector_top_k(...)` when a compatible index exists, otherwise brute-force cosine similarity in Rust |
+| Fusion strategy  | RRF in Rust, same as PostgreSQL                                                                     |
 
 The important implementation detail is how libSQL behaves after the V9
 flexible-dimension migration:
 
 - the fixed-dimension `libsql_vector_idx` index is dropped because it cannot
   support arbitrary embedding lengths
-- the live code first attempts `vector_top_k('idx_memory_chunks_embedding', ...)`
+- the live code first attempts
+  `vector_top_k('idx_memory_chunks_embedding', ...)`
 - when that indexed query is unavailable, the repository logs that it is using
   brute-force vector search and computes cosine similarity in Rust across the
   stored embedding blobs
@@ -275,8 +276,7 @@ The shared database handle is reused by:
   and workspace persistence modules
 
 The key pattern is "shared database, fresh connection per operation". The code
-explicitly avoids passing a long-lived `Connection` into these satellite
-stores.
+explicitly avoids passing a long-lived `Connection` into these satellite stores.
 
 ## 5. Shared persistence consumers
 
@@ -298,10 +298,10 @@ it becomes part of the configuration overlay after bootstrap succeeds.
 
 ### 5.2 Session persistence
 
-The NEAR AI session manager persists session state to disk, but when a
-database is attached it also writes the session token into the settings table.
-On load, the session manager prefers the database-backed copy over the file on
-disk. That behaviour is shared across both backends because it sits above the
+The NEAR AI session manager persists session state to disk, but when a database
+is attached it also writes the session token into the settings table. On load,
+the session manager prefers the database-backed copy over the file on disk.
+That behaviour is shared across both backends because it sits above the
 `SettingsStore` trait.
 
 ### 5.3 Workspace memory
@@ -327,16 +327,16 @@ high-level API.
 
 Table 4. Current backend comparison.
 
-| Concern | PostgreSQL with pgvector | libSQL |
-| --------- | -------------------------- | -------- |
-| Default on this branch | Yes | No, unless bootstrap auto-detects `~/.ironclaw/ironclaw.db` |
-| External service needed | Yes | No for local mode; optional for Turso replica mode |
-| Connection strategy | Shared async pool | Fresh connection per operation |
-| Migration engine | `refinery` over numbered SQL files | Consolidated schema plus `_migrations`-tracked incremental Rust-side runner |
-| Secrets and WASM satellite stores | Reuse cloned pool handles | Reuse shared database handle, then open fresh connections |
-| Keyword search | PostgreSQL `tsvector` plus GIN | FTS5 virtual table plus triggers |
-| Vector search | pgvector cosine distance, now without the old HNSW index after V9 | Indexed `vector_top_k(...)` when available, otherwise brute-force cosine similarity in Rust |
-| Best fit | Full default deployment with richer search parity | Embedded, local-first, or low-ops deployment where external PostgreSQL is undesirable |
+| Concern                           | PostgreSQL with pgvector                                          | libSQL                                                                                      |
+| --------------------------------- | ----------------------------------------------------------------- | ------------------------------------------------------------------------------------------- |
+| Default on this branch            | Yes                                                               | No, unless bootstrap auto-detects `~/.ironclaw/ironclaw.db`                                 |
+| External service needed           | Yes                                                               | No for local mode; optional for Turso replica mode                                          |
+| Connection strategy               | Shared async pool                                                 | Fresh connection per operation                                                              |
+| Migration engine                  | `refinery` over numbered SQL files                                | Consolidated schema plus `_migrations`-tracked incremental Rust-side runner                 |
+| Secrets and WASM satellite stores | Reuse cloned pool handles                                         | Reuse shared database handle, then open fresh connections                                   |
+| Keyword search                    | PostgreSQL `tsvector` plus GIN                                    | FTS5 virtual table plus triggers                                                            |
+| Vector search                     | pgvector cosine distance, now without the old HNSW index after V9 | Indexed `vector_top_k(...)` when available, otherwise brute-force cosine similarity in Rust |
+| Best fit                          | Full default deployment with richer search parity                 | Embedded, local-first, or low-ops deployment where external PostgreSQL is undesirable       |
 
 ### 6.1 When PostgreSQL is the safer choice
 
@@ -382,17 +382,17 @@ persistence operations. Each variant has a distinct purpose:
 
 Table 5. DatabaseError variant usage guide.
 
-| Variant | Purpose | Typical producer | Example |
-| --- | --- | --- | --- |
-| `Validation(String)` | Caller-supplied value fails a precondition check before any query is built or executed | Pagination limit checks, parameter-range enforcement | `limit == 0` rejected with "conversation message pagination limit must be > 0" |
-| `Query(String)` | A SQL statement was constructed and sent but the database rejected it or the connection failed mid-query | Connection errors, syntax errors, constraint violations surfaced as strings | `conn.execute(…).await.map_err(\|e\| DatabaseError::Query(e.to_string()))` |
-| `NotFound { entity, id }` | A lookup by primary key or unique identifier returned zero rows | `get_*` methods on Store implementations | `get_sandbox_job` when the UUID does not exist |
-| `Constraint(String)` | A database-level constraint was violated and the caller should treat it as a business-rule failure | Unique-constraint violations, FK violations | Duplicate conversation ID on insert |
-| `Serialization(String)` | A value could not be converted between its Rust type and the stored representation | `i64` range exceeded when converting a count, malformed JSON | `usize::try_from(row.get::<_, i64>("cnt"))` failure |
-| `Migration(String)` | A schema migration step failed | `refinery` (PostgreSQL), Rust-side migration runner (libSQL) | `_migrations` table unreadable |
-| `Pool(String)` | Connection pool exhaustion or configuration error | Pool creation or checkout timeout | deadpool-postgres pool build failure |
-| `Postgres`, `PoolBuild`, `PoolRuntime` | Feature-gated automatic conversions from `tokio_postgres` and `deadpool_postgres` errors | `?` propagation in PostgreSQL-backed code | `conn.query(…).await?` |
-| `LibSql` | Feature-gated automatic conversion from `libsql::Error` | `?` propagation in libSQL-backed code | `conn.execute(…).await?` |
+| Variant                                | Purpose                                                                                                  | Typical producer                                                            | Example                                                                        |
+| -------------------------------------- | -------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------- | ------------------------------------------------------------------------------ |
+| `Validation(String)`                   | Caller-supplied value fails a precondition check before any query is built or executed                   | Pagination limit checks, parameter-range enforcement                        | `limit == 0` rejected with "conversation message pagination limit must be > 0" |
+| `Query(String)`                        | A SQL statement was constructed and sent but the database rejected it or the connection failed mid-query | Connection errors, syntax errors, constraint violations surfaced as strings | `conn.execute(…).await.map_err(\|e\| DatabaseError::Query(e.to_string()))`     |
+| `NotFound { entity, id }`              | A lookup by primary key or unique identifier returned zero rows                                          | `get_*` methods on Store implementations                                    | `get_sandbox_job` when the UUID does not exist                                 |
+| `Constraint(String)`                   | A database-level constraint was violated and the caller should treat it as a business-rule failure       | Unique-constraint violations, FK violations                                 | Duplicate conversation ID on insert                                            |
+| `Serialization(String)`                | A value could not be converted between its Rust type and the stored representation                       | `i64` range exceeded when converting a count, malformed JSON                | `usize::try_from(row.get::<_, i64>("cnt"))` failure                            |
+| `Migration(String)`                    | A schema migration step failed                                                                           | `refinery` (PostgreSQL), Rust-side migration runner (libSQL)                | `_migrations` table unreadable                                                 |
+| `Pool(String)`                         | Connection pool exhaustion or configuration error                                                        | Pool creation or checkout timeout                                           | deadpool-postgres pool build failure                                           |
+| `Postgres`, `PoolBuild`, `PoolRuntime` | Feature-gated automatic conversions from `tokio_postgres` and `deadpool_postgres` errors                 | `?` propagation in PostgreSQL-backed code                                   | `conn.query(…).await?`                                                         |
+| `LibSql`                               | Feature-gated automatic conversion from `libsql::Error`                                                  | `?` propagation in libSQL-backed code                                       | `conn.execute(…).await?`                                                       |
 
 **Validation vs Query — the key distinction.** `Validation` is for errors
 detected before the database is involved: bad limits, out-of-range parameters,
@@ -456,22 +456,21 @@ external side effects:
    `credential_grants_json`. If serialization fails, it logs a warning and
    falls back to `"[]"`.
 2. **Persist synchronously** — `persist_sandbox_job` awaits
-   `store.save_sandbox_job(&record)` and, when `mode == ClaudeCode`, also
-   awaits `store.update_sandbox_job_mode(…)`. If the mode update fails, it
+   `store.save_sandbox_job(&record)` and, when `mode == ClaudeCode`, also awaits
+   `store.update_sandbox_job_mode(…)`. If the mode update fails, it
    synchronously marks the job as `"failed"` before returning the error.
 3. **Only then create the container** — the code only proceeds to external
    side effects (container creation) after the database write succeeds.
 
-**Fire-and-forget vs synchronous-await for status updates.** The codebase
-uses two strategies:
+**Fire-and-forget vs synchronous-await for status updates.** The codebase uses
+two strategies:
 
 - `update_status` — uses `tokio::spawn` to make status updates intentionally
   fire-and-forget. Used for non-terminal, recoverable states like `"running"`.
   If the write is lost, the next poll or process restart recovers.
 - `update_status_sync` — directly `.await`s the store call. Used for terminal
   states (`"completed"`, `"failed"`, `"cancelled"`) and pre-container failure
-  transitions where the job state must be persisted before the function
-  returns.
+  transitions where the job state must be persisted before the function returns.
 
 ### 8.4 Parameter-struct convention
 

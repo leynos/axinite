@@ -1,26 +1,29 @@
 # Smart Model Routing for IronClaw
 
-**Status:** Implemented
-**Author:** Microwave
-**Date:** 2026-02-19
+**Status:** Implemented **Author:** Microwave **Date:** 2026-02-19
 
 ## What
 
-Automatic model selection based on request complexity. The router analyses each user message and selects an appropriate model tier (flash/standard/pro/frontier), then maps that tier to a configured model.
+Automatic model selection based on request complexity. The router analyses each
+user message and selects an appropriate model tier
+(flash/standard/pro/frontier), then maps that tier to a configured model.
 
 ## Why
 
-1. **Cost optimization** — Simple requests ("hi", "what time is it") don't need expensive models
+1. **Cost optimization** — Simple requests ("hi", "what time is it") don't need
+   expensive models
 2. **User experience** — Simple requests return faster with lightweight models
-3. **NEAR AI native** — Default backend uses NEAR AI inference where costs vary by model
+3. **NEAR AI native** — Default backend uses NEAR AI inference where costs vary
+   by model
 4. **Zero-config value** — Users benefit immediately without configuration
-5. **Not just power users** — Everyone gets smart defaults, power users can override
+5. **Not just power users** — Everyone gets smart defaults, power users can
+   override
 
 ## How
 
 ### Architecture
 
-```
+```text
 User Message
      │
      ▼
@@ -51,32 +54,32 @@ User Message
 
 Each dimension produces a 0-100 score. Weighted sum determines total.
 
-| Dimension | Weight | Signals |
-|-----------|--------|---------|
-| Reasoning Words | 14% | "why", "explain", "compare", "trade-offs" |
-| Token Estimate | 12% | Prompt length |
-| Code Indicators | 10% | Backticks, syntax, "implement", "PR" |
-| Multi-Step | 10% | "first", "then", "after", "steps" |
-| Domain Specific | 10% | Technical terms (configurable) |
-| Creativity | 7% | "write", "summarize", "tweet", "blog" |
-| Question Complexity | 7% | Multiple questions, open-ended starters |
-| Precision | 6% | Numbers, "exactly", "calculate" |
-| Ambiguity | 5% | Vague references |
-| Context Dependency | 5% | "previous", "you said" |
-| Sentence Complexity | 5% | Commas, conjunctions, clause depth |
-| Tool Likelihood | 5% | "read", "deploy", "install" |
-| Safety Sensitivity | 4% | "password", "auth", "vulnerability" |
+| Dimension           | Weight | Signals                                   |
+| ------------------- | ------ | ----------------------------------------- |
+| Reasoning Words     | 14%    | "why", "explain", "compare", "trade-offs" |
+| Token Estimate      | 12%    | Prompt length                             |
+| Code Indicators     | 10%    | Backticks, syntax, "implement", "PR"      |
+| Multi-Step          | 10%    | "first", "then", "after", "steps"         |
+| Domain Specific     | 10%    | Technical terms (configurable)            |
+| Creativity          | 7%     | "write", "summarize", "tweet", "blog"     |
+| Question Complexity | 7%     | Multiple questions, open-ended starters   |
+| Precision           | 6%     | Numbers, "exactly", "calculate"           |
+| Ambiguity           | 5%     | Vague references                          |
+| Context Dependency  | 5%     | "previous", "you said"                    |
+| Sentence Complexity | 5%     | Commas, conjunctions, clause depth        |
+| Tool Likelihood     | 5%     | "read", "deploy", "install"               |
+| Safety Sensitivity  | 4%     | "password", "auth", "vulnerability"       |
 
 **Multi-dimensional boost:** +30% when 3+ dimensions score above threshold.
 
 ### Tier Boundaries
 
-| Score | Tier | Typical Use Case |
-|-------|------|------------------|
-| 0-15 | flash | Greetings, acknowledgements, quick lookups |
-| 16-40 | standard | Writing, comparisons, defined tasks |
-| 41-65 | pro | Multi-step analysis, code review |
-| 66+ | frontier | Critical decisions, security audits |
+| Score | Tier     | Typical Use Case                           |
+| ----- | -------- | ------------------------------------------ |
+| 0-15  | flash    | Greetings, acknowledgements, quick lookups |
+| 16-40 | standard | Writing, comparisons, defined tasks        |
+| 41-65 | pro      | Multi-step analysis, code review           |
+| 66+   | frontier | Critical decisions, security audits        |
 
 ### Pattern Overrides
 
@@ -103,6 +106,7 @@ Fast-path rules that bypass scoring for obvious cases:
 > schema below is the target design — not all knobs are wired yet.
 
 **Default (zero-config):**
+
 ```yaml
 llm:
   routing:
@@ -110,6 +114,7 @@ llm:
 ```
 
 **Power user overrides (target schema):**
+
 ```yaml
 llm:
   routing:
@@ -131,9 +136,11 @@ llm:
       - "internal-tool"
 ```
 
-If `domain_keywords` is not set, uses `DEFAULT_DOMAIN_KEYWORDS` which covers common web3/infra terms.
+If `domain_keywords` is not set, uses `DEFAULT_DOMAIN_KEYWORDS` which covers
+common web3/infra terms.
 
 **Disable routing (pin model):**
+
 ```yaml
 llm:
   routing:
@@ -142,6 +149,7 @@ llm:
 ```
 
 **Bring your own keys:**
+
 ```yaml
 llm:
   backend: anthropic
@@ -152,7 +160,8 @@ llm:
 
 ### Integration Points
 
-1. **RoutingProvider** — New wrapper implementing `LlmProvider` trait (like `FailoverProvider`)
+1. **RoutingProvider** — New wrapper implementing `LlmProvider` trait (like
+   `FailoverProvider`)
 2. **Scorer** — Pure function, no I/O, fast (~1ms)
 3. **Config schema** — Extend `LlmConfig` with `routing` section
 4. **Telemetry** — Log routing decisions for observability
@@ -168,13 +177,13 @@ llm:
 
 ### Layers of Control
 
-| Layer | User Type | Config |
-|-------|-----------|--------|
-| 1. Zero-config | Everyone | `routing.enabled: true` (default) |
-| 2. Tier tuning | Power users | Custom `routing.tiers` mapping |
-| 3. Pattern overrides | Power users | Custom `routing.overrides` |
-| 4. Model pinning | Power users | `routing.enabled: false` + `model: X` |
-| 5. Own API keys | Power users | `backend: anthropic` + `api_key` |
+| Layer                | User Type   | Config                                |
+| -------------------- | ----------- | ------------------------------------- |
+| 1. Zero-config       | Everyone    | `routing.enabled: true` (default)     |
+| 2. Tier tuning       | Power users | Custom `routing.tiers` mapping        |
+| 3. Pattern overrides | Power users | Custom `routing.overrides`            |
+| 4. Model pinning     | Power users | `routing.enabled: false` + `model: X` |
+| 5. Own API keys      | Power users | `backend: anthropic` + `api_key`      |
 
 ## Implementation Plan
 

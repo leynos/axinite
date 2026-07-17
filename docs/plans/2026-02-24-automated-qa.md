@@ -1,38 +1,43 @@
 # Automated QA Plan for IronClaw
 
-**Date:** 2026-02-24
-**Status:** Draft
-**Goal:** Systematically close the QA gaps that led to the ~40 bugs found in issues/PRs to date, progressing from cheap high-ROI checks to full computer-use E2E testing.
+**Date:** 2026-02-24 **Status:** Draft **Goal:** Systematically close the QA
+gaps that led to the ~40 bugs found in issues/PRs to date, progressing from
+cheap high-ROI checks to full computer-use E2E testing.
 
----
+______________________________________________________________________
 
 ## Motivation
 
-A review of all closed issues and merged bug-fix PRs reveals that most IronClaw bugs fall into a few recurring categories:
+A review of all closed issues and merged bug-fix PRs reveals that most IronClaw
+bugs fall into a few recurring categories:
 
-| Category | Examples | Root Cause |
-|----------|----------|------------|
-| Config persistence | Wizard re-triggers on restart, LLM backend silently ignored | No round-trip test for config write→restart→read |
-| Turn persistence | Tool approval results lost, user messages lost on crash | No test that persists a turn and reads it back |
-| Tool schema validity | `required`/`properties` mismatch → 400s with OpenAI strict mode | No schema validator in CI |
-| WASM lifecycle | Workspace writes silently discarded, duplicate Telegram messages | No test that exercises host function → flush → read-back |
-| Web UI / SSE | No re-sync on reconnect, orphan threads, HTML injection | No browser-level testing at all |
-| Shell safety | Destructive-command check was dead code, pipe deadlock, env leak | Tests never passed realistic `Value::Object` args |
-| Build integrity | Docker build broken, feature-flag code untested | CI only runs one feature configuration |
+| Category             | Examples                                                         | Root Cause                                               |
+| -------------------- | ---------------------------------------------------------------- | -------------------------------------------------------- |
+| Config persistence   | Wizard re-triggers on restart, LLM backend silently ignored      | No round-trip test for config write→restart→read         |
+| Turn persistence     | Tool approval results lost, user messages lost on crash          | No test that persists a turn and reads it back           |
+| Tool schema validity | `required`/`properties` mismatch → 400s with OpenAI strict mode  | No schema validator in CI                                |
+| WASM lifecycle       | Workspace writes silently discarded, duplicate Telegram messages | No test that exercises host function → flush → read-back |
+| Web UI / SSE         | No re-sync on reconnect, orphan threads, HTML injection          | No browser-level testing at all                          |
+| Shell safety         | Destructive-command check was dead code, pipe deadlock, env leak | Tests never passed realistic `Value::Object` args        |
+| Build integrity      | Docker build broken, feature-flag code untested                  | CI only runs one feature configuration                   |
 
-Most bugs live at **integration boundaries**, not inside isolated functions. The plan is organized in four tiers of increasing scope and cost, each targeting a specific class of bug.
+Most bugs live at **integration boundaries**, not inside isolated functions.
+The plan is organized in four tiers of increasing scope and cost, each
+targeting a specific class of bug.
 
----
+______________________________________________________________________
 
 ## Tier 1: Schema & Contract Tests
 
-**Cost:** Low (pure Rust tests, no infrastructure)
-**Timeline:** Can land incrementally, one PR per sub-task
-**Bugs this would have caught:** #131, #268, #129, #174, #187, #96, #320
+**Cost:** Low (pure Rust tests, no infrastructure) **Timeline:** Can land
+incrementally, one PR per sub-task **Bugs this would have caught:** #131,
+\#268, #129, #174, #187, #96, #320
 
 ### 1.1 Tool Schema Validator
 
-Every tool registered in `ToolRegistry` must produce a `parameters_schema()` that passes OpenAI's strict-mode rules. Write a test that iterates all built-in tools and asserts:
+Every tool registered in `ToolRegistry` must produce a `parameters_schema()`
+that passes OpenAI's strict-mode rules. Write a test that iterates all built-in
+tools and asserts:
 
 - Top-level has `"type": "object"`
 - Every key in `"required"` exists in `"properties"`
@@ -54,18 +59,23 @@ fn all_tool_schemas_are_openai_strict_valid() {
 }
 ```
 
-Add the same validation for WASM tools (loaded from `~/.ironclaw/tools/`) and MCP tools (mock a simple MCP manifest and validate the schema it produces).
+Add the same validation for WASM tools (loaded from `~/.ironclaw/tools/`) and
+MCP tools (mock a simple MCP manifest and validate the schema it produces).
 
-**Files:** New `src/tools/schema_validator.rs` (validation logic), test in `tests/tool_schema_validation.rs`
+**Files:** New `src/tools/schema_validator.rs` (validation logic), test in
+`tests/tool_schema_validation.rs`
 
 ### 1.2 Config Round-Trip Tests
 
-Test the full config lifecycle: write via wizard helpers → read back via `Config` loader → assert values match.
+Test the full config lifecycle: write via wizard helpers → read back via
+`Config` loader → assert values match.
 
 Cover the specific bugs found:
+
 - `LLM_BACKEND` written to bootstrap `.env` and read back correctly
 - `EMBEDDING_ENABLED=false` survives restart when `OPENAI_API_KEY` is set
-- `ONBOARD_COMPLETED=true` in bootstrap `.env` causes `check_onboard_needed()` to return `false`
+- `ONBOARD_COMPLETED=true` in bootstrap `.env` causes `check_onboard_needed()`
+  to return `false`
 - Session token stored under `nearai.session_token` (not `nearai.session`)
 
 ```rust
@@ -84,7 +94,9 @@ fn bootstrap_env_round_trips_llm_backend() {
 
 ### 1.3 Feature-Flag CI Matrix
 
-The current `code_style.yml` runs clippy without `--all-features`, missing code behind `#[cfg(feature = "libsql")]` etc. The `test.yml` runs with `--all-features` but not with individual features.
+The current `code_style.yml` runs clippy without `--all-features`, missing code
+behind `#[cfg(feature = "libsql")]` etc. The `test.yml` runs with
+`--all-features` but not with individual features.
 
 Add a CI matrix:
 
@@ -110,11 +122,13 @@ Update `code_style.yml` to also run clippy with `--all-features`:
   run: cargo clippy --no-default-features --features libsql -- -D warnings
 ```
 
-**Files:** Modify `.github/workflows/test.yml`, `.github/workflows/code_style.yml`
+**Files:** Modify `.github/workflows/test.yml`,
+`.github/workflows/code_style.yml`
 
 ### 1.4 Docker Build in CI
 
-Add a job that runs `docker build .` on every PR. No need to push the image -- just verify it builds.
+Add a job that runs `docker build .` on every PR. No need to push the image --
+just verify it builds.
 
 ```yaml
 # .github/workflows/test.yml - new job
@@ -129,17 +143,20 @@ docker-build:
 
 **Files:** Modify `.github/workflows/test.yml`
 
----
+______________________________________________________________________
 
 ## Tier 2: Integration Tests
 
-**Cost:** Medium (needs test harnesses, possibly testcontainers)
-**Timeline:** Parallel workstream, ~1 week for the harness, then incremental test additions
+**Cost:** Medium (needs test harnesses, possibly testcontainers) **Timeline:**
+Parallel workstream, ~1 week for the harness, then incremental test additions
 **Bugs this would have caught:** #250, #305, #260, #264, #346, #125, #72, #140
 
 ### 2.1 Test Harness: In-Memory Database Backend
 
-Many integration tests need a database but not a real PostgreSQL/libSQL instance. Create a lightweight in-memory `Database` implementation (backed by `HashMap`s) that satisfies the `Database` trait for test use. This avoids testcontainers overhead for most tests.
+Many integration tests need a database but not a real PostgreSQL/libSQL
+instance. Create a lightweight in-memory `Database` implementation (backed by
+`HashMap`s) that satisfies the `Database` trait for test use. This avoids
+testcontainers overhead for most tests.
 
 Alternatively, use libSQL in `:memory:` mode (it's SQLite under the hood):
 
@@ -152,11 +169,13 @@ pub async fn test_db() -> impl Database {
 }
 ```
 
-**Files:** Extend `src/testing.rs`, potentially `src/db/libsql/mod.rs` (add `open_in_memory`)
+**Files:** Extend `src/testing.rs`, potentially `src/db/libsql/mod.rs` (add
+`open_in_memory`)
 
 ### 2.2 Turn Persistence Tests
 
-Test every code path in `process_approval` and the main agent loop that should call `persist_turn`:
+Test every code path in `process_approval` and the main agent loop that should
+call `persist_turn`:
 
 ```rust
 #[tokio::test]
@@ -174,6 +193,7 @@ async fn approved_tool_call_persists_turn() {
 ```
 
 Cover:
+
 - Approved tool call with successful result
 - Approved tool call with error result
 - Approved tool call requiring auth
@@ -184,7 +204,9 @@ Cover:
 
 ### 2.3 WASM Channel Lifecycle Tests
 
-Test the host function contract: `workspace_write()` followed by `take_pending_writes()` returns the written data. `workspace_read()` returns data that was previously written.
+Test the host function contract: `workspace_write()` followed by
+`take_pending_writes()` returns the written data. `workspace_read()` returns
+data that was previously written.
 
 ```rust
 #[tokio::test]
@@ -209,11 +231,13 @@ async fn wasm_channel_workspace_read_returns_prior_writes() {
 }
 ```
 
-**Files:** New `tests/wasm_channel_lifecycle.rs`, test helpers in `src/channels/wasm/wrapper.rs`
+**Files:** New `tests/wasm_channel_lifecycle.rs`, test helpers in
+`src/channels/wasm/wrapper.rs`
 
 ### 2.4 Extension Registry Collision Tests
 
-Verify that installing a channel named "telegram" and a tool named "telegram" land in different directories and both resolve correctly:
+Verify that installing a channel named "telegram" and a tool named "telegram"
+land in different directories and both resolve correctly:
 
 ```rust
 #[tokio::test]
@@ -233,7 +257,9 @@ async fn channel_and_tool_with_same_name_dont_collide() {
 
 ### 2.5 Shell Tool Realistic Arg Tests
 
-The destructive-command check bug (PR #72) happened because tests passed `Value::String` args but the LLM sends `Value::Object`. Test with realistic args:
+The destructive-command check bug (PR #72) happened because tests passed
+`Value::String` args but the LLM sends `Value::Object`. Test with realistic
+args:
 
 ```rust
 #[tokio::test]
@@ -294,7 +320,8 @@ async fn failover_with_all_providers_failing() {
 
 ### 2.7 Context Length Recovery Test
 
-Verify that when the LLM returns a `ContextLengthExceeded` error, the agent triggers compaction and retries rather than propagating the raw error:
+Verify that when the LLM returns a `ContextLengthExceeded` error, the agent
+triggers compaction and retries rather than propagating the raw error:
 
 ```rust
 #[tokio::test]
@@ -314,17 +341,18 @@ async fn context_length_exceeded_triggers_compaction() {
 
 **Files:** New `tests/context_recovery.rs`
 
----
+______________________________________________________________________
 
 ## Tier 3: Computer-Use E2E Testing
 
-**Cost:** High (requires Anthropic computer use API, headless browser, ironclaw running)
-**Timeline:** ~2 weeks for infrastructure, then incremental scenario additions
-**Bugs this would have caught:** #307, #306, #263, all manual web-ui-test checklist items
+**Cost:** High (requires Anthropic computer use API, headless browser, ironclaw
+running) **Timeline:** ~2 weeks for infrastructure, then incremental scenario
+additions **Bugs this would have caught:** #307, #306, #263, all manual
+web-ui-test checklist items
 
 ### 3.1 Architecture
 
-```
+```text
 +------------------+     +-----------------+     +------------------+
 |  Test Runner     |     |  Headless       |     |  IronClaw        |
 |  (Python/TS)     |---->|  Chromium        |---->|  (cargo run)     |
@@ -345,21 +373,33 @@ async fn context_length_exceeded_triggers_compaction() {
 
 **Components:**
 
-1. **Test runner** -- Python or TypeScript script that orchestrates the flow. Starts ironclaw, waits for readiness, launches Playwright browser, runs scenarios.
+1. **Test runner** -- Python or TypeScript script that orchestrates the flow.
+   Starts ironclaw, waits for readiness, launches Playwright browser, runs
+   scenarios.
 
-2. **Playwright browser** -- Headless Chromium. Takes screenshots, executes click/type actions as directed by the computer use agent. Also provides DOM access for structural assertions (element exists, text content matches, no error toasts).
+2. **Playwright browser** -- Headless Chromium. Takes screenshots, executes
+   click/type actions as directed by the computer use agent. Also provides DOM
+   access for structural assertions (element exists, text content matches, no
+   error toasts).
 
-3. **Claude computer use agent** -- Anthropic API with `computer-use-2025-01-24` tool. Receives screenshots, returns actions (click coordinates, type text, scroll). The test runner translates actions into Playwright calls.
+3. **Claude computer use agent** -- Anthropic API with
+   `computer-use-2025-01-24` tool. Receives screenshots, returns actions (click
+   coordinates, type text, scroll). The test runner translates actions into
+   Playwright calls.
 
 4. **Assertion engine** -- Hybrid approach:
-   - **DOM assertions** (Playwright): Fast, deterministic checks like "element with text 'Connected' exists", "no elements with class 'error-toast' visible", "skills list has N children"
-   - **Visual assertions** (Claude vision): For subjective checks like "the chat message rendered correctly", "no raw HTML visible in the output", "the SSE stream is updating in real-time"
+   - **DOM assertions** (Playwright): Fast, deterministic checks like "element
+     with text 'Connected' exists", "no elements with class 'error-toast'
+     visible", "skills list has N children"
+   - **Visual assertions** (Claude vision): For subjective checks like "the
+     chat message rendered correctly", "no raw HTML visible in the output",
+     "the SSE stream is updating in real-time"
 
 ### 3.2 Test Infrastructure Setup
 
 **Directory structure:**
 
-```
+```text
 tests/
   e2e/
     conftest.py             # pytest fixtures: start ironclaw, browser
@@ -377,7 +417,7 @@ tests/
     Dockerfile.test         # Container for CI: ironclaw + chromium
 ```
 
-**Fixture: start ironclaw**
+#### Fixture: start ironclaw
 
 ```python
 @pytest.fixture(scope="session")
@@ -405,7 +445,7 @@ async def ironclaw_server():
     proc.terminate()
 ```
 
-**Fixture: browser with computer use**
+#### Fixture: browser with computer use
 
 ```python
 @pytest.fixture
@@ -489,7 +529,8 @@ class ComputerUseAgent:
 
 ### 3.3 Test Scenarios
 
-Each scenario maps to a real bug or the existing manual checklist in `skills/web-ui-test/SKILL.md`.
+Each scenario maps to a real bug or the existing manual checklist in
+`skills/web-ui-test/SKILL.md`.
 
 #### Scenario 1: Connection and Tab Navigation
 
@@ -657,19 +698,26 @@ async def test_onboarding_wizard_completes(tmp_ironclaw_home):
 
 ### 3.4 LLM Backend for E2E Tests
 
-E2E tests should not depend on external LLM APIs (flaky, expensive, slow). Options:
+E2E tests should not depend on external LLM APIs (flaky, expensive, slow).
+Options:
 
-1. **Local Ollama** -- Run a small model (e.g., `qwen2.5:0.5b`) locally. Good enough for basic tool-calling tests. Set `LLM_BACKEND=openai_compatible` and `LLM_BASE_URL=http://localhost:11434/v1`.
+1. **Local Ollama** -- Run a small model (e.g., `qwen2.5:0.5b`) locally. Good
+   enough for basic tool-calling tests. Set `LLM_BACKEND=openai_compatible` and
+   `LLM_BASE_URL=http://localhost:11434/v1`.
 
-2. **Mock LLM server** -- A tiny HTTP server that returns canned responses based on message content patterns. Fastest and most deterministic, but requires maintaining fixtures.
+2. **Mock LLM server** -- A tiny HTTP server that returns canned responses
+   based on message content patterns. Fastest and most deterministic, but
+   requires maintaining fixtures.
 
-3. **Recorded responses** -- Record real LLM interactions once, replay in tests (VCR-style). Good balance of realism and determinism.
+3. **Recorded responses** -- Record real LLM interactions once, replay in tests
+   (VCR-style). Good balance of realism and determinism.
 
 Recommendation: Start with local Ollama for development, mock LLM server for CI.
 
 ### 3.5 CI Integration
 
-E2E tests are expensive and slow. Run them on a separate schedule, not on every PR:
+E2E tests are expensive and slow. Run them on a separate schedule, not on every
+PR:
 
 ```yaml
 # .github/workflows/e2e.yml
@@ -701,17 +749,18 @@ jobs:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
 ```
 
----
+______________________________________________________________________
 
 ## Tier 4: Chaos and Resilience Testing
 
-**Cost:** Medium (needs mock providers, time-control utilities)
-**Timeline:** After Tier 2 harness exists; add scenarios incrementally
-**Bugs this would have caught:** #260, #125, #155, #252 (infinite loop), #139
+**Cost:** Medium (needs mock providers, time-control utilities) **Timeline:**
+After Tier 2 harness exists; add scenarios incrementally **Bugs this would have
+caught:** #260, #125, #155, #252 (infinite loop), #139
 
 ### 4.1 LLM Provider Chaos
 
-Test the failover chain, circuit breaker, and retry logic under realistic failure modes:
+Test the failover chain, circuit breaker, and retry logic under realistic
+failure modes:
 
 ```rust
 /// Provider that fails N times then succeeds
@@ -729,15 +778,15 @@ struct GarbageProvider;
 
 **Test scenarios:**
 
-| Scenario | Setup | Expected |
-|----------|-------|----------|
-| Primary fails, secondary works | FlakeyProvider(3) + working provider | Failover after 3 retries, user gets response |
-| All providers fail | FlakeyProvider(max) x3 | Graceful error to user, no panic |
-| Context limit mid-conversation | ContextBombProvider(5) | Auto-compaction triggers, conversation continues |
-| Provider hangs | HangingProvider with 10s timeout | Timeout error, failover to next |
-| Malformed response | GarbageProvider | Error logged, retry or failover |
-| Circuit breaker trips | FlakeyProvider(100) | Circuit opens after threshold, fast-fails subsequent calls |
-| Circuit breaker recovers | FlakeyProvider(5) then success | Circuit half-opens, test call succeeds, circuit closes |
+| Scenario                       | Setup                                | Expected                                                   |
+| ------------------------------ | ------------------------------------ | ---------------------------------------------------------- |
+| Primary fails, secondary works | FlakeyProvider(3) + working provider | Failover after 3 retries, user gets response               |
+| All providers fail             | FlakeyProvider(max) x3               | Graceful error to user, no panic                           |
+| Context limit mid-conversation | ContextBombProvider(5)               | Auto-compaction triggers, conversation continues           |
+| Provider hangs                 | HangingProvider with 10s timeout     | Timeout error, failover to next                            |
+| Malformed response             | GarbageProvider                      | Error logged, retry or failover                            |
+| Circuit breaker trips          | FlakeyProvider(100)                  | Circuit opens after threshold, fast-fails subsequent calls |
+| Circuit breaker recovers       | FlakeyProvider(5) then success       | Circuit half-opens, test call succeeds, circuit closes     |
 
 **Files:** New `tests/provider_chaos.rs`, mock providers in `src/testing.rs`
 
@@ -779,7 +828,9 @@ async fn concurrent_jobs_dont_corrupt_state() {
 
 ### 4.3 Dispatcher Infinite Loop Guard
 
-The dispatcher had an infinite loop bug (PR #252) where `continue` skipped the index increment. Add a test that verifies the dispatcher terminates even when hooks reject tool calls:
+The dispatcher had an infinite loop bug (PR #252) where `continue` skipped the
+index increment. Add a test that verifies the dispatcher terminates even when
+hooks reject tool calls:
 
 ```rust
 #[tokio::test]
@@ -868,41 +919,53 @@ fn sanitizer_blocks_command_injection() {
 }
 ```
 
-**Files:** Extend tests in `src/safety/sanitizer.rs`, `src/safety/leak_detector.rs`, `src/sandbox/proxy/allowlist.rs`, `src/tools/builtin/shell.rs`
+**Files:** Extend tests in `src/safety/sanitizer.rs`,
+`src/safety/leak_detector.rs`, `src/sandbox/proxy/allowlist.rs`,
+`src/tools/builtin/shell.rs`
 
----
+______________________________________________________________________
 
 ## Implementation Priority
 
-| Priority | Tier | Item | Effort | Bugs Prevented |
-|----------|------|------|--------|----------------|
-| P0 | 1.1 | Tool schema validator | 1 day | Schema 400s with every provider |
-| P0 | 1.3 | Feature-flag CI matrix | 0.5 day | Dead code behind wrong cfg gate |
-| P0 | 1.4 | Docker build in CI | 0.5 day | Broken Docker builds |
-| P1 | 1.2 | Config round-trip tests | 1 day | Onboarding persistence bugs |
-| P1 | 2.1 | Test harness (in-memory DB) | 2 days | Enables all Tier 2 tests |
-| P1 | 2.2 | Turn persistence tests | 1 day | Lost turns/messages |
-| P1 | 2.5 | Shell tool realistic args | 0.5 day | Dead safety checks |
-| P1 | 4.5 | Safety adversarial tests | 1 day | Security bypasses |
-| P2 | 2.3 | WASM channel lifecycle | 1 day | Duplicate messages, lost writes |
-| P2 | 2.4 | Registry collision tests | 0.5 day | Wrong install directory |
-| P2 | 2.6 | Failover edge cases | 0.5 day | Panics, sentinel bugs |
-| P2 | 2.7 | Context recovery test | 1 day | Raw errors to user |
-| P2 | 4.1 | Provider chaos tests | 2 days | Failover/retry regressions |
-| P2 | 4.3 | Dispatcher loop guard | 0.5 day | Infinite loops |
-| P3 | 3.1-3.2 | E2E infrastructure | 3-5 days | Enables all Tier 3 tests |
-| P3 | 3.3 | E2E scenarios (7 total) | 1 day each | UI/SSE/reconnect bugs |
-| P3 | 4.2 | Concurrent job stress | 1 day | State corruption |
-| P3 | 4.4 | Estimator boundaries | 0.5 day | Panics on edge inputs |
+| Priority | Tier    | Item                        | Effort     | Bugs Prevented                  |
+| -------- | ------- | --------------------------- | ---------- | ------------------------------- |
+| P0       | 1.1     | Tool schema validator       | 1 day      | Schema 400s with every provider |
+| P0       | 1.3     | Feature-flag CI matrix      | 0.5 day    | Dead code behind wrong cfg gate |
+| P0       | 1.4     | Docker build in CI          | 0.5 day    | Broken Docker builds            |
+| P1       | 1.2     | Config round-trip tests     | 1 day      | Onboarding persistence bugs     |
+| P1       | 2.1     | Test harness (in-memory DB) | 2 days     | Enables all Tier 2 tests        |
+| P1       | 2.2     | Turn persistence tests      | 1 day      | Lost turns/messages             |
+| P1       | 2.5     | Shell tool realistic args   | 0.5 day    | Dead safety checks              |
+| P1       | 4.5     | Safety adversarial tests    | 1 day      | Security bypasses               |
+| P2       | 2.3     | WASM channel lifecycle      | 1 day      | Duplicate messages, lost writes |
+| P2       | 2.4     | Registry collision tests    | 0.5 day    | Wrong install directory         |
+| P2       | 2.6     | Failover edge cases         | 0.5 day    | Panics, sentinel bugs           |
+| P2       | 2.7     | Context recovery test       | 1 day      | Raw errors to user              |
+| P2       | 4.1     | Provider chaos tests        | 2 days     | Failover/retry regressions      |
+| P2       | 4.3     | Dispatcher loop guard       | 0.5 day    | Infinite loops                  |
+| P3       | 3.1-3.2 | E2E infrastructure          | 3-5 days   | Enables all Tier 3 tests        |
+| P3       | 3.3     | E2E scenarios (7 total)     | 1 day each | UI/SSE/reconnect bugs           |
+| P3       | 4.2     | Concurrent job stress       | 1 day      | State corruption                |
+| P3       | 4.4     | Estimator boundaries        | 0.5 day    | Panics on edge inputs           |
 
 ## Open Questions
 
-1. **Computer use cost**: Claude computer use API calls with screenshots are expensive. Should E2E tests run daily, weekly, or only on release branches?
+1. **Computer use cost**: Claude computer use API calls with screenshots are
+   expensive. Should E2E tests run daily, weekly, or only on release branches?
 
-2. **LLM for E2E**: Local Ollama vs mock server vs recorded responses? Ollama is realistic but slow in CI. Mock is fast but requires fixture maintenance.
+2. **LLM for E2E**: Local Ollama vs mock server vs recorded responses? Ollama
+   is realistic but slow in CI. Mock is fast but requires fixture maintenance.
 
-3. **TUI testing**: The TUI (Ratatui) is harder to test with computer use than the web UI. Options: (a) skip TUI E2E, rely on unit tests, (b) use a PTY + expect-style automation (pexpect), (c) use computer use with a terminal emulator in the browser (xterm.js). Recommendation: (b) for wizard, skip TUI E2E otherwise.
+3. **TUI testing**: The TUI (Ratatui) is harder to test with computer use than
+   the web UI. Options: (a) skip TUI E2E, rely on unit tests, (b) use a PTY +
+   expect-style automation (pexpect), (c) use computer use with a terminal
+   emulator in the browser (xterm.js). Recommendation: (b) for wizard, skip TUI
+   E2E otherwise.
 
-4. **Test database**: Should integration tests use libSQL in-memory mode, or invest in a proper in-memory `Database` trait implementation? libSQL is simpler but couples tests to one backend.
+4. **Test database**: Should integration tests use libSQL in-memory mode, or
+   invest in a proper in-memory `Database` trait implementation? libSQL is
+   simpler but couples tests to one backend.
 
-5. **Existing manual test skill**: The `skills/web-ui-test/SKILL.md` checklist should be marked as superseded once the E2E scenarios in Tier 3 cover the same ground, or kept as a human-readable reference.
+5. **Existing manual test skill**: The `skills/web-ui-test/SKILL.md` checklist
+   should be marked as superseded once the E2E scenarios in Tier 3 cover the
+   same ground, or kept as a human-readable reference.

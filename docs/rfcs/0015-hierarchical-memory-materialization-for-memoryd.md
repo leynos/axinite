@@ -10,20 +10,19 @@
   Theme detection and sparsity rebalancing for `memoryd`; RFC 0017:
   Hierarchical recall for `memoryd`
 - **Companion ADRs:** ADR 003: Theme management belongs in `memoryd`;
-  ADR 004: Dual-path semantic extraction with validated provenance;
-  ADR 005: Dual-mode uncertainty gating for hierarchical recall
+  ADR 004: Dual-path semantic extraction with validated provenance; ADR 005:
+  Dual-mode uncertainty gating for hierarchical recall
 
 ## Summary
 
 This RFC outlines how `memoryd` can materialize a durable hierarchical
-structure over raw evidence without replacing RFC 0014's projection
-taxonomy. RFC 0014 remains authoritative for projection classes,
-epistemic status, promotion rules, contradiction handling, and recall
-trust semantics. This RFC instead addresses the consolidation-layer
-question: how raw messages and document revisions are grouped into
-episodes, how reusable semantic carriers are derived from that
-evidence, and how optional theme structures can support navigation and
-retrieval without becoming a second truth model.
+structure over raw evidence without replacing RFC 0014's projection taxonomy.
+RFC 0014 remains authoritative for projection classes, epistemic status,
+promotion rules, contradiction handling, and recall trust semantics. This RFC
+instead addresses the consolidation-layer question: how raw messages and
+document revisions are grouped into episodes, how reusable semantic carriers
+are derived from that evidence, and how optional theme structures can support
+navigation and retrieval without becoming a second truth model.
 
 The proposed hierarchy is:
 
@@ -32,19 +31,18 @@ The proposed hierarchy is:
 - semantic carriers
 - optional `Theme` groupings
 
-Compatibility rule: `Episode`, semantic-carrier, and `Theme` are
-storage and navigation structures. They do not replace RFC 0014's
-first-class memory artefacts (`episode`, `summary`, `concept`, `fact`,
-and `profile`). In particular, `Theme` is not a new epistemic class,
-and semantic carriers do not bypass RFC 0014 promotion or provenance
-rules.
+Compatibility rule: `Episode`, semantic-carrier, and `Theme` are storage and
+navigation structures. They do not replace RFC 0014's first-class memory
+artefacts (`episode`, `summary`, `concept`, `fact`, and `profile`). In
+particular, `Theme` is not a new epistemic class, and semantic carriers do not
+bypass RFC 0014 promotion or provenance rules.
 
 ## Problem
 
-RFC 0014 defines what kinds of memory artefacts exist and how their
-trust and maturity change over time, but it intentionally does not
-specify the physical hierarchy or projection pipeline that produces
-those artefacts. That leaves several implementation questions open:
+RFC 0014 defines what kinds of memory artefacts exist and how their trust and
+maturity change over time, but it intentionally does not specify the physical
+hierarchy or projection pipeline that produces those artefacts. That leaves
+several implementation questions open:
 
 - how raw evidence is grouped into durable episode units
 - how extracted long-term statements are represented before and during
@@ -54,9 +52,9 @@ those artefacts. That leaves several implementation questions open:
 - whether higher-level theme navigation is durable, query-time only, or
   absent
 
-Without a companion materialization design, `memoryd` risks either a
-flat vector store with weak lineage or an accidental second taxonomy
-that conflicts with RFC 0014.
+Without a companion materialization design, `memoryd` risks either a flat
+vector store with weak lineage or an accidental second taxonomy that conflicts
+with RFC 0014.
 
 ## Goals and non-goals
 
@@ -84,17 +82,17 @@ RFC 0014 remains the normative document for memory semantics.
 
 - **Episodes** map directly to RFC 0014's `episode` projection class.
 - **Semantic carriers** are consolidation-layer structures that may
-  materialize candidate or stable `fact`, `concept`, and profile-bound
-  claims. They are not a sixth user-facing projection class.
+  materialize candidate or stable `fact`, `concept`, and profile-bound claims.
+  They are not a sixth user-facing projection class.
 - **Themes** are navigation and retrieval groupings over semantic
-  carriers. They are not evidence by themselves and never outrank
-  `explicit` or `curated` artefacts from RFC 0014.
+  carriers. They are not evidence by themselves and never outrank `explicit` or
+  `curated` artefacts from RFC 0014.
 - **Summaries** remain RFC 0014 projection artefacts. Theme summaries
-  may exist as navigation aids, but they do not replace RFC 0014
-  `summary` artefacts or change their trust semantics.
+  may exist as navigation aids, but they do not replace RFC 0014 `summary`
+  artefacts or change their trust semantics.
 
-Any implementation that cannot be expressed in RFC 0014 terms is out
-of scope for this RFC.
+Any implementation that cannot be expressed in RFC 0014 terms is out of scope
+for this RFC.
 
 ## Proposed design outline
 
@@ -152,8 +150,8 @@ The implementation should follow an additive pipeline:
 7. optional theme assignment runs after semantic acceptance
 8. summary refresh and maintenance work run asynchronously
 
-This RFC should define the invariants of each stage, not the exact
-models or prompts.
+This RFC should define the invariants of each stage, not the exact models or
+prompts.
 
 ### 4. Boundary detection
 
@@ -164,11 +162,11 @@ Boundary detection should remain pluggable.
 - An encoder-based classifier may propose a new boundary from
   embeddings, time gaps, and lexical shift.
 - Hard split rules must take precedence. At minimum these include a new
-  conversation identifier, source-kind change, explicit operator
-  markers, hard time gaps, and document revision changes.
+  conversation identifier, source-kind change, explicit operator markers, hard
+  time gaps, and document revision changes.
 
-The key compatibility point with RFC 0014 is that boundary detection
-defines evidence packaging, not truth semantics.
+The key compatibility point with RFC 0014 is that boundary detection defines
+evidence packaging, not truth semantics.
 
 ### 5. Temporal model
 
@@ -185,14 +183,13 @@ At minimum, the hierarchy should preserve:
   `inferred`, or `unknown`
 - graph edges for precedence, overlap, and supersession
 
-Model-inferred valid time must remain lower-trust than metadata-backed
-or curated time unless corroborated, consistent with RFC 0014's
-promotion rules.
+Model-inferred valid time must remain lower-trust than metadata-backed or
+curated time unless corroborated, consistent with RFC 0014's promotion rules.
 
 ### 6. Provenance model
 
-Every retrievable semantic carrier and every theme must retain a
-durable evidence chain.
+Every retrievable semantic carrier and every theme must retain a durable
+evidence chain.
 
 The implementation should support:
 
@@ -201,8 +198,8 @@ The implementation should support:
 - support edges to specific evidence references
 - membership edges from semantic carriers to themes
 
-Theme nodes are never evidence by themselves. They inherit provenance
-only through their members.
+Theme nodes are never evidence by themselves. They inherit provenance only
+through their members.
 
 ### 7. Curated-document projection
 
@@ -216,13 +213,12 @@ This design should preserve two rules:
 - curated support should outrank weak inferred support during
   deduplication and contradiction handling, unless explicitly retracted
 
-This is compatible with RFC 0014's distinction between `explicit`,
-`curated`, and inferred artefacts.
+This is compatible with RFC 0014's distinction between `explicit`, `curated`,
+and inferred artefacts.
 
 ### 8. Retraction and purge propagation
 
-Retraction should remain soft by default and propagate through the
-hierarchy.
+Retraction should remain soft by default and propagate through the hierarchy.
 
 At minimum:
 
@@ -232,8 +228,8 @@ At minimum:
 - workspace purge must remove all hierarchy artefacts, including draft
   episodes and checkpoints
 
-Retracted nodes should remain auditable until purge or compaction
-policy removes them.
+Retracted nodes should remain auditable until purge or compaction policy
+removes them.
 
 ### 9. Rollout outline
 
@@ -244,8 +240,8 @@ The recommended rollout is staged:
 3. optional theme shadowing and backfill
 4. retrieval integration behind a profile or feature flag
 
-This keeps the materialization hierarchy additive while RFC 0014
-semantics remain stable.
+This keeps the materialization hierarchy additive while RFC 0014 semantics
+remain stable.
 
 ## Open questions
 
@@ -261,8 +257,8 @@ semantics remain stable.
 
 ## Recommendation
 
-Adopt this RFC as the implementation-facing sibling to RFC 0014.
-RFC 0014 should remain the authority on memory semantics and trust
-rules. RFC 0015 should become the authority on how `memoryd`
-materializes those semantics into durable hierarchical structures for
-evidence preservation, navigation, and future retrieval work.
+Adopt this RFC as the implementation-facing sibling to RFC 0014. RFC 0014
+should remain the authority on memory semantics and trust rules. RFC 0015
+should become the authority on how `memoryd` materializes those semantics into
+durable hierarchical structures for evidence preservation, navigation, and
+future retrieval work.

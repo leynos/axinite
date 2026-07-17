@@ -1,7 +1,9 @@
 # IronClaw ↔ OpenClaw Feature Parity Matrix
 
 <!-- markdownlint-disable-next-line MD013 -->
-This document tracks feature parity between IronClaw (Rust implementation) and OpenClaw (TypeScript reference implementation). Use this to coordinate work across developers.
+This document tracks feature parity between IronClaw (Rust implementation) and
+OpenClaw (TypeScript reference implementation). Use this to coordinate work
+across developers.
 
 **Legend:**
 
@@ -14,9 +16,10 @@ This document tracks feature parity between IronClaw (Rust implementation) and O
 - ➖ N/A (not applicable to Rust implementation)
 <!-- markdownlint-enable MD032 -->
 
-**Last reviewed against OpenClaw PRs:** 2026-03-10 (merged 2026-02-24 through 2026-03-10)
+**Last reviewed against OpenClaw PRs:** 2026-03-10 (merged 2026-02-24 through
+2026-03-10)
 
----
+______________________________________________________________________
 
 <!-- markdownlint-disable MD013 MD024 MD060 -->
 
@@ -33,7 +36,7 @@ This document tracks feature parity between IronClaw (Rust implementation) and O
 
 ### Owner: _Unassigned_
 
----
+______________________________________________________________________
 
 ## 2. Gateway System
 
@@ -63,96 +66,96 @@ This document tracks feature parity between IronClaw (Rust implementation) and O
 
 ### Owner: _Unassigned_
 
----
+______________________________________________________________________
 
 ## 3. Messaging Channels
 
-| Channel | OpenClaw | IronClaw | Priority | Notes |
-|---------|----------|----------|----------|-------|
-| CLI/TUI | ✅ | ✅ | - | Ratatui-based TUI |
-| HTTP webhook | ✅ | ✅ | - | axum with secret validation |
-| REPL (simple) | ✅ | ✅ | - | For testing |
-| WASM channels | ❌ | ✅ | - | IronClaw innovation |
-| WhatsApp | ✅ | ❌ | P1 | Baileys (Web), same-phone mode with echo detection |
-| Telegram | ✅ | ✅ | - | WASM channel(MTProto), DM pairing, caption, /start, bot_username, DM topics |
-| Discord | ✅ | ❌ | P2 | discord.js, thread parent binding inheritance |
-| Signal | ✅ | ✅ | P2 | signal-cli daemonPC, SSE listener HTTP/JSON-R, user/group allowlists, DM pairing |
-| Slack | ✅ | ✅ | - | WASM tool |
-| iMessage | ✅ | ❌ | P3 | BlueBubbles or Linq recommended |
-| Linq | ✅ | ❌ | P3 | Real iMessage via API, no Mac required |
-| Feishu/Lark | ✅ | ❌ | P3 | Bitable create app/field tools, Docx table/image/file actions, rich-text media extraction |
-| LINE | ✅ | ❌ | P3 | |
-| WebChat | ✅ | ✅ | - | Web gateway chat |
-| Matrix | ✅ | ❌ | P3 | E2EE support |
-| Mattermost | ✅ | ❌ | P3 | Emoji reactions, interactive buttons, model picker |
-| Google Chat | ✅ | ❌ | P3 | |
-| MS Teams | ✅ | ❌ | P3 | |
-| Twitch | ✅ | ❌ | P3 | |
-| Voice Call | ✅ | ❌ | P3 | Twilio/Telnyx, stale call reaper, pre-cached greeting |
-| Nostr | ✅ | ❌ | P3 | |
+| Channel       | OpenClaw | IronClaw | Priority | Notes                                                                                     |
+| ------------- | -------- | -------- | -------- | ----------------------------------------------------------------------------------------- |
+| CLI/TUI       | ✅       | ✅       | -        | Ratatui-based TUI                                                                         |
+| HTTP webhook  | ✅       | ✅       | -        | axum with secret validation                                                               |
+| REPL (simple) | ✅       | ✅       | -        | For testing                                                                               |
+| WASM channels | ❌       | ✅       | -        | IronClaw innovation                                                                       |
+| WhatsApp      | ✅       | ❌       | P1       | Baileys (Web), same-phone mode with echo detection                                        |
+| Telegram      | ✅       | ✅       | -        | WASM channel(MTProto), DM pairing, caption, /start, bot_username, DM topics               |
+| Discord       | ✅       | ❌       | P2       | discord.js, thread parent binding inheritance                                             |
+| Signal        | ✅       | ✅       | P2       | signal-cli daemonPC, SSE listener HTTP/JSON-R, user/group allowlists, DM pairing          |
+| Slack         | ✅       | ✅       | -        | WASM tool                                                                                 |
+| iMessage      | ✅       | ❌       | P3       | BlueBubbles or Linq recommended                                                           |
+| Linq          | ✅       | ❌       | P3       | Real iMessage via API, no Mac required                                                    |
+| Feishu/Lark   | ✅       | ❌       | P3       | Bitable create app/field tools, Docx table/image/file actions, rich-text media extraction |
+| LINE          | ✅       | ❌       | P3       |                                                                                           |
+| WebChat       | ✅       | ✅       | -        | Web gateway chat                                                                          |
+| Matrix        | ✅       | ❌       | P3       | E2EE support                                                                              |
+| Mattermost    | ✅       | ❌       | P3       | Emoji reactions, interactive buttons, model picker                                        |
+| Google Chat   | ✅       | ❌       | P3       |                                                                                           |
+| MS Teams      | ✅       | ❌       | P3       |                                                                                           |
+| Twitch        | ✅       | ❌       | P3       |                                                                                           |
+| Voice Call    | ✅       | ❌       | P3       | Twilio/Telnyx, stale call reaper, pre-cached greeting                                     |
+| Nostr         | ✅       | ❌       | P3       |                                                                                           |
 
 ### Telegram-Specific Features (since Feb 2025)
 
-| Feature | OpenClaw | IronClaw | Notes |
-|---------|----------|----------|-------|
-| Forum topic creation | ✅ | ❌ | Create topics in forum groups |
-| channel_post support | ✅ | ❌ | Bot-to-bot communication |
-| User message reactions | ✅ | ❌ | Surface inbound reactions |
-| sendPoll | ✅ | ❌ | Poll creation via agent |
-| Cron/heartbeat topic targeting | ✅ | ❌ | Messages land in correct topic |
-| DM topics support | ✅ | ❌ | Agent/topic bindings in DMs and agent-scoped SessionKeys |
-| Persistent ACP topic binding | ✅ | ❌ | ACP harness sessions can pin to Telegram forum or DM topics |
+| Feature                        | OpenClaw | IronClaw | Notes                                                       |
+| ------------------------------ | -------- | -------- | ----------------------------------------------------------- |
+| Forum topic creation           | ✅       | ❌       | Create topics in forum groups                               |
+| channel_post support           | ✅       | ❌       | Bot-to-bot communication                                    |
+| User message reactions         | ✅       | ❌       | Surface inbound reactions                                   |
+| sendPoll                       | ✅       | ❌       | Poll creation via agent                                     |
+| Cron/heartbeat topic targeting | ✅       | ❌       | Messages land in correct topic                              |
+| DM topics support              | ✅       | ❌       | Agent/topic bindings in DMs and agent-scoped SessionKeys    |
+| Persistent ACP topic binding   | ✅       | ❌       | ACP harness sessions can pin to Telegram forum or DM topics |
 
 ### Discord-Specific Features (since Feb 2025)
 
-| Feature | OpenClaw | IronClaw | Notes |
-|---------|----------|----------|-------|
-| Forwarded attachment downloads | ✅ | ❌ | Fetch media from forwarded messages |
-| Faster reaction state machine | ✅ | ❌ | Watchdog + debounce |
-| Thread parent binding inheritance | ✅ | ❌ | Threads inherit parent routing |
+| Feature                           | OpenClaw | IronClaw | Notes                               |
+| --------------------------------- | -------- | -------- | ----------------------------------- |
+| Forwarded attachment downloads    | ✅       | ❌       | Fetch media from forwarded messages |
+| Faster reaction state machine     | ✅       | ❌       | Watchdog + debounce                 |
+| Thread parent binding inheritance | ✅       | ❌       | Threads inherit parent routing      |
 
 ### Slack-Specific Features (since Feb 2025)
 
-| Feature | OpenClaw | IronClaw | Notes |
-|---------|----------|----------|-------|
-| Streaming draft replies | ✅ | ❌ | Partial replies via draft message updates |
-| Configurable stream modes | ✅ | ❌ | Per-channel stream behaviour |
-| Thread ownership | ✅ | ❌ | Thread-level ownership tracking plus reply participation memory |
-| Download-file action | ✅ | ❌ | On-demand attachment downloads via message actions |
+| Feature                   | OpenClaw | IronClaw | Notes                                                           |
+| ------------------------- | -------- | -------- | --------------------------------------------------------------- |
+| Streaming draft replies   | ✅       | ❌       | Partial replies via draft message updates                       |
+| Configurable stream modes | ✅       | ❌       | Per-channel stream behaviour                                    |
+| Thread ownership          | ✅       | ❌       | Thread-level ownership tracking plus reply participation memory |
+| Download-file action      | ✅       | ❌       | On-demand attachment downloads via message actions              |
 
 ### Mattermost-Specific Features (since Mar 2026)
 
-| Feature | OpenClaw | IronClaw | Notes |
-|---------|----------|----------|-------|
-| Interactive buttons | ✅ | ❌ | Clickable message buttons with signed callback flow |
-| Interactive model picker | ✅ | ❌ | In-channel provider/model chooser |
+| Feature                  | OpenClaw | IronClaw | Notes                                               |
+| ------------------------ | -------- | -------- | --------------------------------------------------- |
+| Interactive buttons      | ✅       | ❌       | Clickable message buttons with signed callback flow |
+| Interactive model picker | ✅       | ❌       | In-channel provider/model chooser                   |
 
 ### Feishu/Lark-Specific Features (since Mar 2026)
 
-| Feature | OpenClaw | IronClaw | Notes |
-|---------|----------|----------|-------|
-| Doc/table actions | ✅ | ❌ | `feishu_doc` supports tables, positional insert, color_text, image upload, and file upload |
-| Rich-text embedded media extraction | ✅ | ❌ | Pull video/media attachments from post messages |
+| Feature                             | OpenClaw | IronClaw | Notes                                                                                      |
+| ----------------------------------- | -------- | -------- | ------------------------------------------------------------------------------------------ |
+| Doc/table actions                   | ✅       | ❌       | `feishu_doc` supports tables, positional insert, color_text, image upload, and file upload |
+| Rich-text embedded media extraction | ✅       | ❌       | Pull video/media attachments from post messages                                            |
 
 ### Channel Features
 
-| Feature | OpenClaw | IronClaw | Notes |
-|---------|----------|----------|-------|
-| DM pairing codes | ✅ | ✅ | `ironclaw pairing list/approve`, host APIs |
-| Allowlist/blocklist | ✅ | 🚧 | `allow_from` + pairing store + hardened command/group allowlists |
-| Self-message bypass | ✅ | ❌ | Own messages skip pairing |
-| Mention-based activation | ✅ | ✅ | bot_username + respond_to_all_group_messages |
-| Per-group tool policies | ✅ | ❌ | Allow/deny specific tools |
-| Thread isolation | ✅ | ✅ | Separate sessions per thread/topic |
-| Per-channel media limits | ✅ | 🚧 | Caption support plus `mediaMaxMb` enforcement for WhatsApp, Telegram, and Discord |
-| Typing indicators | ✅ | 🚧 | TUI + channel typing, with configurable silence timeout; richer parity pending |
-| Per-channel ackReaction config | ✅ | ❌ | Customizable acknowledgement reactions/scopes |
-| Group session priming | ✅ | ❌ | Member roster injected for context |
-| Sender_id in trusted metadata | ✅ | ❌ | Exposed in system metadata |
+| Feature                        | OpenClaw | IronClaw | Notes                                                                             |
+| ------------------------------ | -------- | -------- | --------------------------------------------------------------------------------- |
+| DM pairing codes               | ✅       | ✅       | `ironclaw pairing list/approve`, host APIs                                        |
+| Allowlist/blocklist            | ✅       | 🚧       | `allow_from` + pairing store + hardened command/group allowlists                  |
+| Self-message bypass            | ✅       | ❌       | Own messages skip pairing                                                         |
+| Mention-based activation       | ✅       | ✅       | bot_username + respond_to_all_group_messages                                      |
+| Per-group tool policies        | ✅       | ❌       | Allow/deny specific tools                                                         |
+| Thread isolation               | ✅       | ✅       | Separate sessions per thread/topic                                                |
+| Per-channel media limits       | ✅       | 🚧       | Caption support plus `mediaMaxMb` enforcement for WhatsApp, Telegram, and Discord |
+| Typing indicators              | ✅       | 🚧       | TUI + channel typing, with configurable silence timeout; richer parity pending    |
+| Per-channel ackReaction config | ✅       | ❌       | Customizable acknowledgement reactions/scopes                                     |
+| Group session priming          | ✅       | ❌       | Member roster injected for context                                                |
+| Sender_id in trusted metadata  | ✅       | ❌       | Exposed in system metadata                                                        |
 
 ### Owner: _Unassigned_
 
----
+______________________________________________________________________
 
 ## 4. CLI Commands
 
@@ -190,7 +193,7 @@ This document tracks feature parity between IronClaw (Rust implementation) and O
 
 ### Owner: _Unassigned_
 
----
+______________________________________________________________________
 
 ## 5. Agent System
 
@@ -233,7 +236,7 @@ This document tracks feature parity between IronClaw (Rust implementation) and O
 
 ### Owner: _Unassigned_
 
----
+______________________________________________________________________
 
 ## 6. Model & Provider Support
 
@@ -269,7 +272,7 @@ This document tracks feature parity between IronClaw (Rust implementation) and O
 
 ### Owner: _Unassigned_
 
----
+______________________________________________________________________
 
 ## 7. Media Handling
 
@@ -292,7 +295,7 @@ This document tracks feature parity between IronClaw (Rust implementation) and O
 
 ### Owner: _Unassigned_
 
----
+______________________________________________________________________
 
 ## 8. Plugin & Extension System
 
@@ -317,7 +320,7 @@ This document tracks feature parity between IronClaw (Rust implementation) and O
 
 ### Owner: _Unassigned_
 
----
+______________________________________________________________________
 
 ## 9. Configuration System
 
@@ -336,7 +339,7 @@ This document tracks feature parity between IronClaw (Rust implementation) and O
 
 ### Owner: _Unassigned_
 
----
+______________________________________________________________________
 
 ## 10. Memory & Knowledge System
 
@@ -365,7 +368,7 @@ This document tracks feature parity between IronClaw (Rust implementation) and O
 
 ### Owner: _Unassigned_
 
----
+______________________________________________________________________
 
 ## 11. Mobile Apps
 
@@ -386,7 +389,7 @@ This document tracks feature parity between IronClaw (Rust implementation) and O
 
 ### Owner: _Unassigned_ (if ever prioritized)
 
----
+______________________________________________________________________
 
 ## 12. macOS App
 
@@ -407,7 +410,7 @@ This document tracks feature parity between IronClaw (Rust implementation) and O
 
 ### Owner: _Unassigned_ (if ever prioritized)
 
----
+______________________________________________________________________
 
 ## 13. Web Interface
 
@@ -427,40 +430,40 @@ This document tracks feature parity between IronClaw (Rust implementation) and O
 
 ### Owner: _Unassigned_
 
----
+______________________________________________________________________
 
 ## 14. Automation
 
-| Feature | OpenClaw | IronClaw | Priority | Notes |
-|---------|----------|----------|----------|-------|
-| Cron jobs | ✅ | ✅ | - | Routines with cron trigger |
-| Per-job model fallback override | ✅ | ❌ | P2 | `payload.fallbacks` overrides agent-level fallbacks |
-| Cron stagger controls | ✅ | ❌ | P3 | Default stagger for scheduled jobs |
-| Cron finished-run webhook | ✅ | ❌ | P3 | Webhook on job completion |
-| Timezone support | ✅ | ✅ | - | Via cron expressions |
-| One-shot/recurring jobs | ✅ | ✅ | - | Manual + cron triggers |
-| Channel health monitor | ✅ | ❌ | P2 | Auto-restart with configurable interval |
-| `beforeInbound` hook | ✅ | ✅ | P2 | |
-| `beforeOutbound` hook | ✅ | ✅ | P2 | |
-| `beforeToolCall` hook | ✅ | ✅ | P2 | |
-| `before_agent_start` hook | ✅ | ❌ | P2 | Model/provider override |
-| `before_message_write` hook | ✅ | ❌ | P2 | Pre-write interception |
-| `onMessage` hook | ✅ | ✅ | - | Routines with event trigger |
-| `onSessionStart` hook | ✅ | ✅ | P2 | |
-| `onSessionEnd` hook | ✅ | ✅ | P2 | |
-| `transcribeAudio` hook | ✅ | ❌ | P3 | |
-| `transformResponse` hook | ✅ | ✅ | P2 | |
-| `llm_input`/`llm_output` hooks | ✅ | ❌ | P3 | LLM payload inspection |
-| Bundled hooks | ✅ | ✅ | P2 | Audit + declarative rule/webhook hooks |
-| Plugin hooks | ✅ | ✅ | P3 | Registered from WASM `capabilities.json` |
-| Workspace hooks | ✅ | ✅ | P2 | `hooks/hooks.json` and `hooks/*.hook.json` |
-| Outbound webhooks | ✅ | ✅ | P2 | Fire-and-forget lifecycle event delivery |
-| Heartbeat system | ✅ | ✅ | - | Periodic execution |
-| Gmail pub/sub | ✅ | ❌ | P3 | |
+| Feature                         | OpenClaw | IronClaw | Priority | Notes                                               |
+| ------------------------------- | -------- | -------- | -------- | --------------------------------------------------- |
+| Cron jobs                       | ✅       | ✅       | -        | Routines with cron trigger                          |
+| Per-job model fallback override | ✅       | ❌       | P2       | `payload.fallbacks` overrides agent-level fallbacks |
+| Cron stagger controls           | ✅       | ❌       | P3       | Default stagger for scheduled jobs                  |
+| Cron finished-run webhook       | ✅       | ❌       | P3       | Webhook on job completion                           |
+| Timezone support                | ✅       | ✅       | -        | Via cron expressions                                |
+| One-shot/recurring jobs         | ✅       | ✅       | -        | Manual + cron triggers                              |
+| Channel health monitor          | ✅       | ❌       | P2       | Auto-restart with configurable interval             |
+| `beforeInbound` hook            | ✅       | ✅       | P2       |                                                     |
+| `beforeOutbound` hook           | ✅       | ✅       | P2       |                                                     |
+| `beforeToolCall` hook           | ✅       | ✅       | P2       |                                                     |
+| `before_agent_start` hook       | ✅       | ❌       | P2       | Model/provider override                             |
+| `before_message_write` hook     | ✅       | ❌       | P2       | Pre-write interception                              |
+| `onMessage` hook                | ✅       | ✅       | -        | Routines with event trigger                         |
+| `onSessionStart` hook           | ✅       | ✅       | P2       |                                                     |
+| `onSessionEnd` hook             | ✅       | ✅       | P2       |                                                     |
+| `transcribeAudio` hook          | ✅       | ❌       | P3       |                                                     |
+| `transformResponse` hook        | ✅       | ✅       | P2       |                                                     |
+| `llm_input`/`llm_output` hooks  | ✅       | ❌       | P3       | LLM payload inspection                              |
+| Bundled hooks                   | ✅       | ✅       | P2       | Audit + declarative rule/webhook hooks              |
+| Plugin hooks                    | ✅       | ✅       | P3       | Registered from WASM `capabilities.json`            |
+| Workspace hooks                 | ✅       | ✅       | P2       | `hooks/hooks.json` and `hooks/*.hook.json`          |
+| Outbound webhooks               | ✅       | ✅       | P2       | Fire-and-forget lifecycle event delivery            |
+| Heartbeat system                | ✅       | ✅       | -        | Periodic execution                                  |
+| Gmail pub/sub                   | ✅       | ❌       | P3       |                                                     |
 
 ### Owner: _Unassigned_
 
----
+______________________________________________________________________
 
 ## 15. Security Features
 
@@ -500,7 +503,7 @@ This document tracks feature parity between IronClaw (Rust implementation) and O
 
 ### Owner: _Unassigned_
 
----
+______________________________________________________________________
 
 ## 16. Development & Build System
 
@@ -522,7 +525,7 @@ This document tracks feature parity between IronClaw (Rust implementation) and O
 
 ### Owner: _Unassigned_
 
----
+______________________________________________________________________
 
 ## Implementation Priorities
 
@@ -550,7 +553,8 @@ This document tracks feature parity between IronClaw (Rust implementation) and O
 - ✅ Cron job scheduling (routines)
 - ✅ CLI subcommands (onboard, config, status, memory)
 - ✅ Gateway token auth
-- ✅ Skills system (prompt-based with trust gating, attenuation, activation criteria, loaded bundle-root metadata, and scoped bundled-file reads)
+- ✅ Skills system (prompt-based with trust gating, attenuation, activation
+  criteria, loaded bundle-root metadata, and scoped bundled-file reads)
 - ✅ Session file permissions (0o600)
 - ✅ Memory CLI commands (search, read, write, tree, status)
 - ✅ Shell env scrubbing + command injection detection
@@ -561,8 +565,10 @@ This document tracks feature parity between IronClaw (Rust implementation) and O
 - ❌ Slack channel (real implementation)
 - ✅ Telegram channel (WASM, DM pairing, caption, /start)
 - ❌ WhatsApp channel
-- ✅ Multi-provider failover (`FailoverProvider` with retryable error classification)
-- ✅ Hooks system (core lifecycle hooks + bundled/plugin/workspace hooks + outbound webhooks)
+- ✅ Multi-provider failover (`FailoverProvider` with retryable error
+  classification)
+- ✅ Hooks system (core lifecycle hooks + bundled/plugin/workspace hooks +
+  outbound webhooks)
 
 ### P2 - Medium Priority
 - ❌ Media handling (images, PDFs)
@@ -578,7 +584,8 @@ This document tracks feature parity between IronClaw (Rust implementation) and O
 - ❌ Other messaging platforms
 - ❌ TTS/audio features
 - ❌ Video support
-- 🚧 Skills routing blocks (activation criteria exist, but no "Use when / Don't use when")
+- 🚧 Skills routing blocks (activation criteria exist, but no "Use when / Don't
+  use when")
 - ❌ Plugin registry
 - ❌ Streaming (block/tool/Z.AI tool_stream)
 - ❌ Memory: temporal decay, MMR re-ranking, query expansion
@@ -587,13 +594,14 @@ This document tracks feature parity between IronClaw (Rust implementation) and O
 
 <!-- markdownlint-enable MD013 MD022 MD032 -->
 
----
+______________________________________________________________________
 
 <!-- markdownlint-disable MD013 -->
 
 ## How to Contribute
 
-1. **Claim a section**: Edit this file and add your name/handle to the "Owner" field
+1. **Claim a section**: Edit this file and add your name/handle to the "Owner"
+   field
 2. **Create a tracking issue**: Link to GitHub issue for the feature area
 3. **Update status**: Change ❌ to 🚧 when starting, ✅ when complete
 4. **Add notes**: Document any design decisions or deviations
@@ -606,7 +614,7 @@ This document tracks feature parity between IronClaw (Rust implementation) and O
 - Owners can delegate sub-features to others
 - Update this file as part of your PR
 
----
+______________________________________________________________________
 
 ## Deviations from OpenClaw
 
@@ -614,15 +622,20 @@ This document tracks feature parity between IronClaw (Rust implementation) and O
 
 IronClaw intentionally differs from OpenClaw in these ways:
 
-1. **Rust vs TypeScript**: Native performance, memory safety, single binary distribution
-2. **WASM sandbox vs Docker**: Lighter weight, faster startup, capability-based security
-3. **PostgreSQL + libSQL vs SQLite**: Dual-backend (production PG + embedded libSQL for zero-dep local mode)
+1. **Rust vs TypeScript**: Native performance, memory safety, single binary
+   distribution
+2. **WASM sandbox vs Docker**: Lighter weight, faster startup, capability-based
+   security
+3. **PostgreSQL + libSQL vs SQLite**: Dual-backend (production PG + embedded
+   libSQL for zero-dep local mode)
 4. **NEAR AI focus**: Primary provider with session-based auth
 5. **No mobile/desktop apps**: Focus on server-side and CLI initially
 6. **WASM channels**: Novel extension mechanism not in OpenClaw
-7. **Tinfoil private inference**: IronClaw-only provider for private/encrypted inference
+7. **Tinfoil private inference**: IronClaw-only provider for private/encrypted
+   inference
 8. **GitHub WASM tool**: Native GitHub integration as WASM tool
-9. **Prompt-based skills**: Different approach than OpenClaw capability bundles (trust gating, attenuation)
+9. **Prompt-based skills**: Different approach than OpenClaw capability bundles
+   (trust gating, attenuation)
 
 These are intentional architectural choices, not gaps to be filled.
 

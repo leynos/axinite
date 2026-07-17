@@ -25,8 +25,8 @@ formatting changes that alter operator-visible diagnostics.
 Introduce explicit newtype wrappers for schema helper arguments:
 `ParamName<'a>`, `SchemaPath`, and `ToolName<'a>`.
 
-`ParamName<'a>` and `ToolName<'a>` are borrowed wrappers over `&'a str`.
-Each type:
+`ParamName<'a>` and `ToolName<'a>` are borrowed wrappers over `&'a str`. Each
+type:
 
 - carries a single `&'a str` field and is `Copy`;
 - implements `From<&'a str>` and `From<&'a String>` so existing string call

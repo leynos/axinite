@@ -15,18 +15,55 @@ explicitly a contract language for component interfaces and worlds, and it
 supports handle-like “resources” that map neatly to opaque provenance tokens.
 [^1]
 
-In Axinite’s IronClaw harness today, the WASM boundary already enforces a deny-by-default capability model: tools call WIT-imported host functions such as `host.http-request`, and the host validates an allowlist, injects credentials at the boundary, and runs a leak detector before/after requests. That provides a strong base for an intent-first model, but two changes are required to reach “zero-knowledge plugin” semantics reliably:
+In Axinite’s IronClaw harness today, the WASM boundary already enforces a
+deny-by-default capability model: tools call WIT-imported host functions such as
+`host.http-request`, and the host validates an allowlist, injects credentials at
+the boundary, and runs a leak detector before/after requests. That provides a
+strong base for an intent-first model, but two changes are required to reach
+“zero-knowledge plugin” semantics reliably:
 
-1) **Stop plugin-controlled secret placement.** IronClaw currently supports placeholder substitution (`{TOKEN}`-style) inside URLs/headers, and separately supports host-based credential injection. The placeholder mechanism weakens non-exfiltration guarantees because a malicious plugin can choose *where* secrets land (URL, body fields, user-visible text, etc.). In a ZK intent mode, placeholder substitution should be **disabled entirely** and secret injection should be restricted to harness-owned sinks (typically specific headers).
-2) **Add provenance-aware policy over “semantic operations”.** If a plugin can read account data (search results, playlist IDs) and can also write user-visible/account-persistent fields (playlist names, descriptions), the harness should enforce a noninterference-like constraint: secret-derived or remote-derived values must not flow into public sinks without explicit approval. This is not a purely static problem; it requires runtime provenance/taint plus a policy engine.
+1) **Stop plugin-controlled secret placement.** IronClaw currently supports
+   placeholder substitution (`{TOKEN}`-style) inside URLs/headers, and
+   separately supports host-based credential injection. The placeholder
+   mechanism weakens non-exfiltration guarantees because a malicious plugin can
+   choose *where* secrets land (URL, body fields, user-visible text, etc.). In a
+   ZK intent mode, placeholder substitution should be **disabled entirely** and
+   secret injection should be restricted to harness-owned sinks (typically
+   specific headers).
+2) **Add provenance-aware policy over “semantic operations”.** If a plugin can
+   read account data (search results, playlist IDs) and can also write
+   user-visible/account-persistent fields (playlist names, descriptions), the
+   harness should enforce a noninterference-like constraint: secret-derived or
+   remote-derived values must not flow into public sinks without explicit
+   approval. This is not a purely static problem; it requires runtime
+   provenance/taint plus a policy engine.
 
-For policy evaluation, Open Policy Agent (OPA)’s Rego fits the “deny by default, data-in/data-out” model better than Starlark: Rego was purpose-built for expressing policy over structured inputs, and OPA supports compiling policy to WebAssembly for embedding. [^2] Starlark is deterministic and hermetic by design, and works well as a configuration language, but it is still a general-purpose language that tends to produce less auditable “policy-as-code” in practice. [^3] The recommended approach is **Rego for enforcement**, optionally **Starlark for authoring convenience** (rendered to JSON policy inputs/constraints).
+For policy evaluation, Open Policy Agent (OPA)’s Rego fits the “deny by default,
+data-in/data-out” model better than Starlark: Rego was purpose-built for
+expressing policy over structured inputs, and OPA supports compiling policy to
+WebAssembly for embedding. [^2] Starlark is deterministic and hermetic by
+design, and works well as a configuration language, but it is still a
+general-purpose language that tends to produce less auditable “policy-as-code”
+in practice. [^3] The recommended approach is **Rego for enforcement**,
+optionally **Starlark for authoring convenience** (rendered to JSON policy
+inputs/constraints).
 
-On the YouTube Music side: YTMusic’s unofficial interface commonly uses internal `music.youtube.com/youtubei/v1/*` endpoints (e.g. `browse`, `next`). [^4] Authentication in the ytmusic ecosystem often relies on browser-derived cookies plus a derived `SAPISIDHASH` header: `SAPISIDHASH {ts}_{sha1(ts + " " + SAPISID + " " + origin)}` (origin e.g. `https://music.youtube.com`). [^5] If OAuth is used instead, Google’s documentation recommends sending access tokens via `Authorization: Bearer …` headers and using standard refresh flows. [^6]
+On the YouTube Music side: YTMusic’s unofficial interface commonly uses internal
+`music.youtube.com/youtubei/v1/*` endpoints (e.g. `browse`, `next`). [^4]
+Authentication in the ytmusic ecosystem often relies on browser-derived cookies
+plus a derived `SAPISIDHASH` header:
+`SAPISIDHASH {ts}_{sha1(ts + " " + SAPISID + " " + origin)}` (origin e.g.
+`https://music.youtube.com`). [^5] If OAuth is used instead, Google’s
+documentation recommends sending access tokens via `Authorization: Bearer …`
+headers and using standard refresh flows. [^6]
 
 ## Current IronClaw components and APIs relevant to an intent model
 
-This section enumerates the Axinite components involved in the change. Paths and symbols are named so the relevant code can be located quickly in the repository; GitHub web access is not available in this environment, so line-precise citations for repo code are not attached here, but the identifiers below match current source.
+This section enumerates the Axinite components involved in the change. Paths and
+symbols are named so the relevant code can be located quickly in the repository;
+GitHub web access is not available in this environment, so line-precise
+citations for repo code are not attached here, but the identifiers below match
+current source.
 
 ### Current WIT world and host function surface
 
@@ -37,32 +74,49 @@ IronClaw defines a single tool world in `wit/tool.wit`:
 - Imports: `interface host`
 - Exports: `interface tool`
 
-The **host interface** includes `log`, `now-millis`, `workspace-read`, `http-request`, `tool-invoke`, and `secret-exists`. The **tool interface** exposes `execute(req) -> response`, plus `schema()` and `description()`.
+The **host interface** includes `log`, `now-millis`, `workspace-read`,
+`http-request`, `tool-invoke`, and `secret-exists`. The **tool interface**
+exposes `execute(req) -> response`, plus `schema()` and `description()`.
 
-This is already close to what is needed: intents will become *another exported interface/world*, and intent execution will become *either* a host-imported capability (plugin emits “plans”; host executes) *or* a host-owned RPC interface that the plugin calls (plugin requests semantic ops; host executes).
+This is already close to what is needed: intents will become *another exported
+interface/world*, and intent execution will become *either* a host-imported
+capability (plugin emits “plans”; host executes) *or* a host-owned RPC interface
+that the plugin calls (plugin requests semantic ops; host executes).
 
 ### WASM wrapper, lifecycle, and boundary enforcement
 
 The “hard boundary” lives in `src/tools/wasm/wrapper.rs`:
 
-- It uses `wasmtime::component::bindgen!` against `wit/tool.wit` and instantiates `world: "sandboxed-tool"`.
+- It uses `wasmtime::component::bindgen!` against `wit/tool.wit` and
+  instantiates `world: "sandboxed-tool"`.
 - Runtime enforcement includes:
-  - Fuel metering (`store.set_fuel(...)`) and epoch deadline trap (hard timeout) to pre-empt infinite loops.
-  - A **leak detector** invoked on outbound URL/headers/body and on response body prior to returning to WASM.
+  - Fuel metering (`store.set_fuel(...)`) and epoch deadline trap (hard timeout)
+    to pre-empt infinite loops.
+  - A **leak detector** invoked on outbound URL/headers/body and on response
+    body prior to returning to WASM.
   - **Allowlist validation** before executing requests.
-  - **SSRF / DNS rebinding defence** via `reject_private_ip(&url)` before the request executes (and again for OAuth refresh token URLs).
+  - **SSRF / DNS rebinding defence** via `reject_private_ip(&url)` before the
+    request executes (and again for OAuth refresh token URLs).
 
-Important detail for a ZK design: `StoreData::inject_credentials` currently performs **placeholder substitution** over strings (e.g. `{GOOGLE_ACCESS_TOKEN}`), and `http_request` calls it on the URL and header values prior to allowlist checks and leak scanning. Host-based injection happens *after* that, based on host pattern matches.
+Important detail for a ZK design: `StoreData::inject_credentials` currently
+performs **placeholder substitution** over strings (e.g.
+`{GOOGLE_ACCESS_TOKEN}`), and `http_request` calls it on the URL and header
+values prior to allowlist checks and leak scanning. Host-based injection happens
+*after* that, based on host pattern matches.
 
-This is precisely the mechanism that should be disabled (or gated behind `execution_model != ZK`) because it allows the plugin to control where secret material gets placed.
+This is precisely the mechanism that should be disabled (or gated behind
+`execution_model != ZK`) because it allows the plugin to control where secret
+material gets placed.
 
 ### Allowlist and HTTP transport security
 
-- `src/tools/wasm/allowlist.rs` implements `AllowlistValidator` over `(host pattern, optional path prefix, optional methods)` and rejects:
+- `src/tools/wasm/allowlist.rs` implements `AllowlistValidator` over
+  `(host pattern, optional path prefix, optional methods)` and rejects:
   - non-HTTP(S) schemes,
   - URLs with userinfo (`user:pass@host`),
   - URL schemes other than HTTP/HTTPS (and can require HTTPS),
-  - path traversal / ambiguous path encodings (via path normalization and percent-decoding checks).
+  - path traversal / ambiguous path encodings (via path normalization and
+    percent-decoding checks).
 
 This is strong groundwork for “permitted hosts only”.
 
@@ -73,15 +127,23 @@ This is strong groundwork for “permitted hosts only”.
   - `CredentialInjector` (resolves secret mappings from a `SecretsStore`)
   - `InjectedCredentials` (headers + query params)
 
-In `src/tools/registry.rs`, when registering a WASM tool, IronClaw extracts credential mappings from the tool’s capabilities and adds them to the shared registry. That already provides a “capability broker” shape, but it is not provenance-aware and it does not distinguish “ZK tools” from “legacy tools”.
+In `src/tools/registry.rs`, when registering a WASM tool, IronClaw extracts
+credential mappings from the tool’s capabilities and adds them to the shared
+registry. That already provides a “capability broker” shape, but it is not
+provenance-aware and it does not distinguish “ZK tools” from “legacy tools”.
 
 ### Secrets storage and redaction
 
 - `src/secrets/types.rs` defines:
   - encrypted secret storage (`Secret`)
   - `DecryptedSecret` using a secrecy wrapper (never prints plaintext in `Debug`)
-  - credential location types (`CredentialLocation`) including a `UrlPath` placeholder option
-- `src/safety/leak_detector.rs` provides pattern-based secret detection (block/redact/warn). It targets API keys and bearer tokens, plus some high-entropy heuristics. This is relevant but **insufficient alone** for provenance-based noninterference; it prevents literal token exfiltration, not “derived” data flows.
+  - credential location types (`CredentialLocation`) including a `UrlPath`
+    placeholder option
+- `src/safety/leak_detector.rs` provides pattern-based secret detection
+  (block/redact/warn). It targets API keys and bearer tokens, plus some
+  high-entropy heuristics. This is relevant but **insufficient alone** for
+  provenance-based noninterference; it prevents literal token exfiltration, not
+  “derived” data flows.
 
 ### Runtime and sandbox constraints
 
@@ -91,7 +153,11 @@ In `src/tools/registry.rs`, when registering a WASM tool, IronClaw extracts cred
   - component model enabled,
   - wasm threads disabled.
 
-On the Wasmtime side, deterministic fuel is specifically called out as deterministic and designed for interruption. [^7] Epoch interruption has had at least one notable historical safety issue when combined with externrefs (CVE-2022-24791); Wasmtime should be kept current and advisories should be tracked. [^8]
+On the Wasmtime side, deterministic fuel is specifically called out as
+deterministic and designed for interruption. [^7] Epoch interruption has had at
+least one notable historical safety issue when combined with externrefs
+(CVE-2022-24791); Wasmtime should be kept current and advisories should be
+tracked. [^8]
 
 ## Design target: WIT-based intent ABI with provenance tokens
 
@@ -99,7 +165,8 @@ On the Wasmtime side, deterministic fuel is specifically called out as determini
 
 An “intent” exists to decouple **plugin authorship** from **side-effect execution**:
 
-- The plugin defines *what it wants to do* in a structured form (intent ID, inputs, semantic template).
+- The plugin defines *what it wants to do* in a structured form (intent ID,
+  inputs, semantic template).
 - The harness:
   - renders it for user understanding,
   - rejects it if it violates policy,
@@ -107,19 +174,29 @@ An “intent” exists to decouple **plugin authorship** from **side-effect exec
   - injects authentication only at send-time and only into harness-controlled sinks,
   - returns results with provenance metadata.
 
-This matches the confinement intuition in Lampson’s confinement problem: control the channels through which information can flow, and treat non-obvious side channels as part of the threat model. [^9] It also connects to the noninterference framing (public outputs should not depend on secret inputs). [^10]
+This matches the confinement intuition in Lampson’s confinement problem: control
+the channels through which information can flow, and treat non-obvious side
+channels as part of the threat model. [^9] It also connects to the
+noninterference framing (public outputs should not depend on secret
+inputs). [^10]
 
 ### Why WIT fits
 
-WIT defines contracts (interfaces and worlds) for the component model and supports “resources” that represent non-copyable handles crossing the boundary. [^11] This provides an ergonomic mechanism for opaque tokens:
+WIT defines contracts (interfaces and worlds) for the component model and
+supports “resources” that represent non-copyable handles crossing the
+boundary. [^11] This provides an ergonomic mechanism for opaque tokens:
 
 - The host can mint a provenance token as a resource handle.
-- The guest can store/pass it, but cannot introspect it into a string unless the host explicitly provides calls to do so.
-- The host can validate that a given token belongs to a particular provenance class and that using it in a sink is permitted.
+- The guest can store/pass it, but cannot introspect it into a string unless the
+  host explicitly provides calls to do so.
+- The host can validate that a given token belongs to a particular provenance
+  class and that using it in a sink is permitted.
 
 ### Proposed WIT packages/worlds
 
-A **new WIT package version** should be introduced, rather than mutating `near:agent@0.3.0` in-place, because this change becomes semver-significant for tool components.
+A **new WIT package version** should be introduced, rather than mutating
+`near:agent@0.3.0` in-place, because this change becomes semver-significant for
+tool components.
 
 A concrete approach:
 
@@ -128,12 +205,22 @@ A concrete approach:
 
 At minimum:
 
-- `world intentful-tool` exports an `intent` interface that lets the host enumerate intents and invoke the plugin’s orchestrations.
-- The host imports an `intent-host` interface that provides only capability-safe operations (e.g. “execute template X with args Y”) rather than raw `http-request`.
+- `world intentful-tool` exports an `intent` interface that lets the host
+  enumerate intents and invoke the plugin’s orchestrations.
+- The host imports an `intent-host` interface that provides only capability-safe
+  operations (e.g. “execute template X with args Y”) rather than raw
+  `http-request`.
 
-A key design decision is whether plugins may emit new templates, or only reference known ones. The prompt asks for “symbolic template IDs”, which strongly suggests that the plugin references template IDs and the host owns the template implementations.
+A key design decision is whether plugins may emit new templates, or only
+reference known ones. The prompt asks for “symbolic template IDs”, which
+strongly suggests that the plugin references template IDs and the host owns the
+template implementations.
 
-To avoid requiring the harness author to know plugins in advance, template IDs can remain generic: e.g. `http+json.post.v1`, `http+json.get.v1`, plus a “service profile” constraint. The host does not need to know *the plugin*, but it does need to know the *template vocabulary*. That is the stable contract that replaces “knowing plugins”.
+To avoid requiring the harness author to know plugins in advance, template IDs
+can remain generic: e.g. `http+json.post.v1`, `http+json.get.v1`, plus a
+“service profile” constraint. The host does not need to know *the plugin*, but
+it does need to know the *template vocabulary*. That is the stable contract that
+replaces “knowing plugins”.
 
 ### Component interaction diagram
 
@@ -174,18 +261,25 @@ flowchart LR
 
 ## Concrete code-level changes to implement a provenance-based intent model
 
-This section describes the changes in terms of new modules, modifications to existing code, core types/functions, and why each change matters.
+This section describes the changes in terms of new modules, modifications to
+existing code, core types/functions, and why each change matters.
 
 ### Add an execution model switch and forbid placeholder substitution in ZK tools
 
-**Problem:** `StoreData::inject_credentials` allows `{PLACEHOLDER}` substitution anywhere the plugin controls strings (URL, headers). That breaks the “harness-only secret sink” rule.
+**Problem:** `StoreData::inject_credentials` allows `{PLACEHOLDER}` substitution
+anywhere the plugin controls strings (URL, headers). That breaks the
+“harness-only secret sink” rule.
 
 **Change:**
+
 - Extend capabilities schema (`src/tools/wasm/capabilities_schema.rs`) to include:
-  - `execution_model: "legacy" | "intent_zk" | "intent_declarative"` (exact names open).
-- Thread this into runtime capabilities (`src/tools/wasm/capabilities.rs`) or wrapper config, so the wrapper knows which model applies.
+  - `execution_model: "legacy" | "intent_zk" | "intent_declarative"` (exact
+    names open).
+- Thread this into runtime capabilities (`src/tools/wasm/capabilities.rs`) or
+  wrapper config, so the wrapper knows which model applies.
 
 **Implementation sketch:**
+
 - In `src/tools/wasm/wrapper.rs`:
   - Add `execution_model: ExecutionModel` to `StoreData` and to `WasmToolWrapper`.
   - In `http_request`, gate the placeholder substitution:
@@ -198,50 +292,65 @@ This section describes the changes in terms of new modules, modifications to exi
       - `headers = raw headers` (no substitution)
       - Reject any string containing `{...}` when operating in fail-closed mode.
 
-**Security rationale:** This restores a strict invariant: only the harness can place secrets, and it can only place them into specific sinks (headers) at send time.
+**Security rationale:** This restores a strict invariant: only the harness can
+place secrets, and it can only place them into specific sinks (headers) at send
+time.
 
 ### Introduce a WIT intent world and intent manifest schema
 
 Both artefacts are required:
+
 - A runtime ABI (WIT) for **enumerating** and **invoking** intents.
 - A static manifest for **preflight review** and **deterministic rendering**.
 
 **New WIT file(s):**
+
 - Add `wit/intent.wit` (new package) containing:
   - `interface intent` (exported by plugin)
   - `interface intent-host` (imported by plugin)
   - `world intentful-tool` (exports intent, imports intent-host)
 
 **Key WIT types:**
+
 - `type template-id = string` (symbolic template name)
 - `resource prov-token` (opaque provenance handle)
 - `record intent-def { id, title, description, template-id, params, effects }`
 - `record intent-call { template-id, args, input-tokens, output-shape }`
-- `variant effect { read-network, write-network, write-user-visible, write-account-data, ... }`
+- `variant effect { read-network, write-network, write-user-visible,`
+  `write-account-data, ... }`
 
 The “effects” field makes rendering legible without trusting plugin prose.
 
 **Manifest schema:**
-- Extend or complement `<tool>.capabilities.json` with `<tool>.intent.json` or add an `intent` section:
-  - `intents: [ {id, title, description, template_id, param_schema, effects, approval_required?} ]`
+
+- Extend or complement `<tool>.capabilities.json` with `<tool>.intent.json` or
+  add an `intent` section:
+  - `intents: [ {id, title, description, template_id, param_schema,`
+    `effects, approval_required?} ]`
   - `template_bindings` if plugin-supplied bindings are permitted (see below).
 
 **Loader changes:**
+
 - In `src/tools/wasm/loader.rs`, on load:
   - Parse intent manifest alongside capabilities.
   - Validate that manifest template IDs exist (known vocabulary).
   - Store manifest in tool metadata for UI rendering.
 
-**Security rationale:** Deterministic rendering requires a stable, host-validated description of what an intent means; otherwise the plugin can present benign text while executing something else.
+**Security rationale:** Deterministic rendering requires a stable,
+host-validated description of what an intent means; otherwise the plugin can
+present benign text while executing something else.
 
 ### Add ZkWasmToolWrapper and disable direct http-request capability for ZK intent tools
 
-Right now, the world `sandboxed-tool` gives the plugin raw `host.http-request`. In a ZK intent model, the boundary should expose a smaller surface:
+Right now, the world `sandboxed-tool` gives the plugin raw `host.http-request`.
+In a ZK intent model, the boundary should expose a smaller surface:
 
-- The plugin should call `intent-host.exec_template(template_id, args, tokens)` rather than `http-request`.
+- The plugin should call `intent-host.exec_template(template_id, args, tokens)`
+  rather than `http-request`.
 - The host should implement templates and verify policy for each call.
 
 **New wrapper type:**
+
 - `src/tools/wasm/zk_wrapper.rs` (new):
   - `struct ZkWasmToolWrapper { … }` implementing `Tool`
   - Instantiates `world intentful-tool` instead of `sandboxed-tool`
@@ -249,14 +358,18 @@ Right now, the world `sandboxed-tool` gives the plugin raw `host.http-request`. 
 You will likely keep `WasmToolWrapper` for legacy tools.
 
 **Registry changes:**
+
 - In `src/tools/registry.rs` and `src/tools/wasm/loader.rs`:
   - Choose wrapper based on `execution_model`.
 
-**Security rationale:** Removing raw HTTP from plugin space is the single biggest reduction in exfiltration surface. You can still support “declarative HTTP templates”, but the host owns translation into raw HTTP.
+**Security rationale:** Removing raw HTTP from plugin space is the single
+biggest reduction in exfiltration surface. You can still support “declarative
+HTTP templates”, but the host owns translation into raw HTTP.
 
 ### Implement ProvenanceStore and taint types
 
 **New module:**
+
 - `src/provenance/mod.rs`
 - `src/provenance/store.rs`
 
@@ -286,16 +399,21 @@ pub struct ProvenanceStore {
 ```
 
 **Operations:**
+
 - `mint_user_text(String) -> ProvId`
 - `mint_network_response(RequestMeta, bytes) -> ProvId`
 - `read_text(ProvId) -> Result<String, ...>` (guarded; see policy)
 - `combine(new_kind, inputs) -> ProvId`
 
 **Guest-visible representation:**
+
 - In WIT: `resource prov-token`
 - In host: map resource handles to `ProvId`
 
-**Security rationale:** Leak detector catches literal secrets but not higher-level flows. Provenance enables enforcement of constraints such as: “a value derived from network responses must not appear in user-visible text sinks without approval”.
+**Security rationale:** Leak detector catches literal secrets but not
+higher-level flows. Provenance enables enforcement of constraints such as: “a
+value derived from network responses must not appear in user-visible text sinks
+without approval”.
 
 ### Add CapabilityBroker and TransportAssembler
 
@@ -308,6 +426,7 @@ You need a trusted coordinator that:
 - injects auth only at send time.
 
 **New modules:**
+
 - `src/intents/broker.rs` — `CapabilityBroker`
 - `src/intents/templates/mod.rs` — template registry
 - `src/intents/transport.rs` — `TransportAssembler`
@@ -329,6 +448,7 @@ pub struct HttpJsonTemplate {
 ```
 
 **Transport assembler responsibilities:**
+
 - Resolve templates into concrete requests given:
   - non-secret args,
   - provenance tokens for data-bearing fields,
@@ -341,7 +461,8 @@ pub struct HttpJsonTemplate {
   - deterministic header canonicalization.
 - Invoke secret injection via `SecretAuthManager` as the last step before send.
 
-**Security rationale:** This is the “only sink” for secrets and the choke point for policy enforcement.
+**Security rationale:** This is the “only sink” for secrets and the choke point
+for policy enforcement.
 
 ### Add YTMusic profile/templates and SecretAuthManager
 
@@ -350,16 +471,21 @@ pub struct HttpJsonTemplate {
 The following section covers how to store/manage SecretAuth and inject `SAPISIDHASH`/Bearer.
 
 **Cookie/SAPISID model:**
+
 - Store cookie material as secrets in IronClaw’s secrets store:
   - minimal: `SAPISID` (or `__Secure-3PAPISID` depending on observed headers)
-  - possibly also the full `Cookie:` header blob, if required for stable sessions (but minimize scope).
+  - possibly also the full `Cookie:` header blob, if required for stable
+    sessions (but minimize scope).
 - At send time:
-  - compute `SAPISIDHASH` from `(timestamp, SAPISID, origin)`; typical reverse-engineered form:
+  - compute `SAPISIDHASH` from `(timestamp, SAPISID, origin)`; typical
+    reverse-engineered form:
     `SAPISIDHASH {ts}_{sha1(ts + " " + SAPISID + " " + origin)}` [^12]
-  - set `Origin` and/or `X-Origin` consistently with `https://music.youtube.com` [^13]
+  - set `Origin` and/or `X-Origin` consistently with
+    `https://music.youtube.com` [^13]
   - attach cookie header (if stored) *only for the YTMusic allowlisted host*.
 
 **OAuth model:**
+
 - Use standard Google OAuth 2.0, store:
   - access token (with expiry)
   - refresh token
@@ -377,13 +503,16 @@ For the YTMusic internal API, the best-supported minimal allowlist is:
 - Path prefix: `/youtubei/v1/`
 - Typical endpoints:
   - `/youtubei/v1/browse` (often POST, commonly with `prettyPrint=false`) [^16]
-  - `/youtubei/v1/next` (used to retrieve playback-related metadata in ytmusicapi investigations) [^17]
+  - `/youtubei/v1/next` (used to retrieve playback-related metadata in
+    ytmusicapi investigations) [^17]
 
-Keep the path prefix narrow and explicitly exclude other Google hosts unless the profile needs them.
+Keep the path prefix narrow and explicitly exclude other Google hosts unless the
+profile needs them.
 
 #### YTMusic module layout
 
 **New modules:**
+
 - `src/integrations/ytmusic/mod.rs`
 - `src/integrations/ytmusic/auth.rs`
 - `src/integrations/ytmusic/templates.rs`
@@ -398,7 +527,9 @@ pub enum AuthScheme {
 }
 ```
 
-**Security rationale:** Service-specific injection belongs in a service profile. It keeps generic HTTP templates simple and avoids “credential location explosion” in global types.
+**Security rationale:** Service-specific injection belongs in a service profile.
+It keeps generic HTTP templates simple and avoids “credential location
+explosion” in global types.
 
 ### Disable placeholder substitution and URL-path credential locations for ZK tools
 
@@ -406,10 +537,13 @@ This matters enough to call out explicitly.
 
 - For ZK intent tools:
   - Reject `CredentialLocation::UrlPath` mappings.
-  - Reject `CredentialLocation::QueryParam` for auth (URLs leak into logs, error strings, caches).
+  - Reject `CredentialLocation::QueryParam` for auth (URLs leak into logs, error
+    strings, caches).
   - Allow only header injection (and ideally only `Authorization`/`Cookie` for YTMusic).
 
-This aligns with the older reverse-engineering guidance that `SAPISIDHASH` flows often require `Authorization` and `X-Origin`, not query string credentials. [^18]
+This aligns with the older reverse-engineering guidance that `SAPISIDHASH` flows
+often require `Authorization` and `X-Origin`, not query string
+credentials. [^18]
 
 ## Rust API sketch for a harness-facing intentful YTMusic plugin interface
 
@@ -474,14 +608,17 @@ pub trait IntentTool {
 
 ### Example WASM plugin flow
 
-A typical “search → create playlist → add tracks” orchestration, where the harness mints/consumes provenance:
+A typical “search → create playlist → add tracks” orchestration, where the
+harness mints/consumes provenance:
 
 1) User enters search query and playlist title.
 2) Harness mints `ProvToken`s for those user inputs (`ProvKind::UserInput`).
 3) Plugin requests `ytmusic.search` using the query token.
 4) Harness executes HTTP calls with injected auth and returns a search-results token.
-5) Plugin selects track IDs (either directly, or using host-provided extractors) and calls `ytmusic.create_playlist` and then `ytmusic.add_tracks`.
-6) Harness gates “write” intents behind user approval, rendering effects and concrete target hosts/paths in a canonical form.
+5) Plugin selects track IDs (either directly, or using host-provided extractors)
+   and calls `ytmusic.create_playlist` and then `ytmusic.add_tracks`.
+6) Harness gates “write” intents behind user approval, rendering effects and
+   concrete target hosts/paths in a canonical form.
 
 ```mermaid
 sequenceDiagram
@@ -527,29 +664,40 @@ sequenceDiagram
 
 ### Mitigations that matter in practice
 
-Leak detection blocks a class of direct, literal token exfiltration (API keys, bearer tokens). That is necessary, but not sufficient.
+Leak detection blocks a class of direct, literal token exfiltration (API keys,
+bearer tokens). That is necessary, but not sufficient.
 
 To make the “zero-knowledge” claim credible, implement a layered defence:
 
-- **Hard prohibition of placeholder substitution in ZK mode.** This eliminates *plugin-chosen* secret placement.
-- **Strict egress allowlist** at the transport layer (host + path prefix + methods), plus DNS rebinding checks. This reduces “echo server” attacks.
+- **Hard prohibition of placeholder substitution in ZK mode.** This eliminates
+  *plugin-chosen* secret placement.
+- **Strict egress allowlist** at the transport layer (host + path prefix +
+  methods), plus DNS rebinding checks. This reduces “echo server” attacks.
 - **Sink typing + approval gates**:
-  - Treat account-mutating operations (create playlist, edit metadata) as “write” effects and require explicit user approval.
-  - Render both the plugin’s description and the host’s canonical interpretation (template ID, host, path prefix, method).
+  - Treat account-mutating operations (create playlist, edit metadata) as
+    “write” effects and require explicit user approval.
+  - Render both the plugin’s description and the host’s canonical interpretation
+    (template ID, host, path prefix, method).
 - **Length/charset constraints on user-visible sinks** (open parameters):
-  - playlist titles/descriptions: cap length; restrict to a conservative printable subset if that restriction is acceptable.
-  - explicitly reject substrings resembling `{PLACEHOLDER}` or long base16/base64 blobs.
+  - playlist titles/descriptions: cap length; restrict to a conservative
+    printable subset if that restriction is acceptable.
+  - explicitly reject substrings resembling `{PLACEHOLDER}` or long
+    base16/base64 blobs.
 - **Rate limiting** at multiple layers:
   - per execution (already exists in `HostState`)
   - per time window per tool (capabilities rate limit)
   - per intent type (e.g. “no more than N playlist creations per hour”).
 - **Deterministic rendering checks**:
   - canonicalize JSON and headers before showing the user.
-  - ensure the displayed intent matches what the assembler will actually send (no “stringly typed” surprises).
+  - ensure the displayed intent matches what the assembler will actually send
+    (no “stringly typed” surprises).
 - **Redaction before any user-facing UI**:
-  - even if no secrets are expected, treat all error text as untrusted; scrub any host-injected secret values.
+  - even if no secrets are expected, treat all error text as untrusted; scrub
+    any host-injected secret values.
 
-These steps align with the broader literature: confinement/noninterference is not purely about “no read-access”; it’s about eliminating covert channels and controlling observable outputs. [^19]
+These steps align with the broader literature: confinement/noninterference is
+not purely about “no read-access”; it’s about eliminating covert channels and
+controlling observable outputs. [^19]
 
 <!-- markdownlint-disable MD013 MD060 -->
 

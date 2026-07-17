@@ -1,9 +1,8 @@
 # Add end-to-end tests for first-call WASM schema exposure
 
-This ExecPlan (execution plan) is a living document. The sections
-`Constraints`, `Tolerances`, `Risks`, `Progress`,
-`Surprises & Discoveries`, `Decision Log`, and
-`Outcomes & Retrospective` must be kept up to date as work proceeds.
+This ExecPlan (execution plan) is a living document. The sections `Constraints`,
+`Tolerances`, `Risks`, `Progress`, `Surprises & Discoveries`, `Decision Log`,
+and `Outcomes & Retrospective` must be kept up to date as work proceeds.
 
 Status: COMPLETE
 
@@ -47,28 +46,26 @@ and verify that policy, but must not invent a second WASM-specific contract.
   Acceptance criteria: the implementation stays scoped to tests, narrowly
   supporting test harnesses, and documentation updates for roadmap item
   `1.2.4`. No new runtime contract, no new transport route, and no broadened
-  provider-shaping work.
-  Sign-off: human reviewer approves this ExecPlan before implementation
-  begins.
+  provider-shaping work. Sign-off: human reviewer approves this ExecPlan before
+  implementation begins.
 
 - Implementation complete
   Acceptance criteria: non-hosted and hosted first-call schema exposure are
   both covered by observable regression tests, unhappy paths remain covered,
-  and relevant documentation is synchronized.
-  Sign-off: implementer marks all milestones complete before final validation.
+  and relevant documentation is synchronized. Sign-off: implementer marks all
+  milestones complete before final validation.
 
 - Validation passed
   Acceptance criteria: targeted tests, `make all`, Markdown linting for changed
-  docs, and `git diff --check` all pass with retained logs.
-  Sign-off: implementer records evidence immediately before commit.
+  docs, and `git diff --check` all pass with retained logs. Sign-off:
+  implementer records evidence immediately before commit.
 
 - Docs synced
   Acceptance criteria: `docs/roadmap.md`, `docs/rfcs/0002...`,
   `docs/users-guide.md`, `docs/worker-orchestrator-contract.md`, and
   `docs/axinite-architecture-overview.md` describe the same first-call WASM
-  contract, and `docs/contents.md` indexes this plan.
-  Sign-off: implementer completes documentation updates as the final
-  pre-commit checkpoint.
+  contract, and `docs/contents.md` indexes this plan. Sign-off: implementer
+  completes documentation updates as the final pre-commit checkpoint.
 
 ## Repository orientation
 
@@ -81,13 +78,12 @@ The files below are the authoritative orientation points for this feature.
   The most important sections are `Goals`, `Detailed Interface`,
   `Testing Strategy`, and `Migration Plan` step 5.
 - `docs/execplans/1-2-1-audit-and-fix-wasm-registration-paths.md`,
-  `docs/execplans/1-2-2-orchestrator-owned-wasm-tools-in-tool-catalogue.md`,
-  and `docs/execplans/1-2-3-demote-schema-bearing-retry-hints.md` capture the
+  `docs/execplans/1-2-2-orchestrator-owned-wasm-tools-in-tool-catalogue.md`, and
+  `docs/execplans/1-2-3-demote-schema-bearing-retry-hints.md` capture the
   decisions already made for registration-time schema publication, hosted
   catalogue reuse, and fallback-only retry hints.
 - `src/tools/wasm/loader.rs` already contains registration-path regression
-  tests such as
-  `load_from_files_publishes_guest_schema_in_tool_definitions` and
+  tests such as `load_from_files_publishes_guest_schema_in_tool_definitions` and
   `load_dev_tools_publishes_guest_schema_in_tool_definitions`. Those tests are
   the unit-level proof that active WASM registrations publish real schemas.
 - `src/tools/wasm/wrapper.rs` and `src/tools/wasm/wrapper/metadata.rs` own the
@@ -100,12 +96,12 @@ The files below are the authoritative orientation points for this feature.
 - `src/orchestrator/api/remote_tools.rs`,
   `src/orchestrator/api/handlers.rs`, and
   `src/orchestrator/api/tests/{remote_tools.rs,catalogue_fidelity.rs,transport_parity.rs}`
-  own hosted catalogue construction, the shared transport boundary, and current
-  fidelity tests.
+  own hosted catalogue construction, the shared transport boundary, and
+  current fidelity tests.
 - `src/worker/container.rs`, `src/worker/container/delegate.rs`, and
   `src/worker/container/tests/{remote_tools.rs,hosted_fidelity.rs}` own worker
-  proxy registration, first reasoning-context assembly, later
-  `available_tools` refresh, and the current hosted round-trip tests.
+  proxy registration, first reasoning-context assembly, later `available_tools`
+  refresh, and the current hosted round-trip tests.
 - `src/worker/api.rs` and `src/worker/api/proxy_types.rs` define the
   tool-capable proxied completion request. This is the precise place where the
   hosted first-call request can be observed without adding a new transport.
@@ -145,8 +141,8 @@ The files below are the authoritative orientation points for this feature.
   `rstest` integration or trace-backed tests and document the decision.
 
 - Prefer existing in-process harnesses over live external services, Docker, or
-  ambient environment mutation. Dependency injection and capturing stubs are the
-  expected patterns.
+  ambient environment mutation. Dependency injection and capturing stubs are
+  the expected patterns.
 
 - Keep new or modified files under repository size limits. If a test file would
   exceed 400 lines, extract helpers into a nearby fixture module instead.
@@ -191,44 +187,34 @@ The files below are the authoritative orientation points for this feature.
 
 - Risk: Existing tests already cover schema publication and catalogue fidelity,
   so new tests may accidentally duplicate current coverage without proving the
-  new first-call invariant.
-  Severity: high
-  Likelihood: medium
-  Mitigation: every new test must name the exact regression it catches that is
-  not already covered today, especially around observing the first LLM-facing
-  request rather than intermediate registry state.
+  new first-call invariant. Severity: high Likelihood: medium Mitigation: every
+  new test must name the exact regression it catches that is not already
+  covered today, especially around observing the first LLM-facing request
+  rather than intermediate registry state.
 
 - Risk: Strict equality checks against full schemas may become brittle if
   provider-safe shaping changes while the underlying contract remains valid.
-  Severity: medium
-  Likelihood: medium
-  Mitigation: use exact equality only where fidelity is itself the contract
-  boundary, and otherwise assert the structural invariants that matter for
-  first-call correctness.
+  Severity: medium Likelihood: medium Mitigation: use exact equality only where
+  fidelity is itself the contract boundary, and otherwise assert the structural
+  invariants that matter for first-call correctness.
 
 - Risk: Hosted-path tests may prove only catalogue fetch or proxy registration,
-  not the actual first proxied tool-capable completion request.
-  Severity: high
-  Likelihood: medium
-  Mitigation: include one capturing hosted test that inspects the
-  `ProxyToolCompletionRequest.tools` payload sent through
+  not the actual first proxied tool-capable completion request. Severity: high
+  Likelihood: medium Mitigation: include one capturing hosted test that
+  inspects the `ProxyToolCompletionRequest.tools` payload sent through
   `llm_complete_with_tools`.
 
 - Risk: The non-hosted path may drift toward testing a fake native tool instead
-  of a real WASM registration path, weakening the regression value.
-  Severity: medium
-  Likelihood: medium
-  Mitigation: use the real GitHub WASM fixture or the existing WASM loader
-  helpers wherever practical so the first-call proof remains tied to actual
-  registration behaviour.
+  of a real WASM registration path, weakening the regression value. Severity:
+  medium Likelihood: medium Mitigation: use the real GitHub WASM fixture or the
+  existing WASM loader helpers wherever practical so the first-call proof
+  remains tied to actual registration behaviour.
 
 - Risk: Documentation drift is likely because the roadmap marks `1.2.2` done
   while its ExecPlan file still shows `IN PROGRESS`, and this feature touches
-  the same document cluster.
-  Severity: medium
-  Likelihood: high
-  Mitigation: treat documentation synchronization as its own milestone and
-  explicitly reconcile status wording before marking `1.2.4` complete.
+  the same document cluster. Severity: medium Likelihood: high Mitigation:
+  treat documentation synchronization as its own milestone and explicitly
+  reconcile status wording before marking `1.2.4` complete.
 
 ## Milestone 1: confirm the observable first-call seams
 
@@ -447,8 +433,8 @@ command before the final commit.
   carefully when closing `1.2.4`.
 - 2026-04-15T17:57:00+02:00: `TraceLlm` currently captures only
   `ToolCompletionRequest.messages`, not the `tools` vector. A truthful
-  first-call assertion therefore requires either widening that capture or
-  using a narrow purpose-built capturing LLM in the behavioural test.
+  first-call assertion therefore requires either widening that capture or using
+  a narrow purpose-built capturing LLM in the behavioural test.
 - 2026-04-15T17:57:00+02:00: The hosted path already has an exact first-call
   observation seam: `WorkerRuntime` uses `ProxyLlmProvider`, which forwards the
   worker's first `ToolCompletionRequest` into
@@ -460,9 +446,10 @@ command before the final commit.
   harness.
 - 2026-04-15T18:10:00+02:00: The smallest truthful non-hosted seam was a
   purpose-built capturing LLM wired through `TestRigBuilder::with_llm(...)`.
-  That still exercises the real agent loop, real `Reasoning::respond_with_tools`
-  path, and real GitHub WASM registration helper while recording the first
-  `ToolCompletionRequest.tools` payload directly.
+  That still exercises the real agent loop, real
+  `Reasoning::respond_with_tools` path, and real GitHub WASM registration
+  helper while recording the first `ToolCompletionRequest.tools` payload
+  directly.
 - 2026-04-15T18:10:00+02:00: The smallest truthful hosted seam was an Axum
   test server that served the remote-tool catalogue and captured the worker's
   first proxied `POST /worker/{job_id}/llm/complete_with_tools` payload.
@@ -473,10 +460,9 @@ command before the final commit.
 ## Decision Log
 
 - 2026-04-14: Use `docs/axinite-architecture-overview.md` in place of the
-  missing `docs/axinite-architecture-summary.md`.
-  Rationale: it is the available maintainer-facing architecture reference in
-  this checkout and is already named as the fallback in adjacent WASM
-  ExecPlans.
+  missing `docs/axinite-architecture-summary.md`. Rationale: it is the
+  available maintainer-facing architecture reference in this checkout and is
+  already named as the fallback in adjacent WASM ExecPlans.
 
 - 2026-04-14: Treat the non-hosted behavioural layer as a trace-backed
   end-to-end request-capture test, not merely a reasoning-context assertion.
@@ -485,10 +471,9 @@ command before the final commit.
 - 2026-04-15T17:57:00+02:00: Implement the non-hosted first-call proof with a
   narrow capturing LLM provider wired through `TestRigBuilder::with_llm(...)`
   while still exercising the real agent loop and real GitHub WASM registration
-  helper.
-  Rationale: this keeps the behavioural test end to end, avoids widening
-  shared trace support beyond what this slice needs, and records the actual
-  `ToolCompletionRequest.tools` payload that RFC 0002 cares about.
+  helper. Rationale: this keeps the behavioural test end to end, avoids
+  widening shared trace support beyond what this slice needs, and records the
+  actual `ToolCompletionRequest.tools` payload that RFC 0002 cares about.
 
 - 2026-04-14: Prefer a narrow hosted request-capture seam around
   `llm_complete_with_tools` instead of inventing a new hosted test framework.
@@ -498,13 +483,12 @@ command before the final commit.
 - 2026-04-15T17:57:00+02:00: Drive the hosted proof through
   `Reasoning::respond_with_tools(...)` plus `WorkerRuntime`'s existing proxied
   LLM field, backed by an Axum test server that captures the first
-  `ProxyToolCompletionRequest`.
-  Rationale: this observes the real first hosted request without introducing a
-  second transport seam or reaching directly into intermediate worker state.
+  `ProxyToolCompletionRequest`. Rationale: this observes the real first hosted
+  request without introducing a second transport seam or reaching directly into
+  intermediate worker state.
 
 - 2026-04-14: `rstest-bdd` remains conditional rather than mandatory for this
-  slice.
-  Rationale: the repository already has strong `rstest` and trace-backed
+  slice. Rationale: the repository already has strong `rstest` and trace-backed
   harnesses, and a BDD scenario is only justified if it adds new observable
   value without disproportionate scaffolding.
 - 2026-04-15T17:57:00+02:00: Do not add `rstest-bdd` coverage for this slice.
@@ -551,7 +535,7 @@ Validation evidence:
 Key lesson: the most reliable way to prove "first call already has the schema"
 is to capture the actual tool-capable request object at the LLM boundary, not
 to infer behaviour from registry state or reasoning-context assembly alone. In
-this repository that meant using two different narrow seams: a custom
-capturing provider for the in-process agent loop and an Axum capture stub for
-the hosted worker boundary. That kept the change proportional while still
-producing end-to-end evidence.
+this repository that meant using two different narrow seams: a custom capturing
+provider for the in-process agent loop and an Axum capture stub for the hosted
+worker boundary. That kept the change proportional while still producing
+end-to-end evidence.

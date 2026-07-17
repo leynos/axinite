@@ -6,14 +6,14 @@
 - **Status:** Proposed
 - **Created:** 2026-03-11
 - **Implementation status:** Roadmap items `1.1.1`, `1.1.2`, `1.1.3`, and
-  `1.1.4` are complete. The implementation includes the shared `src/worker/api/`
-  transport types, the worker catalogue-fetch startup path, the orchestrator
-  generic remote-tool execution endpoint, the canonical `ToolRegistry`-owned
-  hosted-visible filter for active MCP tools, the explicit worker-side merged
-  reasoning surface used both at context build and later refresh, and the
-  comprehensive test matrix for schema fidelity, execution routing, and
-  worker-orchestrator contract parity. All roadmap items in section `1.1` are
-  now complete.
+  `1.1.4` are complete. The implementation includes the shared
+  `src/worker/api/` transport types, the worker catalogue-fetch startup path,
+  the orchestrator generic remote-tool execution endpoint, the canonical
+  `ToolRegistry`-owned hosted-visible filter for active MCP tools, the explicit
+  worker-side merged reasoning surface used both at context build and later
+  refresh, and the comprehensive test matrix for schema fidelity, execution
+  routing, and worker-orchestrator contract parity. All roadmap items in section
+  `1.1` are now complete.
 
 ## Summary
 
@@ -192,9 +192,9 @@ kept in sync by convention alone.
 ### 2. Filter the catalogue to hosted-executable tools
 
 The catalogue must not blindly dump the whole orchestrator registry into hosted
-mode. It must filter to tools that are valid in the hosted environment.
-That filter should be owned by the canonical `ToolRegistry` or adjacent tool
-policy layer, not rebuilt inside HTTP adapters.
+mode. It must filter to tools that are valid in the hosted environment. That
+filter should be owned by the canonical `ToolRegistry` or adjacent tool policy
+layer, not rebuilt inside HTTP adapters.
 
 For v1, a tool is hosted-visible only if all of the following are true:
 
@@ -211,9 +211,9 @@ For MCP tools specifically, this means:
 - approval semantics are compatible with hosted mode
 
 If IronClaw later grows a hosted approval grant mechanism, the filter can be
-relaxed. Until then, the catalogue should prefer correctness over breadth.
-The current implementation keeps the hosted-visible source set to active MCP
-tools only; later roadmap work extends that same canonical filter seam to
+relaxed. Until then, the catalogue should prefer correctness over breadth. The
+current implementation keeps the hosted-visible source set to active MCP tools
+only; later roadmap work extends that same canonical filter seam to
 orchestrator-owned WASM tools.
 
 ### 3. Add a generic orchestrator-owned tool execution endpoint
@@ -288,11 +288,11 @@ registry.
 
 The LLM-visible fields should map as follows:
 
-| LLM field | Source of truth | Notes |
-| --- | --- | --- |
-| `name` | active tool wrapper | Keep the exact registered tool name |
-| `description` | tool wrapper `description()` | Preserve MCP docs |
-| `parameters` | tool wrapper `parameters_schema()` | Preserve the JSON Schema |
+| LLM field     | Source of truth                    | Notes                               |
+| ------------- | ---------------------------------- | ----------------------------------- |
+| `name`        | active tool wrapper                | Keep the exact registered tool name |
+| `description` | tool wrapper `description()`       | Preserve MCP docs                   |
+| `parameters`  | tool wrapper `parameters_schema()` | Preserve the JSON Schema            |
 
 No provider-specific restatement or prose reconstruction should sit between the
 MCP tool wrapper and the LLM.
@@ -321,8 +321,7 @@ This gives the model behavioural context without distorting tool signatures.
 
 ### 7. Refresh the catalogue when tool availability changes
 
-Tool availability is not static. The hosted worker should refresh the
-catalogue
+Tool availability is not static. The hosted worker should refresh the catalogue
 when:
 
 - the job starts
@@ -332,10 +331,10 @@ when:
 
 The minimal v1 approach is to fetch once at worker startup and again after any
 successful extension-management action that could change active tools. A later
-iteration can add explicit catalogue version checks or push invalidation.
-The current implementation already refreshes the worker-visible tool list
-before later hosted LLM calls by recomputing it from the worker registry after
-proxy registration. That refresh path intentionally does not re-inject
+iteration can add explicit catalogue version checks or push invalidation. The
+current implementation already refreshes the worker-visible tool list before
+later hosted LLM calls by recomputing it from the worker registry after proxy
+registration. That refresh path intentionally does not re-inject
 `toolset_instructions`; the dedicated hosted guidance message is added once
 when the reasoning context is first built.
 
@@ -367,10 +366,9 @@ pub struct RemoteToolExecutionResponse {
 }
 ```
 
-These types are worker-orchestrator transport concerns. Only
-`ToolDefinition` is exposed to the LLM. The route names and payloads should be
-defined once at this boundary and reused by both the orchestrator and worker
-implementations.
+These types are worker-orchestrator transport concerns. Only `ToolDefinition`
+is exposed to the LLM. The route names and payloads should be defined once at
+this boundary and reused by both the orchestrator and worker implementations.
 
 ### LLM-visible interface
 
@@ -378,8 +376,7 @@ The hosted LLM should see a single merged tool list:
 
 1. worker-local container tools
 2. worker-local proxies registered from the orchestrator catalogue, which
-   expose
-   orchestrator-owned hosted-visible tools, including active MCP tools
+   expose orchestrator-owned hosted-visible tools, including active MCP tools
 
 The LLM should not need to know which side owns execution. Ownership stays an
 implementation detail behind the proxy layer.
@@ -408,8 +405,10 @@ This boundary matches existing ownership:
 
 - the orchestrator already owns extension activation
 - the orchestrator already owns active MCP client state
-- the orchestrator already owns the canonical registry for extension-provided tools
-- the worker already knows how to proxy LLM and tool-related calls back to the orchestrator
+- the orchestrator already owns the canonical registry for extension-provided
+  tools
+- the worker already knows how to proxy LLM and tool-related calls back to the
+  orchestrator
 
 The change is therefore architectural alignment, not a new subsystem.
 
@@ -475,7 +474,8 @@ That is the contract that fixes malformed tool calls.
 1. Add worker/orchestrator transport types for the hosted tool catalogue and
    generic remote tool execution, with one shared contract owner for route
    builders and payload shapes.
-2. Add orchestrator-side catalogue filtering against the canonical `ToolRegistry`.
+2. Add orchestrator-side catalogue filtering against the canonical
+   `ToolRegistry`.
 3. Add worker-side remote proxy registration using the shared transport
    contract rather than worker-local path reconstruction.
 4. Merge remote tool definitions into the worker reasoning context.
@@ -502,9 +502,9 @@ problem.
 This is a viable long-term simplification. It would remove the need for the
 worker to fetch and register remote tool definitions at all.
 
-It is not the recommended first step because the
-catalogue-plus-proxy design is a smaller change that fits the current worker
-architecture and can be adopted incrementally.
+It is not the recommended first step because the catalogue-plus-proxy design is
+a smaller change that fits the current worker architecture and can be adopted
+incrementally.
 
 ### Alternative 4: Stop for a separate worker-orchestrator architecture cleanup
 

@@ -37,12 +37,12 @@ shows implementation gaps.
 
 Table 1. Execution families in the current application.
 
-| Family | Primary owner | Persistence model | Main triggers | Tool access |
-|--------|---------------|-------------------|---------------|-------------|
-| Agent job | `Scheduler` plus `Worker` | `ContextManager` in memory, optionally mirrored into `agent_jobs` and related tables | Commands, built-in tools, gateway restart, routine full-job dispatch | Full agent tool loop |
-| Sandbox job | `ContainerJobManager` plus container worker | `sandbox_jobs`, `job_events`, and orchestrator state | `create_job` tool in sandbox mode, gateway restart | Worker or Claude Code inside a container |
-| Routine | `RoutineEngine` | `routines`, `routine_runs`, and routine conversation threads | Cron polling, channel-message matches, structured system events, manual fire | Either inline lightweight loop or delegated full job |
-| Heartbeat | `HeartbeatRunner` | Workspace `HEARTBEAT.md` plus a dedicated heartbeat conversation | Fixed interval timer, subject to quiet hours | No general tool loop; single checklist-oriented LLM turn |
+| Family      | Primary owner                               | Persistence model                                                                    | Main triggers                                                                | Tool access                                              |
+| ----------- | ------------------------------------------- | ------------------------------------------------------------------------------------ | ---------------------------------------------------------------------------- | -------------------------------------------------------- |
+| Agent job   | `Scheduler` plus `Worker`                   | `ContextManager` in memory, optionally mirrored into `agent_jobs` and related tables | Commands, built-in tools, gateway restart, routine full-job dispatch         | Full agent tool loop                                     |
+| Sandbox job | `ContainerJobManager` plus container worker | `sandbox_jobs`, `job_events`, and orchestrator state                                 | `create_job` tool in sandbox mode, gateway restart                           | Worker or Claude Code inside a container                 |
+| Routine     | `RoutineEngine`                             | `routines`, `routine_runs`, and routine conversation threads                         | Cron polling, channel-message matches, structured system events, manual fire | Either inline lightweight loop or delegated full job     |
+| Heartbeat   | `HeartbeatRunner`                           | Workspace `HEARTBEAT.md` plus a dedicated heartbeat conversation                     | Fixed interval timer, subject to quiet hours                                 | No general tool loop; single checklist-oriented LLM turn |
 
 Figure 1. High-level relationship between jobs, routines, heartbeat, and the
 shared gateway.
@@ -89,11 +89,11 @@ that workers and tools need.
 
 Table 2. Core job state model.
 
-| Type | Role |
-|------|------|
-| `JobContext` | Holds the job ID, state, user ownership, title and description, cost and token counters, timestamps, metadata, extra environment, trace interceptor, tool-output stash, and default timezone. |
-| `ContextManager` | Creates jobs, enforces the active-job limit, updates contexts atomically, tracks per-job memory, lists active jobs, and removes completed jobs from memory. |
-| `JobState` | Models `pending`, `in_progress`, `completed`, `submitted`, `accepted`, `failed`, `stuck`, and `cancelled`, with explicit transition rules. |
+| Type             | Role                                                                                                                                                                                          |
+| ---------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `JobContext`     | Holds the job ID, state, user ownership, title and description, cost and token counters, timestamps, metadata, extra environment, trace interceptor, tool-output stash, and default timezone. |
+| `ContextManager` | Creates jobs, enforces the active-job limit, updates contexts atomically, tracks per-job memory, lists active jobs, and removes completed jobs from memory.                                   |
+| `JobState`       | Models `pending`, `in_progress`, `completed`, `submitted`, `accepted`, `failed`, `stuck`, and `cancelled`, with explicit transition rules.                                                    |
 
 The important design choice is that context creation and capacity enforcement
 are separate from worker spawning. `ContextManager::create_job_for_user()`
@@ -125,8 +125,8 @@ Its main responsibilities are:
   `running_jobs()`, and `stop_all()`
 - spawn lightweight subtasks for tool execution and custom background handlers
 
-`dispatch_job()` is the preferred entry point. It creates the job context,
-caps user-supplied `max_tokens` against the configured limit, persists the job
+`dispatch_job()` is the preferred entry point. It creates the job context, caps
+user-supplied `max_tokens` against the configured limit, persists the job
 before worker start so foreign-key writes remain valid, and then schedules the
 worker.
 
@@ -136,11 +136,11 @@ The scheduler uses `Task` as its internal unit of scheduled work.
 
 Table 3. `Task` variants and where they are used.
 
-| Variant | Meaning | Current use |
-|---------|---------|-------------|
-| `Task::Job` | Full LLM-driven job | Reserved for scheduler-managed jobs, but rejected from `spawn_subtask()` because full jobs must go through `schedule()` and the full persistence path. |
-| `Task::ToolExec` | One tool execution tied to a parent job | Used for lightweight parallel or isolated tool execution. |
-| `Task::Background` | Custom async handler with no LLM loop | Mainly a framework extension point and test hook. |
+| Variant            | Meaning                                 | Current use                                                                                                                                            |
+| ------------------ | --------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `Task::Job`        | Full LLM-driven job                     | Reserved for scheduler-managed jobs, but rejected from `spawn_subtask()` because full jobs must go through `schedule()` and the full persistence path. |
+| `Task::ToolExec`   | One tool execution tied to a parent job | Used for lightweight parallel or isolated tool execution.                                                                                              |
+| `Task::Background` | Custom async handler with no LLM loop   | Mainly a framework extension point and test hook.                                                                                                      |
 
 Subtasks are intentionally weaker than full jobs. They:
 
@@ -276,14 +276,14 @@ guardrails, notification settings, and runtime state.
 
 Table 4. Routine model components.
 
-| Component | Current implementation |
-|-----------|------------------------|
-| Trigger | `cron`, `event`, `system_event`, or `manual` |
-| Action | `lightweight` or `full_job` |
-| Guardrails | `cooldown`, `max_concurrent`, and `dedup_window` |
-| Notify config | Channel, user, and per-status notification switches |
+| Component     | Current implementation                                                                      |
+| ------------- | ------------------------------------------------------------------------------------------- |
+| Trigger       | `cron`, `event`, `system_event`, or `manual`                                                |
+| Action        | `lightweight` or `full_job`                                                                 |
+| Guardrails    | `cooldown`, `max_concurrent`, and `dedup_window`                                            |
+| Notify config | Channel, user, and per-status notification switches                                         |
 | Runtime state | `last_run_at`, `next_fire_at`, `run_count`, `consecutive_failures`, and opaque `state` JSON |
-| Run record | `RoutineRun` with trigger detail, status, summary, token count, and optional linked job ID |
+| Run record    | `RoutineRun` with trigger detail, status, summary, token count, and optional linked job ID  |
 
 Triggers and actions both serialize into a type tag plus JSON config. That is
 the main extension seam for new trigger or action kinds: new enum variants must
@@ -311,19 +311,19 @@ The routines engine supports two execution modes with very different trade-offs.
 
 Table 5. Routine action modes.
 
-| Mode | Execution path | Capabilities | Trade-offs |
-|------|----------------|--------------|------------|
-| `lightweight` | Inline in `RoutineEngine` | Workspace context loading, optional lightweight tool loop, direct notification, no scheduler dependency | Small, bounded, and cheap, but deliberately limited |
-| `full_job` | Delegated to `Scheduler::dispatch_job_with_context()` | Full worker loop, full job persistence, tool permissions, linked job ID, existing job tooling | Requires a scheduler, returns quickly rather than waiting for final job outcome |
+| Mode          | Execution path                                        | Capabilities                                                                                            | Trade-offs                                                                      |
+| ------------- | ----------------------------------------------------- | ------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------- |
+| `lightweight` | Inline in `RoutineEngine`                             | Workspace context loading, optional lightweight tool loop, direct notification, no scheduler dependency | Small, bounded, and cheap, but deliberately limited                             |
+| `full_job`    | Delegated to `Scheduler::dispatch_job_with_context()` | Full worker loop, full job persistence, tool permissions, linked job ID, existing job tooling           | Requires a scheduler, returns quickly rather than waiting for final job outcome |
 
 `full_job` routines package the routine's notify target into job metadata and
 construct an `ApprovalContext` so explicitly permitted `Always`-gated tools can
 run without interactive approval. The run record is linked to the dispatched
 job ID after successful dispatch.
 
-`lightweight` routines take a different path. They load workspace context files,
-optionally load a routine-specific state file under `routines/<safe-name>/`,
-and then either:
+`lightweight` routines take a different path. They load workspace context
+files, optionally load a routine-specific state file under
+`routines/<safe-name>/`, and then either:
 
 - make one plain LLM call, or
 - run a simplified tool loop with a hard iteration cap
@@ -361,11 +361,11 @@ Routines are reachable through:
 - gateway endpoints under `/api/routines`
 - the agent loop's post-message event-trigger check
 
-There is a notable asymmetry here. The tool path refreshes the routine
-engine's event cache after create, update, and delete. The web toggle and
-delete handlers update the database, but do not refresh the event cache in the
-current code. That means the in-memory matcher set can drift from the database
-until the next process restart or tool-driven refresh.
+There is a notable asymmetry here. The tool path refreshes the routine engine's
+event cache after create, update, and delete. The web toggle and delete
+handlers update the database, but do not refresh the event cache in the current
+code. That means the in-memory matcher set can drift from the database until
+the next process restart or tool-driven refresh.
 
 ## 6. Heartbeat and hygiene
 
@@ -400,12 +400,12 @@ persistence wiring.
 
 Table 6. Core dependencies by subsystem.
 
-| Subsystem | Hard dependencies | Optional dependencies |
-|-----------|-------------------|-----------------------|
-| Scheduler | `ContextManager`, `LlmProvider`, `SafetyLayer`, `ToolRegistry`, `HookRegistry`, `AgentConfig` | `Database`, SSE sender, HTTP interceptor |
-| Routine engine | `Database`, `Workspace`, `LlmProvider`, notification channel, `ToolRegistry`, `SafetyLayer`, `RoutineConfig` | `Scheduler` for `full_job` routines |
-| Heartbeat | `Workspace`, `LlmProvider`, `HeartbeatConfig` | notification channel, `Database`, hygiene config |
-| Gateway jobs and routines API | `GatewayState` plus DB-backed store | scheduler slot, job manager, routine engine slot, prompt queue |
+| Subsystem                     | Hard dependencies                                                                                            | Optional dependencies                                          |
+| ----------------------------- | ------------------------------------------------------------------------------------------------------------ | -------------------------------------------------------------- |
+| Scheduler                     | `ContextManager`, `LlmProvider`, `SafetyLayer`, `ToolRegistry`, `HookRegistry`, `AgentConfig`                | `Database`, SSE sender, HTTP interceptor                       |
+| Routine engine                | `Database`, `Workspace`, `LlmProvider`, notification channel, `ToolRegistry`, `SafetyLayer`, `RoutineConfig` | `Scheduler` for `full_job` routines                            |
+| Heartbeat                     | `Workspace`, `LlmProvider`, `HeartbeatConfig`                                                                | notification channel, `Database`, hygiene config               |
+| Gateway jobs and routines API | `GatewayState` plus DB-backed store                                                                          | scheduler slot, job manager, routine engine slot, prompt queue |
 
 The scheduler and routines engine both assume a database-backed runtime for
 their full feature set. Without a store, routines do not start. Without a
@@ -416,14 +416,14 @@ otherwise.
 
 Table 7. Main extension points in the current design.
 
-| Area | How to extend it |
-|------|-------------------|
-| New scheduled work kind | Add a new `Task` variant and scheduler handling, or add a new routine action mode if the work is persistent and proactive. |
-| New routine trigger | Add a `Trigger` variant, DB serialization support, engine matching logic, and any tool or API schema support needed to create it. |
-| New routine action mode | Add a `RoutineAction` variant, persistence conversion, execution logic in `execute_routine()`, and notification semantics. |
-| New user surface | Add a built-in tool, gateway handler, or command intent that calls into the existing scheduler or routine engine rather than bypassing them. |
-| New notification sink | Extend the channel layer that already consumes `OutgoingResponse` rather than building a second notification pipeline. |
-| New background helper | Implement `TaskHandler` and schedule it as `Task::Background` where a full job would be too heavy. |
+| Area                    | How to extend it                                                                                                                             |
+| ----------------------- | -------------------------------------------------------------------------------------------------------------------------------------------- |
+| New scheduled work kind | Add a new `Task` variant and scheduler handling, or add a new routine action mode if the work is persistent and proactive.                   |
+| New routine trigger     | Add a `Trigger` variant, DB serialization support, engine matching logic, and any tool or API schema support needed to create it.            |
+| New routine action mode | Add a `RoutineAction` variant, persistence conversion, execution logic in `execute_routine()`, and notification semantics.                   |
+| New user surface        | Add a built-in tool, gateway handler, or command intent that calls into the existing scheduler or routine engine rather than bypassing them. |
+| New notification sink   | Extend the channel layer that already consumes `OutgoingResponse` rather than building a second notification pipeline.                       |
+| New background helper   | Implement `TaskHandler` and schedule it as `Task::Background` where a full job would be too heavy.                                           |
 
 The code already leans in this direction. Tool registration and gateway slots
 make the scheduler and routine engine injectable rather than globally owned.

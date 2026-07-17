@@ -1,9 +1,8 @@
 # Implement hosted remote tool transport for the worker and orchestrator
 
-This ExecPlan (execution plan) is a living document. The sections
-`Constraints`, `Tolerances`, `Risks`, `Progress`,
-`Surprises & Discoveries`, `Decision Log`, and
-`Outcomes & Retrospective` must be kept up to date as work proceeds.
+This ExecPlan (execution plan) is a living document. The sections `Constraints`,
+`Tolerances`, `Risks`, `Progress`, `Surprises & Discoveries`, `Decision Log`,
+and `Outcomes & Retrospective` must be kept up to date as work proceeds.
 
 Status: COMPLETE
 
@@ -34,27 +33,23 @@ reserved for `1.1.2` and `1.1.3`.
 - Plan approved
   Acceptance criteria: the transport scope is limited to catalogue fetch and
   generic remote execution, with filtering and reasoning-context merge work
-  explicitly left to later roadmap items.
-  Sign-off: human reviewer approves the ExecPlan before transport changes
-  begin.
+  explicitly left to later roadmap items. Sign-off: human reviewer approves the
+  ExecPlan before transport changes begin.
 - Implementation complete
   Acceptance criteria: the worker and orchestrator share one typed transport
   contract for hosted catalogue fetch and generic remote execution, and remote
-  proxies preserve the orchestrator-owned tool definitions unchanged.
-  Sign-off: implementer marks the transport slice complete before final
-  validation.
+  proxies preserve the orchestrator-owned tool definitions unchanged. Sign-off:
+  implementer marks the transport slice complete before final validation.
 - Validation passed
   Acceptance criteria: the required repository gates and targeted transport
   regressions pass with retained logs, and the final notes record any
-  deliberate follow-up work left for `1.1.2` or `1.1.3`.
-  Sign-off: implementer records final validation evidence immediately before
-  commit and push.
+  deliberate follow-up work left for `1.1.2` or `1.1.3`. Sign-off: implementer
+  records final validation evidence immediately before commit and push.
 - Docs synced
   Acceptance criteria: the roadmap, RFC, architecture notes, and execplan all
   describe the same worker-orchestrator transport boundary before the plan is
-  marked complete.
-  Sign-off: implementer completes the documentation sync as the final
-  pre-commit checkpoint.
+  marked complete. Sign-off: implementer completes the documentation sync as
+  the final pre-commit checkpoint.
 
 ## Repository orientation
 
@@ -77,8 +72,7 @@ special-cased for this roadmap step.
 - `src/worker/container.rs` constructs `WorkerHttpClient` with
   `WorkerHttpClient::from_env(...)` inside `WorkerRuntime::new(...)`, builds
   the worker tool registry, and loads `reason_ctx.available_tools` from that
-  registry. This is the main startup coupling point that must become
-  injectable.
+  registry. This is the main startup coupling point that must become injectable.
 - `src/worker/mod.rs` and `src/orchestrator/mod.rs` both include module-level
   route sketches for the current worker-orchestrator seam. Those docs still
   describe the pre-catalogue transport and must be kept synchronized when the
@@ -136,8 +130,8 @@ Two documentation gaps mattered before implementation began.
   catalogue fetch and generic execution cannot fit one coherent contract, stop
   and document why the contract split is unavoidable.
 - Startup coupling: if `WorkerRuntime` still has to read environment variables
-  directly after three focused refactoring attempts, stop and record the
-  hidden coupling that blocked injection.
+  directly after three focused refactoring attempts, stop and record the hidden
+  coupling that blocked injection.
 - Filtering: if exposing a real Model Context Protocol (MCP) tool safely
   requires the full hosted visibility policy from `1.1.2`, stop and document
   the exact predicate or data that is missing.
@@ -149,34 +143,27 @@ Two documentation gaps mattered before implementation began.
 ## Risks
 
 - Risk: The generic execution route could become a second ad hoc policy layer
-  that diverges from later hosted-tool filtering work.
-  Severity: high
-  Likelihood: medium
-  Mitigation: put the hosted-executable predicate in one helper that both the
-  catalogue and execution handlers call, even if the predicate is intentionally
-  narrower in `1.1.1` than the later canonical filter.
+  that diverges from later hosted-tool filtering work. Severity: high
+  Likelihood: medium Mitigation: put the hosted-executable predicate in one
+  helper that both the catalogue and execution handlers call, even if the
+  predicate is intentionally narrower in `1.1.1` than the later canonical
+  filter.
 
 - Risk: Replacing the extension-only proxy path could accidentally remove the
   currently safe extension-management tools from hosted workers before remote
-  catalogue registration is complete.
-  Severity: high
-  Likelihood: medium
+  catalogue registration is complete. Severity: high Likelihood: medium
   Mitigation: stage the worker refactor so catalogue-backed remote registration
   lands before the extension-only path is removed, and preserve regression
   coverage for `tool_list`, `tool_search`, `tool_activate`, and
   `extension_info`.
 
 - Risk: Making startup injectable could leak transport abstractions too far
-  into unrelated worker logic.
-  Severity: medium
-  Likelihood: medium
-  Mitigation: keep the injected port narrow, limited to the existing
-  orchestrator interactions plus the new catalogue and execution calls.
+  into unrelated worker logic. Severity: medium Likelihood: medium Mitigation:
+  keep the injected port narrow, limited to the existing orchestrator
+  interactions plus the new catalogue and execution calls.
 
 - Risk: Behaviour tests may become brittle if they rely on route strings rather
-  than the shared transport contract.
-  Severity: medium
-  Likelihood: medium
+  than the shared transport contract. Severity: medium Likelihood: medium
   Mitigation: build tests around the typed client and router helpers from the
   shared boundary module instead of asserting raw path fragments in multiple
   places.
@@ -263,8 +250,7 @@ patch, or shell tools.
 
 ## Milestone 4: add focused unit and behavioural coverage
 
-Write the failing tests first. The feature should be observable at three
-layers.
+Write the failing tests first. The feature should be observable at three layers.
 
 ### Shared-boundary and adapter tests
 
@@ -294,8 +280,8 @@ MCP infrastructure.
 ### Worker startup and proxy tests
 
 Extend `src/worker/container/tests.rs` and, if needed,
-`src/tools/builtin/worker_remote_tool_proxy.rs` tests so the worker runtime proves
-that:
+`src/tools/builtin/worker_remote_tool_proxy.rs` tests so the worker runtime
+proves that:
 
 - a fake remote catalogue adds remote tools to the worker-visible definitions
 - remote tool order and metadata are stable enough for reasoning-context use
@@ -348,8 +334,8 @@ Update the design and user-facing documents in the same change.
 Run the focused suites first, then the full repository gate. Keep all output in
 `/tmp` with `tee` so truncated terminal output does not hide failures.
 
-Name the new tests with stable `remote_tool_catalog`, `remote_tool_execute`,
-and `hosted_worker_remote_tool` prefixes so these commands remain useful.
+Name the new tests with stable `remote_tool_catalog`, `remote_tool_execute`, and
+`hosted_worker_remote_tool` prefixes so these commands remain useful.
 
 ```bash
 set -o pipefail
@@ -415,9 +401,9 @@ Expected evidence:
   extension-only worker proxies before this generic remote-tool transport
   change.
 - [x] 2026-03-14 11:27Z: Confirmed that
-  `docs/axinite-architecture-summary.md` did not exist in this checkout and
-  that `docs/users-guide.md` did not yet exist at that point, so the
-  implementation needed to handle both documentation gaps explicitly.
+  `docs/axinite-architecture-summary.md` did not exist in this checkout and that
+  `docs/users-guide.md` did not yet exist at that point, so the implementation
+  needed to handle both documentation gaps explicitly.
 - [x] 2026-03-14 11:27Z: Drafted this ExecPlan and recorded the expected code,
   test, and documentation touchpoints for roadmap item `1.1.1`.
 - [x] 2026-03-14 12:43Z: Implemented the shared transport contract, the
@@ -448,10 +434,10 @@ Expected evidence:
 ## Decision Log
 
 - Decision: keep this plan scoped to roadmap item `1.1.1` rather than folding
-  in full canonical hosted-tool filtering from `1.1.2`.
-  Rationale: the roadmap explicitly separates transport hardening from later
-  filtering and reasoning-context work. A narrow shared contract and generic
-  execution path are the prerequisites that reduce risk for the later steps.
+  in full canonical hosted-tool filtering from `1.1.2`. Rationale: the roadmap
+  explicitly separates transport hardening from later filtering and
+  reasoning-context work. A narrow shared contract and generic execution path
+  are the prerequisites that reduce risk for the later steps.
 
 - Decision: treat the shared transport contract as the primary architecture
   boundary and keep HTTP libraries on the adapter side of that boundary.
@@ -459,15 +445,14 @@ Expected evidence:
   without forcing a large repository-wide reorganization.
 
 - Decision: create or update `docs/users-guide.md` as part of implementation if
-  it is still missing.
-  Rationale: the request explicitly calls for that update, and the
-  documentation style guide treats the file as canonical for user-facing
-  behaviour.
+  it is still missing. Rationale: the request explicitly calls for that update,
+  and the documentation style guide treats the file as canonical for
+  user-facing behaviour.
 
 - Decision: prefer in-process `rstest` integration tests first, then add
-  `rstest-bdd` only if it gives clearer behavioural evidence.
-  Rationale: the feature is an internal transport change, so behaviour tests
-  must remain lightweight and deterministic.
+  `rstest-bdd` only if it gives clearer behavioural evidence. Rationale: the
+  feature is an internal transport change, so behaviour tests must remain
+  lightweight and deterministic.
 
 ## Outcomes & Retrospective
 
@@ -484,5 +469,5 @@ Implemented in this branch:
 The implementation intentionally keeps `toolset_instructions` empty for now and
 uses a stable hashed `catalog_version` derived from the current catalogue
 contents. That leaves `1.1.2` to refine the hosted-visible filter and leaves
-`1.1.3` to decide how any catalogue-level instructions should be merged into the
-reasoning context.
+`1.1.3` to decide how any catalogue-level instructions should be merged into
+the reasoning context.

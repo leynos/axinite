@@ -1,6 +1,7 @@
 # Slack WASM Tool
 
-A standalone WASM component that provides Slack integration for IronClaw. This serves as both a functional tool and a template for building custom WASM tools.
+A standalone WASM component that provides Slack integration for IronClaw. This
+serves as both a functional tool and a template for building custom WASM tools.
 
 ## Features
 
@@ -13,11 +14,13 @@ A standalone WASM component that provides Slack integration for IronClaw. This s
 ## Prerequisites
 
 1. **Rust toolchain** with WASM target:
+
    ```bash
    rustup target add wasm32-wasip2
    ```
 
 2. **cargo-component** for building WASM components:
+
    ```bash
    cargo install cargo-component
    ```
@@ -39,7 +42,8 @@ cargo component build --release
 ```
 
 The compiled WASM component will be at:
-```
+
+```text
 target/wasm32-wasip2/release/slack_tool.wasm
 ```
 
@@ -75,6 +79,7 @@ ironclaw secret set slack_bot_token "slack-bot-token-EXAMPLE"
 ```
 
 Or via SQL:
+
 ```sql
 INSERT INTO secrets (user_id, name, encrypted_value, key_salt)
 VALUES ('your_user_id', 'slack_bot_token', ...);
@@ -147,9 +152,11 @@ VALUES ('your_user_id', 'slack_bot_token', ...);
 This tool runs in a sandboxed WASM environment with strict capability controls:
 
 1. **HTTP Allowlist**: Can only access `slack.com/api/*`
-2. **Credential Injection**: The bot token is injected by the host runtime; the WASM code never sees it
+2. **Credential Injection**: The bot token is injected by the host runtime; the
+   WASM code never sees it
 3. **Rate Limiting**: 50 requests/minute, 1000 requests/hour
-4. **No Filesystem Access**: Cannot read/write files except through workspace capability
+4. **No Filesystem Access**: Cannot read/write files except through workspace
+   capability
 5. **No Network Access**: Beyond the allowlisted endpoints
 
 ## Capabilities File
@@ -213,13 +220,15 @@ world sandboxed-tool {
 ### "Slack bot token not configured"
 
 Ensure you've stored the secret:
+
 ```bash
 ironclaw secret set slack_bot_token "slack-bot-token-EXAMPLE"
 ```
 
 ### "Endpoint not in allowlist"
 
-Check that `slack.capabilities.json` includes the endpoint you're trying to access.
+Check that `slack.capabilities.json` includes the endpoint you're trying to
+access.
 
 ### "Rate limit exceeded"
 
@@ -228,6 +237,7 @@ The tool has a default rate limit of 50 requests/minute. Wait and retry.
 ### Build errors
 
 Ensure you have the WASM target and cargo-component installed:
+
 ```bash
 rustup target add wasm32-wasip2
 cargo install cargo-component

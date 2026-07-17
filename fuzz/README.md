@@ -1,16 +1,17 @@
 # IronClaw Fuzz Targets
 
-Fuzz testing for security-critical input parsing paths using [cargo-fuzz](https://github.com/rust-fuzz/cargo-fuzz) (libFuzzer).
+Fuzz testing for security-critical input parsing paths using
+[cargo-fuzz](https://github.com/rust-fuzz/cargo-fuzz) (libFuzzer).
 
 ## Targets
 
-| Target | What it exercises |
-|--------|-------------------|
+| Target                  | What it exercises                                         |
+| ----------------------- | --------------------------------------------------------- |
 | `fuzz_safety_sanitizer` | Prompt injection pattern detection (Aho-Corasick + regex) |
-| `fuzz_safety_validator` | Input validation (length, encoding, forbidden patterns) |
-| `fuzz_leak_detector` | Secret leak detection (API keys, tokens, credentials) |
-| `fuzz_tool_params` | Tool parameter and schema JSON validation |
-| `fuzz_config_env` | SafetyLayer end-to-end (sanitize, validate, policy check) |
+| `fuzz_safety_validator` | Input validation (length, encoding, forbidden patterns)   |
+| `fuzz_leak_detector`    | Secret leak detection (API keys, tokens, credentials)     |
+| `fuzz_tool_params`      | Tool parameter and schema JSON validation                 |
+| `fuzz_config_env`       | SafetyLayer end-to-end (sanitize, validate, policy check) |
 
 ## Setup
 

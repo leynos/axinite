@@ -9,9 +9,9 @@ Accepted
 
 2026-03-21
 
-This ADR records a decision whose interim vendored workaround was later
-retired once the ambient wrapper bug was fixed and the unpatched dependency
-graph passed the required stable acceptance command.
+This ADR records a decision whose interim vendored workaround was later retired
+once the ambient wrapper bug was fixed and the unpatched dependency graph
+passed the required stable acceptance command.
 
 ## Context
 
@@ -26,13 +26,13 @@ cargo check --no-default-features --features libsql,test-helpers
 ```
 
 That acceptance command failed on stable before it reached branch code. The
-failure came from the `wasmtime-wasi` dependency chain through
-`cap-primitives`, `cap-std`, `io-extras`, and `system-interface`. Their build
-scripts probe unstable feature support and were treating the ambient
-`RUSTC_WRAPPER` as authoritative for those probes. In this environment, the
-wrapper returned success for a probe that direct `rustc` correctly rejected on
-stable, which caused the crates to enable nightly-only cfg paths and then fail
-later in compilation.
+failure came from the `wasmtime-wasi` dependency chain through `cap-primitives`,
+`cap-std`, `io-extras`, and `system-interface`. Their build scripts probe
+unstable feature support and were treating the ambient `RUSTC_WRAPPER` as
+authoritative for those probes. In this environment, the wrapper returned
+success for a probe that direct `rustc` correctly rejected on stable, which
+caused the crates to enable nightly-only cfg paths and then fail later in
+compilation.
 
 ## Problem statement
 
@@ -72,18 +72,18 @@ depending on ad hoc operator shell state.
 
 ## Options considered
 
-| Option | Risk | Implementation effort | Stable-toolchain impact | Retirement path |
-| --- | --- | --- | --- | --- |
-| Option A: Carry a narrow vendored patch chain | Moderate vendor-delta risk, but the fault stays local to the affected probe scripts | Moderate, because the branch must vendor and patch only the build-script probe path | Restores stable acceptance with plain `cargo` by forcing probes to use `RUSTC` directly | Clear and auditable: remove the patches once the unpatched graph passes the stable acceptance commands |
-| Option B: Upgrade to upstream crate releases that no longer need the patch | Higher dependency-churn risk because runtime-pinned crates would move during a focused feature-gating branch | Higher, because the `wasmtime-wasi` and `cap-*` graph would need coordinated upgrades and revalidation | Potentially good long-term stable outcome, but not the safest immediate recovery path for this branch | Strong long-term exit because the local patch disappears when upstream fixes are adopted |
-| Option C: Enforce a wrapper-neutral build environment | High operational risk because plain `cargo` invocations may still inherit ambient wrapper state | Moderate on paper, but unreliable in practice across shell, Cargo, and automation entry points | Unreliable for stable acceptance because repository-local configuration did not consistently beat ambient environment state | Weak retirement path because it depends on operator choreography rather than a source-controlled fix |
-| Option D: Require nightly or `RUSTC_BOOTSTRAP` | High contract risk because it normalizes a broken probe result instead of fixing it | Low immediate effort, because it sidesteps the defect rather than correcting it | Weakens the stable-toolchain contract and makes the no-Docker path less trustworthy | Poor retirement path because it entrenches the workaround instead of removing the root cause |
+| Option                                                                     | Risk                                                                                                         | Implementation effort                                                                                  | Stable-toolchain impact                                                                                                     | Retirement path                                                                                        |
+| -------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------ |
+| Option A: Carry a narrow vendored patch chain                              | Moderate vendor-delta risk, but the fault stays local to the affected probe scripts                          | Moderate, because the branch must vendor and patch only the build-script probe path                    | Restores stable acceptance with plain `cargo` by forcing probes to use `RUSTC` directly                                     | Clear and auditable: remove the patches once the unpatched graph passes the stable acceptance commands |
+| Option B: Upgrade to upstream crate releases that no longer need the patch | Higher dependency-churn risk because runtime-pinned crates would move during a focused feature-gating branch | Higher, because the `wasmtime-wasi` and `cap-*` graph would need coordinated upgrades and revalidation | Potentially good long-term stable outcome, but not the safest immediate recovery path for this branch                       | Strong long-term exit because the local patch disappears when upstream fixes are adopted               |
+| Option C: Enforce a wrapper-neutral build environment                      | High operational risk because plain `cargo` invocations may still inherit ambient wrapper state              | Moderate on paper, but unreliable in practice across shell, Cargo, and automation entry points         | Unreliable for stable acceptance because repository-local configuration did not consistently beat ambient environment state | Weak retirement path because it depends on operator choreography rather than a source-controlled fix   |
+| Option D: Require nightly or `RUSTC_BOOTSTRAP`                             | High contract risk because it normalizes a broken probe result instead of fixing it                          | Low immediate effort, because it sidesteps the defect rather than correcting it                        | Weakens the stable-toolchain contract and makes the no-Docker path less trustworthy                                         | Poor retirement path because it entrenches the workaround instead of removing the root cause           |
 
 Table: Comparison of options A-D across key dimensions.
 
 Option C neutralizes `RUSTC_WRAPPER` in repository or Continuous Integration
-(CI) configuration so the build scripts see direct compiler behaviour even
-when operators run plain `cargo` commands.
+(CI) configuration so the build scripts see direct compiler behaviour even when
+operators run plain `cargo` commands.
 
 ## Decision outcome / proposed direction
 
@@ -142,9 +142,9 @@ cargo check --no-default-features --features libsql,test-helpers
 ```
 
 That unpatched build succeeded on the stable toolchain, which satisfied the
-root retirement criterion for the original blocker. The repository then
-removed the vendored `cap-*` patch chain and the Dockerfile packaging carry
-for `third-party-patches/`.
+root retirement criterion for the original blocker. The repository then removed
+the vendored `cap-*` patch chain and the Dockerfile packaging carry for
+`third-party-patches/`.
 
 ## Goals and non-goals
 
@@ -181,13 +181,13 @@ retirement.
 This decision protected the repository's stable-toolchain contract at the
 architectural boundary where it was actually violated: compiler capability
 detection. It kept Docker feature-gating and sandbox behaviour independent of a
-separate build-environment fault, and it made the workaround explicit,
-bounded, and removable.
+separate build-environment fault, and it made the workaround explicit, bounded,
+and removable.
 
-The retirement also preserves an important maintainability property:
-repository acceptance should depend on declared source and lock state, not on
-ambient shell quirks. Once the wrapper was fixed, the repository no longer
-needed to carry a local vendor delta to defend itself from that environment bug.
+The retirement also preserves an important maintainability property: repository
+acceptance should depend on declared source and lock state, not on ambient
+shell quirks. Once the wrapper was fixed, the repository no longer needed to
+carry a local vendor delta to defend itself from that environment bug.
 
 ## References
 

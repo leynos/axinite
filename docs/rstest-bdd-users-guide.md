@@ -43,19 +43,19 @@ wrappers normalize results into `StepExecution`.
 
 - **Business analyst/product owner:** Writing and reviewing
   business-readable specifications, and ensuring that acceptance criteria are
-  expressed clearly. `rstest-bdd` provides plain-text Gherkin `.feature`
-  files that start with a `Feature` declaration, with each `Scenario`
-  describing a single behaviour. Steps use the keywords `Given`, `When`, and
-  `Then` ([syntax](#gherkin-feature-files)), producing living documentation
-  that non-technical stakeholders can read.
+  expressed clearly. `rstest-bdd` provides plain-text Gherkin `.feature` files
+  that start with a `Feature` declaration, with each `Scenario` describing a
+  single behaviour. Steps use the keywords `Given`, `When`, and `Then`
+  ([syntax](#gherkin-feature-files)), producing living documentation that
+  non-technical stakeholders can read.
 - **Developer:** Implementing step definitions in Rust and wiring them to the
   business specifications, often by reusing existing fixtures for
   setup/teardown. The `#[given]`, `#[when]`, and `#[then]` attribute macros
-  register step functions and their pattern strings in a global step
-  registry. The `#[scenario]` macro reads a feature file at compile time and
-  generates a test that drives the registered steps. Fixtures whose parameter
-  names match are injected automatically; use `#[from(name)]` only when a
-  parameter name differs from the fixture.
+  register step functions and their pattern strings in a global step registry.
+  The `#[scenario]` macro reads a feature file at compile time and generates a
+  test that drives the registered steps. Fixtures whose parameter names match
+  are injected automatically; use `#[from(name)]` only when a parameter name
+  differs from the fixture.
 - **Tester/QA:** Executing behaviour tests, ensuring correct sequencing of
   steps, and verifying outcomes observable by the user. Scenarios run via the
   standard `cargo test` runner; test functions annotated with `#[scenario]`
@@ -693,8 +693,8 @@ supports `&mut Fixture` step parameters.
 `StepContext::owned_cell` creates the type-erased mutable storage required by
 `insert_owned`.
 
-Use `insert_owned` only when building custom step-execution plumbing
-outside the usual macros and registering a mutable fixture manually:
+Use `insert_owned` only when building custom step-execution plumbing outside
+the usual macros and registering a mutable fixture manually:
 
 ```rust,no_run
 use rstest_bdd::StepContext;
@@ -737,19 +737,18 @@ The `#[scenario]` macro is the entry point that ties a Rust test function to a
 scenario defined in a `.feature` file. It accepts four arguments:
 
 - `path: &str`
-  Purpose: Relative path to the feature file (required).
-  Status: **Implemented**; resolved and parsed at compile time.
+  Purpose: Relative path to the feature file (required). Status:
+  **Implemented**; resolved and parsed at compile time.
 - `index: usize`
-  Purpose: Optional zero-based scenario index (defaults to `0`).
-  Status: **Implemented**; selects the scenario by position.
+  Purpose: Optional zero-based scenario index (defaults to `0`). Status:
+  **Implemented**; selects the scenario by position.
 - `name: &str`
-  Purpose: Optional scenario title; resolves when unique.
-  Status: **Implemented**; errors when missing and directs duplicates to
-  `index`.
+  Purpose: Optional scenario title; resolves when unique. Status:
+  **Implemented**; errors when missing and directs duplicates to `index`.
 - `tags: &str`
-  Purpose: Optional tag-expression filter applied at expansion.
-  Status: **Implemented**; filters scenarios and outline example rows, and
-  errors when nothing matches.
+  Purpose: Optional tag-expression filter applied at expansion. Status:
+  **Implemented**; filters scenarios and outline example rows, and errors when
+  nothing matches.
 
 Tag filters run at macro-expansion time against the union of tags on the
 feature, the matched scenario, and—when dealing with `Scenario Outline`—the
@@ -809,19 +808,18 @@ one may filter or run them in parallel as usual.
 
 Steps or hooks may call `rstest_bdd::skip!` to stop executing the remaining
 steps. The macro records a `Skipped` outcome and short-circuits the scenario so
-the generated test returns before evaluating the annotated function body.
-Invoke `skip!()` with no arguments to record a skipped outcome without a
-message. Pass an optional string to describe the reason, and use the standard
-`format!` syntax to interpolate values when needed. To escalate skipped
-scenarios into test failures, either set the environment variable below or
-call `rstest_bdd::config::set_fail_on_skipped(true)`, unless the feature or
-scenario carries an `@allow_skipped` tag. (Example-level tags are not yet
-evaluated.)
+the generated test returns before evaluating the annotated function body. Invoke
+`skip!()` with no arguments to record a skipped outcome without a message.
+Pass an optional string to describe the reason, and use the standard `format!`
+syntax to interpolate values when needed. To escalate skipped scenarios into
+test failures, either set the environment variable below or call
+`rstest_bdd::config::set_fail_on_skipped(true)`, unless the feature or scenario
+carries an `@allow_skipped` tag. (Example-level tags are not yet evaluated.)
 
 **Table 1:** Environment variables for skipped-scenario behaviour
 
-| Variable name | Meaning | Default or rule |
-| --- | --- | --- |
+| Variable name                | Meaning                                                                           | Default or rule                                                                                |
+| ---------------------------- | --------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------- |
 | `RSTEST_BDD_FAIL_ON_SKIPPED` | Escalates skipped scenarios into test failures unless `@allow_skipped` is present | Unset defaults to `false`; accepts common boolean strings such as `1`, `true`, `yes`, and `on` |
 
 The macro captures the current execution scope internally, so helper functions
@@ -879,9 +877,9 @@ that a step or scenario stopped executing. Use
 `rstest_bdd::assert_step_skipped!` to unwrap a `StepExecution::Skipped`
 outcome, optionally constraining its message, and
 `rstest_bdd::assert_scenario_skipped!` to inspect `ScenarioStatus` records.
-Both macros
-accept `message_absent = true` to assert that no message was provided and
-substring matching to confirm that a message contains the expected reason.
+Both macros accept `message_absent = true` to assert that no message was
+provided and substring matching to confirm that a message contains the expected
+reason.
 
 ```rust,no_run
 use rstest_bdd::{assert_scenario_skipped, assert_step_skipped, StepExecution};
@@ -1205,9 +1203,8 @@ fn async_wrapper_with_aliases<'ctx>(
 ### Current limitations
 
 - **Tokio current-thread mode only:** Multi-threaded Tokio mode would require
-  `Send` futures, which conflicts with the `RefCell`-backed fixture storage.
-  See [ADR-001](adr-001-async-fixtures-and-test.md) for the full design
-  rationale.
+  `Send` futures, which conflicts with the `RefCell`-backed fixture storage. See
+  [ADR-001](adr-001-async-fixtures-and-test.md) for the full design rationale.
 - **Nested runtime safeguards:** Async-only steps running in synchronous
   scenarios use a per-step runtime fallback, which refuses to run when a Tokio
   runtime is already active on the current thread.
@@ -1219,8 +1216,8 @@ Once feature files and step definitions are in place, scenarios run via the
 usual `cargo test` command. Test functions created by the `#[scenario]` macro
 behave like other `rstest` tests; they honour `#[tokio::test]` attributes if
 applied to the original function. Each scenario runs its steps sequentially in
-the order defined in the feature file. By default, missing or multiply
-matching step definitions emit a compile‑time error, such as
+the order defined in the feature file. By default, missing or multiply matching
+step definitions emit a compile‑time error, such as
 `No matching step definition found for: Given an undefined step`, so incomplete
 or ambiguous scenarios fail before tests run. Enabling the
 `compile-time-validation` feature on `rstest-bdd-macros` keeps that
@@ -1275,25 +1272,24 @@ Best practices for writing effective scenarios include:
   (for example, `1e3`, `-1E-9`), and the special values `NaN`, `inf`, and
   `Infinity` (matched case-insensitively). Matching is anchored: the entire
   step text must match the pattern; partial matches do not succeed. Escape
-  literal braces with `{{` and `}}`. Use
-  `\` to match a single backslash. A trailing `\` or any other backslash escape
-  is treated literally, so `\d` matches the two-character sequence `\d`. Nested
-  braces inside placeholders are not supported. Braces are not allowed inside
-  type hints. Placeholders use `{name}` or `{name:type}`; the type hint must
-  not contain braces (for example, `{n:{u32}}` and `{n:Vec<{u32}>}` are
-  rejected). To describe braces in the surrounding step text (for example,
-  referring to `{u32}`), escape them as `{{` and `}}` rather than placing them
-  inside `{name:type}`. The lexer closes the placeholder at the first `}` after
-  the optional type hint; any characters between the `:type` and that first `}`
-  are ignored (for example, `{n:u32 extra}` parses as `name = n`,
-  `type = u32`). `name` must start with a letter or underscore and may contain
-  letters, digits, or underscores (`[A-Za-z_][A-Za-z0-9_]*`). Whitespace within
-  the type hint is ignored (for example, `{count: u32}` and `{count:u32}` are
-  both accepted), but whitespace is not allowed between the name and the colon.
-  Prefer the compact form `{count:u32}` in new code. When a pattern contains no
-  placeholders, the step text must match exactly. Unknown type hints are
-  treated as generic placeholders and capture any non-newline text using a
-  non-greedy match.
+  literal braces with `{{` and `}}`. Use `\` to match a single backslash. A
+  trailing `\` or any other backslash escape is treated literally, so `\d`
+  matches the two-character sequence `\d`. Nested braces inside placeholders
+  are not supported. Braces are not allowed inside type hints. Placeholders use
+  `{name}` or `{name:type}`; the type hint must not contain braces (for example,
+  `{n:{u32}}` and `{n:Vec<{u32}>}` are rejected). To describe braces in the
+  surrounding step text (for example, referring to `{u32}`), escape them as
+  `{{` and `}}` rather than placing them inside `{name:type}`. The lexer closes
+  the placeholder at the first `}` after the optional type hint; any characters
+  between the `:type` and that first `}` are ignored (for example,
+  `{n:u32 extra}` parses as `name = n`, `type = u32`). `name` must start with a
+  letter or underscore and may contain letters, digits, or underscores
+  (`[A-Za-z_][A-Za-z0-9_]*`). Whitespace within the type hint is ignored (for
+  example, `{count: u32}` and `{count:u32}` are both accepted), but whitespace
+  is not allowed between the name and the colon. Prefer the compact form
+  `{count:u32}` in new code. When a pattern contains no placeholders, the step
+  text must match exactly. Unknown type hints are treated as generic
+  placeholders and capture any non-newline text using a non-greedy match.
 
 ## Data tables and doc strings
 
@@ -1649,9 +1645,9 @@ unic-langid = "0.9"
 
 The crate exposes the embedded assets via the [`Localizations`] helper. This
 type implements `i18n_embed::I18nAssets`, allowing applications with existing
-Fluent infrastructure to load resources into their own
-`FluentLanguageLoader`. Libraries without a localization framework can rely on
-the built-in loader and request a different language at runtime:
+Fluent infrastructure to load resources into their own `FluentLanguageLoader`.
+Libraries without a localization framework can rely on the built-in loader and
+request a different language at runtime:
 
 ```rust,no_run
 # fn scope_locale() -> Result<(), rstest_bdd::localization::LocalizationError> {
@@ -1711,11 +1707,11 @@ The tool inspects the runtime step registry and offers four commands:
 
 The subcommand builds each test target in the workspace and runs the resulting
 binary in an internal step-dump mode to collect the registered steps and
-recently executed scenario outcomes as JSON.
-Because usage tracking is process local, `unused` only reflects steps invoked
-during that same execution. The merged output powers the commands above and the
-skip status summary, helping to keep the step library tidy and discover dead
-code early in the development cycle.
+recently executed scenario outcomes as JSON. Because usage tracking is process
+local, `unused` only reflects steps invoked during that same execution. The
+merged output powers the commands above and the skip status summary, helping to
+keep the step library tidy and discover dead code early in the development
+cycle.
 
 `steps --skipped` and `skipped` accept `--json` and emit objects that always
 include `feature`, `scenario`, `line`, `tags`, and `reason` fields. The former
@@ -1736,9 +1732,8 @@ rstest_bdd::reporting::json::write_snapshot(&mut buffer)?;
 ```
 
 The companion `rstest_bdd::reporting::junit` module renders the same snapshot
-as JUnit XML. Each skipped scenario emits a `<skipped>` element with an
-optional `message` attribute so continuous integration (CI) servers surface the
-reason:
+as JUnit XML. Each skipped scenario emits a `<skipped>` element with an optional
+`message` attribute so continuous integration (CI) servers surface the reason:
 
 ```rust,no_run
 let mut xml = String::new();
@@ -1754,8 +1749,7 @@ The `rstest-bdd-server` crate provides a Language Server Protocol (LSP)
 implementation that bridges Gherkin `.feature` files and Rust step definitions.
 The binary is named `rstest-bdd-lsp` and communicates over stdin/stdout using
 JSON Remote Procedure Call (JSON-RPC), making it compatible with any editor
-supporting the LSP (VS Code,
-Neovim, Zed, Helix, etc.).
+supporting the LSP (VS Code, Neovim, Zed, Helix, etc.).
 
 ### Installation
 
@@ -1773,10 +1767,10 @@ The server reads configuration from environment variables:
 
 **Table 2:** Environment variables for `rstest-bdd-lsp`
 
-| Variable name | Meaning | Default or rule |
-| --- | --- | --- |
-| `RSTEST_BDD_LSP_LOG_LEVEL` | Logging verbosity, values: `trace`\|`debug`\|`info`\|`warn`\|`error` | `info` |
-| `RSTEST_BDD_LSP_DEBOUNCE_MS` | Delay before processing file changes in milliseconds | `300` |
+| Variable name                | Meaning                                                              | Default or rule |
+| ---------------------------- | -------------------------------------------------------------------- | --------------- |
+| `RSTEST_BDD_LSP_LOG_LEVEL`   | Logging verbosity, values: `trace`\|`debug`\|`info`\|`warn`\|`error` | `info`          |
+| `RSTEST_BDD_LSP_DEBOUNCE_MS` | Delay before processing file changes in milliseconds                 | `300`           |
 
 Example:
 
@@ -1881,8 +1875,8 @@ implement it.
 
 **Usage:**
 
-1. Place the cursor on a step line in a `.feature` file (e.g., `Given a user
-   exists`).
+1. Place the cursor on a step line in a `.feature` file (e.g.,
+   `Given a user exists`).
 2. Invoke "Go to Implementation" (typically Ctrl+F12 or a similar keybinding in
    most editors).
 3. The editor navigates to all matching Rust step functions.

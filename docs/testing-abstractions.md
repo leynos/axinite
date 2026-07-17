@@ -17,11 +17,11 @@ testing scenarios:
 
 Table: Testing abstractions and recommended use cases
 
-| Abstraction | Purpose | Use when |
-| ----------- | ------- | -------- |
+| Abstraction          | Purpose                                     | Use when                                        |
+| -------------------- | ------------------------------------------- | ----------------------------------------------- |
 | `TestHarnessBuilder` | Full integration testing with real database | Testing actual persistence with a real database |
-| `CapturingStore` | Unit testing without database | Verifying interactions without a real database |
-| `NullDatabase` | Baseline test double | Creating baseline test doubles or custom mocks |
+| `CapturingStore`     | Unit testing without database               | Verifying interactions without a real database  |
+| `NullDatabase`       | Baseline test double                        | Creating baseline test doubles or custom mocks  |
 
 ## Test harness builder (`TestHarnessBuilder`)
 
@@ -140,8 +140,8 @@ specifically.
 ## Choosing the right abstraction
 
 This flowchart guides maintainers to the right testing abstraction by first
-checking whether the test needs real persistence, then whether it only needs
-to inspect captured calls, and finally whether it needs a bespoke mock.
+checking whether the test needs real persistence, then whether it only needs to
+inspect captured calls, and finally whether it needs a bespoke mock.
 
 ```mermaid
 flowchart TD

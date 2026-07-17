@@ -27,8 +27,9 @@
 - [axinite architecture overview](axinite-architecture-overview.md) explains the
   top-level runtime shape, major subsystems, and how the pieces fit together.
 - [Formal verification methods in Axinite](formal-verification-methods-in-axinite.md)
-  recommends where proof-oriented checks, model checking, and generated property
-  tests should land first, and why those targets have the highest return.
+  recommends where proof-oriented checks, model checking, and generated
+  property tests should land first, and why those targets have the highest
+  return.
 - [Webhook server design](webhook-server-design.md) describes the unified
   webhook listener, route composition model, and rollback-focused restart
   behaviour.
@@ -45,8 +46,8 @@
   tool-execution pipeline and diagrams how preflight, execution, post-flight
   folding, approvals, and auth handling fit together.
 - [Database integrations](database-integrations.md) explains the PostgreSQL,
-  `pgvector`, and libSQL persistence backends, their differences, error handling
-  conventions, migration helpers, and job persistence patterns.
+  `pgvector`, and libSQL persistence backends, their differences, error
+  handling conventions, migration helpers, and job persistence patterns.
 - [Embedding integrations](embedding-integrations.md) documents the embedding
   provider interfaces, adapters, and the places embeddings are used.
 - [Jobs and routines](jobs-and-routines.md) covers the scheduler, background
@@ -65,8 +66,8 @@
   explains complexity metrics, the bumpy-road antipattern, and practical
   refactoring strategies for maintainers.
 - [Reliable testing in Rust via dependency injection](reliable-testing-in-rust-via-dependency-injection.md)
-  explains how to avoid global-state coupling in tests by injecting environment,
-  clock, and other system dependencies.
+  explains how to avoid global-state coupling in tests by injecting
+  environment, clock, and other system dependencies.
 - [`rstest-bdd` user's guide](rstest-bdd-users-guide.md) documents how to use
   the current `rstest-bdd` implementation from Gherkin features through step
   definitions and scenario execution.
@@ -231,10 +232,9 @@
   records that hierarchical recall should support both proxy-based and
   model-assisted gain estimation behind one expansion-gating interface.
 - [ADR 006: Dual-trait pattern for dyn-backed async interfaces](adr-006-dual-trait-pattern-for-dyn-backed-async-interfaces.md)
-  records the accepted migration pattern for dyn-backed async traits,
-  balancing compilation speed against implementation maintainability.
-  The pattern has been applied to all dyn-backed trait families in the
-  repository.
+  records the accepted migration pattern for dyn-backed async traits, balancing
+  compilation speed against implementation maintainability. The pattern has
+  been applied to all dyn-backed trait families in the repository.
 - [ADR 007: Stable capability probes must ignore ambient `RUSTC_WRAPPER`](adr-007-stable-capability-probes-must-ignore-ambient-rustc-wrapper.md)
   records why the repository temporarily carried a narrow vendored `cap-*`
   probe patch chain, which non-patch alternatives existed, and what evidence
@@ -246,8 +246,8 @@
   records the schema-helper newtypes that make parameter names, schema paths,
   and tool names explicit at helper call sites.
 - [ADR 010: Consolidate bootstrap rename helpers in `src/bootstrap/migration.rs`](adr-010-consolidate-bootstrap-rename-helpers.md)
-  records the single-helper migration decision for `.migrated` rename
-  behaviour and explicit non-fatal call-site handling.
+  records the single-helper migration decision for `.migrated` rename behaviour
+  and explicit non-fatal call-site handling.
 - [ADR 011: Extract register_wasm helpers to reduce cyclomatic complexity](adr-011-extract-register-wasm-helpers.md)
   records the helper split that keeps the WASM registration path within the
   repository's complexity threshold.

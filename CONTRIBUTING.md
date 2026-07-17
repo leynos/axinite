@@ -8,7 +8,8 @@ cd ironclaw
 ./scripts/dev-setup.sh
 ```
 
-This installs the Rust toolchain, WASM targets, git hooks, and runs initial checks.
+This installs the Rust toolchain, WASM targets, git hooks, and runs initial
+checks.
 
 ## Development Workflow
 
@@ -47,15 +48,15 @@ same branch.
 All PRs follow a risk-based review process:
 
 <!-- markdownlint-disable MD013 MD060 -->
-| Track | Scope | Requirements |
-| ----- | ----- | ------------ |
-| **A** | Docs, tests, chore, dependency bumps | 1 approval + CI green |
-| **B** | Features, refactors, new tools/channels | 1 approval + CI green + test evidence |
+| Track | Scope                                                                                                          | Requirements                           |
+| ----- | -------------------------------------------------------------------------------------------------------------- | -------------------------------------- |
+| **A** | Docs, tests, chore, dependency bumps                                                                           | 1 approval + CI green                  |
+| **B** | Features, refactors, new tools/channels                                                                        | 1 approval + CI green + test evidence  |
 | **C** | Security (`src/safety/`, `src/secrets/`), runtime (`src/agent/`, `src/worker/`), database schema, CI workflows | 2 approvals + rollback plan documented |
 <!-- markdownlint-enable MD013 MD060 -->
 
-Select the appropriate track in the PR template based on the files and behaviour
-the change touches.
+Select the appropriate track in the PR template based on the files and
+behaviour the change touches.
 
 ## Database Changes
 

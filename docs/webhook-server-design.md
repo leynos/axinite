@@ -25,9 +25,9 @@ That design is doing three practical jobs:
 3. it gives the host one place to implement listener restart and shutdown
    behaviour.
 
-The webhook server is intentionally narrower than the broader hot-reload path
-in `src/main.rs`. The server owns *how* a listener starts, stops, or rebinds.
-The caller in `main.rs` still owns *when* a restart is attempted and *why*
+The webhook server is intentionally narrower than the broader hot-reload path in
+`src/main.rs`. The server owns *how* a listener starts, stops, or rebinds. The
+caller in `main.rs` still owns *when* a restart is attempted and *why*
 configuration changes should trigger one.
 
 ## 2. Current architecture
@@ -60,13 +60,13 @@ small.
 Table 1. Core server responsibilities.
 
 <!-- markdownlint-disable MD013 MD060 -->
-| Component | Responsibility |
-| --------- | -------------- |
-| `WebhookServerConfig` | Holds the bind address |
-| `WebhookServer.routes` | Temporary queue of route fragments before first start |
-| `WebhookServer.merged_router` | Saved merged Axum router reused for restarts |
-| `WebhookServer.shutdown_tx` | One-shot graceful shutdown trigger for the live listener |
-| `WebhookServer.handle` | Join handle for the spawned server task |
+| Component                     | Responsibility                                           |
+| ----------------------------- | -------------------------------------------------------- |
+| `WebhookServerConfig`         | Holds the bind address                                   |
+| `WebhookServer.routes`        | Temporary queue of route fragments before first start    |
+| `WebhookServer.merged_router` | Saved merged Axum router reused for restarts             |
+| `WebhookServer.shutdown_tx`   | One-shot graceful shutdown trigger for the live listener |
+| `WebhookServer.handle`        | Join handle for the spawned server task                  |
 <!-- markdownlint-enable MD013 MD060 -->
 
 The important current constraints are:
@@ -144,9 +144,9 @@ This behaviour is directly exercised by the current tests in
 
 ## 6. Listener-based lifecycle API
 
-The listener-based lifecycle methods,
-`start_with_listener()` and `restart_with_listener()`, extend the original
-address-driven API without changing the server's route-ownership model.
+The listener-based lifecycle methods, `start_with_listener()` and
+`restart_with_listener()`, extend the original address-driven API without
+changing the server's route-ownership model.
 
 They exist for two concrete call patterns:
 

@@ -9,9 +9,10 @@ argument-hint: "[pr-number (optional, auto-detects from branch)]"
 
 ## Step 1: Find the PR
 
-If `$ARGUMENTS` is provided, use that as the PR number. Otherwise, detect the PR for the current branch:
+If `$ARGUMENTS` is provided, use that as the PR number. Otherwise, detect the
+PR for the current branch:
 
-```
+```shell
 gh pr list --head $(git branch --show-current) --json number,title,url --jq '.[0]'
 ```
 
@@ -21,37 +22,43 @@ If no PR is found, tell the user and stop.
 
 Resolve the repo owner and name:
 
-```
+```shell
 gh repo view --json owner,name --jq '"\(.owner.login)/\(.name)"'
 ```
 
 Fetch the full set of review comments (not issue-level comments):
 
-```
+```shell
 gh api --paginate repos/{owner}/{repo}/pulls/{number}/comments
 ```
 
 Also fetch the review summaries:
 
-```
+```shell
 gh api --paginate repos/{owner}/{repo}/pulls/{number}/reviews
 ```
 
-Deduplicate comments that appear multiple times (bots sometimes post the same finding under different IDs). Group by the actual issue being raised, not by comment ID.
+Deduplicate comments that appear multiple times (bots sometimes post the same
+finding under different IDs). Group by the actual issue being raised, not by
+comment ID.
 
 ## Step 3: Triage and plan
 
 For each unique issue raised in the comments:
 
-1. **Check if already addressed** - Read the current code at the referenced location. If a prior commit already fixed it, note it as "already resolved".
-2. **Assess validity** - Determine if the comment identifies a real problem or is a false positive. Be honest about false positives but explain why.
-3. **Classify severity** - Critical (security/data loss), High (bugs/broken behaviour), Medium (correctness/robustness), Low (style/naming/nits).
-4. **Plan the fix** - For each valid unresolved issue, describe the specific code change needed.
+1. **Check if already addressed** - Read the current code at the referenced
+   location. If a prior commit already fixed it, note it as "already resolved".
+2. **Assess validity** - Determine if the comment identifies a real problem or
+   is a false positive. Be honest about false positives but explain why.
+3. **Classify severity** - Critical (security/data loss), High (bugs/broken
+   behaviour), Medium (correctness/robustness), Low (style/naming/nits).
+4. **Plan the fix** - For each valid unresolved issue, describe the specific
+   code change needed.
 
 Present the plan as a table to the user:
 
-| # | Issue | File:Line | Severity | Status | Planned Fix |
-|---|-------|-----------|----------|--------|-------------|
+| #   | Issue | File:Line | Severity | Status | Planned Fix |
+| --- | ----- | --------- | -------- | ------ | ----------- |
 
 Wait for user confirmation before proceeding to implementation.
 
@@ -69,13 +76,19 @@ After user confirms:
 
 ## Step 5: Reply to comments
 
-For each comment addressed, reply on the PR with a short message stating what was fixed and the commit SHA. For false positives or already-resolved items, reply explaining why no change was needed.
+For each comment addressed, reply on the PR with a short message stating what
+was fixed and the commit SHA. For false positives or already-resolved items,
+reply explaining why no change was needed.
 
 ## Rules
 
-- Never guess at code you haven't read. Always read the referenced file and line before assessing a comment.
-- Group duplicate comments (same issue reported by multiple bots) and reply to all of them.
+- Never guess at code you haven't read. Always read the referenced file and
+  line before assessing a comment.
+- Group duplicate comments (same issue reported by multiple bots) and reply to
+  all of them.
 - Do not make changes beyond what the review comments ask for. Stay focused.
-- If a comment suggests a change you disagree with, present your reasoning to the user during the planning phase rather than silently ignoring it.
-- Follow IronClaw conventions: no `.unwrap()` in production code, use `crate::` imports, `thiserror` errors.
+- If a comment suggests a change you disagree with, present your reasoning to
+  the user during the planning phase rather than silently ignoring it.
+- Follow IronClaw conventions: no `.unwrap()` in production code, use `crate::`
+  imports, `thiserror` errors.
 - If changes touch persistence, verify both database backends are updated.

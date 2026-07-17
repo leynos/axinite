@@ -1,12 +1,11 @@
 # Recover clean build after bollard optionality
 
-This ExecPlan (execution plan) is a living document. The sections
-`Constraints`, `Tolerances`, `Risks`, `Progress`, `Surprises & discoveries`,
-`Decision log`, and `Outcomes & retrospective` must be kept up to date as work
-proceeds.
+This ExecPlan (execution plan) is a living document. The sections `Constraints`,
+`Tolerances`, `Risks`, `Progress`, `Surprises & discoveries`, `Decision log`,
+and `Outcomes & retrospective` must be kept up to date as work proceeds.
 
-Status: COMPLETED AND RETIRED
-Publication: final branch publication was performed by Codex on 2026-03-22.
+Status: COMPLETED AND RETIRED Publication: final branch publication was
+performed by Codex on 2026-03-22.
 
 ## Purpose / big picture
 
@@ -56,8 +55,7 @@ Two important pieces of evidence have already been gathered:
    --> .../cap-primitives-3.4.5/src/lib.rs:17:37
    ```
 
-   The log is at:
-   `/tmp/check-axinite-feature-gate-bollard-no-docker.out`
+   The log is at: `/tmp/check-axinite-feature-gate-bollard-no-docker.out`
 
 2. The dependency path into `cap-primitives` is:
 
@@ -77,8 +75,7 @@ There is also useful fallback evidence:
 
 1. `RUSTC_BOOTSTRAP=1 cargo check --all-features --features test-helpers`
    finished successfully, proving that the branch does not obviously contain a
-   syntax or gross type break in the all-features configuration.
-   The log is at:
+   syntax or gross type break in the all-features configuration. The log is at:
    `/tmp/check-axinite-feature-gate-bollard-all-features-bootstrap.out`
 
 2. `RUSTC_BOOTSTRAP=1 cargo check --no-default-features --features libsql,test-helpers`
@@ -131,28 +128,21 @@ repository-local vendored patch chain to be retired.
 
 - Risk: `cap-primitives` may be effectively pinned by the current
   `wasmtime-wasi` version, making a clean stable fix larger than a simple
-  patch-level update.
-  Severity: high
-  Likelihood: medium
-  Mitigation: inspect the full `wasmtime` family constraints first, then test a
-  minimal version bump or Cargo patch in isolation before touching source code.
+  patch-level update. Severity: high Likelihood: medium Mitigation: inspect the
+  full `wasmtime` family constraints first, then test a minimal version bump or
+  Cargo patch in isolation before touching source code.
 
 - Risk: fixing the stable dependency issue may expose additional branch-local
-  warnings or clippy findings that were previously hidden.
-  Severity: medium
-  Likelihood: high
-  Mitigation: rerun the narrow checks first, then the full gate stack, and fix
-  findings in smallest-first order.
+  warnings or clippy findings that were previously hidden. Severity: medium
+  Likelihood: high Mitigation: rerun the narrow checks first, then the full
+  gate stack, and fix findings in smallest-first order.
 
 - Risk: the no-Docker warnings may tempt a broad refactor into separate
-  configuration (`cfg`)
-  modules, which could accidentally expand scope.
-  Severity: medium
-  Likelihood: medium
-  Mitigation: prefer local `#[cfg]` pruning or helper extraction. If
-  suppression is truly unavoidable, do not use `#[allow(dead_code)]`; use a
-  tightly scoped `#[expect(dead_code, reason = "...")]` with the reason filled
-  in.
+  configuration (`cfg`) modules, which could accidentally expand scope.
+  Severity: medium Likelihood: medium Mitigation: prefer local `#[cfg]` pruning
+  or helper extraction. If suppression is truly unavoidable, do not use
+  `#[allow(dead_code)]`; use a tightly scoped
+  `#[expect(dead_code, reason = "...")]` with the reason filled in.
 
 ## Execution outline
 
@@ -289,8 +279,8 @@ $ git push
   `/tmp/lint-axinite-feature-gate-bollard-rerun.out`, and
   `/tmp/test-axinite-feature-gate-bollard.out`.
 - [x] Commit and push with clean gate evidence.
-  Final publication was completed by Codex on 2026-03-22, after the clean
-  build had already been retired and the later review-fix follow-up had been
+  Final publication was completed by Codex on 2026-03-22, after the clean build
+  had already been retired and the later review-fix follow-up had been
   published.
 - [x] Fix the ambient `notdeadyet` wrapper so stdin-backed compiler probes are
   stable-safe.
@@ -324,8 +314,7 @@ $ git push
   `--config` worked, but repository config did not beat the shell environment.
 - 2026-03-21: The stable fix therefore moved into vendored crates under
   `third-party-patches/`. Patching only `io-extras` and `cap-primitives` was
-  not enough; the same probe bug also affected `cap-std` and
-  `system-interface`.
+  not enough; the same probe bug also affected `cap-std` and `system-interface`.
 - 2026-03-21: The typecheck rerun surfaced two branch-local test regressions:
   `validate_bind_mount_path` was hidden from tests, and `HashMap` was removed
   from `reaper` test scope. Those are now fixed in-tree.
@@ -338,9 +327,10 @@ $ git push
   by cfg, the entire `make lint` matrix completed cleanly.
 - 2026-03-21: `make test` validated the vendored stable-build workaround under
   the full test feature set, not just the narrow no-Docker check. The branch
-  passed the WebAssembly (WASM) prebuild, `cargo nextest run --workspace --features
-  test-helpers`, and `cargo test --manifest-path tools-src/github/Cargo.toml`
-  without further source changes.
+  passed the WebAssembly (WASM) prebuild,
+  `cargo nextest run --workspace --features test-helpers`, and
+  `cargo test --manifest-path tools-src/github/Cargo.toml` without further
+  source changes.
 - 2026-03-21: Fixing `~/.local/bin/notdeadyet` to keep `rustc` in the
   foreground and materialize stdin-backed probes to a temporary file preserved
   heartbeat output while removing the wrapper behaviour that had tainted the
@@ -353,16 +343,16 @@ $ git push
 ## Decision log
 
 - 2026-03-21: Create a sibling execplan rather than overloading
-  `docs/execplans/feature-gate-bollard.md`.
-  Reason: the existing file already describes the bollard feature-gating work
-  itself. The clean-build recovery work is a separate follow-on stream with its
-  own root cause analysis and validation loop.
+  `docs/execplans/feature-gate-bollard.md`. Reason: the existing file already
+  describes the bollard feature-gating work itself. The clean-build recovery
+  work is a separate follow-on stream with its own root cause analysis and
+  validation loop.
 
 - 2026-03-21: Treat the stable `cap-primitives` failure as the first problem to
-  solve, ahead of the warning-only no-Docker cleanup.
-  Reason: until the normal stable toolchain can compile the dependency graph,
-  the repository's real gate sequence cannot pass, and warning cleanup alone
-  does not make the branch shippable.
+  solve, ahead of the warning-only no-Docker cleanup. Reason: until the normal
+  stable toolchain can compile the dependency graph, the repository's real gate
+  sequence cannot pass, and warning cleanup alone does not make the branch
+  shippable.
 - 2026-03-21: Retire the vendored `cap-*` patch chain once the fixed ambient
   wrapper proves the unpatched stable no-Docker build in a scratch copy.
   Reason: the repository should not keep carrying a vendor delta after the
@@ -374,11 +364,11 @@ $ git push
   contract for this repository.
 
 - 2026-03-21: Treat the stable blocker as a repository-local build-environment
-  mismatch, not as a required `wasmtime` upgrade.
-  Reason: direct probe reproduction shows that the configured heartbeat
-  `RUSTC_WRAPPER` falsely reports unstable std features as supported on stable.
-  That explains the failure family across `cap-primitives` and `io-extras`
-  without forcing a larger dependency update.
+  mismatch, not as a required `wasmtime` upgrade. Reason: direct probe
+  reproduction shows that the configured heartbeat `RUSTC_WRAPPER` falsely
+  reports unstable std features as supported on stable. That explains the
+  failure family across `cap-primitives` and `io-extras` without forcing a
+  larger dependency update.
 
 - 2026-03-21: Apply the first fix in `.cargo/config.toml` by forcing
   `RUSTC_WRAPPER` off for this workspace and disabling Cargo's wrapper usage.
@@ -387,32 +377,30 @@ $ git push
   dependency graph.
 
 - 2026-03-21: Abandon the Cargo-wrapper-config approach in favour of vendored
-  crate patches.
-  Reason: plain `cargo check` still inherited the ambient shell
+  crate patches. Reason: plain `cargo check` still inherited the ambient shell
   `RUSTC_WRAPPER`, so the repository config was not a durable fix for the
   acceptance command. Patching the affected build scripts to probe `RUSTC`
   directly makes the branch self-contained and keeps plain Cargo working.
 
 - 2026-03-21: Vendor and patch the full failing probe chain now used by the
   branch: `io-extras 0.18.4`, `cap-primitives 3.4.5`, `cap-std 3.4.5`, and
-  `system-interface 0.27.3`.
-  Reason: fixing the first two crates only moved the failure to the next
-  `cap-std` family member. The whole chain shares the same broken probe
-  pattern, so patching the full set is the smallest durable stable fix.
+  `system-interface 0.27.3`. Reason: fixing the first two crates only moved the
+  failure to the next `cap-std` family member. The whole chain shares the same
+  broken probe pattern, so patching the full set is the smallest durable stable
+  fix.
 
 - 2026-03-21: Remove the no-Docker warnings by cfg-pruning Docker-only fields
   and helpers rather than adding broad `#[allow(dead_code)]` suppressions.
-  Reason: the warnings came from configuration-specific dead paths introduced by
-  the optional `docker` feature, so the clean fix is to compile those items only
-  when they are genuinely reachable.
+  Reason: the warnings came from configuration-specific dead paths introduced
+  by the optional `docker` feature, so the clean fix is to compile those items
+  only when they are genuinely reachable.
 
 - 2026-03-21: Fix the remaining `clippy::clone_on_copy` findings with
   cfg-specific locals at the clone sites instead of weakening lints or changing
-  the shared `DockerConnection` alias shape.
-  Reason: the Docker-enabled build still needs an owned client handle, while
-  the Docker-disabled stub is intentionally `Copy`. Splitting behaviour at the
-  use sites keeps both configurations honest without distorting the shared type
-  surface.
+  the shared `DockerConnection` alias shape. Reason: the Docker-enabled build
+  still needs an owned client handle, while the Docker-disabled stub is
+  intentionally `Copy`. Splitting behaviour at the use sites keeps both
+  configurations honest without distorting the shared type surface.
 
 ## Outcomes & retrospective
 

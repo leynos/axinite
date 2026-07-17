@@ -31,8 +31,7 @@ not "any text sent to any model". It is a specific runtime contract that:
 
 The browser gateway is the richest chat surface, so it is the easiest place to
 see the full model. The same underlying session-backed path is also used by
-other channels once they emit `IncomingMessage` values through
-`ChannelManager`.
+other channels once they emit `IncomingMessage` values through `ChannelManager`.
 
 This document excludes two adjacent areas on purpose:
 
@@ -46,14 +45,14 @@ This document excludes two adjacent areas on purpose:
 
 Table 1. Applicability of chat-model topics in this document.
 
-| Area | Applies | Evidence | Notes |
-| ------ | --------- | ---------- | ------- |
-| Browser gateway chat | Yes | `src/channels/web/handlers/chat.rs`, `src/channels/web/ws.rs`, `src/channels/web/mod.rs` | This is the canonical end-to-end chat surface. |
-| Session-backed agent loop | Yes | `src/agent/agent_loop.rs`, `src/agent/thread_ops/`, `src/agent/dispatcher/` | This is the core chat execution engine. |
-| Conversation persistence | Yes | `src/agent/thread_ops/`, `src/history/store.rs`, `src/channels/web/util.rs` | Persistence is durable, but less expressive than the in-memory turn model. |
-| Non-web channels | Partly | `src/channels/channel.rs`, `src/channels/manager.rs` | They share the same normalized message contract, but not the same browser-specific sinks. |
-| OpenAI-compatible proxy | Partly | `src/channels/web/openai_compat.rs` | It lives beside chat, but does not use sessions, approvals, or thread persistence. |
-| Background jobs and routines | Partly | `src/channels/manager.rs`, `src/context/memory.rs` | They can inject messages or emit events, but they are not the primary user-chat path. |
+| Area                         | Applies | Evidence                                                                                 | Notes                                                                                     |
+| ---------------------------- | ------- | ---------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------- |
+| Browser gateway chat         | Yes     | `src/channels/web/handlers/chat.rs`, `src/channels/web/ws.rs`, `src/channels/web/mod.rs` | This is the canonical end-to-end chat surface.                                            |
+| Session-backed agent loop    | Yes     | `src/agent/agent_loop.rs`, `src/agent/thread_ops/`, `src/agent/dispatcher/`              | This is the core chat execution engine.                                                   |
+| Conversation persistence     | Yes     | `src/agent/thread_ops/`, `src/history/store.rs`, `src/channels/web/util.rs`              | Persistence is durable, but less expressive than the in-memory turn model.                |
+| Non-web channels             | Partly  | `src/channels/channel.rs`, `src/channels/manager.rs`                                     | They share the same normalized message contract, but not the same browser-specific sinks. |
+| OpenAI-compatible proxy      | Partly  | `src/channels/web/openai_compat.rs`                                                      | It lives beside chat, but does not use sessions, approvals, or thread persistence.        |
+| Background jobs and routines | Partly  | `src/channels/manager.rs`, `src/context/memory.rs`                                       | They can inject messages or emit events, but they are not the primary user-chat path.     |
 
 ## 3. Canonical data model
 
@@ -64,11 +63,11 @@ record is the contract between ingress code and the agent loop.
 
 Table 2. `IncomingMessage` and attachment fields that shape chat behaviour.
 
-| Type | Important fields | Why they matter | Evidence |
-| ------ | ------------------ | ----------------- | ---------- |
-| `IncomingMessage` | `channel`, `user_id`, `content`, `thread_id`, `metadata`, `timezone`, `attachments` | Carries the full chat request as far as the session, safety, and reasoning layers. | `src/channels/channel.rs` |
-| `IncomingAttachment` | `kind`, `mime_type`, `filename`, `size_bytes`, `source_url`, `storage_key`, `extracted_text`, `data`, `duration_secs` | Supports later mutation steps such as transcription, text extraction, and multimodal image injection. | `src/channels/channel.rs` |
-| `AttachmentKind` | `Audio`, `Image`, `Document` | Drives which preprocessing path runs and how the attachment is rendered into prompt content. | `src/channels/channel.rs`, `src/agent/attachments.rs` |
+| Type                 | Important fields                                                                                                      | Why they matter                                                                                       | Evidence                                              |
+| -------------------- | --------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------- | ----------------------------------------------------- |
+| `IncomingMessage`    | `channel`, `user_id`, `content`, `thread_id`, `metadata`, `timezone`, `attachments`                                   | Carries the full chat request as far as the session, safety, and reasoning layers.                    | `src/channels/channel.rs`                             |
+| `IncomingAttachment` | `kind`, `mime_type`, `filename`, `size_bytes`, `source_url`, `storage_key`, `extracted_text`, `data`, `duration_secs` | Supports later mutation steps such as transcription, text extraction, and multimodal image injection. | `src/channels/channel.rs`                             |
+| `AttachmentKind`     | `Audio`, `Image`, `Document`                                                                                          | Drives which preprocessing path runs and how the attachment is rendered into prompt content.          | `src/channels/channel.rs`, `src/agent/attachments.rs` |
 
 The model is intentionally channel-agnostic. The web gateway fills
 `IncomingMessage` from JSON bodies or WebSocket frames, but the agent loop does
@@ -83,13 +82,13 @@ interruptibility, and approval state.
 
 Table 3. Session-backed chat structures.
 
-| Type | Important fields | Behavioural role | Evidence |
-| ------ | ------------------ | ------------------ | ---------- |
-| `Session` | `user_id`, `active_thread`, `threads`, `auto_approved_tools` | Owns all threads for one user and remembers per-session approval decisions. | `src/agent/session.rs` |
-| `Thread` | `id`, `state`, `turns`, `metadata`, `pending_approval`, `pending_auth` | Represents one conversation timeline and the current interruption mode. | `src/agent/session.rs` |
-| `Turn` | `user_input`, `response`, `tool_calls`, `state`, timestamps, `image_content_parts` | Preserves the model-visible user input and the assistant-side work for one turn. | `src/agent/session.rs` |
-| `PendingApproval` | tool name, original parameters, redacted display parameters, `context_messages`, deferred tool calls, timezone | Suspends the loop at a tool boundary and lets the user resume it later. | `src/agent/session.rs`, `src/agent/thread_ops/approval.rs` |
-| `PendingAuth` | `extension_name` | Puts the thread into auth mode so the next user message is routed directly to credential handling. | `src/agent/session.rs`, `src/agent/agent_loop.rs` |
+| Type              | Important fields                                                                                               | Behavioural role                                                                                   | Evidence                                                   |
+| ----------------- | -------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------- | ---------------------------------------------------------- |
+| `Session`         | `user_id`, `active_thread`, `threads`, `auto_approved_tools`                                                   | Owns all threads for one user and remembers per-session approval decisions.                        | `src/agent/session.rs`                                     |
+| `Thread`          | `id`, `state`, `turns`, `metadata`, `pending_approval`, `pending_auth`                                         | Represents one conversation timeline and the current interruption mode.                            | `src/agent/session.rs`                                     |
+| `Turn`            | `user_input`, `response`, `tool_calls`, `state`, timestamps, `image_content_parts`                             | Preserves the model-visible user input and the assistant-side work for one turn.                   | `src/agent/session.rs`                                     |
+| `PendingApproval` | tool name, original parameters, redacted display parameters, `context_messages`, deferred tool calls, timezone | Suspends the loop at a tool boundary and lets the user resume it later.                            | `src/agent/session.rs`, `src/agent/thread_ops/approval.rs` |
+| `PendingAuth`     | `extension_name`                                                                                               | Puts the thread into auth mode so the next user message is routed directly to credential handling. | `src/agent/session.rs`, `src/agent/agent_loop.rs`          |
 
 The important design choice is that `Thread::messages()` rebuilds the model
 transcript from turns, not from raw transport messages. The model sees a
@@ -109,11 +108,11 @@ durable enough to reload history after a restart, but it is intentionally lossy.
 
 Table 4. Durable conversation record.
 
-| Record | Stored fields | Notes | Evidence |
-| -------- | --------------- | ------- | ---------- |
-| `ConversationSummary` | conversation metadata and timestamps | Used to enumerate stored conversations. | `src/history/store.rs` |
-| `ConversationMessage` | `id`, `role`, `content`, `created_at` | The durable history format is a flat role-tagged message stream. | `src/history/store.rs` |
-| Roles in practice | `user`, `tool_calls`, `assistant` | Tool results are not stored as full transcript messages; tool calls are summarized into one JSON record. | `src/agent/thread_ops/persistence.rs`, `src/channels/web/util.rs` |
+| Record                | Stored fields                         | Notes                                                                                                    | Evidence                                                          |
+| --------------------- | ------------------------------------- | -------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------- |
+| `ConversationSummary` | conversation metadata and timestamps  | Used to enumerate stored conversations.                                                                  | `src/history/store.rs`                                            |
+| `ConversationMessage` | `id`, `role`, `content`, `created_at` | The durable history format is a flat role-tagged message stream.                                         | `src/history/store.rs`                                            |
+| Roles in practice     | `user`, `tool_calls`, `assistant`     | Tool results are not stored as full transcript messages; tool calls are summarized into one JSON record. | `src/agent/thread_ops/persistence.rs`, `src/channels/web/util.rs` |
 
 This means persisted history is strong enough for browser history and thread
 hydration, but not identical to the full reasoning transcript held in memory.
@@ -124,13 +123,13 @@ The browser gateway has its own view model over the chat runtime.
 
 Table 5. Browser-facing chat DTOs.
 
-| Type | Purpose | Evidence |
-| ------ | --------- | ---------- |
-| `SendMessageRequest` | REST request body for `/api/chat/send` | `src/channels/web/types.rs` |
-| `ThreadListResponse` | Browser sidebar model for the pinned assistant thread, regular conversations, and the active thread selection | `src/channels/web/types.rs`, `src/channels/web/handlers/chat_threads.rs` |
-| `HistoryResponse`, `TurnInfo`, `ToolCallInfo` | Browser history and thread view model | `src/channels/web/types.rs`, `src/channels/web/util.rs` |
-| `PendingApprovalInfo` | Re-renders approval state after a thread switch | `src/channels/web/types.rs`, `src/channels/web/handlers/chat_history.rs` |
-| `SseEvent` | Unified live event stream for responses, tool activity, approvals, auth, jobs, and generated images | `src/channels/web/types.rs`, `src/channels/web/mod.rs` |
+| Type                                          | Purpose                                                                                                       | Evidence                                                                 |
+| --------------------------------------------- | ------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------ |
+| `SendMessageRequest`                          | REST request body for `/api/chat/send`                                                                        | `src/channels/web/types.rs`                                              |
+| `ThreadListResponse`                          | Browser sidebar model for the pinned assistant thread, regular conversations, and the active thread selection | `src/channels/web/types.rs`, `src/channels/web/handlers/chat_threads.rs` |
+| `HistoryResponse`, `TurnInfo`, `ToolCallInfo` | Browser history and thread view model                                                                         | `src/channels/web/types.rs`, `src/channels/web/util.rs`                  |
+| `PendingApprovalInfo`                         | Re-renders approval state after a thread switch                                                               | `src/channels/web/types.rs`, `src/channels/web/handlers/chat_history.rs` |
+| `SseEvent`                                    | Unified live event stream for responses, tool activity, approvals, auth, jobs, and generated images           | `src/channels/web/types.rs`, `src/channels/web/mod.rs`                   |
 
 The browser sidebar is intentionally not a flat list of identical items.
 `ThreadListResponse` carries the dedicated assistant conversation in
@@ -209,8 +208,7 @@ than an out-of-band RPC. The REST and WebSocket approval paths both serialize a
 `Submission::ExecApproval` value into message content so the same submission
 parser can handle them inside the agent loop. That parser is deliberately
 text-driven: it distinguishes normal user input, slash-style commands, JSON
-approval payloads, and short approval replies such as `yes`, `always`, and
-`no`.
+approval payloads, and short approval replies such as `yes`, `always`, and `no`.
 
 ### 4.3 Early preprocessing and message mutation
 
@@ -221,11 +219,10 @@ First, audio attachments pass through `TranscriptionMiddleware`. If the message
 body is empty or exactly `[Voice note]`, the first successful transcription
 becomes the message content. The attachment also keeps its `extracted_text`.
 
-Second, document attachments pass through
-`DocumentExtractionMiddleware`. Extraction only uses inline `attachment.data`.
-It refuses to fetch `source_url`, specifically to avoid Server-Side Request
-Forgery (SSRF). Extraction also enforces size limits and truncates oversized
-results.
+Second, document attachments pass through `DocumentExtractionMiddleware`.
+Extraction only uses inline `attachment.data`. It refuses to fetch
+`source_url`, specifically to avoid Server-Side Request Forgery (SSRF).
+Extraction also enforces size limits and truncates oversized results.
 
 Third, extracted document text is written into the workspace under
 `documents/<date>/<filename>` by `store_extracted_documents()`. That creates a
@@ -270,13 +267,12 @@ value used in the code. The returned conversation is emitted as
 
 The frontend preserves that contract in one place. `loadThreads()` stores
 `assistant_thread.id` as `assistantThreadId`, renders it as the pinned
-`Assistant` row, and defaults to it when no active thread is selected.
-Ordinary conversations come from `threads`, switch through
-`switchThread(thread.id)`, and keep their stored title, channel, type, or UUID
-prefix. Creating a new conversation through `POST /api/chat/thread/new`
-creates a regular conversation with the literal `thread_type = "thread"` value
-used in the implementation, then selects it without replacing the pinned
-assistant conversation.
+`Assistant` row, and defaults to it when no active thread is selected. Ordinary
+conversations come from `threads`, switch through `switchThread(thread.id)`,
+and keep their stored title, channel, type, or UUID prefix. Creating a new
+conversation through `POST /api/chat/thread/new` creates a regular conversation
+with the literal `thread_type = "thread"` value used in the implementation,
+then selects it without replacing the pinned assistant conversation.
 
 Figure 2. Accessible sequence diagram showing how the gateway returns the
 assistant conversation separately from ordinary thread summaries, how the
@@ -352,15 +348,15 @@ trust levels and lifetimes.
 
 Table 6. Inputs injected into `ReasoningContext` before or during the loop.
 
-| Input | Source | Trust level | How it enters | Evidence |
-| ------ | -------- | ------------- | --------------- | ---------- |
-| Workspace system prompt | workspace identity files such as `AGENTS.md` and `SOUL.md` | Trusted host instruction | Loaded by `system_prompt_for_context_tz()` and inserted as the system prompt | `src/agent/dispatcher/mod.rs` |
-| Skill context | selected installed or trusted skills | Mixed; installed skills are explicitly downgraded to suggestions | Wrapped in `<skill>` blocks and injected into the prompt | `src/agent/dispatcher/mod.rs` |
-| Channel conversation context | channel-specific metadata projection | Trusted host-side adapter data | Added through `Reasoning::with_conversation_data()` | `src/agent/dispatcher/mod.rs` |
-| Prior turns | thread state | Mixed user and assistant history | Rebuilt from `Thread::messages()` | `src/agent/session.rs` |
-| Tool schemas | tool registry, optionally attenuated by active skills | Trusted host instruction | Inserted into `ReasoningContext.available_tools` | `src/agent/dispatcher/mod.rs` |
-| Thread metadata | thread ID | Trusted host metadata | Stored in `ReasoningContext.metadata` | `src/agent/dispatcher/mod.rs` |
-| Tool-result messages | executed tool outputs after sanitization | Untrusted external content after host wrapping | Added as `ChatMessage::tool_result` | `src/agent/dispatcher/delegate/tool_exec.rs`, `src/tools/execute.rs` |
+| Input                        | Source                                                     | Trust level                                                      | How it enters                                                                | Evidence                                                             |
+| ---------------------------- | ---------------------------------------------------------- | ---------------------------------------------------------------- | ---------------------------------------------------------------------------- | -------------------------------------------------------------------- |
+| Workspace system prompt      | workspace identity files such as `AGENTS.md` and `SOUL.md` | Trusted host instruction                                         | Loaded by `system_prompt_for_context_tz()` and inserted as the system prompt | `src/agent/dispatcher/mod.rs`                                        |
+| Skill context                | selected installed or trusted skills                       | Mixed; installed skills are explicitly downgraded to suggestions | Wrapped in `<skill>` blocks and injected into the prompt                     | `src/agent/dispatcher/mod.rs`                                        |
+| Channel conversation context | channel-specific metadata projection                       | Trusted host-side adapter data                                   | Added through `Reasoning::with_conversation_data()`                          | `src/agent/dispatcher/mod.rs`                                        |
+| Prior turns                  | thread state                                               | Mixed user and assistant history                                 | Rebuilt from `Thread::messages()`                                            | `src/agent/session.rs`                                               |
+| Tool schemas                 | tool registry, optionally attenuated by active skills      | Trusted host instruction                                         | Inserted into `ReasoningContext.available_tools`                             | `src/agent/dispatcher/mod.rs`                                        |
+| Thread metadata              | thread ID                                                  | Trusted host metadata                                            | Stored in `ReasoningContext.metadata`                                        | `src/agent/dispatcher/mod.rs`                                        |
+| Tool-result messages         | executed tool outputs after sanitization                   | Untrusted external content after host wrapping                   | Added as `ChatMessage::tool_result`                                          | `src/agent/dispatcher/delegate/tool_exec.rs`, `src/tools/execute.rs` |
 
 The dispatcher builds two cached prompt variants:
 
@@ -389,10 +385,10 @@ the tool-execution implementation lives in
    status updates, sanitizes outputs, and appends `tool_result` messages to the
    reasoning context.
 
-The canonical tool execution path is
-`execute_tool_with_safety()`: validate parameters, redact sensitive values in
-logs, enforce a timeout, execute, and serialize. The chat loop then runs
-`process_tool_result()`, which sanitizes the output and wraps it inside:
+The canonical tool execution path is `execute_tool_with_safety()`: validate
+parameters, redact sensitive values in logs, enforce a timeout, execute, and
+serialize. The chat loop then runs `process_tool_result()`, which sanitizes the
+output and wraps it inside:
 
 ```xml
 <tool_output name="..." sanitized="true|false">
@@ -469,8 +465,8 @@ When the browser requests history, the gateway prefers the in-memory thread if
 it exists and has turn data. That preserves richer state such as pending
 approvals and full per-turn tool-call status. If the thread is not resident, or
 if the caller pages backwards with a `before` cursor, the gateway falls back to
-the database and reconstructs `TurnInfo` values from flat `user`,
-`tool_calls`, and `assistant` records.
+the database and reconstructs `TurnInfo` values from flat `user`, `tool_calls`,
+and `assistant` records.
 
 That reconstruction is intentionally heuristic. It handles:
 
@@ -510,31 +506,31 @@ rather than single files. The key structural units are:
 
 Dispatcher delegate: `src/agent/dispatcher/delegate/`
 
-| File | Responsibility |
-| --- | --- |
-| `mod.rs` | `ChatDelegate<'a>` struct; thin `NativeLoopDelegate` impl delegating to submodules |
-| `llm_hooks.rs` | Signal checking, pre-LLM call preparation, LLM invocation, text-response handling, message compaction |
+| File           | Responsibility                                                                                             |
+| -------------- | ---------------------------------------------------------------------------------------------------------- |
+| `mod.rs`       | `ChatDelegate<'a>` struct; thin `NativeLoopDelegate` impl delegating to submodules                         |
+| `llm_hooks.rs` | Signal checking, pre-LLM call preparation, LLM invocation, text-response handling, message compaction      |
 | `tool_exec.rs` | Tool preflight classification, parallel execution, post-flight result folding, approval and auth detection |
 
 Thread operations: `src/agent/thread_ops/`
 
-| File | Responsibility |
-| --- | --- |
-| `dispatch.rs` | Top-level `dispatch_submission` router |
-| `turn_execution.rs` | Per-turn orchestration: state guard, safety, compaction, loop, result handling |
-| `control.rs` | Undo, redo, interrupt, compact, clear, new-thread, switch-thread, resume |
-| `hydration.rs` | Thread hydration from the backing store on first reference |
-| `persistence.rs` | Durable write helpers for user messages, assistant responses, and tool-call summaries |
-| `approval.rs` | Resume-from-approval flow |
+| File                | Responsibility                                                                        |
+| ------------------- | ------------------------------------------------------------------------------------- |
+| `dispatch.rs`       | Top-level `dispatch_submission` router                                                |
+| `turn_execution.rs` | Per-turn orchestration: state guard, safety, compaction, loop, result handling        |
+| `control.rs`        | Undo, redo, interrupt, compact, clear, new-thread, switch-thread, resume              |
+| `hydration.rs`      | Thread hydration from the backing store on first reference                            |
+| `persistence.rs`    | Durable write helpers for user messages, assistant responses, and tool-call summaries |
+| `approval.rs`       | Resume-from-approval flow                                                             |
 
 Parameter objects introduced to reduce function arity:
 
-| Struct | Fields | Purpose |
-| --- | --- | --- |
-| `UserTurnRequest` | `session`, `thread_id`, `content` | Groups per-turn scope for `process_user_input` |
-| `TurnPersistContext<'a>` | `thread_id`, `user_id`, `turn_number` | Groups identity data for persistence helpers |
-| `ToolCallSpec<'a>` | `name`, `params` | Identifies a tool invocation for standalone execution |
-| `ApprovalCandidate` | `idx`, `tool_call`, `tool` | Captures the first approval-gated call and its registry entry |
+| Struct                   | Fields                                | Purpose                                                       |
+| ------------------------ | ------------------------------------- | ------------------------------------------------------------- |
+| `UserTurnRequest`        | `session`, `thread_id`, `content`     | Groups per-turn scope for `process_user_input`                |
+| `TurnPersistContext<'a>` | `thread_id`, `user_id`, `turn_number` | Groups identity data for persistence helpers                  |
+| `ToolCallSpec<'a>`       | `name`, `params`                      | Identifies a tool invocation for standalone execution         |
+| `ApprovalCandidate`      | `idx`, `tool_call`, `tool`            | Captures the first approval-gated call and its registry entry |
 
 ## 5. Sources, sinks, and content-injection boundaries
 
@@ -542,16 +538,16 @@ Parameter objects introduced to reduce function arity:
 
 Table 7. Primary chat sources, trust levels, and guards.
 
-| Source | Trust level | Example path | Guard or wrapper |
-| -------- | ------------- | -------------- | ------------------ |
-| User text | Untrusted | `/api/chat/send`, `WsClientMessage::Message` | input validation, policy checks, inbound secret scan |
-| Audio transcript | Untrusted derivative of user data | `TranscriptionMiddleware` | attachment-kind gating and provider-specific transcription |
-| Document extraction | Untrusted derivative of attachment data | `DocumentExtractionMiddleware` | inline-data-only rule, size caps, truncation |
-| Image content | Untrusted user data | `augment_with_attachments()` | metadata block plus multimodal image part |
-| Workspace system prompt | Trusted host instruction | workspace identity files | loaded by runtime, not user supplied |
-| Skill content | Mixed | skill registry | installed skills are marked as suggestions |
-| Tool output | Untrusted external data | tool execution path | sanitization, leak detection, policy checks, `<tool_output>` wrapper |
-| Other external content | Untrusted external data | fetched pages, emails, webhook payloads | `wrap_external_content()` when explicitly used |
+| Source                  | Trust level                             | Example path                                 | Guard or wrapper                                                     |
+| ----------------------- | --------------------------------------- | -------------------------------------------- | -------------------------------------------------------------------- |
+| User text               | Untrusted                               | `/api/chat/send`, `WsClientMessage::Message` | input validation, policy checks, inbound secret scan                 |
+| Audio transcript        | Untrusted derivative of user data       | `TranscriptionMiddleware`                    | attachment-kind gating and provider-specific transcription           |
+| Document extraction     | Untrusted derivative of attachment data | `DocumentExtractionMiddleware`               | inline-data-only rule, size caps, truncation                         |
+| Image content           | Untrusted user data                     | `augment_with_attachments()`                 | metadata block plus multimodal image part                            |
+| Workspace system prompt | Trusted host instruction                | workspace identity files                     | loaded by runtime, not user supplied                                 |
+| Skill content           | Mixed                                   | skill registry                               | installed skills are marked as suggestions                           |
+| Tool output             | Untrusted external data                 | tool execution path                          | sanitization, leak detection, policy checks, `<tool_output>` wrapper |
+| Other external content  | Untrusted external data                 | fetched pages, emails, webhook payloads      | `wrap_external_content()` when explicitly used                       |
 
 ### 5.2 Injection boundaries
 
@@ -595,29 +591,29 @@ late because data may already have reached logs, history, or workspace storage.
 
 Table 8. Thread states and how chat actions move between them.
 
-| State | Meaning | Entered by | Exited by |
-| ------- | --------- | ------------ | ----------- |
-| `Idle` | Ready for a new turn | new thread creation, completed turn, cleared approval, resumed interrupt | new user turn |
-| `Processing` | A turn is actively running | `start_turn()` | completed turn, failed turn, interrupt |
-| `AwaitingApproval` | Tool execution is suspended pending user choice | approval-gated tool call | approval handling or interrupt |
-| `Completed` | No more turns expected | explicit completion workflows | uncommon in normal interactive chat; successful turns usually return to `Idle` |
-| `Interrupted` | Current work was cancelled | `/interrupt` path | resume or later user action |
+| State              | Meaning                                         | Entered by                                                               | Exited by                                                                      |
+| ------------------ | ----------------------------------------------- | ------------------------------------------------------------------------ | ------------------------------------------------------------------------------ |
+| `Idle`             | Ready for a new turn                            | new thread creation, completed turn, cleared approval, resumed interrupt | new user turn                                                                  |
+| `Processing`       | A turn is actively running                      | `start_turn()`                                                           | completed turn, failed turn, interrupt                                         |
+| `AwaitingApproval` | Tool execution is suspended pending user choice | approval-gated tool call                                                 | approval handling or interrupt                                                 |
+| `Completed`        | No more turns expected                          | explicit completion workflows                                            | uncommon in normal interactive chat; successful turns usually return to `Idle` |
+| `Interrupted`      | Current work was cancelled                      | `/interrupt` path                                                        | resume or later user action                                                    |
 
 ### 6.2 Action catalogue
 
 Table 9. High-value actions in the chat path.
 
-| Action | Input | Output | Evidence |
-| -------- | ------- | -------- | ---------- |
-| Send chat message | `SendMessageRequest` or `WsClientMessage::Message` | `IncomingMessage` | `src/channels/web/handlers/chat.rs`, `src/channels/web/ws.rs` |
-| Start turn | normalized message plus resolved thread | in-memory turn plus durable user record | `src/agent/thread_ops/turn_execution.rs` |
-| Run model iteration | `ReasoningContext` | assistant text or tool-call batch | `src/agent/dispatcher/mod.rs` |
-| Execute tool batch | tool calls | status events plus `tool_result` messages | `src/agent/dispatcher/delegate/tool_exec.rs`, `src/tools/execute.rs` |
-| Suspend for approval | approval-required tool call | `PendingApproval` plus SSE event | `src/agent/dispatcher/delegate/tool_exec.rs`, `src/agent/thread_ops/approval.rs` |
-| Submit approval | approval REST or WebSocket message | resumed suspended context | `src/channels/web/handlers/chat_auth.rs`, `src/channels/web/ws.rs` |
-| Enter auth mode | auth-required tool result | `PendingAuth` plus auth event | `src/agent/dispatcher/delegate/tool_exec.rs`, `src/agent/session.rs` |
-| Submit auth token | auth REST or WebSocket request | extension activation attempt and auth broadcast | `src/channels/web/handlers/chat_auth.rs`, `src/channels/web/ws.rs` |
-| Load history | thread query | `HistoryResponse` | `src/channels/web/handlers/chat_history.rs` |
+| Action               | Input                                              | Output                                          | Evidence                                                                         |
+| -------------------- | -------------------------------------------------- | ----------------------------------------------- | -------------------------------------------------------------------------------- |
+| Send chat message    | `SendMessageRequest` or `WsClientMessage::Message` | `IncomingMessage`                               | `src/channels/web/handlers/chat.rs`, `src/channels/web/ws.rs`                    |
+| Start turn           | normalized message plus resolved thread            | in-memory turn plus durable user record         | `src/agent/thread_ops/turn_execution.rs`                                         |
+| Run model iteration  | `ReasoningContext`                                 | assistant text or tool-call batch               | `src/agent/dispatcher/mod.rs`                                                    |
+| Execute tool batch   | tool calls                                         | status events plus `tool_result` messages       | `src/agent/dispatcher/delegate/tool_exec.rs`, `src/tools/execute.rs`             |
+| Suspend for approval | approval-required tool call                        | `PendingApproval` plus SSE event                | `src/agent/dispatcher/delegate/tool_exec.rs`, `src/agent/thread_ops/approval.rs` |
+| Submit approval      | approval REST or WebSocket message                 | resumed suspended context                       | `src/channels/web/handlers/chat_auth.rs`, `src/channels/web/ws.rs`               |
+| Enter auth mode      | auth-required tool result                          | `PendingAuth` plus auth event                   | `src/agent/dispatcher/delegate/tool_exec.rs`, `src/agent/session.rs`             |
+| Submit auth token    | auth REST or WebSocket request                     | extension activation attempt and auth broadcast | `src/channels/web/handlers/chat_auth.rs`, `src/channels/web/ws.rs`               |
+| Load history         | thread query                                       | `HistoryResponse`                               | `src/channels/web/handlers/chat_history.rs`                                      |
 
 ## 7. Constraints, trade-offs, and risks
 

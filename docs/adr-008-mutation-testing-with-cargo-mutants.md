@@ -13,8 +13,8 @@ Accepted.
 IronClaw maintains line-coverage reports via `cargo-llvm-cov` and Codecov, but
 line coverage only confirms that code is executed, not that tests actually
 detect faults in it. A function body could be entirely replaced with a default
-return value, and if no test fails, the existing suite provides a false sense of
-safety for that code path.
+return value, and if no test fails, the existing suite provides a false sense
+of safety for that code path.
 
 Mutation testing addresses this gap by systematically injecting small faults
 (mutants) into the source and checking whether the test suite catches each one.
@@ -55,17 +55,17 @@ maintenance overhead and couples production code to a testing tool.
 
 ### Option C: Universal mutation frameworks (e.g. mutmut, Stryker)
 
-These tools target Python and JavaScript/TypeScript, respectively. Adapting them
-to a Rust workspace would require custom integration work with no upstream
+These tools target Python and JavaScript/TypeScript, respectively. Adapting
+them to a Rust workspace would require custom integration work with no upstream
 support.
 
-| Topic                 | cargo-mutants        | Mutagen            | Universal frameworks |
-| --------------------- | -------------------- | ------------------ | -------------------- |
-| Language support      | Rust (native)        | Rust (proc-macro)  | Python / JS / TS     |
-| Source annotation     | None required        | `#[mutate]` needed | N/A for Rust         |
-| Structured output     | JSON + text          | Limited            | Varies               |
-| Workspace support     | Yes                  | Partial            | No                   |
-| Active maintenance    | Yes                  | Sporadic           | N/A for Rust         |
+| Topic              | cargo-mutants | Mutagen            | Universal frameworks |
+| ------------------ | ------------- | ------------------ | -------------------- |
+| Language support   | Rust (native) | Rust (proc-macro)  | Python / JS / TS     |
+| Source annotation  | None required | `#[mutate]` needed | N/A for Rust         |
+| Structured output  | JSON + text   | Limited            | Varies               |
+| Workspace support  | Yes           | Partial            | No                   |
+| Active maintenance | Yes           | Sporadic           | N/A for Rust         |
 
 _Table 1: Comparison of mutation testing options._
 
@@ -82,19 +82,19 @@ mutant reports as workflow artefacts.
    `branch` (string, default `main`) and `paths` (string, default empty).
 2. **Scoping.** When `paths` is empty, the job computes the list of `.rs`
    files changed in the past 24 hours via
-   `git log -m --since="24 hours ago" --diff-filter=ACMR --name-only`. The
-   `-m` flag ensures merge commits expand their file lists relative to each
-   parent, so a recently landed merge that brings in older side-branch commits
-   is not silently skipped. Files under `tools-src/` and `channels-src/` are
-   then excluded because those crates use separate manifests and are not
-   workspace members; `cargo-mutants` operates on workspace members only. Each
-   remaining file is passed via `--file`. If no files remain, the job exits
-   early with success. When `paths` is non-empty (manual dispatch), those
-   paths are used directly, after the same non-workspace exclusion filter.
+   `git log -m --since="24 hours ago" --diff-filter=ACMR --name-only`. The `-m`
+   flag ensures merge commits expand their file lists relative to each parent,
+   so a recently landed merge that brings in older side-branch commits is not
+   silently skipped. Files under `tools-src/` and `channels-src/` are then
+   excluded because those crates use separate manifests and are not workspace
+   members; `cargo-mutants` operates on workspace members only. Each remaining
+   file is passed via `--file`. If no files remain, the job exits early with
+   success. When `paths` is non-empty (manual dispatch), those paths are used
+   directly, after the same non-workspace exclusion filter.
 3. **Execution.** The job installs `cargo-mutants` via `taiki-e/install-action`
    and runs `cargo mutants --test-tool nextest --features test-helpers` with
-   the computed `--file` arguments. The step uses `continue-on-error: true`
-   so surviving mutants do not fail the job.
+   the computed `--file` arguments. The step uses `continue-on-error: true` so
+   surviving mutants do not fail the job.
 4. **Output.** `cargo-mutants` writes results to `mutants.out/`. The workflow
    uploads the full output directory as a GitHub Actions artefact named
    `mutants-report` with a 14-day retention period.
@@ -110,10 +110,10 @@ mutant reports as workflow artefacts.
 
 ### Scoping rationale
 
-Restricting nightly runs to files changed in the past 24 hours keeps
-wall-clock time tractable: a full-workspace mutation run would take hours,
-whereas a diff-scoped run surfaces regressions near the point of introduction.
-Manual dispatch allows wider or narrower scope on demand.
+Restricting nightly runs to files changed in the past 24 hours keeps wall-clock
+time tractable: a full-workspace mutation run would take hours, whereas a
+diff-scoped run surfaces regressions near the point of introduction. Manual
+dispatch allows wider or narrower scope on demand.
 
 ## Goals and non-goals
 

@@ -1,17 +1,15 @@
 # ADR-012 — Monotonic clock seam for build duration measurement
 
-**Status:** Accepted
-**Date:** 2026-05-22
-**Deciders:** `@leynos`
+**Status:** Accepted **Date:** 2026-05-22 **Deciders:** `@leynos`
 
 ## Context
 
-`BuildSoftwareTool` records elapsed build duration in `ToolOutput`. Issue `#194`
-proposed adopting `mockable::Clock` from the project dependency injection (DI)
-guide. However, `mockable::Clock` wraps `SystemTime`, which is not monotonic:
-host-clock adjustments, such as Network Time Protocol (NTP) or virtual machine
-(VM) time sync, can make elapsed durations negative or zero. PR `#195`
-therefore diverges from the DI guide by using a bespoke abstraction.
+`BuildSoftwareTool` records elapsed build duration in `ToolOutput`. Issue
+`#194` proposed adopting `mockable::Clock` from the project dependency
+injection (DI) guide. However, `mockable::Clock` wraps `SystemTime`, which is
+not monotonic: host-clock adjustments, such as Network Time Protocol (NTP) or
+virtual machine (VM) time sync, can make elapsed durations negative or zero. PR
+`#195` therefore diverges from the DI guide by using a bespoke abstraction.
 
 ## Decision
 
@@ -51,9 +49,3 @@ while remaining fully deterministic in tests.
   Instant::now() with DI guide
 - `docs/reliable-testing-in-rust-via-dependency-injection.md`
 - `docs/developers-guide.md`
-
-# ADR-012 — Monotonic clock seam for build duration measurement
-
-**Status:** Accepted
-**Date:** 2026-05-22
-**Deciders:** `@leynos`

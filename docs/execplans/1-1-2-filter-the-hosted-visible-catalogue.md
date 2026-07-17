@@ -1,9 +1,8 @@
 # Filter the hosted-visible catalogue from the canonical `ToolRegistry`
 
-This ExecPlan (execution plan) is a living document. The sections
-`Constraints`, `Tolerances`, `Risks`, `Progress`,
-`Surprises & Discoveries`, `Decision Log`, and
-`Outcomes & Retrospective` must be kept up to date as work proceeds.
+This ExecPlan (execution plan) is a living document. The sections `Constraints`,
+`Tolerances`, `Risks`, `Progress`, `Surprises & Discoveries`, `Decision Log`,
+and `Outcomes & Retrospective` must be kept up to date as work proceeds.
 
 Status: IN PROGRESS
 
@@ -21,11 +20,11 @@ selection logic lives with the tool registry and policy code rather than in the
 `axum` handler layer. Second, the orchestrator catalogue endpoint consumes that
 canonical projection instead of walking `ToolRegistry::all()` directly. Third,
 approval-gated, inactive, protected, container-only, or otherwise ineligible
-tools are omitted from the catalogue rather than described to the model. Fourth,
-execution continues to reject direct calls to tools outside that hosted-visible
-set. Fifth, documentation and tests explain the rule precisely enough that
-later WebAssembly (WASM) catalogue work (`1.2.2`) can reuse the same boundary
-instead of inventing a parallel filter.
+tools are omitted from the catalogue rather than described to the model.
+Fourth, execution continues to reject direct calls to tools outside that
+hosted-visible set. Fifth, documentation and tests explain the rule precisely
+enough that later WebAssembly (WASM) catalogue work (`1.2.2`) can reuse the
+same boundary instead of inventing a parallel filter.
 
 Implementation is underway on branch
 `1-1-2-filter-the-hosted-visible-catalogue`. Keep this document current until
@@ -36,27 +35,23 @@ the final gates, commit, push, and roadmap update are complete.
 - Plan approved
   Acceptance criteria: the hosted-visible filtering rules, excluded tool
   classes, and reuse boundary for later WebAssembly (WASM) work are explicit,
-  with no hidden transport redesign folded into this step.
-  Sign-off: human reviewer approves the ExecPlan before filtering changes
-  proceed.
+  with no hidden transport redesign folded into this step. Sign-off: human
+  reviewer approves the ExecPlan before filtering changes proceed.
 - Implementation complete
   Acceptance criteria: one canonical `ToolRegistry`-owned filter determines the
   hosted-visible catalogue, the orchestrator consumes that filter, and
-  execution continues to reject tools outside the allowed set.
-  Sign-off: implementer marks the filtering slice complete before final
-  validation.
+  execution continues to reject tools outside the allowed set. Sign-off:
+  implementer marks the filtering slice complete before final validation.
 - Validation passed
   Acceptance criteria: the required repository gates and targeted hosted
-  catalogue tests pass with retained logs, and any residual work for `1.1.3`
-  or `1.2.2` is recorded explicitly.
-  Sign-off: implementer records final validation evidence immediately before
-  commit and push.
+  catalogue tests pass with retained logs, and any residual work for `1.1.3` or
+  `1.2.2` is recorded explicitly. Sign-off: implementer records final
+  validation evidence immediately before commit and push.
 - Docs synced
   Acceptance criteria: the roadmap, RFC, architecture notes, user-facing docs,
   and execplan all describe the same hosted-visible filtering rule before the
-  plan is marked complete.
-  Sign-off: implementer completes the documentation sync as the final
-  pre-commit checkpoint.
+  plan is marked complete. Sign-off: implementer completes the documentation
+  sync as the final pre-commit checkpoint.
 
 ## Repository orientation
 
@@ -69,9 +64,8 @@ insufficient.
   source of active registered tools, but it does not yet expose a hosted
   catalogue projection.
 - `src/tools/tool/approval_policy.rs` and `src/tools/tool/traits.rs` define the
-  current policy vocabulary:
-  `ApprovalRequirement`, `HostedToolEligibility`, `ToolDomain`, and the `Tool`
-  trait hooks that wrappers override.
+  current policy vocabulary: `ApprovalRequirement`, `HostedToolEligibility`,
+  `ToolDomain`, and the `Tool` trait hooks that wrappers override.
 - `src/tools/mcp/client.rs` already marks approval-gated MCP wrappers as
   `HostedToolEligibility::ApprovalGated`, which is the strongest existing hint
   that hosted visibility policy belongs near tool metadata rather than in HTTP
@@ -100,20 +94,20 @@ insufficient.
 - Keep the worker-orchestrator transport contract from `1.1.1` intact. This
   step is about canonical filtering, not a second transport redesign.
 - Apply the `hexagonal-architecture` skill narrowly. The goal is to pull
-  hosted-catalogue policy inward, away from HTTP adapters, without transplanting
-  a new directory architecture across the whole repository.
+  hosted-catalogue policy inward, away from HTTP adapters, without
+  transplanting a new directory architecture across the whole repository.
 - Treat the canonical hosted-visible selection as domain or policy logic owned
-  by the tool system. `axum` handlers, router tests, and worker startup code may
-  consume that policy, but must not become the source of truth for it.
+  by the tool system. `axum` handlers, router tests, and worker startup code
+  may consume that policy, but must not become the source of truth for it.
 - Preserve the existing `ToolDefinition` and `ToolOutput` contracts used by the
   worker, orchestrator, and language model provider code.
 - Do not advertise tools that hosted mode cannot execute. Failing closed is
-  mandatory; "described optimistically, then rejected later" is specifically the
-  behaviour this roadmap item exists to remove.
+  mandatory; "described optimistically, then rejected later" is specifically
+  the behaviour this roadmap item exists to remove.
 - Keep future reuse in mind for roadmap item `1.2.2`. The canonical filter may
   start with MCP-focused rules, but it must not hard-code assumptions that make
-  orchestrator-owned WebAssembly (WASM) tools impossible to add through the same
-  seam later. The companion WASM schema-advertising design in
+  orchestrator-owned WebAssembly (WASM) tools impossible to add through the
+  same seam later. The companion WASM schema-advertising design in
   `docs/rfcs/0002-expose-wasm-tool-definitions.md` must explicitly reference
   this canonical `1.1.2` seam so later work is required to reuse it rather than
   rebuilding hosted visibility logic elsewhere.
@@ -127,7 +121,8 @@ insufficient.
   coverage only where it gives a clearer user-visible contract than another
   in-process `rstest` integration test.
 - Update the relevant design and user documentation in the same implementation
-  pass. At minimum, that means checking `docs/rfcs/0001-expose-mcp-tool-definitions.md`,
+  pass. At minimum, that means checking
+  `docs/rfcs/0001-expose-mcp-tool-definitions.md`,
   `docs/axinite-architecture-overview.md`, `docs/users-guide.md`, and
   `docs/roadmap.md`.
 
@@ -154,63 +149,51 @@ insufficient.
 ## Risks
 
 - Risk: Moving the filter into `ToolRegistry` may tempt the implementation to
-  add HTTP-specific concepts to the registry.
-  Severity: high
-  Likelihood: medium
+  add HTTP-specific concepts to the registry. Severity: high Likelihood: medium
   Mitigation: keep the canonical output expressed in tool-system terms such as
   `ToolDefinition`, `HostedToolEligibility`, and "hosted executable", then let
   the orchestrator adapter translate that directly into the existing response
   type.
 
 - Risk: The registry may not yet carry enough provenance to distinguish active
-  MCP tools from other orchestrator-owned tools cleanly.
-  Severity: high
-  Likelihood: medium
-  Mitigation: start by inventorying how MCP, extension-management, and other
-  orchestrator tools are registered today. Prefer a minimal metadata addition
-  owned by the tool layer over `Any` downcasts or name-prefix heuristics in the
-  adapter.
+  MCP tools from other orchestrator-owned tools cleanly. Severity: high
+  Likelihood: medium Mitigation: start by inventorying how MCP,
+  extension-management, and other orchestrator tools are registered today.
+  Prefer a minimal metadata addition owned by the tool layer over `Any`
+  downcasts or name-prefix heuristics in the adapter.
 
 - Risk: Approval-dependent tools with parameter-sensitive rules may still look
   globally eligible unless the filter and execution guard stay aligned.
-  Severity: medium
-  Likelihood: medium
-  Mitigation: keep the catalogue predicate and execution-time approval check as
-  two explicit layers: one coarse-grained visibility decision, one
-  params-aware execution guard. Extend existing param-aware tests to prove the
-  relationship.
+  Severity: medium Likelihood: medium Mitigation: keep the catalogue predicate
+  and execution-time approval check as two explicit layers: one coarse-grained
+  visibility decision, one params-aware execution guard. Extend existing
+  param-aware tests to prove the relationship.
 
 - Risk: Documentation may drift because user-visible behaviour already appears
-  in `docs/users-guide.md`, `docs/welcome-to-axinite.md`, the roadmap, and
-  RFC 0001.
-  Severity: medium
-  Likelihood: high
-  Mitigation: include a documentation sync pass in the implementation milestone
-  rather than treating docs as a final clean-up step.
+  in `docs/users-guide.md`, `docs/welcome-to-axinite.md`, the roadmap, and RFC
+  0001. Severity: medium Likelihood: high Mitigation: include a documentation
+  sync pass in the implementation milestone rather than treating docs as a
+  final clean-up step.
 
 - Risk: The future `1.2.2` WASM catalogue work could be boxed in if `1.1.2`
-  hard-codes "MCP only" too deeply into public method names.
-  Severity: medium
-  Likelihood: medium
-  Mitigation: name internal helpers around "hosted visible" or "hosted remote
-  catalogue" and put any MCP-specific rule inside the policy predicate or
-  metadata lookup, not in transport names.
+  hard-codes "MCP only" too deeply into public method names. Severity: medium
+  Likelihood: medium Mitigation: name internal helpers around "hosted visible"
+  or "hosted remote catalogue" and put any MCP-specific rule inside the policy
+  predicate or metadata lookup, not in transport names.
 
 ## Milestone 1: inventory the current registry and choose the canonical seam
 
 Start by confirming what the registry knows today and what is missing.
 
 1. List the current sources of orchestrator-owned tools that can appear in the
-   remote catalogue:
-   MCP wrappers, extension-management tools, other built-ins, and future WASM
-   wrappers.
+   remote catalogue: MCP wrappers, extension-management tools, other built-ins,
+   and future WASM wrappers.
 2. Verify which properties are already available without adapter reach-through:
-   `ToolDomain`, `HostedToolEligibility`, `requires_approval(params)`, protected
-   names, and any existing source metadata.
+   `ToolDomain`, `HostedToolEligibility`, `requires_approval(params)`,
+   protected names, and any existing source metadata.
 3. Decide the narrowest canonical API that lets the orchestrator answer both
-   questions it needs:
-   "What tool definitions may hosted workers advertise?" and
-   "May this named tool execute for hosted mode?"
+   questions it needs: "What tool definitions may hosted workers advertise?"
+   and "May this named tool execute for hosted mode?"
 
 The preferred result is a `ToolRegistry`-owned method or small policy helper
 near the registry, for example:
@@ -237,11 +220,12 @@ The intended boundary is:
 Concrete implementation expectations:
 
 1. Introduce a dedicated tool-layer helper or registry method in
-   `src/tools/registry/` rather than growing `src/orchestrator/api/remote_tools.rs`
-   further.
+   `src/tools/registry/` rather than growing
+   `src/orchestrator/api/remote_tools.rs` further.
 2. Keep protected-name checks, `ToolDomain`, and hosted-eligibility decisions in
    one place.
-3. If the filter must distinguish MCP-backed tools from other orchestrator tools,
+3. If the filter must distinguish MCP-backed tools from other orchestrator
+   tools,
    add that distinction through the tool layer, not through handler-local type
    tests or tool-name heuristics.
 4. Keep execution-time guards aligned with catalogue visibility. A tool omitted
@@ -273,8 +257,8 @@ document that precisely and use the same examples in tests and docs.
 
 ## Milestone 4: lock down the behaviour with tests
 
-Write failing tests before code changes. Use the smallest test shapes that prove
-the contract.
+Write failing tests before code changes. Use the smallest test shapes that
+prove the contract.
 
 ### Unit and focused integration tests with `rstest`
 
@@ -313,9 +297,9 @@ That scenario should:
 2. Let a worker runtime fetch and register the remote catalogue.
 3. Assert on the worker-visible tool list rather than on internal helper state.
 
-If adding this one feature introduces disproportionate harness cost, record that
-in the implementation's `Decision Log` and keep the observable assertions in a
-plain `rstest` integration test instead.
+If adding this one feature introduces disproportionate harness cost, record
+that in the implementation's `Decision Log` and keep the observable assertions
+in a plain `rstest` integration test instead.
 
 ## Milestone 5: synchronize design, architecture, user docs, and roadmap
 
@@ -456,8 +440,8 @@ When the implementation is ready, the final evidence bundle should include:
   the roadmap while respecting the repository's existing boundaries.
 - 2026-03-21 09:27Z: Treat catalogue visibility and execution-time approval as
   separate checks. The catalogue must fail closed by default, but params-aware
-  approval still belongs in the execution path for tools whose safety depends on
-  invocation data.
+  approval still belongs in the execution path for tools whose safety depends
+  on invocation data.
 - 2026-03-21 10:46Z: Represent hosted-visible source families with
   `HostedToolCatalogSource` on the `Tool` trait, and make the canonical
   registry helper accept an allowed-source list. This keeps the seam reusable

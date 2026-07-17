@@ -22,7 +22,8 @@ activation:
 
 # Local Testing with Docker + Chrome MCP
 
-Use this skill to build, run, and test IronClaw web gateway changes locally using `Dockerfile.test` and Chrome MCP browser automation tools.
+Use this skill to build, run, and test IronClaw web gateway changes locally
+using `Dockerfile.test` and Chrome MCP browser automation tools.
 
 ## Quick Start
 
@@ -43,28 +44,33 @@ docker run --rm -p 3003:3003 \
 
 ## Building the Image
 
-The test Dockerfile uses a two-stage build: Rust compilation with `--features libsql` (no PostgreSQL dependency), then a minimal Debian runtime image.
+The test Dockerfile uses a two-stage build: Rust compilation with
+`--features libsql` (no PostgreSQL dependency), then a minimal Debian runtime
+image.
 
 ```bash
 docker build --platform linux/amd64 -f Dockerfile.test -t ironclaw-test .
 ```
 
-Build takes ~5-10 minutes on first run (cached subsequent builds are faster). The `--platform linux/amd64` flag avoids QEMU warnings on Apple Silicon but can be omitted if targeting native architecture.
+Build takes ~5-10 minutes on first run (cached subsequent builds are faster).
+The `--platform linux/amd64` flag avoids QEMU warnings on Apple Silicon but can
+be omitted if targeting native architecture.
 
 ## Running Containers
 
 ### Required Environment Variables
 
-| Variable | Purpose | Default in Dockerfile |
-|----------|---------|----------------------|
-| `ONBOARD_COMPLETED=true` | Skip onboarding wizard (exits immediately otherwise) | not set |
-| `CLI_ENABLED=false` | Disable TUI/REPL (causes EOF shutdown otherwise) | not set |
+| Variable                 | Purpose                                              | Default in Dockerfile |
+| ------------------------ | ---------------------------------------------------- | --------------------- |
+| `ONBOARD_COMPLETED=true` | Skip onboarding wizard (exits immediately otherwise) | not set               |
+| `CLI_ENABLED=false`      | Disable TUI/REPL (causes EOF shutdown otherwise)     | not set               |
 
 ### LLM Backend Configuration
 
 Pick ONE of these configurations:
 
 **NEAR AI (API key mode):**
+
 ```bash
 docker run --rm -p 3003:3003 \
   -e ONBOARD_COMPLETED=true \
@@ -74,6 +80,7 @@ docker run --rm -p 3003:3003 \
 ```
 
 **NEAR AI (session token mode):**
+
 ```bash
 docker run --rm -p 3003:3003 \
   -e ONBOARD_COMPLETED=true \
@@ -84,6 +91,7 @@ docker run --rm -p 3003:3003 \
 ```
 
 **OpenAI:**
+
 ```bash
 docker run --rm -p 3003:3003 \
   -e ONBOARD_COMPLETED=true \
@@ -94,6 +102,7 @@ docker run --rm -p 3003:3003 \
 ```
 
 **Anthropic:**
+
 ```bash
 docker run --rm -p 3003:3003 \
   -e ONBOARD_COMPLETED=true \
@@ -104,6 +113,7 @@ docker run --rm -p 3003:3003 \
 ```
 
 **Dummy run (no LLM, just test the UI loads):**
+
 ```bash
 docker run --rm -p 3003:3003 \
   -e ONBOARD_COMPLETED=true \
@@ -114,22 +124,24 @@ docker run --rm -p 3003:3003 \
 
 ### Common Overrides
 
-| Variable | Purpose | Example |
-|----------|---------|---------|
-| `GATEWAY_PORT` | Change the listen port | `3003` (default) |
-| `GATEWAY_AUTH_TOKEN` | Auth token for API | `test` (default) |
-| `NEARAI_MODEL` | Override LLM model | `claude-3-5-sonnet-20241022` |
-| `RUST_LOG` | Logging verbosity | `ironclaw=debug` |
-| `ROUTINES_ENABLED` | Enable routines | `true`/`false` |
-| `SKILLS_ENABLED` | Enable skills system | `true` (default) |
+| Variable             | Purpose                | Example                      |
+| -------------------- | ---------------------- | ---------------------------- |
+| `GATEWAY_PORT`       | Change the listen port | `3003` (default)             |
+| `GATEWAY_AUTH_TOKEN` | Auth token for API     | `test` (default)             |
+| `NEARAI_MODEL`       | Override LLM model     | `claude-3-5-sonnet-20241022` |
+| `RUST_LOG`           | Logging verbosity      | `ironclaw=debug`             |
+| `ROUTINES_ENABLED`   | Enable routines        | `true`/`false`               |
+| `SKILLS_ENABLED`     | Enable skills system   | `true` (default)             |
 
 ### Multi-Instance Testing
 
 Run multiple containers on different host ports:
 
 ```bash
-docker run --rm -d --name ic-test-a -p 3003:3003 -e ONBOARD_COMPLETED=true -e CLI_ENABLED=false -e NEARAI_API_KEY=dummy ironclaw-test
-docker run --rm -d --name ic-test-b -p 3004:3003 -e ONBOARD_COMPLETED=true -e CLI_ENABLED=false -e NEARAI_API_KEY=dummy ironclaw-test
+docker run --rm -d --name ic-test-a -p 3003:3003 -e ONBOARD_COMPLETED=true \
+  -e CLI_ENABLED=false -e NEARAI_API_KEY=dummy ironclaw-test
+docker run --rm -d --name ic-test-b -p 3004:3003 -e ONBOARD_COMPLETED=true \
+  -e CLI_ENABLED=false -e NEARAI_API_KEY=dummy ironclaw-test
 ```
 
 ## Chrome MCP Testing Workflow
@@ -138,7 +150,7 @@ Use the Claude for Chrome browser automation tools to test the web UI.
 
 ### Step 1: Get Browser Context
 
-```
+```text
 mcp__claude-in-chrome__tabs_context_mcp
 ```
 
@@ -146,47 +158,51 @@ Always start here to see current tabs and get fresh tab IDs.
 
 ### Step 2: Open the Gateway
 
-```
+```text
 mcp__claude-in-chrome__tabs_create_mcp  url=http://localhost:3003/?token=test
 ```
 
 ### Step 3: Verify the Page
 
-```
+```text
 mcp__claude-in-chrome__read_page
 ```
 
 Check for:
+
 - "Connected" indicator in top-right
 - All tabs visible: Chat, Memory, Jobs, Routines, Extensions, Skills
 
 ### Step 4: Take Screenshots
 
-```
+```text
 mcp__claude-in-chrome__computer  action=screenshot
 ```
 
 ### Step 5: Test Mobile Viewport
 
-```
+```text
 mcp__claude-in-chrome__resize_window  width=375  height=812
 mcp__claude-in-chrome__computer  action=screenshot
 ```
 
 Reset to desktop:
-```
+
+```text
 mcp__claude-in-chrome__resize_window  width=1280  height=800
 ```
 
 ### Step 6: Run JavaScript Checks
 
-```
+```text
 mcp__claude-in-chrome__javascript_tool  script="document.querySelector('.connection-status')?.textContent"
 ```
 
 ### Step 7: Test Interactions
 
-Click tabs, send messages, search skills — use `computer` tool with `action=click` and coordinate-based clicks, or use `find` + `form_input` for text entry.
+Click tabs, send messages, search skills — use `computer` tool with
+`action=click` and coordinate-based clicks, or use `find` + `form_input` for
+text entry.
 
 ## Cleanup
 
@@ -204,22 +220,33 @@ docker rmi ironclaw-test
 ## Troubleshooting
 
 ### Container exits immediately
-- **Missing `ONBOARD_COMPLETED=true`**: The onboarding wizard tries to read stdin, gets EOF, and exits.
-- **Missing `CLI_ENABLED=false`**: The REPL channel reads stdin, gets EOF, and shuts down the agent.
+
+- **Missing `ONBOARD_COMPLETED=true`**: The onboarding wizard tries to read
+  stdin, gets EOF, and exits.
+- **Missing `CLI_ENABLED=false`**: The REPL channel reads stdin, gets EOF, and
+  shuts down the agent.
 
 ### "Model not found" or LLM errors
+
 - Check that your API key/token is valid and the model name is correct.
-- For NEAR AI session token mode, you also need `NEARAI_BASE_URL=https://private.near.ai`.
+- For NEAR AI session token mode, you also need
+  `NEARAI_BASE_URL=https://private.near.ai`.
 
 ### Platform mismatch warnings on Apple Silicon
-- The `--platform linux/amd64` flag causes QEMU emulation warnings — these are harmless.
-- Alternatively, omit the flag and build natively if your dependencies support ARM64.
+
+- The `--platform linux/amd64` flag causes QEMU emulation warnings — these are
+  harmless.
+- Alternatively, omit the flag and build natively if your dependencies support
+  ARM64.
 
 ### Port already in use
-- The dev server defaults to port 3001; the test Dockerfile defaults to 3003 to avoid conflicts.
+
+- The dev server defaults to port 3001; the test Dockerfile defaults to 3003 to
+  avoid conflicts.
 - Use a different host port: `-p 3005:3003`.
 
 ### Cannot connect from browser
+
 - Verify `GATEWAY_HOST=0.0.0.0` (set by default in Dockerfile).
 - Check the container logs: `docker logs <container-id>`.
 - Make sure you include the token query param: `?token=test`.

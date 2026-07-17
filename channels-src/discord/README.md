@@ -1,6 +1,7 @@
 # Discord Channel for IronClaw
 
-WASM channel for Discord integration - handle slash commands and button interactions via webhooks.
+WASM channel for Discord integration - handle slash commands and button
+interactions via webhooks.
 
 ## Features
 
@@ -21,11 +22,11 @@ WASM channel for Discord integration - handle slash commands and button interact
    ironclaw secret set discord_bot_token YOUR_BOT_TOKEN
    ```
 
-   **Note:** The `discord_bot_token` secret is the only value read directly by this
-   Discord channel WASM component. The `discord_app_id` and `discord_public_key`
-   secrets are used by the IronClaw host (for example, to verify Discord
-   interaction signatures and manage slash command registration) and are not
-   accessed from the WASM module itself.
+   **Note:** The `discord_bot_token` secret is the only value read directly by
+   this Discord channel WASM component. The `discord_app_id` and
+   `discord_public_key` secrets are used by the IronClaw host (for example, to
+   verify Discord interaction signatures and manage slash command registration)
+   and are not accessed from the WASM module itself.
 
 ## Discord Configuration
 
@@ -78,7 +79,8 @@ Content: [Button clicked] Original message content
 
 ## Error Handling
 
-If an internal error occurs (e.g., metadata serialization failure), the tool attempts to send an ephemeral message to the user:
+If an internal error occurs (e.g., metadata serialization failure), the tool
+attempts to send an ephemeral message to the user:
 
 ```text
 ❌ Internal Error: Failed to process command metadata.
@@ -90,7 +92,8 @@ Check the host logs for detailed error information.
 
 ### Embeds
 
-To send embeds, include an `embeds` array in the `metadata_json` field of the agent's response. The structure should match the Discord API `embed` object.
+To send embeds, include an `embeds` array in the `metadata_json` field of the
+agent's response. The structure should match the Discord API `embed` object.
 
 ## Troubleshooting
 
@@ -106,7 +109,8 @@ To send embeds, include an `embeds` array in the `metadata_json` field of the ag
 
 ### "Interaction Failed"
 
-- The interaction might have timed out (Discord requires a response within 3 seconds).
+- The interaction might have timed out (Discord requires a response within 3
+  seconds).
 - The `interactions_endpoint_url` might be unreachable.
 
 ## Building

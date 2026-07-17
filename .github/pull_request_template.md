@@ -1,3 +1,5 @@
+# Pull Request
+
 ## Summary
 
 <!-- 2-5 bullet points: what changed and why -->
@@ -31,11 +33,13 @@
 
 ## Security Impact
 
-<!-- Does this change affect: permissions, network calls, secrets, file access, tool execution, sandbox policy? If yes, describe. If no, write "None". -->
+<!-- Does this change affect: permissions, network calls, secrets, file access,
+tool execution, sandbox policy? If yes, describe. If no, write "None". -->
 
 ## Database Impact
 
-<!-- Does this add/modify migrations, change schema, or affect both PostgreSQL and libSQL? If yes, describe. If no, write "None". -->
+<!-- Does this add/modify migrations, change schema, or affect both PostgreSQL
+and libSQL? If yes, describe. If no, write "None". -->
 
 ## Blast Radius
 
@@ -43,8 +47,10 @@
 
 ## Rollback Plan
 
-<!-- How to revert if this causes problems? For Track C changes, this is mandatory. -->
+<!-- How to revert if this causes problems? For Track C changes, this is
+mandatory. -->
 
----
+______________________________________________________________________
 
-**Review track**: <!-- A (docs/tests/chore) | B (feature/refactor) | C (security/runtime/DB/CI) -->
+**Review track**: <!-- A (docs/tests/chore) | B (feature/refactor) | C
+(security/runtime/DB/CI) -->

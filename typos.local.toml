@@ -103,7 +103,7 @@ ignore = [
   "\\ \\ build\\-local\\-artifacts:",
   "\\#\\ The\\ VM\\ service\\ account\\ provides\\ Artifact\\ Registry\\ access",
   "\\#\\ \\ \\ \\-\\ Artifact\\ Registry\\ image\\ pushed",
-  "\\|\\ Doc/table\\ actions\\ \\|\\ \u2705\\ \\|\\ \u274c\\ \\|\\ `feishu_doc`\\ supports\\ tables,\\ positional\\ insert,\\ color_text,\\ image\\ upload,\\ and\\ file\\ upload\\ \\|",
+  '\bcolor_text\b',
   "fulfill\\ the\\ required\\ lifetime\"\\)\\ because\\ the\\ returned\\ future\\ also\\ captures\\ the",
   "pub\\ mod\\ artifacts;",
 ]

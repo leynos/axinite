@@ -1,28 +1,27 @@
 # Merge remote Model Context Protocol (MCP) tool definitions into the worker reasoning context
 
-This ExecPlan (execution plan) is a living document. The sections
-`Constraints`, `Tolerances`, `Risks`, `Progress`,
-`Surprises & Discoveries`, `Decision Log`, and
-`Outcomes & Retrospective` must be kept up to date as work proceeds.
+This ExecPlan (execution plan) is a living document. The sections `Constraints`,
+`Tolerances`, `Risks`, `Progress`, `Surprises & Discoveries`, `Decision Log`,
+and `Outcomes & Retrospective` must be kept up to date as work proceeds.
 
 Status: COMPLETE
 
 ## Purpose / big picture
 
-Roadmap item `1.1.3` exists to make the hosted worker reason from the same
-tool contracts that the orchestrator already owns. After this work, a hosted
-model request must see one unified tool surface that contains both the
+Roadmap item `1.1.3` exists to make the hosted worker reason from the same tool
+contracts that the orchestrator already owns. After this work, a hosted model
+request must see one unified tool surface that contains both the
 container-local worker tools and the orchestrator-owned hosted-visible Model
 Context Protocol (MCP) tools, with the remote tools carrying their canonical
 `name`, `description`, and JSON Schema `parameters` unchanged.
 
 Success is observable in five ways. First, worker startup still fetches the
 remote catalogue and registers one worker-local proxy per advertised remote
-tool. Second, the reasoning context built for hosted jobs exposes those
-proxies alongside the local container tools in `available_tools`. Third, the
-same merged tool surface is refreshed before later large language model (LLM)
-calls, so long-running jobs do not drift back to a local-only view. Fourth,
-toolset guidance from the orchestrator is injected once as guidance rather than
+tool. Second, the reasoning context built for hosted jobs exposes those proxies
+alongside the local container tools in `available_tools`. Third, the same
+merged tool surface is refreshed before later large language model (LLM) calls,
+so long-running jobs do not drift back to a local-only view. Fourth, toolset
+guidance from the orchestrator is injected once as guidance rather than
 duplicated noisily on every loop iteration. Fifth, tests prove that the worker
 advertises exactly the same remote tool definitions that the canonical
 orchestrator registry would advertise in the normal in-process path.
@@ -38,26 +37,24 @@ tests needed to prove the reasoning-context merge itself.
 - Plan approved
   Acceptance criteria: the plan stays limited to reasoning-context merge
   behaviour for roadmap item `1.1.3`, with transport and broader schema-matrix
-  work left to the neighbouring roadmap items that already own them.
-  Sign-off: human reviewer approves the ExecPlan before implementation begins.
+  work left to the neighbouring roadmap items that already own them. Sign-off:
+  human reviewer approves the ExecPlan before implementation begins.
 - Implementation complete
   Acceptance criteria: initial context construction and later
   `before_llm_call(...)` refreshes use the same registry-backed merged tool
   surface, degraded startup remains intact, and hosted guidance is injected
-  once during context build rather than on every refresh.
-  Sign-off: implementer marks the feature complete before final validation.
+  once during context build rather than on every refresh. Sign-off: implementer
+  marks the feature complete before final validation.
 - Validation passed
   Acceptance criteria: the required repository gates and targeted reasoning
   regressions pass with retained logs, and the final plan notes record any
-  follow-up work still reserved for `1.1.4`.
-  Sign-off: implementer records final validation evidence immediately before
-  commit and push.
+  follow-up work still reserved for `1.1.4`. Sign-off: implementer records
+  final validation evidence immediately before commit and push.
 - Docs synced
   Acceptance criteria: the roadmap, RFC, architecture overview, user guide,
   contents index, and execplan all describe the same merged hosted-tool
-  reasoning behaviour before the plan is marked complete.
-  Sign-off: implementer completes the documentation sync as the final
-  pre-commit checkpoint.
+  reasoning behaviour before the plan is marked complete. Sign-off: implementer
+  completes the documentation sync as the final pre-commit checkpoint.
 
 ## Repository orientation
 
@@ -68,8 +65,7 @@ not replace them.
   registration, degraded startup handling, and
   `WorkerRuntime::build_reasoning_context(...)`.
 - `src/worker/container/delegate.rs` owns `ContainerDelegate::before_llm_call`,
-  which refreshes `reason_ctx.available_tools` during the hosted execution
-  loop.
+  which refreshes `reason_ctx.available_tools` during the hosted execution loop.
 - `src/tools/builtin/worker_remote_tool_proxy.rs` owns the worker-local proxy
   wrapper created from orchestrator-supplied `ToolDefinition` values.
 - `src/worker/api.rs` and `src/worker/api/types.rs` already own the shared
@@ -80,16 +76,14 @@ not replace them.
   produce the hosted remote catalogue and execute remote tools through the
   orchestrator-owned registry.
 - `src/worker/container/tests.rs`,
-  `src/orchestrator/api/tests/remote_tools.rs`,
-  `src/tools/registry/tests.rs`, and
-  `src/tools/builtin/worker_remote_tool_proxy.rs` tests are the closest
+  `src/orchestrator/api/tests/remote_tools.rs`, `src/tools/registry/tests.rs`,
+  and `src/tools/builtin/worker_remote_tool_proxy.rs` tests are the closest
   existing regression seams.
 - `docs/rfcs/0001-expose-mcp-tool-definitions.md` remains the design authority
   for this work, while `docs/roadmap.md` defines the delivery checkpoint.
 - The user request named `docs/axinite-architecture-summary.md`, but that file
-  does not exist in this checkout. Use
-  `docs/axinite-architecture-overview.md` as the current architecture source
-  of truth.
+  does not exist in this checkout. Use `docs/axinite-architecture-overview.md`
+  as the current architecture source of truth.
 
 ## Constraints
 
@@ -150,44 +144,35 @@ not replace them.
 
 - Risk: The code already registers remote proxies before reasoning-context
   construction, so implementers may assume `1.1.3` is already "done" and skip
-  the explicit merge contract and regression tests.
-  Severity: high
-  Likelihood: high
-  Mitigation: treat this roadmap step as making the reasoning-context merge
-  explicit, deterministic, and test-locked rather than merely relying on an
-  incidental side effect of registry population.
+  the explicit merge contract and regression tests. Severity: high Likelihood:
+  high Mitigation: treat this roadmap step as making the reasoning-context
+  merge explicit, deterministic, and test-locked rather than merely relying on
+  an incidental side effect of registry population.
 
 - Risk: `reason_ctx.available_tools` may drift between initial context build
   and later loop refreshes if those paths remain separate and untested.
-  Severity: high
-  Likelihood: medium
-  Mitigation: extract or centralize the rule for computing the worker-visible
-  tool surface, then test both the initial and iterative paths against the
-  same expectations.
+  Severity: high Likelihood: medium Mitigation: extract or centralize the rule
+  for computing the worker-visible tool surface, then test both the initial and
+  iterative paths against the same expectations.
 
 - Risk: Tool ordering or duplicate registration could change the prompt surface
   and therefore hosted model behaviour even when the raw tool set is correct.
-  Severity: medium
-  Likelihood: medium
-  Mitigation: preserve sorted `ToolRegistry::tool_definitions()` output, add a
-  regression assertion for the merged list, and avoid concatenating unordered
-  local and remote slices manually.
+  Severity: medium Likelihood: medium Mitigation: preserve sorted
+  `ToolRegistry::tool_definitions()` output, add a regression assertion for the
+  merged list, and avoid concatenating unordered local and remote slices
+  manually.
 
 - Risk: `toolset_instructions` may be injected more than once, causing prompt
-  bloat or contradictory guidance during long-running jobs.
-  Severity: medium
-  Likelihood: medium
-  Mitigation: keep orchestrator guidance injection in the context-build path
-  only, and ensure the pre-LLM refresh path updates tools without re-adding
-  the same system guidance message.
+  bloat or contradictory guidance during long-running jobs. Severity: medium
+  Likelihood: medium Mitigation: keep orchestrator guidance injection in the
+  context-build path only, and ensure the pre-LLM refresh path updates tools
+  without re-adding the same system guidance message.
 
 - Risk: Documentation drift is already present because `docs/users-guide.md`
-  describes the desired hosted proxy behaviour today.
-  Severity: medium
-  Likelihood: high
-  Mitigation: make documentation review an explicit milestone, and update the
-  wording to reflect the implemented merge semantics rather than the intended
-  state alone.
+  describes the desired hosted proxy behaviour today. Severity: medium
+  Likelihood: high Mitigation: make documentation review an explicit milestone,
+  and update the wording to reflect the implemented merge semantics rather than
+  the intended state alone.
 
 ## Milestone 1: define the worker-side merge contract explicitly
 
@@ -214,8 +199,8 @@ Perform the following discovery work before changing behaviour:
    and do not duplicate that message during later `available_tools` refreshes.
 
 Record the chosen rule in `docs/rfcs/0001-expose-mcp-tool-definitions.md` and
-`docs/axinite-architecture-overview.md` if the implementation clarifies an
-open question from the RFC, especially around whether guidance injection is a
+`docs/axinite-architecture-overview.md` if the implementation clarifies an open
+question from the RFC, especially around whether guidance injection is a
 context-build concern or a per-iteration refresh concern.
 
 ## Milestone 2: refactor the worker to compute one unified tool surface
@@ -384,8 +369,8 @@ surface to reasoning, and the final report must cite the exact log paths.
   tool behaviour, so documentation review must verify reality rather than
   merely restating intent.
 - The repository currently shows no existing `.feature` or `#[scenario(...)]`
-  usage for `rstest-bdd` in this area, so behavioural coverage may need to
-  stay with stronger in-process `rstest` integration tests unless a narrow BDD
+  usage for `rstest-bdd` in this area, so behavioural coverage may need to stay
+  with stronger in-process `rstest` integration tests unless a narrow BDD
   harness proves worthwhile.
 - The most surgical implementation point is a tiny shared helper in
   `src/worker/container.rs` that both `build_reasoning_context(...)` and
@@ -400,42 +385,38 @@ surface to reasoning, and the final report must cite the exact log paths.
 ## Decision Log
 
 - Decision: Treat `1.1.3` as an explicit reasoning-context contract task, not
-  as a second remote-catalogue transport task.
-  Rationale: `1.1.1` and `1.1.2` already own the transport and filtering seams.
-  The current branch already has the pieces required for registry-backed merge;
-  the remaining risk is silent drift in how the worker advertises that merged
-  tool surface to the LLM.
+  as a second remote-catalogue transport task. Rationale: `1.1.1` and `1.1.2`
+  already own the transport and filtering seams. The current branch already has
+  the pieces required for registry-backed merge; the remaining risk is silent
+  drift in how the worker advertises that merged tool surface to the LLM.
 
 - Decision: Use `docs/axinite-architecture-overview.md` in place of the
-  missing `docs/axinite-architecture-summary.md`.
-  Rationale: The requested file is absent, and the overview document already
-  contains the hosted worker-orchestrator ownership notes relevant to this
-  feature.
+  missing `docs/axinite-architecture-summary.md`. Rationale: The requested file
+  is absent, and the overview document already contains the hosted
+  worker-orchestrator ownership notes relevant to this feature.
 
 - Decision: The preferred implementation should compute the merged tool list by
   reading the worker registry after remote proxy registration, not by manually
-  appending remote catalogue entries during prompt assembly.
-  Rationale: The registry is already the canonical merged ownership boundary on
-  the worker side. Reusing it keeps sorting, shadowing, and proxy ownership
-  consistent.
+  appending remote catalogue entries during prompt assembly. Rationale: The
+  registry is already the canonical merged ownership boundary on the worker
+  side. Reusing it keeps sorting, shadowing, and proxy ownership consistent.
 
 - Decision: `rstest-bdd` is required only if a narrow in-process scenario adds
   clearer observable coverage than the existing worker and orchestrator harness
-  tests.
-  Rationale: The user asked for behavioural tests where applicable. A fake BDD
-  layer that weakens the assertions would not satisfy that requirement.
+  tests. Rationale: The user asked for behavioural tests where applicable. A
+  fake BDD layer that weakens the assertions would not satisfy that requirement.
 
 - Decision: keep the merged tool-surface rule as one small worker-side helper
-  rather than a new policy module.
-  Rationale: both relevant call sites already live in the worker container
-  family, and the shared helper makes the recomputation rule explicit without
-  widening the architecture for this roadmap slice.
+  rather than a new policy module. Rationale: both relevant call sites already
+  live in the worker container family, and the shared helper makes the
+  recomputation rule explicit without widening the architecture for this
+  roadmap slice.
 
 - Decision: use direct in-process `rstest` integration coverage instead of
-  adding `rstest-bdd` to this slice.
-  Rationale: the repository already had strong worker and orchestrator harness
-  seams, while a new BDD layer would have added ceremony without improving the
-  observable guarantees for the merge contract.
+  adding `rstest-bdd` to this slice. Rationale: the repository already had
+  strong worker and orchestrator harness seams, while a new BDD layer would
+  have added ceremony without improving the observable guarantees for the merge
+  contract.
 
 ## Outcomes & Retrospective
 

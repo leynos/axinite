@@ -163,8 +163,8 @@ management.
 - Prefer single-line function bodies where they remain readable.
 - Use newtypes to model domain values and avoid integer soup. Reach for
   `newt-hype` for families of homogeneous wrappers, tuple structs for bespoke
-  validation or trait surfaces, and `the-newtype` where shared trait
-  forwarding across owned traits materially reduces boilerplate.
+  validation or trait surfaces, and `the-newtype` where shared trait forwarding
+  across owned traits materially reduces boilerplate.
 - Prefer `cap_std`, `cap_std::fs_utf8`, and `camino` over `std::fs` and
   `std::path` when capability-oriented filesystem access improves correctness.
 
@@ -337,8 +337,8 @@ management.
 - Validate Markdown files with `make markdownlint`. This target also enforces
   en-GB-oxendict spelling with the pinned `typos` release.
 - The spelling configuration `typos.toml` is generated. Edit
-  `typos.local.toml` for narrow repository terminology, then regenerate it
-  with `make spelling-config-write`; never edit generated entries by hand.
+  `typos.local.toml` for narrow repository terminology, then regenerate it with
+  `make spelling-config-write`; never edit generated entries by hand.
 - Quoted APIs and identifiers retain upstream spelling. Put them in backticks
   or fenced code blocks where possible, or add a narrowly scoped local pattern
   when executable syntax cannot be quoted.

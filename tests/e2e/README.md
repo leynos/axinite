@@ -1,6 +1,7 @@
 # IronClaw E2E Tests
 
-Browser-level end-to-end tests for the IronClaw web gateway using Python + Playwright.
+Browser-level end-to-end tests for the IronClaw web gateway using Python +
+Playwright.
 
 ## Prerequisites
 
@@ -40,28 +41,33 @@ HEADED=1 pytest tests/e2e/scenarios/test_connection.py -v
 ## Architecture
 
 Tests start two subprocesses:
-1. **Mock LLM** (`mock_llm.py`) -- fake OpenAI-compat server with canned responses
-2. **IronClaw** -- the real binary with gateway enabled, pointing to the mock LLM
 
-Then Playwright drives a headless Chromium browser against the gateway, making DOM assertions.
+1. **Mock LLM** (`mock_llm.py`) -- fake OpenAI-compat server with canned
+   responses
+2. **IronClaw** -- the real binary with gateway enabled, pointing to the mock
+   LLM
+
+Then Playwright drives a headless Chromium browser against the gateway, making
+DOM assertions.
 
 ## Scenarios
 
-| File | What it tests |
-|------|--------------|
-| `test_connection.py` | Auth, tab navigation, connection status |
-| `test_chat.py` | Send message, SSE streaming, response rendering |
-| `test_skills.py` | ClawHub search, skill install/remove |
-| `test_tool_approval.py` | Tool approval overlay (approve, deny, always, params toggle) |
-| `test_sse_reconnect.py` | SSE reconnection handling |
-| `test_html_injection.py` | HTML injection security |
-| `test_extensions.py` | Extensions tab: install, remove, configure, OAuth, auth card, activate |
+| File                     | What it tests                                                          |
+| ------------------------ | ---------------------------------------------------------------------- |
+| `test_connection.py`     | Auth, tab navigation, connection status                                |
+| `test_chat.py`           | Send message, SSE streaming, response rendering                        |
+| `test_skills.py`         | ClawHub search, skill install/remove                                   |
+| `test_tool_approval.py`  | Tool approval overlay (approve, deny, always, params toggle)           |
+| `test_sse_reconnect.py`  | SSE reconnection handling                                              |
+| `test_html_injection.py` | HTML injection security                                                |
+| `test_extensions.py`     | Extensions tab: install, remove, configure, OAuth, auth card, activate |
 
 ## Adding new scenarios
 
 1. Create `tests/e2e/scenarios/test_<name>.py`
 2. Use the `page` fixture for a fresh browser page
-3. Use selectors from `helpers.py` (update `SEL` dict if new elements are needed)
+3. Use selectors from `helpers.py` (update `SEL` dict if new elements are
+   needed)
 4. Keep tests deterministic -- use the mock LLM, not real providers
 
 ## Mocking API responses with `page.route()`
@@ -98,9 +104,9 @@ async def test_something(page):
 
 ### Matching only the exact path
 
-`**/api/extensions` matches `http://host/api/extensions` but NOT sub-paths
-like `http://host/api/extensions/install`. For the bare list endpoint, add
-a check inside the handler:
+`**/api/extensions` matches `http://host/api/extensions` but NOT sub-paths like
+`http://host/api/extensions/install`. For the bare list endpoint, add a check
+inside the handler:
 
 ```python
 async def handle_ext_list(route):
@@ -141,16 +147,17 @@ assert len(calls) == 2   # called twice (initial + after some action)
 
 ### Applying the pattern to other tabs
 
-| Tab | Key API endpoints to mock |
-|-----|--------------------------|
-| **Jobs** | `/api/jobs`, `/api/jobs/{id}`, `/api/jobs/{id}/events` |
-| **Memory** | `/api/memory/search`, `/api/memory/tree`, `/api/memory/read` |
-| **Routines** | `/api/routines`, `/api/routines/{id}/runs` |
+| Tab          | Key API endpoints to mock                                    |
+| ------------ | ------------------------------------------------------------ |
+| **Jobs**     | `/api/jobs`, `/api/jobs/{id}`, `/api/jobs/{id}/events`       |
+| **Memory**   | `/api/memory/search`, `/api/memory/tree`, `/api/memory/read` |
+| **Routines** | `/api/routines`, `/api/routines/{id}/runs`                   |
 
 ### Injecting state directly via `page.evaluate()`
 
-For purely client-side UI (components rendered entirely in JS without API calls),
-call the JavaScript function directly to skip the network layer entirely:
+For purely client-side UI (components rendered entirely in JS without API
+calls), call the JavaScript function directly to skip the network layer
+entirely:
 
 ```python
 # Show an approval card without needing a real tool execution

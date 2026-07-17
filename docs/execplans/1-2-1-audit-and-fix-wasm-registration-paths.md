@@ -1,9 +1,8 @@
 # Audit and fix WASM registration paths for proactive schema publication
 
-This ExecPlan (execution plan) is a living document. The sections
-`Constraints`, `Tolerances`, `Risks`, `Progress`, `Surprises & Discoveries`,
-`Decision Log`, and `Outcomes & Retrospective` must be kept up to date as work
-proceeds.
+This ExecPlan (execution plan) is a living document. The sections `Constraints`,
+`Tolerances`, `Risks`, `Progress`, `Surprises & Discoveries`, `Decision Log`,
+and `Outcomes & Retrospective` must be kept up to date as work proceeds.
 
 Status: COMPLETE
 
@@ -39,20 +38,19 @@ steps 1 and 2.
   registration paths, adding tests, updating the retry-hint comment contract,
   and synchronizing documentation. No changes to the hosted remote-tool
   catalogue (that is `1.2.2`), no changes to provider-specific schema shaping,
-  and no changes to the WIT interface.
-  Sign-off: human reviewer approves this ExecPlan before implementation begins.
+  and no changes to the WIT interface. Sign-off: human reviewer approves this
+  ExecPlan before implementation begins.
 
 - Implementation complete
   Acceptance criteria: all milestones are complete, existing tests are
-  unbroken, and documentation is synchronized.
-  Sign-off: implementer marks the plan in progress and then complete after
-  final validation.
+  unbroken, and documentation is synchronized. Sign-off: implementer marks the
+  plan in progress and then complete after final validation.
 
 - Validation passed
   Acceptance criteria: `make all` passes with retained logs, Markdown linting
   passes for changed documentation, and the final plan notes record validation
-  evidence.
-  Sign-off: implementer records final evidence immediately before commit.
+  evidence. Sign-off: implementer records final evidence immediately before
+  commit.
 
 - Docs synced
   Acceptance criteria: `docs/roadmap.md` marks `1.2.1` done,
@@ -70,8 +68,8 @@ repository root.
 
 ### The four WASM registration paths
 
-Axinite registers WASM tools through four entry points, all of which converge
-on `ToolRegistry::register_wasm()` in `src/tools/registry/wasm.rs`:
+Axinite registers WASM tools through four entry points, all of which converge on
+`ToolRegistry::register_wasm()` in `src/tools/registry/wasm.rs`:
 
 1. **File-loaded tools.** `WasmToolLoader::load_from_files()` in
    `src/tools/wasm/loader.rs` reads a `.wasm` file and an optional
@@ -80,8 +78,8 @@ on `ToolRegistry::register_wasm()` in `src/tools/registry/wasm.rs`:
    must recover metadata from the guest or fall back to placeholders.
 
 2. **Storage-backed tools.** `ToolRegistry::register_wasm_from_storage()` in
-   `src/tools/registry/wasm.rs` loads a tool record from the database. It
-   passes `description` and `schema` from the stored record through
+   `src/tools/registry/wasm.rs` loads a tool record from the database. It passes
+   `description` and `schema` from the stored record through
    `normalized_description()` and `normalized_schema()`, which strip empty or
    null values. When the stored schema is present and non-null, it becomes an
    explicit override and the guest export is not consulted.
@@ -100,13 +98,11 @@ All four paths funnel through `ToolRegistry::register_wasm()`, which calls
 `src/tools/registry/wasm.rs`) attempts `wrapper.exported_metadata()` only when
 no explicit override is provided. If the export recovery fails, the wrapper
 retains placeholder metadata: `"WASM sandboxed tool"` for description and
-`{"type": "object", "properties": {}, "additionalProperties": true}` for
-schema.
+`{"type": "object", "properties": {}, "additionalProperties": true}` for schema.
 
 ### The placeholder schema problem
 
-The placeholder schema in `src/tools/wasm/wrapper/metadata.rs` (lines 20-27)
-is:
+The placeholder schema in `src/tools/wasm/wrapper/metadata.rs` (lines 20-27) is:
 
 ```json
 {
@@ -129,8 +125,7 @@ re-instantiate the guest and read its `description()` and `schema()` exports.
 The hint is embedded in the `WasmError::ToolReturnedError` variant and
 displayed to the model.
 
-The inline comment at line 698-701 still describes this as the normal
-contract:
+The inline comment at line 698-701 still describes this as the normal contract:
 
 ```rust
 // Check for tool-level error -- on failure, call the WASM module's
@@ -150,8 +145,8 @@ The `NativeTool` trait in `src/tools/tool/traits.rs` requires
 by returning `self.schema.clone()` (line 721 of `src/tools/wasm/wrapper.rs`).
 The schema is set during construction and frozen thereafter.
 
-`ToolRegistry::tool_definitions()` in `src/tools/registry/loader.rs`
-(lines 165-179) maps every registered tool to a `ToolDefinition` by calling
+`ToolRegistry::tool_definitions()` in `src/tools/registry/loader.rs` (lines
+165-179) maps every registered tool to a `ToolDefinition` by calling
 `tool.parameters_schema()`. This is the path through which WASM tool schemas
 reach the LLM.
 
@@ -160,8 +155,8 @@ reach the LLM.
 The following tests already exercise parts of the WASM schema path:
 
 - `test_exported_metadata_from_real_github_component` in
-  `src/tools/wasm/wrapper/metadata.rs` (line 256): proves that the GitHub
-  WASM tool's guest exports yield a real description and schema.
+  `src/tools/wasm/wrapper/metadata.rs` (line 256): proves that the GitHub WASM
+  tool's guest exports yield a real description and schema.
 - `wasm_tool_wrapper_reports_wasm_catalog_source` in the same file (line 294):
   proves the wrapper reports `HostedToolCatalogSource::Wasm`.
 - `test_tool_definitions` in `src/tools/registry/tests.rs`: proves that
@@ -178,8 +173,10 @@ registered through any of the three paths publishes a non-placeholder schema in
 - [RFC 0002: Expose WASM tool definitions to LLMs](../rfcs/0002-expose-wasm-tool-definitions.md)
 - [Roadmap item 1.2.1](../roadmap.md)
 - `docs/rust-testing-with-rstest-fixtures.md` for `rstest` fixture patterns.
-- `docs/rstest-bdd-users-guide.md` for `rstest-bdd` behaviour-driven development (BDD) test patterns.
-- `docs/reliable-testing-in-rust-via-dependency-injection.md` for dependency-injection (DI) testing.
+- `docs/rstest-bdd-users-guide.md` for `rstest-bdd` behaviour-driven
+  development (BDD) test patterns.
+- `docs/reliable-testing-in-rust-via-dependency-injection.md` for
+  dependency-injection (DI) testing.
 - `docs/complexity-antipatterns-and-refactoring-strategies.md` for complexity
   management.
 - `AGENTS.md` for repository quality gates and commit conventions.
@@ -235,51 +232,43 @@ registered through any of the three paths publishes a non-placeholder schema in
   to in-process `rstest` integration tests and document the decision.
 
 - Schema recovery failure: if `exported_metadata()` cannot be made reliable
-  for any registration path (for example because the guest component cannot
-  be instantiated during registration), stop and document the limitation
-  rather than hiding it behind an unconditional fallback.
+  for any registration path (for example because the guest component cannot be
+  instantiated during registration), stop and document the limitation rather
+  than hiding it behind an unconditional fallback.
 
 ## Risks
 
 - Risk: `exported_metadata()` may fail for some real WASM components because
   the guest's `description()` or `schema()` export triggers a trap or produces
-  invalid JSON.
-  Severity: medium
-  Likelihood: low
-  Mitigation: the existing `resolve_metadata_overrides()` already catches
-  `exported_metadata()` failures and falls back to placeholders. The fix is not
-  to remove that fallback, but to add a diagnostic warning when a placeholder
-  schema reaches `tool_definitions()` and to ensure the happy path is
-  exercised by tests.
+  invalid JSON. Severity: medium Likelihood: low Mitigation: the existing
+  `resolve_metadata_overrides()` already catches `exported_metadata()` failures
+  and falls back to placeholders. The fix is not to remove that fallback, but
+  to add a diagnostic warning when a placeholder schema reaches
+  `tool_definitions()` and to ensure the happy path is exercised by tests.
 
 - Risk: storage-backed tools may have null or empty schemas in the database,
-  causing `normalized_schema()` to return `None` and triggering the
-  placeholder fallback even though the guest export might have real metadata.
-  Severity: medium
-  Likelihood: medium
-  Mitigation: the storage-backed path already passes the stored schema through
-  `normalized_schema()` and then delegates to `register_wasm()`. If the stored
-  schema is null, `resolve_metadata_overrides()` will attempt
-  `exported_metadata()`. The test for this path should verify that a null
-  stored schema triggers guest export recovery.
+  causing `normalized_schema()` to return `None` and triggering the placeholder
+  fallback even though the guest export might have real metadata. Severity:
+  medium Likelihood: medium Mitigation: the storage-backed path already passes
+  the stored schema through `normalized_schema()` and then delegates to
+  `register_wasm()`. If the stored schema is null,
+  `resolve_metadata_overrides()` will attempt `exported_metadata()`. The test
+  for this path should verify that a null stored schema triggers guest export
+  recovery.
 
 - Risk: the `metadata_test_runtime()` and `github_wasm_artifact()` test helpers
   in `src/testing_wasm.rs` depend on building the GitHub WASM tool from source.
   If the `wasm32-wasip2` target is not installed in the test environment, these
-  tests will fail.
-  Severity: low
-  Likelihood: low
-  Mitigation: the existing test infrastructure already handles this. The
-  `github_wasm_artifact()` helper checks for the build artefact and builds it
-  if missing. New tests should reuse the same fixture.
+  tests will fail. Severity: low Likelihood: low Mitigation: the existing test
+  infrastructure already handles this. The `github_wasm_artifact()` helper
+  checks for the build artefact and builds it if missing. New tests should
+  reuse the same fixture.
 
 - Risk: tests asserting "non-placeholder schema" may be brittle if the
-  placeholder format changes.
-  Severity: low
-  Likelihood: low
-  Mitigation: define a helper predicate `is_placeholder_schema(value) -> bool`
-  that checks for the specific placeholder shape, and use it in assertions.
-  If the placeholder changes, only the predicate needs updating.
+  placeholder format changes. Severity: low Likelihood: low Mitigation: define
+  a helper predicate `is_placeholder_schema(value) -> bool` that checks for the
+  specific placeholder shape, and use it in assertions. If the placeholder
+  changes, only the predicate needs updating.
 
 ## Plan of work
 
@@ -351,10 +340,10 @@ pub(crate) fn is_placeholder_schema(schema: &serde_json::Value) -> bool {
 
 Location: `src/tools/registry/wasm.rs`, inside `resolve_metadata_overrides()`.
 
-Change: escalate the `tracing::debug!` at line 102 to `tracing::warn!` when
-the wrapper ends up with a placeholder schema after the recovery attempt fails.
-The warning must name the tool and explain that the tool will be advertised with
-a placeholder schema.
+Change: escalate the `tracing::debug!` at line 102 to `tracing::warn!` when the
+wrapper ends up with a placeholder schema after the recovery attempt fails. The
+warning must name the tool and explain that the tool will be advertised with a
+placeholder schema.
 
 Add a unit test for `is_placeholder_schema()` in the metadata module.
 
@@ -397,8 +386,8 @@ the module would exceed 400 lines).
 Test 4a: `file_loaded_wasm_tool_publishes_real_schema`
 
 Register the GitHub WASM tool through the file-loaded path (using the existing
-`github_wasm_artifact()` fixture). Assert that the resulting `ToolDefinition`
-in `tool_definitions()` has a `parameters` value that is not the placeholder
+`github_wasm_artifact()` fixture). Assert that the resulting `ToolDefinition` in
+`tool_definitions()` has a `parameters` value that is not the placeholder
 schema. Assert that `parameters["type"]` is `"object"` and that
 `parameters["required"]` contains `"action"`.
 
@@ -583,8 +572,8 @@ described in milestone 3.
 
 ### Step 4: add registration-path tests
 
-In `src/tools/registry/wasm.rs` or a sibling test file, add the tests
-described in milestone 4. Use `rstest` fixtures:
+In `src/tools/registry/wasm.rs` or a sibling test file, add the tests described
+in milestone 4. Use `rstest` fixtures:
 
 ```rust
 #[fixture]
@@ -615,8 +604,8 @@ Edit the files listed in milestone 6.
 
 ### Step 7: run gates
 
-Run the commands listed in milestone 7. Record evidence in `Outcomes &
-Retrospective`.
+Run the commands listed in milestone 7. Record evidence in
+`Outcomes & Retrospective`.
 
 ## Validation and acceptance
 
@@ -695,12 +684,12 @@ pub(crate) fn is_placeholder_schema(schema: &serde_json::Value) -> bool;
 
 - The compiled `ToolRegistry::register_wasm()` and
   `register_wasm_from_storage()` paths live in `src/tools/registry/loader.rs`,
-  while `src/tools/registry/wasm.rs` contains a duplicate helper
-  implementation that is not wired into `src/tools/registry.rs`.
+  while `src/tools/registry/wasm.rs` contains a duplicate helper implementation
+  that is not wired into `src/tools/registry.rs`.
 - The live storage-backed path was still passing empty descriptions and
-  `null` schemas through as explicit overrides, which suppressed guest
-  metadata recovery until `normalized_description()` and
-  `normalized_schema()` were added to the live registration path.
+  `null` schemas through as explicit overrides, which suppressed guest metadata
+  recovery until `normalized_description()` and `normalized_schema()` were
+  added to the live registration path.
 - No existing `rstest-bdd` harness was available for this seam, and adding a
   first behavioural harness would have expanded scope beyond this audit.
 

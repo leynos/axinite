@@ -4,11 +4,10 @@ This document is adapted from
 `../imap-wasm/docs/writing-web-assembly-tools-for-ironclaw.md` and updated to
 match the IronClaw repository as it exists on 2026-03-09.
 
-The most important correction is versioning: new or rebuilt IronClaw
-extensions must target WebAssembly Interface Types (WIT) `0.3.0`. This is not
-a speculative future version.
-It is the current host contract used by both `wit/tool.wit` and
-`wit/channel.wit`.
+The most important correction is versioning: new or rebuilt IronClaw extensions
+must target WebAssembly Interface Types (WIT) `0.3.0`. This is not a
+speculative future version. It is the current host contract used by both
+`wit/tool.wit` and `wit/channel.wit`.
 
 ## Read This First
 
@@ -16,8 +15,8 @@ Three facts shape almost every extension design decision:
 
 1. The authoritative contracts are [wit/tool.wit](../wit/tool.wit)
    and [wit/channel.wit](../wit/channel.wit).
-1. The package line for both contracts is `package near:agent@0.3.0;`.
-1. IronClaw installs WebAssembly extensions from named `.tar.gz` bundles, not
+2. The package line for both contracts is `package near:agent@0.3.0;`.
+3. IronClaw installs WebAssembly extensions from named `.tar.gz` bundles, not
    from loose build directories.
 
 That leads to a practical authoring checklist:
@@ -91,7 +90,7 @@ while allowing extension-specific metadata to evolve.
 There are two separate version surfaces:
 
 1. the WIT package version in the `.wit` file
-1. the declared `wit_version` in the extension's capabilities JSON
+2. the declared `wit_version` in the extension's capabilities JSON
 
 For the current host, both must resolve to `0.3.0` for new or rebuilt
 extensions.
@@ -185,12 +184,11 @@ One end-to-end (E2E) test is not enough for WebAssembly extensions.
 At minimum, prove two separate things:
 
 1. the built component instantiates against the current host linker
-1. the extension behaviour is correct at the protocol or feature level
+2. the extension behaviour is correct at the protocol or feature level
 
 IronClaw's current repo-level guardrail for the first point is
-[tests/wit_compat.rs](../tests/wit_compat.rs). If the WIT shape,
-versioning, or extension packaging changes, that matrix should be
-rerun.
+[tests/wit_compat.rs](../tests/wit_compat.rs). If the WIT shape, versioning, or
+extension packaging changes, that matrix should be rerun.
 
 For the second point, use behaviour tests that exercise the real request and
 response semantics the extension depends on. Mock-only coverage is not enough
@@ -200,13 +198,13 @@ if the mock hides the integration boundary that matters.
 
 1. Start from the shared WIT file in this repository rather than copying an old
    snapshot from another project.
-1. Build the guest around JSON parsing and JSON Schema output instead of
+2. Build the guest around JSON parsing and JSON Schema output instead of
    inventing a second typed protocol.
-1. Declare a truthful `wit_version: "0.3.0"` in the sidecar.
-1. Keep secrets at the host boundary and pass non-secret guest-consumed values
+3. Declare a truthful `wit_version: "0.3.0"` in the sidecar.
+4. Keep secrets at the host boundary and pass non-secret guest-consumed values
    as normal request parameters.
-1. Package a `.tar.gz` with names that match the installation name exactly.
-1. Run component compatibility tests and behaviour tests before shipping.
+5. Package a `.tar.gz` with names that match the installation name exactly.
+6. Run component compatibility tests and behaviour tests before shipping.
 
 ## Related Repo Docs
 

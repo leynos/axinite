@@ -1,9 +1,8 @@
 # Add nightly mutation testing workflow with cargo-mutants
 
-This ExecPlan (execution plan) is a living document. The sections
-`Constraints`, `Tolerances`, `Risks`, `Progress`, `Surprises & Discoveries`,
-`Decision Log`, and `Outcomes & Retrospective` must be kept up to date as work
-proceeds.
+This ExecPlan (execution plan) is a living document. The sections `Constraints`,
+`Tolerances`, `Risks`, `Progress`, `Surprises & Discoveries`, `Decision Log`,
+and `Outcomes & Retrospective` must be kept up to date as work proceeds.
 
 Status: IMPLEMENTED
 
@@ -12,12 +11,12 @@ Status: IMPLEMENTED
 After this change, IronClaw runs `cargo-mutants` nightly against files changed
 in the past 24 hours on the targeted branch. The workflow uploads a structured
 log of surviving mutants as a downloadable GitHub Actions artefact. Developers
-can also trigger the workflow manually on any branch, supplying an explicit list
-of source paths to mutate.
+can also trigger the workflow manually on any branch, supplying an explicit
+list of source paths to mutate.
 
 The surviving-mutant log is a concrete, prioritized backlog: each entry names a
-file, function, and mutation that no test caught, giving developers an immediate
-target for a new or stronger assertion.
+file, function, and mutation that no test caught, giving developers an
+immediate target for a new or stronger assertion.
 
 Observable success: after merging, navigating to Actions > Mutation Testing in
 the GitHub UI shows a scheduled run (or a manual dispatch) whose artefact
@@ -35,7 +34,8 @@ table of survivors.
   mold linker, `Swatinem/rust-cache`, `taiki-e/install-action`).
 - The workflow file must live at `.github/workflows/mutation-testing.yml`.
 - All prose in the workflow file and ADR must follow `en-GB-oxendict` spelling.
-- The `tools-src/github` crate (WebAssembly (WASM) target) is excluded from the workspace
+- The `tools-src/github` crate (WebAssembly (WASM) target) is excluded from the
+  workspace
   and uses a separate manifest. It must be excluded from the mutation run
   because `cargo-mutants` operates on workspace members.
 - The nightly scheduled run must scope mutations to files changed in the past
@@ -47,11 +47,12 @@ table of survivors.
 ## Tolerances (exception triggers)
 
 - Scope: the implementation must not touch more than 3 files (the workflow
-  YAML (YAML Ain't Markup Language), the ADR update, and the contents file if needed). If more files are
-  required, stop and escalate.
+  YAML (YAML Ain't Markup Language), the ADR update, and the contents file if
+  needed). If more files are required, stop and escalate.
 - Interface: no existing workflow or Makefile target may be modified.
 - Dependencies: no new runtime dependency on the Rust codebase. `cargo-mutants`
-  is a Continuous Integration (CI)-only tool installed via `taiki-e/install-action`.
+  is a Continuous Integration (CI)-only tool installed via
+  `taiki-e/install-action`.
 - Iterations: if the workflow YAML does not pass `actionlint` (if available) or
   manual review within 2 attempts, stop and escalate.
 - Ambiguity: if `cargo-mutants` does not support `--file` or `--re` filtering
@@ -60,34 +61,31 @@ table of survivors.
 ## Risks
 
 - Risk: `cargo-mutants` may not support file-path-based filtering granularly
-  enough for the "changed in 24 hours" scoping.
-  Severity: medium
-  Likelihood: low
-  Mitigation: `cargo-mutants` supports `--file <glob>` to restrict mutation
+  enough for the "changed in 24 hours" scoping. Severity: medium Likelihood:
+  low Mitigation: `cargo-mutants` supports `--file <glob>` to restrict mutation
   to named source files. The workflow will compute the changed-file list via
-  `git log -m --since="24 hours ago"` and pass each file as a `--file` argument. If no files changed,
-  the job exits early successfully.
+  `git log -m --since="24 hours ago"` and pass each file as a `--file`
+  argument. If no files changed, the job exits early successfully.
 
 - Risk: nightly runs on a large diff may still be expensive.
-  Severity: low
-  Likelihood: medium
-  Mitigation: the 24-hour window naturally bounds the diff. If a bulk merge
-  lands, the run may be slow but will complete; GitHub Actions has a 6-hour
-  job timeout by default, and a tighter `timeout-minutes` is configured.
+  Severity: low Likelihood: medium Mitigation: the 24-hour window naturally
+  bounds the diff. If a bulk merge lands, the run may be slow but will
+  complete; GitHub Actions has a 6-hour job timeout by default, and a tighter
+  `timeout-minutes` is configured.
 
 - Risk: flaky tests may cause inconsistent mutant verdicts.
-  Severity: medium
-  Likelihood: medium
-  Mitigation: `cargo-mutants` re-runs the baseline test suite first and
-  aborts if the baseline fails, surfacing flakiness early. This is an existing
-  test-suite concern, not a workflow concern.
+  Severity: medium Likelihood: medium Mitigation: `cargo-mutants` re-runs the
+  baseline test suite first and aborts if the baseline fails, surfacing
+  flakiness early. This is an existing test-suite concern, not a workflow
+  concern.
 
 ## Progress
 
 - [x] Draft ExecPlan.
 - [x] Obtain approval.
 - [x] Create `.github/workflows/mutation-testing.yml`.
-- [x] Update Architecture Decision Record (ADR) 008 status from `Proposed` to `Accepted` and record the
+- [x] Update Architecture Decision Record (ADR) 008 status from `Proposed` to
+      `Accepted` and record the
       nightly + changed-files design decision.
 - [x] Update `docs/contents.md` if the ADR is not already listed.
 - [x] Validate the workflow YAML (syntax, act dry-run, or manual review).
@@ -96,8 +94,8 @@ table of survivors.
 ## Surprises & discoveries
 
 - Markdownlint (MD031) requires blank lines before and after fenced code
-  blocks even when they appear inside list items. The execplan's embedded
-  shell snippets needed blank lines added around them.
+  blocks even when they appear inside list items. The execplan's embedded shell
+  snippets needed blank lines added around them.
 - The MD013 line-length rule applied to the Stage D validation command listed
   in the plan body. Rephrased to keep lines within 80 columns.
 - During rebase onto `main`, `ac20fe4` ("Feature-gate Docker sandbox support
@@ -109,18 +107,16 @@ table of survivors.
 ## Decision log
 
 - Decision: scope nightly runs to files changed in 24 hours using
-  `git log -m --since` and `cargo-mutants --file`.
-  Rationale: a full-workspace mutation run would take hours. Scoping to recent
-  changes makes nightly runs tractable while still surfacing regressions near
-  the point of introduction.
+  `git log -m --since` and `cargo-mutants --file`. Rationale: a full-workspace
+  mutation run would take hours. Scoping to recent changes makes nightly runs
+  tractable while still surfacing regressions near the point of introduction.
   Date/Author: 2026-03-22 / plan author.
 
 - Decision: manual dispatch accepts a newline-separated list of paths rather
-  than a package list.
-  Rationale: `--file` operates on source-file paths, which is more granular
-  than `--package` and matches the mental model of "these files changed;
-  mutate them." Developers can use globs (e.g. `src/agent/**/*.rs`).
-  Date/Author: 2026-03-22 / plan author.
+  than a package list. Rationale: `--file` operates on source-file paths, which
+  is more granular than `--package` and matches the mental model of "these
+  files changed; mutate them." Developers can use globs (e.g.
+  `src/agent/**/*.rs`). Date/Author: 2026-03-22 / plan author.
 
 - Decision: set `timeout-minutes: 120` on the mutation job.
   Rationale: mutation testing is inherently slow. Two hours is generous for a
@@ -134,8 +130,8 @@ table of survivors.
   commits. A recently landed merge whose side-branch commits are older than 24
   hours would produce an empty file list and cause mutation testing to be
   silently skipped. `-m` expands each merge commit relative to its parents,
-  ensuring that files introduced via such a merge are captured.
-  Date/Author: 2026-03-22 / plan author.
+  ensuring that files introduced via such a merge are captured. Date/Author:
+  2026-03-22 / plan author.
 
 ## Outcomes & retrospective
 
@@ -155,13 +151,14 @@ line-length violations in this execplan document.
 ## Context and orientation
 
 The repository is a Rust workspace with a single member crate (`ironclaw`) at
-the root. Several out-of-tree crates under `tools-src/` and `channels-src/`
-are excluded from the workspace and built separately.
+the root. Several out-of-tree crates under `tools-src/` and `channels-src/` are
+excluded from the workspace and built separately.
 
 Existing CI workflows live in `.github/workflows/`. The patterns relevant to
 this plan are:
 
-- `test.yml`: Pull Request (PR) and push gate. Uses `dtolnay/rust-toolchain@stable`,
+- `test.yml`: Pull Request (PR) and push gate. Uses
+  `dtolnay/rust-toolchain@stable`,
   `rui314/setup-mold@v1`, `Swatinem/rust-cache@v2`,
   `taiki-e/install-action@cargo-nextest`. Runs `make build-github-tool-wasm`
   before tests.
@@ -218,8 +215,8 @@ previous one.
 Steps:
 
 1. **Checkout.** `actions/checkout@v6` with `fetch-depth: 0` (needed for
-   `git log -m --since="24 hours ago"` on the 24-hour window). For `workflow_dispatch`, check out the
-   `inputs.branch` ref.
+   `git log -m --since="24 hours ago"` on the 24-hour window). For
+   `workflow_dispatch`, check out the `inputs.branch` ref.
 
 2. **Compute file list.** A shell step that decides which files to mutate:
    - If `inputs.paths` is non-empty (manual dispatch with explicit paths),
@@ -359,8 +356,8 @@ Expected: no violations (exit 0).
 make all
 ```
 
-Expected: `check-fmt`, `lint`, and `test` all pass. No Rust source was
-changed, so this is a no-op confirmation.
+Expected: `check-fmt`, `lint`, and `test` all pass. No Rust source was changed,
+so this is a no-op confirmation.
 
 ```bash
 git diff --check
@@ -403,8 +400,8 @@ without side effects. If the commit needs to be amended or redone, the standard
 ## Artefacts and notes
 
 The primary artefact is the workflow file. A representative skeleton of the
-YAML is embedded in the plan of work above. The final file will be produced
-by the Write tool during implementation.
+YAML is embedded in the plan of work above. The final file will be produced by
+the Write tool during implementation.
 
 ## Interfaces and dependencies
 

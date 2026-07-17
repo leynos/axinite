@@ -1,27 +1,28 @@
 # Setup / Onboarding Specification
 
 This document is the authoritative specification for IronClaw's onboarding
-wizard. Any code change to `src/setup/` **must** keep this document in sync.
-If a future contributor or coding agent modifies setup behaviour, update this
-file first, then adjust the code to match.
+wizard. Any code change to `src/setup/` **must** keep this document in sync. If
+a future contributor or coding agent modifies setup behaviour, update this file
+first, then adjust the code to match.
 
----
+______________________________________________________________________
 
 ## Entry Points
 
-```
+```shell
 ironclaw onboard [--skip-auth] [--channels-only] [--provider-only] [--quick]
 ```
 
 Explicit invocation. Loads `.env` files, runs the wizard, exits.
 
-```
+```text
 ironclaw          (first run, no database configured)
 ```
 
-Auto-detection via `check_onboard_needed()` in `main.rs`. Skips onboarding
-when `ONBOARD_COMPLETED` env var is set (written to `~/.ironclaw/.env` by
-the wizard). Otherwise triggers when no database is configured:
+Auto-detection via `check_onboard_needed()` in `main.rs`. Skips onboarding when
+`ONBOARD_COMPLETED` env var is set (written to `~/.ironclaw/.env` by the
+wizard). Otherwise triggers when no database is configured:
+
 - `DATABASE_URL` env var is set
 - `LIBSQL_PATH` env var is set
 - `~/.ironclaw/ironclaw.db` exists on disk
@@ -30,11 +31,11 @@ Auto-triggered onboarding uses **quick mode** by default.
 
 The `--no-onboard` CLI flag suppresses auto-detection.
 
----
+______________________________________________________________________
 
 ## Startup Sequence (main.rs)
 
-```
+```text
 1. Parse CLI args
 2. If Command::Onboard  → load .env, run wizard, exit
 3. If Command::Run or no command:
@@ -47,18 +48,18 @@ The `--no-onboard` CLI flag suppresses auto-detection.
 ```
 
 **Critical ordering:** `.env` files must be loaded (step 3a) before
-`Config::from_env()` (step 3c) because bootstrap vars like
-`DATABASE_BACKEND` live in `~/.ironclaw/.env`.
+`Config::from_env()` (step 3c) because bootstrap vars like `DATABASE_BACKEND`
+live in `~/.ironclaw/.env`.
 
----
+______________________________________________________________________
 
 ## Quick Mode
 
 Quick mode (`--quick` flag, or auto-triggered on first run) provides a
-near-instant onboarding experience by auto-defaulting everything except
-the LLM provider and model selection.
+near-instant onboarding experience by auto-defaulting everything except the LLM
+provider and model selection.
 
-```
+```text
 auto_setup_database()    → libsql at ~/.ironclaw/ironclaw.db (zero prompts)
 auto_setup_security()    → keychain or env var (zero prompts)
 Step 1/2: Inference Provider  ← only interactive step
@@ -67,16 +68,16 @@ Step 2/2: Model Selection     ← only interactive step
    save_and_summarize()      → includes tip to run `ironclaw onboard`
 ```
 
-**`auto_setup_database()`:** Uses existing env vars if set (`DATABASE_URL`
-for postgres, `LIBSQL_PATH` for libsql) without prompting. Otherwise
-defaults to libsql at `~/.ironclaw/ironclaw.db`, creates the database,
-and runs migrations silently. Falls back to interactive mode only when
-just the postgres feature is compiled and no `DATABASE_URL` is set.
+**`auto_setup_database()`:** Uses existing env vars if set (`DATABASE_URL` for
+postgres, `LIBSQL_PATH` for libsql) without prompting. Otherwise defaults to
+libsql at `~/.ironclaw/ironclaw.db`, creates the database, and runs migrations
+silently. Falls back to interactive mode only when just the postgres feature is
+compiled and no `DATABASE_URL` is set.
 
-**`auto_setup_security()`:** Checks for existing `SECRETS_MASTER_KEY`
-env var or OS keychain key. If neither exists, generates a new key and
-stores it in the keychain (macOS) or env var (Linux/other). Zero prompts
-except unavoidable macOS keychain dialogs.
+**`auto_setup_security()`:** Checks for existing `SECRETS_MASTER_KEY` env var
+or OS keychain key. If neither exists, generates a new key and stores it in the
+keychain (macOS) or env var (Linux/other). Zero prompts except unavoidable
+macOS keychain dialogs.
 
 **`.env` preservation (fix for #751):** `write_bootstrap_env()` now uses
 `upsert_bootstrap_vars()` instead of `save_bootstrap_env()`, preserving
@@ -84,13 +85,13 @@ user-added variables like `HTTP_HOST` across re-onboarding.
 
 The full 9-step wizard remains available via `ironclaw onboard`.
 
----
+______________________________________________________________________
 
 ## The 9-Step Wizard
 
 ### Overview
 
-```
+```text
 Step 1: Database Connection
 Step 2: Security (master key)
 Step 3: Inference Provider          ← skipped if --skip-auth
@@ -106,7 +107,7 @@ Step 9: Background Tasks (heartbeat)
 
 `--channels-only` mode runs only Step 6, skipping everything else.
 
----
+______________________________________________________________________
 
 ### Step 1: Database Connection
 
@@ -116,7 +117,7 @@ Step 9: Background Tasks (heartbeat)
 
 **Decision tree:**
 
-```
+```text
 Both features compiled?
 ├─ Yes → DATABASE_BACKEND env var set?
 │  ├─ Yes → use that backend
@@ -126,23 +127,24 @@ Both features compiled?
 ```
 
 **PostgreSQL path** (`step_database_postgres`):
+
 1. Check `DATABASE_URL` from env or settings
 2. Test connection (creates `deadpool_postgres::Pool`)
 3. Optionally run refinery migrations
 4. Store pool in `self.db_pool`
 
 **libSQL path** (`step_database_libsql`):
+
 1. Offer local path (default: `~/.ironclaw/ironclaw.db`)
 2. Optional Turso cloud sync (URL + auth token)
 3. Test connection (creates `LibSqlBackend`)
 4. Always run migrations (idempotent CREATE IF NOT EXISTS)
 5. Store backend in `self.db_backend`
 
-**Invariant:** After Step 1, exactly one of `self.db_pool` or
-`self.db_backend` is `Some`. This is required for settings persistence
-in `save_and_summarize()`.
+**Invariant:** After Step 1, exactly one of `self.db_pool` or `self.db_backend`
+is `Some`. This is required for settings persistence in `save_and_summarize()`.
 
----
+______________________________________________________________________
 
 ### Step 2: Security (Master Key)
 
@@ -152,7 +154,7 @@ in `save_and_summarize()`.
 
 **Decision tree:**
 
-```
+```text
 SECRETS_MASTER_KEY env var set?
 ├─ Yes → use env var, done
 └─ No  → try get_master_key() from OS keychain
@@ -165,19 +167,20 @@ SECRETS_MASTER_KEY env var set?
               └─ Skip: disable secrets features
 ```
 
-**CRITICAL CAVEAT: macOS Keychain Dialogs**
+#### CRITICAL CAVEAT: macOS Keychain Dialogs
 
-On macOS, `security_framework::get_generic_password()` can trigger TWO
-system dialogs:
+On macOS, `security_framework::get_generic_password()` can trigger TWO system
+dialogs:
+
 1. "Enter your password to unlock the keychain" (keychain locked)
 2. "Allow ironclaw to access this keychain item" (per-app authorization)
 
 This is OS-level behaviour we cannot prevent. To minimize pain:
 
 - **Use `get_master_key()` not `has_master_key()`** in step 2. Both call
-  the same underlying API, but `get_master_key()` returns the key bytes
-  so we can cache them. `has_master_key()` throws them away, forcing a
-  second keychain access later.
+  the same underlying API, but `get_master_key()` returns the key bytes so we
+  can cache them. `has_master_key()` throws them away, forcing a second
+  keychain access later.
 
 - **Build `SecretsCrypto` eagerly.** When the keychain key is retrieved,
   immediately construct `SecretsCrypto` and store in `self.secrets_crypto`.
@@ -185,14 +188,14 @@ This is OS-level behaviour we cannot prevent. To minimize pain:
   redundant keychain probes.
 
 - **Never probe the keychain in read-only commands** (e.g., `ironclaw status`).
-  The status command reports "env not set (keychain may be configured)"
-  rather than triggering system dialogs.
+  The status command reports "env not set (keychain may be configured)" rather
+  than triggering system dialogs.
 
-**Invariant:** After Step 2, `self.secrets_crypto` is `Some` if the user
-chose Keychain or generated a new key. It may be `None` if the user chose
-env-var mode or skipped secrets.
+**Invariant:** After Step 2, `self.secrets_crypto` is `Some` if the user chose
+Keychain or generated a new key. It may be `None` if the user chose env-var
+mode or skipped secrets.
 
----
+______________________________________________________________________
 
 ### Step 3: Inference Provider
 
@@ -202,33 +205,37 @@ env-var mode or skipped secrets.
 
 **Providers:**
 
-| Provider | Auth Method | Secret Name | Env Var |
-|----------|-------------|-------------|---------|
-| NEAR AI Chat | Browser OAuth or session token | - | `NEARAI_SESSION_TOKEN` |
-| NEAR AI Cloud | API key | `llm_nearai_api_key` | `NEARAI_API_KEY` |
-| Anthropic | API key | `anthropic_api_key` | `ANTHROPIC_API_KEY` |
-| OpenAI | API key | `openai_api_key` | `OPENAI_API_KEY` |
-| Ollama | None | - | - |
-| OpenRouter | API key | `llm_openrouter_api_key` | `OPENROUTER_API_KEY` |
-| OpenAI-compatible | Optional API key | `llm_compatible_api_key` | `LLM_API_KEY` |
-| AWS Bedrock | AWS credentials (IAM, SSO, instance roles) | - | - |
+| Provider          | Auth Method                                | Secret Name              | Env Var                |
+| ----------------- | ------------------------------------------ | ------------------------ | ---------------------- |
+| NEAR AI Chat      | Browser OAuth or session token             | -                        | `NEARAI_SESSION_TOKEN` |
+| NEAR AI Cloud     | API key                                    | `llm_nearai_api_key`     | `NEARAI_API_KEY`       |
+| Anthropic         | API key                                    | `anthropic_api_key`      | `ANTHROPIC_API_KEY`    |
+| OpenAI            | API key                                    | `openai_api_key`         | `OPENAI_API_KEY`       |
+| Ollama            | None                                       | -                        | -                      |
+| OpenRouter        | API key                                    | `llm_openrouter_api_key` | `OPENROUTER_API_KEY`   |
+| OpenAI-compatible | Optional API key                           | `llm_compatible_api_key` | `LLM_API_KEY`          |
+| AWS Bedrock       | AWS credentials (IAM, SSO, instance roles) | -                        | -                      |
 
-**OpenRouter** is a standalone registry provider (`providers.json` id `"openrouter"`)
-with its own secret name and env var. It is **not** stored as `openai_compatible`.
+**OpenRouter** is a standalone registry provider (`providers.json` id
+`"openrouter"`) with its own secret name and env var. It is **not** stored as
+`openai_compatible`.
 
 **OpenRouter** (`setup.kind = "api_key"` in `providers.json`):
+
 - Standalone provider with base URL `https://openrouter.ai/api/v1`
 - Delegates to `setup_api_key_provider()` with display name "OpenRouter"
 - API key is required (`api_key_required: true`)
 - Default model: `openai/gpt-4o`
 
 **API-key providers** (`setup_api_key_provider`):
+
 1. Check env var → if set, ask to reuse, persist to secrets store
 2. Otherwise prompt for key entry via `secret_input()`
 3. Store encrypted in secrets via `init_secrets_context()`
 4. **Cache key in `self.llm_api_key`** for model fetching in Step 4
 
 **NEAR AI** (`setup_nearai`):
+
 - Calls `session_manager.ensure_authenticated()` which shows the auth menu:
   - Options 1-2 (GitHub/Google): browser OAuth → **NEAR AI Chat** mode
     (Responses API at `private.near.ai`, session token auth)
@@ -239,15 +246,15 @@ with its own secret name and env var. It is **not** stored as `openai_compatible
   precedence over file-based tokens).
 - **NEAR AI Cloud** path: `NEARAI_API_KEY` saved to `~/.ironclaw/.env`
   (bootstrap) and encrypted secrets store (`llm_nearai_api_key`).
-  `LlmConfig::resolve()` auto-selects `ChatCompletions` mode when the
-  API key is present.
+  `LlmConfig::resolve()` auto-selects `ChatCompletions` mode when the API key
+  is present.
 
 **`self.llm_api_key` caching:** The wizard caches the API key as
-`Option<SecretString>` so that Step 4 (model fetching) and Step 5
-(embeddings) can use it without re-reading from the secrets store or
-mutating environment variables.
+`Option<SecretString>` so that Step 4 (model fetching) and Step 5 (embeddings)
+can use it without re-reading from the secrets store or mutating environment
+variables.
 
----
+______________________________________________________________________
 
 ### Step 4: Model Selection
 
@@ -256,6 +263,7 @@ mutating environment variables.
 **Goal:** Choose which model to use.
 
 **Flow:**
+
 1. If model already set → offer to keep it
 2. Fetch models from provider API (5-second timeout)
 3. On timeout or error → use static fallback list
@@ -263,15 +271,16 @@ mutating environment variables.
 5. Store in `self.settings.selected_model`
 
 **Model fetchers pass the cached API key explicitly:**
+
 ```rust
 let cached = self.llm_api_key.as_ref().map(|k| k.expose_secret().to_string());
 let models = fetch_anthropic_models(cached.as_deref()).await;
 ```
 
-This avoids mutating environment variables. The fetcher checks the explicit
-key first, then falls back to the standard env var.
+This avoids mutating environment variables. The fetcher checks the explicit key
+first, then falls back to the standard env var.
 
----
+______________________________________________________________________
 
 ### Step 5: Embeddings
 
@@ -280,6 +289,7 @@ key first, then falls back to the standard env var.
 **Goal:** Configure semantic search for workspace memory.
 
 **Flow:**
+
 1. Ask "Enable semantic search?" (default: yes)
 2. Detect available providers:
    - NEAR AI: if backend is `nearai` OR valid session exists
@@ -290,7 +300,7 @@ key first, then falls back to the standard env var.
 
 **Default model:** `text-embedding-3-small` (for both providers)
 
----
+______________________________________________________________________
 
 ### Step 6: Channel Configuration
 
@@ -300,7 +310,7 @@ key first, then falls back to the standard env var.
 
 **Sub-steps:**
 
-```
+```text
 6a. Tunnel setup (if webhook channels needed)
 6b. Discover WASM channels from ~/.ironclaw/channels/
 6c. Build channel options: discovered + bundled + registry catalog
@@ -313,32 +323,38 @@ key first, then falls back to the standard env var.
 ```
 
 **Channel sources** (priority order for installation):
+
 1. Already installed in `~/.ironclaw/channels/`
 2. Bundled channels (pre-compiled in `channels-src/`)
-3. Registry channels (`registry/channels/*.json`, download-first with source fallback)
+3. Registry channels (`registry/channels/*.json`, download-first with source
+   fallback)
 
 **Tunnel setup** (`setup_tunnel`):
+
 - Options: ngrok, Cloudflare Tunnel, localtunnel, custom URL
 - Validates HTTPS requirement
 - Stored in `self.settings.tunnel.public_url`
 
 **WASM channel setup** (`setup_wasm_channel`):
+
 - Reads `capabilities.json` for `setup.required_secrets`
 - For each secret: check existing, prompt or auto-generate, validate regex
 - Save each secret via `SecretsContext`
 
 **Telegram special case** (`setup_telegram`):
+
 - Validates bot token via Telegram `getMe` API
 - Owner binding: polls `getUpdates` for 120s to capture sender's user ID
 - Optional webhook secret generation
 
 **SecretsContext creation** (`init_secrets_context`):
+
 1. Check `self.secrets_crypto` (set in Step 2) → use if available
 2. Else try `SECRETS_MASTER_KEY` env var
 3. Else try `get_master_key()` from keychain (only in `channels_only` mode)
 4. Create backend-appropriate secrets store (respects selected database backend)
 
----
+______________________________________________________________________
 
 ### Step 7: Extensions (Tools)
 
@@ -347,6 +363,7 @@ key first, then falls back to the standard env var.
 **Goal:** Install WASM tools from the extension registry.
 
 **Flow:**
+
 1. Load `RegistryCatalog` from `registry/` directory
 2. If registry not found, print info and skip
 3. List all tool manifests from the catalogue
@@ -359,13 +376,14 @@ key first, then falls back to the standard env var.
 7. Print consolidated auth hints (deduplicated by provider, e.g. one hint
    for all Google tools sharing `google_oauth_token`)
 
-**Registry lookup** (`load_registry_catalog`):
-Searches for `registry/` directory in order:
+**Registry lookup** (`load_registry_catalog`): Searches for `registry/`
+directory in order:
+
 1. Current working directory
 2. Next to the executable
 3. `CARGO_MANIFEST_DIR` (compile-time, dev builds)
 
----
+______________________________________________________________________
 
 ### Step 8: Heartbeat
 
@@ -374,11 +392,12 @@ Searches for `registry/` directory in order:
 **Goal:** Configure periodic background execution.
 
 **Flow:**
+
 1. Ask "Enable heartbeat?" (default: no)
 2. If yes: interval in minutes (default: 30), notification channel
 3. Store in `self.settings.heartbeat`
 
----
+______________________________________________________________________
 
 ## Settings Persistence
 
@@ -399,6 +418,7 @@ LLM_BASE_URL="http://my-vllm:8000/v1"
 ```
 
 Or for PostgreSQL + NEAR AI:
+
 ```env
 DATABASE_BACKEND="postgres"
 DATABASE_URL="postgres://user:pass@localhost/ironclaw"
@@ -406,22 +426,24 @@ LLM_BACKEND="nearai"
 ```
 
 Or for Ollama:
+
 ```env
 LLM_BACKEND="ollama"
 OLLAMA_BASE_URL="http://localhost:11434"
 ```
 
-**Why separate?** Chicken-and-egg: you need `DATABASE_BACKEND` to know
-which database to connect to, and `LLM_BACKEND` to know whether to
-attempt NEAR AI session auth -- neither can be stored in the database.
+**Why separate?** Chicken-and-egg: you need `DATABASE_BACKEND` to know which
+database to connect to, and `LLM_BACKEND` to know whether to attempt NEAR AI
+session auth -- neither can be stored in the database.
 
 **Layer 2: Database settings table** (everything else)
 
-All other settings are stored as key-value pairs in the `settings` table,
-keyed by `(user_id, key)`. Written by `set_all_settings()`.
+All other settings are stored as key-value pairs in the `settings` table, keyed
+by `(user_id, key)`. Written by `set_all_settings()`.
 
 Settings are serialized via `Settings::to_db_map()` as dotted paths:
-```
+
+```toml
 database_backend = "libsql"
 llm_backend = "nearai"
 selected_model = "anthropic/claude-sonnet-4-5"
@@ -435,22 +457,23 @@ heartbeat.interval_secs = "300"
 ### Incremental Persistence
 
 Settings are persisted **after every successful step**, not just at the end.
-This prevents data loss if a later step fails (e.g., the user enters an
-API key in step 3 but step 5 crashes — they won't need to re-enter it).
+This prevents data loss if a later step fails (e.g., the user enters an API key
+in step 3 but step 5 crashes — they won't need to re-enter it).
 
 **`persist_after_step()`** is called after each step in `run()` and:
+
 1. Writes bootstrap vars to `~/.ironclaw/.env` via `write_bootstrap_env()`
 2. Writes all current settings to the database via `persist_settings()`
 3. Silently ignores errors (e.g., if called before Step 1 establishes a DB)
 
 **`try_load_existing_settings()`** is called after Step 1 establishes a
-database connection. It loads any previously saved settings from the
-database using `get_all_settings("default")` → `Settings::from_db_map()`
-→ `merge_from()`. This recovers progress from prior partial wizard runs.
+database connection. It loads any previously saved settings from the database
+using `get_all_settings("default")` → `Settings::from_db_map()` →
+`merge_from()`. This recovers progress from prior partial wizard runs.
 
 **Ordering after Step 1 is critical:**
 
-```
+```text
 step_database()                        → sets DB fields in self.settings
 let step1 = self.settings.clone()      → snapshot Step 1 choices
 try_load_existing_settings()           → merge DB values into self.settings
@@ -459,6 +482,7 @@ persist_after_step()                   → save merged state
 ```
 
 This ordering ensures:
+
 - Prior progress (steps 2-7 from a previous partial run) is recovered
 - Fresh Step 1 choices override stale DB values (not the reverse)
 - The first DB persist doesn't clobber prior settings with defaults
@@ -467,7 +491,7 @@ This ordering ensures:
 
 Final step of the wizard:
 
-```
+```text
 1. Mark onboard_completed = true
 2. Call persist_settings() for final write (idempotent — ensures
    onboard_completed flag is saved)
@@ -476,6 +500,7 @@ Final step of the wizard:
 ```
 
 Bootstrap vars written to `~/.ironclaw/.env`:
+
 - `DATABASE_BACKEND` (always)
 - `DATABASE_URL` (if postgres)
 - `LIBSQL_PATH` (if libsql)
@@ -486,16 +511,18 @@ Bootstrap vars written to `~/.ironclaw/.env`:
 - `NEARAI_API_KEY` (if API key auth path)
 - `ONBOARD_COMPLETED` (always, "true")
 
-**Invariant:** Both Layer 1 and Layer 2 must be written. If the database
-write fails, the wizard returns an error and the `.env` file is not written.
+**Invariant:** Both Layer 1 and Layer 2 must be written. If the database write
+fails, the wizard returns an error and the `.env` file is not written.
 
 ### Legacy Migration
 
 `bootstrap.rs` handles one-time upgrades from older config formats:
-- `bootstrap.json` → extracts `DATABASE_URL`, writes `.env`, renames to `.migrated`
+
+- `bootstrap.json` → extracts `DATABASE_URL`, writes `.env`, renames to
+  `.migrated`
 - `settings.json` → migrated to database via `migrate_disk_to_db()`
 
----
+______________________________________________________________________
 
 ## Settings Struct
 
@@ -544,7 +571,7 @@ pub struct Settings {
 
 **KeySource enum:** `Keychain | Env | None`
 
----
+______________________________________________________________________
 
 ## Secrets Flow
 
@@ -560,6 +587,7 @@ pub struct SecretsContext {
 ```
 
 Created by `init_secrets_context()` which:
+
 1. Gets `SecretsCrypto` from `self.secrets_crypto` or loads from keychain/env
 2. Creates the appropriate backend store:
    - If both features compiled: respects `self.settings.database_backend`
@@ -568,39 +596,39 @@ Created by `init_secrets_context()` which:
 
 ### Secret Storage
 
-Secrets are encrypted with AES-256-GCM using the master key, then stored
-in the database `secrets` table. The wizard writes secrets like:
+Secrets are encrypted with AES-256-GCM using the master key, then stored in the
+database `secrets` table. The wizard writes secrets like:
 
-```
+```text
 telegram_bot_token    → encrypted bot token
 telegram_webhook_secret → encrypted webhook HMAC secret
 anthropic_api_key     → encrypted API key
 ```
 
----
+______________________________________________________________________
 
 ## Prompt Utilities
 
 **Module:** `prompts.rs`
 
-| Function | Description |
-|----------|-------------|
-| `select_one(label, options)` | Numbered single-choice menu |
-| `select_many(label, options, defaults)` | Checkbox multi-select (raw terminal mode) |
-| `input(label)` | Single line text input |
-| `optional_input(label, hint)` | Text input that can be empty |
-| `secret_input(label)` | Hidden input (shows `*` per char), returns `SecretString` |
-| `confirm(label, default)` | `[Y/n]` or `[y/N]` prompt |
-| `print_header(text)` | Bold section header with underline |
-| `print_step(n, total, text)` | `[1/7] Step Name` |
-| `print_success(text)` | Green `✓` prefix (ANSI colour), message in default colour |
-| `print_error(text)` | Red `✗` prefix (ANSI colour), message in default colour |
-| `print_info(text)` | Blue `ℹ` prefix (ANSI colour), message in default colour |
+| Function                                | Description                                               |
+| --------------------------------------- | --------------------------------------------------------- |
+| `select_one(label, options)`            | Numbered single-choice menu                               |
+| `select_many(label, options, defaults)` | Checkbox multi-select (raw terminal mode)                 |
+| `input(label)`                          | Single line text input                                    |
+| `optional_input(label, hint)`           | Text input that can be empty                              |
+| `secret_input(label)`                   | Hidden input (shows `*` per char), returns `SecretString` |
+| `confirm(label, default)`               | `[Y/n]` or `[y/N]` prompt                                 |
+| `print_header(text)`                    | Bold section header with underline                        |
+| `print_step(n, total, text)`            | `[1/7] Step Name`                                         |
+| `print_success(text)`                   | Green `✓` prefix (ANSI colour), message in default colour |
+| `print_error(text)`                     | Red `✗` prefix (ANSI colour), message in default colour   |
+| `print_info(text)`                      | Blue `ℹ` prefix (ANSI colour), message in default colour  |
 
-`select_many` uses `crossterm` raw mode for arrow key navigation.
-Must properly restore terminal state on all exit paths.
+`select_many` uses `crossterm` raw mode for arrow key navigation. Must properly
+restore terminal state on all exit paths.
 
----
+______________________________________________________________________
 
 ## Platform Caveats
 
@@ -620,27 +648,26 @@ Must properly restore terminal state on all exit paths.
 
 ### Remote Server Authentication
 
-On remote/VPS servers, the browser-based OAuth flow for NEAR AI may not
-work because `http://127.0.0.1:9876` is unreachable from the user's
-local browser.
+On remote/VPS servers, the browser-based OAuth flow for NEAR AI may not work
+because `http://127.0.0.1:9876` is unreachable from the user's local browser.
 
 **Solutions:**
 
 1. **NEAR AI Cloud API key (option 4 in auth menu):** Get an API key
-   from `https://cloud.near.ai` and paste it into the terminal. No
-   local listener is needed. The key is saved to `~/.ironclaw/.env`
-   and the encrypted secrets store. Uses the OpenAI-compatible
-   ChatCompletions API mode.
+   from `https://cloud.near.ai` and paste it into the terminal. No local
+   listener is needed. The key is saved to `~/.ironclaw/.env` and the encrypted
+   secrets store. Uses the OpenAI-compatible ChatCompletions API mode.
 
 2. **Custom callback URL:** Set `IRONCLAW_OAUTH_CALLBACK_URL` to a
    publicly accessible URL (e.g., via SSH tunnel or reverse proxy) that
    forwards to port 9876 on the server:
+
    ```bash
    export IRONCLAW_OAUTH_CALLBACK_URL=https://myserver.example.com:9876
    ```
 
-The `callback_url()` function in `oauth_defaults.rs` checks this env var
-and falls back to `http://127.0.0.1:{OAUTH_CALLBACK_PORT}`.
+The `callback_url()` function in `oauth_defaults.rs` checks this env var and
+falls back to `http://127.0.0.1:{OAUTH_CALLBACK_PORT}`.
 
 ### URL Passwords
 
@@ -655,7 +682,7 @@ and falls back to `http://127.0.0.1:{OAUTH_CALLBACK_PORT}`.
 - Webhook secret header: `X-Telegram-Bot-Api-Secret-Token`
 - Owner binding polls `getUpdates` (must delete webhook first)
 
----
+______________________________________________________________________
 
 ## Testing
 
@@ -671,12 +698,13 @@ Tests live in `mod tests {}` at the bottom of each file.
   don't panic
 
 **Run setup tests:**
+
 ```bash
 cargo test --lib -- setup
 cargo test --lib -- bootstrap
 ```
 
----
+______________________________________________________________________
 
 ## Modification Checklist
 
@@ -687,7 +715,8 @@ When changing the onboarding flow:
    - Add to the step enum in `run()`, adjust `total_steps`
    - Add corresponding settings fields to `Settings`
    - Add `to_db_map` / `from_db_map` serialization
-   - If the setting is needed before DB connection, add to `save_bootstrap_env()`
+   - If the setting is needed before DB connection, add to
+     `save_bootstrap_env()`
 3. If adding a new provider or channel:
    - Add to the selection menu in the appropriate step
    - Add authentication flow (API key or OAuth)
@@ -699,9 +728,11 @@ When changing the onboarding flow:
    - Ensure `init_secrets_context()` respects the selected database backend
    - Test with both postgres and libsql features
 6. Run the full shipping checklist:
+
    ```bash
    cargo fmt
    cargo clippy --all --benches --tests --examples --all-features -- -D warnings
    cargo test --lib -- setup bootstrap
    ```
+
 7. Test a fresh onboarding: `rm -rf ~/.ironclaw && cargo run`
