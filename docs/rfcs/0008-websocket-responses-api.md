@@ -8,22 +8,22 @@
 
 ## Executive summary
 
-Axinite currently integrates “OpenAI-compatible” providers through a Chat
+IronClaw currently integrates “OpenAI-compatible” providers through a Chat
 Completions–style protocol (`open_ai_completions`), configured in
 `providers.json` (the `openai` provider defaults to `https://api.openai.com/v1`
-and a default model `gpt-5-mini`). [^1] This pathway is built around Axinite’s
+and a default model `gpt-5-mini`). [^1] This pathway is built around IronClaw’s
 `LlmProvider` trait, which exposes synchronous request/response methods
 (`complete`, `complete_with_tools`) but no streaming interface. [^2]
 
-Axinite does have “context compaction” today, but it is Axinite-native: it
+IronClaw does have “context compaction” today, but it is IronClaw-native: it
 summarizes or truncates old turns (and optionally writes a summary to workspace)
 before continuing, i.e. it does *not* use OpenAI’s encrypted “compaction item”
-mechanism. [^3] Concretely, Axinite’s compactor generates a summary by making an
+mechanism. [^3] Concretely, IronClaw’s compactor generates a summary by making an
 LLM call with a system summarization prompt and then rewrites the thread
 history. [^4]
 
 OpenAI’s WebSocket Responses API introduces three capabilities that don’t fit
-cleanly into Axinite’s current “Chat Completions–shaped” adapter:
+cleanly into IronClaw’s current “Chat Completions–shaped” adapter:
 
 - A persistent WebSocket transport (`wss://api.openai.com/v1/responses`) where
   each turn begins by sending a `response.create` event whose payload mirrors
@@ -55,20 +55,20 @@ Axinite is written in Rust (so “language/runtime unspecified” does not refle
 the current implementation reality in this repo), but the design constraints
 below remain language-agnostic. [^11]
 
-Axinite’s existing provider stack and agent loop are organized around a small
+IronClaw’s existing provider stack and agent loop are organized around a small
 set of load-bearing modules:
 
 | Area | What it does today | Why it matters for Responses WS |
 | --- | --- | --- |
-| `src/llm/provider.rs` | Defines `ChatMessage`, tool call representation and sanitation; defines the `LlmProvider` trait (`complete`, `complete_with_tools`) used by the reasoning engine. [^12] | The Responses WS backend needs either (a) a new provider trait that supports streaming + input items, or (b) a compatibility shim that projects Responses into Axinite’s current `complete[_with_tools]` contract. |
-| `src/llm/rig_adapter.rs` | Bridges Axinite tool definitions into a rig-core model interface; normalizes JSON Schema to comply with OpenAI “strict mode” function calling; converts Axinite messages into rig messages; extracts tool calls from completion responses. [^13] | This adapter targets “Chat Completions shape” tool calls, not Responses input items/events. Reuse is limited to tool schema normalization logic. |
+| `src/llm/provider.rs` | Defines `ChatMessage`, tool call representation and sanitation; defines the `LlmProvider` trait (`complete`, `complete_with_tools`) used by the reasoning engine. [^12] | The Responses WS backend needs either (a) a new provider trait that supports streaming + input items, or (b) a compatibility shim that projects Responses into IronClaw’s current `complete[_with_tools]` contract. |
+| `src/llm/rig_adapter.rs` | Bridges IronClaw tool definitions into a rig-core model interface; normalizes JSON Schema to comply with OpenAI “strict mode” function calling; converts IronClaw messages into rig messages; extracts tool calls from completion responses. [^13] | This adapter targets “Chat Completions shape” tool calls, not Responses input items/events. Reuse is limited to tool schema normalization logic. |
 | `src/llm/reasoning.rs` | Builds system prompts, constructs `ToolCompletionRequest`s from `ReasoningContext`, calls `llm.complete_with_tools`, and returns either text or `ToolCalls` to the agentic loop. [^14] | This component assumes the LLM call returns complete results (not streamed) and assumes tool calls come back as a list of `ToolCall`s in one response turn. |
 | `src/agent/agentic_loop.rs` | Unified iteration engine that delegates “call LLM”, “execute tool calls”, and “auto-compaction/cost/rate-limit concerns” to a `LoopDelegate`. [^15] | This is a good insertion point: the delegate can own a stateful Responses WS session and can hide streaming/continuations behind its `call_llm` implementation. |
-| `src/agent/session.rs` | Persistent “thread/turn” model; `Thread.messages()` serializes turns into an OpenAI-style message sequence including `assistant_with_tool_calls` then `tool_result` messages. [^16] | Multi-turn tool calling with Responses requires preserving OpenAI `call_id` values; Axinite currently synthesizes tool IDs when serializing (`turn{n}_{i}`), which is incompatible with Responses tool outputs unless extended. [^17] |
-| `src/agent/compaction.rs` | Axinite-native compaction: truncate, summarize, and optionally write summaries to workspace; summary generation is an LLM call with a summarization prompt. [^18] | This compaction can conflict with server-side compaction. A Responses WS backend should usually disable Axinite summarization in favour of `context_management` compaction, or apply it only as a fallback. [^19] |
+| `src/agent/session.rs` | Persistent “thread/turn” model; `Thread.messages()` serializes turns into an OpenAI-style message sequence including `assistant_with_tool_calls` then `tool_result` messages. [^16] | Multi-turn tool calling with Responses requires preserving OpenAI `call_id` values; IronClaw currently synthesizes tool IDs when serializing (`turn{n}_{i}`), which is incompatible with Responses tool outputs unless extended. [^17] |
+| `src/agent/compaction.rs` | IronClaw-native compaction: truncate, summarize, and optionally write summaries to workspace; summary generation is an LLM call with a summarization prompt. [^18] | This compaction can conflict with server-side compaction. A Responses WS backend should usually disable Axinite summarization in favour of `context_management` compaction, or apply it only as a fallback. [^19] |
 | `providers.json` + `src/llm/registry.rs` | Declares provider protocols and selection; `openai` uses `protocol: open_ai_completions` and model/env settings; registry deserializes built-ins and provides selection helpers. [^20] | Adding a WebSocket Responses backend likely means adding a new `ProviderProtocol` and new provider config keys (e.g., enable `store`, compaction settings, conversation strategy). |
 
-Axinite’s own feature parity matrix indicates it already supports “Context
+IronClaw’s own feature parity matrix indicates it already supports “Context
 compaction” (marked as “Auto summarization”) and implements an “OpenAI protocol”
 gateway at `/v1/chat/completions`, but it does not claim Responses/WebSocket
 support. [^21]
@@ -90,21 +90,21 @@ Practical extension points in-repo:
 
 ### Current vs required capability matrix
 
-| Capability | Axinite today | Required for WebSocket Responses backend | Primary gap driver |
+| Capability | IronClaw today | Required for WebSocket Responses backend | Primary gap driver |
 | --- | --- | --- | --- |
 | Transport | HTTP-style request/response (provider-specific); no provider streaming interface in `LlmProvider`. [^26] | Maintain a persistent WebSocket connection to `wss://api.openai.com/v1/responses`; send `response.create` events; consume streaming server events; enforce “one in-flight response” constraint. [^27] | LlmProvider contract is non-streaming and stateless. [^28] |
-| Stateful continuation | Axinite persists context by replaying/summarizing `ChatMessage[]` from `Thread.turns`. [^29] | Use `previous_response_id` (and optionally `conversation`) to carry state; handle connection-local cache semantics and `previous_response_not_found` on reconnect in ZDR/store=false mode. [^30] | Responses API state model differs from Axinite’s transcript replay model. [^31] |
-| Tool calling | Axinite expects tool calls as `ToolCall{id,name,args}` from `complete_with_tools`; serializes tool calls into an “assistant tool_calls” message preceding tool results. [^32] | Responses uses `function_call` output items with a `call_id`; tool outputs are `function_call_output` input items referencing that `call_id`. [^33] | Axinite does not persist provider-owned `call_id` values (it synthesizes IDs later). [^34] |
+| Stateful continuation | IronClaw persists context by replaying/summarizing `ChatMessage[]` from `Thread.turns`. [^29] | Use `previous_response_id` (and optionally `conversation`) to carry state; handle connection-local cache semantics and `previous_response_not_found` on reconnect in ZDR/store=false mode. [^30] | Responses API state model differs from IronClaw’s transcript replay model. [^31] |
+| Tool calling | IronClaw expects tool calls as `ToolCall{id,name,args}` from `complete_with_tools`; serializes tool calls into an “assistant tool_calls” message preceding tool results. [^32] | Responses uses `function_call` output items with a `call_id`; tool outputs are `function_call_output` input items referencing that `call_id`. [^33] | IronClaw does not persist provider-owned `call_id` values (it synthesizes IDs later). [^34] |
 | Multi-turn tool calling loop | Supported at application level: agentic loop iterates, executes tools, appends tool results, calls LLM again. [^35] | Same loop, but “call next turn” becomes “send a new `response.create` with `previous_response_id` + new `function_call_output` items (and possibly user input)”. [^36] | The loop must own a stateful Responses session and must translate tool lifecycle semantics. [^37] |
-| Agentic compaction | Axinite supports “auto summarization” (LLM summarizes transcript) and/or truncation. [^38] | Enable server-side compaction via `context_management` + `compact_threshold`; preserve opaque compaction items and avoid manual pruning when using `previous_response_id`. [^39] | Compaction item is encrypted and not representable as a simple `ChatMessage`. [^40] |
+| Agentic compaction | IronClaw supports “auto summarization” (LLM summarizes transcript) and/or truncation. [^38] | Enable server-side compaction via `context_management` + `compact_threshold`; preserve opaque compaction items and avoid manual pruning when using `previous_response_id`. [^39] | Compaction item is encrypted and not representable as a simple `ChatMessage`. [^40] |
 | Streaming events | No first-class streaming interface in provider API; internal reasoning assumes full response. [^41] | Parse and act on streaming events (e.g. `response.output_text.delta`, `response.function_call_arguments.delta`, `response.completed`, `error`). [^42] | Need streaming event state machine and buffering. [^43] |
-| Conversation IDs | Axinite has internal `Session`/`Thread` IDs. [^44] | Optionally bind an Axinite thread to an OpenAI `conversation` ID for durable storage across sessions/devices/jobs. [^45] | Requires new persistence + configuration and changes to retention semantics. [^46] |
-| Auth | Axinite uses per-provider env vars and may supply extra headers. [^47] | WebSocket handshake must include `Authorization: Bearer …` header; optionally support org/project scoping headers in a provider-independent way. [^48] | Need a WS client that supports headers and renewals. [^49] |
-| Rate limits & retries | Axinite has retry/circuit breaker modules, but provider-specific behaviour varies. [^50] | Explicitly handle 429/5xx; respect rate limit headers; apply exponential backoff with jitter; avoid retry storms. [^51] | WebSocket adds new failure modes (disconnects, connection lifetime limits). [^52] |
+| Conversation IDs | IronClaw has internal `Session`/`Thread` IDs. [^44] | Optionally bind an Axinite thread to an OpenAI `conversation` ID for durable storage across sessions/devices/jobs. [^45] | Requires new persistence + configuration and changes to retention semantics. [^46] |
+| Auth | IronClaw uses per-provider env vars and may supply extra headers. [^47] | WebSocket handshake must include `Authorization: Bearer …` header; optionally support org/project scoping headers in a provider-independent way. [^48] | Need a WS client that supports headers and renewals. [^49] |
+| Rate limits & retries | IronClaw has retry/circuit breaker modules, but provider-specific behaviour varies. [^50] | Explicitly handle 429/5xx; respect rate limit headers; apply exponential backoff with jitter; avoid retry storms. [^51] | WebSocket adds new failure modes (disconnects, connection lifetime limits). [^52] |
 
 ### Prioritized gaps and how they map to OpenAI Responses features
 
-Axinite’s abstractions line up best with Responses if the Responses WS backend
+IronClaw’s abstractions line up best with Responses if the Responses WS backend
 is treated as a *stateful session object* owned by the agent-loop delegate (not
 as a “pure function” provider).
 
@@ -112,7 +112,7 @@ Priority order:
 
 - **State ownership (highest priority):** WebSocket mode supports
   `previous_response_id` chaining and keeps the most recent response cached
-  in-memory on the connection. If Axinite calls providers in a stateless way, it
+  in-memory on the connection. If IronClaw calls providers in a stateless way, it
   will frequently hit `previous_response_not_found` in `store=false` mode after
   any reconnect, because there is no persisted fallback. [^53]
   This pushes design toward: one WS connection per active Axinite thread (or per
@@ -120,9 +120,9 @@ Priority order:
   reconnect+resume. [^54]
 
 - **Tool lifecycle fidelity:** Responses uses `call_id` as the join key for
-  `function_call_output`. Axinite currently reconstructs tool-call messages and
+  `function_call_output`. IronClaw currently reconstructs tool-call messages and
   invents tool IDs when serializing turns, which works for Chat Completions
-  (because Axinite controls both sides) but fails for Responses because OpenAI
+  (because IronClaw controls both sides) but fails for Responses because OpenAI
   validates the `call_id` linkage. [^55]
   OpenAI call IDs need to be stored per tool call, rather than synthesized later.
 
@@ -162,7 +162,7 @@ end-to-end behaviours.
 - Configuration for:
   - `base_url` (default `https://api.openai.com/v1`, but WS URL must resolve to
     `wss://…/v1/responses`). [^61]
-  - `api_key` env var, plus optional extra headers (Axinite already supports
+  - `api_key` env var, plus optional extra headers (IronClaw already supports
     `extra_headers_env` concept at registry level). [^62]
   - State strategy: `previous_response_id` chaining vs stateless input-array
     chaining vs Conversations API binding. [^63]
@@ -257,7 +257,7 @@ end-to-end behaviours.
 
 - Keep API keys in env/secret manager; never store raw keys in thread/session records.
 - Ensure tool outputs passed into `function_call_output.output` don’t leak
-  secrets unnecessarily (Axinite already truncates tool results for context
+  secrets unnecessarily (IronClaw already truncates tool results for context
   size; apply similar hygiene for outputs sent back to the model). [^89]
 
 #### Telemetry and observability
@@ -295,7 +295,7 @@ end-to-end behaviours.
 ### Architecture overview
 
 The core design choice: implement a **stateful Responses session** owned by the
-agent-loop delegate, and keep Axinite’s generic reasoning loop unchanged (it
+agent-loop delegate, and keep IronClaw’s generic reasoning loop unchanged (it
 still calls `delegate.call_llm()` and then dispatches tool execution). [^96]
 
 Mermaid overview:
@@ -383,18 +383,18 @@ sequenceDiagram
 
 ### Data model mapping
 
-Axinite currently models conversations as a sequence of `ChatMessage` objects
+IronClaw currently models conversations as a sequence of `ChatMessage` objects
 derived from turns, including “assistant tool_calls” messages and “tool result”
 messages. [^101] Responses uses an “input items / output items” model. [^102]
 
 A practical mapping for compatibility:
 
-| Axinite concept | Responses API representation | Notes |
+| IronClaw concept | Responses API representation | Notes |
 | --- | --- | --- |
 | System/user/assistant message | `{"type":"message","role":"user\|assistant\|system","content":[{"type":"input_text","text":...}]}` | WebSocket examples show `message` items inside `input`. [^103] |
 | Tool call request from model | Output item `{"type":"function_call","call_id":...,"name":...,"arguments":"{...}"}` | `call_id` is the join key for outputs. [^104] |
 | Tool output back to model | Input item `{"type":"function_call_output","call_id":...,"output":"..."}` | WebSocket docs demonstrate this in continuation. [^105] |
-| Axinite compaction summary | Prefer: Responses “compaction item” emitted by server when `context_management` triggers | Compaction item is opaque and should be stored, not interpreted. [^106] |
+| IronClaw compaction summary | Prefer: Responses “compaction item” emitted by server when `context_management` triggers | Compaction item is opaque and should be stored, not interpreted. [^106] |
 
 ### Schema examples
 
@@ -443,7 +443,7 @@ Event types in the Responses streaming model include
 
 ### Persistence schema
 
-Axinite already persists session/thread state and compaction summaries in its
+IronClaw already persists session/thread state and compaction summaries in its
 own model. [^109] To support Responses WS robustly, add a small
 provider-specific persistence layer that captures the minimum recovery set:
 
@@ -465,7 +465,7 @@ provider-specific persistence layer that captures the minimum recovery set:
 A relational sketch (names illustrative):
 
 ```sql
--- Conversations/threads are Axinite concepts; store OpenAI linkage in thread metadata or a side table.
+-- Conversations/threads are IronClaw concepts; store OpenAI linkage in thread metadata or a side table.
 CREATE TABLE thread_openai_state (
   thread_id UUID PRIMARY KEY,
   openai_conversation_id TEXT NULL,
@@ -500,7 +500,7 @@ CREATE TABLE openai_response_item (
 
 ### Migration strategy
 
-Axinite’s thread model currently stores tool calls without preserving
+IronClaw’s thread model currently stores tool calls without preserving
 provider-native IDs (it synthesizes stable IDs during `Thread.messages()`
 rendering). [^113] For Responses WS, OpenAI `call_id` values need to be
 preserved long enough to send `function_call_output` items in the next
@@ -653,7 +653,7 @@ Mitigation options (make explicit in configuration):
 
 ### Tool call ID mismatch
 
-Axinite currently synthesizes tool call IDs (`turn{n}_{i}`) when building
+IronClaw currently synthesizes tool call IDs (`turn{n}_{i}`) when building
 `ChatMessage` tool call sequences from stored turns. That will not match
 OpenAI’s `call_id` values for Responses tool calls. [^143]
 
@@ -693,7 +693,7 @@ Because the language/runtime was specified as open-ended, choose libraries per
 deployment environment:
 
 - **Rust (Axinite-native):** `tokio` + a WS client that supports custom headers
-  (e.g. `tokio-tungstenite`), `serde_json` for event decoding, and Axinite’s
+  (e.g. `tokio-tungstenite`), `serde_json` for event decoding, and IronClaw’s
   existing retry/circuit breaker modules for resilience. [^149]
 - **Python:** use a WS client that supports headers and async iteration;
   OpenAI’s examples show the `websocket` module usage for WebSocket mode, but
