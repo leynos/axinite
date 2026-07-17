@@ -204,10 +204,11 @@ The current `Makefile` also includes:
 - `make clean` to remove Cargo build outputs for the root crate and the
   GitHub tool crate.
 
-The Makefile resolves `CARGO` to `~/.cargo/bin/cargo` when that path exists,
-falling back to `cargo` on `$PATH`. `NEXTEST` is derived as `$(CARGO) nextest`
-so both variables consistently use the same Cargo binary. Override them by
-setting `CARGO` or `NEXTEST` in the environment before invoking `make`.
+The Makefile resolves an unset or empty `CARGO` with `command -v cargo`,
+falling back to `~/.cargo/bin/cargo` when Cargo is not on `$PATH`. A non-empty
+caller override is preserved. `NEXTEST` is derived as `$(CARGO) nextest`, so
+both variables consistently use the same Cargo binary. Override them by setting
+`CARGO` or `NEXTEST` in the environment before invoking `make`.
 
 ## 10. Integration test fixture wiring
 
