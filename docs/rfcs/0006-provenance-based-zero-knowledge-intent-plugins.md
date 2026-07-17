@@ -59,11 +59,11 @@ headers and using standard refresh flows. [^6]
 
 ## Current IronClaw components and APIs relevant to an intent model
 
-This section enumerates the IronClaw components involved in the change. Paths and
-symbols are named so the relevant code can be located quickly in the repository;
-GitHub web access is not available in this environment, so line-precise
-citations for repo code are not attached here, but the identifiers below match
-current source.
+This section enumerates the IronClaw components involved in the change. Paths
+and symbols are named so the relevant code can be located quickly in the
+repository; GitHub web access is not available in this environment, so
+line-precise citations for repo code are not attached here, but the
+identifiers below match current source.
 
 ### Current WIT world and host function surface
 
