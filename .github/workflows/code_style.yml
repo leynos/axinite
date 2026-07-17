@@ -50,11 +50,7 @@ jobs:
       CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_LINKER: clang
       CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_RUSTFLAGS: >-
         -C link-arg=-fuse-ld=mold
-      WHITAKER_INSTALLER_VERSION: '0.2.5'
-      # The suite's default toolchain (nightly-2025-09-18) predates rustc
-      # 1.93, which wasmtime 45 requires, so the installer builds the suite
-      # against a late 1.93-cycle nightly instead.
-      WHITAKER_TOOLCHAIN: nightly-2025-12-10
+      WHITAKER_INSTALLER_VERSION: '0.2.6'
     strategy:
       fail-fast: false
       matrix:
@@ -104,7 +100,7 @@ jobs:
               cargo install --locked whitaker-installer --version "${WHITAKER_INSTALLER_VERSION}"
             fi
           fi
-          whitaker-installer --toolchain "${WHITAKER_TOOLCHAIN}"
+          whitaker-installer
       - name: Whitaker Dylint suite
         if: matrix.whitaker
         run: make lint-whitaker
