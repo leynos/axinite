@@ -867,7 +867,8 @@ Ingest flow should:
 - Keep embeddings consistent: use the same embedding model for:
   - Episode vectors at ingestion,
   - Query vectors at recall.
-  IronClaw already records and configures an embedding provider + dimension. [^53]
+  IronClaw already records and configures an embedding provider + dimension.
+  [^53]
 
 ### Apalis workers: jobs, retries, heuristics, reconciliation
 

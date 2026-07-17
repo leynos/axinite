@@ -18,9 +18,9 @@ and a default model `gpt-5-mini`). [^1] This pathway is built around IronClaw’
 IronClaw does have “context compaction” today, but it is IronClaw-native: it
 summarizes or truncates old turns (and optionally writes a summary to workspace)
 before continuing, i.e. it does *not* use OpenAI’s encrypted “compaction item”
-mechanism. [^3] Concretely, IronClaw’s compactor generates a summary by making an
-LLM call with a system summarization prompt and then rewrites the thread
-history. [^4]
+mechanism. [^3] Concretely, IronClaw’s compactor generates a summary by
+making an LLM call with a system summarization prompt and then rewrites the
+thread history. [^4]
 
 OpenAI’s WebSocket Responses API introduces three capabilities that don’t fit
 cleanly into IronClaw’s current “Chat Completions–shaped” adapter:
@@ -112,9 +112,10 @@ Priority order:
 
 - **State ownership (highest priority):** WebSocket mode supports
   `previous_response_id` chaining and keeps the most recent response cached
-  in-memory on the connection. If IronClaw calls providers in a stateless way, it
-  will frequently hit `previous_response_not_found` in `store=false` mode after
-  any reconnect, because there is no persisted fallback. [^53]
+  in-memory on the connection. If IronClaw calls providers in a stateless
+  way, it will frequently hit `previous_response_not_found` in
+  `store=false` mode after any reconnect, because there is no persisted
+  fallback. [^53]
   This pushes design toward: one WS connection per active Axinite thread (or per
   worker that handles that thread), plus explicit policy for
   reconnect+resume. [^54]
