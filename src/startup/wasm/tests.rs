@@ -3,7 +3,7 @@
 use std::collections::HashSet;
 use std::sync::Arc;
 
-use ironclaw::{
+use axinite::{
     app::{AppBuilder, AppBuilderFlags, AppBuilderParams, AppComponents},
     channels::web::log_layer::LogBroadcaster,
     channels::{
@@ -151,7 +151,7 @@ async fn run_init_wasm_channels(
 ) -> super::WasmChannelsInit {
     let mut channel_names: Vec<String> = Vec::new();
     let mut webhook_routes: Vec<axum::Router> = Vec::new();
-    let channels = ironclaw::channels::ChannelManager::new();
+    let channels = axinite::channels::ChannelManager::new();
     let mut reg = ChannelRegistrar {
         channels: &channels,
         channel_names: &mut channel_names,

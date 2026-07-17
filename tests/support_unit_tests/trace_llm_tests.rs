@@ -6,9 +6,7 @@ use crate::trace_llm_test_fixtures::{
     make_completion_request, make_request, simple_tool_call, single_text_step_llm, text_step,
     tool_calls_step,
 };
-use ironclaw::llm::{
-    ChatMessage, FinishReason, LlmProvider, Role, ToolCall, ToolCompletionRequest,
-};
+use axinite::llm::{ChatMessage, FinishReason, LlmProvider, Role, ToolCall, ToolCompletionRequest};
 
 #[derive(Copy, Clone, Debug)]
 struct LlmCounterSnapshot {

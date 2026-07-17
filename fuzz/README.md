@@ -1,4 +1,4 @@
-# IronClaw Fuzz Targets
+# Axinite Fuzz Targets
 
 Fuzz testing for security-critical input parsing paths using
 [cargo-fuzz](https://github.com/rust-fuzz/cargo-fuzz) (libFuzzer).
@@ -41,4 +41,4 @@ done
 1. Create `fuzz/fuzz_targets/fuzz_<name>.rs` following the existing pattern
 2. Add a `[[bin]]` entry in `fuzz/Cargo.toml`
 3. Create `fuzz/corpus/fuzz_<name>/` for seed inputs
-4. Exercise real IronClaw code paths, not just generic serde
+4. Exercise real Axinite code paths, not just generic serde

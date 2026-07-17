@@ -96,9 +96,9 @@ impl ContainerJobManager {
         );
 
         let mut env_vec = vec![
-            format!("IRONCLAW_WORKER_TOKEN={}", token),
-            format!("IRONCLAW_JOB_ID={}", job_id),
-            format!("IRONCLAW_ORCHESTRATOR_URL={}", orchestrator_url),
+            format!("AXINITE_WORKER_TOKEN={}", token),
+            format!("AXINITE_JOB_ID={}", job_id),
+            format!("AXINITE_ORCHESTRATOR_URL={}", orchestrator_url),
         ];
 
         let binds = build_workspace_binds(project_dir.as_ref(), job_id, &mut env_vec).await?;

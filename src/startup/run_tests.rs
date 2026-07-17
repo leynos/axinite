@@ -10,7 +10,7 @@ use super::run_shutdown_sequence;
 async fn shutdown_broadcast_is_always_sent() {
     let shutdown_tx = tokio::sync::broadcast::channel::<()>(1).0;
     let mut rx = shutdown_tx.subscribe();
-    let mcp_process_manager = ironclaw::tools::mcp::McpProcessManager::new();
+    let mcp_process_manager = axinite::tools::mcp::McpProcessManager::new();
 
     run_shutdown_sequence(&shutdown_tx, &mcp_process_manager, &None, &None, &None).await;
 
@@ -28,7 +28,7 @@ impl FailingSideEffects {
 struct ShutdownHarness {
     shutdown_tx: tokio::sync::broadcast::Sender<()>,
     rx: tokio::sync::broadcast::Receiver<()>,
-    mcp_process_manager: ironclaw::tools::mcp::McpProcessManager,
+    mcp_process_manager: axinite::tools::mcp::McpProcessManager,
 }
 
 enum FailureCase {
@@ -43,7 +43,7 @@ fn shutdown_harness() -> ShutdownHarness {
     ShutdownHarness {
         shutdown_tx,
         rx,
-        mcp_process_manager: ironclaw::tools::mcp::McpProcessManager::new(),
+        mcp_process_manager: axinite::tools::mcp::McpProcessManager::new(),
     }
 }
 

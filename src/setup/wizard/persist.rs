@@ -22,7 +22,7 @@ impl SetupWizard {
         }
     }
 
-    /// Write bootstrap environment variables to `~/.ironclaw/.env`.
+    /// Write bootstrap environment variables to `~/.axinite/.env`.
     ///
     /// These are the chicken-and-egg settings needed before the database is
     /// connected (DATABASE_BACKEND, DATABASE_URL, LLM_BACKEND, etc.).
@@ -75,7 +75,7 @@ impl SetupWizard {
         Ok(())
     }
 
-    /// Append database bootstrap variables for `~/.ironclaw/.env`.
+    /// Append database bootstrap variables for `~/.axinite/.env`.
     fn push_database_env(&self, env_vars: &mut Vec<(String, String)>) {
         if let Some(ref backend) = self.settings.database_backend {
             env_vars.push(("DATABASE_BACKEND".to_string(), backend.clone()));
@@ -91,7 +91,7 @@ impl SetupWizard {
         }
     }
 
-    /// Append LLM bootstrap variables for `~/.ironclaw/.env`.
+    /// Append LLM bootstrap variables for `~/.axinite/.env`.
     ///
     /// Same chicken-and-egg problem as DATABASE_BACKEND:
     /// `Config::from_env()` needs the backend before the DB is connected.
@@ -152,7 +152,7 @@ impl SetupWizard {
         }
     }
 
-    /// Append Signal channel bootstrap variables for `~/.ironclaw/.env`
+    /// Append Signal channel bootstrap variables for `~/.axinite/.env`
     /// (chicken-and-egg: config resolves before DB).
     fn push_signal_env(&self, env_vars: &mut Vec<(String, String)>) {
         if let Some(ref url) = self.settings.channels.signal_http_url {

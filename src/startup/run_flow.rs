@@ -1,6 +1,6 @@
 //! Shared start/run sequencing helpers for the startup run loop.
 
-use ironclaw::agent::Agent;
+use axinite::agent::Agent;
 
 /// Coordinates startup side effects, the agent run future, and failure-path
 /// shutdown cleanup.
@@ -29,7 +29,7 @@ where
 /// Propagates any `side_effects.start()` error before the loop begins,
 /// then maps the agent's own error type into `anyhow::Error` on exit.
 pub(crate) async fn run_with_side_effects<Shutdown, ShutdownFuture>(
-    side_effects: ironclaw::app::RuntimeSideEffects,
+    side_effects: axinite::app::RuntimeSideEffects,
     agent: Agent,
     shutdown: Shutdown,
 ) -> anyhow::Result<()>

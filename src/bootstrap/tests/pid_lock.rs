@@ -12,7 +12,7 @@ use super::super::*;
 #[test]
 fn test_pid_lock_acquire_and_drop() {
     let dir = tempdir().expect("create temp dir for pid lock acquire/drop");
-    let pid_path = dir.path().join("ironclaw.pid");
+    let pid_path = dir.path().join("axinite.pid");
 
     let lock = PidLock::acquire_at(pid_path.clone()).expect("acquire initial pid lock");
     assert!(pid_path.exists());
@@ -30,7 +30,7 @@ fn test_pid_lock_acquire_and_drop() {
 #[test]
 fn test_pid_lock_rejects_second_acquire() {
     let dir = tempdir().expect("create temp dir for double-acquire test");
-    let pid_path = dir.path().join("ironclaw.pid");
+    let pid_path = dir.path().join("axinite.pid");
 
     let _lock1 = PidLock::acquire_at(pid_path.clone()).expect("acquire first pid lock");
 
@@ -45,7 +45,7 @@ fn test_pid_lock_rejects_second_acquire() {
 #[test]
 fn test_pid_lock_reclaims_after_drop() {
     let dir = tempdir().expect("create temp dir for reclaim-after-drop test");
-    let pid_path = dir.path().join("ironclaw.pid");
+    let pid_path = dir.path().join("axinite.pid");
 
     let lock = PidLock::acquire_at(pid_path.clone()).expect("acquire pid lock");
     drop(lock);
@@ -57,7 +57,7 @@ fn test_pid_lock_reclaims_after_drop() {
 #[test]
 fn test_pid_lock_reclaims_stale_file_without_flock() {
     let dir = tempdir().expect("create temp dir for stale-file pid lock test");
-    let pid_path = dir.path().join("ironclaw.pid");
+    let pid_path = dir.path().join("axinite.pid");
 
     ambient_fs::write(&pid_path, "4294967294").expect("write stale pid file");
 
@@ -73,7 +73,7 @@ fn test_pid_lock_reclaims_stale_file_without_flock() {
 #[test]
 fn test_pid_lock_handles_corrupt_pid_file() {
     let dir = tempdir().expect("create temp dir for corrupt pid test");
-    let pid_path = dir.path().join("ironclaw.pid");
+    let pid_path = dir.path().join("axinite.pid");
 
     ambient_fs::write(&pid_path, "not-a-number").expect("write corrupt pid file");
 
@@ -84,7 +84,7 @@ fn test_pid_lock_handles_corrupt_pid_file() {
 #[test]
 fn test_pid_lock_creates_parent_dirs() {
     let dir = tempdir().expect("create temp dir for nested pid lock test");
-    let pid_path = dir.path().join("nested").join("deep").join("ironclaw.pid");
+    let pid_path = dir.path().join("nested").join("deep").join("axinite.pid");
 
     let lock = PidLock::acquire_at(pid_path.clone()).expect("acquire nested pid lock");
     assert!(pid_path.exists());
@@ -93,14 +93,14 @@ fn test_pid_lock_creates_parent_dirs() {
 
 #[test]
 fn test_pid_lock_child_helper_holds_lock() {
-    if std::env::var("IRONCLAW_PID_LOCK_CHILD").ok().as_deref() != Some("1") {
+    if std::env::var("AXINITE_PID_LOCK_CHILD").ok().as_deref() != Some("1") {
         return;
     }
 
     let pid_path = PathBuf::from(
-        std::env::var("IRONCLAW_PID_LOCK_PATH").expect("IRONCLAW_PID_LOCK_PATH missing"),
+        std::env::var("AXINITE_PID_LOCK_PATH").expect("AXINITE_PID_LOCK_PATH missing"),
     );
-    let hold_ms = std::env::var("IRONCLAW_PID_LOCK_HOLD_MS")
+    let hold_ms = std::env::var("AXINITE_PID_LOCK_HOLD_MS")
         .ok()
         .and_then(|value| value.parse::<u64>().ok())
         .unwrap_or(3000);
@@ -112,7 +112,7 @@ fn test_pid_lock_child_helper_holds_lock() {
 #[test]
 fn test_pid_lock_rejects_lock_held_by_other_process() {
     let dir = tempdir().expect("create temp dir for external pid lock test");
-    let pid_path = dir.path().join("ironclaw.pid");
+    let pid_path = dir.path().join("axinite.pid");
     let current_exe = std::env::current_exe().expect("locate current test binary");
     let mut child = Command::new(current_exe)
         .args([
@@ -121,9 +121,9 @@ fn test_pid_lock_rejects_lock_held_by_other_process() {
             "--nocapture",
             "--test-threads=1",
         ])
-        .env("IRONCLAW_PID_LOCK_CHILD", "1")
-        .env("IRONCLAW_PID_LOCK_PATH", pid_path.display().to_string())
-        .env("IRONCLAW_PID_LOCK_HOLD_MS", "3000")
+        .env("AXINITE_PID_LOCK_CHILD", "1")
+        .env("AXINITE_PID_LOCK_PATH", pid_path.display().to_string())
+        .env("AXINITE_PID_LOCK_HOLD_MS", "3000")
         .spawn()
         .expect("spawn child test process");
 

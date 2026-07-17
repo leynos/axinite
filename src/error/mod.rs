@@ -1,4 +1,4 @@
-//! Error types for IronClaw.
+//! Error types for Axinite.
 
 pub mod channel;
 pub mod config;

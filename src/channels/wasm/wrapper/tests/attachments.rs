@@ -15,7 +15,7 @@ use super::super::attachments::mime_from_extension;
 #[case("data.csv", "text/csv")]
 #[case("unknown.qqqzzz", "application/octet-stream")]
 #[case("noext", "application/octet-stream")]
-#[case("/home/user/.ironclaw/screenshot.png", "image/png")]
+#[case("/home/user/.axinite/screenshot.png", "image/png")]
 fn test_mime_from_extension(#[case] filename: &str, #[case] expected: &str) {
     assert_eq!(mime_from_extension(filename), expected);
 }

@@ -4,9 +4,9 @@ use std::sync::Arc;
 use std::sync::atomic::Ordering;
 use std::thread;
 
-use ironclaw::error::LlmError;
-use ironclaw::llm::recording::{TraceResponse, TraceStep};
-use ironclaw::llm::{ChatMessage, LlmProvider, ToolCompletionRequest};
+use axinite::error::LlmError;
+use axinite::llm::recording::{TraceResponse, TraceStep};
+use axinite::llm::{ChatMessage, LlmProvider, ToolCompletionRequest};
 use rstest::rstest;
 
 use super::trace_provider::TraceLlm;

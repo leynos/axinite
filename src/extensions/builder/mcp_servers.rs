@@ -85,7 +85,7 @@ async fn register_tools_from_client(
             if is_auth_error(&err_str) {
                 tracing::warn!(
                     "MCP server '{}' requires authentication. \
-                     Run: ironclaw mcp auth {}",
+                     Run: axinite mcp auth {}",
                     server_name,
                     server_name
                 );

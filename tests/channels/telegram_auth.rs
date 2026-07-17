@@ -11,8 +11,8 @@
 
 use std::collections::HashMap;
 
-use ironclaw::channels::wasm::{ChannelCapabilities, WasmChannel, WasmChannelRuntime};
-use ironclaw::pairing::PairingStore;
+use axinite::channels::wasm::{ChannelCapabilities, WasmChannel, WasmChannelRuntime};
+use axinite::pairing::PairingStore;
 use std::sync::Arc;
 
 use crate::support::telegram::{create_test_runtime, load_telegram_module, telegram_wasm_path};

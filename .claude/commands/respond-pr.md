@@ -67,7 +67,7 @@ Wait for user confirmation before proceeding to implementation.
 After user confirms:
 
 1. Implement each fix in the plan.
-2. Run IronClaw's quality gate to verify nothing breaks:
+2. Run Axinite's quality gate to verify nothing breaks:
    - `cargo fmt`
    - `cargo clippy --all --benches --tests --examples --all-features`
    - `cargo test --lib`
@@ -89,6 +89,6 @@ reply explaining why no change was needed.
 - Do not make changes beyond what the review comments ask for. Stay focused.
 - If a comment suggests a change you disagree with, present your reasoning to
   the user during the planning phase rather than silently ignoring it.
-- Follow IronClaw conventions: no `.unwrap()` in production code, use `crate::`
+- Follow Axinite conventions: no `.unwrap()` in production code, use `crate::`
   imports, `thiserror` errors.
 - If changes touch persistence, verify both database backends are updated.

@@ -5,7 +5,7 @@
 use std::path::PathBuf;
 use std::sync::{Arc, RwLock};
 
-use crate::bootstrap::ironclaw_base_dir;
+use crate::bootstrap::axinite_base_dir;
 use crate::channels::{ChannelManager, OutgoingResponse};
 use crate::context::JobContext;
 use crate::tools::tool::{
@@ -26,7 +26,7 @@ pub struct MessageTool {
 
 impl MessageTool {
     pub fn new(channel_manager: Arc<ChannelManager>) -> Self {
-        let base_dir = ironclaw_base_dir();
+        let base_dir = axinite_base_dir();
 
         Self {
             channel_manager,
@@ -155,7 +155,7 @@ impl NativeTool for MessageTool {
         let attachment_count = attachments.len();
 
         // Validate all attachment paths against the sandbox and verify existence.
-        // Allow paths under the base_dir (~/.ironclaw) or /tmp/.
+        // Allow paths under the base_dir (~/.axinite) or /tmp/.
         for path in &attachments {
             let tmp_dir = PathBuf::from("/tmp");
             let resolved =

@@ -11,10 +11,10 @@ tools) followed by a markdown body injected into the LLM context.
 
 ## Trust Model
 
-| Trust Level   | Source                                                             | Tool Access                                       |
-| ------------- | ------------------------------------------------------------------ | ------------------------------------------------- |
-| **Trusted**   | User-placed in `~/.ironclaw/skills/` or workspace `skills/`        | All tools available to the agent                  |
-| **Installed** | Downloaded from ClawHub registry (`~/.ironclaw/installed_skills/`) | Read-only tools only (no shell, file write, HTTP) |
+| Trust Level   | Source                                                            | Tool Access                                       |
+| ------------- | ----------------------------------------------------------------- | ------------------------------------------------- |
+| **Trusted**   | User-placed in `~/.axinite/skills/` or workspace `skills/`        | All tools available to the agent                  |
+| **Installed** | Downloaded from ClawHub registry (`~/.axinite/installed_skills/`) | Read-only tools only (no shell, file write, HTTP) |
 
 ## SKILL.md Format
 

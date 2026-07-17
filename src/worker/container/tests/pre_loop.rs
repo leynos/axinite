@@ -270,8 +270,8 @@ async fn worker_runtime_sanitizes_failure_messages(
 
 #[test]
 fn worker_runtime_from_env_reads_worker_token() {
-    let mut env = EnvVarsGuard::new(&["IRONCLAW_WORKER_TOKEN"]);
-    env.set("IRONCLAW_WORKER_TOKEN", "token-from-env");
+    let mut env = EnvVarsGuard::new(&["AXINITE_WORKER_TOKEN"]);
+    env.set("AXINITE_WORKER_TOKEN", "token-from-env");
 
     let runtime = WorkerRuntime::from_env(WorkerConfig {
         job_id: Uuid::new_v4(),
@@ -294,8 +294,8 @@ fn worker_runtime_from_env_reads_worker_token() {
 
 #[test]
 fn worker_runtime_from_env_returns_missing_token_without_worker_env() {
-    let mut env = EnvVarsGuard::new(&["IRONCLAW_WORKER_TOKEN"]);
-    env.remove("IRONCLAW_WORKER_TOKEN");
+    let mut env = EnvVarsGuard::new(&["AXINITE_WORKER_TOKEN"]);
+    env.remove("AXINITE_WORKER_TOKEN");
 
     let result = WorkerRuntime::from_env(WorkerConfig {
         job_id: Uuid::new_v4(),
@@ -305,6 +305,6 @@ fn worker_runtime_from_env_returns_missing_token_without_worker_env() {
 
     assert!(
         matches!(result, Err(WorkerError::MissingToken)),
-        "expected MissingToken when IRONCLAW_WORKER_TOKEN is absent"
+        "expected MissingToken when AXINITE_WORKER_TOKEN is absent"
     );
 }

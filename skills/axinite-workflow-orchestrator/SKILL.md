@@ -1,9 +1,9 @@
 ---
-name: ironclaw-workflow-orchestrator
-description: "Install and operate a full GitHub issue-to-merge workflow in IronClaw using event-driven and cron routines. Use when setting up or tuning autonomous project orchestration: issue intake, planning, maintainer feedback handling, branch/PR execution, CI/comment follow-up, batched staging review every 8 hours, and memory updates from merge outcomes."
+name: axinite-workflow-orchestrator
+description: "Install and operate a full GitHub issue-to-merge workflow in Axinite using event-driven and cron routines. Use when setting up or tuning autonomous project orchestration: issue intake, planning, maintainer feedback handling, branch/PR execution, CI/comment follow-up, batched staging review every 8 hours, and memory updates from merge outcomes."
 ---
 
-# IronClaw Workflow Orchestrator
+# Axinite Workflow Orchestrator
 
 ## Overview
 

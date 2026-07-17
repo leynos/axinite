@@ -18,7 +18,7 @@ use std::sync::Arc;
 use deadpool_postgres::Config as PoolConfig;
 use secrecy::{ExposeSecret, SecretString};
 
-use crate::bootstrap::ironclaw_base_dir;
+use crate::bootstrap::axinite_base_dir;
 use crate::channels::wasm::{
     ChannelCapabilitiesFile, available_channel_names, install_bundled_channel,
 };
@@ -81,7 +81,7 @@ pub struct SetupConfig {
     pub quick: bool,
 }
 
-/// Interactive setup wizard for IronClaw.
+/// Interactive setup wizard for Axinite.
 pub struct SetupWizard {
     config: SetupConfig,
     settings: Settings,

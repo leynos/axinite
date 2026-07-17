@@ -2,7 +2,7 @@
 
 use std::path::PathBuf;
 
-use ironclaw::import::{ImportError, ImportOptions};
+use axinite::import::{ImportError, ImportOptions};
 
 #[test]
 fn test_import_options_construction() {
@@ -20,7 +20,7 @@ fn test_import_options_construction() {
 
 #[test]
 fn test_import_stats_aggregation() {
-    let stats = ironclaw::import::ImportStats {
+    let stats = axinite::import::ImportStats {
         documents: 5,
         chunks: 10,
         conversations: 3,

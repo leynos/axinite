@@ -126,7 +126,7 @@ impl McpRequest {
                     "sampling": {}
                 },
                 "clientInfo": {
-                    "name": "ironclaw",
+                    "name": "axinite",
                     "version": env!("CARGO_PKG_VERSION")
                 }
             })),

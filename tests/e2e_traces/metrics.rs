@@ -9,12 +9,12 @@ use crate::support::assertions::assert_all_tools_succeeded;
 use crate::support::cleanup::{CleanupGuard, setup_test_dir};
 use crate::support::metrics::{RunResult, ScenarioResult, TraceMetrics, compare_runs};
 use crate::support::test_rig::{TestRig, TestRigBuilder};
-use ironclaw::llm::recording::{TraceResponse, TraceToolCall};
+use axinite::llm::recording::{TraceResponse, TraceToolCall};
 
 use crate::support::trace_types::LlmTrace;
 
-const TEST_DIR: &str = "/tmp/ironclaw_metrics_test";
-const TEST_FILE: &str = "/tmp/ironclaw_metrics_test/hello.txt";
+const TEST_DIR: &str = "/tmp/axinite_metrics_test";
+const TEST_FILE: &str = "/tmp/axinite_metrics_test/hello.txt";
 
 fn localize_tool_call_path(tool_call: &mut TraceToolCall, path: &str) -> bool {
     if !matches!(tool_call.name.as_str(), "write_file" | "read_file") {

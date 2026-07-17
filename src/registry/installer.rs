@@ -2,7 +2,7 @@
 
 use std::path::PathBuf;
 
-use crate::bootstrap::ironclaw_base_dir;
+use crate::bootstrap::axinite_base_dir;
 use crate::registry::manifest::{BundleDefinition, ExtensionManifest, ManifestKind};
 
 mod archive;
@@ -32,9 +32,9 @@ pub struct InstallOutcome {
 pub struct RegistryInstaller {
     /// Root of the repo (parent of `registry/`), used to resolve `source.dir`.
     repo_root: PathBuf,
-    /// Directory for installed tools (`~/.ironclaw/tools/`).
+    /// Directory for installed tools (`~/.axinite/tools/`).
     tools_dir: PathBuf,
-    /// Directory for installed channels (`~/.ironclaw/channels/`).
+    /// Directory for installed channels (`~/.axinite/channels/`).
     channels_dir: PathBuf,
 }
 
@@ -49,7 +49,7 @@ impl RegistryInstaller {
 
     /// Default installer using standard paths.
     pub fn with_defaults(repo_root: PathBuf) -> Self {
-        let base_dir = ironclaw_base_dir();
+        let base_dir = axinite_base_dir();
         Self {
             repo_root,
             tools_dir: base_dir.join("tools"),
@@ -100,7 +100,7 @@ impl RegistryInstaller {
         let mut auth_hints = Vec::new();
         if let Some(shared) = &bundle.shared_auth {
             auth_hints.push(format!(
-                "Bundle uses shared auth '{}'. Run `ironclaw tool auth <any-member>` to authenticate all members.",
+                "Bundle uses shared auth '{}'. Run `axinite tool auth <any-member>` to authenticate all members.",
                 shared
             ));
         }

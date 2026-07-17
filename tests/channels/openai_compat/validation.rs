@@ -4,9 +4,9 @@
 use std::net::SocketAddr;
 use std::sync::Arc;
 
-use ironclaw::channels::web::server::{GatewayState, start_server};
-use ironclaw::channels::web::sse::SseManager;
-use ironclaw::channels::web::ws::WsConnectionTracker;
+use axinite::channels::web::server::{GatewayState, start_server};
+use axinite::channels::web::sse::SseManager;
+use axinite::channels::web::ws::WsConnectionTracker;
 
 use super::helpers::{AUTH_TOKEN, client, start_test_server};
 
@@ -190,8 +190,8 @@ async fn test_no_llm_provider_returns_503() {
         llm_provider: None, // No LLM!
         skill_registry: None,
         skill_catalog: None,
-        chat_rate_limiter: ironclaw::channels::web::server::RateLimiter::new(30, 60),
-        oauth_rate_limiter: ironclaw::channels::web::server::RateLimiter::new(10, 60),
+        chat_rate_limiter: axinite::channels::web::server::RateLimiter::new(30, 60),
+        oauth_rate_limiter: axinite::channels::web::server::RateLimiter::new(10, 60),
         registry_entries: Vec::new(),
         cost_guard: None,
         routine_engine: Arc::new(tokio::sync::RwLock::new(None)),

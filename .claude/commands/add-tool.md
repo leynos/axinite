@@ -7,7 +7,7 @@ model: opus
 
 # Add Tool
 
-Scaffold a new tool called `$ARGUMENTS` for the IronClaw agent. First,
+Scaffold a new tool called `$ARGUMENTS` for the Axinite agent. First,
 determine the tool type and then follow the appropriate path.
 
 ## Step 0: Determine tool type
@@ -51,7 +51,7 @@ Follow this exact pattern (adjust name and description):
 name = "<name>-tool"
 version = "0.1.0"
 edition = "2021"
-description = "<Description> tool for IronClaw (WASM component)"
+description = "<Description> tool for Axinite (WASM component)"
 license = "MIT OR Apache-2.0"
 publish = false
 

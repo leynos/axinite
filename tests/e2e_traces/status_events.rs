@@ -6,7 +6,7 @@
 
 use std::time::Duration;
 
-use ironclaw::channels::StatusUpdate;
+use axinite::channels::StatusUpdate;
 
 use crate::support::test_rig::TestRigBuilder;
 use crate::support::trace_types::LlmTrace;

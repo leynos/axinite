@@ -1,6 +1,6 @@
 #![no_main]
 use libfuzzer_sys::fuzz_target;
-use ironclaw::safety::Sanitizer;
+use axinite::safety::Sanitizer;
 
 fuzz_target!(|data: &[u8]| {
     if let Ok(s) = std::str::from_utf8(data) {
@@ -14,7 +14,7 @@ fuzz_target!(|data: &[u8]| {
         }
         // Verify invariant: critical severity triggers modification
         let has_critical = result.warnings.iter().any(|w| {
-            w.severity == ironclaw::safety::Severity::Critical
+            w.severity == axinite::safety::Severity::Critical
         });
         if has_critical {
             assert!(result.was_modified);

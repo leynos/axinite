@@ -6,11 +6,11 @@ use std::path::Path;
 use std::path::PathBuf;
 
 #[cfg(feature = "docker")]
-use crate::bootstrap::ironclaw_base_dir;
+use crate::bootstrap::axinite_base_dir;
 #[cfg(any(feature = "docker", test))]
 use crate::error::OrchestratorError;
 
-/// Validate that a project directory is under `~/.ironclaw/projects/`.
+/// Validate that a project directory is under `~/.axinite/projects/`.
 ///
 /// Returns the canonicalized path if valid. Creates the base directory if
 /// it doesn't exist (so the prefix check always runs).
@@ -20,14 +20,14 @@ use crate::error::OrchestratorError;
 /// There is a time-of-check/time-of-use gap between `canonicalize()` here
 /// and the actual Docker `binds.push()` in the caller. In a multi-tenant
 /// system a malicious actor could swap a symlink after validation. This is
-/// acceptable in IronClaw's single-tenant design where the user controls
+/// acceptable in Axinite's single-tenant design where the user controls
 /// the filesystem.
 #[cfg(feature = "docker")]
 pub(crate) async fn validate_bind_mount_path(
     dir: &std::path::Path,
     job_id: uuid::Uuid,
 ) -> Result<PathBuf, OrchestratorError> {
-    validate_bind_mount_path_against_base(dir, &ironclaw_base_dir().join("projects"), job_id).await
+    validate_bind_mount_path_against_base(dir, &axinite_base_dir().join("projects"), job_id).await
 }
 
 #[cfg(any(feature = "docker", test))]

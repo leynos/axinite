@@ -5,7 +5,7 @@ use super::*;
 /// Helper to simulate Docker environment for testing
 fn enable_docker_env() {
     unsafe {
-        std::env::set_var("IRONCLAW_IN_DOCKER", "true");
+        std::env::set_var("AXINITE_IN_DOCKER", "true");
     }
 }
 
@@ -97,7 +97,7 @@ fn test_restart_tool_description() {
     let tool = RestartTool;
     let desc = NativeTool::description(&tool);
     assert!(desc.contains("Restart"));
-    assert!(desc.contains("IronClaw"));
+    assert!(desc.contains("Axinite"));
     assert!(desc.contains("exits cleanly"));
     assert!(desc.contains("code 0"));
 }
@@ -299,18 +299,18 @@ fn test_restart_tool_approval_consistent_regardless_of_params() {
 
 #[test]
 fn test_restart_tool_requires_docker_environment() {
-    // Test that restart is rejected when not in Docker (IRONCLAW_IN_DOCKER not set or false)
+    // Test that restart is rejected when not in Docker (AXINITE_IN_DOCKER not set or false)
     // Uses sync test to avoid async/env var ordering issues with test parallelization.
-    let in_docker = std::env::var("IRONCLAW_IN_DOCKER")
+    let in_docker = std::env::var("AXINITE_IN_DOCKER")
         .map(|v| v.to_lowercase() == "true")
         .unwrap_or(false);
 
     // Verify logic: when not in Docker, env var should be false/unset
     if !in_docker {
-        // Simulating what the tool would do when IRONCLAW_IN_DOCKER is not set
+        // Simulating what the tool would do when AXINITE_IN_DOCKER is not set
         assert!(
             !in_docker,
-            "Test environment should have IRONCLAW_IN_DOCKER unset or false"
+            "Test environment should have AXINITE_IN_DOCKER unset or false"
         );
     }
 }

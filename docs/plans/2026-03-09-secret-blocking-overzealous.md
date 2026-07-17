@@ -8,14 +8,14 @@ Status: COMPLETE
 
 ## Purpose / big picture
 
-After this work, a hosted or in-process IronClaw agent should be able to call
+After this work, a hosted or in-process Axinite agent should be able to call
 the curated `github` WebAssembly (WASM) tool with a real `github_token` secret
-stored in IronClaw and have the host inject that credential into the outbound
+stored in Axinite and have the host inject that credential into the outbound
 request without the request being blocked as a secret leak. The observable
 success case is simple: a call such as
 `{"action":"get_repo","owner":"leynos","repo":"mxd"}` reaches `api.github.com`
 and either returns real GitHub data or a real GitHub API error, but it must not
-fail with `Potential secret leak blocked` merely because IronClaw injected its
+fail with `Potential secret leak blocked` merely because Axinite injected its
 own bearer token.
 
 The current failure is specific and already reproducible. The `github` tool
@@ -217,7 +217,7 @@ Suggested commands:
 set -o pipefail
 BRANCH=$(git branch --show-current | tr '/' '-')
 cargo test tools::wasm::wrapper --lib -- --nocapture \
-  | tee /tmp/test-tools-wrapper-order-ironclaw-${BRANCH}.out
+  | tee /tmp/test-tools-wrapper-order-axinite-${BRANCH}.out
 ```
 
 Expected pre-fix evidence:
@@ -275,7 +275,7 @@ Required coverage:
 5. Behavioural coverage for the wrapper execution path: a deterministic local
    HTTP test using a loopback server or request-capture seam that proves a
    clean request with host-injected credentials progresses far enough to
-   attempt the outbound request instead of failing locally in IronClaw. This
+   attempt the outbound request instead of failing locally in Axinite. This
    does not need live access to GitHub; it must only demonstrate that the
    wrapper now passes the host-injected credential through the request
    execution path.
@@ -305,17 +305,17 @@ Suggested commands:
 set -o pipefail
 BRANCH=$(git branch --show-current | tr '/' '-')
 cargo test tools::wasm::wrapper --lib -- --nocapture \
-  | tee /tmp/test-tools-wrapper-ironclaw-${BRANCH}.out
+  | tee /tmp/test-tools-wrapper-axinite-${BRANCH}.out
 set -o pipefail
 BRANCH=$(git branch --show-current | tr '/' '-')
 cargo test safety::leak_detector --lib -- --nocapture \
-  | tee /tmp/test-leak-detector-ironclaw-${BRANCH}.out
+  | tee /tmp/test-leak-detector-axinite-${BRANCH}.out
 ```
 
 ## Milestone 4: Validate the GitHub tool path and adjacent extension surfaces
 
 Once the narrow wrapper fix passes, validate that the `github` extension path
-now behaves like a real API client instead of failing locally inside IronClaw.
+now behaves like a real API client instead of failing locally inside Axinite.
 
 Validation should include:
 
@@ -338,7 +338,7 @@ Suggested commands:
 set -o pipefail
 BRANCH=$(git branch --show-current | tr '/' '-')
 cargo test --test tool_schema_validation -- --nocapture \
-  | tee /tmp/test-tool-schema-ironclaw-${BRANCH}.out
+  | tee /tmp/test-tool-schema-axinite-${BRANCH}.out
 ```
 
 ## Concrete steps
@@ -504,7 +504,7 @@ Work from the repository root.
       top-level module. This follow-up keeps the CLI entry point small without
       changing command behaviour.
 - [x] 2026-03-12 20:42Z: Verified that
-      `docs/writing-web-assembly-tools-for-ironclaw.md` still had broken
+      `docs/writing-web-assembly-tools-for-axinite.md` still had broken
       markdown links resolving relative to `docs/`, then rewrote the WIT,
       source, and test references to correct doc-relative targets so they open
       properly on GitHub. This follow-up keeps the extension authoring guide
@@ -608,7 +608,7 @@ Work from the repository root.
 
 ## Outcomes & Retrospective
 
-IronClaw’s GitHub PAT was not being blocked because GitHub auth was
+Axinite’s GitHub PAT was not being blocked because GitHub auth was
 unsupported; it was being blocked because the generic WASM tool wrapper scanned
 the already-injected outbound request and therefore mistook host-managed
 credentials for exfiltrated secrets. Historical evidence strengthened

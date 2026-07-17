@@ -1,28 +1,28 @@
 //! Project directory resolution for sandbox jobs.
 //!
 //! Every sandbox job gets a persistent bind-mount directory under
-//! `~/.ironclaw/projects/`. These helpers create, canonicalize, and validate
+//! `~/.axinite/projects/`. These helpers create, canonicalize, and validate
 //! those directories, rejecting paths that escape the projects base.
 
 use std::path::{Path, PathBuf};
 
 use uuid::Uuid;
 
-use crate::bootstrap::ironclaw_base_dir;
+use crate::bootstrap::axinite_base_dir;
 use crate::tools::tool::ToolError;
 
 /// The base directory where all project directories must live.
 pub(super) fn projects_base() -> PathBuf {
-    ironclaw_base_dir().join("projects")
+    axinite_base_dir().join("projects")
 }
 
 /// Resolve the project directory, creating it if it doesn't exist.
 ///
-/// Auto-creates `~/.ironclaw/projects/{project_id}/` so every sandbox job has a
+/// Auto-creates `~/.axinite/projects/{project_id}/` so every sandbox job has a
 /// persistent bind mount that survives container teardown.
 ///
 /// When an explicit path is provided (e.g. job restarts reusing the old dir),
-/// it is validated to fall within `~/.ironclaw/projects/` after canonicalization.
+/// it is validated to fall within `~/.axinite/projects/` after canonicalization.
 pub(super) fn resolve_project_dir(
     explicit: Option<PathBuf>,
     project_id: Uuid,

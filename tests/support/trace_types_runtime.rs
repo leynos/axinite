@@ -3,7 +3,7 @@
 use std::path::Path;
 
 use anyhow::{Context, Result};
-use ironclaw::llm::recording::TraceStep;
+use axinite::llm::recording::TraceStep;
 
 use super::trace_types::{LlmTrace, TraceExpects, TraceTurn};
 

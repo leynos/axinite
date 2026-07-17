@@ -8,7 +8,7 @@
 
 ## Summary
 
-IronClaw's current skill system is effectively single-file. It discovers and
+Axinite's current skill system is effectively single-file. It discovers and
 injects `SKILL.md`, but installation from a ZIP currently keeps only the
 top-level `SKILL.md` and discards the rest of the archive. That means skills
 cannot reliably ship bundled reference material, templates, or images.
@@ -30,7 +30,7 @@ Phase 1 explicitly does not support bundled scripts or executables.
 
 ## Problem
 
-### IronClaw currently drops ancillary skill files
+### Axinite currently drops ancillary skill files
 
 The current install flow can fetch a raw `SKILL.md` or a ZIP, but when given a
 ZIP it extracts only the root `SKILL.md`. Sibling files such as
@@ -47,7 +47,7 @@ This creates an awkward mismatch:
 
 ### The current prompt contract is too narrow
 
-IronClaw's skill runtime currently injects only the parsed prompt body from
+Axinite's skill runtime currently injects only the parsed prompt body from
 `SKILL.md`. It does not inject the on-disk skill path, and it does not provide
 any skill-scoped file-reading interface.
 
@@ -70,8 +70,8 @@ API:
 4. Ancillary files are read lazily only when the skill instructions point to
    them.
 
-This is the right progressive-discovery model for IronClaw too. The difference
-is that IronClaw should not depend on raw filesystem tools for this. It should
+This is the right progressive-discovery model for Axinite too. The difference
+is that Axinite should not depend on raw filesystem tools for this. It should
 provide an explicit, skill-scoped, read-only interface.
 
 ## Goals
@@ -179,7 +179,7 @@ The existing HTTPS-only and SSRF protections should remain in force.
 
 ### 3. Unified install endpoint
 
-IronClaw should keep one logical install endpoint that accepts exactly one of:
+Axinite should keep one logical install endpoint that accepts exactly one of:
 
 1. inline `content` for raw `SKILL.md`
 2. `url` for remote `SKILL.md` or `.skill`
@@ -318,7 +318,7 @@ only the specific files it needs.
 
 ### 2. Active-skill injection
 
-When a skill is activated, IronClaw should inject:
+When a skill is activated, Axinite should inject:
 
 1. the skill name
 2. the canonical skill identifier and bundle-relative entrypoint
@@ -338,7 +338,7 @@ An illustrative injected block:
 
 ### 3. New tool: `skill_read_file`
 
-IronClaw should expose a new read-only tool for reading installed skill files.
+Axinite should expose a new read-only tool for reading installed skill files.
 
 Suggested schema:
 
@@ -467,7 +467,7 @@ Validation rules for the typed non-inline error:
 ## Why A Dedicated Tool Instead Of Raw File Paths
 
 The codex harness can rely on ordinary local file reads because the agent runs
-with direct repository and local-path access. IronClaw should not couple skill
+with direct repository and local-path access. Axinite should not couple skill
 usage to general filesystem visibility.
 
 A dedicated `skill_read_file` tool has cleaner boundaries:
@@ -480,7 +480,7 @@ A dedicated `skill_read_file` tool has cleaner boundaries:
 
 ## Data Model Changes
 
-IronClaw should extend the loaded skill model so the runtime retains:
+Axinite should extend the loaded skill model so the runtime retains:
 
 1. the canonical skill identifier exposed to the model
 2. the canonical skill root directory on disk

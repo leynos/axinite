@@ -101,7 +101,7 @@ Two documentation gaps mattered before implementation began.
   duplicated stringly typed conventions in separate worker and orchestrator
   files.
 - Keep the worker startup path injectable at the transport boundary. Reading
-  `IRONCLAW_WORKER_TOKEN` from the environment may remain at the composition
+  `AXINITE_WORKER_TOKEN` from the environment may remain at the composition
   root, but the runtime and tests must be able to supply a prebuilt transport
   adapter directly.
 - Protect boundaries using the existing codebase shape rather than forcing a
@@ -287,7 +287,7 @@ proves that:
 - remote tool order and metadata are stable enough for reasoning-context use
 - executing a remote proxy hits the generic execution route
 - the runtime can be constructed with an explicit transport without relying on
-  `IRONCLAW_WORKER_TOKEN`
+  `AXINITE_WORKER_TOKEN`
 
 ### Behaviour tests
 

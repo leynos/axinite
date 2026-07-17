@@ -61,7 +61,7 @@ pub struct AgentSettings {
 }
 
 fn default_agent_name() -> String {
-    "ironclaw".to_string()
+    "axinite".to_string()
 }
 
 fn default_max_parallel_jobs() -> u32 {
@@ -230,7 +230,7 @@ fn default_sandbox_cpu_shares() -> u32 {
 }
 
 fn default_sandbox_image() -> String {
-    "ironclaw-worker:latest".to_string()
+    "axinite-worker:latest".to_string()
 }
 
 impl Default for SandboxSettings {

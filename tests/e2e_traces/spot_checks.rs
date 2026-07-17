@@ -75,9 +75,9 @@ spot_test!(
 
 #[tokio::test]
 async fn spot_chain_write_read() {
-    let _cleanup = CleanupGuard::new().file("/tmp/ironclaw_spot_test.txt");
+    let _cleanup = CleanupGuard::new().file("/tmp/axinite_spot_test.txt");
     // Ignore error: file may not exist yet, this is intentional cleanup
-    let _ = std::fs::remove_file("/tmp/ironclaw_spot_test.txt");
+    let _ = std::fs::remove_file("/tmp/axinite_spot_test.txt");
 
     let trace = LlmTrace::from_file_async(fixture_path("spot", "chain_write_read.json"))
         .await
@@ -89,7 +89,7 @@ async fn spot_chain_write_read() {
         .expect("failed to build test rig");
 
     rig.send_message(
-        "Write the text 'ironclaw spot check' to /tmp/ironclaw_spot_test.txt \
+        "Write the text 'axinite spot check' to /tmp/axinite_spot_test.txt \
          using the write_file tool, then read it back using read_file.",
     )
     .await;
@@ -98,9 +98,8 @@ async fn spot_chain_write_read() {
     rig.verify_trace_expects(&trace, &responses);
 
     // Extra: verify file on disk (can't express in expects).
-    let content =
-        std::fs::read_to_string("/tmp/ironclaw_spot_test.txt").expect("file should exist");
-    assert_eq!(content, "ironclaw spot check");
+    let content = std::fs::read_to_string("/tmp/axinite_spot_test.txt").expect("file should exist");
+    assert_eq!(content, "axinite spot check");
 
     rig.shutdown();
 }

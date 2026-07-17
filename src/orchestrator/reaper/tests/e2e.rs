@@ -5,11 +5,11 @@ use crate::orchestrator::auth::TokenStore;
 use crate::orchestrator::job_manager::{ContainerJobConfig, ContainerJobManager};
 use anyhow::{Result, anyhow};
 
-const LABEL_JOB_ID: &str = "ironclaw.job_id";
-const LABEL_CREATED_AT: &str = "ironclaw.created_at";
+const LABEL_JOB_ID: &str = "axinite.job_id";
+const LABEL_CREATED_AT: &str = "axinite.created_at";
 
 fn should_run_e2e() -> bool {
-    std::env::var("IRONCLAW_E2E_DOCKER_TESTS").is_ok()
+    std::env::var("AXINITE_E2E_DOCKER_TESTS").is_ok()
 }
 
 async fn connect_or_skip() -> Result<crate::sandbox::container::DockerConnection> {
@@ -50,9 +50,9 @@ async fn create_labelled_container(
 }
 
 #[tokio::test]
-async fn e2e_reaper_lists_ironclaw_containers() {
+async fn e2e_reaper_lists_axinite_containers() {
     if !should_run_e2e() {
-        eprintln!("Skipping e2e test (set IRONCLAW_E2E_DOCKER_TESTS=1 to run)");
+        eprintln!("Skipping e2e test (set AXINITE_E2E_DOCKER_TESTS=1 to run)");
         return;
     }
 
@@ -61,7 +61,7 @@ async fn e2e_reaper_lists_ironclaw_containers() {
         .expect("e2e requires Docker and images available");
 
     let job_id = Uuid::new_v4();
-    let test_name = format!("ironclaw-reaper-test-{}", &job_id.to_string()[..8]);
+    let test_name = format!("axinite-reaper-test-{}", &job_id.to_string()[..8]);
     let container_id =
         create_labelled_container(&docker, &test_name, job_id, chrono::Duration::hours(1))
             .await
@@ -79,9 +79,9 @@ async fn e2e_reaper_lists_ironclaw_containers() {
     .expect("e2e requires SandboxReaper setup to succeed");
 
     let containers = reaper
-        .list_ironclaw_containers()
+        .list_axinite_containers()
         .await
-        .expect("list_ironclaw_containers failed in e2e_reaper_lists_ironclaw_containers");
+        .expect("list_axinite_containers failed in e2e_reaper_lists_axinite_containers");
     assert!(
         containers
             .iter()
@@ -100,7 +100,7 @@ async fn e2e_reaper_lists_ironclaw_containers() {
 #[tokio::test]
 async fn e2e_reaper_removes_orphaned_containers() {
     if !should_run_e2e() {
-        eprintln!("Skipping e2e test (set IRONCLAW_E2E_DOCKER_TESTS=1 to run)");
+        eprintln!("Skipping e2e test (set AXINITE_E2E_DOCKER_TESTS=1 to run)");
         return;
     }
 
@@ -109,7 +109,7 @@ async fn e2e_reaper_removes_orphaned_containers() {
         .expect("e2e requires Docker and images available");
 
     let orphaned_job_id = Uuid::new_v4();
-    let test_name = format!("ironclaw-orphan-test-{}", &orphaned_job_id.to_string()[..8]);
+    let test_name = format!("axinite-orphan-test-{}", &orphaned_job_id.to_string()[..8]);
     let container_id = create_labelled_container(
         &docker,
         &test_name,
@@ -155,7 +155,7 @@ async fn e2e_reaper_removes_orphaned_containers() {
 #[tokio::test]
 async fn e2e_reaper_respects_age_threshold() {
     if !should_run_e2e() {
-        eprintln!("Skipping e2e test (set IRONCLAW_E2E_DOCKER_TESTS=1 to run)");
+        eprintln!("Skipping e2e test (set AXINITE_E2E_DOCKER_TESTS=1 to run)");
         return;
     }
 
@@ -165,8 +165,8 @@ async fn e2e_reaper_respects_age_threshold() {
 
     let recent_job_id = Uuid::new_v4();
     let old_job_id = Uuid::new_v4();
-    let recent_name = format!("ironclaw-recent-test-{}", &recent_job_id.to_string()[..8]);
-    let old_name = format!("ironclaw-old-test-{}", &old_job_id.to_string()[..8]);
+    let recent_name = format!("axinite-recent-test-{}", &recent_job_id.to_string()[..8]);
+    let old_name = format!("axinite-old-test-{}", &old_job_id.to_string()[..8]);
 
     let recent_container_id = create_labelled_container(
         &docker,

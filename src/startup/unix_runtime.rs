@@ -2,7 +2,7 @@
 
 use std::sync::Arc;
 
-use ironclaw::{
+use axinite::{
     app::AppComponents,
     channels::{ChannelSecretUpdater, HttpChannelState, WebhookServer},
     secrets::SecretsStore,
@@ -20,10 +20,10 @@ pub(crate) fn setup_runtime_management_unix(
     http_channel_state: &Option<Arc<HttpChannelState>>,
     shutdown_tx: &tokio::sync::broadcast::Sender<()>,
 ) {
-    let sighup_settings_store: Option<Arc<dyn ironclaw::db::SettingsStore>> = components
+    let sighup_settings_store: Option<Arc<dyn axinite::db::SettingsStore>> = components
         .db
         .as_ref()
-        .map(|db| Arc::clone(db) as Arc<dyn ironclaw::db::SettingsStore>);
+        .map(|db| Arc::clone(db) as Arc<dyn axinite::db::SettingsStore>);
 
     let ReloadManagerArgs {
         settings_store,
@@ -47,7 +47,7 @@ pub(crate) fn setup_runtime_management_unix(
 }
 
 fn build_reload_manager_args(
-    settings_store: Option<Arc<dyn ironclaw::db::SettingsStore>>,
+    settings_store: Option<Arc<dyn axinite::db::SettingsStore>>,
     webhook_server: Option<Arc<tokio::sync::Mutex<WebhookServer>>>,
     secrets_store: Option<Arc<dyn SecretsStore + Send + Sync>>,
     http_channel_state: Option<Arc<HttpChannelState>>,
@@ -65,7 +65,7 @@ fn build_reload_manager_args(
 }
 
 struct ReloadManagerArgs {
-    settings_store: Option<Arc<dyn ironclaw::db::SettingsStore>>,
+    settings_store: Option<Arc<dyn axinite::db::SettingsStore>>,
     webhook_server: Option<Arc<tokio::sync::Mutex<WebhookServer>>>,
     secrets_store: Option<Arc<dyn SecretsStore + Send + Sync>>,
     secret_updaters: Vec<Arc<dyn ChannelSecretUpdater>>,
@@ -77,13 +77,13 @@ struct ReloadManagerArgs {
 /// The spawned handler listens until the shared shutdown broadcast fires.
 #[cfg(unix)]
 fn setup_sighup_reload(
-    sighup_settings_store: Option<Arc<dyn ironclaw::db::SettingsStore>>,
+    sighup_settings_store: Option<Arc<dyn axinite::db::SettingsStore>>,
     webhook_server: &Option<Arc<tokio::sync::Mutex<WebhookServer>>>,
     secrets_store: Option<Arc<dyn SecretsStore + Send + Sync>>,
     secret_updaters: &[Arc<dyn ChannelSecretUpdater>],
     shutdown_tx: &tokio::sync::broadcast::Sender<()>,
 ) {
-    let reload_manager = Arc::new(ironclaw::reload::create_hot_reload_manager(
+    let reload_manager = Arc::new(axinite::reload::create_hot_reload_manager(
         sighup_settings_store.clone(),
         webhook_server.clone(),
         secrets_store,
@@ -98,7 +98,7 @@ fn setup_sighup_reload(
 /// Unix targets.
 #[cfg(unix)]
 pub(crate) fn spawn_sighup_handler(
-    reload_manager: Arc<ironclaw::reload::HotReloadManager>,
+    reload_manager: Arc<axinite::reload::HotReloadManager>,
     shutdown_tx: &tokio::sync::broadcast::Sender<()>,
 ) {
     let mut shutdown_rx = shutdown_tx.subscribe();
@@ -135,7 +135,7 @@ mod tests {
     use std::collections::HashMap;
     use std::sync::Arc;
 
-    use ironclaw::{
+    use axinite::{
         channels::{HttpChannel, HttpChannelState, WebhookServer, WebhookServerConfig},
         config::HttpConfig,
         db::{NativeSettingsStore, SettingKey, SettingsStore, UserId},
@@ -154,7 +154,7 @@ mod tests {
             &self,
             _user_id: UserId,
             _key: SettingKey,
-        ) -> Result<Option<serde_json::Value>, ironclaw::error::DatabaseError> {
+        ) -> Result<Option<serde_json::Value>, axinite::error::DatabaseError> {
             Ok(None)
         }
 
@@ -162,7 +162,7 @@ mod tests {
             &self,
             _user_id: UserId,
             _key: SettingKey,
-        ) -> Result<Option<SettingRow>, ironclaw::error::DatabaseError> {
+        ) -> Result<Option<SettingRow>, axinite::error::DatabaseError> {
             Ok(None)
         }
 
@@ -171,7 +171,7 @@ mod tests {
             _user_id: UserId,
             _key: SettingKey,
             _value: &serde_json::Value,
-        ) -> Result<(), ironclaw::error::DatabaseError> {
+        ) -> Result<(), axinite::error::DatabaseError> {
             Ok(())
         }
 
@@ -179,21 +179,21 @@ mod tests {
             &self,
             _user_id: UserId,
             _key: SettingKey,
-        ) -> Result<bool, ironclaw::error::DatabaseError> {
+        ) -> Result<bool, axinite::error::DatabaseError> {
             Ok(false)
         }
 
         async fn list_settings(
             &self,
             _user_id: UserId,
-        ) -> Result<Vec<SettingRow>, ironclaw::error::DatabaseError> {
+        ) -> Result<Vec<SettingRow>, axinite::error::DatabaseError> {
             Ok(vec![])
         }
 
         async fn get_all_settings(
             &self,
             _user_id: UserId,
-        ) -> Result<HashMap<String, serde_json::Value>, ironclaw::error::DatabaseError> {
+        ) -> Result<HashMap<String, serde_json::Value>, axinite::error::DatabaseError> {
             Ok(HashMap::new())
         }
 
@@ -201,14 +201,14 @@ mod tests {
             &self,
             _user_id: UserId,
             _settings: &HashMap<String, serde_json::Value>,
-        ) -> Result<(), ironclaw::error::DatabaseError> {
+        ) -> Result<(), axinite::error::DatabaseError> {
             Ok(())
         }
 
         async fn has_settings(
             &self,
             _user_id: UserId,
-        ) -> Result<bool, ironclaw::error::DatabaseError> {
+        ) -> Result<bool, axinite::error::DatabaseError> {
             Ok(false)
         }
     }

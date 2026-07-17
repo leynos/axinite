@@ -1,12 +1,12 @@
-# IronClaw E2E Tests
+# Axinite E2E Tests
 
-Browser-level end-to-end tests for the IronClaw web gateway using Python +
+Browser-level end-to-end tests for the Axinite web gateway using Python +
 Playwright.
 
 ## Prerequisites
 
 - Python 3.11+
-- Rust toolchain (for building ironclaw)
+- Rust toolchain (for building axinite)
 - Chromium (installed via Playwright)
 
 ## Setup
@@ -17,9 +17,9 @@ pip install -e .
 playwright install chromium
 ```
 
-## Build ironclaw
+## Build axinite
 
-The tests need the ironclaw binary built with libsql support:
+The tests need the axinite binary built with libsql support:
 
 ```bash
 cargo build --no-default-features --features libsql
@@ -44,7 +44,7 @@ Tests start two subprocesses:
 
 1. **Mock LLM** (`mock_llm.py`) -- fake OpenAI-compat server with canned
    responses
-2. **IronClaw** -- the real binary with gateway enabled, pointing to the mock
+2. **Axinite** -- the real binary with gateway enabled, pointing to the mock
    LLM
 
 Then Playwright drives a headless Chromium browser against the gateway, making
@@ -74,7 +74,7 @@ DOM assertions.
 
 For tabs that depend on external data (extensions, jobs, memory, routines), use
 Playwright's `page.route()` to intercept the browser's HTTP requests to the
-ironclaw gateway and return deterministic fixture JSON. This avoids needing
+axinite gateway and return deterministic fixture JSON. This avoids needing
 real installed binaries, live external services, or complex database setup.
 
 ### Basic pattern

@@ -11,10 +11,10 @@ use tokio::time::timeout;
 use tokio_tungstenite::tungstenite::Message;
 use tokio_tungstenite::tungstenite::client::IntoClientRequest;
 
-use ironclaw::channels::IncomingMessage;
-use ironclaw::channels::web::server::{GatewayState, start_server};
-use ironclaw::channels::web::sse::SseManager;
-use ironclaw::channels::web::ws::WsConnectionTracker;
+use axinite::channels::IncomingMessage;
+use axinite::channels::web::server::{GatewayState, start_server};
+use axinite::channels::web::sse::SseManager;
+use axinite::channels::web::ws::WsConnectionTracker;
 
 pub(super) const AUTH_TOKEN: &str = "test-token-12345";
 pub(super) const TIMEOUT: Duration = Duration::from_secs(5);
@@ -47,8 +47,8 @@ pub(super) async fn start_test_server() -> (
         llm_provider: None,
         skill_registry: None,
         skill_catalog: None,
-        chat_rate_limiter: ironclaw::channels::web::server::RateLimiter::new(30, 60),
-        oauth_rate_limiter: ironclaw::channels::web::server::RateLimiter::new(10, 60),
+        chat_rate_limiter: axinite::channels::web::server::RateLimiter::new(30, 60),
+        oauth_rate_limiter: axinite::channels::web::server::RateLimiter::new(10, 60),
         registry_entries: Vec::new(),
         cost_guard: None,
         routine_engine: Arc::new(tokio::sync::RwLock::new(None)),

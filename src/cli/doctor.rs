@@ -1,4 +1,4 @@
-//! `ironclaw doctor` - active health diagnostics.
+//! `axinite doctor` - active health diagnostics.
 //!
 //! Probes external dependencies and validates configuration to surface
 //! problems before they bite during normal operation. Each check reports
@@ -150,7 +150,7 @@ async fn run_external_binary_checks(passed: &mut u32, failed: &mut u32, skipped:
 
 /// Run all diagnostic checks and print results.
 pub async fn run_doctor_command() -> anyhow::Result<()> {
-    println!("IronClaw Doctor");
+    println!("Axinite Doctor");
     println!("===============\n");
 
     let mut passed = 0u32;

@@ -27,7 +27,7 @@ pub(super) async fn build_workspace_binds(
     if let Some(dir) = project_dir {
         let canonical = bind_mount::validate_bind_mount_path(dir, job_id).await?;
         binds.push(format!("{}:/workspace:rw", canonical.display()));
-        env_vec.push("IRONCLAW_WORKSPACE=/workspace".to_string());
+        env_vec.push("AXINITE_WORKSPACE=/workspace".to_string());
     }
 
     Ok(binds)
@@ -132,8 +132,8 @@ pub(super) fn build_cmd(
 /// Build the Docker container name for a job mode.
 pub(super) fn container_name(mode: JobMode, job_id: Uuid) -> String {
     match mode {
-        JobMode::Worker => format!("ironclaw-worker-{}", job_id),
-        JobMode::ClaudeCode => format!("ironclaw-claude-{}", job_id),
+        JobMode::Worker => format!("axinite-worker-{}", job_id),
+        JobMode::ClaudeCode => format!("axinite-claude-{}", job_id),
     }
 }
 
@@ -161,8 +161,8 @@ pub(super) fn build_container_config(
     } = params;
 
     let mut labels = std::collections::HashMap::new();
-    labels.insert("ironclaw.job_id".to_string(), job_id.to_string());
-    labels.insert("ironclaw.created_at".to_string(), Utc::now().to_rfc3339());
+    labels.insert("axinite.job_id".to_string(), job_id.to_string());
+    labels.insert("axinite.created_at".to_string(), Utc::now().to_rfc3339());
 
     let config = ContainerCreateBody {
         image: Some(image),

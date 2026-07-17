@@ -1,7 +1,7 @@
 ---
 name: web-ui-test
 version: 0.1.0
-description: Test the IronClaw web UI using the Claude for Chrome browser extension.
+description: Test the Axinite web UI using the Claude for Chrome browser extension.
 activation:
   keywords:
     - test web ui
@@ -19,12 +19,12 @@ activation:
 
 # Web UI Testing with Claude for Chrome
 
-Use this skill when manually testing the IronClaw web gateway UI via the Claude
+Use this skill when manually testing the Axinite web gateway UI via the Claude
 for Chrome browser extension.
 
 ## Prerequisites
 
-- IronClaw must be running with `GATEWAY_ENABLED=true`
+- Axinite must be running with `GATEWAY_ENABLED=true`
 - Note the gateway URL (default: `http://127.0.0.1:3000/`) and auth token
 - The Claude for Chrome extension must be installed and connected
 
@@ -34,7 +34,7 @@ for Chrome browser extension.
 CLI_ENABLED=false GATEWAY_AUTH_TOKEN=<your-token> cargo run
 ```
 
-Wait for "Agent ironclaw ready and listening" in the logs before proceeding.
+Wait for "Agent axinite ready and listening" in the logs before proceeding.
 
 ## Test Checklist
 
@@ -100,7 +100,7 @@ Wait for "Agent ironclaw ready and listening" in the logs before proceeding.
 After testing, remove any test-installed skills:
 
 ```bash
-rm -rf ~/.ironclaw/installed_skills/<skill-name>
+rm -rf ~/.axinite/installed_skills/<skill-name>
 ```
 
 Stop the server with Ctrl+C or by killing the process.

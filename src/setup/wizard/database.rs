@@ -32,7 +32,7 @@ impl SetupWizard {
 
         #[allow(unreachable_code)]
         Err(SetupError::Database(
-            "No database configured. Run full setup first (ironclaw onboard).".to_string(),
+            "No database configured. Run full setup first (axinite onboard).".to_string(),
         ))
     }
 
@@ -41,7 +41,7 @@ impl SetupWizard {
     async fn reconnect_postgres(&mut self) -> Result<(), SetupError> {
         let url = std::env::var("DATABASE_URL").map_err(|_| {
             SetupError::Database(
-                "DATABASE_URL not set. Run full setup first (ironclaw onboard).".to_string(),
+                "DATABASE_URL not set. Run full setup first (axinite onboard).".to_string(),
             )
         })?;
 
@@ -288,7 +288,7 @@ impl SetupWizard {
         }
 
         println!();
-        print_info("IronClaw uses an embedded SQLite database (libSQL).");
+        print_info("Axinite uses an embedded SQLite database (libSQL).");
         print_info("No external database server required.");
         println!();
 

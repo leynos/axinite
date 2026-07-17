@@ -1,11 +1,11 @@
 //! Compile-contract fixture for PostgreSQL database backend.
 //!
-//! This module validates that the `ironclaw::db` trait forwarders compile
+//! This module validates that the `axinite::db` trait forwarders compile
 //! correctly when used with the PostgreSQL backend (`PgBackend`).
 //! It serves as a trybuild test target to ensure the public DB trait
 //! surface remains compatible with PostgreSQL implementations.
 
-use ironclaw::db::{
+use axinite::db::{
     ConversationStore, Database, SettingKey, SettingsStore, UserId,
 };
 
@@ -32,11 +32,11 @@ where
     let _ = Database::run_migrations(db);
 }
 
-fn assert_postgres_backend(db: &ironclaw::db::postgres::PgBackend) {
+fn assert_postgres_backend(db: &axinite::db::postgres::PgBackend) {
     assert_dyn_database(db);
 }
 
 fn main() {
     // Force monomorphization of the generic assert function for PgBackend
-    let _: fn(&ironclaw::db::postgres::PgBackend) = assert_postgres_backend;
+    let _: fn(&axinite::db::postgres::PgBackend) = assert_postgres_backend;
 }

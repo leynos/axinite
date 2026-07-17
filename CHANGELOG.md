@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- rename the project, crate, and binary from ironclaw to axinite, retaining IronClaw provenance; the project remains a fork of [nearai/ironclaw](https://github.com/nearai/ironclaw)
+- **BREAKING**: default base directory is now `~/.axinite` (was `~/.ironclaw`); environment variables are now `AXINITE_*` (were `IRONCLAW_*`); systemd/launchd service names are renamed (`axinite.service`, `com.axinite.daemon`). Users must move `~/.ironclaw` to `~/.axinite` and rename any `IRONCLAW_*` environment variables
+
 ## [0.18.0](https://github.com/nearai/ironclaw/compare/v0.17.0...v0.18.0) - 2026-03-11
 
 ### Other

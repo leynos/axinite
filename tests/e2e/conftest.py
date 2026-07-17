@@ -1,6 +1,6 @@
 """pytest fixtures for E2E tests.
 
-Session-scoped: build binary, start mock LLM, start ironclaw, launch browser.
+Session-scoped: build binary, start mock LLM, start axinite, launch browser.
 Function-scoped: fresh browser context and page per test.
 """
 
@@ -21,7 +21,7 @@ from helpers import AUTH_TOKEN, wait_for_port_line, wait_for_ready
 ROOT = Path(__file__).resolve().parent.parent.parent
 
 # Temp directory for the libSQL database file (cleaned up automatically)
-_DB_TMPDIR = tempfile.TemporaryDirectory(prefix="ironclaw-e2e-")
+_DB_TMPDIR = tempfile.TemporaryDirectory(prefix="axinite-e2e-")
 
 
 def _find_free_port() -> int:
@@ -32,11 +32,11 @@ def _find_free_port() -> int:
 
 
 @pytest.fixture(scope="session")
-def ironclaw_binary():
-    """Ensure ironclaw binary is built. Returns the binary path."""
-    binary = ROOT / "target" / "debug" / "ironclaw"
+def axinite_binary():
+    """Ensure axinite binary is built. Returns the binary path."""
+    binary = ROOT / "target" / "debug" / "axinite"
     if not binary.exists():
-        print("Building ironclaw (this may take a while)...")
+        print("Building axinite (this may take a while)...")
         subprocess.run(
             ["cargo", "build", "--no-default-features", "--features", "libsql"],
             cwd=ROOT,
@@ -70,14 +70,14 @@ async def mock_llm_server():
 
 
 @pytest.fixture(scope="session")
-async def ironclaw_server(ironclaw_binary, mock_llm_server):
-    """Start the ironclaw gateway. Yields the base URL."""
+async def axinite_server(axinite_binary, mock_llm_server):
+    """Start the axinite gateway. Yields the base URL."""
     gateway_port = _find_free_port()
     env = {
         # Minimal env: PATH for process spawning, HOME for Rust/cargo defaults
         "PATH": os.environ.get("PATH", "/usr/bin:/bin"),
         "HOME": os.environ.get("HOME", "/tmp"),
-        "RUST_LOG": "ironclaw=info",
+        "RUST_LOG": "axinite=info",
         "RUST_BACKTRACE": "1",
         "GATEWAY_ENABLED": "true",
         "GATEWAY_HOST": "127.0.0.1",
@@ -107,7 +107,7 @@ async def ironclaw_server(ironclaw_binary, mock_llm_server):
         if key.startswith(COV_ENV_PREFIXES) or key in COV_ENV_EXTRAS:
             env[key] = val
     proc = await asyncio.create_subprocess_exec(
-        ironclaw_binary, "--no-onboard",
+        axinite_binary, "--no-onboard",
         stdin=asyncio.subprocess.DEVNULL,
         stdout=asyncio.subprocess.PIPE,
         stderr=asyncio.subprocess.PIPE,
@@ -129,7 +129,7 @@ async def ironclaw_server(ironclaw_binary, mock_llm_server):
         stderr_text = stderr_bytes.decode("utf-8", errors="replace")
         proc.kill()
         pytest.fail(
-            f"ironclaw server failed to start on port {gateway_port} "
+            f"axinite server failed to start on port {gateway_port} "
             f"(returncode={returncode}).\nstderr:\n{stderr_text}"
         )
     finally:
@@ -145,7 +145,7 @@ async def ironclaw_server(ironclaw_binary, mock_llm_server):
 
 
 @pytest.fixture(scope="session")
-async def browser(ironclaw_server):
+async def browser(axinite_server):
     """Session-scoped Playwright browser instance.
 
     Reuses a single browser process across all tests. Individual tests
@@ -161,11 +161,11 @@ async def browser(ironclaw_server):
 
 
 @pytest.fixture
-async def page(ironclaw_server, browser):
+async def page(axinite_server, browser):
     """Fresh Playwright browser context + page, navigated to the gateway with auth."""
     context = await browser.new_context(viewport={"width": 1280, "height": 720})
     pg = await context.new_page()
-    await pg.goto(f"{ironclaw_server}/?token={AUTH_TOKEN}")
+    await pg.goto(f"{axinite_server}/?token={AUTH_TOKEN}")
     # Wait for the app to initialize (auth screen hidden, SSE connected)
     await pg.wait_for_selector("#auth-screen", state="hidden", timeout=15000)
     yield pg

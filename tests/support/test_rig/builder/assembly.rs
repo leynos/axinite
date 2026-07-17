@@ -63,8 +63,8 @@ impl TestRigBuilder {
         components: &mut AppComponents,
         db: &Arc<dyn Database>,
     ) -> anyhow::Result<()> {
-        use ironclaw::agent::routine_engine::{RoutineEngine, RoutineEngineDeps};
-        use ironclaw::config::RoutineConfig;
+        use axinite::agent::routine_engine::{RoutineEngine, RoutineEngineDeps};
+        use axinite::config::RoutineConfig;
 
         if components.db.is_none() {
             return Ok(());
@@ -95,10 +95,10 @@ impl TestRigBuilder {
 
     fn register_skills(&self, components: &mut AppComponents) {
         let registry = Arc::new(std::sync::RwLock::new(
-            ironclaw::skills::SkillRegistry::new(components.config.skills.local_dir.clone())
+            axinite::skills::SkillRegistry::new(components.config.skills.local_dir.clone())
                 .with_installed_dir(components.config.skills.installed_dir.clone()),
         ));
-        let catalogue = ironclaw::skills::catalog::shared_catalog();
+        let catalogue = axinite::skills::catalog::shared_catalog();
         components
             .tools
             .register_skill_tools(Arc::clone(&registry), Arc::clone(&catalogue));
@@ -134,7 +134,7 @@ impl TestRigBuilder {
     async fn setup_database_and_config(
         &self,
     ) -> anyhow::Result<(tempfile::TempDir, Arc<dyn Database>, Config)> {
-        use ironclaw::db::libsql::LibSqlBackend;
+        use axinite::db::libsql::LibSqlBackend;
 
         let temp_dir = tempfile::tempdir().context("failed to create temp dir")?;
         let db_path = temp_dir.path().join("test_rig.db");
@@ -202,7 +202,7 @@ impl TestRigBuilder {
     ) -> (
         AgentDeps,
         Arc<dyn Database>,
-        Option<Arc<ironclaw::workspace::Workspace>>,
+        Option<Arc<axinite::workspace::Workspace>>,
     ) {
         let db_ref = components
             .db
@@ -224,7 +224,7 @@ impl TestRigBuilder {
             cost_guard: components.cost_guard,
             sse_tx: None,
             http_interceptor: http_replay.map(|interceptor| {
-                Arc::new(interceptor) as Arc<dyn ironclaw::llm::recording::HttpInterceptor>
+                Arc::new(interceptor) as Arc<dyn axinite::llm::recording::HttpInterceptor>
             }),
             transcription: None,
             document_extraction: None,
@@ -255,13 +255,13 @@ impl TestRigBuilder {
     /// Build the test rig, creating a real agent and spawning it in the background.
     #[cfg(feature = "libsql")]
     pub async fn build(self) -> anyhow::Result<TestRig> {
-        use ironclaw::channels::ChannelManager;
+        use axinite::channels::ChannelManager;
         let (temp_dir, db, config) = self.setup_database_and_config().await?;
         let (base_llm, trace_llm_ref) = self.resolve_llm();
         let instrumented = Arc::new(InstrumentedLlm::new(base_llm));
         let llm: Arc<dyn LlmProvider> = Arc::clone(&instrumented) as Arc<dyn LlmProvider>;
         let mut components = self.build_components(config, Arc::clone(&db), llm).await?;
-        let scheduler_slot: ironclaw::tools::builtin::SchedulerSlot =
+        let scheduler_slot: axinite::tools::builtin::SchedulerSlot =
             Arc::new(tokio::sync::RwLock::new(None));
         register_job_tools_for_tests(&components, &scheduler_slot);
         self.register_optional_subsystems(&mut components, &db, &temp_dir)
@@ -279,7 +279,7 @@ impl TestRigBuilder {
             .register_message_tools(Arc::clone(&channels))
             .await;
         let routine_config = if self.enable_routines {
-            Some(ironclaw::config::RoutineConfig {
+            Some(axinite::config::RoutineConfig {
                 enabled: true,
                 cron_check_interval_secs: 60,
                 max_concurrent_routines: 3,

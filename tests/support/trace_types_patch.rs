@@ -1,6 +1,6 @@
 //! Path-mutation helpers for trace fixtures used by end-to-end tests.
 
-use ironclaw::llm::recording::{TraceResponse, TraceStep};
+use axinite::llm::recording::{TraceResponse, TraceStep};
 
 use super::trace_types::LlmTrace;
 
@@ -13,7 +13,7 @@ impl LlmTrace {
     ///
     /// ```rust,ignore
     /// # fn load_trace_fixture() -> crate::support::trace_types::LlmTrace {
-    /// #     use ironclaw::llm::recording::{TraceResponse, TraceStep, TraceToolCall};
+    /// #     use axinite::llm::recording::{TraceResponse, TraceStep, TraceToolCall};
     /// #     crate::support::trace_types::LlmTrace::single_turn(
     /// #         "example-model",
     /// #         "patch the path",

@@ -177,16 +177,16 @@ fn test_save_to_rejects_deep_traversal() {
 
 #[test]
 fn test_save_to_accepts_simple_tmp_path() {
-    let path = validate_save_to_path("/tmp/test_ironclaw_photo.jpg").unwrap();
+    let path = validate_save_to_path("/tmp/test_axinite_photo.jpg").unwrap();
     assert!(path.starts_with("/tmp"));
     let _ = ambient_fs::remove_file(&path);
 }
 
 #[test]
 fn test_save_to_accepts_nested_tmp_path() {
-    let path = validate_save_to_path("/tmp/ironclaw_test_subdir/nested/file.png").unwrap();
+    let path = validate_save_to_path("/tmp/axinite_test_subdir/nested/file.png").unwrap();
     assert!(path.starts_with("/tmp"));
-    let _ = ambient_fs::remove_dir_all("/tmp/ironclaw_test_subdir");
+    let _ = ambient_fs::remove_dir_all("/tmp/axinite_test_subdir");
 }
 
 #[test]

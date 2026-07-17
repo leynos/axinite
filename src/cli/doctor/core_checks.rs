@@ -4,7 +4,7 @@
 
 use std::path::PathBuf;
 
-use crate::bootstrap::ironclaw_base_dir;
+use crate::bootstrap::axinite_base_dir;
 use crate::config::EnvContext;
 use crate::settings::Settings;
 
@@ -48,7 +48,7 @@ fn missing_session_result(session_path: &std::path::Path) -> CheckResult {
         return CheckResult::Pass("API key configured".into());
     }
     CheckResult::Fail(format!(
-        "session file not found at {}. Run `ironclaw onboard`",
+        "session file not found at {}. Run `axinite onboard`",
         session_path.display()
     ))
 }
@@ -216,7 +216,7 @@ async fn try_pgvector_check() -> Result<(), String> {
 // ── Workspace directory ─────────────────────────────────────
 
 pub(super) fn check_workspace_dir() -> CheckResult {
-    let dir = ironclaw_base_dir();
+    let dir = axinite_base_dir();
 
     if dir.exists() {
         if dir.is_dir() {

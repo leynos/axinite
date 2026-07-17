@@ -66,7 +66,7 @@ async fn test_discover_wasm_channels_empty_dir() {
 #[tokio::test]
 async fn test_discover_wasm_channels_nonexistent_dir() {
     let channels =
-        discover_wasm_channels(&std::env::temp_dir().join("ironclaw_nonexistent_dir_abcxyz123"))
+        discover_wasm_channels(&std::env::temp_dir().join("axinite_nonexistent_dir_abcxyz123"))
             .await;
     assert!(channels.is_empty());
 }

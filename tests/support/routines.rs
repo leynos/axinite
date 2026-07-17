@@ -13,14 +13,14 @@ use chrono::Utc;
 use tempfile::TempDir;
 use uuid::Uuid;
 
-use ironclaw::agent::routine::{NotifyConfig, Routine, RoutineAction, RoutineGuardrails, Trigger};
-use ironclaw::agent::routine_engine::{RoutineEngine, RoutineEngineDeps};
-use ironclaw::channels::IncomingMessage;
-use ironclaw::config::{RoutineConfig, SafetyConfig};
-use ironclaw::db::Database;
-use ironclaw::safety::SafetyLayer;
-use ironclaw::tools::ToolRegistry;
-use ironclaw::workspace::Workspace;
+use axinite::agent::routine::{NotifyConfig, Routine, RoutineAction, RoutineGuardrails, Trigger};
+use axinite::agent::routine_engine::{RoutineEngine, RoutineEngineDeps};
+use axinite::channels::IncomingMessage;
+use axinite::config::{RoutineConfig, SafetyConfig};
+use axinite::db::Database;
+use axinite::safety::SafetyLayer;
+use axinite::tools::ToolRegistry;
+use axinite::workspace::Workspace;
 
 use crate::support::trace_provider::TraceLlm;
 use crate::support::trace_types::LlmTrace;
@@ -61,7 +61,7 @@ mod db {
     /// - `backend.run_migrations` fails to apply migrations:
     ///   `"failed to run routine test database migrations"`.
     pub async fn create_test_db() -> Result<(Arc<dyn Database>, TempDir)> {
-        use ironclaw::db::libsql::LibSqlBackend;
+        use axinite::db::libsql::LibSqlBackend;
 
         let temp_dir = tempfile::tempdir().context("failed to create routine test tempdir")?;
         let db_path = temp_dir.path().join("test.db");
@@ -146,7 +146,7 @@ mod engine {
         ws: Arc<Workspace>,
     ) -> (
         Arc<RoutineEngine>,
-        tokio::sync::mpsc::Receiver<ironclaw::channels::OutgoingResponse>,
+        tokio::sync::mpsc::Receiver<axinite::channels::OutgoingResponse>,
     ) {
         let llm = Arc::new(TraceLlm::from_trace(trace));
         let (notify_tx, notify_rx) = tokio::sync::mpsc::channel(16);
@@ -210,7 +210,7 @@ mod assertions {
         msg: &str,
     ) {
         let fired = engine
-            .emit_system_event(ironclaw::agent::routine_engine::SystemEventRef {
+            .emit_system_event(axinite::agent::routine_engine::SystemEventRef {
                 source: spec.source,
                 event_type: spec.event_type,
                 payload: &spec.payload,
@@ -245,8 +245,8 @@ pub mod engine_sync {
     use anyhow::anyhow;
     use uuid::Uuid;
 
-    use ironclaw::agent::routine_engine::RoutineEngine;
-    use ironclaw::db::Database;
+    use axinite::agent::routine_engine::RoutineEngine;
+    use axinite::db::Database;
 
     /// Waits briefly to let spawned routine work make progress before persistence checks.
     ///

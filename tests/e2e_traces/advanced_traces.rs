@@ -53,8 +53,8 @@ async fn multi_turn_memory_coherence() {
 
 #[tokio::test]
 async fn user_steering() {
-    let _cleanup = CleanupGuard::new().file("/tmp/ironclaw_steer_test.txt");
-    let _ = tokio::fs::remove_file("/tmp/ironclaw_steer_test.txt").await;
+    let _cleanup = CleanupGuard::new().file("/tmp/axinite_steer_test.txt");
+    let _ = tokio::fs::remove_file("/tmp/axinite_steer_test.txt").await;
 
     let trace = LlmTrace::from_file_async(fixture_path("advanced", "steering.json"))
         .await
@@ -71,7 +71,7 @@ async fn user_steering() {
     assert!(!all_responses[1].is_empty(), "Turn 2: no response");
 
     // Extra: verify file on disk after steering.
-    let content = tokio::fs::read_to_string("/tmp/ironclaw_steer_test.txt")
+    let content = tokio::fs::read_to_string("/tmp/axinite_steer_test.txt")
         .await
         .expect("steer test file should exist");
     assert_eq!(
@@ -96,8 +96,8 @@ async fn user_steering() {
 
 #[tokio::test]
 async fn tool_error_recovery() {
-    let _cleanup = CleanupGuard::new().file("/tmp/ironclaw_recovery_test.txt");
-    let _ = tokio::fs::remove_file("/tmp/ironclaw_recovery_test.txt").await;
+    let _cleanup = CleanupGuard::new().file("/tmp/axinite_recovery_test.txt");
+    let _ = tokio::fs::remove_file("/tmp/axinite_recovery_test.txt").await;
 
     let trace = LlmTrace::from_file_async(fixture_path("advanced", "tool_error_recovery.json"))
         .await
@@ -139,7 +139,7 @@ async fn tool_error_recovery() {
     .expect("timed out waiting for successful recovery write");
 
     // The second write should have succeeded on disk.
-    let content = tokio::fs::read_to_string("/tmp/ironclaw_recovery_test.txt")
+    let content = tokio::fs::read_to_string("/tmp/axinite_recovery_test.txt")
         .await
         .expect("recovery file should exist");
     assert_eq!(content, "recovered successfully");
@@ -159,7 +159,7 @@ async fn tool_error_recovery() {
 
 #[tokio::test]
 async fn long_tool_chain() {
-    let test_dir = "/tmp/ironclaw_chain_test";
+    let test_dir = "/tmp/axinite_chain_test";
     let _cleanup = CleanupGuard::new().dir(test_dir);
     setup_test_dir(test_dir).expect("failed to create long tool chain test directory");
 
@@ -173,7 +173,7 @@ async fn long_tool_chain() {
         .expect("failed to build test rig");
 
     rig.send_message(
-        "Create a daily log at /tmp/ironclaw_chain_test/log.md, \
+        "Create a daily log at /tmp/axinite_chain_test/log.md, \
          update it with afternoon activities, write an end-of-day summary, \
          then read both files and give me a report.",
     )

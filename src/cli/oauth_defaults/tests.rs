@@ -15,8 +15,8 @@ use crate::testing::test_utils::EnvVarsGuard;
 fn oauth_env_guard() -> EnvVarsGuard {
     EnvVarsGuard::new(&[
         "OAUTH_CALLBACK_HOST",
-        "IRONCLAW_OAUTH_CALLBACK_URL",
-        "IRONCLAW_INSTANCE_NAME",
+        "AXINITE_OAUTH_CALLBACK_URL",
+        "AXINITE_INSTANCE_NAME",
         "OPENCLAW_INSTANCE_NAME",
     ])
 }
@@ -43,7 +43,7 @@ fn test_callback_host_default(mut oauth_env_guard: EnvVarsGuard) {
 #[rstest]
 fn test_callback_host_env_override(mut oauth_env_guard: EnvVarsGuard) {
     oauth_env_guard.set("OAUTH_CALLBACK_HOST", "203.0.113.10");
-    oauth_env_guard.remove("IRONCLAW_OAUTH_CALLBACK_URL");
+    oauth_env_guard.remove("AXINITE_OAUTH_CALLBACK_URL");
     assert_eq!(callback_host(), "203.0.113.10");
     let url = callback_url();
     assert!(url.contains("203.0.113.10"), "url was: {url}");
@@ -51,7 +51,7 @@ fn test_callback_host_env_override(mut oauth_env_guard: EnvVarsGuard) {
 
 #[rstest]
 fn test_callback_url_default(mut oauth_env_guard: EnvVarsGuard) {
-    oauth_env_guard.remove("IRONCLAW_OAUTH_CALLBACK_URL");
+    oauth_env_guard.remove("AXINITE_OAUTH_CALLBACK_URL");
     oauth_env_guard.remove("OAUTH_CALLBACK_HOST");
     assert_eq!(callback_url(), "http://127.0.0.1:9876");
 }
@@ -59,7 +59,7 @@ fn test_callback_url_default(mut oauth_env_guard: EnvVarsGuard) {
 #[rstest]
 fn test_callback_url_env_override(mut oauth_env_guard: EnvVarsGuard) {
     oauth_env_guard.set(
-        "IRONCLAW_OAUTH_CALLBACK_URL",
+        "AXINITE_OAUTH_CALLBACK_URL",
         "https://myserver.example.com:9876",
     );
     assert_eq!(callback_url(), "https://myserver.example.com:9876");
@@ -83,7 +83,7 @@ fn test_landing_html_success_contains_key_elements() {
     let html = landing_html("Google", true);
     assert!(html.contains("Google Connected"));
     assert!(html.contains("charset"));
-    assert!(html.contains("IronClaw"));
+    assert!(html.contains("Axinite"));
     assert!(html.contains("#22c55e"));
     assert!(!html.contains("Failed"));
 }
@@ -100,7 +100,7 @@ fn test_landing_html_error_contains_key_elements() {
     let html = landing_html("Notion", false);
     assert!(html.contains("Authorization Failed"));
     assert!(html.contains("charset"));
-    assert!(html.contains("IronClaw"));
+    assert!(html.contains("Axinite"));
     assert!(html.contains("#ef4444"));
     assert!(!html.contains("Connected"));
 }
@@ -231,8 +231,8 @@ fn test_use_gateway_callback(
     #[case] expected: bool,
 ) {
     match callback_url {
-        Some(callback_url) => oauth_env_guard.set("IRONCLAW_OAUTH_CALLBACK_URL", callback_url),
-        None => oauth_env_guard.remove("IRONCLAW_OAUTH_CALLBACK_URL"),
+        Some(callback_url) => oauth_env_guard.set("AXINITE_OAUTH_CALLBACK_URL", callback_url),
+        None => oauth_env_guard.remove("AXINITE_OAUTH_CALLBACK_URL"),
     }
 
     assert_eq!(use_gateway_callback(), expected);
@@ -240,41 +240,41 @@ fn test_use_gateway_callback(
 
 #[rstest]
 fn test_build_platform_state_with_instance(mut oauth_env_guard: EnvVarsGuard) {
-    oauth_env_guard.set("IRONCLAW_INSTANCE_NAME", "kind-deer");
+    oauth_env_guard.set("AXINITE_INSTANCE_NAME", "kind-deer");
     assert_eq!(build_platform_state("abc123"), "kind-deer:abc123");
 }
 
 #[rstest]
 fn test_build_platform_state_without_instance(mut oauth_env_guard: EnvVarsGuard) {
-    oauth_env_guard.remove("IRONCLAW_INSTANCE_NAME");
+    oauth_env_guard.remove("AXINITE_INSTANCE_NAME");
     oauth_env_guard.remove("OPENCLAW_INSTANCE_NAME");
     assert_eq!(build_platform_state("abc123"), "abc123");
 }
 
 #[rstest]
 fn test_build_platform_state_with_openclaw_instance(mut oauth_env_guard: EnvVarsGuard) {
-    oauth_env_guard.remove("IRONCLAW_INSTANCE_NAME");
+    oauth_env_guard.remove("AXINITE_INSTANCE_NAME");
     oauth_env_guard.set("OPENCLAW_INSTANCE_NAME", "quiet-lion");
     assert_eq!(build_platform_state("xyz789"), "quiet-lion:xyz789");
 }
 
 #[rstest]
 fn test_build_platform_state_falls_back_when_new_name_is_empty(mut oauth_env_guard: EnvVarsGuard) {
-    oauth_env_guard.set("IRONCLAW_INSTANCE_NAME", "");
+    oauth_env_guard.set("AXINITE_INSTANCE_NAME", "");
     oauth_env_guard.set("OPENCLAW_INSTANCE_NAME", "quiet-lion");
     assert_eq!(build_platform_state("xyz789"), "quiet-lion:xyz789");
 }
 
 #[rstest]
 fn test_build_platform_state_ignores_colon_in_new_name(mut oauth_env_guard: EnvVarsGuard) {
-    oauth_env_guard.set("IRONCLAW_INSTANCE_NAME", "kind:deer");
+    oauth_env_guard.set("AXINITE_INSTANCE_NAME", "kind:deer");
     oauth_env_guard.set("OPENCLAW_INSTANCE_NAME", "quiet-lion");
     assert_eq!(build_platform_state("xyz789"), "quiet-lion:xyz789");
 }
 
 #[rstest]
 fn test_build_platform_state_ignores_colon_in_legacy_name(mut oauth_env_guard: EnvVarsGuard) {
-    oauth_env_guard.remove("IRONCLAW_INSTANCE_NAME");
+    oauth_env_guard.remove("AXINITE_INSTANCE_NAME");
     oauth_env_guard.set("OPENCLAW_INSTANCE_NAME", "quiet:lion");
     assert_eq!(build_platform_state("xyz789"), "xyz789");
 }

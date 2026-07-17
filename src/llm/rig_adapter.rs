@@ -1,4 +1,4 @@
-//! Generic adapter that bridges rig-core's `CompletionModel` trait to IronClaw's `LlmProvider`.
+//! Generic adapter that bridges rig-core's `CompletionModel` trait to Axinite's `LlmProvider`.
 //!
 //! This lets us use any rig-core provider (OpenAI, Anthropic, Ollama, etc.) as an
 //! `Arc<dyn LlmProvider>` without changing any of the agent, reasoning, or tool code.

@@ -1,11 +1,11 @@
 //! Compile-contract fixture for database trait forwarders.
 //!
-//! This module validates that the `ironclaw::db` forwarder traits compile
+//! This module validates that the `axinite::db` forwarder traits compile
 //! correctly for the generic `dyn Database` trait. It serves as a trybuild
 //! test target to ensure the public DB trait surface remains stable and
 //! backward-compatible.
 
-use ironclaw::db::{
+use axinite::db::{
     ConversationStore, Database, SettingKey, SettingsStore, UserId,
 };
 

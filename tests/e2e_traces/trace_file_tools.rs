@@ -21,7 +21,7 @@ async fn test_file_write_and_read_flow() {
         .await
         .expect("failed to load trace fixture");
     let patch_count = trace.patch_path(
-        "/tmp/ironclaw_e2e_test/hello.txt",
+        "/tmp/axinite_e2e_test/hello.txt",
         test_file
             .to_str()
             .expect("temp file path should be valid UTF-8"),

@@ -2,7 +2,7 @@
 
 use std::time::Duration;
 
-use ironclaw::channels::OutgoingResponse;
+use axinite::channels::OutgoingResponse;
 
 use crate::support::test_rig::{TestRig, TestRigBuilder};
 use crate::support::trace_types::LlmTrace;

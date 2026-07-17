@@ -5,6 +5,7 @@
 use std::convert::Infallible;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
+use axinite::channels::relay::client::{RelayClient, RelayError};
 use axum::{
     Json, Router,
     extract::Query,
@@ -13,7 +14,6 @@ use axum::{
     routing::{get, post},
 };
 use futures::stream;
-use ironclaw::channels::relay::client::{RelayClient, RelayError};
 use secrecy::SecretString;
 use serde::Deserialize;
 use tokio::net::TcpListener;
@@ -307,7 +307,7 @@ async fn test_sse_stream_preserves_multibyte_utf8_across_chunks() {
 
 #[test]
 fn test_channel_event_missing_fields_detected() {
-    use ironclaw::channels::relay::client::ChannelEvent;
+    use axinite::channels::relay::client::ChannelEvent;
 
     // Event with empty sender_id should be detectable
     let json = r#"{"event_type": "message", "provider_scope": "T1", "channel_id": "C1", "sender_id": "", "content": "test"}"#;

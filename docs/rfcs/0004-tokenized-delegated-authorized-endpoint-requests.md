@@ -14,7 +14,7 @@
 
 ## Summary
 
-IronClaw should add a new delegated endpoint model for WebAssembly (WASM)
+Axinite should add a new delegated endpoint model for WebAssembly (WASM)
 extensions so a user can configure a service endpoint in the extension
 management page without exposing that endpoint URL to either:
 
@@ -27,7 +27,7 @@ WASM extension. A user should be able to configure a JMAP endpoint once in the
 web UI. The extension should then receive only an opaque endpoint identity such
 as `primary` or `jmap-default`. When the tool needs to check email, it should
 call a new host-managed authorized request service using that identity.
-IronClaw should then:
+Axinite should then:
 
 1. resolve the opaque identity to a host-owned endpoint binding,
 2. apply authorization and internal network policy,
@@ -79,7 +79,7 @@ If the extension must not know the JMAP endpoint URL:
 The required model instead splits between:
 
 - guest authority: "use authorized endpoint `jmap-default`",
-- transport authority: "IronClaw resolved that to
+- transport authority: "Axinite resolved that to
   `https://mail.example.com/jmap/`, confirmed policy, injected credentials, and
   sent the request".
 
@@ -148,13 +148,13 @@ including host-side endpoint resolution and credential injection.
 
 ```text
 User configures JMAP endpoint in Extensions UI
-    -> IronClaw validates and stores encrypted endpoint binding
+    -> Axinite validates and stores encrypted endpoint binding
     -> Extension marked configured, but URL is never surfaced back
 
 Agent asks JMAP tool to check email
     -> Tool calls delegated host request with endpoint_name = "jmap-default"
-    -> IronClaw resolves endpoint binding internally
-    -> IronClaw injects credentials and enforces internal policy
+    -> Axinite resolves endpoint binding internally
+    -> Axinite injects credentials and enforces internal policy
     -> Request executes
     -> Tool receives response body only, not the endpoint URL
 ```
@@ -271,7 +271,7 @@ For delegated endpoint fields:
 
 Suggested copy:
 
-> JMAP endpoint URL. IronClaw stores this for host-side authorized requests.
+> JMAP endpoint URL. Axinite stores this for host-side authorized requests.
 > The extension and the agent will not see the saved URL.
 
 ### Validation UX
@@ -387,7 +387,7 @@ Delegated endpoints are not a good fit for:
 - generic extension provenance metadata, because this is per-user runtime
   configuration.
 
-IronClaw should add a dedicated per-user endpoint binding store.
+Axinite should add a dedicated per-user endpoint binding store.
 
 ### Proposed record shape
 
@@ -439,7 +439,7 @@ EndpointBindingStore {
 }
 ```
 
-This service should be owned by IronClaw, not by the extension.
+This service should be owned by Axinite, not by the extension.
 
 ## WASM Capability and WIT Changes
 
@@ -546,7 +546,7 @@ easy to misuse. A dedicated host call is clearer because it:
 
 ### Add an authorized endpoint request path
 
-IronClaw should add a runtime service that handles delegated endpoint requests:
+Axinite should add a runtime service that handles delegated endpoint requests:
 
 Screen reader: authorized endpoint request service interface covering
 resolution, authorization, credential injection, and execution.
@@ -583,7 +583,7 @@ WASM guest passes endpoint_name + relative request
 
 Delegated endpoints should not bypass outbound hardening.
 
-IronClaw should still:
+Axinite should still:
 
 - enforce HTTPS,
 - reject internal/private IP resolution,
@@ -652,7 +652,7 @@ runtime configuration in at least three places:
 
 ### Approval and observability surfaces
 
-When the agent invokes a JMAP tool, IronClaw should surface only:
+When the agent invokes a JMAP tool, Axinite should surface only:
 
 - extension name,
 - endpoint identity such as `jmap-default`,
@@ -768,7 +768,7 @@ The extension knows only `jmap-default`, not the actual endpoint URL.
 
 ### Existing extensions
 
-No breaking change is required for existing extensions if IronClaw:
+No breaking change is required for existing extensions if Axinite:
 
 - keeps `http_request`,
 - keeps `http.allowlist`,
@@ -858,7 +858,7 @@ Reason:
 1. Should delegated endpoint bindings be extension-scoped, provider-scoped, or
    globally reusable within a user account?
 2. Should endpoint URLs be encrypted at rest using the existing secrets
-   envelope, or should IronClaw keep a separate confidential-config store?
+   envelope, or should Axinite keep a separate confidential-config store?
 3. How should approval surfaces describe delegated requests without leaking
    meaningful origin details?
 4. Should delegated endpoint bindings allow multiple named instances per

@@ -297,18 +297,18 @@ impl NativeTool for CreateJobTool {
                     "mode": {
                         "type": "string",
                         "enum": ["worker", "claude_code"],
-                        "description": "Execution mode. 'worker' (default) uses the IronClaw sub-agent. \
+                        "description": "Execution mode. 'worker' (default) uses the Axinite sub-agent. \
                                         'claude_code' uses Claude Code CLI for full agentic software engineering."
                     },
                     "project_dir": {
                         "type": "string",
                         "description": "Path to an existing project directory to mount into the container. \
-                                        Must be under ~/.ironclaw/projects/. If omitted, a fresh directory is created."
+                                        Must be under ~/.axinite/projects/. If omitted, a fresh directory is created."
                     },
                     "credentials": {
                         "type": "object",
                         "description": "Map of secret names to env var names. Each secret must exist in the \
-                                        secrets store (via 'ironclaw tool auth' or web UI). Example: \
+                                        secrets store (via 'axinite tool auth' or web UI). Example: \
                                         {\"github_token\": \"GITHUB_TOKEN\", \"npm_token\": \"NPM_TOKEN\"}",
                         "additionalProperties": { "type": "string" }
                     }

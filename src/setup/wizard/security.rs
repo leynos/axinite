@@ -105,11 +105,11 @@ impl SetupWizard {
                 // Make visible to optional_env() for any subsequent config resolution.
                 crate::config::inject_single_var("SECRETS_MASTER_KEY", &key_hex);
 
-                // Store hex for write_bootstrap_env to persist to ~/.ironclaw/.env.
+                // Store hex for write_bootstrap_env to persist to ~/.axinite/.env.
                 self.settings.secrets_master_key_hex = Some(key_hex.clone());
 
                 println!();
-                print_info("Master key generated and will be saved to ~/.ironclaw/.env");
+                print_info("Master key generated and will be saved to ~/.axinite/.env");
                 println!();
                 println!("  SECRETS_MASTER_KEY={}", key_hex);
                 println!();
@@ -168,7 +168,7 @@ impl SetupWizard {
         crate::config::inject_single_var("SECRETS_MASTER_KEY", &key_hex);
         self.settings.secrets_master_key_hex = Some(key_hex);
         self.settings.secrets_master_key_source = KeySource::Env;
-        print_success("Master key stored in ~/.ironclaw/.env");
+        print_success("Master key stored in ~/.axinite/.env");
         Ok(())
     }
 

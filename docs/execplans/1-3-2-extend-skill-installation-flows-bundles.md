@@ -294,7 +294,7 @@ Rust test code without a new app-level server harness.
   invalid multipart uploads, mixed multipart sources, JSON size limits,
   additional ambiguous tool-source combinations, and downloaded raw Markdown.
 - [x] 2026-04-24: Review-fix validation passed. The targeted skill test run
-  `cargo test -p ironclaw skill` wrote
+  `cargo test -p axinite skill` wrote
   `/tmp/test-review-skill-comments-axinite-1-3-2-extend-skill-installation-flows-bundles.out`
   and passed. The full gate
   `make all 2>&1 | tee /tmp/make-all-review-comments-axinite-1-3-2-extend-skill-installation-flows-bundles.out`
@@ -306,7 +306,7 @@ Rust test code without a new app-level server harness.
   `install_source`, and developer-guide notes for `ArchiveBytes`,
   `install_source`, `TestGatewayBuilder`, and the request-based web handler.
 - [x] 2026-04-26: Follow-up validation passed. Targeted checks
-  `cargo test -p ironclaw skill` and
+  `cargo test -p axinite skill` and
   `node --test tests/web_static_app.test.mjs` passed, and the full gate
   `make all 2>&1 | tee /tmp/make-all-ci-warnings-axinite-1-3-2-extend-skill-installation-flows-bundles.out`
   passed with 3,989 nextest tests and the GitHub tool tests.
@@ -511,11 +511,11 @@ During implementation, run targeted tests after each milestone that changes
 behaviour. Prefer narrower filters such as:
 
 ```bash
-cargo test -p ironclaw skills::registry::tests \
+cargo test -p axinite skills::registry::tests \
   2>&1 | tee /tmp/test-skill-registry-axinite-${BRANCH_FOR_LOGS}.out
-cargo test -p ironclaw channels::web::handlers::skills \
+cargo test -p axinite channels::web::handlers::skills \
   2>&1 | tee /tmp/test-web-skills-axinite-${BRANCH_FOR_LOGS}.out
-cargo test -p ironclaw tools::builtin::skill_tools \
+cargo test -p axinite tools::builtin::skill_tools \
   2>&1 | tee /tmp/test-skill-tools-axinite-${BRANCH_FOR_LOGS}.out
 ```
 

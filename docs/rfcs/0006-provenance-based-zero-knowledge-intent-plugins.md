@@ -59,7 +59,7 @@ headers and using standard refresh flows. [^6]
 
 ## Current IronClaw components and APIs relevant to an intent model
 
-This section enumerates the Axinite components involved in the change. Paths and
+This section enumerates the IronClaw components involved in the change. Paths and
 symbols are named so the relevant code can be located quickly in the repository;
 GitHub web access is not available in this environment, so line-precise
 citations for repo code are not attached here, but the identifiers below match
@@ -231,7 +231,7 @@ flowchart LR
     IM["Exports: list_intents(), plan()/invoke()"]
   end
 
-  subgraph Host["IronClaw harness (trusted)"]
+  subgraph Host["Axinite harness (trusted)"]
     L["WASM loader"]
     PB["Policy engine (Rego)"]
     PS["ProvenanceStore"]
@@ -472,7 +472,7 @@ The following section covers how to store/manage SecretAuth and inject `SAPISIDH
 
 **Cookie/SAPISID model:**
 
-- Store cookie material as secrets in IronClaw’s secrets store:
+- Store cookie material as secrets in Axinite’s secrets store:
   - minimal: `SAPISID` (or `__Secure-3PAPISID` depending on observed headers)
   - possibly also the full `Cookie:` header blob, if required for stable
     sessions (but minimize scope).
@@ -624,7 +624,7 @@ harness mints/consumes provenance:
 sequenceDiagram
   autonumber
   actor User
-  participant Host as IronClaw Harness
+  participant Host as Axinite Harness
   participant Plugin as WASM Intent Plugin
   participant Policy as Rego Policy
   participant YT as YTMusic Transport
@@ -738,7 +738,7 @@ Both can work, but they optimize for different priorities.
 | Embedding story | OPA can compile policies to WASM; also in-process interpreters exist (e.g. Regorus) [^26] | Multiple implementations; embedding typically straightforward |
 | Auditability | Usually high (rules read like constraints) | Varies; tends to drift into ad-hoc logic |
 | Safety against DoS | Needs time/memory controls; OPA WASM helps with bounded execution [^27] | Also needs step limits; loops/recursion risks depend on implementation |
-| Best fit for IronClaw intents | **Strong** | Medium (better as config) |
+| Best fit for Axinite intents | **Strong** | Medium (better as config) |
 
 **Recommendation:** Use **Rego for enforcement** (deny/allow + obligations like “require approval”), and optionally use Starlark as an authoring layer *only if* it is compiled/translated into a restricted data form consumed by Rego. Rego’s existing WASM compilation path is especially attractive if policy evaluation is intended to run inside the same sandboxing machinery already in use. [^28]
 

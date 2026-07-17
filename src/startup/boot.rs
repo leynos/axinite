@@ -1,6 +1,6 @@
 //! Startup boot-screen rendering and tests.
 
-use ironclaw::{cli::Cli, config::Config};
+use axinite::{cli::Cli, config::Config};
 
 /// Runtime-computed values used to populate the startup boot screen.
 pub(crate) struct BootScreenContext<'a> {
@@ -13,12 +13,12 @@ pub(crate) struct BootScreenContext<'a> {
     /// Optional gateway web-UI URL, shown when the gateway channel is active.
     pub(crate) gateway_url: Option<String>,
     /// Current Docker/sandbox availability status.
-    pub(crate) docker_status: ironclaw::sandbox::DockerStatus,
+    pub(crate) docker_status: axinite::sandbox::DockerStatus,
     /// Names of all enabled channels, displayed in the boot banner.
     pub(crate) channel_names: Vec<String>,
     /// Active tunnel handle used to prefer a public tunnel URL over the
     /// configured static one.
-    pub(crate) active_tunnel: &'a Option<Box<dyn ironclaw::tunnel::Tunnel>>,
+    pub(crate) active_tunnel: &'a Option<Box<dyn axinite::tunnel::Tunnel>>,
 }
 
 /// Renders and prints the startup boot screen to stdout.
@@ -30,20 +30,20 @@ pub(crate) fn print_startup_info(config: &Config, cli: &Cli, data: &BootScreenCo
     let Some(boot_info) = build_boot_info(config, cli, data) else {
         return;
     };
-    ironclaw::boot_screen::print_boot_screen(&boot_info);
+    axinite::boot_screen::print_boot_screen(&boot_info);
 }
 
 /// Constructs the `BootInfo` value passed to
-/// `ironclaw::boot_screen::print_boot_screen`.
+/// `axinite::boot_screen::print_boot_screen`.
 fn build_boot_info(
     config: &Config,
     cli: &Cli,
     data: &BootScreenContext<'_>,
-) -> Option<ironclaw::boot_screen::BootInfo> {
+) -> Option<axinite::boot_screen::BootInfo> {
     if !config.channels.cli.enabled || cli.message.is_some() {
         return None;
     }
-    Some(ironclaw::boot_screen::BootInfo {
+    Some(axinite::boot_screen::BootInfo {
         version: env!("CARGO_PKG_VERSION").to_string(),
         agent_name: config.agent.name.clone(),
         llm_backend: config.llm.backend.to_string(),
@@ -90,13 +90,13 @@ mod tests {
 
     use std::io::Read;
 
-    use gag::BufferRedirect;
-    use insta::assert_snapshot;
-    use ironclaw::{
+    use axinite::{
         config::Config,
         sandbox::DockerStatus,
         tunnel::{NativeTunnel, Tunnel},
     };
+    use gag::BufferRedirect;
+    use insta::assert_snapshot;
 
     use super::{BootScreenContext, build_boot_info, print_startup_info};
     use crate::startup::url_sanitize::sanitize_display_url;
@@ -157,7 +157,7 @@ mod tests {
         config.skills.enabled = true;
         config.tunnel.public_url = Some("https://fallback.example.test".to_string());
 
-        let cli = ironclaw::cli::Cli {
+        let cli = axinite::cli::Cli {
             command: None,
             cli_only: false,
             no_db: false,
@@ -184,7 +184,7 @@ mod tests {
         };
 
         let boot_info = build_boot_info(&config, &cli, &data).expect("boot info");
-        let output = ironclaw::boot_screen::render_boot_screen(&boot_info);
+        let output = axinite::boot_screen::render_boot_screen(&boot_info);
         assert_snapshot!("startup_info_boot_screen", output);
 
         let capture = BufferRedirect::stdout().expect("stdout capture should be available");
@@ -209,7 +209,7 @@ mod tests {
         .expect("test config should be built");
         config.channels.cli.enabled = true;
 
-        let cli = ironclaw::cli::Cli {
+        let cli = axinite::cli::Cli {
             command: None,
             cli_only: false,
             no_db: false,

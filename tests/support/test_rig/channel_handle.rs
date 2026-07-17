@@ -8,10 +8,10 @@
 use std::collections::HashMap;
 use std::sync::Arc;
 
-use ironclaw::channels::{
+use axinite::channels::{
     IncomingMessage, MessageStream, NativeChannel, OutgoingResponse, StatusUpdate,
 };
-use ironclaw::error::ChannelError;
+use axinite::error::ChannelError;
 
 use crate::support::test_channel::TestChannel;
 

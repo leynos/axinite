@@ -18,7 +18,7 @@ fn validate_attachment_paths_accepts_normal_paths() {
     use ambient_fs as fs;
 
     // Create test files in sandbox
-    let base_dir = crate::bootstrap::ironclaw_base_dir();
+    let base_dir = crate::bootstrap::axinite_base_dir();
 
     // Create sandbox directory if it doesn't exist (needed for CI)
     let _ = fs::create_dir_all(&base_dir);

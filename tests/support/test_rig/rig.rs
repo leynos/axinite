@@ -16,9 +16,9 @@
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
-use ironclaw::channels::{OutgoingResponse, StatusUpdate};
-use ironclaw::db::Database;
-use ironclaw::error::LlmError;
+use axinite::channels::{OutgoingResponse, StatusUpdate};
+use axinite::db::Database;
+use axinite::error::LlmError;
 
 use crate::support::assertions::verify_expects;
 use crate::support::instrumented_llm::InstrumentedLlm;
@@ -44,7 +44,7 @@ pub struct TestRig {
     pub(super) db: Arc<dyn Database>,
     /// Workspace handle for direct memory operations in tests.
     #[cfg(feature = "libsql")]
-    pub(super) workspace: Option<Arc<ironclaw::workspace::Workspace>>,
+    pub(super) workspace: Option<Arc<axinite::workspace::Workspace>>,
     /// The underlying TraceLlm for inspecting captured requests.
     #[cfg(feature = "libsql")]
     pub(super) trace_llm: Option<Arc<TraceLlm>>,
@@ -60,12 +60,12 @@ impl TestRig {
     }
 
     /// Inject a raw `IncomingMessage` (for tests that need attachments, etc.).
-    pub async fn send_incoming(&self, msg: ironclaw::channels::IncomingMessage) {
+    pub async fn send_incoming(&self, msg: axinite::channels::IncomingMessage) {
         self.channel.send_incoming(msg).await;
     }
 
     /// Return all message lists that were sent to the LLM provider.
-    pub fn captured_llm_requests(&self) -> Result<Vec<Vec<ironclaw::llm::ChatMessage>>, LlmError> {
+    pub fn captured_llm_requests(&self) -> Result<Vec<Vec<axinite::llm::ChatMessage>>, LlmError> {
         self.trace_llm
             .as_ref()
             .map(|trace_llm| trace_llm.captured_requests())
@@ -288,7 +288,7 @@ impl TestRig {
 
     /// Get the workspace handle for direct memory operations.
     #[cfg(feature = "libsql")]
-    pub fn workspace(&self) -> Option<&Arc<ironclaw::workspace::Workspace>> {
+    pub fn workspace(&self) -> Option<&Arc<axinite::workspace::Workspace>> {
         self.workspace.as_ref()
     }
 

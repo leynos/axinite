@@ -126,7 +126,7 @@ impl CreateJobTool {
 
             if !exists {
                 return Err(ToolError::ExecutionFailed(format!(
-                    "secret '{}' not found. Store it first via 'ironclaw tool auth' or the web UI.",
+                    "secret '{}' not found. Store it first via 'axinite tool auth' or the web UI.",
                     secret_name
                 )));
             }

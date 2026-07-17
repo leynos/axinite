@@ -83,7 +83,7 @@ pub(super) async fn list_tools(dir: Option<PathBuf>, verbose: bool) -> anyhow::R
 
     if !fs::try_exists(&tools_dir).await? {
         println!("No tools directory found at {}", tools_dir.display());
-        println!("Install a tool with: ironclaw tool install <path>");
+        println!("Install a tool with: axinite tool install <path>");
         return Ok(());
     }
 

@@ -162,7 +162,7 @@ jobs:
             # Strip -{version}-wasm32-wasip2.tar.gz to get the extension name.
             # Use '.*' (greedy) so pre-release suffixes like -alpha.1 are consumed too.
             name=$(echo "$filename" | sed 's/-[0-9].*-wasm32-wasip2\.tar\.gz$//')
-            url="https://github.com/nearai/ironclaw/releases/download/${RELEASE_TAG}/${filename}"
+            url="https://github.com/leynos/axinite/releases/download/${RELEASE_TAG}/${filename}"
 
             for manifest in registry/tools/${name}.json registry/channels/${name}.json; do
               if [ -f "$manifest" ]; then
@@ -490,7 +490,7 @@ jobs:
             # Strip -{version}-wasm32-wasip2.tar.gz to get the extension name.
             # Use '.*' (greedy) so pre-release suffixes like -alpha.1 are consumed too.
             name=$(echo "$filename" | sed 's/-[0-9].*-wasm32-wasip2\.tar\.gz$//')
-            url="https://github.com/nearai/ironclaw/releases/download/${RELEASE_TAG}/${filename}"
+            url="https://github.com/leynos/axinite/releases/download/${RELEASE_TAG}/${filename}"
 
             for manifest in registry/tools/${name}.json registry/channels/${name}.json; do
               if [ -f "$manifest" ]; then

@@ -3,7 +3,7 @@
 use crate::support::trace_provider::TraceLlm;
 use crate::support::trace_types::LlmTrace;
 use anyhow::{Context, Result};
-use ironclaw::llm::{ChatMessage, LlmProvider, ToolCompletionRequest};
+use axinite::llm::{ChatMessage, LlmProvider, ToolCompletionRequest};
 use rstest::rstest;
 
 fn make_request(user_msg: &str) -> ToolCompletionRequest {

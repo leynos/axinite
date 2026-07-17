@@ -102,7 +102,7 @@ impl ExtensionManager {
         Self::delete_extension_files(&wasm_path, &cap_path).await?;
 
         Ok(format!(
-            "Removed channel '{}'. Restart IronClaw for the change to take effect.",
+            "Removed channel '{}'. Restart Axinite for the change to take effect.",
             name
         ))
     }

@@ -65,7 +65,7 @@ pub(crate) fn for_testing_context(
         .parent()
         .map(std::path::Path::to_path_buf)
         .unwrap_or_else(|| std::path::PathBuf::from("."))
-        .join("ironclaw-test-channels");
+        .join("axinite-test-channels");
 
     EnvContext::default()
         .with_env("DATABASE_BACKEND", "libsql")
@@ -92,7 +92,7 @@ pub(crate) fn for_testing_context(
 /// Load and merge a TOML config file into settings.
 ///
 /// If `explicit_path` is `Some`, loads from that path (errors are fatal).
-/// If `None`, tries the default path `~/.ironclaw/config.toml` (missing
+/// If `None`, tries the default path `~/.axinite/config.toml` (missing
 /// file is silently ignored).
 pub(crate) fn apply_toml_overlay(
     settings: &mut Settings,
@@ -191,10 +191,10 @@ where
 ///
 /// ```no_run
 /// # async fn example(
-/// #     secrets: &dyn ironclaw::secrets::SecretsStore,
-/// # ) -> Result<(), ironclaw::error::ConfigError> {
-/// let mut ctx = ironclaw::config::EnvContext::default();
-/// ironclaw::config::inject_llm_keys_into_context(&mut ctx, secrets, "user-123").await?;
+/// #     secrets: &dyn axinite::secrets::SecretsStore,
+/// # ) -> Result<(), axinite::error::ConfigError> {
+/// let mut ctx = axinite::config::EnvContext::default();
+/// axinite::config::inject_llm_keys_into_context(&mut ctx, secrets, "user-123").await?;
 /// # Ok(())
 /// # }
 /// ```

@@ -3,7 +3,7 @@
 use std::borrow::Cow;
 use std::collections::{HashMap, HashSet};
 
-use ironclaw::llm::{ChatMessage, Role};
+use axinite::llm::{ChatMessage, Role};
 
 const MAX_TEMPLATE_EXPANSIONS: usize = 128;
 
@@ -79,7 +79,7 @@ fn flatten_json_root_into_vars(
 /// # Examples
 ///
 /// ```rust,ignore
-/// # use ironclaw::llm::{ChatMessage, Role};
+/// # use axinite::llm::{ChatMessage, Role};
 /// # use crate::support::trace_template_utils::extract_tool_result_vars;
 /// let messages = [ChatMessage {
 ///     role: Role::Tool,

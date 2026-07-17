@@ -1,7 +1,7 @@
 //! Tests for registering channels and routing via the WASM router.
 
 use super::*;
-use ironclaw::channels::wasm::WebhookSecrets;
+use axinite::channels::wasm::WebhookSecrets;
 
 #[tokio::test]
 async fn test_register_and_route_channel() {

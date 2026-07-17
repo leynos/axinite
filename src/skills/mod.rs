@@ -1,4 +1,4 @@
-//! OpenClaw SKILL.md-based skills system for IronClaw.
+//! OpenClaw SKILL.md-based skills system for Axinite.
 //!
 //! Skills are SKILL.md files (YAML frontmatter + markdown prompt) that extend the
 //! agent's behaviour through prompt-level instructions. Unlike code-level tools
@@ -100,7 +100,7 @@ impl std::fmt::Display for SkillTrust {
 pub enum SkillSource {
     /// Workspace skills directory (<workspace>/skills/).
     Workspace(PathBuf),
-    /// User skills directory (~/.ironclaw/skills/).
+    /// User skills directory (~/.axinite/skills/).
     User(PathBuf),
     /// Bundled with the application.
     Bundled(PathBuf),

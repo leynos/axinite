@@ -9,7 +9,7 @@
 /// # Example
 ///
 /// ```ignore
-/// print_header("IronClaw Setup Wizard");
+/// print_header("Axinite Setup Wizard");
 /// ```
 pub(super) fn print_header(text: &str) {
     let width = text.len() + 4;

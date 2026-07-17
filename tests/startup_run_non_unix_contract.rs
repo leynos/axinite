@@ -15,7 +15,7 @@ mod startup {
     pub(crate) mod wasm {
         use std::{collections::HashMap, sync::Arc};
 
-        use ironclaw::{
+        use axinite::{
             channels::{ChannelManager, web::types::SseEvent},
             extensions::ExtensionManager,
         };
@@ -38,38 +38,38 @@ mod startup {
     }
 
     pub(crate) struct CoreAgentContext {
-        pub(crate) config: ironclaw::config::Config,
-        pub(crate) components: ironclaw::app::AppComponents,
-        pub(crate) side_effects: ironclaw::app::RuntimeSideEffects,
-        pub(crate) active_tunnel: Option<Box<dyn ironclaw::tunnel::Tunnel>>,
+        pub(crate) config: axinite::config::Config,
+        pub(crate) components: axinite::app::AppComponents,
+        pub(crate) side_effects: axinite::app::RuntimeSideEffects,
+        pub(crate) active_tunnel: Option<Box<dyn axinite::tunnel::Tunnel>>,
         pub(crate) container_job_manager:
-            Option<std::sync::Arc<ironclaw::orchestrator::ContainerJobManager>>,
+            Option<std::sync::Arc<axinite::orchestrator::ContainerJobManager>>,
     }
 
     pub(crate) struct GatewayPhaseContext {
         pub(crate) core: CoreAgentContext,
-        pub(crate) channels: std::sync::Arc<ironclaw::channels::ChannelManager>,
+        pub(crate) channels: std::sync::Arc<axinite::channels::ChannelManager>,
         pub(crate) webhook_server:
-            Option<std::sync::Arc<tokio::sync::Mutex<ironclaw::channels::WebhookServer>>>,
+            Option<std::sync::Arc<tokio::sync::Mutex<axinite::channels::WebhookServer>>>,
         pub(crate) loaded_wasm_channel_names: Vec<String>,
         pub(crate) wasm_channel_runtime_state: Option<wasm::WasmChannelRuntimeState>,
         #[cfg(unix)]
-        pub(crate) http_channel_state: Option<std::sync::Arc<ironclaw::channels::HttpChannelState>>,
-        pub(crate) session_manager: std::sync::Arc<ironclaw::agent::SessionManager>,
-        pub(crate) scheduler_slot: ironclaw::tools::builtin::SchedulerSlot,
+        pub(crate) http_channel_state: Option<std::sync::Arc<axinite::channels::HttpChannelState>>,
+        pub(crate) session_manager: std::sync::Arc<axinite::agent::SessionManager>,
+        pub(crate) scheduler_slot: axinite::tools::builtin::SchedulerSlot,
         pub(crate) sse_sender:
-            Option<tokio::sync::broadcast::Sender<ironclaw::channels::web::types::SseEvent>>,
-        pub(crate) routine_engine_slot: Option<ironclaw::channels::web::server::RoutineEngineSlot>,
+            Option<tokio::sync::broadcast::Sender<axinite::channels::web::types::SseEvent>>,
+        pub(crate) routine_engine_slot: Option<axinite::channels::web::server::RoutineEngineSlot>,
     }
 
     #[cfg(unix)]
     pub(crate) mod unix_runtime {
         pub(crate) fn setup_runtime_management_unix(
-            _components: &ironclaw::app::AppComponents,
+            _components: &axinite::app::AppComponents,
             _webhook_server: &Option<
-                std::sync::Arc<tokio::sync::Mutex<ironclaw::channels::WebhookServer>>,
+                std::sync::Arc<tokio::sync::Mutex<axinite::channels::WebhookServer>>,
             >,
-            _http_channel_state: &Option<std::sync::Arc<ironclaw::channels::HttpChannelState>>,
+            _http_channel_state: &Option<std::sync::Arc<axinite::channels::HttpChannelState>>,
             _shutdown_tx: &tokio::sync::broadcast::Sender<()>,
         ) {
         }

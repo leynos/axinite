@@ -4,8 +4,8 @@
 //! wire shape via `insta` snapshot macros, so changes produce a single
 //! diffable artefact.
 
-use ironclaw::llm::ChatMessage;
-use ironclaw::worker::api::{
+use axinite::llm::ChatMessage;
+use axinite::worker::api::{
     CompletionReport, CredentialResponse, JobDescription, JobEventPayload, JobEventType,
     PromptResponse, ProxyCompletionResponse, ProxyFinishReason, ProxyToolCompletionRequest,
     RemoteToolCatalogResponse, RemoteToolExecutionRequest, StatusUpdate, WorkerState,

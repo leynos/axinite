@@ -18,15 +18,15 @@ exclude = [
 ]
 
 [package]
-name = "ironclaw"
+name = "axinite"
 version = "0.18.0"
 edition = "2024"
 rust-version = "1.93"
 description = "Secure personal AI assistant that protects your data and expands its capabilities on the fly"
-authors = ["NEAR AI <support@near.ai>"]
+authors = ["Payton McIntosh <pmcintosh@df12.net>", "NEAR AI <support@near.ai>"]
 license = "MIT OR Apache-2.0"
-homepage = "https://github.com/nearai/ironclaw"
-repository = "https://github.com/nearai/ironclaw"
+homepage = "https://github.com/leynos/axinite"
+repository = "https://github.com/leynos/axinite"
 
 [package.metadata.wix]
 upgrade-guid = "D0156E61-BA37-451E-8AB9-1A2ECCCFA48F"
@@ -242,12 +242,12 @@ test-helpers = ["dep:tempfile"]
 docker = ["dep:bollard"]
 
 [[test]]
-name = "channels"
-required-features = ["test-helpers"]
+name = "html_to_markdown"
+required-features = ["html-to-markdown"]
 
 [[test]]
-name = "e2e_traces"
-required-features = ["test-helpers"]
+name = "html_to_markdown"
+required-features = ["html-to-markdown"]
 
 [[test]]
 name = "html_to_markdown"

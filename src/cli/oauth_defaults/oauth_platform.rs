@@ -5,7 +5,7 @@ use crate::llm::oauth_helpers::is_loopback_host;
 /// Returns `true` if OAuth callbacks should be routed through the web gateway
 /// instead of the local TCP listener.
 pub fn use_gateway_callback() -> bool {
-    std::env::var("IRONCLAW_OAUTH_CALLBACK_URL")
+    std::env::var("AXINITE_OAUTH_CALLBACK_URL")
         .ok()
         .filter(|v| !v.is_empty())
         .map(|raw| {
@@ -19,7 +19,7 @@ pub fn use_gateway_callback() -> bool {
 }
 
 fn platform_instance_name() -> Option<String> {
-    std::env::var("IRONCLAW_INSTANCE_NAME")
+    std::env::var("AXINITE_INSTANCE_NAME")
         .ok()
         .filter(|v| !v.is_empty() && !v.contains(':'))
         .or_else(|| {

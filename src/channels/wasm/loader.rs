@@ -1,6 +1,6 @@
 //! WASM channel loader for loading channels from files or directories.
 //!
-//! Loads WASM channel modules from the filesystem (default: ~/.ironclaw/channels/).
+//! Loads WASM channel modules from the filesystem (default: ~/.axinite/channels/).
 //! Each channel consists of:
 //! - `<name>.wasm` - The compiled WASM component
 //! - `<name>.capabilities.json` - Channel capabilities and configuration

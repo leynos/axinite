@@ -5,9 +5,9 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 
 use rust_decimal::Decimal;
 
-use ironclaw::error::LlmError;
-use ironclaw::llm::recording::{RequestHint, TraceResponse, TraceStep, TraceToolCall};
-use ironclaw::llm::{
+use axinite::error::LlmError;
+use axinite::llm::recording::{RequestHint, TraceResponse, TraceStep, TraceToolCall};
+use axinite::llm::{
     ChatMessage, CompletionRequest, CompletionResponse, FinishReason, Role, ToolCall,
     ToolCompletionRequest, ToolCompletionResponse,
 };
@@ -225,7 +225,7 @@ fn tool_calls_have_templates(tool_calls: &[TraceToolCall]) -> bool {
         .any(|tool_call| has_template_marker(&tool_call.arguments))
 }
 
-impl ironclaw::llm::NativeLlmProvider for TraceLlm {
+impl axinite::llm::NativeLlmProvider for TraceLlm {
     fn model_name(&self) -> &str {
         &self.model_name
     }

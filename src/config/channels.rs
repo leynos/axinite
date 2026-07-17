@@ -14,7 +14,7 @@ use crate::error::ConfigError;
 use crate::settings::Settings;
 
 #[cfg(test)]
-use crate::bootstrap::ironclaw_base_dir;
+use crate::bootstrap::axinite_base_dir;
 
 /// Channel configurations.
 #[derive(Debug, Clone)]
@@ -23,7 +23,7 @@ pub struct ChannelsConfig {
     pub http: Option<HttpConfig>,
     pub gateway: Option<GatewayConfig>,
     pub signal: Option<SignalConfig>,
-    /// Directory containing WASM channel modules (default: ~/.ironclaw/channels/).
+    /// Directory containing WASM channel modules (default: ~/.axinite/channels/).
     pub wasm_channels_dir: std::path::PathBuf,
     /// Whether WASM channels are enabled.
     pub wasm_channels_enabled: bool,
@@ -235,17 +235,17 @@ impl ChannelsConfig {
             signal: resolve_signal_config(ctx, settings)?,
             wasm_channels_dir: optional_env_from(ctx, EnvKey("WASM_CHANNELS_DIR"))?
                 .map(PathBuf::from)
-                .unwrap_or_else(|| ctx.ironclaw_base_dir().join("channels")),
+                .unwrap_or_else(|| ctx.axinite_base_dir().join("channels")),
             wasm_channels_enabled: parse_bool_env_from(ctx, EnvKey("WASM_CHANNELS_ENABLED"), true)?,
             wasm_channel_owner_ids: resolve_wasm_owner_ids(ctx, settings)?,
         })
     }
 }
 
-/// Get the default channels directory (~/.ironclaw/channels/).
+/// Get the default channels directory (~/.axinite/channels/).
 #[cfg(test)]
 fn default_channels_dir() -> PathBuf {
-    ironclaw_base_dir().join("channels")
+    axinite_base_dir().join("channels")
 }
 
 #[cfg(test)]

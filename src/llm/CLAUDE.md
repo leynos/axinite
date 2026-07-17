@@ -19,7 +19,7 @@ response caching.
 | `costs.rs`           | Static per-model cost table (OpenAI, Anthropic, local/Ollama heuristics)                                                             |
 | `rig_adapter.rs`     | Adapter bridging rig-core `CompletionModel` → `LlmProvider`; used by OpenAI, Anthropic, Ollama, Tinfoil                              |
 | `smart_routing.rs`   | `SmartRoutingProvider` — 13-dimension complexity scorer routes cheap vs primary model                                                |
-| `recording.rs`       | `RecordingLlm` — trace capture for E2E replay testing (`IRONCLAW_RECORD_TRACE`)                                                      |
+| `recording.rs`       | `RecordingLlm` — trace capture for E2E replay testing (`AXINITE_RECORD_TRACE`)                                                       |
 | `bedrock.rs`         | AWS Bedrock provider via native Converse API (feature-gated: `--features bedrock`)                                                   |
 
 ## Provider Selection
@@ -58,7 +58,7 @@ SDK resolves auth automatically from the environment.
 **Dual auth modes:**
 
 - **Session token** (default): `NEARAI_SESSION_TOKEN=sess_...`, base URL =
-  `https://private.near.ai`. Tokens are persisted to `~/.ironclaw/session.json`
+  `https://private.near.ai`. Tokens are persisted to `~/.axinite/session.json`
   (mode 0600) and optionally to the DB `settings` table
   (`nearai.session_token`). On 401 responses where the body contains "session"
   - "expired"/"invalid", `NearAiChatProvider` calls
@@ -227,7 +227,7 @@ Raw provider
   → FailoverProvider        (fallback model; only when NEARAI_FALLBACK_MODEL is set)
   → CircuitBreakerProvider  (fast-fail; only when NEARAI_CIRCUIT_BREAKER_THRESHOLD is set)
   → CachedProvider          (response cache; only when NEARAI_RESPONSE_CACHE_ENABLED=true)
-  → RecordingLlm            (trace capture; only when IRONCLAW_RECORD_TRACE is set)
+  → RecordingLlm            (trace capture; only when AXINITE_RECORD_TRACE is set)
 ```
 
 `build_provider_chain()` also returns a separate standalone cheap LLM provider
@@ -289,8 +289,8 @@ return only after the full response is available.
 
 ## Trace Recording
 
-Set `IRONCLAW_RECORD_TRACE=1` to enable live trace recording via
+Set `AXINITE_RECORD_TRACE=1` to enable live trace recording via
 `RecordingLlm`. Traces are JSON files containing: memory snapshot, HTTP
 exchanges from tools, and LLM steps (user inputs, text responses, tool call
 responses). Replay these in E2E tests via `TraceLlm`. Configure output path with
-`IRONCLAW_TRACE_OUTPUT` (default: `trace_{timestamp}.json`).
+`AXINITE_TRACE_OUTPUT` (default: `trace_{timestamp}.json`).

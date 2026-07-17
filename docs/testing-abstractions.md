@@ -1,13 +1,13 @@
 # Testing abstractions guide
 
 This document describes the crate-wide testing abstractions available in the
-`ironclaw::testing` module and when to use each one.
+`axinite::testing` module and when to use each one.
 
-Note: `ironclaw::testing` and all of its re-exports are test-only surfaces.
+Note: `axinite::testing` and all of its re-exports are test-only surfaces.
 They are compiled only when `#[cfg(test)]` is active, so these symbols are
 unavailable in non-test builds and will fail with unresolved import or
 visibility errors if used from production code or library consumers. Use the
-`ironclaw::testing` module and its re-exports only from tests or
+`axinite::testing` module and its re-exports only from tests or
 `#[cfg(test)]`-gated helper crates.
 
 ## Overview
@@ -33,7 +33,7 @@ correct choice for integration-style tests that need to verify actual
 persistence behaviour.
 
 ```rust
-use ironclaw::testing::TestHarnessBuilder;
+use axinite::testing::TestHarnessBuilder;
 
 #[tokio::test]
 async fn test_something() {
@@ -60,7 +60,7 @@ trait and can be used anywhere a database is required.
 ```rust
 use std::sync::Arc;
 
-use ironclaw::testing::CapturingStore;
+use axinite::testing::CapturingStore;
 
 #[tokio::test]
 async fn captures_calls() {
@@ -98,7 +98,7 @@ stable Universally Unique Identifiers (UUIDs) instead of returning a trivial
 default.
 
 ```rust
-use ironclaw::testing::NullDatabase;
+use axinite::testing::NullDatabase;
 
 fn example() {
     let db = NullDatabase::new();
@@ -126,7 +126,7 @@ tests, including:
 ```rust
 #[tokio::test]
 async fn test_terminal_completed() -> anyhow::Result<()> {
-    use ironclaw::testing::worker_harness::{make_worker, TerminalMethod};
+    use axinite::testing::worker_harness::{make_worker, TerminalMethod};
 
     let worker = make_worker(vec![]).await?;
     TerminalMethod::Completed.apply_transition(&worker).await?;

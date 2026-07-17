@@ -5,7 +5,7 @@ use std::path::PathBuf;
 
 use secrecy::{ExposeSecret, SecretString};
 
-use crate::bootstrap::ironclaw_base_dir;
+use crate::bootstrap::axinite_base_dir;
 use crate::config::EnvContext;
 use crate::config::helpers::{EnvKey, optional_env_from, parse_optional_env_from};
 use crate::error::ConfigError;
@@ -99,7 +99,7 @@ pub struct DatabaseConfig {
     pub ssl_mode: SslMode,
 
     // -- libSQL fields --
-    /// Path to local libSQL database file (default: ~/.ironclaw/ironclaw.db).
+    /// Path to local libSQL database file (default: ~/.axinite/axinite.db).
     pub libsql_path: Option<PathBuf>,
     /// Turso cloud URL for remote sync (optional).
     pub libsql_url: Option<String>,
@@ -156,13 +156,13 @@ impl DatabaseConfig {
     ///
     /// The PostgreSQL URL is required only when using the postgres backend.
     /// For the libsql backend, default to an empty placeholder.
-    /// DATABASE_URL is loaded from ~/.ironclaw/.env via dotenvy early in startup.
+    /// DATABASE_URL is loaded from ~/.axinite/.env via dotenvy early in startup.
     fn resolve_url(ctx: &EnvContext, backend: DatabaseBackend) -> Result<String, ConfigError> {
         optional_env_from(ctx, EnvKey("DATABASE_URL"))?
             .or_else(|| (backend == DatabaseBackend::LibSql).then(|| "unused://libsql".to_string()))
             .ok_or_else(|| ConfigError::MissingRequired {
                 key: "DATABASE_URL".to_string(),
-                hint: "Run 'ironclaw onboard' or set DATABASE_URL environment variable".to_string(),
+                hint: "Run 'axinite onboard' or set DATABASE_URL environment variable".to_string(),
             })
     }
 
@@ -186,7 +186,7 @@ impl DatabaseConfig {
             .map(PathBuf::from)
             .or_else(|| {
                 (backend == DatabaseBackend::LibSql)
-                    .then(|| ctx.ironclaw_base_dir().join("ironclaw.db"))
+                    .then(|| ctx.axinite_base_dir().join("axinite.db"))
             }))
     }
 
@@ -214,9 +214,9 @@ impl SslMode {
     }
 }
 
-/// Default libSQL database path (~/.ironclaw/ironclaw.db).
+/// Default libSQL database path (~/.axinite/axinite.db).
 pub fn default_libsql_path() -> PathBuf {
-    ironclaw_base_dir().join("ironclaw.db")
+    axinite_base_dir().join("axinite.db")
 }
 
 #[cfg(test)]

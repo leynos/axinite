@@ -61,7 +61,7 @@ pgvector (optional libSQL).
 
 **Axinite** starts from IronClaw's codebase. At the time of writing (March
 2026), the fork has no releases and no visible user base. Internal artefacts
-(crate name, README branding) still identify as IronClaw. Expect rough edges.
+(crate name, README branding) still identify as Axinite. Expect rough edges.
 
 ## Why a fork
 
@@ -77,7 +77,7 @@ declare *what* they want to do and the host assembles every HTTP request,
 injects credentials only into harness-controlled sinks, and enforces
 noninterference-like constraints via runtime provenance tracking and a Rego
 policy engine. That's not a hardening patch. It's a different contract between
-extensions and the runtime – one that existing IronClaw extensions would need
+extensions and the runtime – one that existing Axinite extensions would need
 to adapt to.
 
 **The memory subsystem becomes a separate process.** IronClaw's memory is
@@ -214,7 +214,7 @@ The memoryd RFC specifies a concrete architecture:
 - **Capability-token enforcement** over a Unix domain socket RPC
   surface. Short-lived tokens minted per request with minimal scope, split
   between read (`recall`, `readfacts`) and write (`ingest`, `reinforce`,
-  `retract`, `purge`). Socket permissions 0600, owned by the IronClaw user.
+  `retract`, `purge`). Socket permissions 0600, owned by the Axinite user.
 - **Apalis workers** for consolidation: extraction, concept upsert,
   fact upsert, workspace consolidation (clustering, promotion, decay), and
   deletion reconciliation – all with retries, timeouts, and concurrency limits
@@ -254,7 +254,7 @@ mechanism emits opaque encrypted compaction items into the response stream.
 These items must be persisted as-is and included in subsequent requests when
 chaining statelessly. When using `previous_response_id`, manual pruning is
 forbidden. The RFC explicitly addresses the interaction between server-side
-compaction and Axinite's existing native summarization, recommending that
+compaction and IronClaw's existing native summarization, recommending that
 native compaction be disabled or demoted to fallback when the Responses backend
 is active.
 
@@ -375,7 +375,7 @@ Axinite doesn't exist in isolation. Knowing the neighbours helps.
 - **IronClaw** tracks feature parity with OpenClaw from a Rust
   baseline (~9.8k stars, 21 releases, latest 0.18.0 as of March 2026).
 - **MCP (Model Context Protocol)** is the JSON-RPC-based open protocol
-  both IronClaw and Axinite use for connecting to external tool servers. The
+  both Axinite and IronClaw use for connecting to external tool servers. The
   spec makes explicit that MCP enables arbitrary data access and code execution
   paths – consent and control are first-order concerns, not afterthoughts.
 - **Monty** is maintained by Pydantic. Experimental. Blocks

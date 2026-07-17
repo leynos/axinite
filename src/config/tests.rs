@@ -9,7 +9,7 @@ use crate::settings::Settings;
 
 fn base_context(base_dir: &Path) -> EnvContext {
     EnvContext::default()
-        .with_env("IRONCLAW_BASE_DIR", base_dir.to_string_lossy())
+        .with_env("AXINITE_BASE_DIR", base_dir.to_string_lossy())
         .with_env("DATABASE_BACKEND", "libsql")
         .with_env("DATABASE_URL", "unused://test")
 }
@@ -17,7 +17,7 @@ fn base_context(base_dir: &Path) -> EnvContext {
 #[tokio::test]
 async fn from_context_resolves_explicit_snapshot_inputs() {
     let dir = tempfile::tempdir().expect("create tempdir");
-    let base_dir = dir.path().join("ironclaw-home");
+    let base_dir = dir.path().join("axinite-home");
     let mut settings = Settings::default();
     settings.agent.name = "settings-agent".to_string();
     settings.heartbeat.enabled = true;
@@ -75,7 +75,7 @@ async fn from_context_resolves_explicit_snapshot_inputs() {
 #[tokio::test]
 async fn from_context_with_toml_merges_settings_before_resolution() {
     let dir = tempfile::tempdir().expect("create tempdir");
-    let base_dir = dir.path().join("ironclaw-home");
+    let base_dir = dir.path().join("axinite-home");
     let toml_path = dir.path().join("config.toml");
     fs::write(
         &toml_path,
@@ -105,7 +105,7 @@ async fn from_context_with_toml_merges_settings_before_resolution() {
 #[tokio::test]
 async fn re_resolve_llm_from_rebuilds_llm_against_updated_snapshot() {
     let dir = tempfile::tempdir().expect("create tempdir");
-    let base_dir = dir.path().join("ironclaw-home");
+    let base_dir = dir.path().join("axinite-home");
     let settings = Settings::default();
     let ctx_a = base_context(&base_dir)
         .with_env("LLM_BACKEND", "nearai")

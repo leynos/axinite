@@ -146,7 +146,7 @@ impl WorkerRuntime {
 
     /// Create a new worker runtime from environment variables.
     ///
-    /// Reads `IRONCLAW_WORKER_TOKEN` from the environment for auth.
+    /// Reads `AXINITE_WORKER_TOKEN` from the environment for auth.
     /// This is a convenience constructor for production use; tests should
     /// prefer [`Self::new`] with an explicit client.
     pub fn from_env(config: WorkerConfig) -> Result<Self, WorkerError> {

@@ -12,7 +12,7 @@ requirements through `<name>.capabilities.json` sidecar files (in dev mode:
 
 Tools can be WASM (sandboxed, credential-injected, single binary) or MCP
 servers (ecosystem, any language, no sandbox). Both are first-class via
-`ironclaw tool install`.
+`axinite tool install`.
 
 See `src/tools/README.md` for full architecture, adding new tools, auth JSON
 examples, and WASM vs MCP decision guide.

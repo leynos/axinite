@@ -7,11 +7,11 @@ use std::time::Duration;
 
 use rust_decimal::Decimal;
 
-use ironclaw::channels::web::server::{GatewayState, start_server};
-use ironclaw::channels::web::sse::SseManager;
-use ironclaw::channels::web::ws::WsConnectionTracker;
-use ironclaw::error::LlmError;
-use ironclaw::llm::{
+use axinite::channels::web::server::{GatewayState, start_server};
+use axinite::channels::web::sse::SseManager;
+use axinite::channels::web::ws::WsConnectionTracker;
+use axinite::error::LlmError;
+use axinite::llm::{
     CompletionRequest, CompletionResponse, FinishReason, LlmProvider, ToolCompletionRequest,
     ToolCompletionResponse,
 };
@@ -38,7 +38,7 @@ impl MockLlmProvider {
     }
 }
 
-impl ironclaw::llm::NativeLlmProvider for MockLlmProvider {
+impl axinite::llm::NativeLlmProvider for MockLlmProvider {
     fn model_name(&self) -> &str {
         "mock-model-v1"
     }
@@ -59,7 +59,7 @@ impl ironclaw::llm::NativeLlmProvider for MockLlmProvider {
             .messages
             .iter()
             .rev()
-            .find(|m| m.role == ironclaw::llm::Role::User)
+            .find(|m| m.role == axinite::llm::Role::User)
             .map(|m| m.content.clone())
             .unwrap_or_else(|| "no user message".to_string());
 
@@ -87,7 +87,7 @@ impl ironclaw::llm::NativeLlmProvider for MockLlmProvider {
         if let Some(tool) = req.tools.first() {
             Ok(ToolCompletionResponse {
                 content: None,
-                tool_calls: vec![ironclaw::llm::ToolCall {
+                tool_calls: vec![axinite::llm::ToolCall {
                     id: "call_mock_001".to_string(),
                     name: tool.name.clone(),
                     arguments: serde_json::json!({"test": true}),
@@ -129,7 +129,7 @@ impl FixedModelProvider {
     }
 }
 
-impl ironclaw::llm::NativeLlmProvider for FixedModelProvider {
+impl axinite::llm::NativeLlmProvider for FixedModelProvider {
     fn model_name(&self) -> &str {
         self.model
     }
@@ -204,8 +204,8 @@ pub(super) async fn start_test_server_with_provider(
         llm_provider: Some(llm_provider),
         skill_registry: None,
         skill_catalog: None,
-        chat_rate_limiter: ironclaw::channels::web::server::RateLimiter::new(30, 60),
-        oauth_rate_limiter: ironclaw::channels::web::server::RateLimiter::new(10, 60),
+        chat_rate_limiter: axinite::channels::web::server::RateLimiter::new(30, 60),
+        oauth_rate_limiter: axinite::channels::web::server::RateLimiter::new(10, 60),
         registry_entries: Vec::new(),
         cost_guard: None,
         routine_engine: Arc::new(tokio::sync::RwLock::new(None)),

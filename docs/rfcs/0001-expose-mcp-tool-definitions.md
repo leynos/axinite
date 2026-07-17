@@ -21,7 +21,7 @@ Before roadmap item `1.1.1`, hosted workers exposed only their local tool
 registry plus a small set of extension-management proxy tools. That meant the
 hosted large language model (LLM) did not see the real `ToolDefinition`s for
 user-configured Model Context Protocol (MCP) tools, even when those tools were
-already installed, activated, and available in the main IronClaw process.
+already installed, activated, and available in the main Axinite process.
 
 The result is predictable: the model either cannot discover those tools at all,
 or it sees only high-level extension-management tools rather than the real call
@@ -76,14 +76,14 @@ owned by the orchestrator-side extension system rather than the container.
 
 ### Current MCP path outside hosted mode
 
-Outside hosted mode, IronClaw already has the right information:
+Outside hosted mode, Axinite already has the right information:
 
 - MCP activation creates real `Tool` implementations from the server's tool list
 - those wrappers preserve the MCP tool `description`
 - those wrappers preserve the MCP tool `input_schema`
 - the active tool implementations are registered into the main `ToolRegistry`
 
-In other words, IronClaw already has a canonical, correct representation of the
+In other words, Axinite already has a canonical, correct representation of the
 tool signatures and documentation. Hosted mode simply does not reuse it.
 
 ### User-visible failure mode
@@ -210,7 +210,7 @@ For MCP tools specifically, this means:
 - tool definition is available from the live wrapper
 - approval semantics are compatible with hosted mode
 
-If IronClaw later grows a hosted approval grant mechanism, the filter can be
+If Axinite later grows a hosted approval grant mechanism, the filter can be
 relaxed. Until then, the catalogue should prefer correctness over breadth. The
 current implementation keeps the hosted-visible source set to active MCP tools
 only; later roadmap work extends that same canonical filter seam to

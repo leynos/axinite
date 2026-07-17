@@ -1,7 +1,7 @@
 //! MCP server configuration.
 //!
 //! Stores configuration for connecting to hosted MCP servers.
-//! Configuration is persisted at ~/.ironclaw/mcp-servers.json.
+//! Configuration is persisted at ~/.axinite/mcp-servers.json.
 //!
 //! Submodules:
 //! - [`server`]: per-server and transport configuration types

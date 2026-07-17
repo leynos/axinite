@@ -75,7 +75,7 @@ ______________________________________________________________________
 | CLI/TUI       | ✅       | ✅       | -        | Ratatui-based TUI                                                                         |
 | HTTP webhook  | ✅       | ✅       | -        | axum with secret validation                                                               |
 | REPL (simple) | ✅       | ✅       | -        | For testing                                                                               |
-| WASM channels | ❌       | ✅       | -        | IronClaw innovation                                                                       |
+| WASM channels | ❌       | ✅       | -        | IronClaw innovation                                                                      |
 | WhatsApp      | ✅       | ❌       | P1       | Baileys (Web), same-phone mode with echo detection                                        |
 | Telegram      | ✅       | ✅       | -        | WASM channel(MTProto), DM pairing, caption, /start, bot_username, DM topics               |
 | Discord       | ✅       | ❌       | P2       | discord.js, thread parent binding inheritance                                             |
@@ -141,7 +141,7 @@ ______________________________________________________________________
 
 | Feature                        | OpenClaw | IronClaw | Notes                                                                             |
 | ------------------------------ | -------- | -------- | --------------------------------------------------------------------------------- |
-| DM pairing codes               | ✅       | ✅       | `ironclaw pairing list/approve`, host APIs                                        |
+| DM pairing codes               | ✅       | ✅       | `axinite pairing list/approve`, host APIs                                        |
 | Allowlist/blocklist            | ✅       | 🚧       | `allow_from` + pairing store + hardened command/group allowlists                  |
 | Self-message bypass            | ✅       | ❌       | Own messages skip pairing                                                         |
 | Mention-based activation       | ✅       | ✅       | bot_username + respond_to_all_group_messages                                      |
@@ -304,7 +304,7 @@ ______________________________________________________________________
 | Dynamic loading | ✅ | ✅ | WASM modules |
 | Manifest validation | ✅ | ✅ | WASM metadata |
 | HTTP path registration | ✅ | ❌ | Plugin routes |
-| Workspace-relative install | ✅ | ✅ | ~/.ironclaw/tools/ |
+| Workspace-relative install | ✅ | ✅ | ~/.axinite/tools/ |
 | Channel plugins | ✅ | ✅ | WASM channels |
 | Auth plugins | ✅ | ❌ | |
 | Memory plugins | ✅ | ❌ | Custom backends + selectable memory slot |
@@ -333,7 +333,7 @@ ______________________________________________________________________
 | Config validation/schema | ✅ | ✅ | Type-safe Config struct + `openclaw config validate` |
 | Hot-reload | ✅ | ❌ | |
 | Legacy migration | ✅ | ➖ | |
-| State directory | ✅ `~/.openclaw-state/` | ✅ `~/.ironclaw/` | |
+| State directory | ✅ `~/.openclaw-state/` | ✅ `~/.axinite/` | |
 | Credentials directory | ✅ | ✅ | Session files |
 | Full model compat fields in schema | ✅ | ❌ | pi-ai model compat exposed in config |
 
@@ -474,7 +474,7 @@ ______________________________________________________________________
 | Tailscale identity | ✅ | ❌ | |
 | Trusted-proxy auth | ✅ | ❌ | Header-based reverse proxy auth |
 | OAuth flows | ✅ | 🚧 | NEAR AI OAuth |
-| DM pairing verification | ✅ | ✅ | ironclaw pairing approve, host APIs |
+| DM pairing verification | ✅ | ✅ | axinite pairing approve, host APIs |
 | Allowlist/blocklist | ✅ | 🚧 | allow_from + pairing store |
 | Per-group tool policies | ✅ | ❌ | |
 | Exec approvals | ✅ | ✅ | TUI overlay |
@@ -536,7 +536,7 @@ ______________________________________________________________________
 ### P0 - Core (Already Done)
 - ✅ TUI channel with approval overlays
 - ✅ HTTP webhook channel
-- ✅ DM pairing (ironclaw pairing list/approve, host APIs)
+- ✅ DM pairing (axinite pairing list/approve, host APIs)
 - ✅ WASM tool sandbox
 - ✅ Workspace/memory with hybrid search + embeddings batching
 - ✅ Prompt injection defence

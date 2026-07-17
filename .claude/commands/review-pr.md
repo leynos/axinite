@@ -57,9 +57,9 @@ docs. Batch reads in groups of ~20 if needed.
 Go through the changes with each of these lenses. For every finding, note the
 file, line range, severity, and a concrete description.
 
-### IronClaw-specific checks
+### Axinite-specific checks
 
-In addition to the general lenses below, check IronClaw conventions (see
+In addition to the general lenses below, check Axinite conventions (see
 CLAUDE.md):
 
 - No `.unwrap()` or `.expect()` in production code (tests are fine)

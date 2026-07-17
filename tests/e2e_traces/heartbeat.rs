@@ -5,11 +5,11 @@
 
 use std::sync::Arc;
 
-use ironclaw::agent::{HeartbeatConfig, HeartbeatRunner};
-use ironclaw::workspace::hygiene::HygieneConfig;
+use axinite::agent::{HeartbeatConfig, HeartbeatRunner};
+use axinite::workspace::hygiene::HygieneConfig;
 
 use crate::support::routines::{create_test_db, create_workspace};
-use ironclaw::llm::recording::{TraceResponse, TraceStep};
+use axinite::llm::recording::{TraceResponse, TraceStep};
 
 use crate::support::trace_provider::TraceLlm;
 use crate::support::trace_types::LlmTrace;
@@ -59,7 +59,7 @@ async fn heartbeat_findings() {
 
     let result = runner.check_heartbeat().await;
     match result {
-        ironclaw::agent::HeartbeatResult::NeedsAttention(msg) => {
+        axinite::agent::HeartbeatResult::NeedsAttention(msg) => {
             assert!(
                 msg.contains("error"),
                 "Expected 'error' in attention message: {msg}"
@@ -104,7 +104,7 @@ async fn heartbeat_empty_skip() {
 
     let result = runner.check_heartbeat().await;
     assert!(
-        matches!(result, ironclaw::agent::HeartbeatResult::Skipped),
+        matches!(result, axinite::agent::HeartbeatResult::Skipped),
         "Expected Skipped for empty checklist, got: {result:?}"
     );
 }

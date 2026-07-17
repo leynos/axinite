@@ -1,0 +1,20 @@
+[Unit]
+Description=Axinite AI Assistant
+After=cloud-sql-proxy.service docker.service
+Requires=cloud-sql-proxy.service
+
+[Service]
+Type=simple
+ExecStartPre=/usr/bin/docker pull us-central1-docker.pkg.dev/axinite-prod/axinite/agent:latest
+ExecStart=/usr/bin/docker run --rm \
+  --name axinite \
+  --env-file /opt/axinite/.env \
+  --network=host \
+  us-central1-docker.pkg.dev/axinite-prod/axinite/agent:latest \
+  --no-onboard
+ExecStop=/usr/bin/docker stop axinite
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target

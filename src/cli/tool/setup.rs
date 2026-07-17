@@ -117,7 +117,7 @@ pub(super) async fn setup_tool(
         anyhow::anyhow!(
             "Tool '{}' has no setup configuration.\n\
              The tool may not require setup, or setup is not defined.\n\
-             Try 'ironclaw tool auth {}' for OAuth-based authentication.",
+             Try 'axinite tool auth {}' for OAuth-based authentication.",
             name,
             name
         )

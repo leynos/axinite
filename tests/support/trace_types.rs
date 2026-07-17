@@ -4,7 +4,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
 use anyhow::Context;
-use ironclaw::llm::recording::{HttpExchange, MemorySnapshotEntry, TraceResponse, TraceStep};
+use axinite::llm::recording::{HttpExchange, MemorySnapshotEntry, TraceResponse, TraceStep};
 
 /// A single turn in a trace: one user message and the LLM response steps that follow.
 #[derive(Debug, Clone, Serialize, Deserialize)]

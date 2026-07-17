@@ -8,7 +8,7 @@ use chrono::{DateTime, Utc};
 /// Which mode a sandbox container runs in.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum JobMode {
-    /// Standard IronClaw worker with proxied LLM calls.
+    /// Standard Axinite worker with proxied LLM calls.
     Worker,
     /// Claude Code bridge that spawns the `claude` CLI directly.
     ClaudeCode,
@@ -87,7 +87,7 @@ impl fmt::Debug for ContainerJobConfig {
 impl Default for ContainerJobConfig {
     fn default() -> Self {
         Self {
-            image: "ironclaw-worker:latest".to_string(),
+            image: "axinite-worker:latest".to_string(),
             memory_limit_mb: 2048,
             cpu_shares: 1024,
             orchestrator_port: 50051,

@@ -49,7 +49,7 @@ pub(super) fn missing_client_id_error(
     );
     // Only mention the Google-specific build flag for Google providers
     if auth.secret_name.to_lowercase().contains("google") {
-        msg.push_str(", or build with IRONCLAW_GOOGLE_CLIENT_ID");
+        msg.push_str(", or build with AXINITE_GOOGLE_CLIENT_ID");
     }
     msg.push('.');
     msg

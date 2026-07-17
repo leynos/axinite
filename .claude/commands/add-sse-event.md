@@ -7,7 +7,7 @@ model: opus
 
 # Add SSE Event
 
-Add a new SSE event called `$ARGUMENTS` to the IronClaw web gateway. This
+Add a new SSE event called `$ARGUMENTS` to the Axinite web gateway. This
 involves changes across 5 files in a specific order. Follow each step exactly.
 
 ## Step 1: Add `StatusUpdate` variant

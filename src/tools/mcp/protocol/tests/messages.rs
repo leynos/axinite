@@ -15,7 +15,7 @@ fn test_initialize_request() {
     assert!(params["capabilities"].is_object());
     assert!(params["capabilities"]["roots"].is_object());
     assert!(params["capabilities"]["sampling"].is_object());
-    assert_eq!(params["clientInfo"]["name"], "ironclaw");
+    assert_eq!(params["clientInfo"]["name"], "axinite");
     assert!(params["clientInfo"]["version"].is_string());
 }
 

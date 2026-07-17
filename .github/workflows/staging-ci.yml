@@ -416,7 +416,7 @@ jobs:
           if [ -n "$PR_NUMBER" ]; then
             echo "Merging promotion PR #${PR_NUMBER}"
             # Do NOT use --delete-branch: deleting a promotion branch closes
-            # any chained PRs that use it as their base (verified in ironclaw-ci-test).
+            # any chained PRs that use it as their base (verified in axinite-ci-test).
             # Stale promotion branches are cleaned up separately.
             gh pr merge "$PR_NUMBER" --merge
             echo "merged=true" >> "$GITHUB_OUTPUT"

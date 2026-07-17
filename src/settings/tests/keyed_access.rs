@@ -21,7 +21,7 @@ fn test_db_map_round_trip() {
 fn test_get_setting() {
     let settings = Settings::default();
 
-    assert_eq!(settings.get("agent.name"), Some("ironclaw".to_string()));
+    assert_eq!(settings.get("agent.name"), Some("axinite".to_string()));
     assert_eq!(
         settings.get("agent.max_parallel_jobs"),
         Some("5".to_string())
@@ -50,7 +50,7 @@ fn test_reset_setting() {
 
     settings.agent.name = "custom".to_string();
     settings.reset("agent.name").unwrap();
-    assert_eq!(settings.agent.name, "ironclaw");
+    assert_eq!(settings.agent.name, "axinite");
 }
 
 #[test]

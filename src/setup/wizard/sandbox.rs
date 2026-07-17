@@ -51,7 +51,7 @@ fn anthropic_credentials_present() -> bool {
 impl SetupWizard {
     /// Step 8: Docker Sandbox -- check Docker installation and availability.
     pub(super) async fn step_docker_sandbox(&mut self) -> Result<(), SetupError> {
-        print_info("IronClaw can execute code, run builds, and use tools inside Docker");
+        print_info("Axinite can execute code, run builds, and use tools inside Docker");
         print_info("containers. This keeps your system safe -- commands from the LLM run");
         print_info("in an isolated sandbox with no access to your credentials, limited");
         print_info("filesystem access, and network traffic restricted to an allowlist.");

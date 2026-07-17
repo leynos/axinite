@@ -1,6 +1,6 @@
 //! Pairing store: pending requests and allowFrom list.
 //!
-//! Stored in ~/.ironclaw/{channel}-pairing.json and {channel}-allowFrom.json.
+//! Stored in ~/.axinite/{channel}-pairing.json and {channel}-allowFrom.json.
 
 use std::collections::HashSet;
 use std::io::{Seek, SeekFrom, Write};
@@ -79,7 +79,7 @@ pub struct PairingStore {
 }
 
 impl PairingStore {
-    /// Create a new pairing store using default directory (~/.ironclaw).
+    /// Create a new pairing store using default directory (~/.axinite).
     pub fn new() -> Self {
         Self {
             base_dir: default_pairing_dir(),

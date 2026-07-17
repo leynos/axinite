@@ -1,10 +1,10 @@
-//! Bootstrap helpers for IronClaw.
+//! Bootstrap helpers for Axinite.
 //!
 //! The only setting that truly needs disk persistence before the database is
 //! available is `DATABASE_URL` (chicken-and-egg: can't connect to DB without
 //! it). Everything else is auto-detected or read from env vars.
 //!
-//! File: `~/.ironclaw/.env` (standard dotenvy format)
+//! File: `~/.axinite/.env` (standard dotenvy format)
 
 mod migration;
 mod pid_lock;
@@ -18,25 +18,25 @@ use std::sync::LazyLock;
 
 use migration::migrate_bootstrap_json_to_env;
 
-const IRONCLAW_BASE_DIR_ENV: &str = "IRONCLAW_BASE_DIR";
+const AXINITE_BASE_DIR_ENV: &str = "AXINITE_BASE_DIR";
 
-/// Lazily computed IronClaw base directory, cached for the lifetime of the process.
-static IRONCLAW_BASE_DIR: LazyLock<PathBuf> = LazyLock::new(compute_ironclaw_base_dir);
+/// Lazily computed Axinite base directory, cached for the lifetime of the process.
+static AXINITE_BASE_DIR: LazyLock<PathBuf> = LazyLock::new(compute_axinite_base_dir);
 
-/// Compute the IronClaw base directory from environment.
+/// Compute the Axinite base directory from environment.
 ///
 /// This is the underlying implementation used by both the public
-/// `ironclaw_base_dir()` function (which caches the result) and tests
+/// `axinite_base_dir()` function (which caches the result) and tests
 /// (which need to verify different configurations).
-pub fn compute_ironclaw_base_dir() -> PathBuf {
-    std::env::var(IRONCLAW_BASE_DIR_ENV)
+pub fn compute_axinite_base_dir() -> PathBuf {
+    std::env::var(AXINITE_BASE_DIR_ENV)
         .map(PathBuf::from)
         .map(|path| {
             if path.as_os_str().is_empty() {
                 default_base_dir()
             } else if !path.is_absolute() {
                 eprintln!(
-                    "Warning: IRONCLAW_BASE_DIR is a relative path '{}', resolved against current directory",
+                    "Warning: AXINITE_BASE_DIR is a relative path '{}', resolved against current directory",
                     path.display()
                 );
                 path
@@ -47,64 +47,64 @@ pub fn compute_ironclaw_base_dir() -> PathBuf {
         .unwrap_or_else(|_| default_base_dir())
 }
 
-/// Get the default IronClaw base directory (~/.ironclaw).
+/// Get the default Axinite base directory (~/.axinite).
 ///
 /// Logs a warning if the home directory cannot be determined and falls back to
 /// the current directory.
 fn default_base_dir() -> PathBuf {
     if let Some(home) = dirs::home_dir() {
-        home.join(".ironclaw")
+        home.join(".axinite")
     } else {
         eprintln!("Warning: Could not determine home directory, using current directory");
         std::env::current_dir()
             .unwrap_or_else(|_| PathBuf::from("/tmp"))
-            .join(".ironclaw")
+            .join(".axinite")
     }
 }
 
-/// Get the IronClaw base directory.
+/// Get the Axinite base directory.
 ///
-/// Override with `IRONCLAW_BASE_DIR` environment variable.
-/// Defaults to `~/.ironclaw` (or `./.ironclaw` if home directory cannot be determined).
+/// Override with `AXINITE_BASE_DIR` environment variable.
+/// Defaults to `~/.axinite` (or `./.axinite` if home directory cannot be determined).
 ///
 /// Thread-safe: the value is computed once and cached in a `LazyLock`.
 ///
 /// # Environment Variable Behaviour
-/// - If `IRONCLAW_BASE_DIR` is set to a non-empty path, that path is used.
-/// - If `IRONCLAW_BASE_DIR` is set to an empty string, it is treated as unset.
-/// - If `IRONCLAW_BASE_DIR` contains null bytes, a warning is printed and the default is used.
+/// - If `AXINITE_BASE_DIR` is set to a non-empty path, that path is used.
+/// - If `AXINITE_BASE_DIR` is set to an empty string, it is treated as unset.
+/// - If `AXINITE_BASE_DIR` contains null bytes, a warning is printed and the default is used.
 /// - If the home directory cannot be determined, a warning is printed and the current directory is used.
 ///
 /// # Returns
 /// A `PathBuf` pointing to the base directory. The path is not validated
 /// for existence.
-pub fn ironclaw_base_dir() -> PathBuf {
-    IRONCLAW_BASE_DIR.clone()
+pub fn axinite_base_dir() -> PathBuf {
+    AXINITE_BASE_DIR.clone()
 }
 
-/// Path to the IronClaw-specific `.env` file: `~/.ironclaw/.env`.
-pub fn ironclaw_env_path() -> PathBuf {
-    ironclaw_base_dir().join(".env")
+/// Path to the Axinite-specific `.env` file: `~/.axinite/.env`.
+pub fn axinite_env_path() -> PathBuf {
+    axinite_base_dir().join(".env")
 }
 
-/// Load env vars from `~/.ironclaw/.env` (in addition to the standard `.env`).
+/// Load env vars from `~/.axinite/.env` (in addition to the standard `.env`).
 ///
 /// Call this **after** `dotenvy::dotenv()` so that the standard `./.env`
-/// takes priority over `~/.ironclaw/.env`. dotenvy never overwrites
+/// takes priority over `~/.axinite/.env`. dotenvy never overwrites
 /// existing env vars, so the effective priority is:
 ///
-///   explicit env vars > `./.env` > `~/.ironclaw/.env` > auto-detect
+///   explicit env vars > `./.env` > `~/.axinite/.env` > auto-detect
 ///
-/// If `~/.ironclaw/.env` doesn't exist but the legacy `bootstrap.json` does,
+/// If `~/.axinite/.env` doesn't exist but the legacy `bootstrap.json` does,
 /// extracts `DATABASE_URL` from it and writes the `.env` file (one-time
 /// upgrade from the old config format).
 ///
 /// After loading the `.env` file, auto-detects the libsql backend: if
-/// `DATABASE_BACKEND` is still unset and `~/.ironclaw/ironclaw.db` exists,
+/// `DATABASE_BACKEND` is still unset and `~/.axinite/axinite.db` exists,
 /// defaults to `libsql` so cloud instances work out of the box without any
 /// manual configuration.
-pub fn load_ironclaw_env() {
-    let path = ironclaw_env_path();
+pub fn load_axinite_env() {
+    let path = axinite_env_path();
 
     if !path.exists() {
         // One-time upgrade: extract DATABASE_URL from legacy bootstrap.json
@@ -118,21 +118,21 @@ pub fn load_ironclaw_env() {
     // Auto-detect libsql: if DATABASE_BACKEND is still unset after loading
     // all env files, and the local SQLite DB exists, default to libsql.
     // This avoids the chicken-and-egg problem on cloud instances where no
-    // DATABASE_URL is configured but ironclaw.db is already present.
+    // DATABASE_URL is configured but axinite.db is already present.
     if std::env::var("DATABASE_BACKEND").is_err() {
         let default_db = dirs::home_dir()
             .unwrap_or_default()
-            .join(".ironclaw")
-            .join("ironclaw.db");
+            .join(".axinite")
+            .join("axinite.db");
         if default_db.exists() {
-            // SAFETY: `load_ironclaw_env` is called from a synchronous `fn main()`
+            // SAFETY: `load_axinite_env` is called from a synchronous `fn main()`
             // before the Tokio runtime is started, so no other threads exist yet.
             unsafe { std::env::set_var("DATABASE_BACKEND", "libsql") };
         }
     }
 }
 
-/// Write database bootstrap vars to `~/.ironclaw/.env`.
+/// Write database bootstrap vars to `~/.axinite/.env`.
 ///
 /// These settings form the chicken-and-egg layer: they must be available
 /// from the filesystem (env vars) BEFORE any database connection, because
@@ -143,7 +143,7 @@ pub fn load_ironclaw_env() {
 /// Values are double-quoted so that `#` (common in URL-encoded passwords)
 /// and other shell-special characters are preserved by dotenvy.
 pub fn save_bootstrap_env(vars: &[(&str, &str)]) -> std::io::Result<()> {
-    save_bootstrap_env_to(&ironclaw_env_path(), vars)
+    save_bootstrap_env_to(&axinite_env_path(), vars)
 }
 
 /// Write bootstrap vars to an arbitrary path (testable variant).
@@ -166,13 +166,13 @@ pub fn save_bootstrap_env_to(path: &std::path::Path, vars: &[(&str, &str)]) -> s
     Ok(())
 }
 
-/// Update or add multiple variables in `~/.ironclaw/.env`, preserving existing content.
+/// Update or add multiple variables in `~/.axinite/.env`, preserving existing content.
 ///
 /// Like `upsert_bootstrap_var` but batched — replaces lines for any key in `vars`
 /// and preserves all other existing lines. Use this instead of `save_bootstrap_env`
 /// when you want to update specific keys without destroying user-added variables.
 pub fn upsert_bootstrap_vars(vars: &[(&str, &str)]) -> std::io::Result<()> {
-    upsert_bootstrap_vars_to(&ironclaw_env_path(), vars)
+    upsert_bootstrap_vars_to(&axinite_env_path(), vars)
 }
 
 /// Update or add multiple variables at an arbitrary path (testable variant).
@@ -218,14 +218,14 @@ pub fn upsert_bootstrap_vars_to(
     Ok(())
 }
 
-/// Update or add a single variable in `~/.ironclaw/.env`, preserving existing content.
+/// Update or add a single variable in `~/.axinite/.env`, preserving existing content.
 ///
 /// Unlike `save_bootstrap_env` (which overwrites the entire file), this
 /// reads the current `.env`, replaces the line for `key` if it exists,
 /// or appends it otherwise. Use this when writing a single bootstrap var
 /// outside the wizard (which manages the full set via `save_bootstrap_env`).
 pub fn upsert_bootstrap_var(key: &str, value: &str) -> std::io::Result<()> {
-    upsert_bootstrap_var_to(&ironclaw_env_path(), key, value)
+    upsert_bootstrap_var_to(&axinite_env_path(), key, value)
 }
 
 /// Update or add a single variable at an arbitrary path (testable variant).
@@ -283,7 +283,7 @@ fn restrict_file_permissions(_path: &std::path::Path) -> std::io::Result<()> {
     Ok(())
 }
 
-/// Write `DATABASE_URL` to `~/.ironclaw/.env`.
+/// Write `DATABASE_URL` to `~/.axinite/.env`.
 ///
 /// Convenience wrapper around `save_bootstrap_env` for single-value migration
 /// paths. Prefer `save_bootstrap_env` for new code.

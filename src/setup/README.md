@@ -1,6 +1,6 @@
 # Setup / Onboarding Specification
 
-This document is the authoritative specification for IronClaw's onboarding
+This document is the authoritative specification for Axinite's onboarding
 wizard. Any code change to `src/setup/` **must** keep this document in sync. If
 a future contributor or coding agent modifies setup behaviour, update this file
 first, then adjust the code to match.
@@ -10,22 +10,22 @@ ______________________________________________________________________
 ## Entry Points
 
 ```shell
-ironclaw onboard [--skip-auth] [--channels-only] [--provider-only] [--quick]
+axinite onboard [--skip-auth] [--channels-only] [--provider-only] [--quick]
 ```
 
 Explicit invocation. Loads `.env` files, runs the wizard, exits.
 
 ```text
-ironclaw          (first run, no database configured)
+axinite          (first run, no database configured)
 ```
 
 Auto-detection via `check_onboard_needed()` in `main.rs`. Skips onboarding when
-`ONBOARD_COMPLETED` env var is set (written to `~/.ironclaw/.env` by the
+`ONBOARD_COMPLETED` env var is set (written to `~/.axinite/.env` by the
 wizard). Otherwise triggers when no database is configured:
 
 - `DATABASE_URL` env var is set
 - `LIBSQL_PATH` env var is set
-- `~/.ironclaw/ironclaw.db` exists on disk
+- `~/.axinite/axinite.db` exists on disk
 
 Auto-triggered onboarding uses **quick mode** by default.
 
@@ -39,7 +39,7 @@ ______________________________________________________________________
 1. Parse CLI args
 2. If Command::Onboard  → load .env, run wizard, exit
 3. If Command::Run or no command:
-   a. Load .env files (dotenvy::dotenv() then load_ironclaw_env())
+   a. Load .env files (dotenvy::dotenv() then load_axinite_env())
    b. check_onboard_needed() → run wizard if needed
    c. Config::from_env()     → build config from env vars
    d. Create SessionManager  → load session token
@@ -49,7 +49,7 @@ ______________________________________________________________________
 
 **Critical ordering:** `.env` files must be loaded (step 3a) before
 `Config::from_env()` (step 3c) because bootstrap vars like `DATABASE_BACKEND`
-live in `~/.ironclaw/.env`.
+live in `~/.axinite/.env`.
 
 ______________________________________________________________________
 
@@ -60,17 +60,17 @@ near-instant onboarding experience by auto-defaulting everything except the LLM
 provider and model selection.
 
 ```text
-auto_setup_database()    → libsql at ~/.ironclaw/ironclaw.db (zero prompts)
+auto_setup_database()    → libsql at ~/.axinite/axinite.db (zero prompts)
 auto_setup_security()    → keychain or env var (zero prompts)
 Step 1/2: Inference Provider  ← only interactive step
 Step 2/2: Model Selection     ← only interactive step
        ↓
-   save_and_summarize()      → includes tip to run `ironclaw onboard`
+   save_and_summarize()      → includes tip to run `axinite onboard`
 ```
 
 **`auto_setup_database()`:** Uses existing env vars if set (`DATABASE_URL` for
 postgres, `LIBSQL_PATH` for libsql) without prompting. Otherwise defaults to
-libsql at `~/.ironclaw/ironclaw.db`, creates the database, and runs migrations
+libsql at `~/.axinite/axinite.db`, creates the database, and runs migrations
 silently. Falls back to interactive mode only when just the postgres feature is
 compiled and no `DATABASE_URL` is set.
 
@@ -83,7 +83,7 @@ macOS keychain dialogs.
 `upsert_bootstrap_vars()` instead of `save_bootstrap_env()`, preserving
 user-added variables like `HTTP_HOST` across re-onboarding.
 
-The full 9-step wizard remains available via `ironclaw onboard`.
+The full 9-step wizard remains available via `axinite onboard`.
 
 ______________________________________________________________________
 
@@ -135,7 +135,7 @@ Both features compiled?
 
 **libSQL path** (`step_database_libsql`):
 
-1. Offer local path (default: `~/.ironclaw/ironclaw.db`)
+1. Offer local path (default: `~/.axinite/axinite.db`)
 2. Optional Turso cloud sync (URL + auth token)
 3. Test connection (creates `LibSqlBackend`)
 4. Always run migrations (idempotent CREATE IF NOT EXISTS)
@@ -173,7 +173,7 @@ On macOS, `security_framework::get_generic_password()` can trigger TWO system
 dialogs:
 
 1. "Enter your password to unlock the keychain" (keychain locked)
-2. "Allow ironclaw to access this keychain item" (per-app authorization)
+2. "Allow axinite to access this keychain item" (per-app authorization)
 
 This is OS-level behaviour we cannot prevent. To minimize pain:
 
@@ -187,7 +187,7 @@ This is OS-level behaviour we cannot prevent. To minimize pain:
   Later calls to `init_secrets_context()` check this field first, avoiding
   redundant keychain probes.
 
-- **Never probe the keychain in read-only commands** (e.g., `ironclaw status`).
+- **Never probe the keychain in read-only commands** (e.g., `axinite status`).
   The status command reports "env not set (keychain may be configured)" rather
   than triggering system dialogs.
 
@@ -241,10 +241,10 @@ ______________________________________________________________________
     (Responses API at `private.near.ai`, session token auth)
   - Option 4: NEAR AI Cloud API key → **NEAR AI Cloud** mode
     (Chat Completions API at `cloud-api.near.ai`, API key auth)
-- **NEAR AI Chat** path: session token saved to `~/.ironclaw/session.json`.
+- **NEAR AI Chat** path: session token saved to `~/.axinite/session.json`.
   Hosting providers can set `NEARAI_SESSION_TOKEN` env var directly (takes
   precedence over file-based tokens).
-- **NEAR AI Cloud** path: `NEARAI_API_KEY` saved to `~/.ironclaw/.env`
+- **NEAR AI Cloud** path: `NEARAI_API_KEY` saved to `~/.axinite/.env`
   (bootstrap) and encrypted secrets store (`llm_nearai_api_key`).
   `LlmConfig::resolve()` auto-selects `ChatCompletions` mode when the API key
   is present.
@@ -312,7 +312,7 @@ ______________________________________________________________________
 
 ```text
 6a. Tunnel setup (if webhook channels needed)
-6b. Discover WASM channels from ~/.ironclaw/channels/
+6b. Discover WASM channels from ~/.axinite/channels/
 6c. Build channel options: discovered + bundled + registry catalog
 6d. Multi-select: CLI/TUI, HTTP, all available channels
 6e. Install missing bundled channels (copy WASM binaries)
@@ -324,7 +324,7 @@ ______________________________________________________________________
 
 **Channel sources** (priority order for installation):
 
-1. Already installed in `~/.ironclaw/channels/`
+1. Already installed in `~/.axinite/channels/`
 2. Bundled channels (pre-compiled in `channels-src/`)
 3. Registry channels (`registry/channels/*.json`, download-first with source
    fallback)
@@ -367,7 +367,7 @@ ______________________________________________________________________
 1. Load `RegistryCatalog` from `registry/` directory
 2. If registry not found, print info and skip
 3. List all tool manifests from the catalogue
-4. Discover already-installed tools in `~/.ironclaw/tools/`
+4. Discover already-installed tools in `~/.axinite/tools/`
 5. Multi-select: show all registry tools with display name, auth method,
    and description. Pre-check tools tagged `"default"` and already installed.
 6. For each selected tool not yet installed, install via
@@ -405,14 +405,14 @@ ______________________________________________________________________
 
 Settings are persisted in two places:
 
-**Layer 1: `~/.ironclaw/.env`** (bootstrap vars)
+**Layer 1: `~/.axinite/.env`** (bootstrap vars)
 
 Contains only the settings needed BEFORE database connection. Written by
 `save_bootstrap_env()` in `bootstrap.rs`.
 
 ```env
 DATABASE_BACKEND="libsql"
-LIBSQL_PATH="/Users/name/.ironclaw/ironclaw.db"
+LIBSQL_PATH="/Users/name/.axinite/axinite.db"
 LLM_BACKEND="openai_compatible"
 LLM_BASE_URL="http://my-vllm:8000/v1"
 ```
@@ -421,7 +421,7 @@ Or for PostgreSQL + NEAR AI:
 
 ```env
 DATABASE_BACKEND="postgres"
-DATABASE_URL="postgres://user:pass@localhost/ironclaw"
+DATABASE_URL="postgres://user:pass@localhost/axinite"
 LLM_BACKEND="nearai"
 ```
 
@@ -462,7 +462,7 @@ in step 3 but step 5 crashes — they won't need to re-enter it).
 
 **`persist_after_step()`** is called after each step in `run()` and:
 
-1. Writes bootstrap vars to `~/.ironclaw/.env` via `write_bootstrap_env()`
+1. Writes bootstrap vars to `~/.axinite/.env` via `write_bootstrap_env()`
 2. Writes all current settings to the database via `persist_settings()`
 3. Silently ignores errors (e.g., if called before Step 1 establishes a DB)
 
@@ -499,7 +499,7 @@ Final step of the wizard:
 4. Print configuration summary
 ```
 
-Bootstrap vars written to `~/.ironclaw/.env`:
+Bootstrap vars written to `~/.axinite/.env`:
 
 - `DATABASE_BACKEND` (always)
 - `DATABASE_URL` (if postgres)
@@ -560,7 +560,7 @@ pub struct Settings {
     // Step 7: Heartbeat
     pub heartbeat: HeartbeatSettings,        // enabled, interval, notify
 
-    // Advanced (not in wizard, set via `ironclaw config set`)
+    // Advanced (not in wizard, set via `axinite config set`)
     pub agent: AgentSettings,
     pub wasm: WasmSettings,
     pub sandbox: SandboxSettings,
@@ -638,7 +638,7 @@ ______________________________________________________________________
 - Two dialogs per call is normal, not a bug
 - Cache the result after first access to avoid repeat prompts
 - Never probe keychain in read-only commands (`status`, `--help`)
-- Service name: `"ironclaw"`, account: `"master_key"`
+- Service name: `"axinite"`, account: `"master_key"`
 
 ### Linux Secret Service
 
@@ -655,15 +655,15 @@ because `http://127.0.0.1:9876` is unreachable from the user's local browser.
 
 1. **NEAR AI Cloud API key (option 4 in auth menu):** Get an API key
    from `https://cloud.near.ai` and paste it into the terminal. No local
-   listener is needed. The key is saved to `~/.ironclaw/.env` and the encrypted
+   listener is needed. The key is saved to `~/.axinite/.env` and the encrypted
    secrets store. Uses the OpenAI-compatible ChatCompletions API mode.
 
-2. **Custom callback URL:** Set `IRONCLAW_OAUTH_CALLBACK_URL` to a
+2. **Custom callback URL:** Set `AXINITE_OAUTH_CALLBACK_URL` to a
    publicly accessible URL (e.g., via SSH tunnel or reverse proxy) that
    forwards to port 9876 on the server:
 
    ```bash
-   export IRONCLAW_OAUTH_CALLBACK_URL=https://myserver.example.com:9876
+   export AXINITE_OAUTH_CALLBACK_URL=https://myserver.example.com:9876
    ```
 
 The `callback_url()` function in `oauth_defaults.rs` checks this env var and
@@ -735,4 +735,4 @@ When changing the onboarding flow:
    cargo test --lib -- setup bootstrap
    ```
 
-7. Test a fresh onboarding: `rm -rf ~/.ironclaw && cargo run`
+7. Test a fresh onboarding: `rm -rf ~/.axinite && cargo run`

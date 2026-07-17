@@ -3,7 +3,7 @@
 
 use std::path::PathBuf;
 
-use crate::bootstrap::ironclaw_base_dir;
+use crate::bootstrap::axinite_base_dir;
 use crate::config::EnvContext;
 use crate::config::helpers::{
     EnvKey, optional_env_from, parse_bool_env_from, parse_optional_env_from,
@@ -15,10 +15,10 @@ use crate::error::ConfigError;
 pub struct SkillsConfig {
     /// Whether the skills system is enabled.
     pub enabled: bool,
-    /// Directory containing user-placed skills (default: ~/.ironclaw/skills/).
+    /// Directory containing user-placed skills (default: ~/.axinite/skills/).
     /// Skills here are loaded with `Trusted` trust level.
     pub local_dir: PathBuf,
-    /// Directory containing registry-installed skills (default: ~/.ironclaw/installed_skills/).
+    /// Directory containing registry-installed skills (default: ~/.axinite/installed_skills/).
     /// Skills here are loaded with `Installed` trust level and get read-only tool access.
     pub installed_dir: PathBuf,
     /// Maximum number of skills that can be active simultaneously.
@@ -39,14 +39,14 @@ impl Default for SkillsConfig {
     }
 }
 
-/// Get the default user skills directory (~/.ironclaw/skills/).
+/// Get the default user skills directory (~/.axinite/skills/).
 fn default_skills_dir() -> PathBuf {
-    ironclaw_base_dir().join("skills")
+    axinite_base_dir().join("skills")
 }
 
-/// Get the default installed skills directory (~/.ironclaw/installed_skills/).
+/// Get the default installed skills directory (~/.axinite/installed_skills/).
 fn default_installed_skills_dir() -> PathBuf {
-    ironclaw_base_dir().join("installed_skills")
+    axinite_base_dir().join("installed_skills")
 }
 
 impl SkillsConfig {
@@ -60,10 +60,10 @@ impl SkillsConfig {
             enabled: parse_bool_env_from(ctx, EnvKey("SKILLS_ENABLED"), true)?,
             local_dir: optional_env_from(ctx, EnvKey("SKILLS_DIR"))?
                 .map(PathBuf::from)
-                .unwrap_or_else(|| ctx.ironclaw_base_dir().join("skills")),
+                .unwrap_or_else(|| ctx.axinite_base_dir().join("skills")),
             installed_dir: optional_env_from(ctx, EnvKey("SKILLS_INSTALLED_DIR"))?
                 .map(PathBuf::from)
-                .unwrap_or_else(|| ctx.ironclaw_base_dir().join("installed_skills")),
+                .unwrap_or_else(|| ctx.axinite_base_dir().join("installed_skills")),
             max_active_skills: parse_optional_env_from(ctx, EnvKey("SKILLS_MAX_ACTIVE"), 3)?,
             max_context_tokens: parse_optional_env_from(
                 ctx,

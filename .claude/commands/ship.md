@@ -5,7 +5,7 @@ allowed-tools: Bash(cargo fmt:*), Bash(cargo clippy:*), Bash(cargo test:*)
 
 # Ship
 
-Run the IronClaw shipping checklist. This is the mandatory quality gate before
+Run the Axinite shipping checklist. This is the mandatory quality gate before
 any change is considered done.
 
 ## Steps

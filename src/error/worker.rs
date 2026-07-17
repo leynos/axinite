@@ -92,7 +92,7 @@ pub enum WorkerError {
     ExecutionFailed { reason: String },
 
     /// The worker token environment variable was not available at startup.
-    #[error("Missing worker token (IRONCLAW_WORKER_TOKEN not set)")]
+    #[error("Missing worker token (AXINITE_WORKER_TOKEN not set)")]
     MissingToken,
 
     /// The worker configuration does not match the provided HTTP client.

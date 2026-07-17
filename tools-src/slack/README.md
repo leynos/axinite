@@ -1,6 +1,6 @@
 # Slack WASM Tool
 
-A standalone WASM component that provides Slack integration for IronClaw. This
+A standalone WASM component that provides Slack integration for Axinite. This
 serves as both a functional tool and a template for building custom WASM tools.
 
 ## Features
@@ -54,9 +54,9 @@ target/wasm32-wasip2/release/slack_tool.wasm
 Copy the WASM and capabilities files to the agent's tools directory:
 
 ```bash
-mkdir -p ~/.ironclaw/tools
-cp target/wasm32-wasip2/release/slack_tool.wasm ~/.ironclaw/tools/slack.wasm
-cp slack.capabilities.json ~/.ironclaw/tools/
+mkdir -p ~/.axinite/tools
+cp target/wasm32-wasip2/release/slack_tool.wasm ~/.axinite/tools/slack.wasm
+cp slack.capabilities.json ~/.axinite/tools/
 ```
 
 ### Option B: Database Storage (Production)
@@ -64,7 +64,7 @@ cp slack.capabilities.json ~/.ironclaw/tools/
 Use the agent CLI or API to store the tool:
 
 ```bash
-ironclaw tool install \
+axinite tool install \
   --name slack \
   --wasm target/wasm32-wasip2/release/slack_tool.wasm \
   --capabilities slack.capabilities.json
@@ -75,7 +75,7 @@ ironclaw tool install \
 Store your Slack bot token as a secret:
 
 ```bash
-ironclaw secret set slack_bot_token "slack-bot-token-EXAMPLE"
+axinite secret set slack_bot_token "slack-bot-token-EXAMPLE"
 ```
 
 Or via SQL:
@@ -93,7 +93,7 @@ VALUES ('your_user_id', 'slack_bot_token', ...);
 {
   "action": "send_message",
   "channel": "#general",
-  "text": "Hello from IronClaw!"
+  "text": "Hello from Axinite!"
 }
 ```
 
@@ -222,7 +222,7 @@ world sandboxed-tool {
 Ensure you've stored the secret:
 
 ```bash
-ironclaw secret set slack_bot_token "slack-bot-token-EXAMPLE"
+axinite secret set slack_bot_token "slack-bot-token-EXAMPLE"
 ```
 
 ### "Endpoint not in allowlist"

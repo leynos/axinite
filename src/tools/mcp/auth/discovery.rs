@@ -259,7 +259,7 @@ pub async fn register_client(
     let client = build_no_redirect_client(Duration::from_secs(30))?;
 
     let request = ClientRegistrationRequest {
-        client_name: "IronClaw".to_string(),
+        client_name: "Axinite".to_string(),
         redirect_uris: vec![redirect_uri.to_string()],
         grant_types: vec![
             "authorization_code".to_string(),

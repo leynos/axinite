@@ -2,12 +2,12 @@
 
 use std::path::{Path, PathBuf};
 
-use crate::bootstrap::ironclaw_base_dir;
+use crate::bootstrap::axinite_base_dir;
 
 use super::PairingStoreError;
 
 pub(super) fn default_pairing_dir() -> PathBuf {
-    ironclaw_base_dir()
+    axinite_base_dir()
 }
 
 pub(super) fn safe_channel_key(channel: &str) -> Result<String, PairingStoreError> {

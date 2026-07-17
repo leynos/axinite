@@ -2,7 +2,7 @@
 
 use std::{borrow::Cow, io, path::Path};
 
-use crate::bootstrap::{ironclaw_base_dir, ironclaw_env_path, save_database_url};
+use crate::bootstrap::{axinite_base_dir, axinite_env_path, save_database_url};
 use crate::db::{SettingKey, UserId};
 
 #[derive(Debug)]
@@ -76,8 +76,8 @@ const _: [KnownEnvKey; 5] = [
 /// [`rename_to_migrated`] and discarded so that the application can continue
 /// to start up.
 pub(crate) fn migrate_bootstrap_json_to_env(env_path: &Path) {
-    let ironclaw_dir = env_path.parent().unwrap_or_else(|| Path::new("."));
-    let bootstrap_path = ironclaw_dir.join("bootstrap.json");
+    let axinite_dir = env_path.parent().unwrap_or_else(|| Path::new("."));
+    let bootstrap_path = axinite_dir.join("bootstrap.json");
     let parsed = match read_bootstrap_json(&bootstrap_path) {
         Ok(Some(parsed)) => parsed,
         Ok(None) | Err(_) => return,
@@ -229,15 +229,15 @@ async fn migrate_json_sidecar(
     Ok(())
 }
 
-/// Renames `bootstrap.json` inside `ironclaw_dir` to `bootstrap.json.migrated`
+/// Renames `bootstrap.json` inside `axinite_dir` to `bootstrap.json.migrated`
 /// if it exists.
 ///
 /// Logs an `INFO` message when the rename succeeds. On failure,
 /// [`rename_to_migrated`] emits a `WARN` log and the error is silently
 /// discarded, preserving the existing warn-and-continue behaviour at all
 /// bootstrap rename call sites.
-pub(super) fn rename_legacy_bootstrap(ironclaw_dir: &Path) {
-    let old_bootstrap = ironclaw_dir.join("bootstrap.json");
+pub(super) fn rename_legacy_bootstrap(axinite_dir: &Path) {
+    let old_bootstrap = axinite_dir.join("bootstrap.json");
     match old_bootstrap.try_exists() {
         Ok(true) => {
             if rename_to_migrated(&old_bootstrap).is_ok() {
@@ -298,13 +298,13 @@ async fn apply_migration_to_db(
     if let Some(ref url) = settings.database_url {
         save_database_url(url)
             .map_err(|error| MigrationError::Io(format!("Failed to write .env: {}", error)))?;
-        tracing::info!("Wrote DATABASE_URL to {}", ironclaw_env_path().display());
+        tracing::info!("Wrote DATABASE_URL to {}", axinite_env_path().display());
     }
 
-    let ironclaw_dir = legacy_settings_path
+    let axinite_dir = legacy_settings_path
         .parent()
         .unwrap_or_else(|| Path::new("."));
-    let mcp_path = ironclaw_dir.join("mcp-servers.json");
+    let mcp_path = axinite_dir.join("mcp-servers.json");
     let mcp_spec = SidecarSpec {
         user_id,
         path: &mcp_path,
@@ -315,7 +315,7 @@ async fn apply_migration_to_db(
     };
     migrate_json_sidecar(store, &mcp_spec).await?;
 
-    let session_path = ironclaw_dir.join("session.json");
+    let session_path = axinite_dir.join("session.json");
     let session_spec = SidecarSpec {
         user_id,
         path: &session_path,
@@ -326,13 +326,13 @@ async fn apply_migration_to_db(
     };
     migrate_json_sidecar(store, &session_spec).await?;
 
-    rename_legacy_bootstrap(ironclaw_dir);
+    rename_legacy_bootstrap(axinite_dir);
 
     tracing::info!("Disk-to-DB migration complete");
     Ok(())
 }
 
-/// One-time migration of legacy `~/.ironclaw/settings.json` into the database.
+/// One-time migration of legacy `~/.axinite/settings.json` into the database.
 ///
 /// Only runs when a `settings.json` exists on disk AND the DB has no settings
 /// yet. After the wizard writes directly to the DB, this path is only hit by
@@ -343,16 +343,16 @@ pub async fn migrate_disk_to_db(
     store: &dyn crate::db::Database,
     user_id: &str,
 ) -> Result<(), MigrationError> {
-    let ironclaw_dir = ironclaw_base_dir();
-    migrate_disk_to_db_from_dir(store, user_id, &ironclaw_dir).await
+    let axinite_dir = axinite_base_dir();
+    migrate_disk_to_db_from_dir(store, user_id, &axinite_dir).await
 }
 
 /// Path-injected disk-to-database migration entrypoint.
 ///
-/// Migrates legacy disk data from `ironclaw_dir` into `store` for `user_id`.
+/// Migrates legacy disk data from `axinite_dir` into `store` for `user_id`.
 /// Higher-level migration orchestration calls this with a concrete
 /// [`crate::db::Database`] implementor, the current user identifier, and the
-/// Ironclaw base directory whose legacy files should be inspected.
+/// Axinite base directory whose legacy files should be inspected.
 ///
 /// Rename operations that mark legacy files as `.migrated` are best-effort:
 /// failures are logged by the lower-level rename helper and do not cause this
@@ -361,9 +361,9 @@ pub async fn migrate_disk_to_db(
 pub(super) async fn migrate_disk_to_db_from_dir(
     store: &(impl crate::db::SettingsStore + ?Sized),
     user_id: &str,
-    ironclaw_dir: &Path,
+    axinite_dir: &Path,
 ) -> Result<(), MigrationError> {
-    let legacy_settings_path = ironclaw_dir.join("settings.json");
+    let legacy_settings_path = axinite_dir.join("settings.json");
     let Some(legacy) = read_legacy_state(&legacy_settings_path)? else {
         tracing::debug!("No legacy settings.json found, skipping disk-to-DB migration");
         return Ok(());

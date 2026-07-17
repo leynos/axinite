@@ -1,4 +1,4 @@
-// IronClaw Web Gateway - Client
+// Axinite Web Gateway - Client
 
 let token = '';
 let eventSource = null;
@@ -62,7 +62,7 @@ function authenticate() {
   // Test the token against the health-ish endpoint (chat/threads requires auth)
   apiFetch('/api/chat/threads')
     .then(() => {
-      sessionStorage.setItem('ironclaw_token', token);
+      sessionStorage.setItem('axinite_token', token);
       document.getElementById('auth-screen').style.display = 'none';
       document.getElementById('app').style.display = 'flex';
       // Strip token and log_level from URL so they're not visible in the address bar
@@ -86,7 +86,7 @@ function authenticate() {
       }
     })
     .catch(() => {
-      sessionStorage.removeItem('ironclaw_token');
+      sessionStorage.removeItem('axinite_token');
       document.getElementById('auth-screen').style.display = '';
       document.getElementById('app').style.display = 'none';
       document.getElementById('auth-error').textContent = 'Invalid token';
@@ -106,7 +106,7 @@ document.getElementById('token-input').addEventListener('keydown', (e) => {
     authenticate();
     return;
   }
-  const saved = sessionStorage.getItem('ironclaw_token');
+  const saved = sessionStorage.getItem('axinite_token');
   if (saved) {
     document.getElementById('token-input').value = saved;
     // Hide auth screen immediately to prevent flash, authenticate() will
@@ -3527,7 +3527,7 @@ function fetchGatewayStatus() {
 
     // Version
     if (data.version) {
-      html += '<div class="gw-section-label">IronClaw v' + escapeHtml(data.version) + '</div>';
+      html += '<div class="gw-section-label">Axinite v' + escapeHtml(data.version) + '</div>';
       html += '<div class="gw-divider"></div>';
     }
 

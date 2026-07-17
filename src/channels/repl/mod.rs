@@ -33,7 +33,7 @@ use rustyline::{CompletionType, Editor, EventHandler, KeyCode, KeyEvent, Modifie
 use tokio::sync::mpsc;
 use tokio_stream::wrappers::ReceiverStream;
 
-use crate::bootstrap::ironclaw_base_dir;
+use crate::bootstrap::axinite_base_dir;
 use crate::channels::{
     IncomingMessage, MessageStream, NativeChannel, OutgoingResponse, StatusUpdate,
 };
@@ -92,9 +92,9 @@ impl Default for ReplChannel {
     }
 }
 
-/// Get the history file path (~/.ironclaw/history).
+/// Get the history file path (~/.axinite/history).
 fn history_path() -> std::path::PathBuf {
-    ironclaw_base_dir().join("history")
+    axinite_base_dir().join("history")
 }
 
 impl NativeChannel for ReplChannel {
@@ -163,7 +163,7 @@ impl NativeChannel for ReplChannel {
             let _ = rl.load_history(&hist_path);
 
             if !suppress_banner.load(Ordering::Relaxed) {
-                println!("\x1b[1mIronClaw\x1b[0m  /help for commands, /quit to exit");
+                println!("\x1b[1mAxinite\x1b[0m  /help for commands, /quit to exit");
                 println!();
             }
 

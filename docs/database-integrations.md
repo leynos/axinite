@@ -35,15 +35,15 @@ The runtime resolves the backend through `DatabaseConfig`, then connects through
 
 Table 1. Backend selection and startup rules.
 
-| Concern                          | Current implementation                                                                                                            |
-| -------------------------------- | --------------------------------------------------------------------------------------------------------------------------------- |
-| Default backend                  | `postgres` unless `DATABASE_BACKEND` says otherwise or bootstrap auto-detects a local libSQL file                                 |
-| Accepted backend names           | `postgres`, `postgresql`, `pg`, `libsql`, `turso`, and `sqlite`                                                                   |
-| PostgreSQL bootstrap requirement | `DATABASE_URL` must be present                                                                                                    |
-| libSQL bootstrap requirement     | `DATABASE_URL` is replaced with an internal placeholder; `LIBSQL_PATH` defaults to `~/.ironclaw/ironclaw.db`                      |
-| libSQL remote sync requirement   | `LIBSQL_URL` requires `LIBSQL_AUTH_TOKEN`                                                                                         |
-| Auto-detection                   | If `DATABASE_BACKEND` is unset and `~/.ironclaw/ironclaw.db` exists, bootstrap sets `DATABASE_BACKEND=libsql` before Tokio starts |
-| Feature flags                    | `Cargo.toml` enables both `postgres` and `libsql` by default; each backend still lives behind its own feature gate                |
+| Concern                          | Current implementation                                                                                                          |
+| -------------------------------- | ------------------------------------------------------------------------------------------------------------------------------- |
+| Default backend                  | `postgres` unless `DATABASE_BACKEND` says otherwise or bootstrap auto-detects a local libSQL file                               |
+| Accepted backend names           | `postgres`, `postgresql`, `pg`, `libsql`, `turso`, and `sqlite`                                                                 |
+| PostgreSQL bootstrap requirement | `DATABASE_URL` must be present                                                                                                  |
+| libSQL bootstrap requirement     | `DATABASE_URL` is replaced with an internal placeholder; `LIBSQL_PATH` defaults to `~/.axinite/axinite.db`                      |
+| libSQL remote sync requirement   | `LIBSQL_URL` requires `LIBSQL_AUTH_TOKEN`                                                                                       |
+| Auto-detection                   | If `DATABASE_BACKEND` is unset and `~/.axinite/axinite.db` exists, bootstrap sets `DATABASE_BACKEND=libsql` before Tokio starts |
+| Feature flags                    | `Cargo.toml` enables both `postgres` and `libsql` by default; each backend still lives behind its own feature gate              |
 
 The main host path uses `AppBuilder::init_database()` to connect, run
 migrations, migrate legacy disk settings into the database, reload
@@ -329,7 +329,7 @@ Table 4. Current backend comparison.
 
 | Concern                           | PostgreSQL with pgvector                                          | libSQL                                                                                      |
 | --------------------------------- | ----------------------------------------------------------------- | ------------------------------------------------------------------------------------------- |
-| Default on this branch            | Yes                                                               | No, unless bootstrap auto-detects `~/.ironclaw/ironclaw.db`                                 |
+| Default on this branch            | Yes                                                               | No, unless bootstrap auto-detects `~/.axinite/axinite.db`                                   |
 | External service needed           | Yes                                                               | No for local mode; optional for Turso replica mode                                          |
 | Connection strategy               | Shared async pool                                                 | Fresh connection per operation                                                              |
 | Migration engine                  | `refinery` over numbered SQL files                                | Consolidated schema plus `_migrations`-tracked incremental Rust-side runner                 |

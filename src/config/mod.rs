@@ -1,7 +1,7 @@
-//! Configuration for IronClaw.
+//! Configuration for Axinite.
 //!
 //! Settings are loaded with priority: env var > database > default.
-//! `DATABASE_URL` lives in `~/.ironclaw/.env` (loaded via dotenvy early
+//! `DATABASE_URL` lives in `~/.axinite/.env` (loaded via dotenvy early
 //! in startup). Everything else comes from env vars, the DB settings
 //! table, or auto-detection.
 
@@ -151,7 +151,7 @@ impl Config {
         toml_path: Option<&std::path::Path>,
     ) -> Result<Self, ConfigError> {
         let _ = dotenvy::dotenv();
-        crate::bootstrap::load_ironclaw_env();
+        crate::bootstrap::load_axinite_env();
 
         // Load all settings from DB into a Settings struct
         let db_settings = match store
@@ -176,7 +176,7 @@ impl Config {
     /// and by CLI commands that don't have DB access.
     /// Falls back to legacy `settings.json` on disk if present.
     ///
-    /// Loads both `./.env` (standard, higher priority) and `~/.ironclaw/.env`
+    /// Loads both `./.env` (standard, higher priority) and `~/.axinite/.env`
     /// (lower priority) via dotenvy, which never overwrites existing vars.
     pub async fn from_env() -> Result<Self, ConfigError> {
         Self::from_env_with_toml(None).await
@@ -187,7 +187,7 @@ impl Config {
         toml_path: Option<&std::path::Path>,
     ) -> Result<Self, ConfigError> {
         let _ = dotenvy::dotenv();
-        crate::bootstrap::load_ironclaw_env();
+        crate::bootstrap::load_axinite_env();
         let settings = Settings::load();
         let ctx = EnvContext::capture_ambient();
         let merged = runtime_support::merged_settings_with_toml(&settings, toml_path)?;
@@ -203,13 +203,13 @@ impl Config {
     /// # Examples
     ///
     /// ```no_run
-    /// # async fn example() -> Result<(), ironclaw::error::ConfigError> {
-    /// let ctx = ironclaw::config::EnvContext::default()
+    /// # async fn example() -> Result<(), axinite::error::ConfigError> {
+    /// let ctx = axinite::config::EnvContext::default()
     ///     .with_env("DATABASE_BACKEND", "libsql")
     ///     .with_env("DATABASE_URL", "unused://test")
     ///     .with_env("LLM_BACKEND", "nearai");
-    /// let settings = ironclaw::settings::Settings::default();
-    /// let _config = ironclaw::config::Config::from_context(&ctx, &settings).await?;
+    /// let settings = axinite::settings::Settings::default();
+    /// let _config = axinite::config::Config::from_context(&ctx, &settings).await?;
     /// # Ok(())
     /// # }
     /// ```
@@ -255,13 +255,13 @@ impl Config {
     /// # Examples
     ///
     /// ```no_run
-    /// # async fn example(path: &std::path::Path) -> Result<(), ironclaw::error::ConfigError> {
-    /// let ctx = ironclaw::config::EnvContext::default()
+    /// # async fn example(path: &std::path::Path) -> Result<(), axinite::error::ConfigError> {
+    /// let ctx = axinite::config::EnvContext::default()
     ///     .with_env("DATABASE_BACKEND", "libsql")
     ///     .with_env("DATABASE_URL", "unused://test");
-    /// let settings = ironclaw::settings::Settings::default();
+    /// let settings = axinite::settings::Settings::default();
     /// let _config =
-    ///     ironclaw::config::Config::from_context_with_toml(&ctx, &settings, path).await?;
+    ///     axinite::config::Config::from_context_with_toml(&ctx, &settings, path).await?;
     /// # Ok(())
     /// # }
     /// ```
@@ -313,13 +313,13 @@ impl Config {
     /// # Examples
     ///
     /// ```no_run
-    /// # async fn example() -> Result<(), ironclaw::error::ConfigError> {
-    /// let settings = ironclaw::settings::Settings::default();
-    /// let mut ctx = ironclaw::config::EnvContext::default()
+    /// # async fn example() -> Result<(), axinite::error::ConfigError> {
+    /// let settings = axinite::settings::Settings::default();
+    /// let mut ctx = axinite::config::EnvContext::default()
     ///     .with_env("DATABASE_BACKEND", "libsql")
     ///     .with_env("DATABASE_URL", "unused://test")
     ///     .with_env("LLM_BACKEND", "anthropic");
-    /// let mut config = ironclaw::config::Config::from_context(&ctx, &settings).await?;
+    /// let mut config = axinite::config::Config::from_context(&ctx, &settings).await?;
     /// ctx.inject_secret("ANTHROPIC_API_KEY", "secret");
     /// config.re_resolve_llm_from(&ctx, &settings)?;
     /// # Ok(())

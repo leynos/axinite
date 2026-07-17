@@ -23,7 +23,7 @@ fn check_binary_finds_sh() {
 
 #[test]
 fn check_binary_skips_nonexistent() {
-    match check_binary("__ironclaw_nonexistent_binary__", &["--version"]) {
+    match check_binary("__axinite_nonexistent_binary__", &["--version"]) {
         CheckResult::Skip(_) => {}
         other => panic!(
             "expected Skip for nonexistent binary, got: {}",

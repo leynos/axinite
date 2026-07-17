@@ -36,7 +36,7 @@ The highest-return additions are not “formalize everything”. They are:
 
 The best integration path in Axinite is a split one:
 
-- Keep **Kani harnesses inside the main `ironclaw` package**, next to the
+- Keep **Kani harnesses inside the main `axinite` package**, next to the
   internal helpers they verify.
 - Put **Stateright models in a dedicated internal verification crate**, because
   those models should be abstractions of policy rather than thin wrappers around
@@ -61,7 +61,7 @@ That yields a pragmatic stack for Axinite:
 
 Today, Axinite is already a non-virtual Cargo workspace. The root manifest
 contains `[workspace] members = ["."]`, and it explicitly excludes `fuzz/` from
-the workspace.[^20] The root package remains `ironclaw`, and the current
+the workspace.[^20] The root package remains `axinite`, and the current
 `Makefile` drives `cargo nextest` test runs, feature-matrix variants, and
 auxiliary WASM builds.[^20][^2] The current CI is already split by concern:
 `test.yml` runs the main Rust matrix and several build-side checks,
@@ -411,7 +411,7 @@ This is the central structural recommendation in this document.
 
 Use **four different homes**:
 
-1. **Kani harnesses in the main `ironclaw` package**
+1. **Kani harnesses in the main `axinite` package**
    - best for internal helpers and small state machines;
    - avoids widening the public API just to satisfy proof harnesses;
    - aligns with Kani’s `cargo kani` package-oriented workflow.[^27]
@@ -534,12 +534,12 @@ Use a split target structure:
 
 ```make
 kani: ## Run practical Kani smoke harnesses
-	cargo kani -p ironclaw --harness verify_allowlist_userinfo_rejected
-	cargo kani -p ironclaw --harness verify_allowlist_normalize_path_small
-	cargo kani -p ironclaw --harness verify_shared_host_matcher_small
+	cargo kani -p axinite --harness verify_allowlist_userinfo_rejected
+	cargo kani -p axinite --harness verify_allowlist_normalize_path_small
+	cargo kani -p axinite --harness verify_shared_host_matcher_small
 
 kani-full: ## Run all Kani harnesses
-	cargo kani -p ironclaw
+	cargo kani -p axinite
 ```
 
 That keeps the PR path practical while still allowing deeper checking elsewhere.
@@ -627,14 +627,14 @@ publish = false
 
 [dependencies]
 stateright = "0.30"
-ironclaw = { path = "../..", default-features = false }
+axinite = { path = "../..", default-features = false }
 
 [dev-dependencies]
 rstest = "0.26"
 ```
 
 If the first model can stay completely proof-only, an even lighter option is to
-omit the `ironclaw` dependency and re-declare the tiny abstract state needed.
+omit the `axinite` dependency and re-declare the tiny abstract state needed.
 The point of the crate is isolation, not reuse for its own sake.
 
 ### Model scope
@@ -894,12 +894,12 @@ proptest-properties: ## Run targeted generated property tests
 	cargo test --test property_registry_installer
 
 kani: ## Run Kani smoke harnesses
-	cargo kani -p ironclaw --harness verify_allowlist_userinfo_rejected
-	cargo kani -p ironclaw --harness verify_allowlist_normalize_path_small
-	cargo kani -p ironclaw --harness verify_shared_host_matcher_small
+	cargo kani -p axinite --harness verify_allowlist_userinfo_rejected
+	cargo kani -p axinite --harness verify_allowlist_normalize_path_small
+	cargo kani -p axinite --harness verify_shared_host_matcher_small
 
 kani-full: ## Run all Kani harnesses
-	cargo kani -p ironclaw
+	cargo kani -p axinite
 
 verus: ## Run Verus proofs
 	VERUS_BIN="$(VERUS_BIN)" scripts/run-verus.sh

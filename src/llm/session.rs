@@ -1,7 +1,7 @@
 //! Session management for NEAR AI authentication.
 //!
 //! Handles session token persistence, expiration detection, and renewal via
-//! OAuth flow. Tokens are stored in `~/.ironclaw/session.json` and refreshed
+//! OAuth flow. Tokens are stored in `~/.axinite/session.json` and refreshed
 //! automatically when expired.
 
 mod oauth;
@@ -32,7 +32,7 @@ pub struct SessionData {
 pub struct SessionConfig {
     /// Base URL for auth endpoints (e.g., https://private.near.ai).
     pub auth_base_url: String,
-    /// Path to session file (e.g., ~/.ironclaw/session.json).
+    /// Path to session file (e.g., ~/.axinite/session.json).
     pub session_path: PathBuf,
 }
 

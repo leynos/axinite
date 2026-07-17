@@ -5,7 +5,7 @@ complete; recommendations ready for review
 
 ## Big Picture
 
-Investigate slow build/test cycles in the ironclaw repository and identify
+Investigate slow build/test cycles in the axinite repository and identify
 actionable improvements to reduce overall build and test time.
 
 ## Constraints
@@ -45,14 +45,14 @@ Table 2. Clean build phase breakdown.
 
 Table 3. Incremental build breakdown.
 
-| Phase                           | Wall time       | Notes                            |
-| ------------------------------- | --------------- | -------------------------------- |
-| `check-fmt`                     | ~1 s            |                                  |
-| `typecheck` (3 combos + GitHub) | ~51 s           | ironclaw recompiled 3 times      |
-| `lint` (3 combos + GitHub)      | ~108 s          | ironclaw recompiled 3 more times |
-| `test` compilation              | **6 min 05 s**  | Re-links 43 test binaries        |
-| `test` execution                | 21 s            | Fast                             |
-| **Total**                       | **~9 min 16 s** |                                  |
+| Phase                           | Wall time       | Notes                           |
+| ------------------------------- | --------------- | ------------------------------- |
+| `check-fmt`                     | ~1 s            |                                 |
+| `typecheck` (3 combos + GitHub) | ~51 s           | axinite recompiled 3 times      |
+| `lint` (3 combos + GitHub)      | ~108 s          | axinite recompiled 3 more times |
+| `test` compilation              | **6 min 05 s**  | Re-links 43 test binaries       |
+| `test` execution                | 21 s            | Fast                            |
+| **Total**                       | **~9 min 16 s** |                                 |
 
 ### Heaviest Crates (clean build)
 
@@ -60,12 +60,12 @@ Table 4. Heaviest crates by compile time.
 
 | Crate              | Compile time | Notes                                |
 | ------------------ | ------------ | ------------------------------------ |
-| ironclaw (lib)     | 133.0 s      | The project itself                   |
+| axinite (lib)      | 133.0 s      | The project itself                   |
 | wasmtime-wasi      | 17.8 s       | WASM runtime                         |
 | rig-core           | 16.6 s       | Large language model (LLM) framework |
 | wasmtime           | 16.3 s       |                                      |
 | zbus               | 13.7 s       | Linux D-Bus                          |
-| ironclaw (bin)     | 11.3 s       | Binary linking                       |
+| axinite (bin)      | 11.3 s       | Binary linking                       |
 | wasmtime-cranelift | 8.0 s        | Compiler backend                     |
 | bollard-stubs      | 7.9 s        | Docker API                           |
 | libsql             | 6.8 s        |                                      |
@@ -79,14 +79,14 @@ Table 4. Heaviest crates by compile time.
 the same 3 feature combos. Clippy is a strict superset of `cargo check` — it
 performs all type-checking plus lint analysis. Running check first only warms
 the dependency cache, which clippy does anyway. Each pass recompiles the
-ironclaw crate itself (different compiler driver fingerprint).
+axinite crate itself (different compiler driver fingerprint).
 
 CI already skips `cargo check` and runs only clippy. The Makefile is behind.
 
 ### 2. Test binary relinking (incremental: ~365 s)
 
 43 separate integration test binaries exist in `tests/`. Each top-level `.rs`
-file compiles as an independent binary that links against the entire ironclaw
+file compiles as an independent binary that links against the entire axinite
 crate and all dev-dependencies. 21 of these import a shared `mod support;`
 module that is recompiled into each binary. A single-file change triggers 43
 relink operations.
@@ -156,7 +156,7 @@ binary links). **Effort:** Add 2 lines to `Cargo.toml`.
 Full debug info for dependencies is rarely needed for day-to-day development.
 Line tables are sufficient for backtraces. Scoping the override to
 `[profile.dev.package."*"]` preserves full debug info for workspace members
-(ironclaw itself), where diagnostics matter most.
+(axinite itself), where diagnostics matter most.
 
 ```toml
 [profile.dev.package."*"]
@@ -251,13 +251,13 @@ limitation: native async traits are not object-safe without `#[trait_variant]`
 or boxing, so some uses may need to remain as `async-trait` where `dyn Trait`
 is used.
 
-#### 3.2 Extract `ironclaw-types` crate
+#### 3.2 Extract `axinite-types` crate
 
 **Impact:** MEDIUM — shared traits and domain types compile once and in
 parallel with the main crate. **Effort:** MEDIUM — extract `LlmProvider`,
 `Database`, `Channel`, `Tool`, and common domain types.
 
-#### 3.3 Extract `ironclaw-llm` crate
+#### 3.3 Extract `axinite-llm` crate
 
 **Impact:** MEDIUM — 19K lines compile in parallel with main crate. Most
 self-contained large module. **Effort:** MEDIUM — relatively clean boundaries.

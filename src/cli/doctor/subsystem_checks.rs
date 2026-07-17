@@ -1,7 +1,7 @@
 //! Subsystem diagnostic checks: embeddings, routines, gateway, MCP
 //! servers, skills, and secrets configuration.
 
-use crate::bootstrap::ironclaw_base_dir;
+use crate::bootstrap::axinite_base_dir;
 use crate::config::EnvContext;
 use crate::settings::Settings;
 
@@ -28,7 +28,7 @@ pub(super) fn check_embeddings_with_context(ctx: &EnvContext, settings: &Setting
         ))
     } else {
         let hint = match config.provider.as_str() {
-            "nearai" => "run `ironclaw onboard` to create a session",
+            "nearai" => "run `axinite onboard` to create a session",
             _ => "set OPENAI_API_KEY",
         };
         CheckResult::Fail(format!(
@@ -161,8 +161,8 @@ fn validate_mcp_servers(servers: &[&crate::tools::mcp::config::McpServerConfig])
 // ── Skills ──────────────────────────────────────────────────
 
 pub(super) async fn check_skills() -> CheckResult {
-    let user_dir = ironclaw_base_dir().join("skills");
-    let installed_dir = ironclaw_base_dir().join("installed_skills");
+    let user_dir = axinite_base_dir().join("skills");
+    let installed_dir = axinite_base_dir().join("installed_skills");
 
     let mut registry = crate::skills::SkillRegistry::new(user_dir.clone());
     registry = registry.with_installed_dir(installed_dir);
@@ -195,7 +195,7 @@ pub(super) fn check_secrets(settings: &Settings) -> CheckResult {
             }
         }
         crate::settings::KeySource::None => {
-            CheckResult::Skip("secrets not configured (run `ironclaw onboard`)".into())
+            CheckResult::Skip("secrets not configured (run `axinite onboard`)".into())
         }
     }
 }

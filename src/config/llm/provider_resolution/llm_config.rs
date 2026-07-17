@@ -88,7 +88,7 @@ impl LlmConfig {
                 .unwrap_or_else(|| "https://private.near.ai".to_string()),
             session_path: optional_env_from(ctx, EnvKey("NEARAI_SESSION_PATH"))?
                 .map(PathBuf::from)
-                .unwrap_or_else(|| ctx.ironclaw_base_dir().join("session.json")),
+                .unwrap_or_else(|| ctx.axinite_base_dir().join("session.json")),
         })
     }
 

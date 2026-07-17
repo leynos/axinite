@@ -20,7 +20,7 @@ use tokio::time::timeout;
 use tokio_tungstenite::tungstenite::Message;
 use tokio_tungstenite::tungstenite::client::IntoClientRequest;
 
-use ironclaw::channels::web::types::SseEvent;
+use axinite::channels::web::types::SseEvent;
 
 use helpers::{AUTH_TOKEN, TIMEOUT, connect_ws, recv_text, start_test_server};
 
@@ -273,7 +273,7 @@ async fn test_ws_multiple_events_in_sequence() {
 /// without deadlock. If locks are heavily contended, the test will timeout.
 #[tokio::test]
 async fn test_session_lock_not_held_during_api_operations() {
-    use ironclaw::agent::SessionManager;
+    use axinite::agent::SessionManager;
 
     let (_addr, _state, _agent_rx) = start_test_server().await;
 

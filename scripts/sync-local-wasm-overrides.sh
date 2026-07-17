@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 #
 # Synchronize locally built WASM tool and channel overrides into the per-user
-# IronClaw extension directories under ~/.ironclaw.
+# Axinite extension directories under ~/.axinite.
 #
 # This is useful when you have already installed a local override and want to
 # refresh it from the latest build output without touching extensions that are
@@ -22,13 +22,13 @@ resolve_installed_wasm() {
     local raw_name="$2"
     local normalized_name="${raw_name//_/-}"
 
-    if [[ -f "${HOME}/.ironclaw/${kind_dir}/${raw_name}.wasm" ]]; then
-        printf '%s\n' "${HOME}/.ironclaw/${kind_dir}/${raw_name}.wasm"
+    if [[ -f "${HOME}/.axinite/${kind_dir}/${raw_name}.wasm" ]]; then
+        printf '%s\n' "${HOME}/.axinite/${kind_dir}/${raw_name}.wasm"
         return 0
     fi
 
-    if [[ -f "${HOME}/.ironclaw/${kind_dir}/${normalized_name}.wasm" ]]; then
-        printf '%s\n' "${HOME}/.ironclaw/${kind_dir}/${normalized_name}.wasm"
+    if [[ -f "${HOME}/.axinite/${kind_dir}/${normalized_name}.wasm" ]]; then
+        printf '%s\n' "${HOME}/.axinite/${kind_dir}/${normalized_name}.wasm"
         return 0
     fi
 

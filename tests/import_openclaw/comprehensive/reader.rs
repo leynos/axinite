@@ -5,8 +5,8 @@
 use std::path::PathBuf;
 use tempfile::TempDir;
 
-use ironclaw::import::ImportError;
-use ironclaw::import::openclaw::reader::OpenClawReader;
+use axinite::import::ImportError;
+use axinite::import::openclaw::reader::OpenClawReader;
 
 use super::helpers::{create_synthetic_memory_db, create_synthetic_openclaw_dir};
 

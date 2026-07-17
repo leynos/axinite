@@ -36,7 +36,7 @@ fn oauth_error_page(label: &str) -> axum::response::Response {
 /// redirect the user's browser here. The `state` query parameter correlates
 /// the callback with a pending OAuth flow registered by `start_wasm_oauth()`.
 ///
-/// Used on hosted instances where `IRONCLAW_OAUTH_CALLBACK_URL` points to
+/// Used on hosted instances where `AXINITE_OAUTH_CALLBACK_URL` points to
 /// the gateway (e.g., `https://kind-deer.agent1.near.ai/oauth/callback`).
 /// Local/desktop mode continues to use the TCP listener on port 9876.
 pub async fn oauth_callback_handler(
@@ -56,18 +56,18 @@ pub async fn oauth_callback_handler(
 
     let state_param = match params.get("state") {
         Some(s) if !s.is_empty() => s.clone(),
-        _ => return oauth_error_page("IronClaw"),
+        _ => return oauth_error_page("Axinite"),
     };
 
     let code = match params.get("code") {
         Some(c) if !c.is_empty() => c.clone(),
-        _ => return oauth_error_page("IronClaw"),
+        _ => return oauth_error_page("Axinite"),
     };
 
     // Look up the pending flow by CSRF state (atomic remove prevents replay)
     let ext_mgr = match state.extension_manager.as_ref() {
         Some(mgr) => mgr,
-        None => return oauth_error_page("IronClaw"),
+        None => return oauth_error_page("Axinite"),
     };
 
     // Strip instance prefix from state for registry lookup.
@@ -88,7 +88,7 @@ pub async fn oauth_callback_handler(
                 lookup_key = %lookup_key,
                 "OAuth callback received with unknown or expired state"
             );
-            return oauth_error_page("IronClaw");
+            return oauth_error_page("Axinite");
         }
     };
 
@@ -150,7 +150,7 @@ async fn complete_gateway_oauth_flow(
 ) -> Result<(), String> {
     use crate::cli::oauth_defaults;
 
-    let exchange_proxy_url = std::env::var("IRONCLAW_OAUTH_EXCHANGE_URL").ok();
+    let exchange_proxy_url = std::env::var("AXINITE_OAUTH_EXCHANGE_URL").ok();
     let token_response = if let Some(ref proxy_url) = exchange_proxy_url {
         let gateway_token = flow.gateway_token.as_deref().unwrap_or_default();
         oauth_defaults::exchange_via_proxy(

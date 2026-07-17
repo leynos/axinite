@@ -8,10 +8,10 @@ use super::CheckResult;
 pub(super) fn check_service_installed() -> CheckResult {
     if cfg!(target_os = "macos") {
         let plist =
-            dirs::home_dir().map(|h| h.join("Library/LaunchAgents/com.ironclaw.daemon.plist"));
+            dirs::home_dir().map(|h| h.join("Library/LaunchAgents/com.axinite.daemon.plist"));
         service_unit_result(plist, "launchd plist")
     } else if cfg!(target_os = "linux") {
-        let unit = dirs::home_dir().map(|h| h.join(".config/systemd/user/ironclaw.service"));
+        let unit = dirs::home_dir().map(|h| h.join(".config/systemd/user/axinite.service"));
         service_unit_result(unit, "systemd unit")
     } else {
         CheckResult::Skip("service management not supported on this platform".into())
@@ -24,7 +24,7 @@ fn service_unit_result(path: Option<std::path::PathBuf>, label: &str) -> CheckRe
         Some(path) if path.exists() => {
             CheckResult::Pass(format!("{label} installed ({})", path.display()))
         }
-        Some(_) => CheckResult::Skip("not installed (run `ironclaw service install`)".into()),
+        Some(_) => CheckResult::Skip("not installed (run `axinite service install`)".into()),
         None => CheckResult::Skip("cannot determine home directory".into()),
     }
 }

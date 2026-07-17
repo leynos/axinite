@@ -11,15 +11,15 @@ use tokio::sync::Mutex;
 use tower::ServiceExt;
 use uuid::Uuid;
 
-use ironclaw::llm::{
+use axinite::llm::{
     CompletionRequest, CompletionResponse, NativeLlmProvider, ToolCompletionRequest,
     ToolCompletionResponse,
 };
-use ironclaw::orchestrator::api::{OrchestratorApi, OrchestratorState};
-use ironclaw::orchestrator::auth::TokenStore;
-use ironclaw::orchestrator::job_manager::{ContainerJobConfig, ContainerJobManager};
-use ironclaw::tools::ToolRegistry;
-use ironclaw::worker::api::{
+use axinite::orchestrator::api::{OrchestratorApi, OrchestratorState};
+use axinite::orchestrator::auth::TokenStore;
+use axinite::orchestrator::job_manager::{ContainerJobConfig, ContainerJobManager};
+use axinite::tools::ToolRegistry;
+use axinite::worker::api::{
     COMPLETE_ROUTE, CREDENTIALS_ROUTE, EVENT_ROUTE, JOB_ROUTE, LLM_COMPLETE_ROUTE,
     LLM_COMPLETE_WITH_TOOLS_ROUTE, PROMPT_ROUTE, REMOTE_TOOL_CATALOG_ROUTE,
     REMOTE_TOOL_EXECUTE_ROUTE, STATUS_ROUTE, WORKER_HEALTH_ROUTE, job_scoped_path,
@@ -44,14 +44,14 @@ impl NativeLlmProvider for StubLlm {
     async fn complete(
         &self,
         _req: CompletionRequest,
-    ) -> Result<CompletionResponse, ironclaw::error::LlmError> {
+    ) -> Result<CompletionResponse, axinite::error::LlmError> {
         Ok(Default::default())
     }
 
     async fn complete_with_tools(
         &self,
         _req: ToolCompletionRequest,
-    ) -> Result<ToolCompletionResponse, ironclaw::error::LlmError> {
+    ) -> Result<ToolCompletionResponse, axinite::error::LlmError> {
         Ok(Default::default())
     }
 }
@@ -82,7 +82,7 @@ fn make_state() -> OrchestratorState {
 
 #[test]
 fn worker_paths_match_route_constants() {
-    use ironclaw::worker::api::{
+    use axinite::worker::api::{
         COMPLETE_PATH, CREDENTIALS_PATH, EVENT_PATH, JOB_PATH, LLM_COMPLETE_PATH,
         LLM_COMPLETE_WITH_TOOLS_PATH, PROMPT_PATH, REMOTE_TOOL_CATALOG_PATH,
         REMOTE_TOOL_EXECUTE_PATH, STATUS_PATH,
@@ -117,7 +117,7 @@ fn worker_paths_match_route_constants() {
 
 #[test]
 fn worker_job_url_produces_correct_path() {
-    use ironclaw::worker::api::worker_job_url;
+    use axinite::worker::api::worker_job_url;
 
     let job_id = Uuid::new_v4();
     let url = worker_job_url("http://host:1234", &job_id.to_string(), "status");

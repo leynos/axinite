@@ -16,7 +16,7 @@ impl RegistryInstaller {
     /// directory, create it, and return the target `.wasm` path.
     ///
     /// Uses `manifest.name` for installed filenames so discovery, auth, and
-    /// CLI commands (`ironclaw tool auth <name>`) all agree on the stem.
+    /// CLI commands (`axinite tool auth <name>`) all agree on the stem.
     /// Fails with `AlreadyInstalled` when the target exists and `force` is
     /// not set.
     pub(super) async fn prepare_install_target(

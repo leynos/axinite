@@ -3,7 +3,7 @@
 //! Requires a running PostgreSQL with pgvector extension.
 
 use super::{cleanup_user, get_pool, try_connect};
-use ironclaw::workspace::{Workspace, paths};
+use axinite::workspace::{Workspace, paths};
 
 #[tokio::test]
 async fn test_workspace_write_and_read() {

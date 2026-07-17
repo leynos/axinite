@@ -1,7 +1,7 @@
 //! Request-building and `LlmProvider` glue for the rig adapter.
 //!
 //! The functions and trait impls here assemble rig-core completion requests
-//! from IronClaw request types, then translate rig-core responses back into the
+//! from Axinite request types, then translate rig-core responses back into the
 //! provider-neutral response structs used elsewhere in the runtime.
 
 use super::*;

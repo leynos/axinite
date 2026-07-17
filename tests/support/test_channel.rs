@@ -14,10 +14,10 @@ use futures::StreamExt;
 use tokio::sync::{Mutex, mpsc, oneshot};
 use tokio_stream::wrappers::ReceiverStream;
 
-use ironclaw::channels::{
+use axinite::channels::{
     IncomingMessage, MessageStream, NativeChannel, OutgoingResponse, StatusUpdate,
 };
-use ironclaw::error::ChannelError;
+use axinite::error::ChannelError;
 
 // ---------------------------------------------------------------------------
 // TestChannel

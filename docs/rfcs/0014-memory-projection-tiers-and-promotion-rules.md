@@ -60,7 +60,7 @@ reconciler that assumes the world is messy. [^2]
 
 RFC 0007 proposes:
 
-- **Transactional outbox**: events published by IronClaw at persistence
+- **Transactional outbox**: events published by Axinite at persistence
   boundaries (conversation messages, workspace document mutations).
 - **Extraction**: structured extraction via Ollama, producing
   entities, facts, and relations.

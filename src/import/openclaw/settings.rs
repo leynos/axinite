@@ -1,11 +1,11 @@
-//! OpenClaw configuration to IronClaw settings mapping.
+//! OpenClaw configuration to Axinite settings mapping.
 
 use secrecy::SecretString;
 use std::collections::HashMap;
 
 use super::reader::OpenClawConfig;
 
-/// Map OpenClaw configuration to IronClaw settings (dotted-key format).
+/// Map OpenClaw configuration to Axinite settings (dotted-key format).
 pub fn map_openclaw_config_to_settings(
     config: &OpenClawConfig,
 ) -> HashMap<String, serde_json::Value> {

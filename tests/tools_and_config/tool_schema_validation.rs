@@ -6,22 +6,22 @@
 //!
 //! See: <https://github.com/nearai/ironclaw/issues/352> (QA plan, item 1.1)
 
-use ironclaw::tools::builtin::extension_tools::ExtensionToolKind;
-use ironclaw::tools::schema_validator::validate_strict_schema;
-use ironclaw::tools::validate_tool_schema;
-use ironclaw::tools::wasm::WasmToolLoader;
-use ironclaw::tools::{Tool, ToolRegistry};
+use axinite::tools::builtin::extension_tools::ExtensionToolKind;
+use axinite::tools::schema_validator::validate_strict_schema;
+use axinite::tools::validate_tool_schema;
+use axinite::tools::wasm::WasmToolLoader;
+use axinite::tools::{Tool, ToolRegistry};
 use rstest::{fixture, rstest};
 use std::sync::Arc;
 
 struct ExtensionManagerFixture {
     _dir: tempfile::TempDir,
-    manager: Arc<ironclaw::extensions::ExtensionManager>,
+    manager: Arc<axinite::extensions::ExtensionManager>,
 }
 
 #[fixture]
 fn extension_manager_fixture() -> ExtensionManagerFixture {
-    use ironclaw::secrets::{InMemorySecretsStore, SecretsCrypto};
+    use axinite::secrets::{InMemorySecretsStore, SecretsCrypto};
 
     let dir = tempfile::tempdir().expect("temp dir");
     let tools_dir = dir.path().join("tools");
@@ -32,22 +32,22 @@ fn extension_manager_fixture() -> ExtensionManagerFixture {
     let master_key = secrecy::SecretString::from("0123456789abcdef0123456789abcdef".to_string());
     let crypto = std::sync::Arc::new(SecretsCrypto::new(master_key).expect("crypto"));
 
-    let mcp_clients = ironclaw::extensions::McpClientsMap::default();
+    let mcp_clients = axinite::extensions::McpClientsMap::default();
 
     ExtensionManagerFixture {
         _dir: dir,
-        manager: std::sync::Arc::new(ironclaw::extensions::ExtensionManager::new(
-            ironclaw::extensions::ExtensionManagerConfig {
-                shared_state: ironclaw::extensions::LiveWasmChannelSharedState::default(),
-                discovery: std::sync::Arc::new(ironclaw::extensions::NoOpDiscovery),
+        manager: std::sync::Arc::new(axinite::extensions::ExtensionManager::new(
+            axinite::extensions::ExtensionManagerConfig {
+                shared_state: axinite::extensions::LiveWasmChannelSharedState::default(),
+                discovery: std::sync::Arc::new(axinite::extensions::NoOpDiscovery),
                 relay_config: None,
                 gateway_token: None,
-                mcp_activation: std::sync::Arc::new(ironclaw::extensions::NoOpMcpActivation),
+                mcp_activation: std::sync::Arc::new(axinite::extensions::NoOpMcpActivation),
                 wasm_tool_activation: std::sync::Arc::new(
-                    ironclaw::extensions::NoOpWasmToolActivation,
+                    axinite::extensions::NoOpWasmToolActivation,
                 ),
                 wasm_channel_activation: std::sync::Arc::new(
-                    ironclaw::extensions::NoOpWasmChannelActivation,
+                    axinite::extensions::NoOpWasmChannelActivation,
                 ),
                 mcp_clients,
                 secrets: std::sync::Arc::new(InMemorySecretsStore::new(crypto)),
@@ -190,7 +190,7 @@ async fn extension_tool_schemas_are_valid(extension_manager_fixture: ExtensionMa
 fn json_tool_freeform_data_field_is_valid() {
     // Regression: json tool's "data" field intentionally has no "type" for
     // OpenAI compatibility (union types with arrays require "items").
-    let tool = ironclaw::tools::builtin::JsonTool;
+    let tool = axinite::tools::builtin::JsonTool;
     let schema = tool.parameters_schema();
     let errors = validate_tool_schema(&schema, "json");
     assert!(errors.is_empty(), "json tool schema errors: {errors:?}");
@@ -209,7 +209,7 @@ fn json_tool_freeform_data_field_is_valid() {
 #[test]
 fn http_tool_headers_array_is_valid() {
     // Regression: http tool's "headers" is an array of {name, value} objects.
-    let tool = ironclaw::tools::builtin::HttpTool::new().expect("Failed to create HTTP client");
+    let tool = axinite::tools::builtin::HttpTool::new().expect("Failed to create HTTP client");
     let schema = tool.parameters_schema();
     let errors = validate_tool_schema(&schema, "http");
     assert!(errors.is_empty(), "http tool schema errors: {errors:?}");
@@ -232,7 +232,7 @@ fn http_tool_headers_array_is_valid() {
 
 #[test]
 fn time_tool_schema_is_valid() {
-    let tool = ironclaw::tools::builtin::TimeTool;
+    let tool = axinite::tools::builtin::TimeTool;
     let schema = tool.parameters_schema();
     let errors = validate_tool_schema(&schema, "time");
     assert!(errors.is_empty(), "time tool schema errors: {errors:?}");
@@ -240,7 +240,7 @@ fn time_tool_schema_is_valid() {
 
 #[test]
 fn shell_tool_schema_is_valid() {
-    let tool = ironclaw::tools::builtin::ShellTool::new();
+    let tool = axinite::tools::builtin::ShellTool::new();
     let schema = tool.parameters_schema();
     let errors = validate_tool_schema(&schema, "shell");
     assert!(errors.is_empty(), "shell tool schema errors: {errors:?}");

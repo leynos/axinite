@@ -138,7 +138,7 @@ fn print_completion_notes(cloudflared_found: bool) {
 }
 
 /// Detect running cloudflared processes or managed services that could conflict
-/// with IronClaw's tunnel management.
+/// with Axinite's tunnel management.
 fn detect_existing_cloudflared() -> Option<String> {
     #[allow(unused_mut)]
     let mut conflicts: Vec<String> = Vec::new();

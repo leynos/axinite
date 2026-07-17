@@ -3,8 +3,8 @@
 ## Getting Started
 
 ```bash
-git clone https://github.com/nearai/ironclaw.git
-cd ironclaw
+git clone https://github.com/leynos/axinite.git
+cd axinite
 ./scripts/dev-setup.sh
 ```
 
@@ -60,7 +60,7 @@ behaviour the change touches.
 
 ## Database Changes
 
-IronClaw uses dual-backend persistence (PostgreSQL + libSQL). All new
+Axinite uses dual-backend persistence (PostgreSQL + libSQL). All new
 persistence features must support both backends. See `src/db/CLAUDE.md`.
 
 ## Adding Dependencies

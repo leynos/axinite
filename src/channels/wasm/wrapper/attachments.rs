@@ -29,16 +29,16 @@ pub(super) fn read_attachments(paths: &[String]) -> Result<Vec<wit_channel::Atta
     let mut total_bytes: u64 = 0;
     let tmp_base = std::path::Path::new("/tmp");
     let home_base = dirs::home_dir()
-        .map(|h| h.join(".ironclaw"))
+        .map(|h| h.join(".axinite"))
         .unwrap_or_default();
 
     for path in paths {
-        // Validate paths are under /tmp/ or ~/.ironclaw/ to prevent arbitrary file reads
+        // Validate paths are under /tmp/ or ~/.axinite/ to prevent arbitrary file reads
         let validated = crate::tools::builtin::path_utils::validate_path(path, Some(tmp_base))
             .or_else(|_| crate::tools::builtin::path_utils::validate_path(path, Some(&home_base)));
         let validated = validated.map_err(|e| {
             format!(
-                "Invalid attachment path '{}': must be under /tmp/ or ~/.ironclaw/: {}",
+                "Invalid attachment path '{}': must be under /tmp/ or ~/.axinite/: {}",
                 path, e
             )
         })?;

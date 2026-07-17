@@ -4,7 +4,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use crate::support::test_channel::TestChannel;
-use ironclaw::channels::{Channel, IncomingMessage, OutgoingResponse, StatusUpdate};
+use axinite::channels::{Channel, IncomingMessage, OutgoingResponse, StatusUpdate};
 
 #[tokio::test]
 async fn send_and_receive_message() {

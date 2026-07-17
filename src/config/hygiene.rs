@@ -1,6 +1,6 @@
 //! Memory hygiene configuration parsed from the environment.
 
-use crate::bootstrap::ironclaw_base_dir;
+use crate::bootstrap::axinite_base_dir;
 use crate::config::EnvContext;
 use crate::config::helpers::{EnvKey, parse_bool_env_from, parse_optional_env_from};
 use crate::error::ConfigError;
@@ -60,14 +60,14 @@ impl HygieneConfig {
     }
 
     /// Convert to the workspace hygiene config, resolving the state directory
-    /// to the standard `~/.ironclaw` location.
+    /// to the standard `~/.axinite` location.
     pub fn to_workspace_config(&self) -> crate::workspace::hygiene::HygieneConfig {
         crate::workspace::hygiene::HygieneConfig {
             enabled: self.enabled,
             daily_retention_days: self.daily_retention_days,
             conversation_retention_days: self.conversation_retention_days,
             cadence_hours: self.cadence_hours,
-            state_dir: ironclaw_base_dir(),
+            state_dir: axinite_base_dir(),
         }
     }
 }

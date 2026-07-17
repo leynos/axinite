@@ -1,6 +1,6 @@
 //! Message conversion helpers for the rig adapter.
 //!
-//! This module turns IronClaw chat history into rig-core message types while
+//! This module turns Axinite chat history into rig-core message types while
 //! preserving tool-call and tool-result semantics expected by downstream
 //! providers.
 

@@ -52,7 +52,7 @@ pub(super) fn build_inference_config(
 // Message conversion
 // ---------------------------------------------------------------------------
 
-/// Convert IronClaw `ChatMessage` list into Bedrock system blocks + messages.
+/// Convert Axinite `ChatMessage` list into Bedrock system blocks + messages.
 ///
 /// Key differences from OpenAI/Anthropic protocol:
 /// 1. System messages are extracted and passed separately.
@@ -245,7 +245,7 @@ fn build_bedrock_message(
 // Tool configuration
 // ---------------------------------------------------------------------------
 
-/// Build Bedrock `ToolConfiguration` from IronClaw tool definitions.
+/// Build Bedrock `ToolConfiguration` from Axinite tool definitions.
 pub(super) fn build_tool_config(
     tools: &[ToolDefinition],
     tool_choice: Option<&str>,

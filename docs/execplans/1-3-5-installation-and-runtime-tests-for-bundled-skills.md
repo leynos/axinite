@@ -350,13 +350,13 @@ conflict in `Decision Log`, and ask for direction.
   valid bundle shapes, as required by this milestone.
 
 - Observation: the concrete command in the plan that used
-  `cargo nextest run -p ironclaw --test skills_upload` is stale. The file
+  `cargo nextest run -p axinite --test skills_upload` is stale. The file
   `tests/channels/skills_upload.rs` is compiled under the `channels`
   integration test target. Evidence: Cargo reported no test target named
   `skills_upload` and listed `channels` as the available target in
   `/tmp/focused-upload-stage-d-1-3-5-axinite-1-3-5-installation-and-runtime-tests-for-bundled-skills.out`.
   Impact: use
-  `cargo nextest run -p ironclaw --test channels -E 'test(/skills_upload/)'`
+  `cargo nextest run -p axinite --test channels -E 'test(/skills_upload/)'`
   for targeted gateway upload validation.
 
 - Observation: the Stage D happy-path upload test now uses the same
@@ -800,10 +800,10 @@ After each stage, run focussed validation:
 ```bash
 ACTION=focused-1-3-5
 LOG="/tmp/${ACTION}-axinite-$(git branch --show-current).out"
-cargo nextest run -p ironclaw skills::registry::tests 2>&1 | tee "$LOG"
-cargo nextest run -p ironclaw skills::file_read 2>&1 | tee "$LOG"
-cargo nextest run -p ironclaw tools::builtin::skill_tools 2>&1 | tee "$LOG"
-cargo nextest run -p ironclaw --test channels skills_upload 2>&1 | tee "$LOG"
+cargo nextest run -p axinite skills::registry::tests 2>&1 | tee "$LOG"
+cargo nextest run -p axinite skills::file_read 2>&1 | tee "$LOG"
+cargo nextest run -p axinite tools::builtin::skill_tools 2>&1 | tee "$LOG"
+cargo nextest run -p axinite --test channels skills_upload 2>&1 | tee "$LOG"
 ```
 
 Run `coderabbit review --agent` after each major milestone:

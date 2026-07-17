@@ -3,7 +3,7 @@
 use std::collections::HashMap;
 use std::sync::{Arc, LazyLock, Mutex};
 
-use ironclaw::cli::Cli;
+use axinite::cli::Cli;
 use tokio::sync::OnceCell;
 
 use super::*;
@@ -14,9 +14,9 @@ static LOADED_CONTEXT: OnceCell<LoadedConfigContextSnapshot> = OnceCell::const_n
 struct LoadedConfigContextSnapshot {
     config: Config,
     toml_path: Option<std::path::PathBuf>,
-    session: Arc<ironclaw::llm::session::SessionManager>,
+    session: Arc<axinite::llm::session::SessionManager>,
     log_broadcaster: Arc<LogBroadcaster>,
-    log_level_handle: Arc<ironclaw::channels::web::log_layer::LogLevelHandle>,
+    log_level_handle: Arc<axinite::channels::web::log_layer::LogLevelHandle>,
 }
 
 struct EnvVarsGuard {
@@ -79,7 +79,7 @@ fn cli_no_db() -> Cli {
 fn phase_env_guard() -> EnvVarsGuard {
     let mut guard = EnvVarsGuard::new(&["DATABASE_BACKEND", "DATABASE_URL", "LIBSQL_PATH"]);
     guard.set("DATABASE_BACKEND", "libsql");
-    guard.set("LIBSQL_PATH", "/tmp/ironclaw-phase-smoke.db");
+    guard.set("LIBSQL_PATH", "/tmp/axinite-phase-smoke.db");
     guard
 }
 
