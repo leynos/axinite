@@ -3877,7 +3877,7 @@ dependencies = [
  "gag",
  "hex",
  "hkdf",
- "hmac 0.12.1",
+ "hmac 0.13.0",
  "html-to-markdown-rs",
  "http-body-util",
  "hyper 1.9.0",
