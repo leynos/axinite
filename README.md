@@ -44,6 +44,8 @@ target/debug/axinite onboard --quick
 > **Migrating from IronClaw?** If you have an existing `ironclaw`-named
 > build, move `~/.ironclaw` to `~/.axinite` and rename any `IRONCLAW_*`
 > environment variables to `AXINITE_*` before running the commands below.
+> A legacy `ironclaw.db` database inside the moved directory is detected
+> automatically; renaming the file is not required.
 
 ### Basic usage
 

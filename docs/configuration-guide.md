@@ -30,6 +30,9 @@ Two bootstrap details matter in practice:
    warns when one is used.
 2. If `DATABASE_BACKEND` is still unset after environment files are loaded and
    `~/.axinite/axinite.db` exists, startup auto-selects the `libsql` backend.
+   The pre-rename `~/.axinite/ironclaw.db` is accepted as a fallback when only
+   the legacy file exists, so a migrated install keeps its data without a
+   manual file rename.
 
 For maintainers and tests, the config layer also exposes
 `crate::config::EnvContext`, an explicit snapshot of environment variables and

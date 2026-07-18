@@ -100,9 +100,9 @@ pub fn axinite_env_path() -> PathBuf {
 /// upgrade from the old config format).
 ///
 /// After loading the `.env` file, auto-detects the libsql backend: if
-/// `DATABASE_BACKEND` is still unset and `~/.axinite/axinite.db` exists,
-/// defaults to `libsql` so cloud instances work out of the box without any
-/// manual configuration.
+/// `DATABASE_BACKEND` is still unset and `~/.axinite/axinite.db` (or the
+/// pre-rename `~/.axinite/ironclaw.db`) exists, defaults to `libsql` so
+/// cloud instances work out of the box without any manual configuration.
 pub fn load_axinite_env() {
     let path = axinite_env_path();
 
@@ -120,10 +120,9 @@ pub fn load_axinite_env() {
     // This avoids the chicken-and-egg problem on cloud instances where no
     // DATABASE_URL is configured but axinite.db is already present.
     if std::env::var("DATABASE_BACKEND").is_err() {
-        let default_db = dirs::home_dir()
-            .unwrap_or_default()
-            .join(".axinite")
-            .join("axinite.db");
+        // The default path falls back to the pre-rename `ironclaw.db` when
+        // only the legacy file exists, keeping migrated installs working.
+        let default_db = crate::config::default_libsql_path();
         if default_db.exists() {
             // SAFETY: `load_axinite_env` is called from a synchronous `fn main()`
             // before the Tokio runtime is started, so no other threads exist yet.
