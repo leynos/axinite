@@ -11,7 +11,7 @@ jobs:
   coverage-check:
     name: CodeScene Coverage
     if: github.event_name == 'pull_request'
-    runs-on: ubicloud-standard-8
+    runs-on: ubuntu-latest
     env:
       CARGO_INCREMENTAL: "0"
       CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_LINKER: clang
