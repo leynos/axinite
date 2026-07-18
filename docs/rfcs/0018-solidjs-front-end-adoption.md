@@ -6,14 +6,16 @@
 - **Status:** Proposed
 - **Created:** 2026-04-01
 - **Depends on:** RFC 0009
-- **Related:** <https://github.com/leynos/axinite/blob/main/docs/front-end-architecture.md>,
+- **Related:**
+  <https://github.com/leynos/axinite/blob/main/docs/front-end-architecture.md>,
   <https://github.com/leynos/axinite-mockup/blob/main/docs/axinite-v2a-frontend-architecture.md>,
-  and <https://github.com/leynos/axinite-mockup/blob/main/docs/v2a-front-end-stack.md>
+  and
+  <https://github.com/leynos/axinite-mockup/blob/main/docs/v2a-front-end-stack.md>
 
 ## Summary
 
-Axinite's current browser surface is still the Rust-hosted gateway UI built from
-checked-in `index.html`, `style.css`, and `app.js` assets. In parallel, the
+Axinite's current browser surface is still the Rust-hosted gateway UI built
+from checked-in `index.html`, `style.css`, and `app.js` assets. In parallel, the
 `axinite-mockup` repository has proven out a new browser implementation as a
 SolidJS single-page application (SPA) with typed API modules, semantic CSS,
 TanStack Router, TanStack Query, localization, and a Bun mock backend that
@@ -159,8 +161,8 @@ Axinite should preserve the current product boundary:
   than a separate service.
 
 What changes is the implementation of the browser UI. Instead of serving
-manually authored `index.html`, `style.css`, and `app.js` as the primary UI, the
-gateway should serve a built SolidJS SPA.
+manually authored `index.html`, `style.css`, and `app.js` as the primary UI,
+the gateway should serve a built SolidJS SPA.
 
 This preserves Axinite's local-first deployment model while moving browser code
 onto a component-oriented, typed, and better-tested implementation.
@@ -188,8 +190,8 @@ The SolidJS application should move into the main Axinite repository as a
 dedicated browser workspace with its own package metadata, TypeScript config,
 Vite build, and browser-focused test suite.
 
-The exact directory name is open, but the structure should preserve the mockup's
-major boundaries:
+The exact directory name is open, but the structure should preserve the
+mockup's major boundaries:
 
 - application bootstrap and providers,
 - explicit route tree,
@@ -391,8 +393,8 @@ move together.
 
 ### Rollback compatibility
 
-The legacy browser shell should remain available behind a feature flag until the
-new SPA has passed real-runtime validation for the full adopted route set.
+The legacy browser shell should remain available behind a feature flag until
+the new SPA has passed real-runtime validation for the full adopted route set.
 
 ### Documentation migration
 
@@ -444,17 +446,16 @@ shape and earn more machinery later if product behaviour demands it.
 - Which route family should be the first real-runtime migration target after the
   shell and status surfaces?
 - Should the mock backend consume shared generated contract artefacts from the
-  main repository, or should the repositories share contract definitions through
-  a separate package?
+  main repository, or should the repositories share contract definitions
+  through a separate package?
 - Does the existing gateway WebSocket path still serve a browser need that the
-  adopted SPA should keep, or can browser interactivity standardize on JSON plus
-  SSE for the first cutover?
+  adopted SPA should keep, or can browser interactivity standardize on JSON
+  plus SSE for the first cutover?
 
-Informational note:
-Stage 3 already fixes feature-flag-driven entrypoint selection as a
-gateway-side routing decision in the Rust gateway. Any future client-side check
-would be defence-in-depth hardening only and must not reopen the primary
-routing decision.
+Informational note: Stage 3 already fixes feature-flag-driven entrypoint
+selection as a gateway-side routing decision in the Rust gateway. Any future
+client-side check would be defence-in-depth hardening only and must not reopen
+the primary routing decision.
 
 ## Recommendation
 

@@ -1,9 +1,8 @@
 # Extend skill installation flows for uploaded bundles and `.skill` URLs
 
-This ExecPlan (execution plan) is a living document. The sections
-`Constraints`, `Tolerances`, `Risks`, `Progress`,
-`Surprises & Discoveries`, `Decision Log`, and
-`Outcomes & Retrospective` must be kept up to date as work proceeds.
+This ExecPlan (execution plan) is a living document. The sections `Constraints`,
+`Tolerances`, `Risks`, `Progress`, `Surprises & Discoveries`, `Decision Log`,
+and `Outcomes & Retrospective` must be kept up to date as work proceeds.
 
 Status: COMPLETE
 
@@ -35,15 +34,14 @@ configured installed-skills directory preserves `references/` and `assets/`.
 When the archive shape is invalid, the user sees the existing explicit
 `invalid_skill_bundle: ...` error rather than a generic install failure.
 
-This slice deliberately stops before roadmap items `1.3.3` and `1.3.4`.
-Runtime skill activation still injects only the selected `SKILL.md` body until
+This slice deliberately stops before roadmap items `1.3.3` and `1.3.4`. Runtime
+skill activation still injects only the selected `SKILL.md` body until
 canonical skill roots and the future `skill_read_file` tool are implemented.
 
 The plan uses `hexagonal-architecture` as boundary discipline, not as a
 repository-wide pattern transplant. Bundle policy and canonical install rules
 belong in `src/skills/`; HTTP, web forms, JSON requests, and multipart upload
-handling are adapters that translate user input into the shared install
-service.
+handling are adapters that translate user input into the shared install service.
 
 ## Approval gates
 
@@ -73,9 +71,9 @@ shape. The requested `docs/axinite-architecture-summary.md` is not present in
 this checkout; use `docs/axinite-architecture-overview.md` as the available
 architecture reference.
 
-`docs/roadmap.md` defines roadmap item `1.3.2`, its dependency on completed
-item `1.3.1`, and the success rule for preserving `references/` and `assets/`
-while reporting archive-shape failures explicitly.
+`docs/roadmap.md` defines roadmap item `1.3.2`, its dependency on completed item
+`1.3.1`, and the success rule for preserving `references/` and `assets/` while
+reporting archive-shape failures explicitly.
 
 `docs/rfcs/0003-skill-bundle-installation.md` is the design authority. The
 sections to keep open while implementing are `Summary`, `Installation Flows`,
@@ -110,11 +108,11 @@ continue to flow through this fetch path.
 `src/tools/builtin/skill_tools/install.rs` is the agent-callable
 `skill_install` tool. Its current schema still marks `name` as required even
 when installing from a URL or inline content. The implementation should make
-the install-source contract explicit without forcing a bundle URL to pretend
-to have a catalogue name.
+the install-source contract explicit without forcing a bundle URL to pretend to
+have a catalogue name.
 
-`src/channels/web/types.rs` defines `SkillInstallRequest` for JSON installs
-and `ActionResponse` for install results. If multipart upload needs a separate
+`src/channels/web/types.rs` defines `SkillInstallRequest` for JSON installs and
+`ActionResponse` for install results. If multipart upload needs a separate
 request extractor, keep the user-visible response compatible with existing web
 install results.
 
@@ -168,9 +166,8 @@ form field when archive shape validation fails.
 Both URL and upload installs must use the shared staged install path so that
 `references/` and `assets/` are preserved identically.
 
-Archive-shape failures must remain explicit. Do not collapse
-`SkillBundleError` messages into a generic "invalid file" or "install failed"
-response.
+Archive-shape failures must remain explicit. Do not collapse `SkillBundleError`
+messages into a generic "invalid file" or "install failed" response.
 
 The web endpoint must preserve the `X-Confirm-Action: true` requirement for
 mutating installs.
@@ -183,10 +180,10 @@ Tests must avoid live network dependencies. For URL flows, use injected or
 local test fetch seams where available, or test the adapter immediately below
 the HTTP fetch if the existing API has no injection seam.
 
-Use `rstest` fixtures for repeated archive, registry, and web-state setup.
-Use `rstest-bdd` for behaviour coverage where it is practical and focused; if
-the current test harness makes BDD disproportionate for this slice, record why
-in `Surprises & Discoveries` and cover observable behaviour with `rstest`.
+Use `rstest` fixtures for repeated archive, registry, and web-state setup. Use
+`rstest-bdd` for behaviour coverage where it is practical and focused; if the
+current test harness makes BDD disproportionate for this slice, record why in
+`Surprises & Discoveries` and cover observable behaviour with `rstest`.
 
 Run `make all` before any implementation commit. Run Markdown validation for
 changed Markdown files with `bunx markdownlint-cli2 <paths>` and run
@@ -198,9 +195,9 @@ If the implementation appears to require changing more than one public install
 endpoint path, stop and record the reason. The target is one logical web
 install endpoint, not a parallel API family.
 
-If multipart uploads require increasing the global gateway body limit above
-the RFC bundle cap, stop and decide whether a route-local limit is possible.
-The implementation should not silently widen all browser request limits.
+If multipart uploads require increasing the global gateway body limit above the
+RFC bundle cap, stop and decide whether a route-local limit is possible. The
+implementation should not silently widen all browser request limits.
 
 If tool-call upload support appears to require base64 archives in the Large
 Language Model (LLM) tool schema, stop and ask for confirmation. Roadmap item
@@ -259,8 +256,7 @@ Rust test code without a new app-level server harness.
 
 - [x] 2026-04-24: Read the roadmap entry, RFC 0003, documentation index,
   welcome guide, architecture overview, users guide, skills design document,
-  web gateway notes, relevant source seams, and the previous `1.3.1`
-  ExecPlan.
+  web gateway notes, relevant source seams, and the previous `1.3.1` ExecPlan.
 - [x] 2026-04-24: Used a Wyvern agent for a parallel planning brief covering
   likely files, boundaries, docs, tests, and risks.
 - [x] 2026-04-24: Drafted this approval-gated ExecPlan.
@@ -293,9 +289,9 @@ Rust test code without a new app-level server harness.
   `a8d63a1a Support skill bundle upload installs`.
 - [x] 2026-04-24: Code-review feedback addressed. The web and tool adapters now
   share source blankness helpers, multipart source fields use the same
-  whitespace semantics as JSON installs, body size failures distinguish
-  Axum's length-limit error from other body read errors, and regression tests
-  cover invalid multipart uploads, mixed multipart sources, JSON size limits,
+  whitespace semantics as JSON installs, body size failures distinguish Axum's
+  length-limit error from other body read errors, and regression tests cover
+  invalid multipart uploads, mixed multipart sources, JSON size limits,
   additional ambiguous tool-source combinations, and downloaded raw Markdown.
 - [x] 2026-04-24: Review-fix validation passed. The targeted skill test run
   `cargo test -p ironclaw skill` wrote
@@ -323,9 +319,9 @@ available high-level architecture document and already mentions the skills
 startup phase and staged install path.
 
 Roadmap item `1.3.1` is marked complete, and the source already contains
-`src/skills/bundle/`, `SkillInstallPayload::DownloadedBytes`, and staged
-bundle preservation tests. This means `1.3.2` should not rework validation; it
-should extend input adapters and user-visible install flows.
+`src/skills/bundle/`, `SkillInstallPayload::DownloadedBytes`, and staged bundle
+preservation tests. This means `1.3.2` should not rework validation; it should
+extend input adapters and user-visible install flows.
 
 `docs/users-guide.md` currently says local `.skill` uploads are not yet
 supported. That statement becomes false when this plan is implemented and must
@@ -355,10 +351,10 @@ validation enforces exactly one of `content`, `url`, or `name`.
 implicit catalogue-name requirement, so the fixture was updated to send only
 `content` for an inline install.
 
-2026-04-24: Axum's `to_bytes` error wraps `http_body_util::LengthLimitError`
-as the source error when the configured body cap is exceeded. Matching that
-source preserves the intended `413 Payload Too Large` response without
-misclassifying unrelated body read failures.
+2026-04-24: Axum's `to_bytes` error wraps `http_body_util::LengthLimitError` as
+the source error when the configured body cap is exceeded. Matching that source
+preserves the intended `413 Payload Too Large` response without misclassifying
+unrelated body read failures.
 
 2026-04-26: The static web app has no existing package manifest or frontend
 test runner. The follow-up frontend coverage therefore uses Node's built-in
@@ -373,9 +369,9 @@ validation and extraction from installation flows, and the roadmap marks
 `1.3.1` complete.
 
 2026-04-24: Keep the future `skill_read_file` tool and active-skill root
-metadata out of this plan. They are explicitly covered by roadmap items
-`1.3.3` and `1.3.4`, and mixing them into upload support would make approval
-and validation harder.
+metadata out of this plan. They are explicitly covered by roadmap items `1.3.3`
+and `1.3.4`, and mixing them into upload support would make approval and
+validation harder.
 
 2026-04-24: Plan for source-mode validation at the adapter boundary and archive
 shape validation in `src/skills/`. This follows the hexagonal-architecture
@@ -419,13 +415,13 @@ existing install paths still pass and there is a clear failing test for local
 Milestone 2 extracts a shared install orchestration helper if the current code
 requires it. Both `src/channels/web/handlers/skills.rs` and
 `src/tools/builtin/skill_tools/install.rs` currently perform the same
-prepare-commit-cleanup sequence. If adding uploads would duplicate more of
-that flow, move the shared sequence into a small skills-owned application
-service or helper that accepts an install root plus `SkillInstallPayload` and
-returns the installed name. Keep registry locking brief and keep async disk I/O
-outside long-held locks, as `docs/agent-skills-support.md` describes. If the
-existing duplication remains small, leave it alone and only add shared
-source-validation helpers.
+prepare-commit-cleanup sequence. If adding uploads would duplicate more of that
+flow, move the shared sequence into a small skills-owned application service or
+helper that accepts an install root plus `SkillInstallPayload` and returns the
+installed name. Keep registry locking brief and keep async disk I/O outside
+long-held locks, as `docs/agent-skills-support.md` describes. If the existing
+duplication remains small, leave it alone and only add shared source-validation
+helpers.
 
 Milestone 3 makes install sources explicit. Define a small internal source
 selection function for the web and tool adapters that accepts the possible
@@ -443,8 +439,9 @@ part. Preserve `X-Confirm-Action: true`. Read the uploaded file into bounded
 bytes, reject missing or multiple source fields, and pass the bytes to the
 shared staged install path as `SkillInstallPayload::ArchiveBytes`, preserving
 the archive-only upload contract. Ensure an invalid archive root returns the
-existing `invalid_skill_bundle: expected one top-level path prefix with
-SKILL.md at <root>/SKILL.md` style message.
+existing
+`invalid_skill_bundle: expected one top-level path prefix with SKILL.md at <root>/SKILL.md`
+style message.
 
 Milestone 5 updates the browser Skills tab. In
 `src/channels/web/static/index.html`, add a file picker for `.skill` archives
@@ -459,13 +456,13 @@ Milestone 6 adds focused tests. Use `rstest` fixtures to build valid and
 invalid archives, registries with temporary installed directories, and any web
 gateway state needed by the handler. Cover successful upload preserving
 `references/` and `assets/`, upload rejection for malformed archive shape,
-`.skill` URL install preserving ancillary files by exercising downloaded
-bytes, exact-one-source validation, and regression coverage for plain
-`SKILL.md` URL or content installs. Add a `rstest-bdd` scenario only if a
-small in-process feature can exercise "Given a valid skill bundle, When it is
-uploaded, Then its references and assets are installed" without starting a
-full browser server. Otherwise record why `rstest` handler tests are the
-proportional behavioural proof.
+`.skill` URL install preserving ancillary files by exercising downloaded bytes,
+exact-one-source validation, and regression coverage for plain `SKILL.md` URL
+or content installs. Add a `rstest-bdd` scenario only if a small in-process
+feature can exercise "Given a valid skill bundle, When it is uploaded, Then its
+references and assets are installed" without starting a full browser server.
+Otherwise record why `rstest` handler tests are the proportional behavioural
+proof.
 
 Milestone 7 updates documentation. In `docs/users-guide.md`, replace the
 statement that local `.skill` uploads are not supported with the new URL and
@@ -475,11 +472,11 @@ not leave partial skill trees. In `docs/agent-skills-support.md`, update the
 web API and management-surface sections to mention uploaded `.skill` bundles
 and the exact-one-source install contract. In `docs/front-end-architecture.md`
 or `src/channels/web/CLAUDE.md`, update the Skills route notes if the request
-content type or body-limit behaviour changes. Check `FEATURE_PARITY.md` for
-any status row that must change.
+content type or body-limit behaviour changes. Check `FEATURE_PARITY.md` for any
+status row that must change.
 
-Milestone 8 validates and completes the roadmap item. Run targeted tests
-first, then:
+Milestone 8 validates and completes the roadmap item. Run targeted tests first,
+then:
 
 ```bash
 BRANCH_FOR_LOGS=$(git branch --show | tr / -)
@@ -555,13 +552,12 @@ data with a single `bundle` file field. Both the web adapter and the
 model-facing `skill_install` tool reject missing or ambiguous source
 combinations before install side effects. The tool schema cannot express this
 with top-level `oneOf` because the repository's OpenAI-compatible schema
-validator rejects that keyword, so the explicit contract is enforced at
-runtime and documented.
+validator rejects that keyword, so the explicit contract is enforced at runtime
+and documented.
 
-Focused `rstest` coverage proved the relevant happy and unhappy paths:
-uploaded bundles preserve `references/` and `assets/`, malformed uploads
-return explicit archive-shape errors, inline JSON installs still work, and
-ambiguous source combinations fail. No proportional `rstest-bdd` harness
-already existed for skill install flows, so this slice used in-process Axum
-behaviour tests rather than adding a new BDD layer for the same request and
-response proof.
+Focused `rstest` coverage proved the relevant happy and unhappy paths: uploaded
+bundles preserve `references/` and `assets/`, malformed uploads return explicit
+archive-shape errors, inline JSON installs still work, and ambiguous source
+combinations fail. No proportional `rstest-bdd` harness already existed for
+skill install flows, so this slice used in-process Axum behaviour tests rather
+than adding a new BDD layer for the same request and response proof.

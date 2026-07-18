@@ -1,23 +1,22 @@
 # Align All Extensions And Channels To WIT 0.3.0
 
-This ExecPlan (execution plan) is a living document. The sections
-`Constraints`, `Tolerances`, `Risks`, `Progress`, `Surprises & Discoveries`,
-`Decision Log`, and `Outcomes & Retrospective` must be kept up to date as
-work proceeds.
+This ExecPlan (execution plan) is a living document. The sections `Constraints`,
+`Tolerances`, `Risks`, `Progress`, `Surprises & Discoveries`, `Decision Log`,
+and `Outcomes & Retrospective` must be kept up to date as work proceeds.
 
 Status: COMPLETE
 
 ## Purpose / big picture
 
-The target WebAssembly Interface Types (WIT) version for this work is
-`0.3.0`, not `3.0.0`.
+The target WebAssembly Interface Types (WIT) version for this work is `0.3.0`,
+not `3.0.0`.
 
 IronClaw already publishes both WebAssembly (WASM) host contracts as
 `package near:agent@0.3.0;` in `wit/tool.wit` and `wit/channel.wit`, and the
-curated in-tree extension matrix already declares `wit_version: "0.3.0"` in
-its sidecar capabilities files and registry manifests. This means the task is
-not a host-interface major-version migration. It is an audit-and-alignment pass
-to prove every curated extension and channel is actually consistent with the
+curated in-tree extension matrix already declares `wit_version: "0.3.0"` in its
+sidecar capabilities files and registry manifests. This means the task is not a
+host-interface major-version migration. It is an audit-and-alignment pass to
+prove every curated extension and channel is actually consistent with the
 current `0.3.0` host contract, and to remove stale fallback paths that still
 report older versions such as `0.1.0`.
 
@@ -129,8 +128,8 @@ files to inspect are:
   not automatically wrong, but the full matrix build must prove it does not
   hide inconsistent generated bindings under the current WIT contract.
 - Some persistence and test surfaces still embed `0.1.0` fallback values. Those
-  stale values can mislead operators into thinking the host still defaults to an
-  older WIT version.
+  stale values can mislead operators into thinking the host still defaults to
+  an older WIT version.
 - The compatibility checker treats `0.x` minors as breaking. That is correct
   for `0.3.0`, but the audit must confirm the tests still describe the current
   rule clearly.
@@ -147,7 +146,8 @@ Begin by proving the current state rather than editing files immediately.
    registry manifest already advertise `0.3.0`.
 2. Rebuild the full extension matrix with
    `./scripts/build-wasm-extensions.sh`.
-3. Run `cargo test --all-features --test wit_compat -- --nocapture` to prove the built
+3. Run `cargo test --all-features --test wit_compat -- --nocapture` to prove
+   the built
    matrix instantiates against the current host linker.
 4. Record which surfaces are already aligned and which ones still leak older
    values such as `0.1.0`.
@@ -316,23 +316,22 @@ Record the exact log paths in the final implementation summary.
   curated in-tree extension matrix are already on `0.3.0`.
 - [x] 2026-03-09T17:08:00+00:00 Audited the live host contract and curated
   matrix. `wit/tool.wit`, `wit/channel.wit`, `src/tools/wasm/mod.rs`, curated
-  sidecar capabilities files, and curated registry manifests already report
-  WIT `0.3.0`.
+  sidecar capabilities files, and curated registry manifests already report WIT
+  `0.3.0`.
 - [x] 2026-03-09T17:15:00+00:00 Rebuilt the curated extension matrix with
   `./scripts/build-wasm-extensions.sh`; the build completed successfully and
   wrote evidence to
   `/tmp/build-wasm-extensions-ironclaw-use-wit-v3-in-extensions.out`.
 - [x] 2026-03-09T17:18:00+00:00 Re-ran
-  `cargo test --all-features --test wit_compat -- --nocapture` after the full matrix
-  build. All three compatibility tests passed, including the WhatsApp channel,
-  with evidence in
+  `cargo test --all-features --test wit_compat -- --nocapture` after the full
+  matrix build. All three compatibility tests passed, including the WhatsApp
+  channel, with evidence in
   `/tmp/test-wit-compat-rerun-ironclaw-use-wit-v3-in-extensions.out`.
 - [x] 2026-03-09T17:39:00+00:00 Fixed stale runtime defaults and reporting
-  paths that implied older WIT versions. The implementation updated the
-  libSQL base schema, added a libSQL incremental migration for upgraded
-  databases, and added PostgreSQL migration
-  `migrations/V12__wasm_wit_default_0_3_0.sql`, all covered by red-green unit
-  plus behavioural tests.
+  paths that implied older WIT versions. The implementation updated the libSQL
+  base schema, added a libSQL incremental migration for upgraded databases, and
+  added PostgreSQL migration `migrations/V12__wasm_wit_default_0_3_0.sql`, all
+  covered by red-green unit plus behavioural tests.
 - [x] 2026-03-09T17:29:00+00:00 Added a behavioural integration test,
   `tests/libsql_wit_defaults_integration.rs`, that seeds a legacy libSQL
   schema, runs `run_migrations()`, and asserts that inserts without an explicit
@@ -395,8 +394,8 @@ Record the exact log paths in the final implementation summary.
   edit-first patching.
 - The user also expanded the docs scope: import
   `../imap-wasm/docs/writing-web-assembly-tools-for-ironclaw.md` into `docs/`
-  and update it with the findings from this alignment pass, especially the
-  WIT `0.3.0` format and packaging realities.
+  and update it with the findings from this alignment pass, especially the WIT
+  `0.3.0` format and packaging realities.
 - Several older repository docs already fail the current markdownlint profile.
   To keep this WIT change set gateable, the doc edits were narrowed back to the
   imported guide and the living plan instead of expanding into an unrelated
@@ -419,9 +418,9 @@ Record the exact log paths in the final implementation summary.
   an imported authoring guide under `docs/` that documents the actual WIT
   `0.3.0` format.
 - 2026-03-09T17:33:00+00:00: Keep the docs scope focused on the imported guide
-  and the plan after `markdownlint-cli2` showed broad pre-existing violations in
-  other repository docs. Avoid turning this WIT alignment pass into a general
-  markdown remediation branch.
+  and the plan after `markdownlint-cli2` showed broad pre-existing violations
+  in other repository docs. Avoid turning this WIT alignment pass into a
+  general markdown remediation branch.
 
 ## Outcomes & Retrospective
 
@@ -443,9 +442,9 @@ Implementation is complete.
   and
   `/tmp/test-unit-wit-defaults-green-lib-v10-ironclaw-use-wit-v3-in-extensions.out`
   captured the focused unit-test passes.
-  `/tmp/test-wit-compat-focused-ironclaw-use-wit-v3-in-extensions.out`
-  captured the repo-level WIT compatibility gate passing.
-  `/tmp/markdownlint-ironclaw-use-wit-v3-in-extensions.out`
-  captured markdown lint passing for the updated plan and imported guide.
+  `/tmp/test-wit-compat-focused-ironclaw-use-wit-v3-in-extensions.out` captured
+  the repo-level WIT compatibility gate passing.
+  `/tmp/markdownlint-ironclaw-use-wit-v3-in-extensions.out` captured markdown
+  lint passing for the updated plan and imported guide.
 - Release bundles were correctly left unchanged because no shipped extension
   artefact inputs changed.

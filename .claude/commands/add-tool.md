@@ -5,18 +5,26 @@ argument-hint: <tool_name> [description]
 model: opus
 ---
 
-Scaffold a new tool called `$ARGUMENTS` for the IronClaw agent. First, determine the tool type and then follow the appropriate path.
+# Add Tool
+
+Scaffold a new tool called `$ARGUMENTS` for the IronClaw agent. First,
+determine the tool type and then follow the appropriate path.
 
 ## Step 0: Determine tool type
 
 Ask the user which type of tool to create:
 
-- **WASM tool** (recommended) - Sandboxed, dynamically loadable, external API integrations. Lives in `tools-src/<name>/`. This is the right choice for anything that talks to an external service (Notion, GitHub, Discord, etc.).
-- **Built-in tool** - Compiled into the main binary. Only for core agent infrastructure (e.g., memory, file ops, shell). Lives in `src/tools/builtin/<name>.rs`.
+- **WASM tool** (recommended) - Sandboxed, dynamically loadable, external API
+  integrations. Lives in `tools-src/<name>/`. This is the right choice for
+  anything that talks to an external service (Notion, GitHub, Discord, etc.).
+- **Built-in tool** - Compiled into the main binary. Only for core agent
+  infrastructure (e.g., memory, file ops, shell). Lives in
+  `src/tools/builtin/<name>.rs`.
 
-If the description clearly implies an external service integration, default to WASM. If it's a core agent capability, default to built-in.
+If the description clearly implies an external service integration, default to
+WASM. If it's a core agent capability, default to built-in.
 
----
+______________________________________________________________________
 
 ## Path A: WASM Tool
 
@@ -24,7 +32,7 @@ If the description clearly implies an external service integration, default to W
 
 Create `tools-src/<name>/` with:
 
-```
+```text
 tools-src/<name>/
 ├── Cargo.toml
 ├── <name>-tool.capabilities.json
@@ -64,17 +72,22 @@ codegen-units = 1
 
 ### A3: Write `<name>-tool.capabilities.json`
 
-Declare the tool's security requirements. Determine what APIs it needs and create the allowlist. Reference `tools-src/slack/slack-tool.capabilities.json` for the format.
+Declare the tool's security requirements. Determine what APIs it needs and
+create the allowlist. Reference `tools-src/slack/slack-tool.capabilities.json`
+for the format.
 
 Key sections to include:
+
 - `http.allowlist` - API endpoints (host, path_prefix, methods)
-- `http.credentials` - Secret injection config (secret_name, location type: bearer/header/query)
+- `http.credentials` - Secret injection config (secret_name, location type:
+  bearer/header/query)
 - `http.rate_limit` - requests_per_minute, requests_per_hour
 - `http.timeout_secs`
 - `secrets.allowed_names` - Which secrets the tool can check existence of
 - `auth` - Authentication setup (OAuth or manual token entry)
 
 If the tool needs OAuth, include:
+
 ```json
 {
   "auth": {
@@ -94,6 +107,7 @@ If the tool needs OAuth, include:
 ```
 
 If no OAuth, include manual setup instructions:
+
 ```json
 {
   "auth": {
@@ -122,7 +136,8 @@ pub enum <Name>Action {
 }
 ```
 
-Add result structs with `#[derive(Debug, Serialize)]`. Use `#[serde(skip_serializing_if = "Option::is_none")]` for optional fields.
+Add result structs with `#[derive(Debug, Serialize)]`. Use
+`#[serde(skip_serializing_if = "Option::is_none")]` for optional fields.
 
 ### A5: Write `src/api.rs`
 
@@ -159,7 +174,8 @@ fn api_call(method: &str, endpoint: &str, body: Option<&str>) -> Result<String, 
 }
 ```
 
-Add one function per action variant that calls `api_call` and parses the response into the result structs.
+Add one function per action variant that calls `api_call` and parses the
+response into the result structs.
 
 ### A6: Write `src/lib.rs`
 
@@ -226,13 +242,15 @@ fn execute_inner(params: &str) -> Result<String, String> {
 export!(<Name>Tool);
 ```
 
-Fill in the `schema()` with a proper JSON Schema using `oneOf` for each action variant. Reference `tools-src/slack/src/lib.rs` for the exact pattern.
+Fill in the `schema()` with a proper JSON Schema using `oneOf` for each action
+variant. Reference `tools-src/slack/src/lib.rs` for the exact pattern.
 
 ### A7: Verify
 
-Run `cargo fmt` in the tool directory. If `cargo-component` is available, run `cargo component build --release` to verify the WASM compiles.
+Run `cargo fmt` in the tool directory. If `cargo-component` is available, run
+`cargo component build --release` to verify the WASM compiles.
 
----
+______________________________________________________________________
 
 ## Path B: Built-in Tool
 
@@ -292,7 +310,8 @@ impl Tool for <Name>Tool {
 }
 ```
 
-If the tool needs shared state (HTTP client, config), add a struct field and `new()` constructor:
+If the tool needs shared state (HTTP client, config), add a struct field and
+`new()` constructor:
 
 ```rust
 pub struct <Name>Tool {
@@ -322,10 +341,12 @@ pub use <name>::<Name>Tool;
 
 ### B3: Update `src/tools/registry.rs`
 
-Add the import to the `use crate::tools::builtin::{...}` block and register the tool in the appropriate registration method:
+Add the import to the `use crate::tools::builtin::{...}` block and register the
+tool in the appropriate registration method:
 
 - If it's a core tool: add to `register_builtin_tools()`
-- If it needs shared state (workspace, context_manager, etc.): create a new `register_<category>_tools()` method or add to an existing one
+- If it needs shared state (workspace, context_manager, etc.): create a new
+  `register_<category>_tools()` method or add to an existing one
 - Wire the new registration call in `src/main.rs` if a new method was created
 
 ### B4: Add tests
@@ -362,21 +383,26 @@ mod tests {
 
 ### B5: Quality gate
 
-Run `cargo fmt` and `cargo clippy --all --benches --tests --examples --all-features`. Fix any issues.
+Run `cargo fmt` and
+`cargo clippy --all --benches --tests --examples --all-features`. Fix any
+issues.
 
 Run the new tests: `cargo test --lib -- builtin::<name>::tests`
 
----
+______________________________________________________________________
 
 ## Checklist
 
 Before finishing, verify:
+
 - [ ] Tool type chosen (WASM or built-in) and confirmed with user
 - [ ] All files created with correct structure
-- [ ] For WASM: capabilities.json declares all needed permissions (HTTP, secrets, auth)
+- [ ] For WASM: capabilities.json declares all needed permissions (HTTP,
+      secrets, auth)
 - [ ] For WASM: JSON Schema in `schema()` matches the action enum variants
 - [ ] For built-in: mod.rs updated with module + pub use
 - [ ] For built-in: registry.rs imports and registers the tool
 - [ ] For built-in: tests added and passing
 - [ ] `cargo fmt` clean
-- [ ] `cargo clippy` clean (for built-in) or `cargo component build` clean (for WASM)
+- [ ] `cargo clippy` clean (for built-in) or `cargo component build` clean (for
+      WASM)

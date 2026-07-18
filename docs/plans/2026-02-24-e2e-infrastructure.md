@@ -1,24 +1,31 @@
 # E2E Testing Infrastructure Implementation Plan
 
-> **For Claude:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task.
+> **For Claude:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to
+> implement this plan task-by-task.
 
-**Goal:** Build a Python + Playwright E2E testing framework that exercises the IronClaw web gateway through a real browser against the real binary with a mock LLM backend.
+**Goal:** Build a Python + Playwright E2E testing framework that exercises the
+IronClaw web gateway through a real browser against the real binary with a mock
+LLM backend.
 
-**Architecture:** pytest session fixtures start a mock OpenAI-compat HTTP server and the ironclaw binary (libSQL in-memory, gateway enabled), then per-test Playwright browser instances navigate to the gateway and make DOM assertions.
+**Architecture:** pytest session fixtures start a mock OpenAI-compat HTTP
+server and the ironclaw binary (libSQL in-memory, gateway enabled), then
+per-test Playwright browser instances navigate to the gateway and make DOM
+assertions.
 
 **Tech Stack:** Python 3.11+, pytest, pytest-asyncio, playwright, aiohttp
 
 **Design doc:** `docs/plans/2026-02-24-e2e-infrastructure-design.md`
 
----
+______________________________________________________________________
 
-### Task 1: Project scaffolding and pyproject.toml
+## Task 1: Project scaffolding and pyproject.toml
 
 **Files:**
+
 - Create: `tests/e2e/pyproject.toml`
 - Create: `tests/e2e/scenarios/__init__.py`
 
-**Step 1: Create pyproject.toml**
+### Step 1: Create pyproject.toml
 
 ```toml
 [project]
@@ -44,41 +51,47 @@ asyncio_mode = "auto"
 timeout = 120
 ```
 
-**Step 2: Create empty __init__.py**
+### Step 2: Create empty `__init__.py`
 
 Create `tests/e2e/scenarios/__init__.py` as an empty file.
 
-**Step 3: Verify install works**
+### Step 3: Verify install works
 
 Run:
+
 ```bash
 cd tests/e2e && pip install -e . && playwright install chromium
 ```
+
 Expected: Clean install, no errors.
 
-**Step 4: Commit**
+### Step 4: Commit (Task 1)
 
 ```bash
 git add tests/e2e/pyproject.toml tests/e2e/scenarios/__init__.py
 git commit -m "scaffold: E2E test project with pyproject.toml"
 ```
 
----
+______________________________________________________________________
 
-### Task 2: Mock LLM server
+## Task 2: Mock LLM server
 
 **Files:**
+
 - Create: `tests/e2e/mock_llm.py`
 
-**Step 1: Write the mock LLM server**
+### Step 1: Write the mock LLM server
 
 The server must:
-- Listen on `127.0.0.1` with a port passed via `--port` CLI arg (default 0 for OS-assigned)
+
+- Listen on `127.0.0.1` with a port passed via `--port` CLI arg (default 0 for
+  OS-assigned)
 - Print `MOCK_LLM_PORT={port}` to stdout on startup (for fixture to parse)
 - Handle `POST /v1/chat/completions` with both streaming and non-streaming modes
 - Handle `GET /v1/models` for health checks
 - Pattern-match the last user message to select canned responses
-- Support `stream: true` with proper SSE chunk format (critical for IronClaw's streaming)
+- Support `stream: true` with proper SSE chunk format (critical for IronClaw's
+  streaming)
 
 ```python
 """Mock OpenAI-compatible LLM server for E2E tests."""
@@ -209,9 +222,10 @@ if __name__ == "__main__":
     main()
 ```
 
-**Step 2: Verify it starts and responds**
+### Step 2: Verify it starts and responds
 
 Run:
+
 ```bash
 python tests/e2e/mock_llm.py --port 18080 &
 curl -s http://127.0.0.1:18080/v1/models | python -m json.tool
@@ -221,9 +235,10 @@ curl -s -X POST http://127.0.0.1:18080/v1/chat/completions \
 kill %1
 ```
 
-Expected: Models endpoint returns `{"data": [{"id": "mock-model", ...}]}`. Chat returns response containing "4".
+Expected: Models endpoint returns `{"data": [{"id": "mock-model", ...}]}`. Chat
+returns response containing "4".
 
-**Step 3: Verify streaming**
+### Step 3: Verify streaming
 
 ```bash
 python tests/e2e/mock_llm.py --port 18080 &
@@ -235,21 +250,22 @@ kill %1
 
 Expected: SSE chunks ending with `data: [DONE]`.
 
-**Step 4: Commit**
+### Step 4: Commit (Task 2)
 
 ```bash
 git add tests/e2e/mock_llm.py
 git commit -m "feat: mock OpenAI-compat LLM server for E2E tests"
 ```
 
----
+______________________________________________________________________
 
-### Task 3: Helpers module
+## Task 3: Helpers module
 
 **Files:**
+
 - Create: `tests/e2e/helpers.py`
 
-**Step 1: Write helpers**
+### Step 1: Write helpers
 
 ```python
 """Shared helpers for E2E tests."""
@@ -323,24 +339,27 @@ async def wait_for_port_line(process, pattern: str, *, timeout: float = 60) -> i
     raise TimeoutError(f"Port pattern '{pattern}' not found in stdout after {timeout}s")
 ```
 
-**Step 2: Commit**
+### Step 2: Commit (Task 3)
 
 ```bash
 git add tests/e2e/helpers.py
 git commit -m "feat: E2E helpers with DOM selectors and port discovery"
 ```
 
----
+______________________________________________________________________
 
-### Task 4: conftest.py fixtures
+## Task 4: conftest.py fixtures
 
 **Files:**
+
 - Create: `tests/e2e/conftest.py`
 
-**Step 1: Write the fixtures**
+### Step 1: Write the fixtures
 
 Key details from codebase research:
-- IronClaw logs `Web UI: http://{host}:{port}/` to stdout (main.rs:508) using the config port, not the bound port. So we must use a fixed port, not port 0.
+
+- IronClaw logs `Web UI: http://{host}:{port}/` to stdout (main.rs:508) using
+  the config port, not the bound port. So we must use a fixed port, not port 0.
 - Health endpoint: `GET /api/health` (public, no auth required)
 - Auth via `?token=` query parameter for the frontend auto-auth flow
 - The frontend hides `#auth-screen` when token is valid and SSE connects
@@ -477,21 +496,22 @@ async def page(ironclaw_server):
         await browser.close()
 ```
 
-**Step 2: Commit**
+### Step 2: Commit (Task 4)
 
 ```bash
 git add tests/e2e/conftest.py
 git commit -m "feat: E2E conftest with session fixtures for mock LLM and ironclaw"
 ```
 
----
+______________________________________________________________________
 
-### Task 5: Scenario 1 -- Connection and tab navigation
+## Task 5: Scenario 1 -- Connection and tab navigation
 
 **Files:**
+
 - Create: `tests/e2e/scenarios/test_connection.py`
 
-**Step 1: Write the test**
+### Step 1: Write the test (Task 5)
 
 ```python
 """Scenario 1: Connection, auth, and tab navigation."""
@@ -539,7 +559,7 @@ async def test_auth_rejection(page, ironclaw_server):
     await new_page.close()
 ```
 
-**Step 2: Verify test runs (may fail if ironclaw isn't built yet -- that's OK)**
+### Step 2: Verify test runs (may fail if ironclaw isn't built yet -- that's OK)
 
 ```bash
 cd tests/e2e && python -m pytest scenarios/test_connection.py -v --timeout=120
@@ -547,21 +567,22 @@ cd tests/e2e && python -m pytest scenarios/test_connection.py -v --timeout=120
 
 Expected: Tests pass if ironclaw is built, or skip/fail gracefully if not.
 
-**Step 3: Commit**
+### Step 3: Commit
 
 ```bash
 git add tests/e2e/scenarios/test_connection.py
 git commit -m "feat: E2E scenario 1 -- connection and tab navigation tests"
 ```
 
----
+______________________________________________________________________
 
-### Task 6: Scenario 2 -- Chat message round-trip
+## Task 6: Scenario 2 -- Chat message round-trip
 
 **Files:**
+
 - Create: `tests/e2e/scenarios/test_chat.py`
 
-**Step 1: Write the test**
+### Step 1: Write the test (Task 6)
 
 ```python
 """Scenario 2: Chat message round-trip via SSE streaming."""
@@ -642,23 +663,25 @@ async def test_empty_message_not_sent(page):
     assert final_count == initial_count, "Empty message should not create new messages"
 ```
 
-**Step 2: Commit**
+### Step 2: Commit (Task 6)
 
 ```bash
 git add tests/e2e/scenarios/test_chat.py
 git commit -m "feat: E2E scenario 2 -- chat message round-trip tests"
 ```
 
----
+______________________________________________________________________
 
-### Task 7: Scenario 3 -- Skills lifecycle
+## Task 7: Scenario 3 -- Skills lifecycle
 
 **Files:**
+
 - Create: `tests/e2e/scenarios/test_skills.py`
 
-**Step 1: Write the test**
+### Step 1: Write the test (Task 7)
 
-Note: These tests depend on ClawHub being reachable. They're marked with `@pytest.mark.skipif` if the registry is down.
+Note: These tests depend on ClawHub being reachable. They're marked with
+`@pytest.mark.skipif` if the registry is down.
 
 ```python
 """Scenario 3: Skills search, install, and remove lifecycle."""
@@ -745,21 +768,22 @@ async def test_skills_install_and_remove(page):
         assert new_count < installed_count, "Skill should be removed from installed list"
 ```
 
-**Step 2: Commit**
+### Step 2: Commit (Task 7)
 
 ```bash
 git add tests/e2e/scenarios/test_skills.py
 git commit -m "feat: E2E scenario 3 -- skills search, install, remove tests"
 ```
 
----
+______________________________________________________________________
 
-### Task 8: CI workflow
+## Task 8: CI workflow
 
 **Files:**
+
 - Create: `.github/workflows/e2e.yml`
 
-**Step 1: Write the workflow**
+### Step 1: Write the workflow
 
 ```yaml
 name: E2E Tests
@@ -814,23 +838,24 @@ jobs:
           if-no-files-found: ignore
 ```
 
-**Step 2: Commit**
+### Step 2: Commit (Task 8)
 
 ```bash
 git add .github/workflows/e2e.yml
 git commit -m "ci: add weekly E2E test workflow with Playwright"
 ```
 
----
+______________________________________________________________________
 
-### Task 9: README
+## Task 9: README
 
 **Files:**
+
 - Create: `tests/e2e/README.md`
 
-**Step 1: Write the README**
+### Step 1: Write the README
 
-```markdown
+````markdown
 # IronClaw E2E Tests
 
 Browser-level end-to-end tests for the IronClaw web gateway using Python + Playwright.
@@ -844,9 +869,7 @@ Browser-level end-to-end tests for the IronClaw web gateway using Python + Playw
 ## Setup
 
 ```bash
-cd tests/e2e
-pip install -e .
-playwright install chromium
+cd tests/e2e pip install -e . playwright install chromium
 ```
 
 ## Build ironclaw
@@ -873,6 +896,7 @@ HEADED=1 pytest tests/e2e/scenarios/test_connection.py -v
 ## Architecture
 
 Tests start two subprocesses:
+
 1. **Mock LLM** (`mock_llm.py`) -- fake OpenAI-compat server with canned responses
 2. **IronClaw** -- the real binary with gateway enabled, pointing to the mock LLM
 
@@ -892,61 +916,65 @@ Then Playwright drives a headless Chromium browser against the gateway, making D
 2. Use the `page` fixture for a fresh browser page
 3. Use selectors from `helpers.py` (update `SEL` dict if new elements are needed)
 4. Keep tests deterministic -- use the mock LLM, not real providers
-```
 
-**Step 2: Commit**
+````
+
+### Step 2: Commit (Task 9)
 
 ```bash
 git add tests/e2e/README.md
 git commit -m "docs: E2E test README with setup and usage instructions"
 ```
 
----
+______________________________________________________________________
 
-### Task 10: Integration test -- run all scenarios end-to-end
+## Task 10: Integration test -- run all scenarios end-to-end
 
-**Step 1: Build ironclaw**
+### Step 1: Build ironclaw
 
 ```bash
 cargo build --no-default-features --features libsql
 ```
 
-**Step 2: Run the full E2E suite**
+### Step 2: Run the full E2E suite
 
 ```bash
 pytest tests/e2e/ -v --timeout=120
 ```
 
-Expected: All tests in `test_connection.py` and `test_chat.py` pass. `test_skills.py` tests pass or skip (if ClawHub is unreachable).
+Expected: All tests in `test_connection.py` and `test_chat.py` pass.
+`test_skills.py` tests pass or skip (if ClawHub is unreachable).
 
-**Step 3: Fix any issues discovered during the run**
+### Step 3: Fix any issues discovered during the run
 
 Common issues to watch for:
+
 - Port conflicts: change `MOCK_LLM_PORT` or `GATEWAY_PORT` in conftest.py
 - Timing: increase wait timeouts if SSE streaming is slow
 - Selectors: update `SEL` dict in helpers.py if frontend elements changed
-- Onboarding wizard: ensure `ONBOARD_COMPLETED=true` prevents wizard from blocking
+- Onboarding wizard: ensure `ONBOARD_COMPLETED=true` prevents wizard from
+  blocking
 
-**Step 4: Final commit with any fixes**
+### Step 4: Final commit with any fixes
 
 ```bash
 git add -A tests/e2e/
 git commit -m "fix: E2E test adjustments from integration run"
 ```
 
----
+______________________________________________________________________
 
 ## Summary
 
-| Task | Files | Description |
-|------|-------|-------------|
-| 1 | pyproject.toml, __init__.py | Project scaffolding |
-| 2 | mock_llm.py | Mock OpenAI-compat server |
-| 3 | helpers.py | Selectors and utilities |
-| 4 | conftest.py | pytest fixtures |
-| 5 | test_connection.py | Scenario 1: connection/tabs |
-| 6 | test_chat.py | Scenario 2: chat round-trip |
-| 7 | test_skills.py | Scenario 3: skills lifecycle |
-| 8 | e2e.yml | CI workflow |
-| 9 | README.md | Documentation |
-| 10 | (integration run) | Verify everything works |
+| Task | Files                       | Description                  |
+| ---- | --------------------------- | ---------------------------- |
+| 1    | pyproject.toml, **init**.py | Project scaffolding          |
+| 2    | mock_llm.py                 | Mock OpenAI-compat server    |
+| 3    | helpers.py                  | Selectors and utilities      |
+| 4    | conftest.py                 | pytest fixtures              |
+| 5    | test_connection.py          | Scenario 1: connection/tabs  |
+| 6    | test_chat.py                | Scenario 2: chat round-trip  |
+| 7    | test_skills.py              | Scenario 3: skills lifecycle |
+| 8    | e2e.yml                     | CI workflow                  |
+| 9    | README.md                   | Documentation                |
+| 10   | (integration run)           | Verify everything works      |

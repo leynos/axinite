@@ -12,18 +12,17 @@
   browser experience.
 - **Precedence:** `src/NETWORK_SECURITY.md` remains the authoritative reference
   for network-facing security controls. `docs/chat-model.md` remains the
-  authoritative reference for the session-backed chat lifecycle. `docs/jobs-and-routines.md`
-  remains the authoritative reference for scheduler and job semantics. This
-  document explains how those backend capabilities are exposed through the
-  browser UI.
+  authoritative reference for the session-backed chat lifecycle.
+  `docs/jobs-and-routines.md` remains the authoritative reference for scheduler
+  and job semantics. This document explains how those backend capabilities are
+  exposed through the browser UI.
 
 ## 1. Design scope
 
 Axinite's web front end is not a separate single-page application (SPA) build
 that is compiled, versioned, and deployed independently of the host. It is a
 browser gateway surface embedded directly into the Rust application. The same
-binary
-that starts the agent runtime also:
+binary that starts the agent runtime also:
 
 - constructs the gateway channel,
 - binds the HTTP server,
@@ -35,7 +34,7 @@ that starts the agent runtime also:
 That design makes the front end operationally simple. A local instance can be
 started with one process and one gateway port, while the browser UI still gains
 access to memory browsing, job control, routine status, extension management,
-  and live model activity.
+and live model activity.
 
 This document focuses on the implemented browser path. It does not try to be a
 complete product guide, nor does it restate the entire agent architecture.
@@ -56,14 +55,14 @@ channel-specific events through `OutgoingResponse` and `StatusUpdate`.
 Table 1. Browser gateway responsibilities within the host runtime.
 
 <!-- markdownlint-disable MD013 MD060 -->
-| Concern | Front-end role | Primary evidence |
-|---------|----------------|------------------|
-| User interface shell | Presents the authenticated SPA shell, tabs, editors, status widgets, and live activity cards | `src/channels/web/static/index.html`, `src/channels/web/static/style.css`, `src/channels/web/static/app.js` |
-| HTTP server surface | Serves embedded static assets and JSON APIs from the same Axum router | `src/channels/web/server.rs`, `src/channels/web/handlers/static_files.rs` |
-| Chat ingress | Converts REST and WebSocket browser actions into `IncomingMessage` values | `src/channels/web/handlers/chat.rs`, `src/channels/web/ws.rs` |
-| Chat egress | Maps agent responses and status events into browser Server-Sent Events (SSE) and WebSocket events | `src/channels/web/mod.rs`, `src/channels/web/sse.rs`, `src/channels/web/types.rs` |
-| Runtime control plane | Exposes memory, jobs, routines, extensions, skills, settings, logs, and gateway status | `src/channels/web/handlers/` |
-| Integration hub | Holds references to optional runtime subsystems inside `GatewayState` so handlers can expose only what is available | `src/channels/web/server.rs`, `src/channels/web/mod.rs` |
+| Concern               | Front-end role                                                                                                      | Primary evidence                                                                                            |
+| --------------------- | ------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------- |
+| User interface shell  | Presents the authenticated SPA shell, tabs, editors, status widgets, and live activity cards                        | `src/channels/web/static/index.html`, `src/channels/web/static/style.css`, `src/channels/web/static/app.js` |
+| HTTP server surface   | Serves embedded static assets and JSON APIs from the same Axum router                                               | `src/channels/web/server.rs`, `src/channels/web/handlers/static_files.rs`                                   |
+| Chat ingress          | Converts REST and WebSocket browser actions into `IncomingMessage` values                                           | `src/channels/web/handlers/chat.rs`, `src/channels/web/ws.rs`                                               |
+| Chat egress           | Maps agent responses and status events into browser Server-Sent Events (SSE) and WebSocket events                   | `src/channels/web/mod.rs`, `src/channels/web/sse.rs`, `src/channels/web/types.rs`                           |
+| Runtime control plane | Exposes memory, jobs, routines, extensions, skills, settings, logs, and gateway status                              | `src/channels/web/handlers/`                                                                                |
+| Integration hub       | Holds references to optional runtime subsystems inside `GatewayState` so handlers can expose only what is available | `src/channels/web/server.rs`, `src/channels/web/mod.rs`                                                     |
 <!-- markdownlint-enable MD013 MD060 -->
 
 The browser-facing runtime is therefore a composition layer. It does not own
@@ -147,8 +146,7 @@ model:
 
 - CORS is restricted to the gateway's own origin and `localhost` on the bound
   port, reinforcing the local-first assumption.
-- Responses carry `X-Content-Type-Options: nosniff` and `X-Frame-Options:
-  DENY`.
+- Responses carry `X-Content-Type-Options: nosniff` and `X-Frame-Options: DENY`.
 - Request bodies are limited to 10 MB at the server level, which is large
   enough for browser image uploads and `.skill` bundle uploads. Bundle archive
   contents are still constrained by the stricter skill-bundle validator after
@@ -268,17 +266,17 @@ dependency.
 Table 2. Main UI surfaces and how the browser builds them.
 
 <!-- markdownlint-disable MD013 MD060 -->
-| Surface | Rendering approach | Primary backend inputs |
-|---------|--------------------|------------------------|
-| Chat transcript | Append user bubbles, Markdown-render assistant bubbles, and live inline tool/status cards | `/api/chat/send`, `/api/chat/history`, `/api/chat/events` |
-| Thread list | Rebuild sidebar items from JSON thread metadata and unread counters | `/api/chat/threads`, `/api/chat/thread/new` |
-| Memory browser | Build expandable file tree nodes lazily and render Markdown file contents | `/api/memory/list`, `/api/memory/read`, `/api/memory/search`, `/api/memory/write` |
-| Jobs | Render summary cards, list table, detail sub-tabs, file tree, and activity terminal | `/api/jobs`, `/api/jobs/summary`, `/api/jobs/{id}`, `/api/jobs/{id}/events`, file endpoints, job SSE events |
-| Routines | Render summary cards, list table, and detailed JSON-backed views | `/api/routines`, `/api/routines/summary`, `/api/routines/{id}` |
-| Extensions | Render installed and available extension cards, setup modals, and pairing controls | `/api/extensions`, `/api/extensions/tools`, `/api/extensions/registry`, setup and install endpoints |
-| Skills | Render installed-skill cards and ClawHub search/install results | `/api/skills`, `/api/skills/search`, `/api/skills/install` |
-| Logs | Prepend log rows from a dedicated SSE stream with local filters | `/api/logs/events`, `/api/logs/level` |
-| Status widgets | Poll gateway status and optional attestation data for popovers | `/api/gateway/status`, external attestation API |
+| Surface         | Rendering approach                                                                        | Primary backend inputs                                                                                      |
+| --------------- | ----------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------- |
+| Chat transcript | Append user bubbles, Markdown-render assistant bubbles, and live inline tool/status cards | `/api/chat/send`, `/api/chat/history`, `/api/chat/events`                                                   |
+| Thread list     | Rebuild sidebar items from JSON thread metadata and unread counters                       | `/api/chat/threads`, `/api/chat/thread/new`                                                                 |
+| Memory browser  | Build expandable file tree nodes lazily and render Markdown file contents                 | `/api/memory/list`, `/api/memory/read`, `/api/memory/search`, `/api/memory/write`                           |
+| Jobs            | Render summary cards, list table, detail sub-tabs, file tree, and activity terminal       | `/api/jobs`, `/api/jobs/summary`, `/api/jobs/{id}`, `/api/jobs/{id}/events`, file endpoints, job SSE events |
+| Routines        | Render summary cards, list table, and detailed JSON-backed views                          | `/api/routines`, `/api/routines/summary`, `/api/routines/{id}`                                              |
+| Extensions      | Render installed and available extension cards, setup modals, and pairing controls        | `/api/extensions`, `/api/extensions/tools`, `/api/extensions/registry`, setup and install endpoints         |
+| Skills          | Render installed-skill cards and ClawHub search/install results                           | `/api/skills`, `/api/skills/search`, `/api/skills/install`                                                  |
+| Logs            | Prepend log rows from a dedicated SSE stream with local filters                           | `/api/logs/events`, `/api/logs/level`                                                                       |
+| Status widgets  | Poll gateway status and optional attestation data for popovers                            | `/api/gateway/status`, external attestation API                                                             |
 <!-- markdownlint-enable MD013 MD060 -->
 
 ## 5. How the browser communicates with the backend
@@ -365,7 +363,8 @@ client frames for:
 
 In the current browser implementation, the main UI path uses SSE rather than
 WebSocket for chat updates. The WebSocket path exists as an alternative channel
-surface and shares the same event contract through `WsServerMessage::from_sse_event()`.
+surface and shares the same event contract through
+`WsServerMessage::from_sse_event()`.
 
 ### 5.4 Dedicated logs stream
 
@@ -496,15 +495,14 @@ back to the backend.
 
 ### 6.7 Extension and skill integration
 
-The extensions and skills tabs expose extension-management capabilities that are
-already part of the host application:
+The extensions and skills tabs expose extension-management capabilities that
+are already part of the host application:
 
 - the extensions UI lists installed extensions from `ExtensionManager`,
-  available catalogue entries from registry manifests, and registered tools
-  from `ToolRegistry`;
+  available catalogue entries from registry manifests, and registered tools from
+  `ToolRegistry`;
 - setup and auth flows call extension-manager operations and react to gateway
-  SSE events such as `auth_required`, `auth_completed`, and
-  `extension_status`;
+  SSE events such as `auth_required`, `auth_completed`, and `extension_status`;
 - the skills UI talks to the skill registry and skill catalogue through
   `POST /api/skills/install`, which accepts either JSON or
   `multipart/form-data`. Each install request must include exactly one source:

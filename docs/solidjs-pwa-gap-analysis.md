@@ -5,10 +5,10 @@
 This document compares the current Rust-hosted browser gateway in the
 [Axinite repository](https://github.com/leynos/axinite) with the SolidJS
 progressive web application (PWA) prototype in the
-[axinite-mockup repository](https://github.com/leynos/axinite-mockup). The
-goal is not to critique styling or implementation taste. The goal is to
-identify every place where the PWA currently breaks contract with the existing
-web front end in one of three ways:
+[axinite-mockup repository](https://github.com/leynos/axinite-mockup). The goal
+is not to critique styling or implementation taste. The goal is to identify
+every place where the PWA currently breaks contract with the existing web front
+end in one of three ways:
 
 - it expects a data shape the real gateway does not provide,
 - it drops or changes information the current UI presents to the user, or
@@ -46,20 +46,20 @@ current PWA implementation, not against the PWA architecture aspirations.
 
 ## 3. Executive summary
 
-The PWA is not merely incomplete. It currently has several hard contract
-breaks that would prevent direct adoption against the real gateway.
+The PWA is not merely incomplete. It currently has several hard contract breaks
+that would prevent direct adoption against the real gateway.
 
 Table 1. Highest-priority blockers.
 
-| ID | Severity | Area | Gap |
-| --- | --- | --- | --- |
-| G1 | Critical | Auth and transport | The PWA does not implement gateway bearer-token authentication or query-token handling for Server-Sent Events (SSE). |
-| G2 | Critical | Feature flags | The PWA assumes `GET /api/features`, but the real gateway does not implement that endpoint yet. |
-| G3 | Critical | Logs payload shape | The PWA expects `LogEntry.source`, while the real gateway emits `LogEntry.target`. |
-| G4 | Critical | Job prompt request shape | The PWA sends `{ prompt }`, but the real gateway expects `{ content, done? }`. |
-| G5 | High | Surface area | The PWA route set omits shipped browser surfaces such as the Logs tab, settings flows, pairing flows, Trusted Execution Environment (TEE) attestation, restart affordances, and project browser links. |
-| G6 | High | Chat events and media | The PWA consumes only a subset of the real chat SSE stream and does not surface generated images, auth cards, or job-start cards. |
-| G7 | High | Detail fidelity | Jobs, routines, extensions, and skills screens flatten or drop information that the current UI already exposes. |
+| ID  | Severity | Area                     | Gap                                                                                                                                                                                                    |
+| --- | -------- | ------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| G1  | Critical | Auth and transport       | The PWA does not implement gateway bearer-token authentication or query-token handling for Server-Sent Events (SSE).                                                                                   |
+| G2  | Critical | Feature flags            | The PWA assumes `GET /api/features`, but the real gateway does not implement that endpoint yet.                                                                                                        |
+| G3  | Critical | Logs payload shape       | The PWA expects `LogEntry.source`, while the real gateway emits `LogEntry.target`.                                                                                                                     |
+| G4  | Critical | Job prompt request shape | The PWA sends `{ prompt }`, but the real gateway expects `{ content, done? }`.                                                                                                                         |
+| G5  | High     | Surface area             | The PWA route set omits shipped browser surfaces such as the Logs tab, settings flows, pairing flows, Trusted Execution Environment (TEE) attestation, restart affordances, and project browser links. |
+| G6  | High     | Chat events and media    | The PWA consumes only a subset of the real chat SSE stream and does not surface generated images, auth cards, or job-start cards.                                                                      |
+| G7  | High     | Detail fidelity          | Jobs, routines, extensions, and skills screens flatten or drop information that the current UI already exposes.                                                                                        |
 
 The rest of this document expands those gaps into actionable work items.
 

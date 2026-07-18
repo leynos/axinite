@@ -8,10 +8,11 @@
 - **Primary audience:** Maintainers and contributors who need a working mental
   model before changing the system.
 - **Precedence:** `src/NETWORK_SECURITY.md` is the authoritative reference for
-  network-facing security controls. `docs/writing-web-assembly-tools-for-ironclaw.md`
-  is the authoritative extension-authoring guide for WebAssembly Interface
-  Types (WIT), packaging, and host contracts. `docs/developers-guide.md`
-  remains the maintainer workflow guide.
+  network-facing security controls.
+  `docs/writing-web-assembly-tools-for-ironclaw.md` is the authoritative
+  extension-authoring guide for WebAssembly Interface Types (WIT), packaging,
+  and host contracts. `docs/developers-guide.md` remains the maintainer
+  workflow guide.
 
 ## 1. Design goal
 
@@ -20,9 +21,9 @@ persistent memory, configurable language model providers, and an extension
 system that can load both WebAssembly (WASM) components and Model Context
 Protocol (MCP) servers at runtime. In the current implementation the code,
 binary, package metadata, and many documents still use the `ironclaw` name.
-This overview uses `axinite` for the system narrative, but retains
-`ironclaw` when referring to commands, APIs, package names, and filenames that
-still use that identifier.
+This overview uses `axinite` for the system narrative, but retains `ironclaw`
+when referring to commands, APIs, package names, and filenames that still use
+that identifier.
 
 The design centres on four requirements that show up repeatedly in the source:
 
@@ -49,15 +50,15 @@ channels, and enter the long-running agent loop for the default `run` path.
 Table 1. Major runtime layers and their responsibilities.
 
 <!-- markdownlint-disable MD013 MD060 -->
-| Layer | Responsibilities | Primary evidence |
-|------|------------------|------------------|
-| CLI and bootstrap | Parse commands, load early env files, route standalone subcommands, and coordinate the phased startup path | `src/main.rs`, `src/main_cli.rs`, `src/startup/`, `src/cli/mod.rs` |
-| Application builder | Initialize database, secrets, language model providers, tools, workspace memory, and extension managers | `src/app.rs` |
-| Interaction surfaces | Provide REPL, HTTP, Signal, web gateway, webhook, and WASM-backed channel entry points | `src/channels/mod.rs`, `src/startup/` |
-| Agent core | Route messages, schedule jobs, run tools safely, compact context, handle routines, and support self-repair | `src/agent/mod.rs` |
-| Persistence and memory | Provide backend-agnostic storage, settings, conversation history, job records, and searchable workspace memory | `src/db/mod.rs`, `src/workspace/mod.rs`, `src/config/mod.rs` |
-| Extension runtime | Discover, install, authenticate, and activate WASM tools, WASM channels, MCP servers, and relay-backed integrations | `src/extensions/mod.rs`, `src/registry/mod.rs`, `src/app.rs` |
-| Safety and sandbox | Sanitize model inputs and outputs, block secret leakage, and isolate untrusted execution in Docker-backed workers | `src/safety/mod.rs`, `src/sandbox/mod.rs`, `src/orchestrator/mod.rs`, `src/worker/mod.rs` |
+| Layer                  | Responsibilities                                                                                                    | Primary evidence                                                                          |
+| ---------------------- | ------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------- |
+| CLI and bootstrap      | Parse commands, load early env files, route standalone subcommands, and coordinate the phased startup path          | `src/main.rs`, `src/main_cli.rs`, `src/startup/`, `src/cli/mod.rs`                        |
+| Application builder    | Initialize database, secrets, language model providers, tools, workspace memory, and extension managers             | `src/app.rs`                                                                              |
+| Interaction surfaces   | Provide REPL, HTTP, Signal, web gateway, webhook, and WASM-backed channel entry points                              | `src/channels/mod.rs`, `src/startup/`                                                     |
+| Agent core             | Route messages, schedule jobs, run tools safely, compact context, handle routines, and support self-repair          | `src/agent/mod.rs`                                                                        |
+| Persistence and memory | Provide backend-agnostic storage, settings, conversation history, job records, and searchable workspace memory      | `src/db/mod.rs`, `src/workspace/mod.rs`, `src/config/mod.rs`                              |
+| Extension runtime      | Discover, install, authenticate, and activate WASM tools, WASM channels, MCP servers, and relay-backed integrations | `src/extensions/mod.rs`, `src/registry/mod.rs`, `src/app.rs`                              |
+| Safety and sandbox     | Sanitize model inputs and outputs, block secret leakage, and isolate untrusted execution in Docker-backed workers   | `src/safety/mod.rs`, `src/sandbox/mod.rs`, `src/orchestrator/mod.rs`, `src/worker/mod.rs` |
 <!-- markdownlint-enable MD013 MD060 -->
 
 Figure 1. High-level architecture and trust boundaries.
@@ -130,11 +131,10 @@ before channels and background services start.
    layer now captures those inputs into an explicit `EnvContext` snapshot
    before resolving sub-configs, so the runtime can preserve current operator
    behaviour while tests and internal callers use `Config::from_context(...)`
-   for deterministic resolution. The database is not yet required at this
-   point.
+   for deterministic resolution. The database is not yet required at this point.
 6. `AppBuilder::build_components()` executes the mechanical initialization
-   phases in a fixed order, returning `(AppComponents, RuntimeSideEffects)`.
-   In production, the late startup run path calls `side_effects.start()`
+   phases in a fixed order, returning `(AppComponents, RuntimeSideEffects)`. In
+   production, the late startup run path calls `side_effects.start()`
    immediately before entering the long-running agent loop so deferred
    background work (stale job cleanup, workspace import or seeding, embedding
    backfill) begins only after the runtime is fully assembled. In tests, the
@@ -156,38 +156,38 @@ fully initialized `AppComponents` without emulating every channel.
 Table 2. AppBuilder phases and the state they add.
 
 <!-- markdownlint-disable MD013 MD060 -->
-| Phase | Behaviour | Notes |
-|------|-----------|-------|
-| Database | Connects to PostgreSQL or libSQL, runs migrations, reloads configuration from persisted settings, attaches the session store, and schedules stale sandbox cleanup | Database config is allowed to override env defaults after connection |
-| Secrets | Creates the encrypted secrets store when a master key is available, injects stored provider credentials into the config overlay, and falls back to operating system credentials when no encrypted store is available | LLM credential resolution intentionally happens more than once |
-| LLM | Builds the provider chain and any recording wrapper used for tracing | The chain is responsible for retry, failover, and routing decorators |
-| Tools and workspace | Creates the safety layer, tool registry, embedding provider, workspace memory, and optional image or builder tools | Workspace memory only exists when a database backend is active |
-| Skills | [`init_skills()`](./developers-guide.md#init_skills) discovers local and installed skills, records canonical runtime roots and `SKILL.md` entrypoints in `LoadedSkill`, wires skill tools into the `ToolRegistry`, and exposes the registry and catalogue handles used by the shared staged install path for raw `SKILL.md` content, validated passive `.skill` bundles, and scoped bundled-file reads | Runs during construction only; `RuntimeSideEffects` does not load skills. Active-skill prompts expose logical bundle-relative metadata, not private host filesystem roots. `skill_read_file` resolves only bundle-relative paths through `src/skills/file_read.rs` rather than the generic filesystem tools |
-| Extensions | Starts MCP session and process managers, creates the WASM runtime, loads runtime extensions, loads registry metadata, and creates the extension manager | The extension manager is registered back into the tool system so the agent can discover and manage extensions in chat |
+| Phase               | Behaviour                                                                                                                                                                                                                                                                                                                                                                                              | Notes                                                                                                                                                                                                                                                                                                       |
+| ------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Database            | Connects to PostgreSQL or libSQL, runs migrations, reloads configuration from persisted settings, attaches the session store, and schedules stale sandbox cleanup                                                                                                                                                                                                                                      | Database config is allowed to override env defaults after connection                                                                                                                                                                                                                                        |
+| Secrets             | Creates the encrypted secrets store when a master key is available, injects stored provider credentials into the config overlay, and falls back to operating system credentials when no encrypted store is available                                                                                                                                                                                   | LLM credential resolution intentionally happens more than once                                                                                                                                                                                                                                              |
+| LLM                 | Builds the provider chain and any recording wrapper used for tracing                                                                                                                                                                                                                                                                                                                                   | The chain is responsible for retry, failover, and routing decorators                                                                                                                                                                                                                                        |
+| Tools and workspace | Creates the safety layer, tool registry, embedding provider, workspace memory, and optional image or builder tools                                                                                                                                                                                                                                                                                     | Workspace memory only exists when a database backend is active                                                                                                                                                                                                                                              |
+| Skills              | [`init_skills()`](./developers-guide.md#init_skills) discovers local and installed skills, records canonical runtime roots and `SKILL.md` entrypoints in `LoadedSkill`, wires skill tools into the `ToolRegistry`, and exposes the registry and catalogue handles used by the shared staged install path for raw `SKILL.md` content, validated passive `.skill` bundles, and scoped bundled-file reads | Runs during construction only; `RuntimeSideEffects` does not load skills. Active-skill prompts expose logical bundle-relative metadata, not private host filesystem roots. `skill_read_file` resolves only bundle-relative paths through `src/skills/file_read.rs` rather than the generic filesystem tools |
+| Extensions          | Starts MCP session and process managers, creates the WASM runtime, loads runtime extensions, loads registry metadata, and creates the extension manager                                                                                                                                                                                                                                                | The extension manager is registered back into the tool system so the agent can discover and manage extensions in chat                                                                                                                                                                                       |
 <!-- markdownlint-enable MD013 MD060 -->
 
 #### 3.2.1 RuntimeSideEffects
 
-`AppBuilder::build_components()` returns a `RuntimeSideEffects` value
-alongside `AppComponents`. `RuntimeSideEffects` encapsulates deferred
-background work that must not run during tests:
+`AppBuilder::build_components()` returns a `RuntimeSideEffects` value alongside
+`AppComponents`. `RuntimeSideEffects` encapsulates deferred background work
+that must not run during tests:
 
 Table: Runtime side effect trigger conditions.
 
-| Task | Trigger condition |
-| --- | --- |
-| Stale sandbox job cleanup | `db` is present |
-| Workspace import | `workspace` and `workspace_import_dir` are set |
-| Workspace seeding | `workspace` is present (`seed_if_empty()`) |
-| Embedding backfill | `workspace` is present and `embeddings_available` is true |
+| Task                      | Trigger condition                                         |
+| ------------------------- | --------------------------------------------------------- |
+| Stale sandbox job cleanup | `db` is present                                           |
+| Workspace import          | `workspace` and `workspace_import_dir` are set            |
+| Workspace seeding         | `workspace` is present (`seed_if_empty()`)                |
+| Embedding backfill        | `workspace` is present and `embeddings_available` is true |
 
 Call `side_effects.start()` once the late startup run path is ready to enter
 the agent loop. Tests discard the value to keep the test environment isolated.
 
-`AppBuilderFlags` has a `workspace_import_dir: Option<PathBuf>` field
-that captures the import directory at construction time (from the
-`WORKSPACE_IMPORT_DIR` environment variable in production) so that
-activation does not need to re-read the environment.
+`AppBuilderFlags` has a `workspace_import_dir: Option<PathBuf>` field that
+captures the import directory at construction time (from the
+`WORKSPACE_IMPORT_DIR` environment variable in production) so that activation
+does not need to re-read the environment.
 
 ### 3.3 Long-running services
 
@@ -230,11 +230,11 @@ records. The web gateway is not a separate service: it is just another channel
 with extra state such as server-sent events, tool metadata, and runtime logs.
 `docs/front-end-architecture.md` is the browser-specific design reference for
 how that gateway serves the UI, generates the client-side interface, and
-connects browser actions back into the runtime.
-The detailed message lifecycle for the browser and other session-backed chat
-paths lives in `docs/chat-model.md`, which covers ingress normalization,
-attachment mutation, approvals, auth interruptions, persistence, and browser
-status sinks in more depth.
+connects browser actions back into the runtime. The detailed message lifecycle
+for the browser and other session-backed chat paths lives in
+`docs/chat-model.md`, which covers ingress normalization, attachment mutation,
+approvals, auth interruptions, persistence, and browser status sinks in more
+depth.
 
 The main runtime also supports hot activation of persisted WASM channels.
 Startup loads the set of active channels from disk or registry state, wires the
@@ -260,13 +260,13 @@ responsibility split:
 The main process injects a large `AgentDeps` bundle rather than constructing
 dependencies lazily inside the agent. That makes runtime boundaries explicit,
 but it also means the boot sequence must assemble most infrastructure before
-the agent can start.
-`docs/chat-model.md` is the detailed subsystem reference for how those
-dependencies are used once a normalized chat message enters the agent loop.
-`docs/jobs-and-routines.md` covers the scheduler, job model, routines engine,
-heartbeat runner, and the shared jobs and routines control surfaces.
-`docs/agent-skills-support.md` covers how skill artefacts are loaded, selected,
-attenuated, and injected into model context on the interactive chat path.
+the agent can start. `docs/chat-model.md` is the detailed subsystem reference
+for how those dependencies are used once a normalized chat message enters the
+agent loop. `docs/jobs-and-routines.md` covers the scheduler, job model,
+routines engine, heartbeat runner, and the shared jobs and routines control
+surfaces. `docs/agent-skills-support.md` covers how skill artefacts are loaded,
+selected, attenuated, and injected into model context on the interactive chat
+path.
 
 ### 4.3 Persistence, configuration, and memory
 
@@ -275,8 +275,8 @@ effective priority as environment variables, optional TOML overlay, persisted
 database settings, then defaults. During startup Axinite first builds config
 without the database, then rehydrates it from the settings store after the
 database is reachable. The operator-facing reference for the current command
-and environment surface lives in `docs/configuration-guide.md`.
-The backend-specific reference for PostgreSQL, `pgvector`, and libSQL lives in
+and environment surface lives in `docs/configuration-guide.md`. The
+backend-specific reference for PostgreSQL, `pgvector`, and libSQL lives in
 `docs/database-integrations.md`. After the database is connected, startup
 re-resolves provider credentials after secret injection. The repeated
 resolution passes are intentional because some values are only available after
@@ -315,9 +315,9 @@ three distinct runtime kinds:
 The extension manager exists so the agent can discover, install, authenticate,
 and activate these runtime kinds without requiring separate CLI-only workflows.
 At bootstrap, `AppBuilder` loads configured MCP servers, scans the WASM tools
-directory, optionally loads development build artefacts, loads registry catalogue
-entries, and constructs the manager with access to hooks, secrets, tool
-registration, and optional channel runtime wiring.
+directory, optionally loads development build artefacts, loads registry
+catalogue entries, and constructs the manager with access to hooks, secrets,
+tool registration, and optional channel runtime wiring.
 
 The registry catalogue is the metadata bridge between packaged artefacts and
 runtime activation. It loads manifests from `registry/`, falls back to embedded
@@ -349,12 +349,12 @@ restricted runtime that proxies language model access, fetches the remote-tool
 catalogue during startup, and reports status back to the orchestrator.
 
 The worker-orchestrator seam now owns its hosted remote-tool route fragments
-and payload shapes in one shared transport module under `src/worker/api/`.
-That keeps the worker HTTP adapter and the orchestrator router aligned, while
-the canonical hosted-visible catalogue filter now lives with the tool registry
-and policy layer instead of in the HTTP adapter. The current source set is
-active hosted-visible MCP tools plus active hosted-visible orchestrator-owned
-WASM tools. Later roadmap work focuses on richer refresh behaviour.
+and payload shapes in one shared transport module under `src/worker/api/`. That
+keeps the worker HTTP adapter and the orchestrator router aligned, while the
+canonical hosted-visible catalogue filter now lives with the tool registry and
+policy layer instead of in the HTTP adapter. The current source set is active
+hosted-visible MCP tools plus active hosted-visible orchestrator-owned WASM
+tools. Later roadmap work focuses on richer refresh behaviour.
 
 For those advertised WASM tools, `ToolDefinition.parameters` is the canonical
 LLM-facing contract before first execution. Any runtime retry hint is only
@@ -411,10 +411,9 @@ Other edges are more muddled and currently create avoidable maintenance cost.
   discovery, MCP, WASM runtime, channel activation, secrets, database-backed
   state, and gateway callback machinery.
 - The worker-orchestrator seam now shares its hosted remote-tool contract and
-  canonical catalogue filter, and the first hosted
-  `complete_with_tools` request now preserves advertised MCP and WASM schemas
-  before execution. Later roadmap work still focuses on richer refresh
-  behaviour.
+  canonical catalogue filter, and the first hosted `complete_with_tools`
+  request now preserves advertised MCP and WASM schemas before execution. Later
+  roadmap work still focuses on richer refresh behaviour.
 - Job lifecycle semantics are split between in-memory context transitions and
   best-effort persistence paths, which makes cancellation and terminal status
   handling harder to reason about under failure.
@@ -427,17 +426,17 @@ behind one crate root.
 Table 3. Top-level paths that matter most for the current architecture.
 
 <!-- markdownlint-disable MD013 MD060 -->
-| Path | Purpose |
-|------|---------|
-| `src/` | Host application code, including the agent, channels, sandbox, database, config, and extension systems |
-| `channels-src/` | Source crates for standalone WASM channel integrations such as Telegram, Slack, Discord, and WhatsApp |
-| `tools-src/` | Source crates for standalone WASM tools built outside the main crate |
-| `registry/` | Embedded extension manifests and bundle metadata used for discovery and installation |
-| `wit/` | Shared WIT contracts for WASM tools and channels |
-| `migrations/` | Database migrations for the supported backends |
-| `docs/` | Maintainer, provider, setup, and architecture-facing documentation |
-| `tests/` | Host integration coverage such as WIT compatibility and end-to-end tests |
-| `scripts/` | Build, validation, and repository utility scripts |
+| Path            | Purpose                                                                                                |
+| --------------- | ------------------------------------------------------------------------------------------------------ |
+| `src/`          | Host application code, including the agent, channels, sandbox, database, config, and extension systems |
+| `channels-src/` | Source crates for standalone WASM channel integrations such as Telegram, Slack, Discord, and WhatsApp  |
+| `tools-src/`    | Source crates for standalone WASM tools built outside the main crate                                   |
+| `registry/`     | Embedded extension manifests and bundle metadata used for discovery and installation                   |
+| `wit/`          | Shared WIT contracts for WASM tools and channels                                                       |
+| `migrations/`   | Database migrations for the supported backends                                                         |
+| `docs/`         | Maintainer, provider, setup, and architecture-facing documentation                                     |
+| `tests/`        | Host integration coverage such as WIT compatibility and end-to-end tests                               |
+| `scripts/`      | Build, validation, and repository utility scripts                                                      |
 <!-- markdownlint-enable MD013 MD060 -->
 
 The repository also reflects a practical packaging decision: not every runtime
@@ -448,8 +447,8 @@ host crate for understanding the whole system.
 
 ## 6. Current trade-offs and notable divergences
 
-The current implementation makes several deliberate trade-offs that a maintainer
-should understand before reshaping the system.
+The current implementation makes several deliberate trade-offs that a
+maintainer should understand before reshaping the system.
 
 - The naming surface is not yet consistent. The repository and this document
   use `axinite`, but the compiled package, CLI name, and many docs still use
@@ -459,7 +458,8 @@ should understand before reshaping the system.
   reduces deployment complexity for a single-user installation, but the startup
   and shutdown logic now spans `src/main_cli.rs` and the phased helpers in
   `src/startup/`.
-- Configuration resolution is intentionally multi-pass. That keeps env bootstraps,
+- Configuration resolution is intentionally multi-pass. That keeps env
+  bootstraps,
   persisted settings, and encrypted secrets compatible, but it makes the
   configuration story harder to explain than a single immutable config load.
 - Dynamic extensions are a core strength, but they also create several sources

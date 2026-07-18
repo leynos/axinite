@@ -1,9 +1,8 @@
 # Add hosted-mode tests for schema fidelity and execution routing
 
-This ExecPlan (execution plan) is a living document. The sections
-`Constraints`, `Tolerances`, `Risks`, `Progress`,
-`Surprises & Discoveries`, `Decision Log`, and
-`Outcomes & Retrospective` must be kept up to date as work proceeds.
+This ExecPlan (execution plan) is a living document. The sections `Constraints`,
+`Tolerances`, `Risks`, `Progress`, `Surprises & Discoveries`, `Decision Log`,
+and `Outcomes & Retrospective` must be kept up to date as work proceeds.
 
 Status: COMPLETE
 
@@ -23,13 +22,12 @@ regressions occur:
 2. An advertised remote tool executes through a local stub rather than
    through the orchestrator's generic remote-tool execution endpoint.
 3. The worker-orchestrator transport contract drifts so that route paths,
-   request shapes, or response shapes become inconsistent between the two
-   sides.
+   request shapes, or response shapes become inconsistent between the two sides.
 
-Success is observable in two ways. First, `make test` passes and every new
-test added by this plan is present and green. Second, deliberately breaking
-a field, route, or execution path causes at least one of the new tests to
-fail with a clear, diagnostic message.
+Success is observable in two ways. First, `make test` passes and every new test
+added by this plan is present and green. Second, deliberately breaking a field,
+route, or execution path causes at least one of the new tests to fail with a
+clear, diagnostic message.
 
 This plan tracks the worker-orchestrator parity portion of
 [Issue #16](https://github.com/leynos/axinite/issues/16) and addresses
@@ -45,23 +43,21 @@ step 5.
   Sign-off: human reviewer approves this ExecPlan before implementation begins.
 - Implementation complete
   Acceptance criteria: all test families described in the milestones are
-  implemented, the existing test suite is unbroken, and the RFC and roadmap
-  are updated to reflect the completed state.
-  Sign-off: implementer marks the plan in progress and then complete after
-  final validation.
+  implemented, the existing test suite is unbroken, and the RFC and roadmap are
+  updated to reflect the completed state. Sign-off: implementer marks the plan
+  in progress and then complete after final validation.
 - Validation passed
   Acceptance criteria: `make all` passes with retained logs, Markdown linting
   passes for changed documentation, and the final plan notes record validation
-  evidence.
-  Sign-off: implementer records final evidence immediately before commit.
+  evidence. Sign-off: implementer records final evidence immediately before
+  commit.
 - Docs synced
   Acceptance criteria: `docs/roadmap.md` marks `1.1.4` done,
   `docs/rfcs/0001-expose-mcp-tool-definitions.md` implementation status
-  reflects the completed test matrix, `docs/contents.md` indexes this
-  ExecPlan, and `docs/users-guide.md` is reviewed for accuracy against the
-  tested behaviour.
-  Sign-off: implementer completes documentation sync as the final pre-commit
-  checkpoint.
+  reflects the completed test matrix, `docs/contents.md` indexes this ExecPlan,
+  and `docs/users-guide.md` is reviewed for accuracy against the tested
+  behaviour. Sign-off: implementer completes documentation sync as the final
+  pre-commit checkpoint.
 
 ## Repository orientation
 
@@ -71,20 +67,19 @@ plan must lock down with tests. All paths are relative to the repository root.
 ### Orchestrator side (catalogue construction and execution)
 
 - `src/orchestrator/api/remote_tools.rs` owns `hosted_remote_tool_catalog()`
-  and `execute_hosted_remote_tool()`. The catalogue function reads the
-  canonical `ToolRegistry`, filters for hosted-visible sources, sorts
-  alphabetically, and hashes the payload into a deterministic
-  `catalog_version`. The execution function resolves a tool by name through
-  the registry's hosted lookup, checks approval requirements, builds a
-  `JobContext`, calls `tool.execute(...)`, and maps `ToolError` variants to
-  HTTP status codes.
+  and `execute_hosted_remote_tool()`. The catalogue function reads the canonical
+  `ToolRegistry`, filters for hosted-visible sources, sorts alphabetically,
+  and hashes the payload into a deterministic `catalog_version`. The execution
+  function resolves a tool by name through the registry's hosted lookup, checks
+  approval requirements, builds a `JobContext`, calls `tool.execute(...)`, and
+  maps `ToolError` variants to HTTP status codes.
 
 - `src/tools/registry/hosted.rs` owns the canonical hosted-tool projection:
   `hosted_tool_definitions()`, `get_hosted_tool()`, and the private
   `hosted_tool_lookup()` and `is_tool_ineligible_for_hosted_catalogue()`
-  predicates. Eligibility requires the tool to be in the `Orchestrator`
-  domain, not protected, sourced from an allowed `HostedToolCatalogSource`,
-  and not approval-gated.
+  predicates. Eligibility requires the tool to be in the `Orchestrator` domain,
+  not protected, sourced from an allowed `HostedToolCatalogSource`, and not
+  approval-gated.
 
 - `src/tools/registry/loader.rs` owns `ToolRegistry`, including
   `is_protected_tool_name()` and the `PROTECTED_TOOL_NAMES` constant.
@@ -92,10 +87,9 @@ plan must lock down with tests. All paths are relative to the repository root.
 ### Worker side (proxy registration and reasoning-context merge)
 
 - `src/worker/container.rs` owns `WorkerRuntime`, including
-  `build_tools()`, `register_remote_tools()`, and
-  `build_reasoning_context()`. The `available_tool_definitions()` helper
-  reads the combined local-plus-proxy registry to produce the sorted merged
-  tool surface.
+  `build_tools()`, `register_remote_tools()`, and `build_reasoning_context()`.
+  The `available_tool_definitions()` helper reads the combined local-plus-proxy
+  registry to produce the sorted merged tool surface.
 
 - `src/worker/container/delegate.rs` owns
   `ContainerDelegate::before_llm_call()`, which refreshes
@@ -104,8 +98,8 @@ plan must lock down with tests. All paths are relative to the repository root.
 
 - `src/tools/builtin/worker_remote_tool_proxy.rs` owns
   `WorkerRemoteToolProxy` and `register_worker_remote_tool_proxies()`. Each
-  proxy caches a `ToolDefinition` and delegates `execute()` to the worker
-  HTTP client's `execute_remote_tool()` method.
+  proxy caches a `ToolDefinition` and delegates `execute()` to the worker HTTP
+  client's `execute_remote_tool()` method.
 
 ### Shared transport contract
 
@@ -114,15 +108,15 @@ plan must lock down with tests. All paths are relative to the repository root.
 
 - `src/worker/api/types.rs` owns the shared route constants
   (`REMOTE_TOOL_CATALOG_ROUTE`, `REMOTE_TOOL_EXECUTE_ROUTE`) and the shared
-  payload types (`RemoteToolCatalogResponse`,
-  `RemoteToolExecutionRequest`, `RemoteToolExecutionResponse`).
+  payload types (`RemoteToolCatalogResponse`, `RemoteToolExecutionRequest`,
+  `RemoteToolExecutionResponse`).
 
 ### Existing test seams
 
 - `src/orchestrator/api/tests/remote_tools.rs` tests catalogue visibility,
-  execution routing, error-status mapping, and job-identifier propagation.
-  Uses fixtures from `src/orchestrator/api/tests/fixtures/remote_tool_mocks.rs`
-  and `src/orchestrator/api/tests/fixtures/remote_tool_helpers.rs`.
+  execution routing, error-status mapping, and job-identifier propagation. Uses
+  fixtures from `src/orchestrator/api/tests/fixtures/remote_tool_mocks.rs` and
+  `src/orchestrator/api/tests/fixtures/remote_tool_helpers.rs`.
 
 - `src/worker/container/tests.rs` tests remote-tool registration, merged
   reasoning context, guidance deduplication, and degraded startup.
@@ -137,9 +131,9 @@ plan must lock down with tests. All paths are relative to the repository root.
 
 - `docs/rfcs/0001-expose-mcp-tool-definitions.md` is the design authority.
   Its §Testing Strategy names three test families (unit tests, behavioural
-  tests, and a regression test target) and its §Migration Plan step 5 names
-  the deliverable: "targeted tests for definition fidelity, execution
-  routing, and contract parity between worker and orchestrator."
+  tests, and a regression test target) and its §Migration Plan step 5 names the
+  deliverable: "targeted tests for definition fidelity, execution routing, and
+  contract parity between worker and orchestrator."
 
 - `docs/roadmap.md` item `1.1.4` defines the success criterion:
   "tests fail if required MCP fields disappear or are rewritten incorrectly,
@@ -167,28 +161,27 @@ The following project documents inform test design and code style:
   change external behaviour.
 
 - Preserve the existing `ToolDefinition` contract. The LLM-facing shape
-  (`name: String`, `description: String`, `parameters: serde_json::Value`)
-  must not be altered.
+  (`name: String`, `description: String`, `parameters: serde_json::Value`) must
+  not be altered.
 
 - Keep tests in the modules that own the seams being tested. Orchestrator
   catalogue tests stay in `src/orchestrator/api/tests/`, worker merge tests
   stay in `src/worker/container/tests.rs`, proxy fidelity tests stay in
-  `src/tools/builtin/worker_remote_tool_proxy.rs`, and registry tests stay
-  in `src/tools/registry/tests.rs`.
+  `src/tools/builtin/worker_remote_tool_proxy.rs`, and registry tests stay in
+  `src/tools/registry/tests.rs`.
 
 - Use `rstest` fixtures for shared setup, `mockall` where ad hoc mocks are
   needed, and in-process harnesses rather than Docker, live MCP services, or
   external network dependencies.
 
 - Use `rstest-bdd` for behavioural tests where scenarios add clarity beyond
-  what unit-level `rstest` coverage provides. If an `rstest-bdd` harness
-  would require new external infrastructure, fall back to in-process `rstest`
+  what unit-level `rstest` coverage provides. If an `rstest-bdd` harness would
+  require new external infrastructure, fall back to in-process `rstest`
   integration tests with equally observable assertions and document the
   decision.
 
 - All new test files must remain under 400 lines per AGENTS.md. Extract
-  helpers into the existing fixture modules when a file would exceed that
-  limit.
+  helpers into the existing fixture modules when a file would exceed that limit.
 
 - Follow en-GB-oxendict spelling in comments and documentation.
 
@@ -199,20 +192,19 @@ The following project documents inform test design and code style:
 ## Tolerances (exception triggers)
 
 - Scope: if implementation requires changes to more than 12 files or roughly
-  500 net new lines (excluding comments and blank lines), stop and verify
-  that runtime behaviour changes have not leaked in.
+  500 net new lines (excluding comments and blank lines), stop and verify that
+  runtime behaviour changes have not leaked in.
 
 - Interface: if any public type, trait, or function signature outside the
   test modules must change to make the code testable, stop and document the
   interface pressure before proceeding.
 
 - Fixture complexity: if a single test fixture function exceeds 50 lines or
-  a single test function exceeds 80 lines, stop and extract helpers rather
-  than accepting the complexity.
+  a single test function exceeds 80 lines, stop and extract helpers rather than
+  accepting the complexity.
 
 - Iterations: if a test remains red after three focused debugging attempts,
-  stop and document the failure in `Surprises & Discoveries` before
-  continuing.
+  stop and document the failure in `Surprises & Discoveries` before continuing.
 
 - Behaviour-driven development (BDD) harness: if adding `rstest-bdd`
   behavioural coverage for any test family requires a brand-new feature-test
@@ -220,132 +212,114 @@ The following project documents inform test design and code style:
   in `Decision Log` and fall back to in-process `rstest` integration coverage.
 
 - Documentation drift: if `docs/users-guide.md` or
-  `docs/axinite-architecture-overview.md` describes behaviour that the
-  tests cannot actually verify, stop and reconcile the documentation before
-  marking the plan complete.
+  `docs/axinite-architecture-overview.md` describes behaviour that the tests
+  cannot actually verify, stop and reconcile the documentation before marking
+  the plan complete.
 
 ## Risks
 
 - Risk: The existing test infrastructure is already quite comprehensive.
-  New tests may duplicate existing coverage rather than adding new
-  fidelity guarantees, creating maintenance burden without additional
-  protection.
-  Severity: medium
-  Likelihood: medium
-  Mitigation: before writing each test, review the existing tests in the
-  target module and write only tests that cover a gap. Each new test must
-  protect against a regression that no existing test catches. Document
-  the specific gap each test fills.
+  New tests may duplicate existing coverage rather than adding new fidelity
+  guarantees, creating maintenance burden without additional protection.
+  Severity: medium Likelihood: medium Mitigation: before writing each test,
+  review the existing tests in the target module and write only tests that
+  cover a gap. Each new test must protect against a regression that no existing
+  test catches. Document the specific gap each test fills.
 
 - Risk: Schema fidelity tests may become brittle if they assert on exact
   JSON values rather than structural properties, breaking when legitimate
-  schema changes occur.
-  Severity: medium
-  Likelihood: medium
-  Mitigation: assert on structural invariants (field presence, type shape,
-  required-field completeness) rather than exact string equality for
-  descriptions. Use snapshot-style assertions for the full `ToolDefinition`
-  round-trip where exact preservation is the contract.
+  schema changes occur. Severity: medium Likelihood: medium Mitigation: assert
+  on structural invariants (field presence, type shape, required-field
+  completeness) rather than exact string equality for descriptions. Use
+  snapshot-style assertions for the full `ToolDefinition` round-trip where
+  exact preservation is the contract.
 
 - Risk: The `rstest-bdd` framework may not yet have a practical in-process
-  harness for the worker-orchestrator surface, making behavioural test
-  coverage ceremonial rather than valuable.
-  Severity: low
-  Likelihood: high
-  Mitigation: evaluate `rstest-bdd` feasibility in milestone 1 before
-  committing to it. If a narrow scenario adds real clarity, use it.
-  Otherwise, use `rstest` integration tests with equally observable
-  assertions and record the decision.
+  harness for the worker-orchestrator surface, making behavioural test coverage
+  ceremonial rather than valuable. Severity: low Likelihood: high Mitigation:
+  evaluate `rstest-bdd` feasibility in milestone 1 before committing to it. If
+  a narrow scenario adds real clarity, use it. Otherwise, use `rstest`
+  integration tests with equally observable assertions and record the decision.
 
 - Risk: Mock HTTP servers used by worker container tests may introduce
-  flakiness through port conflicts or timing sensitivity.
-  Severity: medium
-  Likelihood: low
-  Mitigation: reuse the existing mock-server patterns from
+  flakiness through port conflicts or timing sensitivity. Severity: medium
+  Likelihood: low Mitigation: reuse the existing mock-server patterns from
   `src/worker/container/tests.rs` and
   `src/tools/builtin/worker_remote_tool_proxy.rs` which already handle
   ephemeral port allocation.
 
 - Risk: Contract parity tests between worker and orchestrator may be hard
   to express without introducing a coupling between the two test modules.
-  Severity: medium
-  Likelihood: medium
-  Mitigation: use the shared types in `src/worker/api/types.rs` as the
-  contract surface. Contract tests assert that both sides produce and
-  consume payloads that round-trip through these shared types without loss.
+  Severity: medium Likelihood: medium Mitigation: use the shared types in
+  `src/worker/api/types.rs` as the contract surface. Contract tests assert that
+  both sides produce and consume payloads that round-trip through these shared
+  types without loss.
 
 ## Milestone 1: audit existing coverage and identify gaps
 
-Before writing any test code, perform a structured audit of the existing
-test suite to identify exactly which schema-fidelity and execution-routing
+Before writing any test code, perform a structured audit of the existing test
+suite to identify exactly which schema-fidelity and execution-routing
 properties are already covered and which are not.
 
 ### Audit scope
 
-Review each existing test module listed in the repository orientation
-section. For each test, record:
+Review each existing test module listed in the repository orientation section.
+For each test, record:
 
 1. What property it asserts (e.g., "catalogue excludes protected tools",
    "proxy preserves tool name").
 2. Whether that property covers schema fidelity (field preservation),
-   execution routing (orchestrator-side dispatch), or contract parity
-   (shared type consistency).
+   execution routing (orchestrator-side dispatch), or contract parity (shared
+   type consistency).
 3. Whether the assertion is structural (would catch a missing field) or
    incidental (tests something else and happens to touch the field).
 
 ### Gap identification
 
-The RFC 0001 §Testing Strategy names the following test families. Map each
-to existing or missing coverage:
+The RFC 0001 §Testing Strategy names the following test families. Map each to
+existing or missing coverage:
 
 **Unit tests (RFC 0001 §Testing Strategy):**
 
 1. "Catalogue construction returns orchestrator-owned active MCP tool
-   definitions with original descriptions and schemas."
-   Gap: existing tests check that the catalogue includes eligible tools and
-   excludes ineligible ones, but do not assert that every `ToolDefinition`
-   field survives the catalogue journey unchanged. A full-payload fidelity
-   assertion is needed.
+   definitions with original descriptions and schemas." Gap: existing tests
+   check that the catalogue includes eligible tools and excludes ineligible
+   ones, but do not assert that every `ToolDefinition` field survives the
+   catalogue journey unchanged. A full-payload fidelity assertion is needed.
 
 2. "Catalogue filtering excludes approval-gated or otherwise uncallable
-   tools."
-   Gap: covered by existing
+   tools." Gap: covered by existing
    `remote_tool_catalog_excludes_ineligible_tools` and
    `get_hosted_tool_reports_lookup_reason`. No new test needed.
 
 3. "Worker proxy registration preserves the orchestrator-provided
-   `ToolDefinition` exactly."
-   Gap: the existing proxy test asserts individual fields match. A
-   whole-`ToolDefinition` structural comparison is needed to catch future
-   field additions that might be dropped.
+   `ToolDefinition` exactly." Gap: the existing proxy test asserts individual
+   fields match. A whole-`ToolDefinition` structural comparison is needed to
+   catch future field additions that might be dropped.
 
 4. "Generic remote execution dispatches to the requested orchestrator-owned
-   tool."
-   Gap: existing tests cover success and several error paths. Missing:
-   a test that proves execution reaches the real orchestrator-side tool
-   (not a local stub) by observing a side effect only the orchestrator
-   path can produce.
+   tool." Gap: existing tests cover success and several error paths. Missing: a
+   test that proves execution reaches the real orchestrator-side tool (not a
+   local stub) by observing a side effect only the orchestrator path can
+   produce.
 
 **Behavioural tests (RFC 0001 §Testing Strategy):**
 
 1. "Hosted worker with an active MCP tool advertises that tool in
-   `available_tools`."
-   Gap: partially covered by
+   `available_tools`." Gap: partially covered by
    `worker_runtime_build_reasoning_context_merges_local_and_remote_tools`.
    Strengthen with a scenario-level assertion that names both tool families.
 
 2. "Hosted worker can execute a proxied MCP tool end-to-end through the
-   orchestrator."
-   Gap: the proxy test exercises round-trip execution through a mock server,
-   but no test exercises the full path from worker registry lookup through
-   proxy dispatch to orchestrator-side tool execution in a single assertion
-   chain.
+   orchestrator." Gap: the proxy test exercises round-trip execution through a
+   mock server, but no test exercises the full path from worker registry lookup
+   through proxy dispatch to orchestrator-side tool execution in a single
+   assertion chain.
 
 3. "Hosted worker still exposes container tools and extension-management
-   proxy tools."
-   Gap: covered by
-   `worker_runtime_build_tools_preserves_container_local_tools`. No new
-   test needed.
+   proxy tools." Gap: covered by
+   `worker_runtime_build_tools_preserves_container_local_tools`. No new test
+   needed.
 
 4. "Extension activation refreshes the hosted-visible tool list."
    Gap: not covered, but this belongs to a later roadmap item (extension
@@ -358,79 +332,76 @@ to existing or missing coverage:
 > expose in the normal in-process path."
 
 Gap: no existing test compares the orchestrator-side canonical definition
-against the worker-side proxy-reported definition in a single assertion.
-This is the primary regression this plan must lock down.
+against the worker-side proxy-reported definition in a single assertion. This
+is the primary regression this plan must lock down.
 
 **Contract parity (Issue #16):**
 
 > "There is no obvious shared contract test proving that worker and
 > orchestrator endpoint parity is maintained."
 
-Gap: no test asserts that the routes registered by the orchestrator match
-the routes consumed by the worker client, or that request and response
-payloads round-trip through the shared types without field loss.
+Gap: no test asserts that the routes registered by the orchestrator match the
+routes consumed by the worker client, or that request and response payloads
+round-trip through the shared types without field loss.
 
 ### Milestone 1 deliverable
 
-A written list of gaps (which may refine the analysis above) recorded in
-the `Progress` section, with each gap assigned to a milestone below. No
-code changes in this milestone.
+A written list of gaps (which may refine the analysis above) recorded in the
+`Progress` section, with each gap assigned to a milestone below. No code
+changes in this milestone.
 
 ### Milestone 1 go/no-go
 
-Proceed to milestone 2 only if the gap analysis is complete and the set of
-new tests is bounded. If the analysis reveals that more than 15 new test
-functions are needed, stop and consider whether the scope should be
-narrowed.
+Proceed to milestone 2 only if the gap analysis is complete and the set of new
+tests is bounded. If the analysis reveals that more than 15 new test functions
+are needed, stop and consider whether the scope should be narrowed.
 
 ## Milestone 2: schema-fidelity tests
 
 Add tests that fail if any required `ToolDefinition` field is dropped,
-rewritten, or corrupted during the journey from orchestrator registry
-through the catalogue endpoint to the worker-side proxy.
+rewritten, or corrupted during the journey from orchestrator registry through
+the catalogue endpoint to the worker-side proxy.
 
 ### Test 2a: catalogue preserves full `ToolDefinition` payloads
 
 Location: `src/orchestrator/api/tests/remote_tools.rs`.
 
 Add a test that registers a `StubTool` with a non-trivial JSON Schema for
-`parameters` (including `required`, `properties` with `description` and
-`type` fields, and nested objects) alongside a multi-sentence `description`
-containing special characters and Markdown formatting. Assert that the
-`ToolDefinition` returned by the catalogue endpoint is byte-for-byte
-identical to the definition reported by the registered tool's trait methods.
+`parameters` (including `required`, `properties` with `description` and `type`
+fields, and nested objects) alongside a multi-sentence `description` containing
+special characters and Markdown formatting. Assert that the `ToolDefinition`
+returned by the catalogue endpoint is byte-for-byte identical to the definition
+reported by the registered tool's trait methods.
 
 This test catches regressions where a serialization layer, filter, or
 transformer silently strips or rewrites fields. Name the test
 `remote_tool_catalog_preserves_full_tool_definition_payload`.
 
-Use an `rstest` fixture for the complex `StubTool` so it can be reused in
-later tests.
+Use an `rstest` fixture for the complex `StubTool` so it can be reused in later
+tests.
 
 ### Test 2b: proxy-reported definition matches catalogue definition
 
 Location: `src/tools/builtin/worker_remote_tool_proxy.rs` (tests module).
 
-Add a test that creates a `WorkerRemoteToolProxy` from a `ToolDefinition`
-with the same complex schema used in test 2a, then asserts that
-`proxy.name()`, `proxy.description()`, and `proxy.parameters_schema()`
-produce values that, when reassembled into a `ToolDefinition`, are
-structurally equal to the input. This catches any transformation or
-truncation in the proxy layer.
+Add a test that creates a `WorkerRemoteToolProxy` from a `ToolDefinition` with
+the same complex schema used in test 2a, then asserts that `proxy.name()`,
+`proxy.description()`, and `proxy.parameters_schema()` produce values that,
+when reassembled into a `ToolDefinition`, are structurally equal to the input.
+This catches any transformation or truncation in the proxy layer.
 
-Name the test
-`worker_remote_tool_proxy_preserves_full_tool_definition_fields`.
+Name the test `worker_remote_tool_proxy_preserves_full_tool_definition_fields`.
 
 ### Test 2c: end-to-end definition fidelity from registry to worker proxy
 
 Location: `src/worker/container/tests.rs`.
 
-Add a test that wires a mock orchestrator serving a catalogue with a
-complex tool definition, starts a worker runtime that fetches and registers
-the proxies, and asserts that the `ToolDefinition` reported by the
-worker's merged registry matches the original orchestrator-side definition
-field by field. This is the RFC 0001 regression test target: the worker
-sees the same definition the orchestrator would expose in-process.
+Add a test that wires a mock orchestrator serving a catalogue with a complex
+tool definition, starts a worker runtime that fetches and registers the
+proxies, and asserts that the `ToolDefinition` reported by the worker's merged
+registry matches the original orchestrator-side definition field by field. This
+is the RFC 0001 regression test target: the worker sees the same definition the
+orchestrator would expose in-process.
 
 Name the test
 `hosted_worker_proxy_definition_matches_orchestrator_canonical_definition`.
@@ -439,10 +410,10 @@ Name the test
 
 Location: `src/orchestrator/api/tests/remote_tools.rs`.
 
-Add a test that computes the catalogue version for two different tool sets
-and asserts the versions differ. Also assert that computing the version
-twice for the same tool set produces the same value. This catches
-nondeterminism and ensures the version is a meaningful signal.
+Add a test that computes the catalogue version for two different tool sets and
+asserts the versions differ. Also assert that computing the version twice for
+the same tool set produces the same value. This catches nondeterminism and
+ensures the version is a meaningful signal.
 
 Name the test
 `remote_tool_catalog_version_is_deterministic_and_sensitive_to_content`.
@@ -450,98 +421,91 @@ Name the test
 ### Milestone 2 go/no-go
 
 Run the new tests. All must pass. Deliberately mutate a field in the test
-fixture (e.g., truncate the description) and confirm at least one test
-fails. Record the evidence.
+fixture (e.g., truncate the description) and confirm at least one test fails.
+Record the evidence.
 
 ## Milestone 3: execution-routing tests
 
-Add tests that prove advertised remote tools execute through the
-orchestrator's generic execution endpoint rather than through a local stub,
-and that the execution path handles the full error taxonomy.
+Add tests that prove advertised remote tools execute through the orchestrator's
+generic execution endpoint rather than through a local stub, and that the
+execution path handles the full error taxonomy.
 
 ### Test 3a: proxy execution reaches the orchestrator endpoint
 
-Location: `src/tools/builtin/worker_remote_tool_proxy.rs` (tests module)
-or `src/worker/container/tests.rs`.
+Location: `src/tools/builtin/worker_remote_tool_proxy.rs` (tests module) or
+`src/worker/container/tests.rs`.
 
-Add a test that creates a mock orchestrator HTTP server with a request
-counter or flag, registers a proxy tool, executes it, and asserts that the
-mock server received exactly one request on the
-`/worker/{job_id}/tools/execute` route with the correct `tool_name` and
-`params`. This proves execution routes through the orchestrator rather
-than resolving locally.
+Add a test that creates a mock orchestrator HTTP server with a request counter
+or flag, registers a proxy tool, executes it, and asserts that the mock server
+received exactly one request on the `/worker/{job_id}/tools/execute` route with
+the correct `tool_name` and `params`. This proves execution routes through the
+orchestrator rather than resolving locally.
 
 Name the test
 `worker_remote_tool_proxy_routes_execution_through_orchestrator_endpoint`.
 
-If a similar assertion already exists in the existing proxy round-trip
-test, extend that test with an explicit route-path assertion rather than
-adding a duplicate.
+If a similar assertion already exists in the existing proxy round-trip test,
+extend that test with an explicit route-path assertion rather than adding a
+duplicate.
 
 ### Test 3b: execution propagates tool output fields faithfully
 
 Location: `src/tools/builtin/worker_remote_tool_proxy.rs` (tests module).
 
-Add or extend a test that asserts the full `ToolOutput` returned by the
-proxy matches the `ToolOutput` returned by the mock orchestrator, including
-`result`, `cost`, `raw`, and `duration_ms` fields. This catches field loss
-in the execution response path.
+Add or extend a test that asserts the full `ToolOutput` returned by the proxy
+matches the `ToolOutput` returned by the mock orchestrator, including `result`,
+`cost`, `raw`, and `duration_ms` fields. This catches field loss in the
+execution response path.
 
-Name the test
-`worker_remote_tool_proxy_preserves_full_tool_output_fields`.
+Name the test `worker_remote_tool_proxy_preserves_full_tool_output_fields`.
 
 ### Test 3c: execution error taxonomy maps correctly
 
 Location: `src/orchestrator/api/tests/remote_tools.rs`.
 
 Review the existing `remote_tool_execute_maps_error_statuses` test. If it
-already covers `InvalidParameters` (400), `NotAuthorized` (403),
-`RateLimited` (429), and general `ExecutionFailed` (502), no new test is
-needed. If any mapping is missing, extend the existing test or add a
-focused companion.
+already covers `InvalidParameters` (400), `NotAuthorized` (403), `RateLimited`
+(429), and general `ExecutionFailed` (502), no new test is needed. If any
+mapping is missing, extend the existing test or add a focused companion.
 
 ### Test 3d: execution of a non-catalogue tool is rejected
 
 Location: `src/orchestrator/api/tests/remote_tools.rs`.
 
 Review the existing `remote_tool_execute_rejects_unknown_tools` and
-`remote_tool_execute_rejects_non_catalog_tools` tests. If they already
-cover the relevant rejection cases (unknown tool → 404, container-only
-tool → 400, protected tool → 400), no new test is needed. Document the
-existing coverage.
+`remote_tool_execute_rejects_non_catalog_tools` tests. If they already cover
+the relevant rejection cases (unknown tool → 404, container-only tool → 400,
+protected tool → 400), no new test is needed. Document the existing coverage.
 
 ### Milestone 3 go/no-go
 
-Run the new and existing execution tests. All must pass. Deliberately
-change the mock server's response route or response body and confirm at
-least one test fails. Record the evidence.
+Run the new and existing execution tests. All must pass. Deliberately change
+the mock server's response route or response body and confirm at least one test
+fails. Record the evidence.
 
 ## Milestone 4: worker-orchestrator contract parity tests
 
 Add tests that prove the shared transport types in `src/worker/api/types.rs`
-are the single source of truth for routes and payloads, so drift between
-the worker client and orchestrator router is caught at compile time or test
-time.
+are the single source of truth for routes and payloads, so drift between the
+worker client and orchestrator router is caught at compile time or test time.
 
 ### Test 4a: route constants match between worker client and orchestrator router
 
-Location: `src/worker/api/types.rs` (tests module, creating if necessary)
-or `src/orchestrator/api/tests/remote_tools.rs`.
+Location: `src/worker/api/types.rs` (tests module, creating if necessary) or
+`src/orchestrator/api/tests/remote_tools.rs`.
 
-Add a test that reads the route constant strings
-(`REMOTE_TOOL_CATALOG_ROUTE` and `REMOTE_TOOL_EXECUTE_ROUTE`) from
-`src/worker/api/types.rs` and asserts they match the routes actually
-registered in the orchestrator's Axum router. This catches route-string
-drift where one side updates a path and the other does not.
+Add a test that reads the route constant strings (`REMOTE_TOOL_CATALOG_ROUTE`
+and `REMOTE_TOOL_EXECUTE_ROUTE`) from `src/worker/api/types.rs` and asserts
+they match the routes actually registered in the orchestrator's Axum router.
+This catches route-string drift where one side updates a path and the other
+does not.
 
-The implementation approach depends on how the orchestrator registers
-routes. If the router is built from the same constants, a compile-time
-guarantee already exists and this test should verify that relationship. If
-the router uses string literals independently, this test must bridge the
-gap.
+The implementation approach depends on how the orchestrator registers routes.
+If the router is built from the same constants, a compile-time guarantee
+already exists and this test should verify that relationship. If the router
+uses string literals independently, this test must bridge the gap.
 
-Name the test
-`worker_and_orchestrator_share_remote_tool_route_constants`.
+Name the test `worker_and_orchestrator_share_remote_tool_route_constants`.
 
 ### Test 4b: request and response payloads round-trip through shared types
 
@@ -551,49 +515,46 @@ Add a test that serializes a `RemoteToolCatalogResponse` with non-trivial
 content (tools with complex schemas, non-empty `toolset_instructions`, a
 non-zero `catalog_version`) to JSON, deserializes it back, and asserts
 structural equality. Do the same for `RemoteToolExecutionRequest` and
-`RemoteToolExecutionResponse`. This catches serde attribute mismatches
-(`skip`, `default`, `rename`) that could cause silent field loss.
+`RemoteToolExecutionResponse`. This catches serde attribute mismatches (`skip`,
+`default`, `rename`) that could cause silent field loss.
 
-Name the test
-`remote_tool_transport_types_round_trip_without_field_loss`.
+Name the test `remote_tool_transport_types_round_trip_without_field_loss`.
 
 ### Test 4c: worker client and orchestrator consume the same payload shape
 
-Location: `src/orchestrator/api/tests/remote_tools.rs` or a new shared
-test file.
+Location: `src/orchestrator/api/tests/remote_tools.rs` or a new shared test
+file.
 
 Add a test that builds a catalogue response using
-`hosted_remote_tool_catalog()`, serializes it to JSON, and deserializes
-it as `RemoteToolCatalogResponse`. Assert that the deserialized value
-matches the original. This proves the orchestrator produces responses that
-the worker client can consume without field loss or misinterpretation.
+`hosted_remote_tool_catalog()`, serializes it to JSON, and deserializes it as
+`RemoteToolCatalogResponse`. Assert that the deserialized value matches the
+original. This proves the orchestrator produces responses that the worker
+client can consume without field loss or misinterpretation.
 
-Do the same for the execution path: build a
-`RemoteToolExecutionRequest`, serialize it, and parse it as the
-orchestrator would. Build a `RemoteToolExecutionResponse`, serialize it as
-the orchestrator would, and parse it as the worker client would.
+Do the same for the execution path: build a `RemoteToolExecutionRequest`,
+serialize it, and parse it as the orchestrator would. Build a
+`RemoteToolExecutionResponse`, serialize it as the orchestrator would, and
+parse it as the worker client would.
 
-Name the test
-`orchestrator_responses_deserialize_into_worker_shared_types`.
+Name the test `orchestrator_responses_deserialize_into_worker_shared_types`.
 
 ### Milestone 4 go/no-go
 
-Run the new contract tests. All must pass. Deliberately add a
-`#[serde(skip)]` attribute to a field in one of the shared types and
-confirm at least one test fails. Record the evidence, then revert the
-deliberate breakage.
+Run the new contract tests. All must pass. Deliberately add a `#[serde(skip)]`
+attribute to a field in one of the shared types and confirm at least one test
+fails. Record the evidence, then revert the deliberate breakage.
 
 ## Milestone 5: behavioural tests
 
-Add `rstest-bdd` behavioural tests if a narrow in-process scenario can
-provide clearer, more readable coverage than the unit-level tests above.
+Add `rstest-bdd` behavioural tests if a narrow in-process scenario can provide
+clearer, more readable coverage than the unit-level tests above.
 
 ### Feasibility check
 
-Evaluate whether the project already has a practical `rstest-bdd` harness
-for the worker-orchestrator surface. If `.feature` files and step
-definitions exist for this area, extend them. If no harness exists, assess
-whether adding one for this plan's scope is proportionate.
+Evaluate whether the project already has a practical `rstest-bdd` harness for
+the worker-orchestrator surface. If `.feature` files and step definitions exist
+for this area, extend them. If no harness exists, assess whether adding one for
+this plan's scope is proportionate.
 
 ### Candidate scenarios
 
@@ -636,32 +597,31 @@ Feature: Hosted remote-tool execution routing
 
 If `rstest-bdd` is not feasible for this surface, the in-process `rstest`
 integration tests from milestones 2-4 already provide equally observable
-assertions. Record the decision in `Decision Log` and do not add a
-ceremonial BDD layer that weakens the guarantees.
+assertions. Record the decision in `Decision Log` and do not add a ceremonial
+BDD layer that weakens the guarantees.
 
 ### Milestone 5 go/no-go
 
-If BDD tests were added, they must pass under `make test`. If the fallback
-was chosen, the decision must be documented and the unit-level tests must
-already cover the same properties.
+If BDD tests were added, they must pass under `make test`. If the fallback was
+chosen, the decision must be documented and the unit-level tests must already
+cover the same properties.
 
 ## Milestone 6: synchronize design and operator documentation
 
-Update the project documentation so the described behaviour matches the
-tested behaviour.
+Update the project documentation so the described behaviour matches the tested
+behaviour.
 
 1. Update `docs/rfcs/0001-expose-mcp-tool-definitions.md` implementation
-   status to reflect that `1.1.4` is complete and the test matrix is in
-   place. Note which test families were delivered and which (if any) were
-   deferred.
+   status to reflect that `1.1.4` is complete and the test matrix is in place.
+   Note which test families were delivered and which (if any) were deferred.
 
 2. Review `docs/axinite-architecture-overview.md` for any wording about
-   the hosted remote-tool contract that should now reference the test
-   coverage as the source of truth.
+   the hosted remote-tool contract that should now reference the test coverage
+   as the source of truth.
 
 3. Review `docs/users-guide.md` for accuracy against the tested behaviour.
-   If any operator-visible description is not backed by a test, either add
-   a test or reconcile the documentation.
+   If any operator-visible description is not backed by a test, either add a
+   test or reconcile the documentation.
 
 4. Mark roadmap item `1.1.4` done in `docs/roadmap.md`. Since this
    completes all items in section `1.1`, review whether the parent section
@@ -675,9 +635,9 @@ tested behaviour.
 
 ## Milestone 7: validate, gate, and publish
 
-Run the smallest useful red-green loop first, then the full repository
-gates. All substantive commands should use `set -o pipefail` and `tee` so
-logs are retained under `/tmp`.
+Run the smallest useful red-green loop first, then the full repository gates.
+All substantive commands should use `set -o pipefail` and `tee` so logs are
+retained under `/tmp`.
 
 Use the following command pattern during implementation for targeted tests:
 
@@ -711,10 +671,10 @@ set -o pipefail && bunx markdownlint-cli2 \
 git diff --check
 ```
 
-Only after the gates pass should the implementation be committed. The
-commit must describe that hosted-mode schema fidelity and execution routing
-tests are now in place for roadmap item `1.1.4`, and the final report must
-cite the exact log paths.
+Only after the gates pass should the implementation be committed. The commit
+must describe that hosted-mode schema fidelity and execution routing tests are
+now in place for roadmap item `1.1.4`, and the final report must cite the exact
+log paths.
 
 ## Progress
 
@@ -729,8 +689,8 @@ cite the exact log paths.
 
 ### Milestone 1 findings
 
-The audit confirmed the gap analysis in the plan. The following test gaps
-were identified:
+The audit confirmed the gap analysis in the plan. The following test gaps were
+identified:
 
 **Schema-fidelity gaps:**
 
@@ -748,9 +708,10 @@ were identified:
 
 3. **End-to-end definition fidelity**: no test compares the orchestrator
    canonical definition against the worker-advertised proxy definition in a
-   single assertion. The test `worker_runtime_build_reasoning_context_merges_local_and_remote_tools`
-   (line 566 in `worker/container/tests.rs`) checks tool names are merged but
-   does not assert field-level fidelity.
+   single assertion. The test
+   `worker_runtime_build_reasoning_context_merges_local_and_remote_tools` (line
+   566 in `worker/container/tests.rs`) checks tool names are merged but does
+   not assert field-level fidelity.
 
 4. **Catalogue version sensitivity**: no test proves the `catalog_version`
    changes when tool definitions change, only that sorting produces a
@@ -761,9 +722,9 @@ were identified:
 
 1. **Proxy routes through orchestrator endpoint**: existing test
    `remote_tool_execute_round_trips_catalog_tools` creates a mock server and
-   executes through it, but does not explicitly assert that the request
-   reached the correct route path. It implicitly proves routing but does not
-   name the guarantee.
+   executes through it, but does not explicitly assert that the request reached
+   the correct route path. It implicitly proves routing but does not name the
+   guarantee.
 
 2. **Output field preservation**: the round-trip test checks `result`, `cost`,
    `raw`, and `duration` individually but does not assert the full `ToolOutput`
@@ -776,8 +737,8 @@ were identified:
 4. **Non-catalogue tool rejection**: existing tests
    `remote_tool_execute_rejects_unknown_tools` (line 214),
    `remote_tool_execute_rejects_non_catalog_tools` (line 242), and
-   `remote_tool_execute_rejects_protected_orchestration_tools` (line 254)
-   cover unknown, container-only, and protected tools. No new test needed.
+   `remote_tool_execute_rejects_protected_orchestration_tools` (line 254) cover
+   unknown, container-only, and protected tools. No new test needed.
 
 **Contract-parity gaps:**
 
@@ -794,9 +755,9 @@ were identified:
    the orchestrator side, serializes it, and deserializes it as the worker
    would, proving the shared types are truly shared.
 
-All gaps align with the plan's milestone 2-4 test families. Milestone 1 go/no-go
-criterion met: the set of new tests is bounded (9 new test functions across 4
-modules).
+All gaps align with the plan's milestone 2-4 test families. Milestone 1
+go/no-go criterion met: the set of new tests is bounded (9 new test functions
+across 4 modules).
 
 ## Surprises & Discoveries
 
@@ -811,25 +772,25 @@ assertions. Milestone 3 tests will strengthen rather than replace this test.
 during targeted test runs. The fixtures shared between orchestrator and worker
 test modules (`complex_tool_definition`, `complex_tool_stub`) successfully
 exercise complex JSON Schema structures with nested objects, arrays, and
-special characters including UTF-8 emoji. The route-capturing test in
-milestone 3 successfully proves that proxy execution reaches the exact expected
+special characters including UTF-8 emoji. The route-capturing test in milestone
+3 successfully proves that proxy execution reaches the exact expected
 orchestrator endpoint path.
 
 ## Decision Log
 
 **Decision 1 (milestone 5):** BDD tests deferred in favour of in-process unit
 tests. No practical `rstest-bdd` harness exists for the worker-orchestrator
-surface. The project has no `.feature` files, no step definition infrastructure,
-and no BDD test patterns. Adding BDD infrastructure for this narrow scope would
-introduce ceremony without material benefit. The in-process `rstest` integration
-tests from milestones 2-4 already provide equally observable assertions with
-clear, descriptive test names that state exactly what they verify. The unit
-tests cover the same properties the BDD scenarios would have named:
-`remote_tool_catalog_preserves_full_tool_definition_payload` is as readable as
-a scenario named "Worker advertises orchestrator tool definitions unchanged",
-and fails with equally clear diagnostics. BDD infrastructure may be added in a
-future roadmap item if cross-cutting behavioural scenarios justify the
-investment.
+surface. The project has no `.feature` files, no step definition
+infrastructure, and no BDD test patterns. Adding BDD infrastructure for this
+narrow scope would introduce ceremony without material benefit. The in-process
+`rstest` integration tests from milestones 2-4 already provide equally
+observable assertions with clear, descriptive test names that state exactly
+what they verify. The unit tests cover the same properties the BDD scenarios
+would have named: `remote_tool_catalog_preserves_full_tool_definition_payload`
+is as readable as a scenario named "Worker advertises orchestrator tool
+definitions unchanged", and fails with equally clear diagnostics. BDD
+infrastructure may be added in a future roadmap item if cross-cutting
+behavioural scenarios justify the investment.
 
 **Decision 2 (milestone 3):** Tests 3c and 3d confirmed to be already covered
 by existing tests. The test `remote_tool_execute_maps_error_statuses` covers
@@ -837,9 +798,9 @@ all four error-taxonomy mappings (`InvalidParameters`, `NotAuthorized`,
 `RateLimited`, `ExecutionFailed`). The tests
 `remote_tool_execute_rejects_unknown_tools`,
 `remote_tool_execute_rejects_non_catalog_tools`, and
-`remote_tool_execute_rejects_protected_orchestration_tools` cover rejection
-of unknown, container-only, and protected tools. No new tests were added for
-these gaps.
+`remote_tool_execute_rejects_protected_orchestration_tools` cover rejection of
+unknown, container-only, and protected tools. No new tests were added for these
+gaps.
 
 ## Outcomes & Retrospective
 
@@ -876,10 +837,12 @@ addressed in a subsequent pass (see progress checklist above).
 - `docs/roadmap.md`: marked roadmap item `1.1.4` complete.
 - `docs/rfcs/0001-expose-mcp-tool-definitions.md`: updated implementation status
   to reflect that all roadmap items in section `1.1` are complete.
-- `docs/contents.md`: added ExecPlan `1-1-4-tests-for-schema-fidelity-and-execution-routing.md`
+- `docs/contents.md`: added ExecPlan
+  `1-1-4-tests-for-schema-fidelity-and-execution-routing.md`
   to the ExecPlans directory listing.
 - `docs/execplans/1-1-4-tests-for-schema-fidelity-and-execution-routing.md`:
-  updated status to `COMPLETE` and recorded progress, decisions, and discoveries.
+  updated status to `COMPLETE` and recorded progress, decisions, and
+  discoveries.
 
 ### Test coverage added
 
@@ -888,7 +851,8 @@ The implementation added 9 new test functions covering:
 1. Full `ToolDefinition` payload preservation through the catalogue endpoint
    (milestone 2).
 2. Proxy-reported fields matching input definitions exactly (milestone 2).
-3. End-to-end definition fidelity from orchestrator canonical to worker-advertised
+3. End-to-end definition fidelity from orchestrator canonical to
+   worker-advertised
    proxy (milestone 2).
 4. Catalogue version determinism and content sensitivity (milestone 2).
 5. Proxy execution routing through the correct orchestrator endpoint path
@@ -932,8 +896,8 @@ types test split into three focused tests per code review).
 
 Markdown linting was only partially green because `docs/roadmap.md` still had
 pre-existing issues unrelated to this implementation (multiple consecutive
-blank lines at lines 1342, 1408, 1450, 1489, 1512). The ExecPlan, RFC 0001,
-and `docs/contents.md` changes introduced no new Markdown issues.
+blank lines at lines 1342, 1408, 1450, 1489, 1512). The ExecPlan, RFC 0001, and
+`docs/contents.md` changes introduced no new Markdown issues.
 
 ### Retrospective observations
 

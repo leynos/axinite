@@ -19,7 +19,8 @@ activation:
 
 # Web UI Testing with Claude for Chrome
 
-Use this skill when manually testing the IronClaw web gateway UI via the Claude for Chrome browser extension.
+Use this skill when manually testing the IronClaw web gateway UI via the Claude
+for Chrome browser extension.
 
 ## Prerequisites
 
@@ -47,16 +48,20 @@ Wait for "Agent ironclaw ready and listening" in the logs before proceeding.
 
 - Send a simple message (e.g., "Hello, what tools do you have?")
 - Verify the LLM responds without errors
-- If you see "Invalid schema for function" errors, the tool schema fix (PR #301) may not be merged yet
+- If you see "Invalid schema for function" errors, the tool schema fix (PR
+  #301) may not be merged yet
 
 ### 3. Skills Tab
 
 - Click the Skills tab
-- Verify "No skills installed" or a list of installed skills (no "Skills system not enabled" error)
+- Verify "No skills installed" or a list of installed skills (no "Skills system
+  not enabled" error)
 - Search for "markdown" in the ClawHub search box
-- Verify results appear with: name, version, description, relevance score, "updated X ago"
+- Verify results appear with: name, version, description, relevance score,
+  "updated X ago"
 - Verify skill names are clickable links to clawhub.ai
-- If search returns empty with a yellow warning banner, the registry may be unreachable
+- If search returns empty with a yellow warning banner, the registry may be
+  unreachable
 
 ### 4. Skill Install (from search)
 
@@ -71,7 +76,8 @@ Wait for "Agent ironclaw ready and listening" in the logs before proceeding.
 - Scroll to "Install Skill by URL"
 - Enter a skill name and a ClawHub download URL:
   - Name: `markdown-viewer`
-  - URL: `https://wry-manatee-359.convex.site/api/v1/download?slug=markdown-viewer`
+  - URL:
+    `https://wry-manatee-359.convex.site/api/v1/download?slug=markdown-viewer`
 - Click Install
 - Verify success toast and skill appears in installed list
 
@@ -101,6 +107,8 @@ Stop the server with Ctrl+C or by killing the process.
 
 ## Known Issues
 
-- ClawHub registry at `clawhub.ai` is behind Vercel which blocks non-browser TLS fingerprints; the backend uses `wry-manatee-359.convex.site` directly
+- ClawHub registry at `clawhub.ai` is behind Vercel which blocks non-browser
+  TLS fingerprints; the backend uses `wry-manatee-359.convex.site` directly
 - Skill downloads are ZIP archives containing SKILL.md, not raw text
-- The `confirm()` dialog for install may block browser automation; override with `window.confirm = () => true` in the console first
+- The `confirm()` dialog for install may block browser automation; override with
+  `window.confirm = () => true` in the console first

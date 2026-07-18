@@ -63,18 +63,18 @@ The current contract includes:
 
 Worker-orchestrator HTTP endpoints and their purposes.
 
-| Endpoint | Purpose |
-| --- | --- |
-| `GET /worker/{job_id}/job` | Fetch the sandboxed job description |
-| `GET /worker/{job_id}/credentials` | Deliver job-scoped credentials for child-process injection |
-| `POST /worker/{job_id}/status` | Persist authoritative progress state |
-| `POST /worker/{job_id}/complete` | Persist authoritative terminal outcome |
-| `POST /worker/{job_id}/event` | Append user-visible timeline events |
-| `GET /worker/{job_id}/prompt` | Poll orchestrator-injected follow-up prompts |
-| `POST /worker/{job_id}/llm/complete` | Proxy plain language model (LLM) completion |
-| `POST /worker/{job_id}/llm/complete_with_tools` | Proxy tool-capable language model (LLM) completion |
-| `GET /worker/{job_id}/tools/catalog` | Fetch hosted-visible remote tool definitions |
-| `POST /worker/{job_id}/tools/execute` | Execute a hosted remote tool through the orchestrator |
+| Endpoint                                        | Purpose                                                    |
+| ----------------------------------------------- | ---------------------------------------------------------- |
+| `GET /worker/{job_id}/job`                      | Fetch the sandboxed job description                        |
+| `GET /worker/{job_id}/credentials`              | Deliver job-scoped credentials for child-process injection |
+| `POST /worker/{job_id}/status`                  | Persist authoritative progress state                       |
+| `POST /worker/{job_id}/complete`                | Persist authoritative terminal outcome                     |
+| `POST /worker/{job_id}/event`                   | Append user-visible timeline events                        |
+| `GET /worker/{job_id}/prompt`                   | Poll orchestrator-injected follow-up prompts               |
+| `POST /worker/{job_id}/llm/complete`            | Proxy plain language model (LLM) completion                |
+| `POST /worker/{job_id}/llm/complete_with_tools` | Proxy tool-capable language model (LLM) completion         |
+| `GET /worker/{job_id}/tools/catalog`            | Fetch hosted-visible remote tool definitions               |
+| `POST /worker/{job_id}/tools/execute`           | Execute a hosted remote tool through the orchestrator      |
 
 Compile-time assertions in the worker API tests lock the canonical route values
 so accidental path drift fails the build before runtime tests execute.
@@ -155,9 +155,8 @@ Hosted remote tools use a parallel mechanism:
 The orchestrator-owned portion of that hosted catalogue is now source-agnostic
 at the wire level. Hosted-visible Model Context Protocol (MCP) tools and
 hosted-visible orchestrator-owned WebAssembly (WASM) tools travel through the
-same `GET
-/worker/{job_id}/tools/catalog` route and execute through the same `POST
-/worker/{job_id}/tools/execute` route, while the registry-owned hosted
+same `GET /worker/{job_id}/tools/catalog` route and execute through the same
+`POST /worker/{job_id}/tools/execute` route, while the registry-owned hosted
 visibility policy continues to filter out protected, approval-gated, and other
 ineligible tools before advertisement.
 

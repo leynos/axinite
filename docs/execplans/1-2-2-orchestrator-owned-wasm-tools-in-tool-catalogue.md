@@ -1,9 +1,8 @@
 # Extend the hosted remote-tool catalogue to include orchestrator-owned WASM tools
 
-This ExecPlan (execution plan) is a living document. The sections
-`Constraints`, `Tolerances`, `Risks`, `Progress`,
-`Surprises & Discoveries`, `Decision Log`, and
-`Outcomes & Retrospective` must be kept up to date as work proceeds.
+This ExecPlan (execution plan) is a living document. The sections `Constraints`,
+`Tolerances`, `Risks`, `Progress`, `Surprises & Discoveries`, `Decision Log`,
+and `Outcomes & Retrospective` must be kept up to date as work proceeds.
 
 Status: IN PROGRESS
 
@@ -13,8 +12,8 @@ Roadmap item `1.2.2` exists to make proactive WebAssembly (WASM) schema
 advertisement the normal hosted contract, not an in-process-only benefit. After
 this work, a hosted worker must receive active orchestrator-owned WASM tool
 definitions through the same remote catalogue used for Model Context Protocol
-(MCP) tools, register local proxy wrappers from those canonical definitions, and
-stop omitting orchestrator-owned WASM tools from the tool array sent to the
+(MCP) tools, register local proxy wrappers from those canonical definitions,
+and stop omitting orchestrator-owned WASM tools from the tool array sent to the
 large language model (LLM).
 
 Success is observable in six ways. First, the orchestrator catalogue response
@@ -40,26 +39,24 @@ policy. No repository-wide pattern transplant is required.
   Acceptance criteria: the implementation stays within roadmap item `1.2.2`,
   reuses the canonical hosted-visible filter seam from `1.1.2`, and does not
   redefine the worker-orchestrator transport or introduce a WASM-specific
-  catalogue path.
-  Sign-off: human reviewer approves this ExecPlan before feature
-  implementation begins.
+  catalogue path. Sign-off: human reviewer approves this ExecPlan before
+  feature implementation begins.
 - Implementation complete
   Acceptance criteria: active orchestrator-owned WASM tools are visible through
   the existing hosted remote catalogue, the worker registers their proxies, and
   the catalogue continues to fail closed for tools that hosted mode cannot
-  execute.
-  Sign-off: implementer marks all milestones complete before final validation.
+  execute. Sign-off: implementer marks all milestones complete before final
+  validation.
 - Validation passed
   Acceptance criteria: required code and documentation gates pass with retained
   logs, and test evidence proves both schema fidelity and hosted execution-path
-  correctness.
-  Sign-off: implementer records validation evidence immediately before commit.
+  correctness. Sign-off: implementer records validation evidence immediately
+  before commit.
 - Docs synced
   Acceptance criteria: the roadmap, RFC 0002, architecture documents,
   user-facing guidance, and this ExecPlan all describe the same hosted WASM
-  catalogue behaviour.
-  Sign-off: implementer completes documentation updates as the final
-  pre-commit checkpoint.
+  catalogue behaviour. Sign-off: implementer completes documentation updates as
+  the final pre-commit checkpoint.
 
 ## Repository orientation
 
@@ -101,9 +98,8 @@ The following files are the core orientation points for this feature.
   reference for the hosted transport boundary. Update it if the internal
   catalogue contract description changes.
 - The user request named `docs/axinite-architecture-summary.md`, but that file
-  does not exist in this checkout. Use
-  `docs/axinite-architecture-overview.md` as the architecture overview document
-  for this feature.
+  does not exist in this checkout. Use `docs/axinite-architecture-overview.md`
+  as the architecture overview document for this feature.
 
 ## Constraints
 
@@ -139,17 +135,17 @@ The following files are the core orientation points for this feature.
 ## Tolerances (exception triggers)
 
 - Scope: if the smallest credible implementation touches more than 12 files or
-  roughly 500 net new lines before documentation, stop and verify that work
-  from `1.2.3`, refresh behaviour, or broader runtime changes have not leaked
-  into this slice.
+  roughly 500 net new lines before documentation, stop and verify that work from
+  `1.2.3`, refresh behaviour, or broader runtime changes have not leaked into
+  this slice.
 - Boundary pressure: if including WASM tools requires changing `ToolDefinition`,
   `RemoteToolCatalogResponse`, or the shared route constants, stop and document
   why the existing transport cannot carry the feature.
 - Policy leakage: if the orchestrator adapter needs to inspect WASM-specific
-  implementation details that are not already represented through
-  `Tool`, `HostedToolCatalogSource`, `HostedToolEligibility`, or
-  `ToolDomain`, stop and introduce the narrowest inward-facing abstraction
-  instead of adding adapter-local heuristics.
+  implementation details that are not already represented through `Tool`,
+  `HostedToolCatalogSource`, `HostedToolEligibility`, or `ToolDomain`, stop and
+  introduce the narrowest inward-facing abstraction instead of adding
+  adapter-local heuristics.
 - Behavioural tests: if adding one focused `rstest-bdd` scenario would require
   more than two new support files, external services, or Docker orchestration
   beyond the current mocked-server harness, record that clearly and keep the
@@ -165,43 +161,34 @@ The following files are the core orientation points for this feature.
 ## Risks
 
 - Risk: The implementation may broaden the hosted catalogue by only changing
-  the orchestrator constant, leaving the policy rationale implicit.
-  Severity: high
-  Likelihood: medium
-  Mitigation: keep the source-family expansion tied to explicit tests and
-  documentation that say the canonical registry-owned filter now admits both
-  hosted-safe MCP and hosted-safe WASM tools.
+  the orchestrator constant, leaving the policy rationale implicit. Severity:
+  high Likelihood: medium Mitigation: keep the source-family expansion tied to
+  explicit tests and documentation that say the canonical registry-owned filter
+  now admits both hosted-safe MCP and hosted-safe WASM tools.
 
 - Risk: Hosted workers may receive WASM tools whose schema is still
   placeholder-shaped, which would technically satisfy visibility while still
-  undermining first-call correctness.
-  Severity: high
-  Likelihood: medium
+  undermining first-call correctness. Severity: high Likelihood: medium
   Mitigation: include at least one real-metadata or fidelity test that proves
   the worker sees a non-placeholder WASM schema through the hosted catalogue.
 
 - Risk: Approval-gated tools may be visible at catalogue time but fail at
-  execution time in ways the user experiences as inconsistent.
-  Severity: medium
-  Likelihood: medium
-  Mitigation: keep catalogue eligibility tests and execute-time rejection tests
-  aligned, including at least one param-aware unhappy path.
+  execution time in ways the user experiences as inconsistent. Severity: medium
+  Likelihood: medium Mitigation: keep catalogue eligibility tests and
+  execute-time rejection tests aligned, including at least one param-aware
+  unhappy path.
 
 - Risk: Documentation drift is likely because the current user's guide,
   architecture overview, worker-orchestrator contract document, roadmap, and
-  RFC 0002 all describe adjacent parts of this behaviour.
-  Severity: medium
-  Likelihood: high
-  Mitigation: treat documentation sync as its own milestone rather than a
-  final afterthought.
+  RFC 0002 all describe adjacent parts of this behaviour. Severity: medium
+  Likelihood: high Mitigation: treat documentation sync as its own milestone
+  rather than a final afterthought.
 
 - Risk: Introducing `rstest-bdd` into a subsystem that currently has no Gherkin
-  coverage could create more scaffolding than value.
-  Severity: medium
-  Likelihood: medium
-  Mitigation: attempt one small in-process scenario only if it stays inside the
-  tolerances. Otherwise, document why `rstest` integration tests are the
-  proportional behavioural layer for this feature.
+  coverage could create more scaffolding than value. Severity: medium
+  Likelihood: medium Mitigation: attempt one small in-process scenario only if
+  it stays inside the tolerances. Otherwise, document why `rstest` integration
+  tests are the proportional behavioural layer for this feature.
 
 ## Milestone 1: confirm the narrow policy change and reuse boundary
 
@@ -225,7 +212,8 @@ MCP-plus-WASM, without redesigning the transport.
 
 Make the policy change at the inward boundary and keep adapters thin.
 
-1. Update the hosted remote-tool policy in `src/orchestrator/api/remote_tools.rs`
+1. Update the hosted remote-tool policy in
+   `src/orchestrator/api/remote_tools.rs`
    so it consumes both `HostedToolCatalogSource::Mcp` and
    `HostedToolCatalogSource::Wasm`.
 2. Keep `src/tools/registry/hosted.rs` as the single place that decides whether
@@ -272,12 +260,11 @@ The validation matrix must prove more than simple inclusion.
    the hosted-visible set, or one requiring approval at execution time, is
    still rejected even after the source-family broadening.
 4. If proportionate, add one focused `rstest-bdd` feature and scenario set
-   describing the hosted worker flow in plain language:
-   "Given an orchestrator-owned hosted-safe WASM tool, when the worker fetches
-   the remote catalogue, then the tool appears in the worker tool array with
-   its canonical schema."
-   Add a second unhappy-path scenario only if the step library remains small.
-   If the subsystem still lacks a practical `rstest-bdd` seam after one
+   describing the hosted worker flow in plain language: "Given an
+   orchestrator-owned hosted-safe WASM tool, when the worker fetches the remote
+   catalogue, then the tool appears in the worker tool array with its canonical
+   schema." Add a second unhappy-path scenario only if the step library remains
+   small. If the subsystem still lacks a practical `rstest-bdd` seam after one
    focused attempt, document why in `Surprises & Discoveries` and keep the
    behavioural proof in `rstest` integration tests.
 
@@ -395,9 +382,9 @@ documentation all match the hosted WASM catalogue contract.
   `HostedToolCatalogSource::Wasm`; the main implementation gap is that the
   orchestrator's hosted source allowlist is still hard-coded to MCP-only.
 - 2026-04-10T17:32:32+02:00 This subsystem currently has no visible
-  `rstest-bdd` or `.feature` coverage, so behavioural BDD
-  (behaviour-driven development) coverage needs an
-  explicit proportionality check before new harness code is introduced.
+  `rstest-bdd` or `.feature` coverage, so behavioural BDD (behaviour-driven
+  development) coverage needs an explicit proportionality check before new
+  harness code is introduced.
 - 2026-04-10T19:36:00+02:00 `src/tools/registry/tests.rs` already contains a
   hosted-visible WASM fixture and `src/worker/container/tests/remote_tools.rs`
   already proves that the worker merges remote catalogue definitions into its
@@ -411,33 +398,32 @@ documentation all match the hosted WASM catalogue contract.
   plumbing.
 - 2026-04-10T19:56:00+02:00 The worker runtime did not need any source-aware
   changes. Once the orchestrator catalogue admitted hosted-visible WASM tools,
-  the existing remote proxy registration path accepted them unchanged because it
-  already consumes only canonical `ToolDefinition` values.
+  the existing remote proxy registration path accepted them unchanged because
+  it already consumes only canonical `ToolDefinition` values.
 
 ## Decision Log
 
 - 2026-04-10T17:32:32+02:00 Use the existing registry-owned hosted filter seam
-  as the policy boundary for this plan.
-  Rationale: this matches roadmap item `1.1.2`, RFC 0002's migration plan, and
-  the `hexagonal-architecture` guidance to keep policy inward and adapters
-  thin.
+  as the policy boundary for this plan. Rationale: this matches roadmap item
+  `1.1.2`, RFC 0002's migration plan, and the `hexagonal-architecture` guidance
+  to keep policy inward and adapters thin.
 - 2026-04-10T17:32:32+02:00 Treat `docs/worker-orchestrator-contract.md` as a
   required architecture update candidate alongside
-  `docs/axinite-architecture-overview.md`.
-  Rationale: the feature changes the internal description of the hosted
-  catalogue boundary even if the wire format stays stable.
+  `docs/axinite-architecture-overview.md`. Rationale: the feature changes the
+  internal description of the hosted catalogue boundary even if the wire format
+  stays stable.
 - 2026-04-10T17:32:32+02:00 Require a proportionality check before adding
-  `rstest-bdd` coverage to this subsystem.
-  Rationale: the user asked for behavioural testing where applicable, but the
-  current subsystem has no existing Gherkin harness, so the plan must preserve
-  a path to strong behavioural assertions without forcing scaffolding that
-  exceeds the feature's scope.
+  `rstest-bdd` coverage to this subsystem. Rationale: the user asked for
+  behavioural testing where applicable, but the current subsystem has no
+  existing Gherkin harness, so the plan must preserve a path to strong
+  behavioural assertions without forcing scaffolding that exceeds the feature's
+  scope.
 - 2026-04-10T19:36:00+02:00 Keep the behavioural proof in the existing
   `rstest` integration suites rather than introducing new `rstest-bdd`
-  scaffolding for `1.2.2`.
-  Rationale: the existing worker/orchestrator harness already exercises the
-  exact observable catalogue fetch and proxy-registration flow. Adding BDD
-  support here would create disproportionate scaffolding for no contract gain.
+  scaffolding for `1.2.2`. Rationale: the existing worker/orchestrator harness
+  already exercises the exact observable catalogue fetch and proxy-registration
+  flow. Adding BDD support here would create disproportionate scaffolding for
+  no contract gain.
 - 2026-04-10T19:56:00+02:00 Express the policy change at the orchestrator
   adapter seam by broadening `HOSTED_REMOTE_TOOL_SOURCES` rather than altering
   `ToolRegistry::hosted_tool_definitions()` or the shared transport types.

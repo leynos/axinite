@@ -2,6 +2,11 @@
 
 Replace `{{...}}` placeholders before use.
 
+<!-- markdownlint-disable MD013 -->
+<!-- The "prompt" values below are single JSON string literals; they cannot be
+     wrapped without breaking the JSON, so line-length is disabled for this
+     section. -->
+
 ## 1) Issue -> Plan
 
 ```json
@@ -22,7 +27,8 @@ Replace `{{...}}` placeholders before use.
 
 ## 2) Maintainer Comment Gate (Update Plan vs Implement)
 
-Trigger per-maintainer by creating one routine per handle, or maintain a shared author convention.
+Trigger per-maintainer by creating one routine per handle, or maintain a shared
+author convention.
 
 ```json
 {
@@ -110,6 +116,8 @@ Trigger per-maintainer by creating one routine per handle, or maintain a shared 
   "cooldown_secs": 30
 }
 ```
+
+<!-- markdownlint-enable MD013 -->
 
 ## Optional: Synthetic Event Test
 

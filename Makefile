@@ -66,7 +66,7 @@ AUDIT_FLAGS ?= \
 	--ignore RUSTSEC-2024-0370 \
 	--ignore RUSTSEC-2025-0134
 
-.PHONY: all install install-with-overrides sync-local-wasm-overrides build-github-tool-wasm check-fmt typecheck lint lint-clippy lint-whitaker markdownlint spelling spelling-phrase-check spelling-config spelling-config-write spelling-helper-test nixie audit rust-audit test test-cargo test-matrix test-matrix-cargo test-workflow-contracts clean
+.PHONY: all install install-with-overrides sync-local-wasm-overrides build-github-tool-wasm fmt check-fmt typecheck lint lint-clippy lint-whitaker markdownlint spelling spelling-phrase-check spelling-config spelling-config-write spelling-helper-test nixie audit rust-audit test test-cargo test-matrix test-matrix-cargo test-workflow-contracts clean
 
 all: check-fmt lint test spelling
 
@@ -81,6 +81,20 @@ sync-local-wasm-overrides:
 
 build-github-tool-wasm:
 	$(CARGO) build --manifest-path $(GITHUB_TOOL_MANIFEST) --release --target $(GITHUB_TOOL_WASM_TARGET)
+
+# Formats Rust sources and Markdown. Mirrors the mdformat-all pipeline
+# (mdtablefix, then markdownlint --fix) but excludes CHANGELOG.md (generated
+# upstream release history) and tests/test-pages/ (converter output fixtures)
+# from the formatter input so local edits to those paths are never discarded.
+fmt:
+	$(CARGO) fmt --all
+	$(CARGO) fmt --manifest-path $(GITHUB_TOOL_MANIFEST) --all
+	fd --print0 --type f --extension md --extension markdown --extension mdx \
+		--exclude CHANGELOG.md --exclude tests/test-pages . \
+		| xargs -0 mdtablefix --wrap --renumber --breaks --ellipsis --fences --in-place
+	fd --print0 --type f --extension md --extension markdown --extension mdx \
+		--exclude CHANGELOG.md --exclude tests/test-pages . \
+		| xargs -0 $(BUNX) markdownlint-cli2 --fix
 
 check-fmt:
 	$(CARGO) fmt --all -- --check

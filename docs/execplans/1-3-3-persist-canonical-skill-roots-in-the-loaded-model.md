@@ -1,9 +1,8 @@
 # Persist canonical skill roots in the loaded skill model
 
-This ExecPlan (execution plan) is a living document. The sections
-`Constraints`, `Tolerances`, `Risks`, `Progress`,
-`Surprises & Discoveries`, `Decision Log`, and
-`Outcomes & Retrospective` must be kept up to date as work proceeds.
+This ExecPlan (execution plan) is a living document. The sections `Constraints`,
+`Tolerances`, `Risks`, `Progress`, `Surprises & Discoveries`, `Decision Log`,
+and `Outcomes & Retrospective` must be kept up to date as work proceeds.
 
 Status: COMPLETE
 
@@ -12,10 +11,10 @@ Status: COMPLETE
 Roadmap item `1.3.3` makes multi-file skill bundles useful at runtime without
 yet adding a general file-read surface. Roadmap items `1.3.1` and `1.3.2`
 already validate and install passive `.skill` archives while preserving
-`SKILL.md`, `references/`, and `assets/` on disk. The current loaded skill model
-still behaves like a prompt-only single-file model: `LoadedSkill` records the
-manifest, prompt body, trust, source, content hash, and selection caches, but it
-does not retain the canonical installed root or the bundle-relative
+`SKILL.md`, `references/`, and `assets/` on disk. The current loaded skill
+model still behaves like a prompt-only single-file model: `LoadedSkill` records
+the manifest, prompt body, trust, source, content hash, and selection caches,
+but it does not retain the canonical installed root or the bundle-relative
 `SKILL.md` entrypoint that later runtime reads will need.
 
 After this change, runtime state must record the installed skill root and the
@@ -30,11 +29,12 @@ Success is observable in four ways. First, loading a nested installed bundle
 produces a `LoadedSkill` whose runtime metadata points at the final installed
 skill directory and `SKILL.md`. Second, loading an existing flat single-file
 skill still works and records a compatible entrypoint without changing trust or
-selection behaviour. Third, an active skill is injected as a `<skill ...>` block
-that includes escaped stable metadata such as the canonical skill identifier,
-bundle root, and entrypoint while still injecting only the `SKILL.md` body.
-Fourth, tests prove that install, discovery, reload, selection, prompt
-injection, and trust attenuation continue to work with this extra metadata.
+selection behaviour. Third, an active skill is injected as a `<skill ...>`
+block that includes escaped stable metadata such as the canonical skill
+identifier, bundle root, and entrypoint while still injecting only the
+`SKILL.md` body. Fourth, tests prove that install, discovery, reload,
+selection, prompt injection, and trust attenuation continue to work with this
+extra metadata.
 
 The plan uses `hexagonal-architecture` as boundary discipline, not as a pattern
 transplant. The domain policy is the skill identity model: a loaded skill has a
@@ -60,10 +60,10 @@ developing and then the repository gate `make all` before committing the
 feature. Long-running validation commands must be run through `tee` to a log
 file under `/tmp`.
 
-The fourth gate is documentation sync. `docs/roadmap.md`,
-`docs/users-guide.md`, `docs/agent-skills-support.md`,
-`docs/axinite-architecture-overview.md`, and `FEATURE_PARITY.md` must be
-checked and updated where the shipped or documented behaviour changes.
+The fourth gate is documentation sync. `docs/roadmap.md`, `docs/users-guide.md`,
+`docs/agent-skills-support.md`, `docs/axinite-architecture-overview.md`, and
+`FEATURE_PARITY.md` must be checked and updated where the shipped or documented
+behaviour changes.
 
 ## Constraints
 
@@ -86,9 +86,8 @@ checked and updated where the shipped or documented behaviour changes.
   make the invariant clearer.
 - Avoid new runtime dependencies. The current standard library, `camino` if it
   is already available in the crate, and existing workspace crates are enough
-  for path metadata. Adding `rstest-bdd` and `rstest-bdd-macros` as
-  development dependencies is explicitly in scope if they are not already
-  present.
+  for path metadata. Adding `rstest-bdd` and `rstest-bdd-macros` as development
+  dependencies is explicitly in scope if they are not already present.
 - Use `rstest` fixtures for shared test setup and parameterized cases.
 - Add an `rstest-bdd` harness for this slice. The harness may be small, but it
   must establish the pattern for behavioural skill tests with a `.feature`
@@ -116,48 +115,41 @@ conflict in `Decision Log`, and ask for direction.
 - Tests: if targeted tests still fail after three focused fix attempts, stop
   and record the failing command and failure summary.
 - Ambiguity: if canonical root has multiple plausible meanings that materially
-  affect `skill_read_file` in `1.3.4`, stop and present the options. The default
-  assumption is that the canonical root is the final installed or discovered
-  directory that contains `SKILL.md`, and the entrypoint is bundle-relative
-  `SKILL.md`.
+  affect `skill_read_file` in `1.3.4`, stop and present the options. The
+  default assumption is that the canonical root is the final installed or
+  discovered directory that contains `SKILL.md`, and the entrypoint is
+  bundle-relative `SKILL.md`.
 
 ## Risks
 
 - Risk: installed-dir discovery currently passes `SkillSource::User` for
-  installed skills.
-  Severity: medium.
-  Likelihood: high.
-  Mitigation: keep trust as the authority for attenuation and add explicit root
-  metadata rather than overloading `SkillSource`. Update documentation if the
-  source variant remains imprecise.
+  installed skills. Severity: medium. Likelihood: high. Mitigation: keep trust
+  as the authority for attenuation and add explicit root metadata rather than
+  overloading `SkillSource`. Update documentation if the source variant remains
+  imprecise.
 
 - Risk: staged install validates `SKILL.md` before the staged directory is
-  renamed into its final location.
-  Severity: medium.
-  Likelihood: high.
-  Mitigation: ensure the prepared `LoadedSkill` records the final root path, not
-  the temporary staging path, before `commit_install()` inserts it.
+  renamed into its final location. Severity: medium. Likelihood: high.
+  Mitigation: ensure the prepared `LoadedSkill` records the final root path,
+  not the temporary staging path, before `commit_install()` inserts it.
 
 - Risk: active-skill injection could accidentally disclose absolute local paths.
-  Severity: medium.
-  Likelihood: medium.
-  Mitigation: inject a stable logical root such as `root="."` and
-  `entry="SKILL.md"` plus the canonical skill identifier. Keep the filesystem
-  root inside runtime state for future tool resolution.
+  Severity: medium. Likelihood: medium. Mitigation: inject a stable logical
+  root such as `root="."` and `entry="SKILL.md"` plus the canonical skill
+  identifier. Keep the filesystem root inside runtime state for future tool
+  resolution.
 
 - Risk: changing `LoadedSkill` breaks many existing test fixture constructors.
-  Severity: low.
-  Likelihood: high.
-  Mitigation: add a small fixture helper or constructor so tests do not
-  duplicate every field, then update existing constructors mechanically.
+  Severity: low. Likelihood: high. Mitigation: add a small fixture helper or
+  constructor so tests do not duplicate every field, then update existing
+  constructors mechanically.
 
 - Risk: `rstest-bdd` is documented but not currently wired into source tests.
-  Severity: low.
-  Likelihood: medium.
-  Mitigation: make the first harness part of this work rather than deferring it.
-  Keep it narrow: one feature file for active skill context, local step
-  definitions that reuse existing dispatcher or registry fixtures, and no broad
-  behaviour-testing framework beyond the documented `rstest-bdd` macros.
+  Severity: low. Likelihood: medium. Mitigation: make the first harness part of
+  this work rather than deferring it. Keep it narrow: one feature file for
+  active skill context, local step definitions that reuse existing dispatcher
+  or registry fixtures, and no broad behaviour-testing framework beyond the
+  documented `rstest-bdd` macros.
 
 ## Progress
 
@@ -196,126 +188,112 @@ conflict in `Decision Log`, and ask for direction.
 ## Surprises & discoveries
 
 - Observation: `docs/axinite-architecture-summary.md` was requested as a
-  reference but does not exist in this checkout.
-  Evidence: `find docs -maxdepth 2 -iname '*summary*' -o -iname '*architecture*'`
-  returned `docs/axinite-architecture-overview.md` and related architecture
-  documents, but no summary file.
-  Impact: use `docs/axinite-architecture-overview.md` as the available
-  high-level architecture source and note the missing file in final
-  implementation records if it remains absent.
+  reference but does not exist in this checkout. Evidence:
+  `find docs -maxdepth 2 -iname '*summary*' -o -iname '*architecture*'` returned
+  `docs/axinite-architecture-overview.md` and related architecture documents,
+  but no summary file. Impact: use `docs/axinite-architecture-overview.md` as
+  the available high-level architecture source and note the missing file in
+  final implementation records if it remains absent.
 
 - Observation: `.skill` archive validation and upload install support already
-  exist from roadmap items `1.3.1` and `1.3.2`.
-  Evidence: `src/skills/bundle/`, `src/skills/registry/materialize.rs`,
+  exist from roadmap items `1.3.1` and `1.3.2`. Evidence: `src/skills/bundle/`,
+  `src/skills/registry/materialize.rs`,
   `src/skills/registry/staged_install.rs`, and
-  `tests/channels/skills_upload.rs` are present.
-  Impact: this plan should build on those seams and avoid re-implementing
-  archive policy.
+  `tests/channels/skills_upload.rs` are present. Impact: this plan should build
+  on those seams and avoid re-implementing archive policy.
 
 - Observation: installed skills are loaded with `SkillTrust::Installed`, but
   installed discovery and staged install currently use `SkillSource::User`.
   Evidence: `SkillRegistry::discover_all()` calls `discover_from_dir()` with
   `SkillSource::User` for `installed_dir`, and `prepare_install_to_disk()` sets
-  `let source = SkillSource::User(final_dir.clone())`.
-  Impact: root metadata must not depend on `SkillSource` alone for future
-  read-file resolution.
+  `let source = SkillSource::User(final_dir.clone())`. Impact: root metadata
+  must not depend on `SkillSource` alone for future read-file resolution.
 
 - Observation: the repository has no obvious existing `rstest-bdd` Rust harness
-  or `.feature` files.
-  Evidence: `find . -path '*rstest*bdd*' -o -name '*.feature'` found only
-  `docs/rstest-bdd-users-guide.md`.
-  Impact: this feature should add the first narrow harness, using the existing
-  guide as the local pattern, so behavioural tests are not deferred again.
+  or `.feature` files. Evidence:
+  `find . -path '*rstest*bdd*' -o -name '*.feature'` found only
+  `docs/rstest-bdd-users-guide.md`. Impact: this feature should add the first
+  narrow harness, using the existing guide as the local pattern, so behavioural
+  tests are not deferred again.
 
 - Observation: `leta workspace add` succeeds, but `leta grep` cannot start
-  rust-analyzer in this environment.
-  Evidence: `leta grep` for the skill-loading symbols returned
-  `Language server 'rust-analyzer' for rust failed to start`.
-  Impact: continue implementation with `rg` and direct file reads for Rust
-  navigation, and keep changes narrow enough to compensate for the unavailable
-  semantic navigation.
+  rust-analyzer in this environment. Evidence: `leta grep` for the
+  skill-loading symbols returned
+  `Language server 'rust-analyzer' for rust failed to start`. Impact: continue
+  implementation with `rg` and direct file reads for Rust navigation, and keep
+  changes narrow enough to compensate for the unavailable semantic navigation.
 
 - Observation: the baseline command drafted in this plan passed multiple
-  filter arguments to `cargo test`, which Cargo rejects.
-  Evidence: the combined baseline `cargo test` command failed with
-  `error: unexpected argument 'skills::attenuation' found`.
-  Impact: run the baseline as separate filtered `cargo test` commands and
-  revise the concrete command list before completion.
+  filter arguments to `cargo test`, which Cargo rejects. Evidence: the combined
+  baseline `cargo test` command failed with
+  `error: unexpected argument 'skills::attenuation' found`. Impact: run the
+  baseline as separate filtered `cargo test` commands and revise the concrete
+  command list before completion.
 
 - Observation: after rediscovery, a raw markdown install stored at
   `<install-root>/<skill>/SKILL.md` and a minimal archive containing only
   `<skill>/SKILL.md` are indistinguishable from the installed tree alone.
   Evidence: the existing staged install path writes both shapes to the same
   final directory layout when an archive has no `references/` or `assets/`
-  entries.
-  Impact: staged install preserves the exact package kind in memory. Reload and
-  directory discovery infer `Bundle` only when `references/` or `assets/` is
-  present; a lone `SKILL.md` tree is treated as `SingleFile`.
+  entries. Impact: staged install preserves the exact package kind in memory.
+  Reload and directory discovery infer `Bundle` only when `references/` or
+  `assets/` is present; a lone `SKILL.md` tree is treated as `SingleFile`.
 
 - Observation: adding the approved `rstest-bdd` harness requires new
   development dependencies and therefore expands `Cargo.lock` by hundreds of
-  lines.
-  Evidence: `git diff --stat` shows most net non-documentation line growth is
-  lockfile metadata for `rstest-bdd`, `rstest-bdd-macros`, and their
-  transitive crates.
-  Impact: treat this as dependency metadata created by an explicitly in-scope
-  BDD requirement, not as source complexity. Keep source edits narrow and avoid
-  unrelated refactors.
+  lines. Evidence: `git diff --stat` shows most net non-documentation line
+  growth is lockfile metadata for `rstest-bdd`, `rstest-bdd-macros`, and their
+  transitive crates. Impact: treat this as dependency metadata created by an
+  explicitly in-scope BDD requirement, not as source complexity. Keep source
+  edits narrow and avoid unrelated refactors.
 
 ## Decision log
 
 - Decision: keep this plan scoped to runtime metadata and active-skill
-  injection, not skill file reads.
-  Rationale: roadmap item `1.3.3` is a prerequisite for `1.3.4`; implementing
-  the read tool here would widen the runtime surface before stable roots are
-  proven.
-  Date/Author: 2026-04-30, planning agent with Wyvern reconnaissance.
+  injection, not skill file reads. Rationale: roadmap item `1.3.3` is a
+  prerequisite for `1.3.4`; implementing the read tool here would widen the
+  runtime surface before stable roots are proven. Date/Author: 2026-04-30,
+  planning agent with Wyvern reconnaissance.
 
 - Decision: record the final filesystem root in runtime state but inject only
-  bundle-relative metadata into the model-facing prompt.
-  Rationale: RFC 0003 requires the runtime to retain the canonical root for
-  `skill_read_file`, while the model should reason in terms of stable
-  skill-scoped paths rather than host-local absolute paths.
-  Date/Author: 2026-04-30, planning agent.
+  bundle-relative metadata into the model-facing prompt. Rationale: RFC 0003
+  requires the runtime to retain the canonical root for `skill_read_file`,
+  while the model should reason in terms of stable skill-scoped paths rather
+  than host-local absolute paths. Date/Author: 2026-04-30, planning agent.
 
 - Decision: prefer a small `LoadedSkillLocation` or equivalent typed field over
-  loose root and entrypoint strings.
-  Rationale: `rust-types-and-apis` guidance applies here: invalid states such as
-  "entrypoint without root" should be hard to construct.
-  Date/Author: 2026-04-30, planning agent.
+  loose root and entrypoint strings. Rationale: `rust-types-and-apis` guidance
+  applies here: invalid states such as "entrypoint without root" should be hard
+  to construct. Date/Author: 2026-04-30, planning agent.
 
 - Decision: treat `docs/axinite-architecture-overview.md` as the architecture
   reference because `docs/axinite-architecture-summary.md` is absent.
   Rationale: the repository documentation index names the overview as the
-  current top-level runtime shape.
-  Date/Author: 2026-04-30, planning agent.
+  current top-level runtime shape. Date/Author: 2026-04-30, planning agent.
 
 - Decision: require an `rstest-bdd` harness in the implementation of `1.3.3`.
   Rationale: deferring BDD as disproportionate would leave this area with no
   behavioural-test pattern. A small harness can prove the externally relevant
-  prompt contract without expanding the runtime feature scope.
-  Date/Author: 2026-04-30, user preference captured by planning agent.
+  prompt contract without expanding the runtime feature scope. Date/Author:
+  2026-04-30, user preference captured by planning agent.
 
 - Decision: inject the logical root `.` and the bundle-relative entry
   `SKILL.md` into active-skill prompt blocks, while keeping the absolute root
-  private inside `LoadedSkillLocation`.
-  Rationale: the model needs stable bundle-relative coordinates for
-  progressive disclosure; exposing host-local absolute paths would widen the
-  prompt surface without adding a scoped file-read tool.
-  Date/Author: 2026-05-01, implementation agent.
+  private inside `LoadedSkillLocation`. Rationale: the model needs stable
+  bundle-relative coordinates for progressive disclosure; exposing host-local
+  absolute paths would widen the prompt surface without adding a scoped
+  file-read tool. Date/Author: 2026-05-01, implementation agent.
 
 - Decision: infer package kind on rediscovery from support directories rather
-  than adding an install marker file.
-  Rationale: the roadmap item is scoped to the loaded runtime model and prompt
-  metadata. A new persistent marker would alter the installed on-disk contract
-  and is unnecessary for the current observable prompt behaviour.
-  Date/Author: 2026-05-01, implementation agent.
+  than adding an install marker file. Rationale: the roadmap item is scoped to
+  the loaded runtime model and prompt metadata. A new persistent marker would
+  alter the installed on-disk contract and is unnecessary for the current
+  observable prompt behaviour. Date/Author: 2026-05-01, implementation agent.
 
 - Decision: keep the `rstest-bdd` dev dependency despite the lockfile growth.
   Rationale: the implementation plan and user feedback made a BDD harness a
   hard requirement for this slice. The dependency is development-only and does
-  not widen the runtime surface.
-  Date/Author: 2026-05-01, implementation agent.
+  not widen the runtime surface. Date/Author: 2026-05-01, implementation agent.
 
 ## Outcomes & retrospective
 
@@ -336,11 +314,10 @@ metadata. `make all` passed after implementation. No `skill_read_file` tool or
 generic filesystem access was added.
 
 The Markdown gate passed for `docs/roadmap.md`, `docs/users-guide.md`,
-`docs/agent-skills-support.md`, `docs/axinite-architecture-overview.md`,
-this ExecPlan, and `FEATURE_PARITY.md`. `FEATURE_PARITY.md` now carries a
-file-level markdownlint disable for pre-existing table and duplicate-heading
-style that would otherwise make the repository-mandated changed-file lint
-unusable.
+`docs/agent-skills-support.md`, `docs/axinite-architecture-overview.md`, this
+ExecPlan, and `FEATURE_PARITY.md`. `FEATURE_PARITY.md` now carries a file-level
+markdownlint disable for pre-existing table and duplicate-heading style that
+would otherwise make the repository-mandated changed-file lint unusable.
 
 ## Context and orientation
 
@@ -459,12 +436,11 @@ even though the staged `SKILL.md` is what was parsed. The package kind should
 come from `InstallArtifact`: raw markdown is `SingleFile`, validated archive
 bytes are `Bundle`. Reload must rediscover the same metadata from disk.
 
-Stage D is active-skill injection. Update
-`Agent::build_skill_context_block()` in `src/agent/dispatcher/core.rs` so each
-selected skill block includes stable escaped attributes for the canonical
-identifier and bundle-relative layout. Keep the existing name, version, trust
-label, content escaping, and installed-skill downgrade suffix. A valid target
-shape is:
+Stage D is active-skill injection. Update `Agent::build_skill_context_block()`
+in `src/agent/dispatcher/core.rs` so each selected skill block includes stable
+escaped attributes for the canonical identifier and bundle-relative layout.
+Keep the existing name, version, trust label, content escaping, and
+installed-skill downgrade suffix. A valid target shape is:
 
 ```plaintext
 <skill name="deploy-docs" skill="deploy-docs" root="." entry="SKILL.md" version="1.0.0" trust="INSTALLED">
@@ -532,8 +508,8 @@ dispatcher context-rendering seam directly rather than starting the whole
 server, because roadmap item `1.3.3` changes the active-skill prompt contract,
 not an HTTP endpoint. The step assertions must fail against the old
 `<skill name="..." version="..." trust="...">` rendering and pass only when
-`skill`, bundle-relative `entry`, and non-sensitive `root` metadata are
-present without leaking the absolute filesystem root.
+`skill`, bundle-relative `entry`, and non-sensitive `root` metadata are present
+without leaking the absolute filesystem root.
 
 Stage F is documentation. Update `docs/users-guide.md` so users know that
 bundle installs now retain stable runtime identity and entrypoint metadata, but
@@ -684,9 +660,10 @@ If `make all` fails because another Cargo job holds the shared package cache,
 wait for Cargo's lock rather than creating an isolated Cargo cache. Do not kill
 other agents' processes.
 
-If Markdown lint fails on pre-existing unrelated lines, do not rewrite unrelated
-documents broadly. Record the failure, fix only changed lines where possible,
-and escalate if the gate cannot be made meaningful without unrelated churn.
+If Markdown lint fails on pre-existing unrelated lines, do not rewrite
+unrelated documents broadly. Record the failure, fix only changed lines where
+possible, and escalate if the gate cannot be made meaningful without unrelated
+churn.
 
 ## Artefacts and notes
 
@@ -742,10 +719,10 @@ pub struct LoadedSkillLocation {
 }
 ```
 
-`LoadedSkill` should contain the location value and provide read-only accessors.
-The constructor path should ensure `entrypoint` is always bundle-relative and
-never absolute. The `root` value is runtime state for future file resolution,
-not prompt text.
+`LoadedSkill` should contain the location value and provide read-only
+accessors. The constructor path should ensure `entrypoint` is always
+bundle-relative and never absolute. The `root` value is runtime state for
+future file resolution, not prompt text.
 
 `src/skills/registry/materialize.rs` should carry enough information from
 `InstallArtifact` to staged install to distinguish markdown from bundle
@@ -766,8 +743,8 @@ this plan.
 
 ## Revision note
 
-Initial draft created on 2026-04-30. The plan captures roadmap item `1.3.3`
-and incorporates Wyvern read-only reconnaissance across roadmap/RFC
-requirements, current skill code paths, and documentation/testing guidance.
-Implementation remains blocked until the plan is explicitly approved.
-The user approved implementation on 2026-05-01, so this plan is now complete.
+Initial draft created on 2026-04-30. The plan captures roadmap item `1.3.3` and
+incorporates Wyvern read-only reconnaissance across roadmap/RFC requirements,
+current skill code paths, and documentation/testing guidance. Implementation
+remains blocked until the plan is explicitly approved. The user approved
+implementation on 2026-05-01, so this plan is now complete.

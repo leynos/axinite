@@ -5,14 +5,20 @@ argument-hint: <symptom or feature name>
 model: sonnet
 ---
 
-Trace the flow of `$ARGUMENTS` through the IronClaw codebase. Your job is to map every file and function involved, identify where data transforms or could break, and report the full chain.
+# Trace
+
+Trace the flow of `$ARGUMENTS` through the IronClaw codebase. Your job is to
+map every file and function involved, identify where data transforms or could
+break, and report the full chain.
 
 ## Architecture Reference
 
-IronClaw has three main data flow paths. Identify which one(s) are relevant and trace through them:
+IronClaw has three main data flow paths. Identify which one(s) are relevant and
+trace through them:
 
 ### Message Flow (user input to LLM response)
-```
+
+```text
 Channel (cli/web/wasm) → IncomingMessage
   → Agent::run() message loop (agent_loop.rs)
     → handle_message() dispatches by Submission type
@@ -29,7 +35,8 @@ Channel (cli/web/wasm) → IncomingMessage
 ```
 
 ### SSE Event Flow (backend status to web UI)
-```
+
+```text
 StatusUpdate variant (channel.rs)
   → Channel::send_status() trait method
     → WebChannel::send_status() (web/mod.rs) maps to SseEvent
@@ -41,7 +48,8 @@ StatusUpdate variant (channel.rs)
 ```
 
 ### Tool Flow (tool definition to execution)
-```
+
+```text
 Tool trait impl (tools/builtin/*.rs or tools/mcp/client.rs or tools/wasm/wrapper.rs)
   → ToolRegistry::register() (tools/registry.rs)
   → tool_definitions() builds Vec<ToolDefinition> for LLM
@@ -55,29 +63,34 @@ Tool trait impl (tools/builtin/*.rs or tools/mcp/client.rs or tools/wasm/wrapper
 
 ## Tracing Instructions
 
-1. **Read** each file in the relevant flow path, focusing on the functions that handle the data.
-2. **Identify transforms**: Where does the data change shape? (e.g., `McpTool.input_schema` → `ToolDefinition.parameters` → `ChatCompletionTool.function.parameters`)
-3. **Identify failure points**: Where could the data be lost, malformed, or misrouted?
-4. **Report the chain**: List every file:line involved, what happens at each step, and where the issue (if any) is.
+1. **Read** each file in the relevant flow path, focusing on the functions that
+   handle the data.
+2. **Identify transforms**: Where does the data change shape? (e.g.,
+   `McpTool.input_schema` → `ToolDefinition.parameters` →
+   `ChatCompletionTool.function.parameters`)
+3. **Identify failure points**: Where could the data be lost, malformed, or
+   misrouted?
+4. **Report the chain**: List every file:line involved, what happens at each
+   step, and where the issue (if any) is.
 
 ## Key Files Quick Reference
 
-| Area | File | Key Functions |
-|------|------|---------------|
-| Message dispatch | `src/agent/agent_loop.rs` | `handle_message`, `process_user_input`, `process_approval`, `run_agentic_loop` |
-| Input parsing | `src/agent/submission.rs` | `SubmissionParser::parse` |
-| LLM reasoning | `src/llm/reasoning.rs` | `respond_with_tools`, `select_tools`, `plan` |
-| Chat completions | `src/llm/nearai_chat.rs` | `complete_with_tools`, `From<ChatMessage>` |
-| Responses API | `src/llm/nearai.rs` | `complete_with_tools`, `split_messages` |
-| Channel trait | `src/channels/channel.rs` | `Channel`, `StatusUpdate`, `IncomingMessage` |
-| Web gateway | `src/channels/web/mod.rs` | `send_status`, `send_response` |
-| Web server | `src/channels/web/server.rs` | Route handlers, SSE endpoints |
-| Web frontend | `src/channels/web/static/app.js` | SSE listeners, DOM builders |
-| Tool registry | `src/tools/registry.rs` | `tool_definitions`, `get`, `register` |
-| MCP tools | `src/tools/mcp/client.rs` | `McpToolWrapper`, `list_tools`, `call_tool` |
-| MCP protocol | `src/tools/mcp/protocol.rs` | `McpTool`, `inputSchema` |
-| Safety | `src/safety/sanitizer.rs` | `sanitize_tool_output`, `wrap_for_llm` |
-| Session state | `src/agent/session.rs` | `ThreadState`, `Turn`, `PendingApproval` |
+| Area             | File                             | Key Functions                                                                  |
+| ---------------- | -------------------------------- | ------------------------------------------------------------------------------ |
+| Message dispatch | `src/agent/agent_loop.rs`        | `handle_message`, `process_user_input`, `process_approval`, `run_agentic_loop` |
+| Input parsing    | `src/agent/submission.rs`        | `SubmissionParser::parse`                                                      |
+| LLM reasoning    | `src/llm/reasoning.rs`           | `respond_with_tools`, `select_tools`, `plan`                                   |
+| Chat completions | `src/llm/nearai_chat.rs`         | `complete_with_tools`, `From<ChatMessage>`                                     |
+| Responses API    | `src/llm/nearai.rs`              | `complete_with_tools`, `split_messages`                                        |
+| Channel trait    | `src/channels/channel.rs`        | `Channel`, `StatusUpdate`, `IncomingMessage`                                   |
+| Web gateway      | `src/channels/web/mod.rs`        | `send_status`, `send_response`                                                 |
+| Web server       | `src/channels/web/server.rs`     | Route handlers, SSE endpoints                                                  |
+| Web frontend     | `src/channels/web/static/app.js` | SSE listeners, DOM builders                                                    |
+| Tool registry    | `src/tools/registry.rs`          | `tool_definitions`, `get`, `register`                                          |
+| MCP tools        | `src/tools/mcp/client.rs`        | `McpToolWrapper`, `list_tools`, `call_tool`                                    |
+| MCP protocol     | `src/tools/mcp/protocol.rs`      | `McpTool`, `inputSchema`                                                       |
+| Safety           | `src/safety/sanitizer.rs`        | `sanitize_tool_output`, `wrap_for_llm`                                         |
+| Session state    | `src/agent/session.rs`           | `ThreadState`, `Turn`, `PendingApproval`                                       |
 
 ## Output Format
 

@@ -1,26 +1,26 @@
 # E2E Testing Infrastructure Design
 
-**Date:** 2026-02-24
-**Status:** Approved
-**Goal:** Deterministic browser-level E2E tests for the IronClaw web gateway using Python + Playwright, with a mock LLM backend for CI reliability.
+**Date:** 2026-02-24 **Status:** Approved **Goal:** Deterministic browser-level
+E2E tests for the IronClaw web gateway using Python + Playwright, with a mock
+LLM backend for CI reliability.
 
----
+______________________________________________________________________
 
 ## Decisions
 
-| Decision | Choice | Rationale |
-|----------|--------|-----------|
-| Assertion style | Deterministic DOM-first | Claude vision optional later; DOM assertions are fast, cheap, reliable |
-| Language | Python + pytest + Playwright | Rich browser automation ecosystem, async/await, separate from Rust tests |
-| LLM backend | Mock HTTP server | Canned OpenAI-compat responses; deterministic, fast, zero cost |
-| Initial scope | 3 scenarios | Connection + Chat + Skills; covers highest-bug-rate areas |
-| Architecture | Subprocess + Playwright | Tests the real binary end-to-end; proven pattern from existing ws_gateway tests |
+| Decision        | Choice                       | Rationale                                                                       |
+| --------------- | ---------------------------- | ------------------------------------------------------------------------------- |
+| Assertion style | Deterministic DOM-first      | Claude vision optional later; DOM assertions are fast, cheap, reliable          |
+| Language        | Python + pytest + Playwright | Rich browser automation ecosystem, async/await, separate from Rust tests        |
+| LLM backend     | Mock HTTP server             | Canned OpenAI-compat responses; deterministic, fast, zero cost                  |
+| Initial scope   | 3 scenarios                  | Connection + Chat + Skills; covers highest-bug-rate areas                       |
+| Architecture    | Subprocess + Playwright      | Tests the real binary end-to-end; proven pattern from existing ws_gateway tests |
 
----
+______________________________________________________________________
 
 ## Architecture
 
-```
+```text
                   pytest
                     |
          +----------+-----------+
@@ -41,16 +41,18 @@
 1. pytest session starts
 2. Session-scoped fixture builds ironclaw binary (or reuses cached)
 3. Session-scoped fixture starts mock LLM on OS-assigned port
-4. Session-scoped fixture starts ironclaw subprocess pointing to mock LLM, gateway on OS-assigned port, libSQL in-memory
-5. Function-scoped fixture launches Playwright browser, navigates to gateway with auth token
+4. Session-scoped fixture starts ironclaw subprocess pointing to mock LLM,
+   gateway on OS-assigned port, libSQL in-memory
+5. Function-scoped fixture launches Playwright browser, navigates to gateway
+   with auth token
 6. Each test uses Playwright locators + DOM assertions
 7. Teardown kills ironclaw and mock LLM
 
----
+______________________________________________________________________
 
 ## Directory Structure
 
-```
+```text
 tests/e2e/
   conftest.py              # pytest fixtures: build binary, start ironclaw, mock LLM, browser
   mock_llm.py              # OpenAI-compat HTTP server with canned responses
@@ -64,7 +66,7 @@ tests/e2e/
   README.md                # How to run locally and in CI
 ```
 
----
+______________________________________________________________________
 
 ## Mock LLM Server
 
@@ -73,23 +75,26 @@ A minimal async HTTP server that speaks the OpenAI Chat Completions API.
 **Endpoint:** `POST /v1/chat/completions`
 
 **Behaviour:**
+
 - Parses the `messages` array from the request body
 - Pattern-matches the last user message content to select a canned response
-- Returns a well-formed `ChatCompletionResponse` with `id`, `choices[0].message`, `usage`
-- Supports `stream: true` by returning SSE chunks with `delta` objects (critical: IronClaw streams responses via SSE to the browser)
+- Returns a well-formed `ChatCompletionResponse` with `id`,
+  `choices[0].message`, `usage`
+- Supports `stream: true` by returning SSE chunks with `delta` objects
+  (critical: IronClaw streams responses via SSE to the browser)
 
 **Canned response table:**
 
-| Pattern (regex) | Response |
-|-----------------|----------|
-| `hello\|hi\|hey` | `Hello! How can I help you today?` |
-| `2\+2\|2 \+ 2\|two plus two` | `The answer is 4.` |
-| `skill\|install` | `I can help you with skills management.` |
-| `.*` (default) | `I understand your request.` |
+| Pattern (regex)              | Response                                 |
+| ---------------------------- | ---------------------------------------- |
+| `hello\|hi\|hey`             | `Hello! How can I help you today?`       |
+| `2\+2\|2 \+ 2\|two plus two` | `The answer is 4.`                       |
+| `skill\|install`             | `I can help you with skills management.` |
+| `.*` (default)               | `I understand your request.`             |
 
 **Streaming format:**
 
-```
+```text
 data: {"id":"mock-1","object":"chat.completion.chunk","choices":[{"index":0,"delta":{"role":"assistant","content":"The "},"finish_reason":null}]}
 
 data: {"id":"mock-1","object":"chat.completion.chunk","choices":[{"index":0,"delta":{"content":"answer is 4."},"finish_reason":null}]}
@@ -99,33 +104,39 @@ data: {"id":"mock-1","object":"chat.completion.chunk","choices":[{"index":0,"del
 data: [DONE]
 ```
 
-**Implementation:** `aiohttp.web` (async, lightweight). No tool call support needed for initial 3 scenarios.
+**Implementation:** `aiohttp.web` (async, lightweight). No tool call support
+needed for initial 3 scenarios.
 
 **Health check:** `GET /v1/models` returns `{"data": [{"id": "mock-model"}]}`.
 
----
+______________________________________________________________________
 
 ## Fixtures
 
 ### Session-scoped (run once per test session)
 
 **`ironclaw_binary`**
+
 - Checks if `./target/debug/ironclaw` exists
-- If missing or stale, runs `cargo build --no-default-features --features libsql`
+- If missing or stale, runs
+  `cargo build --no-default-features --features libsql`
 - Returns the binary path
 - Timeout: 300s (first build can be slow)
 
 **`mock_llm_server`**
+
 - Starts `mock_llm.py` as subprocess on `127.0.0.1:0` (OS-assigned port)
-- Parses port from stdout (server prints `Mock LLM listening on 127.0.0.1:{port}`)
+- Parses port from stdout (server prints
+  `Mock LLM listening on 127.0.0.1:{port}`)
 - Polls `GET /v1/models` until ready (timeout 10s)
 - Yields `(process, url)`
 - Kills process on teardown
 
 **`ironclaw_server(ironclaw_binary, mock_llm_server)`**
+
 - Starts the ironclaw binary with environment:
 
-```
+```text
 GATEWAY_ENABLED=true
 GATEWAY_HOST=127.0.0.1
 GATEWAY_PORT=0
@@ -143,7 +154,8 @@ ROUTINES_ENABLED=false
 HEARTBEAT_ENABLED=false
 ```
 
-- Parses actual gateway port from ironclaw stdout (`Gateway listening on 127.0.0.1:XXXX`)
+- Parses actual gateway port from ironclaw stdout
+  (`Gateway listening on 127.0.0.1:XXXX`)
 - Polls `GET /api/status` until ready (timeout 60s)
 - Yields the base URL (`http://127.0.0.1:{port}`)
 - Sends SIGTERM on teardown, SIGKILL after 5s grace
@@ -151,6 +163,7 @@ HEARTBEAT_ENABLED=false
 ### Function-scoped (fresh per test)
 
 **`page(ironclaw_server)`**
+
 - Launches Playwright Chromium (headless)
 - Creates new browser context (isolated cookies/storage)
 - Creates new page with viewport 1280x720
@@ -159,7 +172,7 @@ HEARTBEAT_ENABLED=false
 - Yields the `Page` object
 - Closes browser context on teardown
 
----
+______________________________________________________________________
 
 ## Test Scenarios
 
@@ -167,7 +180,7 @@ HEARTBEAT_ENABLED=false
 
 Tests auth, initial page load, and tab switching.
 
-```
+```text
 test_page_loads_and_connects:
   1. Assert page title or main container is visible
   2. Assert connection status indicator shows "Connected" (or equivalent)
@@ -188,9 +201,10 @@ test_auth_rejection:
 
 ### Scenario 2: Chat Message Round-Trip (`test_chat.py`)
 
-Tests the full message flow: user input -> gateway -> mock LLM -> SSE -> browser rendering.
+Tests the full message flow: user input -> gateway -> mock LLM -> SSE ->
+browser rendering.
 
-```
+```text
 test_send_message_and_receive_response:
   1. Locate chat input element
   2. Type "What is 2+2?"
@@ -217,9 +231,10 @@ test_empty_message_not_sent:
 
 Tests ClawHub search, install, and remove through the browser UI.
 
-Note: ClawHub registry blocks non-browser TLS fingerprints but Playwright is a real browser, so this works. Tests are skipped if ClawHub is unreachable.
+Note: ClawHub registry blocks non-browser TLS fingerprints but Playwright is a
+real browser, so this works. Tests are skipped if ClawHub is unreachable.
 
-```
+```text
 test_skills_tab_visible:
   1. Click Skills tab
   2. Assert skills panel is visible
@@ -244,11 +259,12 @@ test_skills_install_and_remove:
   8. Assert skill is gone from installed list
 ```
 
----
+______________________________________________________________________
 
 ## Port Discovery
 
-IronClaw logs `Gateway listening on 127.0.0.1:XXXX` at startup. The fixture reads stdout line-by-line until it finds this pattern, extracts the port.
+IronClaw logs `Gateway listening on 127.0.0.1:XXXX` at startup. The fixture
+reads stdout line-by-line until it finds this pattern, extracts the port.
 
 ```python
 async def wait_for_port(process, pattern=r"Gateway listening on .+:(\d+)", timeout=60):
@@ -265,7 +281,7 @@ async def wait_for_port(process, pattern=r"Gateway listening on .+:(\d+)", timeo
 
 Same pattern for the mock LLM server.
 
----
+______________________________________________________________________
 
 ## Dependencies
 
@@ -289,7 +305,7 @@ vision = [
 ]
 ```
 
----
+______________________________________________________________________
 
 ## CI Integration
 
@@ -330,25 +346,29 @@ jobs:
         run: pytest tests/e2e/ -v --timeout=120
 ```
 
-**Trigger policy:** Weekly + manual + PRs touching web gateway or E2E tests. Not on every PR.
+**Trigger policy:** Weekly + manual + PRs touching web gateway or E2E tests.
+Not on every PR.
 
----
+______________________________________________________________________
 
 ## Future: Claude Vision Layer
 
 Not in initial scope. Design accommodates it via:
 
 - `conftest.py` fixture `claude_vision` wrapping `anthropic.Anthropic()`
-- Helper `assert_visually(page, prompt)`: takes screenshot, sends to Claude vision API, asserts response
+- Helper `assert_visually(page, prompt)`: takes screenshot, sends to Claude
+  vision API, asserts response
 - Gated behind `@pytest.mark.vision`, only runs when `ANTHROPIC_API_KEY` is set
-- Use cases: "no raw HTML visible in chat", "markdown renders correctly", "no layout breakage"
+- Use cases: "no raw HTML visible in chat", "markdown renders correctly", "no
+  layout breakage"
 
----
+______________________________________________________________________
 
 ## Success Criteria
 
 1. `pytest tests/e2e/ -v` passes locally with a pre-built ironclaw binary
 2. All 3 scenarios (connection, chat, skills) exercise real browser interactions
-3. Mock LLM provides deterministic responses (no flaky tests from LLM randomness)
+3. Mock LLM provides deterministic responses (no flaky tests from LLM
+   randomness)
 4. CI workflow runs on web gateway changes and weekly schedule
 5. Test failures produce clear error messages with screenshot artefacts

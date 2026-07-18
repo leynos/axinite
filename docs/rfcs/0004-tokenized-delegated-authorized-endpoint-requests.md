@@ -15,9 +15,8 @@
 ## Summary
 
 IronClaw should add a new delegated endpoint model for WebAssembly (WASM)
-extensions so a
-user can configure a service endpoint in the extension management page without
-exposing that endpoint URL to either:
+extensions so a user can configure a service endpoint in the extension
+management page without exposing that endpoint URL to either:
 
 - the agent,
 - the extension code,
@@ -27,9 +26,8 @@ The motivating example is a hypothetical JSON Meta Application Protocol (JMAP)
 WASM extension. A user should be able to configure a JMAP endpoint once in the
 web UI. The extension should then receive only an opaque endpoint identity such
 as `primary` or `jmap-default`. When the tool needs to check email, it should
-call a new
-host-managed authorized request service using that identity. IronClaw should
-then:
+call a new host-managed authorized request service using that identity.
+IronClaw should then:
 
 1. resolve the opaque identity to a host-owned endpoint binding,
 2. apply authorization and internal network policy,
@@ -124,7 +122,8 @@ home in the current model.
 Today:
 
 - WIT exposes `http-request(method, url, headers-json, body, timeout-ms)`,
-- host authorization validates the raw URL against `capabilities.http.allowlist`,
+- host authorization validates the raw URL against
+  `capabilities.http.allowlist`,
 - credential injection resolves secrets via `CredentialMapping.host_patterns`,
 - redaction focuses on credential values, not confidential endpoint URLs.
 
@@ -248,8 +247,8 @@ DelegatedEndpointField {
 
 Suggested value model:
 
-Screen reader: proposed setup value union distinguishes secret submissions
-from delegated endpoint URL submissions.
+Screen reader: proposed setup value union distinguishes secret submissions from
+delegated endpoint URL submissions.
 
 ```text
 ExtensionSetupValue =
@@ -363,8 +362,8 @@ secret fields.
 }
 ```
 
-This replaces the current secret-only schema assumption with an extensible field
-model.
+This replaces the current secret-only schema assumption with an extensible
+field model.
 
 ### Keep auth schema separate
 
@@ -394,8 +393,7 @@ IronClaw should add a dedicated per-user endpoint binding store.
 
 Suggested record:
 
-Screen reader: proposed authorized endpoint binding record stored by the
-host.
+Screen reader: proposed authorized endpoint binding record stored by the host.
 
 ```text
 AuthorizedEndpointBinding {
@@ -428,8 +426,8 @@ Notes:
 
 Add a service interface such as:
 
-Screen reader: host-owned endpoint binding store interface for lookup,
-storage, validation, and readiness checks.
+Screen reader: host-owned endpoint binding store interface for lookup, storage,
+validation, and readiness checks.
 
 ```text
 EndpointBindingStore {
@@ -536,8 +534,8 @@ the guest passes an endpoint identity, not a raw URL.
 
 ### Why not overload `http_request`
 
-Overloading `http_request` with magic URL placeholders would be brittle and easy
-to misuse. A dedicated host call is clearer because it:
+Overloading `http_request` with magic URL placeholders would be brittle and
+easy to misuse. A dedicated host call is clearer because it:
 
 - makes the confidentiality boundary explicit,
 - preserves the existing raw URL semantics,
@@ -566,8 +564,8 @@ AuthorizedEndpointRequestService {
 
 Proposed runtime pipeline:
 
-Screen reader: runtime pipeline for delegated endpoint requests from WASM
-guest input through host execution and redacted response handling.
+Screen reader: runtime pipeline for delegated endpoint requests from WASM guest
+input through host execution and redacted response handling.
 
 ```text
 WASM guest passes endpoint_name + relative request
@@ -636,8 +634,8 @@ This means:
 
 ### Compatibility
 
-Keep `CredentialMapping.host_patterns` for raw URL `http_request`.
-Add `EndpointCredentialBinding` only for delegated authorized requests.
+Keep `CredentialMapping.host_patterns` for raw URL `http_request`. Add
+`EndpointCredentialBinding` only for delegated authorized requests.
 
 ## Security Model Changes
 

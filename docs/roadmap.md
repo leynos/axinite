@@ -1,8 +1,9 @@
 # Axinite Roadmap
 
 This roadmap turns the current axinite design set into a sequence of
-implementation activities. It is derived from the welcome guide, RFCs 0001-0017,
-ADRs 001-005, and the formal-verification design document in this branch.
+implementation activities. It is derived from the welcome guide, RFCs
+0001-0017, ADRs 001-005, and the formal-verification design document in this
+branch.
 
 The roadmap follows the current documentation style guidance:
 
@@ -61,7 +62,8 @@ worker-orchestrator contract hardening belongs inside 1.1.1.
 
 - [x] 1.1.1. Add worker-orchestrator transport for remote tool catalogue fetch
   and generic remote tool execution.
-  - See [RFC 0001 §Migration Plan](./rfcs/0001-expose-mcp-tool-definitions.md#migration-plan).
+  - See
+    [RFC 0001 §Migration Plan](./rfcs/0001-expose-mcp-tool-definitions.md#migration-plan).
   - Tracks [Issue #12](https://github.com/leynos/axinite/issues/12).
   - Define the catalogue and generic execution transport through one shared
     worker-orchestrator boundary module or equivalent typed contract, rather
@@ -89,7 +91,8 @@ worker-orchestrator contract hardening belongs inside 1.1.1.
     unified tool surface.
 - [x] 1.1.4. Add hosted-mode tests for schema fidelity and execution routing.
   Requires 1.1.3.
-  - See [RFC 0001 §Migration Plan](./rfcs/0001-expose-mcp-tool-definitions.md#migration-plan).
+  - See
+    [RFC 0001 §Migration Plan](./rfcs/0001-expose-mcp-tool-definitions.md#migration-plan).
   - Tracks the worker-orchestrator parity portion of
     [Issue #16](https://github.com/leynos/axinite/issues/16).
   - Success: tests fail if required MCP fields disappear or are rewritten
@@ -104,8 +107,8 @@ normal contract for active WASM tools.
 Learning opportunity: verify how much provider-specific schema shaping can be
 done without losing guest-defined semantics.
 
-Dependencies: depends on 1.1 for the shared remote-catalogue shape and informs 2.3
-by tightening the contract around active WASM tools.
+Dependencies: depends on 1.1 for the shared remote-catalogue shape and informs
+2.3 by tightening the contract around active WASM tools.
 
 - [x] 1.2.1. Audit and fix WASM registration paths so every active tool
       publishes `ToolDefinition.parameters`.
@@ -142,15 +145,15 @@ by tightening the contract around active WASM tools.
 
 ### 1.3. Multi-file skill bundles
 
-Objective: replace the effective single-file skill model with a validated bundle
-format and a narrow file-access surface.
+Objective: replace the effective single-file skill model with a validated
+bundle format and a narrow file-access surface.
 
 Learning opportunity: measure whether progressive disclosure is sufficient for
 multi-file skills without widening the generic filesystem surface.
 
-Dependencies: independent of 1.1 and 1.2 at the transport layer, but should land
-before 2.2 so codemode and later automation can rely on richer skill content
-packaging.
+Dependencies: independent of 1.1 and 1.2 at the transport layer, but should
+land before 2.2 so codemode and later automation can rely on richer skill
+content packaging.
 
 - [x] 1.3.1. Implement `.skill` archive validation and extraction.
   - See
@@ -207,8 +210,8 @@ capability mediation, redaction, or approval boundaries.
 Objective: let axinite use confidential service endpoints on behalf of WASM
 tools without exposing raw URLs to the extension or the model.
 
-Learning opportunity: validate whether endpoint confidentiality can coexist with
-understandable approvals and useful diagnostics.
+Learning opportunity: validate whether endpoint confidentiality can coexist
+with understandable approvals and useful diagnostics.
 
 Dependencies: depends on 1.2 for the stricter WASM contract and informs 2.3 by
 establishing host-owned transport assembly for sensitive requests.
@@ -296,8 +299,8 @@ on after 2.3 and 3.2 settle.
 
 ### 2.3. Provenance-enforced intent execution
 
-Objective: replace plugin-controlled secret placement with host-assembled intent
-execution and provenance-aware policy.
+Objective: replace plugin-controlled secret placement with host-assembled
+intent execution and provenance-aware policy.
 
 Learning opportunity: test whether a stable intent vocabulary can stay legible
 to users while still being strict enough for enforceable policy decisions.
@@ -488,8 +491,8 @@ can be rolled out cautiously and observed directly.
 Objective: replace the in-process memory path with a local sidecar that owns
 extraction, recall, and structured memory storage.
 
-Learning opportunity: compare shadow-mode recall and latency against the current
-workspace search path before switching user-facing retrieval.
+Learning opportunity: compare shadow-mode recall and latency against the
+current workspace search path before switching user-facing retrieval.
 
 Dependencies: independent from 2.2, but should land before 3.2 if the provider
 backend is expected to rely on richer memory recall during long-running
@@ -543,8 +546,8 @@ sessions.
 
 ### 3.2. OpenAI Responses over WebSocket
 
-Objective: add a stateful provider backend that supports multi-turn tool calling
-and server-side compaction over a persistent WebSocket session.
+Objective: add a stateful provider backend that supports multi-turn tool
+calling and server-side compaction over a persistent WebSocket session.
 
 Learning opportunity: determine whether a stateful provider session model fits
 axinite's agent loop better than transcript replay for long-running tool-heavy
@@ -612,14 +615,14 @@ rather than bypassing the memory path it introduces.
 
 ### 3.3. Memory projection tiers and promotion rules
 
-Objective: extend the memory sidecar with explicit projection classes, epistemic
-status, observer/subject scope, and promotion rules so recall distinguishes
-trusted facts from hypothesized inferences.
+Objective: extend the memory sidecar with explicit projection classes,
+epistemic status, observer/subject scope, and promotion rules so recall
+distinguishes trusted facts from hypothesized inferences.
 
 Learning opportunity: determine whether layered recall (profile, fact, summary,
-episode) produces meaningfully better context than single-tier vector retrieval,
-and whether batched extraction materially reduces per-message extraction
-overhead.
+episode) produces meaningfully better context than single-tier vector
+retrieval, and whether batched extraction materially reduces per-message
+extraction overhead.
 
 Dependencies: depends on 3.1 for the sidecar architecture, extraction pipeline,
 and Qdrant/Oxigraph storage; informs 2.4 by defining the promotion boundaries
@@ -692,9 +695,9 @@ deliver better evidence packs than projection-layer recall alone, and whether
 dual-path extraction plus dual-mode expansion gating are worth their added
 operational complexity.
 
-Dependencies: depends on 3.1 for the sidecar architecture and stores; depends on
-3.3 for the normative projection classes, epistemic states, and projection-layer
-filtering rules.
+Dependencies: depends on 3.1 for the sidecar architecture and stores; depends
+on 3.3 for the normative projection classes, epistemic states, and
+projection-layer filtering rules.
 
 - [ ] 3.4.1. Materialize episode nodes, semantic carriers, and theme nodes with
       durable provenance and temporal edges.
@@ -766,8 +769,8 @@ stable prefix maximizes cache hits across providers.
 
 Learning opportunity: measure prompt cache hit rates before and after the
 stable-prefix restructuring to validate the cost and latency benefit, and
-determine whether per-job prefix freeze scope is the right default for WebSocket
-Responses sessions.
+determine whether per-job prefix freeze scope is the right default for
+WebSocket Responses sessions.
 
 Dependencies: depends on 3.2 for the Responses session model that
 per-provider-session freeze scope would align with; informs 3.1 by routing
@@ -992,17 +995,17 @@ output modes, and stability promises before 4.3.2-4.3.4.
 
 ### 4.4. Execution truth ledger and action provenance
 
-Objective: add an append-only execution ledger that records system-level actions
-independently of the conversation transcript, and expose the ledger as a
-first-class operator surface.
+Objective: add an append-only execution ledger that records system-level
+actions independently of the conversation transcript, and expose the ledger as
+a first-class operator surface.
 
 Learning opportunity: determine which action categories produce the most useful
 audit signal for operators, and whether completion-claim verification adds
 genuine trust value or produces excessive noise.
 
 Dependencies: informs 2.4 by storing policy decision artefacts; informs 2.5 by
-storing delegation events; builds on 3.2 for provider-event recording; builds on
-4.2 for hook-inspection seams.
+storing delegation events; builds on 3.2 for provider-event recording; builds
+on 4.2 for hook-inspection seams.
 
 - [ ] 4.4.1. Add the append-only ledger table to both PostgreSQL and libSQL
       backends.
@@ -1060,9 +1063,9 @@ storing delegation events; builds on 3.2 for provider-event recording; builds on
 ### 4.5. Feature flags for progressive front-end rollout
 
 Objective: add a lightweight feature-flag delivery mechanism so the backend can
-declare which front-end capabilities are enabled, the browser can gate rendering
-accordingly, and operators can toggle flags at runtime without restarting the
-gateway.
+declare which front-end capabilities are enabled, the browser can gate
+rendering accordingly, and operators can toggle flags at runtime without
+restarting the gateway.
 
 Learning opportunity: validate whether per-flag environment variables, operator
 overrides, and subsystem-derived defaults provide sufficient control for
@@ -1070,8 +1073,8 @@ progressive feature rollout without introducing complex targeting or
 percentage-based activation.
 
 Dependencies: independent of other Phase 4 tasks, but provides a foundation for
-Phase 6 front-end features (canvas hosting, advanced media handling) to roll out
-behind flags.
+Phase 6 front-end features (canvas hosting, advanced media handling) to roll
+out behind flags.
 
 - [ ] 4.5.1. Add per-flag environment variable parsing and registry
       initialization in `GatewayChannel` or a dedicated config module.
@@ -1257,8 +1260,8 @@ without splintering attachment semantics or weakening gateway boundaries.
 
 ### 6.1. Canvas hosting
 
-Objective: add agent-driven canvas hosting with placement, resizing, and runtime
-mutation support inside the existing web control surface.
+Objective: add agent-driven canvas hosting with placement, resizing, and
+runtime mutation support inside the existing web control surface.
 
 Learning opportunity: validate how much agent-controlled UI can be exposed
 without giving runtime code ambient authority over the host page.
@@ -1268,8 +1271,8 @@ rendered inside canvas surfaces, but can land independently of provider
 selection work.
 
 Outstanding design decisions: requires a companion RFC for canvas authority,
-widget transport, placement persistence, asset loading, and isolation boundaries
-before 6.1.2-6.1.4.
+widget transport, placement persistence, asset loading, and isolation
+boundaries before 6.1.2-6.1.4.
 
 - [ ] 6.1.1. Implement the canvas session contract, event model, and placement
       persistence, and record the contract in a companion RFC.
@@ -1311,8 +1314,8 @@ contract, and benefits from 6.1 if canvas surfaces are later used to present
 rich media results.
 
 Outstanding design decisions: requires a companion RFC for attachment caching,
-provenance, transformation policy, and per-channel capability negotiation before
-6.2.2-6.2.4.
+provenance, transformation policy, and per-channel capability negotiation
+before 6.2.2-6.2.4.
 
 - [ ] 6.2.1. Implement a unified media ingest and caching pipeline covering
       images, PDFs, forwarded attachment downloads, and rich-text embedded
@@ -1366,8 +1369,8 @@ resulting runtime satisfies the following product-level outcomes:
 - operators can install, supervise, inspect, and control axinite through first
   class service, health, hook, and CLI workflows;
 - model choice, compaction policy, reasoning visibility, citations, canvas
-  hosting, and rich media handling are explicit runtime capabilities rather than
-  implicit or surface-specific behaviour;
+  hosting, and rich media handling are explicit runtime capabilities rather
+  than implicit or surface-specific behaviour;
 - intent contracts declare inspectable, diffable constraints at every scope, and
   fail-closed gate evaluation blocks rather than permits unauthorized actions;
 - an append-only execution ledger records system-level truth independently of
@@ -1413,8 +1416,8 @@ host-matching contract used by installer- and allowlist-adjacent code.
 
 ### 7.3. Bounded checking for allowlist and host-matcher semantics
 
-Objective: use Kani where the highest-value invariants are small, deterministic,
-security-critical, and close to crate-internal helpers.
+Objective: use Kani where the highest-value invariants are small,
+deterministic, security-critical, and close to crate-internal helpers.
 
 Learning opportunity: determine whether Axinite can freeze one shared
 host-matching contract for both the WASM and sandbox allowlists before adding a
@@ -1515,12 +1518,12 @@ production code have already converged on one matcher contract.
 ### 7.1. Formal-verification infrastructure and workflow split
 
 Objective: add the repository structure, tool runners, and CI split needed for
-Kani, Stateright, Proptest, and later Verus without weakening the existing test,
-coverage, or end-to-end workflows.
+Kani, Stateright, Proptest, and later Verus without weakening the existing
+test, coverage, or end-to-end workflows.
 
-Learning opportunity: determine how much proof-oriented coverage Axinite can add
-while keeping local execution predictable and keeping non-Cargo proof tools out
-of the default Rust path.
+Learning opportunity: determine how much proof-oriented coverage Axinite can
+add while keeping local execution predictable and keeping non-Cargo proof tools
+out of the default Rust path.
 
 Dependencies: independent of the earlier roadmap phases; unlocks 7.2-7.5.
 

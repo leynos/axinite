@@ -1,12 +1,19 @@
 # LLM Trace Fixtures
 
-Trace fixtures are JSON files that script LLM behaviour for deterministic E2E testing. The `TraceLlm` provider (`tests/support/trace_llm.rs`) replays these canned responses in order, allowing tests to exercise the full agent loop -- tool dispatch, safety layer, context accumulation -- without calling a real LLM.
+Trace fixtures are JSON files that script LLM behaviour for deterministic E2E
+testing. The `TraceLlm` provider (`tests/support/trace_llm.rs`) replays these
+canned responses in order, allowing tests to exercise the full agent loop --
+tool dispatch, safety layer, context accumulation -- without calling a real LLM.
 
-Traces can be **handwritten** or **recorded** from a live session using the `RecordingLlm` wrapper (`src/llm/recording.rs`). Recorded traces include additional fields (memory snapshots, HTTP exchanges, expected tool results) that enable fully deterministic replay.
+Traces can be **handwritten** or **recorded** from a live session using the
+`RecordingLlm` wrapper (`src/llm/recording.rs`). Recorded traces include
+additional fields (memory snapshots, HTTP exchanges, expected tool results)
+that enable fully deterministic replay.
 
 ## Trace Format
 
-A trace is a model name and a list of **turns**. Each turn pairs a user message with the LLM response steps that follow it.
+A trace is a model name and a list of **turns**. Each turn pairs a user message
+with the LLM response steps that follow it.
 
 ```json
 {
@@ -18,7 +25,13 @@ A trace is a model name and a list of **turns**. Each turn pairs a user message 
         {
           "response": {
             "type": "tool_calls",
-            "tool_calls": [{ "id": "c1", "name": "write_file", "arguments": {"path": "/tmp/test.txt", "content": "hello"} }],
+            "tool_calls": [
+              {
+                "id": "c1",
+                "name": "write_file",
+                "arguments": { "path": "/tmp/test.txt", "content": "hello" }
+              }
+            ],
             "input_tokens": 60, "output_tokens": 20
           }
         },
@@ -37,7 +50,13 @@ A trace is a model name and a list of **turns**. Each turn pairs a user message 
         {
           "response": {
             "type": "tool_calls",
-            "tool_calls": [{ "id": "c2", "name": "write_file", "arguments": {"path": "/tmp/test.txt", "content": "goodbye"} }],
+            "tool_calls": [
+              {
+                "id": "c2",
+                "name": "write_file",
+                "arguments": { "path": "/tmp/test.txt", "content": "goodbye" }
+              }
+            ],
             "input_tokens": 100, "output_tokens": 20
           }
         },
@@ -54,11 +73,15 @@ A trace is a model name and a list of **turns**. Each turn pairs a user message 
 }
 ```
 
-`TestRig::run_trace()` drives the entire conversation automatically -- no test code needed to send user messages.
+`TestRig::run_trace()` drives the entire conversation automatically -- no test
+code needed to send user messages.
 
 ### Legacy flat format
 
-For backward compatibility, traces with a top-level `"steps"` array (no `"turns"`) are accepted. They are deserialized as a single turn with a placeholder user message. Existing fixtures work unchanged; test code provides the user message via `rig.send_message()`.
+For backward compatibility, traces with a top-level `"steps"` array (no
+`"turns"`) are accepted. They are deserialized as a single turn with a
+placeholder user message. Existing fixtures work unchanged; test code provides
+the user message via `rig.send_message()`.
 
 ```json
 {
@@ -93,60 +116,71 @@ For backward compatibility, traces with a top-level `"steps"` array (no `"turns"
 
 ### Top-level fields
 
-| Field | Type | Required | Description |
-|-------|------|----------|-------------|
-| `model_name` | string | yes | Identifier returned by `LlmProvider::model_name()`. Convention: `{category}-{scenario}` (e.g. `spot-smoke-greeting`, `advanced-tool-error-recovery`). |
-| `turns` | array | yes* | List of turns. Each turn has `user_input` (string) and `steps` (array of response steps). |
-| `memory_snapshot` | array | no | Workspace memory documents captured before the recording session. Replay should restore these before running the trace. Each entry has `path` (string) and `content` (string). |
-| `http_exchanges` | array | no | HTTP request/response pairs recorded during the session, in order. During replay, the `ReplayingHttpInterceptor` returns these instead of making real HTTP requests. |
-| `expects` | object | no | Declarative expectations verified after replay. See [Expects fields](#expects-fields). |
+| Field             | Type   | Required | Description                                                                                                                                                                    |
+| ----------------- | ------ | -------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `model_name`      | string | yes      | Identifier returned by `LlmProvider::model_name()`. Convention: `{category}-{scenario}` (e.g. `spot-smoke-greeting`, `advanced-tool-error-recovery`).                          |
+| `turns`           | array  | yes*     | List of turns. Each turn has `user_input` (string) and `steps` (array of response steps).                                                                                      |
+| `memory_snapshot` | array  | no       | Workspace memory documents captured before the recording session. Replay should restore these before running the trace. Each entry has `path` (string) and `content` (string). |
+| `http_exchanges`  | array  | no       | HTTP request/response pairs recorded during the session, in order. During replay, the `ReplayingHttpInterceptor` returns these instead of making real HTTP requests.           |
+| `expects`         | object | no       | Declarative expectations verified after replay. See [Expects fields](#expects-fields).                                                                                         |
 
-*Or `steps` for the legacy flat format (deserialized as a single turn with a placeholder user message). Legacy `steps` are ordered: each `complete()` or `complete_with_tools()` call consumes the next `text`/`tool_calls` step. `user_input` steps are metadata markers and must be skipped during replay. If LLM calls exceed the number of playable steps, `TraceLlm` returns an error.
+*Or `steps` for the legacy flat format (deserialized as a single turn with a
+placeholder user message). Legacy `steps` are ordered: each `complete()` or
+`complete_with_tools()` call consumes the next `text`/`tool_calls` step.
+`user_input` steps are metadata markers and must be skipped during replay. If
+LLM calls exceed the number of playable steps, `TraceLlm` returns an error.
 
 ### Turn fields
 
-| Field | Type | Required | Description |
-|-------|------|----------|-------------|
-| `user_input` | string | yes | The user message that starts this turn. |
-| `steps` | array | yes | Ordered list of LLM response steps for this turn. |
-| `expects` | object | no | Per-turn expectations. Same schema as top-level `expects`. |
+| Field        | Type   | Required | Description                                                |
+| ------------ | ------ | -------- | ---------------------------------------------------------- |
+| `user_input` | string | yes      | The user message that starts this turn.                    |
+| `steps`      | array  | yes      | Ordered list of LLM response steps for this turn.          |
+| `expects`    | object | no       | Per-turn expectations. Same schema as top-level `expects`. |
 
 ### Step fields
 
-| Field | Type | Required | Description |
-|-------|------|----------|-------------|
-| `request_hint` | object | no | Soft validation against the incoming request. Mismatches log a warning but do **not** fail the call. |
-| `response` | object | yes | The canned response for this step. |
-| `expected_tool_results` | array | no | Tool results that appeared in the message context since the previous step. During replay, the test harness can compare actual `Role::Tool` messages against these to verify tool output hasn't changed (regression detection). Each entry has `tool_call_id`, `name`, and `content`. |
+| Field                   | Type   | Required | Description                                                                                                                                                                                                                                                                          |
+| ----------------------- | ------ | -------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `request_hint`          | object | no       | Soft validation against the incoming request. Mismatches log a warning but do **not** fail the call.                                                                                                                                                                                 |
+| `response`              | object | yes      | The canned response for this step.                                                                                                                                                                                                                                                   |
+| `expected_tool_results` | array  | no       | Tool results that appeared in the message context since the previous step. During replay, the test harness can compare actual `Role::Tool` messages against these to verify tool output hasn't changed (regression detection). Each entry has `tool_call_id`, `name`, and `content`. |
 
 ### Request hints
 
-| Field | Type | Description |
-|-------|------|-------------|
-| `last_user_message_contains` | string | Asserts the last `Role::User` message contains this substring. |
-| `min_message_count` | integer | Asserts the message list has at least this many entries. |
+| Field                        | Type    | Description                                                    |
+| ---------------------------- | ------- | -------------------------------------------------------------- |
+| `last_user_message_contains` | string  | Asserts the last `Role::User` message contains this substring. |
+| `min_message_count`          | integer | Asserts the message list has at least this many entries.       |
 
-Hints are intentionally soft -- they help catch wiring mistakes during test development without making traces brittle.
+Hints are intentionally soft -- they help catch wiring mistakes during test
+development without making traces brittle.
 
 ### Determinism requirement
 
-Trace fixtures must produce deterministic results across runs. **Do not use tools whose output varies by time or environment state.** Specifically:
+Trace fixtures must produce deterministic results across runs. **Do not use
+tools whose output varies by time or environment state.** Specifically:
 
 **Avoid:**
+
 - `time` -- output changes every run
 - `list_dir` on directories not created by the trace itself
-- `shell` with commands that depend on system state (e.g. `date`, `ps`, `ls /var`)
+- `shell` with commands that depend on system state (e.g. `date`, `ps`,
+  `ls /var`)
 - `http` -- external endpoints may change or be unavailable
 - `memory_search` unless the trace writes the memory entry first
 
 **Prefer:**
+
 - `echo` -- always returns its input
 - `json` -- deterministic parsing/formatting
 - `write_file` + `read_file` -- self-contained if the trace writes first
 - `memory_write` + `memory_read` -- deterministic if the trace writes first
 - `shell` with deterministic commands (e.g. `echo "hello"`, `printf`)
 
-When a trace needs to exercise a stateful tool (like `list_dir`), have an earlier step create the expected state (e.g. `write_file` to create the directory contents first).
+When a trace needs to exercise a stateful tool (like `list_dir`), have an
+earlier step create the expected state (e.g. `write_file` to create the
+directory contents first).
 
 ### Response types
 
@@ -163,7 +197,9 @@ Responses are tagged via the `type` field.
 }
 ```
 
-Returns a `CompletionResponse` / `ToolCompletionResponse` with no tool calls and `FinishReason::Stop`. If `complete()` is called (not `complete_with_tools()`), this is the only valid response type.
+Returns a `CompletionResponse` / `ToolCompletionResponse` with no tool calls and
+`FinishReason::Stop`. If `complete()` is called (not `complete_with_tools()`),
+this is the only valid response type.
 
 #### `tool_calls` -- one or more tool invocations
 
@@ -182,15 +218,21 @@ Returns a `CompletionResponse` / `ToolCompletionResponse` with no tool calls and
 }
 ```
 
-Returns a `ToolCompletionResponse` with `FinishReason::ToolUse`. The agent loop executes the tool calls against real tool implementations, feeds the results back as tool-result messages, then calls the LLM again (consuming the next step).
+Returns a `ToolCompletionResponse` with `FinishReason::ToolUse`. The agent loop
+executes the tool calls against real tool implementations, feeds the results
+back as tool-result messages, then calls the LLM again (consuming the next
+step).
 
-**Important:** `tool_calls` steps cause real tool execution. The tools run against the actual tool registry, so side effects (file writes, memory operations) happen for real. This is what makes these E2E tests -- the only mock is the LLM itself.
+**Important:** `tool_calls` steps cause real tool execution. The tools run
+against the actual tool registry, so side effects (file writes, memory
+operations) happen for real. This is what makes these E2E tests -- the only
+mock is the LLM itself.
 
-| Field | Type | Description |
-|-------|------|-------------|
-| `id` | string | Unique call ID. Convention: `call_{tool}_{n}`. |
-| `name` | string | Must match a registered tool name (e.g. `echo`, `write_file`, `read_file`, `memory_write`, `shell`). |
-| `arguments` | object | Tool parameters as JSON. Must conform to the tool's `parameters_schema()`. |
+| Field       | Type   | Description                                                                                          |
+| ----------- | ------ | ---------------------------------------------------------------------------------------------------- |
+| `id`        | string | Unique call ID. Convention: `call_{tool}_{n}`.                                                       |
+| `name`      | string | Must match a registered tool name (e.g. `echo`, `write_file`, `read_file`, `memory_write`, `shell`). |
+| `arguments` | object | Tool parameters as JSON. Must conform to the tool's `parameters_schema()`.                           |
 
 #### `user_input` -- user message marker (recording only)
 
@@ -201,39 +243,49 @@ Returns a `ToolCompletionResponse` with `FinishReason::ToolUse`. The agent loop 
 }
 ```
 
-A metadata marker recording what the user said. This does **not** correspond to an LLM call. During replay, `TraceLlm` must skip `user_input` steps and only consume `text`/`tool_calls` steps. These steps are emitted by `RecordingLlm` when it detects new `Role::User` messages between LLM calls.
+A metadata marker recording what the user said. This does **not** correspond to
+an LLM call. During replay, `TraceLlm` must skip `user_input` steps and only
+consume `text`/`tool_calls` steps. These steps are emitted by `RecordingLlm`
+when it detects new `Role::User` messages between LLM calls.
 
 ### Token counts
 
-Every `text` and `tool_calls` response includes `input_tokens` and `output_tokens`. These are synthetic values for cost tracking -- set them to reasonable estimates for your scenario. `user_input` steps do not have token counts.
+Every `text` and `tool_calls` response includes `input_tokens` and
+`output_tokens`. These are synthetic values for cost tracking -- set them to
+reasonable estimates for your scenario. `user_input` steps do not have token
+counts.
 
 ### Expected tool results
 
-When present on a step, `expected_tool_results` lists the tool output that appeared in the message context before this LLM call. Each entry has:
+When present on a step, `expected_tool_results` lists the tool output that
+appeared in the message context before this LLM call. Each entry has:
 
-| Field | Type | Description |
-|-------|------|-------------|
-| `tool_call_id` | string | The `id` of the tool call that produced this result. |
-| `name` | string | The tool name. |
-| `content` | string | The full tool result content as it appeared in the message context. |
+| Field          | Type   | Description                                                         |
+| -------------- | ------ | ------------------------------------------------------------------- |
+| `tool_call_id` | string | The `id` of the tool call that produced this result.                |
+| `name`         | string | The tool name.                                                      |
+| `content`      | string | The full tool result content as it appeared in the message context. |
 
-During replay, after tools execute and before returning the canned LLM response, the test harness should compare actual tool results against these entries. A content mismatch indicates a tool behaviour change (regression).
+During replay, after tools execute and before returning the canned LLM
+response, the test harness should compare actual tool results against these
+entries. A content mismatch indicates a tool behaviour change (regression).
 
 ### Expects fields
 
-The `expects` object can appear at the top level (whole trace) or per-turn. All fields are optional; traces without `expects` work unchanged.
+The `expects` object can appear at the top level (whole trace) or per-turn. All
+fields are optional; traces without `expects` work unchanged.
 
-| Field | Type | Description |
-|-------|------|-------------|
-| `response_contains` | `string[]` | Each must appear in response (case-insensitive). |
-| `response_not_contains` | `string[]` | None may appear in response. |
-| `response_matches` | `string` | Regex that must match response. |
-| `tools_used` | `string[]` | Each tool name must appear in started calls. |
-| `tools_not_used` | `string[]` | None of these may appear. |
-| `all_tools_succeeded` | `bool` | If true, all tools must succeed. |
-| `max_tool_calls` | `usize` | Upper bound on tool call count. |
-| `min_responses` | `usize` | Minimum response count. |
-| `tool_results_contain` | `map<string,string>` | Tool result preview must contain substring. |
+| Field                   | Type                 | Description                                      |
+| ----------------------- | -------------------- | ------------------------------------------------ |
+| `response_contains`     | `string[]`           | Each must appear in response (case-insensitive). |
+| `response_not_contains` | `string[]`           | None may appear in response.                     |
+| `response_matches`      | `string`             | Regex that must match response.                  |
+| `tools_used`            | `string[]`           | Each tool name must appear in started calls.     |
+| `tools_not_used`        | `string[]`           | None of these may appear.                        |
+| `all_tools_succeeded`   | `bool`               | If true, all tools must succeed.                 |
+| `max_tool_calls`        | `usize`              | Upper bound on tool call count.                  |
+| `min_responses`         | `usize`              | Minimum response count.                          |
+| `tool_results_contain`  | `map<string,string>` | Tool result preview must contain substring.      |
 
 Example (top-level):
 
@@ -266,23 +318,25 @@ Example (per-turn):
 }
 ```
 
-`run_recorded_trace("filename.json")` in test code loads the fixture, builds a rig, replays, verifies all expects, and shuts down -- turning recorded trace tests into one-liners.
+`run_recorded_trace("filename.json")` in test code loads the fixture, builds a
+rig, replays, verifies all expects, and shuts down -- turning recorded trace
+tests into one-liners.
 
 ## What gets mocked vs. what runs for real
 
-| Component | Mocked? | Notes |
-|-----------|---------|-------|
-| LLM responses | Yes | `TraceLlm` replays canned responses from the trace |
-| Tool execution | **No** | Real tools run: file I/O, memory ops, shell commands all execute |
-| Outgoing HTTP (from tools) | **Depends** | Mocked when `http_exchanges` present and `ReplayingHttpInterceptor` is wired; real otherwise |
-| Memory/workspace | **Depends** | Pre-seeded from `memory_snapshot` if present; real workspace operations otherwise |
-| Safety layer | **No** | Sanitizer, validator, policy, leak detector all run |
-| Context/message accumulation | **No** | Messages accumulate naturally across turns |
-| Token counting | Partial | Uses synthetic counts from the trace |
+| Component                    | Mocked?     | Notes                                                                                        |
+| ---------------------------- | ----------- | -------------------------------------------------------------------------------------------- |
+| LLM responses                | Yes         | `TraceLlm` replays canned responses from the trace                                           |
+| Tool execution               | **No**      | Real tools run: file I/O, memory ops, shell commands all execute                             |
+| Outgoing HTTP (from tools)   | **Depends** | Mocked when `http_exchanges` present and `ReplayingHttpInterceptor` is wired; real otherwise |
+| Memory/workspace             | **Depends** | Pre-seeded from `memory_snapshot` if present; real workspace operations otherwise            |
+| Safety layer                 | **No**      | Sanitizer, validator, policy, leak detector all run                                          |
+| Context/message accumulation | **No**      | Messages accumulate naturally across turns                                                   |
+| Token counting               | Partial     | Uses synthetic counts from the trace                                                         |
 
 ## Directory structure
 
-```
+```text
 llm_traces/
   simple_text.json          # Minimal single-turn text response
   file_write_read.json      # Write then read a file
@@ -317,15 +371,22 @@ llm_traces/
 
 ## Writing a new trace
 
-1. **Pick a category**: `spot/` for quick smoke tests, `coverage/` for tool/feature coverage, `advanced/` for complex multi-step scenarios.
+1. **Pick a category**: `spot/` for quick smoke tests, `coverage/` for
+   tool/feature coverage, `advanced/` for complex multi-step scenarios.
 
-2. **Name the model**: Use `{category}-{scenario}` (e.g. `spot-tool-echo`, `coverage-shell-echo`).
+2. **Name the model**: Use `{category}-{scenario}` (e.g. `spot-tool-echo`,
+   `coverage-shell-echo`).
 
-3. **Script the conversation**: Think through the turn sequence. Each LLM call is one step. After a `tool_calls` step, the agent executes the tools and calls the LLM again with the results -- that's the next step.
+3. **Script the conversation**: Think through the turn sequence. Each LLM call
+   is one step. After a `tool_calls` step, the agent executes the tools and
+   calls the LLM again with the results -- that's the next step.
 
-4. **Add request hints** on the first step of each turn (at minimum) to catch wiring issues. Later steps often omit hints since the message content depends on tool output.
+4. **Add request hints** on the first step of each turn (at minimum) to catch
+   wiring issues. Later steps often omit hints since the message content
+   depends on tool output.
 
-5. **End each turn with a `text` step** so the agent has a final response to return.
+5. **End each turn with a `text` step** so the agent has a final response to
+   return.
 
 Example -- single-turn trace:
 
@@ -369,7 +430,13 @@ Example -- multi-turn steering:
         {
           "response": {
             "type": "tool_calls",
-            "tool_calls": [{ "id": "c1", "name": "write_file", "arguments": {"path": "/tmp/test.txt", "content": "hello"} }],
+            "tool_calls": [
+              {
+                "id": "c1",
+                "name": "write_file",
+                "arguments": { "path": "/tmp/test.txt", "content": "hello" }
+              }
+            ],
             "input_tokens": 60, "output_tokens": 20
           }
         },
@@ -382,7 +449,13 @@ Example -- multi-turn steering:
         {
           "response": {
             "type": "tool_calls",
-            "tool_calls": [{ "id": "c2", "name": "write_file", "arguments": {"path": "/tmp/test.txt", "content": "goodbye"} }],
+            "tool_calls": [
+              {
+                "id": "c2",
+                "name": "write_file",
+                "arguments": { "path": "/tmp/test.txt", "content": "goodbye" }
+              }
+            ],
             "input_tokens": 100, "output_tokens": 20
           }
         },
@@ -409,7 +482,8 @@ let reqs = llm.captured_requests()?;       // Vec<Vec<ChatMessage>> of all reque
 
 ## TestRig::run_trace()
 
-For traces with multiple turns, `run_trace()` drives the entire conversation automatically:
+For traces with multiple turns, `run_trace()` drives the entire conversation
+automatically:
 
 ```rust
 let trace = LlmTrace::from_file_async("tests/fixtures/llm_traces/advanced/steering.json")
@@ -427,19 +501,23 @@ assert!(!all_responses[0].is_empty(), "Turn 1: no response");
 assert!(!all_responses[1].is_empty(), "Turn 2: no response");
 ```
 
-For legacy flat traces or when you need fine-grained control, use `send_message()` + `wait_for_responses()` directly.
+For legacy flat traces or when you need fine-grained control, use
+`send_message()` + `wait_for_responses()` directly.
 
 ## Recording traces from live sessions
 
-Instead of hand-writing traces, you can record them from a real LLM session using the `RecordingLlm` wrapper (`src/llm/recording.rs`). This captures everything needed for deterministic replay: user inputs, LLM responses, memory state, HTTP exchanges, and tool results.
+Instead of hand-writing traces, you can record them from a real LLM session
+using the `RecordingLlm` wrapper (`src/llm/recording.rs`). This captures
+everything needed for deterministic replay: user inputs, LLM responses, memory
+state, HTTP exchanges, and tool results.
 
 ### Environment variables
 
-| Variable | Required | Default | Description |
-|----------|----------|---------|-------------|
-| `IRONCLAW_RECORD_TRACE` | yes | — | Set to any non-empty value to enable recording. |
-| `IRONCLAW_TRACE_OUTPUT` | no | `./trace_{timestamp}.json` | Output file path for the recorded trace. |
-| `IRONCLAW_TRACE_MODEL_NAME` | no | `recorded-{model}` | The `model_name` field in the trace JSON. |
+| Variable                    | Required | Default                    | Description                                     |
+| --------------------------- | -------- | -------------------------- | ----------------------------------------------- |
+| `IRONCLAW_RECORD_TRACE`     | yes      | —                          | Set to any non-empty value to enable recording. |
+| `IRONCLAW_TRACE_OUTPUT`     | no       | `./trace_{timestamp}.json` | Output file path for the recorded trace.        |
+| `IRONCLAW_TRACE_MODEL_NAME` | no       | `recorded-{model}`         | The `model_name` field in the trace JSON.       |
 
 ### Usage
 
@@ -454,24 +532,35 @@ IRONCLAW_RECORD_TRACE=1 IRONCLAW_TRACE_OUTPUT=my_trace.json cargo run
 IRONCLAW_RECORD_TRACE=1 IRONCLAW_TRACE_MODEL_NAME=regression-auth-flow cargo run
 ```
 
-Run the agent normally, interact with it, then quit. The trace file is written on shutdown.
+Run the agent normally, interact with it, then quit. The trace file is written
+on shutdown.
 
 ### What gets recorded
 
-1. **Memory snapshot** -- all workspace documents are captured before the agent starts, saved in `memory_snapshot`.
-2. **User inputs** -- new `Role::User` messages detected between LLM calls are emitted as `user_input` steps.
-3. **LLM responses** -- every `complete()`/`complete_with_tools()` response is saved as a `text` or `tool_calls` step with `request_hint`.
-4. **Tool results** -- new `Role::Tool` messages between LLM calls are captured in `expected_tool_results` on the next step.
-5. **HTTP exchanges** -- all outgoing HTTP requests from tools are recorded via the `HttpInterceptor` and saved in `http_exchanges`.
+1. **Memory snapshot** -- all workspace documents are captured before the agent
+   starts, saved in `memory_snapshot`.
+2. **User inputs** -- new `Role::User` messages detected between LLM calls are
+   emitted as `user_input` steps.
+3. **LLM responses** -- every `complete()`/`complete_with_tools()` response is
+   saved as a `text` or `tool_calls` step with `request_hint`.
+4. **Tool results** -- new `Role::Tool` messages between LLM calls are captured
+   in `expected_tool_results` on the next step.
+5. **HTTP exchanges** -- all outgoing HTTP requests from tools are recorded via
+   the `HttpInterceptor` and saved in `http_exchanges`.
 
 ### Using a recorded trace for replay
 
 A recorded trace is a superset of the handwritten format. To use it:
 
-1. The replay provider (`TraceLlm`) must skip `user_input` steps -- they are metadata markers, not LLM responses.
-2. If `memory_snapshot` is present, restore workspace documents before running the trace.
-3. If `http_exchanges` is present, wire a `ReplayingHttpInterceptor` into `JobContext.http_interceptor` so tools get pre-recorded HTTP responses instead of making real requests.
-4. If `expected_tool_results` is present on a step, compare actual tool output against recorded values before returning the canned LLM response.
+1. The replay provider (`TraceLlm`) must skip `user_input` steps -- they are
+   metadata markers, not LLM responses.
+2. If `memory_snapshot` is present, restore workspace documents before running
+   the trace.
+3. If `http_exchanges` is present, wire a `ReplayingHttpInterceptor` into
+   `JobContext.http_interceptor` so tools get pre-recorded HTTP responses
+   instead of making real requests.
+4. If `expected_tool_results` is present on a step, compare actual tool output
+   against recorded values before returning the canned LLM response.
 
 ### Example recorded trace
 
@@ -520,4 +609,7 @@ A recorded trace is a superset of the handwritten format. To use it:
 
 ### Backward compatibility
 
-Recorded traces are backward-compatible with handwritten traces. All new fields (`memory_snapshot`, `http_exchanges`, `expected_tool_results`, `user_input` steps) are optional and default to empty. Existing handwritten traces work unchanged.
+Recorded traces are backward-compatible with handwritten traces. All new fields
+(`memory_snapshot`, `http_exchanges`, `expected_tool_results`, `user_input`
+steps) are optional and default to empty. Existing handwritten traces work
+unchanged.

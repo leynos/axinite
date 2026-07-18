@@ -1,9 +1,8 @@
 # Roll out ADR 006 across the remaining dyn-backed async trait families
 
-This ExecPlan (execution plan) is a living document. The sections
-`Constraints`, `Tolerances`, `Risks`, `Progress`, `Surprises & discoveries`,
-`Decision log`, and `Outcomes & retrospective` must be kept up to date as work
-proceeds.
+This ExecPlan (execution plan) is a living document. The sections `Constraints`,
+`Tolerances`, `Risks`, `Progress`, `Surprises & discoveries`, `Decision log`,
+and `Outcomes & retrospective` must be kept up to date as work proceeds.
 
 Status: COMPLETE
 
@@ -18,9 +17,9 @@ consumers while letting implementations move off `#[async_trait]`.
 
 This follow-up plan turns that pilot into a broader refactor. After this work,
 the repository should use one repeatable migration pattern for the remaining
-dyn-backed async interfaces, reduce the direct `#[async_trait]` footprint across
-the highest-value trait families, and preserve the current object-safe API
-surfaces for callers. Success is observable in three ways:
+dyn-backed async interfaces, reduce the direct `#[async_trait]` footprint
+across the highest-value trait families, and preserve the current object-safe
+API surfaces for callers. Success is observable in three ways:
 
 1. The targeted trait families compile and test with their dyn-facing trait
    names unchanged, while their concrete implementations switch to native async
@@ -35,30 +34,26 @@ surfaces for callers. Success is observable in three ways:
 
 The work already done on this branch is documented in
 `docs/execplans/migrate-async-trait.md` and
-`docs/adr-006-dual-trait-pattern-for-dyn-backed-async-interfaces.md`. The
-first file captures the audit history, the pilot families, and the remaining
-blocked traits. The ADR records the accepted migration shape: keep the existing
+`docs/adr-006-dual-trait-pattern-for-dyn-backed-async-interfaces.md`. The first
+file captures the audit history, the pilot families, and the remaining blocked
+traits. The ADR records the accepted migration shape: keep the existing
 dyn-facing trait name on the object-safe boundary, add a `Native*` sibling for
 implementation ergonomics, and bridge the two with a blanket adapter.
 
 Most of the remaining migration surface sits in four clusters:
 
 - Narrow internal traits with limited consumers, such as
-  `LoopDelegate` in `src/agent/agentic_loop.rs`,
-  `SelfRepair` in `src/agent/self_repair.rs`,
-  `TaskHandler` in `src/agent/task.rs`,
-  `ChannelSecretUpdater` in `src/channels/channel.rs`,
-  `HttpInterceptor` in `src/llm/recording.rs`,
-  `CredentialResolver` in `src/sandbox/proxy/http.rs`, and
-  `WasmToolStore` in `src/tools/wasm/storage.rs`.
+  `LoopDelegate` in `src/agent/agentic_loop.rs`, `SelfRepair` in
+  `src/agent/self_repair.rs`, `TaskHandler` in `src/agent/task.rs`,
+  `ChannelSecretUpdater` in `src/channels/channel.rs`, `HttpInterceptor` in
+  `src/llm/recording.rs`, `CredentialResolver` in `src/sandbox/proxy/http.rs`,
+  and `WasmToolStore` in `src/tools/wasm/storage.rs`.
 - Infrastructure-facing extension seams, such as
-  `EmbeddingProvider` in `src/workspace/embeddings.rs`,
-  `NetworkPolicyDecider` in `src/sandbox/proxy/policy.rs`,
-  `Hook` in `src/hooks/hook.rs`,
-  `Observer` in `src/observability/traits.rs`,
-  `Tunnel` in `src/tunnel/mod.rs`,
-  `SecretsStore` in `src/secrets/store.rs`, and
-  `TranscriptionProvider` in `src/transcription/mod.rs`.
+  `EmbeddingProvider` in `src/workspace/embeddings.rs`, `NetworkPolicyDecider`
+  in `src/sandbox/proxy/policy.rs`, `Hook` in `src/hooks/hook.rs`, `Observer` in
+  `src/observability/traits.rs`, `Tunnel` in `src/tunnel/mod.rs`,
+  `SecretsStore` in `src/secrets/store.rs`, and `TranscriptionProvider` in
+  `src/transcription/mod.rs`.
 - High-fanout core extensibility traits, notably
   `Channel`, `Tool`, `LlmProvider`, and `Database`.
 - The supporting documentation set in
@@ -111,40 +106,30 @@ changes, and gate every commit.
 ## Risks
 
 - Risk: the `Database` family combines dyn-backed supertraits with two backends
-  and a large call graph.
-  Severity: high
-  Likelihood: high
-  Mitigation: treat `Database` as the final migration wave, after the narrower
-  infrastructure seams establish a stable pattern for shared boxed-future
-  aliases and blanket adapters.
+  and a large call graph. Severity: high Likelihood: high Mitigation: treat
+  `Database` as the final migration wave, after the narrower infrastructure
+  seams establish a stable pattern for shared boxed-future aliases and blanket
+  adapters.
 
 - Risk: `Tool` and `LlmProvider` have enough downstream implementations and test
   doubles that a naïve mechanical rewrite could create widespread noise.
-  Severity: high
-  Likelihood: medium
-  Mitigation: migrate these families only after extracting a precise inventory
-  of implementations and test scaffolding, then split production adapters from
-  test-only conversions where needed.
+  Severity: high Likelihood: medium Mitigation: migrate these families only
+  after extracting a precise inventory of implementations and test scaffolding,
+  then split production adapters from test-only conversions where needed.
 
 - Risk: native async sibling traits can silently lose the implicit `Send`
-  guarantee that `#[async_trait]` provided.
-  Severity: high
-  Likelihood: medium
+  guarantee that `#[async_trait]` provided. Severity: high Likelihood: medium
   Mitigation: require every migrated native sibling method to return
   `impl Future<...> + Send`, and add compile-time checks or tests in each wave
   where spawned or cross-thread use exists.
 
 - Risk: compile-time gains may be smaller than expected if the refactor lands
-  mostly in low-volume trait families first.
-  Severity: medium
-  Likelihood: medium
-  Mitigation: capture timing evidence per wave and reorder later waves if the
-  early data shows a different high-value target.
+  mostly in low-volume trait families first. Severity: medium Likelihood:
+  medium Mitigation: capture timing evidence per wave and reorder later waves
+  if the early data shows a different high-value target.
 
 - Risk: scope drift will tempt the implementer to "clean up" unrelated async
-  code while touching the same files.
-  Severity: medium
-  Likelihood: high
+  code while touching the same files. Severity: medium Likelihood: high
   Mitigation: keep each commit family-scoped, update `Progress` before each new
   wave, and defer unrelated cleanup unless it directly unblocks a gate.
 
@@ -171,9 +156,9 @@ sample.
 
 ### Milestone 2: Convert the narrow internal dyn-backed traits
 
-Use the pilot pattern on the small internal families first:
-`LoopDelegate`, `SelfRepair`, `TaskHandler`, `ChannelSecretUpdater`,
-`HttpInterceptor`, `CredentialResolver`, and `WasmToolStore`.
+Use the pilot pattern on the small internal families first: `LoopDelegate`,
+`SelfRepair`, `TaskHandler`, `ChannelSecretUpdater`, `HttpInterceptor`,
+`CredentialResolver`, and `WasmToolStore`.
 
 For each family:
 
@@ -198,12 +183,11 @@ tests still pass.
 
 ### Milestone 3: Convert the infrastructure-facing extension seams
 
-Migrate the next tier of traits:
-`EmbeddingProvider`, `NetworkPolicyDecider`, `Hook`, `Observer`, `Tunnel`,
-`SecretsStore`, and `TranscriptionProvider`.
+Migrate the next tier of traits: `EmbeddingProvider`, `NetworkPolicyDecider`,
+`Hook`, `Observer`, `Tunnel`, `SecretsStore`, and `TranscriptionProvider`.
 
-This wave is larger because these interfaces cross more subsystem boundaries and
-have more implementations, but they are still more tractable than the core
+This wave is larger because these interfaces cross more subsystem boundaries
+and have more implementations, but they are still more tractable than the core
 extensibility surfaces. Treat each family as its own commit unless two families
 share the same module and the same gate impact. Reuse the same sibling naming
 and boxing pattern from the pilot and Milestone 2.
@@ -218,13 +202,13 @@ Special handling:
 - `EmbeddingProvider` may sit close to background or multithreaded work, so
   verify the `Send` contract explicitly.
 
-Observable result: these extension seams retain their dyn-facing usage model but
-move the majority of implementation code off `#[async_trait]`.
+Observable result: these extension seams retain their dyn-facing usage model
+but move the majority of implementation code off `#[async_trait]`.
 
 ### Milestone 4: Convert the high-fanout core traits
 
-With the pattern stabilized, tackle the biggest remaining wins:
-`Channel`, `Tool`, `LlmProvider`, and the `Database` family.
+With the pattern stabilized, tackle the biggest remaining wins: `Channel`,
+`Tool`, `LlmProvider`, and the `Database` family.
 
 This milestone is intentionally split into four separate sub-waves. Do not
 attempt them all at once.
@@ -372,64 +356,57 @@ Progress notes:
   `LlmProvider` and `Tool` fixtures on `#[async_trait]` in
   `src/agent/dispatcher.rs` and `src/worker/job.rs`.
 - 2026-03-22: `LoopDelegate` has now been switched to `NativeLoopDelegate`
-  with a blanket adapter in `src/agent/agentic_loop.rs`. The remaining
-  compiler failures in `cargo check --tests` come from the separate
-  `SelfRepair` migration, not from the loop family.
+  with a blanket adapter in `src/agent/agentic_loop.rs`. The remaining compiler
+  failures in `cargo check --tests` come from the separate `SelfRepair`
+  migration, not from the loop family.
 - 2026-03-23: Completed all seven Milestone 2 families:
-  `CredentialResolver` (`src/sandbox/proxy/http.rs`),
-  `ChannelSecretUpdater` (`src/channels/channel.rs` + `http.rs`),
-  `HttpInterceptor` (`src/llm/recording.rs`), and
-  `WasmToolStore` (`src/tools/wasm/storage.rs`).
-  Each was committed atomically after the full quality gate passed.
-  Post-wave footprint: 217 matched lines for `async-trait|async_trait`
-  in `src/`; 150 remaining `#[async_trait]` attribute usages, all in
-  not-yet-migrated families (`Channel`, `Tool`, `LlmProvider`, `Database`,
-  and infrastructure extension seams targeted in Milestone 3).
-  Gates: `cargo fmt` clean, `cargo clippy --all-features` zero warnings,
-  3,066 library tests passed.
+  `CredentialResolver` (`src/sandbox/proxy/http.rs`), `ChannelSecretUpdater`
+  (`src/channels/channel.rs` + `http.rs`), `HttpInterceptor`
+  (`src/llm/recording.rs`), and `WasmToolStore` (`src/tools/wasm/storage.rs`).
+  Each was committed atomically after the full quality gate passed. Post-wave
+  footprint: 217 matched lines for `async-trait|async_trait` in `src/`; 150
+  remaining `#[async_trait]` attribute usages, all in not-yet-migrated families
+  (`Channel`, `Tool`, `LlmProvider`, `Database`, and infrastructure extension
+  seams targeted in Milestone 3). Gates: `cargo fmt` clean,
+  `cargo clippy --all-features` zero warnings, 3,066 library tests passed.
 - 2026-03-23: Completed all six Milestone 3 families:
   `NetworkPolicyDecider` (`src/sandbox/proxy/policy.rs`),
-  `TranscriptionProvider` (`src/transcription/mod.rs` + `openai.rs`),
-  `Hook` (`src/hooks/hook.rs`, `bundled.rs`, `mod.rs`, `registry.rs` +
-  `src/llm/recording.rs` for disambiguation),
-  `EmbeddingProvider` (`src/workspace/embeddings.rs` + `mod.rs`),
-  `Tunnel` (`src/tunnel/mod.rs` + `cloudflare.rs`, `tailscale.rs`,
-  `ngrok.rs`, `custom.rs`, `none.rs`), and
-  `SecretsStore` (`src/secrets/store.rs` + `mod.rs`).
-  `Observer` was skipped as it has only synchronous methods and
-  requires no migration.
-  Each family was committed atomically after the full quality gate passed.
-  Post-wave footprint: 177 matched lines for `async-trait|async_trait`
-  in `src/`; 119 remaining `#[async_trait]` attribute usages, all in
-  not-yet-migrated families (`Channel`, `Tool`, `LlmProvider`, `Database`).
-  Gates: `cargo fmt` clean, `cargo clippy --all-features` zero warnings,
-  3,066 library tests passed.
+  `TranscriptionProvider` (`src/transcription/mod.rs` + `openai.rs`), `Hook`
+  (`src/hooks/hook.rs`, `bundled.rs`, `mod.rs`, `registry.rs` +
+  `src/llm/recording.rs` for disambiguation), `EmbeddingProvider`
+  (`src/workspace/embeddings.rs` + `mod.rs`), `Tunnel` (`src/tunnel/mod.rs` +
+  `cloudflare.rs`, `tailscale.rs`, `ngrok.rs`, `custom.rs`, `none.rs`), and
+  `SecretsStore` (`src/secrets/store.rs` + `mod.rs`). `Observer` was skipped as
+  it has only synchronous methods and requires no migration. Each family was
+  committed atomically after the full quality gate passed. Post-wave footprint:
+  177 matched lines for `async-trait|async_trait` in `src/`; 119 remaining
+  `#[async_trait]` attribute usages, all in not-yet-migrated families
+  (`Channel`, `Tool`, `LlmProvider`, `Database`). Gates: `cargo fmt` clean,
+  `cargo clippy --all-features` zero warnings, 3,066 library tests passed.
 - 2026-03-23: Completed Milestone 4 `Tool` sub-wave. Introduced
   `NativeTool` as the `impl Future` sibling of the dyn-safe `Tool` boundary.
-  Added `ToolFuture<'a, T>` alias for the boxed future so `Arc<dyn Tool>`
-  call sites need no changes. Converted all 64 `#[async_trait] impl Tool for`
-  blocks across 36 files plus the one test-double in `tests/e2e_traces/`.
-  Fixed E0034 ambiguous calls in `build_loop.rs`, `restart.rs`, `tool/tests.rs`,
-  and `registry/tests.rs` using fully qualified `NativeTool::method(...)` syntax.
-  Re-exported `NativeTool` and `ToolFuture` from `tools/mod.rs`.
-  Post-wave footprint: 85 matched lines for `async-trait|async_trait` in
-  `src/`; 51 remaining `#[async_trait]` attribute usages, all in
-  `LlmProvider` family (src/llm/), `Channel` family (src/channels/),
-  and `Database` family (src/db/).
-  Gates: `cargo fmt` clean, `cargo clippy --all-features` zero warnings,
-  3,066 library tests passed.
+  Added `ToolFuture<'a, T>` alias for the boxed future so `Arc<dyn Tool>` call
+  sites need no changes. Converted all 64 `#[async_trait] impl Tool for` blocks
+  across 36 files plus the one test-double in `tests/e2e_traces/`. Fixed E0034
+  ambiguous calls in `build_loop.rs`, `restart.rs`, `tool/tests.rs`, and
+  `registry/tests.rs` using fully qualified `NativeTool::method(...)` syntax.
+  Re-exported `NativeTool` and `ToolFuture` from `tools/mod.rs`. Post-wave
+  footprint: 85 matched lines for `async-trait|async_trait` in `src/`; 51
+  remaining `#[async_trait]` attribute usages, all in `LlmProvider` family
+  (src/llm/), `Channel` family (src/channels/), and `Database` family
+  (src/db/). Gates: `cargo fmt` clean, `cargo clippy --all-features` zero
+  warnings, 3,066 library tests passed.
 - 2026-03-23: Completed Milestone 4 `LlmProvider` sub-wave. Introduced
   `NativeLlmProvider` as the RPITIT sibling of the dyn-safe `LlmProvider`
-  boundary. Added `LlmFuture<'a, T>` alias and blanket adapter. Converted
-  23 `#[async_trait] impl LlmProvider for` blocks across 15 files in
-  `src/llm/`, `src/worker/`, `src/agent/`, `src/testing/`, and
-  `tests/support/`. Added default impls for `list_models` and `model_metadata`
-  so test stubs need not implement them.
-  Post-wave footprint: 33 matched lines for `async-trait|async_trait` in
-  `src/`; 22 remaining `#[async_trait]` attribute usages, all in `Channel`
-  family (src/channels/) and `Database` family (src/db/).
-  Gates: `cargo fmt` clean, `cargo clippy --all-features` zero warnings,
-  3,066 library tests passed.
+  boundary. Added `LlmFuture<'a, T>` alias and blanket adapter. Converted 23
+  `#[async_trait] impl LlmProvider for` blocks across 15 files in `src/llm/`,
+  `src/worker/`, `src/agent/`, `src/testing/`, and `tests/support/`. Added
+  default impls for `list_models` and `model_metadata` so test stubs need not
+  implement them. Post-wave footprint: 33 matched lines for
+  `async-trait|async_trait` in `src/`; 22 remaining `#[async_trait]` attribute
+  usages, all in `Channel` family (src/channels/) and `Database` family
+  (src/db/). Gates: `cargo fmt` clean, `cargo clippy --all-features` zero
+  warnings, 3,066 library tests passed.
 - 2026-03-23: Completed Milestone 4 `Channel` sub-wave. Introduced
   `NativeChannel` as the RPITIT sibling of the dyn-safe `Channel` boundary.
   Added `ChannelFuture<'a, T>` alias and blanket adapter. Multi-reference
@@ -438,45 +415,41 @@ Progress notes:
   `&self` and a second borrowed argument. Default `async { Ok(()) }` bodies
   provided for `send_status`, `broadcast`, and `shutdown`. Converted 10
   `#[async_trait] impl Channel for` blocks across `src/channels/`,
-  `src/testing/`, and `tests/support/`:
-  `HttpChannel`, `ReplChannel`, `SignalChannel`, `WasmChannel`,
-  `SharedWasmChannel`, `RelayChannel`, `GatewayChannel`, `StubChannel`,
-  `TestChannel`, `TestChannelHandle`.
+  `src/testing/`, and `tests/support/`: `HttpChannel`, `ReplChannel`,
+  `SignalChannel`, `WasmChannel`, `SharedWasmChannel`, `RelayChannel`,
+  `GatewayChannel`, `StubChannel`, `TestChannel`, `TestChannelHandle`.
   Post-wave footprint: 24 matched lines for `async-trait|async_trait` in
   `src/`; 22 remaining `#[async_trait]` attribute usages, all in `Database`
-  family (src/db/).
-  Gates: `cargo fmt` clean, `cargo clippy --all-features` zero warnings,
-  3,066 library tests passed.
+  family (src/db/). Gates: `cargo fmt` clean, `cargo clippy --all-features`
+  zero warnings, 3,066 library tests passed.
 - 2026-03-23: Completed Milestone 4 `Database` sub-wave. Converted the entire
   `Database` supertrait family — all 7 sub-traits (`ConversationStore`,
   `JobStore`, `SandboxStore`, `RoutineStore`, `ToolFailureStore`,
-  `WorkspaceStore`, `SettingsStore` already done) plus `Database` itself —
-  plus both backends (PostgreSQL and libSQL across 9 impl files).
-  Pattern: each dyn-safe sub-trait uses `fn<'a>(...) -> DbFuture<'a, T>`;
-  each `Native*` sibling uses RPITIT (`-> impl Future + Send + 'a`); a
-  blanket adapter bridges the two.
-  Ambiguous internal calls resolved using fully-qualified syntax in
+  `WorkspaceStore`, `SettingsStore` already done) plus `Database` itself — plus
+  both backends (PostgreSQL and libSQL across 9 impl files). Pattern: each
+  dyn-safe sub-trait uses `fn<'a>(...) -> DbFuture<'a, T>`; each `Native*`
+  sibling uses RPITIT (`-> impl Future + Send + 'a`); a blanket adapter bridges
+  the two. Ambiguous internal calls resolved using fully-qualified syntax in
   `conversations.rs` (`NativeConversationStore::touch_conversation`) and
   `workspace.rs` (`NativeWorkspaceStore::get_document_by_path`,
   `NativeWorkspaceStore::delete_chunks`). `connect_with_handles` in `mod.rs`
   updated to use `NativeDatabase::run_migrations(&backend)` to resolve E0034.
-  Post-wave footprint: 0 `async-trait|async_trait` matches in `src/**/*.rs`;
-  the `async-trait` crate remains in `Cargo.toml` pending the Milestone 5
-  dependency audit.
-  Gates: `cargo fmt` clean, `cargo clippy --all-features` zero warnings,
-  3,066 library tests passed.
+  Post-wave footprint: 0 `async-trait|async_trait` matches in `src/**/*.rs`; the
+  `async-trait` crate remains in `Cargo.toml` pending the Milestone 5
+  dependency audit. Gates: `cargo fmt` clean, `cargo clippy --all-features`
+  zero warnings, 3,066 library tests passed.
 - 2026-03-23: Refactored `src/channels/repl.rs` (638 lines) into a submodule
   as adjacent housekeeping during the same session: `repl/input.rs` carries
   `SLASH_COMMANDS`, `ReplHelper`, and `EscInterruptHandler`;
   `repl/formatting.rs` carries `make_skin`, `print_help`, and
   `format_json_params`; `repl/mod.rs` retains `ReplChannel`, its
   `NativeChannel` impl, and the existing unit test. This is unrelated to the
-  ADR 006 migration but was performed concurrently and gated with the same
-  ship checklist.
+  ADR 006 migration but was performed concurrently and gated with the same ship
+  checklist.
 
 - 2026-03-24: Completed Milestone 5 (dependency and documentation cleanup).
-  Removed `async-trait` from the direct `[dependencies]` in `Cargo.toml`.
-  Fresh tree audit confirmed:
+  Removed `async-trait` from the direct `[dependencies]` in `Cargo.toml`. Fresh
+  tree audit confirmed:
   - Zero `#[async_trait]` attribute usages in `src/` or `tests/`.
   - Zero `use async_trait` imports anywhere in the codebase.
   - Three doc-comment prose mentions of "async-trait" remain in
@@ -509,10 +482,11 @@ Progress notes:
   `Arc<dyn TaskHandler>`.
 - 2026-03-23: When both `HttpInterceptor` (dyn-safe, boxed-future) and
   `NativeHttpInterceptor` (impl Future) are in scope for a concrete type, test
-  call sites become ambiguous. Resolved by using fully qualified syntax in tests:
-  `NativeHttpInterceptor::method_name(&receiver, ...)`. In one case the receiver
-  was `Arc<RecordingHttpInterceptor>` and needed explicit deref (`&*arc`) because
-  the blanket impl only covers `T: NativeHttpInterceptor`, not `Arc<T>`.
+  call sites become ambiguous. Resolved by using fully qualified syntax in
+  tests: `NativeHttpInterceptor::method_name(&receiver, ...)`. In one case the
+  receiver was `Arc<RecordingHttpInterceptor>` and needed explicit deref
+  (`&*arc`) because the blanket impl only covers `T: NativeHttpInterceptor`, not
+  `Arc<T>`.
 - 2026-03-23: `WasmToolStore` required `cargo fmt` reformatting of the
   blanket adapter body after the edit (it wrapped a long `Box::pin` call).
 - 2026-03-23: `EmbeddingProvider` has a default `embed_batch` implementation
@@ -522,30 +496,31 @@ Progress notes:
   `NativeEmbeddingProvider::embed_batch(self, ...)` fully qualified syntax.
 - 2026-03-23: `SecretsStore::get_decrypted` and `is_accessible` call
   `self.get()` and `self.exists()` internally. After the blanket impl was
-  added, these became ambiguous. Fixed with `NativeSecretsStore::get(self, ...)`
-  and `NativeSecretsStore::exists(self, ...)`.
+  added, these became ambiguous. Fixed with
+  `NativeSecretsStore::get(self, ...)` and
+  `NativeSecretsStore::exists(self, ...)`.
 - 2026-03-23: Several `record_usage` implementations in `SecretsStore` used an
-  unnecessary `<'a>` lifetime parameter (`async fn record_usage<'a>(&'a self,
-  secret_id: Uuid)`) where `secret_id: Uuid` is not a reference. Clippy
-  flagged these; fixed by removing the lifetime in all three backends (postgres,
-  libsql, in_memory).
+  unnecessary `<'a>` lifetime parameter
+  (`async fn record_usage<'a>(&'a self, secret_id: Uuid)`) where
+  `secret_id: Uuid` is not a reference. Clippy flagged these; fixed by removing
+  the lifetime in all three backends (postgres, libsql, in_memory).
 - 2026-03-23: `Observer` (in `src/observability/traits.rs`) is sync-only and
   needed no migration. It was excluded from the Milestone 3 wave.
 - 2026-03-23: rust-analyzer reported E0195 false positives during the
   `Database` sub-wave for the newly converted `sandbox.rs` impl. `cargo check`
   confirmed these were transient mid-migration noise: once all `#[async_trait]`
-  impls of the old dyn-safe traits were replaced with `impl Native*Store` blocks,
-  the errors disappeared. `async fn` in an impl correctly satisfies a
+  impls of the old dyn-safe traits were replaced with `impl Native*Store`
+  blocks, the errors disappeared. `async fn` in an impl correctly satisfies a
   `fn<'a>(...) -> impl Future<...> + 'a` RPITIT trait method.
 - 2026-03-23: `NativeChannel` methods that take multiple borrowed arguments
-  (`respond(&self, msg: &IncomingMessage, ...)`, `send_status(&self, ...,
-  metadata: &serde_json::Value)`, `broadcast(&self, user_id: &str, ...)`)
-  required explicit `'a` lifetime annotations on both `&'a self` and the
-  second reference parameter, with the return changed to
-  `impl Future<...> + Send + 'a`. Using the shorthand `'_` only captures
-  `&self`, which triggered E0477 because the future also captures the second
-  borrow. The same fix applies whenever a `NativeTrait` method takes more than
-  one borrowed argument.
+  (`respond(&self, msg: &IncomingMessage, ...)`,
+  `send_status(&self, ..., metadata: &serde_json::Value)`,
+  `broadcast(&self, user_id: &str, ...)`) required explicit `'a` lifetime
+  annotations on both `&'a self` and the second reference parameter, with the
+  return changed to `impl Future<...> + Send + 'a`. Using the shorthand `'_`
+  only captures `&self`, which triggered E0477 because the future also captures
+  the second borrow. The same fix applies whenever a `NativeTrait` method takes
+  more than one borrowed argument.
 
 ## Decision log
 
@@ -573,28 +548,28 @@ Milestones 1–4 completed on 2026-03-23. Milestone 5 (cleanup) completed on
 
 ### Families migrated
 
-**Milestone 2 — narrow internal traits (7 families):**
-`LoopDelegate`, `SelfRepair`, `TaskHandler`, `ChannelSecretUpdater`,
-`HttpInterceptor`, `CredentialResolver`, `WasmToolStore`.
+**Milestone 2 — narrow internal traits (7 families):** `LoopDelegate`,
+`SelfRepair`, `TaskHandler`, `ChannelSecretUpdater`, `HttpInterceptor`,
+`CredentialResolver`, `WasmToolStore`.
 
 **Milestone 3 — infrastructure extension seams (6 families):**
 `NetworkPolicyDecider`, `TranscriptionProvider`, `Hook`, `EmbeddingProvider`,
 `Tunnel`, `SecretsStore`. `Observer` was sync-only and required no migration.
 
-**Milestone 4 — high-fanout core traits (4 sub-waves):**
-`Tool` (64 impl blocks across 36 files), `LlmProvider` (23 impl blocks across
-15 files), `NativeChannel` (11 impl blocks across 3 directories), and the `Database`
+**Milestone 4 — high-fanout core traits (4 sub-waves):** `Tool` (64 impl blocks
+across 36 files), `LlmProvider` (23 impl blocks across 15 files),
+`NativeChannel` (11 impl blocks across 3 directories), and the `Database`
 family (7 sub-traits × 2 backends across 9 impl files).
 
 ### Post-rollout footprint
 
 Zero production `#[async_trait]` attribute usages remain in `src/`. The
-remaining matches from `rg "async.trait|async_trait" src/` are all prose in
-doc comments (`src/llm/CLAUDE.md`, `src/evaluation/success.rs`,
-`src/channels/wasm/storage.rs`, and `src/db/mod.rs`), not macro invocations.
-The `async-trait` crate has been removed from `Cargo.toml` as a direct
-dependency (Milestone 5, 2026-03-24). It remains as a transitive dependency
-through upstream crates.
+remaining matches from `rg "async.trait|async_trait" src/` are all prose in doc
+comments (`src/llm/CLAUDE.md`, `src/evaluation/success.rs`,
+`src/channels/wasm/storage.rs`, and `src/db/mod.rs`), not macro invocations. The
+`async-trait` crate has been removed from `Cargo.toml` as a direct dependency
+(Milestone 5, 2026-03-24). It remains as a transitive dependency through
+upstream crates.
 
 ### Patterns that emerged
 
@@ -602,8 +577,9 @@ through upstream crates.
    than one borrowed argument (`&self` plus another `&T`), both must carry an
    explicit `'a` lifetime and the return type must be `+ 'a`. The `'_`
    shorthand only captures `&self`, triggering E0477 because the future also
-   captures the second borrow. First hit during the `Channel` migration (`respond`,
-   `send_status`, `broadcast`). Recorded in Surprises and in the project memory.
+   captures the second borrow. First hit during the `Channel` migration
+   (`respond`, `send_status`, `broadcast`). Recorded in Surprises and in the
+   project memory.
 
 2. **E0034 method ambiguity from blanket adapters.** Once a concrete type
    implements both `NativeFoo` directly and `Foo` via the blanket adapter, a
@@ -612,10 +588,10 @@ through upstream crates.
    `EmbeddingProvider` migrations.
 
 3. **E0195 rust-analyzer false positives.** rust-analyzer may report early/late-
-   bound lifetime mismatches on already-converted files mid-migration. These are
-   transient noise caused by not-yet-converted sibling files; `cargo check` is
-   the authoritative gate and correctly shows the errors only in the files still
-   using `#[async_trait]`.
+   bound lifetime mismatches on already-converted files mid-migration. These
+   are transient noise caused by not-yet-converted sibling files; `cargo check`
+   is the authoritative gate and correctly shows the errors only in the files
+   still using `#[async_trait]`.
 
 4. **Default method bodies reduce test-double friction.** Providing
    `async { Ok(()) }` default bodies for optional methods (`send_status`,
@@ -633,6 +609,7 @@ through upstream crates.
 
 Removed `async-trait` from `Cargo.toml` on 2026-03-24 (Milestone 5). A fresh
 tree audit confirmed zero production and zero test uses of the attribute.
-`cargo check --all-features` and `cargo check --no-default-features --features
-libsql` both pass cleanly. Three doc-comment prose mentions that refer to the
-crate by name remain in `src/` and do not constitute a runtime dependency.
+`cargo check --all-features` and
+`cargo check --no-default-features --features libsql` both pass cleanly. Three
+doc-comment prose mentions that refer to the crate by name remain in `src/` and
+do not constitute a runtime dependency.

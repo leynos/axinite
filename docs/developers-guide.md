@@ -8,23 +8,21 @@ For the current system architecture and subsystem boundaries, see
 
 ## 1. Purpose
 
-Linux continuous integration (CI) on this branch now uses `mold` to
-reduce linker time. The
-compile-time reduction plan assumes local contributors can reproduce
-that setup before they measure anything or change build defaults.
+Linux continuous integration (CI) on this branch now uses `mold` to reduce
+linker time. The compile-time reduction plan assumes local contributors can
+reproduce that setup before they measure anything or change build defaults.
 
-This guide documents the required and optional tools for common
-workflows so contributors do not discover missing prerequisites halfway
-through a build.
+This guide documents the required and optional tools for common workflows so
+contributors do not discover missing prerequisites halfway through a build.
 
 ## 2. Supported environments
 
-The repository builds on Linux, macOS, Windows, and Windows Subsystem
-for Linux (WSL). The fastest documented path today is Linux or WSL
-because the current branch already uses `mold` in Linux CI.
+The repository builds on Linux, macOS, Windows, and Windows Subsystem for Linux
+(WSL). The fastest documented path today is Linux or WSL because the current
+branch already uses `mold` in Linux CI.
 
-For compile-time or CI changes, prefer Linux or WSL so local results
-line up with the current CI setup.
+For compile-time or CI changes, prefer Linux or WSL so local results line up
+with the current CI setup.
 
 ## 3. Required tools
 
@@ -41,10 +39,9 @@ Install these tools before running the standard repository commands:
 9. `make`.
 10. Git.
 
-The root crate declares `rust-version = "1.92"` in `Cargo.toml`. The
-repository also includes standalone WebAssembly (WASM) tool and channel
-crates, so WASM tooling is required for more than release-only
-workflows.
+The root crate declares `rust-version = "1.92"` in `Cargo.toml`. The repository
+also includes standalone WebAssembly (WASM) tool and channel crates, so WASM
+tooling is required for more than release-only workflows.
 
 ## 4. Extra tools for the compile-time reduction effort
 
@@ -52,45 +49,44 @@ Install these extra tools for work on the compile-time reduction plan:
 
 1. `/usr/bin/time` or an equivalent timing tool.
 
-`cargo-nextest` is now part of the standard local test path on this
-branch because `make test` uses it for the root crate. The timing tool
-remains specific to the compile-time reduction work.
+`cargo-nextest` is now part of the standard local test path on this branch
+because `make test` uses it for the root crate. The timing tool remains
+specific to the compile-time reduction work.
 
 ## 5. CI build environment
 
 CI jobs in this repository set `CARGO_INCREMENTAL="0"` at the job environment
 level for the `test`, `coverage`, and `mutation-testing` workflows. Incremental
 compilation writes per-crate fingerprint and dependency files into
-`target/debug/incremental` and `target/debug/.fingerprint`. Those artefacts grow
-quickly across builds and are rarely reused across cache boundaries in CI, so
-disabling them keeps the action cache compact and prevents "No space left on
+`target/debug/incremental` and `target/debug/.fingerprint`. Those artefacts
+grow quickly across builds and are rarely reused across cache boundaries in CI,
+so disabling them keeps the action cache compact and prevents "No space left on
 device" failures on hosted runners.
 
 Disk space is also managed explicitly before each build with the
 `jlumbroso/free-disk-space` action. That action removes large optional packages
-(Android SDK, .NET, and Haskell toolchains) before the compile step begins. After
-the build, an `if: always()` trimming step deletes
+(Android SDK, .NET, and Haskell toolchains) before the compile step begins.
+After the build, an `if: always()` trimming step deletes
 `target/debug/incremental`, `target/debug/.fingerprint`, and `target/**/*.d`
 dependency files before the cache is written back to the action store.
 
-The `gag` crate appears as a `[dev-dependencies]` entry in `Cargo.toml`.
-It provides `gag::BufferRedirect::stdout()` to capture standard output
-in tests that assert on printed startup or boot-screen content — for
-example, the
+The `gag` crate appears as a `[dev-dependencies]` entry in `Cargo.toml`. It
+provides `gag::BufferRedirect::stdout()` to capture standard output in tests
+that assert on printed startup or boot-screen content — for example, the
 `print_startup_info_matches_snapshot` test in `src/startup/boot.rs`. The crate
 is compiled only when running tests and has no effect on the production binary.
 
 ### Workflow pins and Dependabot
 
-Dependabot owns the upgrade of GitHub Actions and reusable workflows,
-including calls into `leynos/shared-actions`. Contract tests that assert a
-caller's exact commit SHA create a lockstep dependency: every time Dependabot
-opens a bump PR, the test fails until a human edits the pinned constant to
-match. That defeats the purpose of automated dependency updates and turns a
-routine bump into a manual chore.
+Dependabot owns the upgrade of GitHub Actions and reusable workflows, including
+calls into `leynos/shared-actions`. Contract tests that assert a caller's exact
+commit SHA create a lockstep dependency: every time Dependabot opens a bump PR,
+the test fails until a human edits the pinned constant to match. That defeats
+the purpose of automated dependency updates and turns a routine bump into a
+manual chore.
 
-Contract tests may still verify the *shape* of a reusable-workflow caller.
-They must not verify the specific SHA value.
+Contract tests may still verify the *shape* of a reusable-workflow caller. They
+must not verify the specific SHA value.
 
 - Do assert the workflow references the correct reusable workflow path.
 - Do assert the ref is pinned to a full 40-character commit SHA, not a
@@ -117,8 +113,8 @@ as a test assertion on the SHA string.
 
 ## 6. Optional tools by workflow
 
-These tools are not required for every contributor, but they are needed
-for specific work:
+These tools are not required for every contributor, but they are needed for
+specific work:
 
 - PostgreSQL 15 or newer with `pgvector` for work on the default
   feature set, integration tests, or coverage jobs that use the
@@ -131,8 +127,8 @@ for specific work:
 
 ## 7. Linux and WSL setup
 
-On Linux or WSL, install the required system packages first. The exact
-package manager varies by distribution, but the important pieces are:
+On Linux or WSL, install the required system packages first. The exact package
+manager varies by distribution, but the important pieces are:
 
 - `clang`
 - `mold`
@@ -162,8 +158,7 @@ cargo install cargo-llvm-cov --locked
 
 ## 8. Local mold configuration
 
-The repository now checks in Linux linker settings in
-`.cargo/config.toml`:
+The repository now checks in Linux linker settings in `.cargo/config.toml`:
 
 ```toml
 [target.x86_64-unknown-linux-gnu]
@@ -171,12 +166,12 @@ linker = "clang"
 rustflags = ["-C", "link-arg=-fuse-ld=mold"]
 ```
 
-That means Linux and WSL contributors only need to install `clang` and
-`mold` locally. Cargo will pick up the linker configuration
-automatically for `x86_64-unknown-linux-gnu`.
+That means Linux and WSL contributors only need to install `clang` and `mold`
+locally. Cargo will pick up the linker configuration automatically for
+`x86_64-unknown-linux-gnu`.
 
-Matching shell exports are only needed to override the checked-in
-defaults. Do not assume this setting applies on macOS or Windows.
+Matching shell exports are only needed to override the checked-in defaults. Do
+not assume this setting applies on macOS or Windows.
 
 A quick verification command is:
 
@@ -202,8 +197,8 @@ The current `Makefile` also includes:
   schema and metadata tests.
 - `make test-matrix` to run the broader host test combinations.
 - `make test-cargo` and `make test-matrix-cargo` to keep the old
-  `cargo test` path available when a harness comparison is needed for
-  the root crate.
+  `cargo test` path available when a harness comparison is needed for the root
+  crate.
 - `./scripts/build-wasm-extensions.sh --channels` to rebuild all
   registered channels into the shared `target/wasm-extensions/` cache.
 - `make clean` to remove Cargo build outputs for the root crate and the
@@ -216,9 +211,8 @@ setting `CARGO` or `NEXTEST` in the environment before invoking `make`.
 
 ## 10. Integration test fixture wiring
 
-Integration test harnesses should load fixture-only helpers at the
-harness boundary, instead of routing them through the shared
-`tests/support` facade.
+Integration test harnesses should load fixture-only helpers at the harness
+boundary, instead of routing them through the shared `tests/support` facade.
 
 For example, `tests/e2e_traces.rs` wires fixture helpers like this:
 
@@ -227,78 +221,76 @@ For example, `tests/e2e_traces.rs` wires fixture helpers like this:
 mod fixtures;
 ```
 
-Use `#[path]` when a helper module belongs to one integration harness,
-or to a small subset of harnesses, and including it through
-`tests/support/mod.rs` would cause unrelated test binaries to compile
-dead code. This keeps the compiled module graph honest and avoids
-reintroducing lint-suppression scaffolding for selectively used helper
-items.
+Use `#[path]` when a helper module belongs to one integration harness, or to a
+small subset of harnesses, and including it through `tests/support/mod.rs`
+would cause unrelated test binaries to compile dead code. This keeps the
+compiled module graph honest and avoids reintroducing lint-suppression
+scaffolding for selectively used helper items.
 
 Follow these rules when wiring fixtures into integration tests:
 
 - Place harness-specific fixture helpers under `tests/support/` so they
-  stay near the rest of the shared test support code, even when a
-  single harness owns the module.
+  stay near the rest of the shared test support code, even when a single
+  harness owns the module.
 - Declare the `#[path = "support/<file>.rs"] mod <name>;` include in the
-  top-level harness file such as `tests/e2e_traces.rs`, not in nested
-  test modules.
+  top-level harness file such as `tests/e2e_traces.rs`, not in nested test
+  modules.
 - Import those helpers through `crate::<name>` inside the harness's
-  submodules, so the harness boundary remains the only place that wires
-  the file into the test binary.
+  submodules, so the harness boundary remains the only place that wires the
+  file into the test binary.
 - Keep visibility narrow. Expose only the constants and functions the
-  harness submodules actually consume, and prefer private internal
-  constants when a value exists only to support a helper function.
+  harness submodules actually consume, and prefer private internal constants
+  when a value exists only to support a helper function.
 - Leave a short comment near the `#[path]` declaration when the reason
-  is non-obvious, especially when the module could otherwise be mistaken
-  for a candidate for the shared `support` facade.
+  is non-obvious, especially when the module could otherwise be mistaken for a
+  candidate for the shared `support` facade.
 
 ### CleanupGuard restructuring
 
-`CleanupGuard` now lives in its own `tests/support/cleanup_guard.rs`
-module instead of being defined inside `tests/support/cleanup.rs`, so
-its implementation can be compiled independently of the directory-setup
-helpers. Harness-specific support roots include it only when they
-exercise filesystem cleanup; currently, `tests/support/e2e_traces.rs`
-compiles the full cleanup helpers, while `tests/support/support_unit.rs`
-wires `cleanup_guard.rs` directly as its crate-local `cleanup` module.
+`CleanupGuard` now lives in its own `tests/support/cleanup_guard.rs` module
+instead of being defined inside `tests/support/cleanup.rs`, so its
+implementation can be compiled independently of the directory-setup helpers.
+Harness-specific support roots include it only when they exercise filesystem
+cleanup; currently, `tests/support/e2e_traces.rs` compiles the full cleanup
+helpers, while `tests/support/support_unit.rs` wires `cleanup_guard.rs`
+directly as its crate-local `cleanup` module.
 
 Harnesses that do not perform filesystem cleanup no longer compile
-`cleanup_guard.rs` at all. That narrower wiring eliminated the five
-per-item `#[allow(dead_code)]` attributes that were previously required
-on `PathKind`, `CleanupGuard`, `CleanupGuard::file`,
-`CleanupGuard::dir`, and `setup_test_dir`, without replacing them with
-a module-level suppression.
+`cleanup_guard.rs` at all. That narrower wiring eliminated the five per-item
+`#[allow(dead_code)]` attributes that were previously required on `PathKind`,
+`CleanupGuard`, `CleanupGuard::file`, `CleanupGuard::dir`, and
+`setup_test_dir`, without replacing them with a module-level suppression.
 
-`setup_test_dir_with_suffix` in `tests/support/cleanup.rs` still accepts
-a `&Path` and returns a `String` because the trace fixtures that call it
-serialize the resulting directory into JSON tool arguments. Prefer
-`PathBuf` for new filesystem-facing helpers unless the caller needs a
-UTF-8 string boundary for fixture data or protocol payloads.
+`setup_test_dir_with_suffix` in `tests/support/cleanup.rs` still accepts a
+`&Path` and returns a `String` because the trace fixtures that call it
+serialize the resulting directory into JSON tool arguments. Prefer `PathBuf`
+for new filesystem-facing helpers unless the caller needs a UTF-8 string
+boundary for fixture data or protocol payloads.
 
-Maintenance note: if multiple integration harnesses genuinely need the
-same fixture helper, first confirm that the helper is shared in real
-use, then place it in a dedicated shared support root and wire it
-through harness-local `#[path = "support/<domain>.rs"] mod support;`.
-Do not recreate `tests/support/mod.rs` as a global facade.
+Maintenance note: if multiple integration harnesses genuinely need the same
+fixture helper, first confirm that the helper is shared in real use, then place
+it in a dedicated shared support root and wire it through harness-local
+`#[path = "support/<domain>.rs"] mod support;`. Do not recreate
+`tests/support/mod.rs` as a global facade.
 
 ## 11. Tools-and-config harness support
 
-`tests/support/tools_and_config.rs` is a harness-specific support root
-for the `tools_and_config` integration binary. Keeping that entrypoint
-separate from the broader `tests/support/` graph means the harness only
-compiles the helpers it requires, which keeps the support surface
-honest and avoids dead-code lint suppression.
+`tests/support/tools_and_config.rs` is a harness-specific support root for the
+`tools_and_config` integration binary. Keeping that entrypoint separate from
+the broader `tests/support/` graph means the harness only compiles the helpers
+it requires, which keeps the support surface honest and avoids dead-code lint
+suppression.
 
-The `trace_llm` facade in that module provides a narrowed one-import
-surface for language model (LLM) trace helpers. It exports
-`trace_types::{LlmTrace, TraceExpects}` publicly for test consumers,
-while `trace_json_patch::patch_json_value` is exposed as crate-local
-`pub(crate)` for integration-test fixture helpers. The patch helper is
-not part of the public API, so JSON patch rewrites stay limited to the
-test crate modules that actually use them.
+The `trace_llm` facade in that module provides a narrowed one-import surface
+for language model (LLM) trace helpers. It exports
+`trace_types::{LlmTrace, TraceExpects}` publicly for test consumers, while
+`trace_json_patch::patch_json_value` is exposed as crate-local `pub(crate)` for
+integration-test fixture helpers. The patch helper is not part of the public
+API, so JSON patch rewrites stay limited to the test crate modules that
+actually use them.
 
-The same support root also exposes three `testing_wasm` helpers with
-restricted `pub(crate)` visibility for harness-internal use:
+The same support root also exposes three `testing_wasm` helpers with restricted
+`pub(crate)` visibility for harness-internal use:
 
 - `github_tool_source_dir` resolves the GitHub tool source tree used by
   schema and metadata tests.
@@ -307,134 +299,125 @@ restricted `pub(crate)` visibility for harness-internal use:
 - `metadata_test_runtime` constructs runtime metadata needed when tests
   exercise the tools-and-config harness against that artefact.
 
-These helpers are not exported for external crates. Their narrow
-visibility keeps integration-test fixture helpers limited to the harness
-submodules that actually use them.
+These helpers are not exported for external crates. Their narrow visibility
+keeps integration-test fixture helpers limited to the harness submodules that
+actually use them.
 
 ## 12. Support-unit harness support
 
 `tests/support/support_unit.rs` is a harness-specific support root for
-`tests/support_unit_tests.rs`. It exists so support-module unit tests
-run exactly once, against the same compiled symbols used by other
-harnesses, without duplicating the test code across every `e2e_*.rs`
-binary.
+`tests/support_unit_tests.rs`. It exists so support-module unit tests run
+exactly once, against the same compiled symbols used by other harnesses,
+without duplicating the test code across every `e2e_*.rs` binary.
 
-The root wires these public modules via `#[path]`:
-`assertions`, `cleanup`, `instrumented_llm`, `metrics`, `test_channel`,
-`test_rig`, `trace_llm`, `trace_test_files`, and `trace_types`.
-It also wires `trace_json_patch` and `trace_provider` privately for
-harness-internal use because they are implementation details consumed by
-the public trace helpers.
+The root wires these public modules via `#[path]`: `assertions`, `cleanup`,
+`instrumented_llm`, `metrics`, `test_channel`, `test_rig`, `trace_llm`,
+`trace_test_files`, and `trace_types`. It also wires `trace_json_patch` and
+`trace_provider` privately for harness-internal use because they are
+implementation details consumed by the public trace helpers.
 
-The `cleanup` module is deliberately backed by
-`tests/support/cleanup_guard.rs` rather than the broader
-`tests/support/cleanup.rs` helper set. The support-unit tests exercise
-the guard contract directly, so compiling only the guard keeps the
-harness focused and avoids dead-code suppressions for directory setup
+The `cleanup` module is deliberately backed by `tests/support/cleanup_guard.rs`
+rather than the broader `tests/support/cleanup.rs` helper set. The support-unit
+tests exercise the guard contract directly, so compiling only the guard keeps
+the harness focused and avoids dead-code suppressions for directory setup
 helpers it does not use.
 
-When the `libsql` feature is enabled, the root also defines
-boxed-future type aliases and private wrapper functions for `TestRig`
-and `TraceLlm` async APIs. The `const _:` assertions at the bottom of
-the module compile those signatures without exporting the wrappers as
-test helpers.
+When the `libsql` feature is enabled, the root also defines boxed-future type
+aliases and private wrapper functions for `TestRig` and `TraceLlm` async APIs.
+The `const _:` assertions at the bottom of the module compile those signatures
+without exporting the wrappers as test helpers.
 
 ## 13. E2E-traces harness support
 
 `tests/support/e2e_traces.rs` is a harness-specific support root for
 `tests/e2e_traces.rs`. The binary also wires `tests/support/fixtures.rs`
-directly at its top level because fixture path constants are local to
-this harness.
+directly at its top level because fixture path constants are local to this
+harness.
 
-The support root wires these public modules via `#[path]`:
-`assertions`, `cleanup`, `instrumented_llm`, `metrics`, `test_channel`,
-`test_rig`, `trace_llm`, and `trace_types`. It exposes `routines`
-publicly only when the `libsql` feature is enabled, matching the
-feature-gated routine tests. `trace_json_patch` and `trace_provider`
-remain private implementation modules behind the trace facade. With the
-`libsql` feature enabled, the root also re-exports
-`test_rig::helpers::run_recorded_trace`.
+The support root wires these public modules via `#[path]`: `assertions`,
+`cleanup`, `instrumented_llm`, `metrics`, `test_channel`, `test_rig`,
+`trace_llm`, and `trace_types`. It exposes `routines` publicly only when the
+`libsql` feature is enabled, matching the feature-gated routine tests.
+`trace_json_patch` and `trace_provider` remain private implementation modules
+behind the trace facade. With the `libsql` feature enabled, the root also
+re-exports `test_rig::helpers::run_recorded_trace`.
 
-Under the same feature gate, the root defines boxed-future type aliases
-and private adapter functions that back `const _:` compile-time
-assertions on selected `TestRig`, `TraceLlm`, and `LlmTrace` API
-signatures.
+Under the same feature gate, the root defines boxed-future type aliases and
+private adapter functions that back `const _:` compile-time assertions on
+selected `TestRig`, `TraceLlm`, and `LlmTrace` API signatures.
 
-This root stays separate from `tests/support/mod.rs` because the E2E
-trace binary is the broad replay harness: it needs cleanup, recorded
-trace loading, instrumented LLMs, metrics, routines, and channel
-capture, while many other integration binaries need none of that graph.
-Keeping the graph harness-local prevents unrelated test binaries from
-compiling replay helpers just to share an import path.
+This root stays separate from `tests/support/mod.rs` because the E2E trace
+binary is the broad replay harness: it needs cleanup, recorded trace loading,
+instrumented LLMs, metrics, routines, and channel capture, while many other
+integration binaries need none of that graph. Keeping the graph harness-local
+prevents unrelated test binaries from compiling replay helpers just to share an
+import path.
 
 ## 14. Channels harness support
 
 `tests/support/channels.rs` is a harness-specific support root for the
-`tests/channels.rs` integration binary. It wires
-`tests/support/telegram.rs` as a single public `telegram` module via
-`#[path]` for channel tests that cover Telegram authentication
-behaviour.
+`tests/channels.rs` integration binary. It wires `tests/support/telegram.rs` as
+a single public `telegram` module via `#[path]` for channel tests that cover
+Telegram authentication behaviour.
 
-The root remains separate from `tests/support/mod.rs` because the
-Telegram fixtures are channel-harness details, not general test support.
-Keeping them behind the `channels` binary boundary avoids compiling
-Telegram-specific helper code into unrelated integration binaries.
+The root remains separate from `tests/support/mod.rs` because the Telegram
+fixtures are channel-harness details, not general test support. Keeping them
+behind the `channels` binary boundary avoids compiling Telegram-specific helper
+code into unrelated integration binaries.
 
 ## 15. Infrastructure harness support
 
 `tests/support/infrastructure.rs` is a harness-specific support root for
-`tests/infrastructure.rs`. It wires
-`tests/support/webhook_common.rs` as a public `webhook_helpers` module
-via `#[path]`, so infrastructure tests can reuse common webhook
-primitives without depending on the full webhook-server harness helper
-graph.
+`tests/infrastructure.rs`. It wires `tests/support/webhook_common.rs` as a
+public `webhook_helpers` module via `#[path]`, so infrastructure tests can
+reuse common webhook primitives without depending on the full webhook-server
+harness helper graph.
 
 `tests/support/webhook.rs` is the harness-specific support root for the
 `webhook_server` integration binary. It wires
-`tests/support/webhook_helpers.rs` publicly for webhook-server tests and
-keeps `tests/support/webhook_common.rs` private for the shared route and
-client primitives used by those helpers.
+`tests/support/webhook_helpers.rs` publicly for webhook-server tests and keeps
+`tests/support/webhook_common.rs` private for the shared route and client
+primitives used by those helpers.
 
-`tests/support/webhook_common.rs` intentionally remains a small shared
-helper module rather than a root. It provides `health_routes()`, which
-builds an Axum router with a `GET /health` endpoint, and
-`test_http_client()`, which constructs a `reqwest::Client` with a
-2-second timeout. The `webhook_server` harness consumes those helpers
-through `webhook.rs`, while the `infrastructure` harness consumes them
-through `infrastructure.rs` under the local `webhook_helpers` name.
+`tests/support/webhook_common.rs` intentionally remains a small shared helper
+module rather than a root. It provides `health_routes()`, which builds an Axum
+router with a `GET /health` endpoint, and `test_http_client()`, which
+constructs a `reqwest::Client` with a 2-second timeout. The `webhook_server`
+harness consumes those helpers through `webhook.rs`, while the `infrastructure`
+harness consumes them through `infrastructure.rs` under the local
+`webhook_helpers` name.
 
 This root exists separately from `tests/support/mod.rs` because the
-infrastructure binary only needs the small shared webhook helper
-surface. It must not compile the `webhook_server`-specific startup
-fixture module, and it should not promote those helpers into the shared
-facade merely because two webhook-adjacent harnesses use the same health
-route. The `webhook_server` root is also harness-local because its
-startup helpers belong to that binary's listener lifecycle tests, not to
-general integration-test setup.
+infrastructure binary only needs the small shared webhook helper surface. It
+must not compile the `webhook_server`-specific startup fixture module, and it
+should not promote those helpers into the shared facade merely because two
+webhook-adjacent harnesses use the same health route. The `webhook_server` root
+is also harness-local because its startup helpers belong to that binary's
+listener lifecycle tests, not to general integration-test setup.
 
 ## 16. Trace-LLM harness support
 
-`tests/support/trace_llm_harness.rs` is an unused legacy support root
-kept in case the standalone `tests/trace_llm_tests.rs` harness is
-restored. The current trace LLM tests run through
-`tests/support_unit_tests.rs` via `tests/support/support_unit.rs`, so no
-active test binary wires this root today. If restored, it wires
-`trace_llm` and `trace_types` publicly via `#[path]`, mapped to
-`trace_llm.rs` and `trace_types.rs`, for trace contract tests. It keeps
-`trace_json_patch` and `trace_provider` private behind the trace facade.
+`tests/support/trace_llm_harness.rs` is an unused legacy support root kept in
+case the standalone `tests/trace_llm_tests.rs` harness is restored. The current
+trace LLM tests run through `tests/support_unit_tests.rs` via
+`tests/support/support_unit.rs`, so no active test binary wires this root
+today. If restored, it wires `trace_llm` and `trace_types` publicly via
+`#[path]`, mapped to `trace_llm.rs` and `trace_types.rs`, for trace contract
+tests. It keeps `trace_json_patch` and `trace_provider` private behind the
+trace facade.
 
 The root exists separately from `tests/support/mod.rs` because trace LLM
-contract tests need the trace parser and provider internals without the
-broader E2E test rig, channel capture, cleanup helpers, or metrics
-graph. The same boundary keeps trace JSON patching and LLM trace
-recording types such as `TraceResponse`, `TraceStep`, and
-`TraceToolCall` crate-local to the tests that exercise the trace facade.
+contract tests need the trace parser and provider internals without the broader
+E2E test rig, channel capture, cleanup helpers, or metrics graph. The same
+boundary keeps trace JSON patching and LLM trace recording types such as
+`TraceResponse`, `TraceStep`, and `TraceToolCall` crate-local to the tests that
+exercise the trace facade.
 
 ## 17. Configuration snapshots with EnvContext
 
 The configuration system now supports an explicit snapshot model through
-`crate::config::EnvContext`. Use it whenever a caller already knows the
-exact environment inputs that should participate in config resolution.
+`crate::config::EnvContext`. Use it whenever a caller already knows the exact
+environment inputs that should participate in config resolution.
 
 The intended call pattern is:
 
@@ -446,12 +429,12 @@ The intended call pattern is:
 3. Build config through `Config::from_context(...)` or
    `Config::from_context_with_toml(...)`.
 
-This keeps config resolution deterministic because the policy layer reads
-from an explicit snapshot instead of touching ambient process state while
-it resolves individual sub-configs.
+This keeps config resolution deterministic because the policy layer reads from
+an explicit snapshot instead of touching ambient process state while it
+resolves individual sub-configs.
 
-Use the older ambient entrypoints only when the caller genuinely wants
-them to do the capture work:
+Use the older ambient entrypoints only when the caller genuinely wants them to
+do the capture work:
 
 - `Config::from_env*` captures process env and bootstrap overlays for
   early startup paths.
@@ -461,8 +444,8 @@ them to do the capture work:
   and any flow that already owns a stable input snapshot.
 
 For tests, prefer the helpers in `src/testing/test_utils.rs` or
-`Config::for_testing(...)` instead of mutating `std::env`. That keeps
-tests independent of host machine secrets, keychains, and shell state.
+`Config::for_testing(...)` instead of mutating `std::env`. That keeps tests
+independent of host machine secrets, keychains, and shell state.
 
 ### Monotonic clock seam for duration measurement
 
@@ -481,22 +464,21 @@ pub trait MonotonicClock: Send + Sync {
 
 - **Production:** `StdMonotonicClock` delegates to `Instant::now()`.
 - **Tests:** `FixedMonotonicClock::with_elapsed(duration)` seeds two
-  pre-computed instants so tests can assert the exact elapsed value rather
-  than `> Duration::ZERO`.
+  pre-computed instants so tests can assert the exact elapsed value rather than
+  `> Duration::ZERO`.
 
 Inject the clock via `Arc<dyn MonotonicClock>` and expose a
-`#[cfg(test)] pub(crate) fn new_with_clock(...)` constructor following the
-same dependency injection conventions as `mockable`-backed abstractions.
+`#[cfg(test)] pub(crate) fn new_with_clock(...)` constructor following the same
+dependency injection conventions as `mockable`-backed abstractions.
 
-Use `mockable::Clock` for wall-clock comparisons (cache expiry, scheduling).
-Use `MonotonicClock` when only elapsed duration matters.
+Use `mockable::Clock` for wall-clock comparisons (cache expiry, scheduling). Use
+`MonotonicClock` when only elapsed duration matters.
 
 ## 18. AppBuilder
 
-`AppBuilder` owns the mechanical bootstrap sequence for host startup.
-It constructs `AppComponents` in phase order and keeps activation of
-runtime side effects separate from construction so tests can avoid
-background I/O.
+`AppBuilder` owns the mechanical bootstrap sequence for host startup. It
+constructs `AppComponents` in phase order and keeps activation of runtime side
+effects separate from construction so tests can avoid background I/O.
 
 ### Two-phase bootstrap
 
@@ -512,19 +494,19 @@ let (components, _side_effects) = builder.build_components().await?;
 // _side_effects is intentionally discarded — no background I/O during tests
 ```
 
-The `build_all()` function provides a backward-compatible single-call
-form; it invokes `build_components()` and then
-`side_effects.start()`. The build logic itself lives in
-`phase_build_components`; the assembled runtime is consumed later.
+The `build_all()` function provides a backward-compatible single-call form; it
+invokes `build_components()` and then `side_effects.start()`. The build logic
+itself lives in `phase_build_components`; the assembled runtime is consumed
+later.
 
 - `init_skills()` runs during `build_components()` construction;
   `RuntimeSideEffects::start()` does not load skills.
 
 #### init_skills()
 
-Phase: after tool registry initialization and before extensions.
-Purpose: discover local and installed skills, register their tools into
-the shared `ToolRegistry`, and expose:
+Phase: after tool registry initialization and before extensions. Purpose:
+discover local and installed skills, register their tools into the shared
+`ToolRegistry`, and expose:
 
 - `SkillRegistry` (`Arc<RwLock<...>>`) for mutation by the agent at
   runtime.
@@ -545,12 +527,12 @@ Tests:
 
 The skills sub-system is split into two top-level modules:
 
-| Module | Purpose |
-| --- | --- |
-| `src/skills/bundle/` | ZIP archive sniffing, path parsing, and passive bundle validation |
-| `src/skills/file_read.rs` and `src/skills/file_read/` | Runtime `skill_read_file` response types, bundle-relative path policy, and scoped file I/O |
-| `src/skills/install_source.rs` | Shared blankness and trimming helpers used by install adapters before they choose a source mode |
-| `src/skills/registry/` | In-memory registry; discovery, loading, staged install, removal |
+| Module                                                | Purpose                                                                                         |
+| ----------------------------------------------------- | ----------------------------------------------------------------------------------------------- |
+| `src/skills/bundle/`                                  | ZIP archive sniffing, path parsing, and passive bundle validation                               |
+| `src/skills/file_read.rs` and `src/skills/file_read/` | Runtime `skill_read_file` response types, bundle-relative path policy, and scoped file I/O      |
+| `src/skills/install_source.rs`                        | Shared blankness and trimming helpers used by install adapters before they choose a source mode |
+| `src/skills/registry/`                                | In-memory registry; discovery, loading, staged install, removal                                 |
 
 #### Shared test assertions
 
@@ -580,9 +562,9 @@ they run once instead of being duplicated across every E2E binary.
 
 Table: `AppBuilderFlags` fields and effects.
 
-| Field | Type | Effect |
-| --- | --- | --- |
-| `no_db` | `bool` | Skip database initialization |
+| Field                  | Type              | Effect                                                                                                                                           |
+| ---------------------- | ----------------- | ------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `no_db`                | `bool`            | Skip database initialization                                                                                                                     |
 | `workspace_import_dir` | `Option<PathBuf>` | Directory to import into the workspace on activation; captured at construction so `RuntimeSideEffects::start()` does not re-read the environment |
 
 ## 19. Fast local validation loop
@@ -605,13 +587,13 @@ cargo nextest run --workspace --no-default-features --features libsql \
   2>&1 | tee /tmp/nextest-ironclaw-$(git branch --show-current | tr '/' '-').out
 ```
 
-To compare behaviour against the legacy harness, use `make test-cargo`
-or `make test-matrix-cargo`.
+To compare behaviour against the legacy harness, use `make test-cargo` or
+`make test-matrix-cargo`.
 
 ## 20. Self-repair internals
 
-The agent loop starts the self-repair subsystem in
-`src/agent/agent_loop.rs` as two cooperating background tasks:
+The agent loop starts the self-repair subsystem in `src/agent/agent_loop.rs` as
+two cooperating background tasks:
 
 - `RepairTask` runs the periodic detection-and-repair cycle.
 - A notification forwarder receives `RepairNotification` values and converts
@@ -635,21 +617,21 @@ dual-trait pattern already used elsewhere in the repository:
 
 ### DefaultSelfRepair helper methods
 
-The `DefaultSelfRepair` tool-repair flow is split across a small type alias
-and six helper methods in `src/agent/self_repair/default.rs` and
+The `DefaultSelfRepair` tool-repair flow is split across a small type alias and
+six helper methods in `src/agent/self_repair/default.rs` and
 `src/agent/self_repair/default_repair_helpers.rs`:
 
 Table: Repair subsystem method summaries — signatures and purposes.
 
-| Method | Signature summary | Purpose |
-| --- | --- | --- |
-| `BuilderAndDb` | `type BuilderAndDb<'a> = (&'a Arc<dyn SoftwareBuilder>, &'a Arc<dyn Database>)` | Type alias used by `validate_repair_preconditions` to return the configured builder and store without a long tuple type at the call site. |
-| `validate_repair_preconditions` | `(&self, tool: &BrokenTool) -> Result<BuilderAndDb<'_>, RepairResult>` | Checks that a builder and store are configured before repair starts. Missing dependencies are logged and returned as `RepairResult::ManualRequired` so callers can stop before claiming or mutating repair state. |
-| `build_repair_requirement` | `(tool: &BrokenTool) -> Result<BuildRequirement, RepairError>` | Validates the tool name via `ProjectName::new`, then constructs the `BuildRequirement` carrying the tool name, last error, failure count, WASM tool type, Rust language, and the `http`/`workspace` capability set. Returns `RepairError::Failed` for invalid names. |
-| `handle_build_result` | `(result: BuildResult, tool: &BrokenTool, store: &dyn Database) -> Result<RepairResult, RepairError>` | Inspects the build outcome. On success, it logs, calls `store.mark_tool_repaired`, and returns `RepairResult::Success`; on failure, it logs and returns `RepairResult::Retry` with an attempt-number message. |
-| `attempt_repair_build` | `(tool: &BrokenTool, store: &dyn Database, builder: &dyn SoftwareBuilder, requirement: &BuildRequirement) -> Result<RepairResult, RepairError>` | Invokes `builder.build(requirement)` and delegates the result to `handle_build_result`. Builder-level errors are caught here and converted into `RepairResult::Retry` with a `"Repair build error: …"` message. |
-| `load_persisted_broken_tool` | `(store: &dyn Database, tool: &BrokenTool) -> Result<Option<BrokenTool>, RepairError>` | Reloads the current broken-tool row by name through `store.get_broken_tool_by_name` so repair-attempt limits are enforced against persisted state when available. Database errors are mapped to `RepairError::Failed`. |
-| `execute_repair` | `(&self, tool: &BrokenTool, builder: &dyn SoftwareBuilder, store: &dyn Database) -> Result<RepairResult, RepairError>` | Runs the post-claim repair body: enforces `max_repair_attempts`, builds the repair requirement, increments persisted repair attempts, and delegates the build to `attempt_repair_build`. |
+| Method                          | Signature summary                                                                                                                               | Purpose                                                                                                                                                                                                                                                              |
+| ------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `BuilderAndDb`                  | `type BuilderAndDb<'a> = (&'a Arc<dyn SoftwareBuilder>, &'a Arc<dyn Database>)`                                                                 | Type alias used by `validate_repair_preconditions` to return the configured builder and store without a long tuple type at the call site.                                                                                                                            |
+| `validate_repair_preconditions` | `(&self, tool: &BrokenTool) -> Result<BuilderAndDb<'_>, RepairResult>`                                                                          | Checks that a builder and store are configured before repair starts. Missing dependencies are logged and returned as `RepairResult::ManualRequired` so callers can stop before claiming or mutating repair state.                                                    |
+| `build_repair_requirement`      | `(tool: &BrokenTool) -> Result<BuildRequirement, RepairError>`                                                                                  | Validates the tool name via `ProjectName::new`, then constructs the `BuildRequirement` carrying the tool name, last error, failure count, WASM tool type, Rust language, and the `http`/`workspace` capability set. Returns `RepairError::Failed` for invalid names. |
+| `handle_build_result`           | `(result: BuildResult, tool: &BrokenTool, store: &dyn Database) -> Result<RepairResult, RepairError>`                                           | Inspects the build outcome. On success, it logs, calls `store.mark_tool_repaired`, and returns `RepairResult::Success`; on failure, it logs and returns `RepairResult::Retry` with an attempt-number message.                                                        |
+| `attempt_repair_build`          | `(tool: &BrokenTool, store: &dyn Database, builder: &dyn SoftwareBuilder, requirement: &BuildRequirement) -> Result<RepairResult, RepairError>` | Invokes `builder.build(requirement)` and delegates the result to `handle_build_result`. Builder-level errors are caught here and converted into `RepairResult::Retry` with a `"Repair build error: …"` message.                                                      |
+| `load_persisted_broken_tool`    | `(store: &dyn Database, tool: &BrokenTool) -> Result<Option<BrokenTool>, RepairError>`                                                          | Reloads the current broken-tool row by name through `store.get_broken_tool_by_name` so repair-attempt limits are enforced against persisted state when available. Database errors are mapped to `RepairError::Failed`.                                               |
+| `execute_repair`                | `(&self, tool: &BrokenTool, builder: &dyn SoftwareBuilder, store: &dyn Database) -> Result<RepairResult, RepairError>`                          | Runs the post-claim repair body: enforces `max_repair_attempts`, builds the repair requirement, increments persisted repair attempts, and delegates the build to `attempt_repair_build`.                                                                             |
 
 Only `validate_repair_preconditions` and `execute_repair` access instance
 state. The other helper methods are static associated functions. Their unit
@@ -663,11 +645,11 @@ static associated functions with no shared mutable state. Concurrent calls for
 different tools are therefore safe: each call operates on its own `BrokenTool`
 and `BuildResult` values.
 
-`repair_broken_tool` claims an in-process repair slot for the same
-`tool.name` before calling `store.increment_repair_attempts`. Concurrent calls
-for the same tool through the same `DefaultSelfRepair` instance return
-`RepairResult::Retry` until the active claim is released, so only the claimed
-call increments attempts and may later call `store.mark_tool_repaired`.
+`repair_broken_tool` claims an in-process repair slot for the same `tool.name`
+before calling `store.increment_repair_attempts`. Concurrent calls for the same
+tool through the same `DefaultSelfRepair` instance return `RepairResult::Retry`
+until the active claim is released, so only the claimed call increments
+attempts and may later call `store.mark_tool_repaired`.
 
 The claim is process-local. Distributed callers still need database-level
 idempotency or scheduler-level at-most-once repair semantics if multiple
@@ -691,17 +673,17 @@ tool-repair path:
 
 Table: Self-repair metrics.
 
-| Metric | Type | Labels | Emitted when |
-| --- | --- | --- | --- |
-| `axinite.repair.outcome` | counter | `result="success"` | `handle_build_result` marks a repaired tool successfully |
-| `axinite.repair.outcome` | counter | `result="retry"` | `handle_build_result` receives a failed build result, or `repair_broken_tool` rejects a same-tool repair because a claim is already held |
-| `axinite.repair.outcome` | counter | `result="manual"` | `repair_broken_tool` stops at a precondition path such as missing builder or store |
-| `axinite.repair.error` | counter | `category="claim_poisoned"` | `RepairClaims::claim_tool` cannot lock the process-local claim set because the mutex is poisoned |
-| `axinite.repair.error` | counter | `category="load_persisted"` | `repair_broken_tool` cannot reload persisted broken-tool state |
-| `axinite.repair.error` | counter | `category="requirement_build"` | `execute_repair` cannot build a repair requirement, usually because the tool name is invalid |
-| `axinite.repair.error` | counter | `category="increment_repair_attempts"` | `execute_repair` cannot persist the repair-attempt increment |
-| `axinite.repair.error` | counter | `category="mark_tool_repaired"` | `handle_build_result` cannot mark a successfully rebuilt tool as repaired |
-| `axinite.repair.latency_ms` | histogram | none | `repair_broken_tool` has acquired a claim and is about to return |
+| Metric                      | Type      | Labels                                 | Emitted when                                                                                                                             |
+| --------------------------- | --------- | -------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------- |
+| `axinite.repair.outcome`    | counter   | `result="success"`                     | `handle_build_result` marks a repaired tool successfully                                                                                 |
+| `axinite.repair.outcome`    | counter   | `result="retry"`                       | `handle_build_result` receives a failed build result, or `repair_broken_tool` rejects a same-tool repair because a claim is already held |
+| `axinite.repair.outcome`    | counter   | `result="manual"`                      | `repair_broken_tool` stops at a precondition path such as missing builder or store                                                       |
+| `axinite.repair.error`      | counter   | `category="claim_poisoned"`            | `RepairClaims::claim_tool` cannot lock the process-local claim set because the mutex is poisoned                                         |
+| `axinite.repair.error`      | counter   | `category="load_persisted"`            | `repair_broken_tool` cannot reload persisted broken-tool state                                                                           |
+| `axinite.repair.error`      | counter   | `category="requirement_build"`         | `execute_repair` cannot build a repair requirement, usually because the tool name is invalid                                             |
+| `axinite.repair.error`      | counter   | `category="increment_repair_attempts"` | `execute_repair` cannot persist the repair-attempt increment                                                                             |
+| `axinite.repair.error`      | counter   | `category="mark_tool_repaired"`        | `handle_build_result` cannot mark a successfully rebuilt tool as repaired                                                                |
+| `axinite.repair.latency_ms` | histogram | none                                   | `repair_broken_tool` has acquired a claim and is about to return                                                                         |
 
 Latency starts immediately after the in-process repair claim is acquired, so
 manual precondition exits and duplicate-claim retries do not emit latency.
@@ -711,8 +693,8 @@ of scope for this feature flag.
 ### In-process repair claim tracking
 
 `RepairClaims` (in `src/agent/self_repair/repair_claim.rs`) maintains a
-`Mutex<HashSet<String>>` of tool names whose repair is currently active
-within one `DefaultSelfRepair` instance.
+`Mutex<HashSet<String>>` of tool names whose repair is currently active within
+one `DefaultSelfRepair` instance.
 
 `RepairClaims::claim_tool(tool)` locks the set and:
 
@@ -722,53 +704,53 @@ within one `DefaultSelfRepair` instance.
   (another repair is in progress for the same tool).
 - Returns `Err(RepairError::Failed)` when the mutex is poisoned.
 
-`ToolRepairClaim` is a Resource Acquisition Is Initialization (RAII)
-guard whose `Drop` implementation removes the tool name from the set,
-releasing the claim for subsequent callers.
-Claims are process-local; no distributed locking is performed.
+`ToolRepairClaim` is a Resource Acquisition Is Initialization (RAII) guard whose
+`Drop` implementation removes the tool name from the set, releasing the claim
+for subsequent callers. Claims are process-local; no distributed locking is
+performed.
 
 ### CapturingStore test infrastructure
 
-`CapturingStore` (in `src/testing/null_db/capturing_store/`) is the
-primary test double for `DefaultSelfRepair` integration tests. PR `#168`
-added the following members:
+`CapturingStore` (in `src/testing/null_db/capturing_store/`) is the primary
+test double for `DefaultSelfRepair` integration tests. PR `#168` added the
+following members:
 
 Table: CapturingStore self-repair test additions.
 
-| Member | Kind | Purpose |
-| --- | --- | --- |
-| `Calls::repaired_tools` | `Mutex<Vec<String>>` | Records each tool name passed to `mark_tool_repaired` in call order |
-| `Calls::record_repaired_tool` | async method | Appends a tool name to `repaired_tools`; called by the `NativeToolFailureStore` impl |
-| `CapturingStore::mark_repaired_error` | `SyncMutex<Option<DatabaseError>>` | Holds an optional one-shot error for the next `mark_tool_repaired` call |
-| `CapturingStore::failing_mark_tool_repaired_once` | constructor | Creates a store that fails the first `mark_tool_repaired` call with the given `DatabaseError` |
-| `CapturingStore::take_mark_repaired_error` | private method | Takes and clears the stored error; subsequent calls delegate to `self.inner` |
+| Member                                            | Kind                               | Purpose                                                                                       |
+| ------------------------------------------------- | ---------------------------------- | --------------------------------------------------------------------------------------------- |
+| `Calls::repaired_tools`                           | `Mutex<Vec<String>>`               | Records each tool name passed to `mark_tool_repaired` in call order                           |
+| `Calls::record_repaired_tool`                     | async method                       | Appends a tool name to `repaired_tools`; called by the `NativeToolFailureStore` impl          |
+| `CapturingStore::mark_repaired_error`             | `SyncMutex<Option<DatabaseError>>` | Holds an optional one-shot error for the next `mark_tool_repaired` call                       |
+| `CapturingStore::failing_mark_tool_repaired_once` | constructor                        | Creates a store that fails the first `mark_tool_repaired` call with the given `DatabaseError` |
+| `CapturingStore::take_mark_repaired_error`        | private method                     | Takes and clears the stored error; subsequent calls delegate to `self.inner`                  |
 
 The `NativeToolFailureStore` impl for `CapturingStore` in
 `src/testing/null_db/capturing_store/delegation.rs` now handles
-`mark_tool_repaired` directly: it records the call, checks for a
-pending error via `take_mark_repaired_error()`, and either returns the
-error or delegates to `self.inner`.
+`mark_tool_repaired` directly: it records the call, checks for a pending error
+via `take_mark_repaired_error()`, and either returns the error or delegates to
+`self.inner`.
 
-Unit tests for `handle_build_result` use `failing_mark_tool_repaired_once`
-to verify that database errors during repair marking are propagated as
+Unit tests for `handle_build_result` use `failing_mark_tool_repaired_once` to
+verify that database errors during repair marking are propagated as
 `RepairError::Failed`.
 
 ### Self-repair test helper module
 
-`src/agent/self_repair/default_tests/helpers.rs` provides shared
-constructors for default self-repair unit tests. Exported items:
+`src/agent/self_repair/default_tests/helpers.rs` provides shared constructors
+for default self-repair unit tests. Exported items:
 
 Table: Default self-repair shared test helpers.
 
-| Item | Kind | Purpose |
-| --- | --- | --- |
-| `stub_broken_tool(name, last_error, repair_attempts)` | function | Constructs a minimal `BrokenTool` with `failure_count = 3` and `Utc::now()` timestamps |
-| `stub_build_requirement()` | function | Returns a `BuildRequirement` for `"test-tool"`, `SoftwareType::WasmTool`, `Language::Rust` |
-| `stub_build_result(is_success, error, iterations, is_registered)` | function | Returns a `BuildResult` with `build_id = Uuid::nil()` and the given outcome fields |
-| `StubBuilderOutcome` | enum | Configures `StubSoftwareBuilder::build` to either return a `BuildResult` or a `ToolError::BuilderFailed` |
-| `StubSoftwareBuilder` | struct | Implements `NativeSoftwareBuilder`; `analyze` and `repair` always error |
-| `FailingRepairStore` | type alias | Alias for `CapturingStore` configured to fail `mark_tool_repaired` |
-| `failing_repair_store()` | function | Constructs a `FailingRepairStore` via `CapturingStore::failing_mark_tool_repaired_once` |
+| Item                                                              | Kind       | Purpose                                                                                                  |
+| ----------------------------------------------------------------- | ---------- | -------------------------------------------------------------------------------------------------------- |
+| `stub_broken_tool(name, last_error, repair_attempts)`             | function   | Constructs a minimal `BrokenTool` with `failure_count = 3` and `Utc::now()` timestamps                   |
+| `stub_build_requirement()`                                        | function   | Returns a `BuildRequirement` for `"test-tool"`, `SoftwareType::WasmTool`, `Language::Rust`               |
+| `stub_build_result(is_success, error, iterations, is_registered)` | function   | Returns a `BuildResult` with `build_id = Uuid::nil()` and the given outcome fields                       |
+| `StubBuilderOutcome`                                              | enum       | Configures `StubSoftwareBuilder::build` to either return a `BuildResult` or a `ToolError::BuilderFailed` |
+| `StubSoftwareBuilder`                                             | struct     | Implements `NativeSoftwareBuilder`; `analyze` and `repair` always error                                  |
+| `FailingRepairStore`                                              | type alias | Alias for `CapturingStore` configured to fail `mark_tool_repaired`                                       |
+| `failing_repair_store()`                                          | function   | Constructs a `FailingRepairStore` via `CapturingStore::failing_mark_tool_repaired_once`                  |
 
 These helpers are `pub(super)` and available only to the sibling test
 submodules declared in `default_tests.rs`.
@@ -785,8 +767,8 @@ When modifying this path, keep three invariants in mind:
 
 ## 21. Database-backed work
 
-For work on the default feature set or PostgreSQL-backed tests, prepare
-a local database with `pgvector` enabled:
+For work on the default feature set or PostgreSQL-backed tests, prepare a local
+database with `pgvector` enabled:
 
 ```bash
 createdb ironclaw
@@ -795,10 +777,8 @@ psql ironclaw -c "CREATE EXTENSION IF NOT EXISTS vector;"
 
 Then set the database connection variable:
 
-Variable: `DATABASE_URL`
-Meaning: PostgreSQL connection URL used by the app.
-Default or rule:
-Required for PostgreSQL-backed work. For local development,
+Variable: `DATABASE_URL` Meaning: PostgreSQL connection URL used by the app.
+Default or rule: Required for PostgreSQL-backed work. For local development,
 `postgres://localhost/ironclaw` is a typical example; include the correct user,
 password, host, port, and database name when a local setup requires them.
 
@@ -813,28 +793,27 @@ different host, user, or password.
 
 ### libSQL test databases
 
-Unit tests that exercise the libSQL backend call
-`LibSqlBackend::new_memory()` rather than `new_local()`. `new_memory()`
-creates a UUID-named file in the OS temp directory so that multiple
-connections within a single test share state, matching production semantics.
-The shared database handle removes that file and its `-wal`/`-shm` sidecars
-automatically when the final clone is dropped, so tests should not leave
-artefacts behind on disk.
+Unit tests that exercise the libSQL backend call `LibSqlBackend::new_memory()`
+rather than `new_local()`. `new_memory()` creates a UUID-named file in the OS
+temp directory so that multiple connections within a single test share state,
+matching production semantics. The shared database handle removes that file and
+its `-wal`/`-shm` sidecars automatically when the final clone is dropped, so
+tests should not leave artefacts behind on disk.
 
-Do **not** use `new_local()` in unit tests; reserve it for integration tests
-or tests that specifically require filesystem-path behaviour.
+Do **not** use `new_local()` in unit tests; reserve it for integration tests or
+tests that specifically require filesystem-path behaviour.
 
 ### LibSqlDatabase shared handles
 
-`LibSqlBackend` owns an `Arc<LibSqlDatabase>` rather than a raw libSQL
-database handle. That wrapper exists for two reasons:
+`LibSqlBackend` owns an `Arc<LibSqlDatabase>` rather than a raw libSQL database
+handle. That wrapper exists for two reasons:
 
 - satellite stores such as the secrets and WASM stores can call
-  `shared_db()` and open their own per-operation connections without
-  reopening a different database
+  `shared_db()` and open their own per-operation connections without reopening
+  a different database
 - temp-file-backed test databases created by `new_memory()` keep their
-  cleanup metadata on the shared handle, so the `.db`, `-wal`, and `-shm`
-  files live until the final shared owner is dropped
+  cleanup metadata on the shared handle, so the `.db`, `-wal`, and `-shm` files
+  live until the final shared owner is dropped
 
 If a constructor or store used to accept a backend directly and now accepts
 `Arc<LibSqlDatabase>`, that is usually a signal that it should share the same
@@ -843,19 +822,18 @@ underlying file while creating its own connections via
 
 ### Type-change propagation through store constructors
 
-The `Arc<libsql::Database>` → `Arc<LibSqlDatabase>` change propagates to
-every store that previously held a raw `Arc<libsql::Database>`. Each
-affected constructor now accepts `Arc<LibSqlDatabase>`:
+The `Arc<libsql::Database>` → `Arc<LibSqlDatabase>` change propagates to every
+store that previously held a raw `Arc<libsql::Database>`. Each affected
+constructor now accepts `Arc<LibSqlDatabase>`:
 
-| Store | Field | Constructor parameter |
-| --- | --- | --- |
-| `LibSqlSecretsStore` | `db: Arc<LibSqlDatabase>` | `new(db: Arc<LibSqlDatabase>, …)` |
-| `LibSqlWasmChannelStore` | `db: Arc<LibSqlDatabase>` | `new(db: Arc<LibSqlDatabase>)` |
-| `LibSqlWasmToolStore` | `db: Arc<LibSqlDatabase>` | `new(db: Arc<LibSqlDatabase>)` |
+| Store                    | Field                     | Constructor parameter             |
+| ------------------------ | ------------------------- | --------------------------------- |
+| `LibSqlSecretsStore`     | `db: Arc<LibSqlDatabase>` | `new(db: Arc<LibSqlDatabase>, …)` |
+| `LibSqlWasmChannelStore` | `db: Arc<LibSqlDatabase>` | `new(db: Arc<LibSqlDatabase>)`    |
+| `LibSqlWasmToolStore`    | `db: Arc<LibSqlDatabase>` | `new(db: Arc<LibSqlDatabase>)`    |
 
 The shared handle is obtained at startup via `LibSqlBackend::shared_db()`,
-which now returns `Arc<LibSqlDatabase>` instead of
-`Arc<libsql::Database>`:
+which now returns `Arc<LibSqlDatabase>` instead of `Arc<libsql::Database>`:
 
 ```rust
 // Obtaining the shared handle (unchanged call site):
@@ -867,27 +845,26 @@ let channel_store = LibSqlWasmChannelStore::new(Arc::clone(&db));
 let tool_store    = LibSqlWasmToolStore::new(Arc::clone(&db));
 ```
 
-The `busy_timeout` PRAGMA that each store previously ran after connecting
-is now applied once inside `LibSqlDatabase::connect()`, so it is no longer
-necessary — and must not be duplicated — in individual store
-`connect()` methods.
+The `busy_timeout` PRAGMA that each store previously ran after connecting is
+now applied once inside `LibSqlDatabase::connect()`, so it is no longer
+necessary — and must not be duplicated — in individual store `connect()`
+methods.
 
 ## 22. Dispatcher architecture
 
 The dispatcher orchestrates interactive chat turns by preparing an LLM
-`ReasoningContext`, running a tool-aware agentic loop, and converting
-loop outcomes into channel outputs. It is decomposed into three layers:
+`ReasoningContext`, running a tool-aware agentic loop, and converting loop
+outcomes into channel outputs. It is decomposed into three layers:
 
 - Core (`src/agent/dispatcher/core.rs`): builds `RunLoopCtx`, computes
   iteration thresholds via `compute_loop_thresholds` (yields
-  `LoopThresholds { nudge_at, force_text_at, hard_ceiling }`), prepares
-  prompts and active skills, and instantiates the delegate.
+  `LoopThresholds { nudge_at, force_text_at, hard_ceiling }`), prepares prompts
+  and active skills, and instantiates the delegate.
 - Delegate (`src/agent/dispatcher/delegate/*`): per-iteration control
-  — prompt refresh; LLM call; three-phase tool pipeline (preflight →
-  execution → post-flight); status, auth, and image-sentinel handling.
+  — prompt refresh; LLM call; three-phase tool pipeline (preflight → execution
+  → post-flight); status, auth, and image-sentinel handling.
 - Types (`src/agent/dispatcher/types.rs`): pure helpers and simple data
-  structures (preview truncation, auth parsing, message compaction,
-  etc.).
+  structures (preview truncation, auth parsing, message compaction, etc.).
 
 Key dispatcher APIs:
 
@@ -899,16 +876,16 @@ Key dispatcher APIs:
   - `hard_ceiling`: safety net that guarantees termination.
 - `ChatDelegate` (internal): implements preflight, execution
   (inline/parallel), ordered post-flight folding, status broadcast, and
-  auth/image side-effects. Status-send failures are explicitly ignored
-  to keep UI updates non-blocking.
+  auth/image side-effects. Status-send failures are explicitly ignored to keep
+  UI updates non-blocking.
 
 ### Dispatcher and Thread-Operations Module Structure
 
-PR `#122` decomposed two previously monolithic source files into
-cohesive submodule trees. Developers extending or debugging the chat
-agent should navigate to the modules described below rather than to the
-old monolithic dispatcher and thread-operations files, which have since
-been split into focused units.
+PR `#122` decomposed two previously monolithic source files into cohesive
+submodule trees. Developers extending or debugging the chat agent should
+navigate to the modules described below rather than to the old monolithic
+dispatcher and thread-operations files, which have since been split into
+focused units.
 
 ### Control flow
 
@@ -939,8 +916,8 @@ sequenceDiagram
 Use `Database::persist_terminal_result_and_status(...)` with
 `TerminalJobPersistence` whenever a code path must persist a terminal
 `agent_jobs` status and its matching `job_events` row as one unit. This is the
-required path for worker completion, failure, and stuck transitions where
-split writes could leave the job row and event history out of sync.
+required path for worker completion, failure, and stuck transitions where split
+writes could leave the job row and event history out of sync.
 
 Prefer the atomic path instead of separate status and event writes when all of
 the following are true:
@@ -964,8 +941,8 @@ Backend expectations:
 - PostgreSQL executes both writes inside one database transaction and rolls
   back both records on any failure
 - libSQL follows the same all-or-nothing contract for the writes it owns, but
-  callers should still treat transport or replication failures as failed
-  writes and retry or roll back their in-memory state accordingly
+  callers should still treat transport or replication failures as failed writes
+  and retry or roll back their in-memory state accordingly
 - `NullDatabase` accepts the call for tests and does not persist anything
 
 Common failure modes include missing jobs, non-direct jobs, constraint
@@ -1010,15 +987,15 @@ pip install -e .
 playwright install --with-deps chromium
 ```
 
-The CI E2E workflow currently builds the binary once, uploads it, and
-fans test slices out from that artefact. That is the closest existing
-example of the faster compile-once, fan-out pattern the compile-time
-reduction effort should reuse elsewhere.
+The CI E2E workflow currently builds the binary once, uploads it, and fans test
+slices out from that artefact. That is the closest existing example of the
+faster compile-once, fan-out pattern the compile-time reduction effort should
+reuse elsewhere.
 
 ## 24. Trace and channel test helpers
 
-Three test-support helpers were added in PR `#161` to make replay-based
-and worker-coverage tests more reliable.
+Three test-support helpers were added in PR `#161` to make replay-based and
+worker-coverage tests more reliable.
 
 ### `load_trace_with_mutation`
 
@@ -1036,11 +1013,11 @@ where
     F: FnOnce(&mut serde_json::Value),
 ```
 
-Reads a JSON trace fixture, deserializes it into a `serde_json::Value`,
-applies the caller-supplied `mutate` closure, then re-deserializes the
-result into `LlmTrace`. Use this instead of `LlmTrace::from_file_async`
-whenever a fixture field must be patched at test time, for example,
-rewriting a hard-coded temp path to the actual test directory:
+Reads a JSON trace fixture, deserializes it into a `serde_json::Value`, applies
+the caller-supplied `mutate` closure, then re-deserializes the result into
+`LlmTrace`. Use this instead of `LlmTrace::from_file_async` whenever a fixture
+field must be patched at test time, for example, rewriting a hard-coded temp
+path to the actual test directory:
 
 ```rust
 let trace = load_trace_with_mutation("fixtures/trace.json", |v| {
@@ -1061,10 +1038,10 @@ Signature:
 pub async fn tool_calls_completed_async(&self) -> Vec<(String, bool)>
 ```
 
-Returns the same data as the synchronous `tool_calls_completed` but
-acquires the status-event mutex with `.await` instead of `try_lock`.
-Use the async variant inside polling loops where status events may still
-be arriving when the assertion runs:
+Returns the same data as the synchronous `tool_calls_completed` but acquires
+the status-event mutex with `.await` instead of `try_lock`. Use the async
+variant inside polling loops where status events may still be arriving when the
+assertion runs:
 
 ```rust
 let completed = tokio::time::timeout(Duration::from_secs(5), async {
@@ -1090,31 +1067,31 @@ Signature:
 pub async fn captured_status_events_async(&self) -> Vec<StatusUpdate>
 ```
 
-Returns a snapshot of all captured `StatusUpdate` values using an
-awaited mutex lock. Use this when contention on the status-event lock
-would cause `captured_status_events` to panic.
+Returns a snapshot of all captured `StatusUpdate` values using an awaited mutex
+lock. Use this when contention on the status-event lock would cause
+`captured_status_events` to panic.
 
 ## 25. WASM-specific notes
 
-The repository contains standalone WASM tool and channel crates. Normal
-host commands such as `cargo check`, `make typecheck`, and `make test`
-no longer auto-build Telegram or other channels from `build.rs`.
+The repository contains standalone WASM tool and channel crates. Normal host
+commands such as `cargo check`, `make typecheck`, and `make test` no longer
+auto-build Telegram or other channels from `build.rs`.
 
-The WASM toolchain is still required when intentionally building
-extensions because:
+The WASM toolchain is still required when intentionally building extensions
+because:
 
 - the GitHub WASM tool is built explicitly by `make build-github-tool-wasm`,
 - channel build scripts rely on `cargo-component` and `wasm-tools`,
 - some CI and release paths rebuild channels or tools as part of
   validation.
 
-When WIT files, standalone extension crates, or channel code change,
-expect the WASM toolchain requirements to apply even if the main focus
-is the Rust host crate. Common explicit commands are:
+When WIT files, standalone extension crates, or channel code change, expect the
+WASM toolchain requirements to apply even if the main focus is the Rust host
+crate. Common explicit commands are:
 
 - `./scripts/build-wasm-extensions.sh --channels` for all registered
-  channels; by default it reuses the shared
-  `target/wasm-extensions/` target dir,
+  channels; by default it reuses the shared `target/wasm-extensions/` target
+  dir,
 - `./channels-src/telegram/build.sh` for a deployable Telegram channel
   artefact with `telegram.wasm`.
 
@@ -1147,46 +1124,42 @@ async fn github_wasm_fixture_executes() -> anyhow::Result<()> {
 
 ### Internal execution helpers
 
-`WasmToolWrapper::configure_store` lives in
-`src/tools/wasm/wrapper.rs` as a private method on
-`WasmToolWrapper`.
+`WasmToolWrapper::configure_store` lives in `src/tools/wasm/wrapper.rs` as a
+private method on `WasmToolWrapper`.
 
-It encapsulates the Wasmtime `Store<StoreData>` lifecycle setup for a
-single tool call: store construction, fuel injection when fuel is
-enabled, epoch-deadline configuration, and resource-limiter wiring. The
-method accepts `host_credentials: Vec<ResolvedHostCredential>` and
-returns `Result<Store<StoreData>, WasmError>`, so `execute_sync` does
-not need to manage store setup details directly.
+It encapsulates the Wasmtime `Store<StoreData>` lifecycle setup for a single
+tool call: store construction, fuel injection when fuel is enabled,
+epoch-deadline configuration, and resource-limiter wiring. The method accepts
+`host_credentials: Vec<ResolvedHostCredential>` and returns
+`Result<Store<StoreData>, WasmError>`, so `execute_sync` does not need to
+manage store setup details directly.
 
-When adding new store-level configuration, extend
-`configure_store` rather than `execute_sync`. That includes new
-Wasmtime resource limits, deadline handling, or per-call credential
-state that must be present in the `StoreData` before component
-instantiation.
+When adding new store-level configuration, extend `configure_store` rather than
+`execute_sync`. That includes new Wasmtime resource limits, deadline handling,
+or per-call credential state that must be present in the `StoreData` before
+component instantiation.
 
-`build_fallback_guidance` lives in
-`src/tools/wasm/wrapper/metadata.rs` and replaces the former
-`build_tool_hint`.
+`build_fallback_guidance` lives in `src/tools/wasm/wrapper/metadata.rs` and
+replaces the former `build_tool_hint`.
 
 It constructs the fallback-guidance string attached to
-`WasmError::ToolReturnedError` after a tool call fails. The guidance
-always starts with `Retry using the advertised tool schema for
-{tool_name}.` and uses the advertised `ToolDefinition.parameters`
-schema as the canonical language model (LLM)-facing contract. If
-available, it also appends the guest's exported description and a
-compact advertised-schema excerpt so the retry path stays aligned with
-the already-advertised schema instead of relying on a separately
+`WasmError::ToolReturnedError` after a tool call fails. The guidance always
+starts with `Retry using the advertised tool schema for {tool_name}.` and uses
+the advertised `ToolDefinition.parameters` schema as the canonical language
+model (LLM)-facing contract. If available, it also appends the guest's exported
+description and a compact advertised-schema excerpt so the retry path stays
+aligned with the already-advertised schema instead of relying on a separately
 transported one.
 
-In signature terms, it takes the tool name, the advertised schema
-value, the guest tool interface, and the mutable store, then returns the
-rendered `String`. Long schema excerpts are truncated to the configured
-maximum line length and end with `…`.
+In signature terms, it takes the tool name, the advertised schema value, the
+guest tool interface, and the mutable store, then returns the rendered
+`String`. Long schema excerpts are truncated to the configured maximum line
+length and end with `…`.
 
-Modify `build_fallback_guidance` when the fallback-guidance format,
-labels, truncation rules, or input set needs to change. Do not use it as
-a primary schema-transport mechanism: the canonical schema remains the
-advertised `ToolDefinition.parameters` value.
+Modify `build_fallback_guidance` when the fallback-guidance format, labels,
+truncation rules, or input set needs to change. Do not use it as a primary
+schema-transport mechanism: the canonical schema remains the advertised
+`ToolDefinition.parameters` value.
 
 ## 26. When to use cargo test versus cargo-nextest
 
@@ -1214,11 +1187,10 @@ For the compile-time reduction effort:
 - If builds fail because `wasm-tools` or `cargo-component` is missing,
   reinstall them with `cargo install ... --locked`.
 - If local Linux or WSL timings look much slower than CI, verify that
-  `clang` and `mold` are installed and that `.cargo/config.toml` is
-  present before drawing conclusions.
+  `clang` and `mold` are installed and that `.cargo/config.toml` is present
+  before drawing conclusions.
 - If PostgreSQL-backed tests fail on connection, rerun them with
-  `--no-default-features --features libsql` until the local database is
-  ready.
+  `--no-default-features --features libsql` until the local database is ready.
 - If Playwright is missing browsers, rerun
   `playwright install --with-deps chromium`.
 
@@ -1239,9 +1211,8 @@ Four trait boundaries separate reload policy from I/O:
 - `SecretInjector` — Injects secrets into an environment variable overlay,
   implemented by `DbSecretInjector` for database-backed secrets.
 - `ChannelSecretUpdater` — Propagates rotated or cleared channel secrets
-  without restarting the channel. `HotReloadManager` uses this boundary in
-  step 4 of the reload flow to fan out webhook-secret changes to live
-  channels.
+  without restarting the channel. `HotReloadManager` uses this boundary in step
+  4 of the reload flow to fan out webhook-secret changes to live channels.
 
 Each trait has a native async sibling (`NativeConfigLoader`,
 `NativeListenerController`, `NativeSecretInjector`,
@@ -1251,18 +1222,18 @@ dyn-compatible boxed-future form.
 
 ### HotReloadManager orchestrator
 
-`HotReloadManager` composes the four boundaries and coordinates the
-reload sequence:
+`HotReloadManager` composes the four boundaries and coordinates the reload
+sequence:
 
 1. Inject secrets into the environment overlay
 2. Load new configuration
 3. Restart the HTTP listener if the bind address changed, restart a
-   stopped listener when `channels.http` is present, or call `shutdown()`
-   when `channels.http` is removed, so the live listener is torn down cleanly
+   stopped listener when `channels.http` is present, or call `shutdown()` when
+   `channels.http` is removed, so the live listener is torn down cleanly
 4. Update channel secrets
 
-The manager is created via `create_hot_reload_manager()` which wires
-together the default implementations based on available stores.
+The manager is created via `create_hot_reload_manager()` which wires together
+the default implementations based on available stores.
 
 ### Webhook server lifecycle / listener-based API
 
@@ -1312,33 +1283,31 @@ Adding a new listener controller:
 2. Implement `current_addr()`, `is_running()`, `restart_with_addr()`, and
    `shutdown()`.
 3. Expect `shutdown()` to be called when hot reload removes the HTTP
-   channel configuration, even if the listener address itself did not
-   change beforehand.
+   channel configuration, even if the listener address itself did not change
+   beforehand.
 
 ### Test stubs
 
-The `src/reload/test_stubs.rs` module provides hand-rolled stubs for
-testing:
+The `src/reload/test_stubs.rs` module provides hand-rolled stubs for testing:
 
 - `StubConfigLoader` — Returns a pre-configured config or error.
 - `StubListenerController` — Records restart calls, can simulate failures.
 - `StubSecretInjector` — Records whether `inject()` was called.
 - `SpySecretUpdater` — Records all secret update calls.
 
-Use these in unit tests to verify manager behaviour without real I/O.
-Example usage is in `src/reload/manager/tests.rs`.
+Use these in unit tests to verify manager behaviour without real I/O. Example
+usage is in `src/reload/manager/tests.rs`.
 
 ## 29. WASM tool schema normalization
 
-WASM tools carry a parameter schema that describes their inputs to the
-language model (LLM). The canonical normalization logic lives in
+WASM tools carry a parameter schema that describes their inputs to the language
+model (LLM). The canonical normalization logic lives in
 `src/tools/registry/schema.rs`.
 
 ### When `normalized_schema` returns `None`
 
 [`schema::normalized_schema`] converts a raw `serde_json::Value` into
-`Option<Value>`, returning `None` when the stored schema is effectively
-missing:
+`Option<Value>`, returning `None` when the stored schema is effectively missing:
 
 - JSON `Null`.
 - Empty or whitespace-only strings.
@@ -1347,24 +1316,23 @@ missing:
   (matched by `is_placeholder_schema`).
 
 When normalization yields `None`, the registration path falls through to
-guest-export recovery — the host asks the compiled WASM component for
-its own exported metadata.
+guest-export recovery — the host asks the compiled WASM component for its own
+exported metadata.
 
 ### Two-phase registration flow
 
-WASM tool registration is split between preparation and registry
-insertion. The preparation helpers live in
-`src/tools/registry/wasm_preparation.rs`, and the public registration
-entry points live in `src/tools/registry/loader.rs`.
+WASM tool registration is split between preparation and registry insertion. The
+preparation helpers live in `src/tools/registry/wasm_preparation.rs`, and the
+public registration entry points live in `src/tools/registry/loader.rs`.
 
 #### Preparation pipeline
 
 `prepare_wasm_tool` is the preparation entry point. It accepts a
 `WasmToolRegistration` from the loader, compiles `wasm_bytes` through the
 runtime, gathers credential mappings from the supplied `Capabilities`, builds
-metadata and runtime configuration values, recovers guest metadata when
-needed, applies overrides, and returns a `PreparedWasmTool`. It can return
-`WasmError` from runtime preparation or component validation failures.
+metadata and runtime configuration values, recovers guest metadata when needed,
+applies overrides, and returns a `PreparedWasmTool`. It can return `WasmError`
+from runtime preparation or component validation failures.
 
 - `PreparedWasmTool` is the hand-off object from preparation to registry
   insertion. It contains the runtime-ready `WasmToolWrapper` plus the
@@ -1394,46 +1362,46 @@ rationale and the maintenance rule behind this helper split.
 #### Registration flow
 
 1. **`register_wasm`** — the lower-level entry point. Accepts raw WASM
-   bytes, a pre-compiled runtime, and optional description/schema
-   overrides. It calls `prepare_wasm_tool`, registers the prepared
-   wrapper, and persists credential mappings only after successful
-   registration. Behaviour is unchanged from the monolithic path, except
-   that preparation now returns credential mappings separately.
+   bytes, a pre-compiled runtime, and optional description/schema overrides. It
+   calls `prepare_wasm_tool`, registers the prepared wrapper, and persists
+   credential mappings only after successful registration. Behaviour is
+   unchanged from the monolithic path, except that preparation now returns
+   credential mappings separately.
 
 2. **`register_wasm_from_storage`** — the database-driven entry point.
    Loads the stored tool record and binary with integrity verification,
    normalizes description and schema via `normalized_schema` and
    `normalized_description`, then delegates to `register_wasm`.
 
-`persist_credential_mappings` belongs to this registration phase, not
-the preparation phase. `register_wasm()` invokes it only after the
-registry accepts the prepared wrapper, and `register_wasm_from_storage()`
-reaches it by delegating through the same lower-level flow.
+`persist_credential_mappings` belongs to this registration phase, not the
+preparation phase. `register_wasm()` invokes it only after the registry accepts
+the prepared wrapper, and `register_wasm_from_storage()` reaches it by
+delegating through the same lower-level flow.
 
 #### `SharedCredentialRegistry`
 
-`SharedCredentialRegistry` in `src/tools/wasm/credential_registry.rs`
-is the thread-safe store that aggregates credential mappings from all
-installed WASM tools. The built-in HTTP tool queries it to resolve
-credentials for outgoing requests.
+`SharedCredentialRegistry` in `src/tools/wasm/credential_registry.rs` is the
+thread-safe store that aggregates credential mappings from all installed WASM
+tools. The built-in HTTP tool queries it to resolve credentials for outgoing
+requests.
 
 Key public methods:
 
 - `add_mappings(&self, mappings)` — adds ownerless mappings (no tool
   owner assigned; used by callers without a specific tool identity).
 - `add_mappings_for_tool(&self, tool_name, mappings)` — replaces the
-  named tool's prior mappings with the new set, without touching
-  mappings owned by other tools.
+  named tool's prior mappings with the new set, without touching mappings owned
+  by other tools.
 - `remove_mappings_for_secrets(&self, owner_id, secret_names)` —
-  removes mappings owned by `owner_id` whose `secret_name` matches any
-  of the given names. When `secret_names` is empty all mappings owned
-  by `owner_id` are removed.
+  removes mappings owned by `owner_id` whose `secret_name` matches any of the
+  given names. When `secret_names` is empty all mappings owned by `owner_id`
+  are removed.
 - `remove_mappings_for_tool_secrets(&self, tool_name, secret_names)` —
-  thin alias for `remove_mappings_for_secrets` with explicit
-  owner-scoped semantics.
+  thin alias for `remove_mappings_for_secrets` with explicit owner-scoped
+  semantics.
 - `has_credentials_for_host(&self, host)` — returns `true` if any
-  mapping covers the given host, using the `host_matches_pattern`
-  predicate from `credential_injector`.
+  mapping covers the given host, using the `host_matches_pattern` predicate from
+  `credential_injector`.
 - `find_for_host(&self, host)` — returns all `CredentialMapping` values
   whose host patterns match the given host.
 
@@ -1486,8 +1454,8 @@ sequenceDiagram
 ```
 
 The storage path is the one that exercises schema normalization, because
-backends may persist placeholder or null schemas that must be stripped
-before the guest-export recovery logic can run.
+backends may persist placeholder or null schemas that must be stripped before
+the guest-export recovery logic can run.
 
 ## 30. End-to-end WASM schema regression tests
 
@@ -1498,8 +1466,8 @@ feature because they import the GitHub test helper
 `ironclaw::testing::github_wasm_wrapper`.
 
 `Cargo.toml` declares `required-features = ["test-helpers"]` for the
-`e2e_traces` target, so Cargo skips it gracefully when the feature is
-absent rather than emitting a compile error.
+`e2e_traces` target, so Cargo skips it gracefully when the feature is absent
+rather than emitting a compile error.
 
 ### Running the tests
 
@@ -1540,14 +1508,14 @@ impl NativeLlmProvider for CapturingToolLlm {
 ```
 
 Pass the capturing LLM into `TestRigBuilder::with_llm(…)` and inspect
-`requests` after the first response to assert schema fidelity before any
-tool execution occurs.
+`requests` after the first response to assert schema fidelity before any tool
+execution occurs.
 
 ### HostedCatalogueHarness — hosted schema verification
 
 For the hosted (worker-proxied) path, `HostedCatalogHarness` in
-`src/worker/container/tests/hosted_fidelity.rs` spins up a real Axum
-server that:
+`src/worker/container/tests/hosted_fidelity.rs` spins up a real Axum server
+that:
 
 - serves a controlled `RemoteToolCatalogResponse` at the catalogue route,
 - captures every `ProxyToolCompletionRequest` posted to
@@ -1576,8 +1544,8 @@ async fn my_schema_test(
 }
 ```
 
-Always abort and await the server join handle at the end of the test to
-avoid port leaks between test runs.
+Always abort and await the server join handle at the end of the test to avoid
+port leaks between test runs.
 
 ### Schema verification pattern
 
@@ -1601,9 +1569,9 @@ assert_eq!(
 
 ## 31. Bootstrap migration module
 
-`src/bootstrap/migration.rs` provides all helpers for the one-time
-migrations that move legacy on-disk configuration into the database and
-the environment file.
+`src/bootstrap/migration.rs` provides all helpers for the one-time migrations
+that move legacy on-disk configuration into the database and the environment
+file.
 
 ### Rename-to-.migrated helper
 
@@ -1613,16 +1581,16 @@ A single `pub(super)` function handles all "mark as processed" renames:
 pub(super) fn rename_to_migrated(path: &Path) -> io::Result<()>
 ```
 
-The function appends `.migrated` to the path, logs rename failures at
-`WARN` level, and propagates the `io::Error` to the caller. Call sites
-that treat the rename as non-fatal discard the result explicitly:
+The function appends `.migrated` to the path, logs rename failures at `WARN`
+level, and propagates the `io::Error` to the caller. Call sites that treat the
+rename as non-fatal discard the result explicitly:
 
 ```rust,no_run
 let _ = rename_to_migrated(&path);
 ```
 
-`rename_legacy_bootstrap` is the only call site that additionally emits
-an `INFO` log on success; it does so conditionally:
+`rename_legacy_bootstrap` is the only call site that additionally emits an
+`INFO` log on success; it does so conditionally:
 
 ```rust,no_run
 if rename_to_migrated(&old_bootstrap).is_ok() {
@@ -1635,42 +1603,39 @@ silently swallowing errors inside the helper.
 
 ### Migration entry points
 
-| Function | Visibility | Purpose |
-| --- | --- | --- |
-| `migrate_bootstrap_json_to_env` | `pub(crate)` | Reads `bootstrap.json`, writes `DATABASE_URL` to `.env`, then renames the source file. |
-| `migrate_disk_to_db` | `pub async` | One-time migration of `settings.json` and sidecar JSON files into the database. |
-| `migrate_disk_to_db_from_dir` | `pub(super) async` | Path-injected helper that migrates legacy disk settings from a supplied Ironclaw base directory into the database, then best-effort renames the source file to `.migrated`. |
-| `rename_legacy_bootstrap` | `pub(super)` | Renames `bootstrap.json` to `.migrated`; logs success at `INFO`. |
-| `rename_to_migrated` | `pub(super)` | Low-level rename helper used by all migration paths. |
+| Function                        | Visibility         | Purpose                                                                                                                                                                     |
+| ------------------------------- | ------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `migrate_bootstrap_json_to_env` | `pub(crate)`       | Reads `bootstrap.json`, writes `DATABASE_URL` to `.env`, then renames the source file.                                                                                      |
+| `migrate_disk_to_db`            | `pub async`        | One-time migration of `settings.json` and sidecar JSON files into the database.                                                                                             |
+| `migrate_disk_to_db_from_dir`   | `pub(super) async` | Path-injected helper that migrates legacy disk settings from a supplied Ironclaw base directory into the database, then best-effort renames the source file to `.migrated`. |
+| `rename_legacy_bootstrap`       | `pub(super)`       | Renames `bootstrap.json` to `.migrated`; logs success at `INFO`.                                                                                                            |
+| `rename_to_migrated`            | `pub(super)`       | Low-level rename helper used by all migration paths.                                                                                                                        |
 
 For the rationale behind consolidating the rename helpers, see
 [ADR-010](adr-010-consolidate-bootstrap-rename-helpers.md).
 
 ## 32. Expected follow-up changes
 
-This guide documents the environment as of the current branch. The
-compile-time reduction plan is still expected to change some of the
-standard commands further, especially around shared extension build
-artefacts and CI duplication.
+This guide documents the environment as of the current branch. The compile-time
+reduction plan is still expected to change some of the standard commands
+further, especially around shared extension build artefacts and CI duplication.
 
-When those changes land, this guide must be updated in the same branch
-so local setup instructions stay truthful.
+When those changes land, this guide must be updated in the same branch so local
+setup instructions stay truthful.
 
 - Issue `#35` (PR `#168`): `DefaultSelfRepair::repair_broken_tool` was
   refactored to ≤ 35 lines by extracting `build_repair_requirement`,
-  `handle_build_result`, and `attempt_repair_build` as private static
-  helpers. No functional changes were made. See
-  `src/agent/self_repair/default.rs` and
+  `handle_build_result`, and `attempt_repair_build` as private static helpers.
+  No functional changes were made. See `src/agent/self_repair/default.rs` and
   `src/agent/self_repair/default_tests/`.
 - Self-repair still has architecture follow-up work: in-process repair
-  claim tracking lives in `src/agent/self_repair/repair_claim.rs`, the
-  helper path still calls database operations directly, and several repair
-  errors use `Uuid::nil()` as a placeholder target id. A future design pass
-  should move process-local claim tracking behind an adapter boundary, hide
-  persistence operations behind a repository-style interface, and replace
-  placeholder ids with domain-shaped repair error data. Kani verification of
-  the claim lifecycle remains optional follow-up beyond the current property
-  tests.
+  claim tracking lives in `src/agent/self_repair/repair_claim.rs`, the helper
+  path still calls database operations directly, and several repair errors use
+  `Uuid::nil()` as a placeholder target id. A future design pass should move
+  process-local claim tracking behind an adapter boundary, hide persistence
+  operations behind a repository-style interface, and replace placeholder ids
+  with domain-shaped repair error data. Kani verification of the claim
+  lifecycle remains optional follow-up beyond the current property tests.
 
 ## 33. Phased startup pipeline
 
@@ -1680,19 +1645,18 @@ so local setup instructions stay truthful.
 port-allocation races:
 
 - `start_with_listener(listener: TcpListener)` — accepts a pre-bound
-  listener, merges queued route fragments, resolves the live listener
-  address, and spawns the server.
+  listener, merges queued route fragments, resolves the live listener address,
+  and spawns the server.
 - `restart_with_listener(listener: TcpListener)` — shuts the current server
   down, resolves the new listener's address, and spawns a fresh server.
 
 Tests should pre-bind via `TcpListener::bind("127.0.0.1:0")` and pass the
-result to these helpers instead of relying on `start()` /
-`restart_with_addr()` to pick a free port.
+result to these helpers instead of relying on `start()` / `restart_with_addr()`
+to pick a free port.
 
 ### Workspace store module structure
 
-The libSQL workspace store is split by concern under
-`src/db/libsql/workspace/`:
+The libSQL workspace store is split by concern under `src/db/libsql/workspace/`:
 
 - `mod.rs` owns the `NativeWorkspaceStore` implementation and hybrid-search
   orchestration
@@ -1702,21 +1666,20 @@ The libSQL workspace store is split by concern under
 - `vector_search.rs` owns vector-index and brute-force similarity helpers
 - `tests.rs` keeps cross-module integration coverage for the hybrid pipeline
 
-Prefer adding logic beside the feature it serves rather than growing
-`mod.rs`. Module-local tests should live with the module they exercise, while
-pipeline tests belong in `workspace/tests.rs`.
+Prefer adding logic beside the feature it serves rather than growing `mod.rs`.
+Module-local tests should live with the module they exercise, while pipeline
+tests belong in `workspace/tests.rs`.
 
 ### AppBuilder integration
 
 `phase_build_components` feeds `AppBuilderFlags` derived from `&Cli` to
 `AppBuilder` and returns a `BuiltComponentsContext` containing both the
-completed `AppComponents` and deferred `RuntimeSideEffects`. Downstream
-startup phases pass that context forward intact: they consume
-`AppComponents` while assembling the long-running runtime, and the
-default run path crosses the `side_effects.start()` boundary only
-immediately before the agent loop begins. Extend `AppBuilderFlags` (in
-the `ironclaw` library crate) when a new component must be
-conditionally included at startup, then thread the resulting
+completed `AppComponents` and deferred `RuntimeSideEffects`. Downstream startup
+phases pass that context forward intact: they consume `AppComponents` while
+assembling the long-running runtime, and the default run path crosses the
+`side_effects.start()` boundary only immediately before the agent loop begins.
+Extend `AppBuilderFlags` (in the `ironclaw` library crate) when a new component
+must be conditionally included at startup, then thread the resulting
 `AppComponents` and `RuntimeSideEffects` through the appropriate startup
 context.
 
@@ -1743,67 +1706,67 @@ Ownership boundary:
   flows such as `ironclaw tool`, `ironclaw mcp`, `ironclaw config`,
   `ironclaw memory`, and the hidden worker-oriented commands.
 - `src/startup/` owns the default `run` path. Its phase modules build
-  the shared runtime, start optional services, wire channels, and then
-  enter the long-running agent loop.
+  the shared runtime, start optional services, wire channels, and then enter
+  the long-running agent loop.
 
 #### Parameter objects
 
 The following structs were introduced to keep function arity within the
 project's four-argument limit:
 
-| Struct | Fields | Used by |
-| --- | --- | --- |
-| `UserTurnRequest` | `session`, `thread_id`, `content` | `process_user_input` |
-| `TurnPersistContext<'a>` | `thread_id`, `user_id`, `turn_number` | `persist_tool_calls` |
-| `ToolCallSpec<'a>` | `name`, `params` | `execute_chat_tool_standalone` |
-| `ApprovalCandidate` | `idx`, `tool_call`, `tool` | `build_pending_approval` |
+| Struct                   | Fields                                | Used by                        |
+| ------------------------ | ------------------------------------- | ------------------------------ |
+| `UserTurnRequest`        | `session`, `thread_id`, `content`     | `process_user_input`           |
+| `TurnPersistContext<'a>` | `thread_id`, `user_id`, `turn_number` | `persist_tool_calls`           |
+| `ToolCallSpec<'a>`       | `name`, `params`                      | `execute_chat_tool_standalone` |
+| `ApprovalCandidate`      | `idx`, `tool_call`, `tool`            | `build_pending_approval`       |
 
 #### Dispatcher delegate (`src/agent/dispatcher/delegate/`)
 
-| File | Responsibility |
-| --- | --- |
-| `mod.rs` | `ChatDelegate<'a>` struct plus thin `NativeLoopDelegate` wiring for the stage helpers |
-| `llm_hooks.rs` | Signal checking, pre-LLM call preparation, LLM invocation with context-length retry, text-response sanitization, and message compaction |
-| `loops.rs` | Shared agentic-loop orchestration glue that hands each stage off to the focused helpers |
-| `tool_exec/mod.rs` | Tool preflight classification, parallel or sequential execution, post-flight result folding, approval detection, and auth handling |
-| `tool_exec/preflight.rs` | Hook dispatch, approval gating, and runnable-batch construction |
-| `tool_exec/execution.rs` | Inline and parallel tool execution plus standalone tool-call execution helpers |
-| `tool_exec/postflight.rs` | Result folding, auth-barrier handling, preview generation, and image-sentinel emission |
-| `tool_exec/recording.rs` | Redacted tool-call recording and indexed thread-history updates |
+| File                      | Responsibility                                                                                                                          |
+| ------------------------- | --------------------------------------------------------------------------------------------------------------------------------------- |
+| `mod.rs`                  | `ChatDelegate<'a>` struct plus thin `NativeLoopDelegate` wiring for the stage helpers                                                   |
+| `llm_hooks.rs`            | Signal checking, pre-LLM call preparation, LLM invocation with context-length retry, text-response sanitization, and message compaction |
+| `loops.rs`                | Shared agentic-loop orchestration glue that hands each stage off to the focused helpers                                                 |
+| `tool_exec/mod.rs`        | Tool preflight classification, parallel or sequential execution, post-flight result folding, approval detection, and auth handling      |
+| `tool_exec/preflight.rs`  | Hook dispatch, approval gating, and runnable-batch construction                                                                         |
+| `tool_exec/execution.rs`  | Inline and parallel tool execution plus standalone tool-call execution helpers                                                          |
+| `tool_exec/postflight.rs` | Result folding, auth-barrier handling, preview generation, and image-sentinel emission                                                  |
+| `tool_exec/recording.rs`  | Redacted tool-call recording and indexed thread-history updates                                                                         |
 
 #### Thread operations (`src/agent/thread_ops/`)
 
-| File | Responsibility |
-| --- | --- |
-| `dispatch.rs` | Top-level `dispatch_submission` router that maps each `Submission` variant to a handler |
-| `turn_execution.rs` | Per-turn orchestration shell that sequences state checks, safety, compaction, checkpointing, preparation, agentic-loop execution, and result handling |
-| `turn_preparation.rs` | Thread-state guard, safety validation, turn creation, and durable user-message persistence |
-| `turn_compaction_checkpointing.rs` | Automatic compaction and undo-checkpoint helpers run before each turn |
-| `turn_result_finalization.rs` | Loop-result handling, response-transform hooks, assistant-response persistence, and failure finalization |
-| `control.rs` | Thread lifecycle commands: undo, redo, interrupt, compact, clear, new-thread, switch-thread, and resume |
-| `hydration.rs` | Lazy thread hydration from the backing store when a known external thread ID is first referenced |
-| `persistence.rs` | Durable write helpers for user messages, assistant responses, and tool-call summaries |
-| `approval.rs` | Resume-from-approval flow after user consent is received |
+| File                               | Responsibility                                                                                                                                        |
+| ---------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `dispatch.rs`                      | Top-level `dispatch_submission` router that maps each `Submission` variant to a handler                                                               |
+| `turn_execution.rs`                | Per-turn orchestration shell that sequences state checks, safety, compaction, checkpointing, preparation, agentic-loop execution, and result handling |
+| `turn_preparation.rs`              | Thread-state guard, safety validation, turn creation, and durable user-message persistence                                                            |
+| `turn_compaction_checkpointing.rs` | Automatic compaction and undo-checkpoint helpers run before each turn                                                                                 |
+| `turn_result_finalization.rs`      | Loop-result handling, response-transform hooks, assistant-response persistence, and failure finalization                                              |
+| `control.rs`                       | Thread lifecycle commands: undo, redo, interrupt, compact, clear, new-thread, switch-thread, and resume                                               |
+| `hydration.rs`                     | Lazy thread hydration from the backing store when a known external thread ID is first referenced                                                      |
+| `persistence.rs`                   | Durable write helpers for user messages, assistant responses, and tool-call summaries                                                                 |
+| `approval.rs`                      | Resume-from-approval flow after user consent is received                                                                                              |
 
 ### Submodule responsibilities
 
 Caption: Responsibilities of startup submodules.
 
-| Module | File | Responsibility |
-| -------- | ------ | --------------- |
-| `context` | `src/startup/context.rs` | Defines the startup hand-off structs and shared core runtime context |
-| `phases` | `src/startup/phases.rs` | Orchestrates each startup phase function |
-| `channels` | `src/startup/channels.rs` | Wires REPL/signal/HTTP/WASM channels; configures the gateway channel |
-| `wasm` | `src/startup/wasm.rs` | Bootstraps WASM channel runtime; hot-wires it into the extension manager |
-| `boot` | `src/startup/boot.rs` | Builds and prints the startup boot screen |
-| `run` | `src/startup/run.rs` | Runs the agent loop and performs the coordinated shutdown sequence |
-| `unix_runtime` | `src/startup/unix_runtime.rs` | Owns Unix-only runtime wiring such as SIGHUP hot-reload setup |
+| Module         | File                          | Responsibility                                                           |
+| -------------- | ----------------------------- | ------------------------------------------------------------------------ |
+| `context`      | `src/startup/context.rs`      | Defines the startup hand-off structs and shared core runtime context     |
+| `phases`       | `src/startup/phases.rs`       | Orchestrates each startup phase function                                 |
+| `channels`     | `src/startup/channels.rs`     | Wires REPL/signal/HTTP/WASM channels; configures the gateway channel     |
+| `wasm`         | `src/startup/wasm.rs`         | Bootstraps WASM channel runtime; hot-wires it into the extension manager |
+| `boot`         | `src/startup/boot.rs`         | Builds and prints the startup boot screen                                |
+| `run`          | `src/startup/run.rs`          | Runs the agent loop and performs the coordinated shutdown sequence       |
+| `unix_runtime` | `src/startup/unix_runtime.rs` | Owns Unix-only runtime wiring such as SIGHUP hot-reload setup            |
 
 ### Adding a new startup phase
 
 1. Define a new `pub(crate) struct MyPhaseContext { … }` in
-   `src/startup/context.rs`, or modify the existing hand-off structs
-   there when the new phase reuses an existing context boundary.
+   `src/startup/context.rs`, or modify the existing hand-off structs there when
+   the new phase reuses an existing context boundary.
 2. Implement
    `pub(crate) async fn phase_my_step(prev: PreviousContext) -> anyhow::Result<MyPhaseContext>`.
 3. Insert the call between the appropriate phases in `async_main()` in
@@ -1813,26 +1776,26 @@ Caption: Responsibilities of startup submodules.
 
 ### Context structs
 
-Each context struct is defined in `src/startup/context.rs`, re-exported
-by `src/startup/mod.rs`, and carries only the values needed by its
-downstream phase.
+Each context struct is defined in `src/startup/context.rs`, re-exported by
+`src/startup/mod.rs`, and carries only the values needed by its downstream
+phase.
 
 Caption: Shared startup context structs.
 
-| Struct | Produced by | Key fields |
-| -------- | ------------- | ------------ |
-| `LoadedConfigContext` | `phase_load_config_and_tracing` | `config`, `session`, `log_broadcaster` |
-| `BuiltComponentsContext` | `phase_build_components` | `components`, `side_effects` |
-| `CoreAgentContext` | `phase_tunnel_and_orchestrator` | `components`, `config`, `active_tunnel`, `container_job_manager`, `prompt_queue` |
-| `AgentRunContext` | `phase_tunnel_and_orchestrator` | `core` |
-| `GatewayPhaseContext` | `phase_init_channels_and_hooks` | all of the above plus `channels`, `session_manager`, `scheduler_slot`, `gateway_url`, `sse_sender` |
+| Struct                   | Produced by                     | Key fields                                                                                         |
+| ------------------------ | ------------------------------- | -------------------------------------------------------------------------------------------------- |
+| `LoadedConfigContext`    | `phase_load_config_and_tracing` | `config`, `session`, `log_broadcaster`                                                             |
+| `BuiltComponentsContext` | `phase_build_components`        | `components`, `side_effects`                                                                       |
+| `CoreAgentContext`       | `phase_tunnel_and_orchestrator` | `components`, `config`, `active_tunnel`, `container_job_manager`, `prompt_queue`                   |
+| `AgentRunContext`        | `phase_tunnel_and_orchestrator` | `core`                                                                                             |
+| `GatewayPhaseContext`    | `phase_init_channels_and_hooks` | all of the above plus `channels`, `session_manager`, `scheduler_slot`, `gateway_url`, `sse_sender` |
 
 ### CLI dispatch
 
-`src/main_cli.rs` handles all non-agent subcommands before the startup
-pipeline runs. `dispatch_subcommand` is called first; it returns `true`
-when a subcommand was matched so `async_main` can exit without entering
-the startup pipeline.
+`src/main_cli.rs` handles all non-agent subcommands before the startup pipeline
+runs. `dispatch_subcommand` is called first; it returns `true` when a
+subcommand was matched so `async_main` can exit without entering the startup
+pipeline.
 
 ```plaintext
 async_main()
@@ -1852,57 +1815,56 @@ consumes the context struct produced by the previous one.
 
 Caption: Startup phase sequence.
 
-| # | Function | Input | Output |
-| --- | ---------- | ------- | -------- |
-| 1 | `phase_pid_and_onboard` | `&Cli` | `Option<PidLock>` |
-| 2 | `phase_load_config_and_tracing` | `&Cli` | `LoadedConfigContext` |
-| 3 | `phase_build_components` | `&Cli`, `LoadedConfigContext` | `BuiltComponentsContext` |
-| 4 | `phase_tunnel_and_orchestrator` | `BuiltComponentsContext` | `AgentRunContext` |
-| 5 | `phase_init_channels_and_hooks` | `&Cli`, `AgentRunContext` | `GatewayPhaseContext` |
-| 6 | `phase_setup_gateway` | `&mut GatewayPhaseContext` | *(mutates in place)* |
-| 7 | `phase_print_boot_screen` | `&Cli`, `&GatewayPhaseContext` | *(side effect)* |
-| 8 | `phase_run_agent` | `GatewayPhaseContext` | `anyhow::Result<()>` |
+| #   | Function                        | Input                          | Output                   |
+| --- | ------------------------------- | ------------------------------ | ------------------------ |
+| 1   | `phase_pid_and_onboard`         | `&Cli`                         | `Option<PidLock>`        |
+| 2   | `phase_load_config_and_tracing` | `&Cli`                         | `LoadedConfigContext`    |
+| 3   | `phase_build_components`        | `&Cli`, `LoadedConfigContext`  | `BuiltComponentsContext` |
+| 4   | `phase_tunnel_and_orchestrator` | `BuiltComponentsContext`       | `AgentRunContext`        |
+| 5   | `phase_init_channels_and_hooks` | `&Cli`, `AgentRunContext`      | `GatewayPhaseContext`    |
+| 6   | `phase_setup_gateway`           | `&mut GatewayPhaseContext`     | *(mutates in place)*     |
+| 7   | `phase_print_boot_screen`       | `&Cli`, `&GatewayPhaseContext` | *(side effect)*          |
+| 8   | `phase_run_agent`               | `GatewayPhaseContext`          | `anyhow::Result<()>`     |
 
-Phases 1–4 are infallible or propagate configuration errors early so
-subsequent phases can assume a fully valid environment.
+Phases 1–4 are infallible or propagate configuration errors early so subsequent
+phases can assume a fully valid environment.
 
 #### `src/skills/bundle/`
 
-| File | Responsibility |
-| --- | --- |
-| `mod.rs` | `validate_skill_archive` — validates a raw `&[u8]` ZIP payload and returns a `ValidatedSkillBundle`; `looks_like_skill_archive` — fast ZIP magic-byte probe |
-| `path.rs` | `ParsedBundlePath::parse` — normalizes a raw ZIP entry name into `(root_name, relative_path, is_dir)` while enforcing RFC 0003 shape constraints |
+| File      | Responsibility                                                                                                                                              |
+| --------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `mod.rs`  | `validate_skill_archive` — validates a raw `&[u8]` ZIP payload and returns a `ValidatedSkillBundle`; `looks_like_skill_archive` — fast ZIP magic-byte probe |
+| `path.rs` | `ParsedBundlePath::parse` — normalizes a raw ZIP entry name into `(root_name, relative_path, is_dir)` while enforcing RFC 0003 shape constraints            |
 
 `ValidatedSkillBundle` carries `skill_name: String` and a
 `Vec<ValidatedBundleEntry>`, where each entry exposes
 `relative_path() -> &Path` and `contents() -> &[u8]`.
 
-`SkillBundleError` enumerates all rejection reasons
-(`InvalidArchive`, `InvalidTopLevelPrefix`, `MissingEntrypoint`,
-`ExecutablePayload`, `UnsupportedFileType`, `DuplicatePath`,
-`EntryTooLarge`, `ArchiveTooLarge`, `TooManyFiles`, `InvalidUtf8Text`,
-`ReadFailure`, and others).
+`SkillBundleError` enumerates all rejection reasons (`InvalidArchive`,
+`InvalidTopLevelPrefix`, `MissingEntrypoint`, `ExecutablePayload`,
+`UnsupportedFileType`, `DuplicatePath`, `EntryTooLarge`, `ArchiveTooLarge`,
+`TooManyFiles`, `InvalidUtf8Text`, `ReadFailure`, and others).
 
 #### `src/skills/registry/`
 
-| File | Responsibility |
-| --- | --- |
-| `mod.rs` | `SkillRegistry` struct; public surface: `new`, `with_workspace_dir`, `with_installed_dir`, `discover_all`, `install_skill`, `prepare_install_to_disk`, `commit_install`, `commit_loaded_skill`, `cleanup_prepared_install`, `remove_skill`, `reload`, `has`, `find_by_name`, `count`, `skills`, `install_target_dir` |
-| `discovery.rs` | `discover_from_dir` — async directory scan with symlink rejection, cap enforcement, and load-failure tolerance |
-| `loading.rs` | `load_and_validate_skill` — reads, validates, normalizes, gates, and constructs a `LoadedSkill`; also exports `compute_hash` and `check_gating` |
-| `materialize.rs` | `materialize_install_artifact` — converts a `SkillInstallPayload` into an `InstallArtifact` (list of `(relative_path, bytes)` pairs); `write_install_artifact` — writes the artefact into a staging directory |
-| `staged_install.rs` | `prepare_install_to_disk` — creates a hidden staging directory, writes and validates the artefact, returns `PreparedSkillInstall`; `commit_install` — duplicate check then atomic rename; `cleanup_prepared_install` — removes the staging directory |
-| `removal.rs` | `validate_remove`, `delete_skill_files`, `commit_remove` |
+| File                | Responsibility                                                                                                                                                                                                                                                                                                       |
+| ------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `mod.rs`            | `SkillRegistry` struct; public surface: `new`, `with_workspace_dir`, `with_installed_dir`, `discover_all`, `install_skill`, `prepare_install_to_disk`, `commit_install`, `commit_loaded_skill`, `cleanup_prepared_install`, `remove_skill`, `reload`, `has`, `find_by_name`, `count`, `skills`, `install_target_dir` |
+| `discovery.rs`      | `discover_from_dir` — async directory scan with symlink rejection, cap enforcement, and load-failure tolerance                                                                                                                                                                                                       |
+| `loading.rs`        | `load_and_validate_skill` — reads, validates, normalizes, gates, and constructs a `LoadedSkill`; also exports `compute_hash` and `check_gating`                                                                                                                                                                      |
+| `materialize.rs`    | `materialize_install_artifact` — converts a `SkillInstallPayload` into an `InstallArtifact` (list of `(relative_path, bytes)` pairs); `write_install_artifact` — writes the artefact into a staging directory                                                                                                        |
+| `staged_install.rs` | `prepare_install_to_disk` — creates a hidden staging directory, writes and validates the artefact, returns `PreparedSkillInstall`; `commit_install` — duplicate check then atomic rename; `cleanup_prepared_install` — removes the staging directory                                                                 |
+| `removal.rs`        | `validate_remove`, `delete_skill_files`, `commit_remove`                                                                                                                                                                                                                                                             |
 
 ##### Skill location metadata (roadmap 1.3.3)
 
 Two new types capture where a skill lives on disk and how its files are laid
 out:
 
-| Type | File | Purpose |
-| --- | --- | --- |
-| `SkillPackageKind` | `src/skills/mod.rs` | `SingleFile` — lone `SKILL.md`; `Bundle` — directory tree with support files |
-| `LoadedSkillLocation` | `src/skills/mod.rs` | Canonical identifier, private runtime root, bundle-relative `SKILL.md` entrypoint, and package kind |
+| Type                       | File                | Purpose                                                                                                         |
+| -------------------------- | ------------------- | --------------------------------------------------------------------------------------------------------------- |
+| `SkillPackageKind`         | `src/skills/mod.rs` | `SingleFile` — lone `SKILL.md`; `Bundle` — directory tree with support files                                    |
+| `LoadedSkillLocation`      | `src/skills/mod.rs` | Canonical identifier, private runtime root, bundle-relative `SKILL.md` entrypoint, and package kind             |
 | `LoadedSkillLocationError` | `src/skills/mod.rs` | Returned by `LoadedSkill::new` and `set_location` when the location identifier does not match the manifest name |
 
 `LoadedSkill::new(LoadedSkillParts)` validates that the location identifier
@@ -2054,8 +2016,8 @@ The web handler and model-facing install tool both use
 `src/skills/install_source.rs` before constructing a `SkillInstallPayload`.
 `non_blank_raw()` rejects missing or whitespace-only inline content while
 preserving the original text for `SKILL.md` installs. `trimmed_non_empty()`
-rejects missing or whitespace-only identifiers and returns the trimmed value for
-URL, name, and slug fields. Multipart source fields use the same helper
+rejects missing or whitespace-only identifiers and returns the trimmed value
+for URL, name, and slug fields. Multipart source fields use the same helper
 semantics as JSON requests so whitespace-only `content`, `url`, `name`, and
 `slug` fields do not create a second install source.
 
@@ -2085,10 +2047,10 @@ returning the original commit error.
 #### Web skill install handler
 
 `skills_install_handler` accepts an Axum `Request` rather than a pre-extracted
-JSON payload because it must branch on `Content-Type` before consuming the body.
-JSON requests are parsed into `SkillInstallRequest`; multipart requests are
-parsed with `Multipart::from_request` and must provide exactly one file field
-named `bundle` with a filename ending in `.skill`.
+JSON payload because it must branch on `Content-Type` before consuming the
+body. JSON requests are parsed into `SkillInstallRequest`; multipart requests
+are parsed with `Multipart::from_request` and must provide exactly one file
+field named `bundle` with a filename ending in `.skill`.
 
 Example request shapes:
 
@@ -2138,11 +2100,11 @@ values used in validation error messages.
 
 Caption: Schema helper newtypes.
 
-| Type | Purpose |
-| --- | --- |
-| `ParamName<'a>` | A JSON parameter key expected in tool input |
-| `SchemaPath` | A dot-separated location in a JSON schema |
-| `ToolName<'a>` | A registered tool identifier used as the root strict-schema path |
+| Type            | Purpose                                                          |
+| --------------- | ---------------------------------------------------------------- |
+| `ParamName<'a>` | A JSON parameter key expected in tool input                      |
+| `SchemaPath`    | A dot-separated location in a JSON schema                        |
+| `ToolName<'a>`  | A registered tool identifier used as the root strict-schema path |
 
 `ParamName<'a>` and `ToolName<'a>` are zero-cost wrappers over `&'a str`.
 `SchemaPath` owns its path string so nested paths can be constructed while
@@ -2151,14 +2113,14 @@ descending through schema nodes. All three types implement `From<&str>` and
 unchanged. `ToolName` additionally converts into `SchemaPath` because the
 strict-schema validator roots its path at the tool name.
 
-Use these types in function signatures that previously accepted a bare `&str`
-or `String` for a parameter name, schema path, or tool name. The types prevent
+Use these types in function signatures that previously accepted a bare `&str` or
+`String` for a parameter name, schema path, or tool name. The types prevent
 accidental argument transposition and make the intent of each parameter clear
 at the call site.
 
-`SchemaPath::child(segment)` returns an owned schema path representing the child
-path `"<parent>.<segment>"`. Use this instead of manual string concatenation
-when descending into nested schema nodes.
+`SchemaPath::child(segment)` returns an owned schema path representing the
+child path `"<parent>.<segment>"`. Use this instead of manual string
+concatenation when descending into nested schema nodes.
 
 These types are re-exported from `src/tools/mod.rs` and are publicly available
 as `crate::tools::{ParamName, SchemaPath, ToolName}`.
@@ -2182,7 +2144,7 @@ directly. Keep repository exceptions narrow: preserve external APIs, formal
 names, wire values and immutable fixtures without adding ordinary bare-word
 exceptions.
 
-The standalone phrase helper and its tests use Python 3.14 at runtime,
-Pathspec 1.1.1 and a Python 3.13 Ruff compatibility target. Continuous
-integration installs Nixie 1.1.0 and Merman CLI 0.7.0 before validating the
-repository's Mermaid diagrams with `make nixie`.
+The standalone phrase helper and its tests use Python 3.14 at runtime, Pathspec
+1.1.1 and a Python 3.13 Ruff compatibility target. Continuous integration
+installs Nixie 1.1.0 and Merman CLI 0.7.0 before validating the repository's
+Mermaid diagrams with `make nixie`.

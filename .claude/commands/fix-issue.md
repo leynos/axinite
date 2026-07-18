@@ -10,13 +10,14 @@ argument-hint: "<issue-number or github-issue-url>"
 ## Step 1: Resolve the issue
 
 Parse `$ARGUMENTS` to extract the issue number:
+
 - If it's a URL like `https://github.com/owner/repo/issues/42`, extract `42`.
 - If it's a bare number, use it directly.
 - If empty, stop and ask the user for an issue number.
 
 Fetch the issue:
 
-```
+```shell
 gh issue view {number} --json title,body,labels,assignees,comments,state
 ```
 
@@ -27,29 +28,42 @@ If the issue is closed, warn the user and ask if they still want to proceed.
 Create a fresh branch off the latest main:
 
 1. Fetch latest: `git fetch origin`
-2. Detect default branch: `gh repo view --json defaultBranchRef --jq .defaultBranchRef.name`
-3. Create and switch to a new branch: `git checkout -b fix/{number}-{short-slug} origin/{default-branch}`
-   - `{short-slug}` is 3-5 words from the issue title, lowercase, hyphenated (e.g. `fix/42-idor-workspace-check`)
+2. Detect default branch:
+   `gh repo view --json defaultBranchRef --jq .defaultBranchRef.name`
+3. Create and switch to a new branch:
+   `git checkout -b fix/{number}-{short-slug} origin/{default-branch}`
+   - `{short-slug}` is 3-5 words from the issue title, lowercase, hyphenated
+     (e.g. `fix/42-idor-workspace-check`)
 
-If the working tree has uncommitted changes, warn the user and stop. Do not stash or discard their work.
+If the working tree has uncommitted changes, warn the user and stop. Do not
+stash or discard their work.
 
 ## Step 3: Understand the issue
 
 Summarize the issue in 2-3 sentences. Identify:
-- **What's broken or missing** (the symptom or feature request)
-- **Acceptance criteria** (what "done" looks like, from the issue body or comments)
-- **Constraints** (mentioned technologies, backward compatibility, performance requirements)
 
-If the issue is unclear or ambiguous, list the open questions. These will be addressed during planning.
+- **What's broken or missing** (the symptom or feature request)
+- **Acceptance criteria** (what "done" looks like, from the issue body or
+  comments)
+- **Constraints** (mentioned technologies, backward compatibility, performance
+  requirements)
+
+If the issue is unclear or ambiguous, list the open questions. These will be
+addressed during planning.
 
 ## Step 4: Research the codebase
 
 Before planning, gather context:
 
-1. **Find relevant code** - Search for files, functions, types, and patterns mentioned in the issue. Read them in full.
-2. **Trace the flow** - If the issue is about a specific behaviour, trace the code path from the entry point (route handler, CLI command, etc.) through to the relevant logic.
-3. **Check existing tests** - Find tests related to the affected code. Understand what's already covered.
-4. **Check for prior art** - Look for similar patterns in the codebase that solve analogous problems. Prefer consistency with existing patterns.
+1. **Find relevant code** - Search for files, functions, types, and patterns
+   mentioned in the issue. Read them in full.
+2. **Trace the flow** - If the issue is about a specific behaviour, trace the
+   code path from the entry point (route handler, CLI command, etc.) through to
+   the relevant logic.
+3. **Check existing tests** - Find tests related to the affected code.
+   Understand what's already covered.
+4. **Check for prior art** - Look for similar patterns in the codebase that
+   solve analogous problems. Prefer consistency with existing patterns.
 
 ## Step 5: Enter planning mode
 
@@ -63,7 +77,8 @@ Enter planning mode to design the implementation. The plan MUST cover:
    - Error paths (invalid input, missing data, permission denied)
    - Edge cases (empty collections, boundary values, concurrent access)
 5. **IronClaw-specific concerns**:
-   - If the change touches persistence, both database backends must be updated (`postgres.rs` and `libsql_backend.rs`)
+   - If the change touches persistence, both database backends must be updated
+     (`postgres.rs` and `libsql_backend.rs`)
    - New `Database` trait methods need implementations in both backends
    - No `.unwrap()` or `.expect()` in production code
    - Use `crate::` imports, not `super::`
@@ -82,15 +97,18 @@ After the plan is approved:
 2. Write all planned tests.
 3. Run IronClaw's full quality gate:
    - `cargo fmt`
-   - `cargo clippy --all --benches --tests --examples --all-features` (zero warnings)
+   - `cargo clippy --all --benches --tests --examples --all-features` (zero
+     warnings)
    - `cargo test --lib` (all tests pass)
 4. If any check fails, fix it before proceeding.
 
-Note: Integration tests (`--test workspace_integration`) require PostgreSQL and are expected to fail locally. Only `--lib` test failures are blocking.
+Note: Integration tests (`--test workspace_integration`) require PostgreSQL and
+are expected to fail locally. Only `--lib` test failures are blocking.
 
 ## Step 7: Commit and summarize
 
-1. Commit with a descriptive message referencing the issue (e.g. `fix: prevent IDOR in function call outputs (#42)`).
+1. Commit with a descriptive message referencing the issue (e.g.
+   `fix: prevent IDOR in function call outputs (#42)`).
 2. Summarize what was done:
    - Files changed with line references
    - Tests added and what they cover

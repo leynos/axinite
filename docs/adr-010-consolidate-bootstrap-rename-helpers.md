@@ -77,8 +77,10 @@ All other non-fatal migration paths also use explicit `let _ = ...` discards:
 
 ## Related references
 
-- Issue `#33`: [chore(bootstrap): deduplicate migration helpers](https://github.com/leynos/axinite/issues/33).
-- PR `#166`: [Issue #33: Deduplicate bootstrap migration rename helpers](https://github.com/leynos/axinite/pull/166).
+- Issue `#33`:
+  [chore(bootstrap): deduplicate migration helpers](https://github.com/leynos/axinite/issues/33).
+- PR `#166`:
+  [Issue #33: Deduplicate bootstrap migration rename helpers](https://github.com/leynos/axinite/pull/166).
 - Implementation:
   [`src/bootstrap/migration.rs`](../src/bootstrap/migration.rs), which defines
   `rename_legacy_bootstrap`.

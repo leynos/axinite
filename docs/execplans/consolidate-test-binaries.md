@@ -1,20 +1,17 @@
 # Consolidate integration test binaries
 
-**Branch:** docs-consolidate-test-binaries-0n9r99
-**Date:** 2026-03-15
-**Status:** Complete
-**Estimated impact:** 3–4 min saved on incremental `make test`
-**Actual result:** Reduced from 40 test binaries to 9 test binaries
+**Branch:** docs-consolidate-test-binaries-0n9r99 **Date:** 2026-03-15
+**Status:** Complete **Estimated impact:** 3–4 min saved on incremental
+`make test` **Actual result:** Reduced from 40 test binaries to 9 test binaries
 
 ## Big picture
 
-Reduce the number of integration test binaries from 40 to 9 by
-grouping related test files into module trees under fewer top-level
-harnesses. Each top-level `.rs` file in `tests/` compiles as a separate
-binary, linked against the full ironclaw crate and all dev-dependencies.
-With 40 binaries, a single source change triggers 40 relink operations
-(measured at 6 min 05 s incremental). Consolidation targets 9 binaries,
-cutting link time roughly in proportion.
+Reduce the number of integration test binaries from 40 to 9 by grouping related
+test files into module trees under fewer top-level harnesses. Each top-level
+`.rs` file in `tests/` compiles as a separate binary, linked against the full
+ironclaw crate and all dev-dependencies. With 40 binaries, a single source
+change triggers 40 relink operations (measured at 6 min 05 s incremental).
+Consolidation targets 9 binaries, cutting link time roughly in proportion.
 
 ## Constraints
 
@@ -25,8 +22,7 @@ cutting link time roughly in proportion.
 - The shared `tests/support/` module must remain importable by all harnesses
   that need it.
 - `tests/html_to_markdown.rs` must remain a separate `[[test]]` binary
-  because it has `required-features = ["html-to-markdown"]` in
-  `Cargo.toml`.
+  because it has `required-features = ["html-to-markdown"]` in `Cargo.toml`.
 - Feature-gated tests (e.g., `#[cfg(feature = "libsql")]`) must retain
   their gates inside the merged modules.
 
@@ -208,11 +204,11 @@ tests/
   using `mod` scoping (each submodule is its own namespace).
 - **Shared mutable state:** Tests that mutate global state (e.g.,
   environment variables) may interfere when colocated in the same binary.
-  nextest runs each test in its own process by default, so this is mitigated
-  at the runner level.
+  nextest runs each test in its own process by default, so this is mitigated at
+  the runner level.
 - **`mod support;` path resolution:** The `support/` directory must be a
-  sibling of the harness `.rs` file. Since all harnesses are at
-  `tests/*.rs`, the existing `tests/support/` works unchanged.
+  sibling of the harness `.rs` file. Since all harnesses are at `tests/*.rs`,
+  the existing `tests/support/` works unchanged.
 
 ## Progress
 

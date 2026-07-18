@@ -22,9 +22,9 @@ This RFC proposes a first-class multi-file skill bundle format:
 4. Expose a dedicated read-only interface so the model can read bundled files
    from an installed skill without requiring general filesystem access.
 5. Mirror the progressive-discovery model used by the codex harness: advertise
-   the skill identifier plus bundle-relative entrypoint, inject only
-   `SKILL.md` content when a skill is active, and load ancillary files lazily
-   when they are actually needed.
+   the skill identifier plus bundle-relative entrypoint, inject only `SKILL.md`
+   content when a skill is active, and load ancillary files lazily when they
+   are actually needed.
 
 Phase 1 explicitly does not support bundled scripts or executables.
 
@@ -251,8 +251,7 @@ Before extraction, the installer should validate:
 2. the shared top-level prefix contains exactly one `SKILL.md` located at
    `<root>/SKILL.md`
 3. no nested subdirectory contains another file named `SKILL.md`, and every
-   other entry under `<root>/` is under `<root>/references/` or
-   `<root>/assets/`
+   other entry under `<root>/` is under `<root>/references/` or `<root>/assets/`
 4. the shared top-level prefix is the sole source of the candidate
    `skill-name` before any normalization or conflict-resolution rules are
    applied
@@ -272,9 +271,9 @@ A valid candidate `skill-name` at archive-validation time must:
 Compatibility note: current `skill-name` validation in the runtime accepts
 dotted names such as `skill.v2`. Archive validation for `.skill` uploads must
 continue to accept dots in the shared top-level prefix so existing skill names
-that are installed or catalogued do not become invalid implicitly. Phase 1
-does not introduce a migration away from dotted names; any future restriction
-would need an explicit compatibility plan and a separate RFC.
+that are installed or catalogued do not become invalid implicitly. Phase 1 does
+not introduce a migration away from dotted names; any future restriction would
+need an explicit compatibility plan and a separate RFC.
 
 If the archive violates the single top-level path-prefix rule, the installer
 must reject it with a typed validation error rather than trying to guess the
@@ -313,9 +312,9 @@ available skills by name, description, and a logical skill identifier plus the
 bundle-relative entrypoint.
 
 The usage rules should be updated so that when `SKILL.md` references
-`references/...` or `assets/...`, the model is told to use
-`skill_read_file` with the advertised `skill` identifier and a bundle-relative
-`path` to retrieve only the specific files it needs.
+`references/...` or `assets/...`, the model is told to use `skill_read_file`
+with the advertised `skill` identifier and a bundle-relative `path` to retrieve
+only the specific files it needs.
 
 ### 2. Active-skill injection
 

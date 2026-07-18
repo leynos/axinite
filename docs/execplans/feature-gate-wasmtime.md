@@ -1,25 +1,24 @@
 # Feature-gate wasmtime (`wasm` feature)
 
-**Branch:** (to be created from `build-time`)
-**Date:** 2026-03-15
-**Status:** Plan ready; not yet started
-**Estimated impact:** ~300 fewer crates when `wasm` feature is off
+**Branch:** (to be created from `build-time`) **Date:** 2026-03-15 **Status:**
+Plan ready; not yet started **Estimated impact:** ~300 fewer crates when `wasm`
+feature is off
 
 ## Big Picture
 
 The wasmtime ecosystem (wasmtime, wasmtime-wasi, wasmtime-cranelift,
-wasmparser, and ~300 transitive dependencies including the Cranelift
-compiler backend) is always compiled, even though WebAssembly (WASM) tool/channel
-execution is an optional capability. Feature-gating it behind a `wasm`
-feature (included in defaults) lets developers who are not working on WASM
+wasmparser, and ~300 transitive dependencies including the Cranelift compiler
+backend) is always compiled, even though WebAssembly (WASM) tool/channel
+execution is an optional capability. Feature-gating it behind a `wasm` feature
+(included in defaults) lets developers who are not working on WASM
 functionality skip ~300 crate compilations, saving ~42 s on clean builds.
 
 ## Constraints
 
 - The `wasm` feature must be included in `default` so that the default build
   continues to include WASM support.
-- The feature matrix in `make typecheck`, `make lint`, and `make
-  test-matrix` must exercise the `wasm` feature.
+- The feature matrix in `make typecheck`, `make lint`, and `make test-matrix`
+  must exercise the `wasm` feature.
 - The `--all-features` combo already covers it.
 - WASM-dependent integration tests must be gated with
   `#[cfg(feature = "wasm")]`.
@@ -31,42 +30,47 @@ module subtrees:
 
 Table: WASM source files using wasmtime
 
-| File | Module |
-|------|--------|
-| `src/tools/wasm/limits.rs` | Tools WASM runtime |
-| `src/tools/wasm/runtime.rs` | Tools WASM runtime |
-| `src/tools/wasm/wrapper.rs` | Tools WASM wrapper |
-| `src/tools/wasm/wrapper/metadata.rs` | Tools WASM metadata |
-| `src/channels/wasm/runtime.rs` | Channels WASM runtime |
-| `src/channels/wasm/wrapper.rs` | Channels WASM wrapper |
+| File                                 | Module                |
+| ------------------------------------ | --------------------- |
+| `src/tools/wasm/limits.rs`           | Tools WASM runtime    |
+| `src/tools/wasm/runtime.rs`          | Tools WASM runtime    |
+| `src/tools/wasm/wrapper.rs`          | Tools WASM wrapper    |
+| `src/tools/wasm/wrapper/metadata.rs` | Tools WASM metadata   |
+| `src/channels/wasm/runtime.rs`       | Channels WASM runtime |
+| `src/channels/wasm/wrapper.rs`       | Channels WASM wrapper |
 
 wasmparser is used in **1 file**:
 
 Table: wasmparser usage
 
-| File | Module |
-|------|--------|
+| File                              | Module                  |
+| --------------------------------- | ----------------------- |
 | `src/tools/builder/validation.rs` | Tool builder validation |
 
 Additional files that reference WASM types transitively (e.g., the tool
-registry, extension manager, channel setup) will need conditional
-compilation or stub types when the feature is off.
+registry, extension manager, channel setup) will need conditional compilation
+or stub types when the feature is off.
 
 ## Implementation Steps
 
 ### Phase 1: Cargo.toml changes
 
 - [ ] Make wasmtime, wasmtime-wasi, and wasmparser optional:
+
   ```toml
   wasmtime = { version = "28", features = ["component-model"], optional = true }
   wasmtime-wasi = { version = "28", optional = true }
   wasmparser = { version = "0.220", optional = true }
   ```
+
 - [ ] Add `wasm` feature:
+
   ```toml
   wasm = ["dep:wasmtime", "dep:wasmtime-wasi", "dep:wasmparser"]
   ```
+
 - [ ] Add `wasm` to `default` features:
+
   ```toml
   default = ["postgres", "libsql", "html-to-markdown", "wasm"]
   ```
@@ -99,8 +103,8 @@ compilation or stub types when the feature is off.
 
 - [ ] Update Makefile `typecheck` and `lint` targets: the
   `--no-default-features --features libsql,test-helpers` combo should
-  explicitly exclude `wasm` (already the case since it is not in that
-  feature list)
+  explicitly exclude `wasm` (already the case since it is not in that feature
+  list)
 - [ ] Verify `--all-features` still compiles and passes all tests
 - [ ] Update AGENTS.md if the feature matrix documentation changes
 
@@ -111,8 +115,9 @@ compilation or stub types when the feature is off.
   passes (no WASM)
 - [ ] `cargo check --all-features --features test-helpers` passes
 - [ ] `cargo nextest run --workspace --features test-helpers` passes
-- [ ] Verify crate count reduction: compare `cargo tree --prefix none |
-  sort -u | wc -l` with and without `wasm` feature
+- [ ] Verify crate count reduction: compare
+      `cargo tree --prefix none | sort -u | wc -l` with and without `wasm`
+      feature
 
 ## Risks
 

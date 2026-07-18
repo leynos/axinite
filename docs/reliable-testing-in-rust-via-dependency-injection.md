@@ -2,8 +2,8 @@
 
 Writing robust, reliable, and parallelizable tests requires an intentional
 approach to handling external dependencies such as environment variables, the
-filesystem, or the system clock. Functions that directly call `std::env::var`
-or `SystemTime::now()` are difficult to test because they depend on global,
+filesystem, or the system clock. Functions that directly call `std::env::var` or
+`SystemTime::now()` are difficult to test because they depend on global,
 non-deterministic state.
 
 This leads to several problems:
@@ -130,8 +130,8 @@ ______________________________________________________________________
 ## 🔩 Handling other non-deterministic dependencies
 
 This dependency injection pattern also applies to other non-deterministic
-dependencies, such as the system clock. The `mockable` crate provides a
-`Clock` trait for this purpose.
+dependencies, such as the system clock. The `mockable` crate provides a `Clock`
+trait for this purpose.
 
 ### Untestable code
 
@@ -197,10 +197,10 @@ In production, an instance of `RealClock::new()` would be used.
 The same pattern applies to internal tool seams. `BuildSoftwareTool` keeps
 override resolution private and tests it through `execute`, while injecting a
 narrow monotonic clock seam, so duration assertions do not depend on wall-clock
-time. This seam deliberately uses `std::time::Instant` instead of
-`SystemTime`, because tool duration is elapsed-time data rather than calendar
-time. The production adapter calls `Instant::now`, and tests use a queued fixed
-clock that returns pre-seeded instants. If a test consumes more instants than it
+time. This seam deliberately uses `std::time::Instant` instead of `SystemTime`,
+because tool duration is elapsed-time data rather than calendar time. The
+production adapter calls `Instant::now`, and tests use a queued fixed clock
+that returns pre-seeded instants. If a test consumes more instants than it
 seeded, the fixed clock panics with a configuration error, so the failure is
 immediate and deterministic.
 

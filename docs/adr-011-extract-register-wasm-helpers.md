@@ -10,26 +10,25 @@ Accepted.
 
 ## Context and problem statement
 
-`ToolRegistry::register_wasm` needs to do more than register a wrapper.
-It has to prepare the WebAssembly (WASM) component, recover guest metadata when
-explicit overrides are missing, apply runtime-scoped overrides, and
-persist credential mappings only after registration succeeds.
+`ToolRegistry::register_wasm` needs to do more than register a wrapper. It has
+to prepare the WebAssembly (WASM) component, recover guest metadata when
+explicit overrides are missing, apply runtime-scoped overrides, and persist
+credential mappings only after registration succeeds.
 
-Keeping that flow in one method makes the orchestration harder to
-review and pushes the method towards the repository's cyclomatic
-complexity threshold of 9. The WASM registration path also has two
-different responsibilities:
+Keeping that flow in one method makes the orchestration harder to review and
+pushes the method towards the repository's cyclomatic complexity threshold of
+
+1. The WASM registration path also has two different responsibilities:
 
 - preparation, which compiles the component and assembles the wrapper;
 - registration, which inserts the prepared wrapper and performs any
   post-registration persistence.
 
-The codebase therefore benefits from a small helper split rather than a
-single large registration method.
+The codebase therefore benefits from a small helper split rather than a single
+large registration method.
 
-The refactor is implemented in
-`src/tools/registry/wasm_preparation.rs`, with tests in
-`src/tools/registry/wasm_preparation_tests.rs`, and is summarized for
+The refactor is implemented in `src/tools/registry/wasm_preparation.rs`, with
+tests in `src/tools/registry/wasm_preparation_tests.rs`, and is summarized for
 maintainers in
 [developer guide section 29](developers-guide.md#29-wasm-tool-schema-normalization).
 
@@ -89,8 +88,8 @@ The registration flow is split as follows:
 
 `register_wasm` remains the orchestration entry point. It delegates
 preparation, registers the prepared wrapper, and only then persists any
-credential mappings. `register_wasm_from_storage` remains a thin caller
-that normalizes stored metadata and reuses the same registration flow.
+credential mappings. `register_wasm_from_storage` remains a thin caller that
+normalizes stored metadata and reuses the same registration flow.
 
 ## Consequences
 
@@ -105,6 +104,6 @@ that normalizes stored metadata and reuses the same registration flow.
 ## Decision summary
 
 Extract the WASM registration helpers and keep `register_wasm` as the
-orchestration point. This preserves the existing runtime behaviour while
-making the registration path easier to maintain and keeping its
-cyclomatic complexity below 9.
+orchestration point. This preserves the existing runtime behaviour while making
+the registration path easier to maintain and keeping its cyclomatic complexity
+below 9.

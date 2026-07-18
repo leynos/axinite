@@ -16,7 +16,7 @@ WASM tool for GitHub integration - manage repos, issues, PRs, and workflows.
 2. Required scopes: `repo`, `workflow`, `read:org`
 3. Store the token:
 
-   ```
+   ```shell
    ironclaw secret set github_token YOUR_TOKEN
    ```
 
@@ -144,7 +144,8 @@ When the GitHub API rate limit is exceeded (and retries fail), you might see:
 GitHub API error 429: { "message": "API rate limit exceeded for user ID ...", ... }
 ```
 
-The tool automatically logs warnings when the rate limit is low (<10 remaining) and retries on 429/5xx errors.
+The tool automatically logs warnings when the rate limit is low (<10 remaining)
+and retries on 429/5xx errors.
 
 ### Invalid Parameters
 
@@ -163,7 +164,8 @@ GitHub token not found in secret store. Set it with: ironclaw secret set github_
 ### "GitHub API error 404: Not Found"
 
 - Check that the `owner` and `repo` are correct.
-- Ensure the `github_token` has access to the repository (especially for private repos).
+- Ensure the `github_token` has access to the repository (especially for
+  private repos).
 - Verify the token scopes include `repo` and `read:org`.
 
 ### "GitHub API error 401: Bad credentials"

@@ -6,30 +6,28 @@
 - **Status:** Proposed
 - **Created:** 2026-03-11
 - **Implementation status:** Roadmap items `1.2.1`, `1.2.2`, `1.2.3`, and
-  `1.2.4` are complete.
-  Active WASM registration paths now recover guest-exported metadata before
-  publication, warn when registration falls back to a placeholder schema, and
-  are covered by regression tests for file-loaded, storage-backed, and
-  dev-build paths. Hosted workers now receive hosted-visible
-  orchestrator-owned WASM definitions through the shared remote-tool catalogue.
-  WASM execution failures now label retry hints as fallback diagnostics that
-  point back to the already advertised contract. End-to-end regression tests
-  now prove that the first non-hosted provider request and the first hosted
-  proxied `complete_with_tools` request both include the advertised WASM
-  schema before any tool execution attempt.
+  `1.2.4` are complete. Active WASM registration paths now recover
+  guest-exported metadata before publication, warn when registration falls back
+  to a placeholder schema, and are covered by regression tests for file-loaded,
+  storage-backed, and dev-build paths. Hosted workers now receive
+  hosted-visible orchestrator-owned WASM definitions through the shared
+  remote-tool catalogue. WASM execution failures now label retry hints as
+  fallback diagnostics that point back to the already advertised contract.
+  End-to-end regression tests now prove that the first non-hosted provider
+  request and the first hosted proxied `complete_with_tools` request both
+  include the advertised WASM schema before any tool execution attempt.
 
 ## Summary
 
 IronClaw already has the machinery to recover real WebAssembly (WASM) tool
-descriptions and schemas from guest exports. The registry can therefore
-publish correct `ToolDefinition` values for active WASM tools.
+descriptions and schemas from guest exports. The registry can therefore publish
+correct `ToolDefinition` values for active WASM tools.
 
 However, the current WASM execution path still carries an older assumption:
 schema disclosure is treated as a reactive retry hint on error rather than the
-normal interface the large language model (LLM) should receive before its
-first call. In
-`src/tools/wasm/wrapper.rs`, tool failures still call `description()` and
-`schema()` so the model can retry "without us having to include the (large)
+normal interface the large language model (LLM) should receive before its first
+call. In `src/tools/wasm/wrapper.rs`, tool failures still call `description()`
+and `schema()` so the model can retry "without us having to include the (large)
 schema in every request's tools array."
 
 That assumption is backwards. The model should see the correct schema before it
@@ -78,15 +76,15 @@ model path:
    tool error.
 
 The proactive path is the correct one because it lets the model choose the tool
-and format the first call correctly. The reactive path is too late for first-use
-success and turns the schema into post-failure recovery data.
+and format the first call correctly. The reactive path is too late for
+first-use success and turns the schema into post-failure recovery data.
 
 ### The codebase still encodes the old assumption
 
 The WASM wrapper still says the schema is included on failure so the LLM can
 retry without IronClaw having to include the large schema in every request's
-tool list. That logic made sense during early bring-up when placeholder metadata
-was common and token pressure was the dominant concern.
+tool list. That logic made sense during early bring-up when placeholder
+metadata was common and token pressure was the dominant concern.
 
 It no longer matches the intended system contract:
 
@@ -238,20 +236,21 @@ to "required interface guarantee."
 
 ### 4. Reuse the remote-tool catalogue for orchestrator-owned WASM tools
 
-The companion RFC [0001-expose-mcp-tool-definitions.md](0001-expose-mcp-tool-definitions.md)
+The companion RFC
+[0001-expose-mcp-tool-definitions.md](0001-expose-mcp-tool-definitions.md)
 proposes a worker-authenticated hosted tool catalogue plus generic remote tool
 execution endpoint.
 
-That same mechanism now covers orchestrator-owned active WASM tools.
-Roadmap item `1.1.2` is the specific prerequisite that moves hosted-visible
-catalogue filtering into the canonical `ToolRegistry` or policy layer. Roadmap
-item `1.2.2` explicitly consumes that same canonical hosted-visible
-filter seam, extending its eligibility rules to include orchestrator-owned WASM
-tools, rather than reconstructing hosted visibility in a second WASM-specific
-adapter path.
+That same mechanism now covers orchestrator-owned active WASM tools. Roadmap
+item `1.1.2` is the specific prerequisite that moves hosted-visible catalogue
+filtering into the canonical `ToolRegistry` or policy layer. Roadmap item
+`1.2.2` explicitly consumes that same canonical hosted-visible filter seam,
+extending its eligibility rules to include orchestrator-owned WASM tools,
+rather than reconstructing hosted visibility in a second WASM-specific adapter
+path.
 
-Figure 1. Hosted remote-tool catalogue flow for MCP and orchestrator-owned
-WASM tools.
+Figure 1. Hosted remote-tool catalogue flow for MCP and orchestrator-owned WASM
+tools.
 
 ```mermaid
 classDiagram
@@ -384,14 +383,14 @@ up front.
 
 ### 6. Keep WASM tools first-class at the LLM boundary
 
-The model should not need to know or care that a tool is backed by WASM. A
-WASM tool should be represented exactly like any other tool:
+The model should not need to know or care that a tool is backed by WASM. A WASM
+tool should be represented exactly like any other tool:
 
-| Field | Meaning | Source |
-| --- | --- | --- |
-| `name` | Stable tool name | wrapper/registration |
-| `description` | Human-readable contract | explicit override or guest export |
-| `parameters` | Schema | override or guest export, then provider shaping |
+| Field         | Meaning                 | Source                                          |
+| ------------- | ----------------------- | ----------------------------------------------- |
+| `name`        | Stable tool name        | wrapper/registration                            |
+| `description` | Human-readable contract | explicit override or guest export               |
+| `parameters`  | Schema                  | override or guest export, then provider shaping |
 
 That is the only interface the model should need for first-call correctness.
 
@@ -418,8 +417,8 @@ It also avoids bad alternatives:
 
 ### In-process LLM interface
 
-No new LLM-facing structure is required. Every active WASM tool should appear in
-the tool list as:
+No new LLM-facing structure is required. Every active WASM tool should appear
+in the tool list as:
 
 ```rust
 pub struct ToolDefinition {
@@ -453,8 +452,8 @@ Suggested shape:
 Recovery hint: check the advertised schema for `<tool-name>`.
 ```
 
-Full schema embedding in the hint should be optional diagnostic behaviour, not a
-design requirement.
+Full schema embedding in the hint should be optional diagnostic behaviour, not
+a design requirement.
 
 ## Testing Strategy
 
@@ -529,7 +528,8 @@ the schema from the normal tool interface.
    only for parse/validation failures?
 2. Should IronClaw store both canonical guest schema and provider-normalized
    advertised schema explicitly for observability?
-3. Should hosted workers fetch the remote tool catalogue only at startup, or also
+3. Should hosted workers fetch the remote tool catalogue only at startup, or
+   also
    after dynamic tool activation events involving WASM tools?
 4. Should UI diagnostics show whether a WASM tool's advertised schema came from
    a guest export or an explicit host override?
@@ -543,7 +543,8 @@ That means:
 
 - active WASM tools must expose `parameters` before first use
 - hosted workers must receive orchestrator-owned WASM tool definitions through
-  the remote-tool catalogue using the same shared transport boundary as MCP tools
+  the remote-tool catalogue using the same shared transport boundary as MCP
+  tools
 - provider shaping may adjust the schema, but it must still be present
 - execution-time hints should help recovery, not teach the tool for the first
   time
