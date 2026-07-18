@@ -271,8 +271,8 @@ mod tests {
     #[test]
     fn default_libsql_path_prefers_axinite_db() {
         let dir = tempfile::tempdir().expect("tempdir");
-        ambient_fs::write(&dir.path().join("axinite.db"), "").expect("write");
-        ambient_fs::write(&dir.path().join("ironclaw.db"), "").expect("write");
+        ambient_fs::write(dir.path().join("axinite.db"), "").expect("write");
+        ambient_fs::write(dir.path().join("ironclaw.db"), "").expect("write");
         assert_eq!(
             default_libsql_path_in(dir.path()),
             dir.path().join("axinite.db")
@@ -282,7 +282,7 @@ mod tests {
     #[test]
     fn default_libsql_path_falls_back_to_legacy_ironclaw_db() {
         let dir = tempfile::tempdir().expect("tempdir");
-        ambient_fs::write(&dir.path().join("ironclaw.db"), "").expect("write");
+        ambient_fs::write(dir.path().join("ironclaw.db"), "").expect("write");
         assert_eq!(
             default_libsql_path_in(dir.path()),
             dir.path().join("ironclaw.db")
