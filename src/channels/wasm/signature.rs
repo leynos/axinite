@@ -69,7 +69,7 @@ pub fn verify_slack_signature(
     signature_header: &str,
     now_secs: i64,
 ) -> bool {
-    use hmac::{Hmac, Mac};
+    use hmac::{Hmac, KeyInit, Mac};
     use sha2::Sha256;
 
     // 1. Parse and check staleness (5-minute window)

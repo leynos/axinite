@@ -84,7 +84,7 @@ fn test_verify_sha256_valid() {
     let data = b"hello world";
     let mut hasher = Sha256::new();
     hasher.update(data);
-    let hash = format!("{:x}", hasher.finalize());
+    let hash = hex::encode(hasher.finalize());
     assert!(verify_sha256(data, &hash, "test://url").is_ok());
 }
 

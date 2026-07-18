@@ -167,7 +167,7 @@ fn cache_key(model: &str, request: &CompletionRequest) -> String {
         }
     }
 
-    format!("{:x}", hasher.finalize())
+    hex::encode(hasher.finalize())
 }
 
 impl crate::llm::NativeLlmProvider for CachedProvider {
