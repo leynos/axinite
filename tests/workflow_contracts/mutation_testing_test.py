@@ -36,8 +36,8 @@ pytestmark = pytest.mark.skipif(
 #: Matches the mutation-cargo caller pinned to a full 40-hex commit SHA.
 #: Dependabot owns the SHA value; this asserts the workflow path and
 #: pin shape only, not which commit is pinned.
-USES_RE = re.compile(
-    r"^leynos/shared-actions/\.github/workflows/mutation-cargo\.yml@[0-9a-f]{40}$"
+USES_RE: re.Pattern[str] = re.compile(
+    r"leynos/shared-actions/\.github/workflows/mutation-cargo\.yml@[0-9a-f]{40}"
 )
 
 #: Test-support scaffolding compiled into non-test builds; mutants
@@ -88,7 +88,7 @@ def test_uses_reference_is_pinned_to_a_commit_sha() -> None:
     """The job must call mutation-cargo.yml pinned to a full commit SHA."""
     uses = _mutation_job(_load()).get("uses")
     assert uses is not None, "jobs.mutation.uses is missing"
-    assert USES_RE.match(uses), (
+    assert USES_RE.fullmatch(uses), (
         f"jobs.mutation.uses must reference "
         "leynos/shared-actions/.github/workflows/mutation-cargo.yml "
         f"pinned to a full 40-character lowercase-hex commit SHA (not a "

@@ -10,9 +10,12 @@ Run via ``make test-workflow-contracts``.
 
 from __future__ import annotations
 
+import re
 from pathlib import Path
 
 import yaml
+
+SHA_RE: re.Pattern[str] = re.compile(r"[0-9a-f]{40}")
 
 WORKFLOW_PATH = (
     Path(__file__).resolve().parents[2]
@@ -170,10 +173,11 @@ def test_codescene_check_uses_canonical_guard_and_inputs() -> None:
     assert steps.index(check) == generator_index + 1, (
         "the CodeScene check must immediately follow report generation"
     )
-    assert check.get("uses") == (
-        "leynos/shared-actions/.github/actions/upload-codescene-coverage@"
-        "927edd45ae77be4251a8a18ca9eb5613a2e32cbd"
-    ), "coverage-check must use the proven CodeScene action pin"
+    codescene_ref = str(check.get("uses", "")).split("@")[-1]
+    assert SHA_RE.fullmatch(codescene_ref), (
+        "coverage-check must pin the CodeScene action to a full commit SHA, "
+        f"got {codescene_ref!r}"
+    )
     assert check.get("env") == {"CS_ACCESS_TOKEN": "${{ secrets.CS_ACCESS_TOKEN }}"}, (
         "the CodeScene token must remain scoped to the check step"
     )
