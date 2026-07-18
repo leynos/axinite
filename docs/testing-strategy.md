@@ -126,7 +126,7 @@ Describes a system event to be emitted in tests. Used with
 #### `register_github_issue_routine(db: &Arc<dyn Database>, engine: &RoutineEngine) -> Routine`
 
 Helper for system event tests that registers a GitHub issue-opened routine with
-a filter for the `nearai/ironclaw` repository.
+a filter for the `leynos/axinite` repository.
 
 #### `assert_system_event_count(engine: &RoutineEngine, spec: SystemEventSpec<'_>, expected: usize, msg: &str)`
 
@@ -358,7 +358,7 @@ The E2E suite itself is a useful ad hoc debugging surface.
 The repository also exposes validation paths that are not full test suites but
 are still valuable during investigation.
 
-- `ironclaw doctor` runs active health diagnostics against the local
+- `axinite doctor` runs active health diagnostics against the local
   environment and configuration.
 - Docker image build jobs in CI provide a packaging-level smoke test.
 - WIT compatibility tests and standalone channel builds provide focused

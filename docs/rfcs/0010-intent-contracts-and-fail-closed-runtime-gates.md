@@ -18,7 +18,7 @@ resources, and similar material should enter context as explicitly
 untrusted data unless promoted into a curated control-plane artefact.
 
 The core lesson from the intent-engineering analysis is that soft policy is
-decorative wallpaper, not enforcement. [^1] Axinite already contains strong
+decorative wallpaper, not enforcement. [^1] IronClaw already contains strong
 deterministic skill activation (keyword/tag/regex scoring with no language
 model (LLM) involvement) and tool attenuation (installed skills receive a
 read-only tool ceiling), plus a WebAssembly (WASM) isolation boundary that
@@ -28,7 +28,7 @@ lifecycle.
 
 ## Problem
 
-Axinite's current safety architecture provides strong individual
+IronClaw's current safety architecture provides strong individual
 mechanisms — `SafetyLayer` sanitization, validation, policy checks,
 secret-leak detection, approval gating, and skill-based tool
 attenuation — but those mechanisms are not organized around a single,
@@ -58,7 +58,7 @@ The practical consequences of this gap include:
 
 ### Existing enforcement mechanisms
 
-Axinite already has multiple gate points where deterministic enforcement
+IronClaw already has multiple gate points where deterministic enforcement
 can live:
 
 - **Tool execution preflight**: `SafetyLayer` validates tool calls before
@@ -101,7 +101,7 @@ workspace documents at the runtime level.
     downgrade-to-approval as an opt-in alternative.
   - Make the effective contract inspectable, diffable, and auditable.
 - Non-goals:
-  - Replace Axinite's existing safety mechanisms. This RFC composes them
+  - Replace IronClaw's existing safety mechanisms. This RFC composes them
     under a contract, not replaces them.
   - Define the policy language. That is the subject of ADR 001, which
     recommends OPA Rego compiled to WebAssembly.

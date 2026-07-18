@@ -8,7 +8,7 @@ use std::path::{Path, PathBuf};
 
 use tokio::fs;
 
-use crate::bootstrap::ironclaw_base_dir;
+use crate::bootstrap::axinite_base_dir;
 
 /// Discover WASM channel files in a directory without loading them.
 ///
@@ -67,8 +67,8 @@ pub struct DiscoveredChannel {
 
 /// Get the default channels directory path.
 ///
-/// Returns ~/.ironclaw/channels/
+/// Returns ~/.axinite/channels/
 #[allow(dead_code)]
 pub fn default_channels_dir() -> PathBuf {
-    ironclaw_base_dir().join("channels")
+    axinite_base_dir().join("channels")
 }

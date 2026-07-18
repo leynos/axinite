@@ -2,7 +2,7 @@
 
 use std::sync::Arc;
 
-use ironclaw::{
+use axinite::{
     app::AppComponents,
     channels::{
         ChannelManager,
@@ -23,7 +23,7 @@ pub(crate) type WasmChannelRuntimeState = (
 
 /// Shared dependencies needed to wire the loaded WASM runtime back into the
 /// extension manager and live channel registry.
-pub(crate) struct WasmWiringContext<'a, Manager = ironclaw::extensions::ExtensionManager>
+pub(crate) struct WasmWiringContext<'a, Manager = axinite::extensions::ExtensionManager>
 where
     Manager: WasmRuntimeWiringPort + ?Sized,
 {
@@ -33,7 +33,7 @@ where
     pub(crate) channels: &'a Arc<ChannelManager>,
     /// Optional SSE sender registered with the extension manager after wiring.
     pub(crate) sse_sender:
-        &'a Option<tokio::sync::broadcast::Sender<ironclaw::channels::web::types::SseEvent>>,
+        &'a Option<tokio::sync::broadcast::Sender<axinite::channels::web::types::SseEvent>>,
     /// Map from WASM channel name to its owner account ID.
     pub(crate) wasm_channel_owner_ids: &'a std::collections::HashMap<String, i64>,
 }
@@ -54,16 +54,16 @@ pub(crate) trait WasmRuntimeWiringPort: Send + Sync {
     async fn activate(
         &self,
         name: &str,
-    ) -> Result<ironclaw::extensions::ActivateResult, ironclaw::extensions::ExtensionError>;
+    ) -> Result<axinite::extensions::ActivateResult, axinite::extensions::ExtensionError>;
     async fn set_relay_channel_manager(&self, channel_manager: Arc<ChannelManager>);
     async fn restore_relay_channels(&self);
     async fn set_sse_sender(
         &self,
-        sender: tokio::sync::broadcast::Sender<ironclaw::channels::web::types::SseEvent>,
+        sender: tokio::sync::broadcast::Sender<axinite::channels::web::types::SseEvent>,
     );
 }
 
-impl WasmRuntimeWiringPort for ironclaw::extensions::ExtensionManager {
+impl WasmRuntimeWiringPort for axinite::extensions::ExtensionManager {
     async fn set_active_channels(&self, names: Vec<String>) {
         self.set_active_channels(names).await;
     }
@@ -97,7 +97,7 @@ impl WasmRuntimeWiringPort for ironclaw::extensions::ExtensionManager {
     async fn activate(
         &self,
         name: &str,
-    ) -> Result<ironclaw::extensions::ActivateResult, ironclaw::extensions::ExtensionError> {
+    ) -> Result<axinite::extensions::ActivateResult, axinite::extensions::ExtensionError> {
         self.activate(name).await
     }
 
@@ -111,7 +111,7 @@ impl WasmRuntimeWiringPort for ironclaw::extensions::ExtensionManager {
 
     async fn set_sse_sender(
         &self,
-        sender: tokio::sync::broadcast::Sender<ironclaw::channels::web::types::SseEvent>,
+        sender: tokio::sync::broadcast::Sender<axinite::channels::web::types::SseEvent>,
     ) {
         self.set_sse_sender(sender).await;
     }
@@ -179,7 +179,7 @@ pub(crate) async fn init_wasm_channels(
         return empty_wasm_channels_init();
     }
 
-    let Some(result) = ironclaw::channels::wasm::setup_wasm_channels(
+    let Some(result) = axinite::channels::wasm::setup_wasm_channels(
         config,
         &components.secrets_store,
         components.extension_manager.as_ref(),
@@ -254,7 +254,7 @@ async fn wire_relay_channels<Manager: WasmRuntimeWiringPort + ?Sized>(
 /// wiring.
 async fn register_sse_sender<Manager: WasmRuntimeWiringPort + ?Sized>(
     ext_mgr: &Manager,
-    sender: &tokio::sync::broadcast::Sender<ironclaw::channels::web::types::SseEvent>,
+    sender: &tokio::sync::broadcast::Sender<axinite::channels::web::types::SseEvent>,
 ) {
     ext_mgr.set_sse_sender(sender.clone()).await;
 }

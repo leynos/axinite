@@ -164,7 +164,7 @@ pub async fn models_handler(
                     "id": name,
                     "object": "model",
                     "created": created,
-                    "owned_by": "ironclaw"
+                    "owned_by": "axinite"
                 })
             })
             .collect(),
@@ -174,7 +174,7 @@ pub async fn models_handler(
                 "id": model_name,
                 "object": "model",
                 "created": created,
-                "owned_by": "ironclaw"
+                "owned_by": "axinite"
             })]
         }
         Err(e) => return Err(map_llm_error(e)),

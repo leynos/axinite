@@ -43,7 +43,7 @@ pub(super) fn print_help() {
     let conversation_cmds = &["/undo", "/redo", "/clear", "/compact", "/new", "/interrupt"];
 
     println!();
-    println!("  {h}IronClaw REPL{r}");
+    println!("  {h}Axinite REPL{r}");
     println!();
     println!("  {h}Commands{r}");
     for cmd in SLASH_COMMANDS

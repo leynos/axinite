@@ -19,7 +19,7 @@ sandboxed environment with explicit capabilities.
 2. Implement the WIT interface (`wit/tool.wit`)
 3. Create `<name>.capabilities.json` declaring required permissions
 4. Build with `cargo build --target wasm32-wasip2 --release`
-5. Install with `ironclaw tool install path/to/tool.wasm`
+5. Install with `axinite tool install path/to/tool.wasm`
 
 See `tools-src/` for examples.
 
@@ -100,7 +100,7 @@ For services without OAuth or when OAuth isn't configured:
 
 #### Auth Flow Priority
 
-When running `ironclaw tool auth <tool>`:
+When running `axinite tool auth <tool>`:
 
 1. Check `env_var` - if set in environment, use it directly
 2. Check `oauth` - if configured, open browser for OAuth flow
@@ -111,10 +111,10 @@ appropriate flow. No service-specific code in the main agent.
 
 ### WASM Tools vs MCP Servers: When to Use Which
 
-Both are first-class in the extension system (`ironclaw tool install` handles
+Both are first-class in the extension system (`axinite tool install` handles
 both), but they have different strengths.
 
-#### WASM Tools (IronClaw native)
+#### WASM Tools (Axinite native)
 
 - Sandboxed: fuel metering, memory limits, no access except what's allowlisted
 - Credentials injected by host runtime, tool code never sees the actual token
@@ -129,7 +129,7 @@ both), but they have different strengths.
 - Any language (TypeScript/Python most common)
 - Can do websockets, streaming, background polling
 - Cost: external process with full system access (no sandbox), manages own
-  credentials, IronClaw can't prevent leaks
+  credentials, Axinite can't prevent leaks
 
 **Decision guide:**
 

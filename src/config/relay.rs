@@ -75,8 +75,8 @@ impl RelayConfig {
         Some(Self {
             url,
             api_key,
-            callback_url: env("IRONCLAW_OAUTH_CALLBACK_URL"),
-            instance_id: env("IRONCLAW_INSTANCE_ID"),
+            callback_url: env("AXINITE_OAUTH_CALLBACK_URL"),
+            instance_id: env("AXINITE_INSTANCE_ID"),
             request_timeout_secs: env("RELAY_REQUEST_TIMEOUT_SECS")
                 .and_then(|v| v.parse().ok())
                 .unwrap_or(30),
@@ -128,8 +128,8 @@ mod tests {
         let config = RelayConfig::from_env_reader(|key| match key {
             "CHANNEL_RELAY_URL" => Some("http://relay:3001".into()),
             "CHANNEL_RELAY_API_KEY" => Some("secret".into()),
-            "IRONCLAW_OAUTH_CALLBACK_URL" => Some("https://tunnel.example.com".into()),
-            "IRONCLAW_INSTANCE_ID" => Some("my-instance".into()),
+            "AXINITE_OAUTH_CALLBACK_URL" => Some("https://tunnel.example.com".into()),
+            "AXINITE_INSTANCE_ID" => Some("my-instance".into()),
             "RELAY_REQUEST_TIMEOUT_SECS" => Some("60".into()),
             "RELAY_STREAM_TIMEOUT_SECS" => Some("43200".into()),
             "RELAY_BACKOFF_INITIAL_MS" => Some("2000".into()),

@@ -8,7 +8,7 @@ Status: IMPLEMENTED
 
 ## Purpose / big picture
 
-After this change, IronClaw runs `cargo-mutants` nightly against files changed
+After this change, Axinite runs `cargo-mutants` nightly against files changed
 in the past 24 hours on the targeted branch. The workflow uploads a structured
 log of surviving mutants as a downloadable GitHub Actions artefact. Developers
 can also trigger the workflow manually on any branch, supplying an explicit
@@ -150,7 +150,7 @@ line-length violations in this execplan document.
 
 ## Context and orientation
 
-The repository is a Rust workspace with a single member crate (`ironclaw`) at
+The repository is a Rust workspace with a single member crate (`axinite`) at
 the root. Several out-of-tree crates under `tools-src/` and `channels-src/` are
 excluded from the workspace and built separately.
 

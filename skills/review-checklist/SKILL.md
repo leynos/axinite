@@ -19,7 +19,7 @@ activation:
 # Pre-Merge Review Checklist
 
 Before merging, verify these items. They represent the most common issues
-caught by automated code reviewers (Copilot, Gemini) on IronClaw PRs.
+caught by automated code reviewers (Copilot, Gemini) on Axinite PRs.
 
 ## Database Operations
 

@@ -18,7 +18,7 @@ layer. [^2]
 
 This report proposes a **security-minded memory sidecar** (“memoryd”) that:
 
-- **Adds a transactional outbox** in PostgreSQL, populated by IronClaw at key
+- **Adds a transactional outbox** in PostgreSQL, populated by Axinite at key
   persistence boundaries (conversation messages; workspace document mutations),
   with explicit idempotency and retention. [^3]
 - Runs a **local-only Rust sidecar** that consumes outbox events, performs
@@ -27,7 +27,7 @@ This report proposes a **security-minded memory sidecar** (“memoryd”) that:
   (embedded; no SPARQL HTTP server). [^4]
 - Uses a **capability-token enforcement model** over a
   **Unix Domain Socket (UDS)** RPC surface with narrow, auditable scopes; tokens
-  are minted by IronClaw per job/workspace and validated by memoryd. The design
+  are minted by Axinite per job/workspace and validated by memoryd. The design
   intentionally minimizes network surfaces (UDS for memoryd; no Oxigraph network
   exposure; Qdrant/Ollama bound to loopback with keys and OS controls). [^5]
 - Delegates consolidation and heavyweight reconciliation to **Apalis** workers
@@ -37,7 +37,7 @@ This report proposes a **security-minded memory sidecar** (“memoryd”) that:
 Open choices (explicit “no constraint” for this request):
 
 - Embedding model(s) (must be consistent for ingest vs recall), extraction
-  model, and whether to add sparse vectors; these remain configurable. Axinite
+  model, and whether to add sparse vectors; these remain configurable. IronClaw
   already exposes a unified embeddings config supporting OpenAI / NEAR AI /
   Ollama and model-dependent vector dimensions. [^7]
 - Whether to structure Qdrant as collection-per-workspace (strong isolation,
@@ -45,7 +45,7 @@ Open choices (explicit “no constraint” for this request):
   reliance on correct filters). This report recommends
   **collection-per-workspace** for security and deletion correctness.
 
-## Baseline architecture and constraints from Axinite
+## Baseline architecture and constraints from IronClaw
 
 IronClaw’s README and internal development guide describe an architecture built
 around: multichannel inputs → agent loop → tools (built-in, Model Context
@@ -74,14 +74,14 @@ Reusable security primitives:
 - A leak detector exists that can redact or block outputs containing secret-like
   patterns (Aho–Corasick + regex; actions include Block/Redact/Warn). [^15]
 
-Design constraint: Axinite’s Postgres schema includes `conversation_messages`,
+Design constraint: IronClaw’s Postgres schema includes `conversation_messages`,
 `memory_documents`, and `memory_chunks`, with indexes (e.g.
 `idx_memory_chunks_tsv`, HNSW on embeddings in V1; later dropped for
 variable-dimension embeddings). [^16] The sidecar must not assume a fixed
 embedding dimension in the primary DB, and should treat embedding dimension as a
 configuration contract. [^17]
 
-## Required IronClaw code changes
+## Required Axinite code changes
 
 This section lists concrete changes to Axinite’s IronClaw codebase to integrate
 a secure memory sidecar while keeping surfaces small and enforcing least
@@ -96,18 +96,18 @@ Key fields:
 
 - `enabled: bool`
 - `mode: Disabled|Shadow|Active`
-- `uds_path: PathBuf` (default under `~/.ironclaw/run/memoryd.sock`)
-- `cap_issuer: String` (e.g. `ironclaw`)
+- `uds_path: PathBuf` (default under `~/.axinite/run/memoryd.sock`)
+- `cap_issuer: String` (e.g. `axinite`)
 - `cap_audience: String` (e.g. `memoryd`)
 - `cap_ttl_seconds: u32` (short-lived, e.g. 60–300s depending on method)
-- `outbox_poll_ms: u32` (if IronClaw also runs a notifier; optional)
-- `qdrant_url`, `qdrant_api_key_secret_ref` (if IronClaw needs to provision;
+- `outbox_poll_ms: u32` (if Axinite also runs a notifier; optional)
+- `qdrant_url`, `qdrant_api_key_secret_ref` (if Axinite needs to provision;
   otherwise memoryd owns)
 - `ollama_base_url` (already present globally for embeddings; reuse) [^19]
 
 ### Capability minting module
 
-Add `src/memory_sidecar/capability.rs` in IronClaw to mint capability tokens for
+Add `src/memory_sidecar/capability.rs` in Axinite to mint capability tokens for
 memoryd calls. Use the same philosophy as WASM capabilities (explicit, opt-in,
 narrow) but expressed as signed tokens. [^20]
 
@@ -134,7 +134,7 @@ separation between orchestrator-only tools vs container tools. [^23]
 
 Implement dual-write into **Postgres outbox** at these boundaries:
 
-- **Conversation writes**: whenever IronClaw inserts into
+- **Conversation writes**: whenever Axinite inserts into
   `conversation_messages`, insert an outbox event in the same transaction. [^24]
 - **Workspace document mutations**: whenever `memory_documents` changes
   materially (insert/update/delete), insert an outbox event. The existing
@@ -158,7 +158,7 @@ workspace are registered once DB exists. [^26]
 
 ## Postgres outbox schema and event types
 
-Axinite’s V1 schema already defines the core persistence tables
+IronClaw’s V1 schema already defines the core persistence tables
 (`conversations`, `conversation_messages`, workspace tables). [^27] The outbox
 adds a durable, ordered stream of events for memory projection and
 consolidation.
@@ -186,7 +186,7 @@ CREATE TABLE IF NOT EXISTS memory_outbox (
   -- Causality / audit
   job_id          UUID NULL,
   channel         TEXT NULL,              -- e.g. "cli", "http", "telegram"
-  producer        TEXT NOT NULL,          -- e.g. "ironclaw"
+  producer        TEXT NOT NULL,          -- e.g. "axinite"
   occurred_at     TIMESTAMPTZ NOT NULL DEFAULT NOW(),
 
   -- Payload (keep small; reference IDs; optionally include redacted text)
@@ -251,7 +251,7 @@ in `conversation_messages.content`). [^29]
 | `conversation.message.appended` | INSERT into `conversation_messages` [^30] | `message_id`, `role`, `content_hash`, `content_redacted?`, `created_at` | `conversation_message:{message_id}` |
 | `workspace.document.upserted` | INSERT/UPDATE `memory_documents` [^31] | `document_id`, `path`, `content_hash`, `updated_at` | `memory_document:{document_id}:{updated_at}` |
 | `workspace.document.deleted` | DELETE `memory_documents` [^32] | `document_id`, `path`, `deleted_at` | `memory_document_deleted:{document_id}` |
-| `memory.reinforcement.recorded` | IronClaw tool → memoryd Reinforce | `target_type`, `target_id`, `delta`, `source` | `reinforce:{job_id}:{target_type}:{target_id}` |
+| `memory.reinforcement.recorded` | Axinite tool → memoryd Reinforce | `target_type`, `target_id`, `delta`, `source` | `reinforce:{job_id}:{target_type}:{target_id}` |
 | `workspace.purged` | CLI/admin | `reason`, `requested_by` | `purge:{workspace_id}:{occurred_at_bucket}` |
 
 Retention policy:
@@ -272,7 +272,7 @@ Retention policy:
   "workspace_id": "default",
   "conversation_id": "1c3f0fd9-fc5c-4f9b-8d02-4a2a1d1f18ac",
   "job_id": "3ab4dc9d-8c7a-4c7b-9b44-1b7f8d8b0fd2",
-  "producer": "ironclaw",
+  "producer": "axinite",
   "occurred_at": "2026-03-11T09:12:44.103Z",
   "payload": {
     "message_id": "7b8f8db5-8ac8-4f55-9bee-b9eaacd71c7b",
@@ -289,7 +289,7 @@ Retention policy:
   "dedupe_key": "memory_document:6a5ad356-9d12-4b36-8c0f-b3f4c0c77f21:2026-03-11T09:20:10Z",
   "event_type": "workspace.document.upserted",
   "workspace_id": "default",
-  "producer": "ironclaw",
+  "producer": "axinite",
   "occurred_at": "2026-03-11T09:20:10.000Z",
   "payload": {
     "document_id": "6a5ad356-9d12-4b36-8c0f-b3f4c0c77f21",
@@ -310,13 +310,13 @@ for shared types:
 - `memoryd-core`: data model, capability verification, schemas, Qdrant/Oxigraph
   adapters.
 - `memoryd`: UDS server, outbox consumer, Apalis worker runtime, metrics.
-- `ironclaw` changes: UDS client + capability minting + outbox insertion hooks.
+- `axinite` changes: UDS client + capability minting + outbox insertion hooks.
 
 Mermaid architecture diagram:
 
 ```mermaid
 flowchart LR
-  subgraph IC[IronClaw process]
+  subgraph IC[Axinite process]
     Tools["Built-in tools\n(memory_search/write/read)"]
     DB[(PostgreSQL)]
     Outbox[(memory_outbox)]
@@ -542,9 +542,9 @@ scopes and resource bindings.
 
 - `header`: `{"alg":"EdDSA","kid":"memoryd-session-1","typ":"cap+jwt"}`
 - `payload` (claims):
-  - `iss`: issuer, e.g. `ironclaw`
+  - `iss`: issuer, e.g. `axinite`
   - `aud`: audience, e.g. `memoryd`
-  - `sub`: workspace principal (`default` in Axinite’s current single-user
+  - `sub`: workspace principal (`default` in IronClaw’s current single-user
     pattern) [^36]
   - `ws`: workspace_id (must match request)
   - `job`: job_id (optional, but recommended for auditing)
@@ -580,7 +580,7 @@ For each request:
    network exposure” policy (memoryd must not provide any network API itself).
 5. **Audit log**: record `job_id`, method, workspace, target ids, and decision outcome.
 
-Redaction and leak detection: before IronClaw sends an episode text to memoryd,
+Redaction and leak detection: before Axinite sends an episode text to memoryd,
 run the existing leak detector and either block or redact secret-like
 content. [^37] This avoids “remembering secrets” as retrievable embeddings.
 
@@ -602,14 +602,14 @@ Create two collections per workspace:
 
 Rationale: simplifies purge, reduces risk of cross-tenant filter mistakes, and
 makes deletion propagation crisp (drop collections). This is consistent with the
-“capabilities must be explicit” philosophy in IronClaw’s WASM model. [^40]
+“capabilities must be explicit” philosophy in Axinite’s WASM model. [^40]
 
 #### Episodes collection schema
 
 Vectors (named):
 
 - `dense`: the embedding vector for episode summaries / chunks
-  - `size`: derived from the configured embedding model. Axinite already
+  - `size`: derived from the configured embedding model. IronClaw already
     supports dimensions per model (e.g. `nomic-embed-text`→768,
     `mxbai-embed-large`→1024, OpenAI 1536/3072). [^41]
   - `distance`: `Cosine` (typical for text embeddings). [^42]
@@ -725,9 +725,9 @@ worker) and optional read-only handles for query execution.
 
 Use **named graphs per workspace** to strongly separate data:
 
-- Graph: `urn:ironclaw:ws:{workspace_id}:facts`
-- Graph: `urn:ironclaw:ws:{workspace_id}:provenance`
-- Graph: `urn:ironclaw:ws:{workspace_id}:retractions`
+- Graph: `urn:axinite:ws:{workspace_id}:facts`
+- Graph: `urn:axinite:ws:{workspace_id}:provenance`
+- Graph: `urn:axinite:ws:{workspace_id}:retractions`
 
 #### RDF predicates (suggested vocabulary)
 
@@ -749,7 +749,7 @@ Use a minimal internal vocabulary (do not depend on remote ontologies):
 
 Each extracted fact links to one or more evidence spans:
 
-- Evidence span node: `urn:ironclaw:evidence:{source_id}:{start}:{end}:{hash}`
+- Evidence span node: `urn:axinite:evidence:{source_id}:{start}:{end}:{hash}`
 - Properties:
   - `ic:source` = `"conversation"` or `"workspace.document"`
   - `ic:sourceId` = message_id or document_id
@@ -862,12 +862,13 @@ keeps the rest of the pipeline deterministic.
 
 Ingest flow should:
 
-- Redact secrets before sending text to Ollama using IronClaw’s leak detector
+- Redact secrets before sending text to Ollama using Axinite’s leak detector
   rules. [^52]
 - Keep embeddings consistent: use the same embedding model for:
   - Episode vectors at ingestion,
   - Query vectors at recall.
-  Axinite already records and configures an embedding provider + dimension. [^53]
+  IronClaw already records and configures an embedding provider + dimension.
+  [^53]
 
 ### Apalis workers: jobs, retries, heuristics, reconciliation
 
@@ -920,7 +921,7 @@ Retries:
 #### Minimize exposure
 
 - memoryd listens only on a UDS socket (0600 permissions; owned by the user
-  running IronClaw).
+  running Axinite).
 - Do not expose Oxigraph over HTTP; embed it in memoryd only. [^57]
 - Ensure Ollama and Qdrant bind to loopback; disable Ollama cloud features for
   strict locality. [^58]
@@ -942,7 +943,7 @@ Store in Postgres (append-only) or in IronClaw’s existing history/audit tables
 - decision: allow/deny, reason
 - latency and error codes
 
-Axinite already persists job history and tool actions (tool_name,
+IronClaw already persists job history and tool actions (tool_name,
 inputs/outputs). [^60] Use the same “structured event” conventions.
 
 #### Redaction

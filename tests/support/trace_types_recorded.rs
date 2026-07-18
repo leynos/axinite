@@ -1,6 +1,6 @@
 //! Helpers for recorded flat-step traces.
 
-use ironclaw::llm::recording::{TraceResponse, TraceStep};
+use axinite::llm::recording::{TraceResponse, TraceStep};
 
 use super::trace_types::LlmTrace;
 
@@ -14,7 +14,7 @@ impl LlmTrace {
     /// # Examples
     ///
     /// ```rust,ignore
-    /// use ironclaw::llm::recording::{TraceResponse, TraceStep};
+    /// use axinite::llm::recording::{TraceResponse, TraceStep};
     ///
     /// use crate::support::trace_types::{LlmTrace, TraceExpects, TraceTurn};
     ///

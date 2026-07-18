@@ -213,11 +213,11 @@ management.
   - `cargo clippy --all --benches --tests --examples --all-features`
   - `cargo test`
   - `cargo test --features integration`
-  - `RUST_LOG=ironclaw=debug cargo run`
+  - `RUST_LOG=axinite=debug cargo run`
 - For debugging, these logging patterns are the default entry points:
-  - `RUST_LOG=ironclaw=trace cargo run`
-  - `RUST_LOG=ironclaw::agent=debug cargo run`
-  - `RUST_LOG=ironclaw=debug,tower_http=debug cargo run`
+  - `RUST_LOG=axinite=trace cargo run`
+  - `RUST_LOG=axinite::agent=debug cargo run`
+  - `RUST_LOG=axinite=debug,tower_http=debug cargo run`
 - For end-to-end coverage, refer to `tests/e2e/CLAUDE.md`.
 
 ## Architecture and Extensibility

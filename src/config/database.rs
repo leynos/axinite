@@ -1,11 +1,11 @@
 //! Database configuration: backend selection and connection settings
 //! resolved from the environment.
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use secrecy::{ExposeSecret, SecretString};
 
-use crate::bootstrap::ironclaw_base_dir;
+use crate::bootstrap::axinite_base_dir;
 use crate::config::EnvContext;
 use crate::config::helpers::{EnvKey, optional_env_from, parse_optional_env_from};
 use crate::error::ConfigError;
@@ -99,7 +99,7 @@ pub struct DatabaseConfig {
     pub ssl_mode: SslMode,
 
     // -- libSQL fields --
-    /// Path to local libSQL database file (default: ~/.ironclaw/ironclaw.db).
+    /// Path to local libSQL database file (default: ~/.axinite/axinite.db).
     pub libsql_path: Option<PathBuf>,
     /// Turso cloud URL for remote sync (optional).
     pub libsql_url: Option<String>,
@@ -156,13 +156,13 @@ impl DatabaseConfig {
     ///
     /// The PostgreSQL URL is required only when using the postgres backend.
     /// For the libsql backend, default to an empty placeholder.
-    /// DATABASE_URL is loaded from ~/.ironclaw/.env via dotenvy early in startup.
+    /// DATABASE_URL is loaded from ~/.axinite/.env via dotenvy early in startup.
     fn resolve_url(ctx: &EnvContext, backend: DatabaseBackend) -> Result<String, ConfigError> {
         optional_env_from(ctx, EnvKey("DATABASE_URL"))?
             .or_else(|| (backend == DatabaseBackend::LibSql).then(|| "unused://libsql".to_string()))
             .ok_or_else(|| ConfigError::MissingRequired {
                 key: "DATABASE_URL".to_string(),
-                hint: "Run 'ironclaw onboard' or set DATABASE_URL environment variable".to_string(),
+                hint: "Run 'axinite onboard' or set DATABASE_URL environment variable".to_string(),
             })
     }
 
@@ -186,7 +186,7 @@ impl DatabaseConfig {
             .map(PathBuf::from)
             .or_else(|| {
                 (backend == DatabaseBackend::LibSql)
-                    .then(|| ctx.ironclaw_base_dir().join("ironclaw.db"))
+                    .then(|| default_libsql_path_in(&ctx.axinite_base_dir()))
             }))
     }
 
@@ -214,9 +214,26 @@ impl SslMode {
     }
 }
 
-/// Default libSQL database path (~/.ironclaw/ironclaw.db).
+/// Default libSQL database path (~/.axinite/axinite.db).
+///
+/// Falls back to the pre-rename `ironclaw.db` when only the legacy file
+/// exists, so an install migrated with `mv ~/.ironclaw ~/.axinite` keeps its
+/// existing data reachable without a manual file rename.
 pub fn default_libsql_path() -> PathBuf {
-    ironclaw_base_dir().join("ironclaw.db")
+    default_libsql_path_in(&axinite_base_dir())
+}
+
+/// Resolve the default libSQL database file within `base`.
+///
+/// Prefers `axinite.db`; selects the legacy `ironclaw.db` only when the
+/// preferred file is absent and the legacy one exists.
+pub(crate) fn default_libsql_path_in(base: &Path) -> PathBuf {
+    let preferred = base.join("axinite.db");
+    if preferred.exists() {
+        return preferred;
+    }
+    let legacy = base.join("ironclaw.db");
+    if legacy.exists() { legacy } else { preferred }
 }
 
 #[cfg(test)]
@@ -249,5 +266,35 @@ mod tests {
     #[test]
     fn ssl_mode_parse_invalid() {
         assert!("invalid".parse::<SslMode>().is_err());
+    }
+
+    #[test]
+    fn default_libsql_path_prefers_axinite_db() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        ambient_fs::write(dir.path().join("axinite.db"), "").expect("write");
+        ambient_fs::write(dir.path().join("ironclaw.db"), "").expect("write");
+        assert_eq!(
+            default_libsql_path_in(dir.path()),
+            dir.path().join("axinite.db")
+        );
+    }
+
+    #[test]
+    fn default_libsql_path_falls_back_to_legacy_ironclaw_db() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        ambient_fs::write(dir.path().join("ironclaw.db"), "").expect("write");
+        assert_eq!(
+            default_libsql_path_in(dir.path()),
+            dir.path().join("ironclaw.db")
+        );
+    }
+
+    #[test]
+    fn default_libsql_path_defaults_to_axinite_db_when_neither_exists() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        assert_eq!(
+            default_libsql_path_in(dir.path()),
+            dir.path().join("axinite.db")
+        );
     }
 }

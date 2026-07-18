@@ -1,6 +1,6 @@
 //! Binary-only CLI dispatch helpers for the host executable.
 
-use ironclaw::{
+use axinite::{
     cli::{
         Cli, Command, run_mcp_command, run_pairing_command, run_service_command,
         run_status_command, run_tool_command,
@@ -9,7 +9,7 @@ use ironclaw::{
 };
 
 #[cfg(any(feature = "postgres", feature = "libsql"))]
-use ironclaw::setup::{SetupConfig, SetupWizard};
+use axinite::setup::{SetupConfig, SetupWizard};
 
 /// Routes a parsed [`Cli`] to the appropriate subcommand handler.
 ///
@@ -35,25 +35,25 @@ fn is_agent_subcommand(command: &Command) -> bool {
     )
 }
 
-// `dispatch_ironclaw_cli_command` intentionally uses a wildcard arm and
+// `dispatch_axinite_cli_command` intentionally uses a wildcard arm and
 // delegates exhaustive compile-time coverage to `dispatch_sync_command`, which
 // is the canonical exhaustive matcher over `Command`. When adding new command
-// variants, update both `dispatch_ironclaw_cli_command` and
+// variants, update both `dispatch_axinite_cli_command` and
 // `dispatch_sync_command` so async and sync routing stay aligned.
-async fn dispatch_ironclaw_cli_command(command: &Command) -> Option<anyhow::Result<bool>> {
+async fn dispatch_axinite_cli_command(command: &Command) -> Option<anyhow::Result<bool>> {
     match command {
         Command::Config(c) => Some(
-            run_traced_async(|| async { ironclaw::cli::run_config_command(c.clone()).await }).await,
+            run_traced_async(|| async { axinite::cli::run_config_command(c.clone()).await }).await,
         ),
         Command::Registry(c) => Some(
-            run_traced_async(|| async { ironclaw::cli::run_registry_command(c.clone()).await })
+            run_traced_async(|| async { axinite::cli::run_registry_command(c.clone()).await })
                 .await,
         ),
         Command::Memory(c) => {
-            Some(run_traced_async(|| async { ironclaw::cli::run_memory_command(c).await }).await)
+            Some(run_traced_async(|| async { axinite::cli::run_memory_command(c).await }).await)
         }
         Command::Doctor => {
-            Some(run_traced_async(|| async { ironclaw::cli::run_doctor_command().await }).await)
+            Some(run_traced_async(|| async { axinite::cli::run_doctor_command().await }).await)
         }
         _ => None,
     }
@@ -77,7 +77,7 @@ async fn dispatch_local_async_command(command: &Command) -> Option<anyhow::Resul
 }
 
 async fn dispatch_async_command(command: &Command) -> Option<anyhow::Result<bool>> {
-    if let Some(result) = dispatch_ironclaw_cli_command(command).await {
+    if let Some(result) = dispatch_axinite_cli_command(command).await {
         return Some(result);
     }
     dispatch_local_async_command(command).await
@@ -240,9 +240,9 @@ async fn run_onboard_subcommand(
 }
 
 #[cfg(feature = "import")]
-async fn run_import_subcommand(import_cmd: &ironclaw::cli::ImportCommand) -> anyhow::Result<()> {
-    let config = ironclaw::config::Config::from_env().await?;
-    ironclaw::cli::run_import_command(import_cmd, &config).await
+async fn run_import_subcommand(import_cmd: &axinite::cli::ImportCommand) -> anyhow::Result<()> {
+    let config = axinite::config::Config::from_env().await?;
+    axinite::cli::run_import_command(import_cmd, &config).await
 }
 
 async fn dispatch_claude_bridge_subcommand(
@@ -252,7 +252,7 @@ async fn dispatch_claude_bridge_subcommand(
     model: &str,
 ) -> anyhow::Result<()> {
     init_worker_tracing();
-    ironclaw::worker::run_claude_bridge(job_id, orchestrator_url, max_turns, model).await
+    axinite::worker::run_claude_bridge(job_id, orchestrator_url, max_turns, model).await
 }
 
 async fn dispatch_worker_subcommand(
@@ -261,7 +261,7 @@ async fn dispatch_worker_subcommand(
     max_iterations: u32,
 ) -> anyhow::Result<()> {
     init_worker_tracing();
-    ironclaw::worker::run_worker(job_id, orchestrator_url, max_iterations).await
+    axinite::worker::run_worker(job_id, orchestrator_url, max_iterations).await
 }
 
 #[cfg(test)]
@@ -271,7 +271,7 @@ mod test_support {
     use std::cell::{Cell, RefCell};
     use std::sync::{Arc, OnceLock};
 
-    use ironclaw::cli::Command;
+    use axinite::cli::Command;
 
     pub(super) type AgentDispatchHook = fn(&Command) -> anyhow::Result<Option<bool>>;
     pub(super) static AGENT_DISPATCH_HOOK: OnceLock<

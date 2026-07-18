@@ -11,7 +11,7 @@ Status: COMPLETE
 The target WebAssembly Interface Types (WIT) version for this work is `0.3.0`,
 not `3.0.0`.
 
-IronClaw already publishes both WebAssembly (WASM) host contracts as
+Axinite already publishes both WebAssembly (WASM) host contracts as
 `package near:agent@0.3.0;` in `wit/tool.wit` and `wit/channel.wit`, and the
 curated in-tree extension matrix already declares `wit_version: "0.3.0"` in its
 sidecar capabilities files and registry manifests. This means the task is not a
@@ -112,7 +112,7 @@ files to inspect are:
   version, expand the scope to that specific extension set and bump its regular
   artefact version together with the WIT metadata fix.
 - If the user intended sibling repositories such as external plugins outside
-  this repo, stop after completing the IronClaw-host plan and ask for the exact
+  this repo, stop after completing the Axinite-host plan and ask for the exact
   repos to include. This plan only has direct authority over the current
   repository.
 - If release checksums cannot be regenerated from local artefacts after any
@@ -123,7 +123,7 @@ files to inspect are:
 
 - The phrase “all extensions and channels” can mean two different scopes:
   curated in-tree extensions in this repo, or every external plugin that might
-  target IronClaw. Only the first scope is directly visible here.
+  target Axinite. Only the first scope is directly visible here.
 - The repo currently mixes `wit-bindgen` versions across extensions. That is
   not automatically wrong, but the full matrix build must prove it does not
   hide inconsistent generated bindings under the current WIT contract.
@@ -164,13 +164,13 @@ BRANCH=$(git branch --show-current | tr '/' '-')
 set -o pipefail && \
   rg -n 'near:agent@0\.3\.0|"wit_version"\s*:\s*"0\.3\.0"' \
   wit src/tools/wasm/mod.rs tools-src channels-src registry 2>&1 | \
-  tee /tmp/audit-wit-versions-ironclaw-${BRANCH}.out
+  tee /tmp/audit-wit-versions-axinite-${BRANCH}.out
 set -o pipefail && \
   ./scripts/build-wasm-extensions.sh 2>&1 | \
-  tee /tmp/build-wasm-extensions-ironclaw-${BRANCH}.out
+  tee /tmp/build-wasm-extensions-axinite-${BRANCH}.out
 set -o pipefail && \
   cargo test --all-features --test wit_compat -- --nocapture 2>&1 | \
-  tee /tmp/test-wit-compat-ironclaw-${BRANCH}.out
+  tee /tmp/test-wit-compat-axinite-${BRANCH}.out
 ```
 
 Commit boundary after this milestone: only if files needed to change because
@@ -208,14 +208,14 @@ BRANCH=$(git branch --show-current | tr '/' '-')
 set -o pipefail && \
   rg -n '0\.1\.0|0\.3\.0' \
   migrations src/db src/extensions src/tools/wasm src/channels/wasm 2>&1 | \
-  tee /tmp/audit-stale-wit-defaults-ironclaw-${BRANCH}.out
+  tee /tmp/audit-stale-wit-defaults-axinite-${BRANCH}.out
 set -o pipefail && \
   cargo test --all-features test_upgrade_up_to_date_extension -- --nocapture \
-  2>&1 | tee /tmp/test-upgrade-up-to-date-ironclaw-${BRANCH}.out
+  2>&1 | tee /tmp/test-upgrade-up-to-date-axinite-${BRANCH}.out
 set -o pipefail && \
   cargo test --all-features test_upgrade_outdated_not_in_registry -- \
   --nocapture 2>&1 | \
-  tee /tmp/test-upgrade-outdated-ironclaw-${BRANCH}.out
+  tee /tmp/test-upgrade-outdated-axinite-${BRANCH}.out
 ```
 
 Commit boundary after this milestone: one commit for default, reporting, and
@@ -235,7 +235,7 @@ Files to review:
 - `tests/wit_compat.rs`
 
 The key outcome is that contributors can tell, from repository docs and test
-guidance alone, that new or rebuilt IronClaw extensions and channels must
+guidance alone, that new or rebuilt Axinite extensions and channels must
 target WIT `0.3.0`.
 
 If the audit in Milestone 1 found zero extension-matrix drift, this milestone
@@ -251,11 +251,11 @@ set -o pipefail && \
   bunx markdownlint-cli2 \
   docs/BUILDING_CHANNELS.md \
   docs/plans/2026-03-09-use-wit-v3-in-extensions.md 2>&1 | \
-  tee /tmp/markdownlint-ironclaw-${BRANCH}.out
+  tee /tmp/markdownlint-axinite-${BRANCH}.out
 set -o pipefail && \
   cargo test --all-features wit_compat_all_registry_extensions_have_source \
   -- --nocapture 2>&1 | \
-  tee /tmp/test-registry-sources-ironclaw-${BRANCH}.out
+  tee /tmp/test-registry-sources-axinite-${BRANCH}.out
 ```
 
 Commit boundary after this milestone: one docs-and-tests commit if files
@@ -282,7 +282,7 @@ Suggested commands:
 BRANCH=$(git branch --show-current | tr '/' '-')
 set -o pipefail && \
   ./scripts/build-wasm-extensions.sh 2>&1 | \
-  tee /tmp/build-release-bundles-ironclaw-${BRANCH}.out
+  tee /tmp/build-release-bundles-axinite-${BRANCH}.out
 ```
 
 Commit boundary after this milestone: one release-artefact sync commit if and
@@ -321,12 +321,12 @@ Record the exact log paths in the final implementation summary.
 - [x] 2026-03-09T17:15:00+00:00 Rebuilt the curated extension matrix with
   `./scripts/build-wasm-extensions.sh`; the build completed successfully and
   wrote evidence to
-  `/tmp/build-wasm-extensions-ironclaw-use-wit-v3-in-extensions.out`.
+  `/tmp/build-wasm-extensions-axinite-use-wit-v3-in-extensions.out`.
 - [x] 2026-03-09T17:18:00+00:00 Re-ran
   `cargo test --all-features --test wit_compat -- --nocapture` after the full
   matrix build. All three compatibility tests passed, including the WhatsApp
   channel, with evidence in
-  `/tmp/test-wit-compat-rerun-ironclaw-use-wit-v3-in-extensions.out`.
+  `/tmp/test-wit-compat-rerun-axinite-use-wit-v3-in-extensions.out`.
 - [x] 2026-03-09T17:39:00+00:00 Fixed stale runtime defaults and reporting
   paths that implied older WIT versions. The implementation updated the libSQL
   base schema, added a libSQL incremental migration for upgraded databases, and
@@ -337,32 +337,32 @@ Record the exact log paths in the final implementation summary.
   schema, runs `run_migrations()`, and asserts that inserts without an explicit
   `wit_version` now land as `0.3.0`. The red run failed as expected before the
   migration fix, with evidence in
-  `/tmp/test-behavior-wit-defaults-red-ironclaw-use-wit-v3-in-extensions.out`.
+  `/tmp/test-behavior-wit-defaults-red-axinite-use-wit-v3-in-extensions.out`.
 - [x] 2026-03-09T17:39:00+00:00 Patched the libSQL base schema and incremental
   migrations so stale `0.1.0` defaults are replaced with `0.3.0`, and added
   PostgreSQL migration `migrations/V12__wasm_wit_default_0_3_0.sql` for the
   same default shift on the PostgreSQL path.
 - [x] 2026-03-09T17:39:00+00:00 Re-ran the behavioural upgrade test after the
   migration fix. It passed and wrote evidence to
-  `/tmp/test-behavior-wit-defaults-green-ironclaw-use-wit-v3-in-extensions.out`.
+  `/tmp/test-behavior-wit-defaults-green-axinite-use-wit-v3-in-extensions.out`.
 - [x] 2026-03-09T17:33:00+00:00 Imported the sibling authoring guide as
-  `docs/writing-web-assembly-tools-for-ironclaw.md` and rewrote it around the
-  actual IronClaw `0.3.0` WIT format, sidecar `wit_version`, packaging
+  `docs/writing-web-assembly-tools-for-axinite.md` and rewrote it around the
+  actual Axinite `0.3.0` WIT format, sidecar `wit_version`, packaging
   contract, and host capability limitations.
 - [x] 2026-03-09T17:47:00+00:00 Added and passed focused unit tests for the
   libSQL schema and V10 incremental migration content in
   `src/db/libsql_migrations.rs`, with green evidence in
-  `/tmp/test-unit-wit-defaults-green-lib-ironclaw-use-wit-v3-in-extensions.out`
+  `/tmp/test-unit-wit-defaults-green-lib-axinite-use-wit-v3-in-extensions.out`
   and
-  `/tmp/test-unit-wit-defaults-green-lib-v10-ironclaw-use-wit-v3-in-extensions.out`.
+  `/tmp/test-unit-wit-defaults-green-lib-v10-axinite-use-wit-v3-in-extensions.out`.
 - [x] 2026-03-09T17:54:00+00:00 Re-ran markdown lint on the living plan and
   imported guide. It passed with evidence in
-  `/tmp/markdownlint-ironclaw-use-wit-v3-in-extensions.out`.
+  `/tmp/markdownlint-axinite-use-wit-v3-in-extensions.out`.
 - [x] 2026-03-09T17:54:00+00:00 Re-ran the repo-level WIT compatibility gate
   in a focused target directory with
   `cargo test --all-features --test wit_compat -- --nocapture`. All five tests
   passed with evidence in
-  `/tmp/test-wit-compat-focused-ironclaw-use-wit-v3-in-extensions.out`.
+  `/tmp/test-wit-compat-focused-axinite-use-wit-v3-in-extensions.out`.
 - [x] 2026-03-09T17:55:20+00:00 Committed the implementation as `6bf4933`.
 - [x] 2026-03-09T17:55:20+00:00 Skipped release-bundle regeneration because no
   shipped extension source, sidecar capabilities file, or registry manifest
@@ -389,11 +389,11 @@ Record the exact log paths in the final implementation summary.
   historical; the work is to stop fresh records and docs from implying that
   `0.1.0` is still current.
 - The user added a non-negotiable test requirement during implementation:
-  any IronClaw application change must be protected by both unit tests and
+  any Axinite application change must be protected by both unit tests and
   behavioural tests, and the preferred workflow is red-green rather than
   edit-first patching.
 - The user also expanded the docs scope: import
-  `../imap-wasm/docs/writing-web-assembly-tools-for-ironclaw.md` into `docs/`
+  `../imap-wasm/docs/writing-web-assembly-tools-for-axinite.md` into `docs/`
   and update it with the findings from this alignment pass, especially the WIT
   `0.3.0` format and packaging realities.
 - Several older repository docs already fail the current markdownlint profile.
@@ -434,17 +434,17 @@ Implementation is complete.
   PostgreSQL migration `V12` plus libSQL base-schema and incremental-migration
   updates.
 - Test evidence:
-  `/tmp/test-behavior-wit-defaults-red-ironclaw-use-wit-v3-in-extensions.out`
+  `/tmp/test-behavior-wit-defaults-red-axinite-use-wit-v3-in-extensions.out`
   captured the expected red failure before the migration fix.
-  `/tmp/test-behavior-wit-defaults-green-ironclaw-use-wit-v3-in-extensions.out`
+  `/tmp/test-behavior-wit-defaults-green-axinite-use-wit-v3-in-extensions.out`
   captured the behavioural upgrade-path pass after the fix.
-  `/tmp/test-unit-wit-defaults-green-lib-ironclaw-use-wit-v3-in-extensions.out`
+  `/tmp/test-unit-wit-defaults-green-lib-axinite-use-wit-v3-in-extensions.out`
   and
-  `/tmp/test-unit-wit-defaults-green-lib-v10-ironclaw-use-wit-v3-in-extensions.out`
+  `/tmp/test-unit-wit-defaults-green-lib-v10-axinite-use-wit-v3-in-extensions.out`
   captured the focused unit-test passes.
-  `/tmp/test-wit-compat-focused-ironclaw-use-wit-v3-in-extensions.out` captured
+  `/tmp/test-wit-compat-focused-axinite-use-wit-v3-in-extensions.out` captured
   the repo-level WIT compatibility gate passing.
-  `/tmp/markdownlint-ironclaw-use-wit-v3-in-extensions.out` captured markdown
+  `/tmp/markdownlint-axinite-use-wit-v3-in-extensions.out` captured markdown
   lint passing for the updated plan and imported guide.
 - Release bundles were correctly left unchanged because no shipped extension
   artefact inputs changed.

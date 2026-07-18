@@ -1,6 +1,6 @@
 //! Orphaned Docker container cleanup.
 //!
-//! The `SandboxReaper` periodically scans Docker for IronClaw-labelled
+//! The `SandboxReaper` periodically scans Docker for Axinite-labelled
 //! containers and cleans up those whose corresponding jobs are no longer
 //! active.
 
@@ -37,7 +37,7 @@ impl Default for ReaperConfig {
         Self {
             scan_interval: Duration::from_secs(300),
             orphan_threshold: Duration::from_secs(600),
-            container_label: "ironclaw.job_id".to_string(),
+            container_label: "axinite.job_id".to_string(),
         }
     }
 }
@@ -65,7 +65,7 @@ enum ReaperBackend {
 }
 
 impl ReaperBackend {
-    async fn list_ironclaw_containers(
+    async fn list_axinite_containers(
         &self,
         label: &str,
     ) -> Result<Vec<ReaperContainer>, crate::sandbox::SandboxError> {
@@ -119,7 +119,7 @@ fn parse_created_at_label(
     created: Option<i64>,
 ) -> Option<DateTime<Utc>> {
     labels
-        .get("ironclaw.created_at")
+        .get("axinite.created_at")
         .and_then(|value| DateTime::parse_from_rfc3339(value).ok())
         .map(|timestamp| timestamp.with_timezone(&Utc))
         .or_else(|| created.and_then(|timestamp| DateTime::from_timestamp(timestamp, 0)))
@@ -190,7 +190,7 @@ impl SandboxReaper {
     }
 
     async fn scan_and_reap(&self) {
-        let containers = match self.list_ironclaw_containers().await {
+        let containers = match self.list_axinite_containers().await {
             Ok(containers) => containers,
             Err(e) => {
                 tracing::error!(error = %e, "Reaper: failed to list Docker containers");
@@ -230,15 +230,15 @@ impl SandboxReaper {
         }
     }
 
-    /// List all IronClaw-managed containers from Docker.
+    /// List all Axinite-managed containers from Docker.
     ///
     /// Returns tuples of `(container_id, job_id, created_at)`.
-    async fn list_ironclaw_containers(
+    async fn list_axinite_containers(
         &self,
     ) -> Result<Vec<(String, Uuid, DateTime<Utc>)>, crate::sandbox::SandboxError> {
         let items = self
             .backend
-            .list_ironclaw_containers(&self.config.container_label)
+            .list_axinite_containers(&self.config.container_label)
             .await?;
 
         Ok(items
@@ -291,7 +291,7 @@ async fn list_docker_containers(
                 tracing::warn!(
                     container_id = %&container_id[..12.min(container_id.len())],
                     label_key = %label,
-                    "Reaper: ironclaw container missing valid job_id label"
+                    "Reaper: axinite container missing valid job_id label"
                 );
                 continue;
             }

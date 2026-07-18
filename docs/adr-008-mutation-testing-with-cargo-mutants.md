@@ -10,7 +10,7 @@ Accepted.
 
 ## Context and problem statement
 
-IronClaw maintains line-coverage reports via `cargo-llvm-cov` and Codecov, but
+Axinite maintains line-coverage reports via `cargo-llvm-cov` and Codecov, but
 line coverage only confirms that code is executed, not that tests actually
 detect faults in it. A function body could be entirely replaced with a default
 return value, and if no test fails, the existing suite provides a false sense

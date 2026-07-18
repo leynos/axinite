@@ -5,12 +5,12 @@
 - RFC number: 0005
 - Status: Proposed
 - Date: 2026-03-11
-- Target: IronClaw tool system and worker runtime
+- Target: Axinite tool system and worker runtime
 - Authors: Codex draft for review
 
 ## Summary
 
-IronClaw should integrate [Monty](https://github.com/pydantic/monty) as a
+Axinite should integrate [Monty](https://github.com/pydantic/monty) as a
 capability-brokered Python code execution environment for agent-written code and
 pre-written scripts. The initial product shape should be a codemode runner, not
 a classic line-oriented REPL.
@@ -21,7 +21,7 @@ The proposed surface is three operations:
 2. `run_script(name, params, allowed_tools, state=None)`
 3. `exec_code(code, allowed_tools, params=None, state=None)`
 
-Saved scripts give IronClaw a durable, reviewable automation format. `exec_code`
+Saved scripts give Axinite a durable, reviewable automation format. `exec_code`
 covers ephemeral scratch execution. Both run through the same host-mediated tool
 broker, use a JSON-only ABI across the guest/host boundary, and return updated
 `state` explicitly rather than depending on hidden interpreter globals.
@@ -53,7 +53,7 @@ The desired scope is narrower than "general Python support". The intended
 execution surface is a small Python environment that:
 
 - runs agent-authored or user-authored scripts,
-- can call a selected subset of IronClaw tools,
+- can call a selected subset of Axinite tools,
 - cannot access the host directly unless the host exposes that access,
 - can branch and loop over JSON-shaped data,
 - is easy to inspect, replay, and audit.
@@ -64,7 +64,7 @@ execution surface is a small Python environment that:
   arbitrary package execution.
 - Support saved scripts that can be reviewed, named, rerun, and invoked from
   higher-level workflows later.
-- Keep all filesystem, network, secret, and environment access behind IronClaw
+- Keep all filesystem, network, secret, and environment access behind Axinite
   tool mediation.
 - Reuse existing approval and tool attenuation concepts rather than inventing a
   separate policy system.
@@ -93,7 +93,7 @@ Monty matches the desired execution model unusually well:
 - It supports resource limits covering memory, allocations, stack depth, and
   execution time.[^1]
 - Its examples already use async host functions and `list[dict[str, Any]]`
-  values, which is the right shape for IronClaw tool results.[^1]
+  values, which is the right shape for Axinite tool results.[^1]
 
 This is a better fit than introducing Bun, Deno, or a full containerized Python
 stack just to gain structured tool calls, loops, and control flow.
@@ -126,7 +126,7 @@ REPL first" design:
   status was not resolved in the visible thread.[^3]
 
 That means a classic REPL may become viable, but it is not the safest foundation
-for IronClaw phase one.
+for Axinite phase one.
 
 ### 3. Availability risks are real
 
@@ -154,7 +154,7 @@ IronClaw already has most of the host-side machinery this integration needs.
 - `tool_definitions(&self)`
 - `tool_definitions_for(&self, names: &[&str])`
 
-That means IronClaw can already derive a per-run allowlist and produce a
+That means Axinite can already derive a per-run allowlist and produce a
 selected tool definition set without inventing a second registry.
 
 ### Worker and sandbox boundaries
@@ -331,7 +331,7 @@ script.
 }
 ```
 
-IronClaw should require that `state` be a dictionary when returned. If the
+Axinite should require that `state` be a dictionary when returned. If the
 script omits `state`, the runner should treat that as a contract error.
 
 ## Guest/Host ABI
@@ -366,13 +366,13 @@ This ABI choice makes:
 ## Tool Broker Design
 
 The key architectural idea is a session-local tool broker between Monty and the
-real IronClaw tool registry.
+real Axinite tool registry.
 
 ### Allowlist derivation
 
 For each run:
 
-1. Start from the available IronClaw `ToolRegistry`.
+1. Start from the available Axinite `ToolRegistry`.
 2. Intersect it with the script's allowed tools and any per-run override.
 3. Export definitions only for that selected subset.
 4. Generate Monty stubs and the external function table from that subset.
@@ -381,7 +381,7 @@ The guest never sees the full registry.
 
 ### Stub generation
 
-The broker should generate Python stubs from IronClaw `ToolDefinition` objects.
+The broker should generate Python stubs from Axinite `ToolDefinition` objects.
 The first version should optimize for reliability over perfect typing.
 
 Recommended first-pass stub shape:
@@ -416,7 +416,7 @@ The host-side loop should look like this:
 2. Start Monty execution.
 3. If Monty yields a function snapshot, inspect `function_name` and arguments.
 4. Re-check that the tool is still allowed.
-5. Run the real IronClaw tool through the normal policy and approval path.
+5. Run the real Axinite tool through the normal policy and approval path.
 6. Normalize the tool result to the JSON ABI.
 7. Resume Monty with that result.
 8. Continue until completion or error.
@@ -443,9 +443,9 @@ This is the right compromise between performance and blast-radius control.
 
 The helper process should run inside the current execution boundary:
 
-- If IronClaw is already inside a Docker worker, spawn the Monty helper inside
+- If Axinite is already inside a Docker worker, spawn the Monty helper inside
   that worker.
-- If IronClaw is not sandboxed, spawn the helper as a child of the main local
+- If Axinite is not sandboxed, spawn the helper as a child of the main local
   process.
 
 This avoids a split-brain model where policy runs in one place and execution in
@@ -475,7 +475,7 @@ Recommended child-to-parent terminal outcomes:
 - `completed`: the script returned a valid JSON-ABI result.
 - `script_error`: guest code raised an exception or returned a contract-invalid
   value such as a non-object top-level result or missing `state`.
-- `tool_error`: a host callback failed because the underlying IronClaw tool was
+- `tool_error`: a host callback failed because the underlying Axinite tool was
   denied, timed out, or returned a normal tool error.
 - `tool_contract_error`: the host callback result could not be converted to the
   JSON ABI, or the child resumed with malformed callback data.
@@ -518,9 +518,9 @@ The safety claim should be precise, not theatrical.
 This integration can credibly claim:
 
 - guest code has no direct filesystem, environment, or network access unless
-  IronClaw exposes host functions for those capabilities,[^1]
+  Axinite exposes host functions for those capabilities,[^1]
 - guest code can call only the external functions published for that run,[^1]
-- every effectful operation still passes through IronClaw's host-side approval
+- every effectful operation still passes through Axinite's host-side approval
   and policy path,
 - execution is bounded by Monty limits plus parent-process kill switches.[^1]
 
@@ -688,7 +688,7 @@ stability is better understood.
 ### Phase 3: Workflow integration
 
 - Allow routines and higher-level jobs to invoke saved scripts.
-- Add curated built-in scripts for common IronClaw automations.
+- Add curated built-in scripts for common Axinite automations.
 - Add UI/CLI affordances for reviewing, listing, and rerunning scripts.
 
 ### Phase 4: Re-evaluate REPL mode
@@ -714,7 +714,7 @@ Only after upstream REPL support and crash behaviour have stabilized:
 
 ## Recommendation
 
-Adopt Monty for codemode-style Python execution in IronClaw, but do it in the
+Adopt Monty for codemode-style Python execution in Axinite, but do it in the
 least glamorous way that is technically honest:
 
 - codemode runner first,
@@ -725,7 +725,7 @@ least glamorous way that is technically honest:
 - helper subprocess for fault isolation,
 - no classic persistent REPL until upstream REPL support is genuinely ready.
 
-That gives IronClaw the useful part of programmatic tool calling without
+That gives Axinite the useful part of programmatic tool calling without
 importing the complexity and fragility of a broader Python runtime story.
 
 ## References

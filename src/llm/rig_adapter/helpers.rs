@@ -16,7 +16,7 @@ pub(super) fn normalized_tool_call_id(raw: Option<&str>, seed: usize) -> String 
     }
 }
 
-/// Convert IronClaw tool definitions to rig-core format.
+/// Convert Axinite tool definitions to rig-core format.
 ///
 /// Applies OpenAI strict-mode schema normalization to ensure all tool
 /// parameter schemas comply with OpenAI's function calling requirements.
@@ -31,7 +31,7 @@ pub(super) fn convert_tools(tools: &[IronToolDefinition]) -> Vec<RigToolDefiniti
         .collect()
 }
 
-/// Convert IronClaw tool_choice string to rig-core ToolChoice.
+/// Convert Axinite tool_choice string to rig-core ToolChoice.
 pub(super) fn convert_tool_choice(choice: Option<&str>) -> Option<RigToolChoice> {
     match choice.map(|s| s.to_lowercase()).as_deref() {
         Some("auto") => Some(RigToolChoice::Auto),
@@ -62,7 +62,7 @@ pub(super) fn extract_response(
                     arguments: tc.function.arguments.clone(),
                 });
             }
-            // Reasoning and Image variants are not mapped to IronClaw types
+            // Reasoning and Image variants are not mapped to Axinite types
             _ => {}
         }
     }

@@ -1,4 +1,4 @@
-# Automated QA Plan for IronClaw
+# Automated QA Plan for Axinite
 
 **Date:** 2026-02-24 **Status:** Draft **Goal:** Systematically close the QA
 gaps that led to the ~40 bugs found in issues/PRs to date, progressing from
@@ -8,7 +8,7 @@ ______________________________________________________________________
 
 ## Motivation
 
-A review of all closed issues and merged bug-fix PRs reveals that most IronClaw
+A review of all closed issues and merged bug-fix PRs reveals that most Axinite
 bugs fall into a few recurring categories:
 
 | Category             | Examples                                                         | Root Cause                                               |
@@ -59,7 +59,7 @@ fn all_tool_schemas_are_openai_strict_valid() {
 }
 ```
 
-Add the same validation for WASM tools (loaded from `~/.ironclaw/tools/`) and
+Add the same validation for WASM tools (loaded from `~/.axinite/tools/`) and
 MCP tools (mock a simple MCP manifest and validate the schema it produces).
 
 **Files:** New `src/tools/schema_validator.rs` (validation logic), test in
@@ -138,7 +138,7 @@ docker-build:
   steps:
     - uses: actions/checkout@v6
     - name: Build Docker image
-      run: docker build -t ironclaw-test:ci .
+      run: docker build -t axinite-test:ci .
 ```
 
 **Files:** Modify `.github/workflows/test.yml`
@@ -345,7 +345,7 @@ ______________________________________________________________________
 
 ## Tier 3: Computer-Use E2E Testing
 
-**Cost:** High (requires Anthropic computer use API, headless browser, ironclaw
+**Cost:** High (requires Anthropic computer use API, headless browser, axinite
 running) **Timeline:** ~2 weeks for infrastructure, then incremental scenario
 additions **Bugs this would have caught:** #307, #306, #263, all manual
 web-ui-test checklist items
@@ -354,7 +354,7 @@ web-ui-test checklist items
 
 ```text
 +------------------+     +-----------------+     +------------------+
-|  Test Runner     |     |  Headless       |     |  IronClaw        |
+|  Test Runner     |     |  Headless       |     |  Axinite        |
 |  (Python/TS)     |---->|  Chromium        |---->|  (cargo run)     |
 |                  |     |  (Playwright)   |     |  GATEWAY=true    |
 |  Orchestrates    |     |                 |     |  port 3001       |
@@ -374,7 +374,7 @@ web-ui-test checklist items
 **Components:**
 
 1. **Test runner** -- Python or TypeScript script that orchestrates the flow.
-   Starts ironclaw, waits for readiness, launches Playwright browser, runs
+   Starts axinite, waits for readiness, launches Playwright browser, runs
    scenarios.
 
 2. **Playwright browser** -- Headless Chromium. Takes screenshots, executes
@@ -402,7 +402,7 @@ web-ui-test checklist items
 ```text
 tests/
   e2e/
-    conftest.py             # pytest fixtures: start ironclaw, browser
+    conftest.py             # pytest fixtures: start axinite, browser
     computer_use.py         # Claude computer use client wrapper
     assertions.py           # DOM + visual assertion helpers
     scenarios/
@@ -414,15 +414,15 @@ tests/
       test_html_injection.py
       test_tool_approval.py
     screenshots/            # Reference screenshots (gitignored)
-    Dockerfile.test         # Container for CI: ironclaw + chromium
+    Dockerfile.test         # Container for CI: axinite + chromium
 ```
 
-#### Fixture: start ironclaw
+#### Fixture: start axinite
 
 ```python
 @pytest.fixture(scope="session")
-async def ironclaw_server():
-    """Start ironclaw with gateway enabled, return base URL."""
+async def axinite_server():
+    """Start axinite with gateway enabled, return base URL."""
     env = {
         "CLI_ENABLED": "false",
         "GATEWAY_ENABLED": "true",
@@ -449,12 +449,12 @@ async def ironclaw_server():
 
 ```python
 @pytest.fixture
-async def browser_agent(ironclaw_server):
+async def browser_agent(axinite_server):
     """Playwright browser + Claude computer use agent."""
     async with async_playwright() as p:
         browser = await p.chromium.launch(headless=True)
         page = await browser.new_page(viewport={"width": 1280, "height": 720})
-        await page.goto(f"{ironclaw_server}/?token=test-token-e2e")
+        await page.goto(f"{axinite_server}/?token=test-token-e2e")
         agent = ComputerUseAgent(page)
         yield agent
         await browser.close()
@@ -574,7 +574,7 @@ async def test_chat_sends_and_receives(browser_agent):
 #### Scenario 3: SSE Reconnect
 
 ```python
-async def test_sse_reconnect_preserves_history(browser_agent, ironclaw_server):
+async def test_sse_reconnect_preserves_history(browser_agent, axinite_server):
     """Bug: #307 (no re-sync on SSE reconnect after server restart)"""
     page = browser_agent.page
 
@@ -587,7 +587,7 @@ async def test_sse_reconnect_preserves_history(browser_agent, ironclaw_server):
 
     # Step 2: Kill and restart the server
     # (test fixture provides a restart helper)
-    await restart_ironclaw(ironclaw_server)
+    await restart_axinite(axinite_server)
 
     # Step 3: Wait for reconnect
     await page.wait_for_selector(".connection-status.connected", timeout=30000)
@@ -664,20 +664,20 @@ async def test_tool_approval_overlay(browser_agent):
 #### Scenario 7: Onboarding Wizard (Full Flow)
 
 ```python
-async def test_onboarding_wizard_completes(tmp_ironclaw_home):
+async def test_onboarding_wizard_completes(tmp_axinite_home):
     """Bugs: #187, #174, #129, #185 (wizard persistence and re-trigger)"""
-    # Start ironclaw with a fresh home directory (no prior config)
+    # Start axinite with a fresh home directory (no prior config)
     # The wizard runs in TUI mode, so we need a PTY or use the web wizard
     # if/when one exists. For now, test the CLI wizard via expect-style automation.
 
     proc = pexpect.spawn(
         "cargo run",
-        env={"IRONCLAW_HOME": str(tmp_ironclaw_home), **base_env},
+        env={"AXINITE_HOME": str(tmp_axinite_home), **base_env},
         timeout=60,
     )
 
     # Step through wizard
-    proc.expect("Welcome to IronClaw")
+    proc.expect("Welcome to Axinite")
     proc.expect("LLM Backend")
     proc.sendline("1")  # Select first option
     # ... continue through all 7 steps ...
@@ -687,12 +687,12 @@ async def test_onboarding_wizard_completes(tmp_ironclaw_home):
     # Restart and verify wizard does NOT re-trigger
     proc2 = pexpect.spawn(
         "cargo run",
-        env={"IRONCLAW_HOME": str(tmp_ironclaw_home), **base_env},
+        env={"AXINITE_HOME": str(tmp_axinite_home), **base_env},
         timeout=30,
     )
-    proc2.expect("Agent ironclaw ready")  # Should skip wizard
-    # Must NOT see "Welcome to IronClaw" again
-    assert not proc2.match_any(["Welcome to IronClaw"], timeout=5)
+    proc2.expect("Agent axinite ready")  # Should skip wizard
+    # Must NOT see "Welcome to Axinite" again
+    assert not proc2.match_any(["Welcome to Axinite"], timeout=5)
     proc2.close()
 ```
 
@@ -735,7 +735,7 @@ jobs:
         image: ollama/ollama:latest
     steps:
       - uses: actions/checkout@v6
-      - name: Build ironclaw
+      - name: Build axinite
         run: cargo build --features libsql
       - name: Install Playwright
         run: pip install playwright pytest-playwright && playwright install chromium

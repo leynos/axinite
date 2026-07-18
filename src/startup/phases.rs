@@ -2,7 +2,7 @@
 
 use std::sync::Arc;
 
-use ironclaw::{
+use axinite::{
     app::{AppBuilder, AppBuilderFlags, AppBuilderParams, AppComponents},
     channels::{ChannelManager, web::log_layer::LogBroadcaster},
     cli::Cli,
@@ -12,7 +12,7 @@ use ironclaw::{
 };
 
 #[cfg(any(feature = "postgres", feature = "libsql"))]
-use ironclaw::setup::{SetupConfig, SetupWizard};
+use axinite::setup::{SetupConfig, SetupWizard};
 
 use crate::startup::channels::{
     ChannelSetup, GatewayContext, GatewaySetup, setup_channels, setup_gateway_channel,
@@ -24,14 +24,14 @@ use crate::startup::{boot, context::*, run};
 /// Returns `None` when no PID lock is configured, `Some(lock)` otherwise.
 pub(crate) async fn phase_pid_and_onboard(
     cli: &Cli,
-) -> anyhow::Result<Option<ironclaw::bootstrap::PidLock>> {
-    let pid_lock = match ironclaw::bootstrap::PidLock::acquire() {
+) -> anyhow::Result<Option<axinite::bootstrap::PidLock>> {
+    let pid_lock = match axinite::bootstrap::PidLock::acquire() {
         Ok(lock) => Some(lock),
-        Err(ironclaw::bootstrap::PidLockError::AlreadyRunning { pid }) => anyhow::bail!(
-            "Another IronClaw instance is already running (PID {}). \
+        Err(axinite::bootstrap::PidLockError::AlreadyRunning { pid }) => anyhow::bail!(
+            "Another Axinite instance is already running (PID {}). \
              If this is incorrect, remove the stale PID file: {}",
             pid,
-            ironclaw::bootstrap::pid_lock_path().display()
+            axinite::bootstrap::pid_lock_path().display()
         ),
         Err(e) => {
             eprintln!("Warning: Could not acquire PID lock: {e}");
@@ -56,9 +56,9 @@ pub(crate) async fn phase_load_config_and_tracing(
     let session = create_session_manager(config.llm.session.clone()).await;
     let log_broadcaster = Arc::new(LogBroadcaster::new());
     let log_level_handle =
-        ironclaw::channels::web::log_layer::init_tracing(Arc::clone(&log_broadcaster));
+        axinite::channels::web::log_layer::init_tracing(Arc::clone(&log_broadcaster));
 
-    tracing::debug!("Starting IronClaw...");
+    tracing::debug!("Starting Axinite...");
     tracing::debug!("Loaded configuration for agent: {}", config.agent.name);
     tracing::debug!("LLM backend: {}", config.llm.backend);
 
@@ -107,7 +107,7 @@ pub(crate) async fn phase_tunnel_and_orchestrator(
     built: BuiltComponentsContext,
 ) -> AgentRunContext {
     let config = built.components.config.clone();
-    let (config, active_tunnel) = ironclaw::tunnel::start_managed_tunnel(config).await;
+    let (config, active_tunnel) = axinite::tunnel::start_managed_tunnel(config).await;
     let mut components = built.components;
     components.config = config.clone();
 
@@ -167,20 +167,20 @@ fn create_session_and_register_tools(
     agent_ctx: &AgentRunContext,
     channels: &ChannelManager,
 ) -> (
-    Arc<ironclaw::agent::SessionManager>,
-    ironclaw::tools::builtin::SchedulerSlot,
+    Arc<axinite::agent::SessionManager>,
+    axinite::tools::builtin::SchedulerSlot,
 ) {
     let session_manager = Arc::new(
-        ironclaw::agent::SessionManager::new().with_hooks(agent_ctx.core.components.hooks.clone()),
+        axinite::agent::SessionManager::new().with_hooks(agent_ctx.core.components.hooks.clone()),
     );
-    let scheduler_slot: ironclaw::tools::builtin::SchedulerSlot =
+    let scheduler_slot: axinite::tools::builtin::SchedulerSlot =
         Arc::new(tokio::sync::RwLock::new(None));
 
     agent_ctx
         .core
         .components
         .tools
-        .register_job_tools(ironclaw::tools::RegisterJobToolsOptions {
+        .register_job_tools(axinite::tools::RegisterJobToolsOptions {
             context_manager: Arc::clone(&agent_ctx.core.components.context_manager),
             scheduler_slot: Some(scheduler_slot.clone()),
             job_manager: agent_ctx.core.container_job_manager.clone(),
@@ -306,7 +306,7 @@ pub(crate) async fn phase_run_agent(ctx: GatewayPhaseContext) -> anyhow::Result<
 /// Runs first-run onboarding when the required database feature is enabled.
 async fn run_first_run_onboarding_if_needed(cli: &Cli) -> anyhow::Result<()> {
     if !cli.no_onboard
-        && let Some(reason) = ironclaw::setup::check_onboard_needed()
+        && let Some(reason) = axinite::setup::check_onboard_needed()
     {
         println!("Onboarding needed: {reason}");
         println!();
@@ -331,10 +331,10 @@ async fn run_first_run_onboarding_if_needed(cli: &Cli) -> anyhow::Result<()> {
 async fn load_initial_config(toml_path: Option<&std::path::Path>) -> anyhow::Result<Config> {
     match Config::from_env_with_toml(toml_path).await {
         Ok(c) => Ok(c),
-        Err(ironclaw::error::ConfigError::MissingRequired { key, hint }) => {
+        Err(axinite::error::ConfigError::MissingRequired { key, hint }) => {
             anyhow::bail!(
                 "Configuration error: Missing required setting '{}'. {}. \
-                 Run 'ironclaw onboard' to configure, or set the required environment variables.",
+                 Run 'axinite onboard' to configure, or set the required environment variables.",
                 key,
                 hint
             );
@@ -349,7 +349,7 @@ async fn setup_orchestrator_context(
     config: &Config,
     components: &AppComponents,
 ) -> OrchestratorContext {
-    let orch = ironclaw::orchestrator::setup_orchestrator(
+    let orch = axinite::orchestrator::setup_orchestrator(
         config,
         &components.llm,
         &components.tools,

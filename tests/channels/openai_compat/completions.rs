@@ -3,7 +3,7 @@
 
 use std::sync::Arc;
 
-use ironclaw::llm::LlmProvider;
+use axinite::llm::LlmProvider;
 
 use super::helpers::{
     AUTH_TOKEN, FixedModelProvider, client, start_test_server, start_test_server_with_provider,
@@ -147,10 +147,10 @@ async fn test_chat_completions_streaming() {
     // Check simulated streaming header
     assert_eq!(
         resp.headers()
-            .get("x-ironclaw-streaming")
+            .get("x-axinite-streaming")
             .and_then(|v| v.to_str().ok()),
         Some("simulated"),
-        "Expected x-ironclaw-streaming: simulated header"
+        "Expected x-axinite-streaming: simulated header"
     );
 
     let text = resp.text().await.unwrap();

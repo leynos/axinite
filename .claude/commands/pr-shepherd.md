@@ -111,7 +111,7 @@ Read EVERY changed file in full (not just diff hunks). For PRs touching >20
 files, prioritize: service logic > handlers > types > tests > docs. Batch reads
 in parallel via Agent tool.
 
-### IronClaw-specific checks (always)
+### Axinite-specific checks (always)
 
 - No `.unwrap()` or `.expect()` in production code
 - Prefer `crate::` for cross-module imports (`super::` OK in tests/intra-module)
@@ -199,7 +199,7 @@ gh pr checkout {number}
 1. All approved review comment fixes (from Phase 2a)
 2. All approved review findings (from Phase 2b)
 
-Follow IronClaw conventions:
+Follow Axinite conventions:
 
 - `thiserror` for errors
 - `crate::` imports
@@ -214,7 +214,7 @@ ______________________________________________________________________
 
 ## Phase 4: Quality Gate
 
-Run the full IronClaw shipping checklist:
+Run the full Axinite shipping checklist:
 
 ```bash
 cargo fmt

@@ -9,7 +9,7 @@ use anyhow::{Context as _, Result};
 use rstest::rstest;
 
 /// Build a standard 600-second-threshold `ReaperConfig`, fabricate a single
-/// `ironclaw.created_at` label `age_offset` before now, parse it, and return
+/// `axinite.created_at` label `age_offset` before now, parse it, and return
 /// whether the container is past the orphan threshold.
 fn container_age_is_past_threshold(age_offset: chrono::Duration) -> Result<bool> {
     let cfg = ReaperConfig {
@@ -19,7 +19,7 @@ fn container_age_is_past_threshold(age_offset: chrono::Duration) -> Result<bool>
     let now = Utc::now();
     let mut labels = HashMap::new();
     labels.insert(
-        "ironclaw.created_at".to_string(),
+        "axinite.created_at".to_string(),
         (now - age_offset).to_rfc3339(),
     );
     let created_at = parse_created_at_label(&labels, None)
@@ -137,13 +137,10 @@ fn parse_container_labels_extracts_job_id_and_timestamp() {
     let mut labels = HashMap::new();
     let job_id = Uuid::new_v4();
     let created_at_raw = "2024-01-15T10:30:45+00:00";
-    labels.insert("ironclaw.job_id".to_string(), job_id.to_string());
-    labels.insert(
-        "ironclaw.created_at".to_string(),
-        created_at_raw.to_string(),
-    );
+    labels.insert("axinite.job_id".to_string(), job_id.to_string());
+    labels.insert("axinite.created_at".to_string(), created_at_raw.to_string());
 
-    let parsed_id = parse_job_id_label(&labels, "ironclaw.job_id");
+    let parsed_id = parse_job_id_label(&labels, "axinite.job_id");
     assert_eq!(parsed_id, Some(job_id));
 
     let parsed_time =
@@ -157,17 +154,14 @@ fn parse_container_labels_extracts_job_id_and_timestamp() {
 #[test]
 fn missing_job_id_label_is_skipped() {
     let labels: HashMap<String, String> = HashMap::new();
-    let job_id = parse_job_id_label(&labels, "ironclaw.job_id");
+    let job_id = parse_job_id_label(&labels, "axinite.job_id");
     assert_eq!(job_id, None);
 }
 
 #[test]
 fn malformed_timestamp_fallback_works() {
     let mut labels: HashMap<String, String> = HashMap::new();
-    labels.insert(
-        "ironclaw.created_at".to_string(),
-        "invalid-date".to_string(),
-    );
+    labels.insert("axinite.created_at".to_string(), "invalid-date".to_string());
 
     let parsed_time = parse_created_at_label(&labels, None);
     assert!(
@@ -210,7 +204,7 @@ fn reaper_config_defaults_are_reasonable() {
     let cfg = ReaperConfig::default();
     assert_eq!(cfg.scan_interval, Duration::from_secs(300));
     assert_eq!(cfg.orphan_threshold, Duration::from_secs(600));
-    assert_eq!(cfg.container_label, "ironclaw.job_id");
+    assert_eq!(cfg.container_label, "axinite.job_id");
 }
 
 #[test]

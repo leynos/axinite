@@ -329,7 +329,7 @@ Table 5. Query-time embedding consumers.
 | -------------------- | --------------------------------------------- | ------------------------------------------------------------------------------------------------------- |
 | `memory_search` tool | Agent tool layer -> `Workspace::search()`     | Generates a query vector when a provider exists, otherwise performs full-text search (FTS)-only search. |
 | Web memory API       | `/api/memory/search` -> `Workspace::search()` | Reuses the same workspace search behaviour as the tool path.                                            |
-| Memory CLI           | `ironclaw memory ...` -> `Workspace`          | Resolves the same provider config and attaches it to a CLI-local workspace.                             |
+| Memory CLI           | `axinite memory ...` -> `Workspace`           | Resolves the same provider config and attaches it to a CLI-local workspace.                             |
 
 The search layer defaults to hybrid retrieval. `SearchConfig::default()`
 enables both FTS and vector search, then combines ranked results through

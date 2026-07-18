@@ -3,7 +3,7 @@
 
 use std::path::PathBuf;
 
-use crate::bootstrap::ironclaw_base_dir;
+use crate::bootstrap::axinite_base_dir;
 use crate::config::EnvContext;
 use crate::config::helpers::{EnvKey, parse_optional_env_from};
 use crate::error::ConfigError;
@@ -23,7 +23,7 @@ impl LlmConfig {
             backend: "nearai".to_string(),
             session: SessionConfig {
                 auth_base_url: "http://localhost:0".to_string(),
-                session_path: std::env::temp_dir().join("ironclaw-test-session.json"),
+                session_path: std::env::temp_dir().join("axinite-test-session.json"),
             },
             nearai: NearAiConfig {
                 model: "test-model".to_string(),
@@ -140,9 +140,9 @@ fn parse_extra_headers(val: &str) -> Result<Vec<(String, String)>, ConfigError> 
     Ok(headers)
 }
 
-/// Get the default session file path (~/.ironclaw/session.json).
+/// Get the default session file path (~/.axinite/session.json).
 pub fn default_session_path() -> PathBuf {
-    ironclaw_base_dir().join("session.json")
+    axinite_base_dir().join("session.json")
 }
 
 #[cfg(test)]

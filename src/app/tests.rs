@@ -94,25 +94,21 @@ async fn two_phase_fixture() -> anyhow::Result<(AppBuilder, PathBuf, tempfile::T
 #[cfg(feature = "libsql")]
 #[tokio::test]
 async fn init_database_migrates_legacy_disk_settings() -> anyhow::Result<()> {
-    if std::env::var("IRONCLAW_APP_MIGRATION_CHILD")
-        .ok()
-        .as_deref()
-        == Some("1")
-    {
+    if std::env::var("AXINITE_APP_MIGRATION_CHILD").ok().as_deref() == Some("1") {
         run_init_database_migration_child().await?;
         return Ok(());
     }
 
     let temp_dir = tempfile::tempdir()?;
-    let ironclaw_dir = temp_dir.path().join("ironclaw");
+    let axinite_dir = temp_dir.path().join("axinite");
     let db_path = temp_dir.path().join("app-migration.db");
     let skills_dir = temp_dir.path().join("skills");
     let installed_skills_dir = temp_dir.path().join("installed_skills");
-    ambient_fs::create_dir_all(&ironclaw_dir)?;
+    ambient_fs::create_dir_all(&axinite_dir)?;
     ambient_fs::create_dir_all(&skills_dir)?;
     ambient_fs::create_dir_all(&installed_skills_dir)?;
     ambient_fs::write(
-        ironclaw_dir.join("settings.json"),
+        axinite_dir.join("settings.json"),
         serde_json::to_string_pretty(&serde_json::json!({
             "onboard_completed": true,
             "database_backend": "libsql"
@@ -127,12 +123,12 @@ async fn init_database_migrates_legacy_disk_settings() -> anyhow::Result<()> {
             "--nocapture",
             "--test-threads=1",
         ])
-        .env("IRONCLAW_APP_MIGRATION_CHILD", "1")
-        .env("IRONCLAW_BASE_DIR", &ironclaw_dir)
-        .env("IRONCLAW_APP_MIGRATION_DB_PATH", &db_path)
-        .env("IRONCLAW_APP_MIGRATION_SKILLS_DIR", &skills_dir)
+        .env("AXINITE_APP_MIGRATION_CHILD", "1")
+        .env("AXINITE_BASE_DIR", &axinite_dir)
+        .env("AXINITE_APP_MIGRATION_DB_PATH", &db_path)
+        .env("AXINITE_APP_MIGRATION_SKILLS_DIR", &skills_dir)
         .env(
-            "IRONCLAW_APP_MIGRATION_INSTALLED_SKILLS_DIR",
+            "AXINITE_APP_MIGRATION_INSTALLED_SKILLS_DIR",
             &installed_skills_dir,
         )
         .env_remove("DATABASE_URL")
@@ -146,12 +142,11 @@ async fn init_database_migrates_legacy_disk_settings() -> anyhow::Result<()> {
 
 #[cfg(feature = "libsql")]
 async fn run_init_database_migration_child() -> anyhow::Result<()> {
-    let ironclaw_dir = PathBuf::from(std::env::var("IRONCLAW_BASE_DIR")?);
-    let db_path = PathBuf::from(std::env::var("IRONCLAW_APP_MIGRATION_DB_PATH")?);
-    let skills_dir = PathBuf::from(std::env::var("IRONCLAW_APP_MIGRATION_SKILLS_DIR")?);
-    let installed_skills_dir = PathBuf::from(std::env::var(
-        "IRONCLAW_APP_MIGRATION_INSTALLED_SKILLS_DIR",
-    )?);
+    let axinite_dir = PathBuf::from(std::env::var("AXINITE_BASE_DIR")?);
+    let db_path = PathBuf::from(std::env::var("AXINITE_APP_MIGRATION_DB_PATH")?);
+    let skills_dir = PathBuf::from(std::env::var("AXINITE_APP_MIGRATION_SKILLS_DIR")?);
+    let installed_skills_dir =
+        PathBuf::from(std::env::var("AXINITE_APP_MIGRATION_INSTALLED_SKILLS_DIR")?);
 
     let config = Config::for_testing(db_path, skills_dir, installed_skills_dir).await?;
     let session = Arc::new(SessionManager::new(SessionConfig::default()));
@@ -177,8 +172,8 @@ async fn run_init_database_migration_child() -> anyhow::Result<()> {
         )
         .await?;
     assert_eq!(migrated, Some(serde_json::Value::Bool(true)));
-    assert!(!ironclaw_dir.join("settings.json").exists());
-    assert!(ironclaw_dir.join("settings.json.migrated").exists());
+    assert!(!axinite_dir.join("settings.json").exists());
+    assert!(axinite_dir.join("settings.json.migrated").exists());
     Ok(())
 }
 

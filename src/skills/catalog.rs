@@ -64,7 +64,7 @@ impl SkillCatalog {
 
         let client = reqwest::Client::builder()
             .timeout(REQUEST_TIMEOUT)
-            .user_agent(concat!("ironclaw/", env!("CARGO_PKG_VERSION")))
+            .user_agent(concat!("axinite/", env!("CARGO_PKG_VERSION")))
             .build()
             .unwrap_or_default();
 
@@ -80,7 +80,7 @@ impl SkillCatalog {
     pub fn with_url(url: &str) -> Self {
         let client = reqwest::Client::builder()
             .timeout(REQUEST_TIMEOUT)
-            .user_agent(concat!("ironclaw/", env!("CARGO_PKG_VERSION")))
+            .user_agent(concat!("axinite/", env!("CARGO_PKG_VERSION")))
             .build()
             .unwrap_or_default();
 

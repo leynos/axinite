@@ -264,7 +264,7 @@ fn upload_file(
     endpoint: &str,
     field_name: &str,
 ) -> Result<(), String> {
-    let boundary = format!("ironclaw-{}", channel_host::now_millis());
+    let boundary = format!("axinite-{}", channel_host::now_millis());
     let body = build_multipart_body(&upload, &boundary, field_name);
 
     let headers = serde_json::json!({
@@ -398,7 +398,7 @@ fn send_attachment(
 /// Send a pairing code message to a chat. Used when an unknown user DMs the bot.
 pub(crate) fn send_pairing_reply(chat_id: i64, code: PairingCode<'_>) -> Result<(), String> {
     let message = format!(
-        "To pair with this bot, run: `ironclaw pairing approve telegram {}`",
+        "To pair with this bot, run: `axinite pairing approve telegram {}`",
         code.0
     );
 

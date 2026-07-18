@@ -1,11 +1,11 @@
 //! Compile-contract fixture for libSQL database backend.
 //!
-//! This module validates that the `ironclaw::db` trait forwarders compile
+//! This module validates that the `axinite::db` trait forwarders compile
 //! correctly when used with the libSQL backend (`LibSqlBackend`).
 //! It serves as a trybuild test target to ensure the public DB trait
 //! surface remains compatible with libSQL implementations.
 
-use ironclaw::db::{
+use axinite::db::{
     ConversationStore, Database, SettingKey, SettingsStore, UserId,
 };
 
@@ -32,11 +32,11 @@ where
     let _ = Database::run_migrations(db);
 }
 
-fn assert_libsql_backend(db: &ironclaw::db::libsql::LibSqlBackend) {
+fn assert_libsql_backend(db: &axinite::db::libsql::LibSqlBackend) {
     assert_dyn_database(db);
 }
 
 fn main() {
     // Force monomorphization of the generic assert function for LibSqlBackend
-    let _: fn(&ironclaw::db::libsql::LibSqlBackend) = assert_libsql_backend;
+    let _: fn(&axinite::db::libsql::LibSqlBackend) = assert_libsql_backend;
 }

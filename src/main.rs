@@ -1,8 +1,8 @@
-//! IronClaw - main entry point.
+//! Axinite - main entry point.
 
 use clap::Parser;
 
-use ironclaw::cli::Cli;
+use axinite::cli::Cli;
 
 #[path = "main_cli.rs"]
 mod cli;
@@ -12,7 +12,7 @@ mod startup;
 /// starts so that `std::env::set_var` is safe (no worker threads yet).
 fn main() -> anyhow::Result<()> {
     let _ = dotenvy::dotenv();
-    ironclaw::bootstrap::load_ironclaw_env();
+    axinite::bootstrap::load_axinite_env();
 
     tokio::runtime::Builder::new_multi_thread()
         .enable_all()

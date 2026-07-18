@@ -3,7 +3,7 @@
 
 #![cfg(feature = "libsql")]
 
-use ironclaw::db::{Database, libsql::LibSqlBackend};
+use axinite::db::{Database, libsql::LibSqlBackend};
 
 const LEGACY_WASM_WIT_SCHEMA: &str = r#"
 CREATE TABLE IF NOT EXISTS _migrations (

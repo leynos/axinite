@@ -15,7 +15,7 @@ use crate::config::INJECTED_VARS;
 #[cfg(any(test, feature = "test-helpers"))]
 use crate::config::helpers::ENV_MUTEX;
 
-const IRONCLAW_BASE_DIR_ENV: &str = "IRONCLAW_BASE_DIR";
+const AXINITE_BASE_DIR_ENV: &str = "AXINITE_BASE_DIR";
 
 /// Snapshot of environment-backed configuration inputs.
 #[derive(Clone, Debug)]
@@ -87,7 +87,7 @@ impl EnvContext {
         let key = key.into();
         let value = value.into();
         self.env_vars.insert(key.clone(), value);
-        if key == IRONCLAW_BASE_DIR_ENV {
+        if key == AXINITE_BASE_DIR_ENV {
             self.base_dir = resolve_base_dir_snapshot(&self.env_vars);
         }
         self
@@ -109,8 +109,8 @@ impl EnvContext {
         self.secrets.extend(secrets);
     }
 
-    /// Resolve the effective IronClaw base directory from the snapshot.
-    pub fn ironclaw_base_dir(&self) -> PathBuf {
+    /// Resolve the effective Axinite base directory from the snapshot.
+    pub fn axinite_base_dir(&self) -> PathBuf {
         self.base_dir.clone()
     }
 }
@@ -152,17 +152,17 @@ fn collect_utf8_env_vars(
 
 fn default_base_dir() -> PathBuf {
     if let Some(home) = dirs::home_dir() {
-        home.join(".ironclaw")
+        home.join(".axinite")
     } else {
         std::env::current_dir()
             .unwrap_or_else(|_| PathBuf::from("/tmp"))
-            .join(".ironclaw")
+            .join(".axinite")
     }
 }
 
 fn resolve_base_dir_snapshot(env_vars: &HashMap<String, String>) -> PathBuf {
     env_vars
-        .get(IRONCLAW_BASE_DIR_ENV)
+        .get(AXINITE_BASE_DIR_ENV)
         .map(PathBuf::from)
         .filter(|path| !path.as_os_str().is_empty())
         .unwrap_or_else(default_base_dir)
@@ -208,9 +208,9 @@ mod tests {
 
     #[test]
     fn base_dir_uses_snapshot_override() {
-        let ctx = EnvContext::default().with_env("IRONCLAW_BASE_DIR", "/tmp/axinite");
+        let ctx = EnvContext::default().with_env("AXINITE_BASE_DIR", "/tmp/axinite");
 
-        assert_eq!(ctx.ironclaw_base_dir(), PathBuf::from("/tmp/axinite"));
+        assert_eq!(ctx.axinite_base_dir(), PathBuf::from("/tmp/axinite"));
     }
 
     #[cfg(unix)]

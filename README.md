@@ -7,11 +7,12 @@ your data local and your tooling under your control.*
 
 [English](README.md) | [简体中文](README.zh-CN.md)
 
-Axinite inherits a large share of IronClaw's runtime, CLI surface, and
+Axinite inherits a large share of
+[IronClaw](https://github.com/nearai/ironclaw)'s runtime, CLI surface, and
 documentation. That heritage is deliberate: this fork keeps the upstream
 security and automation machinery while taking the project in its own
-direction. For the moment, the compiled binary, crate name, and many internal
-paths still use `ironclaw`.
+direction. The compiled binary, crate name, and internal paths now use
+`axinite` throughout.
 
 ______________________________________________________________________
 
@@ -32,25 +33,31 @@ ______________________________________________________________________
 
 ### Installation
 
-Axinite is the fork name. The current crate, binary, and setup command are
-still called `ironclaw`.
+Axinite is the fork name, and the crate, binary, and setup command are all
+called `axinite`.
 
 ```bash
 cargo build
-target/debug/ironclaw onboard --quick
+target/debug/axinite onboard --quick
 ```
+
+> **Migrating from IronClaw?** If you have an existing `ironclaw`-named
+> build, move `~/.ironclaw` to `~/.axinite` and rename any `IRONCLAW_*`
+> environment variables to `AXINITE_*` before running the commands below.
+> A legacy `ironclaw.db` database inside the moved directory is detected
+> automatically; renaming the file is not required.
 
 ### Basic usage
 
 ```bash
 # Send one message and exit
-target/debug/ironclaw --message "Summarize what this machine is ready to do."
+target/debug/axinite --message "Summarize what this machine is ready to do."
 
 # Check health and configured services
-target/debug/ironclaw status
+target/debug/axinite status
 
 # Inspect workspace memory support
-target/debug/ironclaw memory status
+target/debug/axinite memory status
 ```
 
 ______________________________________________________________________
@@ -74,7 +81,7 @@ ______________________________________________________________________
 
 - [LLM provider guide](docs/LLM_PROVIDERS.md) — provider setup and environment
   variables.
-- [Onboarding spec](src/setup/README.md) — what `ironclaw onboard` configures.
+- [Onboarding spec](src/setup/README.md) — what `axinite onboard` configures.
 - [Workspace and memory](src/workspace/README.md) — persistent memory layout
   and tools.
 - [Building channels](docs/BUILDING_CHANNELS.md) — rebuilding bundled channel

@@ -10,19 +10,19 @@ cat >"$workdir/gh" <<'EOF'
 set -euo pipefail
 
 case "$*" in
-  api\ repos/test/ironclaw/pulls/1/files\ --paginate\ --jq*)
+  api\ repos/test/axinite/pulls/1/files\ --paginate\ --jq*)
     printf '5156\n5373\n'
     ;;
-  pr\ view\ 1\ --repo\ test/ironclaw\ --json\ labels\ --jq\ .labels\[\].name)
+  pr\ view\ 1\ --repo\ test/axinite\ --json\ labels\ --jq\ .labels\[\].name)
     ;;
-  pr\ view\ 1\ --repo\ test/ironclaw\ --json\ author\ --jq\ .author.login)
+  pr\ view\ 1\ --repo\ test/axinite\ --json\ author\ --jq\ .author.login)
     printf 'contributor\n'
     ;;
-  pr\ list\ --repo\ test/ironclaw\ --state\ merged\ --author\ contributor\ --limit\ 100\ --json\ number\ --jq\ length)
+  pr\ list\ --repo\ test/axinite\ --state\ merged\ --author\ contributor\ --limit\ 100\ --json\ number\ --jq\ length)
     printf '0\n'
     ;;
   *)
-    if [[ $# -eq 7 && "$1" == "pr" && "$2" == "edit" && "$3" == "1" && "$4" == "--repo" && "$5" == "test/ironclaw" && "$6" == "--add-label" ]]; then
+    if [[ $# -eq 7 && "$1" == "pr" && "$2" == "edit" && "$3" == "1" && "$4" == "--repo" && "$5" == "test/axinite" && "$6" == "--add-label" ]]; then
       case "$7" in
         "size: XL"|"risk: low"|"contributor: new")
           printf 'ADD:%s\n' "$7" >>"$GH_LOG"
@@ -45,7 +45,7 @@ PATH="$workdir:$PATH"
 GH_LOG="$workdir/gh.log"
 export GH_LOG
 export PR_NUMBER=1
-export REPO=test/ironclaw
+export REPO=test/axinite
 
 if ! output="$("$repo_root/.github/scripts/pr-labeler.sh" 2>&1)"; then
     printf '%s\n' "$output"

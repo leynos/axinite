@@ -7,11 +7,11 @@
 
 use std::collections::HashMap;
 
-use ironclaw::db::settings::{
+use axinite::db::settings::{
     NativeSettingsStore, SettingKey, SettingsStore, UserId,
 };
-use ironclaw::error::DatabaseError;
-use ironclaw::history::SettingRow;
+use axinite::error::DatabaseError;
+use axinite::history::SettingRow;
 
 struct DummySettingsStore;
 

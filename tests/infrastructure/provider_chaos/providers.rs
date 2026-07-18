@@ -9,8 +9,8 @@ use std::sync::atomic::{AtomicU32, Ordering};
 
 use rust_decimal::Decimal;
 
-use ironclaw::error::LlmError;
-use ironclaw::llm::{
+use axinite::error::LlmError;
+use axinite::llm::{
     ChatMessage, CompletionRequest, CompletionResponse, FinishReason, ToolCompletionRequest,
     ToolCompletionResponse,
 };
@@ -50,7 +50,7 @@ impl FlakeyProvider {
     }
 }
 
-impl ironclaw::llm::NativeLlmProvider for FlakeyProvider {
+impl axinite::llm::NativeLlmProvider for FlakeyProvider {
     fn model_name(&self) -> &str {
         &self.name
     }
@@ -126,7 +126,7 @@ impl HangingProvider {
     }
 }
 
-impl ironclaw::llm::NativeLlmProvider for HangingProvider {
+impl axinite::llm::NativeLlmProvider for HangingProvider {
     fn model_name(&self) -> &str {
         &self.name
     }
@@ -170,7 +170,7 @@ impl GarbageProvider {
     }
 }
 
-impl ironclaw::llm::NativeLlmProvider for GarbageProvider {
+impl axinite::llm::NativeLlmProvider for GarbageProvider {
     fn model_name(&self) -> &str {
         &self.name
     }
@@ -229,7 +229,7 @@ impl ReliableProvider {
     }
 }
 
-impl ironclaw::llm::NativeLlmProvider for ReliableProvider {
+impl axinite::llm::NativeLlmProvider for ReliableProvider {
     fn model_name(&self) -> &str {
         &self.name
     }

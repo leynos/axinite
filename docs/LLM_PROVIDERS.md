@@ -1,6 +1,6 @@
 # LLM Provider Configuration
 
-IronClaw defaults to NEAR AI for model access, but supports any
+Axinite defaults to NEAR AI for model access, but supports any
 OpenAI-compatible endpoint as well as Anthropic and Ollama directly. This guide
 covers the most common configurations.
 
@@ -28,9 +28,9 @@ ______________________________________________________________________
 
 ## NEAR AI (default)
 
-No additional configuration required. On first run, `ironclaw onboard` opens a
+No additional configuration required. On first run, `axinite onboard` opens a
 browser for OAuth authentication. Credentials are saved to
-`~/.ironclaw/session.json`.
+`~/.axinite/session.json`.
 
 ```env
 NEARAI_MODEL=claude-3-5-sonnet-20241022
@@ -228,7 +228,7 @@ ______________________________________________________________________
 Instead of editing `.env` manually, run the onboarding wizard:
 
 ```bash
-ironclaw onboard
+axinite onboard
 ```
 
 Select **"OpenAI-compatible"** for OpenRouter, Together AI, Fireworks, vLLM,

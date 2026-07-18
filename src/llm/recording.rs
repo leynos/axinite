@@ -10,7 +10,7 @@
 //! - **Steps**: user inputs, LLM responses (text/tool_calls), and expected tool
 //!   results for verifying tool output during replay
 //!
-//! Enable by setting `IRONCLAW_RECORD_TRACE=1` at runtime.
+//! Enable by setting `AXINITE_RECORD_TRACE=1` at runtime.
 
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -65,16 +65,16 @@ impl RecordingLlm {
 
     /// Create from environment variables if recording is enabled.
     ///
-    /// - `IRONCLAW_RECORD_TRACE` — any non-empty value enables recording
-    /// - `IRONCLAW_TRACE_OUTPUT` — file path (default: `./trace_{timestamp}.json`)
-    /// - `IRONCLAW_TRACE_MODEL_NAME` — model_name field (default: `recorded-{inner.model_name()}`)
+    /// - `AXINITE_RECORD_TRACE` — any non-empty value enables recording
+    /// - `AXINITE_TRACE_OUTPUT` — file path (default: `./trace_{timestamp}.json`)
+    /// - `AXINITE_TRACE_MODEL_NAME` — model_name field (default: `recorded-{inner.model_name()}`)
     pub fn from_env(inner: Arc<dyn LlmProvider>) -> Option<Arc<Self>> {
-        let enabled = std::env::var("IRONCLAW_RECORD_TRACE")
+        let enabled = std::env::var("AXINITE_RECORD_TRACE")
             .ok()
             .filter(|v| !v.is_empty());
         enabled?;
 
-        let output_path = std::env::var("IRONCLAW_TRACE_OUTPUT")
+        let output_path = std::env::var("AXINITE_TRACE_OUTPUT")
             .ok()
             .filter(|v| !v.is_empty())
             .map(PathBuf::from)
@@ -83,7 +83,7 @@ impl RecordingLlm {
                 PathBuf::from(format!("trace_{ts}.json"))
             });
 
-        let model_name = std::env::var("IRONCLAW_TRACE_MODEL_NAME")
+        let model_name = std::env::var("AXINITE_TRACE_MODEL_NAME")
             .ok()
             .filter(|v| !v.is_empty())
             .unwrap_or_else(|| format!("recorded-{}", inner.model_name()));

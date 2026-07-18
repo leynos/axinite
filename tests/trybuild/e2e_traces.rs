@@ -8,7 +8,7 @@ mod support;
 
 type AsyncUnit<'a> = std::pin::Pin<Box<dyn std::future::Future<Output = ()> + 'a>>;
 type AsyncStatusEvents<'a> = std::pin::Pin<
-    Box<dyn std::future::Future<Output = Vec<ironclaw::channels::StatusUpdate>> + 'a>,
+    Box<dyn std::future::Future<Output = Vec<axinite::channels::StatusUpdate>> + 'a>,
 >;
 fn clear_sig<'a>(rig: &'a support::test_rig::TestRig) -> AsyncUnit<'a> {
     Box::pin(support::test_rig::TestRig::clear(rig))

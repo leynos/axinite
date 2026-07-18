@@ -13,7 +13,7 @@ fn sandbox_mode_config_default_values() {
     assert_eq!(cfg.timeout_secs, 120);
     assert_eq!(cfg.memory_limit_mb, 2048);
     assert_eq!(cfg.cpu_shares, 1024);
-    assert_eq!(cfg.image, "ironclaw-worker:latest");
+    assert_eq!(cfg.image, "axinite-worker:latest");
     assert!(cfg.auto_pull_image);
     assert!(cfg.extra_allowed_domains.is_empty());
 }

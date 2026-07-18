@@ -13,7 +13,7 @@ name: E2E Tests
 jobs:
   # ── Step 1: compile once ──────────────────────────────────────────────────
   build:
-    name: Build ironclaw (libsql)
+    name: Build axinite (libsql)
     runs-on: ubicloud-standard-8
     timeout-minutes: 30
     env:
@@ -41,8 +41,8 @@ jobs:
       - name: Upload binary
         uses: actions/upload-artifact@v7
         with:
-          name: ironclaw-e2e-binary
-          path: target/debug/ironclaw
+          name: axinite-e2e-binary
+          path: target/debug/axinite
           retention-days: 1
 
   # ── Step 2: run test slices in parallel ───────────────────────────────────
@@ -73,11 +73,11 @@ jobs:
       - name: Download binary
         uses: actions/download-artifact@v8
         with:
-          name: ironclaw-e2e-binary
+          name: axinite-e2e-binary
           path: target/debug/
 
       - name: Make binary executable
-        run: chmod +x target/debug/ironclaw
+        run: chmod +x target/debug/axinite
 
       - uses: actions/setup-python@v6
         with:

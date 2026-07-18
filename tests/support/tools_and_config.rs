@@ -15,6 +15,6 @@ pub mod trace_llm {
     pub use super::trace_types::{LlmTrace, TraceExpects};
 }
 
-pub(crate) use ironclaw::testing_wasm::{
+pub(crate) use axinite::testing_wasm::{
     github_tool_source_dir, github_wasm_artifact, metadata_test_runtime,
 };

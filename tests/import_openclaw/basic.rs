@@ -7,8 +7,8 @@ mod import_tests {
 
     use std::collections::HashMap;
 
-    use ironclaw::import::openclaw::reader::{OpenClawConfig, OpenClawMemoryChunk};
-    use ironclaw::import::{ImportError, ImportStats};
+    use axinite::import::openclaw::reader::{OpenClawConfig, OpenClawMemoryChunk};
+    use axinite::import::{ImportError, ImportStats};
     use rstest::rstest;
 
     #[test]

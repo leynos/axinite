@@ -1,8 +1,8 @@
-#compdef ironclaw
+#compdef axinite
 
 autoload -U is-at-least
 
-_ironclaw() {
+_axinite() {
     typeset -A opt_args
     typeset -a _arguments_options
     local ret=1
@@ -26,14 +26,14 @@ _ironclaw() {
 '--help[Print help (see more with '\''--help'\'')]' \
 '-V[Print version]' \
 '--version[Print version]' \
-":: :_ironclaw_commands" \
-"*::: :->ironclaw" \
+":: :_axinite_commands" \
+"*::: :->axinite" \
 && ret=0
     case $state in
-    (ironclaw)
+    (axinite)
         words=($line[1] "${words[@]}")
         (( CURRENT += 1 ))
-        curcontext="${curcontext%:*:*}:ironclaw-command-$line[1]:"
+        curcontext="${curcontext%:*:*}:axinite-command-$line[1]:"
         case $line[1] in
             (run)
 _arguments "${_arguments_options[@]}" : \
@@ -55,7 +55,9 @@ _arguments "${_arguments_options[@]}" : \
 '-c+[Configuration file path (optional, uses env vars by default)]:CONFIG:_files' \
 '--config=[Configuration file path (optional, uses env vars by default)]:CONFIG:_files' \
 '--skip-auth[Skip authentication (use existing session)]' \
-'--channels-only[Reconfigure channels only]' \
+'(--provider-only --quick)--channels-only[Reconfigure channels only]' \
+'(--channels-only --quick)--provider-only[Reconfigure LLM provider and model only]' \
+'(--channels-only --provider-only)--quick[Quick setup\: auto-defaults everything except LLM provider and model]' \
 '--cli-only[Run in interactive CLI mode only (disable other channels)]' \
 '--no-db[Skip database connection (for testing)]' \
 '--no-onboard[Skip first-run onboarding check]' \
@@ -74,7 +76,7 @@ _arguments "${_arguments_options[@]}" : \
 '--no-onboard[Skip first-run onboarding check]' \
 '-h[Print help (see more with '\''--help'\'')]' \
 '--help[Print help (see more with '\''--help'\'')]' \
-":: :_ironclaw__config_commands" \
+":: :_axinite__subcmd__config_commands" \
 "*::: :->config" \
 && ret=0
 
@@ -82,12 +84,12 @@ _arguments "${_arguments_options[@]}" : \
     (config)
         words=($line[1] "${words[@]}")
         (( CURRENT += 1 ))
-        curcontext="${curcontext%:*:*}:ironclaw-config-command-$line[1]:"
+        curcontext="${curcontext%:*:*}:axinite-config-command-$line[1]:"
         case $line[1] in
             (init)
 _arguments "${_arguments_options[@]}" : \
-'-o+[Output path (default\: ~/.ironclaw/config.toml)]:OUTPUT:_files' \
-'--output=[Output path (default\: ~/.ironclaw/config.toml)]:OUTPUT:_files' \
+'-o+[Output path (default\: ~/.axinite/config.toml)]:OUTPUT:_files' \
+'--output=[Output path (default\: ~/.axinite/config.toml)]:OUTPUT:_files' \
 '-m+[Single message mode - send one message and exit]:MESSAGE:_default' \
 '--message=[Single message mode - send one message and exit]:MESSAGE:_default' \
 '-c+[Configuration file path (optional, uses env vars by default)]:CONFIG:_files' \
@@ -173,7 +175,7 @@ _arguments "${_arguments_options[@]}" : \
 ;;
 (help)
 _arguments "${_arguments_options[@]}" : \
-":: :_ironclaw__config__help_commands" \
+":: :_axinite__subcmd__config__subcmd__help_commands" \
 "*::: :->help" \
 && ret=0
 
@@ -181,7 +183,7 @@ _arguments "${_arguments_options[@]}" : \
     (help)
         words=($line[1] "${words[@]}")
         (( CURRENT += 1 ))
-        curcontext="${curcontext%:*:*}:ironclaw-config-help-command-$line[1]:"
+        curcontext="${curcontext%:*:*}:axinite-config-help-command-$line[1]:"
         case $line[1] in
             (init)
 _arguments "${_arguments_options[@]}" : \
@@ -230,7 +232,7 @@ _arguments "${_arguments_options[@]}" : \
 '--no-onboard[Skip first-run onboarding check]' \
 '-h[Print help (see more with '\''--help'\'')]' \
 '--help[Print help (see more with '\''--help'\'')]' \
-":: :_ironclaw__tool_commands" \
+":: :_axinite__subcmd__tool_commands" \
 "*::: :->tool" \
 && ret=0
 
@@ -238,15 +240,15 @@ _arguments "${_arguments_options[@]}" : \
     (tool)
         words=($line[1] "${words[@]}")
         (( CURRENT += 1 ))
-        curcontext="${curcontext%:*:*}:ironclaw-tool-command-$line[1]:"
+        curcontext="${curcontext%:*:*}:axinite-tool-command-$line[1]:"
         case $line[1] in
             (install)
 _arguments "${_arguments_options[@]}" : \
 '-n+[Tool name (defaults to directory/file name)]:NAME:_default' \
 '--name=[Tool name (defaults to directory/file name)]:NAME:_default' \
 '--capabilities=[Path to capabilities JSON file (auto-detected if not specified)]:CAPABILITIES:_files' \
-'-t+[Target directory for installation (default\: ~/.ironclaw/tools/)]:TARGET:_files' \
-'--target=[Target directory for installation (default\: ~/.ironclaw/tools/)]:TARGET:_files' \
+'-t+[Target directory for installation (default\: ~/.axinite/tools/)]:TARGET:_files' \
+'--target=[Target directory for installation (default\: ~/.axinite/tools/)]:TARGET:_files' \
 '-m+[Single message mode - send one message and exit]:MESSAGE:_default' \
 '--message=[Single message mode - send one message and exit]:MESSAGE:_default' \
 '-c+[Configuration file path (optional, uses env vars by default)]:CONFIG:_files' \
@@ -265,8 +267,8 @@ _arguments "${_arguments_options[@]}" : \
 ;;
 (list)
 _arguments "${_arguments_options[@]}" : \
-'-d+[Directory to list tools from (default\: ~/.ironclaw/tools/)]:DIR:_files' \
-'--dir=[Directory to list tools from (default\: ~/.ironclaw/tools/)]:DIR:_files' \
+'-d+[Directory to list tools from (default\: ~/.axinite/tools/)]:DIR:_files' \
+'--dir=[Directory to list tools from (default\: ~/.axinite/tools/)]:DIR:_files' \
 '-m+[Single message mode - send one message and exit]:MESSAGE:_default' \
 '--message=[Single message mode - send one message and exit]:MESSAGE:_default' \
 '-c+[Configuration file path (optional, uses env vars by default)]:CONFIG:_files' \
@@ -282,8 +284,8 @@ _arguments "${_arguments_options[@]}" : \
 ;;
 (remove)
 _arguments "${_arguments_options[@]}" : \
-'-d+[Directory to remove tool from (default\: ~/.ironclaw/tools/)]:DIR:_files' \
-'--dir=[Directory to remove tool from (default\: ~/.ironclaw/tools/)]:DIR:_files' \
+'-d+[Directory to remove tool from (default\: ~/.axinite/tools/)]:DIR:_files' \
+'--dir=[Directory to remove tool from (default\: ~/.axinite/tools/)]:DIR:_files' \
 '-m+[Single message mode - send one message and exit]:MESSAGE:_default' \
 '--message=[Single message mode - send one message and exit]:MESSAGE:_default' \
 '-c+[Configuration file path (optional, uses env vars by default)]:CONFIG:_files' \
@@ -298,8 +300,8 @@ _arguments "${_arguments_options[@]}" : \
 ;;
 (info)
 _arguments "${_arguments_options[@]}" : \
-'-d+[Directory to look for tool (default\: ~/.ironclaw/tools/)]:DIR:_files' \
-'--dir=[Directory to look for tool (default\: ~/.ironclaw/tools/)]:DIR:_files' \
+'-d+[Directory to look for tool (default\: ~/.axinite/tools/)]:DIR:_files' \
+'--dir=[Directory to look for tool (default\: ~/.axinite/tools/)]:DIR:_files' \
 '-m+[Single message mode - send one message and exit]:MESSAGE:_default' \
 '--message=[Single message mode - send one message and exit]:MESSAGE:_default' \
 '-c+[Configuration file path (optional, uses env vars by default)]:CONFIG:_files' \
@@ -314,8 +316,26 @@ _arguments "${_arguments_options[@]}" : \
 ;;
 (auth)
 _arguments "${_arguments_options[@]}" : \
-'-d+[Directory to look for tool (default\: ~/.ironclaw/tools/)]:DIR:_files' \
-'--dir=[Directory to look for tool (default\: ~/.ironclaw/tools/)]:DIR:_files' \
+'-d+[Directory to look for tool (default\: ~/.axinite/tools/)]:DIR:_files' \
+'--dir=[Directory to look for tool (default\: ~/.axinite/tools/)]:DIR:_files' \
+'-u+[User ID for storing the secret (default\: "default")]:USER:_default' \
+'--user=[User ID for storing the secret (default\: "default")]:USER:_default' \
+'-m+[Single message mode - send one message and exit]:MESSAGE:_default' \
+'--message=[Single message mode - send one message and exit]:MESSAGE:_default' \
+'-c+[Configuration file path (optional, uses env vars by default)]:CONFIG:_files' \
+'--config=[Configuration file path (optional, uses env vars by default)]:CONFIG:_files' \
+'--cli-only[Run in interactive CLI mode only (disable other channels)]' \
+'--no-db[Skip database connection (for testing)]' \
+'--no-onboard[Skip first-run onboarding check]' \
+'-h[Print help]' \
+'--help[Print help]' \
+':name -- Name of the tool:_default' \
+&& ret=0
+;;
+(setup)
+_arguments "${_arguments_options[@]}" : \
+'-d+[Directory to look for tool (default\: ~/.axinite/tools/)]:DIR:_files' \
+'--dir=[Directory to look for tool (default\: ~/.axinite/tools/)]:DIR:_files' \
 '-u+[User ID for storing the secret (default\: "default")]:USER:_default' \
 '--user=[User ID for storing the secret (default\: "default")]:USER:_default' \
 '-m+[Single message mode - send one message and exit]:MESSAGE:_default' \
@@ -332,7 +352,7 @@ _arguments "${_arguments_options[@]}" : \
 ;;
 (help)
 _arguments "${_arguments_options[@]}" : \
-":: :_ironclaw__tool__help_commands" \
+":: :_axinite__subcmd__tool__subcmd__help_commands" \
 "*::: :->help" \
 && ret=0
 
@@ -340,7 +360,7 @@ _arguments "${_arguments_options[@]}" : \
     (help)
         words=($line[1] "${words[@]}")
         (( CURRENT += 1 ))
-        curcontext="${curcontext%:*:*}:ironclaw-tool-help-command-$line[1]:"
+        curcontext="${curcontext%:*:*}:axinite-tool-help-command-$line[1]:"
         case $line[1] in
             (install)
 _arguments "${_arguments_options[@]}" : \
@@ -359,6 +379,10 @@ _arguments "${_arguments_options[@]}" : \
 && ret=0
 ;;
 (auth)
+_arguments "${_arguments_options[@]}" : \
+&& ret=0
+;;
+(setup)
 _arguments "${_arguments_options[@]}" : \
 && ret=0
 ;;
@@ -385,7 +409,7 @@ _arguments "${_arguments_options[@]}" : \
 '--no-onboard[Skip first-run onboarding check]' \
 '-h[Print help (see more with '\''--help'\'')]' \
 '--help[Print help (see more with '\''--help'\'')]' \
-":: :_ironclaw__registry_commands" \
+":: :_axinite__subcmd__registry_commands" \
 "*::: :->registry" \
 && ret=0
 
@@ -393,7 +417,7 @@ _arguments "${_arguments_options[@]}" : \
     (registry)
         words=($line[1] "${words[@]}")
         (( CURRENT += 1 ))
-        curcontext="${curcontext%:*:*}:ironclaw-registry-command-$line[1]:"
+        curcontext="${curcontext%:*:*}:axinite-registry-command-$line[1]:"
         case $line[1] in
             (list)
 _arguments "${_arguments_options[@]}" : \
@@ -463,7 +487,7 @@ _arguments "${_arguments_options[@]}" : \
 ;;
 (help)
 _arguments "${_arguments_options[@]}" : \
-":: :_ironclaw__registry__help_commands" \
+":: :_axinite__subcmd__registry__subcmd__help_commands" \
 "*::: :->help" \
 && ret=0
 
@@ -471,7 +495,7 @@ _arguments "${_arguments_options[@]}" : \
     (help)
         words=($line[1] "${words[@]}")
         (( CURRENT += 1 ))
-        curcontext="${curcontext%:*:*}:ironclaw-registry-help-command-$line[1]:"
+        curcontext="${curcontext%:*:*}:axinite-registry-help-command-$line[1]:"
         case $line[1] in
             (list)
 _arguments "${_arguments_options[@]}" : \
@@ -512,7 +536,7 @@ _arguments "${_arguments_options[@]}" : \
 '--no-onboard[Skip first-run onboarding check]' \
 '-h[Print help (see more with '\''--help'\'')]' \
 '--help[Print help (see more with '\''--help'\'')]' \
-":: :_ironclaw__mcp_commands" \
+":: :_axinite__subcmd__mcp_commands" \
 "*::: :->mcp" \
 && ret=0
 
@@ -520,10 +544,16 @@ _arguments "${_arguments_options[@]}" : \
     (mcp)
         words=($line[1] "${words[@]}")
         (( CURRENT += 1 ))
-        curcontext="${curcontext%:*:*}:ironclaw-mcp-command-$line[1]:"
+        curcontext="${curcontext%:*:*}:axinite-mcp-command-$line[1]:"
         case $line[1] in
             (add)
 _arguments "${_arguments_options[@]}" : \
+'--transport=[Transport type\: http (default), stdio, unix]:TRANSPORT:_default' \
+'--command=[Command to run (stdio transport)]:COMMAND:_default' \
+'*--arg=[Command arguments (stdio transport, can be repeated)]:CMD_ARGS:_default' \
+'*--env=[Environment variables (stdio transport, KEY=VALUE format, can be repeated)]:ENV:_default' \
+'--socket=[Unix socket path (unix transport)]:SOCKET:_default' \
+'*--header=[Custom HTTP headers (KEY\:VALUE format, can be repeated)]:HEADERS:_default' \
 '--client-id=[OAuth client ID (if authentication is required)]:CLIENT_ID:_default' \
 '--auth-url=[OAuth authorization URL (optional, can be discovered)]:AUTH_URL:_default' \
 '--token-url=[OAuth token URL (optional, can be discovered)]:TOKEN_URL:_default' \
@@ -539,7 +569,7 @@ _arguments "${_arguments_options[@]}" : \
 '-h[Print help]' \
 '--help[Print help]' \
 ':name -- Server name (e.g., "notion", "github"):_default' \
-':url -- Server URL (e.g., "https\://mcp.notion.com"):_default' \
+'::url -- Server URL (e.g., "https\://mcp.notion.com") -- required for http transport:_default' \
 && ret=0
 ;;
 (remove)
@@ -621,7 +651,7 @@ _arguments "${_arguments_options[@]}" : \
 ;;
 (help)
 _arguments "${_arguments_options[@]}" : \
-":: :_ironclaw__mcp__help_commands" \
+":: :_axinite__subcmd__mcp__subcmd__help_commands" \
 "*::: :->help" \
 && ret=0
 
@@ -629,7 +659,7 @@ _arguments "${_arguments_options[@]}" : \
     (help)
         words=($line[1] "${words[@]}")
         (( CURRENT += 1 ))
-        curcontext="${curcontext%:*:*}:ironclaw-mcp-help-command-$line[1]:"
+        curcontext="${curcontext%:*:*}:axinite-mcp-help-command-$line[1]:"
         case $line[1] in
             (add)
 _arguments "${_arguments_options[@]}" : \
@@ -678,7 +708,7 @@ _arguments "${_arguments_options[@]}" : \
 '--no-onboard[Skip first-run onboarding check]' \
 '-h[Print help (see more with '\''--help'\'')]' \
 '--help[Print help (see more with '\''--help'\'')]' \
-":: :_ironclaw__memory_commands" \
+":: :_axinite__subcmd__memory_commands" \
 "*::: :->memory" \
 && ret=0
 
@@ -686,7 +716,7 @@ _arguments "${_arguments_options[@]}" : \
     (memory)
         words=($line[1] "${words[@]}")
         (( CURRENT += 1 ))
-        curcontext="${curcontext%:*:*}:ironclaw-memory-command-$line[1]:"
+        curcontext="${curcontext%:*:*}:axinite-memory-command-$line[1]:"
         case $line[1] in
             (search)
 _arguments "${_arguments_options[@]}" : \
@@ -766,7 +796,7 @@ _arguments "${_arguments_options[@]}" : \
 ;;
 (help)
 _arguments "${_arguments_options[@]}" : \
-":: :_ironclaw__memory__help_commands" \
+":: :_axinite__subcmd__memory__subcmd__help_commands" \
 "*::: :->help" \
 && ret=0
 
@@ -774,7 +804,7 @@ _arguments "${_arguments_options[@]}" : \
     (help)
         words=($line[1] "${words[@]}")
         (( CURRENT += 1 ))
-        curcontext="${curcontext%:*:*}:ironclaw-memory-help-command-$line[1]:"
+        curcontext="${curcontext%:*:*}:axinite-memory-help-command-$line[1]:"
         case $line[1] in
             (search)
 _arguments "${_arguments_options[@]}" : \
@@ -819,7 +849,7 @@ _arguments "${_arguments_options[@]}" : \
 '--no-onboard[Skip first-run onboarding check]' \
 '-h[Print help (see more with '\''--help'\'')]' \
 '--help[Print help (see more with '\''--help'\'')]' \
-":: :_ironclaw__pairing_commands" \
+":: :_axinite__subcmd__pairing_commands" \
 "*::: :->pairing" \
 && ret=0
 
@@ -827,7 +857,7 @@ _arguments "${_arguments_options[@]}" : \
     (pairing)
         words=($line[1] "${words[@]}")
         (( CURRENT += 1 ))
-        curcontext="${curcontext%:*:*}:ironclaw-pairing-command-$line[1]:"
+        curcontext="${curcontext%:*:*}:axinite-pairing-command-$line[1]:"
         case $line[1] in
             (list)
 _arguments "${_arguments_options[@]}" : \
@@ -861,7 +891,7 @@ _arguments "${_arguments_options[@]}" : \
 ;;
 (help)
 _arguments "${_arguments_options[@]}" : \
-":: :_ironclaw__pairing__help_commands" \
+":: :_axinite__subcmd__pairing__subcmd__help_commands" \
 "*::: :->help" \
 && ret=0
 
@@ -869,7 +899,7 @@ _arguments "${_arguments_options[@]}" : \
     (help)
         words=($line[1] "${words[@]}")
         (( CURRENT += 1 ))
-        curcontext="${curcontext%:*:*}:ironclaw-pairing-help-command-$line[1]:"
+        curcontext="${curcontext%:*:*}:axinite-pairing-help-command-$line[1]:"
         case $line[1] in
             (list)
 _arguments "${_arguments_options[@]}" : \
@@ -902,7 +932,7 @@ _arguments "${_arguments_options[@]}" : \
 '--no-onboard[Skip first-run onboarding check]' \
 '-h[Print help (see more with '\''--help'\'')]' \
 '--help[Print help (see more with '\''--help'\'')]' \
-":: :_ironclaw__service_commands" \
+":: :_axinite__subcmd__service_commands" \
 "*::: :->service" \
 && ret=0
 
@@ -910,7 +940,7 @@ _arguments "${_arguments_options[@]}" : \
     (service)
         words=($line[1] "${words[@]}")
         (( CURRENT += 1 ))
-        curcontext="${curcontext%:*:*}:ironclaw-service-command-$line[1]:"
+        curcontext="${curcontext%:*:*}:axinite-service-command-$line[1]:"
         case $line[1] in
             (install)
 _arguments "${_arguments_options[@]}" : \
@@ -979,7 +1009,7 @@ _arguments "${_arguments_options[@]}" : \
 ;;
 (help)
 _arguments "${_arguments_options[@]}" : \
-":: :_ironclaw__service__help_commands" \
+":: :_axinite__subcmd__service__subcmd__help_commands" \
 "*::: :->help" \
 && ret=0
 
@@ -987,7 +1017,7 @@ _arguments "${_arguments_options[@]}" : \
     (help)
         words=($line[1] "${words[@]}")
         (( CURRENT += 1 ))
-        curcontext="${curcontext%:*:*}:ironclaw-service-help-command-$line[1]:"
+        curcontext="${curcontext%:*:*}:axinite-service-help-command-$line[1]:"
         case $line[1] in
             (install)
 _arguments "${_arguments_options[@]}" : \
@@ -1096,7 +1126,7 @@ _arguments "${_arguments_options[@]}" : \
 ;;
 (help)
 _arguments "${_arguments_options[@]}" : \
-":: :_ironclaw__help_commands" \
+":: :_axinite__subcmd__help_commands" \
 "*::: :->help" \
 && ret=0
 
@@ -1104,7 +1134,7 @@ _arguments "${_arguments_options[@]}" : \
     (help)
         words=($line[1] "${words[@]}")
         (( CURRENT += 1 ))
-        curcontext="${curcontext%:*:*}:ironclaw-help-command-$line[1]:"
+        curcontext="${curcontext%:*:*}:axinite-help-command-$line[1]:"
         case $line[1] in
             (run)
 _arguments "${_arguments_options[@]}" : \
@@ -1116,7 +1146,7 @@ _arguments "${_arguments_options[@]}" : \
 ;;
 (config)
 _arguments "${_arguments_options[@]}" : \
-":: :_ironclaw__help__config_commands" \
+":: :_axinite__subcmd__help__subcmd__config_commands" \
 "*::: :->config" \
 && ret=0
 
@@ -1124,7 +1154,7 @@ _arguments "${_arguments_options[@]}" : \
     (config)
         words=($line[1] "${words[@]}")
         (( CURRENT += 1 ))
-        curcontext="${curcontext%:*:*}:ironclaw-help-config-command-$line[1]:"
+        curcontext="${curcontext%:*:*}:axinite-help-config-command-$line[1]:"
         case $line[1] in
             (init)
 _arguments "${_arguments_options[@]}" : \
@@ -1156,7 +1186,7 @@ esac
 ;;
 (tool)
 _arguments "${_arguments_options[@]}" : \
-":: :_ironclaw__help__tool_commands" \
+":: :_axinite__subcmd__help__subcmd__tool_commands" \
 "*::: :->tool" \
 && ret=0
 
@@ -1164,7 +1194,7 @@ _arguments "${_arguments_options[@]}" : \
     (tool)
         words=($line[1] "${words[@]}")
         (( CURRENT += 1 ))
-        curcontext="${curcontext%:*:*}:ironclaw-help-tool-command-$line[1]:"
+        curcontext="${curcontext%:*:*}:axinite-help-tool-command-$line[1]:"
         case $line[1] in
             (install)
 _arguments "${_arguments_options[@]}" : \
@@ -1186,13 +1216,17 @@ _arguments "${_arguments_options[@]}" : \
 _arguments "${_arguments_options[@]}" : \
 && ret=0
 ;;
+(setup)
+_arguments "${_arguments_options[@]}" : \
+&& ret=0
+;;
         esac
     ;;
 esac
 ;;
 (registry)
 _arguments "${_arguments_options[@]}" : \
-":: :_ironclaw__help__registry_commands" \
+":: :_axinite__subcmd__help__subcmd__registry_commands" \
 "*::: :->registry" \
 && ret=0
 
@@ -1200,7 +1234,7 @@ _arguments "${_arguments_options[@]}" : \
     (registry)
         words=($line[1] "${words[@]}")
         (( CURRENT += 1 ))
-        curcontext="${curcontext%:*:*}:ironclaw-help-registry-command-$line[1]:"
+        curcontext="${curcontext%:*:*}:axinite-help-registry-command-$line[1]:"
         case $line[1] in
             (list)
 _arguments "${_arguments_options[@]}" : \
@@ -1224,7 +1258,7 @@ esac
 ;;
 (mcp)
 _arguments "${_arguments_options[@]}" : \
-":: :_ironclaw__help__mcp_commands" \
+":: :_axinite__subcmd__help__subcmd__mcp_commands" \
 "*::: :->mcp" \
 && ret=0
 
@@ -1232,7 +1266,7 @@ _arguments "${_arguments_options[@]}" : \
     (mcp)
         words=($line[1] "${words[@]}")
         (( CURRENT += 1 ))
-        curcontext="${curcontext%:*:*}:ironclaw-help-mcp-command-$line[1]:"
+        curcontext="${curcontext%:*:*}:axinite-help-mcp-command-$line[1]:"
         case $line[1] in
             (add)
 _arguments "${_arguments_options[@]}" : \
@@ -1264,7 +1298,7 @@ esac
 ;;
 (memory)
 _arguments "${_arguments_options[@]}" : \
-":: :_ironclaw__help__memory_commands" \
+":: :_axinite__subcmd__help__subcmd__memory_commands" \
 "*::: :->memory" \
 && ret=0
 
@@ -1272,7 +1306,7 @@ _arguments "${_arguments_options[@]}" : \
     (memory)
         words=($line[1] "${words[@]}")
         (( CURRENT += 1 ))
-        curcontext="${curcontext%:*:*}:ironclaw-help-memory-command-$line[1]:"
+        curcontext="${curcontext%:*:*}:axinite-help-memory-command-$line[1]:"
         case $line[1] in
             (search)
 _arguments "${_arguments_options[@]}" : \
@@ -1300,7 +1334,7 @@ esac
 ;;
 (pairing)
 _arguments "${_arguments_options[@]}" : \
-":: :_ironclaw__help__pairing_commands" \
+":: :_axinite__subcmd__help__subcmd__pairing_commands" \
 "*::: :->pairing" \
 && ret=0
 
@@ -1308,7 +1342,7 @@ _arguments "${_arguments_options[@]}" : \
     (pairing)
         words=($line[1] "${words[@]}")
         (( CURRENT += 1 ))
-        curcontext="${curcontext%:*:*}:ironclaw-help-pairing-command-$line[1]:"
+        curcontext="${curcontext%:*:*}:axinite-help-pairing-command-$line[1]:"
         case $line[1] in
             (list)
 _arguments "${_arguments_options[@]}" : \
@@ -1324,7 +1358,7 @@ esac
 ;;
 (service)
 _arguments "${_arguments_options[@]}" : \
-":: :_ironclaw__help__service_commands" \
+":: :_axinite__subcmd__help__subcmd__service_commands" \
 "*::: :->service" \
 && ret=0
 
@@ -1332,7 +1366,7 @@ _arguments "${_arguments_options[@]}" : \
     (service)
         words=($line[1] "${words[@]}")
         (( CURRENT += 1 ))
-        curcontext="${curcontext%:*:*}:ironclaw-help-service-command-$line[1]:"
+        curcontext="${curcontext%:*:*}:axinite-help-service-command-$line[1]:"
         case $line[1] in
             (install)
 _arguments "${_arguments_options[@]}" : \
@@ -1391,8 +1425,8 @@ esac
 esac
 }
 
-(( $+functions[_ironclaw_commands] )) ||
-_ironclaw_commands() {
+(( $+functions[_axinite_commands] )) ||
+_axinite_commands() {
     local commands; commands=(
 'run:Run the AI agent' \
 'onboard:Run interactive setup wizard' \
@@ -1410,20 +1444,20 @@ _ironclaw_commands() {
 'claude-bridge:Run as a Claude Code bridge inside a Docker container (internal use). Spawns the \`claude\` CLI and streams output back to the orchestrator' \
 'help:Print this message or the help of the given subcommand(s)' \
     )
-    _describe -t commands 'ironclaw commands' commands "$@"
+    _describe -t commands 'axinite commands' commands "$@"
 }
-(( $+functions[_ironclaw__claude-bridge_commands] )) ||
-_ironclaw__claude-bridge_commands() {
+(( $+functions[_axinite__subcmd__claude-bridge_commands] )) ||
+_axinite__subcmd__claude-bridge_commands() {
     local commands; commands=()
-    _describe -t commands 'ironclaw claude-bridge commands' commands "$@"
+    _describe -t commands 'axinite claude-bridge commands' commands "$@"
 }
-(( $+functions[_ironclaw__completion_commands] )) ||
-_ironclaw__completion_commands() {
+(( $+functions[_axinite__subcmd__completion_commands] )) ||
+_axinite__subcmd__completion_commands() {
     local commands; commands=()
-    _describe -t commands 'ironclaw completion commands' commands "$@"
+    _describe -t commands 'axinite completion commands' commands "$@"
 }
-(( $+functions[_ironclaw__config_commands] )) ||
-_ironclaw__config_commands() {
+(( $+functions[_axinite__subcmd__config_commands] )) ||
+_axinite__subcmd__config_commands() {
     local commands; commands=(
 'init:Generate a default config.toml file' \
 'list:List all settings and their current values' \
@@ -1433,15 +1467,15 @@ _ironclaw__config_commands() {
 'path:Show the settings storage info' \
 'help:Print this message or the help of the given subcommand(s)' \
     )
-    _describe -t commands 'ironclaw config commands' commands "$@"
+    _describe -t commands 'axinite config commands' commands "$@"
 }
-(( $+functions[_ironclaw__config__get_commands] )) ||
-_ironclaw__config__get_commands() {
+(( $+functions[_axinite__subcmd__config__subcmd__get_commands] )) ||
+_axinite__subcmd__config__subcmd__get_commands() {
     local commands; commands=()
-    _describe -t commands 'ironclaw config get commands' commands "$@"
+    _describe -t commands 'axinite config get commands' commands "$@"
 }
-(( $+functions[_ironclaw__config__help_commands] )) ||
-_ironclaw__config__help_commands() {
+(( $+functions[_axinite__subcmd__config__subcmd__help_commands] )) ||
+_axinite__subcmd__config__subcmd__help_commands() {
     local commands; commands=(
 'init:Generate a default config.toml file' \
 'list:List all settings and their current values' \
@@ -1451,75 +1485,75 @@ _ironclaw__config__help_commands() {
 'path:Show the settings storage info' \
 'help:Print this message or the help of the given subcommand(s)' \
     )
-    _describe -t commands 'ironclaw config help commands' commands "$@"
+    _describe -t commands 'axinite config help commands' commands "$@"
 }
-(( $+functions[_ironclaw__config__help__get_commands] )) ||
-_ironclaw__config__help__get_commands() {
+(( $+functions[_axinite__subcmd__config__subcmd__help__subcmd__get_commands] )) ||
+_axinite__subcmd__config__subcmd__help__subcmd__get_commands() {
     local commands; commands=()
-    _describe -t commands 'ironclaw config help get commands' commands "$@"
+    _describe -t commands 'axinite config help get commands' commands "$@"
 }
-(( $+functions[_ironclaw__config__help__help_commands] )) ||
-_ironclaw__config__help__help_commands() {
+(( $+functions[_axinite__subcmd__config__subcmd__help__subcmd__help_commands] )) ||
+_axinite__subcmd__config__subcmd__help__subcmd__help_commands() {
     local commands; commands=()
-    _describe -t commands 'ironclaw config help help commands' commands "$@"
+    _describe -t commands 'axinite config help help commands' commands "$@"
 }
-(( $+functions[_ironclaw__config__help__init_commands] )) ||
-_ironclaw__config__help__init_commands() {
+(( $+functions[_axinite__subcmd__config__subcmd__help__subcmd__init_commands] )) ||
+_axinite__subcmd__config__subcmd__help__subcmd__init_commands() {
     local commands; commands=()
-    _describe -t commands 'ironclaw config help init commands' commands "$@"
+    _describe -t commands 'axinite config help init commands' commands "$@"
 }
-(( $+functions[_ironclaw__config__help__list_commands] )) ||
-_ironclaw__config__help__list_commands() {
+(( $+functions[_axinite__subcmd__config__subcmd__help__subcmd__list_commands] )) ||
+_axinite__subcmd__config__subcmd__help__subcmd__list_commands() {
     local commands; commands=()
-    _describe -t commands 'ironclaw config help list commands' commands "$@"
+    _describe -t commands 'axinite config help list commands' commands "$@"
 }
-(( $+functions[_ironclaw__config__help__path_commands] )) ||
-_ironclaw__config__help__path_commands() {
+(( $+functions[_axinite__subcmd__config__subcmd__help__subcmd__path_commands] )) ||
+_axinite__subcmd__config__subcmd__help__subcmd__path_commands() {
     local commands; commands=()
-    _describe -t commands 'ironclaw config help path commands' commands "$@"
+    _describe -t commands 'axinite config help path commands' commands "$@"
 }
-(( $+functions[_ironclaw__config__help__reset_commands] )) ||
-_ironclaw__config__help__reset_commands() {
+(( $+functions[_axinite__subcmd__config__subcmd__help__subcmd__reset_commands] )) ||
+_axinite__subcmd__config__subcmd__help__subcmd__reset_commands() {
     local commands; commands=()
-    _describe -t commands 'ironclaw config help reset commands' commands "$@"
+    _describe -t commands 'axinite config help reset commands' commands "$@"
 }
-(( $+functions[_ironclaw__config__help__set_commands] )) ||
-_ironclaw__config__help__set_commands() {
+(( $+functions[_axinite__subcmd__config__subcmd__help__subcmd__set_commands] )) ||
+_axinite__subcmd__config__subcmd__help__subcmd__set_commands() {
     local commands; commands=()
-    _describe -t commands 'ironclaw config help set commands' commands "$@"
+    _describe -t commands 'axinite config help set commands' commands "$@"
 }
-(( $+functions[_ironclaw__config__init_commands] )) ||
-_ironclaw__config__init_commands() {
+(( $+functions[_axinite__subcmd__config__subcmd__init_commands] )) ||
+_axinite__subcmd__config__subcmd__init_commands() {
     local commands; commands=()
-    _describe -t commands 'ironclaw config init commands' commands "$@"
+    _describe -t commands 'axinite config init commands' commands "$@"
 }
-(( $+functions[_ironclaw__config__list_commands] )) ||
-_ironclaw__config__list_commands() {
+(( $+functions[_axinite__subcmd__config__subcmd__list_commands] )) ||
+_axinite__subcmd__config__subcmd__list_commands() {
     local commands; commands=()
-    _describe -t commands 'ironclaw config list commands' commands "$@"
+    _describe -t commands 'axinite config list commands' commands "$@"
 }
-(( $+functions[_ironclaw__config__path_commands] )) ||
-_ironclaw__config__path_commands() {
+(( $+functions[_axinite__subcmd__config__subcmd__path_commands] )) ||
+_axinite__subcmd__config__subcmd__path_commands() {
     local commands; commands=()
-    _describe -t commands 'ironclaw config path commands' commands "$@"
+    _describe -t commands 'axinite config path commands' commands "$@"
 }
-(( $+functions[_ironclaw__config__reset_commands] )) ||
-_ironclaw__config__reset_commands() {
+(( $+functions[_axinite__subcmd__config__subcmd__reset_commands] )) ||
+_axinite__subcmd__config__subcmd__reset_commands() {
     local commands; commands=()
-    _describe -t commands 'ironclaw config reset commands' commands "$@"
+    _describe -t commands 'axinite config reset commands' commands "$@"
 }
-(( $+functions[_ironclaw__config__set_commands] )) ||
-_ironclaw__config__set_commands() {
+(( $+functions[_axinite__subcmd__config__subcmd__set_commands] )) ||
+_axinite__subcmd__config__subcmd__set_commands() {
     local commands; commands=()
-    _describe -t commands 'ironclaw config set commands' commands "$@"
+    _describe -t commands 'axinite config set commands' commands "$@"
 }
-(( $+functions[_ironclaw__doctor_commands] )) ||
-_ironclaw__doctor_commands() {
+(( $+functions[_axinite__subcmd__doctor_commands] )) ||
+_axinite__subcmd__doctor_commands() {
     local commands; commands=()
-    _describe -t commands 'ironclaw doctor commands' commands "$@"
+    _describe -t commands 'axinite doctor commands' commands "$@"
 }
-(( $+functions[_ironclaw__help_commands] )) ||
-_ironclaw__help_commands() {
+(( $+functions[_axinite__subcmd__help_commands] )) ||
+_axinite__subcmd__help_commands() {
     local commands; commands=(
 'run:Run the AI agent' \
 'onboard:Run interactive setup wizard' \
@@ -1537,20 +1571,20 @@ _ironclaw__help_commands() {
 'claude-bridge:Run as a Claude Code bridge inside a Docker container (internal use). Spawns the \`claude\` CLI and streams output back to the orchestrator' \
 'help:Print this message or the help of the given subcommand(s)' \
     )
-    _describe -t commands 'ironclaw help commands' commands "$@"
+    _describe -t commands 'axinite help commands' commands "$@"
 }
-(( $+functions[_ironclaw__help__claude-bridge_commands] )) ||
-_ironclaw__help__claude-bridge_commands() {
+(( $+functions[_axinite__subcmd__help__subcmd__claude-bridge_commands] )) ||
+_axinite__subcmd__help__subcmd__claude-bridge_commands() {
     local commands; commands=()
-    _describe -t commands 'ironclaw help claude-bridge commands' commands "$@"
+    _describe -t commands 'axinite help claude-bridge commands' commands "$@"
 }
-(( $+functions[_ironclaw__help__completion_commands] )) ||
-_ironclaw__help__completion_commands() {
+(( $+functions[_axinite__subcmd__help__subcmd__completion_commands] )) ||
+_axinite__subcmd__help__subcmd__completion_commands() {
     local commands; commands=()
-    _describe -t commands 'ironclaw help completion commands' commands "$@"
+    _describe -t commands 'axinite help completion commands' commands "$@"
 }
-(( $+functions[_ironclaw__help__config_commands] )) ||
-_ironclaw__help__config_commands() {
+(( $+functions[_axinite__subcmd__help__subcmd__config_commands] )) ||
+_axinite__subcmd__help__subcmd__config_commands() {
     local commands; commands=(
 'init:Generate a default config.toml file' \
 'list:List all settings and their current values' \
@@ -1559,50 +1593,50 @@ _ironclaw__help__config_commands() {
 'reset:Reset a setting to its default value' \
 'path:Show the settings storage info' \
     )
-    _describe -t commands 'ironclaw help config commands' commands "$@"
+    _describe -t commands 'axinite help config commands' commands "$@"
 }
-(( $+functions[_ironclaw__help__config__get_commands] )) ||
-_ironclaw__help__config__get_commands() {
+(( $+functions[_axinite__subcmd__help__subcmd__config__subcmd__get_commands] )) ||
+_axinite__subcmd__help__subcmd__config__subcmd__get_commands() {
     local commands; commands=()
-    _describe -t commands 'ironclaw help config get commands' commands "$@"
+    _describe -t commands 'axinite help config get commands' commands "$@"
 }
-(( $+functions[_ironclaw__help__config__init_commands] )) ||
-_ironclaw__help__config__init_commands() {
+(( $+functions[_axinite__subcmd__help__subcmd__config__subcmd__init_commands] )) ||
+_axinite__subcmd__help__subcmd__config__subcmd__init_commands() {
     local commands; commands=()
-    _describe -t commands 'ironclaw help config init commands' commands "$@"
+    _describe -t commands 'axinite help config init commands' commands "$@"
 }
-(( $+functions[_ironclaw__help__config__list_commands] )) ||
-_ironclaw__help__config__list_commands() {
+(( $+functions[_axinite__subcmd__help__subcmd__config__subcmd__list_commands] )) ||
+_axinite__subcmd__help__subcmd__config__subcmd__list_commands() {
     local commands; commands=()
-    _describe -t commands 'ironclaw help config list commands' commands "$@"
+    _describe -t commands 'axinite help config list commands' commands "$@"
 }
-(( $+functions[_ironclaw__help__config__path_commands] )) ||
-_ironclaw__help__config__path_commands() {
+(( $+functions[_axinite__subcmd__help__subcmd__config__subcmd__path_commands] )) ||
+_axinite__subcmd__help__subcmd__config__subcmd__path_commands() {
     local commands; commands=()
-    _describe -t commands 'ironclaw help config path commands' commands "$@"
+    _describe -t commands 'axinite help config path commands' commands "$@"
 }
-(( $+functions[_ironclaw__help__config__reset_commands] )) ||
-_ironclaw__help__config__reset_commands() {
+(( $+functions[_axinite__subcmd__help__subcmd__config__subcmd__reset_commands] )) ||
+_axinite__subcmd__help__subcmd__config__subcmd__reset_commands() {
     local commands; commands=()
-    _describe -t commands 'ironclaw help config reset commands' commands "$@"
+    _describe -t commands 'axinite help config reset commands' commands "$@"
 }
-(( $+functions[_ironclaw__help__config__set_commands] )) ||
-_ironclaw__help__config__set_commands() {
+(( $+functions[_axinite__subcmd__help__subcmd__config__subcmd__set_commands] )) ||
+_axinite__subcmd__help__subcmd__config__subcmd__set_commands() {
     local commands; commands=()
-    _describe -t commands 'ironclaw help config set commands' commands "$@"
+    _describe -t commands 'axinite help config set commands' commands "$@"
 }
-(( $+functions[_ironclaw__help__doctor_commands] )) ||
-_ironclaw__help__doctor_commands() {
+(( $+functions[_axinite__subcmd__help__subcmd__doctor_commands] )) ||
+_axinite__subcmd__help__subcmd__doctor_commands() {
     local commands; commands=()
-    _describe -t commands 'ironclaw help doctor commands' commands "$@"
+    _describe -t commands 'axinite help doctor commands' commands "$@"
 }
-(( $+functions[_ironclaw__help__help_commands] )) ||
-_ironclaw__help__help_commands() {
+(( $+functions[_axinite__subcmd__help__subcmd__help_commands] )) ||
+_axinite__subcmd__help__subcmd__help_commands() {
     local commands; commands=()
-    _describe -t commands 'ironclaw help help commands' commands "$@"
+    _describe -t commands 'axinite help help commands' commands "$@"
 }
-(( $+functions[_ironclaw__help__mcp_commands] )) ||
-_ironclaw__help__mcp_commands() {
+(( $+functions[_axinite__subcmd__help__subcmd__mcp_commands] )) ||
+_axinite__subcmd__help__subcmd__mcp_commands() {
     local commands; commands=(
 'add:Add an MCP server' \
 'remove:Remove an MCP server' \
@@ -1611,40 +1645,40 @@ _ironclaw__help__mcp_commands() {
 'test:Test connection to an MCP server' \
 'toggle:Enable or disable an MCP server' \
     )
-    _describe -t commands 'ironclaw help mcp commands' commands "$@"
+    _describe -t commands 'axinite help mcp commands' commands "$@"
 }
-(( $+functions[_ironclaw__help__mcp__add_commands] )) ||
-_ironclaw__help__mcp__add_commands() {
+(( $+functions[_axinite__subcmd__help__subcmd__mcp__subcmd__add_commands] )) ||
+_axinite__subcmd__help__subcmd__mcp__subcmd__add_commands() {
     local commands; commands=()
-    _describe -t commands 'ironclaw help mcp add commands' commands "$@"
+    _describe -t commands 'axinite help mcp add commands' commands "$@"
 }
-(( $+functions[_ironclaw__help__mcp__auth_commands] )) ||
-_ironclaw__help__mcp__auth_commands() {
+(( $+functions[_axinite__subcmd__help__subcmd__mcp__subcmd__auth_commands] )) ||
+_axinite__subcmd__help__subcmd__mcp__subcmd__auth_commands() {
     local commands; commands=()
-    _describe -t commands 'ironclaw help mcp auth commands' commands "$@"
+    _describe -t commands 'axinite help mcp auth commands' commands "$@"
 }
-(( $+functions[_ironclaw__help__mcp__list_commands] )) ||
-_ironclaw__help__mcp__list_commands() {
+(( $+functions[_axinite__subcmd__help__subcmd__mcp__subcmd__list_commands] )) ||
+_axinite__subcmd__help__subcmd__mcp__subcmd__list_commands() {
     local commands; commands=()
-    _describe -t commands 'ironclaw help mcp list commands' commands "$@"
+    _describe -t commands 'axinite help mcp list commands' commands "$@"
 }
-(( $+functions[_ironclaw__help__mcp__remove_commands] )) ||
-_ironclaw__help__mcp__remove_commands() {
+(( $+functions[_axinite__subcmd__help__subcmd__mcp__subcmd__remove_commands] )) ||
+_axinite__subcmd__help__subcmd__mcp__subcmd__remove_commands() {
     local commands; commands=()
-    _describe -t commands 'ironclaw help mcp remove commands' commands "$@"
+    _describe -t commands 'axinite help mcp remove commands' commands "$@"
 }
-(( $+functions[_ironclaw__help__mcp__test_commands] )) ||
-_ironclaw__help__mcp__test_commands() {
+(( $+functions[_axinite__subcmd__help__subcmd__mcp__subcmd__test_commands] )) ||
+_axinite__subcmd__help__subcmd__mcp__subcmd__test_commands() {
     local commands; commands=()
-    _describe -t commands 'ironclaw help mcp test commands' commands "$@"
+    _describe -t commands 'axinite help mcp test commands' commands "$@"
 }
-(( $+functions[_ironclaw__help__mcp__toggle_commands] )) ||
-_ironclaw__help__mcp__toggle_commands() {
+(( $+functions[_axinite__subcmd__help__subcmd__mcp__subcmd__toggle_commands] )) ||
+_axinite__subcmd__help__subcmd__mcp__subcmd__toggle_commands() {
     local commands; commands=()
-    _describe -t commands 'ironclaw help mcp toggle commands' commands "$@"
+    _describe -t commands 'axinite help mcp toggle commands' commands "$@"
 }
-(( $+functions[_ironclaw__help__memory_commands] )) ||
-_ironclaw__help__memory_commands() {
+(( $+functions[_axinite__subcmd__help__subcmd__memory_commands] )) ||
+_axinite__subcmd__help__subcmd__memory_commands() {
     local commands; commands=(
 'search:Search workspace memory (hybrid full-text + semantic)' \
 'read:Read a file from the workspace' \
@@ -1652,93 +1686,93 @@ _ironclaw__help__memory_commands() {
 'tree:Show workspace directory tree' \
 'status:Show workspace status (document count, index health)' \
     )
-    _describe -t commands 'ironclaw help memory commands' commands "$@"
+    _describe -t commands 'axinite help memory commands' commands "$@"
 }
-(( $+functions[_ironclaw__help__memory__read_commands] )) ||
-_ironclaw__help__memory__read_commands() {
+(( $+functions[_axinite__subcmd__help__subcmd__memory__subcmd__read_commands] )) ||
+_axinite__subcmd__help__subcmd__memory__subcmd__read_commands() {
     local commands; commands=()
-    _describe -t commands 'ironclaw help memory read commands' commands "$@"
+    _describe -t commands 'axinite help memory read commands' commands "$@"
 }
-(( $+functions[_ironclaw__help__memory__search_commands] )) ||
-_ironclaw__help__memory__search_commands() {
+(( $+functions[_axinite__subcmd__help__subcmd__memory__subcmd__search_commands] )) ||
+_axinite__subcmd__help__subcmd__memory__subcmd__search_commands() {
     local commands; commands=()
-    _describe -t commands 'ironclaw help memory search commands' commands "$@"
+    _describe -t commands 'axinite help memory search commands' commands "$@"
 }
-(( $+functions[_ironclaw__help__memory__status_commands] )) ||
-_ironclaw__help__memory__status_commands() {
+(( $+functions[_axinite__subcmd__help__subcmd__memory__subcmd__status_commands] )) ||
+_axinite__subcmd__help__subcmd__memory__subcmd__status_commands() {
     local commands; commands=()
-    _describe -t commands 'ironclaw help memory status commands' commands "$@"
+    _describe -t commands 'axinite help memory status commands' commands "$@"
 }
-(( $+functions[_ironclaw__help__memory__tree_commands] )) ||
-_ironclaw__help__memory__tree_commands() {
+(( $+functions[_axinite__subcmd__help__subcmd__memory__subcmd__tree_commands] )) ||
+_axinite__subcmd__help__subcmd__memory__subcmd__tree_commands() {
     local commands; commands=()
-    _describe -t commands 'ironclaw help memory tree commands' commands "$@"
+    _describe -t commands 'axinite help memory tree commands' commands "$@"
 }
-(( $+functions[_ironclaw__help__memory__write_commands] )) ||
-_ironclaw__help__memory__write_commands() {
+(( $+functions[_axinite__subcmd__help__subcmd__memory__subcmd__write_commands] )) ||
+_axinite__subcmd__help__subcmd__memory__subcmd__write_commands() {
     local commands; commands=()
-    _describe -t commands 'ironclaw help memory write commands' commands "$@"
+    _describe -t commands 'axinite help memory write commands' commands "$@"
 }
-(( $+functions[_ironclaw__help__onboard_commands] )) ||
-_ironclaw__help__onboard_commands() {
+(( $+functions[_axinite__subcmd__help__subcmd__onboard_commands] )) ||
+_axinite__subcmd__help__subcmd__onboard_commands() {
     local commands; commands=()
-    _describe -t commands 'ironclaw help onboard commands' commands "$@"
+    _describe -t commands 'axinite help onboard commands' commands "$@"
 }
-(( $+functions[_ironclaw__help__pairing_commands] )) ||
-_ironclaw__help__pairing_commands() {
+(( $+functions[_axinite__subcmd__help__subcmd__pairing_commands] )) ||
+_axinite__subcmd__help__subcmd__pairing_commands() {
     local commands; commands=(
 'list:List pending pairing requests' \
 'approve:Approve a pairing request by code' \
     )
-    _describe -t commands 'ironclaw help pairing commands' commands "$@"
+    _describe -t commands 'axinite help pairing commands' commands "$@"
 }
-(( $+functions[_ironclaw__help__pairing__approve_commands] )) ||
-_ironclaw__help__pairing__approve_commands() {
+(( $+functions[_axinite__subcmd__help__subcmd__pairing__subcmd__approve_commands] )) ||
+_axinite__subcmd__help__subcmd__pairing__subcmd__approve_commands() {
     local commands; commands=()
-    _describe -t commands 'ironclaw help pairing approve commands' commands "$@"
+    _describe -t commands 'axinite help pairing approve commands' commands "$@"
 }
-(( $+functions[_ironclaw__help__pairing__list_commands] )) ||
-_ironclaw__help__pairing__list_commands() {
+(( $+functions[_axinite__subcmd__help__subcmd__pairing__subcmd__list_commands] )) ||
+_axinite__subcmd__help__subcmd__pairing__subcmd__list_commands() {
     local commands; commands=()
-    _describe -t commands 'ironclaw help pairing list commands' commands "$@"
+    _describe -t commands 'axinite help pairing list commands' commands "$@"
 }
-(( $+functions[_ironclaw__help__registry_commands] )) ||
-_ironclaw__help__registry_commands() {
+(( $+functions[_axinite__subcmd__help__subcmd__registry_commands] )) ||
+_axinite__subcmd__help__subcmd__registry_commands() {
     local commands; commands=(
 'list:List available extensions in the registry' \
 'info:Show detailed information about an extension or bundle' \
 'install:Install an extension or bundle from the registry' \
 'install-defaults:Install the default bundle of recommended extensions' \
     )
-    _describe -t commands 'ironclaw help registry commands' commands "$@"
+    _describe -t commands 'axinite help registry commands' commands "$@"
 }
-(( $+functions[_ironclaw__help__registry__info_commands] )) ||
-_ironclaw__help__registry__info_commands() {
+(( $+functions[_axinite__subcmd__help__subcmd__registry__subcmd__info_commands] )) ||
+_axinite__subcmd__help__subcmd__registry__subcmd__info_commands() {
     local commands; commands=()
-    _describe -t commands 'ironclaw help registry info commands' commands "$@"
+    _describe -t commands 'axinite help registry info commands' commands "$@"
 }
-(( $+functions[_ironclaw__help__registry__install_commands] )) ||
-_ironclaw__help__registry__install_commands() {
+(( $+functions[_axinite__subcmd__help__subcmd__registry__subcmd__install_commands] )) ||
+_axinite__subcmd__help__subcmd__registry__subcmd__install_commands() {
     local commands; commands=()
-    _describe -t commands 'ironclaw help registry install commands' commands "$@"
+    _describe -t commands 'axinite help registry install commands' commands "$@"
 }
-(( $+functions[_ironclaw__help__registry__install-defaults_commands] )) ||
-_ironclaw__help__registry__install-defaults_commands() {
+(( $+functions[_axinite__subcmd__help__subcmd__registry__subcmd__install-defaults_commands] )) ||
+_axinite__subcmd__help__subcmd__registry__subcmd__install-defaults_commands() {
     local commands; commands=()
-    _describe -t commands 'ironclaw help registry install-defaults commands' commands "$@"
+    _describe -t commands 'axinite help registry install-defaults commands' commands "$@"
 }
-(( $+functions[_ironclaw__help__registry__list_commands] )) ||
-_ironclaw__help__registry__list_commands() {
+(( $+functions[_axinite__subcmd__help__subcmd__registry__subcmd__list_commands] )) ||
+_axinite__subcmd__help__subcmd__registry__subcmd__list_commands() {
     local commands; commands=()
-    _describe -t commands 'ironclaw help registry list commands' commands "$@"
+    _describe -t commands 'axinite help registry list commands' commands "$@"
 }
-(( $+functions[_ironclaw__help__run_commands] )) ||
-_ironclaw__help__run_commands() {
+(( $+functions[_axinite__subcmd__help__subcmd__run_commands] )) ||
+_axinite__subcmd__help__subcmd__run_commands() {
     local commands; commands=()
-    _describe -t commands 'ironclaw help run commands' commands "$@"
+    _describe -t commands 'axinite help run commands' commands "$@"
 }
-(( $+functions[_ironclaw__help__service_commands] )) ||
-_ironclaw__help__service_commands() {
+(( $+functions[_axinite__subcmd__help__subcmd__service_commands] )) ||
+_axinite__subcmd__help__subcmd__service_commands() {
     local commands; commands=(
 'install:Install the OS service (launchd on macOS, systemd on Linux)' \
 'start:Start the installed service' \
@@ -1746,104 +1780,87 @@ _ironclaw__help__service_commands() {
 'status:Show service status' \
 'uninstall:Uninstall the OS service and remove the unit file' \
     )
-    _describe -t commands 'ironclaw help service commands' commands "$@"
+    _describe -t commands 'axinite help service commands' commands "$@"
 }
-(( $+functions[_ironclaw__help__service__install_commands] )) ||
-_ironclaw__help__service__install_commands() {
+(( $+functions[_axinite__subcmd__help__subcmd__service__subcmd__install_commands] )) ||
+_axinite__subcmd__help__subcmd__service__subcmd__install_commands() {
     local commands; commands=()
-    _describe -t commands 'ironclaw help service install commands' commands "$@"
+    _describe -t commands 'axinite help service install commands' commands "$@"
 }
-(( $+functions[_ironclaw__help__service__start_commands] )) ||
-_ironclaw__help__service__start_commands() {
+(( $+functions[_axinite__subcmd__help__subcmd__service__subcmd__start_commands] )) ||
+_axinite__subcmd__help__subcmd__service__subcmd__start_commands() {
     local commands; commands=()
-    _describe -t commands 'ironclaw help service start commands' commands "$@"
+    _describe -t commands 'axinite help service start commands' commands "$@"
 }
-(( $+functions[_ironclaw__help__service__status_commands] )) ||
-_ironclaw__help__service__status_commands() {
+(( $+functions[_axinite__subcmd__help__subcmd__service__subcmd__status_commands] )) ||
+_axinite__subcmd__help__subcmd__service__subcmd__status_commands() {
     local commands; commands=()
-    _describe -t commands 'ironclaw help service status commands' commands "$@"
+    _describe -t commands 'axinite help service status commands' commands "$@"
 }
-(( $+functions[_ironclaw__help__service__stop_commands] )) ||
-_ironclaw__help__service__stop_commands() {
+(( $+functions[_axinite__subcmd__help__subcmd__service__subcmd__stop_commands] )) ||
+_axinite__subcmd__help__subcmd__service__subcmd__stop_commands() {
     local commands; commands=()
-    _describe -t commands 'ironclaw help service stop commands' commands "$@"
+    _describe -t commands 'axinite help service stop commands' commands "$@"
 }
-(( $+functions[_ironclaw__help__service__uninstall_commands] )) ||
-_ironclaw__help__service__uninstall_commands() {
+(( $+functions[_axinite__subcmd__help__subcmd__service__subcmd__uninstall_commands] )) ||
+_axinite__subcmd__help__subcmd__service__subcmd__uninstall_commands() {
     local commands; commands=()
-    _describe -t commands 'ironclaw help service uninstall commands' commands "$@"
+    _describe -t commands 'axinite help service uninstall commands' commands "$@"
 }
-(( $+functions[_ironclaw__help__status_commands] )) ||
-_ironclaw__help__status_commands() {
+(( $+functions[_axinite__subcmd__help__subcmd__status_commands] )) ||
+_axinite__subcmd__help__subcmd__status_commands() {
     local commands; commands=()
-    _describe -t commands 'ironclaw help status commands' commands "$@"
+    _describe -t commands 'axinite help status commands' commands "$@"
 }
-(( $+functions[_ironclaw__help__tool_commands] )) ||
-_ironclaw__help__tool_commands() {
+(( $+functions[_axinite__subcmd__help__subcmd__tool_commands] )) ||
+_axinite__subcmd__help__subcmd__tool_commands() {
     local commands; commands=(
 'install:Install a WASM tool from source directory or .wasm file' \
 'list:List installed tools' \
 'remove:Remove an installed tool' \
 'info:Show information about a tool' \
 'auth:Configure authentication for a tool' \
+'setup:Configure required secrets for a tool (from setup.required_secrets)' \
     )
-    _describe -t commands 'ironclaw help tool commands' commands "$@"
+    _describe -t commands 'axinite help tool commands' commands "$@"
 }
-(( $+functions[_ironclaw__help__tool__auth_commands] )) ||
-_ironclaw__help__tool__auth_commands() {
+(( $+functions[_axinite__subcmd__help__subcmd__tool__subcmd__auth_commands] )) ||
+_axinite__subcmd__help__subcmd__tool__subcmd__auth_commands() {
     local commands; commands=()
-    _describe -t commands 'ironclaw help tool auth commands' commands "$@"
+    _describe -t commands 'axinite help tool auth commands' commands "$@"
 }
-(( $+functions[_ironclaw__help__tool__info_commands] )) ||
-_ironclaw__help__tool__info_commands() {
+(( $+functions[_axinite__subcmd__help__subcmd__tool__subcmd__info_commands] )) ||
+_axinite__subcmd__help__subcmd__tool__subcmd__info_commands() {
     local commands; commands=()
-    _describe -t commands 'ironclaw help tool info commands' commands "$@"
+    _describe -t commands 'axinite help tool info commands' commands "$@"
 }
-(( $+functions[_ironclaw__help__tool__install_commands] )) ||
-_ironclaw__help__tool__install_commands() {
+(( $+functions[_axinite__subcmd__help__subcmd__tool__subcmd__install_commands] )) ||
+_axinite__subcmd__help__subcmd__tool__subcmd__install_commands() {
     local commands; commands=()
-    _describe -t commands 'ironclaw help tool install commands' commands "$@"
+    _describe -t commands 'axinite help tool install commands' commands "$@"
 }
-(( $+functions[_ironclaw__help__tool__list_commands] )) ||
-_ironclaw__help__tool__list_commands() {
+(( $+functions[_axinite__subcmd__help__subcmd__tool__subcmd__list_commands] )) ||
+_axinite__subcmd__help__subcmd__tool__subcmd__list_commands() {
     local commands; commands=()
-    _describe -t commands 'ironclaw help tool list commands' commands "$@"
+    _describe -t commands 'axinite help tool list commands' commands "$@"
 }
-(( $+functions[_ironclaw__help__tool__remove_commands] )) ||
-_ironclaw__help__tool__remove_commands() {
+(( $+functions[_axinite__subcmd__help__subcmd__tool__subcmd__remove_commands] )) ||
+_axinite__subcmd__help__subcmd__tool__subcmd__remove_commands() {
     local commands; commands=()
-    _describe -t commands 'ironclaw help tool remove commands' commands "$@"
+    _describe -t commands 'axinite help tool remove commands' commands "$@"
 }
-(( $+functions[_ironclaw__help__worker_commands] )) ||
-_ironclaw__help__worker_commands() {
+(( $+functions[_axinite__subcmd__help__subcmd__tool__subcmd__setup_commands] )) ||
+_axinite__subcmd__help__subcmd__tool__subcmd__setup_commands() {
     local commands; commands=()
-    _describe -t commands 'ironclaw help worker commands' commands "$@"
+    _describe -t commands 'axinite help tool setup commands' commands "$@"
 }
-(( $+functions[_ironclaw__mcp_commands] )) ||
-_ironclaw__mcp_commands() {
-    local commands; commands=(
-'add:Add an MCP server' \
-'remove:Remove an MCP server' \
-'list:List configured MCP servers' \
-'auth:Authenticate with an MCP server (OAuth flow)' \
-'test:Test connection to an MCP server' \
-'toggle:Enable or disable an MCP server' \
-'help:Print this message or the help of the given subcommand(s)' \
-    )
-    _describe -t commands 'ironclaw mcp commands' commands "$@"
-}
-(( $+functions[_ironclaw__mcp__add_commands] )) ||
-_ironclaw__mcp__add_commands() {
+(( $+functions[_axinite__subcmd__help__subcmd__worker_commands] )) ||
+_axinite__subcmd__help__subcmd__worker_commands() {
     local commands; commands=()
-    _describe -t commands 'ironclaw mcp add commands' commands "$@"
+    _describe -t commands 'axinite help worker commands' commands "$@"
 }
-(( $+functions[_ironclaw__mcp__auth_commands] )) ||
-_ironclaw__mcp__auth_commands() {
-    local commands; commands=()
-    _describe -t commands 'ironclaw mcp auth commands' commands "$@"
-}
-(( $+functions[_ironclaw__mcp__help_commands] )) ||
-_ironclaw__mcp__help_commands() {
+(( $+functions[_axinite__subcmd__mcp_commands] )) ||
+_axinite__subcmd__mcp_commands() {
     local commands; commands=(
 'add:Add an MCP server' \
 'remove:Remove an MCP server' \
@@ -1853,65 +1870,88 @@ _ironclaw__mcp__help_commands() {
 'toggle:Enable or disable an MCP server' \
 'help:Print this message or the help of the given subcommand(s)' \
     )
-    _describe -t commands 'ironclaw mcp help commands' commands "$@"
+    _describe -t commands 'axinite mcp commands' commands "$@"
 }
-(( $+functions[_ironclaw__mcp__help__add_commands] )) ||
-_ironclaw__mcp__help__add_commands() {
+(( $+functions[_axinite__subcmd__mcp__subcmd__add_commands] )) ||
+_axinite__subcmd__mcp__subcmd__add_commands() {
     local commands; commands=()
-    _describe -t commands 'ironclaw mcp help add commands' commands "$@"
+    _describe -t commands 'axinite mcp add commands' commands "$@"
 }
-(( $+functions[_ironclaw__mcp__help__auth_commands] )) ||
-_ironclaw__mcp__help__auth_commands() {
+(( $+functions[_axinite__subcmd__mcp__subcmd__auth_commands] )) ||
+_axinite__subcmd__mcp__subcmd__auth_commands() {
     local commands; commands=()
-    _describe -t commands 'ironclaw mcp help auth commands' commands "$@"
+    _describe -t commands 'axinite mcp auth commands' commands "$@"
 }
-(( $+functions[_ironclaw__mcp__help__help_commands] )) ||
-_ironclaw__mcp__help__help_commands() {
+(( $+functions[_axinite__subcmd__mcp__subcmd__help_commands] )) ||
+_axinite__subcmd__mcp__subcmd__help_commands() {
+    local commands; commands=(
+'add:Add an MCP server' \
+'remove:Remove an MCP server' \
+'list:List configured MCP servers' \
+'auth:Authenticate with an MCP server (OAuth flow)' \
+'test:Test connection to an MCP server' \
+'toggle:Enable or disable an MCP server' \
+'help:Print this message or the help of the given subcommand(s)' \
+    )
+    _describe -t commands 'axinite mcp help commands' commands "$@"
+}
+(( $+functions[_axinite__subcmd__mcp__subcmd__help__subcmd__add_commands] )) ||
+_axinite__subcmd__mcp__subcmd__help__subcmd__add_commands() {
     local commands; commands=()
-    _describe -t commands 'ironclaw mcp help help commands' commands "$@"
+    _describe -t commands 'axinite mcp help add commands' commands "$@"
 }
-(( $+functions[_ironclaw__mcp__help__list_commands] )) ||
-_ironclaw__mcp__help__list_commands() {
+(( $+functions[_axinite__subcmd__mcp__subcmd__help__subcmd__auth_commands] )) ||
+_axinite__subcmd__mcp__subcmd__help__subcmd__auth_commands() {
     local commands; commands=()
-    _describe -t commands 'ironclaw mcp help list commands' commands "$@"
+    _describe -t commands 'axinite mcp help auth commands' commands "$@"
 }
-(( $+functions[_ironclaw__mcp__help__remove_commands] )) ||
-_ironclaw__mcp__help__remove_commands() {
+(( $+functions[_axinite__subcmd__mcp__subcmd__help__subcmd__help_commands] )) ||
+_axinite__subcmd__mcp__subcmd__help__subcmd__help_commands() {
     local commands; commands=()
-    _describe -t commands 'ironclaw mcp help remove commands' commands "$@"
+    _describe -t commands 'axinite mcp help help commands' commands "$@"
 }
-(( $+functions[_ironclaw__mcp__help__test_commands] )) ||
-_ironclaw__mcp__help__test_commands() {
+(( $+functions[_axinite__subcmd__mcp__subcmd__help__subcmd__list_commands] )) ||
+_axinite__subcmd__mcp__subcmd__help__subcmd__list_commands() {
     local commands; commands=()
-    _describe -t commands 'ironclaw mcp help test commands' commands "$@"
+    _describe -t commands 'axinite mcp help list commands' commands "$@"
 }
-(( $+functions[_ironclaw__mcp__help__toggle_commands] )) ||
-_ironclaw__mcp__help__toggle_commands() {
+(( $+functions[_axinite__subcmd__mcp__subcmd__help__subcmd__remove_commands] )) ||
+_axinite__subcmd__mcp__subcmd__help__subcmd__remove_commands() {
     local commands; commands=()
-    _describe -t commands 'ironclaw mcp help toggle commands' commands "$@"
+    _describe -t commands 'axinite mcp help remove commands' commands "$@"
 }
-(( $+functions[_ironclaw__mcp__list_commands] )) ||
-_ironclaw__mcp__list_commands() {
+(( $+functions[_axinite__subcmd__mcp__subcmd__help__subcmd__test_commands] )) ||
+_axinite__subcmd__mcp__subcmd__help__subcmd__test_commands() {
     local commands; commands=()
-    _describe -t commands 'ironclaw mcp list commands' commands "$@"
+    _describe -t commands 'axinite mcp help test commands' commands "$@"
 }
-(( $+functions[_ironclaw__mcp__remove_commands] )) ||
-_ironclaw__mcp__remove_commands() {
+(( $+functions[_axinite__subcmd__mcp__subcmd__help__subcmd__toggle_commands] )) ||
+_axinite__subcmd__mcp__subcmd__help__subcmd__toggle_commands() {
     local commands; commands=()
-    _describe -t commands 'ironclaw mcp remove commands' commands "$@"
+    _describe -t commands 'axinite mcp help toggle commands' commands "$@"
 }
-(( $+functions[_ironclaw__mcp__test_commands] )) ||
-_ironclaw__mcp__test_commands() {
+(( $+functions[_axinite__subcmd__mcp__subcmd__list_commands] )) ||
+_axinite__subcmd__mcp__subcmd__list_commands() {
     local commands; commands=()
-    _describe -t commands 'ironclaw mcp test commands' commands "$@"
+    _describe -t commands 'axinite mcp list commands' commands "$@"
 }
-(( $+functions[_ironclaw__mcp__toggle_commands] )) ||
-_ironclaw__mcp__toggle_commands() {
+(( $+functions[_axinite__subcmd__mcp__subcmd__remove_commands] )) ||
+_axinite__subcmd__mcp__subcmd__remove_commands() {
     local commands; commands=()
-    _describe -t commands 'ironclaw mcp toggle commands' commands "$@"
+    _describe -t commands 'axinite mcp remove commands' commands "$@"
 }
-(( $+functions[_ironclaw__memory_commands] )) ||
-_ironclaw__memory_commands() {
+(( $+functions[_axinite__subcmd__mcp__subcmd__test_commands] )) ||
+_axinite__subcmd__mcp__subcmd__test_commands() {
+    local commands; commands=()
+    _describe -t commands 'axinite mcp test commands' commands "$@"
+}
+(( $+functions[_axinite__subcmd__mcp__subcmd__toggle_commands] )) ||
+_axinite__subcmd__mcp__subcmd__toggle_commands() {
+    local commands; commands=()
+    _describe -t commands 'axinite mcp toggle commands' commands "$@"
+}
+(( $+functions[_axinite__subcmd__memory_commands] )) ||
+_axinite__subcmd__memory_commands() {
     local commands; commands=(
 'search:Search workspace memory (hybrid full-text + semantic)' \
 'read:Read a file from the workspace' \
@@ -1920,10 +1960,10 @@ _ironclaw__memory_commands() {
 'status:Show workspace status (document count, index health)' \
 'help:Print this message or the help of the given subcommand(s)' \
     )
-    _describe -t commands 'ironclaw memory commands' commands "$@"
+    _describe -t commands 'axinite memory commands' commands "$@"
 }
-(( $+functions[_ironclaw__memory__help_commands] )) ||
-_ironclaw__memory__help_commands() {
+(( $+functions[_axinite__subcmd__memory__subcmd__help_commands] )) ||
+_axinite__subcmd__memory__subcmd__help_commands() {
     local commands; commands=(
 'search:Search workspace memory (hybrid full-text + semantic)' \
 'read:Read a file from the workspace' \
@@ -1932,113 +1972,113 @@ _ironclaw__memory__help_commands() {
 'status:Show workspace status (document count, index health)' \
 'help:Print this message or the help of the given subcommand(s)' \
     )
-    _describe -t commands 'ironclaw memory help commands' commands "$@"
+    _describe -t commands 'axinite memory help commands' commands "$@"
 }
-(( $+functions[_ironclaw__memory__help__help_commands] )) ||
-_ironclaw__memory__help__help_commands() {
+(( $+functions[_axinite__subcmd__memory__subcmd__help__subcmd__help_commands] )) ||
+_axinite__subcmd__memory__subcmd__help__subcmd__help_commands() {
     local commands; commands=()
-    _describe -t commands 'ironclaw memory help help commands' commands "$@"
+    _describe -t commands 'axinite memory help help commands' commands "$@"
 }
-(( $+functions[_ironclaw__memory__help__read_commands] )) ||
-_ironclaw__memory__help__read_commands() {
+(( $+functions[_axinite__subcmd__memory__subcmd__help__subcmd__read_commands] )) ||
+_axinite__subcmd__memory__subcmd__help__subcmd__read_commands() {
     local commands; commands=()
-    _describe -t commands 'ironclaw memory help read commands' commands "$@"
+    _describe -t commands 'axinite memory help read commands' commands "$@"
 }
-(( $+functions[_ironclaw__memory__help__search_commands] )) ||
-_ironclaw__memory__help__search_commands() {
+(( $+functions[_axinite__subcmd__memory__subcmd__help__subcmd__search_commands] )) ||
+_axinite__subcmd__memory__subcmd__help__subcmd__search_commands() {
     local commands; commands=()
-    _describe -t commands 'ironclaw memory help search commands' commands "$@"
+    _describe -t commands 'axinite memory help search commands' commands "$@"
 }
-(( $+functions[_ironclaw__memory__help__status_commands] )) ||
-_ironclaw__memory__help__status_commands() {
+(( $+functions[_axinite__subcmd__memory__subcmd__help__subcmd__status_commands] )) ||
+_axinite__subcmd__memory__subcmd__help__subcmd__status_commands() {
     local commands; commands=()
-    _describe -t commands 'ironclaw memory help status commands' commands "$@"
+    _describe -t commands 'axinite memory help status commands' commands "$@"
 }
-(( $+functions[_ironclaw__memory__help__tree_commands] )) ||
-_ironclaw__memory__help__tree_commands() {
+(( $+functions[_axinite__subcmd__memory__subcmd__help__subcmd__tree_commands] )) ||
+_axinite__subcmd__memory__subcmd__help__subcmd__tree_commands() {
     local commands; commands=()
-    _describe -t commands 'ironclaw memory help tree commands' commands "$@"
+    _describe -t commands 'axinite memory help tree commands' commands "$@"
 }
-(( $+functions[_ironclaw__memory__help__write_commands] )) ||
-_ironclaw__memory__help__write_commands() {
+(( $+functions[_axinite__subcmd__memory__subcmd__help__subcmd__write_commands] )) ||
+_axinite__subcmd__memory__subcmd__help__subcmd__write_commands() {
     local commands; commands=()
-    _describe -t commands 'ironclaw memory help write commands' commands "$@"
+    _describe -t commands 'axinite memory help write commands' commands "$@"
 }
-(( $+functions[_ironclaw__memory__read_commands] )) ||
-_ironclaw__memory__read_commands() {
+(( $+functions[_axinite__subcmd__memory__subcmd__read_commands] )) ||
+_axinite__subcmd__memory__subcmd__read_commands() {
     local commands; commands=()
-    _describe -t commands 'ironclaw memory read commands' commands "$@"
+    _describe -t commands 'axinite memory read commands' commands "$@"
 }
-(( $+functions[_ironclaw__memory__search_commands] )) ||
-_ironclaw__memory__search_commands() {
+(( $+functions[_axinite__subcmd__memory__subcmd__search_commands] )) ||
+_axinite__subcmd__memory__subcmd__search_commands() {
     local commands; commands=()
-    _describe -t commands 'ironclaw memory search commands' commands "$@"
+    _describe -t commands 'axinite memory search commands' commands "$@"
 }
-(( $+functions[_ironclaw__memory__status_commands] )) ||
-_ironclaw__memory__status_commands() {
+(( $+functions[_axinite__subcmd__memory__subcmd__status_commands] )) ||
+_axinite__subcmd__memory__subcmd__status_commands() {
     local commands; commands=()
-    _describe -t commands 'ironclaw memory status commands' commands "$@"
+    _describe -t commands 'axinite memory status commands' commands "$@"
 }
-(( $+functions[_ironclaw__memory__tree_commands] )) ||
-_ironclaw__memory__tree_commands() {
+(( $+functions[_axinite__subcmd__memory__subcmd__tree_commands] )) ||
+_axinite__subcmd__memory__subcmd__tree_commands() {
     local commands; commands=()
-    _describe -t commands 'ironclaw memory tree commands' commands "$@"
+    _describe -t commands 'axinite memory tree commands' commands "$@"
 }
-(( $+functions[_ironclaw__memory__write_commands] )) ||
-_ironclaw__memory__write_commands() {
+(( $+functions[_axinite__subcmd__memory__subcmd__write_commands] )) ||
+_axinite__subcmd__memory__subcmd__write_commands() {
     local commands; commands=()
-    _describe -t commands 'ironclaw memory write commands' commands "$@"
+    _describe -t commands 'axinite memory write commands' commands "$@"
 }
-(( $+functions[_ironclaw__onboard_commands] )) ||
-_ironclaw__onboard_commands() {
+(( $+functions[_axinite__subcmd__onboard_commands] )) ||
+_axinite__subcmd__onboard_commands() {
     local commands; commands=()
-    _describe -t commands 'ironclaw onboard commands' commands "$@"
+    _describe -t commands 'axinite onboard commands' commands "$@"
 }
-(( $+functions[_ironclaw__pairing_commands] )) ||
-_ironclaw__pairing_commands() {
+(( $+functions[_axinite__subcmd__pairing_commands] )) ||
+_axinite__subcmd__pairing_commands() {
     local commands; commands=(
 'list:List pending pairing requests' \
 'approve:Approve a pairing request by code' \
 'help:Print this message or the help of the given subcommand(s)' \
     )
-    _describe -t commands 'ironclaw pairing commands' commands "$@"
+    _describe -t commands 'axinite pairing commands' commands "$@"
 }
-(( $+functions[_ironclaw__pairing__approve_commands] )) ||
-_ironclaw__pairing__approve_commands() {
+(( $+functions[_axinite__subcmd__pairing__subcmd__approve_commands] )) ||
+_axinite__subcmd__pairing__subcmd__approve_commands() {
     local commands; commands=()
-    _describe -t commands 'ironclaw pairing approve commands' commands "$@"
+    _describe -t commands 'axinite pairing approve commands' commands "$@"
 }
-(( $+functions[_ironclaw__pairing__help_commands] )) ||
-_ironclaw__pairing__help_commands() {
+(( $+functions[_axinite__subcmd__pairing__subcmd__help_commands] )) ||
+_axinite__subcmd__pairing__subcmd__help_commands() {
     local commands; commands=(
 'list:List pending pairing requests' \
 'approve:Approve a pairing request by code' \
 'help:Print this message or the help of the given subcommand(s)' \
     )
-    _describe -t commands 'ironclaw pairing help commands' commands "$@"
+    _describe -t commands 'axinite pairing help commands' commands "$@"
 }
-(( $+functions[_ironclaw__pairing__help__approve_commands] )) ||
-_ironclaw__pairing__help__approve_commands() {
+(( $+functions[_axinite__subcmd__pairing__subcmd__help__subcmd__approve_commands] )) ||
+_axinite__subcmd__pairing__subcmd__help__subcmd__approve_commands() {
     local commands; commands=()
-    _describe -t commands 'ironclaw pairing help approve commands' commands "$@"
+    _describe -t commands 'axinite pairing help approve commands' commands "$@"
 }
-(( $+functions[_ironclaw__pairing__help__help_commands] )) ||
-_ironclaw__pairing__help__help_commands() {
+(( $+functions[_axinite__subcmd__pairing__subcmd__help__subcmd__help_commands] )) ||
+_axinite__subcmd__pairing__subcmd__help__subcmd__help_commands() {
     local commands; commands=()
-    _describe -t commands 'ironclaw pairing help help commands' commands "$@"
+    _describe -t commands 'axinite pairing help help commands' commands "$@"
 }
-(( $+functions[_ironclaw__pairing__help__list_commands] )) ||
-_ironclaw__pairing__help__list_commands() {
+(( $+functions[_axinite__subcmd__pairing__subcmd__help__subcmd__list_commands] )) ||
+_axinite__subcmd__pairing__subcmd__help__subcmd__list_commands() {
     local commands; commands=()
-    _describe -t commands 'ironclaw pairing help list commands' commands "$@"
+    _describe -t commands 'axinite pairing help list commands' commands "$@"
 }
-(( $+functions[_ironclaw__pairing__list_commands] )) ||
-_ironclaw__pairing__list_commands() {
+(( $+functions[_axinite__subcmd__pairing__subcmd__list_commands] )) ||
+_axinite__subcmd__pairing__subcmd__list_commands() {
     local commands; commands=()
-    _describe -t commands 'ironclaw pairing list commands' commands "$@"
+    _describe -t commands 'axinite pairing list commands' commands "$@"
 }
-(( $+functions[_ironclaw__registry_commands] )) ||
-_ironclaw__registry_commands() {
+(( $+functions[_axinite__subcmd__registry_commands] )) ||
+_axinite__subcmd__registry_commands() {
     local commands; commands=(
 'list:List available extensions in the registry' \
 'info:Show detailed information about an extension or bundle' \
@@ -2046,10 +2086,10 @@ _ironclaw__registry_commands() {
 'install-defaults:Install the default bundle of recommended extensions' \
 'help:Print this message or the help of the given subcommand(s)' \
     )
-    _describe -t commands 'ironclaw registry commands' commands "$@"
+    _describe -t commands 'axinite registry commands' commands "$@"
 }
-(( $+functions[_ironclaw__registry__help_commands] )) ||
-_ironclaw__registry__help_commands() {
+(( $+functions[_axinite__subcmd__registry__subcmd__help_commands] )) ||
+_axinite__subcmd__registry__subcmd__help_commands() {
     local commands; commands=(
 'list:List available extensions in the registry' \
 'info:Show detailed information about an extension or bundle' \
@@ -2057,60 +2097,60 @@ _ironclaw__registry__help_commands() {
 'install-defaults:Install the default bundle of recommended extensions' \
 'help:Print this message or the help of the given subcommand(s)' \
     )
-    _describe -t commands 'ironclaw registry help commands' commands "$@"
+    _describe -t commands 'axinite registry help commands' commands "$@"
 }
-(( $+functions[_ironclaw__registry__help__help_commands] )) ||
-_ironclaw__registry__help__help_commands() {
+(( $+functions[_axinite__subcmd__registry__subcmd__help__subcmd__help_commands] )) ||
+_axinite__subcmd__registry__subcmd__help__subcmd__help_commands() {
     local commands; commands=()
-    _describe -t commands 'ironclaw registry help help commands' commands "$@"
+    _describe -t commands 'axinite registry help help commands' commands "$@"
 }
-(( $+functions[_ironclaw__registry__help__info_commands] )) ||
-_ironclaw__registry__help__info_commands() {
+(( $+functions[_axinite__subcmd__registry__subcmd__help__subcmd__info_commands] )) ||
+_axinite__subcmd__registry__subcmd__help__subcmd__info_commands() {
     local commands; commands=()
-    _describe -t commands 'ironclaw registry help info commands' commands "$@"
+    _describe -t commands 'axinite registry help info commands' commands "$@"
 }
-(( $+functions[_ironclaw__registry__help__install_commands] )) ||
-_ironclaw__registry__help__install_commands() {
+(( $+functions[_axinite__subcmd__registry__subcmd__help__subcmd__install_commands] )) ||
+_axinite__subcmd__registry__subcmd__help__subcmd__install_commands() {
     local commands; commands=()
-    _describe -t commands 'ironclaw registry help install commands' commands "$@"
+    _describe -t commands 'axinite registry help install commands' commands "$@"
 }
-(( $+functions[_ironclaw__registry__help__install-defaults_commands] )) ||
-_ironclaw__registry__help__install-defaults_commands() {
+(( $+functions[_axinite__subcmd__registry__subcmd__help__subcmd__install-defaults_commands] )) ||
+_axinite__subcmd__registry__subcmd__help__subcmd__install-defaults_commands() {
     local commands; commands=()
-    _describe -t commands 'ironclaw registry help install-defaults commands' commands "$@"
+    _describe -t commands 'axinite registry help install-defaults commands' commands "$@"
 }
-(( $+functions[_ironclaw__registry__help__list_commands] )) ||
-_ironclaw__registry__help__list_commands() {
+(( $+functions[_axinite__subcmd__registry__subcmd__help__subcmd__list_commands] )) ||
+_axinite__subcmd__registry__subcmd__help__subcmd__list_commands() {
     local commands; commands=()
-    _describe -t commands 'ironclaw registry help list commands' commands "$@"
+    _describe -t commands 'axinite registry help list commands' commands "$@"
 }
-(( $+functions[_ironclaw__registry__info_commands] )) ||
-_ironclaw__registry__info_commands() {
+(( $+functions[_axinite__subcmd__registry__subcmd__info_commands] )) ||
+_axinite__subcmd__registry__subcmd__info_commands() {
     local commands; commands=()
-    _describe -t commands 'ironclaw registry info commands' commands "$@"
+    _describe -t commands 'axinite registry info commands' commands "$@"
 }
-(( $+functions[_ironclaw__registry__install_commands] )) ||
-_ironclaw__registry__install_commands() {
+(( $+functions[_axinite__subcmd__registry__subcmd__install_commands] )) ||
+_axinite__subcmd__registry__subcmd__install_commands() {
     local commands; commands=()
-    _describe -t commands 'ironclaw registry install commands' commands "$@"
+    _describe -t commands 'axinite registry install commands' commands "$@"
 }
-(( $+functions[_ironclaw__registry__install-defaults_commands] )) ||
-_ironclaw__registry__install-defaults_commands() {
+(( $+functions[_axinite__subcmd__registry__subcmd__install-defaults_commands] )) ||
+_axinite__subcmd__registry__subcmd__install-defaults_commands() {
     local commands; commands=()
-    _describe -t commands 'ironclaw registry install-defaults commands' commands "$@"
+    _describe -t commands 'axinite registry install-defaults commands' commands "$@"
 }
-(( $+functions[_ironclaw__registry__list_commands] )) ||
-_ironclaw__registry__list_commands() {
+(( $+functions[_axinite__subcmd__registry__subcmd__list_commands] )) ||
+_axinite__subcmd__registry__subcmd__list_commands() {
     local commands; commands=()
-    _describe -t commands 'ironclaw registry list commands' commands "$@"
+    _describe -t commands 'axinite registry list commands' commands "$@"
 }
-(( $+functions[_ironclaw__run_commands] )) ||
-_ironclaw__run_commands() {
+(( $+functions[_axinite__subcmd__run_commands] )) ||
+_axinite__subcmd__run_commands() {
     local commands; commands=()
-    _describe -t commands 'ironclaw run commands' commands "$@"
+    _describe -t commands 'axinite run commands' commands "$@"
 }
-(( $+functions[_ironclaw__service_commands] )) ||
-_ironclaw__service_commands() {
+(( $+functions[_axinite__subcmd__service_commands] )) ||
+_axinite__subcmd__service_commands() {
     local commands; commands=(
 'install:Install the OS service (launchd on macOS, systemd on Linux)' \
 'start:Start the installed service' \
@@ -2119,10 +2159,10 @@ _ironclaw__service_commands() {
 'uninstall:Uninstall the OS service and remove the unit file' \
 'help:Print this message or the help of the given subcommand(s)' \
     )
-    _describe -t commands 'ironclaw service commands' commands "$@"
+    _describe -t commands 'axinite service commands' commands "$@"
 }
-(( $+functions[_ironclaw__service__help_commands] )) ||
-_ironclaw__service__help_commands() {
+(( $+functions[_axinite__subcmd__service__subcmd__help_commands] )) ||
+_axinite__subcmd__service__subcmd__help_commands() {
     local commands; commands=(
 'install:Install the OS service (launchd on macOS, systemd on Linux)' \
 'start:Start the installed service' \
@@ -2131,155 +2171,167 @@ _ironclaw__service__help_commands() {
 'uninstall:Uninstall the OS service and remove the unit file' \
 'help:Print this message or the help of the given subcommand(s)' \
     )
-    _describe -t commands 'ironclaw service help commands' commands "$@"
+    _describe -t commands 'axinite service help commands' commands "$@"
 }
-(( $+functions[_ironclaw__service__help__help_commands] )) ||
-_ironclaw__service__help__help_commands() {
+(( $+functions[_axinite__subcmd__service__subcmd__help__subcmd__help_commands] )) ||
+_axinite__subcmd__service__subcmd__help__subcmd__help_commands() {
     local commands; commands=()
-    _describe -t commands 'ironclaw service help help commands' commands "$@"
+    _describe -t commands 'axinite service help help commands' commands "$@"
 }
-(( $+functions[_ironclaw__service__help__install_commands] )) ||
-_ironclaw__service__help__install_commands() {
+(( $+functions[_axinite__subcmd__service__subcmd__help__subcmd__install_commands] )) ||
+_axinite__subcmd__service__subcmd__help__subcmd__install_commands() {
     local commands; commands=()
-    _describe -t commands 'ironclaw service help install commands' commands "$@"
+    _describe -t commands 'axinite service help install commands' commands "$@"
 }
-(( $+functions[_ironclaw__service__help__start_commands] )) ||
-_ironclaw__service__help__start_commands() {
+(( $+functions[_axinite__subcmd__service__subcmd__help__subcmd__start_commands] )) ||
+_axinite__subcmd__service__subcmd__help__subcmd__start_commands() {
     local commands; commands=()
-    _describe -t commands 'ironclaw service help start commands' commands "$@"
+    _describe -t commands 'axinite service help start commands' commands "$@"
 }
-(( $+functions[_ironclaw__service__help__status_commands] )) ||
-_ironclaw__service__help__status_commands() {
+(( $+functions[_axinite__subcmd__service__subcmd__help__subcmd__status_commands] )) ||
+_axinite__subcmd__service__subcmd__help__subcmd__status_commands() {
     local commands; commands=()
-    _describe -t commands 'ironclaw service help status commands' commands "$@"
+    _describe -t commands 'axinite service help status commands' commands "$@"
 }
-(( $+functions[_ironclaw__service__help__stop_commands] )) ||
-_ironclaw__service__help__stop_commands() {
+(( $+functions[_axinite__subcmd__service__subcmd__help__subcmd__stop_commands] )) ||
+_axinite__subcmd__service__subcmd__help__subcmd__stop_commands() {
     local commands; commands=()
-    _describe -t commands 'ironclaw service help stop commands' commands "$@"
+    _describe -t commands 'axinite service help stop commands' commands "$@"
 }
-(( $+functions[_ironclaw__service__help__uninstall_commands] )) ||
-_ironclaw__service__help__uninstall_commands() {
+(( $+functions[_axinite__subcmd__service__subcmd__help__subcmd__uninstall_commands] )) ||
+_axinite__subcmd__service__subcmd__help__subcmd__uninstall_commands() {
     local commands; commands=()
-    _describe -t commands 'ironclaw service help uninstall commands' commands "$@"
+    _describe -t commands 'axinite service help uninstall commands' commands "$@"
 }
-(( $+functions[_ironclaw__service__install_commands] )) ||
-_ironclaw__service__install_commands() {
+(( $+functions[_axinite__subcmd__service__subcmd__install_commands] )) ||
+_axinite__subcmd__service__subcmd__install_commands() {
     local commands; commands=()
-    _describe -t commands 'ironclaw service install commands' commands "$@"
+    _describe -t commands 'axinite service install commands' commands "$@"
 }
-(( $+functions[_ironclaw__service__start_commands] )) ||
-_ironclaw__service__start_commands() {
+(( $+functions[_axinite__subcmd__service__subcmd__start_commands] )) ||
+_axinite__subcmd__service__subcmd__start_commands() {
     local commands; commands=()
-    _describe -t commands 'ironclaw service start commands' commands "$@"
+    _describe -t commands 'axinite service start commands' commands "$@"
 }
-(( $+functions[_ironclaw__service__status_commands] )) ||
-_ironclaw__service__status_commands() {
+(( $+functions[_axinite__subcmd__service__subcmd__status_commands] )) ||
+_axinite__subcmd__service__subcmd__status_commands() {
     local commands; commands=()
-    _describe -t commands 'ironclaw service status commands' commands "$@"
+    _describe -t commands 'axinite service status commands' commands "$@"
 }
-(( $+functions[_ironclaw__service__stop_commands] )) ||
-_ironclaw__service__stop_commands() {
+(( $+functions[_axinite__subcmd__service__subcmd__stop_commands] )) ||
+_axinite__subcmd__service__subcmd__stop_commands() {
     local commands; commands=()
-    _describe -t commands 'ironclaw service stop commands' commands "$@"
+    _describe -t commands 'axinite service stop commands' commands "$@"
 }
-(( $+functions[_ironclaw__service__uninstall_commands] )) ||
-_ironclaw__service__uninstall_commands() {
+(( $+functions[_axinite__subcmd__service__subcmd__uninstall_commands] )) ||
+_axinite__subcmd__service__subcmd__uninstall_commands() {
     local commands; commands=()
-    _describe -t commands 'ironclaw service uninstall commands' commands "$@"
+    _describe -t commands 'axinite service uninstall commands' commands "$@"
 }
-(( $+functions[_ironclaw__status_commands] )) ||
-_ironclaw__status_commands() {
+(( $+functions[_axinite__subcmd__status_commands] )) ||
+_axinite__subcmd__status_commands() {
     local commands; commands=()
-    _describe -t commands 'ironclaw status commands' commands "$@"
+    _describe -t commands 'axinite status commands' commands "$@"
 }
-(( $+functions[_ironclaw__tool_commands] )) ||
-_ironclaw__tool_commands() {
+(( $+functions[_axinite__subcmd__tool_commands] )) ||
+_axinite__subcmd__tool_commands() {
     local commands; commands=(
 'install:Install a WASM tool from source directory or .wasm file' \
 'list:List installed tools' \
 'remove:Remove an installed tool' \
 'info:Show information about a tool' \
 'auth:Configure authentication for a tool' \
+'setup:Configure required secrets for a tool (from setup.required_secrets)' \
 'help:Print this message or the help of the given subcommand(s)' \
     )
-    _describe -t commands 'ironclaw tool commands' commands "$@"
+    _describe -t commands 'axinite tool commands' commands "$@"
 }
-(( $+functions[_ironclaw__tool__auth_commands] )) ||
-_ironclaw__tool__auth_commands() {
+(( $+functions[_axinite__subcmd__tool__subcmd__auth_commands] )) ||
+_axinite__subcmd__tool__subcmd__auth_commands() {
     local commands; commands=()
-    _describe -t commands 'ironclaw tool auth commands' commands "$@"
+    _describe -t commands 'axinite tool auth commands' commands "$@"
 }
-(( $+functions[_ironclaw__tool__help_commands] )) ||
-_ironclaw__tool__help_commands() {
+(( $+functions[_axinite__subcmd__tool__subcmd__help_commands] )) ||
+_axinite__subcmd__tool__subcmd__help_commands() {
     local commands; commands=(
 'install:Install a WASM tool from source directory or .wasm file' \
 'list:List installed tools' \
 'remove:Remove an installed tool' \
 'info:Show information about a tool' \
 'auth:Configure authentication for a tool' \
+'setup:Configure required secrets for a tool (from setup.required_secrets)' \
 'help:Print this message or the help of the given subcommand(s)' \
     )
-    _describe -t commands 'ironclaw tool help commands' commands "$@"
+    _describe -t commands 'axinite tool help commands' commands "$@"
 }
-(( $+functions[_ironclaw__tool__help__auth_commands] )) ||
-_ironclaw__tool__help__auth_commands() {
+(( $+functions[_axinite__subcmd__tool__subcmd__help__subcmd__auth_commands] )) ||
+_axinite__subcmd__tool__subcmd__help__subcmd__auth_commands() {
     local commands; commands=()
-    _describe -t commands 'ironclaw tool help auth commands' commands "$@"
+    _describe -t commands 'axinite tool help auth commands' commands "$@"
 }
-(( $+functions[_ironclaw__tool__help__help_commands] )) ||
-_ironclaw__tool__help__help_commands() {
+(( $+functions[_axinite__subcmd__tool__subcmd__help__subcmd__help_commands] )) ||
+_axinite__subcmd__tool__subcmd__help__subcmd__help_commands() {
     local commands; commands=()
-    _describe -t commands 'ironclaw tool help help commands' commands "$@"
+    _describe -t commands 'axinite tool help help commands' commands "$@"
 }
-(( $+functions[_ironclaw__tool__help__info_commands] )) ||
-_ironclaw__tool__help__info_commands() {
+(( $+functions[_axinite__subcmd__tool__subcmd__help__subcmd__info_commands] )) ||
+_axinite__subcmd__tool__subcmd__help__subcmd__info_commands() {
     local commands; commands=()
-    _describe -t commands 'ironclaw tool help info commands' commands "$@"
+    _describe -t commands 'axinite tool help info commands' commands "$@"
 }
-(( $+functions[_ironclaw__tool__help__install_commands] )) ||
-_ironclaw__tool__help__install_commands() {
+(( $+functions[_axinite__subcmd__tool__subcmd__help__subcmd__install_commands] )) ||
+_axinite__subcmd__tool__subcmd__help__subcmd__install_commands() {
     local commands; commands=()
-    _describe -t commands 'ironclaw tool help install commands' commands "$@"
+    _describe -t commands 'axinite tool help install commands' commands "$@"
 }
-(( $+functions[_ironclaw__tool__help__list_commands] )) ||
-_ironclaw__tool__help__list_commands() {
+(( $+functions[_axinite__subcmd__tool__subcmd__help__subcmd__list_commands] )) ||
+_axinite__subcmd__tool__subcmd__help__subcmd__list_commands() {
     local commands; commands=()
-    _describe -t commands 'ironclaw tool help list commands' commands "$@"
+    _describe -t commands 'axinite tool help list commands' commands "$@"
 }
-(( $+functions[_ironclaw__tool__help__remove_commands] )) ||
-_ironclaw__tool__help__remove_commands() {
+(( $+functions[_axinite__subcmd__tool__subcmd__help__subcmd__remove_commands] )) ||
+_axinite__subcmd__tool__subcmd__help__subcmd__remove_commands() {
     local commands; commands=()
-    _describe -t commands 'ironclaw tool help remove commands' commands "$@"
+    _describe -t commands 'axinite tool help remove commands' commands "$@"
 }
-(( $+functions[_ironclaw__tool__info_commands] )) ||
-_ironclaw__tool__info_commands() {
+(( $+functions[_axinite__subcmd__tool__subcmd__help__subcmd__setup_commands] )) ||
+_axinite__subcmd__tool__subcmd__help__subcmd__setup_commands() {
     local commands; commands=()
-    _describe -t commands 'ironclaw tool info commands' commands "$@"
+    _describe -t commands 'axinite tool help setup commands' commands "$@"
 }
-(( $+functions[_ironclaw__tool__install_commands] )) ||
-_ironclaw__tool__install_commands() {
+(( $+functions[_axinite__subcmd__tool__subcmd__info_commands] )) ||
+_axinite__subcmd__tool__subcmd__info_commands() {
     local commands; commands=()
-    _describe -t commands 'ironclaw tool install commands' commands "$@"
+    _describe -t commands 'axinite tool info commands' commands "$@"
 }
-(( $+functions[_ironclaw__tool__list_commands] )) ||
-_ironclaw__tool__list_commands() {
+(( $+functions[_axinite__subcmd__tool__subcmd__install_commands] )) ||
+_axinite__subcmd__tool__subcmd__install_commands() {
     local commands; commands=()
-    _describe -t commands 'ironclaw tool list commands' commands "$@"
+    _describe -t commands 'axinite tool install commands' commands "$@"
 }
-(( $+functions[_ironclaw__tool__remove_commands] )) ||
-_ironclaw__tool__remove_commands() {
+(( $+functions[_axinite__subcmd__tool__subcmd__list_commands] )) ||
+_axinite__subcmd__tool__subcmd__list_commands() {
     local commands; commands=()
-    _describe -t commands 'ironclaw tool remove commands' commands "$@"
+    _describe -t commands 'axinite tool list commands' commands "$@"
 }
-(( $+functions[_ironclaw__worker_commands] )) ||
-_ironclaw__worker_commands() {
+(( $+functions[_axinite__subcmd__tool__subcmd__remove_commands] )) ||
+_axinite__subcmd__tool__subcmd__remove_commands() {
     local commands; commands=()
-    _describe -t commands 'ironclaw worker commands' commands "$@"
+    _describe -t commands 'axinite tool remove commands' commands "$@"
+}
+(( $+functions[_axinite__subcmd__tool__subcmd__setup_commands] )) ||
+_axinite__subcmd__tool__subcmd__setup_commands() {
+    local commands; commands=()
+    _describe -t commands 'axinite tool setup commands' commands "$@"
+}
+(( $+functions[_axinite__subcmd__worker_commands] )) ||
+_axinite__subcmd__worker_commands() {
+    local commands; commands=()
+    _describe -t commands 'axinite worker commands' commands "$@"
 }
 
-if [ "$funcstack[1]" = "_ironclaw" ]; then
-    _ironclaw "$@"
+if [ "$funcstack[1]" = "_axinite" ]; then
+    _axinite "$@"
 else
-    (( $+functions[compdef] )) && compdef _ironclaw ironclaw
+    (( $+functions[compdef] )) && compdef _axinite axinite
 fi

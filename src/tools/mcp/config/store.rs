@@ -6,7 +6,7 @@ use std::path::{Path, PathBuf};
 use serde::{Deserialize, Serialize};
 use tokio::fs;
 
-use crate::bootstrap::ironclaw_base_dir;
+use crate::bootstrap::axinite_base_dir;
 
 use super::ConfigError;
 use super::server::McpServerConfig;
@@ -62,7 +62,7 @@ impl McpServersFile {
 
 /// Get the default MCP servers configuration path.
 pub fn default_config_path() -> PathBuf {
-    ironclaw_base_dir().join("mcp-servers.json")
+    axinite_base_dir().join("mcp-servers.json")
 }
 
 /// Load MCP server configurations from the default location.

@@ -2,7 +2,7 @@
 //! (Slack) via the channel-relay service.
 //!
 //! The relay service handles OAuth, credential storage, webhook ingestion,
-//! and SSE event streaming. IronClaw consumes the SSE stream and sends
+//! and SSE event streaming. Axinite consumes the SSE stream and sends
 //! messages via the relay's proxy API.
 
 pub mod channel;

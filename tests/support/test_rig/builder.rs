@@ -8,14 +8,14 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use anyhow::Context;
-use ironclaw::agent::{Agent, AgentDeps};
-use ironclaw::app::{AppBuilder, AppBuilderFlags, AppBuilderParams, AppComponents};
-use ironclaw::channels::web::log_layer::LogBroadcaster;
-use ironclaw::config::Config;
-use ironclaw::db::Database;
-use ironclaw::llm::recording::{HttpExchange, ReplayingHttpInterceptor, TraceResponse, TraceStep};
-use ironclaw::llm::{LlmProvider, SessionConfig, SessionManager};
-use ironclaw::tools::Tool;
+use axinite::agent::{Agent, AgentDeps};
+use axinite::app::{AppBuilder, AppBuilderFlags, AppBuilderParams, AppComponents};
+use axinite::channels::web::log_layer::LogBroadcaster;
+use axinite::config::Config;
+use axinite::db::Database;
+use axinite::llm::recording::{HttpExchange, ReplayingHttpInterceptor, TraceResponse, TraceStep};
+use axinite::llm::{LlmProvider, SessionConfig, SessionManager};
+use axinite::tools::Tool;
 
 use crate::support::instrumented_llm::InstrumentedLlm;
 use crate::support::test_channel::TestChannel;
@@ -40,12 +40,12 @@ pub struct TestRigBuilder {
 }
 
 fn register_job_tools_for_tests(
-    components: &ironclaw::app::AppComponents,
-    scheduler_slot: &ironclaw::tools::builtin::SchedulerSlot,
+    components: &axinite::app::AppComponents,
+    scheduler_slot: &axinite::tools::builtin::SchedulerSlot,
 ) {
     components
         .tools
-        .register_job_tools(ironclaw::tools::RegisterJobToolsOptions {
+        .register_job_tools(axinite::tools::RegisterJobToolsOptions {
             context_manager: Arc::clone(&components.context_manager),
             scheduler_slot: Some(scheduler_slot.clone()),
             job_manager: None,

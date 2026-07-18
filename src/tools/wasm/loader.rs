@@ -8,7 +8,7 @@
 //! # Example: Loading from Directory
 //!
 //! ```text
-//! ~/.ironclaw/tools/
+//! ~/.axinite/tools/
 //! ├── slack.wasm
 //! ├── slack.capabilities.json
 //! ├── github.wasm
@@ -17,7 +17,7 @@
 //!
 //! ```ignore
 //! let loader = WasmToolLoader::new(runtime, registry);
-//! loader.load_from_dir(Path::new("~/.ironclaw/tools/")).await?;
+//! loader.load_from_dir(Path::new("~/.axinite/tools/")).await?;
 //! ```
 //!
 //! # Dev Mode

@@ -7,7 +7,7 @@
 use std::sync::Arc;
 
 use anyhow::Context as _;
-use ironclaw::cli::{Cli, Command, PairingCommand};
+use axinite::cli::{Cli, Command, PairingCommand};
 use rstest::rstest;
 
 use super::{

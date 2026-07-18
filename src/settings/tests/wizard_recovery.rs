@@ -15,7 +15,7 @@ fn wizard_recovery_step1_overrides_stale_db() {
     // Simulate prior partial run (steps 1-4 completed):
     let prior_run = Settings {
         database_backend: Some("postgres".to_string()),
-        database_url: Some("postgres://old-host/ironclaw".to_string()),
+        database_url: Some("postgres://old-host/axinite".to_string()),
         llm_backend: Some("anthropic".to_string()),
         selected_model: Some("claude-sonnet-4-5".to_string()),
         embeddings: EmbeddingsSettings {
@@ -33,7 +33,7 @@ fn wizard_recovery_step1_overrides_stale_db() {
     // Step 1 of the new wizard run: user enters a NEW database_url
     let step1_settings = Settings {
         database_backend: Some("postgres".to_string()),
-        database_url: Some("postgres://new-host/ironclaw".to_string()),
+        database_url: Some("postgres://new-host/axinite".to_string()),
         ..Settings::default()
     };
 
@@ -47,7 +47,7 @@ fn wizard_recovery_step1_overrides_stale_db() {
     // Step 1's fresh database_url wins over stale DB value
     assert_eq!(
         current.database_url,
-        Some("postgres://new-host/ironclaw".to_string()),
+        Some("postgres://new-host/axinite".to_string()),
         "Step 1 fresh choice must override stale DB value"
     );
 

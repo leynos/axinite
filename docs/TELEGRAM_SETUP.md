@@ -1,11 +1,11 @@
 # Telegram Channel Setup
 
-This guide covers configuring the Telegram channel for IronClaw, including DM
+This guide covers configuring the Telegram channel for Axinite, including DM
 pairing for access control.
 
 ## Overview
 
-The Telegram channel lets you interact with IronClaw via Telegram DMs and
+The Telegram channel lets you interact with Axinite via Telegram DMs and
 groups. It supports:
 
 - **Webhook mode** (recommended): Instant delivery via tunnel
@@ -15,7 +15,7 @@ groups. It supports:
 
 ## Prerequisites
 
-- IronClaw installed and configured (`ironclaw onboard`)
+- Axinite installed and configured (`axinite onboard`)
 - A Telegram bot token from [@BotFather](https://t.me/BotFather)
 
 ## Quick Start
@@ -29,7 +29,7 @@ groups. It supports:
 ### 2. Configure via Setup Wizard
 
 ```bash
-ironclaw onboard
+axinite onboard
 ```
 
 When prompted, enable the Telegram channel and paste your bot token. The wizard
@@ -63,26 +63,26 @@ approve them before they can message the agent.
 
 1. Unknown user sends a message to your bot
 2. Bot replies:
-   `To pair with this bot, run: ironclaw pairing approve telegram ABC12345`
-3. You run: `ironclaw pairing approve telegram ABC12345`
+   `To pair with this bot, run: axinite pairing approve telegram ABC12345`
+3. You run: `axinite pairing approve telegram ABC12345`
 4. User is added to the allow list; future messages are delivered
 
 ### Commands
 
 ```bash
 # List pending pairing requests
-ironclaw pairing list telegram
+axinite pairing list telegram
 
 # List as JSON
-ironclaw pairing list telegram --json
+axinite pairing list telegram --json
 
 # Approve a user by code
-ironclaw pairing approve telegram ABC12345
+axinite pairing approve telegram ABC12345
 ```
 
 ### Configuration
 
-Edit `~/.ironclaw/channels/telegram.capabilities.json` (or the config injected
+Edit `~/.axinite/channels/telegram.capabilities.json` (or the config injected
 by the host):
 
 | Option                          | Values                         | Default   | Description                                                                                                     |
@@ -103,8 +103,8 @@ rustup target add wasm32-wasip2
 ./channels-src/telegram/build.sh
 
 # Install
-mkdir -p ~/.ironclaw/channels
-cp channels-src/telegram/telegram.wasm channels-src/telegram/telegram.capabilities.json ~/.ironclaw/channels/
+mkdir -p ~/.axinite/channels
+cp channels-src/telegram/telegram.wasm channels-src/telegram/telegram.capabilities.json ~/.axinite/channels/
 ```
 
 ## Secrets
@@ -113,7 +113,7 @@ The channel expects a secret named `telegram_bot_token`. Configure via:
 
 - **Setup wizard**: Saves to encrypted secrets store
 - **Environment**: `TELEGRAM_BOT_TOKEN=your_token`
-- **Secrets store**: `ironclaw` CLI (if available)
+- **Secrets store**: `axinite` CLI (if available)
 
 ## Webhook Secret (Optional)
 
@@ -138,10 +138,10 @@ before forwarding.
 
 ### Group mentions not working
 
-- Set `bot_username` in config to your bot's username (e.g., `MyIronClawBot`)
+- Set `bot_username` in config to your bot's username (e.g., `MyAxiniteBot`)
 - Ensure the message contains `@YourBot` or starts with `/`
 
 ### "Connection refused" when starting
 
-- For webhook mode: Start your tunnel before `ironclaw run`
+- For webhook mode: Start your tunnel before `axinite run`
 - For polling only: No tunnel needed; ignore tunnel-related warnings

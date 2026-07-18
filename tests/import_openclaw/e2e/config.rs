@@ -1,7 +1,7 @@
 //! Configuration, settings-mapping, and credential extraction tests.
 
-use ironclaw::import::openclaw::reader::OpenClawReader;
-use ironclaw::import::openclaw::settings;
+use axinite::import::openclaw::reader::OpenClawReader;
+use axinite::import::openclaw::settings;
 
 use super::harness::setup_full_openclaw_test_env;
 
@@ -33,7 +33,7 @@ fn test_full_config_extraction() {
 }
 
 #[test]
-fn test_settings_mapping_to_ironclaw_format() {
+fn test_settings_mapping_to_axinite_format() {
     let (_temp, openclaw_path) = setup_full_openclaw_test_env().expect("setup failed");
 
     let reader = OpenClawReader::new(&openclaw_path).expect("reader creation failed");

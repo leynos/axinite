@@ -3,7 +3,7 @@
 use super::*;
 
 impl SetupWizard {
-    /// Save settings to the database and `~/.ironclaw/.env`, then print summary.
+    /// Save settings to the database and `~/.axinite/.env`, then print summary.
     pub(super) async fn save_and_summarize(&mut self) -> Result<(), SetupError> {
         self.settings.onboard_completed = true;
 
@@ -166,16 +166,16 @@ impl SetupWizard {
     fn print_next_steps(&self) {
         println!();
         println!("To start the agent, run:");
-        println!("  ironclaw");
+        println!("  axinite");
         println!();
         println!("To change settings later:");
-        println!("  ironclaw config set <setting> <value>");
-        println!("  ironclaw onboard");
+        println!("  axinite config set <setting> <value>");
+        println!("  axinite onboard");
         println!();
 
         if self.config.quick {
             print_info(
-                "Tip: Run `ironclaw onboard` to configure channels, extensions, embeddings, and more.",
+                "Tip: Run `axinite onboard` to configure channels, extensions, embeddings, and more.",
             );
             println!();
         }

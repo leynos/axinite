@@ -3,7 +3,7 @@
 use std::sync::Arc;
 use std::time::Duration;
 
-use ironclaw::{
+use axinite::{
     agent::{Agent, AgentDeps},
     app::AppComponents,
     channels::web::types::SseEvent,
@@ -107,10 +107,10 @@ pub(crate) async fn run_agent(ctx: GatewayPhaseContext) -> anyhow::Result<()> {
 /// stay valid for the duration of `prepare_channels`.
 struct ChannelPreparation<'a> {
     components: &'a AppComponents,
-    extension_manager: &'a Option<Arc<ironclaw::extensions::ExtensionManager>>,
+    extension_manager: &'a Option<Arc<axinite::extensions::ExtensionManager>>,
     wasm_channel_runtime_state: &'a mut Option<crate::startup::wasm::WasmChannelRuntimeState>,
     loaded_wasm_channel_names: &'a [String],
-    channels: &'a Arc<ironclaw::channels::ChannelManager>,
+    channels: &'a Arc<axinite::channels::ChannelManager>,
     sse_sender: &'a Option<tokio::sync::broadcast::Sender<SseEvent>>,
     wasm_channel_owner_ids: &'a std::collections::HashMap<String, i64>,
 }
@@ -167,11 +167,11 @@ async fn snapshot_workspace_memory(components: &AppComponents) {
 /// The contained scheduler and routine-engine slots are populated during
 /// `prepare_agent` and then handed back to the wider startup pipeline.
 struct AgentSetupResources {
-    channels: Arc<ironclaw::channels::ChannelManager>,
-    session_manager: Arc<ironclaw::agent::SessionManager>,
-    scheduler_slot: ironclaw::tools::builtin::SchedulerSlot,
-    sse_sender: Option<tokio::sync::broadcast::Sender<ironclaw::channels::web::types::SseEvent>>,
-    routine_engine_slot: Option<ironclaw::channels::web::server::RoutineEngineSlot>,
+    channels: Arc<axinite::channels::ChannelManager>,
+    session_manager: Arc<axinite::agent::SessionManager>,
+    scheduler_slot: axinite::tools::builtin::SchedulerSlot,
+    sse_sender: Option<tokio::sync::broadcast::Sender<axinite::channels::web::types::SseEvent>>,
+    routine_engine_slot: Option<axinite::channels::web::server::RoutineEngineSlot>,
 }
 
 /// Builds the agent, publishes its scheduler handle, and wires any routine
@@ -219,11 +219,9 @@ async fn prepare_agent(
 pub(crate) fn setup_runtime_management(
     components: &AppComponents,
     config: &Config,
-    container_job_manager: &Option<Arc<ironclaw::orchestrator::ContainerJobManager>>,
-    #[cfg(unix)] webhook_server: &Option<
-        Arc<tokio::sync::Mutex<ironclaw::channels::WebhookServer>>,
-    >,
-    #[cfg(unix)] http_channel_state: &Option<Arc<ironclaw::channels::HttpChannelState>>,
+    container_job_manager: &Option<Arc<axinite::orchestrator::ContainerJobManager>>,
+    #[cfg(unix)] webhook_server: &Option<Arc<tokio::sync::Mutex<axinite::channels::WebhookServer>>>,
+    #[cfg(unix)] http_channel_state: &Option<Arc<axinite::channels::HttpChannelState>>,
 ) -> tokio::sync::broadcast::Sender<()> {
     let reaper_context_manager = Arc::clone(&components.context_manager);
     maybe_spawn_sandbox_reaper(container_job_manager, reaper_context_manager, config);
@@ -274,9 +272,9 @@ fn build_agent_deps(
         transcription: config
             .transcription
             .create_provider()
-            .map(|p| Arc::new(ironclaw::transcription::TranscriptionMiddleware::new(p))),
+            .map(|p| Arc::new(axinite::transcription::TranscriptionMiddleware::new(p))),
         document_extraction: Some(Arc::new(
-            ironclaw::document_extraction::DocumentExtractionMiddleware::new(),
+            axinite::document_extraction::DocumentExtractionMiddleware::new(),
         )),
     }
 }
@@ -286,9 +284,9 @@ fn build_agent_deps(
 /// These handles must already be initialized by earlier startup phases and are
 /// moved into the final agent during `build_agent`.
 struct AgentConnections {
-    channels: Arc<ironclaw::channels::ChannelManager>,
-    session_manager: Arc<ironclaw::agent::SessionManager>,
-    context_manager: Arc<ironclaw::context::ContextManager>,
+    channels: Arc<axinite::channels::ChannelManager>,
+    session_manager: Arc<axinite::agent::SessionManager>,
+    context_manager: Arc<axinite::context::ContextManager>,
 }
 
 /// Constructs the final `Agent` from the prepared dependency bundle and live
@@ -319,7 +317,7 @@ fn build_agent(config: &Config, deps: AgentDeps, connections: AgentConnections) 
 /// The reaper runs independently on the Tokio runtime and logs initialization
 /// failures rather than aborting startup.
 pub(crate) fn maybe_spawn_sandbox_reaper(
-    container_job_manager: &Option<Arc<ironclaw::orchestrator::ContainerJobManager>>,
+    container_job_manager: &Option<Arc<axinite::orchestrator::ContainerJobManager>>,
     reaper_context_manager: Arc<ContextManager>,
     config: &Config,
 ) {
@@ -347,10 +345,10 @@ pub(crate) fn maybe_spawn_sandbox_reaper(
 /// webhook state, and tunnels are flushed or torn down.
 async fn run_shutdown_sequence(
     shutdown_tx: &tokio::sync::broadcast::Sender<()>,
-    mcp_process_manager: &ironclaw::tools::mcp::McpProcessManager,
-    recording_handle: &Option<Arc<ironclaw::llm::recording::RecordingLlm>>,
-    webhook_server: &Option<Arc<tokio::sync::Mutex<ironclaw::channels::WebhookServer>>>,
-    active_tunnel: &Option<Box<dyn ironclaw::tunnel::Tunnel>>,
+    mcp_process_manager: &axinite::tools::mcp::McpProcessManager,
+    recording_handle: &Option<Arc<axinite::llm::recording::RecordingLlm>>,
+    webhook_server: &Option<Arc<tokio::sync::Mutex<axinite::channels::WebhookServer>>>,
+    active_tunnel: &Option<Box<dyn axinite::tunnel::Tunnel>>,
 ) {
     let _ = shutdown_tx.send(());
     mcp_process_manager.shutdown_all().await;

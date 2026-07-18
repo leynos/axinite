@@ -19,7 +19,7 @@
 
 ## Summary
 
-IronClaw already has the machinery to recover real WebAssembly (WASM) tool
+Axinite already has the machinery to recover real WebAssembly (WASM) tool
 descriptions and schemas from guest exports. The registry can therefore publish
 correct `ToolDefinition` values for active WASM tools.
 
@@ -68,7 +68,7 @@ The LLM-visible interface remains the existing `ToolDefinition` shape:
 
 ### There are two competing schema surfaces today
 
-IronClaw currently has two different ways a WASM tool schema can reach the
+Axinite currently has two different ways a WASM tool schema can reach the
 model path:
 
 1. Proactive tool advertisement through `ToolRegistry::tool_definitions()`.
@@ -82,7 +82,7 @@ first-use success and turns the schema into post-failure recovery data.
 ### The codebase still encodes the old assumption
 
 The WASM wrapper still says the schema is included on failure so the LLM can
-retry without IronClaw having to include the large schema in every request's
+retry without Axinite having to include the large schema in every request's
 tool list. That logic made sense during early bring-up when placeholder
 metadata was common and token pressure was the dominant concern.
 
@@ -122,7 +122,7 @@ The registration path is much healthier than it used to be:
   regression tests that fail if the GitHub WASM fixture regresses back to a
   placeholder schema
 
-This means IronClaw does not need a new schema format for WASM tools. It
+This means Axinite does not need a new schema format for WASM tools. It
 already has the right outward-facing structure.
 
 ### What is still wrong
@@ -146,7 +146,7 @@ hints and add the end-to-end first-call regression coverage tracked under
    correct parameter schema.
 2. Ensure the first call to a WASM tool has the same schema context as any
    built-in tool call.
-3. Preserve explicit schema overrides where IronClaw intentionally provides
+3. Preserve explicit schema overrides where Axinite intentionally provides
    host-authored metadata instead of guest metadata.
 4. Ensure hosted workers can expose orchestrator-owned WASM tools to the LLM.
 5. Keep error hints as supplemental recovery data rather than the primary
@@ -179,7 +179,7 @@ hints and add the end-to-end first-call regression coverage tracked under
 
 ### 1. Define a single canonical LLM-facing schema path for WASM tools
 
-For every active WASM tool, IronClaw should determine one canonical advertised
+For every active WASM tool, Axinite should determine one canonical advertised
 schema before the tool is made visible to the LLM.
 
 That canonical schema comes from the first applicable source in this order:
@@ -221,7 +221,7 @@ is now a fallback choice rather than the primary design.
 ### 3. Guarantee schema advertisement in `ToolRegistry::tool_definitions()`
 
 The system should explicitly guarantee that any WASM tool returned by
-`ToolRegistry::tool_definitions()` exposes the same schema IronClaw expects the
+`ToolRegistry::tool_definitions()` exposes the same schema Axinite expects the
 LLM to use for its first call.
 
 That guarantee should be documented and tested for:
@@ -362,7 +362,7 @@ wrapper locally, and execute through the orchestrator.
 ### 5. Preserve provider-specific shaping without hiding the contract
 
 Some providers impose stricter schema rules than raw guest exports permit.
-IronClaw already has provider-bound schema validation and normalization logic
+Axinite already has provider-bound schema validation and normalization logic
 for OpenAI-compatible tool calling.
 
 The correct pattern for WASM tools is:
@@ -377,7 +377,7 @@ What should not happen:
 2. rely on a later tool error to reveal the contract
 3. force the LLM to infer call structure from prose alone
 
-If IronClaw needs both a canonical guest schema and a provider-safe advertised
+If Axinite needs both a canonical guest schema and a provider-safe advertised
 schema, it should track both internally. The LLM still needs the advertised one
 up front.
 
@@ -396,7 +396,7 @@ That is the only interface the model should need for first-call correctness.
 
 ## Why This Is The Correct Boundary
 
-This boundary lines up with how IronClaw already works:
+This boundary lines up with how Axinite already works:
 
 - WASM registration decides the visible metadata
 - `ToolRegistry` already knows how to emit `ToolDefinition`s
@@ -526,7 +526,7 @@ the schema from the normal tool interface.
 
 1. Should full schema-bearing retry hints remain enabled for all WASM tools, or
    only for parse/validation failures?
-2. Should IronClaw store both canonical guest schema and provider-normalized
+2. Should Axinite store both canonical guest schema and provider-normalized
    advertised schema explicitly for observability?
 3. Should hosted workers fetch the remote tool catalogue only at startup, or
    also
@@ -550,4 +550,4 @@ That means:
   time
 
 That is the correct fix because it aligns WASM tools with every other
-first-class tool in IronClaw: the model gets the contract up front.
+first-class tool in Axinite: the model gets the contract up front.

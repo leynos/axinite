@@ -21,7 +21,7 @@ fn test_log_broadcaster_subscribe() {
 
     broadcaster.send(LogEntry {
         level: "WARN".to_string(),
-        target: "ironclaw::test".to_string(),
+        target: "axinite::test".to_string(),
         message: "test warning".to_string(),
         timestamp: "2024-01-01T00:00:00.000Z".to_string(),
     });
@@ -35,7 +35,7 @@ fn test_log_broadcaster_subscribe() {
 fn test_log_entry_serialization() {
     let entry = LogEntry {
         level: "ERROR".to_string(),
-        target: "ironclaw::agent".to_string(),
+        target: "axinite::agent".to_string(),
         message: "something broke".to_string(),
         timestamp: "2024-01-01T00:00:00.000Z".to_string(),
     };

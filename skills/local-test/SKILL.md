@@ -1,7 +1,7 @@
 ---
 name: local-test
 version: 0.1.0
-description: Build, run, and test IronClaw locally using Docker containers and Chrome MCP browser automation.
+description: Build, run, and test Axinite locally using Docker containers and Chrome MCP browser automation.
 activation:
   keywords:
     - test locally
@@ -22,21 +22,21 @@ activation:
 
 # Local Testing with Docker + Chrome MCP
 
-Use this skill to build, run, and test IronClaw web gateway changes locally
+Use this skill to build, run, and test Axinite web gateway changes locally
 using `Dockerfile.test` and Chrome MCP browser automation tools.
 
 ## Quick Start
 
 ```bash
 # Build the test image (libsql-only, no PostgreSQL needed)
-docker build --platform linux/amd64 -f Dockerfile.test -t ironclaw-test .
+docker build --platform linux/amd64 -f Dockerfile.test -t axinite-test .
 
 # Run on port 3003 (default)
 docker run --rm -p 3003:3003 \
   -e ONBOARD_COMPLETED=true \
   -e CLI_ENABLED=false \
   -e NEARAI_API_KEY=<key> \
-  ironclaw-test
+  axinite-test
 
 # Open in browser
 # http://localhost:3003/?token=test
@@ -49,7 +49,7 @@ The test Dockerfile uses a two-stage build: Rust compilation with
 image.
 
 ```bash
-docker build --platform linux/amd64 -f Dockerfile.test -t ironclaw-test .
+docker build --platform linux/amd64 -f Dockerfile.test -t axinite-test .
 ```
 
 Build takes ~5-10 minutes on first run (cached subsequent builds are faster).
@@ -76,7 +76,7 @@ docker run --rm -p 3003:3003 \
   -e ONBOARD_COMPLETED=true \
   -e CLI_ENABLED=false \
   -e NEARAI_API_KEY=<your-key> \
-  ironclaw-test
+  axinite-test
 ```
 
 **NEAR AI (session token mode):**
@@ -87,7 +87,7 @@ docker run --rm -p 3003:3003 \
   -e CLI_ENABLED=false \
   -e NEARAI_SESSION_TOKEN=<sess_xxx> \
   -e NEARAI_BASE_URL=https://private.near.ai \
-  ironclaw-test
+  axinite-test
 ```
 
 **OpenAI:**
@@ -98,7 +98,7 @@ docker run --rm -p 3003:3003 \
   -e CLI_ENABLED=false \
   -e LLM_BACKEND=openai \
   -e OPENAI_API_KEY=<your-key> \
-  ironclaw-test
+  axinite-test
 ```
 
 **Anthropic:**
@@ -109,7 +109,7 @@ docker run --rm -p 3003:3003 \
   -e CLI_ENABLED=false \
   -e LLM_BACKEND=anthropic \
   -e ANTHROPIC_API_KEY=<your-key> \
-  ironclaw-test
+  axinite-test
 ```
 
 **Dummy run (no LLM, just test the UI loads):**
@@ -119,7 +119,7 @@ docker run --rm -p 3003:3003 \
   -e ONBOARD_COMPLETED=true \
   -e CLI_ENABLED=false \
   -e NEARAI_API_KEY=dummy \
-  ironclaw-test
+  axinite-test
 ```
 
 ### Common Overrides
@@ -129,7 +129,7 @@ docker run --rm -p 3003:3003 \
 | `GATEWAY_PORT`       | Change the listen port | `3003` (default)             |
 | `GATEWAY_AUTH_TOKEN` | Auth token for API     | `test` (default)             |
 | `NEARAI_MODEL`       | Override LLM model     | `claude-3-5-sonnet-20241022` |
-| `RUST_LOG`           | Logging verbosity      | `ironclaw=debug`             |
+| `RUST_LOG`           | Logging verbosity      | `axinite=debug`              |
 | `ROUTINES_ENABLED`   | Enable routines        | `true`/`false`               |
 | `SKILLS_ENABLED`     | Enable skills system   | `true` (default)             |
 
@@ -139,9 +139,9 @@ Run multiple containers on different host ports:
 
 ```bash
 docker run --rm -d --name ic-test-a -p 3003:3003 -e ONBOARD_COMPLETED=true \
-  -e CLI_ENABLED=false -e NEARAI_API_KEY=dummy ironclaw-test
+  -e CLI_ENABLED=false -e NEARAI_API_KEY=dummy axinite-test
 docker run --rm -d --name ic-test-b -p 3004:3003 -e ONBOARD_COMPLETED=true \
-  -e CLI_ENABLED=false -e NEARAI_API_KEY=dummy ironclaw-test
+  -e CLI_ENABLED=false -e NEARAI_API_KEY=dummy axinite-test
 ```
 
 ## Chrome MCP Testing Workflow
@@ -211,10 +211,10 @@ text entry.
 docker stop ic-test-a
 
 # Stop all test containers
-docker ps --filter ancestor=ironclaw-test -q | xargs -r docker stop
+docker ps --filter ancestor=axinite-test -q | xargs -r docker stop
 
 # Remove the test image
-docker rmi ironclaw-test
+docker rmi axinite-test
 ```
 
 ## Troubleshooting

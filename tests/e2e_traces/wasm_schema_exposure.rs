@@ -10,13 +10,13 @@ use rust_decimal::Decimal;
 use crate::fixtures::DEFAULT_TIMEOUT;
 use crate::support::test_rig::TestRigBuilder;
 
-use ironclaw::error::LlmError;
-use ironclaw::llm::{
+use axinite::error::LlmError;
+use axinite::llm::{
     CompletionRequest, CompletionResponse, FinishReason, LlmProvider, NativeLlmProvider,
     ToolCompletionRequest, ToolCompletionResponse, ToolDefinition,
 };
-use ironclaw::testing::github_wasm_wrapper;
-use ironclaw::tools::Tool;
+use axinite::testing::github_wasm_wrapper;
+use axinite::tools::Tool;
 
 /// A pre-built GitHub WASM tool and its registration-time
 /// [`ToolDefinition`], shared across schema-exposure assertions.

@@ -88,7 +88,7 @@ fn test_authorization_server_metadata_serde_without_registration() {
 #[test]
 fn test_client_registration_request_serialization() {
     let req = ClientRegistrationRequest {
-        client_name: "IronClaw".to_string(),
+        client_name: "Axinite".to_string(),
         redirect_uris: vec!["http://localhost:9876/callback".to_string()],
         grant_types: vec![
             "authorization_code".to_string(),
@@ -100,7 +100,7 @@ fn test_client_registration_request_serialization() {
 
     let value: serde_json::Value = serde_json::to_value(&req).unwrap();
 
-    assert_eq!(value["client_name"], "IronClaw");
+    assert_eq!(value["client_name"], "Axinite");
     assert_eq!(value["redirect_uris"][0], "http://localhost:9876/callback");
     assert_eq!(value["grant_types"][0], "authorization_code");
     assert_eq!(value["grant_types"][1], "refresh_token");

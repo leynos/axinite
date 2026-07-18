@@ -63,7 +63,7 @@ Axinite resolves configuration through a layered precedence chain (see
 `src/config/mod.rs`):
 
 1. Environment variables (highest precedence).
-2. TOML config file overlay (`~/.ironclaw/config.toml`).
+2. TOML config file overlay (`~/.axinite/config.toml`).
 3. Database settings.
 4. Compiled defaults (lowest precedence).
 

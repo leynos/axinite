@@ -3,7 +3,7 @@
 //! Requires a running PostgreSQL with pgvector extension.
 
 use super::{cleanup_user, get_pool, try_connect};
-use ironclaw::workspace::{MockEmbeddings, SearchConfig, Workspace};
+use axinite::workspace::{MockEmbeddings, SearchConfig, Workspace};
 use std::sync::Arc;
 
 #[tokio::test]

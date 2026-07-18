@@ -21,8 +21,8 @@ use crate::error::ChannelError;
 /// # Usage
 ///
 /// ```rust,no_run
-/// use ironclaw::prelude::IncomingMessage;
-/// use ironclaw::testing::StubChannel;
+/// use axinite::prelude::IncomingMessage;
+/// use axinite::testing::StubChannel;
 ///
 /// # async fn example() {
 /// let (channel, sender) = StubChannel::new("test");

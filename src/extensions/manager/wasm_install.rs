@@ -351,7 +351,7 @@ impl ExtensionManager {
                 ExtensionError::InstallFailed(format!(
                     "'{}' requires building from source. Build artefact not found. \
                          Run `cargo component build --release` in {} first, \
-                         or use `ironclaw registry install {}`.",
+                         or use `axinite registry install {}`.",
                     name,
                     resolved_dir.display(),
                     name,

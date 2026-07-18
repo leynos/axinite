@@ -11,7 +11,7 @@
 /// # Example
 ///
 /// ```rust,ignore
-/// use ironclaw::testing::github::assert_real_github_schema;
+/// use axinite::testing::github::assert_real_github_schema;
 ///
 /// let definition = registry
 ///     .tool_definitions()

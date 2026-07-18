@@ -14,7 +14,7 @@ use crate::settings::Settings;
 pub enum ConfigCommand {
     /// Generate a default config.toml file
     Init {
-        /// Output path (default: ~/.ironclaw/config.toml)
+        /// Output path (default: ~/.axinite/config.toml)
         #[arg(short, long)]
         output: Option<std::path::PathBuf>,
 
@@ -244,14 +244,14 @@ fn show_path(has_db: bool) -> anyhow::Result<()> {
     }
     println!(
         "Env config:         {}",
-        crate::bootstrap::ironclaw_env_path().display()
+        crate::bootstrap::axinite_env_path().display()
     );
 
     let toml_path = Settings::default_toml_path();
     let toml_status = if toml_path.exists() {
         "found"
     } else {
-        "not found (run `ironclaw config init` to create)"
+        "not found (run `axinite config init` to create)"
     };
     println!(
         "TOML config:        {} ({})",
@@ -289,7 +289,7 @@ mod tests {
 
         // Reset to default
         settings.reset("agent.name").unwrap();
-        assert_eq!(settings.agent.name, "ironclaw");
+        assert_eq!(settings.agent.name, "axinite");
     }
 
     #[tokio::test]

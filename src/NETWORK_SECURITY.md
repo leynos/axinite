@@ -1,6 +1,6 @@
-# IronClaw Network Security Reference
+# Axinite Network Security Reference
 
-This document catalogues every network-facing surface in IronClaw, its
+This document catalogues every network-facing surface in Axinite, its
 authentication mechanism, bind address, security controls, and known findings.
 Use this as the authoritative reference during code reviews that touch
 network-facing code.
@@ -11,7 +11,7 @@ ______________________________________________________________________
 
 ## Threat Model
 
-IronClaw operates across four trust boundaries:
+Axinite operates across four trust boundaries:
 
 | Boundary              | Trust Level           | Examples                                                                                                     |
 | --------------------- | --------------------- | ------------------------------------------------------------------------------------------------------------ |
@@ -28,7 +28,7 @@ IronClaw operates across four trust boundaries:
   to access other jobs, exfiltrate secrets, or reach the host network beyond
   the orchestrator API.
 - Webhook senders must prove knowledge of the shared secret. The secret is
-  never transmitted in the clear by IronClaw itself.
+  never transmitted in the clear by Axinite itself.
 - MCP server URLs are operator-configured and treated as trusted destinations
   (see [MCP Client](#mcp-client)).
 
@@ -354,7 +354,7 @@ reachable from the local machine.
 ### Lifecycle
 
 The listener is **ephemeral** — it is started only when an OAuth flow is
-initiated (e.g., `ironclaw tool auth <name>`) and shut down after the callback
+initiated (e.g., `axinite tool auth <name>`) and shut down after the callback
 is received or the timeout expires.
 
 ### Timeout
@@ -379,8 +379,8 @@ down.
 ### Built-in OAuth Credentials
 
 Google OAuth client ID and secret are compiled into the binary (with
-compile-time override via `IRONCLAW_GOOGLE_CLIENT_ID` /
-`IRONCLAW_GOOGLE_CLIENT_SECRET`). As noted in the source, Google Desktop App
+compile-time override via `AXINITE_GOOGLE_CLIENT_ID` /
+`AXINITE_GOOGLE_CLIENT_SECRET`). As noted in the source, Google Desktop App
 client secrets are
 [not actually secret](https://developers.google.com/identity/protocols/oauth2/native-app)
 per Google's documentation.
@@ -551,7 +551,7 @@ server.
 This is by design: MCP server URLs come from **operator-controlled
 configuration** (config files, environment variables, or the CLI `tool install`
 command), not from user input or LLM output. A compromised config file is
-outside IronClaw's threat model — it would imply the operator's machine is
+outside Axinite's threat model — it would imply the operator's machine is
 already compromised.
 
 **Reference:** `src/tools/mcp/client.rs` — `reqwest::Client` builder

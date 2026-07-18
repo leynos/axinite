@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Build IronClaw and all bundled channels.
+# Build Axinite and all bundled channels.
 #
 # Run this before release or when channel sources have changed.
 
@@ -11,8 +11,8 @@ echo "Building bundled channels..."
 ./scripts/build-wasm-extensions.sh --channels
 
 echo ""
-echo "Building IronClaw..."
+echo "Building Axinite..."
 cargo build --release
 
 echo ""
-echo "Done. Binary: target/release/ironclaw"
+echo "Done. Binary: target/release/axinite"

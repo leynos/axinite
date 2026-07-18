@@ -10,7 +10,7 @@ impl SetupWizard {
     pub(super) async fn step_extensions(&mut self) -> Result<(), SetupError> {
         let Some(catalogue) = load_registry_catalogue() else {
             print_info("Extension registry not found. Skipping tool installation.");
-            print_info("Install tools manually with: ironclaw tool install <path>");
+            print_info("Install tools manually with: axinite tool install <path>");
             return Ok(());
         };
 
@@ -27,11 +27,11 @@ impl SetupWizard {
 
         print_info("Available tools from the extension registry:");
         print_info("Select which tools to install. You can install more later with:");
-        print_info("  ironclaw registry install <name>");
+        print_info("  axinite registry install <name>");
         println!();
 
         // Check which tools are already installed
-        let tools_dir = ironclaw_base_dir().join("tools");
+        let tools_dir = axinite_base_dir().join("tools");
         let installed_tools = discover_installed_tools(&tools_dir).await;
 
         let selected = prompt_tool_selection(&tools, &installed_tools)?;
@@ -45,7 +45,7 @@ impl SetupWizard {
         let installer = crate::registry::installer::RegistryInstaller::new(
             repo_root.to_path_buf(),
             tools_dir.clone(),
-            ironclaw_base_dir().join("channels"),
+            axinite_base_dir().join("channels"),
         );
 
         let (installed_count, auth_needed) =
@@ -156,7 +156,7 @@ fn record_auth_hint(auth_needed: &mut Vec<String>, tool: &ExtensionManifest) {
     if auth_needed.iter().any(|h| h.starts_with(&prefix)) {
         return;
     }
-    auth_needed.push(format!("  {} - ironclaw tool auth {}", provider, tool.name));
+    auth_needed.push(format!("  {} - axinite tool auth {}", provider, tool.name));
 }
 
 /// Print the install count and any pending authentication hints.

@@ -8,7 +8,7 @@ Status: COMPLETE
 
 ## Purpose / big picture
 
-After this work, when IronClaw advertises a file-loaded WebAssembly (WASM) tool
+After this work, when Axinite advertises a file-loaded WebAssembly (WASM) tool
 such as `GitHub`, the external tool definition must expose the same parameter
 schema that the tool itself exports from its WASM `schema()` function. The
 user-visible outcome is that the model sees a non-empty function definition,
@@ -186,7 +186,7 @@ Suggested command:
 set -o pipefail
 BRANCH=$(git branch --show-current | tr '/' '-')
 cargo test file_loaded_wasm_tool_exposes_exported_schema -- --nocapture \
-  2>&1 | tee /tmp/test-wasm-file-schema-red-ironclaw-${BRANCH}.out
+  2>&1 | tee /tmp/test-wasm-file-schema-red-axinite-${BRANCH}.out
 ```
 
 Expected pre-fix evidence:
@@ -270,16 +270,16 @@ Suggested commands:
 set -o pipefail
 BRANCH=$(git branch --show-current | tr '/' '-')
 cargo test --test tool_schema_validation -- --nocapture \
-  2>&1 | tee /tmp/test-tool-schema-ironclaw-${BRANCH}.out
+  2>&1 | tee /tmp/test-tool-schema-axinite-${BRANCH}.out
 set -o pipefail
 BRANCH=$(git branch --show-current | tr '/' '-')
 cargo test wasm_tool_schemas --lib -- --nocapture \
-  2>&1 | tee /tmp/test-wasm-schema-validator-ironclaw-${BRANCH}.out
+  2>&1 | tee /tmp/test-wasm-schema-validator-axinite-${BRANCH}.out
 ```
 
 ## Concrete steps
 
-Work from the repository root `/data/leynos/Projects/ironclaw`.
+Work from the repository root `/data/leynos/Projects/axinite`.
 
 1. Confirm the current placeholder path and override asymmetry:
 

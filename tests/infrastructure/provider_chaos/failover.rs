@@ -6,8 +6,8 @@ use std::time::Duration;
 
 use rust_decimal::Decimal;
 
-use ironclaw::error::LlmError;
-use ironclaw::llm::{
+use axinite::error::LlmError;
+use axinite::llm::{
     CircuitBreakerConfig, CircuitBreakerProvider, CompletionRequest, CompletionResponse,
     CooldownConfig, FailoverProvider, LlmProvider, RetryConfig, RetryProvider,
     ToolCompletionRequest, ToolCompletionResponse,
@@ -133,7 +133,7 @@ async fn test_failover_non_transient_stops_chain() {
     // Provider that returns a non-transient error.
     struct NonTransientProvider;
 
-    impl ironclaw::llm::NativeLlmProvider for NonTransientProvider {
+    impl axinite::llm::NativeLlmProvider for NonTransientProvider {
         fn model_name(&self) -> &str {
             "non-transient"
         }
@@ -207,7 +207,7 @@ async fn test_retry_plus_circuit_breaker_integration() {
     assert_eq!(response.content, "stack success");
     assert_eq!(
         cb.circuit_state().await,
-        ironclaw::llm::circuit_breaker::CircuitState::Closed,
+        axinite::llm::circuit_breaker::CircuitState::Closed,
         "circuit should remain closed"
     );
 }
@@ -278,7 +278,7 @@ async fn test_garbage_through_full_chain() {
     );
     assert_eq!(
         cb.circuit_state().await,
-        ironclaw::llm::circuit_breaker::CircuitState::Closed,
+        axinite::llm::circuit_breaker::CircuitState::Closed,
         "Ok responses should not trip the breaker"
     );
 }

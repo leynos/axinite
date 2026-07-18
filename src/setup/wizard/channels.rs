@@ -18,7 +18,7 @@ impl SetupWizard {
         println!();
 
         // Discover available WASM channels
-        let channels_dir = ironclaw_base_dir().join("channels");
+        let channels_dir = axinite_base_dir().join("channels");
 
         let mut discovered_channels = discover_wasm_channels(&channels_dir).await;
         let installed_names: HashSet<String> = discovered_channels

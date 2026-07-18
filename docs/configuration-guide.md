@@ -1,9 +1,9 @@
 # Axinite configuration guide
 
 This guide is for operators and contributors who need a complete reference for
-the current `ironclaw` command-line interface (CLI) surface and the environment
+the current `axinite` command-line interface (CLI) surface and the environment
 variables that shape axinite at runtime. The system narrative uses the name
-axinite, but commands, APIs, and filenames retain `ironclaw` where that is
+axinite, but commands, APIs, and filenames retain `axinite` where that is
 still the implemented identifier.
 
 ## 1. Configuration sources and precedence
@@ -14,22 +14,25 @@ settings once persistent state is online.
 
 Table 1. Effective configuration precedence.
 
-| Priority | Source                       | Notes                                                                                                                                                                                                                                                   |
-| -------- | ---------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Highest  | Explicit process environment | Values exported in the shell always win. Empty strings are treated as unset by the config helpers.                                                                                                                                                      |
-| High     | `./.env`                     | Loaded by `dotenvy::dotenv()` before `~/.ironclaw/.env`, and never overwrites existing process variables.                                                                                                                                               |
-| Medium   | `~/.ironclaw/.env`           | Loaded by `crate::bootstrap::load_ironclaw_env()`. This is the bootstrap layer for settings needed before database access, especially `DATABASE_URL`.                                                                                                   |
-| Medium   | Optional TOML overlay        | `Config::from_env_with_toml()` and `Config::from_db_with_toml()` overlay `~/.ironclaw/config.toml` by default, or an explicit `--config` path when one is provided. TOML overrides JSON or database settings, but still loses to environment variables. |
-| Low      | Persisted database settings  | Used once the settings store is available.                                                                                                                                                                                                              |
-| Lowest   | Code defaults                | Hard-coded defaults in `src/config/*.rs`.                                                                                                                                                                                                               |
+| Priority | Source                       | Notes                                                                                                                                                                                                                                                  |
+| -------- | ---------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Highest  | Explicit process environment | Values exported in the shell always win. Empty strings are treated as unset by the config helpers.                                                                                                                                                     |
+| High     | `./.env`                     | Loaded by `dotenvy::dotenv()` before `~/.axinite/.env`, and never overwrites existing process variables.                                                                                                                                               |
+| Medium   | `~/.axinite/.env`            | Loaded by `crate::bootstrap::load_axinite_env()`. This is the bootstrap layer for settings needed before database access, especially `DATABASE_URL`.                                                                                                   |
+| Medium   | Optional TOML overlay        | `Config::from_env_with_toml()` and `Config::from_db_with_toml()` overlay `~/.axinite/config.toml` by default, or an explicit `--config` path when one is provided. TOML overrides JSON or database settings, but still loses to environment variables. |
+| Low      | Persisted database settings  | Used once the settings store is available.                                                                                                                                                                                                             |
+| Lowest   | Code defaults                | Hard-coded defaults in `src/config/*.rs`.                                                                                                                                                                                                              |
 
 Two bootstrap details matter in practice:
 
-1. `IRONCLAW_BASE_DIR` changes the per-user base directory from
-   `~/.ironclaw` to another path. Relative paths are accepted, but the code
+1. `AXINITE_BASE_DIR` changes the per-user base directory from
+   `~/.axinite` to another path. Relative paths are accepted, but the code
    warns when one is used.
 2. If `DATABASE_BACKEND` is still unset after environment files are loaded and
-   `~/.ironclaw/ironclaw.db` exists, startup auto-selects the `libsql` backend.
+   `~/.axinite/axinite.db` exists, startup auto-selects the `libsql` backend.
+   The pre-rename `~/.axinite/ironclaw.db` is accepted as a fallback when only
+   the legacy file exists, so a migrated install keeps its data without a
+   manual file rename.
 
 For maintainers and tests, the config layer also exposes
 `crate::config::EnvContext`, an explicit snapshot of environment variables and
@@ -38,7 +41,7 @@ snapshot instead of re-reading ambient process state, which keeps precedence
 deterministic and removes the need for global environment mutation in many
 tests.
 
-## 2. Global `ironclaw` CLI options
+## 2. Global `axinite` CLI options
 
 These options apply to the root parser and are available before any subcommand.
 
@@ -49,16 +52,16 @@ Table 2. Global CLI options.
 | `--cli-only`             | Run in interactive CLI mode only and disable other channels. | Disabled by default.                                                          |
 | `--no-db`                | Skip database connection.                                    | Disabled by default. Intended mainly for testing and reduced bootstrap paths. |
 | `-m`, `--message <TEXT>` | Send one message and exit.                                   | Omitted by default.                                                           |
-| `-c`, `--config <PATH>`  | Load an explicit TOML configuration file.                    | If omitted, startup looks for the default TOML path under `~/.ironclaw`.      |
+| `-c`, `--config <PATH>`  | Load an explicit TOML configuration file.                    | If omitted, startup looks for the default TOML path under `~/.axinite`.       |
 | `--no-onboard`           | Skip the first-run onboarding check.                         | Disabled by default.                                                          |
 
-When no subcommand is supplied, `ironclaw` behaves as `ironclaw run`.
+When no subcommand is supplied, `axinite` behaves as `axinite run`.
 
 ## 3. Command reference
 
 ### 3.1 Top-level commands
 
-Table 3. Top-level commands exposed by `ironclaw`.
+Table 3. Top-level commands exposed by `axinite`.
 
 | Command         | Purpose                                                   | Notes                                                            |
 | --------------- | --------------------------------------------------------- | ---------------------------------------------------------------- |
@@ -78,9 +81,9 @@ Table 3. Top-level commands exposed by `ironclaw`.
 | `worker`        | Run the internal container worker entrypoint.             | Hidden from normal help output.                                  |
 | `claude-bridge` | Run the internal Claude Code bridge container entrypoint. | Hidden from normal help output.                                  |
 
-### 3.2 `ironclaw onboard`
+### 3.2 `axinite onboard`
 
-Table 4. `ironclaw onboard` options.
+Table 4. `axinite onboard` options.
 
 | Option            | Meaning                                                           | Notes                                                   |
 | ----------------- | ----------------------------------------------------------------- | ------------------------------------------------------- |
@@ -89,20 +92,20 @@ Table 4. `ironclaw onboard` options.
 | `--provider-only` | Reconfigure only the LLM provider and model.                      | Conflicts with `--channels-only` and `--quick`.         |
 | `--quick`         | Accept defaults for everything except the LLM provider and model. | Conflicts with `--channels-only` and `--provider-only`. |
 
-### 3.3 `ironclaw config`
+### 3.3 `axinite config`
 
-Table 5. `ironclaw config` subcommands.
+Table 5. `axinite config` subcommands.
 
-| Command | Syntax                                               | Meaning                                                        |
-| ------- | ---------------------------------------------------- | -------------------------------------------------------------- |
-| `init`  | `ironclaw config init [-o\|--output PATH] [--force]` | Emit a starter configuration file.                             |
-| `list`  | `ironclaw config list [-f\|--filter PREFIX]`         | List known configuration paths, optionally filtered by prefix. |
-| `get`   | `ironclaw config get <path>`                         | Print one configuration value.                                 |
-| `set`   | `ironclaw config set <path> <value>`                 | Persist one configuration value.                               |
-| `reset` | `ironclaw config reset <path>`                       | Remove a persisted override for one configuration path.        |
-| `path`  | `ironclaw config path`                               | Print the default TOML path.                                   |
+| Command | Syntax                                              | Meaning                                                        |
+| ------- | --------------------------------------------------- | -------------------------------------------------------------- |
+| `init`  | `axinite config init [-o\|--output PATH] [--force]` | Emit a starter configuration file.                             |
+| `list`  | `axinite config list [-f\|--filter PREFIX]`         | List known configuration paths, optionally filtered by prefix. |
+| `get`   | `axinite config get <path>`                         | Print one configuration value.                                 |
+| `set`   | `axinite config set <path> <value>`                 | Persist one configuration value.                               |
+| `reset` | `axinite config reset <path>`                       | Remove a persisted override for one configuration path.        |
+| `path`  | `axinite config path`                               | Print the default TOML path.                                   |
 
-Table 6. `ironclaw config` options.
+Table 6. `axinite config` options.
 
 | Option                    | Used by       | Meaning                                         |
 | ------------------------- | ------------- | ----------------------------------------------- |
@@ -110,20 +113,20 @@ Table 6. `ironclaw config` options.
 | `--force`                 | `config init` | Overwrite the output file if it already exists. |
 | `-f`, `--filter <PREFIX>` | `config list` | Restrict listed keys to a prefix.               |
 
-### 3.4 `ironclaw tool`
+### 3.4 `axinite tool`
 
-Table 7. `ironclaw tool` subcommands and options.
+Table 7. `axinite tool` subcommands and options.
 
-| Command   | Syntax                                                                                                                                     | Meaning                                               |
-| --------- | ------------------------------------------------------------------------------------------------------------------------------------------ | ----------------------------------------------------- |
-| `install` | `ironclaw tool install <path> [-n\|--name NAME] [--capabilities PATH] [-t\|--target PATH] [--release <BOOL>] [--skip-build] [-f\|--force]` | Install a WASM tool from a file or a crate directory. |
-| `list`    | `ironclaw tool list [-d\|--dir PATH] [-v\|--verbose]`                                                                                      | List installed tools.                                 |
-| `remove`  | `ironclaw tool remove <name> [-d\|--dir PATH]`                                                                                             | Remove an installed tool.                             |
-| `info`    | `ironclaw tool info <name-or-path> [-d\|--dir PATH]`                                                                                       | Show metadata for a tool.                             |
-| `auth`    | `ironclaw tool auth <name> [-d\|--dir PATH] [-u\|--user USER]`                                                                             | Trigger tool authentication for one user.             |
-| `setup`   | `ironclaw tool setup <name> [-d\|--dir PATH] [-u\|--user USER]`                                                                            | Run tool setup without a full install.                |
+| Command   | Syntax                                                                                                                                    | Meaning                                               |
+| --------- | ----------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------- |
+| `install` | `axinite tool install <path> [-n\|--name NAME] [--capabilities PATH] [-t\|--target PATH] [--release <BOOL>] [--skip-build] [-f\|--force]` | Install a WASM tool from a file or a crate directory. |
+| `list`    | `axinite tool list [-d\|--dir PATH] [-v\|--verbose]`                                                                                      | List installed tools.                                 |
+| `remove`  | `axinite tool remove <name> [-d\|--dir PATH]`                                                                                             | Remove an installed tool.                             |
+| `info`    | `axinite tool info <name-or-path> [-d\|--dir PATH]`                                                                                       | Show metadata for a tool.                             |
+| `auth`    | `axinite tool auth <name> [-d\|--dir PATH] [-u\|--user USER]`                                                                             | Trigger tool authentication for one user.             |
+| `setup`   | `axinite tool setup <name> [-d\|--dir PATH] [-u\|--user USER]`                                                                            | Run tool setup without a full install.                |
 
-Table 8. `ironclaw tool` option meanings.
+Table 8. `axinite tool` option meanings.
 
 | Option                  | Meaning                                                                  | Notes                                                  |
 | ----------------------- | ------------------------------------------------------------------------ | ------------------------------------------------------ |
@@ -137,18 +140,18 @@ Table 8. `ironclaw tool` option meanings.
 | `-v`, `--verbose`       | Show extra metadata.                                                     | `tool list` only.                                      |
 | `-u`, `--user <USER>`   | Select the user identity for auth or setup.                              | Defaults to `default`.                                 |
 
-### 3.5 `ironclaw registry`
+### 3.5 `axinite registry`
 
-Table 9. `ironclaw registry` subcommands and options.
+Table 9. `axinite registry` subcommands and options.
 
-| Command            | Syntax                                                                     | Meaning                           |
-| ------------------ | -------------------------------------------------------------------------- | --------------------------------- |
-| `list`             | `ironclaw registry list [-k\|--kind KIND] [-t\|--tag TAG] [-v\|--verbose]` | List registry entries.            |
-| `info`             | `ironclaw registry info <name>`                                            | Show one registry entry.          |
-| `install`          | `ironclaw registry install <name> [-f\|--force] [--build]`                 | Install one registry entry.       |
-| `install-defaults` | `ironclaw registry install-defaults [-f\|--force] [--build]`               | Install the default registry set. |
+| Command            | Syntax                                                                    | Meaning                           |
+| ------------------ | ------------------------------------------------------------------------- | --------------------------------- |
+| `list`             | `axinite registry list [-k\|--kind KIND] [-t\|--tag TAG] [-v\|--verbose]` | List registry entries.            |
+| `info`             | `axinite registry info <name>`                                            | Show one registry entry.          |
+| `install`          | `axinite registry install <name> [-f\|--force] [--build]`                 | Install one registry entry.       |
+| `install-defaults` | `axinite registry install-defaults [-f\|--force] [--build]`               | Install the default registry set. |
 
-Table 10. `ironclaw registry` option meanings.
+Table 10. `axinite registry` option meanings.
 
 | Option                | Meaning                                    | Notes                                               |
 | --------------------- | ------------------------------------------ | --------------------------------------------------- |
@@ -158,20 +161,20 @@ Table 10. `ironclaw registry` option meanings.
 | `-f`, `--force`       | Replace an existing installation.          | `registry install` and `registry install-defaults`. |
 | `--build`             | Build the extension from source if needed. | `registry install` and `registry install-defaults`. |
 
-### 3.6 `ironclaw mcp`
+### 3.6 `axinite mcp`
 
-Table 11. `ironclaw mcp` subcommands.
+Table 11. `axinite mcp` subcommands.
 
-| Command  | Syntax                                                                                                                                                                                                                                                 | Meaning                                      |
-| -------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | -------------------------------------------- |
-| `add`    | `ironclaw mcp add <name> [url] [--transport http\|stdio\|unix] [--command CMD] [--arg ARG ...] [--env KEY=VALUE ...] [--socket PATH] [--header KEY:VALUE ...] [--client-id ID] [--auth-url URL] [--token-url URL] [--scopes CSV] [--description TEXT]` | Register an MCP server definition.           |
-| `remove` | `ironclaw mcp remove <name>`                                                                                                                                                                                                                           | Remove an MCP server definition.             |
-| `list`   | `ironclaw mcp list [-v\|--verbose]`                                                                                                                                                                                                                    | List registered MCP servers.                 |
-| `auth`   | `ironclaw mcp auth <name> [-u\|--user USER]`                                                                                                                                                                                                           | Authenticate one MCP server for one user.    |
-| `test`   | `ironclaw mcp test <name> [-u\|--user USER]`                                                                                                                                                                                                           | Test one MCP server for one user.            |
-| `toggle` | `ironclaw mcp toggle <name> [--enable\|--disable]`                                                                                                                                                                                                     | Enable or disable one MCP server definition. |
+| Command  | Syntax                                                                                                                                                                                                                                                | Meaning                                      |
+| -------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------- |
+| `add`    | `axinite mcp add <name> [url] [--transport http\|stdio\|unix] [--command CMD] [--arg ARG ...] [--env KEY=VALUE ...] [--socket PATH] [--header KEY:VALUE ...] [--client-id ID] [--auth-url URL] [--token-url URL] [--scopes CSV] [--description TEXT]` | Register an MCP server definition.           |
+| `remove` | `axinite mcp remove <name>`                                                                                                                                                                                                                           | Remove an MCP server definition.             |
+| `list`   | `axinite mcp list [-v\|--verbose]`                                                                                                                                                                                                                    | List registered MCP servers.                 |
+| `auth`   | `axinite mcp auth <name> [-u\|--user USER]`                                                                                                                                                                                                           | Authenticate one MCP server for one user.    |
+| `test`   | `axinite mcp test <name> [-u\|--user USER]`                                                                                                                                                                                                           | Test one MCP server for one user.            |
+| `toggle` | `axinite mcp toggle <name> [--enable\|--disable]`                                                                                                                                                                                                     | Enable or disable one MCP server definition. |
 
-Table 12. `ironclaw mcp` option meanings.
+Table 12. `axinite mcp` option meanings.
 
 | Option                            | Meaning                                                | Notes                                          |
 | --------------------------------- | ------------------------------------------------------ | ---------------------------------------------- |
@@ -191,19 +194,19 @@ Table 12. `ironclaw mcp` option meanings.
 | `--enable`                        | Enable the target server.                              | `mcp toggle` only, conflicts with `--disable`. |
 | `--disable`                       | Disable the target server.                             | `mcp toggle` only, conflicts with `--enable`.  |
 
-### 3.7 `ironclaw memory`
+### 3.7 `axinite memory`
 
-Table 13. `ironclaw memory` subcommands and options.
+Table 13. `axinite memory` subcommands and options.
 
-| Command  | Syntax                                                  | Meaning                            |
-| -------- | ------------------------------------------------------- | ---------------------------------- |
-| `search` | `ironclaw memory search <query> [-l\|--limit N]`        | Search workspace memory.           |
-| `read`   | `ironclaw memory read <path>`                           | Read one memory document.          |
-| `write`  | `ironclaw memory write <path> [content] [-a\|--append]` | Write or append a memory document. |
-| `tree`   | `ironclaw memory tree [path] [-d\|--depth N]`           | Print a tree view of memory paths. |
-| `status` | `ironclaw memory status`                                | Show memory subsystem status.      |
+| Command  | Syntax                                                 | Meaning                            |
+| -------- | ------------------------------------------------------ | ---------------------------------- |
+| `search` | `axinite memory search <query> [-l\|--limit N]`        | Search workspace memory.           |
+| `read`   | `axinite memory read <path>`                           | Read one memory document.          |
+| `write`  | `axinite memory write <path> [content] [-a\|--append]` | Write or append a memory document. |
+| `tree`   | `axinite memory tree [path] [-d\|--depth N]`           | Print a tree view of memory paths. |
+| `status` | `axinite memory status`                                | Show memory subsystem status.      |
 
-Table 14. `ironclaw memory` option meanings.
+Table 14. `axinite memory` option meanings.
 
 | Option              | Meaning                               | Notes                |
 | ------------------- | ------------------------------------- | -------------------- |
@@ -211,32 +214,32 @@ Table 14. `ironclaw memory` option meanings.
 | `-a`, `--append`    | Append instead of replacing the file. | `memory write` only. |
 | `-d`, `--depth <N>` | Limit tree traversal depth.           | Defaults to `3`.     |
 
-### 3.8 `ironclaw pairing`, `service`, `completion`, `doctor`, and `status`
+### 3.8 `axinite pairing`, `service`, `completion`, `doctor`, and `status`
 
 Table 15. Remaining user-facing commands.
 
-| Command             | Syntax                                                              | Meaning                                        |
-| ------------------- | ------------------------------------------------------------------- | ---------------------------------------------- |
-| `pairing list`      | `ironclaw pairing list <channel> [--json]`                          | List pending pairing requests for one channel. |
-| `pairing approve`   | `ironclaw pairing approve <channel> <code>`                         | Approve one pairing request.                   |
-| `service install`   | `ironclaw service install`                                          | Install the operating-system service.          |
-| `service start`     | `ironclaw service start`                                            | Start the service.                             |
-| `service stop`      | `ironclaw service stop`                                             | Stop the service.                              |
-| `service status`    | `ironclaw service status`                                           | Show service status.                           |
-| `service uninstall` | `ironclaw service uninstall`                                        | Remove the service.                            |
-| `completion`        | `ironclaw completion --shell <bash\|elvish\|fish\|powershell\|zsh>` | Generate shell completions.                    |
-| `doctor`            | `ironclaw doctor`                                                   | Run dependency and configuration diagnostics.  |
-| `status`            | `ironclaw status`                                                   | Show runtime status and diagnostics.           |
+| Command             | Syntax                                                             | Meaning                                        |
+| ------------------- | ------------------------------------------------------------------ | ---------------------------------------------- |
+| `pairing list`      | `axinite pairing list <channel> [--json]`                          | List pending pairing requests for one channel. |
+| `pairing approve`   | `axinite pairing approve <channel> <code>`                         | Approve one pairing request.                   |
+| `service install`   | `axinite service install`                                          | Install the operating-system service.          |
+| `service start`     | `axinite service start`                                            | Start the service.                             |
+| `service stop`      | `axinite service stop`                                             | Stop the service.                              |
+| `service status`    | `axinite service status`                                           | Show service status.                           |
+| `service uninstall` | `axinite service uninstall`                                        | Remove the service.                            |
+| `completion`        | `axinite completion --shell <bash\|elvish\|fish\|powershell\|zsh>` | Generate shell completions.                    |
+| `doctor`            | `axinite doctor`                                                   | Run dependency and configuration diagnostics.  |
+| `status`            | `axinite status`                                                   | Show runtime status and diagnostics.           |
 
 ### 3.9 Feature-gated and hidden commands
 
 Table 16. Feature-gated and hidden commands.
 
-| Command           | Syntax                                                                                          | Meaning                                                                                                      |
-| ----------------- | ----------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------ |
-| `import openclaw` | `ironclaw import openclaw [--path PATH] [--dry-run] [--re-embed] [--user-id USER]`              | Import from an OpenClaw data source when the `import` feature is enabled.                                    |
-| `worker`          | `ironclaw worker --job-id UUID [--orchestrator-url URL] [--max-iterations N]`                   | Internal sandbox worker entrypoint. Defaults to `http://host.docker.internal:50051` and `50`.                |
-| `claude-bridge`   | `ironclaw claude-bridge --job-id UUID [--orchestrator-url URL] [--max-turns N] [--model MODEL]` | Internal Claude Code bridge entrypoint. Defaults to `http://host.docker.internal:50051`, `50`, and `sonnet`. |
+| Command           | Syntax                                                                                         | Meaning                                                                                                      |
+| ----------------- | ---------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------ |
+| `import openclaw` | `axinite import openclaw [--path PATH] [--dry-run] [--re-embed] [--user-id USER]`              | Import from an OpenClaw data source when the `import` feature is enabled.                                    |
+| `worker`          | `axinite worker --job-id UUID [--orchestrator-url URL] [--max-iterations N]`                   | Internal sandbox worker entrypoint. Defaults to `http://host.docker.internal:50051` and `50`.                |
+| `claude-bridge`   | `axinite claude-bridge --job-id UUID [--orchestrator-url URL] [--max-turns N] [--model MODEL]` | Internal Claude Code bridge entrypoint. Defaults to `http://host.docker.internal:50051`, `50`, and `sonnet`. |
 
 ## 4. Environment variables
 
@@ -246,10 +249,10 @@ Table 17. Bootstrap and configuration-source environment variables.
 
 | Variable                | Meaning                                                          | Default or rule                                                                                                                                        |
 | ----------------------- | ---------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `IRONCLAW_BASE_DIR`     | Override the per-user base directory.                            | Defaults to `~/.ironclaw`. An empty string is treated as unset.                                                                                        |
+| `AXINITE_BASE_DIR`      | Override the per-user base directory.                            | Defaults to `~/.axinite`. An empty string is treated as unset.                                                                                         |
 | `DATABASE_BACKEND`      | Select the database backend.                                     | Accepted values include `postgres`, `postgresql`, `pg`, `libsql`, `turso`, and `sqlite`. Defaults to `postgres` unless libSQL auto-detection triggers. |
 | `DATABASE_URL`          | PostgreSQL connection string.                                    | Required unless the effective backend is `libsql`.                                                                                                     |
-| `ONBOARD_COMPLETED`     | Mark onboarding as complete for first-run checks.                | Written to `~/.ironclaw/.env` by the setup wizard. The first-run check treats `true` as complete.                                                      |
+| `ONBOARD_COMPLETED`     | Mark onboarding as complete for first-run checks.                | Written to `~/.axinite/.env` by the setup wizard. The first-run check treats `true` as complete.                                                       |
 | `WORKSPACE_IMPORT_DIR`  | Import workspace files from a directory before built-in seeding. | Optional. Files are imported only when they do not already exist in the workspace store.                                                               |
 | `OBSERVABILITY_BACKEND` | Select the observer backend.                                     | `none` or `noop` discard events; `log` emits them via `tracing`. Unknown values currently fall back to `noop`.                                         |
 
@@ -261,7 +264,7 @@ Table 18. Database and secrets environment variables.
 | -------------------- | ----------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------- |
 | `DATABASE_POOL_SIZE` | PostgreSQL connection-pool size.          | Defaults to `10`.                                                                                                                 |
 | `DATABASE_SSLMODE`   | PostgreSQL TLS mode.                      | `disable`, `prefer`, or `require`; defaults to `prefer`.                                                                          |
-| `LIBSQL_PATH`        | Local libSQL database path.               | Defaults to `~/.ironclaw/ironclaw.db` when `DATABASE_BACKEND=libsql`.                                                             |
+| `LIBSQL_PATH`        | Local libSQL database path.               | Defaults to `~/.axinite/axinite.db` when `DATABASE_BACKEND=libsql`.                                                               |
 | `LIBSQL_URL`         | Remote libSQL or Turso sync URL.          | Optional.                                                                                                                         |
 | `LIBSQL_AUTH_TOKEN`  | Auth token for `LIBSQL_URL`.              | Required when `LIBSQL_URL` is set.                                                                                                |
 | `SECRETS_MASTER_KEY` | Master key for encrypted secrets storage. | Optional, but must be at least 32 bytes when set. If omitted, axinite falls back to the operating-system keychain when available. |
@@ -270,7 +273,7 @@ When workspace memory search is enabled, backend choice affects how semantic
 retrieval runs. PostgreSQL uses pgvector cosine-distance queries. libSQL uses
 indexed `vector_top_k(...)` only when a compatible fixed-dimension vector index
 exists; otherwise it falls back to brute-force cosine similarity in Rust.
-`ironclaw doctor` and `ironclaw status` surface the active search mode. See
+`axinite doctor` and `axinite status` surface the active search mode. See
 [database integrations](database-integrations.md) for the backend trade-offs.
 
 ### 4.3 Agent runtime, safety, routines, heartbeat, hygiene, skills, and builder mode
@@ -315,8 +318,8 @@ Table 19. Core runtime behaviour variables.
 | `MEMORY_HYGIENE_CONVERSATION_RETENTION_DAYS` | Retention for `conversations/` memory documents.                                                       | Defaults to `7`.                                                   |
 | `MEMORY_HYGIENE_CADENCE_HOURS`               | Minimum interval between hygiene passes.                                                               | Defaults to `12`.                                                  |
 | `SKILLS_ENABLED`                             | Enable the skills subsystem.                                                                           | Boolean, default `true`.                                           |
-| `SKILLS_DIR`                                 | Directory for locally placed skills.                                                                   | Defaults to `~/.ironclaw/skills`.                                  |
-| `SKILLS_INSTALLED_DIR`                       | Directory for registry-installed skills.                                                               | Defaults to `~/.ironclaw/installed_skills`.                        |
+| `SKILLS_DIR`                                 | Directory for locally placed skills.                                                                   | Defaults to `~/.axinite/skills`.                                   |
+| `SKILLS_INSTALLED_DIR`                       | Directory for registry-installed skills.                                                               | Defaults to `~/.axinite/installed_skills`.                         |
 | `SKILLS_MAX_ACTIVE`                          | Maximum simultaneously active skills.                                                                  | Defaults to `3`.                                                   |
 | `SKILLS_MAX_CONTEXT_TOKENS`                  | Maximum prompt-budget tokens allocated to skills.                                                      | Defaults to `4000`.                                                |
 | `BUILDER_ENABLED`                            | Enable builder mode.                                                                                   | Boolean, default `true`.                                           |
@@ -329,48 +332,48 @@ Table 19. Core runtime behaviour variables.
 
 Table 20. Channel, gateway, tunnel, and relay environment variables.
 
-| Variable                      | Meaning                                                          | Default or rule                                                                                                      |
-| ----------------------------- | ---------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------- |
-| `CLI_ENABLED`                 | Enable the CLI channel.                                          | Truthy by default; `false` or `0` disables it.                                                                       |
-| `HTTP_HOST`                   | Bind address for the HTTP and webhook channel.                   | Only enabling HTTP when `HTTP_HOST` or `HTTP_PORT` is set. Defaults to `0.0.0.0` once enabled.                       |
-| `HTTP_PORT`                   | Port for the HTTP and webhook channel.                           | Enables HTTP when set; defaults to `8080` once enabled.                                                              |
-| `HTTP_WEBHOOK_SECRET`         | Shared secret for validating webhook traffic.                    | Optional, and by itself does not enable the HTTP listener.                                                           |
-| `HTTP_USER_ID`                | User ID associated with the HTTP channel.                        | Defaults to `http`.                                                                                                  |
-| `GATEWAY_ENABLED`             | Enable the browser gateway channel.                              | Boolean, default `true`.                                                                                             |
-| `GATEWAY_HOST`                | Bind address for the web gateway.                                | Defaults to `127.0.0.1`.                                                                                             |
-| `GATEWAY_PORT`                | Port for the web gateway.                                        | Defaults to `3000`.                                                                                                  |
-| `GATEWAY_AUTH_TOKEN`          | Bearer token for the gateway.                                    | Optional; generated at runtime if omitted.                                                                           |
-| `GATEWAY_USER_ID`             | User ID associated with the gateway.                             | Defaults to `default`.                                                                                               |
-| `SIGNAL_HTTP_URL`             | Base URL for the `signal-cli` HTTP endpoint.                     | Optional. Enables Signal support when set.                                                                           |
-| `SIGNAL_ACCOUNT`              | Account identifier for Signal.                                   | Required when `SIGNAL_HTTP_URL` is set.                                                                              |
-| `SIGNAL_ALLOW_FROM`           | Comma-separated allowlist for direct messages.                   | Defaults to the configured Signal account, which effectively self-allowlists only that account until changed.        |
-| `SIGNAL_ALLOW_FROM_GROUPS`    | Comma-separated allowlist for group IDs.                         | Empty by default.                                                                                                    |
-| `SIGNAL_DM_POLICY`            | Direct-message policy.                                           | `open`, `allowlist`, or `pairing`; defaults to `pairing`.                                                            |
-| `SIGNAL_GROUP_POLICY`         | Group-message policy.                                            | `allowlist`, `open`, or `disabled`; defaults to `allowlist`.                                                         |
-| `SIGNAL_GROUP_ALLOW_FROM`     | Comma-separated allowlist for senders inside groups.             | Empty by default, which causes the runtime to inherit `SIGNAL_ALLOW_FROM`.                                           |
-| `SIGNAL_IGNORE_ATTACHMENTS`   | Ignore messages that only contain attachments.                   | Accepts `true` or `1`; defaults to `false`.                                                                          |
-| `SIGNAL_IGNORE_STORIES`       | Ignore Signal story messages.                                    | Accepts `true` or `1`; defaults to `true`.                                                                           |
-| `WASM_CHANNELS_DIR`           | Directory containing installed WASM channels.                    | Defaults to `~/.ironclaw/channels`.                                                                                  |
-| `WASM_CHANNELS_ENABLED`       | Enable WASM channels.                                            | Boolean, default `true`.                                                                                             |
-| `TELEGRAM_OWNER_ID`           | Back-compat single-owner Telegram override.                      | Optional integer. Injects a telegram-only owner ID into the channel settings map.                                    |
-| `TUNNEL_URL`                  | Static public HTTPS URL for webhook-capable channels.            | Optional, but must start with `https://` when set.                                                                   |
-| `TUNNEL_PROVIDER`             | Managed tunnel provider name.                                    | Optional. `none` or an empty value disables managed tunnelling.                                                      |
-| `TUNNEL_CF_TOKEN`             | Cloudflare tunnel token.                                         | Used when the provider is Cloudflare.                                                                                |
-| `TUNNEL_TS_FUNNEL`            | Enable Tailscale Funnel mode.                                    | Accepts `true` or `1`; otherwise false.                                                                              |
-| `TUNNEL_TS_HOSTNAME`          | Tailscale hostname.                                              | Optional.                                                                                                            |
-| `TUNNEL_NGROK_DOMAIN`         | Reserved ngrok domain.                                           | Optional.                                                                                                            |
-| `TUNNEL_NGROK_TOKEN`          | ngrok auth token.                                                | Optional. Passed to the ngrok child process as `NGROK_AUTHTOKEN`.                                                    |
-| `TUNNEL_CUSTOM_HEALTH_URL`    | Health probe URL for a custom tunnel launcher.                   | Optional.                                                                                                            |
-| `TUNNEL_CUSTOM_URL_PATTERN`   | Pattern for extracting the public URL from custom tunnel output. | Optional.                                                                                                            |
-| `TUNNEL_CUSTOM_COMMAND`       | Command used to launch a custom tunnel.                          | Optional.                                                                                                            |
-| `CHANNEL_RELAY_URL`           | Base URL for the external channel relay service.                 | The relay integration is enabled only when both this variable and `CHANNEL_RELAY_API_KEY` are set.                   |
-| `CHANNEL_RELAY_API_KEY`       | API key for the relay service.                                   | Required with `CHANNEL_RELAY_URL`.                                                                                   |
-| `IRONCLAW_OAUTH_CALLBACK_URL` | Override the OAuth callback base URL.                            | Optional. Also used to decide whether OAuth should be routed through the web gateway instead of a loopback listener. |
-| `IRONCLAW_INSTANCE_ID`        | Override the relay instance identifier.                          | Optional.                                                                                                            |
-| `RELAY_REQUEST_TIMEOUT_SECS`  | Relay HTTP request timeout.                                      | Defaults to `30`.                                                                                                    |
-| `RELAY_STREAM_TIMEOUT_SECS`   | Relay long-poll or stream timeout.                               | Defaults to `86400`.                                                                                                 |
-| `RELAY_BACKOFF_INITIAL_MS`    | Initial exponential-backoff interval for relay retries.          | Defaults to `1000`.                                                                                                  |
-| `RELAY_BACKOFF_MAX_MS`        | Maximum exponential-backoff interval for relay retries.          | Defaults to `60000`.                                                                                                 |
+| Variable                     | Meaning                                                          | Default or rule                                                                                                      |
+| ---------------------------- | ---------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------- |
+| `CLI_ENABLED`                | Enable the CLI channel.                                          | Truthy by default; `false` or `0` disables it.                                                                       |
+| `HTTP_HOST`                  | Bind address for the HTTP and webhook channel.                   | Only enabling HTTP when `HTTP_HOST` or `HTTP_PORT` is set. Defaults to `0.0.0.0` once enabled.                       |
+| `HTTP_PORT`                  | Port for the HTTP and webhook channel.                           | Enables HTTP when set; defaults to `8080` once enabled.                                                              |
+| `HTTP_WEBHOOK_SECRET`        | Shared secret for validating webhook traffic.                    | Optional, and by itself does not enable the HTTP listener.                                                           |
+| `HTTP_USER_ID`               | User ID associated with the HTTP channel.                        | Defaults to `http`.                                                                                                  |
+| `GATEWAY_ENABLED`            | Enable the browser gateway channel.                              | Boolean, default `true`.                                                                                             |
+| `GATEWAY_HOST`               | Bind address for the web gateway.                                | Defaults to `127.0.0.1`.                                                                                             |
+| `GATEWAY_PORT`               | Port for the web gateway.                                        | Defaults to `3000`.                                                                                                  |
+| `GATEWAY_AUTH_TOKEN`         | Bearer token for the gateway.                                    | Optional; generated at runtime if omitted.                                                                           |
+| `GATEWAY_USER_ID`            | User ID associated with the gateway.                             | Defaults to `default`.                                                                                               |
+| `SIGNAL_HTTP_URL`            | Base URL for the `signal-cli` HTTP endpoint.                     | Optional. Enables Signal support when set.                                                                           |
+| `SIGNAL_ACCOUNT`             | Account identifier for Signal.                                   | Required when `SIGNAL_HTTP_URL` is set.                                                                              |
+| `SIGNAL_ALLOW_FROM`          | Comma-separated allowlist for direct messages.                   | Defaults to the configured Signal account, which effectively self-allowlists only that account until changed.        |
+| `SIGNAL_ALLOW_FROM_GROUPS`   | Comma-separated allowlist for group IDs.                         | Empty by default.                                                                                                    |
+| `SIGNAL_DM_POLICY`           | Direct-message policy.                                           | `open`, `allowlist`, or `pairing`; defaults to `pairing`.                                                            |
+| `SIGNAL_GROUP_POLICY`        | Group-message policy.                                            | `allowlist`, `open`, or `disabled`; defaults to `allowlist`.                                                         |
+| `SIGNAL_GROUP_ALLOW_FROM`    | Comma-separated allowlist for senders inside groups.             | Empty by default, which causes the runtime to inherit `SIGNAL_ALLOW_FROM`.                                           |
+| `SIGNAL_IGNORE_ATTACHMENTS`  | Ignore messages that only contain attachments.                   | Accepts `true` or `1`; defaults to `false`.                                                                          |
+| `SIGNAL_IGNORE_STORIES`      | Ignore Signal story messages.                                    | Accepts `true` or `1`; defaults to `true`.                                                                           |
+| `WASM_CHANNELS_DIR`          | Directory containing installed WASM channels.                    | Defaults to `~/.axinite/channels`.                                                                                   |
+| `WASM_CHANNELS_ENABLED`      | Enable WASM channels.                                            | Boolean, default `true`.                                                                                             |
+| `TELEGRAM_OWNER_ID`          | Back-compat single-owner Telegram override.                      | Optional integer. Injects a telegram-only owner ID into the channel settings map.                                    |
+| `TUNNEL_URL`                 | Static public HTTPS URL for webhook-capable channels.            | Optional, but must start with `https://` when set.                                                                   |
+| `TUNNEL_PROVIDER`            | Managed tunnel provider name.                                    | Optional. `none` or an empty value disables managed tunnelling.                                                      |
+| `TUNNEL_CF_TOKEN`            | Cloudflare tunnel token.                                         | Used when the provider is Cloudflare.                                                                                |
+| `TUNNEL_TS_FUNNEL`           | Enable Tailscale Funnel mode.                                    | Accepts `true` or `1`; otherwise false.                                                                              |
+| `TUNNEL_TS_HOSTNAME`         | Tailscale hostname.                                              | Optional.                                                                                                            |
+| `TUNNEL_NGROK_DOMAIN`        | Reserved ngrok domain.                                           | Optional.                                                                                                            |
+| `TUNNEL_NGROK_TOKEN`         | ngrok auth token.                                                | Optional. Passed to the ngrok child process as `NGROK_AUTHTOKEN`.                                                    |
+| `TUNNEL_CUSTOM_HEALTH_URL`   | Health probe URL for a custom tunnel launcher.                   | Optional.                                                                                                            |
+| `TUNNEL_CUSTOM_URL_PATTERN`  | Pattern for extracting the public URL from custom tunnel output. | Optional.                                                                                                            |
+| `TUNNEL_CUSTOM_COMMAND`      | Command used to launch a custom tunnel.                          | Optional.                                                                                                            |
+| `CHANNEL_RELAY_URL`          | Base URL for the external channel relay service.                 | The relay integration is enabled only when both this variable and `CHANNEL_RELAY_API_KEY` are set.                   |
+| `CHANNEL_RELAY_API_KEY`      | API key for the relay service.                                   | Required with `CHANNEL_RELAY_URL`.                                                                                   |
+| `AXINITE_OAUTH_CALLBACK_URL` | Override the OAuth callback base URL.                            | Optional. Also used to decide whether OAuth should be routed through the web gateway instead of a loopback listener. |
+| `AXINITE_INSTANCE_ID`        | Override the relay instance identifier.                          | Optional.                                                                                                            |
+| `RELAY_REQUEST_TIMEOUT_SECS` | Relay HTTP request timeout.                                      | Defaults to `30`.                                                                                                    |
+| `RELAY_STREAM_TIMEOUT_SECS`  | Relay long-poll or stream timeout.                               | Defaults to `86400`.                                                                                                 |
+| `RELAY_BACKOFF_INITIAL_MS`   | Initial exponential-backoff interval for relay retries.          | Defaults to `1000`.                                                                                                  |
+| `RELAY_BACKOFF_MAX_MS`       | Maximum exponential-backoff interval for relay retries.          | Defaults to `60000`.                                                                                                 |
 
 ### 4.5 LLM selection, failover, embeddings, and transcription
 
@@ -381,7 +384,7 @@ Table 21. LLM routing and provider-selection environment variables.
 | `LLM_BACKEND`                   | Select the primary LLM backend.                                       | Defaults to `nearai`. Known backends include `nearai`, `bedrock`, and the provider IDs in `providers.json`. Unknown values fall back to the generic OpenAI-compatible provider definition. |
 | `LLM_REQUEST_TIMEOUT_SECS`      | End-to-end request timeout for LLM calls.                             | Defaults to `120`.                                                                                                                                                                         |
 | `NEARAI_AUTH_URL`               | OAuth or auth base URL for the NEAR AI session manager.               | Defaults to `https://private.near.ai`.                                                                                                                                                     |
-| `NEARAI_SESSION_PATH`           | Session file path for NEAR AI auth state.                             | Defaults to `~/.ironclaw/session.json`.                                                                                                                                                    |
+| `NEARAI_SESSION_PATH`           | Session file path for NEAR AI auth state.                             | Defaults to `~/.axinite/session.json`.                                                                                                                                                     |
 | `NEARAI_SESSION_TOKEN`          | Inject a NEAR AI session token directly through the environment.      | Optional. Takes precedence over any token loaded from `NEARAI_SESSION_PATH`.                                                                                                               |
 | `NEARAI_API_KEY`                | NEAR AI API key.                                                      | Optional. When present, the default NEAR AI base URL switches to the cloud endpoint.                                                                                                       |
 | `NEARAI_MODEL`                  | Primary NEAR AI model.                                                | Defaults to `zai-org/GLM-latest`.                                                                                                                                                          |
@@ -417,7 +420,7 @@ Table 21. LLM routing and provider-selection environment variables.
 
 The shipped `providers.json` file defines the built-in non-Bedrock, non-NEAR-AI
 provider backends. Operators can override or extend this file with
-`~/.ironclaw/providers.json`, in which case the environment-variable names come
+`~/.axinite/providers.json`, in which case the environment-variable names come
 from the custom provider definition rather than this table.
 
 Table 22. Built-in provider-specific environment variables from
@@ -452,7 +455,7 @@ Table 23. WASM, sandbox, and development-override environment variables.
 | Variable                        | Meaning                                                                                 | Default or rule                                                                                                                    |
 | ------------------------------- | --------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------- |
 | `WASM_ENABLED`                  | Enable WASM tool execution.                                                             | Boolean, default `true`.                                                                                                           |
-| `WASM_TOOLS_DIR`                | Directory containing installed WASM tools.                                              | Defaults to `~/.ironclaw/tools`.                                                                                                   |
+| `WASM_TOOLS_DIR`                | Directory containing installed WASM tools.                                              | Defaults to `~/.axinite/tools`.                                                                                                    |
 | `WASM_DEFAULT_MEMORY_LIMIT`     | Default WASM memory limit in bytes.                                                     | Defaults to `10485760` (10 MiB).                                                                                                   |
 | `WASM_DEFAULT_TIMEOUT_SECS`     | Default WASM execution timeout.                                                         | Defaults to `60`.                                                                                                                  |
 | `WASM_DEFAULT_FUEL_LIMIT`       | Default WASM fuel budget.                                                               | Defaults to `10000000`.                                                                                                            |
@@ -463,7 +466,7 @@ Table 23. WASM, sandbox, and development-override environment variables.
 | `SANDBOX_TIMEOUT_SECS`          | Sandbox command timeout.                                                                | Defaults to `120`.                                                                                                                 |
 | `SANDBOX_MEMORY_LIMIT_MB`       | Sandbox memory limit in MiB.                                                            | Defaults to `2048`.                                                                                                                |
 | `SANDBOX_CPU_SHARES`            | Relative CPU share weight.                                                              | Defaults to `1024`.                                                                                                                |
-| `SANDBOX_IMAGE`                 | Docker image used for sandbox workers.                                                  | Defaults to `ironclaw-worker:latest`.                                                                                              |
+| `SANDBOX_IMAGE`                 | Docker image used for sandbox workers.                                                  | Defaults to `axinite-worker:latest`.                                                                                               |
 | `SANDBOX_AUTO_PULL`             | Auto-pull the sandbox image when missing.                                               | Boolean, default `true`.                                                                                                           |
 | `SANDBOX_EXTRA_DOMAINS`         | Comma-separated extra network allowlist entries.                                        | Optional.                                                                                                                          |
 | `SANDBOX_REAPER_INTERVAL_SECS`  | Reaper scan interval.                                                                   | Defaults to `300`, and must be greater than `0`.                                                                                   |
@@ -474,8 +477,8 @@ Table 23. WASM, sandbox, and development-override environment variables.
 | `CLAUDE_CODE_MAX_TURNS`         | Maximum turns for Claude Code runs.                                                     | Defaults to `50`.                                                                                                                  |
 | `CLAUDE_CODE_MEMORY_LIMIT_MB`   | Memory limit for Claude Code containers.                                                | Defaults to `4096`.                                                                                                                |
 | `CLAUDE_CODE_ALLOWED_TOOLS`     | Comma-separated allowlist for Claude Code auto-approved tools.                          | Defaults to a built-in list covering read, write, edit, bash, task, and web tools.                                                 |
-| `IRONCLAW_TOOLS_SRC`            | Override the development `tools-src/` directory.                                        | Intended for development or packaging flows, not normal runtime configuration.                                                     |
-| `IRONCLAW_CHANNELS_SRC`         | Override the development `channels-src/` directory.                                     | Intended for development or packaging flows, not normal runtime configuration.                                                     |
+| `AXINITE_TOOLS_SRC`             | Override the development `tools-src/` directory.                                        | Intended for development or packaging flows, not normal runtime configuration.                                                     |
+| `AXINITE_CHANNELS_SRC`          | Override the development `channels-src/` directory.                                     | Intended for development or packaging flows, not normal runtime configuration.                                                     |
 | `CARGO_TARGET_DIR`              | Override the shared Cargo target directory used when locating dev-built WASM artefacts. | Development-only.                                                                                                                  |
 | `CLAWHUB_REGISTRY`              | Override the skill-catalogue registry base URL.                                         | Development or staging override.                                                                                                   |
 | `CLAWDHUB_REGISTRY`             | Legacy fallback for `CLAWHUB_REGISTRY`.                                                 | Kept for backward compatibility.                                                                                                   |
@@ -484,25 +487,25 @@ Table 23. WASM, sandbox, and development-override environment variables.
 
 Table 24. Advanced, internal, and debug-oriented environment variables.
 
-| Variable                      | Meaning                                                                                                | Default or rule                                                                        |
-| ----------------------------- | ------------------------------------------------------------------------------------------------------ | -------------------------------------------------------------------------------------- |
-| `IRONCLAW_OAUTH_EXCHANGE_URL` | Proxy URL used by gateway OAuth completion to exchange the authorization code through another service. | Optional. When unset, the gateway exchanges directly with the upstream token endpoint. |
-| `OAUTH_CALLBACK_HOST`         | Host used by the local OAuth callback listener.                                                        | Defaults to `127.0.0.1`. Wildcard addresses such as `0.0.0.0` and `::` are rejected.   |
-| `IRONCLAW_INSTANCE_NAME`      | Prefix applied to OAuth CSRF state for platform routing.                                               | Optional.                                                                              |
-| `OPENCLAW_INSTANCE_NAME`      | Legacy fallback for `IRONCLAW_INSTANCE_NAME`.                                                          | Optional, kept for backwards compatibility.                                            |
-| `IRONCLAW_USER_ID`            | Override the relay-auth user UUID derivation.                                                          | Optional.                                                                              |
-| `IRONCLAW_RECORD_TRACE`       | Enable LLM trace recording when set to any non-empty value.                                            | Disabled when unset or empty.                                                          |
-| `IRONCLAW_TRACE_OUTPUT`       | Output file path for recorded traces.                                                                  | Defaults to `./trace_<timestamp>.json`.                                                |
-| `IRONCLAW_TRACE_MODEL_NAME`   | Override the model name stored in a trace file.                                                        | Defaults to `recorded-<inner-model-name>`.                                             |
-| `IRONCLAW_IN_DOCKER`          | Declare that the host is running inside the Docker restart environment.                                | Must be `true` for the restart tool to perform a process exit.                         |
-| `IRONCLAW_DISABLE_RESTART`    | Suppress the actual process exit in the restart tool.                                                  | Intended for tests or controlled development runs.                                     |
-| `IRONCLAW_WORKER_TOKEN`       | Bearer token used by internal sandbox workers when talking to the orchestrator.                        | Required for `worker` and `claude-bridge` container entrypoints.                       |
-| `CLAUDE_CODE_OAUTH_TOKEN`     | OAuth token discovered by the Claude Code bridge when no API key is present.                           | Intended for container and bridge flows rather than the main config loader.            |
-| `IRONCLAW_PID_LOCK_CHILD`     | Internal test knob for PID-lock child processes.                                                       | Not intended for user-facing configuration.                                            |
-| `IRONCLAW_PID_LOCK_PATH`      | Internal PID-lock test path override.                                                                  | Not intended for user-facing configuration.                                            |
-| `IRONCLAW_PID_LOCK_HOLD_MS`   | Internal PID-lock test hold duration.                                                                  | Not intended for user-facing configuration.                                            |
-| `IRONCLAW_E2E_DOCKER_TESTS`   | Enable Docker-backed end-to-end tests for the reaper.                                                  | Test-only.                                                                             |
-| `RUST_LOG`                    | Standard `tracing` filter used by the web log layer.                                                   | Defaults internally to `ironclaw=info,tower_http=warn` when the variable is unset.     |
+| Variable                     | Meaning                                                                                                | Default or rule                                                                        |
+| ---------------------------- | ------------------------------------------------------------------------------------------------------ | -------------------------------------------------------------------------------------- |
+| `AXINITE_OAUTH_EXCHANGE_URL` | Proxy URL used by gateway OAuth completion to exchange the authorization code through another service. | Optional. When unset, the gateway exchanges directly with the upstream token endpoint. |
+| `OAUTH_CALLBACK_HOST`        | Host used by the local OAuth callback listener.                                                        | Defaults to `127.0.0.1`. Wildcard addresses such as `0.0.0.0` and `::` are rejected.   |
+| `AXINITE_INSTANCE_NAME`      | Prefix applied to OAuth CSRF state for platform routing.                                               | Optional.                                                                              |
+| `OPENCLAW_INSTANCE_NAME`     | Legacy fallback for `AXINITE_INSTANCE_NAME`.                                                           | Optional, kept for backwards compatibility.                                            |
+| `AXINITE_USER_ID`            | Override the relay-auth user UUID derivation.                                                          | Optional.                                                                              |
+| `AXINITE_RECORD_TRACE`       | Enable LLM trace recording when set to any non-empty value.                                            | Disabled when unset or empty.                                                          |
+| `AXINITE_TRACE_OUTPUT`       | Output file path for recorded traces.                                                                  | Defaults to `./trace_<timestamp>.json`.                                                |
+| `AXINITE_TRACE_MODEL_NAME`   | Override the model name stored in a trace file.                                                        | Defaults to `recorded-<inner-model-name>`.                                             |
+| `AXINITE_IN_DOCKER`          | Declare that the host is running inside the Docker restart environment.                                | Must be `true` for the restart tool to perform a process exit.                         |
+| `AXINITE_DISABLE_RESTART`    | Suppress the actual process exit in the restart tool.                                                  | Intended for tests or controlled development runs.                                     |
+| `AXINITE_WORKER_TOKEN`       | Bearer token used by internal sandbox workers when talking to the orchestrator.                        | Required for `worker` and `claude-bridge` container entrypoints.                       |
+| `CLAUDE_CODE_OAUTH_TOKEN`    | OAuth token discovered by the Claude Code bridge when no API key is present.                           | Intended for container and bridge flows rather than the main config loader.            |
+| `AXINITE_PID_LOCK_CHILD`     | Internal test knob for PID-lock child processes.                                                       | Not intended for user-facing configuration.                                            |
+| `AXINITE_PID_LOCK_PATH`      | Internal PID-lock test path override.                                                                  | Not intended for user-facing configuration.                                            |
+| `AXINITE_PID_LOCK_HOLD_MS`   | Internal PID-lock test hold duration.                                                                  | Not intended for user-facing configuration.                                            |
+| `AXINITE_E2E_DOCKER_TESTS`   | Enable Docker-backed end-to-end tests for the reaper.                                                  | Test-only.                                                                             |
+| `RUST_LOG`                   | Standard `tracing` filter used by the web log layer.                                                   | Defaults internally to `axinite=info,tower_http=warn` when the variable is unset.      |
 
 The runtime also consults platform variables such as `HOME`, `XDG_RUNTIME_DIR`,
 and `UID` for home-directory resolution and rootless Docker socket discovery.
@@ -542,5 +545,5 @@ names.
    tries to interpret the backend through the generic OpenAI-compatible
    provider shape.
 11. The built-in provider table is not exhaustive once a local
-   `~/.ironclaw/providers.json` exists. Custom provider definitions can add new
+   `~/.axinite/providers.json` exists. Custom provider definitions can add new
    provider IDs and entirely different environment-variable names.

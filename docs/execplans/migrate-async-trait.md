@@ -261,7 +261,7 @@ Final `async-trait` status as of 2026-03-24 (after Milestone 5):
 - The crate remains present as a transitive dependency through upstream crates
   (wasmtime, tokio-postgres, refinery, zbus, testcontainers, and others) that
   have not yet updated their own code. `cargo tree -i async-trait` will still
-  show it, but `ironclaw` itself no longer imports or uses it directly.
+  show it, but `axinite` itself no longer imports or uses it directly.
 
 ## Estimated scope
 

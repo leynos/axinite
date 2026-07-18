@@ -11,8 +11,8 @@ use reqwest::Client;
 use secrecy::SecretString;
 use serde_json::json;
 
-use ironclaw::channels::{HttpChannel, NativeChannel, WebhookServer, WebhookServerConfig};
-use ironclaw::config::HttpConfig;
+use axinite::channels::{HttpChannel, NativeChannel, WebhookServer, WebhookServerConfig};
+use axinite::config::HttpConfig;
 use rstest::{fixture, rstest};
 
 use crate::support::webhook_helpers;

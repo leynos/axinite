@@ -16,7 +16,7 @@
 //! # Usage
 //!
 //! ```rust,no_run
-//! use ironclaw::testing::TestHarnessBuilder;
+//! use axinite::testing::TestHarnessBuilder;
 //!
 //! #[tokio::test]
 //! async fn test_something() {

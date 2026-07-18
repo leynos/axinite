@@ -1,15 +1,15 @@
-//! PID lock helpers for preventing multiple IronClaw instances.
+//! PID lock helpers for preventing multiple Axinite instances.
 
 use std::path::PathBuf;
 
-use crate::bootstrap::ironclaw_base_dir;
+use crate::bootstrap::axinite_base_dir;
 
-/// Path to the PID lock file: `~/.ironclaw/ironclaw.pid`.
+/// Path to the PID lock file: `~/.axinite/axinite.pid`.
 pub fn pid_lock_path() -> PathBuf {
-    ironclaw_base_dir().join("ironclaw.pid")
+    axinite_base_dir().join("axinite.pid")
 }
 
-/// A PID-based lock that prevents multiple IronClaw instances from running
+/// A PID-based lock that prevents multiple Axinite instances from running
 /// simultaneously.
 ///
 /// Uses `fs4::try_lock_exclusive()` for atomic locking (no TOCTOU race),
@@ -26,7 +26,7 @@ pub struct PidLock {
 /// Errors from PID lock acquisition.
 #[derive(Debug, thiserror::Error)]
 pub enum PidLockError {
-    #[error("Another IronClaw instance is already running (PID {pid})")]
+    #[error("Another Axinite instance is already running (PID {pid})")]
     AlreadyRunning { pid: u32 },
     #[error("Failed to acquire PID lock: {0}")]
     Io(#[from] std::io::Error),

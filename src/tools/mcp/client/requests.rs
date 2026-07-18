@@ -66,7 +66,7 @@ impl McpClient {
     /// Error advising the user to (re-)authenticate against this server.
     fn auth_required_error(&self) -> ToolError {
         ToolError::ExternalService(format!(
-            "MCP server '{}' requires authentication. Run: ironclaw mcp auth {}",
+            "MCP server '{}' requires authentication. Run: axinite mcp auth {}",
             self.server_name, self.server_name
         ))
     }

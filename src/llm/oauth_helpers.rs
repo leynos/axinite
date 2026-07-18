@@ -39,11 +39,11 @@ pub enum OAuthCallbackError {
 
 /// Returns the OAuth callback base URL.
 ///
-/// Checks `IRONCLAW_OAUTH_CALLBACK_URL` env var first (useful for remote/VPS
+/// Checks `AXINITE_OAUTH_CALLBACK_URL` env var first (useful for remote/VPS
 /// deployments where `127.0.0.1` is unreachable from the user's browser),
 /// then falls back to `http://{callback_host()}:{OAUTH_CALLBACK_PORT}`.
 pub fn callback_url() -> String {
-    std::env::var("IRONCLAW_OAUTH_CALLBACK_URL")
+    std::env::var("AXINITE_OAUTH_CALLBACK_URL")
         .ok()
         .filter(|v| !v.is_empty())
         .unwrap_or_else(|| format!("http://{}:{}", callback_host(), OAUTH_CALLBACK_PORT))

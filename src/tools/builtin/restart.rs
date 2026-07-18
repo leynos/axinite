@@ -2,9 +2,9 @@
 //!
 //! ## Architecture
 //!
-//! IronClaw runs inside a Docker container with an entrypoint loop that monitors exit codes:
-//! - **Exit code 0** (clean): Reset failure counter, wait `IRONCLAW_RESTART_DELAY` (default 5s), restart
-//! - **Exit code ≠ 0** (failure): Increment failure counter, exit after `IRONCLAW_MAX_FAILURES` (default 10)
+//! Axinite runs inside a Docker container with an entrypoint loop that monitors exit codes:
+//! - **Exit code 0** (clean): Reset failure counter, wait `AXINITE_RESTART_DELAY` (default 5s), restart
+//! - **Exit code ≠ 0** (failure): Increment failure counter, exit after `AXINITE_MAX_FAILURES` (default 10)
 //!
 //! This tool triggers a restart by calling `std::process::exit(0)` after a brief delay, allowing
 //! the HTTP response to be flushed before the process terminates. The entrypoint loop then
@@ -43,7 +43,7 @@ impl NativeTool for RestartTool {
     }
 
     fn description(&self) -> &str {
-        "Restart the IronClaw agent process. The process exits cleanly (code 0) and the \
+        "Restart the Axinite agent process. The process exits cleanly (code 0) and the \
          container entrypoint loop restarts it automatically within a few seconds."
     }
 
@@ -69,20 +69,20 @@ impl NativeTool for RestartTool {
         tracing::info!("[RestartTool::execute] Restart tool invoked");
         let start = std::time::Instant::now();
 
-        // Check if running inside a Docker container via IRONCLAW_IN_DOCKER env var.
+        // Check if running inside a Docker container via AXINITE_IN_DOCKER env var.
         // The Docker entrypoint sets this to "true". For local development, it's unset or "false".
-        // The entrypoint restart loop only works inside a Docker container (ironclaw-worker).
-        let in_docker = std::env::var("IRONCLAW_IN_DOCKER")
+        // The entrypoint restart loop only works inside a Docker container (axinite-worker).
+        let in_docker = std::env::var("AXINITE_IN_DOCKER")
             .map(|v| v.to_lowercase() == "true")
             .unwrap_or(false);
 
-        tracing::debug!("[RestartTool::execute] IRONCLAW_IN_DOCKER={}", in_docker);
+        tracing::debug!("[RestartTool::execute] AXINITE_IN_DOCKER={}", in_docker);
 
         if !in_docker {
             tracing::error!("[RestartTool::execute] Not in Docker, rejecting restart");
             return Err(ToolError::ExecutionFailed(
                 "Restart is only available when running inside the Docker container. \
-                 For local development, please restart IronClaw manually."
+                 For local development, please restart Axinite manually."
                     .to_string(),
             ));
         }
@@ -99,11 +99,11 @@ impl NativeTool for RestartTool {
         // Spawn a background task so the response is flushed before exit.
         // We use std::process::exit(0) to trigger a Docker container restart:
         //
-        // - The ironclaw-worker Docker container runs an entrypoint loop that monitors
-        //   the exit code of the `ironclaw run` process:
-        //   * Exit code 0 = clean restart: reset failure counter, wait IRONCLAW_RESTART_DELAY
+        // - The axinite-worker Docker container runs an entrypoint loop that monitors
+        //   the exit code of the `axinite run` process:
+        //   * Exit code 0 = clean restart: reset failure counter, wait AXINITE_RESTART_DELAY
         //     (default 5s), then restart the process
-        //   * Exit code ≠ 0 = failure: increment counter, exit after IRONCLAW_MAX_FAILURES
+        //   * Exit code ≠ 0 = failure: increment counter, exit after AXINITE_MAX_FAILURES
         //     (default 10 failures)
         //
         // - std::process::exit(0) is a hard exit (no destructors, no graceful shutdown).
@@ -117,7 +117,7 @@ impl NativeTool for RestartTool {
         //   to properly drain Axum, close DB connections, and checkpoint jobs.
         // Check if restart is disabled (e.g., in tests). This allows tests to verify
         // parameter parsing and output without actually terminating the process.
-        let restart_disabled = std::env::var("IRONCLAW_DISABLE_RESTART")
+        let restart_disabled = std::env::var("AXINITE_DISABLE_RESTART")
             .map(|v| {
                 let v = v.to_lowercase();
                 v == "1" || v == "true"
@@ -137,14 +137,14 @@ impl NativeTool for RestartTool {
                 std::process::exit(0);
             } else {
                 tracing::info!(
-                    "[RestartTool] Exit disabled (IRONCLAW_DISABLE_RESTART set), skipping std::process::exit(0)"
+                    "[RestartTool] Exit disabled (AXINITE_DISABLE_RESTART set), skipping std::process::exit(0)"
                 );
             }
         });
 
         let msg = format!(
             "Restarting in {delay} second(s). The process will exit cleanly and the \
-             entrypoint restart loop will bring IronClaw back online."
+             entrypoint restart loop will bring Axinite back online."
         );
         tracing::info!("[RestartTool::execute] Returning success response: {}", msg);
         Ok(ToolOutput::text(msg, start.elapsed()))

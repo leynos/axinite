@@ -29,9 +29,8 @@ pub use test_rig::run_recorded_trace;
 #[cfg(feature = "libsql")]
 type AsyncUnit<'a> = std::pin::Pin<Box<dyn std::future::Future<Output = ()> + 'a>>;
 #[cfg(feature = "libsql")]
-type AsyncStatusEvents<'a> = std::pin::Pin<
-    Box<dyn std::future::Future<Output = Vec<ironclaw::channels::StatusUpdate>> + 'a>,
->;
+type AsyncStatusEvents<'a> =
+    std::pin::Pin<Box<dyn std::future::Future<Output = Vec<axinite::channels::StatusUpdate>> + 'a>>;
 
 #[cfg(feature = "libsql")]
 fn _clear_sig<'a>(rig: &'a test_rig::TestRig) -> AsyncUnit<'a> {

@@ -13,8 +13,8 @@ use super::*;
 //   http + memory_write + message (broadcast to test channel)
 // -----------------------------------------------------------------------
 
-fn build_news_api_http_exchanges() -> Vec<ironclaw::llm::recording::HttpExchange> {
-    use ironclaw::llm::recording::{HttpExchange, HttpExchangeRequest, HttpExchangeResponse};
+fn build_news_api_http_exchanges() -> Vec<axinite::llm::recording::HttpExchange> {
+    use axinite::llm::recording::{HttpExchange, HttpExchangeRequest, HttpExchangeResponse};
     vec![HttpExchange {
         request: HttpExchangeRequest {
             method: "GET".to_string(),
@@ -37,7 +37,7 @@ fn build_news_api_http_exchanges() -> Vec<ironclaw::llm::recording::HttpExchange
     }]
 }
 
-fn assert_routine_created(responses: &[ironclaw::channels::OutgoingResponse]) {
+fn assert_routine_created(responses: &[axinite::channels::OutgoingResponse]) {
     assert!(!responses.is_empty(), "Turn 1: no response");
     let t1 = responses[0].content.to_lowercase();
     assert!(

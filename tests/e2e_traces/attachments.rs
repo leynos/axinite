@@ -7,17 +7,17 @@ use crate::fixtures::{DEFAULT_TIMEOUT, fixture_path};
 use crate::support::test_rig::{TestRig, TestRigBuilder};
 use crate::support::trace_types::LlmTrace;
 
-use ironclaw::channels::{AttachmentKind, IncomingAttachment, IncomingMessage};
-use ironclaw::llm::ContentPart;
+use axinite::channels::{AttachmentKind, IncomingAttachment, IncomingMessage};
+use axinite::llm::ContentPart;
 
 /// Extract the last user message from captured LLM requests.
-fn last_user_message(requests: &[Vec<ironclaw::llm::ChatMessage>]) -> &ironclaw::llm::ChatMessage {
+fn last_user_message(requests: &[Vec<axinite::llm::ChatMessage>]) -> &axinite::llm::ChatMessage {
     assert!(!requests.is_empty(), "no LLM requests captured");
     let last_request = requests.last().expect("requests should be non-empty");
     last_request
         .iter()
         .rev()
-        .find(|m| matches!(m.role, ironclaw::llm::Role::User))
+        .find(|m| matches!(m.role, axinite::llm::Role::User))
         .expect("should have a user message in the last request")
 }
 

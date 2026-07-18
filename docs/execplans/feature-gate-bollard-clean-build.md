@@ -62,7 +62,7 @@ Two important pieces of evidence have already been gathered:
    ```plaintext
    cap-primitives
    └── wasmtime-wasi
-       └── ironclaw
+       └── axinite
    ```
 
    This was confirmed with:

@@ -15,7 +15,7 @@ provider-side continuity state. The ledger should be exposed through
 browser history and live status surfaces as a plane separate from
 assistant prose.
 
-Axinite's current chat model intentionally stores a lossy durable
+IronClaw's current chat model intentionally stores a lossy durable
 conversation record even though the runtime keeps richer in-memory turn
 structure and emits richer live status events via Server-Sent Events
 (SSE). [^1] The missing piece is a durable truth surface that lets the
@@ -29,7 +29,7 @@ failure: the model claims work was done when it was not. [^2] This is
 not a hallucination problem in the usual sense; it is a systems problem
 where the model's narrative is not a reliable source of execution truth.
 
-Axinite's chat model preserves tool causality by rebuilding transcripts
+IronClaw's chat model preserves tool causality by rebuilding transcripts
 from turns and tool calls, and by persisting user messages early for
 crash recoverability. [^1] However, the same document notes that the
 durable record is intentionally lossy, and that some paths (e.g. auth
@@ -51,7 +51,7 @@ ground-truth record independent of the model's narrative.
 
 ### Existing instrumentation
 
-Axinite already emits rich runtime data through several channels:
+IronClaw already emits rich runtime data through several channels:
 
 - **SSE events**: the web channel broadcasts structured events for
   assistant messages, tool calls, job status, and other lifecycle

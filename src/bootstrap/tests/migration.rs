@@ -38,7 +38,7 @@ fn test_migrate_bootstrap_json_to_env() {
     let env_path = dir.path().join(".env");
     let bootstrap_path = dir.path().join("bootstrap.json");
     let bootstrap_json = serde_json::json!({
-        "database_url": "postgres://localhost/ironclaw_upgrade",
+        "database_url": "postgres://localhost/axinite_upgrade",
         "database_pool_size": 5,
         "secrets_master_key_source": "keychain",
         "onboard_completed": true
@@ -55,29 +55,29 @@ fn test_migrate_bootstrap_json_to_env() {
 
     migrate_bootstrap_json_to_env(&env_path);
 
-    assert_bootstrap_env_written(&env_path, "postgres://localhost/ironclaw_upgrade");
+    assert_bootstrap_env_written(&env_path, "postgres://localhost/axinite_upgrade");
     assert_bootstrap_file_renamed(dir.path());
 }
 
 #[test]
-fn load_ironclaw_env_migrates_bootstrap_json_to_env() {
-    if std::env::var("IRONCLAW_LOAD_ENV_CHILD").ok().as_deref() == Some("1") {
+fn load_axinite_env_migrates_bootstrap_json_to_env() {
+    if std::env::var("AXINITE_LOAD_ENV_CHILD").ok().as_deref() == Some("1") {
         let base_dir = std::path::PathBuf::from(
-            std::env::var("IRONCLAW_BASE_DIR").expect("IRONCLAW_BASE_DIR missing"),
+            std::env::var("AXINITE_BASE_DIR").expect("AXINITE_BASE_DIR missing"),
         );
         let env_path = base_dir.join(".env");
 
-        load_ironclaw_env();
+        load_axinite_env();
 
-        assert_bootstrap_env_written(&env_path, "postgres://localhost/ironclaw_public_boundary");
+        assert_bootstrap_env_written(&env_path, "postgres://localhost/axinite_public_boundary");
         assert_bootstrap_file_renamed(&base_dir);
         return;
     }
 
-    let dir = tempdir().expect("create temp dir for load_ironclaw_env migration");
+    let dir = tempdir().expect("create temp dir for load_axinite_env migration");
     let bootstrap_path = dir.path().join("bootstrap.json");
     let bootstrap_json = serde_json::json!({
-        "database_url": "postgres://localhost/ironclaw_public_boundary"
+        "database_url": "postgres://localhost/axinite_public_boundary"
     });
     ambient_fs::write(
         &bootstrap_path,
@@ -89,16 +89,16 @@ fn load_ironclaw_env_migrates_bootstrap_json_to_env() {
     let status = Command::new(current_exe)
         .args([
             "--exact",
-            "bootstrap::tests::migration::load_ironclaw_env_migrates_bootstrap_json_to_env",
+            "bootstrap::tests::migration::load_axinite_env_migrates_bootstrap_json_to_env",
             "--nocapture",
             "--test-threads=1",
         ])
-        .env("IRONCLAW_LOAD_ENV_CHILD", "1")
-        .env("IRONCLAW_BASE_DIR", dir.path())
+        .env("AXINITE_LOAD_ENV_CHILD", "1")
+        .env("AXINITE_BASE_DIR", dir.path())
         .env_remove("DATABASE_URL")
         .env_remove("DATABASE_BACKEND")
         .status()
-        .expect("spawn load_ironclaw_env boundary test");
+        .expect("spawn load_axinite_env boundary test");
 
     assert!(status.success(), "child boundary test failed: {status}");
 }
@@ -138,7 +138,7 @@ fn test_libsql_autodetect_sets_backend_when_db_exists() {
     env_guard.remove("DATABASE_BACKEND");
 
     let dir = tempdir().expect("create temp dir for libsql autodetect");
-    let db_path = dir.path().join("ironclaw.db");
+    let db_path = dir.path().join("axinite.db");
 
     assert!(!db_path.exists());
     assert!(
@@ -159,7 +159,7 @@ fn test_libsql_autodetect_does_not_override_explicit_backend() {
     env_guard.set("DATABASE_BACKEND", "postgres");
 
     let dir = tempdir().expect("create temp dir for explicit backend autodetect test");
-    let db_path = dir.path().join("ironclaw.db");
+    let db_path = dir.path().join("axinite.db");
     ambient_fs::write(&db_path, "").expect("create libsql marker file");
 
     let would_override = std::env::var("DATABASE_BACKEND").is_err() && db_path.exists();
@@ -201,7 +201,7 @@ fn migrate_bootstrap_json_to_env_rename_failure_leaves_env_written() {
     let env_path = dir.path().join(".env");
     let bootstrap_path = dir.path().join("bootstrap.json");
     let bootstrap_json = serde_json::json!({
-        "database_url": "postgres://localhost/ironclaw_rename_fail",
+        "database_url": "postgres://localhost/axinite_rename_fail",
     });
 
     ambient_fs::write(

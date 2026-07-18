@@ -1532,7 +1532,7 @@ Dependencies: independent of the earlier roadmap phases; unlocks 7.2-7.5.
       as a root `dev-dependency`.
   - See
     [Formal verification methods in Axinite §Root `Cargo.toml` changes](./formal-verification-methods-in-axinite.md#root-cargotoml-changes).
-  - Success: the workspace keeps the main `ironclaw` package as the default
+  - Success: the workspace keeps the main `axinite` package as the default
     member, the verification crate can build independently, and generated
     property tests can run through normal Rust test entry points.
 - [ ] 7.1.2. Add pinned tool metadata, install scripts, and Makefile targets for

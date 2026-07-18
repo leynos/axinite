@@ -1,4 +1,4 @@
-//! Curated built-in extension entries that ship with ironclaw.
+//! Curated built-in extension entries that ship with axinite.
 
 use crate::extensions::{AuthHint, ExtensionKind, ExtensionSource, RegistryEntry};
 
@@ -30,7 +30,7 @@ impl McpEntrySpec {
     }
 }
 
-/// Curated MCP servers that ship with ironclaw.
+/// Curated MCP servers that ship with axinite.
 ///
 /// WASM channels (telegram, slack, discord, whatsapp) come from the embedded
 /// registry catalogue (registry/channels/*.json) with WasmDownload URLs pointing
@@ -133,7 +133,7 @@ fn slack_relay_entry(relay_url: String) -> RegistryEntry {
     }
 }
 
-/// Well-known extensions that ship with ironclaw.
+/// Well-known extensions that ship with axinite.
 ///
 /// If `relay_url` is provided, a channel-relay Slack entry is included in the list.
 /// Pass `None` when the relay is not configured.

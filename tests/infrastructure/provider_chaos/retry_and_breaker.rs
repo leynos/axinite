@@ -4,8 +4,8 @@
 use std::sync::Arc;
 use std::time::Duration;
 
-use ironclaw::error::LlmError;
-use ironclaw::llm::{
+use axinite::error::LlmError;
+use axinite::llm::{
     CircuitBreakerConfig, CircuitBreakerProvider, FinishReason, LlmProvider, RetryConfig,
     RetryProvider,
 };
@@ -190,7 +190,7 @@ async fn test_circuit_breaker_trips_and_recovers() {
     let state = cb.circuit_state().await;
     assert_eq!(
         state,
-        ironclaw::llm::circuit_breaker::CircuitState::Open,
+        axinite::llm::circuit_breaker::CircuitState::Open,
         "circuit should be open after 3 failures"
     );
 
@@ -215,7 +215,7 @@ async fn test_circuit_breaker_trips_and_recovers() {
     let _ = cb.complete(make_request()).await;
     assert_eq!(
         cb.circuit_state().await,
-        ironclaw::llm::circuit_breaker::CircuitState::Open,
+        axinite::llm::circuit_breaker::CircuitState::Open,
         "probe failed, should reopen"
     );
 
@@ -226,7 +226,7 @@ async fn test_circuit_breaker_trips_and_recovers() {
     let _ = cb.complete(make_request()).await;
     assert_eq!(
         cb.circuit_state().await,
-        ironclaw::llm::circuit_breaker::CircuitState::Open,
+        axinite::llm::circuit_breaker::CircuitState::Open,
         "still one failure left, should reopen again"
     );
 
@@ -239,7 +239,7 @@ async fn test_circuit_breaker_trips_and_recovers() {
     assert_eq!(result.unwrap().content, "recovered");
     assert_eq!(
         cb.circuit_state().await,
-        ironclaw::llm::circuit_breaker::CircuitState::Closed,
+        axinite::llm::circuit_breaker::CircuitState::Closed,
         "circuit should close after successful probe"
     );
 }

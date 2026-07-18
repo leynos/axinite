@@ -1,6 +1,6 @@
 //! Worker mode for running inside Docker containers.
 //!
-//! When `ironclaw worker` is invoked, the binary starts in worker mode:
+//! When `axinite worker` is invoked, the binary starts in worker mode:
 //! - Connects to the orchestrator over HTTP
 //! - Uses a `ProxyLlmProvider` that routes LLM calls through the orchestrator
 //! - Runs container-local development tools plus orchestrator-backed hosted
@@ -11,7 +11,7 @@
 //! ┌──────────────────────────────────────────────────────────────────────────────┐
 //! │                              Docker Container                               │
 //! │                                                                              │
-//! │  ironclaw worker                                                             │
+//! │  axinite worker                                                             │
 //! │    ├─ ProxyLlmProvider ─────────┼──▶ Orchestrator /worker/{id}/llm/complete │
 //! │    ├─ SafetyLayer               │                                            │
 //! │    ├─ ToolRegistry              │                                            │

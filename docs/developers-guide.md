@@ -1,6 +1,6 @@
 # Developer's Guide
 
-This guide explains the local prerequisites for working on IronClaw and
+This guide explains the local prerequisites for working on Axinite and
 reproducing the build and test workflows on this branch.
 
 For the current system architecture and subsystem boundaries, see
@@ -576,7 +576,7 @@ assumptions:
 set -o pipefail
 /usr/bin/time -f 'ELAPSED %E\nMAXRSS_KB %M' \
   cargo check --no-default-features --features libsql --timings \
-  2>&1 | tee /tmp/check-ironclaw-$(git branch --show-current | tr '/' '-').out
+  2>&1 | tee /tmp/check-axinite-$(git branch --show-current | tr '/' '-').out
 ```
 
 The standard fast host-side test path is now:
@@ -584,7 +584,7 @@ The standard fast host-side test path is now:
 ```bash
 set -o pipefail
 cargo nextest run --workspace --no-default-features --features libsql \
-  2>&1 | tee /tmp/nextest-ironclaw-$(git branch --show-current | tr '/' '-').out
+  2>&1 | tee /tmp/nextest-axinite-$(git branch --show-current | tr '/' '-').out
 ```
 
 To compare behaviour against the legacy harness, use `make test-cargo` or
@@ -771,21 +771,21 @@ For work on the default feature set or PostgreSQL-backed tests, prepare a local
 database with `pgvector` enabled:
 
 ```bash
-createdb ironclaw
-psql ironclaw -c "CREATE EXTENSION IF NOT EXISTS vector;"
+createdb axinite
+psql axinite -c "CREATE EXTENSION IF NOT EXISTS vector;"
 ```
 
 Then set the database connection variable:
 
 Variable: `DATABASE_URL` Meaning: PostgreSQL connection URL used by the app.
 Default or rule: Required for PostgreSQL-backed work. For local development,
-`postgres://localhost/ironclaw` is a typical example; include the correct user,
+`postgres://localhost/axinite` is a typical example; include the correct user,
 password, host, port, and database name when a local setup requires them.
 
 Example:
 
 ```bash
-export DATABASE_URL=postgres://localhost/ironclaw
+export DATABASE_URL=postgres://localhost/axinite
 ```
 
 Adjust the connection string if the local PostgreSQL instance requires a
@@ -1110,7 +1110,7 @@ This helper:
 Typical usage from an async test or `rstest` fixture is:
 
 ```rust
-use ironclaw::testing::github_wasm_wrapper;
+use axinite::testing::github_wasm_wrapper;
 
 #[tokio::test]
 async fn github_wasm_fixture_executes() -> anyhow::Result<()> {
@@ -1463,7 +1463,7 @@ The `e2e_traces` integration test target includes first-call WASM schema
 regression tests introduced in roadmap item `1.2.4`. These tests live in
 `tests/e2e_traces/wasm_schema_exposure.rs` and require the `test-helpers`
 feature because they import the GitHub test helper
-`ironclaw::testing::github_wasm_wrapper`.
+`axinite::testing::github_wasm_wrapper`.
 
 `Cargo.toml` declares `required-features = ["test-helpers"]` for the
 `e2e_traces` target, so Cargo skips it gracefully when the feature is absent
@@ -1486,7 +1486,7 @@ cargo check --all --benches --tests --examples
 ### CapturingToolLlm — non-hosted schema verification
 
 For in-process (non-hosted) schema assertions, implement
-`ironclaw::llm::NativeLlmProvider` as a capturing stub that records every
+`axinite::llm::NativeLlmProvider` as a capturing stub that records every
 `ToolCompletionRequest` before returning a deterministic response:
 
 ```rust
@@ -1603,13 +1603,13 @@ silently swallowing errors inside the helper.
 
 ### Migration entry points
 
-| Function                        | Visibility         | Purpose                                                                                                                                                                     |
-| ------------------------------- | ------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `migrate_bootstrap_json_to_env` | `pub(crate)`       | Reads `bootstrap.json`, writes `DATABASE_URL` to `.env`, then renames the source file.                                                                                      |
-| `migrate_disk_to_db`            | `pub async`        | One-time migration of `settings.json` and sidecar JSON files into the database.                                                                                             |
-| `migrate_disk_to_db_from_dir`   | `pub(super) async` | Path-injected helper that migrates legacy disk settings from a supplied Ironclaw base directory into the database, then best-effort renames the source file to `.migrated`. |
-| `rename_legacy_bootstrap`       | `pub(super)`       | Renames `bootstrap.json` to `.migrated`; logs success at `INFO`.                                                                                                            |
-| `rename_to_migrated`            | `pub(super)`       | Low-level rename helper used by all migration paths.                                                                                                                        |
+| Function                        | Visibility         | Purpose                                                                                                                                                                    |
+| ------------------------------- | ------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `migrate_bootstrap_json_to_env` | `pub(crate)`       | Reads `bootstrap.json`, writes `DATABASE_URL` to `.env`, then renames the source file.                                                                                     |
+| `migrate_disk_to_db`            | `pub async`        | One-time migration of `settings.json` and sidecar JSON files into the database.                                                                                            |
+| `migrate_disk_to_db_from_dir`   | `pub(super) async` | Path-injected helper that migrates legacy disk settings from a supplied Axinite base directory into the database, then best-effort renames the source file to `.migrated`. |
+| `rename_legacy_bootstrap`       | `pub(super)`       | Renames `bootstrap.json` to `.migrated`; logs success at `INFO`.                                                                                                           |
+| `rename_to_migrated`            | `pub(super)`       | Low-level rename helper used by all migration paths.                                                                                                                       |
 
 For the rationale behind consolidating the rename helpers, see
 [ADR-010](adr-010-consolidate-bootstrap-rename-helpers.md).
@@ -1678,7 +1678,7 @@ completed `AppComponents` and deferred `RuntimeSideEffects`. Downstream startup
 phases pass that context forward intact: they consume `AppComponents` while
 assembling the long-running runtime, and the default run path crosses the
 `side_effects.start()` boundary only immediately before the agent loop begins.
-Extend `AppBuilderFlags` (in the `ironclaw` library crate) when a new component
+Extend `AppBuilderFlags` (in the `axinite` library crate) when a new component
 must be conditionally included at startup, then thread the resulting
 `AppComponents` and `RuntimeSideEffects` through the appropriate startup
 context.
@@ -1703,8 +1703,8 @@ describe the query or scope they model instead of generic `Options` suffixes.
 Ownership boundary:
 
 - `src/main_cli.rs` owns standalone subcommand routing for one-shot CLI
-  flows such as `ironclaw tool`, `ironclaw mcp`, `ironclaw config`,
-  `ironclaw memory`, and the hidden worker-oriented commands.
+  flows such as `axinite tool`, `axinite mcp`, `axinite config`,
+  `axinite memory`, and the hidden worker-oriented commands.
 - `src/startup/` owns the default `run` path. Its phase modules build
   the shared runtime, start optional services, wire channels, and then enter
   the long-running agent loop.
@@ -1803,7 +1803,7 @@ async_main()
        ├─ dispatch_cli_tool_commands()
        │    ├─ dispatch_sync_command()
        │    └─ dispatch_async_command()
-       │         ├─ dispatch_ironclaw_cli_command()
+       │         ├─ dispatch_axinite_cli_command()
        │         └─ dispatch_local_async_command()
        └─ dispatch_agent_commands()
 ```

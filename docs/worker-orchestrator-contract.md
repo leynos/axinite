@@ -86,7 +86,7 @@ so accidental path drift fails the build before runtime tests execute.
 - `WorkerRuntime::new(config, client)` is the primary constructor. It is used
   by tests and by any caller that already owns a prepared `WorkerHttpClient`.
 - `WorkerRuntime::from_env(config)` is the production convenience wrapper. It
-  reads `IRONCLAW_WORKER_TOKEN` and then delegates to `new`, which builds the
+  reads `AXINITE_WORKER_TOKEN` and then delegates to `new`, which builds the
   HTTP client with the shared timeout and error mapping.
 
 This split exists so tests can validate runtime behaviour without relying on

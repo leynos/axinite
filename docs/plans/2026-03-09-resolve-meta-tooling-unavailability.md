@@ -8,7 +8,7 @@ Status: COMPLETE
 
 ## Purpose / big picture
 
-After this work, a hosted worker in IronClaw will advertise and use the safe
+After this work, a hosted worker in Axinite will advertise and use the safe
 extension-management tools it can execute without bypassing approval:
 `tool_search`, `tool_activate`, `tool_list`, and `extension_info`. A user
 should be able to ask a hosted agent whether an extension such as Telegram is
@@ -240,7 +240,7 @@ cargo clippy --all --benches --tests --examples --all-features -- -D warnings
 `cargo test --no-default-features --features libsql -- --nocapture`, and
 `cargo test --features postgres,libsql,html-to-markdown -- --nocapture` all
 passed, as did the focused regression suites recorded in
-`/tmp/test-ironclaw-tool-list-breakage-*.out`.
+`/tmp/test-axinite-tool-list-breakage-*.out`.
 
 No follow-up was deferred for correctness. The only remaining gap relative to
 full CI parity is the Windows-specific build and clippy matrix, which was not
@@ -248,7 +248,7 @@ runnable in this Linux workspace.
 
 ## Context and orientation
 
-IronClaw currently has two relevant execution paths. The normal application
+Axinite currently has two relevant execution paths. The normal application
 path builds the full app in `src/app.rs`, creates an `ExtensionManager`, and
 registers extension-management tools into the main `ToolRegistry`. The hosted
 worker path builds `WorkerRuntime` in `src/worker/runtime.rs`, creates a fresh
@@ -282,7 +282,7 @@ The files that matter most are:
 
 In this document, “meta tooling” means the extension-management tools that let
 the model discover, inspect, authenticate, activate, and remove extensions from
-conversation. “Hosted worker” means the `ironclaw worker` path that runs inside
+conversation. “Hosted worker” means the `axinite worker` path that runs inside
 the sandboxed job environment and talks back to the orchestrator over HTTP.
 
 ## Plan of work
@@ -360,7 +360,7 @@ sed -n '3540,3815p' src/extensions/manager.rs
 set -o pipefail
 BRANCH=$(git branch --show-current | tr '/' '-')
 cargo test --lib test_register_hosted_worker_tools_includes_extension_management_tools -- --nocapture \
-  | tee /tmp/test-ironclaw-${BRANCH}.out
+  | tee /tmp/test-axinite-${BRANCH}.out
 ```
 
 Expected pre-fix result:
@@ -378,11 +378,11 @@ assertion failed: hosted worker tools contain "tool_list"
 set -o pipefail
 BRANCH=$(git branch --show-current | tr '/' '-')
 cargo test --lib test_register_extension_tools_registers_expected_names -- --nocapture \
-  | tee /tmp/test-ironclaw-${BRANCH}.out
+  | tee /tmp/test-axinite-${BRANCH}.out
 cargo test --test tool_schema_validation -- --nocapture \
-  | tee /tmp/test-ironclaw-${BRANCH}.out
+  | tee /tmp/test-axinite-${BRANCH}.out
 cargo test extension_tools --lib -- --nocapture \
-  | tee /tmp/test-ironclaw-${BRANCH}.out
+  | tee /tmp/test-axinite-${BRANCH}.out
 ```
 
 1. Implement the hosted-worker registration helper and the narrow orchestrator
@@ -400,7 +400,7 @@ sed -n '1,220p' src/worker/runtime.rs
 set -o pipefail
 BRANCH=$(git branch --show-current | tr '/' '-')
 cargo test --features libsql --test hosted_worker_extension_tools -- --nocapture \
-  | tee /tmp/test-ironclaw-${BRANCH}.out
+  | tee /tmp/test-axinite-${BRANCH}.out
 ```
 
 Expected post-fix result:
@@ -416,17 +416,17 @@ test hosted_worker_can_call_tool_list ... ok
 set -o pipefail
 BRANCH=$(git branch --show-current | tr '/' '-')
 cargo test --lib test_register_hosted_worker_tools_includes_extension_management_tools -- --nocapture \
-  | tee /tmp/test-ironclaw-${BRANCH}.out
+  | tee /tmp/test-axinite-${BRANCH}.out
 cargo test --lib test_worker_runtime_advertises_meta_tooling -- --nocapture \
-  | tee /tmp/test-ironclaw-${BRANCH}.out
+  | tee /tmp/test-axinite-${BRANCH}.out
 cargo test --test tool_schema_validation -- --nocapture \
-  | tee /tmp/test-ironclaw-${BRANCH}.out
+  | tee /tmp/test-axinite-${BRANCH}.out
 cargo test --features libsql --test hosted_worker_extension_tools -- --nocapture \
-  | tee /tmp/test-ironclaw-${BRANCH}.out
+  | tee /tmp/test-axinite-${BRANCH}.out
 cargo test --features libsql --test e2e_recorded_trace recorded_telegram_check -- --nocapture \
-  | tee /tmp/test-ironclaw-${BRANCH}.out
+  | tee /tmp/test-axinite-${BRANCH}.out
 cargo test --features libsql -- --nocapture \
-  | tee /tmp/test-ironclaw-${BRANCH}-full.out
+  | tee /tmp/test-axinite-${BRANCH}-full.out
 ```
 
 ## Validation and acceptance

@@ -7,7 +7,7 @@ use super::url_policy::{
 };
 use crate::tools::tool::ToolError;
 
-const USER_AGENT: &str = concat!("ironclaw/", env!("CARGO_PKG_VERSION"));
+const USER_AGENT: &str = concat!("axinite/", env!("CARGO_PKG_VERSION"));
 const MAX_DOWNLOAD_BYTES: usize = 10 * 1024 * 1024;
 
 fn build_fetch_client_builder() -> reqwest::ClientBuilder {

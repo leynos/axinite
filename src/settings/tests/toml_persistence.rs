@@ -84,7 +84,7 @@ fn toml_header_comment_present() {
     Settings::default().save_toml(&path).unwrap();
     let content = ambient_fs::read_to_string(&path).unwrap();
 
-    assert!(content.starts_with("# IronClaw configuration file."));
+    assert!(content.starts_with("# Axinite configuration file."));
     assert!(content.contains("[agent]"));
     assert!(content.contains("[heartbeat]"));
 }
@@ -127,8 +127,8 @@ fn toml_creates_parent_dirs() {
 }
 
 #[test]
-fn default_toml_path_under_ironclaw() {
+fn default_toml_path_under_axinite() {
     let path = Settings::default_toml_path();
-    assert!(path.to_string_lossy().contains(".ironclaw"));
+    assert!(path.to_string_lossy().contains(".axinite"));
     assert!(path.to_string_lossy().ends_with("config.toml"));
 }

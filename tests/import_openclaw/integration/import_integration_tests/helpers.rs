@@ -4,8 +4,8 @@
 use std::path::PathBuf;
 use std::sync::{Arc, OnceLock};
 
-use ironclaw::db::Database;
-use ironclaw::db::libsql::LibSqlBackend;
+use axinite::db::Database;
+use axinite::db::libsql::LibSqlBackend;
 use tempfile::TempDir;
 use tokio::sync::{Mutex, OnceCell};
 use uuid::Uuid;
@@ -34,12 +34,12 @@ pub(super) async fn ensure_libsql_initialized() {
 
 /// Helper: Create a test database and return both the DB and temp dir
 pub(super) async fn create_test_db()
--> Result<(Arc<dyn ironclaw::db::Database>, TempDir), Box<dyn std::error::Error>> {
+-> Result<(Arc<dyn axinite::db::Database>, TempDir), Box<dyn std::error::Error>> {
     let temp_dir = TempDir::new()?;
     let db_path = temp_dir.path().join("test.db");
     let backend = LibSqlBackend::new_local(&db_path).await?;
     backend.run_migrations().await?;
-    let db: Arc<dyn ironclaw::db::Database> = Arc::new(backend);
+    let db: Arc<dyn axinite::db::Database> = Arc::new(backend);
     Ok((db, temp_dir))
 }
 

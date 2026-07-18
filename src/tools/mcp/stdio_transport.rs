@@ -203,7 +203,7 @@ mod tests {
         let env: HashMap<String, String> = HashMap::new();
         let result = StdioMcpTransport::spawn(
             "test",
-            "this-command-does-not-exist-ironclaw-test",
+            "this-command-does-not-exist-axinite-test",
             std::iter::empty::<&str>(),
             &env,
         )

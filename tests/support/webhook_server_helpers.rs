@@ -4,7 +4,7 @@
 use std::net::SocketAddr;
 
 use anyhow::{Context, Result};
-use ironclaw::channels::{WebhookServer, WebhookServerConfig};
+use axinite::channels::{WebhookServer, WebhookServerConfig};
 
 use super::webhook_helpers::{health_routes, test_http_client};
 

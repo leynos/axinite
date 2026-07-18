@@ -8,7 +8,7 @@ Status: COMPLETE
 
 ## Purpose / big picture
 
-After this work, IronClaw must stop sending OpenAI function-tool schemas whose
+After this work, Axinite must stop sending OpenAI function-tool schemas whose
 root object still contains forbidden JSON Schema keywords such as `oneOf`,
 `anyOf`, `allOf`, `enum`, or `not`. The concrete user-visible outcome is that
 the `GitHub` WebAssembly (WASM) tool can again be advertised to
@@ -34,7 +34,7 @@ The live failure path currently crosses four areas.
 - `tests/tool_schema_validation.rs` currently asserts that the published
   GitHub tool definition contains that root-level `oneOf`, which reflects
   recovered guest metadata but not provider compatibility.
-- `src/llm/rig_adapter.rs` converts IronClaw tool definitions into
+- `src/llm/rig_adapter.rs` converts Axinite tool definitions into
   rig/OpenAI tool definitions with `convert_tools(...)` and
   `normalize_schema_strict(...)`. The current normalizer recursively adjusts
   nested objects but does not eliminate root-level `oneOf`/`anyOf`/`allOf`/
@@ -169,21 +169,21 @@ commit.
 set -o pipefail
 BRANCH=$(git branch --show-current | tr '/' '-')
 cargo test rig_adapter --lib -- --nocapture \
-  2>&1 | tee /tmp/test-rig-adapter-ironclaw-${BRANCH}.out
+  2>&1 | tee /tmp/test-rig-adapter-axinite-${BRANCH}.out
 ```
 
 ```bash
 set -o pipefail
 BRANCH=$(git branch --show-current | tr '/' '-')
 cargo test --test tool_schema_validation -- --nocapture \
-  2>&1 | tee /tmp/test-tool-schema-validation-ironclaw-${BRANCH}.out
+  2>&1 | tee /tmp/test-tool-schema-validation-axinite-${BRANCH}.out
 ```
 
 ```bash
 set -o pipefail
 BRANCH=$(git branch --show-current | tr '/' '-')
 cargo fmt --all --check \
-  2>&1 | tee /tmp/fmt-check-ironclaw-${BRANCH}.out
+  2>&1 | tee /tmp/fmt-check-axinite-${BRANCH}.out
 ```
 
 ## Progress
@@ -236,10 +236,10 @@ cargo fmt --all --check \
   `cargo test test_top_level_one_of_fails --lib -- --nocapture`; the
   provider-bound guard and strict-validator regression both passed.
 - [x] 2026-03-10 15:41Z: Re-opened the PR review thread for
-  `https://github.com/leynos/ironclaw/pull/1`, verified the unresolved comments
+  `https://github.com/leynos/axinite/pull/1`, verified the unresolved comments
   cluster into schema normalization, test/helper cleanup, and docs polish, and
   switched this plan back to active follow-up status.
-- [x] 2026-03-10 15:43Z: Verified that `grepai` now sees the `ironclaw`
+- [x] 2026-03-10 15:43Z: Verified that `grepai` now sees the `axinite`
   project in the `Projects` workspace, so follow-up code exploration can use
   semantic search again instead of the earlier exact-text fallback.
 - [x] 2026-03-10 17:58Z: Verified the latest review comments against

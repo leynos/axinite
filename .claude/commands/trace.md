@@ -1,5 +1,5 @@
 ---
-description: Trace a data flow or bug through the IronClaw codebase end-to-end
+description: Trace a data flow or bug through the Axinite codebase end-to-end
 allowed-tools: Read, Glob, Grep, Bash(cargo test:*)
 argument-hint: <symptom or feature name>
 model: sonnet
@@ -7,13 +7,13 @@ model: sonnet
 
 # Trace
 
-Trace the flow of `$ARGUMENTS` through the IronClaw codebase. Your job is to
+Trace the flow of `$ARGUMENTS` through the Axinite codebase. Your job is to
 map every file and function involved, identify where data transforms or could
 break, and report the full chain.
 
 ## Architecture Reference
 
-IronClaw has three main data flow paths. Identify which one(s) are relevant and
+Axinite has three main data flow paths. Identify which one(s) are relevant and
 trace through them:
 
 ### Message Flow (user input to LLM response)

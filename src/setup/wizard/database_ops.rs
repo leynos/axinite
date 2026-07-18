@@ -51,7 +51,7 @@ impl SetupWizard {
 
         if major_version < MIN_PG_MAJOR_VERSION {
             return Err(SetupError::Database(format!(
-                "PostgreSQL {} detected. IronClaw requires PostgreSQL {} or later for pgvector support.\n\
+                "PostgreSQL {} detected. Axinite requires PostgreSQL {} or later for pgvector support.\n\
                  Upgrade: https://www.postgresql.org/download/",
                 version_str, MIN_PG_MAJOR_VERSION
             )));
@@ -76,7 +76,7 @@ impl SetupWizard {
                  Ubuntu:  apt install postgresql-{0}-pgvector\n  \
                  Docker:  use the pgvector/pgvector:pg{0} image\n  \
                  Source:  https://github.com/pgvector/pgvector#installation\n\n\
-                 Then restart PostgreSQL and re-run: ironclaw onboard",
+                 Then restart PostgreSQL and re-run: axinite onboard",
                 major_version
             )));
         }

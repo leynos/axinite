@@ -49,14 +49,14 @@ fn test_save_and_load_database_url() {
     let read_error = format!("read .env at {}", env_path.display());
     let parse_error = format!("parse dotenv from {}", env_path.display());
 
-    let url = "postgres://localhost:5432/ironclaw_test";
+    let url = "postgres://localhost:5432/axinite_test";
     ambient_fs::write(&env_path, format!("DATABASE_URL=\"{}\"\n", url))
         .expect(write_error.as_str());
 
     let content = ambient_fs::read_to_string(&env_path).expect(read_error.as_str());
     assert_eq!(
         content,
-        "DATABASE_URL=\"postgres://localhost:5432/ironclaw_test\"\n"
+        "DATABASE_URL=\"postgres://localhost:5432/axinite_test\"\n"
     );
 
     let parsed: Vec<(String, String)> = dotenvy::from_path_iter(&env_path)
@@ -72,7 +72,7 @@ fn test_save_and_load_database_url() {
 fn test_save_database_url_with_hash_in_password() {
     let dir = tempdir().expect("create temp dir for hash-in-password test");
     let env_path = dir.path().join(".env");
-    let url = "postgres://user:p%23ss@localhost:5432/ironclaw";
+    let url = "postgres://user:p%23ss@localhost:5432/axinite";
 
     ambient_fs::write(&env_path, format!("DATABASE_URL=\"{}\"\n", url))
         .expect("write .env for hash-in-password test");
@@ -130,7 +130,7 @@ fn test_save_bootstrap_env_multiple_vars() {
     let env_path = dir.path().join("nested").join(".env");
     let vars = [
         ("DATABASE_BACKEND", "libsql"),
-        ("LIBSQL_PATH", "/home/user/.ironclaw/ironclaw.db"),
+        ("LIBSQL_PATH", "/home/user/.axinite/axinite.db"),
     ];
 
     ambient_fs::create_dir_all(env_path.parent().expect("env_path has parent"))
@@ -155,7 +155,7 @@ fn test_save_bootstrap_env_multiple_vars() {
         parsed[1],
         (
             "LIBSQL_PATH".to_string(),
-            "/home/user/.ironclaw/ironclaw.db".to_string()
+            "/home/user/.axinite/axinite.db".to_string()
         )
     );
 }

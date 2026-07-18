@@ -59,7 +59,7 @@ pub(super) fn extract_token_usage(
     }
 }
 
-/// Map Bedrock `StopReason` to IronClaw `FinishReason`.
+/// Map Bedrock `StopReason` to Axinite `FinishReason`.
 pub(super) fn map_stop_reason(reason: &StopReason) -> FinishReason {
     match reason {
         StopReason::EndTurn | StopReason::StopSequence => FinishReason::Stop,

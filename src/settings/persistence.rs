@@ -2,7 +2,7 @@
 
 use std::path::PathBuf;
 
-use crate::bootstrap::ironclaw_base_dir;
+use crate::bootstrap::axinite_base_dir;
 
 use super::Settings;
 
@@ -62,9 +62,9 @@ impl Settings {
         map
     }
 
-    /// Get the default settings file path (~/.ironclaw/settings.json).
+    /// Get the default settings file path (~/.axinite/settings.json).
     pub fn default_path() -> std::path::PathBuf {
-        ironclaw_base_dir().join("settings.json")
+        axinite_base_dir().join("settings.json")
     }
 
     /// Load settings from disk, returning default if not found.
@@ -80,9 +80,9 @@ impl Settings {
         }
     }
 
-    /// Default TOML config file path (~/.ironclaw/config.toml).
+    /// Default TOML config file path (~/.axinite/config.toml).
     pub fn default_toml_path() -> PathBuf {
-        ironclaw_base_dir().join("config.toml")
+        axinite_base_dir().join("config.toml")
     }
 
     /// Load settings from a TOML file.
@@ -107,13 +107,13 @@ impl Settings {
             .map_err(|e| format!("failed to serialize settings: {}", e))?;
 
         let content = format!(
-            "# IronClaw configuration file.\n\
+            "# Axinite configuration file.\n\
              #\n\
              # Priority: env var > this file > database settings > defaults.\n\
              # Uncomment and edit values to override defaults.\n\
-             # Run `ironclaw config init` to regenerate this file.\n\
+             # Run `axinite config init` to regenerate this file.\n\
              #\n\
-             # Documentation: https://github.com/nearai/ironclaw\n\
+             # Documentation: https://github.com/leynos/axinite\n\
              \n\
              {raw}"
         );

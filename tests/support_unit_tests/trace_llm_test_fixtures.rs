@@ -1,7 +1,7 @@
 //! Shared fixtures for TraceLlm unit tests.
 
-use ironclaw::llm::recording::{TraceResponse, TraceStep, TraceToolCall};
-use ironclaw::llm::{ChatMessage, CompletionRequest, ToolCompletionRequest};
+use axinite::llm::recording::{TraceResponse, TraceStep, TraceToolCall};
+use axinite::llm::{ChatMessage, CompletionRequest, ToolCompletionRequest};
 
 use crate::support::trace_provider::TraceLlm;
 use crate::support::trace_types::LlmTrace;

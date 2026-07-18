@@ -151,8 +151,8 @@ pub struct SkillReadFileMetadata {
 /// # Example
 ///
 /// ```no_run
-/// # async fn example(skill: &ironclaw::skills::LoadedSkill) {
-/// use ironclaw::skills::file_read::{SkillReadFileResponse, read_skill_file};
+/// # async fn example(skill: &axinite::skills::LoadedSkill) {
+/// use axinite::skills::file_read::{SkillReadFileResponse, read_skill_file};
 ///
 /// match read_skill_file(skill, "references/usage.md").await {
 ///     SkillReadFileResponse::Success(file) => {

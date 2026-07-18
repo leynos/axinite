@@ -1,4 +1,4 @@
-# Smart Model Routing for IronClaw
+# Smart Model Routing for Axinite
 
 **Status:** Implemented **Author:** Microwave **Date:** 2026-02-19
 

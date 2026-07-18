@@ -4,11 +4,11 @@
 > implement this plan task-by-task.
 
 **Goal:** Build a Python + Playwright E2E testing framework that exercises the
-IronClaw web gateway through a real browser against the real binary with a mock
+Axinite web gateway through a real browser against the real binary with a mock
 LLM backend.
 
 **Architecture:** pytest session fixtures start a mock OpenAI-compat HTTP
-server and the ironclaw binary (libSQL in-memory, gateway enabled), then
+server and the axinite binary (libSQL in-memory, gateway enabled), then
 per-test Playwright browser instances navigate to the gateway and make DOM
 assertions.
 
@@ -29,7 +29,7 @@ ______________________________________________________________________
 
 ```toml
 [project]
-name = "ironclaw-e2e"
+name = "axinite-e2e"
 version = "0.1.0"
 requires-python = ">=3.11"
 dependencies = [
@@ -90,7 +90,7 @@ The server must:
 - Handle `POST /v1/chat/completions` with both streaming and non-streaming modes
 - Handle `GET /v1/models` for health checks
 - Pattern-match the last user message to select canned responses
-- Support `stream: true` with proper SSE chunk format (critical for IronClaw's
+- Support `stream: true` with proper SSE chunk format (critical for Axinite's
   streaming)
 
 ```python
@@ -358,7 +358,7 @@ ______________________________________________________________________
 
 Key details from codebase research:
 
-- IronClaw logs `Web UI: http://{host}:{port}/` to stdout (main.rs:508) using
+- Axinite logs `Web UI: http://{host}:{port}/` to stdout (main.rs:508) using
   the config port, not the bound port. So we must use a fixed port, not port 0.
 - Health endpoint: `GET /api/health` (public, no auth required)
 - Auth via `?token=` query parameter for the frontend auto-auth flow
@@ -367,7 +367,7 @@ Key details from codebase research:
 ```python
 """pytest fixtures for E2E tests.
 
-Session-scoped: build binary, start mock LLM, start ironclaw.
+Session-scoped: build binary, start mock LLM, start axinite.
 Function-scoped: fresh Playwright browser page per test.
 """
 
@@ -391,11 +391,11 @@ GATEWAY_PORT = 18_200
 
 
 @pytest.fixture(scope="session")
-def ironclaw_binary():
-    """Ensure ironclaw binary is built. Returns the binary path."""
-    binary = ROOT / "target" / "debug" / "ironclaw"
+def axinite_binary():
+    """Ensure axinite binary is built. Returns the binary path."""
+    binary = ROOT / "target" / "debug" / "axinite"
     if not binary.exists():
-        print("Building ironclaw (this may take a while)...")
+        print("Building axinite (this may take a while)...")
         subprocess.run(
             ["cargo", "build", "--no-default-features", "--features", "libsql"],
             cwd=ROOT,
@@ -437,11 +437,11 @@ async def mock_llm_server():
 
 
 @pytest.fixture(scope="session")
-async def ironclaw_server(ironclaw_binary, mock_llm_server):
-    """Start the ironclaw gateway. Yields the base URL."""
+async def axinite_server(axinite_binary, mock_llm_server):
+    """Start the axinite gateway. Yields the base URL."""
     env = {
         **os.environ,
-        "RUST_LOG": "ironclaw=info",
+        "RUST_LOG": "axinite=info",
         "GATEWAY_ENABLED": "true",
         "GATEWAY_HOST": "127.0.0.1",
         "GATEWAY_PORT": str(GATEWAY_PORT),
@@ -462,7 +462,7 @@ async def ironclaw_server(ironclaw_binary, mock_llm_server):
         "ONBOARD_COMPLETED": "true",
     }
     proc = await asyncio.create_subprocess_exec(
-        ironclaw_binary,
+        axinite_binary,
         stdout=asyncio.subprocess.PIPE,
         stderr=asyncio.subprocess.PIPE,
         env=env,
@@ -480,7 +480,7 @@ async def ironclaw_server(ironclaw_binary, mock_llm_server):
 
 
 @pytest.fixture
-async def page(ironclaw_server):
+async def page(axinite_server):
     """Fresh Playwright browser page, navigated to the gateway with auth."""
     from playwright.async_api import async_playwright
 
@@ -488,7 +488,7 @@ async def page(ironclaw_server):
         browser = await p.chromium.launch(headless=True)
         context = await browser.new_context(viewport={"width": 1280, "height": 720})
         pg = await context.new_page()
-        await pg.goto(f"{ironclaw_server}/?token={AUTH_TOKEN}")
+        await pg.goto(f"{axinite_server}/?token={AUTH_TOKEN}")
         # Wait for the app to initialize (auth screen hidden, SSE connected)
         await pg.wait_for_selector("#auth-screen", state="hidden", timeout=15000)
         yield pg
@@ -500,7 +500,7 @@ async def page(ironclaw_server):
 
 ```bash
 git add tests/e2e/conftest.py
-git commit -m "feat: E2E conftest with session fixtures for mock LLM and ironclaw"
+git commit -m "feat: E2E conftest with session fixtures for mock LLM and axinite"
 ```
 
 ______________________________________________________________________
@@ -549,23 +549,23 @@ async def test_tab_navigation(page):
     await chat_input.wait_for(state="visible", timeout=5000)
 
 
-async def test_auth_rejection(page, ironclaw_server):
+async def test_auth_rejection(page, axinite_server):
     """Navigating without a token shows the auth screen."""
     # Open a new page without the token
     new_page = await page.context.new_page()
-    await new_page.goto(ironclaw_server)
+    await new_page.goto(axinite_server)
     auth_screen = new_page.locator(SEL["auth_screen"])
     await auth_screen.wait_for(state="visible", timeout=10000)
     await new_page.close()
 ```
 
-### Step 2: Verify test runs (may fail if ironclaw isn't built yet -- that's OK)
+### Step 2: Verify test runs (may fail if axinite isn't built yet -- that's OK)
 
 ```bash
 cd tests/e2e && python -m pytest scenarios/test_connection.py -v --timeout=120
 ```
 
-Expected: Tests pass if ironclaw is built, or skip/fail gracefully if not.
+Expected: Tests pass if axinite is built, or skip/fail gracefully if not.
 
 ### Step 3: Commit
 
@@ -813,7 +813,7 @@ jobs:
             ~/.cargo/registry
           key: e2e-${{ runner.os }}-${{ hashFiles('Cargo.lock') }}
 
-      - name: Build ironclaw (libsql)
+      - name: Build axinite (libsql)
         run: cargo build --no-default-features --features libsql
 
       - uses: actions/setup-python@v5
@@ -856,14 +856,14 @@ ______________________________________________________________________
 ### Step 1: Write the README
 
 ````markdown
-# IronClaw E2E Tests
+# Axinite E2E Tests
 
-Browser-level end-to-end tests for the IronClaw web gateway using Python + Playwright.
+Browser-level end-to-end tests for the Axinite web gateway using Python + Playwright.
 
 ## Prerequisites
 
 - Python 3.11+
-- Rust toolchain (for building ironclaw)
+- Rust toolchain (for building axinite)
 - Chromium (installed via Playwright)
 
 ## Setup
@@ -872,9 +872,9 @@ Browser-level end-to-end tests for the IronClaw web gateway using Python + Playw
 cd tests/e2e pip install -e . playwright install chromium
 ```
 
-## Build ironclaw
+## Build axinite
 
-The tests need the ironclaw binary built with libsql support:
+The tests need the axinite binary built with libsql support:
 
 ```bash
 cargo build --no-default-features --features libsql
@@ -898,7 +898,7 @@ HEADED=1 pytest tests/e2e/scenarios/test_connection.py -v
 Tests start two subprocesses:
 
 1. **Mock LLM** (`mock_llm.py`) -- fake OpenAI-compat server with canned responses
-2. **IronClaw** -- the real binary with gateway enabled, pointing to the mock LLM
+2. **Axinite** -- the real binary with gateway enabled, pointing to the mock LLM
 
 Then Playwright drives a headless Chromium browser against the gateway, making DOM assertions.
 
@@ -930,7 +930,7 @@ ______________________________________________________________________
 
 ## Task 10: Integration test -- run all scenarios end-to-end
 
-### Step 1: Build ironclaw
+### Step 1: Build axinite
 
 ```bash
 cargo build --no-default-features --features libsql

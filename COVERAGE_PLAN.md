@@ -1,4 +1,4 @@
-# IronClaw Coverage Plan: 63.3% to 95%
+# Axinite Coverage Plan: 63.3% to 95%
 
 > Generated 2025-03-06 from
 > [Codecov](https://app.codecov.io/gh/nearai/ironclaw/tree/main/src)

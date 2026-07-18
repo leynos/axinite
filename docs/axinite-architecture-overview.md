@@ -9,7 +9,7 @@
   model before changing the system.
 - **Precedence:** `src/NETWORK_SECURITY.md` is the authoritative reference for
   network-facing security controls.
-  `docs/writing-web-assembly-tools-for-ironclaw.md` is the authoritative
+  `docs/writing-web-assembly-tools-for-axinite.md` is the authoritative
   extension-authoring guide for WebAssembly Interface Types (WIT), packaging,
   and host contracts. `docs/developers-guide.md` remains the maintainer
   workflow guide.
@@ -20,8 +20,8 @@ Axinite is a local-first agent runtime that combines interactive channels,
 persistent memory, configurable language model providers, and an extension
 system that can load both WebAssembly (WASM) components and Model Context
 Protocol (MCP) servers at runtime. In the current implementation the code,
-binary, package metadata, and many documents still use the `ironclaw` name.
-This overview uses `axinite` for the system narrative, but retains `ironclaw`
+binary, package metadata, and many documents still use the `axinite` name.
+This overview uses `axinite` for the system narrative, but retains `axinite`
 when referring to commands, APIs, package names, and filenames that still use
 that identifier.
 
@@ -42,8 +42,8 @@ Axinite starts as a single Rust binary. The synchronous `main()` function loads
 environment files before Tokio starts, then hands control to `async_main()`.
 `async_main()` is intentionally thin and delegates to binary-only helper
 modules. First, the dedicated CLI-dispatch helper handles standalone
-subcommands such as `ironclaw tool`, `ironclaw mcp`, `ironclaw config`,
-`ironclaw memory`, and the hidden worker-oriented subcommands. Second, the
+subcommands such as `axinite tool`, `axinite mcp`, `axinite config`,
+`axinite memory`, and the hidden worker-oriented subcommands. Second, the
 startup phases build the shared runtime, start optional services, wire
 channels, and enter the long-running agent loop for the default `run` path.
 
@@ -117,11 +117,11 @@ flowchart TD
 The host boot sequence is deliberately staged so that early failures happen
 before channels and background services start.
 
-1. `main()` loads `.env` files and the per-user `~/.ironclaw/.env` bootstrap
+1. `main()` loads `.env` files and the per-user `~/.axinite/.env` bootstrap
    file before starting Tokio. This avoids mutating process environment after
    worker threads exist.
 2. `async_main()` parses `Cli`, routes standalone subcommands, and only falls
-   through to the agent runtime for `ironclaw run` or no subcommand.
+   through to the agent runtime for `axinite run` or no subcommand.
 3. The host acquires a PID lock to prevent accidental double-starts of the main
    process.
 4. If onboarding is still required and onboarding has not been suppressed, the
@@ -327,7 +327,7 @@ rather than downloaded.
 
 The authoritative packaging and interface contract for WASM extensions lives
 outside this overview. New extension work should follow
-`docs/writing-web-assembly-tools-for-ironclaw.md`, which names `wit/tool.wit`
+`docs/writing-web-assembly-tools-for-axinite.md`, which names `wit/tool.wit`
 and `wit/channel.wit` as the host contracts and requires `0.3.0` WIT metadata
 for rebuilt extensions.
 
@@ -344,7 +344,7 @@ process, owns the worker-facing HTTP API, creates per-job bearer tokens, tracks
 credential grants, serves `GET /worker/{job_id}/tools/catalog`, and executes
 hosted-visible orchestrator-owned tools through
 `POST /worker/{job_id}/tools/execute`. Workers run the same binary through the
-hidden `ironclaw worker` or `ironclaw claude-bridge` subcommands, but with a
+hidden `axinite worker` or `axinite claude-bridge` subcommands, but with a
 restricted runtime that proxies language model access, fetches the remote-tool
 catalogue during startup, and reports status back to the orchestrator.
 
@@ -452,7 +452,7 @@ maintainer should understand before reshaping the system.
 
 - The naming surface is not yet consistent. The repository and this document
   use `axinite`, but the compiled package, CLI name, and many docs still use
-  `ironclaw`.
+  `axinite`.
 - The main process owns many responsibilities at once: CLI routing, service
   hosting, channel wiring, worker orchestration, and lifecycle management. This
   reduces deployment complexity for a single-user installation, but the startup
@@ -489,4 +489,4 @@ maintainer should understand before reshaping the system.
 - `src/NETWORK_SECURITY.md`
 - `docs/developers-guide.md`
 - `docs/documentation-style-guide.md`
-- `docs/writing-web-assembly-tools-for-ironclaw.md`
+- `docs/writing-web-assembly-tools-for-axinite.md`

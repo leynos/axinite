@@ -1,4 +1,4 @@
-_ironclaw() {
+_axinite() {
     local i cur prev opts cmd
     COMPREPLY=()
     if [[ "${BASH_VERSINFO[0]}" -ge 4 ]]; then
@@ -14,388 +14,445 @@ _ironclaw() {
     do
         case "${cmd},${i}" in
             ",$1")
-                cmd="ironclaw"
+                cmd="axinite"
                 ;;
-            ironclaw,claude-bridge)
-                cmd="ironclaw__claude__bridge"
+            axinite,claude-bridge)
+                cmd="axinite__subcmd__claude__subcmd__bridge"
                 ;;
-            ironclaw,completion)
-                cmd="ironclaw__completion"
+            axinite,completion)
+                cmd="axinite__subcmd__completion"
                 ;;
-            ironclaw,config)
-                cmd="ironclaw__config"
+            axinite,config)
+                cmd="axinite__subcmd__config"
                 ;;
-            ironclaw,doctor)
-                cmd="ironclaw__doctor"
+            axinite,doctor)
+                cmd="axinite__subcmd__doctor"
                 ;;
-            ironclaw,help)
-                cmd="ironclaw__help"
+            axinite,help)
+                cmd="axinite__subcmd__help"
                 ;;
-            ironclaw,mcp)
-                cmd="ironclaw__mcp"
+            axinite,mcp)
+                cmd="axinite__subcmd__mcp"
                 ;;
-            ironclaw,memory)
-                cmd="ironclaw__memory"
+            axinite,memory)
+                cmd="axinite__subcmd__memory"
                 ;;
-            ironclaw,onboard)
-                cmd="ironclaw__onboard"
+            axinite,onboard)
+                cmd="axinite__subcmd__onboard"
                 ;;
-            ironclaw,pairing)
-                cmd="ironclaw__pairing"
+            axinite,pairing)
+                cmd="axinite__subcmd__pairing"
                 ;;
-            ironclaw,run)
-                cmd="ironclaw__run"
+            axinite,registry)
+                cmd="axinite__subcmd__registry"
                 ;;
-            ironclaw,service)
-                cmd="ironclaw__service"
+            axinite,run)
+                cmd="axinite__subcmd__run"
                 ;;
-            ironclaw,status)
-                cmd="ironclaw__status"
+            axinite,service)
+                cmd="axinite__subcmd__service"
                 ;;
-            ironclaw,tool)
-                cmd="ironclaw__tool"
+            axinite,status)
+                cmd="axinite__subcmd__status"
                 ;;
-            ironclaw,worker)
-                cmd="ironclaw__worker"
+            axinite,tool)
+                cmd="axinite__subcmd__tool"
                 ;;
-            ironclaw__config,get)
-                cmd="ironclaw__config__get"
+            axinite,worker)
+                cmd="axinite__subcmd__worker"
                 ;;
-            ironclaw__config,help)
-                cmd="ironclaw__config__help"
+            axinite__subcmd__config,get)
+                cmd="axinite__subcmd__config__subcmd__get"
                 ;;
-            ironclaw__config,init)
-                cmd="ironclaw__config__init"
+            axinite__subcmd__config,help)
+                cmd="axinite__subcmd__config__subcmd__help"
                 ;;
-            ironclaw__config,list)
-                cmd="ironclaw__config__list"
+            axinite__subcmd__config,init)
+                cmd="axinite__subcmd__config__subcmd__init"
                 ;;
-            ironclaw__config,path)
-                cmd="ironclaw__config__path"
+            axinite__subcmd__config,list)
+                cmd="axinite__subcmd__config__subcmd__list"
                 ;;
-            ironclaw__config,reset)
-                cmd="ironclaw__config__reset"
+            axinite__subcmd__config,path)
+                cmd="axinite__subcmd__config__subcmd__path"
                 ;;
-            ironclaw__config,set)
-                cmd="ironclaw__config__set"
+            axinite__subcmd__config,reset)
+                cmd="axinite__subcmd__config__subcmd__reset"
                 ;;
-            ironclaw__config__help,get)
-                cmd="ironclaw__config__help__get"
+            axinite__subcmd__config,set)
+                cmd="axinite__subcmd__config__subcmd__set"
                 ;;
-            ironclaw__config__help,help)
-                cmd="ironclaw__config__help__help"
+            axinite__subcmd__config__subcmd__help,get)
+                cmd="axinite__subcmd__config__subcmd__help__subcmd__get"
                 ;;
-            ironclaw__config__help,init)
-                cmd="ironclaw__config__help__init"
+            axinite__subcmd__config__subcmd__help,help)
+                cmd="axinite__subcmd__config__subcmd__help__subcmd__help"
                 ;;
-            ironclaw__config__help,list)
-                cmd="ironclaw__config__help__list"
+            axinite__subcmd__config__subcmd__help,init)
+                cmd="axinite__subcmd__config__subcmd__help__subcmd__init"
                 ;;
-            ironclaw__config__help,path)
-                cmd="ironclaw__config__help__path"
+            axinite__subcmd__config__subcmd__help,list)
+                cmd="axinite__subcmd__config__subcmd__help__subcmd__list"
                 ;;
-            ironclaw__config__help,reset)
-                cmd="ironclaw__config__help__reset"
+            axinite__subcmd__config__subcmd__help,path)
+                cmd="axinite__subcmd__config__subcmd__help__subcmd__path"
                 ;;
-            ironclaw__config__help,set)
-                cmd="ironclaw__config__help__set"
+            axinite__subcmd__config__subcmd__help,reset)
+                cmd="axinite__subcmd__config__subcmd__help__subcmd__reset"
                 ;;
-            ironclaw__help,claude-bridge)
-                cmd="ironclaw__help__claude__bridge"
+            axinite__subcmd__config__subcmd__help,set)
+                cmd="axinite__subcmd__config__subcmd__help__subcmd__set"
                 ;;
-            ironclaw__help,completion)
-                cmd="ironclaw__help__completion"
+            axinite__subcmd__help,claude-bridge)
+                cmd="axinite__subcmd__help__subcmd__claude__subcmd__bridge"
                 ;;
-            ironclaw__help,config)
-                cmd="ironclaw__help__config"
+            axinite__subcmd__help,completion)
+                cmd="axinite__subcmd__help__subcmd__completion"
                 ;;
-            ironclaw__help,doctor)
-                cmd="ironclaw__help__doctor"
+            axinite__subcmd__help,config)
+                cmd="axinite__subcmd__help__subcmd__config"
                 ;;
-            ironclaw__help,help)
-                cmd="ironclaw__help__help"
+            axinite__subcmd__help,doctor)
+                cmd="axinite__subcmd__help__subcmd__doctor"
                 ;;
-            ironclaw__help,mcp)
-                cmd="ironclaw__help__mcp"
+            axinite__subcmd__help,help)
+                cmd="axinite__subcmd__help__subcmd__help"
                 ;;
-            ironclaw__help,memory)
-                cmd="ironclaw__help__memory"
+            axinite__subcmd__help,mcp)
+                cmd="axinite__subcmd__help__subcmd__mcp"
                 ;;
-            ironclaw__help,onboard)
-                cmd="ironclaw__help__onboard"
+            axinite__subcmd__help,memory)
+                cmd="axinite__subcmd__help__subcmd__memory"
                 ;;
-            ironclaw__help,pairing)
-                cmd="ironclaw__help__pairing"
+            axinite__subcmd__help,onboard)
+                cmd="axinite__subcmd__help__subcmd__onboard"
                 ;;
-            ironclaw__help,run)
-                cmd="ironclaw__help__run"
+            axinite__subcmd__help,pairing)
+                cmd="axinite__subcmd__help__subcmd__pairing"
                 ;;
-            ironclaw__help,service)
-                cmd="ironclaw__help__service"
+            axinite__subcmd__help,registry)
+                cmd="axinite__subcmd__help__subcmd__registry"
                 ;;
-            ironclaw__help,status)
-                cmd="ironclaw__help__status"
+            axinite__subcmd__help,run)
+                cmd="axinite__subcmd__help__subcmd__run"
                 ;;
-            ironclaw__help,tool)
-                cmd="ironclaw__help__tool"
+            axinite__subcmd__help,service)
+                cmd="axinite__subcmd__help__subcmd__service"
                 ;;
-            ironclaw__help,worker)
-                cmd="ironclaw__help__worker"
+            axinite__subcmd__help,status)
+                cmd="axinite__subcmd__help__subcmd__status"
                 ;;
-            ironclaw__help__config,get)
-                cmd="ironclaw__help__config__get"
+            axinite__subcmd__help,tool)
+                cmd="axinite__subcmd__help__subcmd__tool"
                 ;;
-            ironclaw__help__config,init)
-                cmd="ironclaw__help__config__init"
+            axinite__subcmd__help,worker)
+                cmd="axinite__subcmd__help__subcmd__worker"
                 ;;
-            ironclaw__help__config,list)
-                cmd="ironclaw__help__config__list"
+            axinite__subcmd__help__subcmd__config,get)
+                cmd="axinite__subcmd__help__subcmd__config__subcmd__get"
                 ;;
-            ironclaw__help__config,path)
-                cmd="ironclaw__help__config__path"
+            axinite__subcmd__help__subcmd__config,init)
+                cmd="axinite__subcmd__help__subcmd__config__subcmd__init"
                 ;;
-            ironclaw__help__config,reset)
-                cmd="ironclaw__help__config__reset"
+            axinite__subcmd__help__subcmd__config,list)
+                cmd="axinite__subcmd__help__subcmd__config__subcmd__list"
                 ;;
-            ironclaw__help__config,set)
-                cmd="ironclaw__help__config__set"
+            axinite__subcmd__help__subcmd__config,path)
+                cmd="axinite__subcmd__help__subcmd__config__subcmd__path"
                 ;;
-            ironclaw__help__mcp,add)
-                cmd="ironclaw__help__mcp__add"
+            axinite__subcmd__help__subcmd__config,reset)
+                cmd="axinite__subcmd__help__subcmd__config__subcmd__reset"
                 ;;
-            ironclaw__help__mcp,auth)
-                cmd="ironclaw__help__mcp__auth"
+            axinite__subcmd__help__subcmd__config,set)
+                cmd="axinite__subcmd__help__subcmd__config__subcmd__set"
                 ;;
-            ironclaw__help__mcp,list)
-                cmd="ironclaw__help__mcp__list"
+            axinite__subcmd__help__subcmd__mcp,add)
+                cmd="axinite__subcmd__help__subcmd__mcp__subcmd__add"
                 ;;
-            ironclaw__help__mcp,remove)
-                cmd="ironclaw__help__mcp__remove"
+            axinite__subcmd__help__subcmd__mcp,auth)
+                cmd="axinite__subcmd__help__subcmd__mcp__subcmd__auth"
                 ;;
-            ironclaw__help__mcp,test)
-                cmd="ironclaw__help__mcp__test"
+            axinite__subcmd__help__subcmd__mcp,list)
+                cmd="axinite__subcmd__help__subcmd__mcp__subcmd__list"
                 ;;
-            ironclaw__help__mcp,toggle)
-                cmd="ironclaw__help__mcp__toggle"
+            axinite__subcmd__help__subcmd__mcp,remove)
+                cmd="axinite__subcmd__help__subcmd__mcp__subcmd__remove"
                 ;;
-            ironclaw__help__memory,read)
-                cmd="ironclaw__help__memory__read"
+            axinite__subcmd__help__subcmd__mcp,test)
+                cmd="axinite__subcmd__help__subcmd__mcp__subcmd__test"
                 ;;
-            ironclaw__help__memory,search)
-                cmd="ironclaw__help__memory__search"
+            axinite__subcmd__help__subcmd__mcp,toggle)
+                cmd="axinite__subcmd__help__subcmd__mcp__subcmd__toggle"
                 ;;
-            ironclaw__help__memory,status)
-                cmd="ironclaw__help__memory__status"
+            axinite__subcmd__help__subcmd__memory,read)
+                cmd="axinite__subcmd__help__subcmd__memory__subcmd__read"
                 ;;
-            ironclaw__help__memory,tree)
-                cmd="ironclaw__help__memory__tree"
+            axinite__subcmd__help__subcmd__memory,search)
+                cmd="axinite__subcmd__help__subcmd__memory__subcmd__search"
                 ;;
-            ironclaw__help__memory,write)
-                cmd="ironclaw__help__memory__write"
+            axinite__subcmd__help__subcmd__memory,status)
+                cmd="axinite__subcmd__help__subcmd__memory__subcmd__status"
                 ;;
-            ironclaw__help__pairing,approve)
-                cmd="ironclaw__help__pairing__approve"
+            axinite__subcmd__help__subcmd__memory,tree)
+                cmd="axinite__subcmd__help__subcmd__memory__subcmd__tree"
                 ;;
-            ironclaw__help__pairing,list)
-                cmd="ironclaw__help__pairing__list"
+            axinite__subcmd__help__subcmd__memory,write)
+                cmd="axinite__subcmd__help__subcmd__memory__subcmd__write"
                 ;;
-            ironclaw__help__service,install)
-                cmd="ironclaw__help__service__install"
+            axinite__subcmd__help__subcmd__pairing,approve)
+                cmd="axinite__subcmd__help__subcmd__pairing__subcmd__approve"
                 ;;
-            ironclaw__help__service,start)
-                cmd="ironclaw__help__service__start"
+            axinite__subcmd__help__subcmd__pairing,list)
+                cmd="axinite__subcmd__help__subcmd__pairing__subcmd__list"
                 ;;
-            ironclaw__help__service,status)
-                cmd="ironclaw__help__service__status"
+            axinite__subcmd__help__subcmd__registry,info)
+                cmd="axinite__subcmd__help__subcmd__registry__subcmd__info"
                 ;;
-            ironclaw__help__service,stop)
-                cmd="ironclaw__help__service__stop"
+            axinite__subcmd__help__subcmd__registry,install)
+                cmd="axinite__subcmd__help__subcmd__registry__subcmd__install"
                 ;;
-            ironclaw__help__service,uninstall)
-                cmd="ironclaw__help__service__uninstall"
+            axinite__subcmd__help__subcmd__registry,install-defaults)
+                cmd="axinite__subcmd__help__subcmd__registry__subcmd__install__subcmd__defaults"
                 ;;
-            ironclaw__help__tool,auth)
-                cmd="ironclaw__help__tool__auth"
+            axinite__subcmd__help__subcmd__registry,list)
+                cmd="axinite__subcmd__help__subcmd__registry__subcmd__list"
                 ;;
-            ironclaw__help__tool,info)
-                cmd="ironclaw__help__tool__info"
+            axinite__subcmd__help__subcmd__service,install)
+                cmd="axinite__subcmd__help__subcmd__service__subcmd__install"
                 ;;
-            ironclaw__help__tool,install)
-                cmd="ironclaw__help__tool__install"
+            axinite__subcmd__help__subcmd__service,start)
+                cmd="axinite__subcmd__help__subcmd__service__subcmd__start"
                 ;;
-            ironclaw__help__tool,list)
-                cmd="ironclaw__help__tool__list"
+            axinite__subcmd__help__subcmd__service,status)
+                cmd="axinite__subcmd__help__subcmd__service__subcmd__status"
                 ;;
-            ironclaw__help__tool,remove)
-                cmd="ironclaw__help__tool__remove"
+            axinite__subcmd__help__subcmd__service,stop)
+                cmd="axinite__subcmd__help__subcmd__service__subcmd__stop"
                 ;;
-            ironclaw__mcp,add)
-                cmd="ironclaw__mcp__add"
+            axinite__subcmd__help__subcmd__service,uninstall)
+                cmd="axinite__subcmd__help__subcmd__service__subcmd__uninstall"
                 ;;
-            ironclaw__mcp,auth)
-                cmd="ironclaw__mcp__auth"
+            axinite__subcmd__help__subcmd__tool,auth)
+                cmd="axinite__subcmd__help__subcmd__tool__subcmd__auth"
                 ;;
-            ironclaw__mcp,help)
-                cmd="ironclaw__mcp__help"
+            axinite__subcmd__help__subcmd__tool,info)
+                cmd="axinite__subcmd__help__subcmd__tool__subcmd__info"
                 ;;
-            ironclaw__mcp,list)
-                cmd="ironclaw__mcp__list"
+            axinite__subcmd__help__subcmd__tool,install)
+                cmd="axinite__subcmd__help__subcmd__tool__subcmd__install"
                 ;;
-            ironclaw__mcp,remove)
-                cmd="ironclaw__mcp__remove"
+            axinite__subcmd__help__subcmd__tool,list)
+                cmd="axinite__subcmd__help__subcmd__tool__subcmd__list"
                 ;;
-            ironclaw__mcp,test)
-                cmd="ironclaw__mcp__test"
+            axinite__subcmd__help__subcmd__tool,remove)
+                cmd="axinite__subcmd__help__subcmd__tool__subcmd__remove"
                 ;;
-            ironclaw__mcp,toggle)
-                cmd="ironclaw__mcp__toggle"
+            axinite__subcmd__help__subcmd__tool,setup)
+                cmd="axinite__subcmd__help__subcmd__tool__subcmd__setup"
                 ;;
-            ironclaw__mcp__help,add)
-                cmd="ironclaw__mcp__help__add"
+            axinite__subcmd__mcp,add)
+                cmd="axinite__subcmd__mcp__subcmd__add"
                 ;;
-            ironclaw__mcp__help,auth)
-                cmd="ironclaw__mcp__help__auth"
+            axinite__subcmd__mcp,auth)
+                cmd="axinite__subcmd__mcp__subcmd__auth"
                 ;;
-            ironclaw__mcp__help,help)
-                cmd="ironclaw__mcp__help__help"
+            axinite__subcmd__mcp,help)
+                cmd="axinite__subcmd__mcp__subcmd__help"
                 ;;
-            ironclaw__mcp__help,list)
-                cmd="ironclaw__mcp__help__list"
+            axinite__subcmd__mcp,list)
+                cmd="axinite__subcmd__mcp__subcmd__list"
                 ;;
-            ironclaw__mcp__help,remove)
-                cmd="ironclaw__mcp__help__remove"
+            axinite__subcmd__mcp,remove)
+                cmd="axinite__subcmd__mcp__subcmd__remove"
                 ;;
-            ironclaw__mcp__help,test)
-                cmd="ironclaw__mcp__help__test"
+            axinite__subcmd__mcp,test)
+                cmd="axinite__subcmd__mcp__subcmd__test"
                 ;;
-            ironclaw__mcp__help,toggle)
-                cmd="ironclaw__mcp__help__toggle"
+            axinite__subcmd__mcp,toggle)
+                cmd="axinite__subcmd__mcp__subcmd__toggle"
                 ;;
-            ironclaw__memory,help)
-                cmd="ironclaw__memory__help"
+            axinite__subcmd__mcp__subcmd__help,add)
+                cmd="axinite__subcmd__mcp__subcmd__help__subcmd__add"
                 ;;
-            ironclaw__memory,read)
-                cmd="ironclaw__memory__read"
+            axinite__subcmd__mcp__subcmd__help,auth)
+                cmd="axinite__subcmd__mcp__subcmd__help__subcmd__auth"
                 ;;
-            ironclaw__memory,search)
-                cmd="ironclaw__memory__search"
+            axinite__subcmd__mcp__subcmd__help,help)
+                cmd="axinite__subcmd__mcp__subcmd__help__subcmd__help"
                 ;;
-            ironclaw__memory,status)
-                cmd="ironclaw__memory__status"
+            axinite__subcmd__mcp__subcmd__help,list)
+                cmd="axinite__subcmd__mcp__subcmd__help__subcmd__list"
                 ;;
-            ironclaw__memory,tree)
-                cmd="ironclaw__memory__tree"
+            axinite__subcmd__mcp__subcmd__help,remove)
+                cmd="axinite__subcmd__mcp__subcmd__help__subcmd__remove"
                 ;;
-            ironclaw__memory,write)
-                cmd="ironclaw__memory__write"
+            axinite__subcmd__mcp__subcmd__help,test)
+                cmd="axinite__subcmd__mcp__subcmd__help__subcmd__test"
                 ;;
-            ironclaw__memory__help,help)
-                cmd="ironclaw__memory__help__help"
+            axinite__subcmd__mcp__subcmd__help,toggle)
+                cmd="axinite__subcmd__mcp__subcmd__help__subcmd__toggle"
                 ;;
-            ironclaw__memory__help,read)
-                cmd="ironclaw__memory__help__read"
+            axinite__subcmd__memory,help)
+                cmd="axinite__subcmd__memory__subcmd__help"
                 ;;
-            ironclaw__memory__help,search)
-                cmd="ironclaw__memory__help__search"
+            axinite__subcmd__memory,read)
+                cmd="axinite__subcmd__memory__subcmd__read"
                 ;;
-            ironclaw__memory__help,status)
-                cmd="ironclaw__memory__help__status"
+            axinite__subcmd__memory,search)
+                cmd="axinite__subcmd__memory__subcmd__search"
                 ;;
-            ironclaw__memory__help,tree)
-                cmd="ironclaw__memory__help__tree"
+            axinite__subcmd__memory,status)
+                cmd="axinite__subcmd__memory__subcmd__status"
                 ;;
-            ironclaw__memory__help,write)
-                cmd="ironclaw__memory__help__write"
+            axinite__subcmd__memory,tree)
+                cmd="axinite__subcmd__memory__subcmd__tree"
                 ;;
-            ironclaw__pairing,approve)
-                cmd="ironclaw__pairing__approve"
+            axinite__subcmd__memory,write)
+                cmd="axinite__subcmd__memory__subcmd__write"
                 ;;
-            ironclaw__pairing,help)
-                cmd="ironclaw__pairing__help"
+            axinite__subcmd__memory__subcmd__help,help)
+                cmd="axinite__subcmd__memory__subcmd__help__subcmd__help"
                 ;;
-            ironclaw__pairing,list)
-                cmd="ironclaw__pairing__list"
+            axinite__subcmd__memory__subcmd__help,read)
+                cmd="axinite__subcmd__memory__subcmd__help__subcmd__read"
                 ;;
-            ironclaw__pairing__help,approve)
-                cmd="ironclaw__pairing__help__approve"
+            axinite__subcmd__memory__subcmd__help,search)
+                cmd="axinite__subcmd__memory__subcmd__help__subcmd__search"
                 ;;
-            ironclaw__pairing__help,help)
-                cmd="ironclaw__pairing__help__help"
+            axinite__subcmd__memory__subcmd__help,status)
+                cmd="axinite__subcmd__memory__subcmd__help__subcmd__status"
                 ;;
-            ironclaw__pairing__help,list)
-                cmd="ironclaw__pairing__help__list"
+            axinite__subcmd__memory__subcmd__help,tree)
+                cmd="axinite__subcmd__memory__subcmd__help__subcmd__tree"
                 ;;
-            ironclaw__service,help)
-                cmd="ironclaw__service__help"
+            axinite__subcmd__memory__subcmd__help,write)
+                cmd="axinite__subcmd__memory__subcmd__help__subcmd__write"
                 ;;
-            ironclaw__service,install)
-                cmd="ironclaw__service__install"
+            axinite__subcmd__pairing,approve)
+                cmd="axinite__subcmd__pairing__subcmd__approve"
                 ;;
-            ironclaw__service,start)
-                cmd="ironclaw__service__start"
+            axinite__subcmd__pairing,help)
+                cmd="axinite__subcmd__pairing__subcmd__help"
                 ;;
-            ironclaw__service,status)
-                cmd="ironclaw__service__status"
+            axinite__subcmd__pairing,list)
+                cmd="axinite__subcmd__pairing__subcmd__list"
                 ;;
-            ironclaw__service,stop)
-                cmd="ironclaw__service__stop"
+            axinite__subcmd__pairing__subcmd__help,approve)
+                cmd="axinite__subcmd__pairing__subcmd__help__subcmd__approve"
                 ;;
-            ironclaw__service,uninstall)
-                cmd="ironclaw__service__uninstall"
+            axinite__subcmd__pairing__subcmd__help,help)
+                cmd="axinite__subcmd__pairing__subcmd__help__subcmd__help"
                 ;;
-            ironclaw__service__help,help)
-                cmd="ironclaw__service__help__help"
+            axinite__subcmd__pairing__subcmd__help,list)
+                cmd="axinite__subcmd__pairing__subcmd__help__subcmd__list"
                 ;;
-            ironclaw__service__help,install)
-                cmd="ironclaw__service__help__install"
+            axinite__subcmd__registry,help)
+                cmd="axinite__subcmd__registry__subcmd__help"
                 ;;
-            ironclaw__service__help,start)
-                cmd="ironclaw__service__help__start"
+            axinite__subcmd__registry,info)
+                cmd="axinite__subcmd__registry__subcmd__info"
                 ;;
-            ironclaw__service__help,status)
-                cmd="ironclaw__service__help__status"
+            axinite__subcmd__registry,install)
+                cmd="axinite__subcmd__registry__subcmd__install"
                 ;;
-            ironclaw__service__help,stop)
-                cmd="ironclaw__service__help__stop"
+            axinite__subcmd__registry,install-defaults)
+                cmd="axinite__subcmd__registry__subcmd__install__subcmd__defaults"
                 ;;
-            ironclaw__service__help,uninstall)
-                cmd="ironclaw__service__help__uninstall"
+            axinite__subcmd__registry,list)
+                cmd="axinite__subcmd__registry__subcmd__list"
                 ;;
-            ironclaw__tool,auth)
-                cmd="ironclaw__tool__auth"
+            axinite__subcmd__registry__subcmd__help,help)
+                cmd="axinite__subcmd__registry__subcmd__help__subcmd__help"
                 ;;
-            ironclaw__tool,help)
-                cmd="ironclaw__tool__help"
+            axinite__subcmd__registry__subcmd__help,info)
+                cmd="axinite__subcmd__registry__subcmd__help__subcmd__info"
                 ;;
-            ironclaw__tool,info)
-                cmd="ironclaw__tool__info"
+            axinite__subcmd__registry__subcmd__help,install)
+                cmd="axinite__subcmd__registry__subcmd__help__subcmd__install"
                 ;;
-            ironclaw__tool,install)
-                cmd="ironclaw__tool__install"
+            axinite__subcmd__registry__subcmd__help,install-defaults)
+                cmd="axinite__subcmd__registry__subcmd__help__subcmd__install__subcmd__defaults"
                 ;;
-            ironclaw__tool,list)
-                cmd="ironclaw__tool__list"
+            axinite__subcmd__registry__subcmd__help,list)
+                cmd="axinite__subcmd__registry__subcmd__help__subcmd__list"
                 ;;
-            ironclaw__tool,remove)
-                cmd="ironclaw__tool__remove"
+            axinite__subcmd__service,help)
+                cmd="axinite__subcmd__service__subcmd__help"
                 ;;
-            ironclaw__tool__help,auth)
-                cmd="ironclaw__tool__help__auth"
+            axinite__subcmd__service,install)
+                cmd="axinite__subcmd__service__subcmd__install"
                 ;;
-            ironclaw__tool__help,help)
-                cmd="ironclaw__tool__help__help"
+            axinite__subcmd__service,start)
+                cmd="axinite__subcmd__service__subcmd__start"
                 ;;
-            ironclaw__tool__help,info)
-                cmd="ironclaw__tool__help__info"
+            axinite__subcmd__service,status)
+                cmd="axinite__subcmd__service__subcmd__status"
                 ;;
-            ironclaw__tool__help,install)
-                cmd="ironclaw__tool__help__install"
+            axinite__subcmd__service,stop)
+                cmd="axinite__subcmd__service__subcmd__stop"
                 ;;
-            ironclaw__tool__help,list)
-                cmd="ironclaw__tool__help__list"
+            axinite__subcmd__service,uninstall)
+                cmd="axinite__subcmd__service__subcmd__uninstall"
                 ;;
-            ironclaw__tool__help,remove)
-                cmd="ironclaw__tool__help__remove"
+            axinite__subcmd__service__subcmd__help,help)
+                cmd="axinite__subcmd__service__subcmd__help__subcmd__help"
+                ;;
+            axinite__subcmd__service__subcmd__help,install)
+                cmd="axinite__subcmd__service__subcmd__help__subcmd__install"
+                ;;
+            axinite__subcmd__service__subcmd__help,start)
+                cmd="axinite__subcmd__service__subcmd__help__subcmd__start"
+                ;;
+            axinite__subcmd__service__subcmd__help,status)
+                cmd="axinite__subcmd__service__subcmd__help__subcmd__status"
+                ;;
+            axinite__subcmd__service__subcmd__help,stop)
+                cmd="axinite__subcmd__service__subcmd__help__subcmd__stop"
+                ;;
+            axinite__subcmd__service__subcmd__help,uninstall)
+                cmd="axinite__subcmd__service__subcmd__help__subcmd__uninstall"
+                ;;
+            axinite__subcmd__tool,auth)
+                cmd="axinite__subcmd__tool__subcmd__auth"
+                ;;
+            axinite__subcmd__tool,help)
+                cmd="axinite__subcmd__tool__subcmd__help"
+                ;;
+            axinite__subcmd__tool,info)
+                cmd="axinite__subcmd__tool__subcmd__info"
+                ;;
+            axinite__subcmd__tool,install)
+                cmd="axinite__subcmd__tool__subcmd__install"
+                ;;
+            axinite__subcmd__tool,list)
+                cmd="axinite__subcmd__tool__subcmd__list"
+                ;;
+            axinite__subcmd__tool,remove)
+                cmd="axinite__subcmd__tool__subcmd__remove"
+                ;;
+            axinite__subcmd__tool,setup)
+                cmd="axinite__subcmd__tool__subcmd__setup"
+                ;;
+            axinite__subcmd__tool__subcmd__help,auth)
+                cmd="axinite__subcmd__tool__subcmd__help__subcmd__auth"
+                ;;
+            axinite__subcmd__tool__subcmd__help,help)
+                cmd="axinite__subcmd__tool__subcmd__help__subcmd__help"
+                ;;
+            axinite__subcmd__tool__subcmd__help,info)
+                cmd="axinite__subcmd__tool__subcmd__help__subcmd__info"
+                ;;
+            axinite__subcmd__tool__subcmd__help,install)
+                cmd="axinite__subcmd__tool__subcmd__help__subcmd__install"
+                ;;
+            axinite__subcmd__tool__subcmd__help,list)
+                cmd="axinite__subcmd__tool__subcmd__help__subcmd__list"
+                ;;
+            axinite__subcmd__tool__subcmd__help,remove)
+                cmd="axinite__subcmd__tool__subcmd__help__subcmd__remove"
+                ;;
+            axinite__subcmd__tool__subcmd__help,setup)
+                cmd="axinite__subcmd__tool__subcmd__help__subcmd__setup"
                 ;;
             *)
                 ;;
@@ -403,8 +460,8 @@ _ironclaw() {
     done
 
     case "${cmd}" in
-        ironclaw)
-            opts="-m -c -h -V --cli-only --no-db --message --config --no-onboard --help --version run onboard config tool mcp memory pairing service doctor status completion worker claude-bridge help"
+        axinite)
+            opts="-m -c -h -V --cli-only --no-db --message --config --no-onboard --help --version run onboard config tool registry mcp memory pairing service doctor status completion worker claude-bridge help"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 1 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
@@ -433,7 +490,7 @@ _ironclaw() {
             COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
             return 0
             ;;
-        ironclaw__claude__bridge)
+        axinite__subcmd__claude__subcmd__bridge)
             opts="-m -c -h --job-id --orchestrator-url --max-turns --model --cli-only --no-db --message --config --no-onboard --help"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 2 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
@@ -479,7 +536,7 @@ _ironclaw() {
             COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
             return 0
             ;;
-        ironclaw__completion)
+        axinite__subcmd__completion)
             opts="-m -c -h --shell --cli-only --no-db --message --config --no-onboard --help"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 2 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
@@ -487,7 +544,7 @@ _ironclaw() {
             fi
             case "${prev}" in
                 --shell)
-                    COMPREPLY=($(compgen -W "bash zsh fish powershell elvish" -- "${cur}"))
+                    COMPREPLY=($(compgen -W "bash elvish fish powershell zsh" -- "${cur}"))
                     return 0
                     ;;
                 --message)
@@ -513,7 +570,7 @@ _ironclaw() {
             COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
             return 0
             ;;
-        ironclaw__config)
+        axinite__subcmd__config)
             opts="-m -c -h --cli-only --no-db --message --config --no-onboard --help init list get set reset path help"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 2 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
@@ -543,7 +600,7 @@ _ironclaw() {
             COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
             return 0
             ;;
-        ironclaw__config__get)
+        axinite__subcmd__config__subcmd__get)
             opts="-m -c -h --cli-only --no-db --message --config --no-onboard --help <PATH>"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 3 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
@@ -573,7 +630,7 @@ _ironclaw() {
             COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
             return 0
             ;;
-        ironclaw__config__help)
+        axinite__subcmd__config__subcmd__help)
             opts="init list get set reset path help"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 3 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
@@ -587,7 +644,7 @@ _ironclaw() {
             COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
             return 0
             ;;
-        ironclaw__config__help__get)
+        axinite__subcmd__config__subcmd__help__subcmd__get)
             opts=""
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 4 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
@@ -601,7 +658,7 @@ _ironclaw() {
             COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
             return 0
             ;;
-        ironclaw__config__help__help)
+        axinite__subcmd__config__subcmd__help__subcmd__help)
             opts=""
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 4 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
@@ -615,7 +672,7 @@ _ironclaw() {
             COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
             return 0
             ;;
-        ironclaw__config__help__init)
+        axinite__subcmd__config__subcmd__help__subcmd__init)
             opts=""
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 4 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
@@ -629,7 +686,7 @@ _ironclaw() {
             COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
             return 0
             ;;
-        ironclaw__config__help__list)
+        axinite__subcmd__config__subcmd__help__subcmd__list)
             opts=""
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 4 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
@@ -643,7 +700,7 @@ _ironclaw() {
             COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
             return 0
             ;;
-        ironclaw__config__help__path)
+        axinite__subcmd__config__subcmd__help__subcmd__path)
             opts=""
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 4 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
@@ -657,7 +714,7 @@ _ironclaw() {
             COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
             return 0
             ;;
-        ironclaw__config__help__reset)
+        axinite__subcmd__config__subcmd__help__subcmd__reset)
             opts=""
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 4 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
@@ -671,7 +728,7 @@ _ironclaw() {
             COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
             return 0
             ;;
-        ironclaw__config__help__set)
+        axinite__subcmd__config__subcmd__help__subcmd__set)
             opts=""
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 4 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
@@ -685,7 +742,7 @@ _ironclaw() {
             COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
             return 0
             ;;
-        ironclaw__config__init)
+        axinite__subcmd__config__subcmd__init)
             opts="-o -m -c -h --output --force --cli-only --no-db --message --config --no-onboard --help"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 3 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
@@ -723,7 +780,7 @@ _ironclaw() {
             COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
             return 0
             ;;
-        ironclaw__config__list)
+        axinite__subcmd__config__subcmd__list)
             opts="-f -m -c -h --filter --cli-only --no-db --message --config --no-onboard --help"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 3 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
@@ -761,7 +818,7 @@ _ironclaw() {
             COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
             return 0
             ;;
-        ironclaw__config__path)
+        axinite__subcmd__config__subcmd__path)
             opts="-m -c -h --cli-only --no-db --message --config --no-onboard --help"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 3 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
@@ -791,7 +848,7 @@ _ironclaw() {
             COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
             return 0
             ;;
-        ironclaw__config__reset)
+        axinite__subcmd__config__subcmd__reset)
             opts="-m -c -h --cli-only --no-db --message --config --no-onboard --help <PATH>"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 3 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
@@ -821,7 +878,7 @@ _ironclaw() {
             COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
             return 0
             ;;
-        ironclaw__config__set)
+        axinite__subcmd__config__subcmd__set)
             opts="-m -c -h --cli-only --no-db --message --config --no-onboard --help <PATH> <VALUE>"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 3 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
@@ -851,7 +908,7 @@ _ironclaw() {
             COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
             return 0
             ;;
-        ironclaw__doctor)
+        axinite__subcmd__doctor)
             opts="-m -c -h --cli-only --no-db --message --config --no-onboard --help"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 2 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
@@ -881,8 +938,8 @@ _ironclaw() {
             COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
             return 0
             ;;
-        ironclaw__help)
-            opts="run onboard config tool mcp memory pairing service doctor status completion worker claude-bridge help"
+        axinite__subcmd__help)
+            opts="run onboard config tool registry mcp memory pairing service doctor status completion worker claude-bridge help"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 2 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
@@ -895,7 +952,7 @@ _ironclaw() {
             COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
             return 0
             ;;
-        ironclaw__help__claude__bridge)
+        axinite__subcmd__help__subcmd__claude__subcmd__bridge)
             opts=""
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 3 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
@@ -909,7 +966,7 @@ _ironclaw() {
             COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
             return 0
             ;;
-        ironclaw__help__completion)
+        axinite__subcmd__help__subcmd__completion)
             opts=""
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 3 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
@@ -923,7 +980,7 @@ _ironclaw() {
             COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
             return 0
             ;;
-        ironclaw__help__config)
+        axinite__subcmd__help__subcmd__config)
             opts="init list get set reset path"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 3 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
@@ -937,7 +994,7 @@ _ironclaw() {
             COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
             return 0
             ;;
-        ironclaw__help__config__get)
+        axinite__subcmd__help__subcmd__config__subcmd__get)
             opts=""
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 4 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
@@ -951,7 +1008,7 @@ _ironclaw() {
             COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
             return 0
             ;;
-        ironclaw__help__config__init)
+        axinite__subcmd__help__subcmd__config__subcmd__init)
             opts=""
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 4 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
@@ -965,7 +1022,7 @@ _ironclaw() {
             COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
             return 0
             ;;
-        ironclaw__help__config__list)
+        axinite__subcmd__help__subcmd__config__subcmd__list)
             opts=""
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 4 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
@@ -979,7 +1036,7 @@ _ironclaw() {
             COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
             return 0
             ;;
-        ironclaw__help__config__path)
+        axinite__subcmd__help__subcmd__config__subcmd__path)
             opts=""
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 4 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
@@ -993,7 +1050,7 @@ _ironclaw() {
             COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
             return 0
             ;;
-        ironclaw__help__config__reset)
+        axinite__subcmd__help__subcmd__config__subcmd__reset)
             opts=""
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 4 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
@@ -1007,7 +1064,7 @@ _ironclaw() {
             COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
             return 0
             ;;
-        ironclaw__help__config__set)
+        axinite__subcmd__help__subcmd__config__subcmd__set)
             opts=""
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 4 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
@@ -1021,7 +1078,7 @@ _ironclaw() {
             COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
             return 0
             ;;
-        ironclaw__help__doctor)
+        axinite__subcmd__help__subcmd__doctor)
             opts=""
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 3 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
@@ -1035,7 +1092,7 @@ _ironclaw() {
             COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
             return 0
             ;;
-        ironclaw__help__help)
+        axinite__subcmd__help__subcmd__help)
             opts=""
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 3 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
@@ -1049,7 +1106,7 @@ _ironclaw() {
             COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
             return 0
             ;;
-        ironclaw__help__mcp)
+        axinite__subcmd__help__subcmd__mcp)
             opts="add remove list auth test toggle"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 3 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
@@ -1063,7 +1120,7 @@ _ironclaw() {
             COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
             return 0
             ;;
-        ironclaw__help__mcp__add)
+        axinite__subcmd__help__subcmd__mcp__subcmd__add)
             opts=""
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 4 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
@@ -1077,7 +1134,7 @@ _ironclaw() {
             COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
             return 0
             ;;
-        ironclaw__help__mcp__auth)
+        axinite__subcmd__help__subcmd__mcp__subcmd__auth)
             opts=""
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 4 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
@@ -1091,7 +1148,7 @@ _ironclaw() {
             COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
             return 0
             ;;
-        ironclaw__help__mcp__list)
+        axinite__subcmd__help__subcmd__mcp__subcmd__list)
             opts=""
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 4 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
@@ -1105,7 +1162,7 @@ _ironclaw() {
             COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
             return 0
             ;;
-        ironclaw__help__mcp__remove)
+        axinite__subcmd__help__subcmd__mcp__subcmd__remove)
             opts=""
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 4 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
@@ -1119,7 +1176,7 @@ _ironclaw() {
             COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
             return 0
             ;;
-        ironclaw__help__mcp__test)
+        axinite__subcmd__help__subcmd__mcp__subcmd__test)
             opts=""
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 4 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
@@ -1133,7 +1190,7 @@ _ironclaw() {
             COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
             return 0
             ;;
-        ironclaw__help__mcp__toggle)
+        axinite__subcmd__help__subcmd__mcp__subcmd__toggle)
             opts=""
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 4 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
@@ -1147,7 +1204,7 @@ _ironclaw() {
             COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
             return 0
             ;;
-        ironclaw__help__memory)
+        axinite__subcmd__help__subcmd__memory)
             opts="search read write tree status"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 3 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
@@ -1161,7 +1218,7 @@ _ironclaw() {
             COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
             return 0
             ;;
-        ironclaw__help__memory__read)
+        axinite__subcmd__help__subcmd__memory__subcmd__read)
             opts=""
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 4 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
@@ -1175,7 +1232,7 @@ _ironclaw() {
             COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
             return 0
             ;;
-        ironclaw__help__memory__search)
+        axinite__subcmd__help__subcmd__memory__subcmd__search)
             opts=""
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 4 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
@@ -1189,7 +1246,7 @@ _ironclaw() {
             COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
             return 0
             ;;
-        ironclaw__help__memory__status)
+        axinite__subcmd__help__subcmd__memory__subcmd__status)
             opts=""
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 4 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
@@ -1203,7 +1260,7 @@ _ironclaw() {
             COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
             return 0
             ;;
-        ironclaw__help__memory__tree)
+        axinite__subcmd__help__subcmd__memory__subcmd__tree)
             opts=""
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 4 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
@@ -1217,7 +1274,7 @@ _ironclaw() {
             COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
             return 0
             ;;
-        ironclaw__help__memory__write)
+        axinite__subcmd__help__subcmd__memory__subcmd__write)
             opts=""
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 4 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
@@ -1231,7 +1288,7 @@ _ironclaw() {
             COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
             return 0
             ;;
-        ironclaw__help__onboard)
+        axinite__subcmd__help__subcmd__onboard)
             opts=""
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 3 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
@@ -1245,7 +1302,7 @@ _ironclaw() {
             COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
             return 0
             ;;
-        ironclaw__help__pairing)
+        axinite__subcmd__help__subcmd__pairing)
             opts="list approve"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 3 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
@@ -1259,7 +1316,7 @@ _ironclaw() {
             COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
             return 0
             ;;
-        ironclaw__help__pairing__approve)
+        axinite__subcmd__help__subcmd__pairing__subcmd__approve)
             opts=""
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 4 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
@@ -1273,7 +1330,7 @@ _ironclaw() {
             COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
             return 0
             ;;
-        ironclaw__help__pairing__list)
+        axinite__subcmd__help__subcmd__pairing__subcmd__list)
             opts=""
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 4 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
@@ -1287,7 +1344,77 @@ _ironclaw() {
             COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
             return 0
             ;;
-        ironclaw__help__run)
+        axinite__subcmd__help__subcmd__registry)
+            opts="list info install install-defaults"
+            if [[ ${cur} == -* || ${COMP_CWORD} -eq 3 ]] ; then
+                COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+                return 0
+            fi
+            case "${prev}" in
+                *)
+                    COMPREPLY=()
+                    ;;
+            esac
+            COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+            return 0
+            ;;
+        axinite__subcmd__help__subcmd__registry__subcmd__info)
+            opts=""
+            if [[ ${cur} == -* || ${COMP_CWORD} -eq 4 ]] ; then
+                COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+                return 0
+            fi
+            case "${prev}" in
+                *)
+                    COMPREPLY=()
+                    ;;
+            esac
+            COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+            return 0
+            ;;
+        axinite__subcmd__help__subcmd__registry__subcmd__install)
+            opts=""
+            if [[ ${cur} == -* || ${COMP_CWORD} -eq 4 ]] ; then
+                COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+                return 0
+            fi
+            case "${prev}" in
+                *)
+                    COMPREPLY=()
+                    ;;
+            esac
+            COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+            return 0
+            ;;
+        axinite__subcmd__help__subcmd__registry__subcmd__install__subcmd__defaults)
+            opts=""
+            if [[ ${cur} == -* || ${COMP_CWORD} -eq 4 ]] ; then
+                COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+                return 0
+            fi
+            case "${prev}" in
+                *)
+                    COMPREPLY=()
+                    ;;
+            esac
+            COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+            return 0
+            ;;
+        axinite__subcmd__help__subcmd__registry__subcmd__list)
+            opts=""
+            if [[ ${cur} == -* || ${COMP_CWORD} -eq 4 ]] ; then
+                COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+                return 0
+            fi
+            case "${prev}" in
+                *)
+                    COMPREPLY=()
+                    ;;
+            esac
+            COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+            return 0
+            ;;
+        axinite__subcmd__help__subcmd__run)
             opts=""
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 3 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
@@ -1301,7 +1428,7 @@ _ironclaw() {
             COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
             return 0
             ;;
-        ironclaw__help__service)
+        axinite__subcmd__help__subcmd__service)
             opts="install start stop status uninstall"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 3 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
@@ -1315,7 +1442,7 @@ _ironclaw() {
             COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
             return 0
             ;;
-        ironclaw__help__service__install)
+        axinite__subcmd__help__subcmd__service__subcmd__install)
             opts=""
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 4 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
@@ -1329,7 +1456,7 @@ _ironclaw() {
             COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
             return 0
             ;;
-        ironclaw__help__service__start)
+        axinite__subcmd__help__subcmd__service__subcmd__start)
             opts=""
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 4 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
@@ -1343,7 +1470,7 @@ _ironclaw() {
             COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
             return 0
             ;;
-        ironclaw__help__service__status)
+        axinite__subcmd__help__subcmd__service__subcmd__status)
             opts=""
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 4 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
@@ -1357,7 +1484,7 @@ _ironclaw() {
             COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
             return 0
             ;;
-        ironclaw__help__service__stop)
+        axinite__subcmd__help__subcmd__service__subcmd__stop)
             opts=""
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 4 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
@@ -1371,7 +1498,7 @@ _ironclaw() {
             COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
             return 0
             ;;
-        ironclaw__help__service__uninstall)
+        axinite__subcmd__help__subcmd__service__subcmd__uninstall)
             opts=""
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 4 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
@@ -1385,7 +1512,7 @@ _ironclaw() {
             COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
             return 0
             ;;
-        ironclaw__help__status)
+        axinite__subcmd__help__subcmd__status)
             opts=""
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 3 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
@@ -1399,8 +1526,8 @@ _ironclaw() {
             COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
             return 0
             ;;
-        ironclaw__help__tool)
-            opts="install list remove info auth"
+        axinite__subcmd__help__subcmd__tool)
+            opts="install list remove info auth setup"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 3 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
@@ -1413,7 +1540,7 @@ _ironclaw() {
             COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
             return 0
             ;;
-        ironclaw__help__tool__auth)
+        axinite__subcmd__help__subcmd__tool__subcmd__auth)
             opts=""
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 4 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
@@ -1427,7 +1554,7 @@ _ironclaw() {
             COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
             return 0
             ;;
-        ironclaw__help__tool__info)
+        axinite__subcmd__help__subcmd__tool__subcmd__info)
             opts=""
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 4 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
@@ -1441,7 +1568,7 @@ _ironclaw() {
             COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
             return 0
             ;;
-        ironclaw__help__tool__install)
+        axinite__subcmd__help__subcmd__tool__subcmd__install)
             opts=""
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 4 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
@@ -1455,7 +1582,7 @@ _ironclaw() {
             COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
             return 0
             ;;
-        ironclaw__help__tool__list)
+        axinite__subcmd__help__subcmd__tool__subcmd__list)
             opts=""
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 4 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
@@ -1469,7 +1596,7 @@ _ironclaw() {
             COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
             return 0
             ;;
-        ironclaw__help__tool__remove)
+        axinite__subcmd__help__subcmd__tool__subcmd__remove)
             opts=""
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 4 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
@@ -1483,7 +1610,21 @@ _ironclaw() {
             COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
             return 0
             ;;
-        ironclaw__help__worker)
+        axinite__subcmd__help__subcmd__tool__subcmd__setup)
+            opts=""
+            if [[ ${cur} == -* || ${COMP_CWORD} -eq 4 ]] ; then
+                COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+                return 0
+            fi
+            case "${prev}" in
+                *)
+                    COMPREPLY=()
+                    ;;
+            esac
+            COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+            return 0
+            ;;
+        axinite__subcmd__help__subcmd__worker)
             opts=""
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 3 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
@@ -1497,7 +1638,7 @@ _ironclaw() {
             COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
             return 0
             ;;
-        ironclaw__mcp)
+        axinite__subcmd__mcp)
             opts="-m -c -h --cli-only --no-db --message --config --no-onboard --help add remove list auth test toggle help"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 2 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
@@ -1527,13 +1668,37 @@ _ironclaw() {
             COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
             return 0
             ;;
-        ironclaw__mcp__add)
-            opts="-m -c -h --client-id --auth-url --token-url --scopes --description --cli-only --no-db --message --config --no-onboard --help <NAME> <URL>"
+        axinite__subcmd__mcp__subcmd__add)
+            opts="-m -c -h --transport --command --arg --env --socket --header --client-id --auth-url --token-url --scopes --description --cli-only --no-db --message --config --no-onboard --help <NAME> [URL]"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 3 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
             fi
             case "${prev}" in
+                --transport)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --command)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --arg)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --env)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --socket)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --header)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
                 --client-id)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
@@ -1577,7 +1742,7 @@ _ironclaw() {
             COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
             return 0
             ;;
-        ironclaw__mcp__auth)
+        axinite__subcmd__mcp__subcmd__auth)
             opts="-u -m -c -h --user --cli-only --no-db --message --config --no-onboard --help <NAME>"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 3 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
@@ -1615,7 +1780,7 @@ _ironclaw() {
             COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
             return 0
             ;;
-        ironclaw__mcp__help)
+        axinite__subcmd__mcp__subcmd__help)
             opts="add remove list auth test toggle help"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 3 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
@@ -1629,7 +1794,7 @@ _ironclaw() {
             COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
             return 0
             ;;
-        ironclaw__mcp__help__add)
+        axinite__subcmd__mcp__subcmd__help__subcmd__add)
             opts=""
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 4 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
@@ -1643,7 +1808,7 @@ _ironclaw() {
             COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
             return 0
             ;;
-        ironclaw__mcp__help__auth)
+        axinite__subcmd__mcp__subcmd__help__subcmd__auth)
             opts=""
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 4 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
@@ -1657,7 +1822,7 @@ _ironclaw() {
             COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
             return 0
             ;;
-        ironclaw__mcp__help__help)
+        axinite__subcmd__mcp__subcmd__help__subcmd__help)
             opts=""
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 4 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
@@ -1671,7 +1836,7 @@ _ironclaw() {
             COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
             return 0
             ;;
-        ironclaw__mcp__help__list)
+        axinite__subcmd__mcp__subcmd__help__subcmd__list)
             opts=""
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 4 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
@@ -1685,7 +1850,7 @@ _ironclaw() {
             COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
             return 0
             ;;
-        ironclaw__mcp__help__remove)
+        axinite__subcmd__mcp__subcmd__help__subcmd__remove)
             opts=""
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 4 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
@@ -1699,7 +1864,7 @@ _ironclaw() {
             COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
             return 0
             ;;
-        ironclaw__mcp__help__test)
+        axinite__subcmd__mcp__subcmd__help__subcmd__test)
             opts=""
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 4 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
@@ -1713,7 +1878,7 @@ _ironclaw() {
             COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
             return 0
             ;;
-        ironclaw__mcp__help__toggle)
+        axinite__subcmd__mcp__subcmd__help__subcmd__toggle)
             opts=""
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 4 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
@@ -1727,7 +1892,7 @@ _ironclaw() {
             COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
             return 0
             ;;
-        ironclaw__mcp__list)
+        axinite__subcmd__mcp__subcmd__list)
             opts="-v -m -c -h --verbose --cli-only --no-db --message --config --no-onboard --help"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 3 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
@@ -1757,7 +1922,7 @@ _ironclaw() {
             COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
             return 0
             ;;
-        ironclaw__mcp__remove)
+        axinite__subcmd__mcp__subcmd__remove)
             opts="-m -c -h --cli-only --no-db --message --config --no-onboard --help <NAME>"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 3 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
@@ -1787,7 +1952,7 @@ _ironclaw() {
             COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
             return 0
             ;;
-        ironclaw__mcp__test)
+        axinite__subcmd__mcp__subcmd__test)
             opts="-u -m -c -h --user --cli-only --no-db --message --config --no-onboard --help <NAME>"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 3 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
@@ -1825,7 +1990,7 @@ _ironclaw() {
             COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
             return 0
             ;;
-        ironclaw__mcp__toggle)
+        axinite__subcmd__mcp__subcmd__toggle)
             opts="-m -c -h --enable --disable --cli-only --no-db --message --config --no-onboard --help <NAME>"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 3 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
@@ -1855,7 +2020,7 @@ _ironclaw() {
             COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
             return 0
             ;;
-        ironclaw__memory)
+        axinite__subcmd__memory)
             opts="-m -c -h --cli-only --no-db --message --config --no-onboard --help search read write tree status help"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 2 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
@@ -1885,7 +2050,7 @@ _ironclaw() {
             COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
             return 0
             ;;
-        ironclaw__memory__help)
+        axinite__subcmd__memory__subcmd__help)
             opts="search read write tree status help"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 3 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
@@ -1899,7 +2064,7 @@ _ironclaw() {
             COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
             return 0
             ;;
-        ironclaw__memory__help__help)
+        axinite__subcmd__memory__subcmd__help__subcmd__help)
             opts=""
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 4 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
@@ -1913,7 +2078,7 @@ _ironclaw() {
             COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
             return 0
             ;;
-        ironclaw__memory__help__read)
+        axinite__subcmd__memory__subcmd__help__subcmd__read)
             opts=""
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 4 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
@@ -1927,7 +2092,7 @@ _ironclaw() {
             COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
             return 0
             ;;
-        ironclaw__memory__help__search)
+        axinite__subcmd__memory__subcmd__help__subcmd__search)
             opts=""
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 4 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
@@ -1941,7 +2106,7 @@ _ironclaw() {
             COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
             return 0
             ;;
-        ironclaw__memory__help__status)
+        axinite__subcmd__memory__subcmd__help__subcmd__status)
             opts=""
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 4 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
@@ -1955,7 +2120,7 @@ _ironclaw() {
             COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
             return 0
             ;;
-        ironclaw__memory__help__tree)
+        axinite__subcmd__memory__subcmd__help__subcmd__tree)
             opts=""
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 4 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
@@ -1969,7 +2134,7 @@ _ironclaw() {
             COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
             return 0
             ;;
-        ironclaw__memory__help__write)
+        axinite__subcmd__memory__subcmd__help__subcmd__write)
             opts=""
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 4 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
@@ -1983,7 +2148,7 @@ _ironclaw() {
             COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
             return 0
             ;;
-        ironclaw__memory__read)
+        axinite__subcmd__memory__subcmd__read)
             opts="-m -c -h --cli-only --no-db --message --config --no-onboard --help <PATH>"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 3 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
@@ -2013,7 +2178,7 @@ _ironclaw() {
             COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
             return 0
             ;;
-        ironclaw__memory__search)
+        axinite__subcmd__memory__subcmd__search)
             opts="-l -m -c -h --limit --cli-only --no-db --message --config --no-onboard --help <QUERY>"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 3 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
@@ -2051,7 +2216,7 @@ _ironclaw() {
             COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
             return 0
             ;;
-        ironclaw__memory__status)
+        axinite__subcmd__memory__subcmd__status)
             opts="-m -c -h --cli-only --no-db --message --config --no-onboard --help"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 3 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
@@ -2081,7 +2246,7 @@ _ironclaw() {
             COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
             return 0
             ;;
-        ironclaw__memory__tree)
+        axinite__subcmd__memory__subcmd__tree)
             opts="-d -m -c -h --depth --cli-only --no-db --message --config --no-onboard --help [PATH]"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 3 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
@@ -2119,7 +2284,7 @@ _ironclaw() {
             COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
             return 0
             ;;
-        ironclaw__memory__write)
+        axinite__subcmd__memory__subcmd__write)
             opts="-a -m -c -h --append --cli-only --no-db --message --config --no-onboard --help <PATH> [CONTENT]"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 3 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
@@ -2149,8 +2314,8 @@ _ironclaw() {
             COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
             return 0
             ;;
-        ironclaw__onboard)
-            opts="-m -c -h --skip-auth --channels-only --cli-only --no-db --message --config --no-onboard --help"
+        axinite__subcmd__onboard)
+            opts="-m -c -h --skip-auth --channels-only --provider-only --quick --cli-only --no-db --message --config --no-onboard --help"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 2 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
@@ -2179,7 +2344,7 @@ _ironclaw() {
             COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
             return 0
             ;;
-        ironclaw__pairing)
+        axinite__subcmd__pairing)
             opts="-m -c -h --cli-only --no-db --message --config --no-onboard --help list approve help"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 2 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
@@ -2209,7 +2374,7 @@ _ironclaw() {
             COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
             return 0
             ;;
-        ironclaw__pairing__approve)
+        axinite__subcmd__pairing__subcmd__approve)
             opts="-m -c -h --cli-only --no-db --message --config --no-onboard --help <CHANNEL> <CODE>"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 3 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
@@ -2239,7 +2404,7 @@ _ironclaw() {
             COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
             return 0
             ;;
-        ironclaw__pairing__help)
+        axinite__subcmd__pairing__subcmd__help)
             opts="list approve help"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 3 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
@@ -2253,7 +2418,7 @@ _ironclaw() {
             COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
             return 0
             ;;
-        ironclaw__pairing__help__approve)
+        axinite__subcmd__pairing__subcmd__help__subcmd__approve)
             opts=""
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 4 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
@@ -2267,7 +2432,7 @@ _ironclaw() {
             COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
             return 0
             ;;
-        ironclaw__pairing__help__help)
+        axinite__subcmd__pairing__subcmd__help__subcmd__help)
             opts=""
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 4 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
@@ -2281,7 +2446,7 @@ _ironclaw() {
             COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
             return 0
             ;;
-        ironclaw__pairing__help__list)
+        axinite__subcmd__pairing__subcmd__help__subcmd__list)
             opts=""
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 4 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
@@ -2295,7 +2460,7 @@ _ironclaw() {
             COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
             return 0
             ;;
-        ironclaw__pairing__list)
+        axinite__subcmd__pairing__subcmd__list)
             opts="-m -c -h --json --cli-only --no-db --message --config --no-onboard --help <CHANNEL>"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 3 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
@@ -2325,7 +2490,257 @@ _ironclaw() {
             COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
             return 0
             ;;
-        ironclaw__run)
+        axinite__subcmd__registry)
+            opts="-m -c -h --cli-only --no-db --message --config --no-onboard --help list info install install-defaults help"
+            if [[ ${cur} == -* || ${COMP_CWORD} -eq 2 ]] ; then
+                COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+                return 0
+            fi
+            case "${prev}" in
+                --message)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                -m)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --config)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                -c)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                *)
+                    COMPREPLY=()
+                    ;;
+            esac
+            COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+            return 0
+            ;;
+        axinite__subcmd__registry__subcmd__help)
+            opts="list info install install-defaults help"
+            if [[ ${cur} == -* || ${COMP_CWORD} -eq 3 ]] ; then
+                COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+                return 0
+            fi
+            case "${prev}" in
+                *)
+                    COMPREPLY=()
+                    ;;
+            esac
+            COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+            return 0
+            ;;
+        axinite__subcmd__registry__subcmd__help__subcmd__help)
+            opts=""
+            if [[ ${cur} == -* || ${COMP_CWORD} -eq 4 ]] ; then
+                COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+                return 0
+            fi
+            case "${prev}" in
+                *)
+                    COMPREPLY=()
+                    ;;
+            esac
+            COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+            return 0
+            ;;
+        axinite__subcmd__registry__subcmd__help__subcmd__info)
+            opts=""
+            if [[ ${cur} == -* || ${COMP_CWORD} -eq 4 ]] ; then
+                COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+                return 0
+            fi
+            case "${prev}" in
+                *)
+                    COMPREPLY=()
+                    ;;
+            esac
+            COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+            return 0
+            ;;
+        axinite__subcmd__registry__subcmd__help__subcmd__install)
+            opts=""
+            if [[ ${cur} == -* || ${COMP_CWORD} -eq 4 ]] ; then
+                COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+                return 0
+            fi
+            case "${prev}" in
+                *)
+                    COMPREPLY=()
+                    ;;
+            esac
+            COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+            return 0
+            ;;
+        axinite__subcmd__registry__subcmd__help__subcmd__install__subcmd__defaults)
+            opts=""
+            if [[ ${cur} == -* || ${COMP_CWORD} -eq 4 ]] ; then
+                COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+                return 0
+            fi
+            case "${prev}" in
+                *)
+                    COMPREPLY=()
+                    ;;
+            esac
+            COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+            return 0
+            ;;
+        axinite__subcmd__registry__subcmd__help__subcmd__list)
+            opts=""
+            if [[ ${cur} == -* || ${COMP_CWORD} -eq 4 ]] ; then
+                COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+                return 0
+            fi
+            case "${prev}" in
+                *)
+                    COMPREPLY=()
+                    ;;
+            esac
+            COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+            return 0
+            ;;
+        axinite__subcmd__registry__subcmd__info)
+            opts="-m -c -h --cli-only --no-db --message --config --no-onboard --help <NAME>"
+            if [[ ${cur} == -* || ${COMP_CWORD} -eq 3 ]] ; then
+                COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+                return 0
+            fi
+            case "${prev}" in
+                --message)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                -m)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --config)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                -c)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                *)
+                    COMPREPLY=()
+                    ;;
+            esac
+            COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+            return 0
+            ;;
+        axinite__subcmd__registry__subcmd__install)
+            opts="-f -m -c -h --force --build --cli-only --no-db --message --config --no-onboard --help <NAME>"
+            if [[ ${cur} == -* || ${COMP_CWORD} -eq 3 ]] ; then
+                COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+                return 0
+            fi
+            case "${prev}" in
+                --message)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                -m)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --config)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                -c)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                *)
+                    COMPREPLY=()
+                    ;;
+            esac
+            COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+            return 0
+            ;;
+        axinite__subcmd__registry__subcmd__install__subcmd__defaults)
+            opts="-f -m -c -h --force --build --cli-only --no-db --message --config --no-onboard --help"
+            if [[ ${cur} == -* || ${COMP_CWORD} -eq 3 ]] ; then
+                COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+                return 0
+            fi
+            case "${prev}" in
+                --message)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                -m)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --config)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                -c)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                *)
+                    COMPREPLY=()
+                    ;;
+            esac
+            COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+            return 0
+            ;;
+        axinite__subcmd__registry__subcmd__list)
+            opts="-k -t -v -m -c -h --kind --tag --verbose --cli-only --no-db --message --config --no-onboard --help"
+            if [[ ${cur} == -* || ${COMP_CWORD} -eq 3 ]] ; then
+                COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+                return 0
+            fi
+            case "${prev}" in
+                --kind)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                -k)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --tag)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                -t)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --message)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                -m)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --config)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                -c)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                *)
+                    COMPREPLY=()
+                    ;;
+            esac
+            COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+            return 0
+            ;;
+        axinite__subcmd__run)
             opts="-m -c -h --cli-only --no-db --message --config --no-onboard --help"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 2 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
@@ -2355,7 +2770,7 @@ _ironclaw() {
             COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
             return 0
             ;;
-        ironclaw__service)
+        axinite__subcmd__service)
             opts="-m -c -h --cli-only --no-db --message --config --no-onboard --help install start stop status uninstall help"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 2 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
@@ -2385,7 +2800,7 @@ _ironclaw() {
             COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
             return 0
             ;;
-        ironclaw__service__help)
+        axinite__subcmd__service__subcmd__help)
             opts="install start stop status uninstall help"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 3 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
@@ -2399,7 +2814,7 @@ _ironclaw() {
             COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
             return 0
             ;;
-        ironclaw__service__help__help)
+        axinite__subcmd__service__subcmd__help__subcmd__help)
             opts=""
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 4 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
@@ -2413,7 +2828,7 @@ _ironclaw() {
             COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
             return 0
             ;;
-        ironclaw__service__help__install)
+        axinite__subcmd__service__subcmd__help__subcmd__install)
             opts=""
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 4 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
@@ -2427,7 +2842,7 @@ _ironclaw() {
             COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
             return 0
             ;;
-        ironclaw__service__help__start)
+        axinite__subcmd__service__subcmd__help__subcmd__start)
             opts=""
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 4 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
@@ -2441,7 +2856,7 @@ _ironclaw() {
             COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
             return 0
             ;;
-        ironclaw__service__help__status)
+        axinite__subcmd__service__subcmd__help__subcmd__status)
             opts=""
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 4 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
@@ -2455,7 +2870,7 @@ _ironclaw() {
             COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
             return 0
             ;;
-        ironclaw__service__help__stop)
+        axinite__subcmd__service__subcmd__help__subcmd__stop)
             opts=""
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 4 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
@@ -2469,7 +2884,7 @@ _ironclaw() {
             COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
             return 0
             ;;
-        ironclaw__service__help__uninstall)
+        axinite__subcmd__service__subcmd__help__subcmd__uninstall)
             opts=""
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 4 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
@@ -2483,7 +2898,7 @@ _ironclaw() {
             COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
             return 0
             ;;
-        ironclaw__service__install)
+        axinite__subcmd__service__subcmd__install)
             opts="-m -c -h --cli-only --no-db --message --config --no-onboard --help"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 3 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
@@ -2513,7 +2928,7 @@ _ironclaw() {
             COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
             return 0
             ;;
-        ironclaw__service__start)
+        axinite__subcmd__service__subcmd__start)
             opts="-m -c -h --cli-only --no-db --message --config --no-onboard --help"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 3 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
@@ -2543,7 +2958,7 @@ _ironclaw() {
             COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
             return 0
             ;;
-        ironclaw__service__status)
+        axinite__subcmd__service__subcmd__status)
             opts="-m -c -h --cli-only --no-db --message --config --no-onboard --help"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 3 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
@@ -2573,7 +2988,7 @@ _ironclaw() {
             COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
             return 0
             ;;
-        ironclaw__service__stop)
+        axinite__subcmd__service__subcmd__stop)
             opts="-m -c -h --cli-only --no-db --message --config --no-onboard --help"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 3 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
@@ -2603,7 +3018,7 @@ _ironclaw() {
             COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
             return 0
             ;;
-        ironclaw__service__uninstall)
+        axinite__subcmd__service__subcmd__uninstall)
             opts="-m -c -h --cli-only --no-db --message --config --no-onboard --help"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 3 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
@@ -2633,7 +3048,7 @@ _ironclaw() {
             COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
             return 0
             ;;
-        ironclaw__status)
+        axinite__subcmd__status)
             opts="-m -c -h --cli-only --no-db --message --config --no-onboard --help"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 2 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
@@ -2663,8 +3078,8 @@ _ironclaw() {
             COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
             return 0
             ;;
-        ironclaw__tool)
-            opts="-m -c -h --cli-only --no-db --message --config --no-onboard --help install list remove info auth help"
+        axinite__subcmd__tool)
+            opts="-m -c -h --cli-only --no-db --message --config --no-onboard --help install list remove info auth setup help"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 2 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
@@ -2693,7 +3108,7 @@ _ironclaw() {
             COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
             return 0
             ;;
-        ironclaw__tool__auth)
+        axinite__subcmd__tool__subcmd__auth)
             opts="-d -u -m -c -h --dir --user --cli-only --no-db --message --config --no-onboard --help <NAME>"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 3 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
@@ -2739,8 +3154,8 @@ _ironclaw() {
             COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
             return 0
             ;;
-        ironclaw__tool__help)
-            opts="install list remove info auth help"
+        axinite__subcmd__tool__subcmd__help)
+            opts="install list remove info auth setup help"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 3 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
@@ -2753,7 +3168,7 @@ _ironclaw() {
             COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
             return 0
             ;;
-        ironclaw__tool__help__auth)
+        axinite__subcmd__tool__subcmd__help__subcmd__auth)
             opts=""
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 4 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
@@ -2767,7 +3182,7 @@ _ironclaw() {
             COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
             return 0
             ;;
-        ironclaw__tool__help__help)
+        axinite__subcmd__tool__subcmd__help__subcmd__help)
             opts=""
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 4 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
@@ -2781,7 +3196,7 @@ _ironclaw() {
             COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
             return 0
             ;;
-        ironclaw__tool__help__info)
+        axinite__subcmd__tool__subcmd__help__subcmd__info)
             opts=""
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 4 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
@@ -2795,7 +3210,7 @@ _ironclaw() {
             COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
             return 0
             ;;
-        ironclaw__tool__help__install)
+        axinite__subcmd__tool__subcmd__help__subcmd__install)
             opts=""
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 4 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
@@ -2809,7 +3224,7 @@ _ironclaw() {
             COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
             return 0
             ;;
-        ironclaw__tool__help__list)
+        axinite__subcmd__tool__subcmd__help__subcmd__list)
             opts=""
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 4 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
@@ -2823,7 +3238,7 @@ _ironclaw() {
             COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
             return 0
             ;;
-        ironclaw__tool__help__remove)
+        axinite__subcmd__tool__subcmd__help__subcmd__remove)
             opts=""
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 4 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
@@ -2837,7 +3252,21 @@ _ironclaw() {
             COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
             return 0
             ;;
-        ironclaw__tool__info)
+        axinite__subcmd__tool__subcmd__help__subcmd__setup)
+            opts=""
+            if [[ ${cur} == -* || ${COMP_CWORD} -eq 4 ]] ; then
+                COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+                return 0
+            fi
+            case "${prev}" in
+                *)
+                    COMPREPLY=()
+                    ;;
+            esac
+            COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+            return 0
+            ;;
+        axinite__subcmd__tool__subcmd__info)
             opts="-d -m -c -h --dir --cli-only --no-db --message --config --no-onboard --help <NAME_OR_PATH>"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 3 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
@@ -2875,7 +3304,7 @@ _ironclaw() {
             COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
             return 0
             ;;
-        ironclaw__tool__install)
+        axinite__subcmd__tool__subcmd__install)
             opts="-n -t -f -m -c -h --name --capabilities --target --release --skip-build --force --cli-only --no-db --message --config --no-onboard --help <PATH>"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 3 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
@@ -2925,7 +3354,7 @@ _ironclaw() {
             COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
             return 0
             ;;
-        ironclaw__tool__list)
+        axinite__subcmd__tool__subcmd__list)
             opts="-d -v -m -c -h --dir --verbose --cli-only --no-db --message --config --no-onboard --help"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 3 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
@@ -2963,7 +3392,7 @@ _ironclaw() {
             COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
             return 0
             ;;
-        ironclaw__tool__remove)
+        axinite__subcmd__tool__subcmd__remove)
             opts="-d -m -c -h --dir --cli-only --no-db --message --config --no-onboard --help <NAME>"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 3 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
@@ -3001,7 +3430,53 @@ _ironclaw() {
             COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
             return 0
             ;;
-        ironclaw__worker)
+        axinite__subcmd__tool__subcmd__setup)
+            opts="-d -u -m -c -h --dir --user --cli-only --no-db --message --config --no-onboard --help <NAME>"
+            if [[ ${cur} == -* || ${COMP_CWORD} -eq 3 ]] ; then
+                COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+                return 0
+            fi
+            case "${prev}" in
+                --dir)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                -d)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --user)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                -u)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --message)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                -m)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --config)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                -c)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                *)
+                    COMPREPLY=()
+                    ;;
+            esac
+            COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+            return 0
+            ;;
+        axinite__subcmd__worker)
             opts="-m -c -h --job-id --orchestrator-url --max-iterations --cli-only --no-db --message --config --no-onboard --help"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 2 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
@@ -3047,7 +3522,7 @@ _ironclaw() {
 }
 
 if [[ "${BASH_VERSINFO[0]}" -eq 4 && "${BASH_VERSINFO[1]}" -ge 4 || "${BASH_VERSINFO[0]}" -gt 4 ]]; then
-    complete -F _ironclaw -o nosort -o bashdefault -o default ironclaw
+    complete -F _axinite -o nosort -o bashdefault -o default axinite
 else
-    complete -F _ironclaw -o bashdefault -o default ironclaw
+    complete -F _axinite -o bashdefault -o default axinite
 fi

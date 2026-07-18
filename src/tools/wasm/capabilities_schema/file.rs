@@ -41,7 +41,7 @@ pub struct CapabilitiesFile {
     pub workspace: Option<WorkspaceCapabilitySchema>,
 
     /// Authentication setup instructions.
-    /// Used by `ironclaw config` to guide users through auth setup.
+    /// Used by `axinite config` to guide users through auth setup.
     #[serde(default)]
     pub auth: Option<AuthCapabilitySchema>,
 

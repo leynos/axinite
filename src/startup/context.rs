@@ -2,7 +2,7 @@
 
 use std::sync::Arc;
 
-use ironclaw::{
+use axinite::{
     app::{AppComponents, RuntimeSideEffects},
     channels::{ChannelManager, web::log_layer::LogBroadcaster},
     config::Config,
@@ -25,10 +25,9 @@ use crate::startup::wasm::WasmChannelRuntimeState;
 pub(crate) struct LoadedConfigContext {
     pub(in crate::startup) config: Config,
     pub(in crate::startup) toml_path: Option<std::path::PathBuf>,
-    pub(in crate::startup) session: Arc<ironclaw::llm::session::SessionManager>,
+    pub(in crate::startup) session: Arc<axinite::llm::session::SessionManager>,
     pub(in crate::startup) log_broadcaster: Arc<LogBroadcaster>,
-    pub(in crate::startup) log_level_handle:
-        Arc<ironclaw::channels::web::log_layer::LogLevelHandle>,
+    pub(in crate::startup) log_level_handle: Arc<axinite::channels::web::log_layer::LogLevelHandle>,
 }
 
 /// Fully built application components handed from `AppBuilder` to the runtime
@@ -47,8 +46,7 @@ pub(crate) struct BuiltComponentsContext {
     pub(in crate::startup) components: AppComponents,
     pub(in crate::startup) side_effects: RuntimeSideEffects,
     pub(in crate::startup) log_broadcaster: Arc<LogBroadcaster>,
-    pub(in crate::startup) log_level_handle:
-        Arc<ironclaw::channels::web::log_layer::LogLevelHandle>,
+    pub(in crate::startup) log_level_handle: Arc<axinite::channels::web::log_layer::LogLevelHandle>,
 }
 
 /// Orchestrator state created during startup before channel setup begins.
@@ -66,19 +64,19 @@ pub(crate) struct BuiltComponentsContext {
 /// snapshot used by later startup status reporting.
 pub(crate) struct OrchestratorContext {
     pub(in crate::startup) container_job_manager:
-        Option<Arc<ironclaw::orchestrator::ContainerJobManager>>,
+        Option<Arc<axinite::orchestrator::ContainerJobManager>>,
     pub(in crate::startup) job_event_tx: Option<
-        tokio::sync::broadcast::Sender<(uuid::Uuid, ironclaw::channels::web::types::SseEvent)>,
+        tokio::sync::broadcast::Sender<(uuid::Uuid, axinite::channels::web::types::SseEvent)>,
     >,
     pub(in crate::startup) prompt_queue: Arc<
         tokio::sync::Mutex<
             std::collections::HashMap<
                 uuid::Uuid,
-                std::collections::VecDeque<ironclaw::orchestrator::api::PendingPrompt>,
+                std::collections::VecDeque<axinite::orchestrator::api::PendingPrompt>,
             >,
         >,
     >,
-    pub(in crate::startup) docker_status: ironclaw::sandbox::DockerStatus,
+    pub(in crate::startup) docker_status: axinite::sandbox::DockerStatus,
 }
 
 /// Shared runtime state carried through the late startup phases after the
@@ -104,24 +102,23 @@ pub(crate) struct CoreAgentContext {
     pub(in crate::startup) config: Config,
     pub(in crate::startup) components: AppComponents,
     pub(in crate::startup) side_effects: RuntimeSideEffects,
-    pub(in crate::startup) active_tunnel: Option<Box<dyn ironclaw::tunnel::Tunnel>>,
+    pub(in crate::startup) active_tunnel: Option<Box<dyn axinite::tunnel::Tunnel>>,
     pub(in crate::startup) container_job_manager:
-        Option<Arc<ironclaw::orchestrator::ContainerJobManager>>,
+        Option<Arc<axinite::orchestrator::ContainerJobManager>>,
     pub(in crate::startup) job_event_tx: Option<
-        tokio::sync::broadcast::Sender<(uuid::Uuid, ironclaw::channels::web::types::SseEvent)>,
+        tokio::sync::broadcast::Sender<(uuid::Uuid, axinite::channels::web::types::SseEvent)>,
     >,
     pub(in crate::startup) prompt_queue: Arc<
         tokio::sync::Mutex<
             std::collections::HashMap<
                 uuid::Uuid,
-                std::collections::VecDeque<ironclaw::orchestrator::api::PendingPrompt>,
+                std::collections::VecDeque<axinite::orchestrator::api::PendingPrompt>,
             >,
         >,
     >,
-    pub(in crate::startup) docker_status: ironclaw::sandbox::DockerStatus,
+    pub(in crate::startup) docker_status: axinite::sandbox::DockerStatus,
     pub(in crate::startup) log_broadcaster: Arc<LogBroadcaster>,
-    pub(in crate::startup) log_level_handle:
-        Arc<ironclaw::channels::web::log_layer::LogLevelHandle>,
+    pub(in crate::startup) log_level_handle: Arc<axinite::channels::web::log_layer::LogLevelHandle>,
 }
 
 /// Runtime hand-off from orchestrator setup into channel and hook
@@ -163,17 +160,17 @@ pub(crate) struct GatewayPhaseContext {
     pub(in crate::startup) core: CoreAgentContext,
     pub(in crate::startup) channels: Arc<ChannelManager>,
     pub(in crate::startup) webhook_server:
-        Option<Arc<tokio::sync::Mutex<ironclaw::channels::WebhookServer>>>,
+        Option<Arc<tokio::sync::Mutex<axinite::channels::WebhookServer>>>,
     pub(in crate::startup) channel_names: Vec<String>,
     pub(in crate::startup) loaded_wasm_channel_names: Vec<String>,
     pub(in crate::startup) wasm_channel_runtime_state: Option<WasmChannelRuntimeState>,
     #[cfg(unix)]
-    pub(in crate::startup) http_channel_state: Option<Arc<ironclaw::channels::HttpChannelState>>,
-    pub(in crate::startup) session_manager: Arc<ironclaw::agent::SessionManager>,
-    pub(in crate::startup) scheduler_slot: ironclaw::tools::builtin::SchedulerSlot,
+    pub(in crate::startup) http_channel_state: Option<Arc<axinite::channels::HttpChannelState>>,
+    pub(in crate::startup) session_manager: Arc<axinite::agent::SessionManager>,
+    pub(in crate::startup) scheduler_slot: axinite::tools::builtin::SchedulerSlot,
     pub(in crate::startup) gateway_url: Option<String>,
     pub(in crate::startup) sse_sender:
-        Option<tokio::sync::broadcast::Sender<ironclaw::channels::web::types::SseEvent>>,
+        Option<tokio::sync::broadcast::Sender<axinite::channels::web::types::SseEvent>>,
     pub(in crate::startup) routine_engine_slot:
-        Option<ironclaw::channels::web::server::RoutineEngineSlot>,
+        Option<axinite::channels::web::server::RoutineEngineSlot>,
 }

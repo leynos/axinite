@@ -5,7 +5,7 @@
 
 use std::path::PathBuf;
 
-use crate::bootstrap::ironclaw_base_dir;
+use crate::bootstrap::axinite_base_dir;
 use crate::settings::Settings;
 
 /// Load settings from JSON and TOML config files, matching the runtime
@@ -35,11 +35,11 @@ fn load_settings_from(json_path: &std::path::Path, toml_path: &std::path::Path) 
 }
 
 fn default_tools_dir() -> PathBuf {
-    ironclaw_base_dir().join("tools")
+    axinite_base_dir().join("tools")
 }
 
 fn default_channels_dir() -> PathBuf {
-    ironclaw_base_dir().join("channels")
+    axinite_base_dir().join("channels")
 }
 
 fn db_backend_name() -> String {
@@ -97,7 +97,7 @@ fn print_session_status() {
     if session_path.exists() {
         println!("found ({})", session_path.display());
     } else {
-        println!("not found (run `ironclaw onboard`)");
+        println!("not found (run `axinite onboard`)");
     }
 }
 
@@ -195,7 +195,7 @@ async fn print_mcp_status() {
 pub async fn run_status_command() -> anyhow::Result<()> {
     let settings = load_settings();
 
-    println!("IronClaw Status");
+    println!("Axinite Status");
     println!("===============\n");
 
     // Version
@@ -225,7 +225,7 @@ pub async fn run_status_command() -> anyhow::Result<()> {
     // Config path
     println!(
         "\n  Config:      {}",
-        crate::bootstrap::ironclaw_env_path().display()
+        crate::bootstrap::axinite_env_path().display()
     );
 
     Ok(())

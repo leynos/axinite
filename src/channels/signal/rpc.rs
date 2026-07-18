@@ -7,7 +7,7 @@ use std::time::Duration;
 use futures::StreamExt;
 use uuid::Uuid;
 
-use crate::bootstrap::ironclaw_base_dir;
+use crate::bootstrap::axinite_base_dir;
 use crate::error::ChannelError;
 
 use super::{GROUP_TARGET_PREFIX, MAX_HTTP_RESPONSE_SIZE, RecipientTarget, SignalChannel};
@@ -267,10 +267,10 @@ impl SignalChannel {
     /// Uses the shared path validation logic from path_utils to ensure:
     /// - No path traversal attacks (../, URL-encoded, null bytes)
     /// - Paths are canonicalized and symlinks resolved
-    /// - All paths are within ~/.ironclaw/ sandbox
+    /// - All paths are within ~/.axinite/ sandbox
     pub(super) fn validate_attachment_paths(paths: &[String]) -> Result<(), ChannelError> {
         // Get the sandbox base directory (same as MessageTool uses)
-        let base_dir = ironclaw_base_dir();
+        let base_dir = axinite_base_dir();
 
         for path in paths {
             crate::tools::builtin::path_utils::validate_path(path, Some(&base_dir)).map_err(

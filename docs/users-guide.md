@@ -188,8 +188,8 @@ When workspace memory is enabled, the search backend differs by database:
 To determine which search mode is active for a workspace, run:
 
 ```text
-ironclaw doctor
-ironclaw status
+axinite doctor
+axinite status
 ```
 
 Both commands report whether indexed or brute-force vector retrieval is

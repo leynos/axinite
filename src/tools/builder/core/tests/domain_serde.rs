@@ -141,8 +141,8 @@ fn test_builder_config_default_sensible_values() {
         config
             .build_dir
             .to_string_lossy()
-            .contains("ironclaw-builds"),
-        "build_dir should contain 'ironclaw-builds'"
+            .contains("axinite-builds"),
+        "build_dir should contain 'axinite-builds'"
     );
 }
 

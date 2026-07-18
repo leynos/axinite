@@ -149,7 +149,7 @@ async fn add_server(args: McpAddArgs) -> anyhow::Result<()> {
 
     if requires_auth {
         println!();
-        println!("  Run 'ironclaw mcp auth {}' to authenticate.", name);
+        println!("  Run 'axinite mcp auth {}' to authenticate.", name);
     }
 
     println!();

@@ -10,7 +10,7 @@ fn print_no_servers_help() {
     println!("  No MCP servers configured.");
     println!();
     println!("  Add a server with:");
-    println!("    ironclaw mcp add <name> <url> [--client-id <id>]");
+    println!("    axinite mcp add <name> <url> [--client-id <id>]");
     println!();
 }
 

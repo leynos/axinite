@@ -4,7 +4,7 @@
 use std::path::PathBuf;
 use std::time::Duration;
 
-use crate::bootstrap::ironclaw_base_dir;
+use crate::bootstrap::axinite_base_dir;
 use crate::config::EnvContext;
 use crate::config::helpers::{
     EnvKey, optional_env_from, parse_bool_env_from, parse_optional_env_from,
@@ -16,7 +16,7 @@ use crate::error::ConfigError;
 pub struct WasmConfig {
     /// Whether WASM tool execution is enabled.
     pub enabled: bool,
-    /// Directory containing installed WASM tools (default: ~/.ironclaw/tools/).
+    /// Directory containing installed WASM tools (default: ~/.axinite/tools/).
     pub tools_dir: PathBuf,
     /// Default memory limit in bytes (default: 10 MB).
     pub default_memory_limit: u64,
@@ -44,9 +44,9 @@ impl Default for WasmConfig {
     }
 }
 
-/// Get the default tools directory (~/.ironclaw/tools/).
+/// Get the default tools directory (~/.axinite/tools/).
 fn default_tools_dir() -> PathBuf {
-    ironclaw_base_dir().join("tools")
+    axinite_base_dir().join("tools")
 }
 
 impl WasmConfig {
@@ -60,7 +60,7 @@ impl WasmConfig {
             enabled: parse_bool_env_from(ctx, EnvKey("WASM_ENABLED"), true)?,
             tools_dir: optional_env_from(ctx, EnvKey("WASM_TOOLS_DIR"))?
                 .map(PathBuf::from)
-                .unwrap_or_else(|| ctx.ironclaw_base_dir().join("tools")),
+                .unwrap_or_else(|| ctx.axinite_base_dir().join("tools")),
             default_memory_limit: parse_optional_env_from(
                 ctx,
                 EnvKey("WASM_DEFAULT_MEMORY_LIMIT"),

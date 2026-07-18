@@ -2,7 +2,7 @@
 //!
 //! Skills are discovered from two filesystem locations:
 //! 1. Workspace skills directory (`<workspace>/skills/`) -- Trusted
-//! 2. User skills directory (`~/.ironclaw/skills/`) -- Trusted
+//! 2. User skills directory (`~/.axinite/skills/`) -- Trusted
 //!
 //! Both flat (`skills/SKILL.md`) and subdirectory (`skills/<name>/SKILL.md`)
 //! layouts are supported. Earlier locations win on name collision (workspace
@@ -91,9 +91,9 @@ impl From<crate::skills::LoadedSkillLocationError> for SkillRegistryError {
 pub struct SkillRegistry {
     /// All loaded skills.
     skills: Vec<LoadedSkill>,
-    /// User skills directory (~/.ironclaw/skills/). Skills here are Trusted.
+    /// User skills directory (~/.axinite/skills/). Skills here are Trusted.
     user_dir: PathBuf,
-    /// Registry-installed skills directory (~/.ironclaw/installed_skills/). Skills here are Installed.
+    /// Registry-installed skills directory (~/.axinite/installed_skills/). Skills here are Installed.
     installed_dir: Option<PathBuf>,
     /// Optional workspace skills directory.
     workspace_dir: Option<PathBuf>,

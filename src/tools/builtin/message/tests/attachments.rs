@@ -15,7 +15,7 @@ async fn message_tool_with_attachments_outside_sandbox() {
     tool.set_context(Some("signal".to_string()), Some("+1234567890".to_string()))
         .await;
 
-    // Execute with attachments outside both sandbox (~/.ironclaw) and /tmp/
+    // Execute with attachments outside both sandbox (~/.axinite) and /tmp/
     let ctx = crate::context::JobContext::new("test", "test description");
     let result = tool
         .execute(

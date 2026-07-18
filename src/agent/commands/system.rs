@@ -118,17 +118,17 @@ impl Agent {
             ));
         }
         // Environment check: restart is only available in Docker containers
-        let in_docker = std::env::var("IRONCLAW_IN_DOCKER")
+        let in_docker = std::env::var("AXINITE_IN_DOCKER")
             .map(|v| v.to_lowercase() == "true")
             .unwrap_or(false);
 
-        tracing::debug!("[commands::restart] IRONCLAW_IN_DOCKER={}", in_docker);
+        tracing::debug!("[commands::restart] AXINITE_IN_DOCKER={}", in_docker);
 
         if !in_docker {
             tracing::warn!("[commands::restart] Restart rejected: not in Docker environment");
             return Ok(SubmissionResult::error(
                 "Restart is not available in this environment. \
-                 The IRONCLAW_IN_DOCKER environment variable must be set to 'true' for Docker deployments."
+                 The AXINITE_IN_DOCKER environment variable must be set to 'true' for Docker deployments."
                     .to_string(),
             ));
         }

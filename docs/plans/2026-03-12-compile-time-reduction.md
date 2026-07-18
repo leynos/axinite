@@ -8,7 +8,7 @@ Status: IN PROGRESS
 
 ## Purpose / big picture
 
-After this effort, IronClaw developers should be able to edit the Rust host,
+After this effort, Axinite developers should be able to edit the Rust host,
 WebAssembly (WASM) extensions, and continuous integration (CI) workflows with
 less waiting between changes and usable feedback. The target is not a single
 trick. It is a stack of improvements that make the common check, test, and
@@ -66,7 +66,7 @@ A representative local measurement on this branch ran:
 set -o pipefail
 /usr/bin/time -f 'ELAPSED %E\nMAXRSS_KB %M' \
   cargo check --no-default-features --features libsql --timings \
-  2>&1 | tee /tmp/check-ironclaw-build-performance.out
+  2>&1 | tee /tmp/check-axinite-build-performance.out
 ```
 
 That run completed in `1m 58.05s`, peaked at `2334232` KB RSS, and wrote a
@@ -83,7 +83,7 @@ main crate:
 - `wasmtime`: `7.47s`
 - `wasmtime-wasi`: `19.27s`
 - `libsql`: `3.38s`
-- `ironclaw` library check: `63.82s`
+- `axinite` library check: `63.82s`
 
 The current `libsql` path also pulls duplicate generations of key Hypertext
 Transfer Protocol (HTTP) and async stacks, including `axum 0.6` and `0.8`,
@@ -219,7 +219,7 @@ Acceptance evidence should include:
 set -o pipefail
 BRANCH=$(git branch --show-current | tr '/' '-')
 cargo nextest run --workspace --no-default-features --features libsql \
-  2>&1 | tee /tmp/nextest-libsql-ironclaw-${BRANCH}.out
+  2>&1 | tee /tmp/nextest-libsql-axinite-${BRANCH}.out
 ```
 
 and an updated repository-native command path such as `make test` or a new
@@ -276,7 +276,7 @@ Acceptance evidence should include repeated runs of:
 set -o pipefail
 BRANCH=$(git branch --show-current | tr '/' '-')
 ./scripts/build-wasm-extensions.sh --channels \
-  2>&1 | tee /tmp/build-wasm-channels-ironclaw-${BRANCH}.out
+  2>&1 | tee /tmp/build-wasm-channels-axinite-${BRANCH}.out
 ```
 
 and either timing improvements or a clear rejection of the attempted approach
@@ -344,7 +344,7 @@ Work from the repository root.
    set -o pipefail
    /usr/bin/time -f 'ELAPSED %E\nMAXRSS_KB %M' \
      cargo check --no-default-features --features libsql --timings \
-     2>&1 | tee /tmp/check-ironclaw-build-performance.out
+     2>&1 | tee /tmp/check-axinite-build-performance.out
    ```
 
 2. Create and keep `docs/developers-guide.md` current before changing
@@ -456,14 +456,14 @@ Work from the repository root.
   `channels-src/telegram/telegram.wasm` file from `build.rs` was not required
   for normal host compilation.
 - The representative `libsql` timing path still spends significant time
-  in `wasmtime`, `wasmtime-wasi`, `cranelift-codegen`, and the main `ironclaw`
+  in `wasmtime`, `wasmtime-wasi`, `cranelift-codegen`, and the main `axinite`
   crate, which means linker improvements alone will not solve the broader
   feedback-loop problem.
 - The standalone WASM tool and channel crates still declare their own
   `[workspace]` roots, which preserves release isolation but also limits
   dependency reuse.
 - The expensive part of the current default-feature test path is still
-  the single large `ironclaw` test crate compile, not nextest execution. The
+  the single large `axinite` test crate compile, not nextest execution. The
   actual `nextest` runtime was about `30.7s` after a `6m 22s` compile.
 - Removing the hidden Telegram build reduced the representative
   `libsql` check command from `1m 58.05s` to `1m 25.45s` on this branch after

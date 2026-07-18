@@ -12,8 +12,8 @@ use std::time::Instant;
 use rust_decimal::Decimal;
 use tokio::sync::Mutex;
 
-use ironclaw::error::LlmError;
-use ironclaw::llm::{
+use axinite::error::LlmError;
+use axinite::llm::{
     CompletionRequest, CompletionResponse, LlmProvider, ModelMetadata, ToolCompletionRequest,
     ToolCompletionResponse,
 };
@@ -94,7 +94,7 @@ impl InstrumentedLlm {
     }
 }
 
-impl ironclaw::llm::NativeLlmProvider for InstrumentedLlm {
+impl axinite::llm::NativeLlmProvider for InstrumentedLlm {
     fn model_name(&self) -> &str {
         self.inner.model_name()
     }

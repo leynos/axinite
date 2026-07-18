@@ -1,6 +1,6 @@
 //! User settings persistence.
 //!
-//! Stores user preferences in ~/.ironclaw/settings.json.
+//! Stores user preferences in ~/.axinite/settings.json.
 //! Settings are loaded with env var > settings.json > default priority.
 
 mod access;

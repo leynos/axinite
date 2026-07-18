@@ -9,9 +9,9 @@ use std::time::Duration;
 use rstest::rstest;
 use serde_json::json;
 
-use ironclaw::channels::OutgoingResponse;
-use ironclaw::context::JobContext;
-use ironclaw::tools::{NativeTool, Tool, ToolError, ToolOutput};
+use axinite::channels::OutgoingResponse;
+use axinite::context::JobContext;
+use axinite::tools::{NativeTool, Tool, ToolError, ToolOutput};
 
 use crate::support::test_rig::{TestRig, TestRigBuilder};
 use crate::support::trace_types::{LlmTrace, load_trace_with_mutation};

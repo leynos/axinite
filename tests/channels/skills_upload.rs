@@ -7,16 +7,16 @@
 
 use std::sync::{Arc, RwLock};
 
-use ironclaw::channels::web::test_helpers::TestGatewayBuilder;
-use ironclaw::skills::SkillRegistry;
-use ironclaw::skills::test_support::{
+use axinite::channels::web::test_helpers::TestGatewayBuilder;
+use axinite::skills::SkillRegistry;
+use axinite::skills::test_support::{
     build_bundle_archive as try_build_bundle_archive,
     build_bundle_archive_from_owned as try_build_bundle_archive_from_owned,
 };
 #[cfg(target_os = "linux")]
-use ironclaw::tools::NativeTool;
+use axinite::tools::NativeTool;
 #[cfg(target_os = "linux")]
-use ironclaw::tools::builtin::SkillReadFileTool;
+use axinite::tools::builtin::SkillReadFileTool;
 use reqwest::multipart::{Form, Part};
 use rstest::rstest;
 use tempfile::TempDir;
@@ -203,7 +203,7 @@ async fn multipart_skill_bundle_upload_round_trip_reads_each_entry(
             "skill": "deploy-docs",
             "path": path,
         }),
-        &ironclaw::context::JobContext::default(),
+        &axinite::context::JobContext::default(),
     )
     .await
     .expect("skill_read_file should return uploaded entry");

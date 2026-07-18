@@ -6,7 +6,7 @@
 use crate::support::trace_llm::{LlmTrace, TraceExpects};
 use crate::support::trace_test_files::write_tmp_trace;
 use crate::support::trace_types::{TraceTurn, load_trace_with_mutation};
-use ironclaw::llm::recording::{TraceResponse, TraceStep};
+use axinite::llm::recording::{TraceResponse, TraceStep};
 
 /// Bundles the expected values checked against a [`TraceExpects`] instance.
 struct CoreExpectsSpec<'a> {

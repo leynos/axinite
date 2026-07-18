@@ -10,7 +10,7 @@ use crate::support::routines::{
     SystemEventSpec, assert_system_event_count, create_test_db, create_workspace,
     make_minimal_engine, register_github_issue_routine,
 };
-use ironclaw::llm::recording::{TraceResponse, TraceStep};
+use axinite::llm::recording::{TraceResponse, TraceStep};
 
 use crate::support::trace_types::LlmTrace;
 

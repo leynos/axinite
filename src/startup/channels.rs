@@ -5,7 +5,7 @@ use std::{
     sync::Arc,
 };
 
-use ironclaw::{
+use axinite::{
     app::AppComponents,
     channels::{
         ChannelManager, GatewayChannel, HttpChannel, ReplChannel, SignalChannel, WebhookServer,
@@ -29,13 +29,13 @@ pub(crate) struct ChannelSetup {
     pub(crate) wasm_channel_runtime_state: Option<WasmChannelRuntimeState>,
     /// (Unix only) Optional shared HTTP channel state for secret-updater wiring.
     #[cfg(unix)]
-    pub(crate) http_channel_state: Option<Arc<ironclaw::channels::HttpChannelState>>,
+    pub(crate) http_channel_state: Option<Arc<axinite::channels::HttpChannelState>>,
 }
 
 struct HttpChannelResult {
     webhook_server_addr: Option<std::net::SocketAddr>,
     #[cfg(unix)]
-    http_channel_state: Option<Arc<ironclaw::channels::HttpChannelState>>,
+    http_channel_state: Option<Arc<axinite::channels::HttpChannelState>>,
 }
 
 /// Registration sinks shared across channel-setup helpers.
@@ -51,27 +51,27 @@ pub(crate) struct ChannelRegistrar<'a> {
 /// Runtime-service dependencies required to configure the gateway channel.
 pub(crate) struct GatewayContext<'a> {
     /// Container job manager exposed to the gateway for sandbox operations.
-    pub(crate) container_job_manager: &'a Option<Arc<ironclaw::orchestrator::ContainerJobManager>>,
+    pub(crate) container_job_manager: &'a Option<Arc<axinite::orchestrator::ContainerJobManager>>,
     /// Session manager used by gateway sessions.
-    pub(crate) session_manager: &'a Arc<ironclaw::agent::SessionManager>,
+    pub(crate) session_manager: &'a Arc<axinite::agent::SessionManager>,
     /// Log broadcaster backing live gateway log streaming.
     pub(crate) log_broadcaster: &'a Arc<LogBroadcaster>,
     /// Shared log-level handle used by the gateway UI.
-    pub(crate) log_level_handle: &'a Arc<ironclaw::channels::web::log_layer::LogLevelHandle>,
+    pub(crate) log_level_handle: &'a Arc<axinite::channels::web::log_layer::LogLevelHandle>,
     /// Prompt queue shared with sandbox-backed job interactions.
     pub(crate) prompt_queue: &'a Arc<
         tokio::sync::Mutex<
             std::collections::HashMap<
                 uuid::Uuid,
-                std::collections::VecDeque<ironclaw::orchestrator::api::PendingPrompt>,
+                std::collections::VecDeque<axinite::orchestrator::api::PendingPrompt>,
             >,
         >,
     >,
     /// Scheduler slot injected into the gateway after startup.
-    pub(crate) scheduler_slot: &'a ironclaw::tools::builtin::SchedulerSlot,
+    pub(crate) scheduler_slot: &'a axinite::tools::builtin::SchedulerSlot,
     /// Broadcast sender for relaying job events into the gateway.
     pub(crate) job_event_tx: &'a Option<
-        tokio::sync::broadcast::Sender<(uuid::Uuid, ironclaw::channels::web::types::SseEvent)>,
+        tokio::sync::broadcast::Sender<(uuid::Uuid, axinite::channels::web::types::SseEvent)>,
     >,
     /// Live channel manager used to register the gateway channel.
     pub(crate) channels: &'a ChannelManager,
@@ -87,9 +87,9 @@ pub(crate) struct GatewaySetup {
     pub(crate) gateway_url: Option<String>,
     /// Gateway SSE broadcast sender for pushing events to connected clients.
     pub(crate) sse_sender:
-        Option<tokio::sync::broadcast::Sender<ironclaw::channels::web::types::SseEvent>>,
+        Option<tokio::sync::broadcast::Sender<axinite::channels::web::types::SseEvent>>,
     /// Slot for injecting a routine engine into the gateway after startup.
-    pub(crate) routine_engine_slot: Option<ironclaw::channels::web::server::RoutineEngineSlot>,
+    pub(crate) routine_engine_slot: Option<axinite::channels::web::server::RoutineEngineSlot>,
 }
 
 /// Registers the interactive REPL channel when CLI mode is enabled.
@@ -316,9 +316,9 @@ pub(crate) async fn setup_gateway_channel(
 ) -> GatewaySetup {
     let mut gateway_url: Option<String> = None;
     let mut sse_sender: Option<
-        tokio::sync::broadcast::Sender<ironclaw::channels::web::types::SseEvent>,
+        tokio::sync::broadcast::Sender<axinite::channels::web::types::SseEvent>,
     > = None;
-    let mut routine_engine_slot: Option<ironclaw::channels::web::server::RoutineEngineSlot> = None;
+    let mut routine_engine_slot: Option<axinite::channels::web::server::RoutineEngineSlot> = None;
 
     if let Some(ref gw_config) = config.channels.gateway {
         let mut gw =
@@ -376,11 +376,8 @@ fn render_socket_addr(host: &str, port: u16) -> String {
 /// Forwards sandbox job events from the broadcast stream into the gateway SSE
 /// manager.
 async fn forward_job_events_to_gateway(
-    mut rx: tokio::sync::broadcast::Receiver<(
-        uuid::Uuid,
-        ironclaw::channels::web::types::SseEvent,
-    )>,
-    gw_state: Arc<ironclaw::channels::web::server::GatewayState>,
+    mut rx: tokio::sync::broadcast::Receiver<(uuid::Uuid, axinite::channels::web::types::SseEvent)>,
+    gw_state: Arc<axinite::channels::web::server::GatewayState>,
 ) {
     loop {
         match rx.recv().await {

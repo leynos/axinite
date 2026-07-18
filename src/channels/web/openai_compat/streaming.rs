@@ -87,10 +87,9 @@ pub(super) async fn handle_streaming(
     let stream = tokio_stream::wrappers::ReceiverStream::new(rx);
     let sse = Sse::new(stream).keep_alive(KeepAlive::new().text(""));
     let mut response = sse.into_response();
-    response.headers_mut().insert(
-        "x-ironclaw-streaming",
-        HeaderValue::from_static("simulated"),
-    );
+    response
+        .headers_mut()
+        .insert("x-axinite-streaming", HeaderValue::from_static("simulated"));
     Ok(response)
 }
 

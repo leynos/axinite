@@ -1,6 +1,6 @@
 //! HTTP client for worker-to-orchestrator communication.
 //!
-//! Every request includes a bearer token from `IRONCLAW_WORKER_TOKEN` env var.
+//! Every request includes a bearer token from `AXINITE_WORKER_TOKEN` env var.
 //! The orchestrator validates this token is scoped to the correct job.
 
 use serde::Serialize;
@@ -44,10 +44,9 @@ const REQUEST_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(30);
 impl WorkerHttpClient {
     /// Create a new client from environment.
     ///
-    /// Reads `IRONCLAW_WORKER_TOKEN` from the environment.
+    /// Reads `AXINITE_WORKER_TOKEN` from the environment.
     pub fn from_env(orchestrator_url: String, job_id: Uuid) -> Result<Self, WorkerError> {
-        let token =
-            std::env::var("IRONCLAW_WORKER_TOKEN").map_err(|_| WorkerError::MissingToken)?;
+        let token = std::env::var("AXINITE_WORKER_TOKEN").map_err(|_| WorkerError::MissingToken)?;
         Self::new(orchestrator_url, job_id, token)
     }
 

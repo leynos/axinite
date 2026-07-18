@@ -197,7 +197,7 @@ async fn install_registry_channel(
 ) -> bool {
     let installer = crate::registry::installer::RegistryInstaller::new(
         repo_root.to_path_buf(),
-        ironclaw_base_dir().join("tools"),
+        axinite_base_dir().join("tools"),
         channels_dir.to_path_buf(),
     );
 

@@ -64,8 +64,8 @@ fn test_manifest_with_kind(
 fn test_installer_creation() {
     let installer = RegistryInstaller::new(
         PathBuf::from("/repo"),
-        PathBuf::from("/home/.ironclaw/tools"),
-        PathBuf::from("/home/.ironclaw/channels"),
+        PathBuf::from("/home/.axinite/tools"),
+        PathBuf::from("/home/.axinite/channels"),
     );
     assert_eq!(installer.repo_root, PathBuf::from("/repo"));
 }

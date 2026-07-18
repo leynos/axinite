@@ -1,8 +1,8 @@
 //! Full-pipeline import tests: database writes, CLI options, dry-run
 //! protection, and idempotency on reimport.
 
-use ironclaw::import::openclaw::reader::OpenClawReader;
-use ironclaw::import::{ImportOptions, ImportStats};
+use axinite::import::openclaw::reader::OpenClawReader;
+use axinite::import::{ImportOptions, ImportStats};
 
 use super::helpers::{
     create_test_db, create_test_openclaw, ensure_libsql_initialized, libsql_test_mutex,

@@ -4,7 +4,7 @@ use std::error::Error;
 use std::path::PathBuf;
 use std::sync::Arc;
 
-use ironclaw::channels::wasm::{
+use axinite::channels::wasm::{
     PreparedChannelModule, WasmChannelRuntime, WasmChannelRuntimeConfig,
 };
 
@@ -20,9 +20,9 @@ pub fn telegram_wasm_path() -> Result<PathBuf, String> {
         return Ok(bundled_component);
     }
 
-    ironclaw::registry::artifacts::find_wasm_artifact(&channel_dir, "telegram_channel", "release")
+    axinite::registry::artifacts::find_wasm_artifact(&channel_dir, "telegram_channel", "release")
         .ok_or_else(|| {
-            let expected = ironclaw::registry::artifacts::resolve_target_dir(&channel_dir)
+            let expected = axinite::registry::artifacts::resolve_target_dir(&channel_dir)
                 .join("wasm32-wasip2/release/telegram_channel.wasm");
             format!(
                 "Telegram WASM module not found. Checked {} and {}",

@@ -6,14 +6,14 @@
 use std::time::Duration;
 
 use anyhow::Context as _;
-use ironclaw::channels::OutgoingResponse;
+use axinite::channels::OutgoingResponse;
 
 use crate::support::cleanup::{CleanupGuard, setup_test_dir_with_suffix};
 use crate::support::test_rig::{TestRig, TestRigBuilder};
 use crate::support::trace_types::LlmTrace;
 
 fn test_dir_base() -> std::path::PathBuf {
-    std::env::temp_dir().join("ironclaw_coverage_test")
+    std::env::temp_dir().join("axinite_coverage_test")
 }
 
 async fn run_trace(
@@ -117,7 +117,7 @@ async fn test_list_dir() {
     let (trace, responses, rig) = run_trace(
         fixture_path,
         "list the test directory",
-        &[("/tmp/ironclaw_coverage_test_list_dir", test_dir.as_str())],
+        &[("/tmp/axinite_coverage_test_list_dir", test_dir.as_str())],
     )
     .await;
 
@@ -142,7 +142,7 @@ async fn test_apply_patch_chain() {
     let (trace, responses, rig) = run_trace(
         fixture_path,
         "Write a file and patch it",
-        &[("/tmp/ironclaw_coverage_test_apply_patch", test_dir.as_str())],
+        &[("/tmp/axinite_coverage_test_apply_patch", test_dir.as_str())],
     )
     .await;
 

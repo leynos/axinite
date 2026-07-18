@@ -5,10 +5,10 @@
 
 [English](README.md) | [简体中文](README.zh-CN.md)
 
-Axinite 继承了 IronClaw 相当多的运行时、CLI 入口和文档内容。这份传承
-是刻意保留的：这个分支沿用了上游的安全与自动化基础，同时把项目带往自
-己的方向。现阶段，编译出来的二进制、crate 名称，以及不少内部路径仍然 使用
-`ironclaw`。
+Axinite 继承了 [IronClaw](https://github.com/nearai/ironclaw) 相当多的运
+行时、CLI 入口和文档内容。这份传承是刻意保留的：这个分支沿用了上游的
+安全与自动化基础，同时把项目带往自己的方向。现在，编译出来的二进制、 crate
+名称，以及内部路径都统一使用 `axinite`。
 
 ______________________________________________________________________
 
@@ -29,25 +29,28 @@ ______________________________________________________________________
 
 ### 安装
 
-Axinite 是这个分支的名称；当前的 crate、可执行文件与初始化命令仍然叫
-`ironclaw`。
+Axinite 是这个分支的名称，当前的 crate、可执行文件与初始化命令都叫 `axinite`。
 
 ```bash
 cargo build
-target/debug/ironclaw onboard --quick
+target/debug/axinite onboard --quick
 ```
+
+> **从 IronClaw 迁移？** 如果你之前使用的是 `ironclaw` 命名的构建版本，
+> 请先将 `~/.ironclaw` 移动到 `~/.axinite`，并将所有 `IRONCLAW_*` 环境
+> 变量重命名为 `AXINITE_*`，然后再运行下面的命令。
 
 ### 基本用法
 
 ```bash
 # 发送一条消息后退出
-target/debug/ironclaw --message "Summarize what this machine is ready to do."
+target/debug/axinite --message "Summarize what this machine is ready to do."
 
 # 查看健康状态与已配置服务
-target/debug/ironclaw status
+target/debug/axinite status
 
 # 检查工作空间记忆功能
-target/debug/ironclaw memory status
+target/debug/axinite memory status
 ```
 
 ______________________________________________________________________
@@ -68,7 +71,7 @@ ______________________________________________________________________
 ## 延伸阅读
 
 - [LLM 提供方指南](docs/LLM_PROVIDERS.md) — 提供方配置与环境变量说明。
-- [初始化规范](src/setup/README.md) — `ironclaw onboard` 实际会配置什么。
+- [初始化规范](src/setup/README.md) — `axinite onboard` 实际会配置什么。
 - [工作空间与记忆](src/workspace/README.md) — 持久记忆布局与相关工具。
 - [构建渠道](docs/BUILDING_CHANNELS.md) — 如何重新构建随仓库分发的渠道
   产物。

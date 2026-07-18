@@ -59,7 +59,7 @@ type AsyncResultUnit<'a> =
 
 #[cfg(feature = "libsql")]
 type AsyncOutgoingResponses<'a> = std::pin::Pin<
-    Box<dyn std::future::Future<Output = Vec<ironclaw::channels::OutgoingResponse>> + 'a>,
+    Box<dyn std::future::Future<Output = Vec<axinite::channels::OutgoingResponse>> + 'a>,
 >;
 
 #[cfg(feature = "libsql")]
@@ -71,13 +71,12 @@ type AsyncCompletedToolCalls<'a> =
     std::pin::Pin<Box<dyn std::future::Future<Output = Vec<(String, bool)>> + 'a>>;
 
 #[cfg(feature = "libsql")]
-type AsyncStatusEvents<'a> = std::pin::Pin<
-    Box<dyn std::future::Future<Output = Vec<ironclaw::channels::StatusUpdate>> + 'a>,
->;
+type AsyncStatusEvents<'a> =
+    std::pin::Pin<Box<dyn std::future::Future<Output = Vec<axinite::channels::StatusUpdate>> + 'a>>;
 
 #[cfg(feature = "libsql")]
 type AsyncTraceRun<'a> = std::pin::Pin<
-    Box<dyn std::future::Future<Output = Vec<Vec<ironclaw::channels::OutgoingResponse>>> + 'a>,
+    Box<dyn std::future::Future<Output = Vec<Vec<axinite::channels::OutgoingResponse>>> + 'a>,
 >;
 
 #[cfg(feature = "libsql")]
@@ -92,7 +91,7 @@ fn _send_message_sig<'a>(rig: &'a test_rig::TestRig, content: &'a str) -> AsyncU
 #[cfg(feature = "libsql")]
 fn _send_incoming_sig<'a>(
     rig: &'a test_rig::TestRig,
-    message: ironclaw::channels::IncomingMessage,
+    message: axinite::channels::IncomingMessage,
 ) -> AsyncUnit<'a> {
     Box::pin(test_rig::TestRig::send_incoming(rig, message))
 }
@@ -165,7 +164,7 @@ const _: fn(test_rig::TestRigBuilder, trace_types::LlmTrace) -> test_rig::TestRi
 #[cfg(feature = "libsql")]
 const _: fn(
     test_rig::TestRigBuilder,
-    std::sync::Arc<dyn ironclaw::llm::LlmProvider>,
+    std::sync::Arc<dyn axinite::llm::LlmProvider>,
 ) -> test_rig::TestRigBuilder = test_rig::TestRigBuilder::with_llm;
 #[cfg(feature = "libsql")]
 const _: fn(test_rig::TestRigBuilder, usize) -> test_rig::TestRigBuilder =
@@ -173,7 +172,7 @@ const _: fn(test_rig::TestRigBuilder, usize) -> test_rig::TestRigBuilder =
 #[cfg(feature = "libsql")]
 const _: fn(
     test_rig::TestRigBuilder,
-    Vec<std::sync::Arc<dyn ironclaw::tools::Tool>>,
+    Vec<std::sync::Arc<dyn axinite::tools::Tool>>,
 ) -> test_rig::TestRigBuilder = test_rig::TestRigBuilder::with_extra_tools;
 #[cfg(feature = "libsql")]
 const _: fn(test_rig::TestRigBuilder, bool) -> test_rig::TestRigBuilder =
@@ -190,12 +189,12 @@ const _: fn(test_rig::TestRigBuilder) -> test_rig::TestRigBuilder =
 #[cfg(feature = "libsql")]
 const _: fn(
     test_rig::TestRigBuilder,
-    Vec<ironclaw::llm::recording::HttpExchange>,
+    Vec<axinite::llm::recording::HttpExchange>,
 ) -> test_rig::TestRigBuilder = test_rig::TestRigBuilder::with_http_exchanges;
 #[cfg(feature = "libsql")]
 const _: fn(
     &test_rig::TestRig,
-) -> Result<Vec<Vec<ironclaw::llm::ChatMessage>>, ironclaw::error::LlmError> =
+) -> Result<Vec<Vec<axinite::llm::ChatMessage>>, axinite::error::LlmError> =
     test_rig::TestRig::captured_llm_requests;
 #[cfg(feature = "libsql")]
 const _: fn(&test_rig::TestRig) -> Vec<String> = test_rig::TestRig::tool_calls_started;
@@ -206,7 +205,7 @@ const _: fn(&test_rig::TestRig) -> Vec<(String, String)> = test_rig::TestRig::to
 #[cfg(feature = "libsql")]
 const _: fn(&test_rig::TestRig) -> Vec<(String, u64)> = test_rig::TestRig::tool_timings;
 #[cfg(feature = "libsql")]
-const _: fn(&test_rig::TestRig) -> Vec<ironclaw::channels::StatusUpdate> =
+const _: fn(&test_rig::TestRig) -> Vec<axinite::channels::StatusUpdate> =
     test_rig::TestRig::captured_status_events;
 #[cfg(feature = "libsql")]
 const _: fn(&test_rig::TestRig) -> u32 = test_rig::TestRig::llm_call_count;
@@ -219,7 +218,7 @@ const _: fn(&test_rig::TestRig) -> f64 = test_rig::TestRig::estimated_cost_usd;
 #[cfg(feature = "libsql")]
 const _: fn(&test_rig::TestRig) -> u64 = test_rig::TestRig::elapsed_ms;
 #[cfg(feature = "libsql")]
-const _: fn(&test_rig::TestRig, &trace_types::LlmTrace, &[ironclaw::channels::OutgoingResponse]) =
+const _: fn(&test_rig::TestRig, &trace_types::LlmTrace, &[axinite::channels::OutgoingResponse]) =
     test_rig::TestRig::verify_trace_expects;
 #[cfg(feature = "libsql")]
 const _: fn(test_rig::TestRig) = test_rig::TestRig::shutdown;
@@ -228,7 +227,7 @@ const _: fn(&test_rig::TestRig) -> bool = test_rig::TestRig::has_safety_warnings
 #[cfg(feature = "libsql")]
 const _: for<'a> fn(&'a test_rig::TestRig, &'a str) -> AsyncUnit<'a> = _send_message_sig;
 #[cfg(feature = "libsql")]
-const _: for<'a> fn(&'a test_rig::TestRig, ironclaw::channels::IncomingMessage) -> AsyncUnit<'a> =
+const _: for<'a> fn(&'a test_rig::TestRig, axinite::channels::IncomingMessage) -> AsyncUnit<'a> =
     _send_incoming_sig;
 
 #[cfg(feature = "libsql")]
@@ -262,10 +261,10 @@ const _: for<'a> fn(
     std::time::Duration,
 ) -> AsyncTraceRun<'a> = _run_and_verify_trace_sig;
 #[cfg(feature = "libsql")]
-const _: fn(&test_rig::TestRig) -> &std::sync::Arc<dyn ironclaw::db::Database> =
+const _: fn(&test_rig::TestRig) -> &std::sync::Arc<dyn axinite::db::Database> =
     test_rig::TestRig::database;
 #[cfg(feature = "libsql")]
-const _: fn(&test_rig::TestRig) -> Option<&std::sync::Arc<ironclaw::workspace::Workspace>> =
+const _: fn(&test_rig::TestRig) -> Option<&std::sync::Arc<axinite::workspace::Workspace>> =
     test_rig::TestRig::workspace;
 #[cfg(feature = "libsql")]
 const _: fn(&test_rig::TestRig) -> Option<&std::sync::Arc<trace_provider::TraceLlm>> =
@@ -277,5 +276,5 @@ const _: for<'a> fn(&'a str) -> AsyncResultUnit<'a> = _run_recorded_trace_sig;
 
 const _: fn(&mut trace_types::LlmTrace, &str, &str) -> usize = trace_types::LlmTrace::patch_path;
 
-const _: for<'a> fn(&'a trace_types::LlmTrace) -> Vec<&'a ironclaw::llm::recording::TraceStep> =
+const _: for<'a> fn(&'a trace_types::LlmTrace) -> Vec<&'a axinite::llm::recording::TraceStep> =
     trace_types::LlmTrace::playable_steps;

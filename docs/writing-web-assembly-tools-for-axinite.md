@@ -1,10 +1,10 @@
-# Writing WebAssembly Extensions for IronClaw
+# Writing WebAssembly Extensions for Axinite
 
 This document is adapted from
-`../imap-wasm/docs/writing-web-assembly-tools-for-ironclaw.md` and updated to
-match the IronClaw repository as it exists on 2026-03-09.
+`../imap-wasm/docs/writing-web-assembly-tools-for-axinite.md` and updated to
+match the Axinite repository as it exists on 2026-03-09.
 
-The most important correction is versioning: new or rebuilt IronClaw extensions
+The most important correction is versioning: new or rebuilt Axinite extensions
 must target WebAssembly Interface Types (WIT) `0.3.0`. This is not a
 speculative future version. It is the current host contract used by both
 `wit/tool.wit` and `wit/channel.wit`.
@@ -16,7 +16,7 @@ Three facts shape almost every extension design decision:
 1. The authoritative contracts are [wit/tool.wit](../wit/tool.wit)
    and [wit/channel.wit](../wit/channel.wit).
 2. The package line for both contracts is `package near:agent@0.3.0;`.
-3. IronClaw installs WebAssembly extensions from named `.tar.gz` bundles, not
+3. Axinite installs WebAssembly extensions from named `.tar.gz` bundles, not
    from loose build directories.
 
 That leads to a practical authoring checklist:
@@ -31,7 +31,7 @@ That leads to a practical authoring checklist:
 
 ## The Current WIT Format
 
-IronClaw has two extension worlds:
+Axinite has two extension worlds:
 
 - tools implement `world sandboxed-tool`
 - channels implement `world sandboxed-channel`
@@ -82,7 +82,7 @@ needs flexibility:
 - channel metadata is a JSON string
 - attachment extras are a JSON string
 
-This is deliberate. IronClaw uses JSON-bearing records to keep the WIT stable
+This is deliberate. Axinite uses JSON-bearing records to keep the WIT stable
 while allowing extension-specific metadata to evolve.
 
 ## Versioning Rules That Matter In Practice
@@ -113,7 +113,7 @@ For example:
 }
 ```
 
-Historical artefacts may still declare older values, and IronClaw's
+Historical artefacts may still declare older values, and Axinite's
 compatibility tests intentionally keep some legacy coverage. That is not a
 licence to ship new sidecars with `0.1.0` or `0.2.0`.
 
@@ -141,7 +141,7 @@ guest-managed socket protocols fit poorly.
 
 ### `tool-invoke` Exists In WIT But Is Not A Safe Design Primitive Yet
 
-`tool-invoke` is part of the tool host interface, but the current IronClaw
+`tool-invoke` is part of the tool host interface, but the current Axinite
 runtime does not make it a reliable composition mechanism for guest code. Do
 not build a new extension assuming guest-to-guest tool orchestration is the
 core happy path.
@@ -186,7 +186,7 @@ At minimum, prove two separate things:
 1. the built component instantiates against the current host linker
 2. the extension behaviour is correct at the protocol or feature level
 
-IronClaw's current repo-level guardrail for the first point is
+Axinite's current repo-level guardrail for the first point is
 [tests/wit_compat.rs](../tests/wit_compat.rs). If the WIT shape, versioning, or
 extension packaging changes, that matrix should be rerun.
 

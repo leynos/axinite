@@ -9,7 +9,7 @@
 Reduce the number of integration test binaries from 40 to 9 by grouping related
 test files into module trees under fewer top-level harnesses. Each top-level
 `.rs` file in `tests/` compiles as a separate binary, linked against the full
-ironclaw crate and all dev-dependencies. With 40 binaries, a single source
+axinite crate and all dev-dependencies. With 40 binaries, a single source
 change triggers 40 relink operations (measured at 6 min 05 s incremental).
 Consolidation targets 9 binaries, cutting link time roughly in proportion.
 

@@ -9,11 +9,11 @@ pub struct OAuthCredentials {
 
 /// Google OAuth "Desktop App" credentials, shared across Google-backed tools.
 /// Compile-time env vars override the hardcoded defaults below.
-const GOOGLE_CLIENT_ID: &str = match option_env!("IRONCLAW_GOOGLE_CLIENT_ID") {
+const GOOGLE_CLIENT_ID: &str = match option_env!("AXINITE_GOOGLE_CLIENT_ID") {
     Some(v) => v,
     None => "564604149681-efo25d43rs85v0tibdepsmdv5dsrhhr0.apps.googleusercontent.com",
 };
-const GOOGLE_CLIENT_SECRET: &str = match option_env!("IRONCLAW_GOOGLE_CLIENT_SECRET") {
+const GOOGLE_CLIENT_SECRET: &str = match option_env!("AXINITE_GOOGLE_CLIENT_SECRET") {
     Some(v) => v,
     None => "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",
 };

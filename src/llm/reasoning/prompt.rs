@@ -109,7 +109,7 @@ Example:
         };
 
         format!(
-            r#"You are IronClaw Agent, a secure autonomous assistant.
+            r#"You are Axinite Agent, a secure autonomous assistant.
 
 {response_format}
 

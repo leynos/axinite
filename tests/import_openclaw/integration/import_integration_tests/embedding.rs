@@ -1,7 +1,7 @@
 //! Embedding-dimension handling tests: mismatch queues re-embedding,
 //! matching dimensions skip it.
 
-use ironclaw::import::openclaw::reader::OpenClawReader;
+use axinite::import::openclaw::reader::OpenClawReader;
 use tempfile::TempDir;
 use uuid::Uuid;
 

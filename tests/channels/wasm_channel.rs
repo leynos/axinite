@@ -9,12 +9,12 @@
 use std::collections::HashMap;
 use std::sync::Arc;
 
-use ironclaw::channels::Channel;
-use ironclaw::channels::wasm::{
+use axinite::channels::Channel;
+use axinite::channels::wasm::{
     ChannelCapabilities, EmitRateLimitConfig, PreparedChannelModule, RegisteredEndpoint,
     WasmChannel, WasmChannelRouter, WasmChannelRuntime, WasmChannelRuntimeConfig,
 };
-use ironclaw::pairing::PairingStore;
+use axinite::pairing::PairingStore;
 use tempfile::TempDir;
 
 /// Create a test runtime for WASM channel operations.
@@ -114,7 +114,7 @@ mod loader_tests {
     async fn test_discover_channels_empty_dir() {
         let dir = TempDir::new().expect("Failed to create temp dir");
 
-        let channels = ironclaw::channels::wasm::discover_channels(dir.path())
+        let channels = axinite::channels::wasm::discover_channels(dir.path())
             .await
             .expect("Discovery failed");
 
@@ -129,7 +129,7 @@ mod loader_tests {
         std::fs::File::create(dir.path().join("slack.wasm")).expect("Failed to create file");
         std::fs::File::create(dir.path().join("telegram.wasm")).expect("Failed to create file");
 
-        let channels = ironclaw::channels::wasm::discover_channels(dir.path())
+        let channels = axinite::channels::wasm::discover_channels(dir.path())
             .await
             .expect("Discovery failed");
 
@@ -160,7 +160,7 @@ mod loader_tests {
             )
             .expect("Failed to write capabilities");
 
-        let channels = ironclaw::channels::wasm::discover_channels(dir.path())
+        let channels = axinite::channels::wasm::discover_channels(dir.path())
             .await
             .expect("Discovery failed");
 
@@ -177,7 +177,7 @@ mod loader_tests {
         std::fs::File::create(dir.path().join("config.json")).expect("Failed to create file");
         std::fs::File::create(dir.path().join("channel.wasm")).expect("Failed to create file");
 
-        let channels = ironclaw::channels::wasm::discover_channels(dir.path())
+        let channels = axinite::channels::wasm::discover_channels(dir.path())
             .await
             .expect("Discovery failed");
 
@@ -268,7 +268,7 @@ mod message_emission_tests {
     //! Tests for message emission through the channel host state.
 
     use super::*;
-    use ironclaw::channels::wasm::{ChannelHostState, EmittedMessage};
+    use axinite::channels::wasm::{ChannelHostState, EmittedMessage};
 
     #[test]
     fn test_emit_message_basic() {

@@ -71,7 +71,7 @@ impl SetupWizard {
     /// settings are loaded from the database after Step 1 establishes a
     /// connection, so users don't have to re-enter everything.
     pub async fn run(&mut self) -> Result<(), SetupError> {
-        print_header("IronClaw Setup Wizard");
+        print_header("Axinite Setup Wizard");
 
         if self.config.channels_only {
             // Channels-only mode: reconnect to existing DB and load settings
