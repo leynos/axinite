@@ -314,7 +314,7 @@ pub(super) fn verify_sha256(bytes: &[u8], expected: &str, url: &str) -> Result<(
     use sha2::{Digest, Sha256};
     let mut hasher = Sha256::new();
     hasher.update(bytes);
-    let actual = format!("{:x}", hasher.finalize());
+    let actual = hex::encode(hasher.finalize());
 
     if actual != expected {
         return Err(RegistryError::ChecksumMismatch {
