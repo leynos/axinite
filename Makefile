@@ -82,11 +82,19 @@ sync-local-wasm-overrides:
 build-github-tool-wasm:
 	$(CARGO) build --manifest-path $(GITHUB_TOOL_MANIFEST) --release --target $(GITHUB_TOOL_WASM_TARGET)
 
+# Formats Rust sources and Markdown. Mirrors the mdformat-all pipeline
+# (mdtablefix, then markdownlint --fix) but excludes CHANGELOG.md (generated
+# upstream release history) and tests/test-pages/ (converter output fixtures)
+# from the formatter input so local edits to those paths are never discarded.
 fmt:
 	$(CARGO) fmt --all
 	$(CARGO) fmt --manifest-path $(GITHUB_TOOL_MANIFEST) --all
-	mdformat-all
-	git checkout -- CHANGELOG.md tests/test-pages
+	fd --print0 --type f --extension md --extension markdown --extension mdx \
+		--exclude CHANGELOG.md --exclude tests/test-pages . \
+		| xargs -0 mdtablefix --wrap --renumber --breaks --ellipsis --fences --in-place
+	fd --print0 --type f --extension md --extension markdown --extension mdx \
+		--exclude CHANGELOG.md --exclude tests/test-pages . \
+		| xargs -0 $(BUNX) markdownlint-cli2 --fix
 
 check-fmt:
 	$(CARGO) fmt --all -- --check
