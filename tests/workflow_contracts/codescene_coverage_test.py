@@ -15,7 +15,7 @@ from pathlib import Path
 
 import yaml
 
-SHA_RE = re.compile(r"^[0-9a-f]{40}$")
+SHA_RE: re.Pattern[str] = re.compile(r"[0-9a-f]{40}")
 
 WORKFLOW_PATH = (
     Path(__file__).resolve().parents[2]
@@ -174,7 +174,7 @@ def test_codescene_check_uses_canonical_guard_and_inputs() -> None:
         "the CodeScene check must immediately follow report generation"
     )
     codescene_ref = str(check.get("uses", "")).split("@")[-1]
-    assert SHA_RE.match(codescene_ref), (
+    assert SHA_RE.fullmatch(codescene_ref), (
         "coverage-check must pin the CodeScene action to a full commit SHA, "
         f"got {codescene_ref!r}"
     )
