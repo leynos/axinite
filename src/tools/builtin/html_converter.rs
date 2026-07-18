@@ -175,10 +175,9 @@ fn restore_missing_figure_captions(document: &kuchiki::NodeRef, markdown: &str) 
             continue;
         };
 
-        if caption.is_empty()
-            || normalized_markdown.contains(caption.as_str())
-            || inserted_captions.contains(caption.as_str())
-        {
+        let already_present = normalized_markdown.contains(caption.as_str())
+            || inserted_captions.contains(caption.as_str());
+        if caption.is_empty() || already_present {
             continue;
         }
 
