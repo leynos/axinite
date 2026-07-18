@@ -15,6 +15,8 @@ mod cleanup_tests;
 mod test_channel_tests;
 #[path = "support_unit_tests/trace_llm_contract_tests.rs"]
 mod trace_llm_contract_tests;
+#[path = "support_unit_tests/trace_llm_test_assertions.rs"]
+mod trace_llm_test_assertions;
 #[path = "support_unit_tests/trace_llm_test_fixtures.rs"]
 mod trace_llm_test_fixtures;
 #[path = "support_unit_tests/trace_llm_tests.rs"]
