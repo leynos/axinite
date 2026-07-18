@@ -37,6 +37,9 @@ pub(super) fn build_rig_request(
     };
 
     Ok(RigRequest {
+        // Per-request model overrides are handled (and warned about) before
+        // the adapter builds the rig request, so the configured model applies.
+        model: None,
         preamble,
         chat_history,
         documents: Vec::new(),
@@ -45,6 +48,8 @@ pub(super) fn build_rig_request(
         max_tokens: max_tokens.map(|t| t as u64),
         tool_choice,
         additional_params,
+        // Structured output is not part of the LlmProvider contract.
+        output_schema: None,
     })
 }
 
