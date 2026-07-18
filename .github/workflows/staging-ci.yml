@@ -28,7 +28,7 @@ jobs:
   # ── Check for new commits ──────────────────────────────────────
   check-changes:
     name: Check for new commits
-    runs-on: ubuntu-latest
+    runs-on: ubicloud-standard-8
     outputs:
       has_changes: ${{ steps.check.outputs.has_changes }}
       current_head: ${{ steps.check.outputs.current_head }}
@@ -103,7 +103,7 @@ jobs:
     name: Create Promotion PR
     needs: check-changes
     if: needs.check-changes.outputs.has_changes == 'true'
-    runs-on: ubuntu-latest
+    runs-on: ubicloud-standard-8
     outputs:
       pr_number: ${{ steps.create-pr.outputs.pr_number }}
       promotion_branch: ${{ steps.branch.outputs.branch }}
@@ -217,7 +217,7 @@ jobs:
       needs.tests.result == 'success' &&
       needs.e2e.result == 'success' &&
       needs.create-promotion-pr.result == 'success'
-    runs-on: ubuntu-latest
+    runs-on: ubicloud-standard-8
     timeout-minutes: 25
     outputs:
       gate_passed: ${{ steps.evaluate.outputs.passed }}
@@ -432,7 +432,7 @@ jobs:
       needs.tests.result == 'success' &&
       needs.e2e.result == 'success' &&
       needs.create-promotion-pr.result == 'success'
-    runs-on: ubuntu-latest
+    runs-on: ubicloud-standard-8
     steps:
       - uses: actions/checkout@v6
         with:
@@ -450,7 +450,7 @@ jobs:
     name: Staging CI Summary
     needs: [check-changes, tests, e2e, create-promotion-pr, gate, update-tag]
     if: always() && needs.check-changes.outputs.has_changes == 'true'
-    runs-on: ubuntu-latest
+    runs-on: ubicloud-standard-8
     steps:
       - name: Summary
         run: |

@@ -10,7 +10,7 @@ permissions:
 
 jobs:
   scope:
-    runs-on: ubuntu-latest
+    runs-on: ubicloud-standard-8
     steps:
       - uses: actions/labeler@v6
         with:

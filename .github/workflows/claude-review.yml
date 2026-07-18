@@ -18,7 +18,7 @@ jobs:
   review:
     name: Claude Code Review
     if: contains(github.event.pull_request.labels.*.name, 'staging-promotion')
-    runs-on: ubuntu-latest
+    runs-on: ubicloud-standard-8
     steps:
       - uses: actions/checkout@v6
         with:

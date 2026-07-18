@@ -6,7 +6,7 @@ name: Code Style
 jobs:
   format:
     name: Formatting
-    runs-on: ubuntu-latest
+    runs-on: ubicloud-standard-8
     env:
       MERMAN_CLI_VERSION: '0.7.0'
     steps:
@@ -45,7 +45,7 @@ jobs:
 
   clippy:
     name: Clippy (${{ matrix.name }})
-    runs-on: ubuntu-latest
+    runs-on: ubicloud-standard-8
     env:
       CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_LINKER: clang
       CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_RUSTFLAGS: >-
@@ -137,7 +137,7 @@ jobs:
   # Roll-up job for branch protection
   code-style:
     name: Code Style (fmt + clippy)
-    runs-on: ubuntu-latest
+    runs-on: ubicloud-standard-8
     if: always()
     needs: [format, clippy, clippy-windows]
     steps:

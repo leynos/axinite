@@ -11,7 +11,7 @@ permissions:
 
 jobs:
   classify:
-    runs-on: ubuntu-latest
+    runs-on: ubicloud-standard-8
     steps:
       - name: Checkout base branch
         uses: actions/checkout@v4
