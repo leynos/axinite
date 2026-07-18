@@ -5,7 +5,7 @@
 //! JSON-RPC framing helpers for newline-delimited byte streams (used by stdio
 //! and unix socket transports).
 //!
-//! Rust 1.92 still rejects `dyn McpTransport` when the trait uses native
+//! Rust 1.93 still rejects `dyn McpTransport` when the trait uses native
 //! `async fn` methods directly, so the boxed-future boundary remains necessary
 //! for object-safe call sites such as `Arc<dyn McpTransport>`.
 
@@ -25,7 +25,7 @@ use crate::tools::tool::ToolError;
 ///
 /// This keeps the object-safe trait compact while preserving `Send` and the
 /// existing `Arc<dyn McpTransport>` call sites that native `async fn` traits
-/// still cannot express on stable Rust 1.92.
+/// still cannot express on stable Rust 1.93.
 pub type McpTransportFuture<'a, T> = Pin<Box<dyn Future<Output = T> + Send + 'a>>;
 
 /// Trait for sending JSON-RPC requests to an MCP server and receiving responses.

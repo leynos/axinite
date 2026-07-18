@@ -97,6 +97,7 @@ Our questioning of other student journalists in 15 student newsrooms brought
  was seen as “a career with words.” The other 5% were designers, designing
  words on computers, for print.
 - Not enough discussion between the business side and web efforts
+
 From our 2011 research
 
 ### Common problems in student newsrooms (2013)
@@ -259,9 +260,6 @@ We don’t know what journalism or the web will be like in 10 years, but
  to learn new tools quickly as they come and go.
 
 Another slide from 2012 website
-
-
-
 ### What we’re trying to share with others
 
 - **A concise guide to building stories for the web**  

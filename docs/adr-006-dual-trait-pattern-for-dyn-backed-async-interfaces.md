@@ -24,7 +24,7 @@ dynamic dispatch today, so those interfaces cannot be migrated by simply
 dropping `#[async_trait]`.[^3]
 
 That is not just a theoretical limitation in older toolchains. A direct
-check on `rustc 1.92.0` still rejects `&dyn McpTransport` when
+check on `rustc 1.93.0` still rejects `&dyn McpTransport` when
 `McpTransport` is written with native `async fn` methods, so the dyn
 boundary must remain explicitly boxed for this repository's current
 minimum toolchain.[^6]

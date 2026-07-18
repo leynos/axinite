@@ -28,7 +28,7 @@ with the current CI setup.
 
 Install these tools before running the standard repository commands:
 
-1. Rust `1.92` via `rustup`.
+1. Rust `1.93` via `rustup`.
 2. `clang` on Linux or WSL.
 3. `mold` on Linux or WSL.
 4. The `wasm32-wasip2` Rust target.
@@ -39,7 +39,7 @@ Install these tools before running the standard repository commands:
 9. `make`.
 10. Git.
 
-The root crate declares `rust-version = "1.92"` in `Cargo.toml`. The repository
+The root crate declares `rust-version = "1.93"` in `Cargo.toml`. The repository
 also includes standalone WebAssembly (WASM) tool and channel crates, so WASM
 tooling is required for more than release-only workflows.
 
@@ -2148,3 +2148,32 @@ The standalone phrase helper and its tests use Python 3.14 at runtime, Pathspec
 1.1.1 and a Python 3.13 Ruff compatibility target. Continuous integration
 installs Nixie 1.1.0 and Merman CLI 0.7.0 before validating the repository's
 Mermaid diagrams with `make nixie`.
+
+## 36. HTML-to-Markdown conversion pipeline
+
+`src/tools/builtin/html_converter.rs` converts HTML `http` tool responses to
+Markdown in three stages:
+
+1. **readability-js** extracts the main article, discarding navigation and
+   other boilerplate.
+2. **kuchiki** strips embedded-media placeholders from the extracted article
+   content, then, once that content is converted to Markdown, parses the
+   *original* raw HTML once more and shares that single `NodeRef` between two
+   restoration passes: restoring an intro heading that extraction demoted out
+   of the article body, and restoring figure captions that would otherwise be
+   dropped.
+3. **html-to-markdown-rs** renders the cleaned HTML as Markdown, between the
+   media-removal and restoration passes above.
+
+The two restoration passes deliberately share one parse of the raw document
+instead of each re-parsing the same HTML; see the comment above the
+`document` binding in `convert_html_to_markdown` for the rationale.
+
+The pipeline sits behind the `html-to-markdown` cargo feature, which gates
+`dep:html-to-markdown-rs`, `dep:kuchiki`, and `dep:readability-js`. It is part
+of the default feature set. When the feature is disabled,
+`convert_html_to_markdown` is a passthrough that returns the input unchanged.
+
+Golden tests live in `tests/html_to_markdown.rs`, which loads fixtures from
+`tests/test-pages/`: each fixture directory provides a `source.html` file and
+the harness asserts the converter's output against the fixture's expectations.

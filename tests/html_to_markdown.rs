@@ -20,7 +20,21 @@ struct PageMetadata {
 fn normalize(s: &str) -> String {
     let s = s.replace("\r\n", "\n");
     let s = s.trim();
-    let lines: Vec<&str> = s.lines().map(|l| l.trim()).collect();
+
+    // Collapse runs of two or more blank lines down to a single blank line,
+    // but keep lone blank lines intact: paragraph boundaries (a single blank
+    // line) are meaningful and must not be erased by normalization.
+    let mut lines: Vec<&str> = Vec::new();
+    let mut previous_was_blank = false;
+    for line in s.lines().map(|l| l.trim()) {
+        let is_blank = line.is_empty();
+        if is_blank && previous_was_blank {
+            continue;
+        }
+        lines.push(line);
+        previous_was_blank = is_blank;
+    }
+
     lines.join("\n").trim_end().to_string()
 }
 
