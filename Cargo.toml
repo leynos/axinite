@@ -242,12 +242,12 @@ test-helpers = ["dep:tempfile"]
 docker = ["dep:bollard"]
 
 [[test]]
-name = "html_to_markdown"
-required-features = ["html-to-markdown"]
+name = "channels"
+required-features = ["test-helpers"]
 
 [[test]]
-name = "html_to_markdown"
-required-features = ["html-to-markdown"]
+name = "e2e_traces"
+required-features = ["test-helpers"]
 
 [[test]]
 name = "html_to_markdown"
