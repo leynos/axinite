@@ -78,8 +78,8 @@ def test_trigger_permissions_and_job_are_pr_only_and_isolated() -> None:
     assert job.get("if") == "github.event_name == 'pull_request'", (
         "coverage-check must retain an explicit pull-request guard"
     )
-    assert job.get("runs-on") == "ubuntu-latest", (
-        "coverage-check must use the proven Ubuntu runner"
+    assert job.get("runs-on") == "ubicloud-standard-8", (
+        "coverage-check must use the standard Ubicloud runner"
     )
     assert {"strategy", "services", "needs"}.isdisjoint(job), (
         "coverage-check must not inherit the main matrix, PostgreSQL, or gate"

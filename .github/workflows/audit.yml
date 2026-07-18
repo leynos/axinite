@@ -16,7 +16,7 @@ permissions:
 
 jobs:
   audit:
-    runs-on: ubuntu-latest
+    runs-on: ubicloud-standard-8
     steps:
       - name: Checkout repository
         uses: actions/checkout@v6
