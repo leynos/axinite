@@ -43,7 +43,7 @@ version = "0.4.1"
 version = "2.0.0-rc0"
 
 [dependencies.hmac]
-version = "0.12.1"
+version = "0.13.0"
 
 [dependencies.num-bigint]
 version = "0.4.6"
@@ -52,10 +52,10 @@ version = "0.4.6"
 version = "0.2.19"
 
 [dependencies.pbkdf2]
-version = "0.12.2"
+version = "0.13.0"
 
 [dependencies.sha1]
-version = "0.10.6"
+version = "0.11.0"
 
 [dependencies.sha2]
-version = "0.10.9"
+version = "0.11.0"
