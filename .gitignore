@@ -19,6 +19,7 @@ target-codex-*/
 bench-results/
 
 # Coverage reports (local runs, not committed)
+/.coverage
 /coverage/
 .coverage
 
@@ -37,6 +38,9 @@ trace_*.json
 
 # GrepAI index
 .grepai/
+
+# Leta index
+.memdb/
 
 # Pending snapshot files (transient test artefacts)
 *.pending-snap

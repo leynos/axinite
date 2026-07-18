@@ -28,7 +28,7 @@ with the current CI setup.
 
 Install these tools before running the standard repository commands:
 
-1. Rust `1.92` via `rustup`.
+1. Rust `1.93` via `rustup`.
 2. `clang` on Linux or WSL.
 3. `mold` on Linux or WSL.
 4. The `wasm32-wasip2` Rust target.
@@ -39,7 +39,7 @@ Install these tools before running the standard repository commands:
 9. `make`.
 10. Git.
 
-The root crate declares `rust-version = "1.92"` in `Cargo.toml`. The repository
+The root crate declares `rust-version = "1.93"` in `Cargo.toml`. The repository
 also includes standalone WebAssembly (WASM) tool and channel crates, so WASM
 tooling is required for more than release-only workflows.
 

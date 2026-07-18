@@ -72,7 +72,7 @@ changes, and gate every commit.
   such as `Arc<dyn Tool>` and `Arc<dyn Database>` continue to compile without
   broad call-site rewrites.
 - Do not change the repository minimum toolchain or Rust edition. The plan is
-  constrained to Rust 1.92 and Edition 2024.
+  constrained to Rust 1.93 and Edition 2024.
 - Avoid new dependencies. The accepted path is the local ADR 006 dual-trait
   pattern, not `trait_variant` or a new helper crate.
 - Keep each migration wave small enough to validate independently. No single

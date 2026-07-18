@@ -43,6 +43,33 @@ The roadmap follows the current documentation style guidance:
 - [ADR 004](./adr-004-dual-path-semantic-extraction-with-validated-provenance.md)
 - [ADR 005](./adr-005-dual-mode-uncertainty-gating-for-hierarchical-recall.md)
 
+## Appendix: Completion criteria
+
+The roadmap is complete when every step has shipped its headline tasks and the
+resulting runtime satisfies the following product-level outcomes:
+
+- hosted and local tool execution paths expose canonical machine-readable tool
+  contracts before first use;
+- extension packaging, delegated endpoints, codemode execution, and
+  provenance-based intents all preserve explicit capability boundaries;
+- memory and long-running provider state can be rolled out behind opt-in or
+  shadow-mode controls rather than replacing current behaviour blindly;
+- operators can install, supervise, inspect, and control axinite through first
+  class service, health, hook, and CLI workflows;
+- model choice, compaction policy, reasoning visibility, citations, canvas
+  hosting, and rich media handling are explicit runtime capabilities rather
+  than implicit or surface-specific behaviour;
+- intent contracts declare inspectable, diffable constraints at every scope, and
+  fail-closed gate evaluation blocks rather than permits unauthorized actions;
+- an append-only execution ledger records system-level truth independently of
+  the model's conversational narrative;
+- delegated child jobs run with isolated context, explicit budgets, and
+  narrowing-only contract inheritance;
+- memory recall distinguishes facts from hypotheses through explicit projection
+  tiers and epistemic status;
+- auxiliary provider profiles route non-critical workloads to cost-appropriate
+  models, and stable-prefix prompt assembly maximizes cache hits.
+
 ## 1. Make tool contracts explicit
 
 Phase objective: ensure axinite advertises accurate tool interfaces before it
@@ -1354,33 +1381,6 @@ before 6.2.2-6.2.4.
 Phase objective: add proof-oriented and generated verification where Axinite's
 highest-risk behaviour lives in lifecycle interleavings, allowlist semantics,
 and layered configuration rules rather than in one more example-based test.
-
-## Appendix: Completion criteria
-
-The roadmap is complete when every step has shipped its headline tasks and the
-resulting runtime satisfies the following product-level outcomes:
-
-- hosted and local tool execution paths expose canonical machine-readable tool
-  contracts before first use;
-- extension packaging, delegated endpoints, codemode execution, and
-  provenance-based intents all preserve explicit capability boundaries;
-- memory and long-running provider state can be rolled out behind opt-in or
-  shadow-mode controls rather than replacing current behaviour blindly;
-- operators can install, supervise, inspect, and control axinite through first
-  class service, health, hook, and CLI workflows;
-- model choice, compaction policy, reasoning visibility, citations, canvas
-  hosting, and rich media handling are explicit runtime capabilities rather
-  than implicit or surface-specific behaviour;
-- intent contracts declare inspectable, diffable constraints at every scope, and
-  fail-closed gate evaluation blocks rather than permits unauthorized actions;
-- an append-only execution ledger records system-level truth independently of
-  the model's conversational narrative;
-- delegated child jobs run with isolated context, explicit budgets, and
-  narrowing-only contract inheritance;
-- memory recall distinguishes facts from hypotheses through explicit projection
-  tiers and epistemic status;
-- auxiliary provider profiles route non-critical workloads to cost-appropriate
-  models, and stable-prefix prompt assembly maximizes cache hits.
 
 ### 7.2. Generated properties for configuration and installer semantics
 
