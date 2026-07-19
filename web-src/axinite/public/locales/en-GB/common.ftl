@@ -455,3 +455,39 @@ chat-auth-card-submit = Submit
 chat-auth-card-cancel = Cancel
 chat-auth-card-error = Authentication failed. Check the token and try again.
 chat-auth-notice-dismiss = Dismiss
+
+# Gateway restart affordance
+restart-action = Restart gateway
+restart-confirm-title = Restart the gateway?
+restart-confirm-description = This sends the /restart command and briefly interrupts the gateway. Active streams reconnect automatically.
+restart-confirm-accept = Restart
+restart-confirm-cancel = Cancel
+restart-progress = Restarting the gateway…
+restart-complete = Gateway restarted.
+
+# TEE attestation surface
+tee-shield-label = View TEE attestation
+tee-popover-title = TEE attestation
+tee-field-image-digest = Image digest
+tee-field-tls-fingerprint = TLS certificate fingerprint
+tee-field-report-data = Report data
+tee-field-vm-config = VM configuration
+tee-copy-report = Copy full report
+tee-value-empty = N/A
+tee-report-loading = Loading attestation report…
+tee-report-error = Could not load attestation report
+
+# WASM channel activation and pairing
+extensions-stepper-label = Activation progress
+extensions-stepper-installed = Installed
+extensions-stepper-configured = Configured
+extensions-stepper-active = Active
+extensions-stepper-awaiting-pairing = Awaiting pairing
+extensions-stepper-state-completed = Completed
+extensions-stepper-state-failed = Failed
+extensions-stepper-state-in-progress = In progress
+extensions-stepper-state-pending = Pending
+extensions-pairing-heading = Pending pairing requests
+extensions-pairing-from = from { $sender }
+extensions-pairing-approve = Approve
+extensions-pairing-approve-label = Approve pairing { $code }

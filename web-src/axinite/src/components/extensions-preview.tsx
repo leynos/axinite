@@ -13,6 +13,8 @@ import {
   onCleanup,
   Show,
 } from "solid-js";
+import { ExtensionPairing } from "@/components/extension-pairing";
+import { WasmChannelStepper } from "@/components/wasm-channel-stepper";
 import type { ExtensionInfo } from "@/lib/api/contracts";
 import {
   activateExtension,
@@ -396,6 +398,12 @@ export const ExtensionsPreview = () => {
                   </p>
                   <p class="catalogue-card__body">{extension.description}</p>
 
+                  <Show when={extension.kind === "wasm_channel"}>
+                    <WasmChannelStepper
+                      activationStatus={extension.activation_status}
+                    />
+                  </Show>
+
                   <div class="catalogue-card__tags">
                     <For each={tagList(extension)}>
                       {(tag) => (
@@ -432,6 +440,13 @@ export const ExtensionsPreview = () => {
                       {t("extensions-action-remove")}
                     </button>
                   </div>
+
+                  <Show when={extension.kind === "wasm_channel"}>
+                    <ExtensionPairing
+                      channel={extension.name}
+                      onApproved={refresh}
+                    />
+                  </Show>
                 </article>
               )}
             </For>

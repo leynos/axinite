@@ -446,3 +446,39 @@ chat-auth-card-submit = Verzenden
 chat-auth-card-cancel = Annuleren
 chat-auth-card-error = Authenticatie mislukt. Controleer het token en probeer het opnieuw.
 chat-auth-notice-dismiss = Sluiten
+
+# Gateway opnieuw starten
+restart-action = Gateway opnieuw starten
+restart-confirm-title = Gateway opnieuw starten?
+restart-confirm-description = Hiermee wordt de opdracht /restart verstuurd en de gateway kort onderbroken. Actieve streams maken automatisch opnieuw verbinding.
+restart-confirm-accept = Opnieuw starten
+restart-confirm-cancel = Annuleren
+restart-progress = Gateway wordt opnieuw gestart…
+restart-complete = Gateway opnieuw gestart.
+
+# TEE-attestatieoppervlak
+tee-shield-label = TEE-attestatie bekijken
+tee-popover-title = TEE-attestatie
+tee-field-image-digest = Image-digest
+tee-field-tls-fingerprint = TLS-certificaatvingerafdruk
+tee-field-report-data = Rapportgegevens
+tee-field-vm-config = VM-configuratie
+tee-copy-report = Volledig rapport kopiëren
+tee-value-empty = N.v.t.
+tee-report-loading = Attestatierapport laden…
+tee-report-error = Kon attestatierapport niet laden
+
+# WASM-kanaalactivering en -koppeling
+extensions-stepper-label = Activeringsvoortgang
+extensions-stepper-installed = Geïnstalleerd
+extensions-stepper-configured = Geconfigureerd
+extensions-stepper-active = Actief
+extensions-stepper-awaiting-pairing = Wacht op koppeling
+extensions-stepper-state-completed = Voltooid
+extensions-stepper-state-failed = Mislukt
+extensions-stepper-state-in-progress = Bezig
+extensions-stepper-state-pending = In behandeling
+extensions-pairing-heading = Openstaande koppelingsverzoeken
+extensions-pairing-from = van { $sender }
+extensions-pairing-approve = Goedkeuren
+extensions-pairing-approve-label = Koppeling { $code } goedkeuren

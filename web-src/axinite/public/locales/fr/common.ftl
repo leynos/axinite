@@ -455,3 +455,39 @@ chat-auth-card-submit = Envoyer
 chat-auth-card-cancel = Annuler
 chat-auth-card-error = Échec de l’authentification. Vérifiez le jeton et réessayez.
 chat-auth-notice-dismiss = Fermer
+
+# Affordance de redémarrage de la passerelle
+restart-action = Redémarrer la passerelle
+restart-confirm-title = Redémarrer la passerelle ?
+restart-confirm-description = Ceci envoie la commande /restart et interrompt brièvement la passerelle. Les flux actifs se reconnectent automatiquement.
+restart-confirm-accept = Redémarrer
+restart-confirm-cancel = Annuler
+restart-progress = Redémarrage de la passerelle…
+restart-complete = Passerelle redémarrée.
+
+# Surface d'attestation TEE
+tee-shield-label = Voir l'attestation TEE
+tee-popover-title = Attestation TEE
+tee-field-image-digest = Empreinte de l'image
+tee-field-tls-fingerprint = Empreinte du certificat TLS
+tee-field-report-data = Données du rapport
+tee-field-vm-config = Configuration de la VM
+tee-copy-report = Copier le rapport complet
+tee-value-empty = N/D
+tee-report-loading = Chargement du rapport d'attestation…
+tee-report-error = Impossible de charger le rapport d'attestation
+
+# Activation et appairage des canaux WASM
+extensions-stepper-label = Progression de l'activation
+extensions-stepper-installed = Installé
+extensions-stepper-configured = Configuré
+extensions-stepper-active = Actif
+extensions-stepper-awaiting-pairing = En attente d'appairage
+extensions-stepper-state-completed = Terminé
+extensions-stepper-state-failed = Échec
+extensions-stepper-state-in-progress = En cours
+extensions-stepper-state-pending = En attente
+extensions-pairing-heading = Demandes d'appairage en attente
+extensions-pairing-from = de { $sender }
+extensions-pairing-approve = Approuver
+extensions-pairing-approve-label = Approuver l'appairage { $code }

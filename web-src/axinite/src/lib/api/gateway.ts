@@ -5,22 +5,35 @@ import type {
   GatewayStatusResponse,
 } from "@/lib/api/contracts";
 
-export async function fetchGatewayStatus(): Promise<GatewayStatus> {
+/** Fetch the full gateway status payload, or `null` when unreachable. */
+export async function fetchGatewayStatusRaw(): Promise<GatewayStatusResponse | null> {
   try {
-    const payload = await requestJson<GatewayStatusResponse>(
-      "/api/gateway/status"
-    );
-
-    return {
-      label: payload.total_connections > 0 ? "Connected" : "Preview",
-      detail: `v${payload.version} · ${payload.total_connections} live browser stream${payload.total_connections === 1 ? "" : "s"}`,
-    };
+    return await requestJson<GatewayStatusResponse>("/api/gateway/status");
   } catch {
+    return null;
+  }
+}
+
+/** Derive the topbar status pill from a raw status payload. */
+export function deriveGatewayStatus(
+  payload: GatewayStatusResponse | null
+): GatewayStatus {
+  if (!payload) {
     return {
       label: "Preview",
       detail: "Mock gateway unavailable",
     };
   }
+
+  const connections = payload.total_connections ?? 0;
+  return {
+    label: connections > 0 ? "Connected" : "Preview",
+    detail: `v${payload.version} · ${connections} live browser stream${connections === 1 ? "" : "s"}`,
+  };
+}
+
+export async function fetchGatewayStatus(): Promise<GatewayStatus> {
+  return deriveGatewayStatus(await fetchGatewayStatusRaw());
 }
 
 export async function fetchRuntimeFeatureFlags(): Promise<

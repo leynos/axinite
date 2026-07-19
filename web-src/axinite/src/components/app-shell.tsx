@@ -5,7 +5,9 @@ import { createMemo, For, Show } from "solid-js";
 
 import { DebugFlagPanel } from "@/components/debug-flag-panel";
 import { LocalePicker } from "@/components/locale-picker";
-import { fetchGatewayStatus } from "@/lib/api/gateway";
+import { RestartControl } from "@/components/restart-control";
+import { TeeAttestation } from "@/components/tee-attestation";
+import { deriveGatewayStatus, fetchGatewayStatusRaw } from "@/lib/api/gateway";
 import { buildAppPath } from "@/lib/base-path";
 import { useFeatureFlags } from "@/lib/feature-flags/runtime";
 import { useI18n } from "@/lib/i18n/provider";
@@ -22,9 +24,13 @@ export const ShellChrome: ParentComponent<ShellChromeProps> = (props) => {
   const basePath = import.meta.env.BASE_URL as string | undefined;
   const gatewayStatus = createQuery(() => ({
     queryKey: ["gateway-status"],
-    queryFn: fetchGatewayStatus,
+    queryFn: fetchGatewayStatusRaw,
     refetchInterval: 30_000,
   }));
+  const statusPill = createMemo(() =>
+    deriveGatewayStatus(gatewayStatus.data ?? null)
+  );
+  const restartEnabled = () => gatewayStatus.data?.restart_enabled;
 
   return (
     <div class="shell-frame">
@@ -73,15 +79,21 @@ export const ShellChrome: ParentComponent<ShellChromeProps> = (props) => {
           </nav>
         </div>
         <div class="shell-controls">
+          <TeeAttestation />
+          <RestartControl restartEnabled={restartEnabled} />
           <LocalePicker />
           <div class="shell-status">
             <span class="shell-status__dot" />
             <div>
               <div class="shell-status__label">
-                {gatewayStatus.data?.label ?? t("status-preview-label")}
+                {gatewayStatus.data
+                  ? statusPill().label
+                  : t("status-preview-label")}
               </div>
               <div class="shell-status__value">
-                {gatewayStatus.data?.detail ?? t("status-preview-detail")}
+                {gatewayStatus.data
+                  ? statusPill().detail
+                  : t("status-preview-detail")}
               </div>
             </div>
           </div>

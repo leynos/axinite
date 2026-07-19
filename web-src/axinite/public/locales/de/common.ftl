@@ -455,3 +455,39 @@ chat-auth-card-submit = Senden
 chat-auth-card-cancel = Abbrechen
 chat-auth-card-error = Authentifizierung fehlgeschlagen. Prüfen Sie das Token und versuchen Sie es erneut.
 chat-auth-notice-dismiss = Schließen
+
+# Gateway-Neustart
+restart-action = Gateway neu starten
+restart-confirm-title = Gateway neu starten?
+restart-confirm-description = Dies sendet den Befehl /restart und unterbricht das Gateway kurz. Aktive Streams verbinden sich automatisch neu.
+restart-confirm-accept = Neu starten
+restart-confirm-cancel = Abbrechen
+restart-progress = Gateway wird neu gestartet…
+restart-complete = Gateway neu gestartet.
+
+# TEE-Attestierungsoberfläche
+tee-shield-label = TEE-Attestierung anzeigen
+tee-popover-title = TEE-Attestierung
+tee-field-image-digest = Image-Digest
+tee-field-tls-fingerprint = TLS-Zertifikat-Fingerabdruck
+tee-field-report-data = Berichtsdaten
+tee-field-vm-config = VM-Konfiguration
+tee-copy-report = Vollständigen Bericht kopieren
+tee-value-empty = N/V
+tee-report-loading = Attestierungsbericht wird geladen…
+tee-report-error = Attestierungsbericht konnte nicht geladen werden
+
+# WASM-Kanalaktivierung und -kopplung
+extensions-stepper-label = Aktivierungsfortschritt
+extensions-stepper-installed = Installiert
+extensions-stepper-configured = Konfiguriert
+extensions-stepper-active = Aktiv
+extensions-stepper-awaiting-pairing = Warten auf Kopplung
+extensions-stepper-state-completed = Abgeschlossen
+extensions-stepper-state-failed = Fehlgeschlagen
+extensions-stepper-state-in-progress = In Bearbeitung
+extensions-stepper-state-pending = Ausstehend
+extensions-pairing-heading = Ausstehende Kopplungsanfragen
+extensions-pairing-from = von { $sender }
+extensions-pairing-approve = Genehmigen
+extensions-pairing-approve-label = Kopplung { $code } genehmigen

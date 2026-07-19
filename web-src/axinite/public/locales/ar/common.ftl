@@ -449,3 +449,39 @@ chat-auth-card-submit = إرسال
 chat-auth-card-cancel = إلغاء
 chat-auth-card-error = فشلت المصادقة. تحقّق من الرمز وحاول مرة أخرى.
 chat-auth-notice-dismiss = إغلاق
+
+# إعادة تشغيل البوابة
+restart-action = إعادة تشغيل البوابة
+restart-confirm-title = إعادة تشغيل البوابة؟
+restart-confirm-description = يؤدي هذا إلى إرسال الأمر /restart وقطع البوابة لفترة وجيزة. تُعاد التدفقات النشطة تلقائيًا.
+restart-confirm-accept = إعادة التشغيل
+restart-confirm-cancel = إلغاء
+restart-progress = جارٍ إعادة تشغيل البوابة…
+restart-complete = تمت إعادة تشغيل البوابة.
+
+# واجهة إثبات TEE
+tee-shield-label = عرض إثبات TEE
+tee-popover-title = إثبات TEE
+tee-field-image-digest = بصمة الصورة
+tee-field-tls-fingerprint = بصمة شهادة TLS
+tee-field-report-data = بيانات التقرير
+tee-field-vm-config = تكوين الجهاز الافتراضي
+tee-copy-report = نسخ التقرير الكامل
+tee-value-empty = غير متوفر
+tee-report-loading = جارٍ تحميل تقرير الإثبات…
+tee-report-error = تعذّر تحميل تقرير الإثبات
+
+# تفعيل قنوات WASM والإقران
+extensions-stepper-label = تقدّم التفعيل
+extensions-stepper-installed = مُثبّت
+extensions-stepper-configured = مُهيّأ
+extensions-stepper-active = نشط
+extensions-stepper-awaiting-pairing = في انتظار الإقران
+extensions-stepper-state-completed = مكتمل
+extensions-stepper-state-failed = فشل
+extensions-stepper-state-in-progress = قيد التنفيذ
+extensions-stepper-state-pending = قيد الانتظار
+extensions-pairing-heading = طلبات الإقران المعلّقة
+extensions-pairing-from = من { $sender }
+extensions-pairing-approve = الموافقة
+extensions-pairing-approve-label = الموافقة على الإقران { $code }
