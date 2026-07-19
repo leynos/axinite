@@ -19,11 +19,7 @@ export type ModelUsageEntry = {
   cost: string;
 };
 
-export type FeatureFlagsResponse = {
-  deployment: string;
-  fetched_at: string;
-  flags: Record<string, boolean>;
-};
+export type FeatureFlagsResponse = Record<string, boolean>;
 
 export type GatewayStatus = {
   label: string;
