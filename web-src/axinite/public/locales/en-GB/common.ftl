@@ -433,3 +433,25 @@ auth-checking = Checking gateway access…
 auth-error-rejected = The gateway rejected the token.
 auth-error-unreachable = The gateway could not be reached. Retry once it is running.
 jobs-load-error = Jobs could not be loaded from the gateway. Check the connection and try again.
+
+# Chat media, auth cards, and job-start cards
+chat-attach-images = Attach images
+chat-attachment-strip-label = Staged image attachments
+chat-attachment-invalid-type = Only image files can be attached.
+chat-attachment-too-large = { $name } is larger than the 5 MB limit.
+chat-attachment-too-many = You can attach at most 5 images per message.
+chat-attachment-remove = Remove { $name }
+chat-generated-image-alt = Generated image
+chat-job-card-fallback-title = Sandbox job
+chat-job-card-id = Job { $id }
+chat-job-card-open = Open in Jobs
+chat-job-card-browse = Browse
+chat-auth-card-title = Authentication required for { $name }
+chat-auth-card-oauth = Authenticate
+chat-auth-card-get-token = Get your token
+chat-auth-card-token-label = Access token
+chat-auth-card-token-placeholder = Paste token…
+chat-auth-card-submit = Submit
+chat-auth-card-cancel = Cancel
+chat-auth-card-error = Authentication failed. Check the token and try again.
+chat-auth-notice-dismiss = Dismiss

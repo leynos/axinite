@@ -12,18 +12,83 @@ import {
   onCleanup,
   Show,
 } from "solid-js";
-
 import {
+  AuthCard,
+  GeneratedImageCard,
+  JobStartCard,
+} from "@/components/chat-cards";
+import {
+  cancelAuth,
   connectChatEvents,
   createThread,
   fetchHistory,
   fetchThreads,
   sendMessage,
   submitApproval,
+  submitAuthToken,
 } from "@/lib/api/chat";
-import type { ToolCallInfo } from "@/lib/api/contracts";
+import type { ImageData, ToolCallInfo } from "@/lib/api/contracts";
 import { useI18n } from "@/lib/i18n/provider";
 import { renderMarkdown } from "@/lib/markdown";
+
+const MAX_IMAGES = 5;
+const MAX_IMAGE_BYTES = 5 * 1024 * 1024;
+
+type StagedImage = {
+  id: string;
+  name: string;
+  mediaType: string;
+  data: string;
+  dataUrl: string;
+};
+
+type GeneratedImage = {
+  id: string;
+  dataUrl: string;
+  path?: string;
+};
+
+type JobCard = {
+  id: string;
+  jobId: string;
+  title: string;
+  browseUrl?: string;
+};
+
+type AuthCardState = {
+  extensionName: string;
+  instructions?: string;
+  authUrl?: string;
+  setupUrl?: string;
+};
+
+/**
+ * Reads an image File as a data URL and splits it into the base64 payload and
+ * media type the daemon expects (`{ media_type, data }`, no `data:` prefix).
+ */
+function readImageFile(
+  file: File
+): Promise<{ mediaType: string; data: string; dataUrl: string }> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      const result = reader.result;
+      if (typeof result !== "string") {
+        reject(new Error("Unreadable image data"));
+        return;
+      }
+      const match = /^data:([^;,]+)(?:;[^,]*)?,(.*)$/su.exec(result);
+      if (!match) {
+        reject(new Error("Malformed data URL"));
+        return;
+      }
+      resolve({ mediaType: match[1], data: match[2], dataUrl: result });
+    };
+    reader.onerror = () =>
+      reject(reader.error ?? new Error("Image read error"));
+    reader.readAsDataURL(file);
+  });
+}
 
 function formatTimestamp(
   value: string | null | undefined,
@@ -97,6 +162,109 @@ export const ChatPreview = () => {
   const [streamingResponse, setStreamingResponse] = createSignal("");
   const [isAwaitingResponse, setIsAwaitingResponse] = createSignal(false);
   const [liveStatus, setLiveStatus] = createSignal("");
+  const [stagedImages, setStagedImages] = createSignal<StagedImage[]>([]);
+  const [attachmentNotice, setAttachmentNotice] = createSignal("");
+  const [generatedImages, setGeneratedImages] = createSignal<GeneratedImage[]>(
+    []
+  );
+  const [jobCards, setJobCards] = createSignal<JobCard[]>([]);
+  const [authCards, setAuthCards] = createSignal<AuthCardState[]>([]);
+  const [authNotice, setAuthNotice] = createSignal("");
+  let cardIdCounter = 0;
+  const nextCardId = () => {
+    cardIdCounter += 1;
+    return `card-${cardIdCounter}`;
+  };
+  let fileInputRef: HTMLInputElement | undefined;
+
+  const removeAuthCard = (extensionName: string) => {
+    setAuthCards((prev) =>
+      prev.filter((card) => card.extensionName !== extensionName)
+    );
+  };
+
+  async function stageFiles(files: File[]): Promise<void> {
+    setAttachmentNotice("");
+    for (const file of files) {
+      if (!file.type.startsWith("image/")) {
+        setAttachmentNotice(t("chat-attachment-invalid-type"));
+        continue;
+      }
+      if (file.size > MAX_IMAGE_BYTES) {
+        setAttachmentNotice(
+          t("chat-attachment-too-large", { name: file.name })
+        );
+        continue;
+      }
+      if (stagedImages().length >= MAX_IMAGES) {
+        setAttachmentNotice(t("chat-attachment-too-many"));
+        break;
+      }
+      try {
+        const read = await readImageFile(file);
+        setStagedImages((prev) =>
+          prev.length >= MAX_IMAGES
+            ? prev
+            : [...prev, { id: nextCardId(), name: file.name, ...read }]
+        );
+      } catch {
+        setAttachmentNotice(t("chat-attachment-invalid-type"));
+      }
+    }
+  }
+
+  const handleFileInput = (
+    event: Event & { currentTarget: HTMLInputElement }
+  ) => {
+    const input = event.currentTarget;
+    const files = input.files ? Array.from(input.files) : [];
+    if (files.length > 0) {
+      void stageFiles(files);
+    }
+    // Reset so selecting the same file again re-triggers the change event.
+    input.value = "";
+  };
+
+  const handlePaste = (event: ClipboardEvent) => {
+    const items = event.clipboardData?.items;
+    if (!items) {
+      return;
+    }
+    const files: File[] = [];
+    for (const item of items) {
+      if (item.kind === "file" && item.type.startsWith("image/")) {
+        const file = item.getAsFile();
+        if (file) {
+          files.push(file);
+        }
+      }
+    }
+    if (files.length > 0) {
+      event.preventDefault();
+      void stageFiles(files);
+    }
+  };
+
+  const handleAuthSubmit = async (
+    extensionName: string,
+    token: string
+  ): Promise<boolean> => {
+    const response = await submitAuthToken({
+      extension_name: extensionName,
+      token,
+    });
+    if (response.success) {
+      removeAuthCard(extensionName);
+      setAuthNotice(response.message);
+      return true;
+    }
+    return false;
+  };
+
+  const handleAuthCancel = (extensionName: string) => {
+    void cancelAuth({ extension_name: extensionName });
+    removeAuthCard(extensionName);
+  };
 
   const threads = createQuery(() => ({
     queryKey: ["chat", "threads"],
@@ -148,14 +316,19 @@ export const ChatPreview = () => {
   }));
 
   const sendMutation = createMutation(() => ({
-    mutationFn: (content: string) =>
-      sendMessage({
+    mutationFn: (content: string) => {
+      const images: ImageData[] = stagedImages().map((image) => ({
+        media_type: image.mediaType,
+        data: image.data,
+      }));
+      return sendMessage({
         content,
         thread_id: activeThreadId() ?? null,
         timezone:
           Intl.DateTimeFormat().resolvedOptions().timeZone ?? "Europe/London",
-        images: [],
-      }),
+        images,
+      });
+    },
     onMutate: (content) => {
       setPendingUserMessage(content);
       setComposerText("");
@@ -164,6 +337,8 @@ export const ChatPreview = () => {
       setLiveStatus(t("chat-status-waiting"));
     },
     onSuccess: () => {
+      setStagedImages([]);
+      setAttachmentNotice("");
       setLiveStatus(t("chat-status-streaming"));
       void queryClient.invalidateQueries({ queryKey: ["chat", "history"] });
       void queryClient.invalidateQueries({ queryKey: ["chat", "threads"] });
@@ -243,10 +418,52 @@ export const ChatPreview = () => {
           setIsAwaitingResponse(false);
           setLiveStatus(event.message);
           break;
+        case "image_generated":
+          setGeneratedImages((prev) => [
+            ...prev,
+            {
+              id: nextCardId(),
+              dataUrl: event.data_url,
+              path: event.path,
+            },
+          ]);
+          break;
+        case "job_started":
+          setJobCards((prev) => [
+            ...prev,
+            {
+              id: nextCardId(),
+              jobId: event.job_id,
+              title: event.title,
+              browseUrl: event.browse_url,
+            },
+          ]);
+          break;
         case "auth_required":
+          setAuthCards((prev) => [
+            // Dedupe by extension: a fresh prompt replaces any existing card.
+            ...prev.filter(
+              (card) => card.extensionName !== event.extension_name
+            ),
+            {
+              extensionName: event.extension_name,
+              instructions: event.instructions,
+              authUrl: event.auth_url,
+              setupUrl: event.setup_url,
+            },
+          ]);
+          break;
         case "auth_completed":
+          removeAuthCard(event.extension_name);
+          setAuthNotice(event.message);
+          break;
         case "heartbeat":
         case "extension_status":
+        case "job_message":
+        case "job_tool_use":
+        case "job_tool_result":
+        case "job_status":
+        case "job_result":
           break;
       }
     });
@@ -442,6 +659,53 @@ export const ChatPreview = () => {
                   </div>
                 )}
               </Show>
+
+              <For each={generatedImages()}>
+                {(image) => (
+                  <GeneratedImageCard
+                    dataUrl={image.dataUrl}
+                    path={image.path}
+                  />
+                )}
+              </For>
+
+              <For each={jobCards()}>
+                {(job) => (
+                  <JobStartCard
+                    browseUrl={job.browseUrl}
+                    jobId={job.jobId}
+                    title={job.title}
+                  />
+                )}
+              </For>
+
+              <For each={authCards()}>
+                {(card) => (
+                  <AuthCard
+                    authUrl={card.authUrl}
+                    extensionName={card.extensionName}
+                    instructions={card.instructions}
+                    onCancel={() => handleAuthCancel(card.extensionName)}
+                    onSubmit={(token) =>
+                      handleAuthSubmit(card.extensionName, token)
+                    }
+                    setupUrl={card.setupUrl}
+                  />
+                )}
+              </For>
+
+              <Show when={authNotice().length > 0}>
+                <div class="chat-preview__auth-notice" role="status">
+                  <span>{authNotice()}</span>
+                  <button
+                    class="chat-preview__auth-notice-dismiss"
+                    type="button"
+                    onClick={() => setAuthNotice("")}
+                  >
+                    {t("chat-auth-notice-dismiss")}
+                  </button>
+                </div>
+              </Show>
             </div>
           </div>
 
@@ -450,29 +714,79 @@ export const ChatPreview = () => {
               <Show when={liveStatus().length > 0}>
                 <p class="chat-preview__safety-note">{liveStatus()}</p>
               </Show>
+              <Show when={attachmentNotice().length > 0}>
+                <p class="chat-preview__attachment-notice" role="alert">
+                  {attachmentNotice()}
+                </p>
+              </Show>
+              <Show when={stagedImages().length > 0}>
+                <ul
+                  aria-label={t("chat-attachment-strip-label")}
+                  class="chat-preview__attachments"
+                >
+                  <For each={stagedImages()}>
+                    {(image) => (
+                      <li class="chat-preview__attachment">
+                        <img
+                          alt={image.name}
+                          class="chat-preview__attachment-thumb"
+                          src={image.dataUrl}
+                        />
+                        <button
+                          aria-label={t("chat-attachment-remove", {
+                            name: image.name,
+                          })}
+                          class="chat-preview__attachment-remove"
+                          type="button"
+                          onClick={() =>
+                            setStagedImages((prev) =>
+                              prev.filter((staged) => staged.id !== image.id)
+                            )
+                          }
+                        >
+                          {"✕"}
+                        </button>
+                      </li>
+                    )}
+                  </For>
+                </ul>
+              </Show>
               <div class="chat-preview__composer">
+                <input
+                  accept="image/*"
+                  class="chat-preview__file-input"
+                  hidden
+                  multiple
+                  onChange={handleFileInput}
+                  ref={fileInputRef}
+                  type="file"
+                />
                 <textarea
                   aria-label={t("chat-composer-label")}
                   class="chat-preview__textarea"
                   onInput={(event) =>
                     setComposerText(event.currentTarget.value)
                   }
+                  onPaste={handlePaste}
                   placeholder={t("chat-composer-placeholder")}
                   rows={1}
                   value={composerText()}
                 />
                 <div class="chat-preview__composer-actions">
                   <button
-                    aria-label={t("chat-attach-button")}
+                    aria-label={t("chat-attach-images")}
                     class="chat-preview__ghost-button"
                     type="button"
-                    onClick={() => setLiveStatus(t("chat-upload-unavailable"))}
+                    onClick={() => fileInputRef?.click()}
                   >
                     +
                   </button>
                   <button
                     class="chat-preview__send-button"
-                    disabled={composerText().trim().length === 0}
+                    disabled={
+                      composerText().trim().length === 0 &&
+                      stagedImages().length === 0
+                    }
                     type="button"
                     onClick={() => sendMutation.mutate(composerText().trim())}
                   >

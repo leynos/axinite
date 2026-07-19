@@ -424,3 +424,25 @@ auth-checking = Gateway-toegang wordt gecontroleerd…
 auth-error-rejected = De gateway heeft het token geweigerd.
 auth-error-unreachable = De gateway is niet bereikbaar. Probeer het opnieuw zodra deze draait.
 jobs-load-error = Jobs konden niet vanaf de gateway worden geladen. Controleer de verbinding en probeer het opnieuw.
+
+# Chat media, auth cards, and job-start cards
+chat-attach-images = Afbeeldingen bijvoegen
+chat-attachment-strip-label = Voorbereide afbeeldingsbijlagen
+chat-attachment-invalid-type = Alleen afbeeldingsbestanden kunnen worden bijgevoegd.
+chat-attachment-too-large = { $name } is groter dan de limiet van 5 MB.
+chat-attachment-too-many = U kunt maximaal 5 afbeeldingen per bericht bijvoegen.
+chat-attachment-remove = { $name } verwijderen
+chat-generated-image-alt = Gegenereerde afbeelding
+chat-job-card-fallback-title = Sandbox-taak
+chat-job-card-id = Taak { $id }
+chat-job-card-open = Openen in Taken
+chat-job-card-browse = Bladeren
+chat-auth-card-title = Authenticatie vereist voor { $name }
+chat-auth-card-oauth = Authenticeren
+chat-auth-card-get-token = Uw token ophalen
+chat-auth-card-token-label = Toegangstoken
+chat-auth-card-token-placeholder = Token plakken…
+chat-auth-card-submit = Verzenden
+chat-auth-card-cancel = Annuleren
+chat-auth-card-error = Authenticatie mislukt. Controleer het token en probeer het opnieuw.
+chat-auth-notice-dismiss = Sluiten

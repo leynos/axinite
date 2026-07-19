@@ -421,3 +421,25 @@ auth-checking = ゲートウェイアクセスを確認しています…
 auth-error-rejected = ゲートウェイがトークンを拒否しました。
 auth-error-unreachable = ゲートウェイに接続できません。起動後に再試行してください。
 jobs-load-error = ゲートウェイからジョブを読み込めませんでした。接続を確認して再試行してください。
+
+# Chat media, auth cards, and job-start cards
+chat-attach-images = 画像を添付
+chat-attachment-strip-label = 添付予定の画像
+chat-attachment-invalid-type = 添付できるのは画像ファイルのみです。
+chat-attachment-too-large = { $name } は 5 MB の上限を超えています。
+chat-attachment-too-many = 1 メッセージにつき最大 5 枚まで画像を添付できます。
+chat-attachment-remove = { $name } を削除
+chat-generated-image-alt = 生成された画像
+chat-job-card-fallback-title = サンドボックスジョブ
+chat-job-card-id = ジョブ { $id }
+chat-job-card-open = ジョブで開く
+chat-job-card-browse = 参照
+chat-auth-card-title = { $name } には認証が必要です
+chat-auth-card-oauth = 認証する
+chat-auth-card-get-token = トークンを取得
+chat-auth-card-token-label = アクセストークン
+chat-auth-card-token-placeholder = トークンを貼り付け…
+chat-auth-card-submit = 送信
+chat-auth-card-cancel = キャンセル
+chat-auth-card-error = 認証に失敗しました。トークンを確認して再試行してください。
+chat-auth-notice-dismiss = 閉じる
