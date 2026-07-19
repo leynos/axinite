@@ -104,7 +104,13 @@ def main():
     args = parser.parse_args()
 
     app = web.Application()
+    # The daemon's openai_compatible client posts to `{LLM_BASE_URL}/chat/completions`
+    # (no `/v1` segment, since LLM_BASE_URL carries no `/v1`). Register both the
+    # bare and the `/v1`-prefixed paths so the mock answers regardless of how the
+    # client composes the URL.
+    app.router.add_post("/chat/completions", chat_completions)
     app.router.add_post("/v1/chat/completions", chat_completions)
+    app.router.add_get("/models", models)
     app.router.add_get("/v1/models", models)
 
     # Use aiohttp's runner to get the actual bound port

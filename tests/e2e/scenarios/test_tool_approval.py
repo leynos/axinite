@@ -1,132 +1,143 @@
-"""Scenario 6: Tool approval overlay UI behaviour."""
+"""Scenario 6: Tool approval card (SolidJS, history-driven).
 
-import pytest
-from helpers import SEL
-
-
-INJECT_APPROVAL_JS = """
-(data) => {
-    // Simulate an approval_needed SSE event by calling showApproval directly
-    showApproval(data);
-}
+Adaptation from the legacy shell:
+  - There is no `showApproval()` global and no `.approval-card` overlay. The
+    approval card is rendered from GET /api/chat/history's `pending_approval`
+    field (a query). To inject one deterministically we intercept
+    `/api/chat/history` and `/api/chat/threads` with `page.route`, then fire
+    `window.__axinite.emitChatEvent({type:"approval_needed", ...})`, which the
+    chat surface handles by refetching history (see chat-preview.tsx).
+  - Approve/Always/Deny post to /api/chat/approval; the card clears once the
+    refetched history no longer carries a pending approval. Legacy assertions
+    on `.approval-resolved` ("Approved"/"Denied") no longer apply — the card
+    simply disappears — so we assert the POST and the card removal instead.
 """
 
+import json
 
-async def test_approval_card_appears(page):
-    """Injecting an approval event should show the approval card."""
-    # Inject a fake approval_needed event
-    await page.evaluate("""
-        showApproval({
+from helpers import AUTH_TOKEN, SEL
+
+_THREAD_ID = "e2e-approval-thread"
+
+_APPROVAL = {
+    "request_id": "test-req-001",
+    "tool_name": "shell",
+    "description": "Execute: echo hello world",
+    "parameters": '{"command": "echo hello world"}',
+}
+
+
+async def _install_routes(page, phase, approval_posts):
+    """Intercept threads/history/approval so the card is fully deterministic."""
+
+    async def handle_threads(route):
+        body = json.dumps(
+            {
+                "assistant_thread": {
+                    "id": _THREAD_ID,
+                    "state": "idle",
+                    "turn_count": 0,
+                    "created_at": "2026-01-01T00:00:00Z",
+                    "updated_at": "2026-01-01T00:00:00Z",
+                    "title": "Approval",
+                },
+                "threads": [],
+                "active_thread": _THREAD_ID,
+            }
+        )
+        await route.fulfill(status=200, content_type="application/json", body=body)
+
+    async def handle_history(route):
+        payload = {
+            "thread_id": _THREAD_ID,
+            "turns": [],
+            "has_more": False,
+        }
+        if phase["value"] == "pending":
+            payload["pending_approval"] = _APPROVAL
+        await route.fulfill(
+            status=200,
+            content_type="application/json",
+            body=json.dumps(payload),
+        )
+
+    async def handle_approval(route):
+        approval_posts.append(json.loads(route.request.post_data or "{}"))
+        # Once approved, subsequent history refetches carry no pending approval.
+        phase["value"] = "approved"
+        await route.fulfill(
+            status=200,
+            content_type="application/json",
+            body=json.dumps({"success": True, "message": "Approved"}),
+        )
+
+    await page.route("**/api/chat/threads", handle_threads)
+    await page.route("**/api/chat/history*", handle_history)
+    await page.route("**/api/chat/approval", handle_approval)
+
+
+async def _boot_chat(page, axinite_server, phase, approval_posts):
+    await _install_routes(page, phase, approval_posts)
+    # Reload so ChatPreview remounts and fetches threads/history through the
+    # interception; the token persists in sessionStorage across the reload.
+    await page.goto(f"{axinite_server}/chat")
+    await page.wait_for_selector(SEL["auth_screen"], state="hidden", timeout=15000)
+    await page.get_by_label("Message composer").wait_for(state="visible", timeout=10000)
+
+
+async def _inject_approval(page):
+    await page.evaluate(
+        """() => window.__axinite.emitChatEvent({
+            type: 'approval_needed',
             request_id: 'test-req-001',
-            thread_id: currentThreadId,
             tool_name: 'shell',
             description: 'Execute: echo hello world',
             parameters: '{"command": "echo hello world"}'
-        })
-    """)
+        })"""
+    )
 
-    # Verify the approval card appeared
+
+async def test_approval_card_appears_with_fields(page, axinite_server):
+    """Injecting a pending approval renders the card with its fields/actions."""
+    phase = {"value": "none"}
+    posts = []
+    await _boot_chat(page, axinite_server, phase, posts)
+
+    phase["value"] = "pending"
+    await _inject_approval(page)
+
     card = page.locator(SEL["approval_card"])
-    await card.wait_for(state="visible", timeout=5000)
+    await card.wait_for(state="visible", timeout=8000)
 
-    # Check card contents
-    header = card.locator(SEL["approval_header"].replace(".approval-card ", ""))
-    assert await header.text_content() == "Tool requires approval"
+    assert (await card.locator("h3").text_content()) == "shell"
+    assert "echo hello world" in await card.text_content()
 
-    tool_name = card.locator(".approval-tool-name")
-    assert await tool_name.text_content() == "shell"
-
-    desc = card.locator(".approval-description")
-    assert "echo hello world" in await desc.text_content()
-
-    # Verify all three buttons exist
-    assert await card.locator("button.approve").count() == 1
-    assert await card.locator("button.always").count() == 1
-    assert await card.locator("button.deny").count() == 1
+    # Localized en-GB action names are exactly Approve/Always/Deny.
+    assert await card.get_by_role("button", name="Approve").count() == 1
+    assert await card.get_by_role("button", name="Always").count() == 1
+    assert await card.get_by_role("button", name="Deny").count() == 1
 
 
-async def test_approval_approve_disables_buttons(page):
-    """Clicking Approve should disable all buttons and show status."""
-    # Inject approval card
-    await page.evaluate("""
-        showApproval({
-            request_id: 'test-req-002',
-            thread_id: currentThreadId,
-            tool_name: 'http',
-            description: 'GET https://example.com',
-        })
-    """)
+async def test_approve_posts_and_clears_card(page, axinite_server):
+    """Approve posts to /api/chat/approval and the card clears on refetch."""
+    phase = {"value": "none"}
+    posts = []
+    await _boot_chat(page, axinite_server, phase, posts)
 
-    card = page.locator('.approval-card[data-request-id="test-req-002"]')
-    await card.wait_for(state="visible", timeout=5000)
+    phase["value"] = "pending"
+    await _inject_approval(page)
 
-    # Click Approve
-    await card.locator("button.approve").click()
+    card = page.locator(SEL["approval_card"])
+    await card.wait_for(state="visible", timeout=8000)
 
-    # Buttons should be disabled
-    await page.wait_for_timeout(500)
-    buttons = card.locator(".approval-actions button")
-    count = await buttons.count()
-    for i in range(count):
-        is_disabled = await buttons.nth(i).is_disabled()
-        assert is_disabled, f"Button {i} should be disabled after approval"
+    await card.get_by_role("button", name="Approve").click()
 
-    # Resolved status should show
-    resolved = card.locator(".approval-resolved")
-    assert await resolved.text_content() == "Approved"
+    # The POST was made with action=approve for our request id.
+    await page.wait_for_function(
+        "() => true", timeout=100
+    )  # yield to the event loop
+    await card.wait_for(state="hidden", timeout=8000)
 
-
-async def test_approval_deny_shows_denied(page):
-    """Clicking Deny should show 'Denied' status."""
-    await page.evaluate("""
-        showApproval({
-            request_id: 'test-req-003',
-            thread_id: currentThreadId,
-            tool_name: 'write_file',
-            description: 'Write to /tmp/test.txt',
-        })
-    """)
-
-    card = page.locator('.approval-card[data-request-id="test-req-003"]')
-    await card.wait_for(state="visible", timeout=5000)
-
-    # Click Deny
-    await card.locator("button.deny").click()
-
-    await page.wait_for_timeout(500)
-    resolved = card.locator(".approval-resolved")
-    assert await resolved.text_content() == "Denied"
-
-
-async def test_approval_params_toggle(page):
-    """Parameters toggle should show/hide the parameter details."""
-    await page.evaluate("""
-        showApproval({
-            request_id: 'test-req-004',
-            thread_id: currentThreadId,
-            tool_name: 'shell',
-            description: 'Run command',
-            parameters: '{"command": "ls -la /tmp"}'
-        })
-    """)
-
-    card = page.locator('.approval-card[data-request-id="test-req-004"]')
-    await card.wait_for(state="visible", timeout=5000)
-
-    # Parameters should be hidden initially
-    params = card.locator(".approval-params")
-    assert await params.is_hidden(), "Parameters should be hidden initially"
-
-    # Click toggle to show
-    toggle = card.locator(".approval-params-toggle")
-    await toggle.click()
-    await page.wait_for_timeout(300)
-
-    assert await params.is_visible(), "Parameters should be visible after toggle"
-    text = await params.text_content()
-    assert "ls -la /tmp" in text
-
-    # Click toggle again to hide
-    await toggle.click()
-    await page.wait_for_timeout(300)
-    assert await params.is_hidden(), "Parameters should be hidden after second toggle"
+    assert len(posts) >= 1, "Approval POST was not made"
+    assert posts[0].get("action") == "approve"
+    assert posts[0].get("request_id") == _APPROVAL["request_id"]

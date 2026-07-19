@@ -97,12 +97,6 @@ async def axinite_server(axinite_binary, mock_llm_server):
         "EMBEDDING_ENABLED": "false",
         # Prevent onboarding wizard from triggering
         "ONBOARD_COMPLETED": "true",
-        # These scenarios drive the legacy handwritten shell (tab bar,
-        # approval overlay, `?token=` boot). The SolidJS UI is the gateway
-        # default now; pin the legacy variant here until the scenarios are
-        # rewritten against the SolidJS DOM. See
-        # docs/execplans/adopt-solidjs-ui.md.
-        "AXINITE_WEB_UI": "legacy",
     }
     # Forward LLVM coverage instrumentation env vars when present
     # (allows cargo-llvm-cov to collect profraw data from E2E runs).
@@ -172,7 +166,11 @@ async def page(axinite_server, browser):
     context = await browser.new_context(viewport={"width": 1280, "height": 720})
     pg = await context.new_page()
     await pg.goto(f"{axinite_server}/?token={AUTH_TOKEN}")
-    # Wait for the app to initialize (auth screen hidden, SSE connected)
+    # Wait for the SolidJS AuthGate to unlock: `#auth-screen` is present only
+    # while checking/locked and is removed once unlocked (state="hidden"
+    # matches absence). Then wait for the app shell (role=navigation) so the
+    # test starts against a mounted UI rather than a blank frame.
     await pg.wait_for_selector("#auth-screen", state="hidden", timeout=15000)
+    await pg.get_by_role("navigation").wait_for(state="visible", timeout=15000)
     yield pg
     await context.close()
