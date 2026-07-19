@@ -446,3 +446,39 @@ chat-auth-card-submit = भेजें
 chat-auth-card-cancel = रद्द करें
 chat-auth-card-error = प्रमाणीकरण विफल रहा। टोकन जाँचें और पुनः प्रयास करें।
 chat-auth-notice-dismiss = बंद करें
+
+# गेटवे पुनः आरंभ करने की सुविधा
+restart-action = गेटवे पुनः आरंभ करें
+restart-confirm-title = गेटवे पुनः आरंभ करें?
+restart-confirm-description = यह /restart कमांड भेजता है और गेटवे को कुछ समय के लिए बाधित करता है। सक्रिय स्ट्रीम स्वचालित रूप से पुनः कनेक्ट हो जाती हैं।
+restart-confirm-accept = पुनः आरंभ करें
+restart-confirm-cancel = रद्द करें
+restart-progress = गेटवे पुनः आरंभ हो रहा है…
+restart-complete = गेटवे पुनः आरंभ हो गया।
+
+# TEE सत्यापन सतह
+tee-shield-label = TEE सत्यापन देखें
+tee-popover-title = TEE सत्यापन
+tee-field-image-digest = इमेज डाइजेस्ट
+tee-field-tls-fingerprint = TLS प्रमाणपत्र फ़िंगरप्रिंट
+tee-field-report-data = रिपोर्ट डेटा
+tee-field-vm-config = VM कॉन्फ़िगरेशन
+tee-copy-report = पूरी रिपोर्ट कॉपी करें
+tee-value-empty = लागू नहीं
+tee-report-loading = सत्यापन रिपोर्ट लोड हो रही है…
+tee-report-error = सत्यापन रिपोर्ट लोड नहीं हो सकी
+
+# WASM चैनल सक्रियण और युग्मन
+extensions-stepper-label = सक्रियण प्रगति
+extensions-stepper-installed = इंस्टॉल किया गया
+extensions-stepper-configured = कॉन्फ़िगर किया गया
+extensions-stepper-active = सक्रिय
+extensions-stepper-awaiting-pairing = युग्मन की प्रतीक्षा में
+extensions-stepper-state-completed = पूर्ण
+extensions-stepper-state-failed = विफल
+extensions-stepper-state-in-progress = प्रगति पर
+extensions-stepper-state-pending = लंबित
+extensions-pairing-heading = लंबित युग्मन अनुरोध
+extensions-pairing-from = { $sender } से
+extensions-pairing-approve = स्वीकृत करें
+extensions-pairing-approve-label = युग्मन { $code } स्वीकृत करें
