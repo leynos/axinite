@@ -165,6 +165,14 @@ pub struct GatewayState {
     pub routine_engine: RoutineEngineSlot,
     /// Server startup time for uptime calculation.
     pub startup_time: std::time::Instant,
+    /// Deployment-scoped feature-flag override registry (RFC 0009).
+    ///
+    /// Caches operator overrides per deployment; resolution against
+    /// environment variables and compiled defaults happens in the
+    /// `features` handler. Lazily hydrated from `store` on first read.
+    pub feature_flags: Arc<
+        tokio::sync::RwLock<crate::channels::web::handlers::feature_registry::FeatureFlagRegistry>,
+    >,
 }
 
 /// Bind the TCP listener and resolve the actual bound address.

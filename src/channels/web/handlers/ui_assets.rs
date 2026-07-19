@@ -47,6 +47,7 @@ const SOLID_APP_ROUTES: &[&str] = &[
     "/routines",
     "/extensions",
     "/skills",
+    "/logs",
 ];
 
 /// Embedded Fluent locale bundles for the SolidJS app, keyed by locale code.

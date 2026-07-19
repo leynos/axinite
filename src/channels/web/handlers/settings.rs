@@ -1,17 +1,34 @@
 //! Settings API handlers.
+//!
+//! Most keys are per-user preferences stored in the `settings` table. Keys with
+//! the `feature_flag:` prefix are a deployment-scoped exception (RFC 0009):
+//! they require an `X-Deployment-Id` header, persist to
+//! `feature_flag_overrides` (never the user-scoped `settings` table), and
+//! update the in-memory [`FeatureFlagRegistry`] so `GET /api/features` reflects
+//! the change without a restart. Reads and deletes of `feature_flag:` keys are
+//! rejected here and directed to `GET /api/features`.
+//!
+//! [`FeatureFlagRegistry`]:
+//! crate::channels::web::handlers::feature_registry::FeatureFlagRegistry
 
 use std::sync::Arc;
 
 use axum::{
     Json, Router,
     extract::{Path, State},
-    http::StatusCode,
+    http::{HeaderMap, StatusCode},
+    response::{IntoResponse, Response},
     routing::{delete, get, post, put},
 };
 
+use crate::channels::web::handlers::feature_registry::deployment_id_from_headers;
+use crate::channels::web::handlers::features::apply_flag_override;
 use crate::channels::web::server::GatewayState;
 use crate::channels::web::types::*;
 use crate::db::{SettingKey, UserId};
+
+/// Settings key prefix marking a deployment-scoped feature-flag override.
+const FEATURE_FLAG_PREFIX: &str = "feature_flag:";
 
 pub fn routes() -> Router<Arc<GatewayState>> {
     Router::new()
@@ -54,6 +71,10 @@ pub async fn settings_get_handler(
     State(state): State<Arc<GatewayState>>,
     Path(key): Path<String>,
 ) -> Result<Json<SettingResponse>, StatusCode> {
+    // Feature-flag state is deployment-scoped; read it via GET /api/features.
+    if key.starts_with(FEATURE_FLAG_PREFIX) {
+        return Err(StatusCode::BAD_REQUEST);
+    }
     let store = state
         .store
         .as_ref()
@@ -80,12 +101,19 @@ pub async fn settings_get_handler(
 pub async fn settings_set_handler(
     State(state): State<Arc<GatewayState>>,
     Path(key): Path<String>,
+    headers: HeaderMap,
     Json(body): Json<SettingWriteRequest>,
-) -> Result<StatusCode, StatusCode> {
+) -> Result<Response, (StatusCode, String)> {
+    // Deployment-scoped feature-flag overrides (RFC 0009) take a separate
+    // persistence path and must never touch the user-scoped `settings` table.
+    if let Some(flag_name) = key.strip_prefix(FEATURE_FLAG_PREFIX) {
+        return set_feature_flag(&state, &key, flag_name, &headers, &body.value).await;
+    }
+
     let store = state
         .store
         .as_ref()
-        .ok_or(StatusCode::SERVICE_UNAVAILABLE)?;
+        .ok_or((StatusCode::SERVICE_UNAVAILABLE, "no store".to_string()))?;
     store
         .set_setting(
             UserId::from(state.user_id.as_str()),
@@ -95,16 +123,96 @@ pub async fn settings_set_handler(
         .await
         .map_err(|e| {
             tracing::error!("Failed to set setting '{}': {}", key, e);
-            StatusCode::INTERNAL_SERVER_ERROR
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "failed to set setting".to_string(),
+            )
         })?;
 
-    Ok(StatusCode::NO_CONTENT)
+    Ok(StatusCode::NO_CONTENT.into_response())
+}
+
+/// Validate, persist, and cache a deployment-scoped feature-flag override.
+///
+/// Requires a non-empty `X-Deployment-Id` header, a `[a-z0-9_]+` flag name, and
+/// a value that is a JSON boolean or the string `"true"`/`"false"`
+/// (case-insensitively). Returns a `SettingResponse`-shaped success body on the
+/// happy path.
+async fn set_feature_flag(
+    state: &GatewayState,
+    key: &str,
+    flag_name: &str,
+    headers: &HeaderMap,
+    value: &serde_json::Value,
+) -> Result<Response, (StatusCode, String)> {
+    let deployment_id = deployment_id_from_headers(headers).ok_or((
+        StatusCode::BAD_REQUEST,
+        "feature_flag writes require a non-empty X-Deployment-Id header".to_string(),
+    ))?;
+
+    if !is_valid_flag_name(flag_name) {
+        return Err((
+            StatusCode::BAD_REQUEST,
+            format!("invalid feature flag name '{flag_name}': expected [a-z0-9_]+"),
+        ));
+    }
+
+    let enabled = coerce_flag_value(value).ok_or((
+        StatusCode::BAD_REQUEST,
+        "feature flag value must be a JSON boolean or \"true\"/\"false\"".to_string(),
+    ))?;
+
+    apply_flag_override(state, &deployment_id, flag_name, enabled)
+        .await
+        .map_err(|e| {
+            tracing::error!(
+                deployment_id,
+                flag_name,
+                "Failed to persist feature flag override: {e}"
+            );
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "failed to persist feature flag override".to_string(),
+            )
+        })?;
+
+    Ok(Json(SettingResponse {
+        key: key.to_string(),
+        value: serde_json::Value::Bool(enabled),
+        updated_at: chrono::Utc::now().to_rfc3339(),
+    })
+    .into_response())
+}
+
+/// Flag names are lowercase ASCII letters, digits, and underscores (RFC 0009).
+fn is_valid_flag_name(name: &str) -> bool {
+    !name.is_empty()
+        && name
+            .bytes()
+            .all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'_')
+}
+
+/// Coerce a settings write value into a boolean: accept a JSON boolean, or the
+/// strings `"true"`/`"false"` (case-insensitively). Anything else is rejected.
+fn coerce_flag_value(value: &serde_json::Value) -> Option<bool> {
+    match value {
+        serde_json::Value::Bool(b) => Some(*b),
+        serde_json::Value::String(s) if s.eq_ignore_ascii_case("true") => Some(true),
+        serde_json::Value::String(s) if s.eq_ignore_ascii_case("false") => Some(false),
+        _ => None,
+    }
 }
 
 pub async fn settings_delete_handler(
     State(state): State<Arc<GatewayState>>,
     Path(key): Path<String>,
 ) -> Result<StatusCode, StatusCode> {
+    // Feature-flag overrides are deployment-scoped; the settings DELETE path
+    // only manages user-scoped rows. Deletion is out of scope for RFC 0009's
+    // minimal surface, so reject rather than silently no-op.
+    if key.starts_with(FEATURE_FLAG_PREFIX) {
+        return Err(StatusCode::BAD_REQUEST);
+    }
     let store = state
         .store
         .as_ref()
@@ -159,3 +267,6 @@ pub async fn settings_import_handler(
 
     Ok(StatusCode::NO_CONTENT)
 }
+
+#[cfg(test)]
+mod tests;

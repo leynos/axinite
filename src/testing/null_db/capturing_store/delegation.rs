@@ -318,6 +318,16 @@ impl crate::db::NativeToolFailureStore for CapturingStore {
 impl crate::db::NativeSettingsStore for CapturingStore {
     delegate! {
         to self.inner {
+            async fn list_deployment_flags(
+                &self,
+                deployment_id: &str
+            ) -> Result<Vec<(String, bool)>, DatabaseError>;
+            async fn set_deployment_flag(
+                &self,
+                deployment_id: &str,
+                flag_name: &str,
+                enabled: bool
+            ) -> Result<(), DatabaseError>;
             async fn get_setting(
                 &self,
                 user_id: UserId,

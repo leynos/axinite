@@ -4,7 +4,7 @@ use std::collections::HashMap;
 
 use libsql::params;
 
-use super::{LibSqlBackend, fmt_ts, get_json, get_text, get_ts};
+use super::{LibSqlBackend, fmt_ts, get_i64, get_json, get_text, get_ts};
 use crate::db::{NativeSettingsStore, SettingKey, UserId};
 use crate::error::DatabaseError;
 use crate::history::SettingRow;
@@ -240,5 +240,110 @@ impl NativeSettingsStore for LibSqlBackend {
             }
             None => Ok(false),
         }
+    }
+
+    async fn list_deployment_flags(
+        &self,
+        deployment_id: &str,
+    ) -> Result<Vec<(String, bool)>, DatabaseError> {
+        let conn = self.connect().await?;
+        let mut rows = conn
+            .query(
+                "SELECT flag_name, enabled FROM feature_flag_overrides \
+                 WHERE deployment_id = ?1 ORDER BY flag_name",
+                params![deployment_id],
+            )
+            .await
+            .map_err(|e| DatabaseError::Query(e.to_string()))?;
+
+        let mut flags = Vec::new();
+        while let Some(row) = rows
+            .next()
+            .await
+            .map_err(|e| DatabaseError::Query(e.to_string()))?
+        {
+            // Booleans store as INTEGER (0/1) in libSQL; read via get_i64.
+            flags.push((get_text(&row, 0), get_i64(&row, 1) != 0));
+        }
+        Ok(flags)
+    }
+
+    async fn set_deployment_flag(
+        &self,
+        deployment_id: &str,
+        flag_name: &str,
+        enabled: bool,
+    ) -> Result<(), DatabaseError> {
+        let conn = self.connect().await?;
+        let now = fmt_ts(&Utc::now());
+        conn.execute(
+            r#"
+                INSERT INTO feature_flag_overrides (deployment_id, flag_name, enabled, updated_at)
+                VALUES (?1, ?2, ?3, ?4)
+                ON CONFLICT (deployment_id, flag_name) DO UPDATE SET
+                    enabled = excluded.enabled,
+                    updated_at = ?4
+                "#,
+            params![deployment_id, flag_name, i64::from(enabled), now],
+        )
+        .await
+        .map_err(|e| DatabaseError::Query(e.to_string()))?;
+        Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    //! Round-trip tests for deployment-scoped feature-flag persistence.
+
+    use crate::db::libsql::LibSqlBackend;
+    use crate::db::{Database, NativeSettingsStore};
+
+    #[tokio::test]
+    async fn deployment_flag_round_trip_upserts_and_isolates_deployments() {
+        let backend = LibSqlBackend::new_memory().await.unwrap();
+        backend.run_migrations().await.unwrap();
+
+        // No overrides initially.
+        assert!(
+            backend
+                .list_deployment_flags("production")
+                .await
+                .unwrap()
+                .is_empty()
+        );
+
+        backend
+            .set_deployment_flag("production", "panel_logs", false)
+            .await
+            .unwrap();
+        backend
+            .set_deployment_flag("production", "route_chat", true)
+            .await
+            .unwrap();
+        // Upsert: writing the same key again replaces the stored value.
+        backend
+            .set_deployment_flag("production", "panel_logs", true)
+            .await
+            .unwrap();
+
+        // ORDER BY flag_name -> panel_logs before route_chat.
+        let flags = backend.list_deployment_flags("production").await.unwrap();
+        assert_eq!(
+            flags,
+            vec![
+                ("panel_logs".to_string(), true),
+                ("route_chat".to_string(), true),
+            ]
+        );
+
+        // A different deployment is isolated.
+        assert!(
+            backend
+                .list_deployment_flags("staging")
+                .await
+                .unwrap()
+                .is_empty()
+        );
     }
 }
