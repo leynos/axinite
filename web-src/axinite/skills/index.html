@@ -1,0 +1,724 @@
+<!DOCTYPE html><html lang="en" class="dark"><head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link rel="icon" href="../assets/icons/axinite32.ico" sizes="32x32">
+    <title>Skills - Axinite</title>
+    <link rel="stylesheet" href="../assets/css/index.css">
+    <script src="../assets/vendor/tailwindcss-browser-4.2.1.js"></script>
+    <script src="../assets/vendor/iconify-icon-3.0.2.min.js"></script>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Buenard:wght@400..700&family=Molengo&display=swap" rel="stylesheet">
+    <script src="../assets/js/tailwind-config.js"></script>
+</head>
+<body class="h-screen w-full overflow-hidden bg-brand-dark bg-mesh-gradient flex flex-col font-sans text-sm antialiased">
+    <div id="app-shell" class="contents">
+    <!-- Top Navigation -->
+    <header id="header" class="glass-topbar w-full h-14 flex items-center justify-between px-4 z-20 shrink-0">
+        <div class="flex items-center space-x-6 h-full">
+            <nav class="flex h-full space-x-1">
+                <a href="../chat/" class="h-full px-4 flex items-center text-zinc-400 hover:text-zinc-200 transition-colors">Chat</a>
+                <a href="../memory/" class="h-full px-4 flex items-center text-zinc-400 hover:text-zinc-200 transition-colors">Memory</a>
+                <a href="../jobs/" class="h-full px-4 flex items-center text-zinc-400 hover:text-zinc-200 transition-colors">Jobs</a>
+                <a href="../routines/" class="h-full px-4 flex items-center text-zinc-400 hover:text-zinc-200 transition-colors">Routines</a>
+                <a href="../extensions/" class="h-full px-4 flex items-center text-zinc-400 hover:text-zinc-200 transition-colors">Extensions</a>
+                <a href="../skills/" class="h-full px-4 flex items-center text-brand-emerald border-b-2 border-brand-emerald font-medium">Skills</a>
+            </nav>
+        </div>
+
+        <div class="flex items-center space-x-4">
+            <button type="button" class="text-xs text-zinc-400 hover:text-zinc-200 px-3 py-1.5 rounded-md hover:bg-glass-100 transition-colors border border-glass-border">
+                Logs
+            </button>
+            <div class="flex items-center space-x-2 text-xs text-zinc-400">
+                <span class="w-2 h-2 rounded-full bg-brand-emerald shadow-[0_0_8px_rgba(0,255,65,0.5)]"></span>
+                <span>Connected</span>
+            </div>
+        </div>
+    </header>
+
+    <!-- Background watermark -->
+    <iconify-icon icon="carbon:magic-wand-filled" class="fixed bottom-[-3vh] right-[-2vw] text-white pointer-events-none z-0" style="font-size: 30vh; opacity: 0.025;"></iconify-icon>
+
+    <div class="flex flex-1 overflow-hidden relative z-10">
+        <main class="flex-1 overflow-y-auto">
+            <div class="max-w-6xl mx-auto px-6 py-6 space-y-8">
+
+                <!-- Search ClawHub -->
+                <section>
+                    <h2 class="text-base font-semibold text-zinc-200 mb-3">Search ClawHub</h2>
+                    <div class="flex items-center gap-3">
+                        <label for="search-input" class="sr-only">Search for skills</label>
+                        <input id="search-input" type="text" placeholder="Search for skills..." class="flex-1 bg-glass-200 border border-glass-border rounded-lg px-3 py-1.5 text-sm text-zinc-200 placeholder-zinc-600 focus:outline-none focus:ring-1 focus:ring-brand-emerald/50 focus:border-brand-emerald/30">
+                        <button type="button" id="search-btn" class="px-4 py-1.5 rounded-lg text-sm btn-primary">Search</button>
+                    </div>
+                    <div id="search-results" class="hidden mt-3 space-y-2"></div>
+                </section>
+
+                <!-- Installed Skills -->
+                <section>
+                    <h2 class="text-base font-semibold text-zinc-200 mb-4">Installed Skills</h2>
+                    <div id="skill-cards" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4"></div>
+                </section>
+
+                <!-- Install panels side by side -->
+                <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
+
+                    <!-- URL install panel -->
+                    <div class="relative bg-glass-100 border border-glass-border rounded-xl p-6 overflow-hidden">
+                        <iconify-icon icon="carbon:link" class="absolute -bottom-6 -right-4 text-white pointer-events-none" style="font-size: 11rem; opacity: 0.03;"></iconify-icon>
+
+                        <div class="relative z-10 space-y-4">
+                            <h2 class="text-base font-semibold text-zinc-200">Install by URL</h2>
+
+                            <div>
+                                <label for="url-skill-name" class="text-xs text-zinc-400 mb-1.5 block">Skill name or slug <span class="text-zinc-600">(optional)</span></label>
+                                <input id="url-skill-name" type="text" placeholder="my-skill" class="w-full bg-glass-200 border border-glass-border rounded-lg px-3 py-1.5 text-sm text-zinc-200 placeholder-zinc-600 focus:outline-none focus:ring-1 focus:ring-brand-emerald/50 focus:border-brand-emerald/30">
+                            </div>
+
+                            <div>
+                                <label for="url-install-url" class="text-xs text-zinc-400 mb-1.5 block">HTTPS URL</label>
+                                <div class="flex items-center gap-3">
+                                    <input id="url-install-url" type="text" placeholder="https://example.com/SKILL.md or .skill" class="flex-1 bg-glass-200 border border-glass-border rounded-lg px-3 py-1.5 text-sm text-zinc-200 placeholder-zinc-600 focus:outline-none focus:ring-1 focus:ring-brand-emerald/50 focus:border-brand-emerald/30 min-w-0">
+                                    <button type="button" id="url-install-btn" class="px-4 py-1.5 rounded-lg text-sm btn-primary shrink-0" disabled>Install</button>
+                                </div>
+                            </div>
+
+                            <p class="text-xs text-zinc-500">
+                                <iconify-icon icon="carbon:information" class="align-middle mr-0.5"></iconify-icon>
+                                URL may point to a raw <code class="text-[11px] bg-white/5 border border-white/5 rounded px-1 py-0.5 text-zinc-400">SKILL.md</code> or a <code class="text-[11px] bg-white/5 border border-white/5 rounded px-1 py-0.5 text-zinc-400">.skill</code> bundle archive.
+                            </p>
+                        </div>
+                    </div>
+
+                    <!-- Upload panel -->
+                    <div class="relative bg-glass-100 border border-glass-border rounded-xl p-6 overflow-hidden">
+                        <iconify-icon icon="carbon:cloud-upload" class="absolute -bottom-6 -right-4 text-white pointer-events-none" style="font-size: 11rem; opacity: 0.03;"></iconify-icon>
+
+                        <div class="relative z-10 space-y-4">
+                            <h2 class="text-base font-semibold text-zinc-200">Upload Skill Bundle</h2>
+
+                            <div id="upload-zone" role="button" tabindex="0" aria-label="Upload a skill bundle" aria-describedby="upload-zone-help upload-zone-format" class="border-2 border-dashed border-glass-border rounded-xl p-6 flex flex-col items-center justify-center text-center cursor-pointer hover:border-brand-emerald/30 hover:bg-glass-200 transition-colors">
+                                <iconify-icon icon="carbon:document-add" class="text-2xl text-zinc-600 mb-2"></iconify-icon>
+                                <p id="upload-zone-help" class="text-sm text-zinc-400">Drop <code class="text-[11px] bg-white/5 border border-white/5 rounded px-1 py-0.5 text-zinc-400">.skill</code> file here or click to browse</p>
+                                <p id="upload-zone-format" class="text-xs text-zinc-600 mt-1">ZIP archive with SKILL.md at root</p>
+                                <input id="upload-input" type="file" class="hidden" accept=".skill,.zip">
+                            </div>
+
+                            <div id="upload-selected" class="hidden space-y-3">
+                                <div class="flex items-center gap-2 text-sm">
+                                    <iconify-icon icon="carbon:document" class="text-brand-emerald"></iconify-icon>
+                                    <span id="upload-filename" class="text-zinc-300"></span>
+                                    <button type="button" id="upload-clear" class="text-zinc-500 hover:text-zinc-300 transition-colors ml-1">
+                                        <iconify-icon icon="carbon:close" class="text-xs"></iconify-icon>
+                                    </button>
+                                </div>
+                                <div class="flex items-center gap-3">
+                                    <label for="upload-name-override" class="text-xs text-zinc-400 shrink-0">Name override <span class="text-zinc-600">(optional)</span></label>
+                                    <input id="upload-name-override" type="text" placeholder="Derived from archive" class="flex-1 bg-glass-200 border border-glass-border rounded-lg px-3 py-1.5 text-sm text-zinc-200 placeholder-zinc-600 focus:outline-none focus:ring-1 focus:ring-brand-emerald/50 focus:border-brand-emerald/30 min-w-0">
+                                    <button type="button" id="upload-install-btn" class="px-4 py-1.5 rounded-lg text-sm btn-primary shrink-0" disabled>Install</button>
+                                </div>
+                            </div>
+
+                            <p class="text-xs text-zinc-500">
+                                <iconify-icon icon="carbon:information" class="align-middle mr-0.5"></iconify-icon>
+                                Phase 1 bundles support <code class="text-[11px] bg-white/5 border border-white/5 rounded px-1 py-0.5 text-zinc-400">references/</code> and <code class="text-[11px] bg-white/5 border border-white/5 rounded px-1 py-0.5 text-zinc-400">assets/</code> directories. Scripts and executables are not permitted.
+                            </p>
+                        </div>
+                    </div>
+
+                </div>
+
+            </div>
+        </main>
+    </div>
+
+    </div>
+
+    <!-- View skill modal -->
+    <div id="view-modal" role="dialog" aria-modal="true" aria-labelledby="view-title" aria-hidden="true" tabindex="-1" class="hidden fixed inset-0 z-50 flex items-center justify-center">
+        <div id="view-backdrop" class="absolute inset-0 bg-black/60"></div>
+        <div class="relative rounded-2xl p-6 w-full max-w-xl mx-4 border border-glass-border max-h-[80vh] flex flex-col" style="background: rgba(15, 15, 20, 0.9); backdrop-filter: blur(24px); -webkit-backdrop-filter: blur(24px);">
+            <h3 id="view-title" class="text-lg font-semibold text-zinc-100 mb-1 font-serif"></h3>
+            <div id="view-meta" class="flex items-center gap-2 mb-4"></div>
+            <div id="view-bundle-files" class="hidden mb-4"></div>
+            <div id="view-content" class="flex-1 overflow-y-auto markdown-body bg-glass-200 rounded-lg p-4 border border-glass-border"></div>
+            <div class="flex justify-end mt-4">
+                <button type="button" id="view-close" class="px-4 py-2 rounded-lg text-sm text-zinc-300 font-medium transition-colors border border-red-500/60 hover:bg-red-500/10">Close</button>
+            </div>
+        </div>
+    </div>
+
+    <script src="../assets/js/markdown.js"></script>
+    <script>
+    (function () {
+        /* ── data ──────────────────────────────────────────────── */
+        var skills = [
+            {
+                id: 'rust-ownership', name: 'rust-ownership', version: 'v1.0.0',
+                format: 'single', active: true,
+                description: 'Ownership, borrowing, and lifetime guidance for Rust.',
+                bundleFiles: ['SKILL.md'],
+                content: '# Rust Ownership\n\nGuide the model through Rust ownership rules.\n\n## When to activate\n\nActivate when working with borrowing, lifetimes, or move semantics.\n\n## Key rules\n\n- Each value has exactly one owner\n- Borrowing is either shared (`&T`) or exclusive (`&mut T`)\n- References must not outlive their referent'
+            },
+            {
+                id: 'openapi-reference', name: 'openapi-reference', version: 'v2.1.0',
+                format: 'bundle', active: true,
+                description: 'OpenAPI 3.1 specification reference with schema examples.',
+                bundleFiles: [
+                    'SKILL.md',
+                    'references/schemas.md',
+                    'references/endpoints.md',
+                    'references/authentication.md',
+                    'assets/logo.png'
+                ],
+                content: '# OpenAPI Reference\n\nComprehensive OpenAPI 3.1 guidance.\n\n## Bundled references\n\nUse `skill_read_file` to access:\n- `references/schemas.md` \u2014 JSON Schema vocabulary\n- `references/endpoints.md` \u2014 path item patterns\n- `references/authentication.md` \u2014 security scheme examples'
+            },
+            {
+                id: 'code-review', name: 'code-review', version: 'v1.2.0',
+                format: 'single', active: true,
+                description: 'Structured code review methodology and checklist.',
+                bundleFiles: ['SKILL.md'],
+                content: '# Code Review\n\nStructured approach to code review.\n\n## Checklist\n\n- Correctness: does it do what it claims?\n- Clarity: can a new contributor follow it?\n- Performance: are there obvious inefficiencies?\n- Security: are inputs validated at boundaries?'
+            },
+            {
+                id: 'frontend-a11y', name: 'frontend-a11y', version: 'v0.9.0',
+                format: 'bundle', active: false,
+                description: 'WCAG 2.2 accessibility patterns, checklist, and testing guides.',
+                bundleFiles: [
+                    'SKILL.md',
+                    'references/checklist.md',
+                    'references/aria-patterns.md',
+                    'references/colour-contrast.md',
+                    'references/keyboard-nav.md',
+                    'references/screen-readers.md',
+                    'assets/wcag-flowchart.png',
+                    'assets/contrast-table.png'
+                ],
+                content: '# Frontend Accessibility\n\nWCAG 2.2 Level AA compliance guidance.\n\n## Bundled references\n\nUse `skill_read_file` to access:\n- `references/checklist.md` \u2014 full WCAG 2.2 AA checklist\n- `references/aria-patterns.md` \u2014 WAI-ARIA authoring practices\n- `references/colour-contrast.md` \u2014 contrast ratio requirements\n- `references/keyboard-nav.md` \u2014 keyboard interaction patterns\n- `references/screen-readers.md` \u2014 screen reader testing guide'
+            },
+        ];
+
+        var clawhubResults = [
+            { name: 'react-patterns', version: 'v1.3.0', format: 'bundle', description: 'React component patterns and best practices.', refs: 4, assets: 0 },
+            { name: 'python-typing', version: 'v2.0.0', format: 'single', description: 'Python type annotation guide and mypy integration.', refs: 0, assets: 0 },
+            { name: 'docker-compose', version: 'v1.1.0', format: 'bundle', description: 'Docker Compose patterns for development and production.', refs: 2, assets: 1 },
+        ];
+
+        var formatStyle = {
+            'single': 'bg-zinc-500/20 text-zinc-400',
+            'bundle': 'bg-indigo-500/20 text-indigo-400',
+        };
+
+        /* ── elements ──────────────────────────────────────────── */
+        var cardsEl        = document.getElementById('skill-cards');
+        var searchInput    = document.getElementById('search-input');
+        var searchResults  = document.getElementById('search-results');
+        var urlSkillNameInput = document.getElementById('url-skill-name');
+        var urlInstallUrlInput = document.getElementById('url-install-url');
+        var urlInstallButton = document.getElementById('url-install-btn');
+        var appShell       = document.getElementById('app-shell');
+        var modal          = document.getElementById('view-modal');
+        var modalClose     = document.getElementById('view-close');
+        var modalBackdrop  = document.getElementById('view-backdrop');
+        var modalTitle     = document.getElementById('view-title');
+        var modalMeta      = document.getElementById('view-meta');
+        var modalFiles     = document.getElementById('view-bundle-files');
+        var modalContent   = document.getElementById('view-content');
+        var uploadZone     = document.getElementById('upload-zone');
+        var uploadInput    = document.getElementById('upload-input');
+        var uploadSelected = document.getElementById('upload-selected');
+        var uploadFilename = document.getElementById('upload-filename');
+        var uploadNameOverride = document.getElementById('upload-name-override');
+        var uploadInstallButton = document.getElementById('upload-install-btn');
+        var focusableSelector = 'a[href], button:not([disabled]), textarea:not([disabled]), input:not([disabled]):not([type="hidden"]), select:not([disabled]), [tabindex]:not([tabindex="-1"])';
+        var lastFocusedElement = null;
+        var modalKeydownHandler = null;
+        var selectedUploadFileName = '';
+        var installingButton = null;
+
+        /* ── helpers ───────────────────────────────────────────── */
+        var markdown = window.axiniteMarkdown;
+        var esc = markdown.escapeHtml;
+        var renderMd = markdown.renderMarkdown;
+
+        function fileCounts(bundleFiles) {
+            var refs   = 0;
+            var assets = 0;
+            bundleFiles.forEach(function (f) {
+                if (f.indexOf('references/') === 0) refs++;
+                if (f.indexOf('assets/') === 0) assets++;
+            });
+            return { refs: refs, assets: assets };
+        }
+
+        function formatCounts(refs, assets) {
+            var parts = [];
+            if (refs > 0)   parts.push(refs + ' reference' + (refs > 1 ? 's' : ''));
+            if (assets > 0) parts.push(assets + ' asset' + (assets > 1 ? 's' : ''));
+            return parts.join(' &middot; ');
+        }
+
+        function slugify(value) {
+            return value.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '') || 'new-skill';
+        }
+
+        function isValidUrl(value) {
+            var parsedUrl;
+
+            try {
+                parsedUrl = new URL(value);
+                return parsedUrl.protocol === 'https:';
+            } catch {
+                return false;
+            }
+        }
+
+        function isSupportedBundleFilename(name) {
+            return /\.(skill|zip)$/i.test(name || '');
+        }
+
+        function getUrlInstallPayload() {
+            var url = urlInstallUrlInput.value.trim();
+            var providedName = urlSkillNameInput.value.trim();
+            var urlObject;
+            var derivedName;
+
+            if (!isValidUrl(url)) {
+                return null;
+            }
+
+            urlObject = new URL(url);
+            derivedName = urlObject.pathname.split('/').filter(Boolean).pop() || urlObject.hostname;
+            derivedName = derivedName.replace(/\.(md|skill|zip)$/i, '');
+
+            return {
+                id: slugify(providedName || derivedName),
+                name: providedName || derivedName,
+                version: 'v1.0.0',
+                format: /\.(skill|zip)$/i.test(urlObject.pathname) ? 'bundle' : 'single',
+                description: 'Installed from URL: ' + urlObject.hostname + '.',
+                bundleFiles: ['SKILL.md'],
+                content: '# ' + (providedName || derivedName) + '\n\nInstalled from ' + url + '.'
+            };
+        }
+
+        function getUploadInstallPayload() {
+            var overrideName = uploadNameOverride.value.trim();
+            var baseName;
+
+            if (!selectedUploadFileName || !isSupportedBundleFilename(selectedUploadFileName)) {
+                return null;
+            }
+
+            baseName = selectedUploadFileName.replace(/\.(skill|zip)$/i, '');
+
+            return {
+                id: slugify(overrideName || baseName),
+                name: overrideName || baseName,
+                version: 'v1.0.0',
+                format: 'bundle',
+                description: 'Installed from uploaded bundle.',
+                bundleFiles: ['SKILL.md'],
+                content: '# ' + (overrideName || baseName) + '\n\nInstalled from uploaded bundle.'
+            };
+        }
+
+        function upsertSkill(skill) {
+            var existingIndex = skills.findIndex(function (existingSkill) {
+                return existingSkill.id === skill.id;
+            });
+
+            if (existingIndex === -1) {
+                skills.push(skill);
+            } else {
+                skills[existingIndex] = skill;
+            }
+            renderCards();
+        }
+
+        function updateInstallButtons() {
+            var urlPayload = getUrlInstallPayload();
+            var uploadPayload = getUploadInstallPayload();
+
+            urlInstallButton.disabled = installingButton !== null || !urlPayload;
+            uploadInstallButton.disabled = installingButton !== null || !uploadPayload;
+        }
+
+        function completeInstall(button, payload, afterInstall) {
+            var originalLabel = button.dataset.defaultLabel;
+
+            upsertSkill(payload);
+            if (typeof afterInstall === 'function') {
+                afterInstall();
+            }
+            installingButton = null;
+            button.textContent = originalLabel;
+            updateInstallButtons();
+        }
+
+        function installSkill(button, payload, afterInstall) {
+            if (!payload || installingButton) {
+                return;
+            }
+
+            installingButton = button.id;
+            button.textContent = 'Installing...';
+            updateInstallButtons();
+            window.setTimeout(function () {
+                completeInstall(button, payload, afterInstall);
+            }, 300);
+        }
+
+        /* ── render skill cards ──────────────────────────────── */
+        function renderCards() {
+            cardsEl.innerHTML = '';
+            if (skills.length === 0) {
+                cardsEl.innerHTML = '<p class="text-zinc-500 text-sm pl-4 col-span-full">No skills installed</p>';
+                return;
+            }
+            skills.forEach(function (skill) {
+                var card = document.createElement('div');
+                card.className = 'bg-glass-100 border border-glass-border rounded-xl p-4 flex flex-col';
+
+                var counts = fileCounts(skill.bundleFiles);
+
+                /* header row */
+                var header = '<div class="flex items-center gap-2 mb-1.5 flex-wrap">' +
+                    '<span class="font-semibold text-zinc-200">' + esc(skill.name) + '</span>' +
+                    '<span class="text-[10px] px-1.5 py-0.5 rounded font-medium ' + (formatStyle[skill.format] || '') + '">' + (skill.format === 'bundle' ? 'Bundle' : 'Single') + '</span>' +
+                    '<span class="text-xs text-zinc-500">' + esc(skill.version) + '</span>' +
+                    (skill.active
+                        ? '<span class="w-2 h-2 rounded-full bg-brand-emerald shadow-[0_0_6px_rgba(0,255,65,0.5)]"></span>'
+                        : '<span class="w-2 h-2 rounded-full bg-zinc-600"></span>') +
+                    '</div>';
+
+                /* description */
+                var desc = '<p class="text-xs text-zinc-500 mb-2 leading-relaxed">' + esc(skill.description) + '</p>';
+
+                /* bundle file counts */
+                var bundle = '';
+                if (skill.format === 'bundle') {
+                    var countsStr = formatCounts(counts.refs, counts.assets);
+                    bundle = '<div class="flex items-center gap-1.5 text-[10px] text-zinc-500 mb-3">' +
+                        '<iconify-icon icon="carbon:folder" class="text-xs text-zinc-600"></iconify-icon>' +
+                        '<span>' + countsStr + '</span>' +
+                        '</div>';
+                } else {
+                    bundle = '<div class="mb-3"></div>';
+                }
+
+                /* action buttons */
+                var actions = '<div class="flex gap-2 mt-auto text-xs">' +
+                    '<button type="button" class="btn-view px-2.5 py-1 rounded-md border border-glass-border text-zinc-400 hover:text-zinc-200 hover:bg-glass-200 transition-colors">View</button>' +
+                    '<button type="button" class="btn-toggle px-2.5 py-1 rounded-md border border-glass-border text-zinc-400 hover:text-zinc-200 hover:bg-glass-200 transition-colors">' + (skill.active ? 'Disable' : 'Enable') + '</button>' +
+                    '<button type="button" class="btn-remove px-2.5 py-1 rounded-md border border-glass-border text-zinc-400 hover:text-red-400 hover:border-red-500/30 hover:bg-red-500/10 transition-colors">Remove</button>' +
+                    '</div>';
+
+                card.innerHTML = header + desc + bundle + actions;
+
+                /* view */
+                card.querySelector('.btn-view').addEventListener('click', function () {
+                    openView(skill);
+                });
+
+                /* enable/disable */
+                card.querySelector('.btn-toggle').addEventListener('click', function () {
+                    skill.active = !skill.active;
+                    renderCards();
+                });
+
+                /* remove */
+                card.querySelector('.btn-remove').addEventListener('click', function () {
+                    var idx = skills.indexOf(skill);
+                    if (idx !== -1) skills.splice(idx, 1);
+                    renderCards();
+                });
+
+                cardsEl.appendChild(card);
+            });
+        }
+
+        /* ── view modal ──────────────────────────────────────── */
+        function isViewOpen() {
+            return !modal.classList.contains('hidden');
+        }
+
+        function setBackgroundInert(isInert) {
+            if (!appShell) return;
+            appShell.inert = isInert;
+            if (isInert) {
+                appShell.setAttribute('aria-hidden', 'true');
+            } else {
+                appShell.removeAttribute('aria-hidden');
+            }
+        }
+
+        function getFocusableInModal() {
+            return Array.prototype.filter.call(
+                modal.querySelectorAll(focusableSelector),
+                function (el) {
+                    return !el.hasAttribute('disabled') && el.getAttribute('aria-hidden') !== 'true' && el.offsetParent !== null;
+                }
+            );
+        }
+
+        function focusModalStart() {
+            var focusable = getFocusableInModal();
+            var target = modalClose || focusable[0] || modal;
+            target.focus();
+        }
+
+        function handleModalKeydown(e) {
+            if (!isViewOpen()) return;
+
+            if (e.key === 'Escape') {
+                e.preventDefault();
+                closeView();
+                return;
+            }
+
+            if (e.key !== 'Tab') return;
+
+            var focusable = getFocusableInModal();
+            var first = focusable[0];
+            var last = focusable[focusable.length - 1];
+
+            if (!first || !last) {
+                e.preventDefault();
+                modal.focus();
+                return;
+            }
+
+            if (e.shiftKey && document.activeElement === first) {
+                e.preventDefault();
+                last.focus();
+            } else if (!e.shiftKey && document.activeElement === last) {
+                e.preventDefault();
+                first.focus();
+            }
+        }
+
+        function openView(skill) {
+            modalTitle.textContent = skill.name;
+
+            modalMeta.innerHTML =
+                '<span class="text-[10px] px-1.5 py-0.5 rounded font-medium ' + (formatStyle[skill.format] || '') + '">' + (skill.format === 'bundle' ? 'Bundle' : 'Single file') + '</span>' +
+                '<span class="text-xs text-zinc-500">' + esc(skill.version) + '</span>';
+
+            /* bundle file listing */
+            if (skill.format === 'bundle' && skill.bundleFiles.length > 1) {
+                modalFiles.classList.remove('hidden');
+                var fileList = '<div class="text-xs text-zinc-500 mb-1.5 font-medium">Bundle contents</div>' +
+                    '<div class="bg-glass-200 rounded-lg p-3 border border-glass-border font-mono text-xs text-zinc-400 space-y-0.5">';
+                skill.bundleFiles.forEach(function (f) {
+                    var icon = f.indexOf('references/') === 0 ? 'carbon:document'
+                             : f.indexOf('assets/') === 0     ? 'carbon:image'
+                             :                                   'carbon:notebook';
+                    fileList += '<div class="flex items-center gap-2"><iconify-icon icon="' + icon + '" class="text-zinc-600"></iconify-icon>' + esc(f) + '</div>';
+                });
+                fileList += '</div>';
+                modalFiles.innerHTML = fileList;
+            } else {
+                modalFiles.classList.add('hidden');
+            }
+
+            /* rendered SKILL.md content */
+            modalContent.innerHTML = renderMd(skill.content);
+            lastFocusedElement = document.activeElement;
+            setBackgroundInert(true);
+            modal.classList.remove('hidden');
+            modal.setAttribute('aria-hidden', 'false');
+            if (modalKeydownHandler) {
+                document.removeEventListener('keydown', modalKeydownHandler);
+            }
+            modalKeydownHandler = handleModalKeydown;
+            document.addEventListener('keydown', modalKeydownHandler);
+            focusModalStart();
+        }
+
+        function closeView() {
+            if (!isViewOpen()) return;
+
+            modal.classList.add('hidden');
+            modal.setAttribute('aria-hidden', 'true');
+            setBackgroundInert(false);
+            if (modalKeydownHandler) {
+                document.removeEventListener('keydown', modalKeydownHandler);
+                modalKeydownHandler = null;
+            }
+            if (lastFocusedElement && typeof lastFocusedElement.focus === 'function') {
+                lastFocusedElement.focus();
+            }
+            lastFocusedElement = null;
+        }
+
+        modalClose.addEventListener('click', closeView);
+        modalBackdrop.addEventListener('click', closeView);
+
+        /* ── search ──────────────────────────────────────────── */
+        function doSearch() {
+            var q = searchInput.value.trim().toLowerCase();
+            if (!q) {
+                searchResults.classList.add('hidden');
+                return;
+            }
+            searchResults.classList.remove('hidden');
+            searchResults.innerHTML = '';
+
+            var hits = clawhubResults.filter(function (r) {
+                return r.name.toLowerCase().indexOf(q) !== -1 || r.description.toLowerCase().indexOf(q) !== -1;
+            });
+
+            if (hits.length === 0) {
+                searchResults.innerHTML = '<p class="text-zinc-500 text-sm pl-4">No results found</p>';
+                return;
+            }
+
+            hits.forEach(function (r) {
+                var row = document.createElement('div');
+                row.className = 'flex items-center justify-between bg-glass-100 border border-glass-border rounded-lg px-4 py-3';
+
+                var bundleInfo = '';
+                if (r.format === 'bundle') {
+                    var countsStr = formatCounts(r.refs, r.assets);
+                    if (countsStr) {
+                        bundleInfo = '<span class="text-[10px] text-zinc-600 ml-2"><iconify-icon icon="carbon:folder" class="text-[10px] align-middle mr-0.5"></iconify-icon>' + countsStr + '</span>';
+                    }
+                }
+
+                var already = skills.some(function (s) { return s.id === r.name; });
+
+                row.innerHTML =
+                    '<div class="flex-1 min-w-0">' +
+                        '<div class="flex items-center gap-2 flex-wrap">' +
+                            '<span class="font-semibold text-zinc-200">' + esc(r.name) + '</span>' +
+                            '<span class="text-[10px] px-1.5 py-0.5 rounded font-medium ' + (formatStyle[r.format] || '') + '">' + (r.format === 'bundle' ? 'Bundle' : 'Single') + '</span>' +
+                            '<span class="text-xs text-zinc-500">' + esc(r.version) + '</span>' +
+                            bundleInfo +
+                        '</div>' +
+                        '<p class="text-xs text-zinc-500 mt-0.5 truncate">' + esc(r.description) + '</p>' +
+                    '</div>' +
+                    (already
+                        ? '<span class="px-3 py-1 text-xs text-zinc-500 font-medium shrink-0 ml-3">Installed</span>'
+                        : '<button type="button" class="btn-install-result px-3 py-1 rounded-md text-xs border border-brand-emerald/60 text-zinc-300 hover:bg-brand-emerald/10 transition-colors font-medium shrink-0 ml-3">Install</button>');
+
+                if (!already) {
+                    row.querySelector('.btn-install-result').addEventListener('click', function () {
+                        skills.push({
+                            id: r.name, name: r.name, version: r.version,
+                            format: r.format, active: true,
+                            description: r.description,
+                            bundleFiles: ['SKILL.md'],
+                            content: '# ' + r.name + '\n\nSkill content loaded from ClawHub.'
+                        });
+                        renderCards();
+                        this.replaceWith(Object.assign(document.createElement('span'), {
+                            className: 'px-3 py-1 text-xs text-zinc-500 font-medium shrink-0 ml-3',
+                            textContent: 'Installed'
+                        }));
+                    });
+                }
+
+                searchResults.appendChild(row);
+            });
+        }
+
+        document.getElementById('search-btn').addEventListener('click', doSearch);
+        searchInput.addEventListener('keydown', function (e) {
+            if (e.key === 'Enter') doSearch();
+        });
+
+        urlInstallButton.dataset.defaultLabel = urlInstallButton.textContent;
+        uploadInstallButton.dataset.defaultLabel = uploadInstallButton.textContent;
+
+        urlInstallButton.addEventListener('click', function () {
+            installSkill(urlInstallButton, getUrlInstallPayload(), function () {
+                urlSkillNameInput.value = '';
+                urlInstallUrlInput.value = '';
+            });
+        });
+        uploadInstallButton.addEventListener('click', function () {
+            installSkill(uploadInstallButton, getUploadInstallPayload(), function () {
+                uploadInput.value = '';
+                uploadNameOverride.value = '';
+                selectedUploadFileName = '';
+                uploadSelected.classList.add('hidden');
+                uploadZone.classList.remove('hidden');
+            });
+        });
+        urlSkillNameInput.addEventListener('input', updateInstallButtons);
+        urlInstallUrlInput.addEventListener('input', updateInstallButtons);
+        uploadNameOverride.addEventListener('input', updateInstallButtons);
+
+        function triggerUploadPicker() {
+            uploadInput.click();
+        }
+
+        /* ── upload zone ─────────────────────────────────────── */
+        uploadZone.addEventListener('click', function () {
+            triggerUploadPicker();
+        });
+
+        uploadZone.addEventListener('keydown', function (e) {
+            if (e.key === 'Enter' || e.key === ' ') {
+                e.preventDefault();
+                triggerUploadPicker();
+            }
+        });
+
+        uploadZone.addEventListener('dragover', function (e) {
+            e.preventDefault();
+            uploadZone.classList.add('border-brand-emerald/30', 'bg-glass-200');
+        });
+
+        uploadZone.addEventListener('dragleave', function () {
+            uploadZone.classList.remove('border-brand-emerald/30', 'bg-glass-200');
+        });
+
+        uploadZone.addEventListener('drop', function (e) {
+            e.preventDefault();
+            uploadZone.classList.remove('border-brand-emerald/30', 'bg-glass-200');
+            if (e.dataTransfer.files.length > 0) {
+                showUploadFile(e.dataTransfer.files[0].name);
+            }
+        });
+
+        uploadInput.addEventListener('change', function () {
+            if (uploadInput.files.length > 0) {
+                showUploadFile(uploadInput.files[0].name);
+            }
+        });
+
+        function showUploadFile(name) {
+            if (!isSupportedBundleFilename(name)) {
+                uploadInput.value = '';
+                selectedUploadFileName = '';
+                uploadSelected.classList.add('hidden');
+                uploadZone.classList.remove('hidden');
+                updateInstallButtons();
+                return;
+            }
+
+            selectedUploadFileName = name;
+            uploadFilename.textContent = name;
+            uploadSelected.classList.remove('hidden');
+            uploadZone.classList.add('hidden');
+            updateInstallButtons();
+        }
+
+        document.getElementById('upload-clear').addEventListener('click', function () {
+            uploadInput.value = '';
+            uploadNameOverride.value = '';
+            selectedUploadFileName = '';
+            uploadSelected.classList.add('hidden');
+            uploadZone.classList.remove('hidden');
+            updateInstallButtons();
+        });
+        /* ── init ──────────────────────────────────────────────── */
+        renderCards();
+        updateInstallButtons();
+    })();
+    </script>
+
+</body></html>
