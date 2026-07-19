@@ -1,5 +1,8 @@
 # Axinite
 
+[![Ask DeepWiki](https://deepwiki.com/badge.svg)](
+https://deepwiki.com/leynos/axinite)
+
 *A security-minded personal AI assistant forked from IronClaw, built to keep
 your data local and your tooling under your control.*
 
