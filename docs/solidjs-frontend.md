@@ -36,12 +36,22 @@ All commands run from the repository root.
 | `make frontend-install` | `bun install --frozen-lockfile` in `web-src/`.                 |
 | `make frontend-build`   | Vite build, then refresh `src/channels/web/static/solid/`.     |
 | `make frontend-verify`  | Rebuild and fail if the embedded copy is stale.                |
-| `make frontend-check`   | Biome format check, Biome lint, TypeScript check.              |
-| `make frontend-test`    | `frontend-check` plus vitest unit and accessibility suites.    |
+| `make frontend-check`   | Biome format/lint, TypeScript, semantic-CSS rules.             |
+| `make frontend-test`    | `frontend-check` plus unit, a11y, and Fluent suites.           |
+| `make frontend-full`    | The complete `verify:full` verification chain.                 |
 | `make frontend-stub`    | Daemon-free stub runtime (see below).                          |
 
+The semantic-CSS rules cover the classlist, semgrep, and stylelint
+checks; `verify:full` adds the Tailwind compile check, the workspace
+Playwright spec, and `moz-fluent-lint` on top of every other suite.
 Inside `web-src/`, the underlying Bun scripts are available directly
-(`bun run test`, `bun run test:e2e`, `bun run build`, and so on).
+(`bun run test`, `bun run test:e2e`, `bun run build`, and so on). The
+`semantic` and `verify:full` scripts fetch semgrep and moz-fluent-linter
+through `uvx` on first use. Continuous integration runs `make
+frontend-full` and the `make frontend-verify` staleness gate for any pull
+request touching `web-src/` or the embedded assets
+(`.github/workflows/frontend.yml`); Playwright's Chromium must be
+installed for the workspace spec (`bunx playwright install chromium`).
 
 After changing anything in `web-src/` that affects the built app, run
 `make frontend-build` and commit the refreshed
