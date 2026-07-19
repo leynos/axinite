@@ -364,7 +364,13 @@ chat-status-tool-failed = { $name } 失败。
 chat-status-complete = 响应已完成。
 chat-response-pending = 等待完成…
 chat-approval-approve = 批准
+chat-approval-always = 始终允许
 chat-approval-deny = 拒绝
+
+connection-status-idle = 空闲
+connection-status-connecting = 连接中…
+connection-status-connected = 已连接
+connection-status-disconnected = 已断开
 chat-upload-unavailable = 模拟后端预览不会保存上传的文件。
 chat-sidebar-conversations = 对话
 chat-tools-used = 使用了 { $count } 个工具
@@ -421,3 +427,82 @@ auth-checking = 正在检查网关访问…
 auth-error-rejected = 网关拒绝了该令牌。
 auth-error-unreachable = 无法连接到网关。请在其运行后重试。
 jobs-load-error = 无法从网关加载任务。请检查连接并重试。
+
+# Chat media, auth cards, and job-start cards
+chat-attach-images = 附加图片
+chat-attachment-strip-label = 待发送的图片附件
+chat-attachment-invalid-type = 只能附加图片文件。
+chat-attachment-too-large = { $name } 超过了 5 MB 的限制。
+chat-attachment-too-many = 每条消息最多可附加 5 张图片。
+chat-attachment-remove = 移除 { $name }
+chat-generated-image-alt = 生成的图片
+chat-job-card-fallback-title = 沙盒作业
+chat-job-card-id = 作业 { $id }
+chat-job-card-open = 在作业中打开
+chat-job-card-browse = 浏览
+chat-auth-card-title = { $name } 需要身份验证
+chat-auth-card-oauth = 进行验证
+chat-auth-card-get-token = 获取您的令牌
+chat-auth-card-token-label = 访问令牌
+chat-auth-card-token-placeholder = 粘贴令牌…
+chat-auth-card-submit = 提交
+chat-auth-card-cancel = 取消
+chat-auth-card-error = 身份验证失败。请检查令牌后重试。
+chat-auth-notice-dismiss = 关闭
+
+# 网关重启
+restart-action = 重启网关
+restart-confirm-title = 重启网关？
+restart-confirm-description = 这将发送 /restart 命令并短暂中断网关。活动的流将自动重新连接。
+restart-confirm-accept = 重启
+restart-confirm-cancel = 取消
+restart-progress = 正在重启网关…
+restart-complete = 网关已重启。
+
+# TEE 认证界面
+tee-shield-label = 查看 TEE 认证
+tee-popover-title = TEE 认证
+tee-field-image-digest = 镜像摘要
+tee-field-tls-fingerprint = TLS 证书指纹
+tee-field-report-data = 报告数据
+tee-field-vm-config = VM 配置
+tee-copy-report = 复制完整报告
+tee-value-empty = 不适用
+tee-report-loading = 正在加载认证报告…
+tee-report-error = 无法加载认证报告
+
+# WASM 通道激活与配对
+extensions-stepper-label = 激活进度
+extensions-stepper-installed = 已安装
+extensions-stepper-configured = 已配置
+extensions-stepper-active = 活动
+extensions-stepper-awaiting-pairing = 等待配对
+extensions-stepper-state-completed = 已完成
+extensions-stepper-state-failed = 失败
+extensions-stepper-state-in-progress = 进行中
+extensions-stepper-state-pending = 待处理
+extensions-pairing-heading = 待处理的配对请求
+extensions-pairing-from = 来自 { $sender }
+extensions-pairing-approve = 批准
+extensions-pairing-approve-label = 批准配对 { $code }
+
+# Jobs detail tabs (F6)
+jobs-tab-overview = 概览
+jobs-tab-activity = 活动
+jobs-tab-files = 文件
+jobs-meta-mode = 模式
+jobs-meta-kind = 类型
+jobs-meta-project = 项目目录
+jobs-meta-unset = 未设置
+jobs-transitions-title = 时间线
+jobs-transitions-empty = 尚未记录任何状态转换。
+jobs-browse-link = 打开项目浏览器
+jobs-activity-empty = 暂无活动。
+jobs-activity-kind-message = 消息
+jobs-activity-kind-tool-use = 工具调用
+jobs-activity-kind-tool-result = 工具结果
+jobs-activity-kind-status = 状态
+jobs-activity-kind-result = 结果
+jobs-files-empty = 尚未生成任何文件。
+jobs-file-tree-label = 任务文件
+jobs-prompt-done-label = 标记为完成

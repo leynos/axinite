@@ -366,7 +366,13 @@ chat-status-tool-failed = { $name } fallito.
 chat-status-complete = Risposta completata.
 chat-response-pending = In attesa di completamento…
 chat-approval-approve = Approva
+chat-approval-always = Sempre
 chat-approval-deny = Rifiuta
+
+connection-status-idle = Inattivo
+connection-status-connecting = Connessione…
+connection-status-connected = Connesso
+connection-status-disconnected = Disconnesso
 chat-upload-unavailable = L’anteprima del backend mock non conserva i file caricati.
 chat-sidebar-conversations = Conversazioni
 chat-tools-used = { $count ->
@@ -433,3 +439,82 @@ auth-checking = Verifica dell'accesso al gateway…
 auth-error-rejected = Il gateway ha rifiutato il token.
 auth-error-unreachable = Impossibile raggiungere il gateway. Riprova quando è in esecuzione.
 jobs-load-error = Impossibile caricare i job dal gateway. Controlla la connessione e riprova.
+
+# Chat media, auth cards, and job-start cards
+chat-attach-images = Allega immagini
+chat-attachment-strip-label = Immagini allegate in attesa
+chat-attachment-invalid-type = È possibile allegare solo file immagine.
+chat-attachment-too-large = { $name } supera il limite di 5 MB.
+chat-attachment-too-many = Puoi allegare al massimo 5 immagini per messaggio.
+chat-attachment-remove = Rimuovi { $name }
+chat-generated-image-alt = Immagine generata
+chat-job-card-fallback-title = Processo sandbox
+chat-job-card-id = Processo { $id }
+chat-job-card-open = Apri in Processi
+chat-job-card-browse = Sfoglia
+chat-auth-card-title = Autenticazione richiesta per { $name }
+chat-auth-card-oauth = Autentica
+chat-auth-card-get-token = Ottieni il token
+chat-auth-card-token-label = Token di accesso
+chat-auth-card-token-placeholder = Incolla il token…
+chat-auth-card-submit = Invia
+chat-auth-card-cancel = Annulla
+chat-auth-card-error = Autenticazione non riuscita. Controlla il token e riprova.
+chat-auth-notice-dismiss = Chiudi
+
+# Riavvio del gateway
+restart-action = Riavvia il gateway
+restart-confirm-title = Riavviare il gateway?
+restart-confirm-description = Questo invia il comando /restart e interrompe brevemente il gateway. I flussi attivi si riconnettono automaticamente.
+restart-confirm-accept = Riavvia
+restart-confirm-cancel = Annulla
+restart-progress = Riavvio del gateway…
+restart-complete = Gateway riavviato.
+
+# Superficie di attestazione TEE
+tee-shield-label = Visualizza attestazione TEE
+tee-popover-title = Attestazione TEE
+tee-field-image-digest = Digest dell'immagine
+tee-field-tls-fingerprint = Impronta del certificato TLS
+tee-field-report-data = Dati del rapporto
+tee-field-vm-config = Configurazione VM
+tee-copy-report = Copia rapporto completo
+tee-value-empty = N/D
+tee-report-loading = Caricamento del rapporto di attestazione…
+tee-report-error = Impossibile caricare il rapporto di attestazione
+
+# Attivazione e associazione dei canali WASM
+extensions-stepper-label = Avanzamento attivazione
+extensions-stepper-installed = Installato
+extensions-stepper-configured = Configurato
+extensions-stepper-active = Attivo
+extensions-stepper-awaiting-pairing = In attesa di associazione
+extensions-stepper-state-completed = Completato
+extensions-stepper-state-failed = Non riuscito
+extensions-stepper-state-in-progress = In corso
+extensions-stepper-state-pending = In attesa
+extensions-pairing-heading = Richieste di associazione in attesa
+extensions-pairing-from = da { $sender }
+extensions-pairing-approve = Approva
+extensions-pairing-approve-label = Approva associazione { $code }
+
+# Jobs detail tabs (F6)
+jobs-tab-overview = Panoramica
+jobs-tab-activity = Attività
+jobs-tab-files = File
+jobs-meta-mode = Modalità
+jobs-meta-kind = Tipo
+jobs-meta-project = Cartella del progetto
+jobs-meta-unset = Non impostato
+jobs-transitions-title = Cronologia
+jobs-transitions-empty = Nessuna transizione registrata finora.
+jobs-browse-link = Apri il browser del progetto
+jobs-activity-empty = Nessuna attività finora.
+jobs-activity-kind-message = Messaggio
+jobs-activity-kind-tool-use = Chiamata allo strumento
+jobs-activity-kind-tool-result = Risultato dello strumento
+jobs-activity-kind-status = Stato
+jobs-activity-kind-result = Risultato
+jobs-files-empty = Nessun file prodotto finora.
+jobs-file-tree-label = File del lavoro
+jobs-prompt-done-label = Segna come completato

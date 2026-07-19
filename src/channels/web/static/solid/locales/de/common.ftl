@@ -366,7 +366,13 @@ chat-status-tool-failed = { $name } fehlgeschlagen.
 chat-status-complete = Antwort abgeschlossen.
 chat-response-pending = Warte auf Abschluss…
 chat-approval-approve = Genehmigen
+chat-approval-always = Immer
 chat-approval-deny = Ablehnen
+
+connection-status-idle = Inaktiv
+connection-status-connecting = Verbinden…
+connection-status-connected = Verbunden
+connection-status-disconnected = Getrennt
 chat-upload-unavailable = Die Mock-Backend-Vorschau speichert keine hochgeladenen Dateien.
 chat-sidebar-conversations = Unterhaltungen
 chat-tools-used = { $count ->
@@ -433,3 +439,82 @@ auth-checking = Gateway-Zugang wird geprüft…
 auth-error-rejected = Das Gateway hat das Token abgelehnt.
 auth-error-unreachable = Das Gateway ist nicht erreichbar. Versuchen Sie es erneut, sobald es läuft.
 jobs-load-error = Jobs konnten nicht vom Gateway geladen werden. Prüfen Sie die Verbindung und versuchen Sie es erneut.
+
+# Chat media, auth cards, and job-start cards
+chat-attach-images = Bilder anhängen
+chat-attachment-strip-label = Vorbereitete Bildanhänge
+chat-attachment-invalid-type = Es können nur Bilddateien angehängt werden.
+chat-attachment-too-large = { $name } ist größer als das Limit von 5 MB.
+chat-attachment-too-many = Sie können höchstens 5 Bilder pro Nachricht anhängen.
+chat-attachment-remove = { $name } entfernen
+chat-generated-image-alt = Generiertes Bild
+chat-job-card-fallback-title = Sandbox-Auftrag
+chat-job-card-id = Auftrag { $id }
+chat-job-card-open = In Aufträgen öffnen
+chat-job-card-browse = Durchsuchen
+chat-auth-card-title = Authentifizierung für { $name } erforderlich
+chat-auth-card-oauth = Authentifizieren
+chat-auth-card-get-token = Token abrufen
+chat-auth-card-token-label = Zugriffstoken
+chat-auth-card-token-placeholder = Token einfügen…
+chat-auth-card-submit = Senden
+chat-auth-card-cancel = Abbrechen
+chat-auth-card-error = Authentifizierung fehlgeschlagen. Prüfen Sie das Token und versuchen Sie es erneut.
+chat-auth-notice-dismiss = Schließen
+
+# Gateway-Neustart
+restart-action = Gateway neu starten
+restart-confirm-title = Gateway neu starten?
+restart-confirm-description = Dies sendet den Befehl /restart und unterbricht das Gateway kurz. Aktive Streams verbinden sich automatisch neu.
+restart-confirm-accept = Neu starten
+restart-confirm-cancel = Abbrechen
+restart-progress = Gateway wird neu gestartet…
+restart-complete = Gateway neu gestartet.
+
+# TEE-Attestierungsoberfläche
+tee-shield-label = TEE-Attestierung anzeigen
+tee-popover-title = TEE-Attestierung
+tee-field-image-digest = Image-Digest
+tee-field-tls-fingerprint = TLS-Zertifikat-Fingerabdruck
+tee-field-report-data = Berichtsdaten
+tee-field-vm-config = VM-Konfiguration
+tee-copy-report = Vollständigen Bericht kopieren
+tee-value-empty = N/V
+tee-report-loading = Attestierungsbericht wird geladen…
+tee-report-error = Attestierungsbericht konnte nicht geladen werden
+
+# WASM-Kanalaktivierung und -kopplung
+extensions-stepper-label = Aktivierungsfortschritt
+extensions-stepper-installed = Installiert
+extensions-stepper-configured = Konfiguriert
+extensions-stepper-active = Aktiv
+extensions-stepper-awaiting-pairing = Warten auf Kopplung
+extensions-stepper-state-completed = Abgeschlossen
+extensions-stepper-state-failed = Fehlgeschlagen
+extensions-stepper-state-in-progress = In Bearbeitung
+extensions-stepper-state-pending = Ausstehend
+extensions-pairing-heading = Ausstehende Kopplungsanfragen
+extensions-pairing-from = von { $sender }
+extensions-pairing-approve = Genehmigen
+extensions-pairing-approve-label = Kopplung { $code } genehmigen
+
+# Jobs detail tabs (F6)
+jobs-tab-overview = Übersicht
+jobs-tab-activity = Aktivität
+jobs-tab-files = Dateien
+jobs-meta-mode = Modus
+jobs-meta-kind = Art
+jobs-meta-project = Projektverzeichnis
+jobs-meta-unset = Nicht gesetzt
+jobs-transitions-title = Verlauf
+jobs-transitions-empty = Noch keine Übergänge aufgezeichnet.
+jobs-browse-link = Projekt-Browser öffnen
+jobs-activity-empty = Noch keine Aktivität.
+jobs-activity-kind-message = Nachricht
+jobs-activity-kind-tool-use = Werkzeugaufruf
+jobs-activity-kind-tool-result = Werkzeugergebnis
+jobs-activity-kind-status = Status
+jobs-activity-kind-result = Ergebnis
+jobs-files-empty = Noch keine Dateien erstellt.
+jobs-file-tree-label = Auftragsdateien
+jobs-prompt-done-label = Als erledigt markieren
