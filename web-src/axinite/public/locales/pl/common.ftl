@@ -448,3 +448,39 @@ chat-auth-card-submit = Wyślij
 chat-auth-card-cancel = Anuluj
 chat-auth-card-error = Uwierzytelnianie nie powiodło się. Sprawdź token i spróbuj ponownie.
 chat-auth-notice-dismiss = Zamknij
+
+# Ponowne uruchamianie bramy
+restart-action = Uruchom ponownie bramę
+restart-confirm-title = Uruchomić ponownie bramę?
+restart-confirm-description = Spowoduje to wysłanie polecenia /restart i krótką przerwę w działaniu bramy. Aktywne strumienie połączą się ponownie automatycznie.
+restart-confirm-accept = Uruchom ponownie
+restart-confirm-cancel = Anuluj
+restart-progress = Ponowne uruchamianie bramy…
+restart-complete = Brama uruchomiona ponownie.
+
+# Powierzchnia atestacji TEE
+tee-shield-label = Wyświetl atestację TEE
+tee-popover-title = Atestacja TEE
+tee-field-image-digest = Skrót obrazu
+tee-field-tls-fingerprint = Odcisk certyfikatu TLS
+tee-field-report-data = Dane raportu
+tee-field-vm-config = Konfiguracja VM
+tee-copy-report = Kopiuj pełny raport
+tee-value-empty = Nd.
+tee-report-loading = Ładowanie raportu atestacji…
+tee-report-error = Nie można załadować raportu atestacji
+
+# Aktywacja i parowanie kanałów WASM
+extensions-stepper-label = Postęp aktywacji
+extensions-stepper-installed = Zainstalowano
+extensions-stepper-configured = Skonfigurowano
+extensions-stepper-active = Aktywne
+extensions-stepper-awaiting-pairing = Oczekiwanie na parowanie
+extensions-stepper-state-completed = Ukończono
+extensions-stepper-state-failed = Niepowodzenie
+extensions-stepper-state-in-progress = W toku
+extensions-stepper-state-pending = Oczekuje
+extensions-pairing-heading = Oczekujące żądania parowania
+extensions-pairing-from = od { $sender }
+extensions-pairing-approve = Zatwierdź
+extensions-pairing-approve-label = Zatwierdź parowanie { $code }

@@ -455,3 +455,39 @@ chat-auth-card-submit = Invia
 chat-auth-card-cancel = Annulla
 chat-auth-card-error = Autenticazione non riuscita. Controlla il token e riprova.
 chat-auth-notice-dismiss = Chiudi
+
+# Riavvio del gateway
+restart-action = Riavvia il gateway
+restart-confirm-title = Riavviare il gateway?
+restart-confirm-description = Questo invia il comando /restart e interrompe brevemente il gateway. I flussi attivi si riconnettono automaticamente.
+restart-confirm-accept = Riavvia
+restart-confirm-cancel = Annulla
+restart-progress = Riavvio del gateway…
+restart-complete = Gateway riavviato.
+
+# Superficie di attestazione TEE
+tee-shield-label = Visualizza attestazione TEE
+tee-popover-title = Attestazione TEE
+tee-field-image-digest = Digest dell'immagine
+tee-field-tls-fingerprint = Impronta del certificato TLS
+tee-field-report-data = Dati del rapporto
+tee-field-vm-config = Configurazione VM
+tee-copy-report = Copia rapporto completo
+tee-value-empty = N/D
+tee-report-loading = Caricamento del rapporto di attestazione…
+tee-report-error = Impossibile caricare il rapporto di attestazione
+
+# Attivazione e associazione dei canali WASM
+extensions-stepper-label = Avanzamento attivazione
+extensions-stepper-installed = Installato
+extensions-stepper-configured = Configurato
+extensions-stepper-active = Attivo
+extensions-stepper-awaiting-pairing = In attesa di associazione
+extensions-stepper-state-completed = Completato
+extensions-stepper-state-failed = Non riuscito
+extensions-stepper-state-in-progress = In corso
+extensions-stepper-state-pending = In attesa
+extensions-pairing-heading = Richieste di associazione in attesa
+extensions-pairing-from = da { $sender }
+extensions-pairing-approve = Approva
+extensions-pairing-approve-label = Approva associazione { $code }
