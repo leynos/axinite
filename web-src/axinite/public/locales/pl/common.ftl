@@ -426,3 +426,25 @@ auth-checking = Sprawdzanie dostępu do bramy…
 auth-error-rejected = Brama odrzuciła token.
 auth-error-unreachable = Nie można połączyć się z bramą. Spróbuj ponownie, gdy będzie uruchomiona.
 jobs-load-error = Nie udało się wczytać zadań z bramy. Sprawdź połączenie i spróbuj ponownie.
+
+# Chat media, auth cards, and job-start cards
+chat-attach-images = Załącz obrazy
+chat-attachment-strip-label = Przygotowane załączniki graficzne
+chat-attachment-invalid-type = Można załączać tylko pliki graficzne.
+chat-attachment-too-large = { $name } przekracza limit 5 MB.
+chat-attachment-too-many = Możesz załączyć maksymalnie 5 obrazów na wiadomość.
+chat-attachment-remove = Usuń { $name }
+chat-generated-image-alt = Wygenerowany obraz
+chat-job-card-fallback-title = Zadanie piaskownicy
+chat-job-card-id = Zadanie { $id }
+chat-job-card-open = Otwórz w Zadaniach
+chat-job-card-browse = Przeglądaj
+chat-auth-card-title = Wymagane uwierzytelnienie dla { $name }
+chat-auth-card-oauth = Uwierzytelnij
+chat-auth-card-get-token = Pobierz token
+chat-auth-card-token-label = Token dostępu
+chat-auth-card-token-placeholder = Wklej token…
+chat-auth-card-submit = Wyślij
+chat-auth-card-cancel = Anuluj
+chat-auth-card-error = Uwierzytelnianie nie powiodło się. Sprawdź token i spróbuj ponownie.
+chat-auth-notice-dismiss = Zamknij

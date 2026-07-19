@@ -433,3 +433,25 @@ auth-checking = Gateway-Zugang wird geprüft…
 auth-error-rejected = Das Gateway hat das Token abgelehnt.
 auth-error-unreachable = Das Gateway ist nicht erreichbar. Versuchen Sie es erneut, sobald es läuft.
 jobs-load-error = Jobs konnten nicht vom Gateway geladen werden. Prüfen Sie die Verbindung und versuchen Sie es erneut.
+
+# Chat media, auth cards, and job-start cards
+chat-attach-images = Bilder anhängen
+chat-attachment-strip-label = Vorbereitete Bildanhänge
+chat-attachment-invalid-type = Es können nur Bilddateien angehängt werden.
+chat-attachment-too-large = { $name } ist größer als das Limit von 5 MB.
+chat-attachment-too-many = Sie können höchstens 5 Bilder pro Nachricht anhängen.
+chat-attachment-remove = { $name } entfernen
+chat-generated-image-alt = Generiertes Bild
+chat-job-card-fallback-title = Sandbox-Auftrag
+chat-job-card-id = Auftrag { $id }
+chat-job-card-open = In Aufträgen öffnen
+chat-job-card-browse = Durchsuchen
+chat-auth-card-title = Authentifizierung für { $name } erforderlich
+chat-auth-card-oauth = Authentifizieren
+chat-auth-card-get-token = Token abrufen
+chat-auth-card-token-label = Zugriffstoken
+chat-auth-card-token-placeholder = Token einfügen…
+chat-auth-card-submit = Senden
+chat-auth-card-cancel = Abbrechen
+chat-auth-card-error = Authentifizierung fehlgeschlagen. Prüfen Sie das Token und versuchen Sie es erneut.
+chat-auth-notice-dismiss = Schließen
