@@ -9,12 +9,11 @@ import {
   it,
   vi,
 } from "vitest";
-
-import { TestProviders } from "./support/test-providers";
 import { TeeAttestation } from "@/components/tee-attestation";
 import { DEFAULT_LOCALE } from "@/lib/i18n/supported-locales";
 import { resetTeeReportCache } from "@/lib/tee";
 import { setupI18nTestHarness } from "./support/i18n-test-runtime";
+import { TestProviders } from "./support/test-providers";
 
 const STATUS = { image_digest: "sha256:cafef00d" };
 const REPORT = {

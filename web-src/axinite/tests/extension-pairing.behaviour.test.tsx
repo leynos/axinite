@@ -1,11 +1,10 @@
 import { render, screen, waitFor, within } from "@solidjs/testing-library";
 import userEvent from "@testing-library/user-event";
 import { beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
-
-import { TestProviders } from "./support/test-providers";
 import { ExtensionsPreview } from "@/components/extensions-preview";
 import { DEFAULT_LOCALE } from "@/lib/i18n/supported-locales";
 import { setupI18nTestHarness } from "./support/i18n-test-runtime";
+import { TestProviders } from "./support/test-providers";
 
 const extensionApiMocks = vi.hoisted(() => ({
   activateExtension: vi.fn(),

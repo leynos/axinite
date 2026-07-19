@@ -75,6 +75,19 @@ describe("app shell behaviour", () => {
     });
   });
 
+  it("renders the chat-stream status indicator, idle before any stream opens", async () => {
+    render(() => (
+      <AppProviders>
+        <ShellChrome activePath="/chat" usePlainLinks>
+          <div>Child</div>
+        </ShellChrome>
+      </AppProviders>
+    ));
+
+    const indicator = await screen.findByTestId("sse-status");
+    expect(indicator).toHaveAttribute("data-state", "idle");
+  });
+
   it("hides navigation entries whose route flag is overridden off", async () => {
     window.localStorage.setItem(
       "axinite.feature-flag-overrides",
