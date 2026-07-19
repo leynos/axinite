@@ -1,0 +1,401 @@
+<!DOCTYPE html><html lang="en" class="dark"><head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link rel="icon" href="../assets/icons/axinite32.ico" sizes="32x32">
+    <title>Memory - Axinite</title>
+    <link rel="stylesheet" href="../assets/css/index.css">
+    <script src="../assets/vendor/tailwindcss-browser-4.2.1.js"></script>
+    <script src="../assets/vendor/iconify-icon-3.0.2.min.js"></script>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Buenard:wght@400..700&family=Molengo&display=swap" rel="stylesheet">
+    <script src="../assets/js/tailwind-config.js"></script>
+</head>
+<body class="h-screen w-full overflow-hidden bg-brand-dark bg-mesh-gradient flex flex-col font-sans text-sm antialiased">
+
+    <!-- Top Navigation -->
+    <header id="header" class="glass-topbar w-full h-14 flex items-center justify-between px-4 z-20 shrink-0">
+        <div class="flex items-center space-x-6 h-full">
+            <button type="button" id="sidebar-toggle" class="md:hidden w-8 h-8 rounded-md flex items-center justify-center text-zinc-400 hover:text-zinc-200 hover:bg-glass-200 transition-all" aria-label="Toggle sidebar">
+                <iconify-icon icon="carbon:menu" class="text-lg"></iconify-icon>
+            </button>
+            <nav class="flex h-full space-x-1">
+                <a href="../chat/" class="h-full px-4 flex items-center text-zinc-400 hover:text-zinc-200 transition-colors">Chat</a>
+                <a href="../memory/" class="h-full px-4 flex items-center text-brand-emerald border-b-2 border-brand-emerald font-medium">Memory</a>
+                <a href="../jobs/" class="h-full px-4 flex items-center text-zinc-400 hover:text-zinc-200 transition-colors">Jobs</a>
+                <a href="../routines/" class="h-full px-4 flex items-center text-zinc-400 hover:text-zinc-200 transition-colors">Routines</a>
+                <a href="../extensions/" class="h-full px-4 flex items-center text-zinc-400 hover:text-zinc-200 transition-colors">Extensions</a>
+                <a href="../skills/" class="h-full px-4 flex items-center text-zinc-400 hover:text-zinc-200 transition-colors">Skills</a>
+            </nav>
+        </div>
+
+        <div class="flex items-center space-x-4">
+            <button type="button" class="text-xs text-zinc-400 hover:text-zinc-200 px-3 py-1.5 rounded-md hover:bg-glass-100 transition-colors border border-glass-border">
+                Logs
+            </button>
+            <div class="flex items-center space-x-2 text-xs text-zinc-400">
+                <span class="w-2 h-2 rounded-full bg-brand-emerald shadow-[0_0_8px_rgba(0,255,65,0.5)]"></span>
+                <span>Connected</span>
+            </div>
+        </div>
+    </header>
+
+    <!-- Background watermark -->
+    <iconify-icon icon="carbon:model-alt" class="fixed bottom-[-3vh] right-[-2vw] text-white pointer-events-none z-0" style="font-size: 30vh; opacity: 0.025;"></iconify-icon>
+
+    <div class="flex flex-1 overflow-hidden relative z-10">
+
+        <!-- Sidebar: file tree -->
+        <aside id="sidebar" class="glass-panel w-64 flex-shrink-0 flex flex-col h-full hidden md:flex transition-all duration-300 relative z-20">
+
+            <div class="p-3 border-b border-glass-border">
+                <div class="flex items-center gap-2">
+                    <label for="search-input" class="sr-only">Search memory files</label>
+                    <input id="search-input" type="text" placeholder="Search memory..." class="flex-1 bg-glass-200 border border-glass-border rounded-lg px-3 py-1.5 text-sm text-zinc-200 placeholder-zinc-600 focus:outline-none focus:ring-1 focus:ring-brand-emerald/50 focus:border-brand-emerald/30">
+                    <button type="button" id="sidebar-close" class="md:hidden w-8 h-8 shrink-0 rounded-md flex items-center justify-center text-zinc-500 hover:text-zinc-300 transition-all" aria-label="Close sidebar">
+                        <iconify-icon icon="carbon:chevron-left" class="text-xs"></iconify-icon>
+                    </button>
+                </div>
+            </div>
+
+            <div id="file-tree" class="flex-1 overflow-y-auto p-2"></div>
+        </aside>
+
+        <div id="sidebar-backdrop" class="fixed inset-0 top-14 bg-black/50 z-[25] hidden md:hidden"></div>
+
+        <!-- Main content area -->
+        <main class="flex-1 flex flex-col h-full overflow-hidden">
+
+            <!-- Breadcrumb bar -->
+            <div class="flex items-center justify-between px-6 py-3 shrink-0 border-b border-glass-border">
+                <div id="breadcrumb" class="text-sm text-brand-emerald"></div>
+                <div id="toolbar">
+                    <button type="button" id="btn-edit" class="text-sm text-zinc-400 hover:text-zinc-200 transition-colors">Edit</button>
+                </div>
+                <div id="toolbar-edit" class="hidden flex items-center space-x-3">
+                    <button type="button" id="btn-cancel" class="text-sm text-zinc-400 hover:text-zinc-200 transition-colors">Cancel</button>
+                    <button type="button" id="btn-save" class="text-sm px-3 py-1 rounded-lg btn-primary">Save</button>
+                </div>
+            </div>
+
+            <!-- Rendered view -->
+            <div id="view-pane" class="flex-1 overflow-y-auto px-6 py-6 md:px-8">
+                <div id="view-content" class="markdown-body max-w-4xl"></div>
+            </div>
+
+            <!-- Edit view -->
+            <div id="edit-pane" class="hidden flex-1 flex flex-col overflow-hidden px-6 py-6 md:px-8">
+                <textarea id="editor" class="flex-1 w-full max-w-4xl bg-glass-200 border border-glass-border rounded-lg p-4 text-sm text-zinc-200 font-mono leading-relaxed resize-none focus:outline-none focus:ring-1 focus:ring-brand-emerald/50 focus:border-brand-emerald/30 overflow-y-auto"></textarea>
+            </div>
+
+        </main>
+    </div>
+
+    <script src="../assets/js/sidebar-toggle.js"></script>
+    <script src="../assets/js/markdown.js"></script>
+    <script>
+    (function () {
+        /* ── file tree structure ───────────────────────────────── */
+        var tree = [
+            { type: 'file', path: 'AGENTS.md' },
+            { type: 'folder', name: 'daily', open: true, children: [
+                { type: 'file', path: 'daily/HEARTBEAT.md' },
+                { type: 'file', path: 'daily/IDENTITY.md' },
+                { type: 'file', path: 'daily/MEMORY.md' },
+                { type: 'file', path: 'daily/payton_notes.md' },
+                { type: 'file', path: 'daily/README.md' },
+            ]},
+            { type: 'folder', name: 'skills', open: true, children: [
+                { type: 'file', path: 'skills/SOUL.md' },
+                { type: 'file', path: 'skills/TOOLS.md' },
+                { type: 'file', path: 'skills/USER.md' },
+            ]},
+        ];
+
+        /* ── file contents (markdown source) ───────────────────── */
+        var contents = {
+'AGENTS.md':
+'# Agents\n\
+\n\
+Axinite agent configuration. This file controls which agent profiles are active and how they coordinate.\n\
+\n\
+- **primary** \u2014 Main conversational agent\n\
+- **researcher** \u2014 Background research and fact-checking\n\
+- **coder** \u2014 Code generation and review\n\
+\n\
+## Delegation Rules\n\
+\n\
+Tasks are routed based on intent classification. The primary agent handles all user-facing interaction and delegates specialist work.',
+
+'daily/HEARTBEAT.md':
+'# Heartbeat\n\
+\n\
+Last check-in: 2026-03-12 09:41 UTC\n\
+\n\
+## Status\n\
+\n\
+- **Uptime:** 14d 6h 22m\n\
+- **Sessions today:** 3\n\
+- **Pending jobs:** 0\n\
+- **Memory files:** 9\n\
+\n\
+## Recent Activity\n\
+\n\
+- Completed web scrape of netsuke.dev homepage\n\
+- Updated comparison table draft in `docs/comparison.md`\n\
+- Ran dependency audit \u2014 no new advisories',
+
+'daily/IDENTITY.md':
+'# Identity\n\
+\n\
+- **Name:** (pick one during your first conversation)\n\
+- **Vibe:** (how you come across, e.g. calm, witty, direct)\n\
+- **Emoji:** (your signature emoji, optional)\n\
+\n\
+Edit this file to give the agent a custom name and personality. The agent will evolve this over time as it develops a voice.',
+
+'daily/MEMORY.md':
+'# Memory\n\
+\n\
+Working memory for cross-session context.\n\
+\n\
+## Pinned Facts\n\
+\n\
+- User prefers British English spelling\n\
+- Primary project: Netsuke build system\n\
+- CI runs on GitHub Actions, deploy target is GitHub Pages\n\
+- Preferred review style: direct, no fluff\n\
+\n\
+## Session Notes\n\
+\n\
+Recent conversations have focused on the Netsuke website copy and Firecrawl integration for content auditing.',
+
+'daily/payton_notes.md':
+'# Payton Notes\n\
+\n\
+Observations from the Payton coding session (2026-03-10).\n\
+\n\
+- The `auth_flow` test was flaky due to a race condition in token refresh. Fixed by adding a mutex around the refresh call.\n\
+- User prefers small, focused commits over large sweeping changes.\n\
+- When reviewing PRs, flag style issues separately from logic issues.',
+
+'daily/README.md':
+'# Daily\n\
+\n\
+This folder contains files that the agent updates frequently \u2014 identity, memory, heartbeat status, and session notes.\n\
+\n\
+Files here are loaded into context at the start of each session. Keep them concise.',
+
+'skills/SOUL.md':
+'# Soul\n\
+\n\
+Core behavioural directives for the agent.\n\
+\n\
+- Be honest about uncertainty. Say "I don\'t know" when appropriate.\n\
+- Prefer precision over verbosity.\n\
+- When the user is frustrated, slow down and clarify before acting.\n\
+- Never fabricate citations or invent URLs.\n\
+- Treat every code change as if it will be reviewed by a stranger.',
+
+'skills/TOOLS.md':
+'# Tools\n\
+\n\
+Available tool integrations.\n\
+\n\
+- **Firecrawl** \u2014 Web scraping and content extraction\n\
+- **GitHub CLI** \u2014 Repository operations, PR management\n\
+- **Playwright** \u2014 Browser automation and testing\n\
+- **Caddy** \u2014 Local file serving for preview\n\
+- **grepai** \u2014 Semantic code search',
+
+'skills/USER.md':
+'# User Preferences\n\
+\n\
+- **Editor:** VS Code with Vim bindings\n\
+- **Shell:** zsh with custom prompt\n\
+- **Language:** Rust (primary), TypeScript (secondary)\n\
+- **Style:** Concise commit messages, small PRs, British English\n\
+- **Hours:** Typically active 09:00\u201318:00 GMT',
+        };
+
+        /* ── state ─────────────────────────────────────────────── */
+        var activeFile  = 'daily/IDENTITY.md';
+        var editing     = false;
+
+        /* ── elements ──────────────────────────────────────────── */
+        var fileTreeEl  = document.getElementById('file-tree');
+        var searchInput = document.getElementById('search-input');
+        var breadcrumb  = document.getElementById('breadcrumb');
+        var toolbar     = document.getElementById('toolbar');
+        var toolbarEdit = document.getElementById('toolbar-edit');
+        var viewPane    = document.getElementById('view-pane');
+        var editPane    = document.getElementById('edit-pane');
+        var viewContent = document.getElementById('view-content');
+        var editorEl    = document.getElementById('editor');
+        var btnEdit     = document.getElementById('btn-edit');
+        var btnCancel   = document.getElementById('btn-cancel');
+        var btnSave     = document.getElementById('btn-save');
+
+        /* ── minimal markdown renderer ─────────────────────────── */
+        var markdown = window.axiniteMarkdown;
+        var esc = markdown.escapeHtml;
+        var renderMd = markdown.renderMarkdown;
+
+        /* ── breadcrumb ────────────────────────────────────────── */
+        function updateBreadcrumb() {
+            var parts = activeFile.split('/');
+            var crumbs = '<span class="text-brand-emerald/70">workspace</span>';
+            for (var i = 0; i < parts.length; i++) {
+                crumbs += ' <span class="text-zinc-600">/</span> ';
+                if (i === parts.length - 1) {
+                    crumbs += '<span class="text-brand-emerald">' + esc(parts[i]) + '</span>';
+                } else {
+                    crumbs += '<span class="text-brand-emerald/70">' + esc(parts[i]) + '</span>';
+                }
+            }
+            breadcrumb.innerHTML = crumbs;
+        }
+
+        /* ── render file tree ──────────────────────────────────── */
+        function renderTree() {
+            var query = searchInput.value.toLowerCase().trim();
+            fileTreeEl.innerHTML = '';
+            buildTreeNodes(tree, fileTreeEl, query, 0);
+        }
+
+        function buildTreeNodes(nodes, parent, query, depth) {
+            nodes.forEach(function (node) {
+                if (node.type === 'folder') {
+                    var matchingChildren = filterChildren(node.children, query);
+                    if (query && matchingChildren.length === 0) return;
+
+                    var folderDiv = document.createElement('div');
+
+                    /* folder header */
+                    var header = document.createElement('button');
+                    header.type = 'button';
+                    header.className = 'w-full flex items-center py-1 rounded text-left hover:bg-glass-100 text-zinc-300 transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-brand-emerald/60';
+                    header.style.paddingLeft = (depth * 12 + 4) + 'px';
+                    header.setAttribute('aria-expanded', String(node.open));
+
+                    var caret = document.createElement('iconify-icon');
+                    caret.setAttribute('icon', node.open ? 'carbon:caret-down' : 'carbon:caret-right');
+                    caret.className = 'text-[10px] text-zinc-500 mr-1 shrink-0';
+                    caret.style.width = '12px';
+
+                    var label = document.createElement('span');
+                    label.className = 'text-sm font-medium';
+                    label.textContent = node.name;
+
+                    header.appendChild(caret);
+                    header.appendChild(label);
+
+                    header.addEventListener('click', function () {
+                        node.open = !node.open;
+                        renderTree();
+                    });
+
+                    folderDiv.appendChild(header);
+
+                    /* children */
+                    if (node.open || query) {
+                        var childContainer = document.createElement('div');
+                        buildTreeNodes(node.children, childContainer, query, depth + 1);
+                        folderDiv.appendChild(childContainer);
+                    }
+
+                    parent.appendChild(folderDiv);
+                } else {
+                    /* file */
+                    var fname = node.path.split('/').pop();
+                    if (query && fname.toLowerCase().indexOf(query) === -1) return;
+
+                    var isActive = node.path === activeFile;
+                    var fileButton = document.createElement('button');
+                    fileButton.type = 'button';
+                    fileButton.className = 'w-full flex items-center py-1 rounded text-left transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-brand-emerald/60 ' +
+                        (isActive ? 'bg-glass-200 text-zinc-200' : 'text-zinc-400 hover:bg-glass-100 hover:text-zinc-200');
+                    fileButton.style.paddingLeft = (depth * 12 + 20) + 'px';
+                    if (isActive) {
+                        fileButton.setAttribute('aria-current', 'true');
+                    }
+
+                    var nameSpan = document.createElement('span');
+                    nameSpan.className = 'text-sm truncate';
+                    nameSpan.textContent = fname;
+
+                    fileButton.appendChild(nameSpan);
+
+                    fileButton.addEventListener('click', function () {
+                        if (editing) exitEdit(false);
+                        activeFile = node.path;
+                        showFile();
+                        renderTree();
+                    });
+
+                    parent.appendChild(fileButton);
+                }
+            });
+        }
+
+        function filterChildren(children, query) {
+            if (!query) return children;
+            return children.filter(function (c) {
+                if (c.type === 'folder') return filterChildren(c.children, query).length > 0;
+                var name = c.path.split('/').pop().toLowerCase();
+                return name.indexOf(query) !== -1;
+            });
+        }
+
+        /* ── show file content ─────────────────────────────────── */
+        function showFile() {
+            updateBreadcrumb();
+            viewContent.innerHTML = renderMd(contents[activeFile] || '');
+        }
+
+        /* ── edit mode ─────────────────────────────────────────── */
+        function enterEdit() {
+            editing = true;
+            editorEl.value = contents[activeFile] || '';
+            viewPane.classList.add('hidden');
+            editPane.classList.remove('hidden');
+            toolbar.classList.add('hidden');
+            toolbarEdit.classList.remove('hidden');
+            toolbarEdit.style.display = 'flex';
+            editorEl.focus();
+        }
+
+        function exitEdit(save) {
+            if (save) {
+                contents[activeFile] = editorEl.value;
+                viewContent.innerHTML = renderMd(contents[activeFile]);
+            }
+            editing = false;
+            editPane.classList.add('hidden');
+            viewPane.classList.remove('hidden');
+            toolbarEdit.classList.add('hidden');
+            toolbarEdit.style.display = '';
+            toolbar.classList.remove('hidden');
+        }
+
+        btnEdit.addEventListener('click', function () { enterEdit(); });
+        btnCancel.addEventListener('click', function () { exitEdit(false); });
+        btnSave.addEventListener('click', function () { exitEdit(true); });
+
+        document.addEventListener('keydown', function (e) {
+            if (editing && e.key === 'Escape') exitEdit(false);
+        });
+
+        /* ── search ────────────────────────────────────────────── */
+        searchInput.addEventListener('input', function () { renderTree(); });
+
+        /* ── sidebar toggle (mobile) ──────────────────────────── */
+        initSidebarToggle();
+
+        /* ── init ──────────────────────────────────────────────── */
+        renderTree();
+        showFile();
+    })();
+    </script>
+
+</body></html>

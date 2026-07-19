@@ -1,0 +1,411 @@
+<!DOCTYPE html><html lang="en" class="dark"><head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link rel="icon" href="../assets/icons/axinite32.ico" sizes="32x32">
+    <title>Extensions - Axinite</title>
+    <link rel="stylesheet" href="../assets/css/index.css">
+    <script src="../assets/vendor/tailwindcss-browser-4.2.1.js"></script>
+    <script src="../assets/vendor/iconify-icon-3.0.2.min.js"></script>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Buenard:wght@400..700&family=Molengo&display=swap" rel="stylesheet">
+    <script src="../assets/js/tailwind-config.js"></script>
+</head>
+<body class="h-screen w-full overflow-hidden bg-brand-dark bg-mesh-gradient flex flex-col font-sans text-sm antialiased">
+    <div id="app-shell" class="contents">
+
+    <!-- Top Navigation -->
+    <header id="header" class="glass-topbar w-full h-14 flex items-center justify-between px-4 z-20 shrink-0">
+        <div class="flex items-center space-x-6 h-full">
+            <nav class="flex h-full space-x-1">
+                <a href="../chat/" class="h-full px-4 flex items-center text-zinc-400 hover:text-zinc-200 transition-colors">Chat</a>
+                <a href="../memory/" class="h-full px-4 flex items-center text-zinc-400 hover:text-zinc-200 transition-colors">Memory</a>
+                <a href="../jobs/" class="h-full px-4 flex items-center text-zinc-400 hover:text-zinc-200 transition-colors">Jobs</a>
+                <a href="../routines/" class="h-full px-4 flex items-center text-zinc-400 hover:text-zinc-200 transition-colors">Routines</a>
+                <a href="../extensions/" class="h-full px-4 flex items-center text-brand-emerald border-b-2 border-brand-emerald font-medium">Extensions</a>
+                <a href="../skills/" class="h-full px-4 flex items-center text-zinc-400 hover:text-zinc-200 transition-colors">Skills</a>
+            </nav>
+        </div>
+
+        <div class="flex items-center space-x-4">
+            <button type="button" class="text-xs text-zinc-400 hover:text-zinc-200 px-3 py-1.5 rounded-md hover:bg-glass-100 transition-colors border border-glass-border">
+                Logs
+            </button>
+            <div class="flex items-center space-x-2 text-xs text-zinc-400">
+                <span class="w-2 h-2 rounded-full bg-brand-emerald shadow-[0_0_8px_rgba(0,255,65,0.5)]"></span>
+                <span>Connected</span>
+            </div>
+        </div>
+    </header>
+
+    <!-- Background watermark -->
+    <iconify-icon icon="carbon:chart-network" class="fixed bottom-[-3vh] right-[-2vw] text-white pointer-events-none z-0" style="font-size: 30vh; opacity: 0.025;"></iconify-icon>
+
+    <div class="flex flex-1 overflow-hidden relative z-10">
+        <main class="flex-1 overflow-y-auto">
+            <div class="max-w-6xl mx-auto px-6 py-6 space-y-8">
+
+                <!-- Installed Extensions -->
+                <section>
+                    <h2 class="text-base font-semibold text-zinc-200 mb-4">Installed Extensions</h2>
+                    <div id="ext-cards" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4"></div>
+                </section>
+
+                <!-- WASM & MCP panels side by side -->
+                <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
+
+                    <!-- WASM panel -->
+                    <div class="relative bg-glass-100 border border-glass-border rounded-xl p-6 overflow-hidden">
+                        <iconify-icon icon="carbon:data-vis-1" class="absolute -bottom-6 -right-4 text-white pointer-events-none" style="font-size: 11rem; opacity: 0.03;"></iconify-icon>
+
+                        <div class="relative z-10 space-y-6">
+                            <section>
+                                <h2 class="text-base font-semibold text-zinc-200 mb-3">Available WASM Extensions</h2>
+                                <p class="text-zinc-500 text-sm pl-4">No additional WASM extensions available</p>
+                            </section>
+
+                            <section>
+                                <h2 class="text-base font-semibold text-zinc-200 mb-3">Install WASM Extension</h2>
+                                <div class="flex items-center gap-3 flex-wrap">
+                                    <label for="wasm-extension-input" class="text-xs text-zinc-400 shrink-0">Extension name</label>
+                                    <input id="wasm-extension-input" type="text" placeholder="URL or cargo handle" class="bg-glass-200 border border-glass-border rounded-lg px-3 py-1.5 text-sm text-zinc-200 placeholder-zinc-600 focus:outline-none focus:ring-1 focus:ring-brand-emerald/50 focus:border-brand-emerald/30 flex-1 min-w-[12rem]">
+                                    <button type="button" class="px-4 py-1.5 rounded-lg text-sm btn-primary">Install</button>
+                                </div>
+                            </section>
+                        </div>
+                    </div>
+
+                    <!-- MCP panel -->
+                    <div class="relative bg-glass-100 border border-glass-border rounded-xl p-6 overflow-hidden">
+                        <iconify-icon icon="carbon:logo-model-context-protocol" class="absolute -bottom-6 -right-4 text-white pointer-events-none" style="font-size: 11rem; opacity: 0.03;"></iconify-icon>
+
+                        <div class="relative z-10 space-y-6">
+                            <section>
+                                <h2 class="text-base font-semibold text-zinc-200 mb-3">MCP Servers</h2>
+                                <p class="text-zinc-500 text-sm pl-4">No MCP servers available</p>
+                            </section>
+
+                            <section>
+                                <h2 class="text-base font-semibold text-zinc-200 mb-3">Add Custom MCP Server</h2>
+                                <div class="flex items-center gap-3 flex-wrap">
+                                    <label for="mcp-server-input" class="text-xs text-zinc-400 shrink-0">Server name</label>
+                                    <input id="mcp-server-input" type="text" placeholder="MCP server URL (SSE) [...]" class="bg-glass-200 border border-glass-border rounded-lg px-3 py-1.5 text-sm text-zinc-200 placeholder-zinc-600 focus:outline-none focus:ring-1 focus:ring-brand-emerald/50 focus:border-brand-emerald/30 flex-1 min-w-[12rem]">
+                                    <button type="button" class="px-4 py-1.5 rounded-lg text-sm btn-primary">Add</button>
+                                </div>
+                            </section>
+                        </div>
+                    </div>
+
+                </div>
+
+                <!-- Registered Tools -->
+                <section>
+                    <h2 class="text-base font-semibold text-zinc-200 mb-3">Registered Tools</h2>
+                    <div id="tools-list"></div>
+                </section>
+
+            </div>
+        </main>
+    </div>
+
+    </div>
+
+    <!-- Configure extension modal -->
+    <div id="configure-modal" role="dialog" aria-modal="true" aria-labelledby="configure-title" aria-hidden="true" tabindex="-1" class="hidden fixed inset-0 z-50 flex items-center justify-center">
+        <div id="configure-backdrop" class="absolute inset-0 bg-black/60"></div>
+        <div class="relative rounded-2xl p-6 w-full max-w-lg mx-4 border border-glass-border" style="background: rgba(15, 15, 20, 0.9); backdrop-filter: blur(24px); -webkit-backdrop-filter: blur(24px);">
+            <h3 id="configure-title" class="text-lg font-semibold text-zinc-100 mb-4 font-serif"></h3>
+            <div id="configure-fields" class="space-y-4"></div>
+            <div class="flex justify-end space-x-3 mt-6">
+                <button type="button" id="configure-save" class="px-4 py-2 rounded-lg text-sm text-zinc-300 font-medium transition-colors border border-brand-emerald/60 hover:bg-brand-emerald/10">Save</button>
+                <button type="button" id="configure-cancel" class="px-4 py-2 rounded-lg text-sm text-zinc-300 font-medium transition-colors border border-red-500/60 hover:bg-red-500/10">Cancel</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+    (function () {
+        /* ── data ──────────────────────────────────────────────── */
+        var extensions = [
+            {
+                id: 'firecrawl', name: 'firecrawl', type: 'MCP', version: 'v3.1',
+                active: true,
+                url: 'https://api.firecrawl.dev/v1/mcp/sse/fc-\u2026',
+                tags: ['Actions', 'Read'],
+                config: [
+                    { label: 'Firecrawl API Key', placeholder: '(already set \u2014 leave empty to keep)', set: true }
+                ]
+            },
+            {
+                id: 'github', name: 'github', type: 'WASM', version: 'v0.1.3',
+                active: true,
+                url: 'cargo:axinite-ext-github',
+                tags: ['Actions', 'Read/Write'],
+                config: [
+                    { label: 'GitHub Personal Access Token (create one at github.com/settings/tokens with \u2018repo\u2019 scope)', placeholder: '(already set \u2014 leave empty to keep)', set: true }
+                ]
+            },
+            {
+                id: 'jmap', name: 'jmap', type: 'WASM', version: 'v0.1',
+                active: true,
+                url: 'cargo:axinite-ext-jmap',
+                tags: ['Actions', 'Read/Write'],
+                config: [
+                    { label: 'JMAP server URL', placeholder: 'https://jmap.example.com/.well-known/jmap', set: false },
+                    { label: 'JMAP bearer token', placeholder: '(not set)', set: false }
+                ]
+            },
+            {
+                id: 'telegram', name: 'telegram', type: 'GRPC(M)', version: 'v0.2.3',
+                active: true,
+                url: 'grpc://localhost:50051',
+                tags: ['Actions', 'Read/Write', 'Triggers', 'Events'],
+                config: [
+                    { label: 'Telegram Bot Token', placeholder: '(already set \u2014 leave empty to keep)', set: true }
+                ]
+            },
+        ];
+
+        var tools = [
+            { name: 'scrape', source: 'firecrawl', desc: 'Scrape a single URL and return the content as markdown or structured data.' },
+            { name: 'cancel_job', source: 'core', desc: 'Cancel a running or pending job. The job will be marked as cancelled and stopped.' },
+            { name: 'create_job', source: 'core', desc: 'Create a new job or task for the agent to work on. Use this when the user wants you to do something substantial that should be tracked as a separate job.' },
+            { name: 'crawl', source: 'firecrawl', desc: 'Crawl a website starting from a URL, following links up to a specified depth and returning page content.' },
+            { name: 'extension_info', source: 'core', desc: 'Show detailed information about an installed extension, including version and API version compatibility.' },
+            { name: 'firecrawl_browser_session_create', source: 'firecrawl', desc: 'Create a browser session for code execution via the Firecrawl Tool Protocol. "Best for:" Running code (Python/JS) that interacts with a live browser page; multi-step browser automation; sessions with profiles that survive across multiple tool calls.' },
+            { name: 'firecrawl_browser_session_delete', source: 'firecrawl', desc: 'Destroy a browser session. "Usage Example:" { "type": [ "name": "firecrawl_browser_session_delete", "arguments": { "sessionId": "abc-123" } ] }. "Returns:" Success confirmation.' },
+            { name: 'firecrawl_browser_session_urls', source: 'firecrawl', desc: 'List browser sessions, optionally filtered by status. Usage Example: { "type": "name": "firecrawl_browser_session_urls" }. Returns a list of active session IDs and their creation timestamps.' },
+            { name: 'firecrawl_crawl_check_results', source: 'firecrawl', desc: 'Check the status and progress of the crawl job, including results if available.' },
+            { name: 'firecrawl_crawl_start', source: 'firecrawl', desc: 'Starts a crawl job on a website and extracts content from all pages. "Best for:" Extracting content from a single page (use scrape); when you need comprehensive coverage. "Not recommended for:" Extracting content from a single page (use scrape instead).' },
+            { name: 'firecrawl_crawl_cancel', source: 'firecrawl', desc: 'Cancel a crawl operation. Calling it on a crawlCheckResults that has a status of "completed" or "failed" will have no effect.' },
+            { name: 'firecrawl_extract', source: 'firecrawl', desc: 'Extract structured information from web pages using LLM capabilities. "Best for:" Extracting specific named data like prices, names, details from web pages. "Not recommended for:" Getting the full content of a page (use scrape); when you\'re not looking for specific structured data.' },
+            { name: 'firecrawl_scrape', source: 'firecrawl', desc: 'Scrape content from a single URL with advanced options. Supports output as markdown, HTML, or structured data via extraction schemas.' },
+        ];
+
+        var tagStyle = {
+            'Actions':    'bg-emerald-500/15 text-emerald-400',
+            'Read':       'bg-emerald-500/10 text-emerald-500/70',
+            'Read/Write': 'bg-blue-500/15 text-blue-400',
+            'Triggers':   'bg-amber-500/15 text-amber-400',
+            'Events':     'bg-purple-500/15 text-purple-400',
+        };
+
+        var typeStyle = {
+            'MCP':     'bg-brand-emerald/20 text-brand-emerald',
+            'WASM':    'bg-amber-500/20 text-amber-400',
+            'GRPC(M)': 'bg-cyan-500/20 text-cyan-400',
+        };
+
+        /* ── elements ──────────────────────────────────────────── */
+        var cardsEl           = document.getElementById('ext-cards');
+        var toolsListEl       = document.getElementById('tools-list');
+        var appShell          = document.getElementById('app-shell');
+        var modal             = document.getElementById('configure-modal');
+        var modalBackdrop     = document.getElementById('configure-backdrop');
+        var modalTitle        = document.getElementById('configure-title');
+        var modalFields       = document.getElementById('configure-fields');
+        var modalSave         = document.getElementById('configure-save');
+        var modalCancel       = document.getElementById('configure-cancel');
+        var focusableSelector = 'a[href], button:not([disabled]), textarea:not([disabled]), input:not([disabled]):not([type="hidden"]), select:not([disabled]), [tabindex]:not([tabindex="-1"])';
+        var lastFocusedElement = null;
+        var modalKeydownHandler = null;
+
+        /* ── helpers ───────────────────────────────────────────── */
+        function esc(s) {
+            var d = document.createElement('div');
+            d.textContent = s;
+            return d.innerHTML;
+        }
+
+        function isConfigureOpen() {
+            return !modal.classList.contains('hidden');
+        }
+
+        function setBackgroundInert(isInert) {
+            if (!appShell) return;
+            appShell.inert = isInert;
+            if (isInert) {
+                appShell.setAttribute('aria-hidden', 'true');
+            } else {
+                appShell.removeAttribute('aria-hidden');
+            }
+        }
+
+        function getFocusableInModal() {
+            return Array.prototype.filter.call(
+                modal.querySelectorAll(focusableSelector),
+                function (el) {
+                    return !el.hasAttribute('disabled') && el.getAttribute('aria-hidden') !== 'true' && el.offsetParent !== null;
+                }
+            );
+        }
+
+        function focusModalStart() {
+            var focusable = getFocusableInModal();
+            var target = focusable[0] || modal;
+            target.focus();
+        }
+
+        function handleModalKeydown(e) {
+            if (!isConfigureOpen()) return;
+
+            if (e.key === 'Escape') {
+                e.preventDefault();
+                closeConfigure();
+                return;
+            }
+
+            if (e.key !== 'Tab') return;
+
+            var focusable = getFocusableInModal();
+            var first = focusable[0];
+            var last = focusable[focusable.length - 1];
+
+            if (!first || !last) {
+                e.preventDefault();
+                modal.focus();
+                return;
+            }
+
+            if (e.shiftKey && document.activeElement === first) {
+                e.preventDefault();
+                last.focus();
+            } else if (!e.shiftKey && document.activeElement === last) {
+                e.preventDefault();
+                first.focus();
+            }
+        }
+
+        /* ── render extension cards ────────────────────────────── */
+        function renderCards() {
+            cardsEl.innerHTML = '';
+            extensions.forEach(function (ext) {
+                var card = document.createElement('div');
+                card.className = 'bg-glass-100 border border-glass-border rounded-xl p-4 flex flex-col';
+
+                /* header row: name + type badge + version + dot */
+                var header = '<div class="flex items-center gap-2 mb-2 flex-wrap">' +
+                    '<span class="font-semibold text-zinc-200">' + esc(ext.name) + '</span>' +
+                    '<span class="text-[10px] px-1.5 py-0.5 rounded font-medium ' + (typeStyle[ext.type] || 'bg-zinc-700 text-zinc-300') + '">' + esc(ext.type) + '</span>' +
+                    '<span class="text-xs text-zinc-500">' + esc(ext.version) + '</span>' +
+                    (ext.active
+                        ? '<span class="w-2 h-2 rounded-full bg-brand-emerald shadow-[0_0_6px_rgba(0,255,65,0.5)]"></span>'
+                        : '<span class="w-2 h-2 rounded-full bg-zinc-600"></span>') +
+                    '</div>';
+
+                /* url */
+                var url = '<div class="text-xs font-mono text-zinc-500 truncate mb-3">' + esc(ext.url) + '</div>';
+
+                /* tags */
+                var tags = '<div class="flex flex-wrap gap-1.5 mb-4">';
+                ext.tags.forEach(function (t) {
+                    tags += '<span class="text-[10px] px-1.5 py-0.5 rounded font-medium ' + (tagStyle[t] || 'bg-zinc-700 text-zinc-400') + '">' + esc(t) + '</span>';
+                });
+                tags += '</div>';
+
+                /* action buttons */
+                var actions = '<div class="flex gap-2 mt-auto text-xs">' +
+                    '<button type="button" class="btn-configure px-2.5 py-1 rounded-md border border-glass-border text-zinc-400 hover:text-zinc-200 hover:bg-glass-200 transition-colors">Configure</button>' +
+                    '<button type="button" class="btn-toggle px-2.5 py-1 rounded-md border border-glass-border text-zinc-400 hover:text-zinc-200 hover:bg-glass-200 transition-colors">' + (ext.active ? 'Disable' : 'Enable') + '</button>' +
+                    '<button type="button" class="btn-remove px-2.5 py-1 rounded-md border border-glass-border text-zinc-400 hover:text-red-400 hover:border-red-500/30 hover:bg-red-500/10 transition-colors">Remove</button>' +
+                    '</div>';
+
+                card.innerHTML = header + url + tags + actions;
+
+                /* configure */
+                card.querySelector('.btn-configure').addEventListener('click', function () {
+                    openConfigure(ext);
+                });
+
+                /* enable/disable toggle */
+                card.querySelector('.btn-toggle').addEventListener('click', function () {
+                    ext.active = !ext.active;
+                    renderCards();
+                });
+
+                /* remove */
+                card.querySelector('.btn-remove').addEventListener('click', function () {
+                    var idx = extensions.indexOf(ext);
+                    if (idx !== -1) extensions.splice(idx, 1);
+                    tools = tools.filter(function (tool) {
+                        return tool.source !== ext.id;
+                    });
+                    renderCards();
+                    renderTools();
+                });
+
+                cardsEl.appendChild(card);
+            });
+        }
+
+        /* ── render registered tools ───────────────────────────── */
+        function renderTools() {
+            toolsListEl.innerHTML = '';
+            tools.forEach(function (tool) {
+                var row = document.createElement('div');
+                row.className = 'flex gap-4 py-2.5 border-b border-glass-border';
+                row.innerHTML =
+                    '<span class="w-72 shrink-0 font-mono text-xs text-zinc-300 break-all">' + esc(tool.name) + '</span>' +
+                    '<span class="text-xs text-zinc-500 leading-relaxed">' + esc(tool.desc) + '</span>';
+                toolsListEl.appendChild(row);
+            });
+        }
+
+        /* ── configure modal ───────────────────────────────────── */
+        function openConfigure(ext) {
+            modalTitle.textContent = 'Configure ' + ext.name;
+            modalFields.innerHTML = '';
+
+            ext.config.forEach(function (cfg, index) {
+                var fieldId = 'configure-field-' + index;
+                var fieldDiv = document.createElement('div');
+                fieldDiv.innerHTML =
+                    '<label for="' + fieldId + '" class="block text-sm text-zinc-400 mb-2">' + esc(cfg.label) + '</label>' +
+                    '<div class="flex items-center gap-2">' +
+                        '<input id="' + fieldId + '" type="text" placeholder="' + esc(cfg.placeholder) + '" class="flex-1 bg-glass-200 border border-glass-border rounded-lg px-3 py-2 text-sm text-zinc-200 placeholder-zinc-600 focus:outline-none focus:ring-1 focus:ring-brand-emerald/50 focus:border-brand-emerald/30">' +
+                        (cfg.set
+                            ? '<iconify-icon icon="carbon:checkmark-filled" class="text-brand-emerald text-lg shrink-0"></iconify-icon>'
+                            : '') +
+                    '</div>';
+                modalFields.appendChild(fieldDiv);
+            });
+
+            lastFocusedElement = document.activeElement;
+            setBackgroundInert(true);
+            modal.classList.remove('hidden');
+            modal.setAttribute('aria-hidden', 'false');
+            if (modalKeydownHandler) {
+                document.removeEventListener('keydown', modalKeydownHandler);
+            }
+            modalKeydownHandler = handleModalKeydown;
+            document.addEventListener('keydown', modalKeydownHandler);
+            focusModalStart();
+        }
+
+        function closeConfigure() {
+            if (!isConfigureOpen()) return;
+
+            modal.classList.add('hidden');
+            modal.setAttribute('aria-hidden', 'true');
+            setBackgroundInert(false);
+            if (modalKeydownHandler) {
+                document.removeEventListener('keydown', modalKeydownHandler);
+                modalKeydownHandler = null;
+            }
+            if (lastFocusedElement && typeof lastFocusedElement.focus === 'function') {
+                lastFocusedElement.focus();
+            }
+            lastFocusedElement = null;
+        }
+
+        modalSave.addEventListener('click', closeConfigure);
+        modalCancel.addEventListener('click', closeConfigure);
+        modalBackdrop.addEventListener('click', closeConfigure);
+
+        /* ── init ──────────────────────────────────────────────── */
+        renderCards();
+        renderTools();
+    })();
+    </script>
+
+</body></html>
