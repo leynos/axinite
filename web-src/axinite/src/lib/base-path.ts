@@ -1,4 +1,4 @@
-export const GITHUB_PAGES_BASE_PATH = "/axinite-mockup/";
+export const DEPLOY_BASE_PATH = "/";
 
 export function normaliseBasePath(rawBase: string | undefined): string {
   const candidate = rawBase && rawBase.length > 0 ? rawBase : "/";
