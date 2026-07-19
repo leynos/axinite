@@ -104,3 +104,35 @@ describe("SSE token propagation", () => {
     expect(stream.url).toBe("/api/chat/events?token=sse-token");
   });
 });
+
+describe("SSE error-event handling", () => {
+  it("ignores browser connection-error events that carry no data", async () => {
+    const { connectChatEvents } = await import("@/lib/api/chat");
+
+    class FakeEventSource extends EventTarget {
+      url: string;
+      withCredentials = false;
+      constructor(url: string) {
+        super();
+        this.url = url;
+      }
+      close() {}
+    }
+    vi.stubGlobal("EventSource", FakeEventSource);
+
+    const received: unknown[] = [];
+    const source = connectChatEvents((event) => received.push(event));
+
+    // Browser-style connection failure: an "error" Event with no data.
+    source.dispatchEvent(new Event("error"));
+    expect(received).toEqual([]);
+
+    // Gateway-style SSE frame: a MessageEvent with a JSON payload.
+    source.dispatchEvent(
+      new MessageEvent("error", {
+        data: JSON.stringify({ type: "error", message: "boom" }),
+      })
+    );
+    expect(received).toEqual([{ type: "error", message: "boom" }]);
+  });
+});

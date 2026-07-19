@@ -198,6 +198,11 @@ export const JobsPreview = () => {
             </div>
           </div>
 
+          <Show when={jobs.isError}>
+            <p class="route-page__notice" role="alert">
+              {t("jobs-load-error")}
+            </p>
+          </Show>
           <div class="dashboard-table-wrap">
             <table class="dashboard-table">
               <thead>

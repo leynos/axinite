@@ -423,3 +423,4 @@ auth-submit = Se connecter
 auth-checking = Vérification de l'accès à la passerelle…
 auth-error-rejected = La passerelle a rejeté le jeton.
 auth-error-unreachable = La passerelle est injoignable. Réessayez lorsqu'elle est en cours d'exécution.
+jobs-load-error = Impossible de charger les jobs depuis la passerelle. Vérifiez la connexion et réessayez.
