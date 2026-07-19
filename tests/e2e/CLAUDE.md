@@ -48,25 +48,32 @@ HEADED=1 pytest scenarios/
 
 ## Test Scenarios
 
-| File                     | What it tests                                                                                                                                                      |
-| ------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `test_connection.py`     | Gateway reachability, tab navigation, auth rejection (no token shows auth screen)                                                                                  |
-| `test_chat.py`           | Send message via browser UI, verify streamed response from mock LLM; also tests empty-message suppression                                                          |
-| `test_html_injection.py` | XSS vectors injected directly via `page.evaluate("addMessage('assistant', ...)")` are sanitized by `renderMarkdown`; user messages are shown as escaped plain text |
-| `test_skills.py`         | Skills tab UI visibility, ClawHub search (skipped if registry unreachable), install + remove lifecycle                                                             |
-| `test_sse_reconnect.py`  | SSE reconnects after programmatic `eventSource.close()` + `connectSSE()`; history is reloaded after reconnect                                                      |
-| `test_tool_approval.py`  | Approval card appears, buttons disable on approve/deny, parameters toggle; all triggered via `page.evaluate("showApproval(...)")` — no real tool call needed       |
+The suite drives the SolidJS UI (the gateway default) through its
+documented testability contract: the `?token=` boot parameter, the
+`#auth-screen` marker, the `[data-testid="sse-status"]` connection
+indicator (`data-state` attribute), `data-role` message turns, and the
+`window.__axinite` hooks (`closeChatStream`, `reconnectChatStream`,
+`emitChatEvent`).
+
+| File                     | What it tests                                                                                                                                 |
+| ------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------- |
+| `test_connection.py`     | Shell loads with token, nav-link route navigation, SSE indicator reaches `connected`, missing token shows `#auth-screen`                      |
+| `test_chat.py`           | Chat round-trip against the mock LLM, empty-message guard, and the inline extension auth cards (token submit, cancel, `auth_completed`)       |
+| `test_html_injection.py` | XSS payloads through the real pipeline: a canned mock-LLM response renders sanitized; user input renders as escaped text                      |
+| `test_skills.py`         | Skills route, ClawHub search (skipped if registry unreachable), install + remove lifecycle                                                    |
+| `test_sse_reconnect.py`  | `window.__axinite.closeChatStream()`/`reconnectChatStream()` flip the SSE indicator; chat history survives reconnection                       |
+| `test_tool_approval.py`  | Approval card (Approve/Always/Deny) injected via history-route interception plus an `emitChatEvent` refetch trigger; approve POST intercepted |
+| `test_extensions.py`     | Extension cards, install/activate/remove (Kobalte dialog), inline configure panel, WASM stepper states, pairing list + approve                |
 
 ## `helpers.py`
 
 Shared constants and utilities imported by every test file and `conftest.py`.
 
-- **`SEL`** — dict of CSS/ID selectors for all DOM elements (chat input,
-  message bubbles, approval card, tab buttons, skill search, etc.). Update this
-  dict when frontend HTML changes; tests import selectors from here rather than
-  hardcoding them.
-- **`TABS`** — ordered list of tab names:
-  `["chat", "memory", "jobs", "routines", "extensions", "skills"]`.
+- **`SEL`** — dict of selectors for the SolidJS DOM (role/label/testid
+  first). Update this dict when frontend HTML changes; tests import
+  selectors from here rather than hardcoding them.
+- **`ROUTES`** / **`ROUTE_LANDMARK`** — nav-link names to paths and the
+  per-route landmark selectors; `goto_route()` navigates via the shell nav.
 - **`AUTH_TOKEN`** — hardcoded to `"e2e-test-token"`. Used by `conftest.py`
   when starting the server (`GATEWAY_AUTH_TOKEN`) and by the `page` fixture
   when navigating (`/?token=e2e-test-token`).
@@ -206,9 +213,11 @@ async def test_my_ui_feature(page):
   auth screen and has SSE connected.
 - **`test_skills.py` makes real network calls to ClawHub.** Tests skip (not
   fail) if the registry is unreachable via `pytest.skip()`.
-- **`test_html_injection.py` and `test_tool_approval.py` inject state via
-  `page.evaluate(...)`.** They test the browser-side rendering pipeline and do
-  not depend on the LLM or backend tool execution.
+- **`test_tool_approval.py` injects state via `page.route` interception of
+  the history endpoints plus `window.__axinite.emitChatEvent(...)`.** It
+  tests the browser-side approval surface without a real tool call.
+  `test_html_injection.py` uses the real mock-LLM pipeline (the legacy
+  `addMessage` global no longer exists).
 - **Browser is Chromium only.** `conftest.py` uses `p.chromium.launch()`; there
   is no Firefox or WebKit variant.
 - **Default timeout is 120 seconds** (pyproject.toml). Individual `wait_for`
