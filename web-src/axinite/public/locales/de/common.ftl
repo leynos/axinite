@@ -366,7 +366,13 @@ chat-status-tool-failed = { $name } fehlgeschlagen.
 chat-status-complete = Antwort abgeschlossen.
 chat-response-pending = Warte auf Abschluss…
 chat-approval-approve = Genehmigen
+chat-approval-always = Immer
 chat-approval-deny = Ablehnen
+
+connection-status-idle = Inaktiv
+connection-status-connecting = Verbinden…
+connection-status-connected = Verbunden
+connection-status-disconnected = Getrennt
 chat-upload-unavailable = Die Mock-Backend-Vorschau speichert keine hochgeladenen Dateien.
 chat-sidebar-conversations = Unterhaltungen
 chat-tools-used = { $count ->

@@ -14,6 +14,8 @@ beforeAll(async () => {
 afterEach(() => {
   clearGatewayToken();
   vi.unstubAllGlobals();
+  // Reset the URL so a `?token=` boot test cannot leak into later cases.
+  window.history.replaceState({}, "", "/");
 });
 
 function jsonResponse(status: number, body: unknown = {}): Response {
@@ -43,6 +45,38 @@ describe("auth gate behaviour", () => {
     await waitFor(() => {
       expect(screen.getByText("Protected content")).toBeVisible();
     });
+  });
+
+  it("consumes a ?token= boot parameter, strips it, and unlocks", async () => {
+    window.history.replaceState({}, "", "/?token=abc&view=chat");
+
+    let seenAuth: string | null = null;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) => {
+        seenAuth = new Headers(init?.headers).get("Authorization");
+        return jsonResponse(200);
+      })
+    );
+
+    render(() => (
+      <AppProviders>
+        <AuthGate>
+          <div>Protected content</div>
+        </AuthGate>
+      </AppProviders>
+    ));
+
+    await waitFor(() => {
+      expect(screen.getByText("Protected content")).toBeVisible();
+    });
+
+    // The boot token is stored and used to probe the gateway.
+    expect(getGatewayToken()).toBe("abc");
+    expect(seenAuth).toBe("Bearer abc");
+    // It is stripped from the URL while other parameters and the path survive.
+    expect(window.location.search).toBe("?view=chat");
+    expect(new URL(window.location.href).searchParams.has("token")).toBe(false);
   });
 
   it("prompts for a token when the gateway returns 401 and unlocks on success", async () => {

@@ -364,7 +364,13 @@ chat-status-tool-failed = { $name } 失败。
 chat-status-complete = 响应已完成。
 chat-response-pending = 等待完成…
 chat-approval-approve = 批准
+chat-approval-always = 始终允许
 chat-approval-deny = 拒绝
+
+connection-status-idle = 空闲
+connection-status-connecting = 连接中…
+connection-status-connected = 已连接
+connection-status-disconnected = 已断开
 chat-upload-unavailable = 模拟后端预览不会保存上传的文件。
 chat-sidebar-conversations = 对话
 chat-tools-used = 使用了 { $count } 个工具

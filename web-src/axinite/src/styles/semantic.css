@@ -2589,3 +2589,35 @@
   font-size: 0.8rem;
   color: #a1a1aa;
 }
+
+/* Chat-stream connection indicator (data-testid="sse-status"). The e2e suite
+   targets data-state; the dot colour and label give operators a visible cue. */
+.shell-sse-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-size: 0.72rem;
+  color: #a1a1aa;
+}
+
+.shell-sse-status__dot {
+  inline-size: 0.5rem;
+  block-size: 0.5rem;
+  border-radius: 999px;
+  background: #52525b;
+}
+
+.shell-sse-status[data-state="connecting"] .shell-sse-status__dot {
+  background: #eab308;
+  box-shadow: 0 0 8px rgb(234 179 8 / 0.5);
+}
+
+.shell-sse-status[data-state="connected"] .shell-sse-status__dot {
+  background: #00ff41;
+  box-shadow: 0 0 8px rgb(0 255 65 / 0.5);
+}
+
+.shell-sse-status[data-state="disconnected"] .shell-sse-status__dot {
+  background: #ef4444;
+  box-shadow: 0 0 8px rgb(239 68 68 / 0.5);
+}

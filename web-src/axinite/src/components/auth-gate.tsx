@@ -62,6 +62,19 @@ export const AuthGate = (props: AuthGateProps) => {
   };
 
   onMount(async () => {
+    // The Python e2e suite (and shared deep links) hand off the bearer token
+    // as a `?token=` query parameter. Consume it before probing: store it,
+    // then strip it from the URL so it does not linger in history, referrers,
+    // or copied links. The path and any other query parameters are preserved.
+    const url = new URL(window.location.href);
+    const queryToken = url.searchParams.get("token");
+    if (queryToken) {
+      setGatewayToken(queryToken);
+      url.searchParams.delete("token");
+      const stripped = `${url.pathname}${url.search}${url.hash}`;
+      window.history.replaceState(window.history.state, "", stripped);
+    }
+
     const stored = getGatewayToken();
     const result = await probeGateway(stored);
     // A stored token that no longer works should surface the form afresh
@@ -96,12 +109,12 @@ export const AuthGate = (props: AuthGateProps) => {
   return (
     <Switch>
       <Match when={state() === "checking"}>
-        <main class="auth-gate" aria-busy="true">
+        <main class="auth-gate" id="auth-screen" aria-busy="true">
           <p class="auth-gate__status">{t("auth-checking")}</p>
         </main>
       </Match>
       <Match when={state() === "locked"}>
-        <main class="auth-gate">
+        <main class="auth-gate" id="auth-screen">
           <form class="auth-gate__panel catalogue-form" onSubmit={submit}>
             <h1 class="auth-gate__title">{t("auth-title")}</h1>
             <p class="auth-gate__description">{t("auth-description")}</p>

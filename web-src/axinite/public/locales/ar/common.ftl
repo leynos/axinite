@@ -364,7 +364,13 @@ chat-status-tool-failed = فشل { $name }.
 chat-status-complete = اكتملت الاستجابة.
 chat-response-pending = في انتظار الاكتمال…
 chat-approval-approve = موافقة
+chat-approval-always = دائمًا
 chat-approval-deny = رفض
+
+connection-status-idle = خامل
+connection-status-connecting = جارٍ الاتصال…
+connection-status-connected = متصل
+connection-status-disconnected = غير متصل
 chat-upload-unavailable = لا تحتفظ معاينة الخلفية التجريبية بالملفات المرفوعة.
 chat-sidebar-conversations = المحادثات
 chat-tools-used = { $count ->

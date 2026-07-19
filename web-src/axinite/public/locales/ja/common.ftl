@@ -364,7 +364,13 @@ chat-status-tool-failed = { $name } が失敗しました。
 chat-status-complete = 応答が完了しました。
 chat-response-pending = 完了を待っています…
 chat-approval-approve = 承認
+chat-approval-always = 常に許可
 chat-approval-deny = 拒否
+
+connection-status-idle = 待機中
+connection-status-connecting = 接続中…
+connection-status-connected = 接続済み
+connection-status-disconnected = 切断
 chat-upload-unavailable = モックバックエンドのプレビューではファイルアップロードは保存されません。
 chat-sidebar-conversations = 会話
 chat-tools-used = { $count }個のツールを使用

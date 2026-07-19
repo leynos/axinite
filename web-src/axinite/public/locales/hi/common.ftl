@@ -364,7 +364,13 @@ chat-status-tool-failed = { $name } विफल हुआ।
 chat-status-complete = प्रतिक्रिया पूर्ण।
 chat-response-pending = पूर्णता की प्रतीक्षा…
 chat-approval-approve = स्वीकृत करें
+chat-approval-always = हमेशा
 chat-approval-deny = अस्वीकार करें
+
+connection-status-idle = निष्क्रिय
+connection-status-connecting = कनेक्ट हो रहा है…
+connection-status-connected = कनेक्टेड
+connection-status-disconnected = डिस्कनेक्टेड
 chat-upload-unavailable = Mock बैकएंड पूर्वावलोकन फ़ाइल अपलोड सहेजता नहीं है।
 chat-sidebar-conversations = वार्तालाप
 chat-tools-used = { $count ->
