@@ -325,6 +325,23 @@ export type JobEventInfo = {
 
 export type JobEventsResponse = {
   events: JobEventInfo[];
+  // The daemon's paginated history carries these; the mock omits them, so they
+  // are optional here to stay additive against both contracts.
+  job_id?: Identifier;
+  next_before_id?: Identifier | null;
+};
+
+/**
+ * A single row in the merged jobs activity feed. Persisted rows come from
+ * `fetchJobEvents` and carry a stable `id`; live rows are mapped from the
+ * global chat SSE stream's `job_*` events and receive a synthetic key.
+ */
+export type JobActivityRow = {
+  key: string;
+  kind: "log" | "message" | "tool_use" | "tool_result" | "status" | "result";
+  level?: string;
+  message: string;
+  timestamp: string | null;
 };
 
 export type ProjectFileEntry = {
