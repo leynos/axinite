@@ -6,7 +6,7 @@ This ExecPlan (execution plan) is a living document. The sections
 proceeds. It continues `docs/execplans/adopt-solidjs-ui.md` (COMPLETE), which
 established the SolidJS SPA as the default gateway UI.
 
-Status: IN PROGRESS
+Status: COMPLETE
 
 ## Purpose / big picture
 
@@ -124,9 +124,20 @@ against the SolidJS UI.
   hooks, rewrite `helpers.py` SEL + all seven scenarios to the SolidJS DOM,
   drop `AXINITE_WEB_UI=legacy` from conftest, run the suite against the
   real daemon.
-- [ ] F8: validation closure: frontend-build/verify, Playwright MCP +
-  css-view on the new surfaces, full gates via scrutineer, CodeRabbit,
-  retrospective.
+- [x] (2026-07-19 18:20Z) F8: validation closure. Browser validation via
+  Playwright MCP against the stub: logs route controls and stream,
+  generated-image and job-start cards, the three-way approval card, jobs
+  detail tabs with the expandable file tree, the awaiting-pairing stepper
+  and pending pairing request, zero console errors, and no horizontal
+  overflow at 375 px. css-view on logs/jobs/extensions/chat (88 to 376
+  nodes per route): no element beyond the viewport. Full gates green via
+  scrutineer: check-fmt, lint (clippy plus whitaker), nextest (4267
+  passed), markdownlint/spelling (after renaming `_fulfil` and
+  `unparsable`), nixie, frontend-test (126 tests), frontend-verify, the
+  legacy Node test, and the workspace Playwright spec; the migrated
+  Python suite passes 35 with one skip and the extensions scenario
+  re-passed after the rename. CodeRabbit reviewed the 189-file diff
+  against main: zero findings, no rate limiting.
 
 ## Surprises & discoveries
 
@@ -331,4 +342,31 @@ Milestone commits allow `git revert`. Migrations are additive
 
 ## Outcomes & retrospective
 
-To be completed.
+All three streams delivered. Operators can persist deployment-scoped flag
+overrides through the settings API and see them at `GET /api/features`
+without a restart, layered beneath environment variables exactly as RFC
+0009 orders precedence. The SolidJS UI now carries the legacy shell's
+operator surfaces: logs as a route, restart with honest completion
+detection, the TEE shield, pairing approval with the activation stepper,
+chat media and auth/job cards, and a jobs detail view with live activity.
+The Python e2e suite drives the SolidJS DOM against the real daemon with
+the legacy pin removed.
+
+Notable catches along the way: the e2e mock LLM had been silently 404-ing
+every completion call (the daemon posts to `{base}/chat/completions`, the
+mock only served `/v1/...`) — the legacy UI never surfaced the hang; and
+the restart controller was hardened beyond the legacy heuristic to require
+an observed down/up cycle before declaring success.
+
+Lessons: agent parallelism inside one worktree needs strict file
+ownership — a concurrent lint run mid-implementation produced a confusing
+half-state twice; the whitaker module-size cap and the en-GB spelling gate
+are the two gates external contributions most reliably trip, so budget a
+cleanup pass after any large import; and test suites that poke framework
+internals (the legacy globals) migrate far more cleanly once the app
+exposes a small, documented hook surface instead.
+
+Remaining follow-up (unchanged in scope): RFC 0018 Stage 5 — removing the
+legacy shell, its assets, and `tests/web_static_app.test.mjs` once the
+rollback window closes — plus the RFC 0009 open questions (subsystem
+defaults, flag-change SSE events).
