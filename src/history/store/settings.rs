@@ -180,6 +180,55 @@ impl Store {
         Ok(())
     }
 
+    /// List deployment-scoped feature-flag overrides for a deployment.
+    ///
+    /// Feature flags (RFC 0009) are deployment-scoped, stored in the dedicated
+    /// `feature_flag_overrides` table rather than the user-scoped `settings`
+    /// table.
+    pub async fn list_deployment_flags(
+        &self,
+        deployment_id: &str,
+    ) -> Result<Vec<(String, bool)>, DatabaseError> {
+        let conn = self.conn().await?;
+        let rows = conn
+            .query(
+                "SELECT flag_name, enabled FROM feature_flag_overrides \
+                 WHERE deployment_id = $1 ORDER BY flag_name",
+                &[&deployment_id],
+            )
+            .await?;
+        Ok(rows
+            .iter()
+            .map(|r| {
+                let name: String = r.get("flag_name");
+                let enabled: bool = r.get("enabled");
+                (name, enabled)
+            })
+            .collect())
+    }
+
+    /// Insert or replace one deployment-scoped feature-flag override (upsert).
+    pub async fn set_deployment_flag(
+        &self,
+        deployment_id: &str,
+        flag_name: &str,
+        enabled: bool,
+    ) -> Result<(), DatabaseError> {
+        let conn = self.conn().await?;
+        conn.execute(
+            r#"
+            INSERT INTO feature_flag_overrides (deployment_id, flag_name, enabled, updated_at)
+            VALUES ($1, $2, $3, NOW())
+            ON CONFLICT (deployment_id, flag_name) DO UPDATE SET
+                enabled = EXCLUDED.enabled,
+                updated_at = NOW()
+            "#,
+            &[&deployment_id, &flag_name, &enabled],
+        )
+        .await?;
+        Ok(())
+    }
+
     /// Check if the settings table has any rows for a user.
     pub async fn has_settings(&self, user_id: UserId) -> Result<bool, DatabaseError> {
         let conn = self.conn().await?;
