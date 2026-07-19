@@ -1,6 +1,8 @@
 import type {
   ActionResponse,
   ApprovalRequest,
+  AuthCancelRequest,
+  AuthTokenRequest,
   CatalogueSkillEntry,
   ChatSseEvent,
   ExtensionInfo,
@@ -8,6 +10,7 @@ import type {
   FeatureFlagsResponse,
   GatewayStatusResponse,
   HistoryResponse,
+  ImageData,
   JobDetailResponse,
   JobEventInfo,
   JobEventsResponse,
@@ -24,6 +27,8 @@ import type {
   MemoryTreeResponse,
   MemoryWriteRequest,
   MemoryWriteResponse,
+  PairingListResponse,
+  PairingRequestInfo,
   PendingApprovalInfo,
   ProjectFileReadResponse,
   ProjectFilesResponse,
@@ -51,6 +56,17 @@ import type {
   TransitionInfo,
   TurnInfo,
 } from "../../axinite/src/lib/api/contracts";
+
+// A deterministic 1x1 transparent PNG used for the `image_generated`
+// SSE fixture emitted when a chat prompt contains "image".
+export const MOCK_GENERATED_IMAGE_DATA_URL =
+  "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=";
+
+// Thrown by pairing approval when the deterministic rate-limit fixture code
+// is submitted, so the transport layer can answer with a plain-text 429
+// response matching the daemon's `PairingStoreError::ApproveRateLimited`
+// shape (a bare `(StatusCode, String)` body, not JSON).
+export class PairingRateLimitedError extends Error {}
 
 type MemoryDocument = {
   content: string;
@@ -960,6 +976,64 @@ export class MockBackendState {
         ],
       },
     ],
+    [
+      "whatsapp",
+      {
+        info: {
+          name: "whatsapp",
+          display_name: "WhatsApp",
+          kind: "wasm_channel",
+          description:
+            "Pairing-gated messaging channel used to exercise the extensions pairing stepper.",
+          url: "https://www.whatsapp.com",
+          authenticated: false,
+          active: false,
+          tools: ["send_message"],
+          needs_setup: true,
+          has_auth: false,
+          activation_status: "pairing",
+          version: "0.1.0",
+        },
+        setupSecrets: [],
+      },
+    ],
+    [
+      "google-drive",
+      {
+        info: {
+          name: "google-drive",
+          display_name: "Google Drive",
+          kind: "mcp_server",
+          description:
+            "OAuth-gated Drive file access used to exercise the auth-card dispatch path.",
+          url: "https://drive.google.com",
+          authenticated: false,
+          active: false,
+          tools: ["list_files", "read_file"],
+          needs_setup: true,
+          has_auth: true,
+          activation_status: "configured",
+          version: "0.1.0",
+        },
+        setupSecrets: [],
+      },
+    ],
+  ]);
+
+  // Deterministic pending pairing request fixture for the "whatsapp" WASM
+  // channel, so the extensions pairing stepper has an approvable row without
+  // needing a real pairing handshake.
+  private readonly pairingRequests = new Map<string, PairingRequestInfo[]>([
+    [
+      "whatsapp",
+      [
+        {
+          code: "PAIR-1234",
+          sender_id: "user-42",
+          created_at: iso(5),
+        },
+      ],
+    ],
   ]);
 
   private readonly registryEntries = new Map<string, RegistryEntryInfo>([
@@ -1294,9 +1368,26 @@ export class MockBackendState {
       thread_id: targetThread.info.id,
     });
 
-    const toolName =
-      request.content.toLowerCase().includes("log") ||
-      request.content.toLowerCase().includes("inspect")
+    const lowerContent = request.content.toLowerCase();
+    const isRestart = request.content === "/restart";
+    const hasImageTrigger = !isRestart && lowerContent.includes("image");
+    const hasJobTrigger = lowerContent.includes("job");
+    const images: ImageData[] = request.images ?? [];
+
+    if (hasJobTrigger) {
+      setTimeout(() => {
+        this.publishChatEvent({
+          type: "job_started",
+          job_id: "job-spawned-1",
+          title: "Spawned preview job",
+          browse_url: "/projects/job-spawned-1/",
+        });
+      }, 60);
+    }
+
+    const toolName = isRestart
+      ? "restart"
+      : lowerContent.includes("log") || lowerContent.includes("inspect")
         ? "inspect_preview_stack"
         : "write_preview_summary";
 
@@ -1315,24 +1406,26 @@ export class MockBackendState {
       });
     }, 120);
 
-    setTimeout(() => {
-      this.publishChatEvent({
-        type: "tool_result",
-        name: toolName,
-        preview:
-          "Collected current route state, mock transport health, and feature-flag visibility.",
-        thread_id: targetThread.info.id,
-      });
-      turn.tool_calls = [
-        {
+    if (!isRestart) {
+      setTimeout(() => {
+        this.publishChatEvent({
+          type: "tool_result",
           name: toolName,
-          has_result: true,
-          has_error: false,
-          result_preview:
+          preview:
             "Collected current route state, mock transport health, and feature-flag visibility.",
-        },
-      ];
-    }, 260);
+          thread_id: targetThread.info.id,
+        });
+        turn.tool_calls = [
+          {
+            name: toolName,
+            has_result: true,
+            has_error: false,
+            result_preview:
+              "Collected current route state, mock transport health, and feature-flag visibility.",
+          },
+        ];
+      }, 260);
+    }
 
     setTimeout(() => {
       this.publishChatEvent({
@@ -1341,15 +1434,45 @@ export class MockBackendState {
         success: true,
         thread_id: targetThread.info.id,
       });
+      if (isRestart) {
+        turn.tool_calls = [
+          {
+            name: toolName,
+            has_result: true,
+            has_error: false,
+            result_preview: "Restart sequence acknowledged.",
+          },
+        ];
+      }
     }, 340);
 
-    const fullResponse = `Mock backend response for "${request.content}": the preview is now wired to typed JSON and SSE routes instead of local screen fixture arrays.`;
-    const chunks = [
-      "Mock backend response for ",
-      `"${request.content}": `,
-      "the preview is now wired to typed JSON and SSE routes ",
-      "instead of local screen fixture arrays.",
-    ];
+    if (hasImageTrigger) {
+      setTimeout(() => {
+        this.publishChatEvent({
+          type: "image_generated",
+          data_url: MOCK_GENERATED_IMAGE_DATA_URL,
+          path: "workspace/generated/preview.png",
+          thread_id: targetThread.info.id,
+        });
+      }, 360);
+    }
+
+    const responseParts = isRestart
+      ? [
+          "Restart initiated. ",
+          "The mock preview backend acknowledged the /restart command.",
+        ]
+      : [
+          "Mock backend response for ",
+          `"${request.content}": `,
+          "the preview is now wired to typed JSON and SSE routes ",
+          "instead of local screen fixture arrays.",
+          ...(images.length > 0
+            ? [` Received ${images.length} image attachment(s).`]
+            : []),
+        ];
+    const fullResponse = responseParts.join("");
+    const chunks = responseParts;
 
     chunks.forEach((content, index) => {
       setTimeout(() => {
@@ -1443,6 +1566,83 @@ export class MockBackendState {
       request.action === "deny"
         ? "Request denied."
         : "Approval recorded and the conversation resumed."
+    );
+  }
+
+  // Submit an extension auth token, bypassing the message pipeline, mirroring
+  // POST /api/chat/auth-token. Deterministic acceptance rule: the literal
+  // token "valid-token", or any token of length >= 8, succeeds; anything
+  // shorter fails.
+  chatAuthToken(request: AuthTokenRequest): ActionResponse {
+    const accepted =
+      request.token === "valid-token" || request.token.length >= 8;
+    if (accepted) {
+      const message = "Authentication completed.";
+      this.publishChatEvent({
+        type: "auth_completed",
+        extension_name: request.extension_name,
+        success: true,
+        message,
+      });
+      this.pushLog(
+        `Authenticated ${request.extension_name} via chat auth-token.`,
+        "extensions"
+      );
+      return createActionResponse(message, { activated: true });
+    }
+    this.pushLog(
+      `Rejected auth token for ${request.extension_name}.`,
+      "extensions",
+      "warn"
+    );
+    return createActionResponse(
+      "Invalid or missing authentication token.",
+      { success: false }
+    );
+  }
+
+  chatAuthCancel(request: AuthCancelRequest): ActionResponse {
+    this.pushLog(
+      `Cancelled auth flow for ${request.extension_name}.`,
+      "extensions",
+      "warn"
+    );
+    return createActionResponse("Auth cancelled.");
+  }
+
+  // Mirrors GET /api/pairing/{channel}: unknown channels answer with an
+  // empty pending-request list rather than a 404.
+  pairingList(channel: string): PairingListResponse {
+    return {
+      channel,
+      requests: this.pairingRequests.get(channel) ?? [],
+    };
+  }
+
+  // Mirrors POST /api/pairing/{channel}/approve. Submitting the code
+  // "rate-limited" throws PairingRateLimitedError so the transport layer can
+  // answer with the daemon's plain-text 429 fixture.
+  pairingApprove(channel: string, code: string): ActionResponse {
+    if (code === "rate-limited") {
+      throw new PairingRateLimitedError(
+        "Too many failed approve attempts; try again later"
+      );
+    }
+    const pending = this.pairingRequests.get(channel) ?? [];
+    const index = pending.findIndex((request) => request.code === code);
+    if (index === -1) {
+      return createActionResponse("Invalid or expired pairing code", {
+        success: false,
+      });
+    }
+    const [approved] = pending.splice(index, 1);
+    this.pairingRequests.set(channel, pending);
+    this.pushLog(
+      `Approved pairing request ${code} for ${channel}.`,
+      "extensions"
+    );
+    return createActionResponse(
+      `Pairing approved for sender '${approved.sender_id}'`
     );
   }
 
@@ -1929,12 +2129,27 @@ export class MockBackendState {
       throw new Error("Extension not found");
     }
     if (extension.info.has_auth && !extension.info.authenticated) {
+      // The "google-drive" fixture exercises the OAuth auth-card dispatch
+      // path (an `auth_url` to open in a new tab); every other has_auth
+      // extension keeps the existing configure-modal (`setup_url` only)
+      // path.
+      const isOAuthFixture = name === "google-drive";
+      const authUrl = isOAuthFixture
+        ? "https://oauth.example.invalid/consent"
+        : undefined;
+      const setupUrl = isOAuthFixture
+        ? "https://example.invalid/token-help"
+        : `/api/extensions/${name}/setup`;
+      const instructions = isOAuthFixture
+        ? "Sign in with Google and grant Drive access, then return to finish activation."
+        : "Provide a token in the setup panel to complete activation.";
+
       this.publishChatEvent({
         type: "auth_required",
         extension_name: name,
-        instructions:
-          "Provide a token in the setup panel to complete activation.",
-        setup_url: `/api/extensions/${name}/setup`,
+        instructions,
+        auth_url: authUrl,
+        setup_url: setupUrl,
       });
       this.pushLog(
         `Activation for ${name} is waiting for a manual token.`,
@@ -1943,9 +2158,9 @@ export class MockBackendState {
       );
       return createActionResponse("Manual token required before activation.", {
         awaiting_token: true,
-        instructions:
-          "Provide a token in the setup panel to complete activation.",
+        instructions,
         activated: false,
+        auth_url: authUrl,
       });
     }
     extension.info = {

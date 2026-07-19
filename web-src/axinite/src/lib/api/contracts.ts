@@ -173,6 +173,47 @@ export type ChatSseEvent =
       extension_name: string;
       status: string;
       message?: string;
+    }
+  | {
+      type: "job_started";
+      job_id: string;
+      title: string;
+      browse_url: string;
+    }
+  | {
+      type: "job_message";
+      job_id: string;
+      role: string;
+      content: string;
+    }
+  | {
+      type: "job_tool_use";
+      job_id: string;
+      tool_name: string;
+      input: unknown;
+    }
+  | {
+      type: "job_tool_result";
+      job_id: string;
+      tool_name: string;
+      output: string;
+    }
+  | {
+      type: "job_status";
+      job_id: string;
+      message: string;
+    }
+  | {
+      type: "job_result";
+      job_id: string;
+      status: string;
+      session_id?: string;
+    }
+  | {
+      type: "image_generated";
+      data_url: string;
+      path?: string;
+      thread_id?: string;
     };
 
 export type MemoryTreeResponse = {
@@ -499,4 +540,29 @@ export type LogEntry = {
 
 export type LogLevelResponse = {
   level: string;
+};
+
+export type PairingRequestInfo = {
+  code: string;
+  sender_id: string;
+  meta?: unknown;
+  created_at: string;
+};
+
+export type PairingListResponse = {
+  channel: string;
+  requests: PairingRequestInfo[];
+};
+
+export type PairingApproveRequest = {
+  code: string;
+};
+
+export type AuthTokenRequest = {
+  extension_name: string;
+  token: string;
+};
+
+export type AuthCancelRequest = {
+  extension_name: string;
 };
