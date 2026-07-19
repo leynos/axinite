@@ -92,7 +92,7 @@ frontend-check: frontend-install
 	cd $(FRONTEND_DIR) && $(BUN) run check:fmt && $(BUN) run lint && $(BUN) run check:types
 
 frontend-test: frontend-check
-	cd $(FRONTEND_DIR) && $(BUN) run test && $(BUN) run test:a11y
+	cd $(FRONTEND_DIR) && $(BUN) run test && $(BUN) run test:a11y && $(BUN) run lint:ftl-vars
 
 # Daemon-free stub runtime: Bun mock API (HTTP + SSE + /api/features) plus a
 # preview server for the built SPA on http://127.0.0.1:2020.

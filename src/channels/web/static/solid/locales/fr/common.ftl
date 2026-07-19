@@ -424,7 +424,7 @@ logs-level-info = info
 logs-level-warn = warn
 logs-level-error = error
 logs-level-trace = trace
-logs-filter-level-label = Niveau d'affichage
+logs-filter-level-label = Niveau d’affichage
 logs-filter-target-label = Filtre de cible
 logs-pause = Pause
 logs-resume = Reprendre
@@ -432,12 +432,12 @@ logs-clear = Effacer
 logs-autoscroll = Défilement automatique
 
 auth-title = Accès à la passerelle
-auth-description = Cette passerelle nécessite un jeton d'accès. Collez le jeton depuis la console de la passerelle pour continuer.
-auth-token-label = Jeton d'accès
+auth-description = Cette passerelle nécessite un jeton d’accès. Collez le jeton depuis la console de la passerelle pour continuer.
+auth-token-label = Jeton d’accès
 auth-submit = Se connecter
-auth-checking = Vérification de l'accès à la passerelle…
+auth-checking = Vérification de l’accès à la passerelle…
 auth-error-rejected = La passerelle a rejeté le jeton.
-auth-error-unreachable = La passerelle est injoignable. Réessayez lorsqu'elle est en cours d'exécution.
+auth-error-unreachable = La passerelle est injoignable. Réessayez lorsqu’elle est en cours d’exécution.
 jobs-load-error = Impossible de charger les jobs depuis la passerelle. Vérifiez la connexion et réessayez.
 
 # Chat media, auth cards, and job-start cards
@@ -471,32 +471,32 @@ restart-confirm-cancel = Annuler
 restart-progress = Redémarrage de la passerelle…
 restart-complete = Passerelle redémarrée.
 
-# Surface d'attestation TEE
-tee-shield-label = Voir l'attestation TEE
+# Surface d’attestation TEE
+tee-shield-label = Voir l’attestation TEE
 tee-popover-title = Attestation TEE
-tee-field-image-digest = Empreinte de l'image
+tee-field-image-digest = Empreinte de l’image
 tee-field-tls-fingerprint = Empreinte du certificat TLS
 tee-field-report-data = Données du rapport
 tee-field-vm-config = Configuration de la VM
 tee-copy-report = Copier le rapport complet
 tee-value-empty = N/D
-tee-report-loading = Chargement du rapport d'attestation…
-tee-report-error = Impossible de charger le rapport d'attestation
+tee-report-loading = Chargement du rapport d’attestation…
+tee-report-error = Impossible de charger le rapport d’attestation
 
 # Activation et appairage des canaux WASM
-extensions-stepper-label = Progression de l'activation
+extensions-stepper-label = Progression de l’activation
 extensions-stepper-installed = Installé
 extensions-stepper-configured = Configuré
 extensions-stepper-active = Actif
-extensions-stepper-awaiting-pairing = En attente d'appairage
+extensions-stepper-awaiting-pairing = En attente d’appairage
 extensions-stepper-state-completed = Terminé
 extensions-stepper-state-failed = Échec
 extensions-stepper-state-in-progress = En cours
 extensions-stepper-state-pending = En attente
-extensions-pairing-heading = Demandes d'appairage en attente
+extensions-pairing-heading = Demandes d’appairage en attente
 extensions-pairing-from = de { $sender }
 extensions-pairing-approve = Approuver
-extensions-pairing-approve-label = Approuver l'appairage { $code }
+extensions-pairing-approve-label = Approuver l’appairage { $code }
 
 # Jobs detail tabs (F6)
 jobs-tab-overview = Aperçu
