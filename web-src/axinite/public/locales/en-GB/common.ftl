@@ -415,3 +415,11 @@ logs-level-debug = debug
 logs-level-info = info
 logs-level-warn = warn
 logs-level-error = error
+
+auth-title = Gateway access
+auth-description = This gateway requires an access token. Paste the token from the gateway console to continue.
+auth-token-label = Access token
+auth-submit = Connect
+auth-checking = Checking gateway access…
+auth-error-rejected = The gateway rejected the token.
+auth-error-unreachable = The gateway could not be reached. Retry once it is running.
