@@ -1,0 +1,50 @@
+---
+name: Frontend
+"on":
+  pull_request:
+    branches:
+      - main
+    paths:
+      - "web-src/**"
+      - "src/channels/web/static/solid/**"
+      - "Makefile"
+      - ".github/workflows/frontend.yml"
+  push:
+    branches:
+      - main
+    paths:
+      - "web-src/**"
+      - "src/channels/web/static/solid/**"
+      - "Makefile"
+      - ".github/workflows/frontend.yml"
+
+jobs:
+  frontend:
+    name: Frontend verification
+    runs-on: ubicloud-standard-8
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+      - name: Install Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+      - name: Install uv
+        # `semantic` and `verify:full` fetch semgrep and moz-fluent-linter
+        # through uvx.
+        uses: astral-sh/setup-uv@v5
+      - name: Install dependencies
+        run: make frontend-install
+      - name: Install Playwright Chromium
+        working-directory: web-src
+        run: bunx playwright install --with-deps chromium
+      - name: Full verification chain
+        # Tailwind compile check, Biome lint, TypeScript, vitest unit and
+        # accessibility suites, Fluent variable/coverage checks, the
+        # semantic-CSS rules, the workspace Playwright spec, and
+        # moz-fluent-lint.
+        run: make frontend-full
+      - name: Embedded asset staleness gate
+        # Rebuild the SPA and fail when src/channels/web/static/solid does
+        # not match the web-src sources.
+        run: make frontend-verify
