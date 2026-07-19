@@ -1,28 +1,28 @@
 import { describe, expect, it } from "vitest";
 import {
   buildAppPath,
-  GITHUB_PAGES_BASE_PATH,
+  DEPLOY_BASE_PATH,
   normaliseBasePath,
 } from "@/lib/base-path";
 import { buildFluentLoadPath } from "@/lib/i18n/runtime";
 
 describe("base path helpers", () => {
-  it("normalises the GitHub Pages base path", () => {
-    expect(normaliseBasePath(GITHUB_PAGES_BASE_PATH)).toBe("/axinite-mockup/");
+  it("normalises the deploy base path", () => {
+    expect(normaliseBasePath(DEPLOY_BASE_PATH)).toBe("/");
   });
 
-  it("builds route paths under the deploy prefix", () => {
-    expect(buildAppPath(GITHUB_PAGES_BASE_PATH, "/chat")).toBe(
-      "/axinite-mockup/chat"
-    );
-    expect(buildAppPath(GITHUB_PAGES_BASE_PATH, "skills")).toBe(
-      "/axinite-mockup/skills"
-    );
+  it("normalises a prefixed base path", () => {
+    expect(normaliseBasePath("/preview")).toBe("/preview/");
   });
 
-  it("builds locale asset paths under the same deploy prefix", () => {
-    expect(buildFluentLoadPath(GITHUB_PAGES_BASE_PATH)).toBe(
-      "/axinite-mockup/locales/{{lng}}/{{ns}}.ftl"
+  it("builds route paths under the deploy base", () => {
+    expect(buildAppPath(DEPLOY_BASE_PATH, "/chat")).toBe("/chat");
+    expect(buildAppPath(DEPLOY_BASE_PATH, "skills")).toBe("/skills");
+  });
+
+  it("builds locale asset paths under the same deploy base", () => {
+    expect(buildFluentLoadPath(DEPLOY_BASE_PATH)).toBe(
+      "/locales/{{lng}}/{{ns}}.ftl"
     );
   });
 });
