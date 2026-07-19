@@ -97,6 +97,12 @@ async def axinite_server(axinite_binary, mock_llm_server):
         "EMBEDDING_ENABLED": "false",
         # Prevent onboarding wizard from triggering
         "ONBOARD_COMPLETED": "true",
+        # SANDBOX_ENABLED/ROUTINES_ENABLED above leave the jobs and routines
+        # runtimes unwired, so the subsystem-availability layer would hide
+        # their routes. Force the route flags on (precedence layer 1) so the
+        # scenarios can still walk every nav entry.
+        "FEATURE_FLAG_ROUTE_JOBS": "true",
+        "FEATURE_FLAG_ROUTE_ROUTINES": "true",
     }
     # Forward LLVM coverage instrumentation env vars when present
     # (allows cargo-llvm-cov to collect profraw data from E2E runs).

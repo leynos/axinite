@@ -48,7 +48,7 @@ async fn put_feature_flag_without_deployment_header_returns_400() {
         .oneshot(
             Request::builder()
                 .method("PUT")
-                .uri("/api/settings/feature_flag:panel_logs")
+                .uri("/api/settings/feature_flag:route_memory")
                 .header("content-type", "application/json")
                 .body(Body::from(r#"{"value":"false"}"#))
                 .unwrap(),
@@ -86,7 +86,7 @@ async fn put_feature_flag_with_uncoercible_value_returns_400() {
         .oneshot(
             Request::builder()
                 .method("PUT")
-                .uri("/api/settings/feature_flag:panel_logs")
+                .uri("/api/settings/feature_flag:route_memory")
                 .header("content-type", "application/json")
                 .header("x-deployment-id", "production")
                 .body(Body::from(r#"{"value":"maybe"}"#))
@@ -104,7 +104,7 @@ async fn get_feature_flag_key_via_settings_is_rejected() {
         .oneshot(
             Request::builder()
                 .method("GET")
-                .uri("/api/settings/feature_flag:panel_logs")
+                .uri("/api/settings/feature_flag:route_memory")
                 .body(Body::empty())
                 .unwrap(),
         )
@@ -127,12 +127,21 @@ async fn features_get_without_header_uses_default_deployment() {
         .await
         .unwrap();
     assert_eq!(response.status(), StatusCode::OK);
+    assert!(
+        response
+            .headers()
+            .get(super::super::features::VERSION_HEADER)
+            .is_some(),
+        "features response should carry the gateway version header"
+    );
     let body = body_string(response).await;
     let flags: std::collections::BTreeMap<String, bool> =
         serde_json::from_str(&body).expect("valid JSON map");
     // Compiled defaults for the "default" deployment.
     assert_eq!(flags.get("route_chat"), Some(&true));
-    assert_eq!(flags.get("panel_logs"), Some(&true));
+    // The bare test gateway wires no log broadcaster, so the
+    // subsystem-availability layer forces the logs surfaces off.
+    assert_eq!(flags.get("panel_logs"), Some(&false));
 }
 
 // --- libSQL-backed persistence proof (requires the libsql backend) ---
@@ -160,18 +169,20 @@ async fn put_feature_flag_then_get_reflects_override_without_restart() {
     // Guard against a leaked environment override from another test.
     // SAFETY: single-threaded test; no other thread reads the environment.
     unsafe {
-        std::env::remove_var("FEATURE_FLAG_PANEL_LOGS");
+        std::env::remove_var("FEATURE_FLAG_ROUTE_MEMORY");
     }
 
     let backend = new_test_store().await;
     let state = TestGatewayBuilder::new().store(backend).build();
 
-    // Override panel_logs=false for the "production" deployment.
+    // Override route_memory=false for the "production" deployment
+    // (route_memory has no subsystem gate, so the compiled default applies
+    // elsewhere).
     let put = app(state.clone())
         .oneshot(
             Request::builder()
                 .method("PUT")
-                .uri("/api/settings/feature_flag:panel_logs")
+                .uri("/api/settings/feature_flag:route_memory")
                 .header("content-type", "application/json")
                 .header("x-deployment-id", "production")
                 .body(Body::from(r#"{"value":"false"}"#))
@@ -195,7 +206,7 @@ async fn put_feature_flag_then_get_reflects_override_without_restart() {
     assert_eq!(get.status(), StatusCode::OK);
     let flags: std::collections::BTreeMap<String, bool> =
         serde_json::from_str(&body_string(get).await).unwrap();
-    assert_eq!(flags.get("panel_logs"), Some(&false));
+    assert_eq!(flags.get("route_memory"), Some(&false));
 
     // A different deployment is unaffected and keeps the compiled default.
     let other = app(state)
@@ -210,5 +221,5 @@ async fn put_feature_flag_then_get_reflects_override_without_restart() {
         .unwrap();
     let other_flags: std::collections::BTreeMap<String, bool> =
         serde_json::from_str(&body_string(other).await).unwrap();
-    assert_eq!(other_flags.get("panel_logs"), Some(&true));
+    assert_eq!(other_flags.get("route_memory"), Some(&true));
 }
