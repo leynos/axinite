@@ -3,8 +3,9 @@
 ## Preamble
 
 - **RFC number:** 0009
-- **Status:** Proposed
+- **Status:** Implemented (with noted deviations)
 - **Created:** 2026-03-14
+- **Implemented:** 2026-07-19 (see §Implementation notes)
 
 ## Summary
 
@@ -486,6 +487,44 @@ _Table 2: Comparison of alternatives._
 - Should the front end re-fetch flags periodically or on SSE
   reconnect, or is a single fetch at boot sufficient given that operator
   overrides update the registry immediately?
+
+## Implementation notes and deviations
+
+The mechanism shipped with the SolidJS front-end adoption
+(`docs/execplans/adopt-solidjs-ui-followups.md`). The delivered behaviour
+follows this RFC with the following deliberate deviations:
+
+- **Storage**: deployment-scoped overrides live in a dedicated
+  `feature_flag_overrides` table (primary key `(deployment_id, flag_name)`;
+  Postgres migration `V18`, libsql incremental 18) rather than a
+  deployment-aware extension of the `settings` table. This keeps the
+  `(user_id, key)` settings contract untouched and avoids a libsql
+  table rebuild; the API surface (`feature_flag:` key prefix,
+  `X-Deployment-Id` header) is unchanged.
+- **Reads default the deployment**: `GET /api/features` treats
+  `X-Deployment-Id` as optional and resolves to the `"default"`
+  deployment when absent, because the browser boot fetch has no
+  deployment identity source. Writes require the header, as specified.
+- **Settings API access to flag keys**: `GET` and `DELETE` of
+  `feature_flag:` keys through `/api/settings` return 400, directing
+  callers to `GET /api/features`; flag rows never enter the user-scoped
+  settings table.
+- **Subsystem-availability defaults** are implemented as a
+  disable-only layer: when a flag's backing subsystem is absent from
+  `GatewayState` (jobs and routines runtimes, extension manager, skill
+  registry, log broadcaster), the flag defaults to `false`; presence of
+  a subsystem falls through to the compiled default rather than
+  enabling a flag early. Environment variables and operator overrides
+  still take precedence.
+- **Gateway version correlation** (open question 1) is provided as an
+  `X-Axinite-Version` response header on `GET /api/features`,
+  preserving the flat boolean-map body.
+- **Flag-change SSE event** (open question 2) remains deferred; it is
+  tracked as roadmap task 4.5.7.
+- **Front-end consumption** (§5) is realized in the SolidJS workspace
+  (`web-src/axinite/src/lib/feature-flags/`) rather than the retired
+  legacy `app.js`; the browser additionally supports localStorage
+  overrides for preview and testing.
 
 ## Recommendation
 

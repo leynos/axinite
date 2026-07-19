@@ -5,7 +5,9 @@
 //!
 //! 1. `FEATURE_FLAG_<UPPER_SNAKE_NAME>` environment variable (highest),
 //! 2. deployment-scoped operator override (from the registry / store),
-//! 3. compiled default (lowest).
+//! 3. subsystem-availability default (forces a flag off when its backing
+//!    subsystem is not wired into `GatewayState`; never enables a flag),
+//! 4. compiled default (lowest).
 //!
 //! For the environment layer, the value `true` (case-insensitively) enables the
 //! flag; any other set value disables it; unset falls through to the next
@@ -52,10 +54,15 @@ pub fn routes() -> Router<Arc<GatewayState>> {
     Router::new().route("/api/features", get(features_handler))
 }
 
+/// Response header carrying the gateway build version so browsers can
+/// correlate flag availability with the host build without polluting the flat
+/// RFC 0009 body shape.
+pub const VERSION_HEADER: &str = "x-axinite-version";
+
 pub async fn features_handler(
     State(state): State<Arc<GatewayState>>,
     headers: HeaderMap,
-) -> Json<BTreeMap<String, bool>> {
+) -> impl axum::response::IntoResponse {
     let deployment_id =
         deployment_id_from_headers(&headers).unwrap_or_else(|| DEFAULT_DEPLOYMENT_ID.to_string());
 
@@ -66,8 +73,48 @@ pub async fn features_handler(
         .read()
         .await
         .overrides_for(&deployment_id);
+    let unavailable = unavailable_subsystem_flags(&state).await;
 
-    Json(resolve_flags(|name| std::env::var(name).ok(), &overrides))
+    (
+        [(VERSION_HEADER, env!("CARGO_PKG_VERSION"))],
+        Json(resolve_flags(
+            |name| std::env::var(name).ok(),
+            &overrides,
+            &unavailable,
+        )),
+    )
+}
+
+/// Flags whose backing subsystem is absent from `GatewayState`, per the
+/// registry's own `backendContract` metadata (for example `route_jobs` is
+/// "hide when jobs runtime is absent").
+///
+/// The subsystem layer only ever *disables*: presence of a subsystem falls
+/// through to the compiled default rather than enabling a flag early.
+async fn unavailable_subsystem_flags(state: &GatewayState) -> Vec<&'static str> {
+    let mut unavailable = Vec::new();
+
+    let scheduler_present = match state.scheduler.as_ref() {
+        Some(slot) => slot.read().await.is_some(),
+        None => false,
+    };
+    if state.job_manager.is_none() && !scheduler_present {
+        unavailable.extend(["route_jobs", "action_job_restart"]);
+    }
+    if !state.routine_engine.read().await.is_some() {
+        unavailable.extend(["route_routines", "action_routine_trigger"]);
+    }
+    if state.extension_manager.is_none() {
+        unavailable.extend(["route_extensions", "action_extension_install"]);
+    }
+    if state.skill_registry.is_none() {
+        unavailable.extend(["route_skills", "action_skill_install"]);
+    }
+    if state.log_broadcaster.is_none() {
+        unavailable.extend(["route_logs", "panel_logs"]);
+    }
+
+    unavailable
 }
 
 /// Ensure the registry has loaded the given deployment's overrides from the
@@ -106,13 +153,16 @@ async fn ensure_deployment_hydrated(state: &GatewayState, deployment_id: &str) {
 }
 
 /// Resolve every known flag through the precedence chain: environment variable
-/// > deployment override > compiled default.
+/// > deployment override > subsystem-availability default > compiled default.
 ///
-/// Only names in [`FLAG_DEFAULTS`] are emitted; unknown override names are
-/// ignored, matching RFC 0009's flag-name validation posture.
+/// `unavailable` lists flags whose backing subsystem is absent; they resolve
+/// to `false` unless an environment variable or operator override says
+/// otherwise. Only names in [`FLAG_DEFAULTS`] are emitted; unknown override
+/// names are ignored, matching RFC 0009's flag-name validation posture.
 fn resolve_flags(
     env: impl Fn(&str) -> Option<String>,
     overrides: &HashMap<String, bool>,
+    unavailable: &[&str],
 ) -> BTreeMap<String, bool> {
     FLAG_DEFAULTS
         .iter()
@@ -120,7 +170,13 @@ fn resolve_flags(
             let variable = format!("FEATURE_FLAG_{}", name.to_ascii_uppercase());
             let value = match env(&variable) {
                 Some(raw) => raw.eq_ignore_ascii_case("true"),
-                None => overrides.get(*name).copied().unwrap_or(*default),
+                None => overrides.get(*name).copied().unwrap_or_else(|| {
+                    if unavailable.contains(name) {
+                        false
+                    } else {
+                        *default
+                    }
+                }),
             };
             ((*name).to_string(), value)
         })
@@ -172,7 +228,7 @@ mod tests {
 
     #[test]
     fn defaults_apply_when_no_environment_or_override_exists() {
-        let flags = resolve_flags(|_| None, &no_overrides());
+        let flags = resolve_flags(|_| None, &no_overrides(), &[]);
         assert_eq!(flags.get("route_chat"), Some(&true));
         assert_eq!(flags.get("panel_logs"), Some(&true));
         assert_eq!(flags.get("action_memory_edit"), Some(&false));
@@ -188,6 +244,7 @@ mod tests {
                 _ => None,
             },
             &no_overrides(),
+            &[],
         );
         assert_eq!(flags.get("action_memory_edit"), Some(&true));
         assert_eq!(flags.get("route_skills"), Some(&false));
@@ -200,6 +257,7 @@ mod tests {
         let flags = resolve_flags(
             |name| (name == "FEATURE_FLAG_ROUTE_CHAT").then(|| "1".to_string()),
             &no_overrides(),
+            &[],
         );
         assert_eq!(flags.get("route_chat"), Some(&false));
     }
@@ -209,7 +267,7 @@ mod tests {
         let mut overrides = HashMap::new();
         overrides.insert("panel_logs".to_string(), false);
         overrides.insert("action_job_restart".to_string(), true);
-        let flags = resolve_flags(|_| None, &overrides);
+        let flags = resolve_flags(|_| None, &overrides, &[]);
         assert_eq!(flags.get("panel_logs"), Some(&false));
         assert_eq!(flags.get("action_job_restart"), Some(&true));
         // A flag with no override keeps its default.
@@ -223,6 +281,7 @@ mod tests {
         let flags = resolve_flags(
             |name| (name == "FEATURE_FLAG_ROUTE_CHAT").then(|| "true".to_string()),
             &overrides,
+            &[],
         );
         // Env var wins over the override.
         assert_eq!(flags.get("route_chat"), Some(&true));
@@ -232,8 +291,56 @@ mod tests {
     fn unknown_override_names_are_ignored() {
         let mut overrides = HashMap::new();
         overrides.insert("not_a_real_flag".to_string(), true);
-        let flags = resolve_flags(|_| None, &overrides);
+        let flags = resolve_flags(|_| None, &overrides, &[]);
         assert!(!flags.contains_key("not_a_real_flag"));
         assert_eq!(flags.len(), FLAG_DEFAULTS.len());
+    }
+
+    #[test]
+    fn unavailable_subsystem_forces_a_flag_off() {
+        let flags = resolve_flags(|_| None, &no_overrides(), &["route_routines"]);
+        assert_eq!(flags.get("route_routines"), Some(&false));
+        // Other flags keep their compiled defaults.
+        assert_eq!(flags.get("route_jobs"), Some(&true));
+    }
+
+    #[test]
+    fn override_beats_subsystem_unavailability() {
+        let overrides = HashMap::from([("route_routines".to_string(), true)]);
+        let flags = resolve_flags(|_| None, &overrides, &["route_routines"]);
+        assert_eq!(flags.get("route_routines"), Some(&true));
+    }
+
+    #[test]
+    fn environment_variable_beats_subsystem_unavailability() {
+        let flags = resolve_flags(
+            |name| (name == "FEATURE_FLAG_ROUTE_JOBS").then(|| "true".to_string()),
+            &no_overrides(),
+            &["route_jobs"],
+        );
+        assert_eq!(flags.get("route_jobs"), Some(&true));
+    }
+
+    #[test]
+    fn subsystem_layer_never_enables_a_flag() {
+        // action flags default off; an available subsystem must not flip them.
+        let flags = resolve_flags(|_| None, &no_overrides(), &[]);
+        assert_eq!(flags.get("action_job_restart"), Some(&false));
+    }
+
+    #[tokio::test]
+    async fn bare_test_state_reports_all_gated_subsystems_unavailable() {
+        let state = crate::channels::web::test_helpers::TestGatewayBuilder::new().build();
+        let unavailable = unavailable_subsystem_flags(&state).await;
+        for flag in [
+            "route_jobs",
+            "route_routines",
+            "route_extensions",
+            "route_skills",
+            "route_logs",
+            "panel_logs",
+        ] {
+            assert!(unavailable.contains(&flag), "missing {flag}");
+        }
     }
 }
