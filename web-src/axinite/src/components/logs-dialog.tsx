@@ -75,7 +75,7 @@ export const LogsDialog = () => {
                     {formatTimestamp(entry.timestamp)} · {entry.level}
                   </p>
                   <p class="logs-panel__message">
-                    [{entry.source}] {entry.message}
+                    [{entry.target}] {entry.message}
                   </p>
                 </article>
               )}
