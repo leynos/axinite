@@ -241,4 +241,285 @@ describe("stub SSE contract", () => {
       expect(payload.type).toBe(frame.event);
     }
   });
+
+  it("emits a restart sequence with a named restart tool before the response", async () => {
+    const state = new MockBackendState();
+    const response = await handleMockRequest(
+      request("/api/chat/events"),
+      state
+    );
+
+    const send = await handleMockRequest(
+      request("/api/chat/send", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ content: "/restart" }),
+      }),
+      state
+    );
+    expect(send.status).toBe(202);
+
+    const frames = await collectSse(response, (seen) =>
+      seen.some((frame) => frame.event === "response")
+    );
+    const order = frames.map((frame) => frame.event);
+    const toolCompletedIndex = order.findIndex((event, index) => {
+      if (event !== "tool_completed") {
+        return false;
+      }
+      const payload = JSON.parse(frames[index].data) as { name: string };
+      return payload.name === "restart";
+    });
+    const responseIndex = order.indexOf("response");
+    expect(toolCompletedIndex).toBeGreaterThanOrEqual(0);
+    expect(responseIndex).toBeGreaterThan(toolCompletedIndex);
+
+    const toolStartedFrame = frames[order.indexOf("tool_started")];
+    expect(JSON.parse(toolStartedFrame.data)).toMatchObject({
+      name: "restart",
+    });
+
+    const responseFrame = frames[responseIndex];
+    expect(JSON.parse(responseFrame.data)).toMatchObject({
+      content: expect.stringContaining("Restart initiated"),
+    });
+  });
+
+  it("emits image_generated with an inline data URL for image-flavoured prompts", async () => {
+    const state = new MockBackendState();
+    const response = await handleMockRequest(
+      request("/api/chat/events"),
+      state
+    );
+
+    const send = await handleMockRequest(
+      request("/api/chat/send", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ content: "Generate an image of a robot panda" }),
+      }),
+      state
+    );
+    expect(send.status).toBe(202);
+
+    const frames = await collectSse(response, (seen) =>
+      seen.some((frame) => frame.event === "response")
+    );
+
+    const imageFrame = frames.find(
+      (frame) => frame.event === "image_generated"
+    );
+    expect(imageFrame).toBeDefined();
+    const payload = JSON.parse(imageFrame?.data ?? "{}") as {
+      data_url: string;
+      path?: string;
+    };
+    expect(payload.data_url).toMatch(/^data:image\/png;base64,/);
+    expect(payload.path).toBe("workspace/generated/preview.png");
+  });
+
+  it("emits job_started for job-flavoured prompts", async () => {
+    const state = new MockBackendState();
+    const response = await handleMockRequest(
+      request("/api/chat/events"),
+      state
+    );
+
+    const send = await handleMockRequest(
+      request("/api/chat/send", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ content: "Spawn a background job for this" }),
+      }),
+      state
+    );
+    expect(send.status).toBe(202);
+
+    const frames = await collectSse(response, (seen) =>
+      seen.some((frame) => frame.event === "response")
+    );
+
+    const jobFrame = frames.find((frame) => frame.event === "job_started");
+    expect(jobFrame).toBeDefined();
+    expect(JSON.parse(jobFrame?.data ?? "{}")).toMatchObject({
+      job_id: "job-spawned-1",
+      title: "Spawned preview job",
+      browse_url: "/projects/job-spawned-1/",
+    });
+  });
+
+  it("acknowledges attached images in the canned response text", async () => {
+    const state = new MockBackendState();
+    const response = await handleMockRequest(
+      request("/api/chat/events"),
+      state
+    );
+
+    const send = await handleMockRequest(
+      request("/api/chat/send", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          content: "Here are two photos",
+          images: [
+            { media_type: "image/png", data: "AA==" },
+            { media_type: "image/png", data: "AA==" },
+          ],
+        }),
+      }),
+      state
+    );
+    expect(send.status).toBe(202);
+
+    const frames = await collectSse(response, (seen) =>
+      seen.some((frame) => frame.event === "response")
+    );
+    const responseFrame = frames.find((frame) => frame.event === "response");
+    expect(responseFrame).toBeDefined();
+    const payload = JSON.parse(responseFrame?.data ?? "{}") as {
+      content: string;
+    };
+    expect(payload.content).toContain("Received 2 image attachment(s).");
+  });
+
+  it("publishes auth_completed on the chat stream when a chat auth token succeeds", async () => {
+    const state = new MockBackendState();
+    const response = await handleMockRequest(
+      request("/api/chat/events"),
+      state
+    );
+
+    const authResponse = await handleMockRequest(
+      request("/api/chat/auth-token", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          extension_name: "google-drive",
+          token: "valid-token",
+        }),
+      }),
+      state
+    );
+    expect(authResponse.status).toBe(200);
+    const authBody = (await authResponse.json()) as { success: boolean };
+    expect(authBody.success).toBe(true);
+
+    const frames = await collectSse(response, (seen) =>
+      seen.some((frame) => frame.event === "auth_completed")
+    );
+    const authFrame = frames.find((frame) => frame.event === "auth_completed");
+    expect(authFrame).toBeDefined();
+    expect(JSON.parse(authFrame?.data ?? "{}")).toMatchObject({
+      type: "auth_completed",
+      extension_name: "google-drive",
+      success: true,
+      message: "Authentication completed.",
+    });
+  });
+
+  it("rejects a chat auth token that is too short", async () => {
+    const state = new MockBackendState();
+    const response = await handleMockRequest(
+      request("/api/chat/auth-token", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ extension_name: "google-drive", token: "abc" }),
+      }),
+      state
+    );
+    expect(response.status).toBe(200);
+    const body = (await response.json()) as { success: boolean };
+    expect(body.success).toBe(false);
+  });
+
+  it("cancels a chat auth flow", async () => {
+    const state = new MockBackendState();
+    const response = await handleMockRequest(
+      request("/api/chat/auth-cancel", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ extension_name: "google-drive" }),
+      }),
+      state
+    );
+    expect(response.status).toBe(200);
+    const body = (await response.json()) as { success: boolean };
+    expect(body.success).toBe(true);
+  });
+});
+
+describe("stub pairing contract", () => {
+  it("returns an empty request list for an unknown channel", async () => {
+    const state = new MockBackendState();
+    const list = (await getJson(state, "/api/pairing/does-not-exist")) as {
+      channel: string;
+      requests: unknown[];
+    };
+    expect(list.channel).toBe("does-not-exist");
+    expect(list.requests).toEqual([]);
+  });
+
+  it("lists the deterministic whatsapp pending pairing request", async () => {
+    const state = new MockBackendState();
+    const list = (await getJson(state, "/api/pairing/whatsapp")) as {
+      channel: string;
+      requests: { code: string; sender_id: string; created_at: string }[];
+    };
+    expect(list.requests).toHaveLength(1);
+    expect(list.requests[0]).toMatchObject({
+      code: "PAIR-1234",
+      sender_id: "user-42",
+    });
+  });
+
+  it("approves a known pairing code and removes it from the list", async () => {
+    const state = new MockBackendState();
+    const approve = await handleMockRequest(
+      request("/api/pairing/whatsapp/approve", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ code: "PAIR-1234" }),
+      }),
+      state
+    );
+    expect(approve.status).toBe(200);
+    const body = (await approve.json()) as { success: boolean };
+    expect(body.success).toBe(true);
+
+    const list = (await getJson(state, "/api/pairing/whatsapp")) as {
+      requests: unknown[];
+    };
+    expect(list.requests).toEqual([]);
+  });
+
+  it("returns success: false with 200 for an unknown pairing code", async () => {
+    const state = new MockBackendState();
+    const approve = await handleMockRequest(
+      request("/api/pairing/whatsapp/approve", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ code: "NOT-A-CODE" }),
+      }),
+      state
+    );
+    expect(approve.status).toBe(200);
+    const body = (await approve.json()) as { success: boolean };
+    expect(body.success).toBe(false);
+  });
+
+  it("returns a plain-text 429 for the rate-limited fixture code", async () => {
+    const state = new MockBackendState();
+    const approve = await handleMockRequest(
+      request("/api/pairing/whatsapp/approve", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ code: "rate-limited" }),
+      }),
+      state
+    );
+    expect(approve.status).toBe(429);
+    expect(approve.headers.get("content-type")).toContain("text/plain");
+    const text = await approve.text();
+    expect(text).toBe("Too many failed approve attempts; try again later");
+  });
 });
