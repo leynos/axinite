@@ -364,7 +364,13 @@ chat-status-tool-failed = { $name } is mislukt.
 chat-status-complete = Antwoord voltooid.
 chat-response-pending = Wacht op voltooiing…
 chat-approval-approve = Goedkeuren
+chat-approval-always = Altijd
 chat-approval-deny = Weigeren
+
+connection-status-idle = Inactief
+connection-status-connecting = Verbinden…
+connection-status-connected = Verbonden
+connection-status-disconnected = Verbroken
 chat-upload-unavailable = Mock-backendvoorbeeld bewaart geen bestandsuploads.
 chat-sidebar-conversations = Gesprekken
 chat-tools-used = { $count ->
@@ -424,3 +430,82 @@ auth-checking = Gateway-toegang wordt gecontroleerd…
 auth-error-rejected = De gateway heeft het token geweigerd.
 auth-error-unreachable = De gateway is niet bereikbaar. Probeer het opnieuw zodra deze draait.
 jobs-load-error = Jobs konden niet vanaf de gateway worden geladen. Controleer de verbinding en probeer het opnieuw.
+
+# Chat media, auth cards, and job-start cards
+chat-attach-images = Afbeeldingen bijvoegen
+chat-attachment-strip-label = Voorbereide afbeeldingsbijlagen
+chat-attachment-invalid-type = Alleen afbeeldingsbestanden kunnen worden bijgevoegd.
+chat-attachment-too-large = { $name } is groter dan de limiet van 5 MB.
+chat-attachment-too-many = U kunt maximaal 5 afbeeldingen per bericht bijvoegen.
+chat-attachment-remove = { $name } verwijderen
+chat-generated-image-alt = Gegenereerde afbeelding
+chat-job-card-fallback-title = Sandbox-taak
+chat-job-card-id = Taak { $id }
+chat-job-card-open = Openen in Taken
+chat-job-card-browse = Bladeren
+chat-auth-card-title = Authenticatie vereist voor { $name }
+chat-auth-card-oauth = Authenticeren
+chat-auth-card-get-token = Uw token ophalen
+chat-auth-card-token-label = Toegangstoken
+chat-auth-card-token-placeholder = Token plakken…
+chat-auth-card-submit = Verzenden
+chat-auth-card-cancel = Annuleren
+chat-auth-card-error = Authenticatie mislukt. Controleer het token en probeer het opnieuw.
+chat-auth-notice-dismiss = Sluiten
+
+# Gateway opnieuw starten
+restart-action = Gateway opnieuw starten
+restart-confirm-title = Gateway opnieuw starten?
+restart-confirm-description = Hiermee wordt de opdracht /restart verstuurd en de gateway kort onderbroken. Actieve streams maken automatisch opnieuw verbinding.
+restart-confirm-accept = Opnieuw starten
+restart-confirm-cancel = Annuleren
+restart-progress = Gateway wordt opnieuw gestart…
+restart-complete = Gateway opnieuw gestart.
+
+# TEE-attestatieoppervlak
+tee-shield-label = TEE-attestatie bekijken
+tee-popover-title = TEE-attestatie
+tee-field-image-digest = Image-digest
+tee-field-tls-fingerprint = TLS-certificaatvingerafdruk
+tee-field-report-data = Rapportgegevens
+tee-field-vm-config = VM-configuratie
+tee-copy-report = Volledig rapport kopiëren
+tee-value-empty = N.v.t.
+tee-report-loading = Attestatierapport laden…
+tee-report-error = Kon attestatierapport niet laden
+
+# WASM-kanaalactivering en -koppeling
+extensions-stepper-label = Activeringsvoortgang
+extensions-stepper-installed = Geïnstalleerd
+extensions-stepper-configured = Geconfigureerd
+extensions-stepper-active = Actief
+extensions-stepper-awaiting-pairing = Wacht op koppeling
+extensions-stepper-state-completed = Voltooid
+extensions-stepper-state-failed = Mislukt
+extensions-stepper-state-in-progress = Bezig
+extensions-stepper-state-pending = In behandeling
+extensions-pairing-heading = Openstaande koppelingsverzoeken
+extensions-pairing-from = van { $sender }
+extensions-pairing-approve = Goedkeuren
+extensions-pairing-approve-label = Koppeling { $code } goedkeuren
+
+# Jobs detail tabs (F6)
+jobs-tab-overview = Overzicht
+jobs-tab-activity = Activiteit
+jobs-tab-files = Bestanden
+jobs-meta-mode = Modus
+jobs-meta-kind = Soort
+jobs-meta-project = Projectmap
+jobs-meta-unset = Niet ingesteld
+jobs-transitions-title = Tijdlijn
+jobs-transitions-empty = Nog geen overgangen vastgelegd.
+jobs-browse-link = Projectbrowser openen
+jobs-activity-empty = Nog geen activiteit.
+jobs-activity-kind-message = Bericht
+jobs-activity-kind-tool-use = Toolaanroep
+jobs-activity-kind-tool-result = Toolresultaat
+jobs-activity-kind-status = Status
+jobs-activity-kind-result = Resultaat
+jobs-files-empty = Nog geen bestanden geproduceerd.
+jobs-file-tree-label = Taakbestanden
+jobs-prompt-done-label = Markeren als voltooid

@@ -364,7 +364,13 @@ chat-status-tool-failed = { $name } が失敗しました。
 chat-status-complete = 応答が完了しました。
 chat-response-pending = 完了を待っています…
 chat-approval-approve = 承認
+chat-approval-always = 常に許可
 chat-approval-deny = 拒否
+
+connection-status-idle = 待機中
+connection-status-connecting = 接続中…
+connection-status-connected = 接続済み
+connection-status-disconnected = 切断
 chat-upload-unavailable = モックバックエンドのプレビューではファイルアップロードは保存されません。
 chat-sidebar-conversations = 会話
 chat-tools-used = { $count }個のツールを使用
@@ -421,3 +427,82 @@ auth-checking = ゲートウェイアクセスを確認しています…
 auth-error-rejected = ゲートウェイがトークンを拒否しました。
 auth-error-unreachable = ゲートウェイに接続できません。起動後に再試行してください。
 jobs-load-error = ゲートウェイからジョブを読み込めませんでした。接続を確認して再試行してください。
+
+# Chat media, auth cards, and job-start cards
+chat-attach-images = 画像を添付
+chat-attachment-strip-label = 添付予定の画像
+chat-attachment-invalid-type = 添付できるのは画像ファイルのみです。
+chat-attachment-too-large = { $name } は 5 MB の上限を超えています。
+chat-attachment-too-many = 1 メッセージにつき最大 5 枚まで画像を添付できます。
+chat-attachment-remove = { $name } を削除
+chat-generated-image-alt = 生成された画像
+chat-job-card-fallback-title = サンドボックスジョブ
+chat-job-card-id = ジョブ { $id }
+chat-job-card-open = ジョブで開く
+chat-job-card-browse = 参照
+chat-auth-card-title = { $name } には認証が必要です
+chat-auth-card-oauth = 認証する
+chat-auth-card-get-token = トークンを取得
+chat-auth-card-token-label = アクセストークン
+chat-auth-card-token-placeholder = トークンを貼り付け…
+chat-auth-card-submit = 送信
+chat-auth-card-cancel = キャンセル
+chat-auth-card-error = 認証に失敗しました。トークンを確認して再試行してください。
+chat-auth-notice-dismiss = 閉じる
+
+# ゲートウェイ再起動
+restart-action = ゲートウェイを再起動
+restart-confirm-title = ゲートウェイを再起動しますか？
+restart-confirm-description = /restart コマンドを送信し、ゲートウェイを一時的に中断します。アクティブなストリームは自動的に再接続します。
+restart-confirm-accept = 再起動
+restart-confirm-cancel = キャンセル
+restart-progress = ゲートウェイを再起動しています…
+restart-complete = ゲートウェイを再起動しました。
+
+# TEE 認証サーフェス
+tee-shield-label = TEE 認証を表示
+tee-popover-title = TEE 認証
+tee-field-image-digest = イメージダイジェスト
+tee-field-tls-fingerprint = TLS 証明書フィンガープリント
+tee-field-report-data = レポートデータ
+tee-field-vm-config = VM 構成
+tee-copy-report = レポート全体をコピー
+tee-value-empty = 該当なし
+tee-report-loading = 認証レポートを読み込んでいます…
+tee-report-error = 認証レポートを読み込めませんでした
+
+# WASM チャネルの有効化とペアリング
+extensions-stepper-label = 有効化の進行状況
+extensions-stepper-installed = インストール済み
+extensions-stepper-configured = 構成済み
+extensions-stepper-active = 有効
+extensions-stepper-awaiting-pairing = ペアリング待ち
+extensions-stepper-state-completed = 完了
+extensions-stepper-state-failed = 失敗
+extensions-stepper-state-in-progress = 進行中
+extensions-stepper-state-pending = 保留中
+extensions-pairing-heading = 保留中のペアリング要求
+extensions-pairing-from = { $sender } から
+extensions-pairing-approve = 承認
+extensions-pairing-approve-label = ペアリング { $code } を承認
+
+# Jobs detail tabs (F6)
+jobs-tab-overview = 概要
+jobs-tab-activity = アクティビティ
+jobs-tab-files = ファイル
+jobs-meta-mode = モード
+jobs-meta-kind = 種類
+jobs-meta-project = プロジェクトディレクトリ
+jobs-meta-unset = 未設定
+jobs-transitions-title = タイムライン
+jobs-transitions-empty = 遷移はまだ記録されていません。
+jobs-browse-link = プロジェクトブラウザーを開く
+jobs-activity-empty = アクティビティはまだありません。
+jobs-activity-kind-message = メッセージ
+jobs-activity-kind-tool-use = ツール呼び出し
+jobs-activity-kind-tool-result = ツール結果
+jobs-activity-kind-status = ステータス
+jobs-activity-kind-result = 結果
+jobs-files-empty = ファイルはまだ生成されていません。
+jobs-file-tree-label = ジョブファイル
+jobs-prompt-done-label = 完了としてマーク

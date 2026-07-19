@@ -366,7 +366,13 @@ chat-status-tool-failed = { $name } a échoué.
 chat-status-complete = Réponse terminée.
 chat-response-pending = En attente de complétion…
 chat-approval-approve = Approuver
+chat-approval-always = Toujours
 chat-approval-deny = Refuser
+
+connection-status-idle = Inactif
+connection-status-connecting = Connexion…
+connection-status-connected = Connecté
+connection-status-disconnected = Déconnecté
 chat-upload-unavailable = L’aperçu du backend mock ne conserve pas les fichiers téléversés.
 chat-sidebar-conversations = Conversations
 chat-tools-used = { $count ->
@@ -433,3 +439,82 @@ auth-checking = Vérification de l'accès à la passerelle…
 auth-error-rejected = La passerelle a rejeté le jeton.
 auth-error-unreachable = La passerelle est injoignable. Réessayez lorsqu'elle est en cours d'exécution.
 jobs-load-error = Impossible de charger les jobs depuis la passerelle. Vérifiez la connexion et réessayez.
+
+# Chat media, auth cards, and job-start cards
+chat-attach-images = Joindre des images
+chat-attachment-strip-label = Images jointes en attente
+chat-attachment-invalid-type = Seuls les fichiers image peuvent être joints.
+chat-attachment-too-large = { $name } dépasse la limite de 5 Mo.
+chat-attachment-too-many = Vous pouvez joindre au maximum 5 images par message.
+chat-attachment-remove = Supprimer { $name }
+chat-generated-image-alt = Image générée
+chat-job-card-fallback-title = Tâche du bac à sable
+chat-job-card-id = Tâche { $id }
+chat-job-card-open = Ouvrir dans Tâches
+chat-job-card-browse = Parcourir
+chat-auth-card-title = Authentification requise pour { $name }
+chat-auth-card-oauth = S’authentifier
+chat-auth-card-get-token = Obtenir votre jeton
+chat-auth-card-token-label = Jeton d’accès
+chat-auth-card-token-placeholder = Coller le jeton…
+chat-auth-card-submit = Envoyer
+chat-auth-card-cancel = Annuler
+chat-auth-card-error = Échec de l’authentification. Vérifiez le jeton et réessayez.
+chat-auth-notice-dismiss = Fermer
+
+# Affordance de redémarrage de la passerelle
+restart-action = Redémarrer la passerelle
+restart-confirm-title = Redémarrer la passerelle ?
+restart-confirm-description = Ceci envoie la commande /restart et interrompt brièvement la passerelle. Les flux actifs se reconnectent automatiquement.
+restart-confirm-accept = Redémarrer
+restart-confirm-cancel = Annuler
+restart-progress = Redémarrage de la passerelle…
+restart-complete = Passerelle redémarrée.
+
+# Surface d'attestation TEE
+tee-shield-label = Voir l'attestation TEE
+tee-popover-title = Attestation TEE
+tee-field-image-digest = Empreinte de l'image
+tee-field-tls-fingerprint = Empreinte du certificat TLS
+tee-field-report-data = Données du rapport
+tee-field-vm-config = Configuration de la VM
+tee-copy-report = Copier le rapport complet
+tee-value-empty = N/D
+tee-report-loading = Chargement du rapport d'attestation…
+tee-report-error = Impossible de charger le rapport d'attestation
+
+# Activation et appairage des canaux WASM
+extensions-stepper-label = Progression de l'activation
+extensions-stepper-installed = Installé
+extensions-stepper-configured = Configuré
+extensions-stepper-active = Actif
+extensions-stepper-awaiting-pairing = En attente d'appairage
+extensions-stepper-state-completed = Terminé
+extensions-stepper-state-failed = Échec
+extensions-stepper-state-in-progress = En cours
+extensions-stepper-state-pending = En attente
+extensions-pairing-heading = Demandes d'appairage en attente
+extensions-pairing-from = de { $sender }
+extensions-pairing-approve = Approuver
+extensions-pairing-approve-label = Approuver l'appairage { $code }
+
+# Jobs detail tabs (F6)
+jobs-tab-overview = Aperçu
+jobs-tab-activity = Activité
+jobs-tab-files = Fichiers
+jobs-meta-mode = Mode
+jobs-meta-kind = Type
+jobs-meta-project = Répertoire du projet
+jobs-meta-unset = Non défini
+jobs-transitions-title = Chronologie
+jobs-transitions-empty = Aucune transition enregistrée pour l’instant.
+jobs-browse-link = Ouvrir le navigateur de projet
+jobs-activity-empty = Aucune activité pour l’instant.
+jobs-activity-kind-message = Message
+jobs-activity-kind-tool-use = Appel d’outil
+jobs-activity-kind-tool-result = Résultat d’outil
+jobs-activity-kind-status = Statut
+jobs-activity-kind-result = Résultat
+jobs-files-empty = Aucun fichier produit pour l’instant.
+jobs-file-tree-label = Fichiers de la tâche
+jobs-prompt-done-label = Marquer comme terminé
