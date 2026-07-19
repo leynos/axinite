@@ -364,7 +364,13 @@ chat-status-tool-failed = فشل { $name }.
 chat-status-complete = اكتملت الاستجابة.
 chat-response-pending = في انتظار الاكتمال…
 chat-approval-approve = موافقة
+chat-approval-always = دائمًا
 chat-approval-deny = رفض
+
+connection-status-idle = خامل
+connection-status-connecting = جارٍ الاتصال…
+connection-status-connected = متصل
+connection-status-disconnected = غير متصل
 chat-upload-unavailable = لا تحتفظ معاينة الخلفية التجريبية بالملفات المرفوعة.
 chat-sidebar-conversations = المحادثات
 chat-tools-used = { $count ->
@@ -427,3 +433,82 @@ auth-checking = يجري التحقق من الوصول إلى البوابة…
 auth-error-rejected = رفضت البوابة الرمز.
 auth-error-unreachable = تعذر الوصول إلى البوابة. أعد المحاولة عند تشغيلها.
 jobs-load-error = تعذر تحميل المهام من البوابة. تحقق من الاتصال وحاول مرة أخرى.
+
+# Chat media, auth cards, and job-start cards
+chat-attach-images = إرفاق صور
+chat-attachment-strip-label = مرفقات الصور المُعدّة
+chat-attachment-invalid-type = لا يمكن إرفاق سوى ملفات الصور.
+chat-attachment-too-large = { $name } أكبر من الحد الأقصى البالغ 5 ميغابايت.
+chat-attachment-too-many = يمكنك إرفاق 5 صور كحد أقصى لكل رسالة.
+chat-attachment-remove = إزالة { $name }
+chat-generated-image-alt = صورة مُولّدة
+chat-job-card-fallback-title = مهمة الصندوق الرملي
+chat-job-card-id = المهمة { $id }
+chat-job-card-open = فتح في المهام
+chat-job-card-browse = تصفّح
+chat-auth-card-title = المصادقة مطلوبة لـ { $name }
+chat-auth-card-oauth = مصادقة
+chat-auth-card-get-token = احصل على رمزك
+chat-auth-card-token-label = رمز الوصول
+chat-auth-card-token-placeholder = الصق الرمز…
+chat-auth-card-submit = إرسال
+chat-auth-card-cancel = إلغاء
+chat-auth-card-error = فشلت المصادقة. تحقّق من الرمز وحاول مرة أخرى.
+chat-auth-notice-dismiss = إغلاق
+
+# إعادة تشغيل البوابة
+restart-action = إعادة تشغيل البوابة
+restart-confirm-title = إعادة تشغيل البوابة؟
+restart-confirm-description = يؤدي هذا إلى إرسال الأمر /restart وقطع البوابة لفترة وجيزة. تُعاد التدفقات النشطة تلقائيًا.
+restart-confirm-accept = إعادة التشغيل
+restart-confirm-cancel = إلغاء
+restart-progress = جارٍ إعادة تشغيل البوابة…
+restart-complete = تمت إعادة تشغيل البوابة.
+
+# واجهة إثبات TEE
+tee-shield-label = عرض إثبات TEE
+tee-popover-title = إثبات TEE
+tee-field-image-digest = بصمة الصورة
+tee-field-tls-fingerprint = بصمة شهادة TLS
+tee-field-report-data = بيانات التقرير
+tee-field-vm-config = تكوين الجهاز الافتراضي
+tee-copy-report = نسخ التقرير الكامل
+tee-value-empty = غير متوفر
+tee-report-loading = جارٍ تحميل تقرير الإثبات…
+tee-report-error = تعذّر تحميل تقرير الإثبات
+
+# تفعيل قنوات WASM والإقران
+extensions-stepper-label = تقدّم التفعيل
+extensions-stepper-installed = مُثبّت
+extensions-stepper-configured = مُهيّأ
+extensions-stepper-active = نشط
+extensions-stepper-awaiting-pairing = في انتظار الإقران
+extensions-stepper-state-completed = مكتمل
+extensions-stepper-state-failed = فشل
+extensions-stepper-state-in-progress = قيد التنفيذ
+extensions-stepper-state-pending = قيد الانتظار
+extensions-pairing-heading = طلبات الإقران المعلّقة
+extensions-pairing-from = من { $sender }
+extensions-pairing-approve = الموافقة
+extensions-pairing-approve-label = الموافقة على الإقران { $code }
+
+# Jobs detail tabs (F6)
+jobs-tab-overview = نظرة عامة
+jobs-tab-activity = النشاط
+jobs-tab-files = الملفات
+jobs-meta-mode = الوضع
+jobs-meta-kind = النوع
+jobs-meta-project = دليل المشروع
+jobs-meta-unset = غير محدد
+jobs-transitions-title = المخطط الزمني
+jobs-transitions-empty = لم يتم تسجيل أي انتقالات بعد.
+jobs-browse-link = فتح متصفح المشروع
+jobs-activity-empty = لا يوجد نشاط بعد.
+jobs-activity-kind-message = رسالة
+jobs-activity-kind-tool-use = استدعاء أداة
+jobs-activity-kind-tool-result = نتيجة الأداة
+jobs-activity-kind-status = الحالة
+jobs-activity-kind-result = النتيجة
+jobs-files-empty = لم يتم إنتاج أي ملفات بعد.
+jobs-file-tree-label = ملفات المهمة
+jobs-prompt-done-label = وضع علامة كمكتمل
