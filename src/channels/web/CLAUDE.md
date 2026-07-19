@@ -19,7 +19,7 @@ bearer-token auth.
 | `openai_compat.rs` | OpenAI-compatible proxy routes.                            |
 | `util.rs`          | Shared handler helpers.                                    |
 | `static/solid/`    | Embedded SolidJS SPA build output (default UI).            |
-| `static/`          | Embedded legacy shell assets (rollback via `AXINITE_WEB_UI=legacy`). |
+| `static/`          | Embedded legacy shell (rollback: `AXINITE_WEB_UI=legacy`). |
 
 ## API Routes
 
@@ -136,15 +136,17 @@ require `X-Confirm-Action: true`.
 The public asset routes depend on the UI variant (`AXINITE_WEB_UI`,
 default `solid`; see `routes_for()` in `handlers/static_files.rs`).
 
-Solid variant (default):
+Solid variant (default). The app shell is served at `/` and at each
+client-side route (`/chat`, `/memory`, `/jobs`, `/routines`, `/extensions`,
+`/skills`) so deep links and reloads work.
 
-| Method | Path                              | Description                        |
-| ------ | --------------------------------- | ---------------------------------- |
-| GET    | `/`, `/chat`, `/memory`, `/jobs`, `/routines`, `/extensions`, `/skills` | SolidJS app shell (SPA deep links). |
-| GET    | `/assets/app.js`                  | SPA bundle.                        |
-| GET    | `/assets/index.css`               | SPA stylesheet.                    |
-| GET    | `/assets/axinite32.ico`           | App icon (also `/favicon.ico`).    |
-| GET    | `/locales/{locale}/common.ftl`    | Fluent locale bundle (10 locales). |
+| Method | Path                           | Description                        |
+| ------ | ------------------------------ | ---------------------------------- |
+| GET    | `/` and SPA routes             | SolidJS app shell.                 |
+| GET    | `/assets/app.js`               | SPA bundle.                        |
+| GET    | `/assets/index.css`            | SPA stylesheet.                    |
+| GET    | `/assets/axinite32.ico`        | App icon (also `/favicon.ico`).    |
+| GET    | `/locales/{locale}/common.ftl` | Fluent locale bundle (10 locales). |
 
 Legacy variant (`AXINITE_WEB_UI=legacy`):
 

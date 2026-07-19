@@ -3,7 +3,7 @@ import LanguageDetector from "i18next-browser-languagedetector";
 import Fluent from "i18next-fluent";
 import FluentBackend from "i18next-fluent-backend";
 
-import { normaliseBasePath } from "@/lib/base-path";
+import { normalizeBasePath } from "@/lib/base-path";
 import {
   AVAILABLE_LOCALES,
   DEFAULT_LOCALE,
@@ -72,7 +72,7 @@ function fetchAjax(
 }
 
 export function buildFluentLoadPath(rawBase: string | undefined): string {
-  return `${normaliseBasePath(rawBase)}locales/{{lng}}/{{ns}}.ftl`;
+  return `${normalizeBasePath(rawBase)}locales/{{lng}}/{{ns}}.ftl`;
 }
 
 export function applyDocumentLocale(language: string | undefined): void {

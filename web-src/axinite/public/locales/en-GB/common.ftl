@@ -119,7 +119,7 @@ jobs-meta-created = Created
 jobs-meta-elapsed = Elapsed
 jobs-meta-guardrail = Guardrail
 jobs-prompt-label = Follow-up prompt
-jobs-prompt-placeholder = Summarise the current blocker…
+jobs-prompt-placeholder = Summarize the current blocker…
 jobs-prompt-send = Send
 jobs-prompt-safety = Prompt is sent to the active job context. Responses may take a moment.
 jobs-item-audit-title = Audit Netsuke CI pipeline
@@ -400,7 +400,7 @@ extensions-remove-description = This will uninstall the extension from the curre
 extensions-remove-reinstall-hint = Built-in WASM extensions become available to install again after removal.
 extensions-remove-confirm = Remove extension
 
-jobs-default-prompt = Summarise the current blocker.
+jobs-default-prompt = Summarize the current blocker.
 jobs-elapsed-pending = Pending
 jobs-activity-title = Activity
 jobs-files-title = Files

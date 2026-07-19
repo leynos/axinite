@@ -51,7 +51,7 @@ Today’s implementation is composed of five layers:
 1. **Build and packaging layer:** Bun runs scripts, Vite builds the SPA, and
    `vite-plugin-pwa` generates the service-worker-backed static artefact.
 2. **Application shell layer:** SolidJS, TanStack Router, and a small provider
-   tree define the shell, route tree, feature-flag context, and localisation
+   tree define the shell, route tree, feature-flag context, and localization
    context.
 3. **Route and component layer:** route screens such as chat, memory, jobs,
    routines, extensions, and skills are implemented as focused Solid
@@ -73,7 +73,7 @@ The new front end is built from `axinite/` with Vite rather than being served
 from embedded static files inside the host process. The main consequences are:
 
 - `axinite/src/main.tsx` is the browser entry point and mounts the app after
-  localisation initialization succeeds.
+  localization initialization succeeds.
 - `vite.config.ts` treats `axinite/` as the project root, emits the build into
   repository-level `dist/`, and configures the GitHub Pages base path.
 - `scripts/postbuild-routes.mjs` mirrors route entry points into both root and
@@ -94,9 +94,9 @@ browser testing ecosystem.
 
 The browser runtime is intentionally shallow:
 
-- `axinite/src/main.tsx` waits for localisation readiness, then renders the app.
+- `axinite/src/main.tsx` waits for localization readiness, then renders the app.
 - `axinite/src/app/providers.tsx` wraps the tree in three providers only:
-  TanStack Query, localisation, and feature flags.
+  TanStack Query, localization, and feature flags.
 - `axinite/src/app/router.tsx` defines the route tree and router base path.
 
 That provider stack is a deliberate restraint. It keeps the global runtime
@@ -122,7 +122,7 @@ The front end uses a three-way state split:
 - **Solid signals and memos** own local interaction state, such as the active
   thread, composer draft, optimistic waiting state, and UI selections.
 - **Context providers** own the small number of cross-cutting browser concerns,
-  namely localisation and feature-flag resolution.
+  namely localization and feature-flag resolution.
 
 This is lighter than the fuller v2a stack described in
 `docs/v2a-front-end-stack.md`. There is no Zustand store, no Dexie layer, and
@@ -148,7 +148,7 @@ feature flags as local mock data hidden inside each screen. Instead:
 - route-specific client helpers live in `axinite/src/lib/api/*.ts`, and
 - components consume those helpers through Query and mutations.
 
-This is not just a code organisation preference. It is what allows the UI to
+This is not just a code organization preference. It is what allows the UI to
 act like a real application surface rather than a static storyboard. It also
 means the browser contract is visible and testable in one place, instead of
 being recreated ad hoc in several components.
@@ -236,7 +236,7 @@ Each major route is implemented as a dedicated preview component, for example
 `ExtensionsPreview`, and `SkillsPreview`.
 
 This is a more component-oriented approach than the old front end’s large
-hand-written `app.js`, where one runtime script owns rendering and behaviour
+handwritten `app.js`, where one runtime script owns rendering and behaviour
 for the whole browser experience. The new structure improves locality:
 
 - route-specific behaviour stays with the route component,
@@ -260,15 +260,15 @@ new frontend keeps semantic styling, but moves it into a component-oriented SPA
 layout where routes and styles can evolve together without a monolithic script
 owning all rendering concerns.
 
-## 7. Localisation and feature-flag decisions
+## 7. Localization and feature-flag decisions
 
-### 7.1 Localisation
+### 7.1 Localization
 
 The front end uses `i18next` with Fluent bundles, a narrow detection order, and
 document-level `lang` and `dir` updates. A key design choice here is that the
 runtime only advertises fully translated locales through `AVAILABLE_LOCALES`.
 
-That means localisation is treated as a product-integrity concern, not a
+That means localization is treated as a product-integrity concern, not a
 cosmetic toggle. The app would rather expose fewer languages than offer a mixed
 language shell.
 
@@ -303,7 +303,7 @@ booted for every UI change.
 
 ## 9. How this differs from the older front end in `../axinite`
 
-The differences can be summarised as follows.
+The differences can be summarized as follows.
 
 ### 9.1 Deployment boundary
 
@@ -313,7 +313,7 @@ The differences can be summarised as follows.
 
 ### 9.2 Rendering model
 
-- **Old front end:** hand-written DOM construction in one large browser script.
+- **Old front end:** handwritten DOM construction in one large browser script.
 - **New front end:** component-based SolidJS rendering with explicit route and
   provider composition.
 
@@ -331,7 +331,7 @@ The differences can be summarised as follows.
 - **New front end:** narrower browser contract centred on JSON plus SSE, behind
   a same-origin preview gateway.
 
-### 9.5 State and code organisation
+### 9.5 State and code organization
 
 - **Old front end:** one large script orchestrates most browser state and DOM
   updates.
@@ -361,7 +361,7 @@ The main architectural decisions in this repo were:
 - **Use the lightest state model that remains legible.** Query plus signals and
   context won over a larger state stack because the current surface does not yet
   justify the added indirection.
-- **Protect semantic and localisation integrity.** Semantic CSS classes,
+- **Protect semantic and localization integrity.** Semantic CSS classes,
   semantic HTML, and complete-locale gating are treated as architectural
   concerns, not only implementation details.
 - **Optimise for future integration, not for permanent mock isolation.** The
@@ -386,7 +386,7 @@ architectural split established here:
 - keep product-facing route contracts typed and explicit,
 - keep preview transport same-origin unless there is a compelling reason to
   change the browser contract,
-- treat localisation completeness and semantic accessibility as architecture,
+- treat localization completeness and semantic accessibility as architecture,
   not polish,
 - resist introducing broader state frameworks until there is concrete pressure,
   and

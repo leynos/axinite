@@ -423,3 +423,4 @@ auth-submit = Verbinden
 auth-checking = Gateway-Zugang wird geprüft…
 auth-error-rejected = Das Gateway hat das Token abgelehnt.
 auth-error-unreachable = Das Gateway ist nicht erreichbar. Versuchen Sie es erneut, sobald es läuft.
+jobs-load-error = Jobs konnten nicht vom Gateway geladen werden. Prüfen Sie die Verbindung und versuchen Sie es erneut.

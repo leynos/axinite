@@ -9,9 +9,9 @@ import {
 
 import { AppShell } from "@/components/app-shell";
 import { RoutePage } from "@/components/route-page";
-import { normaliseBasePath } from "@/lib/base-path";
+import { normalizeBasePath } from "@/lib/base-path";
 
-const routerBasePath = normaliseBasePath(
+const routerBasePath = normalizeBasePath(
   import.meta.env.BASE_URL as string | undefined
 );
 

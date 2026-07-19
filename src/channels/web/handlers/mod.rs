@@ -21,3 +21,4 @@ pub mod routines;
 pub mod settings;
 pub mod skills;
 pub mod static_files;
+pub mod ui_assets;

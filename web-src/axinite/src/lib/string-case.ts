@@ -1,4 +1,4 @@
-export function capitalise(value: string): string {
+export function capitalize(value: string): string {
   if (value.length === 0) {
     return value;
   }
@@ -9,6 +9,6 @@ export function capitalise(value: string): string {
 export function pascalCase(value: string): string {
   return value
     .split("_")
-    .map((segment) => capitalise(segment))
+    .map((segment) => capitalize(segment))
     .join("");
 }
