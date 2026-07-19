@@ -18,7 +18,8 @@ bearer-token auth.
 | `handlers/`        | Handler modules grouped by API domain.                     |
 | `openai_compat.rs` | OpenAI-compatible proxy routes.                            |
 | `util.rs`          | Shared handler helpers.                                    |
-| `static/`          | Embedded single-page app assets.                           |
+| `static/solid/`    | Embedded SolidJS SPA build output (default UI).            |
+| `static/`          | Embedded legacy shell assets (rollback via `AXINITE_WEB_UI=legacy`). |
 
 ## API Routes
 
@@ -126,17 +127,38 @@ require `X-Confirm-Action: true`.
 | GET     | `/api/pairing/{channel}`         | List pending pairing requests.                      |
 | POST    | `/api/pairing/{channel}/approve` | Approve a pairing request.                          |
 | GET     | `/api/gateway/status`            | Server uptime, clients, and config.                 |
+| GET     | `/api/features`                  | Deployment feature flags (RFC 0009 subset).         |
 | POST    | `/v1/chat/completions`           | OpenAI-compatible Large Language Model (LLM) proxy. |
 | GET     | `/v1/models`                     | OpenAI-compatible model list.                       |
 
 ### Static And Project Files
 
+The public asset routes depend on the UI variant (`AXINITE_WEB_UI`,
+default `solid`; see `routes_for()` in `handlers/static_files.rs`).
+
+Solid variant (default):
+
+| Method | Path                              | Description                        |
+| ------ | --------------------------------- | ---------------------------------- |
+| GET    | `/`, `/chat`, `/memory`, `/jobs`, `/routines`, `/extensions`, `/skills` | SolidJS app shell (SPA deep links). |
+| GET    | `/assets/app.js`                  | SPA bundle.                        |
+| GET    | `/assets/index.css`               | SPA stylesheet.                    |
+| GET    | `/assets/axinite32.ico`           | App icon (also `/favicon.ico`).    |
+| GET    | `/locales/{locale}/common.ftl`    | Fluent locale bundle (10 locales). |
+
+Legacy variant (`AXINITE_WEB_UI=legacy`):
+
 | Method | Path                             | Description                      |
 | ------ | -------------------------------- | -------------------------------- |
-| GET    | `/`                              | Single-page app HTML.            |
+| GET    | `/`                              | Legacy single-page app HTML.     |
 | GET    | `/style.css`                     | App stylesheet.                  |
 | GET    | `/app.js`                        | App JavaScript.                  |
 | GET    | `/favicon.ico`                   | Favicon, cached for one day.     |
+
+Both variants:
+
+| Method | Path                             | Description                      |
+| ------ | -------------------------------- | -------------------------------- |
 | GET    | `/projects/{project_id}/`        | Redirect into the job browser.   |
 | GET    | `/projects/{project_id}/{*path}` | Serve an authenticated job file. |
 
