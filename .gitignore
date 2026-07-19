@@ -19,6 +19,7 @@ target-codex-*/
 bench-results/
 
 # Coverage reports (local runs, not committed)
+/.coverage
 /coverage/
 
 # WASM build artefacts (loaded from disk, not bundled)
