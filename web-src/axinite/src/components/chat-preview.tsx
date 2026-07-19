@@ -27,9 +27,23 @@ import {
   submitApproval,
   submitAuthToken,
 } from "@/lib/api/chat";
-import type { ImageData, ToolCallInfo } from "@/lib/api/contracts";
+import type {
+  ChatSseEvent,
+  ImageData,
+  ToolCallInfo,
+} from "@/lib/api/contracts";
+import {
+  markConnected,
+  markConnecting,
+  markDisconnected,
+} from "@/lib/connection-status";
 import { useI18n } from "@/lib/i18n/provider";
 import { renderMarkdown } from "@/lib/markdown";
+import {
+  type ChatStreamHooks,
+  registerChatStreamHooks,
+  unregisterChatStreamHooks,
+} from "@/lib/test-hooks";
 
 const MAX_IMAGES = 5;
 const MAX_IMAGE_BYTES = 5 * 1024 * 1024;
@@ -353,7 +367,7 @@ export const ChatPreview = () => {
   }));
 
   const approvalMutation = createMutation(() => ({
-    mutationFn: (action: "approve" | "deny") =>
+    mutationFn: (action: "approve" | "deny" | "always") =>
       submitApproval({
         request_id: history.data?.pending_approval?.request_id ?? "",
         action,
@@ -366,109 +380,137 @@ export const ChatPreview = () => {
     },
   }));
 
+  const handleChatEvent = (event: ChatSseEvent) => {
+    if (
+      "thread_id" in event &&
+      event.thread_id &&
+      event.thread_id !== activeThreadId()
+    ) {
+      return;
+    }
+
+    switch (event.type) {
+      case "thinking":
+      case "status":
+        setLiveStatus(event.message);
+        break;
+      case "tool_started":
+        setLiveStatus(t("chat-status-tool-running", { name: event.name }));
+        break;
+      case "tool_result":
+        setLiveStatus(event.preview);
+        break;
+      case "tool_completed":
+        setLiveStatus(
+          event.success
+            ? t("chat-status-tool-success", { name: event.name })
+            : (event.error ??
+                t("chat-status-tool-failed", { name: event.name }))
+        );
+        break;
+      case "stream_chunk":
+        setIsAwaitingResponse(false);
+        setStreamingResponse((current) => `${current}${event.content}`);
+        break;
+      case "response":
+        setPendingUserMessage("");
+        setIsAwaitingResponse(false);
+        setStreamingResponse("");
+        setLiveStatus(t("chat-status-complete"));
+        void queryClient.invalidateQueries({ queryKey: ["chat", "history"] });
+        void queryClient.invalidateQueries({ queryKey: ["chat", "threads"] });
+        break;
+      case "approval_needed":
+        setPendingUserMessage("");
+        setIsAwaitingResponse(false);
+        setLiveStatus(event.description);
+        void queryClient.invalidateQueries({ queryKey: ["chat", "history"] });
+        break;
+      case "error":
+        setPendingUserMessage("");
+        setIsAwaitingResponse(false);
+        setLiveStatus(event.message);
+        break;
+      case "image_generated":
+        setGeneratedImages((prev) => [
+          ...prev,
+          {
+            id: nextCardId(),
+            dataUrl: event.data_url,
+            path: event.path,
+          },
+        ]);
+        break;
+      case "job_started":
+        setJobCards((prev) => [
+          ...prev,
+          {
+            id: nextCardId(),
+            jobId: event.job_id,
+            title: event.title,
+            browseUrl: event.browse_url,
+          },
+        ]);
+        break;
+      case "auth_required":
+        setAuthCards((prev) => [
+          // Dedupe by extension: a fresh prompt replaces any existing card.
+          ...prev.filter((card) => card.extensionName !== event.extension_name),
+          {
+            extensionName: event.extension_name,
+            instructions: event.instructions,
+            authUrl: event.auth_url,
+            setupUrl: event.setup_url,
+          },
+        ]);
+        break;
+      case "auth_completed":
+        removeAuthCard(event.extension_name);
+        setAuthNotice(event.message);
+        break;
+      case "heartbeat":
+      case "extension_status":
+      case "job_message":
+      case "job_tool_use":
+      case "job_tool_result":
+      case "job_status":
+      case "job_result":
+        break;
+    }
+  };
+
   createEffect(() => {
-    const source = connectChatEvents((event) => {
-      if (
-        "thread_id" in event &&
-        event.thread_id &&
-        event.thread_id !== activeThreadId()
-      ) {
-        return;
-      }
+    let source: EventSource;
 
-      switch (event.type) {
-        case "thinking":
-        case "status":
-          setLiveStatus(event.message);
-          break;
-        case "tool_started":
-          setLiveStatus(t("chat-status-tool-running", { name: event.name }));
-          break;
-        case "tool_result":
-          setLiveStatus(event.preview);
-          break;
-        case "tool_completed":
-          setLiveStatus(
-            event.success
-              ? t("chat-status-tool-success", { name: event.name })
-              : (event.error ??
-                  t("chat-status-tool-failed", { name: event.name }))
-          );
-          break;
-        case "stream_chunk":
-          setIsAwaitingResponse(false);
-          setStreamingResponse((current) => `${current}${event.content}`);
-          break;
-        case "response":
-          setPendingUserMessage("");
-          setIsAwaitingResponse(false);
-          setStreamingResponse("");
-          setLiveStatus(t("chat-status-complete"));
-          void queryClient.invalidateQueries({ queryKey: ["chat", "history"] });
-          void queryClient.invalidateQueries({ queryKey: ["chat", "threads"] });
-          break;
-        case "approval_needed":
-          setPendingUserMessage("");
-          setIsAwaitingResponse(false);
-          setLiveStatus(event.description);
-          void queryClient.invalidateQueries({ queryKey: ["chat", "history"] });
-          break;
-        case "error":
-          setPendingUserMessage("");
-          setIsAwaitingResponse(false);
-          setLiveStatus(event.message);
-          break;
-        case "image_generated":
-          setGeneratedImages((prev) => [
-            ...prev,
-            {
-              id: nextCardId(),
-              dataUrl: event.data_url,
-              path: event.path,
-            },
-          ]);
-          break;
-        case "job_started":
-          setJobCards((prev) => [
-            ...prev,
-            {
-              id: nextCardId(),
-              jobId: event.job_id,
-              title: event.title,
-              browseUrl: event.browse_url,
-            },
-          ]);
-          break;
-        case "auth_required":
-          setAuthCards((prev) => [
-            // Dedupe by extension: a fresh prompt replaces any existing card.
-            ...prev.filter(
-              (card) => card.extensionName !== event.extension_name
-            ),
-            {
-              extensionName: event.extension_name,
-              instructions: event.instructions,
-              authUrl: event.auth_url,
-              setupUrl: event.setup_url,
-            },
-          ]);
-          break;
-        case "auth_completed":
-          removeAuthCard(event.extension_name);
-          setAuthNotice(event.message);
-          break;
-        case "heartbeat":
-        case "extension_status":
-        case "job_message":
-        case "job_tool_use":
-        case "job_tool_result":
-        case "job_status":
-        case "job_result":
-          break;
-      }
+    // Open the chat stream, mirroring the connection state onto the shared
+    // indicator: `connecting` on request, `connected` when the browser fires
+    // `open`, `disconnected` on error. Reconnecting re-runs this same path so
+    // the test hook re-registers listeners exactly as the initial mount does.
+    const connect = () => {
+      markConnecting();
+      source = connectChatEvents(handleChatEvent, () => markDisconnected());
+      source.onopen = () => markConnected();
+      return source;
+    };
+    connect();
+
+    const hooks: ChatStreamHooks = {
+      close: () => {
+        source.close();
+        markDisconnected();
+      },
+      reconnect: () => {
+        source.close();
+        connect();
+      },
+      emit: (event) => handleChatEvent(event),
+    };
+    registerChatStreamHooks(hooks);
+
+    onCleanup(() => {
+      unregisterChatStreamHooks(hooks);
+      source.close();
     });
-
-    onCleanup(() => source.close());
   });
 
   return (
@@ -555,7 +597,10 @@ export const ChatPreview = () => {
               <For each={history.data?.turns ?? []}>
                 {(turn) => (
                   <>
-                    <div class="chat-preview__turn chat-preview__turn--user">
+                    <div
+                      class="chat-preview__turn chat-preview__turn--user"
+                      data-role="user"
+                    >
                       <div class="chat-preview__bubble chat-preview__bubble--user">
                         <p>{turn.user_input}</p>
                       </div>
@@ -569,7 +614,10 @@ export const ChatPreview = () => {
                       />
                     </Show>
                     <Show when={turn.response != null}>
-                      <div class="chat-preview__turn chat-preview__turn--assistant">
+                      <div
+                        class="chat-preview__turn chat-preview__turn--assistant"
+                        data-role="assistant"
+                      >
                         <div class="chat-preview__bubble chat-preview__bubble--assistant">
                           <div
                             class="chat-preview__markdown"
@@ -583,7 +631,10 @@ export const ChatPreview = () => {
                         turn.response == null && turn.tool_calls.length === 0
                       }
                     >
-                      <div class="chat-preview__turn chat-preview__turn--assistant">
+                      <div
+                        class="chat-preview__turn chat-preview__turn--assistant"
+                        data-role="assistant"
+                      >
                         <div class="chat-preview__bubble chat-preview__bubble--assistant">
                           <div class="chat-preview__markdown">
                             <p>{t("chat-response-pending")}</p>
@@ -596,7 +647,10 @@ export const ChatPreview = () => {
               </For>
 
               <Show when={pendingUserMessage().length > 0}>
-                <div class="chat-preview__turn chat-preview__turn--user">
+                <div
+                  class="chat-preview__turn chat-preview__turn--user"
+                  data-role="user"
+                >
                   <div class="chat-preview__bubble chat-preview__bubble--user">
                     <p>{pendingUserMessage()}</p>
                   </div>
@@ -606,7 +660,10 @@ export const ChatPreview = () => {
               <Show
                 when={isAwaitingResponse() && streamingResponse().length === 0}
               >
-                <div class="chat-preview__turn chat-preview__turn--assistant">
+                <div
+                  class="chat-preview__turn chat-preview__turn--assistant"
+                  data-role="assistant"
+                >
                   <div class="chat-preview__bubble chat-preview__bubble--assistant">
                     <div
                       aria-busy="true"
@@ -621,7 +678,10 @@ export const ChatPreview = () => {
               </Show>
 
               <Show when={streamingResponse().length > 0}>
-                <div class="chat-preview__turn chat-preview__turn--assistant">
+                <div
+                  class="chat-preview__turn chat-preview__turn--assistant"
+                  data-role="assistant"
+                >
                   <div class="chat-preview__bubble chat-preview__bubble--assistant">
                     <div class="chat-preview__markdown">
                       <p>{streamingResponse()}</p>
@@ -632,15 +692,22 @@ export const ChatPreview = () => {
 
               <Show when={history.data?.pending_approval}>
                 {(approval) => (
-                  <div class="chat-preview__turn chat-preview__turn--assistant">
+                  <div
+                    class="chat-preview__turn chat-preview__turn--assistant"
+                    data-role="assistant"
+                  >
                     <div class="chat-preview__bubble chat-preview__bubble--assistant">
-                      <div class="chat-preview__markdown">
+                      <div
+                        class="chat-preview__markdown"
+                        data-request-id={approval().request_id}
+                      >
                         <h3>{approval().tool_name}</h3>
                         <p>{approval().description}</p>
                         <p>{approval().parameters}</p>
                         <div class="dashboard-detail__actions">
                           <button
                             class="dashboard-detail__ghost"
+                            disabled={approvalMutation.isPending}
                             type="button"
                             onClick={() => approvalMutation.mutate("approve")}
                           >
@@ -648,6 +715,15 @@ export const ChatPreview = () => {
                           </button>
                           <button
                             class="dashboard-detail__ghost"
+                            disabled={approvalMutation.isPending}
+                            type="button"
+                            onClick={() => approvalMutation.mutate("always")}
+                          >
+                            {t("chat-approval-always")}
+                          </button>
+                          <button
+                            class="dashboard-detail__ghost"
+                            disabled={approvalMutation.isPending}
                             type="button"
                             onClick={() => approvalMutation.mutate("deny")}
                           >

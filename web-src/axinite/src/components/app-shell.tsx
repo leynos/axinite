@@ -9,6 +9,7 @@ import { RestartControl } from "@/components/restart-control";
 import { TeeAttestation } from "@/components/tee-attestation";
 import { deriveGatewayStatus, fetchGatewayStatusRaw } from "@/lib/api/gateway";
 import { buildAppPath } from "@/lib/base-path";
+import { connectionState } from "@/lib/connection-status";
 import { useFeatureFlags } from "@/lib/feature-flags/runtime";
 import { useI18n } from "@/lib/i18n/provider";
 import { ROUTE_DETAILS, ROUTE_ORDER } from "@/lib/route-config";
@@ -79,6 +80,17 @@ export const ShellChrome: ParentComponent<ShellChromeProps> = (props) => {
           </nav>
         </div>
         <div class="shell-controls">
+          <div
+            class="shell-sse-status"
+            data-testid="sse-status"
+            data-state={connectionState()}
+            title={t(`connection-status-${connectionState()}`)}
+          >
+            <span class="shell-sse-status__dot" aria-hidden="true" />
+            <span class="shell-sse-status__label">
+              {t(`connection-status-${connectionState()}`)}
+            </span>
+          </div>
           <TeeAttestation />
           <RestartControl restartEnabled={restartEnabled} />
           <LocalePicker />
