@@ -157,31 +157,27 @@ export class MockBackendState {
 
   private readonly logs: LogEntry[] = [
     {
-      id: "log-boot",
       level: "info",
       message: "Mock gateway booted and attached to the static preview.",
-      source: "gateway",
+      target: "gateway",
       timestamp: iso(35),
     },
     {
-      id: "log-flags",
       level: "debug",
       message: "Runtime feature flags resolved for the mock preview shell.",
-      source: "gateway",
+      target: "gateway",
       timestamp: iso(24),
     },
     {
-      id: "log-locale",
       level: "info",
       message: "Locale bundles loaded successfully for en-GB.",
-      source: "i18n",
+      target: "i18n",
       timestamp: iso(16),
     },
     {
-      id: "log-query",
       level: "info",
       message: "Initial route queries completed against the mock backend.",
-      source: "frontend",
+      target: "frontend",
       timestamp: iso(8),
     },
   ];
@@ -1169,15 +1165,14 @@ export class MockBackendState {
 
   private pushLog(
     message: string,
-    source: string,
+    target: string,
     level: LogEntry["level"] = "info"
   ): LogEntry {
     const entry: LogEntry = {
-      id: this.nextId("log"),
       level,
       timestamp: nowIso(),
       message,
-      source,
+      target,
     };
     this.logs.unshift(entry);
     while (this.logs.length > 100) {
@@ -1710,7 +1705,7 @@ export class MockBackendState {
       {
         id: this.nextId("job-event"),
         level: "info",
-        message: `Follow-up prompt submitted: ${request.prompt}`,
+        message: `Follow-up prompt submitted: ${request.content}`,
         timestamp: nowIso(),
       },
       ...job.events,

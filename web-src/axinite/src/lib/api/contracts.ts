@@ -306,7 +306,8 @@ export type ProjectFileReadResponse = {
 };
 
 export type JobPromptRequest = {
-  prompt: string;
+  content: string;
+  done?: boolean;
 };
 
 export type ActionResponse = {
@@ -494,11 +495,10 @@ export type SkillInstallRequest = {
 };
 
 export type LogEntry = {
-  id: Identifier;
   level: "trace" | "debug" | "info" | "warn" | "error";
   timestamp: string;
   message: string;
-  source: string;
+  target: string;
 };
 
 export type LogLevelResponse = {
