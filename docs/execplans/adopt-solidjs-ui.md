@@ -5,7 +5,7 @@ This ExecPlan (execution plan) is a living document. The sections
 `Decision Log`, and `Outcomes & Retrospective` must be kept up to date as work
 proceeds.
 
-Status: IN PROGRESS
+Status: COMPLETE
 
 ## Purpose / big picture
 
@@ -137,7 +137,14 @@ daemon-free stub runtime, and a minimal environment-variable subset of RFC 0009
   CLAUDE.md route tables); `tests/web_static_app.test.mjs` still passes
   (targets the retained legacy assets); Python e2e conftest pins
   `AXINITE_WEB_UI=legacy` with rationale.
-- [ ] M9: full gates via scrutineer, CodeRabbit review, retrospective.
+- [x] (2026-07-19 12:40Z) M9: gates green — `make check-fmt`, `make lint`
+  (clippy plus whitaker after splitting `ui_assets.rs` out of
+  `static_files.rs`), `make typecheck`, `make markdownlint`, `make nixie`,
+  `make frontend-test` (45 unit + 2 a11y), `make frontend-verify`, full
+  `cargo nextest --workspace` (4252 passed), web-channel subset re-run after
+  the module split (148 passed), `node --test tests/web_static_app.test.mjs`
+  (8 passed). CodeRabbit CLI reviewed the branch diff (121 files): zero
+  findings, no rate limiting (commit 586983fe).
 
 ## Surprises & discoveries
 
@@ -209,7 +216,36 @@ daemon-free stub runtime, and a minimal environment-variable subset of RFC 0009
 
 ## Outcomes & retrospective
 
-To be completed at the end of the work.
+Delivered against the original purpose: the SolidJS SPA is the default
+gateway UI (embedded, one-binary model preserved); the legacy shell survives
+only behind `AXINITE_WEB_UI=legacy`; `make frontend-stub` runs the UI without
+the daemon with deterministic HTTP fixtures, SSE streams, runtime flag
+overrides, and failure fixtures; contract, unit, behaviour, a11y, browser
+(Playwright MCP), and layout (css-view) validation all passed, and CodeRabbit
+reported zero findings.
+
+What browser validation earned beyond the test suites: three real defects
+(nav ignoring route flags, silent list-failure state, SSE error-event JSON
+crash) that no existing suite covered — each now has a regression test.
+
+Remaining follow-up work:
+
+- Rewrite the Python e2e scenarios (`tests/e2e/`) against the SolidJS DOM
+  route-by-route (RFC 0018 Stage 4) and then retire the legacy shell and its
+  assets (Stage 5), including `tests/web_static_app.test.mjs`.
+- Implement the RFC 0009 settings-table/deployment-scoped flag layer beneath
+  the env-var resolution in `handlers/features.rs`.
+- Close the remaining UI parity gaps catalogued in
+  `docs/solidjs-pwa-gap-analysis.md` (logs as a route, restart/TEE/pairing
+  surfaces, chat media, jobs detail fidelity).
+
+Lessons: the mockup's own e2e spec was stale against its components (chat and
+memory headings), so imported suites need verification before trust; the
+`typos` en-GB-oxendict gate interacts noisily with vendored front-end code
+and needed a deliberate exclusion policy (generated artefacts, translations,
+CSS syntax, vendored docs) rather than word-by-word fixes; and gate runs and
+editing must not overlap in one worktree — a scrutineer pass ran while the
+module split landed, which muddied its report.
 
 ## Context and orientation
 
