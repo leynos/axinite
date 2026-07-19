@@ -74,6 +74,12 @@ const skillsRoute = createRoute({
   component: () => <RoutePage routeId="skills" />,
 });
 
+const logsRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/logs",
+  component: () => <RoutePage routeId="logs" />,
+});
+
 const routeTree = rootRoute.addChildren([
   indexRoute,
   chatRoute,
@@ -82,6 +88,7 @@ const routeTree = rootRoute.addChildren([
   routinesRoute,
   extensionsRoute,
   skillsRoute,
+  logsRoute,
 ]);
 
 const router = createRouter({

@@ -36,10 +36,12 @@ test("navigates routes and only exposes complete locales", async ({ page }) => {
     page.getByRole("heading", { name: "Skills", level: 2 })
   ).toBeVisible();
 
-  await page.getByRole("button", { name: "Logs" }).click();
-  await expect(page.getByRole("heading", { name: "Logs" })).toBeVisible();
+  await page.getByRole("link", { name: "Logs" }).click();
+  await expect(page).toHaveURL(/\/logs$/);
+  await expect(
+    page.getByRole("heading", { name: "Logs", level: 2 })
+  ).toBeVisible();
 
-  await page.keyboard.press("Escape");
   const languagePicker = page.getByLabel("Language");
   await expect(languagePicker).toHaveValue("en-GB");
   await expect(languagePicker.locator("option")).toHaveCount(10);

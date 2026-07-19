@@ -145,6 +145,7 @@ export class MockBackendState {
     route_routines: true,
     route_extensions: true,
     route_skills: true,
+    route_logs: true,
     panel_logs: true,
     action_memory_edit: false,
     action_job_restart: false,

@@ -5,7 +5,6 @@ import { createMemo, For, Show } from "solid-js";
 
 import { DebugFlagPanel } from "@/components/debug-flag-panel";
 import { LocalePicker } from "@/components/locale-picker";
-import { LogsDialog } from "@/components/logs-dialog";
 import { fetchGatewayStatus } from "@/lib/api/gateway";
 import { buildAppPath } from "@/lib/base-path";
 import { useFeatureFlags } from "@/lib/feature-flags/runtime";
@@ -75,9 +74,6 @@ export const ShellChrome: ParentComponent<ShellChromeProps> = (props) => {
         </div>
         <div class="shell-controls">
           <LocalePicker />
-          <Show when={flags.isRouteVisible("panel_logs")}>
-            <LogsDialog />
-          </Show>
           <div class="shell-status">
             <span class="shell-status__dot" />
             <div>

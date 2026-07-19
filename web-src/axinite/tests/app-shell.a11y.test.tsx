@@ -1,5 +1,4 @@
 import { render, screen } from "@solidjs/testing-library";
-import userEvent from "@testing-library/user-event";
 import { axe } from "jest-axe";
 import { beforeAll, describe, expect, it } from "vitest";
 
@@ -12,8 +11,7 @@ beforeAll(async () => {
 });
 
 describe("app shell accessibility", () => {
-  it("keeps the shell and logs dialog accessible", async () => {
-    const user = userEvent.setup();
+  it("keeps the shell accessible, including the logs nav entry", async () => {
     const { container } = render(() => (
       <AppProviders>
         <ShellChrome activePath="/chat" usePlainLinks>
@@ -22,20 +20,13 @@ describe("app shell accessibility", () => {
       </AppProviders>
     ));
 
+    expect(screen.getByRole("link", { name: "Logs" })).toBeVisible();
+
     const shellResults = await axe(container, {
       rules: {
         "color-contrast": { enabled: false },
       },
     });
     expect(shellResults.violations).toHaveLength(0);
-
-    await user.click(screen.getByRole("button", { name: "Logs" }));
-
-    const dialogResults = await axe(screen.getByRole("dialog"), {
-      rules: {
-        "color-contrast": { enabled: false },
-      },
-    });
-    expect(dialogResults.violations).toHaveLength(0);
   });
 });
