@@ -63,7 +63,12 @@ export function connectChatEvents(
 
   for (const eventType of eventTypes) {
     source.addEventListener(eventType, (rawEvent) => {
-      const messageEvent = rawEvent as MessageEvent<string>;
+      const messageEvent = rawEvent as MessageEvent<unknown>;
+      // The browser dispatches its built-in connection-failure Event under
+      // the "error" type too; only gateway frames carry a JSON data string.
+      if (typeof messageEvent.data !== "string") {
+        return;
+      }
       listener(JSON.parse(messageEvent.data) as ChatSseEvent);
     });
   }

@@ -412,3 +412,4 @@ auth-submit = 接続
 auth-checking = ゲートウェイアクセスを確認しています…
 auth-error-rejected = ゲートウェイがトークンを拒否しました。
 auth-error-unreachable = ゲートウェイに接続できません。起動後に再試行してください。
+jobs-load-error = ゲートウェイからジョブを読み込めませんでした。接続を確認して再試行してください。

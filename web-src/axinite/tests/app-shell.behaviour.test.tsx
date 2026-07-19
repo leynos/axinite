@@ -74,4 +74,24 @@ describe("app shell behaviour", () => {
       expect(document.documentElement.lang).toBe("en-GB");
     });
   });
+
+  it("hides navigation entries whose route flag is overridden off", async () => {
+    window.localStorage.setItem(
+      "axinite.feature-flag-overrides",
+      JSON.stringify({ route_skills: false })
+    );
+
+    render(() => (
+      <AppProviders>
+        <ShellChrome activePath="/chat" usePlainLinks>
+          <div>Child</div>
+        </ShellChrome>
+      </AppProviders>
+    ));
+
+    await waitFor(() => {
+      expect(screen.getByRole("link", { name: "Chat" })).toBeVisible();
+    });
+    expect(screen.queryByRole("link", { name: "Skills" })).toBeNull();
+  });
 });
