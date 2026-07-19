@@ -443,3 +443,39 @@ chat-auth-card-submit = 送信
 chat-auth-card-cancel = キャンセル
 chat-auth-card-error = 認証に失敗しました。トークンを確認して再試行してください。
 chat-auth-notice-dismiss = 閉じる
+
+# ゲートウェイ再起動
+restart-action = ゲートウェイを再起動
+restart-confirm-title = ゲートウェイを再起動しますか？
+restart-confirm-description = /restart コマンドを送信し、ゲートウェイを一時的に中断します。アクティブなストリームは自動的に再接続します。
+restart-confirm-accept = 再起動
+restart-confirm-cancel = キャンセル
+restart-progress = ゲートウェイを再起動しています…
+restart-complete = ゲートウェイを再起動しました。
+
+# TEE 認証サーフェス
+tee-shield-label = TEE 認証を表示
+tee-popover-title = TEE 認証
+tee-field-image-digest = イメージダイジェスト
+tee-field-tls-fingerprint = TLS 証明書フィンガープリント
+tee-field-report-data = レポートデータ
+tee-field-vm-config = VM 構成
+tee-copy-report = レポート全体をコピー
+tee-value-empty = 該当なし
+tee-report-loading = 認証レポートを読み込んでいます…
+tee-report-error = 認証レポートを読み込めませんでした
+
+# WASM チャネルの有効化とペアリング
+extensions-stepper-label = 有効化の進行状況
+extensions-stepper-installed = インストール済み
+extensions-stepper-configured = 構成済み
+extensions-stepper-active = 有効
+extensions-stepper-awaiting-pairing = ペアリング待ち
+extensions-stepper-state-completed = 完了
+extensions-stepper-state-failed = 失敗
+extensions-stepper-state-in-progress = 進行中
+extensions-stepper-state-pending = 保留中
+extensions-pairing-heading = 保留中のペアリング要求
+extensions-pairing-from = { $sender } から
+extensions-pairing-approve = 承認
+extensions-pairing-approve-label = ペアリング { $code } を承認

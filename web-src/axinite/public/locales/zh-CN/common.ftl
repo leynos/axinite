@@ -443,3 +443,39 @@ chat-auth-card-submit = 提交
 chat-auth-card-cancel = 取消
 chat-auth-card-error = 身份验证失败。请检查令牌后重试。
 chat-auth-notice-dismiss = 关闭
+
+# 网关重启
+restart-action = 重启网关
+restart-confirm-title = 重启网关？
+restart-confirm-description = 这将发送 /restart 命令并短暂中断网关。活动的流将自动重新连接。
+restart-confirm-accept = 重启
+restart-confirm-cancel = 取消
+restart-progress = 正在重启网关…
+restart-complete = 网关已重启。
+
+# TEE 认证界面
+tee-shield-label = 查看 TEE 认证
+tee-popover-title = TEE 认证
+tee-field-image-digest = 镜像摘要
+tee-field-tls-fingerprint = TLS 证书指纹
+tee-field-report-data = 报告数据
+tee-field-vm-config = VM 配置
+tee-copy-report = 复制完整报告
+tee-value-empty = 不适用
+tee-report-loading = 正在加载认证报告…
+tee-report-error = 无法加载认证报告
+
+# WASM 通道激活与配对
+extensions-stepper-label = 激活进度
+extensions-stepper-installed = 已安装
+extensions-stepper-configured = 已配置
+extensions-stepper-active = 活动
+extensions-stepper-awaiting-pairing = 等待配对
+extensions-stepper-state-completed = 已完成
+extensions-stepper-state-failed = 失败
+extensions-stepper-state-in-progress = 进行中
+extensions-stepper-state-pending = 待处理
+extensions-pairing-heading = 待处理的配对请求
+extensions-pairing-from = 来自 { $sender }
+extensions-pairing-approve = 批准
+extensions-pairing-approve-label = 批准配对 { $code }
