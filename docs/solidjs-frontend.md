@@ -24,9 +24,8 @@ toolchain is needed to build or run the Rust gateway.
 The legacy handwritten shell (`src/channels/web/static/{index.html,style.css,
 app.js}`) remains embedded purely as a rollback path. Setting
 `AXINITE_WEB_UI=legacy` before starting the gateway serves the legacy shell
-instead of the SPA. The Python end-to-end suite in `tests/e2e/` still drives
-the legacy shell and pins this variable itself; migrating those scenarios to
-the SolidJS DOM is tracked follow-up work.
+instead of the SPA. The Python end-to-end suite in `tests/e2e/` drives the
+SolidJS UI against the real daemon.
 
 ## 2. Commands
 
@@ -72,7 +71,12 @@ payloads (`web-src/axinite/src/lib/api/contracts.ts` documents the shapes):
 - `GET /api/gateway/status`, `GET /api/features`
 - Chat: `GET /api/chat/threads`, `POST /api/chat/thread/new`,
   `GET /api/chat/history`, `POST /api/chat/send` (returns 202),
-  `POST /api/chat/approval`
+  `POST /api/chat/approval`, `POST /api/chat/auth-token`,
+  `POST /api/chat/auth-cancel`
+- Pairing: `GET /api/pairing/{channel}`,
+  `POST /api/pairing/{channel}/approve` (a deterministic pending request
+  `PAIR-1234` exists on the `whatsapp` channel; approving the code
+  `rate-limited` returns the daemon's plain-text 429)
 - Memory: `GET /api/memory/tree`, `GET /api/memory/read`,
   `POST /api/memory/search`, `POST /api/memory/write`
 - Jobs: `GET /api/jobs`, `GET /api/jobs/summary`, `GET /api/jobs/{id}`,
@@ -99,7 +103,13 @@ Unknown routes return 404 with a JSON error body.
   `SseEvent` tagging). Sending a chat message produces a deterministic
   lifecycle: `thinking`, then `tool_started`/`tool_completed`/`tool_result`
   on fixed short delays, then `response`. Heartbeat `event: heartbeat`
-  frames are emitted every 15 seconds.
+  frames are emitted every 15 seconds. Deterministic extras: the exact
+  message `/restart` emits a `restart`-named tool sequence and a
+  "Restart initiated" response; a prompt containing "image" additionally
+  emits `image_generated` with an inline data URL; a prompt containing
+  "job" emits `job_started`; attached `images[]` are acknowledged in the
+  response text; a successful `POST /api/chat/auth-token` publishes
+  `auth_completed`.
 - `GET /api/logs/events` — replays the fixture log history as
   `event: log` frames (entries carry `level`, `target`, `message`,
   `timestamp`, matching `log_layer.rs`), then streams new entries; comment
@@ -143,7 +153,7 @@ registry default (`web-src/axinite/src/lib/feature-flags/`).
 serves, by default (`UiVariant::Solid`):
 
 - the app shell at `/` and every client route (`/chat`, `/memory`, `/jobs`,
-  `/routines`, `/extensions`, `/skills`),
+  `/routines`, `/extensions`, `/skills`, `/logs`),
 - `/assets/app.js`, `/assets/index.css`, `/assets/axinite32.ico`,
   `/favicon.ico`, and
 - `/locales/{locale}/common.ftl` for the ten locale bundles.
@@ -185,5 +195,8 @@ headers).
 - Rust unit tests (`make test`): SPA shell serving on every route, stable
   asset names, locale bundles, legacy-variant fallback, and feature-flag
   resolution.
-- Python e2e (`tests/e2e/`): drives the legacy shell against the real
-  daemon (pinned via `AXINITE_WEB_UI=legacy` in its conftest).
+- Python e2e (`tests/e2e/`): drives the SolidJS UI against the real
+  daemon through a documented testability contract — the `?token=` boot
+  parameter, the `#auth-screen` marker, the `sse-status` indicator, and
+  the minimal `window.__axinite` hook object (close/reconnect the chat
+  stream, inject a chat event). See `tests/e2e/CLAUDE.md`.
