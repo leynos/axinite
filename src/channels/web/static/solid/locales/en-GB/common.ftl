@@ -366,7 +366,13 @@ chat-status-tool-failed = { $name } failed.
 chat-status-complete = Response completed.
 chat-response-pending = Awaiting completion…
 chat-approval-approve = Approve
+chat-approval-always = Always
 chat-approval-deny = Deny
+
+connection-status-idle = Idle
+connection-status-connecting = Connecting…
+connection-status-connected = Connected
+connection-status-disconnected = Disconnected
 chat-upload-unavailable = Mock backend preview does not persist file uploads.
 chat-sidebar-conversations = Conversations
 chat-tools-used = { $count ->
@@ -433,3 +439,82 @@ auth-checking = Checking gateway access…
 auth-error-rejected = The gateway rejected the token.
 auth-error-unreachable = The gateway could not be reached. Retry once it is running.
 jobs-load-error = Jobs could not be loaded from the gateway. Check the connection and try again.
+
+# Chat media, auth cards, and job-start cards
+chat-attach-images = Attach images
+chat-attachment-strip-label = Staged image attachments
+chat-attachment-invalid-type = Only image files can be attached.
+chat-attachment-too-large = { $name } is larger than the 5 MB limit.
+chat-attachment-too-many = You can attach at most 5 images per message.
+chat-attachment-remove = Remove { $name }
+chat-generated-image-alt = Generated image
+chat-job-card-fallback-title = Sandbox job
+chat-job-card-id = Job { $id }
+chat-job-card-open = Open in Jobs
+chat-job-card-browse = Browse
+chat-auth-card-title = Authentication required for { $name }
+chat-auth-card-oauth = Authenticate
+chat-auth-card-get-token = Get your token
+chat-auth-card-token-label = Access token
+chat-auth-card-token-placeholder = Paste token…
+chat-auth-card-submit = Submit
+chat-auth-card-cancel = Cancel
+chat-auth-card-error = Authentication failed. Check the token and try again.
+chat-auth-notice-dismiss = Dismiss
+
+# Gateway restart affordance
+restart-action = Restart gateway
+restart-confirm-title = Restart the gateway?
+restart-confirm-description = This sends the /restart command and briefly interrupts the gateway. Active streams reconnect automatically.
+restart-confirm-accept = Restart
+restart-confirm-cancel = Cancel
+restart-progress = Restarting the gateway…
+restart-complete = Gateway restarted.
+
+# TEE attestation surface
+tee-shield-label = View TEE attestation
+tee-popover-title = TEE attestation
+tee-field-image-digest = Image digest
+tee-field-tls-fingerprint = TLS certificate fingerprint
+tee-field-report-data = Report data
+tee-field-vm-config = VM configuration
+tee-copy-report = Copy full report
+tee-value-empty = N/A
+tee-report-loading = Loading attestation report…
+tee-report-error = Could not load attestation report
+
+# WASM channel activation and pairing
+extensions-stepper-label = Activation progress
+extensions-stepper-installed = Installed
+extensions-stepper-configured = Configured
+extensions-stepper-active = Active
+extensions-stepper-awaiting-pairing = Awaiting pairing
+extensions-stepper-state-completed = Completed
+extensions-stepper-state-failed = Failed
+extensions-stepper-state-in-progress = In progress
+extensions-stepper-state-pending = Pending
+extensions-pairing-heading = Pending pairing requests
+extensions-pairing-from = from { $sender }
+extensions-pairing-approve = Approve
+extensions-pairing-approve-label = Approve pairing { $code }
+
+# Jobs detail tabs (F6)
+jobs-tab-overview = Overview
+jobs-tab-activity = Activity
+jobs-tab-files = Files
+jobs-meta-mode = Mode
+jobs-meta-kind = Kind
+jobs-meta-project = Project directory
+jobs-meta-unset = Not set
+jobs-transitions-title = Timeline
+jobs-transitions-empty = No transitions recorded yet.
+jobs-browse-link = Open project browser
+jobs-activity-empty = No activity yet.
+jobs-activity-kind-message = Message
+jobs-activity-kind-tool-use = Tool call
+jobs-activity-kind-tool-result = Tool result
+jobs-activity-kind-status = Status
+jobs-activity-kind-result = Result
+jobs-files-empty = No files produced yet.
+jobs-file-tree-label = Job files
+jobs-prompt-done-label = Mark as done

@@ -364,7 +364,13 @@ chat-status-tool-failed = { $name } nie powiodło się.
 chat-status-complete = Odpowiedź zakończona.
 chat-response-pending = Oczekiwanie na zakończenie…
 chat-approval-approve = Zatwierdź
+chat-approval-always = Zawsze
 chat-approval-deny = Odrzuć
+
+connection-status-idle = Bezczynny
+connection-status-connecting = Łączenie…
+connection-status-connected = Połączono
+connection-status-disconnected = Rozłączono
 chat-upload-unavailable = Podgląd mock backendu nie zachowuje przesłanych plików.
 chat-sidebar-conversations = Rozmowy
 chat-tools-used = { $count ->
@@ -426,3 +432,82 @@ auth-checking = Sprawdzanie dostępu do bramy…
 auth-error-rejected = Brama odrzuciła token.
 auth-error-unreachable = Nie można połączyć się z bramą. Spróbuj ponownie, gdy będzie uruchomiona.
 jobs-load-error = Nie udało się wczytać zadań z bramy. Sprawdź połączenie i spróbuj ponownie.
+
+# Chat media, auth cards, and job-start cards
+chat-attach-images = Załącz obrazy
+chat-attachment-strip-label = Przygotowane załączniki graficzne
+chat-attachment-invalid-type = Można załączać tylko pliki graficzne.
+chat-attachment-too-large = { $name } przekracza limit 5 MB.
+chat-attachment-too-many = Możesz załączyć maksymalnie 5 obrazów na wiadomość.
+chat-attachment-remove = Usuń { $name }
+chat-generated-image-alt = Wygenerowany obraz
+chat-job-card-fallback-title = Zadanie piaskownicy
+chat-job-card-id = Zadanie { $id }
+chat-job-card-open = Otwórz w Zadaniach
+chat-job-card-browse = Przeglądaj
+chat-auth-card-title = Wymagane uwierzytelnienie dla { $name }
+chat-auth-card-oauth = Uwierzytelnij
+chat-auth-card-get-token = Pobierz token
+chat-auth-card-token-label = Token dostępu
+chat-auth-card-token-placeholder = Wklej token…
+chat-auth-card-submit = Wyślij
+chat-auth-card-cancel = Anuluj
+chat-auth-card-error = Uwierzytelnianie nie powiodło się. Sprawdź token i spróbuj ponownie.
+chat-auth-notice-dismiss = Zamknij
+
+# Ponowne uruchamianie bramy
+restart-action = Uruchom ponownie bramę
+restart-confirm-title = Uruchomić ponownie bramę?
+restart-confirm-description = Spowoduje to wysłanie polecenia /restart i krótką przerwę w działaniu bramy. Aktywne strumienie połączą się ponownie automatycznie.
+restart-confirm-accept = Uruchom ponownie
+restart-confirm-cancel = Anuluj
+restart-progress = Ponowne uruchamianie bramy…
+restart-complete = Brama uruchomiona ponownie.
+
+# Powierzchnia atestacji TEE
+tee-shield-label = Wyświetl atestację TEE
+tee-popover-title = Atestacja TEE
+tee-field-image-digest = Skrót obrazu
+tee-field-tls-fingerprint = Odcisk certyfikatu TLS
+tee-field-report-data = Dane raportu
+tee-field-vm-config = Konfiguracja VM
+tee-copy-report = Kopiuj pełny raport
+tee-value-empty = Nd.
+tee-report-loading = Ładowanie raportu atestacji…
+tee-report-error = Nie można załadować raportu atestacji
+
+# Aktywacja i parowanie kanałów WASM
+extensions-stepper-label = Postęp aktywacji
+extensions-stepper-installed = Zainstalowano
+extensions-stepper-configured = Skonfigurowano
+extensions-stepper-active = Aktywne
+extensions-stepper-awaiting-pairing = Oczekiwanie na parowanie
+extensions-stepper-state-completed = Ukończono
+extensions-stepper-state-failed = Niepowodzenie
+extensions-stepper-state-in-progress = W toku
+extensions-stepper-state-pending = Oczekuje
+extensions-pairing-heading = Oczekujące żądania parowania
+extensions-pairing-from = od { $sender }
+extensions-pairing-approve = Zatwierdź
+extensions-pairing-approve-label = Zatwierdź parowanie { $code }
+
+# Jobs detail tabs (F6)
+jobs-tab-overview = Przegląd
+jobs-tab-activity = Aktywność
+jobs-tab-files = Pliki
+jobs-meta-mode = Tryb
+jobs-meta-kind = Rodzaj
+jobs-meta-project = Katalog projektu
+jobs-meta-unset = Nie ustawiono
+jobs-transitions-title = Oś czasu
+jobs-transitions-empty = Nie zarejestrowano jeszcze żadnych przejść.
+jobs-browse-link = Otwórz przeglądarkę projektu
+jobs-activity-empty = Brak aktywności.
+jobs-activity-kind-message = Wiadomość
+jobs-activity-kind-tool-use = Wywołanie narzędzia
+jobs-activity-kind-tool-result = Wynik narzędzia
+jobs-activity-kind-status = Status
+jobs-activity-kind-result = Wynik
+jobs-files-empty = Nie utworzono jeszcze żadnych plików.
+jobs-file-tree-label = Pliki zadania
+jobs-prompt-done-label = Oznacz jako ukończone
