@@ -16,7 +16,7 @@ import {
   triggerRoutine,
 } from "@/lib/api/routines";
 import { useI18n } from "@/lib/i18n/provider";
-import { capitalise, pascalCase } from "@/lib/string-case";
+import { capitalize, pascalCase } from "@/lib/string-case";
 
 const STATUS_CLASS: Record<string, string> = {
   active: "pill pill--success",
@@ -240,7 +240,7 @@ export const RoutinesPreview = () => {
                           }
                         >
                           {t(
-                            `routines-status-${capitalise(routine.status).toLowerCase()}`
+                            `routines-status-${capitalize(routine.status).toLowerCase()}`
                           )}
                         </span>
                       </td>

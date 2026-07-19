@@ -25,7 +25,7 @@ import {
   submitExtensionSetup,
 } from "@/lib/api/extensions";
 import { useI18n } from "@/lib/i18n/provider";
-import { capitalise, pascalCase } from "@/lib/string-case";
+import { capitalize, pascalCase } from "@/lib/string-case";
 
 const KIND_CLASS: Record<string, string> = {
   grpcm: "pill pill--info",
@@ -248,7 +248,7 @@ export const ExtensionsPreview = () => {
       return t("extensions-kind-wasm");
     }
 
-    return capitalise(kind).toLowerCase();
+    return capitalize(kind).toLowerCase();
   };
 
   createEffect(() => {

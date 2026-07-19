@@ -415,3 +415,4 @@ auth-submit = Verbinden
 auth-checking = Gateway-toegang wordt gecontroleerd…
 auth-error-rejected = De gateway heeft het token geweigerd.
 auth-error-unreachable = De gateway is niet bereikbaar. Probeer het opnieuw zodra deze draait.
+jobs-load-error = Jobs konden niet vanaf de gateway worden geladen. Controleer de verbinding en probeer het opnieuw.

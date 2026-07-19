@@ -417,3 +417,4 @@ auth-submit = Połącz
 auth-checking = Sprawdzanie dostępu do bramy…
 auth-error-rejected = Brama odrzuciła token.
 auth-error-unreachable = Nie można połączyć się z bramą. Spróbuj ponownie, gdy będzie uruchomiona.
+jobs-load-error = Nie udało się wczytać zadań z bramy. Sprawdź połączenie i spróbuj ponownie.

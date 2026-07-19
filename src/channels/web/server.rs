@@ -23,7 +23,7 @@ use crate::channels::IncomingMessage;
 use crate::channels::web::auth::{AuthState, auth_middleware};
 use crate::channels::web::handlers::{
     chat, extensions, features, jobs, memory, oauth, pairing, routines, settings, skills,
-    static_files,
+    static_files, ui_assets,
 };
 use crate::channels::web::log_layer::LogBroadcaster;
 use crate::channels::web::sse::SseManager;
@@ -245,7 +245,7 @@ fn build_cors_layer(addr: SocketAddr) -> Result<CorsLayer, crate::error::Channel
 /// Assemble the full application router with body limits, CORS, and
 /// security headers.
 fn build_app(state: Arc<GatewayState>, auth_token: String, cors: CorsLayer) -> Router {
-    let public = oauth::public_routes().merge(static_files::public_routes());
+    let public = oauth::public_routes().merge(ui_assets::public_routes());
     Router::new()
         .merge(public)
         .merge(protected_routes(auth_token))

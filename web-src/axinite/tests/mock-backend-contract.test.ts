@@ -218,7 +218,7 @@ describe("stub SSE contract", () => {
       request("/api/chat/send", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ content: "Summarise the preview state" }),
+        body: JSON.stringify({ content: "Summarize the preview state" }),
       }),
       state
     );

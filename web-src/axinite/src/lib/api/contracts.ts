@@ -463,7 +463,7 @@ export type SkillSearchRequest = {
   query: string;
 };
 
-export type CatalogSkillEntry = {
+export type CatalogueSkillEntry = {
   slug: string;
   name: string;
   description: string;
@@ -477,7 +477,7 @@ export type CatalogSkillEntry = {
 };
 
 export type SkillSearchResponse = {
-  catalog: CatalogSkillEntry[];
+  catalog: CatalogueSkillEntry[];
   installed: SkillInfo[];
   registry_url: string;
   catalog_error?: string;
