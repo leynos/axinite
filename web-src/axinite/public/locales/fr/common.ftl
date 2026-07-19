@@ -491,3 +491,24 @@ extensions-pairing-heading = Demandes d'appairage en attente
 extensions-pairing-from = de { $sender }
 extensions-pairing-approve = Approuver
 extensions-pairing-approve-label = Approuver l'appairage { $code }
+
+# Jobs detail tabs (F6)
+jobs-tab-overview = Aperçu
+jobs-tab-activity = Activité
+jobs-tab-files = Fichiers
+jobs-meta-mode = Mode
+jobs-meta-kind = Type
+jobs-meta-project = Répertoire du projet
+jobs-meta-unset = Non défini
+jobs-transitions-title = Chronologie
+jobs-transitions-empty = Aucune transition enregistrée pour l’instant.
+jobs-browse-link = Ouvrir le navigateur de projet
+jobs-activity-empty = Aucune activité pour l’instant.
+jobs-activity-kind-message = Message
+jobs-activity-kind-tool-use = Appel d’outil
+jobs-activity-kind-tool-result = Résultat d’outil
+jobs-activity-kind-status = Statut
+jobs-activity-kind-result = Résultat
+jobs-files-empty = Aucun fichier produit pour l’instant.
+jobs-file-tree-label = Fichiers de la tâche
+jobs-prompt-done-label = Marquer comme terminé

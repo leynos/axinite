@@ -491,3 +491,24 @@ extensions-pairing-heading = Richieste di associazione in attesa
 extensions-pairing-from = da { $sender }
 extensions-pairing-approve = Approva
 extensions-pairing-approve-label = Approva associazione { $code }
+
+# Jobs detail tabs (F6)
+jobs-tab-overview = Panoramica
+jobs-tab-activity = Attività
+jobs-tab-files = File
+jobs-meta-mode = Modalità
+jobs-meta-kind = Tipo
+jobs-meta-project = Cartella del progetto
+jobs-meta-unset = Non impostato
+jobs-transitions-title = Cronologia
+jobs-transitions-empty = Nessuna transizione registrata finora.
+jobs-browse-link = Apri il browser del progetto
+jobs-activity-empty = Nessuna attività finora.
+jobs-activity-kind-message = Messaggio
+jobs-activity-kind-tool-use = Chiamata allo strumento
+jobs-activity-kind-tool-result = Risultato dello strumento
+jobs-activity-kind-status = Stato
+jobs-activity-kind-result = Risultato
+jobs-files-empty = Nessun file prodotto finora.
+jobs-file-tree-label = File del lavoro
+jobs-prompt-done-label = Segna come completato

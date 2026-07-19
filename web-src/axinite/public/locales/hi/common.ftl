@@ -482,3 +482,24 @@ extensions-pairing-heading = लंबित युग्मन अनुरो�
 extensions-pairing-from = { $sender } से
 extensions-pairing-approve = स्वीकृत करें
 extensions-pairing-approve-label = युग्मन { $code } स्वीकृत करें
+
+# Jobs detail tabs (F6)
+jobs-tab-overview = अवलोकन
+jobs-tab-activity = गतिविधि
+jobs-tab-files = फ़ाइलें
+jobs-meta-mode = मोड
+jobs-meta-kind = प्रकार
+jobs-meta-project = परियोजना निर्देशिका
+jobs-meta-unset = सेट नहीं
+jobs-transitions-title = समयरेखा
+jobs-transitions-empty = अभी तक कोई संक्रमण दर्ज नहीं हुआ।
+jobs-browse-link = परियोजना ब्राउज़र खोलें
+jobs-activity-empty = अभी तक कोई गतिविधि नहीं।
+jobs-activity-kind-message = संदेश
+jobs-activity-kind-tool-use = टूल कॉल
+jobs-activity-kind-tool-result = टूल परिणाम
+jobs-activity-kind-status = स्थिति
+jobs-activity-kind-result = परिणाम
+jobs-files-empty = अभी तक कोई फ़ाइल नहीं बनी।
+jobs-file-tree-label = कार्य फ़ाइलें
+jobs-prompt-done-label = पूर्ण के रूप में चिह्नित करें

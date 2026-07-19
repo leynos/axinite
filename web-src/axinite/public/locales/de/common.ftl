@@ -491,3 +491,24 @@ extensions-pairing-heading = Ausstehende Kopplungsanfragen
 extensions-pairing-from = von { $sender }
 extensions-pairing-approve = Genehmigen
 extensions-pairing-approve-label = Kopplung { $code } genehmigen
+
+# Jobs detail tabs (F6)
+jobs-tab-overview = Übersicht
+jobs-tab-activity = Aktivität
+jobs-tab-files = Dateien
+jobs-meta-mode = Modus
+jobs-meta-kind = Art
+jobs-meta-project = Projektverzeichnis
+jobs-meta-unset = Nicht gesetzt
+jobs-transitions-title = Verlauf
+jobs-transitions-empty = Noch keine Übergänge aufgezeichnet.
+jobs-browse-link = Projekt-Browser öffnen
+jobs-activity-empty = Noch keine Aktivität.
+jobs-activity-kind-message = Nachricht
+jobs-activity-kind-tool-use = Werkzeugaufruf
+jobs-activity-kind-tool-result = Werkzeugergebnis
+jobs-activity-kind-status = Status
+jobs-activity-kind-result = Ergebnis
+jobs-files-empty = Noch keine Dateien erstellt.
+jobs-file-tree-label = Auftragsdateien
+jobs-prompt-done-label = Als erledigt markieren

@@ -491,3 +491,24 @@ extensions-pairing-heading = Pending pairing requests
 extensions-pairing-from = from { $sender }
 extensions-pairing-approve = Approve
 extensions-pairing-approve-label = Approve pairing { $code }
+
+# Jobs detail tabs (F6)
+jobs-tab-overview = Overview
+jobs-tab-activity = Activity
+jobs-tab-files = Files
+jobs-meta-mode = Mode
+jobs-meta-kind = Kind
+jobs-meta-project = Project directory
+jobs-meta-unset = Not set
+jobs-transitions-title = Timeline
+jobs-transitions-empty = No transitions recorded yet.
+jobs-browse-link = Open project browser
+jobs-activity-empty = No activity yet.
+jobs-activity-kind-message = Message
+jobs-activity-kind-tool-use = Tool call
+jobs-activity-kind-tool-result = Tool result
+jobs-activity-kind-status = Status
+jobs-activity-kind-result = Result
+jobs-files-empty = No files produced yet.
+jobs-file-tree-label = Job files
+jobs-prompt-done-label = Mark as done

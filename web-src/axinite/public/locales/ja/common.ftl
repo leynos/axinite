@@ -479,3 +479,24 @@ extensions-pairing-heading = 保留中のペアリング要求
 extensions-pairing-from = { $sender } から
 extensions-pairing-approve = 承認
 extensions-pairing-approve-label = ペアリング { $code } を承認
+
+# Jobs detail tabs (F6)
+jobs-tab-overview = 概要
+jobs-tab-activity = アクティビティ
+jobs-tab-files = ファイル
+jobs-meta-mode = モード
+jobs-meta-kind = 種類
+jobs-meta-project = プロジェクトディレクトリ
+jobs-meta-unset = 未設定
+jobs-transitions-title = タイムライン
+jobs-transitions-empty = 遷移はまだ記録されていません。
+jobs-browse-link = プロジェクトブラウザーを開く
+jobs-activity-empty = アクティビティはまだありません。
+jobs-activity-kind-message = メッセージ
+jobs-activity-kind-tool-use = ツール呼び出し
+jobs-activity-kind-tool-result = ツール結果
+jobs-activity-kind-status = ステータス
+jobs-activity-kind-result = 結果
+jobs-files-empty = ファイルはまだ生成されていません。
+jobs-file-tree-label = ジョブファイル
+jobs-prompt-done-label = 完了としてマーク
