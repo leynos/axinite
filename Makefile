@@ -81,7 +81,7 @@ RUST_DECIMAL_AUDIT_FLAGS := \
 LIBSQL_AUDIT_FLAGS := \
 	--ignore RUSTSEC-2026-0258
 
-.PHONY: all install install-with-overrides sync-local-wasm-overrides build-github-tool-wasm fmt check-fmt typecheck lint lint-clippy lint-whitaker markdownlint spelling nixie audit rust-audit test test-workspace test-github-tool test-cargo test-matrix test-matrix-cargo test-workflow-contracts clean frontend-install frontend-build frontend-verify frontend-check frontend-test frontend-stub
+.PHONY: all install install-with-overrides sync-local-wasm-overrides build-github-tool-wasm fmt check-fmt typecheck lint lint-clippy lint-whitaker markdownlint spelling nixie audit rust-audit test test-workspace test-github-tool test-cargo test-matrix test-matrix-cargo test-workflow-contracts clean frontend-install frontend-build frontend-verify frontend-check frontend-test frontend-full frontend-stub
 
 # `make fmt` and `make check-fmt` call mdtablefix directly. `--git` selects the
 # Markdown files Git tracks and `--include-untracked` adds the untracked files
@@ -112,12 +112,20 @@ frontend-build: frontend-install
 frontend-verify: frontend-build
 	git diff --exit-code -- $(FRONTEND_EMBED_DIR) || 		{ echo "error: $(FRONTEND_EMBED_DIR) is stale; commit the output of 'make frontend-build'" >&2; exit 1; }
 
-# Static checks and unit suites for the browser workspace.
+# Static checks and unit suites for the browser workspace. `semantic`
+# covers the classlist, semgrep, and stylelint rules and fetches semgrep
+# through uvx on first use.
 frontend-check: frontend-install
-	cd $(FRONTEND_DIR) && $(BUN) run check:fmt && $(BUN) run lint && $(BUN) run check:types
+	cd $(FRONTEND_DIR) && $(BUN) run check:fmt && $(BUN) run lint && $(BUN) run check:types && $(BUN) run semantic
 
 frontend-test: frontend-check
 	cd $(FRONTEND_DIR) && $(BUN) run test && $(BUN) run test:a11y && $(BUN) run lint:ftl-vars
+
+# The mockup's full verification chain: Tailwind compile check, lint,
+# typecheck, unit + a11y + Fluent + semantic suites, the workspace
+# Playwright spec (browsers must be installed), and moz-fluent-lint.
+frontend-full: frontend-install
+	cd $(FRONTEND_DIR) && $(BUN) run verify:full
 
 # Daemon-free stub runtime: Bun mock API (HTTP + SSE + /api/features) plus a
 # preview server for the built SPA on http://127.0.0.1:2020.
