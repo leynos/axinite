@@ -479,3 +479,24 @@ extensions-pairing-heading = 待处理的配对请求
 extensions-pairing-from = 来自 { $sender }
 extensions-pairing-approve = 批准
 extensions-pairing-approve-label = 批准配对 { $code }
+
+# Jobs detail tabs (F6)
+jobs-tab-overview = 概览
+jobs-tab-activity = 活动
+jobs-tab-files = 文件
+jobs-meta-mode = 模式
+jobs-meta-kind = 类型
+jobs-meta-project = 项目目录
+jobs-meta-unset = 未设置
+jobs-transitions-title = 时间线
+jobs-transitions-empty = 尚未记录任何状态转换。
+jobs-browse-link = 打开项目浏览器
+jobs-activity-empty = 暂无活动。
+jobs-activity-kind-message = 消息
+jobs-activity-kind-tool-use = 工具调用
+jobs-activity-kind-tool-result = 工具结果
+jobs-activity-kind-status = 状态
+jobs-activity-kind-result = 结果
+jobs-files-empty = 尚未生成任何文件。
+jobs-file-tree-label = 任务文件
+jobs-prompt-done-label = 标记为完成

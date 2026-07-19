@@ -2435,3 +2435,157 @@
   font-size: 0.72rem;
   color: #ff5c5c;
 }
+
+/* Jobs detail tabs */
+.jobs-tabs {
+  margin-top: 1.25rem;
+}
+
+.jobs-tabs__list {
+  position: relative;
+  display: flex;
+  gap: 0.25rem;
+  border-bottom: 1px solid rgb(255 255 255 / 0.08);
+}
+
+.jobs-tabs__trigger {
+  padding: 0.55rem 0.9rem;
+  border: 0;
+  background: transparent;
+  color: #a1a1aa;
+  font: inherit;
+  cursor: pointer;
+}
+
+.jobs-tabs__trigger[data-selected] {
+  color: #e4e4e7;
+}
+
+.jobs-tabs__indicator {
+  position: absolute;
+  bottom: -1px;
+  height: 2px;
+  background: #8b5cf6;
+  transition:
+    transform 150ms ease,
+    width 150ms ease;
+}
+
+.jobs-tabs__content {
+  padding-top: 1.25rem;
+}
+
+/* Transitions timeline */
+.jobs-timeline {
+  margin-top: 1.25rem;
+}
+
+.jobs-timeline__title {
+  margin: 0 0 0.75rem;
+  font-size: 0.8rem;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: #a1a1aa;
+}
+
+.jobs-timeline__list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.jobs-timeline__item {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+}
+
+.jobs-timeline__time {
+  font-size: 0.75rem;
+  color: #71717a;
+}
+
+.jobs-timeline__reason {
+  flex-basis: 100%;
+  font-size: 0.78rem;
+  color: #a1a1aa;
+}
+
+.jobs-timeline__empty {
+  margin: 0;
+  font-size: 0.8rem;
+  color: #71717a;
+}
+
+/* Browse link */
+.jobs-detail__browse {
+  display: inline-block;
+  margin-top: 1rem;
+  color: #8b5cf6;
+  font-size: 0.85rem;
+  text-decoration: none;
+}
+
+.jobs-detail__browse:hover {
+  text-decoration: underline;
+}
+
+/* File tree */
+.jobs-file-tree,
+.jobs-file-tree__group {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.jobs-file-tree__group {
+  padding-left: 1rem;
+}
+
+.jobs-file-tree__file,
+.jobs-file-tree__folder {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  width: 100%;
+  padding: 0.4rem 0.6rem;
+  border: 0;
+  border-radius: 0.6rem;
+  background: transparent;
+  color: #a1a1aa;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.jobs-file-tree__file--active {
+  background: rgb(255 255 255 / 0.05);
+  color: #e4e4e7;
+}
+
+.jobs-file-tree__twist {
+  display: inline-block;
+  width: 0;
+  height: 0;
+  border-top: 4px solid transparent;
+  border-bottom: 4px solid transparent;
+  border-left: 5px solid currentColor;
+  transition: transform 120ms ease;
+}
+
+.jobs-file-tree__twist--open {
+  transform: rotate(90deg);
+}
+
+/* Follow-up prompt "done" toggle */
+.jobs-prompt__done {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-size: 0.8rem;
+  color: #a1a1aa;
+}
