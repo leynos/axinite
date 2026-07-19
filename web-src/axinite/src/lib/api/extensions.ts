@@ -4,6 +4,7 @@ import type {
   ExtensionListResponse,
   ExtensionSetupRequest,
   ExtensionSetupResponse,
+  InstallExtensionRequest,
   RegistrySearchResponse,
   ToolListResponse,
 } from "@/lib/api/contracts";
@@ -26,8 +27,10 @@ export function fetchExtensionRegistry(
   return requestJson<RegistrySearchResponse>(`${url.pathname}${url.search}`);
 }
 
-export function installExtension(name: string): Promise<ActionResponse> {
-  return postJson<ActionResponse>("/api/extensions/install", { name });
+export function installExtension(
+  request: InstallExtensionRequest
+): Promise<ActionResponse> {
+  return postJson<ActionResponse>("/api/extensions/install", request);
 }
 
 export function activateExtension(name: string): Promise<ActionResponse> {

@@ -145,7 +145,7 @@ export const JobsPreview = () => {
   const promptMutation = createMutation(() => ({
     mutationFn: () =>
       promptJob(activeJobId() ?? "", {
-        prompt: promptText(),
+        content: promptText(),
       }),
     onSuccess: () => {
       refreshJobs();

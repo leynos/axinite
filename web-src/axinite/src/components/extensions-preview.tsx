@@ -189,7 +189,7 @@ export const ExtensionsPreview = () => {
   };
 
   const installMutation = createMutation(() => ({
-    mutationFn: (name: string) => installExtension(name),
+    mutationFn: (name: string) => installExtension({ name }),
     onSuccess: refresh,
   }));
 
