@@ -16,6 +16,21 @@ import { MockBackendState } from "./state";
 
 export const DEFAULT_API_PORT = Number(process.env.MOCK_API_PORT ?? "8787");
 
+// Deterministic failure fixtures: MOCK_FAILURES is a comma-separated list of
+// request paths that should return HTTP 500 so error-handling UI states can
+// be exercised without the real daemon (for example
+// MOCK_FAILURES=/api/jobs,/api/skills).
+export function parseFailureRoutes(raw: string | undefined): Set<string> {
+  return new Set(
+    (raw ?? "")
+      .split(",")
+      .map((entry) => entry.trim())
+      .filter((entry) => entry.length > 0)
+  );
+}
+
+const failureRoutes = parseFailureRoutes(process.env.MOCK_FAILURES);
+
 function jsonResponse(payload: unknown, init?: ResponseInit): Response {
   return new Response(JSON.stringify(payload), {
     headers: {
@@ -118,11 +133,16 @@ function buildLogSseResponse(state: MockBackendState): Response {
 
 export async function handleMockRequest(
   request: Request,
-  state: MockBackendState
+  state: MockBackendState,
+  failures: Set<string> = failureRoutes
 ): Promise<Response> {
   const url = new URL(request.url);
   const pathname = url.pathname;
   const method = request.method.toUpperCase();
+
+  if (failures.has(pathname)) {
+    return errorResponse(500, `Simulated failure for ${pathname}.`);
+  }
 
   try {
     if (method === "GET" && pathname === "/api/gateway/status") {

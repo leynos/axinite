@@ -135,18 +135,23 @@ export class MockBackendState {
 
   private nextCounter = 1;
 
+  // Mirrors the compiled defaults in the gateway's
+  // src/channels/web/handlers/features.rs and the registry in
+  // axinite/src/lib/feature-flags/registry.ts.
   private readonly featureFlags: FeatureFlagsResponse = {
-    deployment: "mock-preview",
-    fetched_at: nowIso(),
-    flags: {
-      route_chat: true,
-      route_memory: true,
-      route_jobs: true,
-      route_routines: true,
-      route_extensions: true,
-      route_skills: true,
-      panel_logs: true,
-    },
+    route_chat: true,
+    route_memory: true,
+    route_jobs: true,
+    route_routines: true,
+    route_extensions: true,
+    route_skills: true,
+    panel_logs: true,
+    action_memory_edit: false,
+    action_job_restart: false,
+    action_routine_trigger: false,
+    action_extension_install: false,
+    action_skill_install: false,
+    surface_tee_attestation: false,
   };
 
   private logLevel = "info";
@@ -1133,11 +1138,18 @@ export class MockBackendState {
     };
   }
 
+  // Flags resolve like the real gateway: a FEATURE_FLAG_<UPPER_SNAKE_NAME>
+  // environment variable overrides the default (`true` enables, any other
+  // set value disables), so stub runs can exercise flag combinations.
   getFeatureFlags(): FeatureFlagsResponse {
-    return {
-      ...this.featureFlags,
-      fetched_at: nowIso(),
-    };
+    const resolved: FeatureFlagsResponse = { ...this.featureFlags };
+    for (const name of Object.keys(resolved)) {
+      const raw = process.env[`FEATURE_FLAG_${name.toUpperCase()}`];
+      if (typeof raw === "string") {
+        resolved[name] = raw.toLowerCase() === "true";
+      }
+    }
+    return resolved;
   }
 
   subscribeToChat(subscriber: EventSubscriber<ChatSseEvent>): () => void {
