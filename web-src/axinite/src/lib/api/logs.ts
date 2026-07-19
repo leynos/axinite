@@ -19,7 +19,10 @@ export function connectLogEvents(
 ): EventSource {
   const source = createEventStream("/api/logs/events");
   source.addEventListener("log", (rawEvent) => {
-    const messageEvent = rawEvent as MessageEvent<string>;
+    const messageEvent = rawEvent as MessageEvent<unknown>;
+    if (typeof messageEvent.data !== "string") {
+      return;
+    }
     listener(JSON.parse(messageEvent.data) as LogEntry);
   });
   if (onError) {

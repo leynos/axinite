@@ -423,3 +423,4 @@ auth-submit = Connect
 auth-checking = Checking gateway access…
 auth-error-rejected = The gateway rejected the token.
 auth-error-unreachable = The gateway could not be reached. Retry once it is running.
+jobs-load-error = Jobs could not be loaded from the gateway. Check the connection and try again.

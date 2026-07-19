@@ -412,3 +412,4 @@ auth-submit = 连接
 auth-checking = 正在检查网关访问…
 auth-error-rejected = 网关拒绝了该令牌。
 auth-error-unreachable = 无法连接到网关。请在其运行后重试。
+jobs-load-error = 无法从网关加载任务。请检查连接并重试。

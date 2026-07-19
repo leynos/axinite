@@ -10,7 +10,7 @@ import { fetchGatewayStatus } from "@/lib/api/gateway";
 import { buildAppPath } from "@/lib/base-path";
 import { useFeatureFlags } from "@/lib/feature-flags/runtime";
 import { useI18n } from "@/lib/i18n/provider";
-import { ROUTE_ORDER } from "@/lib/route-config";
+import { ROUTE_DETAILS, ROUTE_ORDER } from "@/lib/route-config";
 
 type ShellChromeProps = {
   activePath: string;
@@ -42,30 +42,34 @@ export const ShellChrome: ParentComponent<ShellChromeProps> = (props) => {
 
           <nav aria-label={t("shell-navigation-label")} class="shell-nav">
             <For each={ROUTE_ORDER}>
-              {(routeId) =>
-                props.usePlainLinks ? (
-                  <a
-                    class={
-                      props.activePath === `/${routeId}`
-                        ? "shell-nav__link shell-nav__link--active"
-                        : "shell-nav__link"
-                    }
-                    href={buildAppPath(basePath, routeId)}
-                  >
-                    {t(`route-${routeId}-label`)}
-                  </a>
-                ) : (
-                  <Link
-                    to={`/${routeId}`}
-                    activeProps={{
-                      class: "shell-nav__link shell-nav__link--active",
-                    }}
-                    inactiveProps={{ class: "shell-nav__link" }}
-                  >
-                    {t(`route-${routeId}-label`)}
-                  </Link>
-                )
-              }
+              {(routeId) => (
+                <Show
+                  when={flags.isRouteVisible(ROUTE_DETAILS[routeId].flagName)}
+                >
+                  {props.usePlainLinks ? (
+                    <a
+                      class={
+                        props.activePath === `/${routeId}`
+                          ? "shell-nav__link shell-nav__link--active"
+                          : "shell-nav__link"
+                      }
+                      href={buildAppPath(basePath, routeId)}
+                    >
+                      {t(`route-${routeId}-label`)}
+                    </a>
+                  ) : (
+                    <Link
+                      to={`/${routeId}`}
+                      activeProps={{
+                        class: "shell-nav__link shell-nav__link--active",
+                      }}
+                      inactiveProps={{ class: "shell-nav__link" }}
+                    >
+                      {t(`route-${routeId}-label`)}
+                    </Link>
+                  )}
+                </Show>
+              )}
             </For>
           </nav>
         </div>
