@@ -1,0 +1,15 @@
+README.md
+pyproject.toml
+axinite_e2e.egg-info/PKG-INFO
+axinite_e2e.egg-info/SOURCES.txt
+axinite_e2e.egg-info/dependency_links.txt
+axinite_e2e.egg-info/requires.txt
+axinite_e2e.egg-info/top_level.txt
+scenarios/__init__.py
+scenarios/test_chat.py
+scenarios/test_connection.py
+scenarios/test_extensions.py
+scenarios/test_html_injection.py
+scenarios/test_skills.py
+scenarios/test_sse_reconnect.py
+scenarios/test_tool_approval.py
