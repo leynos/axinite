@@ -12,7 +12,7 @@ describe("isHttpUrl", () => {
     expect(isHttpUrl("javascript:alert(1)")).toBe(false);
   });
 
-  it("rejects data:, file:, relative, and unparseable values", () => {
+  it("rejects data:, file:, relative, and unparsable values", () => {
     expect(isHttpUrl("data:text/html,<h1>hi</h1>")).toBe(false);
     expect(isHttpUrl("file:///etc/passwd")).toBe(false);
     expect(isHttpUrl("/relative/path")).toBe(false);

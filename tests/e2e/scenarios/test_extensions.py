@@ -101,7 +101,7 @@ _SAMPLE_TOOLS = [
 # --- Interception helpers -------------------------------------------------
 
 
-async def _fulfill(route, payload):
+async def _fulfil(route, payload):
     await route.fulfill(
         status=200, content_type="application/json", body=json.dumps(payload)
     )
@@ -113,19 +113,19 @@ async def mock_ext_apis(page, *, installed=None, tools=None, registry=None):
     Must be called BEFORE navigating to the extensions route.
     """
     await page.route(
-        "**/api/extensions", lambda r: _fulfill(r, {"extensions": installed or []})
+        "**/api/extensions", lambda r: _fulfil(r, {"extensions": installed or []})
     )
     await page.route(
-        "**/api/extensions/tools", lambda r: _fulfill(r, {"tools": tools or []})
+        "**/api/extensions/tools", lambda r: _fulfil(r, {"tools": tools or []})
     )
     await page.route(
         "**/api/extensions/registry*",
-        lambda r: _fulfill(r, {"entries": registry or []}),
+        lambda r: _fulfil(r, {"entries": registry or []}),
     )
 
     async def handle_pairing(route):
         # Default: no pending pairing requests for any channel.
-        await _fulfill(route, {"channel": "test-channel", "requests": []})
+        await _fulfil(route, {"channel": "test-channel", "requests": []})
 
     await page.route("**/api/pairing/**", handle_pairing)
 
@@ -215,7 +215,7 @@ async def test_registry_entry_and_install(page):
 
     async def handle_install(route):
         install_posts.append(json.loads(route.request.post_data or "{}"))
-        await _fulfill(route, {"success": True, "message": "Installed"})
+        await _fulfil(route, {"success": True, "message": "Installed"})
 
     await mock_ext_apis(page, registry=[_REGISTRY_WASM])
     await page.route("**/api/extensions/install", handle_install)
@@ -229,7 +229,7 @@ async def test_registry_entry_and_install(page):
     # Once installed, the list refetch should surface the new card.
     installed_after = {**_WASM_TOOL, "name": "registry-tool", "display_name": "Registry Tool"}
     await page.route(
-        "**/api/extensions", lambda r: _fulfill(r, {"extensions": [installed_after]})
+        "**/api/extensions", lambda r: _fulfil(r, {"extensions": [installed_after]})
     )
 
     await reg.get_by_role("button", name="Install").first.click()
@@ -244,11 +244,11 @@ async def test_registry_entry_and_install(page):
 async def _route_setup(page, name, secrets, save_posts=None):
     async def handle(route):
         if route.request.method == "GET":
-            await _fulfill(route, {"name": name, "kind": "wasm_tool", "secrets": secrets})
+            await _fulfil(route, {"name": name, "kind": "wasm_tool", "secrets": secrets})
         else:
             if save_posts is not None:
                 save_posts.append(json.loads(route.request.post_data or "{}"))
-            await _fulfill(route, {"success": True, "message": "Saved"})
+            await _fulfil(route, {"success": True, "message": "Saved"})
 
     await page.route(f"**/api/extensions/{name}/setup", handle)
 
@@ -341,7 +341,7 @@ async def test_remove_confirmed(page):
 
     async def handle_remove(route):
         remove_posts.append(True)
-        await _fulfill(route, {"success": True, "message": "Removed"})
+        await _fulfil(route, {"success": True, "message": "Removed"})
 
     await mock_ext_apis(page, installed=[_WASM_TOOL])
     await page.route("**/api/extensions/test-tool/remove", handle_remove)
@@ -355,7 +355,7 @@ async def test_remove_confirmed(page):
 
     # After removal the list is empty.
     await page.route(
-        "**/api/extensions", lambda r: _fulfill(r, {"extensions": []})
+        "**/api/extensions", lambda r: _fulfil(r, {"extensions": []})
     )
     await dialog.get_by_role("button", name="Remove extension").click()
 
@@ -448,9 +448,9 @@ async def test_pairing_list_and_approve(page):
         url = route.request.url
         if url.rstrip("/").endswith("/approve"):
             approve_posts.append(json.loads(route.request.post_data or "{}"))
-            await _fulfill(route, {"success": True, "message": "Approved"})
+            await _fulfil(route, {"success": True, "message": "Approved"})
         else:
-            await _fulfill(
+            await _fulfil(
                 route,
                 {
                     "channel": "test-channel",

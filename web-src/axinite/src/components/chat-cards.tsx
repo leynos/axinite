@@ -6,7 +6,7 @@ import { useI18n } from "@/lib/i18n/provider";
 /**
  * Returns true only for absolute http(s) URLs. Everything else — relative
  * references, `javascript:` payloads, `data:` URIs, `file:` paths, and
- * unparseable strings — is rejected. This is the single guard that gates any
+ * unparsable strings — is rejected. This is the single guard that gates any
  * externally supplied URL before it reaches `window.open` or an anchor.
  */
 export function isHttpUrl(value: string): boolean {
