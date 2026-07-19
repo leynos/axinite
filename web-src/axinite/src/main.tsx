@@ -2,6 +2,7 @@ import { render } from "solid-js/web";
 
 import { AppProviders } from "./app/providers";
 import { AppRouter } from "./app/router";
+import { AuthGate } from "./components/auth-gate";
 import { i18nReady } from "./lib/i18n/runtime";
 import "./styles/index.css";
 
@@ -20,7 +21,9 @@ void i18nReady
     render(
       () => (
         <AppProviders>
-          <AppRouter />
+          <AuthGate>
+            <AppRouter />
+          </AuthGate>
         </AppProviders>
       ),
       mountNode

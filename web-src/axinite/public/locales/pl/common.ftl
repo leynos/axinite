@@ -409,3 +409,11 @@ logs-level-debug = debug
 logs-level-info = info
 logs-level-warn = warn
 logs-level-error = error
+
+auth-title = Dostęp do bramy
+auth-description = Ta brama wymaga tokenu dostępu. Wklej token z konsoli bramy, aby kontynuować.
+auth-token-label = Token dostępu
+auth-submit = Połącz
+auth-checking = Sprawdzanie dostępu do bramy…
+auth-error-rejected = Brama odrzuciła token.
+auth-error-unreachable = Nie można połączyć się z bramą. Spróbuj ponownie, gdy będzie uruchomiona.

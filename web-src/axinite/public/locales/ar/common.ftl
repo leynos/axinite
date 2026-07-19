@@ -410,3 +410,11 @@ logs-level-debug = debug
 logs-level-info = info
 logs-level-warn = warn
 logs-level-error = error
+
+auth-title = الوصول إلى البوابة
+auth-description = تتطلب هذه البوابة رمز وصول. الصق الرمز من وحدة تحكم البوابة للمتابعة.
+auth-token-label = رمز الوصول
+auth-submit = اتصال
+auth-checking = يجري التحقق من الوصول إلى البوابة…
+auth-error-rejected = رفضت البوابة الرمز.
+auth-error-unreachable = تعذر الوصول إلى البوابة. أعد المحاولة عند تشغيلها.
