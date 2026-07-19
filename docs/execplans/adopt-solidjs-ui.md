@@ -98,25 +98,46 @@ daemon-free stub runtime, and a minimal environment-variable subset of RFC 0009
 - [x] (2026-07-19 10:20Z) Recon complete: legacy web channel, mockup repo,
   build/CI wiring (three parallel reconnaissance passes).
 - [x] (2026-07-19 10:30Z) ExecPlan drafted.
-- [ ] M1: import `axinite-mockup` as `web-src/`; isolated build + checks pass.
-- [ ] M2: rebase the workspace onto root serving (base path `/`), stable
-  asset filenames, single-page entry.
-- [ ] M3: contract fixes (`LogEntry.target`, `JobPromptRequest`, extension
-  install shape) in `contracts.ts` + mock backend.
-- [ ] M4: auth boot flow in the SPA (token screen, bearer header, SSE query
-  token).
-- [ ] M5: gateway serves built SPA by default; legacy shell behind
-  `AXINITE_WEB_UI=legacy`; committed `web-src/dist` embedded via
-  `include_str!`; freshness gate.
-- [ ] M6: minimal `GET /api/features` in the gateway (env-var
-  `FEATURE_FLAG_<NAME>` resolution).
-- [ ] M7: stub runtime command (`make frontend-stub`), deterministic
-  fixtures, flag overrides via env/fixture, contract tests for stub HTTP and
-  SSE routes.
-- [ ] M8: regression suite migration (Node `web_static_app.test.mjs`, Python
-  e2e selectors), docs updates.
-- [ ] M9: browser validation (Playwright MCP), layout validation (css-view),
-  full gates, CodeRabbit review.
+- [x] (2026-07-19 10:55Z) M1: imported `axinite-mockup` as `web-src/`;
+  isolated build + checks pass (commit 8fa5d2b9).
+- [x] (2026-07-19 11:00Z) M2: root base path, stable asset filenames, PWA
+  and GitHub Pages scaffolding removed, preview-server SPA fallback
+  (commit 056d90cc).
+- [x] (2026-07-19 11:05Z) M3: contract fixes (`LogEntry.target`,
+  `JobPromptRequest { content, done? }`, full extension install shape) in
+  `contracts.ts` + mock backend, pinned by
+  `api-contract-alignment.test.ts` (commit 6fc69902).
+- [x] (2026-07-19 11:10Z) M4: auth boot flow — token module, bearer
+  injection, SSE query token, `AuthGate` with anonymous-probe bypass for
+  the stub; localized in all ten locales (commit bae63224).
+- [x] (2026-07-19 11:20Z) M5: gateway serves the built SPA by default
+  (embedded `src/channels/web/static/solid/`); legacy behind
+  `AXINITE_WEB_UI=legacy`; Make targets `frontend-build`/`frontend-verify`
+  etc.; five Rust serving tests (commit 617fb6c0).
+- [x] (2026-07-19 11:25Z) M6: env-var-driven `GET /api/features` in the
+  gateway with compiled defaults mirroring the SPA registry
+  (commit 44750c29).
+- [x] (2026-07-19 11:30Z) M7: stub flags flattened to the RFC 0009 map
+  with `FEATURE_FLAG_*` overrides; `MOCK_FAILURES` failure fixtures;
+  in-process contract tests for HTTP shapes and SSE ordering
+  (commit d0d43217).
+- [x] (2026-07-19 11:45Z) Browser validation via Playwright MCP against the
+  stub: initial load from HTTP fixtures, SSE-driven chat turn, flag toggle
+  hiding the Skills nav entry, `MOCK_FAILURES` error state, clean console on
+  the happy path. Three defects found and fixed with regression tests
+  (nav flag gating, jobs error notice, SSE error-event JSON parsing)
+  (commit 96466513).
+- [x] (2026-07-19 11:50Z) css-view layout validation on all six routes (84 to
+  284 nodes per route): no element extends past the viewport except the
+  decorative `position: fixed` watermark; `scrollWidth == innerWidth` at
+  1280, 768, and 375 px; the jobs table scrolls inside its own
+  `overflow-x: auto` wrap.
+- [x] (2026-07-19 12:00Z) M8: docs (`docs/solidjs-frontend.md`, transitional
+  banner in `docs/front-end-architecture.md`, README pointer, web module
+  CLAUDE.md route tables); `tests/web_static_app.test.mjs` still passes
+  (targets the retained legacy assets); Python e2e conftest pins
+  `AXINITE_WEB_UI=legacy` with rationale.
+- [ ] M9: full gates via scrutineer, CodeRabbit review, retrospective.
 
 ## Surprises & discoveries
 
@@ -166,6 +187,17 @@ daemon-free stub runtime, and a minimal environment-variable subset of RFC 0009
   Rust work-item; an env-var switch satisfies RFC 0018's rollback requirement
   now and can be upgraded to registry-backed routing when RFC 0009 lands. The
   new UI is the default either way.
+  Date/Author: 2026-07-19, Claude.
+- Decision: keep the Python e2e suite (`tests/e2e/`) on the legacy shell by
+  pinning `AXINITE_WEB_UI=legacy` in its conftest, rather than rewriting the
+  scenarios against the SolidJS DOM in this change.
+  Rationale: the suite binds to roughly eighty legacy selectors (tab bar,
+  approval overlay, configure modal, `?token=` boot) whose SolidJS
+  equivalents either differ structurally or do not exist yet; rewriting
+  exceeds the per-scenario tolerance in this plan. The SolidJS UI has its
+  own browser-level coverage (the `web-src` Playwright suite plus the
+  Playwright MCP validation recorded above). Migrating the Python scenarios
+  route-by-route is explicit follow-up work aligned with RFC 0018 Stage 4.
   Date/Author: 2026-07-19, Claude.
 - Decision: implement `GET /api/features` now, minimally, resolving only
   `FEATURE_FLAG_<UPPER_SNAKE_NAME>` environment variables over compiled
