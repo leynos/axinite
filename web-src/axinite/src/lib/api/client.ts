@@ -1,3 +1,5 @@
+import { appendTokenToUrl, getGatewayToken } from "@/lib/auth/token";
+
 type RequestOptions = {
   headers?: HeadersInit;
   method?: string;
@@ -13,11 +15,13 @@ async function request<T>(
   const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
 
   try {
+    const token = getGatewayToken();
     const response = await fetch(url, {
       ...options,
       signal: controller.signal,
       headers: {
         Accept: "application/json",
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
         ...(options.headers ?? {}),
       },
     });
@@ -87,13 +91,14 @@ export function deleteJson<T>(url: string): Promise<T> {
 }
 
 export function createEventStream(url: string): EventSource {
+  const streamUrl = appendTokenToUrl(url);
   if (typeof EventSource === "undefined") {
     const stub = {
       onerror: null,
       onmessage: null,
       onopen: null,
       readyState: 0,
-      url,
+      url: streamUrl,
       withCredentials: false,
       addEventListener() {},
       removeEventListener() {},
@@ -106,5 +111,5 @@ export function createEventStream(url: string): EventSource {
     return stub as unknown as EventSource;
   }
 
-  return new EventSource(url, { withCredentials: false });
+  return new EventSource(streamUrl, { withCredentials: false });
 }

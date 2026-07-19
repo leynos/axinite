@@ -404,3 +404,11 @@ logs-level-debug = debug
 logs-level-info = info
 logs-level-warn = warn
 logs-level-error = error
+
+auth-title = 网关访问
+auth-description = 此网关需要访问令牌。请粘贴网关控制台中的令牌以继续。
+auth-token-label = 访问令牌
+auth-submit = 连接
+auth-checking = 正在检查网关访问…
+auth-error-rejected = 网关拒绝了该令牌。
+auth-error-unreachable = 无法连接到网关。请在其运行后重试。

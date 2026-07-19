@@ -407,3 +407,11 @@ logs-level-debug = debug
 logs-level-info = info
 logs-level-warn = warn
 logs-level-error = error
+
+auth-title = गेटवे पहुँच
+auth-description = इस गेटवे के लिए एक्सेस टोकन आवश्यक है। जारी रखने के लिए गेटवे कंसोल से टोकन चिपकाएँ।
+auth-token-label = एक्सेस टोकन
+auth-submit = कनेक्ट करें
+auth-checking = गेटवे पहुँच की जाँच हो रही है…
+auth-error-rejected = गेटवे ने टोकन अस्वीकार कर दिया।
+auth-error-unreachable = गेटवे तक नहीं पहुँचा जा सका। इसके चलने पर पुनः प्रयास करें।
