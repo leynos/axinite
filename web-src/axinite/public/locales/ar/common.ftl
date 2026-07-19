@@ -485,3 +485,24 @@ extensions-pairing-heading = طلبات الإقران المعلّقة
 extensions-pairing-from = من { $sender }
 extensions-pairing-approve = الموافقة
 extensions-pairing-approve-label = الموافقة على الإقران { $code }
+
+# Jobs detail tabs (F6)
+jobs-tab-overview = نظرة عامة
+jobs-tab-activity = النشاط
+jobs-tab-files = الملفات
+jobs-meta-mode = الوضع
+jobs-meta-kind = النوع
+jobs-meta-project = دليل المشروع
+jobs-meta-unset = غير محدد
+jobs-transitions-title = المخطط الزمني
+jobs-transitions-empty = لم يتم تسجيل أي انتقالات بعد.
+jobs-browse-link = فتح متصفح المشروع
+jobs-activity-empty = لا يوجد نشاط بعد.
+jobs-activity-kind-message = رسالة
+jobs-activity-kind-tool-use = استدعاء أداة
+jobs-activity-kind-tool-result = نتيجة الأداة
+jobs-activity-kind-status = الحالة
+jobs-activity-kind-result = النتيجة
+jobs-files-empty = لم يتم إنتاج أي ملفات بعد.
+jobs-file-tree-label = ملفات المهمة
+jobs-prompt-done-label = وضع علامة كمكتمل

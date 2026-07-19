@@ -484,3 +484,24 @@ extensions-pairing-heading = Oczekujące żądania parowania
 extensions-pairing-from = od { $sender }
 extensions-pairing-approve = Zatwierdź
 extensions-pairing-approve-label = Zatwierdź parowanie { $code }
+
+# Jobs detail tabs (F6)
+jobs-tab-overview = Przegląd
+jobs-tab-activity = Aktywność
+jobs-tab-files = Pliki
+jobs-meta-mode = Tryb
+jobs-meta-kind = Rodzaj
+jobs-meta-project = Katalog projektu
+jobs-meta-unset = Nie ustawiono
+jobs-transitions-title = Oś czasu
+jobs-transitions-empty = Nie zarejestrowano jeszcze żadnych przejść.
+jobs-browse-link = Otwórz przeglądarkę projektu
+jobs-activity-empty = Brak aktywności.
+jobs-activity-kind-message = Wiadomość
+jobs-activity-kind-tool-use = Wywołanie narzędzia
+jobs-activity-kind-tool-result = Wynik narzędzia
+jobs-activity-kind-status = Status
+jobs-activity-kind-result = Wynik
+jobs-files-empty = Nie utworzono jeszcze żadnych plików.
+jobs-file-tree-label = Pliki zadania
+jobs-prompt-done-label = Oznacz jako ukończone

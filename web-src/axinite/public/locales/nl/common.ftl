@@ -482,3 +482,24 @@ extensions-pairing-heading = Openstaande koppelingsverzoeken
 extensions-pairing-from = van { $sender }
 extensions-pairing-approve = Goedkeuren
 extensions-pairing-approve-label = Koppeling { $code } goedkeuren
+
+# Jobs detail tabs (F6)
+jobs-tab-overview = Overzicht
+jobs-tab-activity = Activiteit
+jobs-tab-files = Bestanden
+jobs-meta-mode = Modus
+jobs-meta-kind = Soort
+jobs-meta-project = Projectmap
+jobs-meta-unset = Niet ingesteld
+jobs-transitions-title = Tijdlijn
+jobs-transitions-empty = Nog geen overgangen vastgelegd.
+jobs-browse-link = Projectbrowser openen
+jobs-activity-empty = Nog geen activiteit.
+jobs-activity-kind-message = Bericht
+jobs-activity-kind-tool-use = Toolaanroep
+jobs-activity-kind-tool-result = Toolresultaat
+jobs-activity-kind-status = Status
+jobs-activity-kind-result = Resultaat
+jobs-files-empty = Nog geen bestanden geproduceerd.
+jobs-file-tree-label = Taakbestanden
+jobs-prompt-done-label = Markeren als voltooid
