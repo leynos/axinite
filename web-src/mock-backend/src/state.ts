@@ -1,7 +1,7 @@
 import type {
   ActionResponse,
   ApprovalRequest,
-  CatalogSkillEntry,
+  CatalogueSkillEntry,
   ChatSseEvent,
   ExtensionInfo,
   ExtensionSetupResponse,
@@ -78,7 +78,7 @@ type MockExtension = {
   setupSecrets: SecretFieldInfo[];
 };
 
-type MockCatalogSkill = CatalogSkillEntry;
+type MockCatalogueSkill = CatalogueSkillEntry;
 
 type EventSubscriber<T> = {
   send: (payload: T) => void;
@@ -686,7 +686,7 @@ export class MockBackendState {
             "Collects route changes, open jobs, and flag overrides into a short morning summary.",
           enabled: true,
           trigger: { type: "cron", schedule: "0 9 * * 1-5" },
-          action: { type: "lightweight", prompt: "Summarise active preview work" },
+          action: { type: "lightweight", prompt: "Summarize active preview work" },
           guardrails: { approvals_required: false },
           notify: { channel: "chat" },
           last_run_at: iso(150),
@@ -752,7 +752,7 @@ export class MockBackendState {
             "Scans route regressions and turns them into job prompts for follow-up work.",
           enabled: true,
           trigger: { type: "system_event", source: "preview", event_type: "warning" },
-          action: { type: "lightweight", prompt: "Summarise new warnings" },
+          action: { type: "lightweight", prompt: "Summarize new warnings" },
           guardrails: { approvals_required: false },
           notify: { channel: "chat" },
           last_run_at: iso(85),
@@ -1052,7 +1052,7 @@ export class MockBackendState {
     ],
   ]);
 
-  private readonly catalogSkills = new Map<string, MockCatalogSkill>([
+  private readonly catalogueSkills = new Map<string, MockCatalogueSkill>([
     [
       "react-patterns",
       {
@@ -2038,7 +2038,7 @@ export class MockBackendState {
         skill.keywords.some((keyword) => keyword.toLowerCase().includes(query))
       );
     });
-    const catalog = [...this.catalogSkills.values()].filter((entry) => {
+    const catalogue = [...this.catalogueSkills.values()].filter((entry) => {
       if (query.length === 0) {
         return true;
       }
@@ -2049,30 +2049,30 @@ export class MockBackendState {
       );
     });
     return {
-      catalog,
+      catalog: catalogue,
       installed,
       registry_url: "https://clawhub.example.invalid",
     };
   }
 
   installSkill(request: SkillInstallRequest): ActionResponse {
-    const catalogMatch =
-      [...this.catalogSkills.values()].find(
+    const catalogueMatch =
+      [...this.catalogueSkills.values()].find(
         (entry) =>
           entry.name === request.name ||
           entry.slug === request.slug ||
           entry.slug.endsWith(`/${request.name}`)
       ) ?? null;
-    const name = catalogMatch?.name ?? request.name;
+    const name = catalogueMatch?.name ?? request.name;
     this.skills.set(name, {
       name,
       description:
-        catalogMatch?.description ??
+        catalogueMatch?.description ??
         "Installed ad hoc into the mock preview for UI validation.",
-      version: catalogMatch?.version ?? "1.0.0",
+      version: catalogueMatch?.version ?? "1.0.0",
       trust: "preview",
       source: request.url ? "url" : request.content ? "content" : "catalog",
-      keywords: catalogMatch?.keywords ?? ["mock", "preview"],
+      keywords: catalogueMatch?.keywords ?? ["mock", "preview"],
     });
     this.pushLog(`Installed skill ${name}.`, "skills");
     return createActionResponse(`Skill ${name} installed.`);
