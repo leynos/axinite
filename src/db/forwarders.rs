@@ -182,6 +182,8 @@ impl_db_forwarders! {
         fn get_all_settings(user_id: UserId) -> Result<HashMap<String, serde_json::Value>, DatabaseError>;
         fn set_all_settings(user_id: UserId, settings: &'a HashMap<String, serde_json::Value>) -> Result<(), DatabaseError>;
         fn has_settings(user_id: UserId) -> Result<bool, DatabaseError>;
+        fn list_deployment_flags(deployment_id: &'a str) -> Result<Vec<(String, bool)>, DatabaseError>;
+        fn set_deployment_flag(deployment_id: &'a str, flag_name: &'a str, enabled: bool) -> Result<(), DatabaseError>;
     }
 }
 
