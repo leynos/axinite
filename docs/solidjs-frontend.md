@@ -171,9 +171,14 @@ serves, by default (`UiVariant::Solid`):
 Vite is configured to emit stable, hash-free artefact names so the embedded
 file list stays fixed; everything is served with `Cache-Control: no-cache`.
 
-`GET /api/features` on the gateway resolves `FEATURE_FLAG_<NAME>` environment
-variables over compiled defaults (`src/channels/web/handlers/features.rs`).
-The RFC 0009 settings-table override layer is not implemented yet.
+`GET /api/features` on the gateway resolves, per flag: `FEATURE_FLAG_<NAME>`
+environment variable, then the deployment-scoped operator override
+(persisted via `PUT /api/settings/feature_flag:<name>` with an
+`X-Deployment-Id` header), then a subsystem-availability default (flags
+whose backing runtime is absent resolve off), then the compiled default
+(`src/channels/web/handlers/features.rs`). The response carries an
+`X-Axinite-Version` header; see RFC 0009's implementation notes for the
+full contract and deviations.
 
 ### 4.1 Authentication
 
