@@ -364,7 +364,13 @@ chat-status-tool-failed = { $name } is mislukt.
 chat-status-complete = Antwoord voltooid.
 chat-response-pending = Wacht op voltooiing…
 chat-approval-approve = Goedkeuren
+chat-approval-always = Altijd
 chat-approval-deny = Weigeren
+
+connection-status-idle = Inactief
+connection-status-connecting = Verbinden…
+connection-status-connected = Verbonden
+connection-status-disconnected = Verbroken
 chat-upload-unavailable = Mock-backendvoorbeeld bewaart geen bestandsuploads.
 chat-sidebar-conversations = Gesprekken
 chat-tools-used = { $count ->

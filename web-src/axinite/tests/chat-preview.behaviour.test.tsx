@@ -6,6 +6,7 @@ import { AppProviders } from "@/app/providers";
 import { ChatPreview } from "@/components/chat-preview";
 import { DEFAULT_LOCALE } from "@/lib/i18n/supported-locales";
 import { setupI18nTestHarness } from "./support/i18n-test-runtime";
+import { TestProviders } from "./support/test-providers";
 
 type ChatEvent = { type: string; [key: string]: unknown };
 
@@ -332,5 +333,96 @@ describe("chat preview behaviour", () => {
     expect(payload.images[0].media_type).toBe("image/png");
     expect(typeof payload.images[0].data).toBe("string");
     expect(payload.images[0].data.length).toBeGreaterThan(0);
+  });
+
+  it("tags user and assistant turns with data-role markers", async () => {
+    chatApiMocks.fetchHistory.mockResolvedValue({
+      thread_id: "thread-1",
+      turns: [
+        {
+          turn_number: 1,
+          user_input: "Ping the daemon",
+          response: "Pong from the daemon.",
+          state: "Complete",
+          started_at: "2026-03-26T12:00:00Z",
+          completed_at: "2026-03-26T12:00:01Z",
+          tool_calls: [],
+        },
+      ],
+      has_more: false,
+    });
+
+    // TestProviders builds a fresh QueryClient so the non-empty history is not
+    // shadowed by the empty "thread-1" history cached by earlier cases in the
+    // module-singleton client that AppProviders shares.
+    const { container } = render(() => (
+      <TestProviders>
+        <ChatPreview />
+      </TestProviders>
+    ));
+
+    await screen.findByText("Ping the daemon");
+    expect(container.querySelector('[data-role="user"]')).not.toBeNull();
+    await waitFor(() => {
+      expect(container.querySelector('[data-role="assistant"]')).not.toBeNull();
+    });
+  });
+
+  it("offers Approve/Always/Deny on the pending-approval card and disables them while submitting", async () => {
+    chatApiMocks.fetchHistory.mockResolvedValue({
+      thread_id: "thread-1",
+      turns: [],
+      has_more: false,
+      pending_approval: {
+        request_id: "req-42",
+        tool_name: "shell",
+        description: "Run a shell command",
+        parameters: '{ "cmd": "ls" }',
+      },
+    });
+
+    let resolveApproval: (() => void) | undefined;
+    chatApiMocks.submitApproval.mockImplementation(
+      () =>
+        new Promise<{ success: boolean; message: string }>((resolve) => {
+          resolveApproval = () => resolve({ success: true, message: "ok" });
+        })
+    );
+
+    // Fresh QueryClient (see the data-role test) so the pending_approval
+    // history is not masked by the cached empty "thread-1" history.
+    const { container } = render(() => (
+      <TestProviders>
+        <ChatPreview />
+      </TestProviders>
+    ));
+
+    const approveButton = await screen.findByRole("button", {
+      name: "Approve",
+    });
+    const alwaysButton = screen.getByRole("button", { name: "Always" });
+    const denyButton = screen.getByRole("button", { name: "Deny" });
+
+    // The card carries the request id for the e2e suite to target.
+    expect(
+      container.querySelector('[data-request-id="req-42"]')
+    ).not.toBeNull();
+
+    await userEvent.click(alwaysButton);
+
+    await waitFor(() => {
+      expect(chatApiMocks.submitApproval).toHaveBeenCalledWith(
+        expect.objectContaining({ request_id: "req-42", action: "always" })
+      );
+    });
+
+    // All three actions are disabled while the mutation is pending.
+    await waitFor(() => {
+      expect(approveButton).toBeDisabled();
+    });
+    expect(alwaysButton).toBeDisabled();
+    expect(denyButton).toBeDisabled();
+
+    resolveApproval?.();
   });
 });
