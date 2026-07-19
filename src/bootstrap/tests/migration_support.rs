@@ -109,6 +109,22 @@ impl MigrationStore {
 }
 
 impl SettingsStore for MigrationStore {
+    fn list_deployment_flags<'a>(
+        &'a self,
+        _deployment_id: &'a str,
+    ) -> DbFuture<'a, Result<Vec<(String, bool)>, DatabaseError>> {
+        Box::pin(async { Ok(Vec::new()) })
+    }
+
+    fn set_deployment_flag<'a>(
+        &'a self,
+        _deployment_id: &'a str,
+        _flag_name: &'a str,
+        _enabled: bool,
+    ) -> DbFuture<'a, Result<(), DatabaseError>> {
+        Box::pin(async { Ok(()) })
+    }
+
     fn get_setting<'a>(
         &'a self,
         _user_id: UserId,
