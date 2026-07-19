@@ -427,3 +427,25 @@ auth-checking = يجري التحقق من الوصول إلى البوابة…
 auth-error-rejected = رفضت البوابة الرمز.
 auth-error-unreachable = تعذر الوصول إلى البوابة. أعد المحاولة عند تشغيلها.
 jobs-load-error = تعذر تحميل المهام من البوابة. تحقق من الاتصال وحاول مرة أخرى.
+
+# Chat media, auth cards, and job-start cards
+chat-attach-images = إرفاق صور
+chat-attachment-strip-label = مرفقات الصور المُعدّة
+chat-attachment-invalid-type = لا يمكن إرفاق سوى ملفات الصور.
+chat-attachment-too-large = { $name } أكبر من الحد الأقصى البالغ 5 ميغابايت.
+chat-attachment-too-many = يمكنك إرفاق 5 صور كحد أقصى لكل رسالة.
+chat-attachment-remove = إزالة { $name }
+chat-generated-image-alt = صورة مُولّدة
+chat-job-card-fallback-title = مهمة الصندوق الرملي
+chat-job-card-id = المهمة { $id }
+chat-job-card-open = فتح في المهام
+chat-job-card-browse = تصفّح
+chat-auth-card-title = المصادقة مطلوبة لـ { $name }
+chat-auth-card-oauth = مصادقة
+chat-auth-card-get-token = احصل على رمزك
+chat-auth-card-token-label = رمز الوصول
+chat-auth-card-token-placeholder = الصق الرمز…
+chat-auth-card-submit = إرسال
+chat-auth-card-cancel = إلغاء
+chat-auth-card-error = فشلت المصادقة. تحقّق من الرمز وحاول مرة أخرى.
+chat-auth-notice-dismiss = إغلاق
