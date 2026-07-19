@@ -87,32 +87,39 @@ against the SolidJS UI.
 - [x] (2026-07-19 13:10Z) Recon: e2e scenario inventory, settings/migration
   conventions, restart/TEE/media/pairing contracts, mock gaps.
 - [x] (2026-07-19 13:20Z) ExecPlan drafted.
-- [x] (2026-07-19 14:45Z) F1: RFC 0009 flag persistence (Rust): `feature_flag_overrides` table
+- [x] (2026-07-19 14:45Z) F1: RFC 0009 flag persistence (Rust):
+  `feature_flag_overrides` table
   (postgres V18 + libsql incremental), `SettingsStore` deployment-flag
   methods, `FeatureFlagRegistry` in `GatewayState`, settings-handler
   interception, `/api/features` layering, tests.
-- [x] (2026-07-19 14:05Z) F2: logs top-level route (SPA): `/logs` route + `route_logs` flag
+- [x] (2026-07-19 14:05Z) F2: logs top-level route (SPA): `/logs` route +
+  `route_logs` flag
   (registry, Rust defaults, mock), filters (level, target, text),
   pause/resume, clear, auto-scroll; gateway serves `/logs` shell; web-src
   e2e updated.
-- [x] (2026-07-19 14:30Z) F3: stub surface extensions (mock backend): pairing routes and
+- [x] (2026-07-19 14:30Z) F3: stub surface extensions (mock backend):
+  pairing routes and
   `pairing` activation fixture; `/api/chat/auth-token` + `auth-cancel`;
   `job_started` + `image_generated` emissions; `/restart` command fixture;
   images accepted on send; contract tests.
-- [x] (2026-07-19 15:10Z) F4: chat media + auth cards + job cards (SPA): image staging
+- [x] (2026-07-19 15:10Z) F4: chat media + auth cards + job cards (SPA):
+  image staging
   (attach/paste, caps, previews), `images[]` on send, generated-image
   rendering, `auth_required` dispatch (OAuth card vs configure modal),
   `auth_completed` dismissal + toast, `job_started` card; `ChatSseEvent`
   union extended to the full daemon event set; tests.
-- [x] (2026-07-19 15:40Z) F5: restart + TEE + pairing surfaces (SPA): restart button/modal/
+- [x] (2026-07-19 15:40Z) F5: restart + TEE + pairing surfaces (SPA):
+  restart button/modal/
   loader driven by `restart_enabled` and the `/restart` chat command; TEE
   shield + popover behind `surface_tee_attestation` (external-host client
   per the legacy contract); pairing rows + approve + stepper states on the
   extensions route with 10 s polling; tests.
-- [x] (2026-07-19 16:10Z) F6: jobs detail fidelity (SPA): Overview/Activity/Files tabs,
+- [x] (2026-07-19 16:10Z) F6: jobs detail fidelity (SPA):
+  Overview/Activity/Files tabs,
   transitions timeline, `browse_url`, mode/kind, restart/prompt gating,
   persisted+live activity merge, done signal, recursive file tree; tests.
-- [x] (2026-07-19 17:10Z) F7: Python e2e migration: `?token=` boot + `data-testid` contract in
+- [x] (2026-07-19 17:10Z) F7: Python e2e migration: `?token=` boot +
+  `data-testid` contract in
   the SPA (`auth-screen`, `sse-status`, message roles), `window.__axinite`
   hooks, rewrite `helpers.py` SEL + all seven scenarios to the SolidJS DOM,
   drop `AXINITE_WEB_UI=legacy` from conftest, run the suite against the
