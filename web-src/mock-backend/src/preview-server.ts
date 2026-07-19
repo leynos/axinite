@@ -35,6 +35,15 @@ function resolveStaticPath(pathname: string): string | null {
     }
   }
 
+  // Single-page-app fallback: extension-less routes (for example /chat)
+  // resolve to the app shell, matching the gateway's serving behaviour.
+  if (!path.extname(cleanPath)) {
+    const shell = path.join(distDir, "index.html");
+    if (fileExists(shell)) {
+      return shell;
+    }
+  }
+
   return null;
 }
 

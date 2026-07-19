@@ -465,8 +465,8 @@ export class MockBackendState {
           started_at: iso(219),
           completed_at: iso(210),
           elapsed_secs: 540,
-          project_dir: "/workspace/axinite-mockup",
-          browse_url: "/axinite-mockup/jobs",
+          project_dir: "/workspace/axinite",
+          browse_url: "/jobs",
           job_mode: "direct",
           transitions: [
             { from: "queued", to: "running", timestamp: iso(219), reason: null },
@@ -515,8 +515,8 @@ export class MockBackendState {
           started_at: iso(126),
           completed_at: null,
           elapsed_secs: 1_260,
-          project_dir: "/workspace/axinite-mockup",
-          browse_url: "/axinite-mockup/jobs",
+          project_dir: "/workspace/axinite",
+          browse_url: "/jobs",
           job_mode: "direct",
           transitions: [
             { from: "queued", to: "running", timestamp: iso(126), reason: null },
@@ -559,8 +559,8 @@ export class MockBackendState {
           started_at: iso(308),
           completed_at: iso(300),
           elapsed_secs: 480,
-          project_dir: "/workspace/axinite-mockup",
-          browse_url: "/axinite-mockup/extensions",
+          project_dir: "/workspace/axinite",
+          browse_url: "/extensions",
           job_mode: "sandbox",
           transitions: [
             { from: "queued", to: "running", timestamp: iso(308), reason: null },
@@ -602,8 +602,8 @@ export class MockBackendState {
           started_at: iso(395),
           completed_at: null,
           elapsed_secs: 7_200,
-          project_dir: "/workspace/axinite-mockup",
-          browse_url: "/axinite-mockup/skills",
+          project_dir: "/workspace/axinite",
+          browse_url: "/skills",
           job_mode: "direct",
           transitions: [
             { from: "queued", to: "running", timestamp: iso(395), reason: null },
@@ -646,8 +646,8 @@ export class MockBackendState {
           started_at: null,
           completed_at: null,
           elapsed_secs: null,
-          project_dir: "/workspace/axinite-mockup",
-          browse_url: "/axinite-mockup/chat",
+          project_dir: "/workspace/axinite",
+          browse_url: "/chat",
           job_mode: "direct",
           transitions: [
             {
