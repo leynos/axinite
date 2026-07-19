@@ -408,6 +408,8 @@ jobs-files-title = Dateien
 skills-format-preview = Vorschau
 skills-action-install = Installieren
 
+route-logs-label = Protokolle
+
 memory-watermark = MEM
 
 logs-level-label = Log-Stufe
@@ -415,6 +417,13 @@ logs-level-debug = debug
 logs-level-info = info
 logs-level-warn = warn
 logs-level-error = error
+logs-level-trace = trace
+logs-filter-level-label = Anzeigestufe
+logs-filter-target-label = Zielfilter
+logs-pause = Pause
+logs-resume = Fortsetzen
+logs-clear = Leeren
+logs-autoscroll = Automatisches Scrollen
 
 auth-title = Gateway-Zugang
 auth-description = Dieses Gateway erfordert ein Zugriffstoken. Fügen Sie das Token aus der Gateway-Konsole ein, um fortzufahren.

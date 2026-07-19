@@ -408,6 +408,8 @@ jobs-files-title = Fichiers
 skills-format-preview = Aperçu
 skills-action-install = Installer
 
+route-logs-label = Journaux
+
 memory-watermark = MEM
 
 logs-level-label = Niveau de log
@@ -415,6 +417,13 @@ logs-level-debug = debug
 logs-level-info = info
 logs-level-warn = warn
 logs-level-error = error
+logs-level-trace = trace
+logs-filter-level-label = Niveau d'affichage
+logs-filter-target-label = Filtre de cible
+logs-pause = Pause
+logs-resume = Reprendre
+logs-clear = Effacer
+logs-autoscroll = Défilement automatique
 
 auth-title = Accès à la passerelle
 auth-description = Cette passerelle nécessite un jeton d'accès. Collez le jeton depuis la console de la passerelle pour continuer.

@@ -408,6 +408,8 @@ jobs-files-title = File
 skills-format-preview = Anteprima
 skills-action-install = Installa
 
+route-logs-label = Log
+
 memory-watermark = MEM
 
 logs-level-label = Livello di log
@@ -415,6 +417,13 @@ logs-level-debug = debug
 logs-level-info = info
 logs-level-warn = warn
 logs-level-error = error
+logs-level-trace = trace
+logs-filter-level-label = Livello di visualizzazione
+logs-filter-target-label = Filtro target
+logs-pause = Pausa
+logs-resume = Riprendi
+logs-clear = Cancella
+logs-autoscroll = Scorrimento automatico
 
 auth-title = Accesso al gateway
 auth-description = Questo gateway richiede un token di accesso. Incolla il token dalla console del gateway per continuare.

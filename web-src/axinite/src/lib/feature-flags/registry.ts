@@ -5,6 +5,7 @@ export type FeatureFlagName =
   | "route_routines"
   | "route_extensions"
   | "route_skills"
+  | "route_logs"
   | "panel_logs"
   | "action_memory_edit"
   | "action_job_restart"
@@ -56,6 +57,12 @@ export const FEATURE_FLAGS: FeatureFlagDefinition[] = [
     defaultValue: true,
     owner: "skills-ui",
     backendContract: "hide when skill registry is absent",
+  },
+  {
+    name: "route_logs",
+    defaultValue: true,
+    owner: "shell-ui",
+    backendContract: "always available in preview shell",
   },
   {
     name: "panel_logs",
