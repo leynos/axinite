@@ -22,7 +22,8 @@ use crate::agent::SessionManager;
 use crate::channels::IncomingMessage;
 use crate::channels::web::auth::{AuthState, auth_middleware};
 use crate::channels::web::handlers::{
-    chat, extensions, jobs, memory, oauth, pairing, routines, settings, skills, static_files,
+    chat, extensions, features, jobs, memory, oauth, pairing, routines, settings, skills,
+    static_files,
 };
 use crate::channels::web::log_layer::LogBroadcaster;
 use crate::channels::web::sse::SseManager;
@@ -190,6 +191,7 @@ async fn bind_listener(
 fn protected_routes(auth_token: String) -> Router<Arc<GatewayState>> {
     let auth_state = AuthState { token: auth_token };
     chat::routes()
+        .merge(features::routes())
         .merge(memory::routes())
         .merge(jobs::routes())
         .merge(static_files::protected_routes())
