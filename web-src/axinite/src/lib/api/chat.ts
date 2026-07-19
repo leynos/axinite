@@ -2,6 +2,8 @@ import { createEventStream, postJson, requestJson } from "@/lib/api/client";
 import type {
   ActionResponse,
   ApprovalRequest,
+  AuthCancelRequest,
+  AuthTokenRequest,
   ChatSseEvent,
   HistoryResponse,
   SendMessageRequest,
@@ -40,6 +42,18 @@ export function submitApproval(
   return postJson<ActionResponse>("/api/chat/approval", request);
 }
 
+export function submitAuthToken(
+  request: AuthTokenRequest
+): Promise<ActionResponse> {
+  return postJson<ActionResponse>("/api/chat/auth-token", request);
+}
+
+export function cancelAuth(
+  request: AuthCancelRequest
+): Promise<ActionResponse> {
+  return postJson<ActionResponse>("/api/chat/auth-cancel", request);
+}
+
 export function connectChatEvents(
   listener: (event: ChatSseEvent) => void,
   onError?: () => void
@@ -59,6 +73,13 @@ export function connectChatEvents(
     "error",
     "heartbeat",
     "extension_status",
+    "job_started",
+    "job_message",
+    "job_tool_use",
+    "job_tool_result",
+    "job_status",
+    "job_result",
+    "image_generated",
   ];
 
   for (const eventType of eventTypes) {

@@ -433,3 +433,25 @@ auth-checking = Vérification de l'accès à la passerelle…
 auth-error-rejected = La passerelle a rejeté le jeton.
 auth-error-unreachable = La passerelle est injoignable. Réessayez lorsqu'elle est en cours d'exécution.
 jobs-load-error = Impossible de charger les jobs depuis la passerelle. Vérifiez la connexion et réessayez.
+
+# Chat media, auth cards, and job-start cards
+chat-attach-images = Joindre des images
+chat-attachment-strip-label = Images jointes en attente
+chat-attachment-invalid-type = Seuls les fichiers image peuvent être joints.
+chat-attachment-too-large = { $name } dépasse la limite de 5 Mo.
+chat-attachment-too-many = Vous pouvez joindre au maximum 5 images par message.
+chat-attachment-remove = Supprimer { $name }
+chat-generated-image-alt = Image générée
+chat-job-card-fallback-title = Tâche du bac à sable
+chat-job-card-id = Tâche { $id }
+chat-job-card-open = Ouvrir dans Tâches
+chat-job-card-browse = Parcourir
+chat-auth-card-title = Authentification requise pour { $name }
+chat-auth-card-oauth = S’authentifier
+chat-auth-card-get-token = Obtenir votre jeton
+chat-auth-card-token-label = Jeton d’accès
+chat-auth-card-token-placeholder = Coller le jeton…
+chat-auth-card-submit = Envoyer
+chat-auth-card-cancel = Annuler
+chat-auth-card-error = Échec de l’authentification. Vérifiez le jeton et réessayez.
+chat-auth-notice-dismiss = Fermer

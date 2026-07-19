@@ -421,3 +421,25 @@ auth-checking = 正在检查网关访问…
 auth-error-rejected = 网关拒绝了该令牌。
 auth-error-unreachable = 无法连接到网关。请在其运行后重试。
 jobs-load-error = 无法从网关加载任务。请检查连接并重试。
+
+# Chat media, auth cards, and job-start cards
+chat-attach-images = 附加图片
+chat-attachment-strip-label = 待发送的图片附件
+chat-attachment-invalid-type = 只能附加图片文件。
+chat-attachment-too-large = { $name } 超过了 5 MB 的限制。
+chat-attachment-too-many = 每条消息最多可附加 5 张图片。
+chat-attachment-remove = 移除 { $name }
+chat-generated-image-alt = 生成的图片
+chat-job-card-fallback-title = 沙盒作业
+chat-job-card-id = 作业 { $id }
+chat-job-card-open = 在作业中打开
+chat-job-card-browse = 浏览
+chat-auth-card-title = { $name } 需要身份验证
+chat-auth-card-oauth = 进行验证
+chat-auth-card-get-token = 获取您的令牌
+chat-auth-card-token-label = 访问令牌
+chat-auth-card-token-placeholder = 粘贴令牌…
+chat-auth-card-submit = 提交
+chat-auth-card-cancel = 取消
+chat-auth-card-error = 身份验证失败。请检查令牌后重试。
+chat-auth-notice-dismiss = 关闭
