@@ -1,6 +1,6 @@
 export const DEPLOY_BASE_PATH = "/";
 
-export function normaliseBasePath(rawBase: string | undefined): string {
+export function normalizeBasePath(rawBase: string | undefined): string {
   const candidate = rawBase && rawBase.length > 0 ? rawBase : "/";
   const withLeading = candidate.startsWith("/") ? candidate : `/${candidate}`;
   return withLeading.endsWith("/") ? withLeading : `${withLeading}/`;
@@ -10,7 +10,7 @@ export function buildAppPath(
   rawBase: string | undefined,
   path: string
 ): string {
-  const basePath = normaliseBasePath(rawBase);
+  const basePath = normalizeBasePath(rawBase);
   const trimmedPath = path.replace(/^\/+/, "");
 
   if (trimmedPath.length === 0) {
