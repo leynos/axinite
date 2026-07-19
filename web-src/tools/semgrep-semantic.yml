@@ -1,0 +1,7 @@
+rules:
+  - id: solid-classname-prop
+    message: Use the Solid `class` prop instead of `className`.
+    severity: ERROR
+    languages: [typescript]
+    patterns:
+      - pattern: <... className=$VALUE ...>

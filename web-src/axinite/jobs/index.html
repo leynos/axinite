@@ -1,0 +1,426 @@
+<!DOCTYPE html><html lang="en" class="dark"><head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link rel="icon" href="../assets/icons/axinite32.ico" sizes="32x32">
+    <title>Jobs - Axinite</title>
+    <link rel="stylesheet" href="../assets/css/index.css">
+    <script src="../assets/vendor/tailwindcss-browser-4.2.1.js"></script>
+    <script src="../assets/vendor/iconify-icon-3.0.2.min.js"></script>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Buenard:wght@400..700&family=Molengo&display=swap" rel="stylesheet">
+    <script src="../assets/js/tailwind-config.js"></script>
+</head>
+<body class="h-screen w-full overflow-hidden bg-brand-dark bg-mesh-gradient flex flex-col font-sans text-sm antialiased">
+    <div id="app-shell" class="contents">
+
+    <!-- Top Navigation -->
+    <header id="header" class="glass-topbar w-full h-14 flex items-center justify-between px-4 z-20 shrink-0">
+        <div class="flex items-center space-x-6 h-full">
+            <nav class="flex h-full space-x-1">
+                <a href="../chat/" class="h-full px-4 flex items-center text-zinc-400 hover:text-zinc-200 transition-colors">Chat</a>
+                <a href="../memory/" class="h-full px-4 flex items-center text-zinc-400 hover:text-zinc-200 transition-colors">Memory</a>
+                <a href="../jobs/" class="h-full px-4 flex items-center text-brand-emerald border-b-2 border-brand-emerald font-medium">Jobs</a>
+                <a href="../routines/" class="h-full px-4 flex items-center text-zinc-400 hover:text-zinc-200 transition-colors">Routines</a>
+                <a href="../extensions/" class="h-full px-4 flex items-center text-zinc-400 hover:text-zinc-200 transition-colors">Extensions</a>
+                <a href="../skills/" class="h-full px-4 flex items-center text-zinc-400 hover:text-zinc-200 transition-colors">Skills</a>
+            </nav>
+        </div>
+
+        <div class="flex items-center space-x-4">
+            <button type="button" class="text-xs text-zinc-400 hover:text-zinc-200 px-3 py-1.5 rounded-md hover:bg-glass-100 transition-colors border border-glass-border">
+                Logs
+            </button>
+            <div class="flex items-center space-x-2 text-xs text-zinc-400">
+                <span class="w-2 h-2 rounded-full bg-brand-emerald shadow-[0_0_8px_rgba(0,255,65,0.5)]"></span>
+                <span>Connected</span>
+            </div>
+        </div>
+    </header>
+
+    <!-- Background watermark -->
+    <iconify-icon icon="carbon:task" class="fixed bottom-[-3vh] right-[-2vw] text-white pointer-events-none z-0" style="font-size: 30vh; opacity: 0.025;"></iconify-icon>
+
+    <div class="flex flex-1 overflow-hidden relative z-10">
+        <main class="flex-1 overflow-y-auto">
+            <div class="max-w-6xl mx-auto px-6 py-6 space-y-6">
+
+                <!-- Summary cards -->
+                <div class="overflow-x-auto">
+                    <div id="summary-cards" class="grid grid-cols-5 gap-3 min-w-[560px]"></div>
+                </div>
+
+                <!-- Job table -->
+                <section>
+                    <div class="overflow-x-auto">
+                        <table class="w-full">
+                            <thead>
+                                <tr class="text-left text-[10px] font-semibold text-zinc-500 uppercase tracking-wider">
+                                    <th class="pb-2 pl-3 w-24">ID</th>
+                                    <th class="pb-2">Title</th>
+                                    <th class="pb-2 w-24">Source</th>
+                                    <th class="pb-2 w-28">Status</th>
+                                    <th class="pb-2 w-36">Created</th>
+                                    <th class="pb-2 pl-3">Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody id="job-rows"></tbody>
+                        </table>
+                    </div>
+                    <p id="empty-msg" class="hidden text-center text-zinc-500 text-sm py-12">No jobs found</p>
+                </section>
+
+            </div>
+        </main>
+    </div>
+
+    </div>
+
+    <!-- Job detail modal -->
+    <div id="detail-modal" role="dialog" aria-modal="true" aria-labelledby="detail-title" aria-hidden="true" tabindex="-1" class="hidden fixed inset-0 z-50 flex items-center justify-center">
+        <div id="detail-backdrop" class="absolute inset-0 bg-black/60"></div>
+        <div class="relative rounded-2xl p-6 w-full max-w-lg mx-4 border border-glass-border max-h-[80vh] flex flex-col" style="background: rgba(15, 15, 20, 0.9); backdrop-filter: blur(24px); -webkit-backdrop-filter: blur(24px);">
+            <h3 id="detail-title" class="text-lg font-semibold text-zinc-100 mb-1 font-serif"></h3>
+            <div id="detail-meta" class="flex items-center gap-2 mb-4 flex-wrap"></div>
+            <div id="detail-body" class="flex-1 overflow-y-auto space-y-4"></div>
+            <div class="flex justify-end space-x-3 mt-4">
+                <span id="detail-actions"></span>
+                <button type="button" id="detail-close" class="px-4 py-2 rounded-lg text-sm text-zinc-300 font-medium transition-colors border border-red-500/60 hover:bg-red-500/10">Close</button>
+            </div>
+        </div>
+    </div>
+
+    <script src="../assets/js/dashboard.js"></script>
+    <script>
+    (function () {
+        /* ── data ──────────────────────────────────────────────── */
+        var jobs = [
+            {
+                id: 'f2854dd8-1a2b-4c3d-9e4f-5a6b7c8d9e0f',
+                shortId: 'f2854dd8',
+                title: 'Audit netsuke CI pipeline',
+                description: 'Review the CI/CD pipeline configuration for the Netsuke project. Check for flaky tests, unnecessary steps, and opportunities to parallelise builds.',
+                source: 'direct',
+                status: 'completed',
+                createdAt: '2026-03-12 08:15',
+                startedAt: '2026-03-12 08:15',
+                completedAt: '2026-03-12 08:22',
+                elapsed: '7m 45s',
+                transitions: [
+                    { from: 'pending', to: 'in_progress', at: '08:15:02' },
+                    { from: 'in_progress', to: 'completed', at: '08:22:47' }
+                ]
+            },
+            {
+                id: 'a1b2c3d4-5e6f-7a8b-9c0d-1e2f3a4b5c6d',
+                shortId: 'a1b2c3d4',
+                title: 'Draft comparison table copy',
+                description: 'Write the comparison table content for the Netsuke documentation site, comparing Netsuke against Make, shell scripts, and other build systems.',
+                source: 'direct',
+                status: 'in_progress',
+                createdAt: '2026-03-12 09:30',
+                startedAt: '2026-03-12 09:30',
+                completedAt: null,
+                elapsed: null,
+                transitions: [
+                    { from: 'pending', to: 'in_progress', at: '09:30:01' }
+                ]
+            },
+            {
+                id: '7e8f9a0b-1c2d-3e4f-5a6b-7c8d9e0f1a2b',
+                shortId: '7e8f9a0b',
+                title: 'Migrate auth module to OAuth2',
+                description: 'Refactor the authentication module from custom token-based auth to OAuth2 with PKCE flow. Update all API endpoints and client code.',
+                source: 'sandbox',
+                status: 'failed',
+                createdAt: '2026-03-11 14:00',
+                startedAt: '2026-03-11 14:00',
+                completedAt: '2026-03-11 14:45',
+                elapsed: '45m 9s',
+                transitions: [
+                    { from: 'pending', to: 'in_progress', at: '14:00:03' },
+                    { from: 'in_progress', to: 'failed', at: '14:45:12' }
+                ]
+            },
+            {
+                id: 'b3c4d5e6-7f8a-9b0c-1d2e-3f4a5b6c7d8e',
+                shortId: 'b3c4d5e6',
+                title: 'Generate API documentation',
+                description: 'Auto-generate API reference documentation from the Rust codebase using doc comments and OpenAPI annotations.',
+                source: 'direct',
+                status: 'stuck',
+                createdAt: '2026-03-12 07:00',
+                startedAt: '2026-03-12 07:00',
+                completedAt: null,
+                elapsed: null,
+                transitions: [
+                    { from: 'pending', to: 'in_progress', at: '07:00:02' },
+                    { from: 'in_progress', to: 'stuck', at: '07:34:18' }
+                ]
+            },
+            {
+                id: 'c5d6e7f8-9a0b-1c2d-3e4f-5a6b7c8d9e0f',
+                shortId: 'c5d6e7f8',
+                title: 'Review PR #47 security changes',
+                description: 'Review pull request #47 which adds rate limiting and input validation to the public API endpoints.',
+                source: 'direct',
+                status: 'pending',
+                createdAt: '2026-03-12 10:05',
+                startedAt: null,
+                completedAt: null,
+                elapsed: null,
+                transitions: []
+            },
+        ];
+
+        var statusStyle = {
+            'pending':     { color: 'text-zinc-400',       bg: 'bg-zinc-500/20 text-zinc-400' },
+            'in_progress': { color: 'text-brand-emerald',  bg: 'bg-emerald-500/15 text-emerald-400' },
+            'completed':   { color: 'text-brand-emerald',  bg: 'bg-emerald-500/15 text-emerald-400' },
+            'submitted':   { color: 'text-blue-400',       bg: 'bg-blue-500/15 text-blue-400' },
+            'accepted':    { color: 'text-blue-400',       bg: 'bg-blue-500/15 text-blue-400' },
+            'failed':      { color: 'text-red-400',        bg: 'bg-red-500/15 text-red-400' },
+            'stuck':       { color: 'text-amber-400',      bg: 'bg-amber-500/15 text-amber-400' },
+            'cancelled':   { color: 'text-zinc-400',       bg: 'bg-zinc-500/20 text-zinc-400' },
+        };
+
+        var statusLabel = {
+            'pending': 'Pending', 'in_progress': 'In Progress', 'completed': 'Completed',
+            'submitted': 'Submitted', 'accepted': 'Accepted', 'failed': 'Failed',
+            'stuck': 'Stuck', 'cancelled': 'Cancelled',
+        };
+
+        var sourceStyle = {
+            'direct':  'bg-zinc-500/20 text-zinc-400',
+            'sandbox': 'bg-indigo-500/20 text-indigo-400',
+        };
+
+        /* summary card definitions matching the screenshot */
+        var summaryDefs = [
+            { key: 'total',       label: 'TOTAL',       color: 'text-white' },
+            { key: 'in_progress', label: 'IN PROGRESS', color: 'text-brand-emerald' },
+            { key: 'completed',   label: 'COMPLETED',   color: 'text-brand-emerald' },
+            { key: 'failed',      label: 'FAILED',      color: 'text-red-400' },
+            { key: 'stuck',       label: 'STUCK',       color: 'text-amber-400' },
+        ];
+
+        var activeFilter = null;
+
+        /* ── elements ──────────────────────────────────────────── */
+        var summaryCardsEl = document.getElementById('summary-cards');
+        var jobRowsEl      = document.getElementById('job-rows');
+        var emptyMsg       = document.getElementById('empty-msg');
+        var modalTitle     = document.getElementById('detail-title');
+        var modalMeta      = document.getElementById('detail-meta');
+        var modalBody      = document.getElementById('detail-body');
+        var modalActions   = document.getElementById('detail-actions');
+
+        /* ── helpers ───────────────────────────────────────────── */
+        var esc = escapeHtml;
+
+        function countByStatus(status) {
+            return jobs.filter(function (j) { return j.status === status; }).length;
+        }
+
+        function summaryCount(key) {
+            return key === 'total' ? jobs.length : countByStatus(key);
+        }
+
+        /* ── render summary cards ────────────────────────────── */
+        function renderSummary() {
+            renderSummaryCards(summaryCardsEl, summaryDefs, summaryCount, activeFilter, function (key) {
+                activeFilter = activeFilter === key ? null : key;
+                renderSummary();
+                renderTable();
+            });
+        }
+
+        /* ── render job table ────────────────────────────────── */
+        function renderTable() {
+            jobRowsEl.innerHTML = '';
+            var filtered = jobs;
+            if (activeFilter && activeFilter !== 'total') {
+                filtered = jobs.filter(function (j) { return j.status === activeFilter; });
+            }
+
+            if (filtered.length === 0) {
+                emptyMsg.classList.remove('hidden');
+                return;
+            }
+            emptyMsg.classList.add('hidden');
+
+            filtered.forEach(function (job) {
+                var ss = statusStyle[job.status] || statusStyle['pending'];
+                var sl = statusLabel[job.status] || job.status;
+                var src = sourceStyle[job.source] || sourceStyle['direct'];
+
+                var tr = document.createElement('tr');
+                tr.className = 'border-b border-glass-border hover:bg-glass-100 transition-colors';
+                tr.innerHTML =
+                    '<td class="py-2.5 pl-3 font-mono text-xs text-zinc-500">' + esc(job.shortId) + '</td>' +
+                    '<td class="py-2.5"><button type="button" class="btn-title text-zinc-200 hover:text-brand-emerald transition-colors text-left">' + esc(job.title) + '</button></td>' +
+                    '<td class="py-2.5"><span class="text-[10px] px-1.5 py-0.5 rounded font-medium ' + src + '">' + esc(job.source) + '</span></td>' +
+                    '<td class="py-2.5"><span class="text-[10px] px-1.5 py-0.5 rounded font-medium ' + ss.bg + '">' + sl + '</span></td>' +
+                    '<td class="py-2.5 text-xs text-zinc-500">' + esc(job.createdAt) + '</td>' +
+                    '<td class="py-2.5 pl-3 whitespace-nowrap">' + actionButtons(job) + '</td>';
+
+                tr.querySelector('.btn-title').addEventListener('click', function () {
+                    openDetail(job);
+                });
+
+                bindRowActions(tr, job);
+                jobRowsEl.appendChild(tr);
+            });
+        }
+
+        /* ── action buttons per status ───────────────────────── */
+        function actionButtons(job) {
+            var btns = '';
+            var base = 'inline-flex items-center px-2 py-2 md:py-0.5 rounded text-[10px] border border-glass-border text-zinc-400 hover:text-zinc-200 hover:bg-glass-200 transition-colors';
+            if (job.status === 'pending' || job.status === 'in_progress' || job.status === 'stuck') {
+                btns += '<button type="button" class="btn-cancel ' + base + ' hover:!text-red-400 hover:!border-red-500/30 hover:!bg-red-500/10 mr-1" title="Cancel"><iconify-icon icon="carbon:close-filled" class="md:hidden"></iconify-icon><span class="hidden md:inline">Cancel</span></button>';
+            }
+            if (job.status === 'completed' || job.status === 'failed' || job.status === 'stuck' || job.status === 'cancelled') {
+                btns += '<button type="button" class="btn-restart ' + base + ' mr-1" title="Restart"><iconify-icon icon="carbon:restart" class="md:hidden"></iconify-icon><span class="hidden md:inline">Restart</span></button>';
+            }
+            btns += '<button type="button" class="btn-detail ' + base + '" title="Details"><iconify-icon icon="carbon:information" class="md:hidden"></iconify-icon><span class="hidden md:inline">Details</span></button>';
+            return btns;
+        }
+
+        function bindRowActions(tr, job) {
+            var cancelBtn  = tr.querySelector('.btn-cancel');
+            var restartBtn = tr.querySelector('.btn-restart');
+            var detailBtn  = tr.querySelector('.btn-detail');
+
+            if (cancelBtn) {
+                cancelBtn.addEventListener('click', function (e) {
+                    e.stopPropagation();
+                    var prev = job.status;
+                    job.status = 'cancelled';
+                    job.completedAt = 'now';
+                    job.transitions.push({ from: prev, to: 'cancelled', at: 'now' });
+                    renderSummary();
+                    renderTable();
+                });
+            }
+            if (restartBtn) {
+                restartBtn.addEventListener('click', function (e) {
+                    e.stopPropagation();
+                    var prev = job.status;
+                    job.status = 'in_progress';
+                    job.completedAt = null;
+                    job.transitions.push({ from: prev, to: 'in_progress', at: 'now' });
+                    renderSummary();
+                    renderTable();
+                });
+            }
+            if (detailBtn) {
+                detailBtn.addEventListener('click', function (e) {
+                    e.stopPropagation();
+                    openDetail(job);
+                });
+            }
+        }
+
+        /* ── detail modal ────────────────────────────────────── */
+        function openDetail(job) {
+            var ss = statusStyle[job.status] || statusStyle['pending'];
+            var sl = statusLabel[job.status] || job.status;
+            var src = sourceStyle[job.source] || sourceStyle['direct'];
+
+            modalTitle.textContent = job.title;
+
+            modalMeta.innerHTML =
+                '<span class="text-[10px] px-1.5 py-0.5 rounded font-medium ' + ss.bg + '">' + sl + '</span>' +
+                '<span class="text-[10px] px-1.5 py-0.5 rounded font-medium ' + src + '">' + esc(job.source) + '</span>' +
+                '<span class="font-mono text-xs text-zinc-500">' + esc(job.shortId) + '</span>';
+
+            var body = '';
+
+            /* description */
+            body += '<div class="text-sm text-zinc-400 leading-relaxed">' + esc(job.description) + '</div>';
+
+            /* timestamps */
+            body += '<div class="grid grid-cols-2 gap-x-4 gap-y-1.5 text-xs">';
+            body += '<span class="text-zinc-500">Created</span><span class="text-zinc-300">' + esc(job.createdAt) + '</span>';
+            if (job.startedAt) {
+                body += '<span class="text-zinc-500">Started</span><span class="text-zinc-300">' + esc(job.startedAt) + '</span>';
+            }
+            if (job.completedAt) {
+                body += '<span class="text-zinc-500">Completed</span><span class="text-zinc-300">' + esc(job.completedAt) + '</span>';
+            }
+            if (job.elapsed) {
+                body += '<span class="text-zinc-500">Elapsed</span><span class="text-zinc-300">' + esc(job.elapsed) + '</span>';
+            }
+            body += '</div>';
+
+            /* state transitions */
+            if (job.transitions.length > 0) {
+                body += '<div>';
+                body += '<div class="text-xs text-zinc-500 font-medium mb-1.5">State transitions</div>';
+                body += '<div class="bg-glass-200 rounded-lg p-3 border border-glass-border space-y-1">';
+                job.transitions.forEach(function (t) {
+                    var fromSs = statusStyle[t.from] || statusStyle['pending'];
+                    var toSs   = statusStyle[t.to]   || statusStyle['pending'];
+                    var fromLabel = statusLabel[t.from] || t.from;
+                    var toLabel   = statusLabel[t.to]   || t.to;
+                    body += '<div class="flex items-center gap-2 text-xs">' +
+                        '<span class="font-mono text-zinc-500">' + esc(t.at) + '</span>' +
+                        '<span class="' + (fromSs.color || 'text-zinc-400') + '">' + esc(fromLabel) + '</span>' +
+                        '<iconify-icon icon="carbon:arrow-right" class="text-[10px] text-zinc-600"></iconify-icon>' +
+                        '<span class="' + (toSs.color || 'text-zinc-400') + '">' + esc(toLabel) + '</span>' +
+                        '</div>';
+                });
+                body += '</div></div>';
+            }
+
+            modalBody.innerHTML = body;
+
+            /* modal actions */
+            var acts = '';
+            if (job.status === 'completed' || job.status === 'failed' || job.status === 'stuck' || job.status === 'cancelled') {
+                acts += '<button type="button" id="modal-restart" class="px-4 py-2 rounded-lg text-sm text-zinc-300 font-medium transition-colors border border-brand-emerald/60 hover:bg-brand-emerald/10">Restart</button>';
+            }
+            if (job.status === 'pending' || job.status === 'in_progress' || job.status === 'stuck') {
+                acts += '<button type="button" id="modal-cancel" class="px-4 py-2 rounded-lg text-sm text-zinc-300 font-medium transition-colors border border-red-500/60 hover:bg-red-500/10">Cancel</button>';
+            }
+            modalActions.innerHTML = acts;
+
+            var restartBtn = document.getElementById('modal-restart');
+            var cancelBtn  = document.getElementById('modal-cancel');
+            if (restartBtn) {
+                restartBtn.addEventListener('click', function () {
+                    var prev = job.status;
+                    job.status = 'in_progress';
+                    job.completedAt = null;
+                    job.transitions.push({ from: prev, to: 'in_progress', at: 'now' });
+                    closeDetail();
+                    renderSummary();
+                    renderTable();
+                });
+            }
+            if (cancelBtn) {
+                cancelBtn.addEventListener('click', function () {
+                    var prev = job.status;
+                    job.status = 'cancelled';
+                    job.completedAt = 'now';
+                    job.transitions.push({ from: prev, to: 'cancelled', at: 'now' });
+                    closeDetail();
+                    renderSummary();
+                    renderTable();
+                });
+            }
+
+            detailModal.open();
+        }
+
+        var detailModal = initDetailModal();
+        function closeDetail() { detailModal.close(); }
+
+        /* ── init ──────────────────────────────────────────────── */
+        renderSummary();
+        renderTable();
+    })();
+    </script>
+
+</body></html>
