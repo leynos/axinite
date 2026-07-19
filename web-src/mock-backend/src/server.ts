@@ -1,18 +1,21 @@
 import type {
   ApprovalRequest,
+  AuthCancelRequest,
+  AuthTokenRequest,
   ChatSseEvent,
   ExtensionSetupRequest,
   JobPromptRequest,
   LogEntry,
   MemorySearchRequest,
   MemoryWriteRequest,
+  PairingApproveRequest,
   SendMessageRequest,
   SkillInstallRequest,
   SkillSearchRequest,
   ToggleRequest,
 } from "../../axinite/src/lib/api/contracts";
 import { isStreamingApiPath } from "./streaming-routes";
-import { MockBackendState } from "./state";
+import { MockBackendState, PairingRateLimitedError } from "./state";
 
 export const DEFAULT_API_PORT = Number(process.env.MOCK_API_PORT ?? "8787");
 
@@ -177,6 +180,41 @@ export async function handleMockRequest(
     if (method === "POST" && pathname === "/api/chat/approval") {
       const body = await parseJson<ApprovalRequest>(request);
       return jsonResponse(state.submitApproval(body));
+    }
+
+    if (method === "POST" && pathname === "/api/chat/auth-token") {
+      const body = await parseJson<AuthTokenRequest>(request);
+      return jsonResponse(state.chatAuthToken(body));
+    }
+
+    if (method === "POST" && pathname === "/api/chat/auth-cancel") {
+      const body = await parseJson<AuthCancelRequest>(request);
+      return jsonResponse(state.chatAuthCancel(body));
+    }
+
+    const pairingApproveMatch = pathname.match(
+      /^\/api\/pairing\/([^/]+)\/approve$/
+    );
+    if (method === "POST" && pairingApproveMatch) {
+      const body = await parseJson<PairingApproveRequest>(request);
+      try {
+        return jsonResponse(
+          state.pairingApprove(pairingApproveMatch[1], body.code)
+        );
+      } catch (error) {
+        if (error instanceof PairingRateLimitedError) {
+          return new Response(error.message, {
+            status: 429,
+            headers: { "content-type": "text/plain; charset=utf-8" },
+          });
+        }
+        throw error;
+      }
+    }
+
+    const pairingListMatch = pathname.match(/^\/api\/pairing\/([^/]+)$/);
+    if (method === "GET" && pairingListMatch) {
+      return jsonResponse(state.pairingList(pairingListMatch[1]));
     }
 
     if (method === "GET" && pathname === "/api/memory/tree") {
