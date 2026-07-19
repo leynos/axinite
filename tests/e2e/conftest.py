@@ -97,6 +97,12 @@ async def axinite_server(axinite_binary, mock_llm_server):
         "EMBEDDING_ENABLED": "false",
         # Prevent onboarding wizard from triggering
         "ONBOARD_COMPLETED": "true",
+        # These scenarios drive the legacy handwritten shell (tab bar,
+        # approval overlay, `?token=` boot). The SolidJS UI is the gateway
+        # default now; pin the legacy variant here until the scenarios are
+        # rewritten against the SolidJS DOM. See
+        # docs/execplans/adopt-solidjs-ui.md.
+        "AXINITE_WEB_UI": "legacy",
     }
     # Forward LLVM coverage instrumentation env vars when present
     # (allows cargo-llvm-cov to collect profraw data from E2E runs).
