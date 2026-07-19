@@ -415,3 +415,11 @@ logs-level-debug = debug
 logs-level-info = info
 logs-level-warn = warn
 logs-level-error = error
+
+auth-title = Accès à la passerelle
+auth-description = Cette passerelle nécessite un jeton d'accès. Collez le jeton depuis la console de la passerelle pour continuer.
+auth-token-label = Jeton d'accès
+auth-submit = Se connecter
+auth-checking = Vérification de l'accès à la passerelle…
+auth-error-rejected = La passerelle a rejeté le jeton.
+auth-error-unreachable = La passerelle est injoignable. Réessayez lorsqu'elle est en cours d'exécution.

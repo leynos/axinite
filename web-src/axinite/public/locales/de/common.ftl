@@ -415,3 +415,11 @@ logs-level-debug = debug
 logs-level-info = info
 logs-level-warn = warn
 logs-level-error = error
+
+auth-title = Gateway-Zugang
+auth-description = Dieses Gateway erfordert ein Zugriffstoken. Fügen Sie das Token aus der Gateway-Konsole ein, um fortzufahren.
+auth-token-label = Zugriffstoken
+auth-submit = Verbinden
+auth-checking = Gateway-Zugang wird geprüft…
+auth-error-rejected = Das Gateway hat das Token abgelehnt.
+auth-error-unreachable = Das Gateway ist nicht erreichbar. Versuchen Sie es erneut, sobald es läuft.

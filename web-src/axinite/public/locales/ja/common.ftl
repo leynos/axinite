@@ -404,3 +404,11 @@ logs-level-debug = debug
 logs-level-info = info
 logs-level-warn = warn
 logs-level-error = error
+
+auth-title = ゲートウェイアクセス
+auth-description = このゲートウェイにはアクセストークンが必要です。続行するにはゲートウェイコンソールのトークンを貼り付けてください。
+auth-token-label = アクセストークン
+auth-submit = 接続
+auth-checking = ゲートウェイアクセスを確認しています…
+auth-error-rejected = ゲートウェイがトークンを拒否しました。
+auth-error-unreachable = ゲートウェイに接続できません。起動後に再試行してください。

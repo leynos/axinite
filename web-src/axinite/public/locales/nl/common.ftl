@@ -407,3 +407,11 @@ logs-level-debug = debug
 logs-level-info = info
 logs-level-warn = warn
 logs-level-error = error
+
+auth-title = Gateway-toegang
+auth-description = Deze gateway vereist een toegangstoken. Plak het token uit de gatewayconsole om door te gaan.
+auth-token-label = Toegangstoken
+auth-submit = Verbinden
+auth-checking = Gateway-toegang wordt gecontroleerd…
+auth-error-rejected = De gateway heeft het token geweigerd.
+auth-error-unreachable = De gateway is niet bereikbaar. Probeer het opnieuw zodra deze draait.
