@@ -4,7 +4,8 @@ export type RouteId =
   | "jobs"
   | "routines"
   | "extensions"
-  | "skills";
+  | "skills"
+  | "logs";
 
 const SHARED_CARD_KEYS = ["card-a", "card-b", "card-c"] as const;
 
@@ -20,6 +21,7 @@ export const ROUTE_ORDER: RouteId[] = [
   "routines",
   "extensions",
   "skills",
+  "logs",
 ];
 
 export const ROUTE_DETAILS: Record<RouteId, RouteDetails> = {
@@ -45,6 +47,10 @@ export const ROUTE_DETAILS: Record<RouteId, RouteDetails> = {
   },
   skills: {
     flagName: "route_skills",
+    cardKeys: SHARED_CARD_KEYS,
+  },
+  logs: {
+    flagName: "route_logs",
     cardKeys: SHARED_CARD_KEYS,
   },
 };

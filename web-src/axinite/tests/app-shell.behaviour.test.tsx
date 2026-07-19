@@ -51,7 +51,7 @@ describe("app shell behaviour", () => {
     ));
 
     await waitFor(() => {
-      expect(screen.getByRole("button", { name: "Logs" })).toBeVisible();
+      expect(screen.getByRole("link", { name: "Logs" })).toBeVisible();
     });
 
     expect(document.documentElement.lang).toBe("en-GB");
