@@ -107,26 +107,48 @@ const renderShellWithChat = () =>
     </AppProviders>
   ));
 
+// Install the hooks, mount the chat surface, wait for it to register its stream
+// controls, then drive the fake stream to the "connected" state. Returns the
+// hook surface and the connection indicator so each test can act from a known,
+// connected baseline. Keeping the shared waits here holds the per-test bodies
+// below the complex-method threshold.
+async function setupConnectedChat(): Promise<{
+  hooks: typeof window.__axinite;
+  indicator: HTMLElement;
+}> {
+  installTestHooks();
+  renderShellWithChat();
+
+  await waitFor(() => {
+    expect(chatApiMocks.source).not.toBeNull();
+  });
+
+  const hooks = window.__axinite;
+  const indicator = screen.getByTestId("sse-status");
+
+  // The stream is opening; simulate the browser firing `open`.
+  chatApiMocks.source?.onopen?.();
+  await waitFor(() => {
+    expect(indicator).toHaveAttribute("data-state", "connected");
+  });
+
+  return { hooks, indicator };
+}
+
+async function expectIndicatorState(
+  indicator: HTMLElement,
+  state: string
+): Promise<void> {
+  await waitFor(() => {
+    expect(indicator).toHaveAttribute("data-state", state);
+  });
+}
+
 describe("window.__axinite test hooks", () => {
-  it("drives chat updates and the connection indicator through the hook surface", async () => {
-    installTestHooks();
-    renderShellWithChat();
+  it("exposes the versioned hook surface and drives chat updates via emitChatEvent", async () => {
+    const { hooks } = await setupConnectedChat();
 
-    // The chat surface registers its stream controls on mount.
-    await waitFor(() => {
-      expect(chatApiMocks.source).not.toBeNull();
-    });
-
-    const hooks = window.__axinite;
     expect(hooks?.version).toBe(1);
-
-    const indicator = screen.getByTestId("sse-status");
-
-    // The stream is opening; simulate the browser firing `open`.
-    chatApiMocks.source?.onopen?.();
-    await waitFor(() => {
-      expect(indicator).toHaveAttribute("data-state", "connected");
-    });
 
     // emitChatEvent feeds a synthetic event into the same handler the stream
     // uses; a job_started event renders a visible job card.
@@ -137,20 +159,26 @@ describe("window.__axinite test hooks", () => {
       browse_url: "https://example.test/projects/9/",
     });
     expect(await screen.findByText("Hooked preview job")).toBeVisible();
+  });
 
-    // closeChatStream flips the indicator to disconnected.
+  it("closeChatStream flips the connection indicator to disconnected", async () => {
+    const { hooks, indicator } = await setupConnectedChat();
+
     hooks?.closeChatStream();
-    await waitFor(() => {
-      expect(indicator).toHaveAttribute("data-state", "disconnected");
-    });
+    await expectIndicatorState(indicator, "disconnected");
     expect(chatApiMocks.source?.close).toHaveBeenCalled();
+  });
+
+  it("reconnectChatStream re-opens the stream and returns to connected", async () => {
+    const { hooks, indicator } = await setupConnectedChat();
+
+    hooks?.closeChatStream();
+    await expectIndicatorState(indicator, "disconnected");
 
     // reconnectChatStream re-opens the stream (re-registering listeners); the
     // indicator returns to connected once the fake stream fires `open`.
     hooks?.reconnectChatStream();
     chatApiMocks.source?.onopen?.();
-    await waitFor(() => {
-      expect(indicator).toHaveAttribute("data-state", "connected");
-    });
+    await expectIndicatorState(indicator, "connected");
   });
 });

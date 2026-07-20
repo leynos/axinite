@@ -49,6 +49,14 @@ function listFtlFiles(locale: string): string[] {
   return files;
 }
 
+function logFileError(action: string, filePath: string, error: unknown): void {
+  console.error(
+    `[ftl-vars] Unable to ${action} ${filePath}:`,
+    (error as Error).message
+  );
+  process.exitCode = 1;
+}
+
 function variableReferenceName(node: object): string | undefined {
   if ((node as { type?: string }).type !== "VariableReference") {
     return undefined;
@@ -87,11 +95,7 @@ function parseResource(
   try {
     return parse(contents, {});
   } catch (error) {
-    console.error(
-      `[ftl-vars] Unable to parse ${filePath}:`,
-      (error as Error).message
-    );
-    process.exitCode = 1;
+    logFileError("parse", filePath, error);
     return undefined;
   }
 }
@@ -103,53 +107,60 @@ function shouldIgnoreEntry(entry: {
   return comment.includes(IGNORE_MARKER);
 }
 
+// Fold one Message/Term entry's placeholders into the accumulating map,
+// merging with any earlier definition of the same id.
+function collectEntryPlaceholders(
+  entry: Resource["body"][number],
+  results: Map<string, PlaceholderReport>
+): void {
+  if (entry.type !== "Message" && entry.type !== "Term") {
+    return;
+  }
+
+  const id = entry.id?.name;
+  if (!id) {
+    return;
+  }
+
+  const vars = results.get(id)?.vars ?? new Set<string>();
+  collectVariableNames(entry.value, vars);
+  entry.attributes?.forEach((attribute) => {
+    collectVariableNames(attribute.value, vars);
+  });
+
+  const ignore = shouldIgnoreEntry(entry) || results.get(id)?.ignore === true;
+  results.set(id, { vars, ignore });
+}
+
+function readFilePlaceholders(
+  filePath: string,
+  results: Map<string, PlaceholderReport>
+): void {
+  let contents: string;
+  try {
+    contents = fs.readFileSync(filePath, "utf8");
+  } catch (error) {
+    logFileError("read", filePath, error);
+    return;
+  }
+
+  const resource = parseResource(contents, filePath);
+  if (!resource) {
+    return;
+  }
+
+  resource.body.forEach((entry) => {
+    collectEntryPlaceholders(entry, results);
+  });
+}
+
 function readLocalePlaceholders(
   locale: string
 ): Map<string, PlaceholderReport> {
-  const files = listFtlFiles(locale);
   const results = new Map<string, PlaceholderReport>();
-
-  files.forEach((filePath) => {
-    let contents: string;
-
-    try {
-      contents = fs.readFileSync(filePath, "utf8");
-    } catch (error) {
-      console.error(
-        `[ftl-vars] Unable to read ${filePath}:`,
-        (error as Error).message
-      );
-      process.exitCode = 1;
-      return;
-    }
-
-    const resource = parseResource(contents, filePath);
-    if (!resource) {
-      return;
-    }
-
-    resource.body.forEach((entry) => {
-      if (entry.type !== "Message" && entry.type !== "Term") {
-        return;
-      }
-
-      const id = entry.id?.name;
-      if (!id) {
-        return;
-      }
-
-      const vars = results.get(id)?.vars ?? new Set<string>();
-      collectVariableNames(entry.value, vars);
-      entry.attributes?.forEach((attribute) => {
-        collectVariableNames(attribute.value, vars);
-      });
-
-      const ignore =
-        shouldIgnoreEntry(entry) || results.get(id)?.ignore === true;
-      results.set(id, { vars, ignore });
-    });
-  });
-
+  for (const filePath of listFtlFiles(locale)) {
+    readFilePlaceholders(filePath, results);
+  }
   return results;
 }
 
@@ -176,11 +187,26 @@ function resolveLocales(): string[] {
 
 // Compare a single entry against its base counterpart, returning the
 // placeholder differences or null when the entry is ignored or aligned.
+// A base/target entry pair is comparable only when neither side opts out of the
+// placeholder check. Sequential guards keep each condition simple.
+function isComparablePair(
+  baseEntry: PlaceholderReport,
+  target: PlaceholderReport | undefined
+): target is PlaceholderReport {
+  if (baseEntry.ignore) {
+    return false;
+  }
+  if (!target) {
+    return false;
+  }
+  return !target.ignore;
+}
+
 function diffPlaceholders(
   baseEntry: PlaceholderReport,
   target: PlaceholderReport | undefined
 ): PlaceholderDiff | null {
-  if (baseEntry.ignore || !target || target.ignore) {
+  if (!isComparablePair(baseEntry, target)) {
     return null;
   }
 

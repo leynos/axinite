@@ -15,14 +15,17 @@ function fileExists(filePath: string): boolean {
   return statSync(filePath).isFile();
 }
 
-function resolveStaticPath(pathname: string): string | null {
+// Ordered list of on-disk paths a request may resolve to. Extension-less routes
+// additionally try a sibling `.html` file, the directory index, and finally the
+// single-page-app shell (for example /chat), matching the gateway's serving
+// behaviour. Building the full list here keeps `resolveStaticPath` free of
+// nested control flow.
+function candidatePaths(pathname: string): string[] {
   const cleanPath = pathname === "/" ? "/index.html" : pathname;
   const relative = cleanPath.replace(/^\/+/, "");
   const hasExtension = Boolean(path.extname(cleanPath));
 
-  // Extension-less routes additionally try a sibling `.html` file and the
-  // directory index before falling back to the app shell.
-  const candidates = [
+  return [
     path.join(distDir, relative),
     path.join(distDir, relative, "index.html"),
     ...(hasExtension
@@ -30,25 +33,13 @@ function resolveStaticPath(pathname: string): string | null {
       : [
           path.join(distDir, `${relative}.html`),
           path.join(distDir, relative, "index.html"),
+          path.join(distDir, "index.html"),
         ]),
   ];
+}
 
-  for (const candidate of candidates) {
-    if (fileExists(candidate)) {
-      return candidate;
-    }
-  }
-
-  // Single-page-app fallback: extension-less routes (for example /chat)
-  // resolve to the app shell, matching the gateway's serving behaviour.
-  if (!hasExtension) {
-    const shell = path.join(distDir, "index.html");
-    if (fileExists(shell)) {
-      return shell;
-    }
-  }
-
-  return null;
+function resolveStaticPath(pathname: string): string | null {
+  return candidatePaths(pathname).find(fileExists) ?? null;
 }
 
 async function proxyRequest(request: Request): Promise<Response> {

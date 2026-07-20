@@ -11,6 +11,26 @@ use crate::history::SettingRow;
 
 use chrono::Utc;
 
+impl LibSqlBackend {
+    /// Run a timestamped two-key upsert statement on a fresh connection.
+    ///
+    /// Shared by the settings and feature-flag writers so the timestamp,
+    /// connect, execute, and error plumbing live in one place; `build_params`
+    /// receives the formatted current timestamp for the `?4` slot.
+    async fn execute_timestamped_upsert<P: libsql::params::IntoParams>(
+        &self,
+        sql: &str,
+        build_params: impl FnOnce(String) -> P,
+    ) -> Result<(), DatabaseError> {
+        let now = fmt_ts(&Utc::now());
+        let conn = self.connect().await?;
+        conn.execute(sql, build_params(now))
+            .await
+            .map_err(|e| DatabaseError::Query(e.to_string()))?;
+        Ok(())
+    }
+}
+
 impl NativeSettingsStore for LibSqlBackend {
     async fn get_setting(
         &self,
@@ -70,9 +90,7 @@ impl NativeSettingsStore for LibSqlBackend {
         key: SettingKey,
         value: &serde_json::Value,
     ) -> Result<(), DatabaseError> {
-        let conn = self.connect().await?;
-        let now = fmt_ts(&Utc::now());
-        conn.execute(
+        self.execute_timestamped_upsert(
             r#"
                 INSERT INTO settings (user_id, key, value, updated_at)
                 VALUES (?1, ?2, ?3, ?4)
@@ -80,11 +98,9 @@ impl NativeSettingsStore for LibSqlBackend {
                     value = excluded.value,
                     updated_at = ?4
                 "#,
-            params![user_id.as_str(), key.as_str(), value.to_string(), now],
+            |now| params![user_id.as_str(), key.as_str(), value.to_string(), now],
         )
         .await
-        .map_err(|e| DatabaseError::Query(e.to_string()))?;
-        Ok(())
     }
 
     async fn delete_setting(
@@ -274,9 +290,7 @@ impl NativeSettingsStore for LibSqlBackend {
         flag_name: &str,
         enabled: bool,
     ) -> Result<(), DatabaseError> {
-        let conn = self.connect().await?;
-        let now = fmt_ts(&Utc::now());
-        conn.execute(
+        self.execute_timestamped_upsert(
             r#"
                 INSERT INTO feature_flag_overrides (deployment_id, flag_name, enabled, updated_at)
                 VALUES (?1, ?2, ?3, ?4)
@@ -284,11 +298,9 @@ impl NativeSettingsStore for LibSqlBackend {
                     enabled = excluded.enabled,
                     updated_at = ?4
                 "#,
-            params![deployment_id, flag_name, i64::from(enabled), now],
+            |now| params![deployment_id, flag_name, i64::from(enabled), now],
         )
         .await
-        .map_err(|e| DatabaseError::Query(e.to_string()))?;
-        Ok(())
     }
 }
 

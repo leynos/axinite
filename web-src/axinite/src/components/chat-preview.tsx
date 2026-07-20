@@ -119,6 +119,23 @@ function formatTimestamp(
   }).format(new Date(value));
 }
 
+// True when a thread-scoped event targets a thread other than the active one,
+// so the caller can ignore it. Thread-agnostic events (no `thread_id`) never
+// count as foreign. Sequential guards keep any single condition below the
+// complex-conditional threshold.
+function isEventForOtherThread(
+  event: ChatSseEvent,
+  activeThreadId: string | undefined
+): boolean {
+  if (!("thread_id" in event)) {
+    return false;
+  }
+  if (!event.thread_id) {
+    return false;
+  }
+  return event.thread_id !== activeThreadId;
+}
+
 const ToolCallsSummary = (props: {
   toolCalls: ToolCallInfo[];
   label: string;
@@ -460,11 +477,7 @@ export const ChatPreview = () => {
   };
 
   const handleChatEvent = (event: ChatSseEvent) => {
-    if (
-      "thread_id" in event &&
-      event.thread_id &&
-      event.thread_id !== activeThreadId()
-    ) {
+    if (isEventForOtherThread(event, activeThreadId())) {
       return;
     }
 
