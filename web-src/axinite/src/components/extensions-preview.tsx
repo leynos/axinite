@@ -116,17 +116,18 @@ function appendKeyCell(row: HTMLTableRowElement, text: string) {
   row.append(cell);
 }
 
-function appendTextCell(
-  row: HTMLTableRowElement,
-  className: string,
-  textClassName: string,
-  text: string
-) {
+type TextCellSpec = {
+  className: string;
+  textClassName: string;
+  text: string;
+};
+
+function appendTextCell(row: HTMLTableRowElement, spec: TextCellSpec) {
   const cell = document.createElement("td");
-  cell.className = className;
+  cell.className = spec.className;
   const paragraph = document.createElement("p");
-  paragraph.className = textClassName;
-  paragraph.textContent = text;
+  paragraph.className = spec.textClassName;
+  paragraph.textContent = spec.text;
   cell.append(paragraph);
   row.append(cell);
 }
@@ -689,18 +690,16 @@ export const ExtensionsPreview = () => {
         const row = document.createElement("tr");
         row.className = "catalogue-list__row";
 
-        appendTextCell(
-          row,
-          "catalogue-list__content",
-          "catalogue-list__source",
-          entry.display_name
-        );
-        appendTextCell(
-          row,
-          "catalogue-list__content",
-          "catalogue-list__body",
-          entry.description
-        );
+        appendTextCell(row, {
+          className: "catalogue-list__content",
+          textClassName: "catalogue-list__source",
+          text: entry.display_name,
+        });
+        appendTextCell(row, {
+          className: "catalogue-list__content",
+          textClassName: "catalogue-list__body",
+          text: entry.description,
+        });
 
         const actionCell = document.createElement("td");
         actionCell.className = "catalogue-list__action";
@@ -728,12 +727,11 @@ export const ExtensionsPreview = () => {
         const row = document.createElement("tr");
         row.className = "catalogue-list__row";
         appendKeyCell(row, extension.display_name ?? extension.name);
-        appendTextCell(
-          row,
-          "catalogue-list__content",
-          "catalogue-list__source",
-          extension.url ?? t("extensions-url-local")
-        );
+        appendTextCell(row, {
+          className: "catalogue-list__content",
+          textClassName: "catalogue-list__source",
+          text: extension.url ?? t("extensions-url-local"),
+        });
         return row;
       })
     );
@@ -745,20 +743,18 @@ export const ExtensionsPreview = () => {
         const row = document.createElement("tr");
         row.className = "catalogue-list__row";
         appendKeyCell(row, tool.name);
-        appendTextCell(
-          row,
-          "catalogue-list__content",
-          "catalogue-list__source",
-          tool.name.includes("_")
+        appendTextCell(row, {
+          className: "catalogue-list__content",
+          textClassName: "catalogue-list__source",
+          text: tool.name.includes("_")
             ? t("extensions-tool-source-mock")
-            : t("extensions-tool-source-core")
-        );
-        appendTextCell(
-          row,
-          "catalogue-list__content",
-          "catalogue-list__body",
-          tool.description
-        );
+            : t("extensions-tool-source-core"),
+        });
+        appendTextCell(row, {
+          className: "catalogue-list__content",
+          textClassName: "catalogue-list__body",
+          text: tool.description,
+        });
         return row;
       })
     );
