@@ -22,6 +22,10 @@ jobs:
   frontend:
     name: Frontend verification
     runs-on: ubicloud-standard-8
+    env:
+      # playwright.config.ts pins the hermetic browsers path at test time;
+      # the install step must target the same location.
+      PLAYWRIGHT_BROWSERS_PATH: "0"
     steps:
       - name: Checkout repository
         uses: actions/checkout@v6
