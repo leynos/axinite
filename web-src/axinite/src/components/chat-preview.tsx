@@ -167,6 +167,14 @@ const ToolCallsSummary = (props: {
   );
 };
 
+// A per-variant handler table for chat SSE events. Each key handles its own
+// discriminated-union member; omitted event types are intentionally ignored.
+type ChatEventHandlers = {
+  [K in ChatSseEvent["type"]]?: (
+    event: Extract<ChatSseEvent, { type: K }>
+  ) => void;
+};
+
 export const ChatPreview = () => {
   const { t } = useI18n();
   const queryClient = useQueryClient();
@@ -380,6 +388,77 @@ export const ChatPreview = () => {
     },
   }));
 
+  const chatEventHandlers: ChatEventHandlers = {
+    thinking: (event) => setLiveStatus(event.message),
+    status: (event) => setLiveStatus(event.message),
+    tool_started: (event) =>
+      setLiveStatus(t("chat-status-tool-running", { name: event.name })),
+    tool_result: (event) => setLiveStatus(event.preview),
+    tool_completed: (event) =>
+      setLiveStatus(
+        event.success
+          ? t("chat-status-tool-success", { name: event.name })
+          : (event.error ?? t("chat-status-tool-failed", { name: event.name }))
+      ),
+    stream_chunk: (event) => {
+      setIsAwaitingResponse(false);
+      setStreamingResponse((current) => `${current}${event.content}`);
+    },
+    response: () => {
+      setPendingUserMessage("");
+      setIsAwaitingResponse(false);
+      setStreamingResponse("");
+      setLiveStatus(t("chat-status-complete"));
+      void queryClient.invalidateQueries({ queryKey: ["chat", "history"] });
+      void queryClient.invalidateQueries({ queryKey: ["chat", "threads"] });
+    },
+    approval_needed: (event) => {
+      setPendingUserMessage("");
+      setIsAwaitingResponse(false);
+      setLiveStatus(event.description);
+      void queryClient.invalidateQueries({ queryKey: ["chat", "history"] });
+    },
+    error: (event) => {
+      setPendingUserMessage("");
+      setIsAwaitingResponse(false);
+      setLiveStatus(event.message);
+    },
+    image_generated: (event) =>
+      setGeneratedImages((prev) => [
+        ...prev,
+        {
+          id: nextCardId(),
+          dataUrl: event.data_url,
+          path: event.path,
+        },
+      ]),
+    job_started: (event) =>
+      setJobCards((prev) => [
+        ...prev,
+        {
+          id: nextCardId(),
+          jobId: event.job_id,
+          title: event.title,
+          browseUrl: event.browse_url,
+        },
+      ]),
+    auth_required: (event) =>
+      setAuthCards((prev) => [
+        // Dedupe by extension: a fresh prompt replaces any existing card.
+        ...prev.filter((card) => card.extensionName !== event.extension_name),
+        {
+          extensionName: event.extension_name,
+          instructions: event.instructions,
+          authUrl: event.auth_url,
+          setupUrl: event.setup_url,
+        },
+      ]),
+    auth_completed: (event) => {
+      removeAuthCard(event.extension_name);
+      setAuthNotice(event.message);
+    },
+  };
+
   const handleChatEvent = (event: ChatSseEvent) => {
     if (
       "thread_id" in event &&
@@ -389,94 +468,10 @@ export const ChatPreview = () => {
       return;
     }
 
-    switch (event.type) {
-      case "thinking":
-      case "status":
-        setLiveStatus(event.message);
-        break;
-      case "tool_started":
-        setLiveStatus(t("chat-status-tool-running", { name: event.name }));
-        break;
-      case "tool_result":
-        setLiveStatus(event.preview);
-        break;
-      case "tool_completed":
-        setLiveStatus(
-          event.success
-            ? t("chat-status-tool-success", { name: event.name })
-            : (event.error ??
-                t("chat-status-tool-failed", { name: event.name }))
-        );
-        break;
-      case "stream_chunk":
-        setIsAwaitingResponse(false);
-        setStreamingResponse((current) => `${current}${event.content}`);
-        break;
-      case "response":
-        setPendingUserMessage("");
-        setIsAwaitingResponse(false);
-        setStreamingResponse("");
-        setLiveStatus(t("chat-status-complete"));
-        void queryClient.invalidateQueries({ queryKey: ["chat", "history"] });
-        void queryClient.invalidateQueries({ queryKey: ["chat", "threads"] });
-        break;
-      case "approval_needed":
-        setPendingUserMessage("");
-        setIsAwaitingResponse(false);
-        setLiveStatus(event.description);
-        void queryClient.invalidateQueries({ queryKey: ["chat", "history"] });
-        break;
-      case "error":
-        setPendingUserMessage("");
-        setIsAwaitingResponse(false);
-        setLiveStatus(event.message);
-        break;
-      case "image_generated":
-        setGeneratedImages((prev) => [
-          ...prev,
-          {
-            id: nextCardId(),
-            dataUrl: event.data_url,
-            path: event.path,
-          },
-        ]);
-        break;
-      case "job_started":
-        setJobCards((prev) => [
-          ...prev,
-          {
-            id: nextCardId(),
-            jobId: event.job_id,
-            title: event.title,
-            browseUrl: event.browse_url,
-          },
-        ]);
-        break;
-      case "auth_required":
-        setAuthCards((prev) => [
-          // Dedupe by extension: a fresh prompt replaces any existing card.
-          ...prev.filter((card) => card.extensionName !== event.extension_name),
-          {
-            extensionName: event.extension_name,
-            instructions: event.instructions,
-            authUrl: event.auth_url,
-            setupUrl: event.setup_url,
-          },
-        ]);
-        break;
-      case "auth_completed":
-        removeAuthCard(event.extension_name);
-        setAuthNotice(event.message);
-        break;
-      case "heartbeat":
-      case "extension_status":
-      case "job_message":
-      case "job_tool_use":
-      case "job_tool_result":
-      case "job_status":
-      case "job_result":
-        break;
-    }
+    // Dispatch to the matching per-variant handler; unlisted event types
+    // (heartbeat, extension_status, job_* progress frames) are no-ops.
+    const handler = chatEventHandlers[event.type];
+    handler?.(event as never);
   };
 
   createEffect(() => {
