@@ -94,7 +94,7 @@ tower = "0.5"
 tower-http = { version = "0.7", features = ["trace", "cors", "set-header"] }
 
 # Cron scheduling for routines
-cron = "0.13"
+cron = "0.17"
 
 # Safety/sanitization
 regex = "1"
