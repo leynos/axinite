@@ -17,17 +17,21 @@ function fileExists(filePath: string): boolean {
 
 function resolveStaticPath(pathname: string): string | null {
   const cleanPath = pathname === "/" ? "/index.html" : pathname;
-  const candidates = [
-    path.join(distDir, cleanPath.replace(/^\/+/, "")),
-    path.join(distDir, cleanPath.replace(/^\/+/, ""), "index.html"),
-  ];
+  const relative = cleanPath.replace(/^\/+/, "");
+  const hasExtension = Boolean(path.extname(cleanPath));
 
-  if (!path.extname(cleanPath)) {
-    candidates.push(
-      path.join(distDir, `${cleanPath.replace(/^\/+/, "")}.html`),
-      path.join(distDir, cleanPath.replace(/^\/+/, ""), "index.html")
-    );
-  }
+  // Extension-less routes additionally try a sibling `.html` file and the
+  // directory index before falling back to the app shell.
+  const candidates = [
+    path.join(distDir, relative),
+    path.join(distDir, relative, "index.html"),
+    ...(hasExtension
+      ? []
+      : [
+          path.join(distDir, `${relative}.html`),
+          path.join(distDir, relative, "index.html"),
+        ]),
+  ];
 
   for (const candidate of candidates) {
     if (fileExists(candidate)) {
@@ -37,7 +41,7 @@ function resolveStaticPath(pathname: string): string | null {
 
   // Single-page-app fallback: extension-less routes (for example /chat)
   // resolve to the app shell, matching the gateway's serving behaviour.
-  if (!path.extname(cleanPath)) {
+  if (!hasExtension) {
     const shell = path.join(distDir, "index.html");
     if (fileExists(shell)) {
       return shell;
