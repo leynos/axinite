@@ -23,7 +23,7 @@ import { useI18n } from "@/lib/i18n/provider";
 
 // The translate accessor mirrors the shape returned by useI18n; it is passed
 // through to the extracted sub-components so translation lookups stay
-// centralised on a single provider instance.
+// centralized on a single provider instance.
 type Translate = (
   key: string,
   options?: Record<string, string | number>
