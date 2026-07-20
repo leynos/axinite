@@ -239,7 +239,7 @@
     },
     {
       "matching_content_path": "web-src/mock-backend/**",
-      "matching_content_path_doc": "Daemon-free stub harness, not production code: it mirrors the gateway wire contract with deterministic in-memory fixtures, so fixture volume (file length), contract-shaped response builders (duplication), and stringly wire identifiers (primitive obsession) are inherent to its job. Structural rules (Bumpy Road, Complex Method) stay at default weight and were refactored, not suppressed.",
+      "matching_content_path_doc": "Daemon-free stub harness, not production code: it mirrors the gateway wire contract with deterministic in-memory fixtures, so fixture volume (file length) and contract-shaped response builders (duplication) are down-weighted, and stringly wire identifiers (primitive obsession, string-heavy arguments) are disabled outright \u2014 the public mock API deliberately takes the same string ids the wire carries. Structural rules (Bumpy Road, Complex Method) stay at default weight and were refactored, not suppressed. Note CodeScene applies one rule set per file, so this set restates the repo-wide String Heavy disable.",
       "rules": [
         {
           "name": "Code Duplication",
@@ -251,7 +251,11 @@
         },
         {
           "name": "Primitive Obsession",
-          "weight": 0.3
+          "weight": 0.0
+        },
+        {
+          "name": "String Heavy Function Arguments",
+          "weight": 0.0
         }
       ]
     },
