@@ -107,7 +107,7 @@ pub async fn settings_set_handler(
     // Deployment-scoped feature-flag overrides (RFC 0009) take a separate
     // persistence path and must never touch the user-scoped `settings` table.
     if let Some(flag_name) = key.strip_prefix(FEATURE_FLAG_PREFIX) {
-        return set_feature_flag(&state, &key, flag_name, &headers, &body.value).await;
+        return set_feature_flag(&state, flag_name, &headers, &body.value).await;
     }
 
     let store = state
@@ -140,7 +140,6 @@ pub async fn settings_set_handler(
 /// happy path.
 async fn set_feature_flag(
     state: &GatewayState,
-    key: &str,
     flag_name: &str,
     headers: &HeaderMap,
     value: &serde_json::Value,
@@ -177,7 +176,7 @@ async fn set_feature_flag(
         })?;
 
     Ok(Json(SettingResponse {
-        key: key.to_string(),
+        key: format!("{FEATURE_FLAG_PREFIX}{flag_name}"),
         value: serde_json::Value::Bool(enabled),
         updated_at: chrono::Utc::now().to_rfc3339(),
     })
