@@ -49,6 +49,13 @@ function listFtlFiles(locale: string): string[] {
   return files;
 }
 
+function variableReferenceName(node: object): string | undefined {
+  if ((node as { type?: string }).type !== "VariableReference") {
+    return undefined;
+  }
+  return (node as { id?: { name?: string } }).id?.name;
+}
+
 function collectVariableNames(node: unknown, vars: Set<string>): void {
   if (!node || typeof node !== "object") {
     return;
@@ -61,17 +68,15 @@ function collectVariableNames(node: unknown, vars: Set<string>): void {
     return;
   }
 
-  if ((node as { type?: string }).type === "VariableReference") {
-    const name = (node as { id?: { name?: string } }).id?.name;
-    if (name) {
-      vars.add(name);
-    }
+  const name = variableReferenceName(node);
+  if (name) {
+    vars.add(name);
   }
 
+  // Non-object values are ignored by the guard above, so recursing into every
+  // property value is equivalent to filtering for objects here.
   for (const value of Object.values(node)) {
-    if (typeof value === "object" && value !== null) {
-      collectVariableNames(value, vars);
-    }
+    collectVariableNames(value, vars);
   }
 }
 
@@ -148,7 +153,11 @@ function readLocalePlaceholders(
   return results;
 }
 
-function main(): void {
+type PlaceholderDiff = { missing: string[]; extra: string[] };
+
+// Resolve the locale directories, exiting with a diagnostic when the locales
+// directory or the base locale is absent.
+function resolveLocales(): string[] {
   if (!fs.existsSync(LOCALES_DIR)) {
     console.error(`[ftl-vars] No locales directory at ${LOCALES_DIR}`);
     process.exit(1);
@@ -162,55 +171,85 @@ function main(): void {
     process.exit(1);
   }
 
-  const baseMap = readLocalePlaceholders(BASE_LOCALE);
-  const comparisonLocales = locales.filter((locale) => locale !== BASE_LOCALE);
+  return locales;
+}
+
+// Compare a single entry against its base counterpart, returning the
+// placeholder differences or null when the entry is ignored or aligned.
+function diffPlaceholders(
+  baseEntry: PlaceholderReport,
+  target: PlaceholderReport | undefined
+): PlaceholderDiff | null {
+  if (baseEntry.ignore || !target || target.ignore) {
+    return null;
+  }
+
+  const missing = [...baseEntry.vars].filter((name) => !target.vars.has(name));
+  const extra = [...target.vars].filter((name) => !baseEntry.vars.has(name));
+
+  if (missing.length === 0 && extra.length === 0) {
+    return null;
+  }
+
+  return { missing, extra };
+}
+
+function reportMismatch(
+  locale: string,
+  id: string,
+  diff: PlaceholderDiff
+): void {
+  console.error(
+    `[ftl-vars] ${locale}:${id} placeholder mismatch vs ${BASE_LOCALE}`
+  );
+  if (diff.missing.length > 0) {
+    console.error(
+      `  missing: ${diff.missing.map((name) => `$${name}`).join(", ")}`
+    );
+  }
+  if (diff.extra.length > 0) {
+    console.error(
+      `  extra:   ${diff.extra.map((name) => `$${name}`).join(", ")}`
+    );
+  }
+}
+
+// Report every placeholder mismatch in one locale, returning whether any were
+// found.
+function compareLocale(
+  baseMap: Map<string, PlaceholderReport>,
+  locale: string
+): boolean {
+  const localeMap = readLocalePlaceholders(locale);
   let hasMismatch = false;
 
-  comparisonLocales.forEach((locale) => {
-    const localeMap = readLocalePlaceholders(locale);
-
-    baseMap.forEach((baseEntry, id) => {
-      if (baseEntry.ignore) {
-        return;
-      }
-
-      const target = localeMap.get(id);
-      if (!target || target.ignore) {
-        return;
-      }
-
-      const missing = [...baseEntry.vars].filter(
-        (name) => !target.vars.has(name)
-      );
-      const extra = [...target.vars].filter(
-        (name) => !baseEntry.vars.has(name)
-      );
-
-      if (missing.length === 0 && extra.length === 0) {
-        return;
-      }
-
-      hasMismatch = true;
-      console.error(
-        `[ftl-vars] ${locale}:${id} placeholder mismatch vs ${BASE_LOCALE}`
-      );
-      if (missing.length > 0) {
-        console.error(
-          `  missing: ${missing.map((name) => `$${name}`).join(", ")}`
-        );
-      }
-      if (extra.length > 0) {
-        console.error(
-          `  extra:   ${extra.map((name) => `$${name}`).join(", ")}`
-        );
-      }
-    });
+  baseMap.forEach((baseEntry, id) => {
+    const diff = diffPlaceholders(baseEntry, localeMap.get(id));
+    if (!diff) {
+      return;
+    }
+    hasMismatch = true;
+    reportMismatch(locale, id, diff);
   });
+
+  return hasMismatch;
+}
+
+function main(): void {
+  const locales = resolveLocales();
+  const baseMap = readLocalePlaceholders(BASE_LOCALE);
+  const comparisonLocales = locales.filter((locale) => locale !== BASE_LOCALE);
+
+  let hasMismatch = false;
+  for (const locale of comparisonLocales) {
+    if (compareLocale(baseMap, locale)) {
+      hasMismatch = true;
+    }
+  }
 
   if (hasMismatch || process.exitCode) {
     console.error("[ftl-vars] Placeholder validation failed");
     process.exit(1);
-    return;
   }
 
   console.log("[ftl-vars] All Fluent placeholders align across locales");

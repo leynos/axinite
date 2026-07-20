@@ -2,28 +2,28 @@ import type { ChatSseEvent } from "@/lib/api/contracts";
 
 export type RestartPhase = "idle" | "restarting" | "restarted";
 
+/** A successful completion of the `restart` tool call. */
+function isRestartToolCompleted(event: ChatSseEvent): boolean {
+  return (
+    event.type === "tool_completed" && event.name === "restart" && event.success
+  );
+}
+
+/** A response whose text announces "restart initiated" (case-insensitive). */
+function isRestartAnnouncement(event: ChatSseEvent): boolean {
+  return (
+    event.type === "response" &&
+    event.content.toLowerCase().includes("restart initiated")
+  );
+}
+
 /**
  * Whether a chat event signals that the gateway has accepted the `/restart`
  * command. Mirrors the legacy heuristic: a completed `restart` tool call, or a
  * response whose text contains "restart initiated" (case-insensitive).
  */
 export function isRestartInitiated(event: ChatSseEvent): boolean {
-  if (
-    event.type === "tool_completed" &&
-    event.name === "restart" &&
-    event.success
-  ) {
-    return true;
-  }
-
-  if (
-    event.type === "response" &&
-    event.content.toLowerCase().includes("restart initiated")
-  ) {
-    return true;
-  }
-
-  return false;
+  return isRestartToolCompleted(event) || isRestartAnnouncement(event);
 }
 
 export type RestartStreamHandlers = {

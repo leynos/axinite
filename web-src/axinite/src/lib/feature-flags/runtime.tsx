@@ -77,6 +77,22 @@ export function resolveFeatureFlags(
   return defaults;
 }
 
+// Debug flag surfacing is enabled in dev builds or when the `debug-flags=1`
+// query parameter is present.
+function isDebugFlagsEnabled(): boolean {
+  if (typeof window === "undefined") {
+    return false;
+  }
+
+  const searchParams = new URLSearchParams(window.location.search);
+  return import.meta.env.DEV || searchParams.get("debug-flags") === "1";
+}
+
+// Runtime-flag load failures are only worth logging when debugging is active.
+function shouldReportFlagError(error: unknown): boolean {
+  return Boolean(error) && (import.meta.env.DEV || isDebugFlagsEnabled());
+}
+
 const FeatureFlagContext = createContext<FeatureFlagContextValue>();
 
 export const FeatureFlagProvider: ParentComponent = (props) => {
@@ -88,7 +104,7 @@ export const FeatureFlagProvider: ParentComponent = (props) => {
   }));
 
   createEffect(() => {
-    if (runtimeFlags.error && (import.meta.env.DEV || isDebugEnabled())) {
+    if (shouldReportFlagError(runtimeFlags.error)) {
       console.error(
         "[feature-flags] Failed to load runtime flags",
         runtimeFlags.error
@@ -120,15 +136,6 @@ export const FeatureFlagProvider: ParentComponent = (props) => {
     writeOverrides(next);
   };
 
-  const isDebugEnabled = () => {
-    if (typeof window === "undefined") {
-      return false;
-    }
-
-    const searchParams = new URLSearchParams(window.location.search);
-    return import.meta.env.DEV || searchParams.get("debug-flags") === "1";
-  };
-
   return (
     <FeatureFlagContext.Provider
       value={{
@@ -137,7 +144,7 @@ export const FeatureFlagProvider: ParentComponent = (props) => {
         setOverride,
         clearOverride,
         isRouteVisible: (name) => resolvedFlags()[name],
-        isDebugEnabled,
+        isDebugEnabled: isDebugFlagsEnabled,
       }}
     >
       {props.children}

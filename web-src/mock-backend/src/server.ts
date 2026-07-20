@@ -134,6 +134,380 @@ function buildLogSseResponse(state: MockBackendState): Response {
   });
 }
 
+// Route dispatch context. `match` carries the captured groups for regex
+// patterns and is null for exact string patterns.
+interface RouteContext {
+  state: MockBackendState;
+  url: URL;
+  request: Request;
+  match: RegExpMatchArray | null;
+}
+
+type RouteHandler = (ctx: RouteContext) => Response | Promise<Response>;
+
+interface Route {
+  method: string | readonly string[];
+  pattern: string | RegExp;
+  handler: RouteHandler;
+}
+
+// Declarative route table iterated once by handleMockRequest. Order is
+// significant: earlier entries win, so more specific exact paths (such as
+// /api/routines/summary) must precede the parametric patterns that would
+// otherwise capture them (such as /api/routines/:id).
+const routes: readonly Route[] = [
+  {
+    method: "GET",
+    pattern: "/api/gateway/status",
+    handler: ({ state }) => jsonResponse(state.getGatewayStatus()),
+  },
+  {
+    method: "GET",
+    pattern: "/api/features",
+    handler: ({ state }) => jsonResponse(state.getFeatureFlags()),
+  },
+  {
+    method: "GET",
+    pattern: "/api/chat/threads",
+    handler: ({ state }) => jsonResponse(state.listThreads()),
+  },
+  {
+    method: "POST",
+    pattern: "/api/chat/thread/new",
+    handler: ({ state }) => jsonResponse(state.createThread(), { status: 201 }),
+  },
+  {
+    method: "GET",
+    pattern: "/api/chat/history",
+    handler: ({ state, url }) =>
+      jsonResponse(state.getHistory(url.searchParams.get("thread_id"))),
+  },
+  {
+    method: "POST",
+    pattern: "/api/chat/send",
+    handler: async ({ state, request }) => {
+      const body = await parseJson<SendMessageRequest>(request);
+      return jsonResponse(state.sendMessage(body), { status: 202 });
+    },
+  },
+  {
+    method: "GET",
+    pattern: "/api/chat/events",
+    handler: ({ state }) => buildChatSseResponse(state),
+  },
+  {
+    method: "POST",
+    pattern: "/api/chat/approval",
+    handler: async ({ state, request }) => {
+      const body = await parseJson<ApprovalRequest>(request);
+      return jsonResponse(state.submitApproval(body));
+    },
+  },
+  {
+    method: "POST",
+    pattern: "/api/chat/auth-token",
+    handler: async ({ state, request }) => {
+      const body = await parseJson<AuthTokenRequest>(request);
+      return jsonResponse(state.chatAuthToken(body));
+    },
+  },
+  {
+    method: "POST",
+    pattern: "/api/chat/auth-cancel",
+    handler: async ({ state, request }) => {
+      const body = await parseJson<AuthCancelRequest>(request);
+      return jsonResponse(state.chatAuthCancel(body));
+    },
+  },
+  {
+    method: "POST",
+    pattern: /^\/api\/pairing\/([^/]+)\/approve$/,
+    handler: async ({ state, request, match }) => {
+      const body = await parseJson<PairingApproveRequest>(request);
+      try {
+        return jsonResponse(state.pairingApprove(match![1], body.code));
+      } catch (error) {
+        if (error instanceof PairingRateLimitedError) {
+          return new Response(error.message, {
+            status: 429,
+            headers: { "content-type": "text/plain; charset=utf-8" },
+          });
+        }
+        throw error;
+      }
+    },
+  },
+  {
+    method: "GET",
+    pattern: /^\/api\/pairing\/([^/]+)$/,
+    handler: ({ state, match }) => jsonResponse(state.pairingList(match![1])),
+  },
+  {
+    method: "GET",
+    pattern: "/api/memory/tree",
+    handler: ({ state, url }) => {
+      const depthParam = url.searchParams.get("depth");
+      return jsonResponse(
+        state.getMemoryTree(
+          depthParam === null ? undefined : Number.parseInt(depthParam, 10)
+        )
+      );
+    },
+  },
+  {
+    method: "GET",
+    pattern: "/api/memory/list",
+    handler: ({ state, url }) =>
+      jsonResponse(state.listMemory(url.searchParams.get("path") ?? "")),
+  },
+  {
+    method: "GET",
+    pattern: "/api/memory/read",
+    handler: ({ state, url }) => {
+      const path = url.searchParams.get("path");
+      if (!path) {
+        return errorResponse(400, "Missing path query parameter.");
+      }
+      return jsonResponse(state.readMemory(path));
+    },
+  },
+  {
+    method: "POST",
+    pattern: "/api/memory/write",
+    handler: async ({ state, request }) => {
+      const body = await parseJson<MemoryWriteRequest>(request);
+      return jsonResponse(state.writeMemory(body));
+    },
+  },
+  {
+    method: "POST",
+    pattern: "/api/memory/search",
+    handler: async ({ state, request }) => {
+      const body = await parseJson<MemorySearchRequest>(request);
+      return jsonResponse(state.searchMemory(body));
+    },
+  },
+  {
+    method: "GET",
+    pattern: "/api/jobs",
+    handler: ({ state }) => jsonResponse(state.listJobs()),
+  },
+  {
+    method: "GET",
+    pattern: "/api/jobs/summary",
+    handler: ({ state }) => jsonResponse(state.summarizeJobs()),
+  },
+  {
+    method: "GET",
+    pattern: /^\/api\/jobs\/([^/]+)$/,
+    handler: ({ state, match }) => jsonResponse(state.getJob(match![1])),
+  },
+  {
+    method: "GET",
+    pattern: /^\/api\/jobs\/([^/]+)\/events$/,
+    handler: ({ state, match }) => jsonResponse(state.getJobEvents(match![1])),
+  },
+  {
+    method: "GET",
+    pattern: /^\/api\/jobs\/([^/]+)\/files\/list$/,
+    handler: ({ state, match }) => jsonResponse(state.listJobFiles(match![1])),
+  },
+  {
+    method: "GET",
+    pattern: /^\/api\/jobs\/([^/]+)\/files\/read$/,
+    handler: ({ state, url, match }) => {
+      const path = url.searchParams.get("path");
+      if (!path) {
+        return errorResponse(400, "Missing path query parameter.");
+      }
+      return jsonResponse(state.readJobFile(match![1], path));
+    },
+  },
+  {
+    method: "POST",
+    pattern: /^\/api\/jobs\/([^/]+)\/restart$/,
+    handler: ({ state, match }) => jsonResponse(state.restartJob(match![1])),
+  },
+  {
+    method: "POST",
+    pattern: /^\/api\/jobs\/([^/]+)\/cancel$/,
+    handler: ({ state, match }) => jsonResponse(state.cancelJob(match![1])),
+  },
+  {
+    method: "POST",
+    pattern: /^\/api\/jobs\/([^/]+)\/prompt$/,
+    handler: async ({ state, request, match }) => {
+      const body = await parseJson<JobPromptRequest>(request);
+      return jsonResponse(state.promptJob(match![1], body));
+    },
+  },
+  {
+    method: "GET",
+    pattern: "/api/routines",
+    handler: ({ state }) => jsonResponse(state.listRoutines()),
+  },
+  {
+    method: "GET",
+    pattern: "/api/routines/summary",
+    handler: ({ state }) => jsonResponse(state.summarizeRoutines()),
+  },
+  {
+    method: "GET",
+    pattern: /^\/api\/routines\/([^/]+)$/,
+    handler: ({ state, match }) => jsonResponse(state.getRoutine(match![1])),
+  },
+  {
+    method: "GET",
+    pattern: /^\/api\/routines\/([^/]+)\/runs$/,
+    handler: ({ state, match }) =>
+      jsonResponse(state.getRoutineRuns(match![1])),
+  },
+  {
+    method: "POST",
+    pattern: /^\/api\/routines\/([^/]+)\/trigger$/,
+    handler: ({ state, match }) =>
+      jsonResponse(state.triggerRoutine(match![1])),
+  },
+  {
+    method: "POST",
+    pattern: /^\/api\/routines\/([^/]+)\/toggle$/,
+    handler: async ({ state, request, match }) => {
+      const body =
+        request.headers.get("content-length") === "0"
+          ? undefined
+          : await request
+              .clone()
+              .json()
+              .catch(() => undefined as ToggleRequest | undefined);
+      return jsonResponse(state.toggleRoutine(match![1], body));
+    },
+  },
+  {
+    method: "DELETE",
+    pattern: /^\/api\/routines\/([^/]+)$/,
+    handler: ({ state, match }) => jsonResponse(state.deleteRoutine(match![1])),
+  },
+  {
+    method: "GET",
+    pattern: "/api/extensions",
+    handler: ({ state }) => jsonResponse(state.listExtensions()),
+  },
+  {
+    method: "GET",
+    pattern: "/api/extensions/tools",
+    handler: ({ state }) => jsonResponse(state.listExtensionTools()),
+  },
+  {
+    method: "GET",
+    pattern: "/api/extensions/registry",
+    handler: ({ state, url }) =>
+      jsonResponse(state.searchExtensionRegistry(url.searchParams.get("query"))),
+  },
+  {
+    method: "POST",
+    pattern: "/api/extensions/install",
+    handler: async ({ state, request }) => {
+      const body = (await request.json().catch(() => ({ name: "" }))) as {
+        name?: string;
+      };
+      if (!body.name) {
+        return errorResponse(400, "Missing extension name.");
+      }
+      return jsonResponse(state.installExtension(body.name));
+    },
+  },
+  {
+    method: "POST",
+    pattern: /^\/api\/extensions\/([^/]+)\/activate$/,
+    handler: ({ state, match }) =>
+      jsonResponse(state.activateExtension(match![1])),
+  },
+  {
+    method: "POST",
+    pattern: /^\/api\/extensions\/([^/]+)\/remove$/,
+    handler: ({ state, match }) =>
+      jsonResponse(state.removeExtension(match![1])),
+  },
+  {
+    method: "GET",
+    pattern: /^\/api\/extensions\/([^/]+)\/setup$/,
+    handler: ({ state, match }) =>
+      jsonResponse(state.getExtensionSetup(match![1])),
+  },
+  {
+    method: "POST",
+    pattern: /^\/api\/extensions\/([^/]+)\/setup$/,
+    handler: async ({ state, request, match }) => {
+      const body = await parseJson<ExtensionSetupRequest>(request);
+      return jsonResponse(state.submitExtensionSetup(match![1], body.secrets));
+    },
+  },
+  {
+    method: "GET",
+    pattern: "/api/skills",
+    handler: ({ state }) => jsonResponse(state.listSkills()),
+  },
+  {
+    method: "POST",
+    pattern: "/api/skills/search",
+    handler: async ({ state, request }) => {
+      const body = await parseJson<SkillSearchRequest>(request);
+      return jsonResponse(state.searchSkills(body));
+    },
+  },
+  {
+    method: "POST",
+    pattern: "/api/skills/install",
+    handler: async ({ state, request }) => {
+      const body = await parseJson<SkillInstallRequest>(request);
+      return jsonResponse(state.installSkill(body));
+    },
+  },
+  {
+    method: "DELETE",
+    pattern: /^\/api\/skills\/([^/]+)$/,
+    handler: ({ state, match }) => jsonResponse(state.removeSkill(match![1])),
+  },
+  {
+    method: "GET",
+    pattern: "/api/logs/events",
+    handler: ({ state }) => buildLogSseResponse(state),
+  },
+  {
+    method: "GET",
+    pattern: "/api/logs/level",
+    handler: ({ state }) => jsonResponse(state.getLogLevel()),
+  },
+  {
+    method: ["POST", "PUT"],
+    pattern: "/api/logs/level",
+    handler: async ({ state, request }) => {
+      const body = (await request.json().catch(() => ({ level: "info" }))) as {
+        level?: string;
+      };
+      return jsonResponse(state.setLogLevel(body.level ?? "info"));
+    },
+  },
+];
+
+// Attempt to match a single route. Returns the captured groups (null for an
+// exact-string match) when both method and path match, otherwise undefined.
+function matchRoute(
+  route: Route,
+  method: string,
+  pathname: string
+): RegExpMatchArray | null | undefined {
+  const methods =
+    typeof route.method === "string" ? [route.method] : route.method;
+  if (!methods.includes(method)) {
+    return undefined;
+  }
+  if (typeof route.pattern === "string") {
+    return route.pattern === pathname ? null : undefined;
+  }
+  return pathname.match(route.pattern) ?? undefined;
+}
+
 export async function handleMockRequest(
   request: Request,
   state: MockBackendState,
@@ -148,279 +522,11 @@ export async function handleMockRequest(
   }
 
   try {
-    if (method === "GET" && pathname === "/api/gateway/status") {
-      return jsonResponse(state.getGatewayStatus());
-    }
-
-    if (method === "GET" && pathname === "/api/features") {
-      return jsonResponse(state.getFeatureFlags());
-    }
-
-    if (method === "GET" && pathname === "/api/chat/threads") {
-      return jsonResponse(state.listThreads());
-    }
-
-    if (method === "POST" && pathname === "/api/chat/thread/new") {
-      return jsonResponse(state.createThread(), { status: 201 });
-    }
-
-    if (method === "GET" && pathname === "/api/chat/history") {
-      return jsonResponse(state.getHistory(url.searchParams.get("thread_id")));
-    }
-
-    if (method === "POST" && pathname === "/api/chat/send") {
-      const body = await parseJson<SendMessageRequest>(request);
-      return jsonResponse(state.sendMessage(body), { status: 202 });
-    }
-
-    if (method === "GET" && pathname === "/api/chat/events") {
-      return buildChatSseResponse(state);
-    }
-
-    if (method === "POST" && pathname === "/api/chat/approval") {
-      const body = await parseJson<ApprovalRequest>(request);
-      return jsonResponse(state.submitApproval(body));
-    }
-
-    if (method === "POST" && pathname === "/api/chat/auth-token") {
-      const body = await parseJson<AuthTokenRequest>(request);
-      return jsonResponse(state.chatAuthToken(body));
-    }
-
-    if (method === "POST" && pathname === "/api/chat/auth-cancel") {
-      const body = await parseJson<AuthCancelRequest>(request);
-      return jsonResponse(state.chatAuthCancel(body));
-    }
-
-    const pairingApproveMatch = pathname.match(
-      /^\/api\/pairing\/([^/]+)\/approve$/
-    );
-    if (method === "POST" && pairingApproveMatch) {
-      const body = await parseJson<PairingApproveRequest>(request);
-      try {
-        return jsonResponse(
-          state.pairingApprove(pairingApproveMatch[1], body.code)
-        );
-      } catch (error) {
-        if (error instanceof PairingRateLimitedError) {
-          return new Response(error.message, {
-            status: 429,
-            headers: { "content-type": "text/plain; charset=utf-8" },
-          });
-        }
-        throw error;
+    for (const route of routes) {
+      const match = matchRoute(route, method, pathname);
+      if (match !== undefined) {
+        return await route.handler({ state, url, request, match });
       }
-    }
-
-    const pairingListMatch = pathname.match(/^\/api\/pairing\/([^/]+)$/);
-    if (method === "GET" && pairingListMatch) {
-      return jsonResponse(state.pairingList(pairingListMatch[1]));
-    }
-
-    if (method === "GET" && pathname === "/api/memory/tree") {
-      const depthParam = url.searchParams.get("depth");
-      return jsonResponse(
-        state.getMemoryTree(
-          depthParam === null ? undefined : Number.parseInt(depthParam, 10)
-        )
-      );
-    }
-
-    if (method === "GET" && pathname === "/api/memory/list") {
-      return jsonResponse(state.listMemory(url.searchParams.get("path") ?? ""));
-    }
-
-    if (method === "GET" && pathname === "/api/memory/read") {
-      const path = url.searchParams.get("path");
-      if (!path) {
-        return errorResponse(400, "Missing path query parameter.");
-      }
-      return jsonResponse(state.readMemory(path));
-    }
-
-    if (method === "POST" && pathname === "/api/memory/write") {
-      const body = await parseJson<MemoryWriteRequest>(request);
-      return jsonResponse(state.writeMemory(body));
-    }
-
-    if (method === "POST" && pathname === "/api/memory/search") {
-      const body = await parseJson<MemorySearchRequest>(request);
-      return jsonResponse(state.searchMemory(body));
-    }
-
-    if (method === "GET" && pathname === "/api/jobs") {
-      return jsonResponse(state.listJobs());
-    }
-
-    if (method === "GET" && pathname === "/api/jobs/summary") {
-      return jsonResponse(state.summarizeJobs());
-    }
-
-    const jobDetailMatch = pathname.match(/^\/api\/jobs\/([^/]+)$/);
-    if (method === "GET" && jobDetailMatch) {
-      return jsonResponse(state.getJob(jobDetailMatch[1]));
-    }
-
-    const jobEventsMatch = pathname.match(/^\/api\/jobs\/([^/]+)\/events$/);
-    if (method === "GET" && jobEventsMatch) {
-      return jsonResponse(state.getJobEvents(jobEventsMatch[1]));
-    }
-
-    const jobFilesListMatch = pathname.match(/^\/api\/jobs\/([^/]+)\/files\/list$/);
-    if (method === "GET" && jobFilesListMatch) {
-      return jsonResponse(state.listJobFiles(jobFilesListMatch[1]));
-    }
-
-    const jobFilesReadMatch = pathname.match(/^\/api\/jobs\/([^/]+)\/files\/read$/);
-    if (method === "GET" && jobFilesReadMatch) {
-      const path = url.searchParams.get("path");
-      if (!path) {
-        return errorResponse(400, "Missing path query parameter.");
-      }
-      return jsonResponse(state.readJobFile(jobFilesReadMatch[1], path));
-    }
-
-    const jobRestartMatch = pathname.match(/^\/api\/jobs\/([^/]+)\/restart$/);
-    if (method === "POST" && jobRestartMatch) {
-      return jsonResponse(state.restartJob(jobRestartMatch[1]));
-    }
-
-    const jobCancelMatch = pathname.match(/^\/api\/jobs\/([^/]+)\/cancel$/);
-    if (method === "POST" && jobCancelMatch) {
-      return jsonResponse(state.cancelJob(jobCancelMatch[1]));
-    }
-
-    const jobPromptMatch = pathname.match(/^\/api\/jobs\/([^/]+)\/prompt$/);
-    if (method === "POST" && jobPromptMatch) {
-      const body = await parseJson<JobPromptRequest>(request);
-      return jsonResponse(state.promptJob(jobPromptMatch[1], body));
-    }
-
-    if (method === "GET" && pathname === "/api/routines") {
-      return jsonResponse(state.listRoutines());
-    }
-
-    if (method === "GET" && pathname === "/api/routines/summary") {
-      return jsonResponse(state.summarizeRoutines());
-    }
-
-    const routineDetailMatch = pathname.match(/^\/api\/routines\/([^/]+)$/);
-    if (method === "GET" && routineDetailMatch) {
-      return jsonResponse(state.getRoutine(routineDetailMatch[1]));
-    }
-
-    const routineRunsMatch = pathname.match(/^\/api\/routines\/([^/]+)\/runs$/);
-    if (method === "GET" && routineRunsMatch) {
-      return jsonResponse(state.getRoutineRuns(routineRunsMatch[1]));
-    }
-
-    const routineTriggerMatch = pathname.match(
-      /^\/api\/routines\/([^/]+)\/trigger$/
-    );
-    if (method === "POST" && routineTriggerMatch) {
-      return jsonResponse(state.triggerRoutine(routineTriggerMatch[1]));
-    }
-
-    const routineToggleMatch = pathname.match(/^\/api\/routines\/([^/]+)\/toggle$/);
-    if (method === "POST" && routineToggleMatch) {
-      const body =
-        request.headers.get("content-length") === "0"
-          ? undefined
-          : await request.clone().json().catch(() => undefined as ToggleRequest | undefined);
-      return jsonResponse(state.toggleRoutine(routineToggleMatch[1], body));
-    }
-
-    if (method === "DELETE" && routineDetailMatch) {
-      return jsonResponse(state.deleteRoutine(routineDetailMatch[1]));
-    }
-
-    if (method === "GET" && pathname === "/api/extensions") {
-      return jsonResponse(state.listExtensions());
-    }
-
-    if (method === "GET" && pathname === "/api/extensions/tools") {
-      return jsonResponse(state.listExtensionTools());
-    }
-
-    if (method === "GET" && pathname === "/api/extensions/registry") {
-      return jsonResponse(
-        state.searchExtensionRegistry(url.searchParams.get("query"))
-      );
-    }
-
-    if (method === "POST" && pathname === "/api/extensions/install") {
-      const body = await request.json().catch(() => ({ name: "" })) as {
-        name?: string;
-      };
-      if (!body.name) {
-        return errorResponse(400, "Missing extension name.");
-      }
-      return jsonResponse(state.installExtension(body.name));
-    }
-
-    const extensionActivateMatch = pathname.match(
-      /^\/api\/extensions\/([^/]+)\/activate$/
-    );
-    if (method === "POST" && extensionActivateMatch) {
-      return jsonResponse(state.activateExtension(extensionActivateMatch[1]));
-    }
-
-    const extensionRemoveMatch = pathname.match(
-      /^\/api\/extensions\/([^/]+)\/remove$/
-    );
-    if (method === "POST" && extensionRemoveMatch) {
-      return jsonResponse(state.removeExtension(extensionRemoveMatch[1]));
-    }
-
-    const extensionSetupMatch = pathname.match(
-      /^\/api\/extensions\/([^/]+)\/setup$/
-    );
-    if (extensionSetupMatch && method === "GET") {
-      return jsonResponse(state.getExtensionSetup(extensionSetupMatch[1]));
-    }
-
-    if (extensionSetupMatch && method === "POST") {
-      const body = await parseJson<ExtensionSetupRequest>(request);
-      return jsonResponse(
-        state.submitExtensionSetup(extensionSetupMatch[1], body.secrets)
-      );
-    }
-
-    if (method === "GET" && pathname === "/api/skills") {
-      return jsonResponse(state.listSkills());
-    }
-
-    if (method === "POST" && pathname === "/api/skills/search") {
-      const body = await parseJson<SkillSearchRequest>(request);
-      return jsonResponse(state.searchSkills(body));
-    }
-
-    if (method === "POST" && pathname === "/api/skills/install") {
-      const body = await parseJson<SkillInstallRequest>(request);
-      return jsonResponse(state.installSkill(body));
-    }
-
-    const skillDeleteMatch = pathname.match(/^\/api\/skills\/([^/]+)$/);
-    if (method === "DELETE" && skillDeleteMatch) {
-      return jsonResponse(state.removeSkill(skillDeleteMatch[1]));
-    }
-
-    if (method === "GET" && pathname === "/api/logs/events") {
-      return buildLogSseResponse(state);
-    }
-
-    if (method === "GET" && pathname === "/api/logs/level") {
-      return jsonResponse(state.getLogLevel());
-    }
-
-    if (
-      (method === "POST" || method === "PUT") &&
-      pathname === "/api/logs/level"
-    ) {
-      const body = await request.json().catch(() => ({ level: "info" })) as {
-        level?: string;
-      };
-      return jsonResponse(state.setLogLevel(body.level ?? "info"));
     }
   } catch (error) {
     return errorResponse(
