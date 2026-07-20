@@ -15,7 +15,7 @@ import {
 } from "solid-js";
 import { ExtensionPairing } from "@/components/extension-pairing";
 import { WasmChannelStepper } from "@/components/wasm-channel-stepper";
-import type { ExtensionInfo } from "@/lib/api/contracts";
+import type { ExtensionInfo, SecretFieldInfo } from "@/lib/api/contracts";
 import {
   activateExtension,
   fetchExtensionRegistry,
@@ -28,6 +28,14 @@ import {
 } from "@/lib/api/extensions";
 import { useI18n } from "@/lib/i18n/provider";
 import { capitalize, pascalCase } from "@/lib/string-case";
+
+// Translation accessor mirroring the shape returned by `useI18n`. Subcomponents
+// receive it explicitly so their JSX stays reactive without reaching into the
+// parent scope.
+type TranslateFn = (
+  key: string,
+  options?: Record<string, string | number>
+) => string;
 
 const KIND_CLASS: Record<string, string> = {
   grpcm: "pill pill--info",
@@ -63,6 +71,42 @@ function kindMatchesRegistry(
     (isMcpExtensionKind(extensionKind) && isMcpExtensionKind(registryKind)) ||
     (isWasmExtensionKind(extensionKind) && isWasmExtensionKind(registryKind))
   );
+}
+
+function tagList(extension: ExtensionInfo): string[] {
+  const tags = [
+    extension.active ? "actions" : "read",
+    extension.authenticated ? "read_write" : "triggers",
+  ];
+  if (extension.has_auth) {
+    tags.push("events");
+  }
+  return tags;
+}
+
+function tagLabel(t: TranslateFn, tag: string): string {
+  return t(
+    `extensions-tag-${pascalCase(tag)
+      .replace(/([A-Z])/g, "-$1")
+      .toLowerCase()
+      .replace(/^-/, "")}`
+  );
+}
+
+function extensionDisplayName(extension: ExtensionInfo): string {
+  return extension.display_name ?? extension.name;
+}
+
+function extensionKindLabel(t: TranslateFn, kind: string): string {
+  if (isMcpExtensionKind(kind)) {
+    return t("extensions-kind-mcp");
+  }
+
+  if (isWasmExtensionKind(kind)) {
+    return t("extensions-kind-wasm");
+  }
+
+  return capitalize(kind).toLowerCase();
 }
 
 function appendKeyCell(row: HTMLTableRowElement, text: string) {
@@ -104,6 +148,412 @@ function useTableBodyCleanup(
   onCleanup(() => {
     getBody()?.replaceChildren();
   });
+}
+
+type InstalledExtensionCardProps = {
+  extension: ExtensionInfo;
+  t: TranslateFn;
+  onConfigure: (name: string) => void;
+  onToggleActive: (name: string) => void;
+  onRequestRemove: (name: string) => void;
+  onPairingApproved: () => void;
+};
+
+function InstalledExtensionCard(props: InstalledExtensionCardProps) {
+  return (
+    <article class="catalogue-card extensions-card">
+      <div class="catalogue-card__header">
+        <div class="catalogue-card__title-wrap">
+          <h4 class="catalogue-card__title">
+            {extensionDisplayName(props.extension)}
+          </h4>
+          <span
+            class={KIND_CLASS[props.extension.kind] ?? "pill pill--neutral"}
+          >
+            {extensionKindLabel(props.t, props.extension.kind)}
+          </span>
+        </div>
+        <div class="catalogue-card__meta">
+          <span>
+            {props.extension.version ?? props.t("extensions-version-preview")}
+          </span>
+          <span
+            class={
+              props.extension.active
+                ? STATUS_CLASS.active
+                : STATUS_CLASS.inactive
+            }
+          />
+        </div>
+      </div>
+
+      <p class="catalogue-card__path">
+        {props.extension.url ?? props.t("extensions-url-local")}
+      </p>
+      <p class="catalogue-card__body">{props.extension.description}</p>
+
+      <Show when={props.extension.kind === "wasm_channel"}>
+        <WasmChannelStepper
+          activationStatus={props.extension.activation_status}
+        />
+      </Show>
+
+      <div class="catalogue-card__tags">
+        <For each={tagList(props.extension)}>
+          {(tag) => (
+            <span class="pill pill--neutral">{tagLabel(props.t, tag)}</span>
+          )}
+        </For>
+      </div>
+
+      <div class="catalogue-card__actions">
+        <button
+          class="catalogue-card__action"
+          onClick={() => props.onConfigure(props.extension.name)}
+          type="button"
+        >
+          {props.t("extensions-action-configure")}
+        </button>
+        <button
+          class="catalogue-card__action"
+          onClick={() => props.onToggleActive(props.extension.name)}
+          type="button"
+        >
+          {props.extension.active
+            ? props.t("extensions-action-disable")
+            : props.t("extensions-action-activate")}
+        </button>
+        <button
+          aria-label={props.t("extensions-action-remove-label", {
+            name: extensionDisplayName(props.extension),
+          })}
+          class="catalogue-card__action"
+          onClick={() => props.onRequestRemove(props.extension.name)}
+          type="button"
+        >
+          {props.t("extensions-action-remove")}
+        </button>
+      </div>
+
+      <Show when={props.extension.kind === "wasm_channel"}>
+        <ExtensionPairing
+          channel={props.extension.name}
+          onApproved={props.onPairingApproved}
+        />
+      </Show>
+    </article>
+  );
+}
+
+type ConfigurePanelProps = {
+  name: string;
+  secrets: SecretFieldInfo[];
+  t: TranslateFn;
+  onSecretChange: (fieldName: string, value: string) => void;
+  onSave: () => void;
+  onCancel: () => void;
+};
+
+function ConfigurePanel(props: ConfigurePanelProps) {
+  return (
+    <aside class="catalogue-detail catalogue-detail--inline extensions-detail">
+      <h3 class="catalogue-detail__title">
+        {props.t("extensions-configure-title", {
+          name: props.name,
+        })}
+      </h3>
+
+      <For each={props.secrets}>
+        {(field) => (
+          <div class="catalogue-form">
+            <label class="catalogue-form__label" for={`setup-${field.name}`}>
+              {field.prompt}
+            </label>
+            <div class="catalogue-form__row catalogue-form__row--indicator">
+              <input
+                class="catalogue-form__input"
+                id={`setup-${field.name}`}
+                onInput={(event) =>
+                  props.onSecretChange(field.name, event.currentTarget.value)
+                }
+                placeholder={
+                  field.provided
+                    ? props.t("extensions-setup-provided-hint")
+                    : field.prompt
+                }
+                type="text"
+              />
+              <Show when={field.provided}>
+                <span
+                  class="catalogue-form__provided-icon"
+                  role="img"
+                  aria-label={props.t("extensions-setup-stored")}
+                >
+                  ✓
+                </span>
+              </Show>
+            </div>
+          </div>
+        )}
+      </For>
+
+      <Show when={props.secrets.length === 0}>
+        <p class="catalogue-panel__empty">{props.t("extensions-setup-none")}</p>
+      </Show>
+
+      <div class="dashboard-detail__actions">
+        <button
+          class="dashboard-detail__ghost"
+          type="button"
+          onClick={() => props.onSave()}
+        >
+          {props.t("extensions-action-save")}
+        </button>
+        <button
+          class="dashboard-detail__ghost dashboard-detail__ghost--danger"
+          type="button"
+          onClick={() => props.onCancel()}
+        >
+          {props.t("extensions-action-cancel")}
+        </button>
+      </div>
+    </aside>
+  );
+}
+
+type RegistrySearchPanelProps = {
+  t: TranslateFn;
+  query: string;
+  onQueryInput: (value: string) => void;
+  bodyRef: (element: HTMLTableSectionElement) => void;
+};
+
+function RegistrySearchPanel(props: RegistrySearchPanelProps) {
+  return (
+    <section class="catalogue-panel">
+      <div class="catalogue-panel__mark">{props.t("extensions-wasm-mark")}</div>
+      <div class="catalogue-panel__content">
+        <h3 class="catalogue-panel__title">
+          {props.t("extensions-wasm-title")}
+        </h3>
+        <div class="catalogue-form">
+          <label class="catalogue-form__label" for="extensions-registry-search">
+            {props.t("extensions-registry-label")}
+          </label>
+          <div class="catalogue-form__row">
+            <input
+              class="catalogue-form__input"
+              id="extensions-registry-search"
+              onInput={(event) => props.onQueryInput(event.currentTarget.value)}
+              placeholder={props.t("extensions-wasm-placeholder")}
+              type="text"
+              value={props.query}
+            />
+          </div>
+        </div>
+        <div class="catalogue-table-wrap">
+          <table class="catalogue-list catalogue-list--extensions">
+            <caption class="catalogue-table__caption">
+              {props.t("extensions-wasm-title")}
+            </caption>
+            <thead>
+              <tr class="catalogue-list__row">
+                <th class="catalogue-list__content" scope="col">
+                  {props.t("routines-column-name")}
+                </th>
+                <th class="catalogue-list__content" scope="col">
+                  {props.t("extensions-column-description")}
+                </th>
+                <th class="catalogue-list__action" scope="col">
+                  {props.t("routines-column-action")}
+                </th>
+              </tr>
+            </thead>
+            <tbody ref={props.bodyRef} />
+          </table>
+        </div>
+      </div>
+    </section>
+  );
+}
+
+type McpServerPanelProps = {
+  t: TranslateFn;
+  hasExtensions: boolean;
+  serverName: string;
+  onServerNameInput: (value: string) => void;
+  onAddServer: () => void;
+  bodyRef: (element: HTMLTableSectionElement) => void;
+};
+
+function McpServerPanel(props: McpServerPanelProps) {
+  return (
+    <section class="catalogue-panel">
+      <div class="catalogue-panel__mark">{props.t("extensions-mcp-mark")}</div>
+      <div class="catalogue-panel__content">
+        <h3 class="catalogue-panel__title">
+          {props.t("extensions-mcp-title")}
+        </h3>
+        <Show
+          when={props.hasExtensions}
+          fallback={
+            <p class="catalogue-panel__empty">
+              {props.t("extensions-mcp-empty")}
+            </p>
+          }
+        >
+          <div class="catalogue-table-wrap">
+            <table class="catalogue-list catalogue-list--extensions">
+              <caption class="catalogue-table__caption">
+                {props.t("extensions-mcp-title")}
+              </caption>
+              <thead>
+                <tr class="catalogue-list__row">
+                  <th class="catalogue-list__key" scope="col">
+                    {props.t("routines-column-name")}
+                  </th>
+                  <th class="catalogue-list__content" scope="col">
+                    {props.t("extensions-column-endpoint")}
+                  </th>
+                </tr>
+              </thead>
+              <tbody ref={props.bodyRef} />
+            </table>
+          </div>
+        </Show>
+        <h4 class="catalogue-panel__subtitle">
+          {props.t("extensions-mcp-add-title")}
+        </h4>
+        <div class="catalogue-form">
+          <label class="catalogue-form__label" for="mcp-server-name">
+            {props.t("extensions-mcp-field-label")}
+          </label>
+          <div class="catalogue-form__row">
+            <input
+              class="catalogue-form__input"
+              id="mcp-server-name"
+              onInput={(event) =>
+                props.onServerNameInput(event.currentTarget.value)
+              }
+              placeholder={props.t("extensions-mcp-placeholder")}
+              type="text"
+              value={props.serverName}
+            />
+          </div>
+        </div>
+        <button
+          class="catalogue-form__button"
+          type="button"
+          onClick={() => props.onAddServer()}
+        >
+          {props.t("extensions-mcp-action")}
+        </button>
+      </div>
+    </section>
+  );
+}
+
+type ExtensionToolsSectionProps = {
+  t: TranslateFn;
+  bodyRef: (element: HTMLTableSectionElement) => void;
+};
+
+function ExtensionToolsSection(props: ExtensionToolsSectionProps) {
+  return (
+    <section class="catalogue-section catalogue-section--bare">
+      <div class="catalogue-section__header extensions-preview__section-header">
+        <div>
+          <h3 class="catalogue-section__title">
+            {props.t("extensions-tools-title")}
+          </h3>
+          <p class="catalogue-section__body">
+            {props.t("page-extensions-guardrail")}
+          </p>
+        </div>
+      </div>
+
+      <div class="catalogue-table-wrap">
+        <table class="catalogue-list catalogue-list--extensions">
+          <caption class="catalogue-table__caption">
+            {props.t("extensions-tools-title")}
+          </caption>
+          <thead>
+            <tr class="catalogue-list__row">
+              <th class="catalogue-list__key" scope="col">
+                {props.t("extensions-column-tool")}
+              </th>
+              <th class="catalogue-list__content" scope="col">
+                {props.t("extensions-tools-source-label")}
+              </th>
+              <th class="catalogue-list__content" scope="col">
+                {props.t("extensions-column-description")}
+              </th>
+            </tr>
+          </thead>
+          <tbody ref={props.bodyRef} />
+        </table>
+      </div>
+    </section>
+  );
+}
+
+type RemoveExtensionDialogProps = {
+  t: TranslateFn;
+  extension: ExtensionInfo | null;
+  showReinstallHint: boolean;
+  isRemoving: boolean;
+  onOpenChange: (open: boolean) => void;
+  onConfirm: (name: string) => void;
+};
+
+function RemoveExtensionDialog(props: RemoveExtensionDialogProps) {
+  return (
+    <AlertDialog
+      onOpenChange={(open) => props.onOpenChange(open)}
+      open={props.extension !== null}
+    >
+      <AlertDialog.Portal>
+        <AlertDialog.Overlay class="dialog-overlay" />
+        <Show when={props.extension}>
+          {(extension) => (
+            <AlertDialog.Content class="dialog-surface extensions-remove-dialog">
+              <AlertDialog.Title class="dialog-title">
+                {props.t("extensions-remove-title", {
+                  name: extensionDisplayName(extension()),
+                })}
+              </AlertDialog.Title>
+              <AlertDialog.Description class="dialog-description">
+                {props.t("extensions-remove-description", {
+                  name: extensionDisplayName(extension()),
+                })}
+              </AlertDialog.Description>
+              <Show when={props.showReinstallHint}>
+                <p class="dialog-description">
+                  {props.t("extensions-remove-reinstall-hint")}
+                </p>
+              </Show>
+              <div class="dashboard-detail__actions extensions-remove-dialog__actions">
+                <button
+                  class="dashboard-detail__ghost"
+                  disabled={props.isRemoving}
+                  onClick={() => props.onConfirm(extension().name)}
+                  type="button"
+                >
+                  {props.t("extensions-remove-confirm")}
+                </button>
+                <AlertDialog.CloseButton
+                  class="dashboard-detail__ghost dashboard-detail__ghost--danger"
+                  disabled={props.isRemoving}
+                >
+                  {props.t("extensions-action-cancel")}
+                </AlertDialog.CloseButton>
+              </div>
+            </AlertDialog.Content>
+          )}
+        </Show>
+      </AlertDialog.Portal>
+    </AlertDialog>
+  );
 }
 
 export const ExtensionsPreview = () => {
@@ -219,38 +669,18 @@ export const ExtensionsPreview = () => {
     onSuccess: refresh,
   }));
 
-  const tagList = (extension: ExtensionInfo) => {
-    const tags = [
-      extension.active ? "actions" : "read",
-      extension.authenticated ? "read_write" : "triggers",
-    ];
-    if (extension.has_auth) {
-      tags.push("events");
+  const addMcpServer = () => {
+    const name = mcpServerName().trim();
+    if (name) {
+      installMutation.mutate(name);
+      setMcpServerName("");
     }
-    return tags;
   };
 
-  const tagLabel = (tag: string) =>
-    t(
-      `extensions-tag-${pascalCase(tag)
-        .replace(/([A-Z])/g, "-$1")
-        .toLowerCase()
-        .replace(/^-/, "")}`
-    );
-
-  const extensionDisplayName = (extension: ExtensionInfo) =>
-    extension.display_name ?? extension.name;
-
-  const extensionKindLabel = (kind: string) => {
-    if (isMcpExtensionKind(kind)) {
-      return t("extensions-kind-mcp");
+  const handleRemoveDialogOpenChange = (open: boolean) => {
+    if (!open && !removeMutation.isPending) {
+      setPendingRemovalName(undefined);
     }
-
-    if (isWasmExtensionKind(kind)) {
-      return t("extensions-kind-wasm");
-    }
-
-    return capitalize(kind).toLowerCase();
   };
 
   createEffect(() => {
@@ -365,374 +795,74 @@ export const ExtensionsPreview = () => {
           <div class="catalogue-grid catalogue-grid--extensions">
             <For each={extensions.data?.extensions ?? []}>
               {(extension) => (
-                <article class="catalogue-card extensions-card">
-                  <div class="catalogue-card__header">
-                    <div class="catalogue-card__title-wrap">
-                      <h4 class="catalogue-card__title">
-                        {extensionDisplayName(extension)}
-                      </h4>
-                      <span
-                        class={
-                          KIND_CLASS[extension.kind] ?? "pill pill--neutral"
-                        }
-                      >
-                        {extensionKindLabel(extension.kind)}
-                      </span>
-                    </div>
-                    <div class="catalogue-card__meta">
-                      <span>
-                        {extension.version ?? t("extensions-version-preview")}
-                      </span>
-                      <span
-                        class={
-                          extension.active
-                            ? STATUS_CLASS.active
-                            : STATUS_CLASS.inactive
-                        }
-                      />
-                    </div>
-                  </div>
-
-                  <p class="catalogue-card__path">
-                    {extension.url ?? t("extensions-url-local")}
-                  </p>
-                  <p class="catalogue-card__body">{extension.description}</p>
-
-                  <Show when={extension.kind === "wasm_channel"}>
-                    <WasmChannelStepper
-                      activationStatus={extension.activation_status}
-                    />
-                  </Show>
-
-                  <div class="catalogue-card__tags">
-                    <For each={tagList(extension)}>
-                      {(tag) => (
-                        <span class="pill pill--neutral">{tagLabel(tag)}</span>
-                      )}
-                    </For>
-                  </div>
-
-                  <div class="catalogue-card__actions">
-                    <button
-                      class="catalogue-card__action"
-                      onClick={() => setConfiguringName(extension.name)}
-                      type="button"
-                    >
-                      {t("extensions-action-configure")}
-                    </button>
-                    <button
-                      class="catalogue-card__action"
-                      onClick={() => activateMutation.mutate(extension.name)}
-                      type="button"
-                    >
-                      {extension.active
-                        ? t("extensions-action-disable")
-                        : t("extensions-action-activate")}
-                    </button>
-                    <button
-                      aria-label={t("extensions-action-remove-label", {
-                        name: extensionDisplayName(extension),
-                      })}
-                      class="catalogue-card__action"
-                      onClick={() => setPendingRemovalName(extension.name)}
-                      type="button"
-                    >
-                      {t("extensions-action-remove")}
-                    </button>
-                  </div>
-
-                  <Show when={extension.kind === "wasm_channel"}>
-                    <ExtensionPairing
-                      channel={extension.name}
-                      onApproved={refresh}
-                    />
-                  </Show>
-                </article>
+                <InstalledExtensionCard
+                  extension={extension}
+                  onConfigure={(name) => setConfiguringName(name)}
+                  onPairingApproved={refresh}
+                  onRequestRemove={(name) => setPendingRemovalName(name)}
+                  onToggleActive={(name) => activateMutation.mutate(name)}
+                  t={t}
+                />
               )}
             </For>
           </div>
 
           <Show when={activeExtension()}>
             {(extension) => (
-              <aside class="catalogue-detail catalogue-detail--inline extensions-detail">
-                <h3 class="catalogue-detail__title">
-                  {t("extensions-configure-title", {
-                    name: extension().name,
-                  })}
-                </h3>
-
-                <For each={setup.data?.secrets ?? []}>
-                  {(field) => (
-                    <div class="catalogue-form">
-                      <label
-                        class="catalogue-form__label"
-                        for={`setup-${field.name}`}
-                      >
-                        {field.prompt}
-                      </label>
-                      <div class="catalogue-form__row catalogue-form__row--indicator">
-                        <input
-                          class="catalogue-form__input"
-                          id={`setup-${field.name}`}
-                          onInput={(event) =>
-                            setSetupValues((current) => ({
-                              ...current,
-                              [field.name]: event.currentTarget.value,
-                            }))
-                          }
-                          placeholder={
-                            field.provided
-                              ? t("extensions-setup-provided-hint")
-                              : field.prompt
-                          }
-                          type="text"
-                        />
-                        <Show when={field.provided}>
-                          <span
-                            class="catalogue-form__provided-icon"
-                            role="img"
-                            aria-label={t("extensions-setup-stored")}
-                          >
-                            ✓
-                          </span>
-                        </Show>
-                      </div>
-                    </div>
-                  )}
-                </For>
-
-                <Show when={(setup.data?.secrets ?? []).length === 0}>
-                  <p class="catalogue-panel__empty">
-                    {t("extensions-setup-none")}
-                  </p>
-                </Show>
-
-                <div class="dashboard-detail__actions">
-                  <button
-                    class="dashboard-detail__ghost"
-                    type="button"
-                    onClick={() => setupMutation.mutate()}
-                  >
-                    {t("extensions-action-save")}
-                  </button>
-                  <button
-                    class="dashboard-detail__ghost dashboard-detail__ghost--danger"
-                    type="button"
-                    onClick={() => setConfiguringName(undefined)}
-                  >
-                    {t("extensions-action-cancel")}
-                  </button>
-                </div>
-              </aside>
+              <ConfigurePanel
+                name={extension().name}
+                onCancel={() => setConfiguringName(undefined)}
+                onSave={() => setupMutation.mutate()}
+                onSecretChange={(fieldName, value) =>
+                  setSetupValues((current) => ({
+                    ...current,
+                    [fieldName]: value,
+                  }))
+                }
+                secrets={setup.data?.secrets ?? []}
+                t={t}
+              />
             )}
           </Show>
         </section>
 
         <div class="catalogue-panel-grid catalogue-panel-grid--extensions">
-          <section class="catalogue-panel">
-            <div class="catalogue-panel__mark">{t("extensions-wasm-mark")}</div>
-            <div class="catalogue-panel__content">
-              <h3 class="catalogue-panel__title">
-                {t("extensions-wasm-title")}
-              </h3>
-              <div class="catalogue-form">
-                <label
-                  class="catalogue-form__label"
-                  for="extensions-registry-search"
-                >
-                  {t("extensions-registry-label")}
-                </label>
-                <div class="catalogue-form__row">
-                  <input
-                    class="catalogue-form__input"
-                    id="extensions-registry-search"
-                    onInput={(event) =>
-                      setRegistryQuery(event.currentTarget.value)
-                    }
-                    placeholder={t("extensions-wasm-placeholder")}
-                    type="text"
-                    value={registryQuery()}
-                  />
-                </div>
-              </div>
-              <div class="catalogue-table-wrap">
-                <table class="catalogue-list catalogue-list--extensions">
-                  <caption class="catalogue-table__caption">
-                    {t("extensions-wasm-title")}
-                  </caption>
-                  <thead>
-                    <tr class="catalogue-list__row">
-                      <th class="catalogue-list__content" scope="col">
-                        {t("routines-column-name")}
-                      </th>
-                      <th class="catalogue-list__content" scope="col">
-                        {t("extensions-column-description")}
-                      </th>
-                      <th class="catalogue-list__action" scope="col">
-                        {t("routines-column-action")}
-                      </th>
-                    </tr>
-                  </thead>
-                  <tbody ref={registryBodyRef} />
-                </table>
-              </div>
-            </div>
-          </section>
+          <RegistrySearchPanel
+            bodyRef={(element) => {
+              registryBodyRef = element;
+            }}
+            onQueryInput={(value) => setRegistryQuery(value)}
+            query={registryQuery()}
+            t={t}
+          />
 
-          <section class="catalogue-panel">
-            <div class="catalogue-panel__mark">{t("extensions-mcp-mark")}</div>
-            <div class="catalogue-panel__content">
-              <h3 class="catalogue-panel__title">
-                {t("extensions-mcp-title")}
-              </h3>
-              <Show
-                when={mcpExtensions().length > 0}
-                fallback={
-                  <p class="catalogue-panel__empty">
-                    {t("extensions-mcp-empty")}
-                  </p>
-                }
-              >
-                <div class="catalogue-table-wrap">
-                  <table class="catalogue-list catalogue-list--extensions">
-                    <caption class="catalogue-table__caption">
-                      {t("extensions-mcp-title")}
-                    </caption>
-                    <thead>
-                      <tr class="catalogue-list__row">
-                        <th class="catalogue-list__key" scope="col">
-                          {t("routines-column-name")}
-                        </th>
-                        <th class="catalogue-list__content" scope="col">
-                          {t("extensions-column-endpoint")}
-                        </th>
-                      </tr>
-                    </thead>
-                    <tbody ref={mcpBodyRef} />
-                  </table>
-                </div>
-              </Show>
-              <h4 class="catalogue-panel__subtitle">
-                {t("extensions-mcp-add-title")}
-              </h4>
-              <div class="catalogue-form">
-                <label class="catalogue-form__label" for="mcp-server-name">
-                  {t("extensions-mcp-field-label")}
-                </label>
-                <div class="catalogue-form__row">
-                  <input
-                    class="catalogue-form__input"
-                    id="mcp-server-name"
-                    onInput={(event) =>
-                      setMcpServerName(event.currentTarget.value)
-                    }
-                    placeholder={t("extensions-mcp-placeholder")}
-                    type="text"
-                    value={mcpServerName()}
-                  />
-                </div>
-              </div>
-              <button
-                class="catalogue-form__button"
-                type="button"
-                onClick={() => {
-                  const name = mcpServerName().trim();
-                  if (name) {
-                    installMutation.mutate(name);
-                    setMcpServerName("");
-                  }
-                }}
-              >
-                {t("extensions-mcp-action")}
-              </button>
-            </div>
-          </section>
+          <McpServerPanel
+            bodyRef={(element) => {
+              mcpBodyRef = element;
+            }}
+            hasExtensions={mcpExtensions().length > 0}
+            onAddServer={addMcpServer}
+            onServerNameInput={(value) => setMcpServerName(value)}
+            serverName={mcpServerName()}
+            t={t}
+          />
         </div>
 
-        <section class="catalogue-section catalogue-section--bare">
-          <div class="catalogue-section__header extensions-preview__section-header">
-            <div>
-              <h3 class="catalogue-section__title">
-                {t("extensions-tools-title")}
-              </h3>
-              <p class="catalogue-section__body">
-                {t("page-extensions-guardrail")}
-              </p>
-            </div>
-          </div>
-
-          <div class="catalogue-table-wrap">
-            <table class="catalogue-list catalogue-list--extensions">
-              <caption class="catalogue-table__caption">
-                {t("extensions-tools-title")}
-              </caption>
-              <thead>
-                <tr class="catalogue-list__row">
-                  <th class="catalogue-list__key" scope="col">
-                    {t("extensions-column-tool")}
-                  </th>
-                  <th class="catalogue-list__content" scope="col">
-                    {t("extensions-tools-source-label")}
-                  </th>
-                  <th class="catalogue-list__content" scope="col">
-                    {t("extensions-column-description")}
-                  </th>
-                </tr>
-              </thead>
-              <tbody ref={toolsBodyRef} />
-            </table>
-          </div>
-        </section>
-
-        <AlertDialog
-          onOpenChange={(open) => {
-            if (!open && !removeMutation.isPending) {
-              setPendingRemovalName(undefined);
-            }
+        <ExtensionToolsSection
+          bodyRef={(element) => {
+            toolsBodyRef = element;
           }}
-          open={pendingRemovalExtension() !== null}
-        >
-          <AlertDialog.Portal>
-            <AlertDialog.Overlay class="dialog-overlay" />
-            <Show when={pendingRemovalExtension()}>
-              {(extension) => (
-                <AlertDialog.Content class="dialog-surface extensions-remove-dialog">
-                  <AlertDialog.Title class="dialog-title">
-                    {t("extensions-remove-title", {
-                      name: extensionDisplayName(extension()),
-                    })}
-                  </AlertDialog.Title>
-                  <AlertDialog.Description class="dialog-description">
-                    {t("extensions-remove-description", {
-                      name: extensionDisplayName(extension()),
-                    })}
-                  </AlertDialog.Description>
-                  <Show when={pendingRemovalWasmRegistryEntry()}>
-                    <p class="dialog-description">
-                      {t("extensions-remove-reinstall-hint")}
-                    </p>
-                  </Show>
-                  <div class="dashboard-detail__actions extensions-remove-dialog__actions">
-                    <button
-                      class="dashboard-detail__ghost"
-                      disabled={removeMutation.isPending}
-                      onClick={() => removeMutation.mutate(extension().name)}
-                      type="button"
-                    >
-                      {t("extensions-remove-confirm")}
-                    </button>
-                    <AlertDialog.CloseButton
-                      class="dashboard-detail__ghost dashboard-detail__ghost--danger"
-                      disabled={removeMutation.isPending}
-                    >
-                      {t("extensions-action-cancel")}
-                    </AlertDialog.CloseButton>
-                  </div>
-                </AlertDialog.Content>
-              )}
-            </Show>
-          </AlertDialog.Portal>
-        </AlertDialog>
+          t={t}
+        />
+
+        <RemoveExtensionDialog
+          extension={pendingRemovalExtension()}
+          isRemoving={removeMutation.isPending}
+          onConfirm={(name) => removeMutation.mutate(name)}
+          onOpenChange={handleRemoveDialogOpenChange}
+          showReinstallHint={pendingRemovalWasmRegistryEntry() !== null}
+          t={t}
+        />
       </div>
     </section>
   );

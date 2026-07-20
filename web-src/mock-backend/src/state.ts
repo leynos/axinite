@@ -73,6 +73,13 @@ type MemoryDocument = {
   updated_at: string;
 };
 
+type MemoryListingEntry = {
+  name: string;
+  path: string;
+  is_dir: boolean;
+  updated_at: string | null;
+};
+
 type MockThread = {
   info: ThreadInfo;
   turns: TurnInfo[];
@@ -1672,45 +1679,61 @@ export class MockBackendState {
     return { entries };
   }
 
-  listMemory(path = ""): MemoryListResponse {
-    const prefix = path.length > 0 ? `${path}/` : "";
-    const names = new Map<
-      string,
-      { name: string; path: string; is_dir: boolean; updated_at: string | null }
-    >();
+  // Fold a single stored document into the listing for `parentPath`. Returns
+  // early when the document lies outside the requested directory; otherwise
+  // records the immediate child as either a directory placeholder or a leaf
+  // file. A leaf always overwrites a placeholder, but a placeholder never
+  // displaces an already-recorded leaf.
+  private addMemoryListingEntry(
+    entries: Map<string, MemoryListingEntry>,
+    parentPath: string,
+    documentPath: string,
+    document: MemoryDocument
+  ): void {
+    const prefix = parentPath.length > 0 ? `${parentPath}/` : "";
+    if (!documentPath.startsWith(prefix)) {
+      return;
+    }
 
-    for (const [documentPath, document] of this.memoryDocuments.entries()) {
-      if (!documentPath.startsWith(prefix)) {
-        continue;
-      }
-      const remainder = documentPath.slice(prefix.length);
-      if (remainder.length === 0) {
-        continue;
-      }
-      const [segment, ...rest] = remainder.split("/");
-      const entryPath = path.length > 0 ? `${path}/${segment}` : segment;
-      if (rest.length > 0) {
-        if (!names.has(entryPath)) {
-          names.set(entryPath, {
-            name: segment,
-            path: entryPath,
-            is_dir: true,
-            updated_at: null,
-          });
-        }
-      } else {
-        names.set(entryPath, {
+    const remainder = documentPath.slice(prefix.length);
+    if (remainder.length === 0) {
+      return;
+    }
+
+    const [segment, ...rest] = remainder.split("/");
+    const entryPath = parentPath.length > 0 ? `${parentPath}/${segment}` : segment;
+    const isDirectory = rest.length > 0;
+
+    if (isDirectory) {
+      if (!entries.has(entryPath)) {
+        entries.set(entryPath, {
           name: segment,
           path: entryPath,
-          is_dir: false,
-          updated_at: document.updated_at,
+          is_dir: true,
+          updated_at: null,
         });
       }
+      return;
+    }
+
+    entries.set(entryPath, {
+      name: segment,
+      path: entryPath,
+      is_dir: false,
+      updated_at: document.updated_at,
+    });
+  }
+
+  listMemory(path = ""): MemoryListResponse {
+    const entries = new Map<string, MemoryListingEntry>();
+
+    for (const [documentPath, document] of this.memoryDocuments.entries()) {
+      this.addMemoryListingEntry(entries, path, documentPath, document);
     }
 
     return {
       path,
-      entries: [...names.values()].sort((left, right) =>
+      entries: [...entries.values()].sort((left, right) =>
         left.path.localeCompare(right.path)
       ),
     };

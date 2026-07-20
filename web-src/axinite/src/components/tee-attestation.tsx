@@ -1,5 +1,6 @@
 import { Popover } from "@kobalte/core/popover";
 import { createQuery } from "@tanstack/solid-query";
+import type { Accessor, Component } from "solid-js";
 import { createSignal, Show } from "solid-js";
 
 import { useFeatureFlags } from "@/lib/feature-flags/runtime";
@@ -20,21 +21,19 @@ function truncate(value: string): string {
     : value;
 }
 
-export const TeeAttestation = () => {
-  const { t } = useI18n();
-  const flags = useFeatureFlags();
+type TeeReportLoader = {
+  report: Accessor<TeeReport | undefined>;
+  reportError: Accessor<boolean>;
+  reportLoading: Accessor<boolean>;
+  loadReport: () => void;
+  copyReport: () => void;
+};
 
-  const enabled = () =>
-    flags.isRouteVisible("surface_tee_attestation") && teeApiBase() !== null;
-
-  const status = createQuery<TeeStatus | null>(() => ({
-    queryKey: ["tee", "status"],
-    queryFn: checkTeeStatus,
-    enabled: enabled(),
-    retry: false,
-    staleTime: Number.POSITIVE_INFINITY,
-  }));
-
+// Encapsulate the lazy report fetch and clipboard export. `status` is the live
+// query result so its latest data is read when the report is copied.
+function createTeeReportLoader(status: {
+  data: TeeStatus | null | undefined;
+}): TeeReportLoader {
   const [report, setReport] = createSignal<TeeReport>();
   const [reportError, setReportError] = createSignal(false);
   const [reportLoading, setReportLoading] = createSignal(false);
@@ -60,7 +59,98 @@ export const TeeAttestation = () => {
     void navigator.clipboard.writeText(JSON.stringify(combined, null, 2));
   };
 
+  return { report, reportError, reportLoading, loadReport, copyReport };
+}
+
+// The popover body: attestation fields once the report loads, otherwise the
+// loading or error placeholder.
+const TeeReportPanel: Component<{
+  teeStatus: Accessor<TeeStatus>;
+  report: Accessor<TeeReport | undefined>;
+  reportError: Accessor<boolean>;
+  copyReport: () => void;
+}> = (props) => {
+  const { t } = useI18n();
   const emptyValue = () => t("tee-value-empty");
+
+  return (
+    <Show
+      fallback={
+        <Show
+          fallback={<p class="shell-tee__loading">{t("tee-report-loading")}</p>}
+          when={props.reportError()}
+        >
+          <p class="shell-tee__loading">{t("tee-report-error")}</p>
+        </Show>
+      }
+      when={props.report()}
+    >
+      {(loaded) => (
+        <>
+          <div class="shell-tee__field">
+            <div class="shell-tee__field-label">
+              {t("tee-field-image-digest")}
+            </div>
+            <div class="shell-tee__field-value">
+              {props.teeStatus().image_digest || emptyValue()}
+            </div>
+          </div>
+          <div class="shell-tee__field">
+            <div class="shell-tee__field-label">
+              {t("tee-field-tls-fingerprint")}
+            </div>
+            <div class="shell-tee__field-value">
+              {loaded().tls_certificate_fingerprint || emptyValue()}
+            </div>
+          </div>
+          <div class="shell-tee__field">
+            <div class="shell-tee__field-label">
+              {t("tee-field-report-data")}
+            </div>
+            <div class="shell-tee__field-value">
+              {loaded().report_data
+                ? truncate(loaded().report_data ?? "")
+                : emptyValue()}
+            </div>
+          </div>
+          <div class="shell-tee__field">
+            <div class="shell-tee__field-label">{t("tee-field-vm-config")}</div>
+            <div class="shell-tee__field-value">
+              {loaded().vm_config || emptyValue()}
+            </div>
+          </div>
+          <div class="shell-tee__actions">
+            <button
+              class="shell-tee__copy"
+              onClick={props.copyReport}
+              type="button"
+            >
+              {t("tee-copy-report")}
+            </button>
+          </div>
+        </>
+      )}
+    </Show>
+  );
+};
+
+export const TeeAttestation = () => {
+  const { t } = useI18n();
+  const flags = useFeatureFlags();
+
+  const enabled = () =>
+    flags.isRouteVisible("surface_tee_attestation") && teeApiBase() !== null;
+
+  const status = createQuery<TeeStatus | null>(() => ({
+    queryKey: ["tee", "status"],
+    queryFn: checkTeeStatus,
+    enabled: enabled(),
+    retry: false,
+    staleTime: Number.POSITIVE_INFINITY,
+  }));
+
+  const { report, reportError, loadReport, copyReport } =
+    createTeeReportLoader(status);
 
   return (
     <Show when={enabled() && status.data}>
@@ -95,69 +185,12 @@ export const TeeAttestation = () => {
               <Popover.Title class="shell-tee__title">
                 {t("tee-popover-title")}
               </Popover.Title>
-              <Show
-                fallback={
-                  <Show
-                    fallback={
-                      <p class="shell-tee__loading">
-                        {t("tee-report-loading")}
-                      </p>
-                    }
-                    when={reportError()}
-                  >
-                    <p class="shell-tee__loading">{t("tee-report-error")}</p>
-                  </Show>
-                }
-                when={report()}
-              >
-                {(loaded) => (
-                  <>
-                    <div class="shell-tee__field">
-                      <div class="shell-tee__field-label">
-                        {t("tee-field-image-digest")}
-                      </div>
-                      <div class="shell-tee__field-value">
-                        {teeStatus().image_digest || emptyValue()}
-                      </div>
-                    </div>
-                    <div class="shell-tee__field">
-                      <div class="shell-tee__field-label">
-                        {t("tee-field-tls-fingerprint")}
-                      </div>
-                      <div class="shell-tee__field-value">
-                        {loaded().tls_certificate_fingerprint || emptyValue()}
-                      </div>
-                    </div>
-                    <div class="shell-tee__field">
-                      <div class="shell-tee__field-label">
-                        {t("tee-field-report-data")}
-                      </div>
-                      <div class="shell-tee__field-value">
-                        {loaded().report_data
-                          ? truncate(loaded().report_data ?? "")
-                          : emptyValue()}
-                      </div>
-                    </div>
-                    <div class="shell-tee__field">
-                      <div class="shell-tee__field-label">
-                        {t("tee-field-vm-config")}
-                      </div>
-                      <div class="shell-tee__field-value">
-                        {loaded().vm_config || emptyValue()}
-                      </div>
-                    </div>
-                    <div class="shell-tee__actions">
-                      <button
-                        class="shell-tee__copy"
-                        onClick={copyReport}
-                        type="button"
-                      >
-                        {t("tee-copy-report")}
-                      </button>
-                    </div>
-                  </>
-                )}
-              </Show>
+              <TeeReportPanel
+                copyReport={copyReport}
+                report={report}
+                reportError={reportError}
+                teeStatus={teeStatus}
+              />
             </Popover.Content>
           </Popover.Portal>
         </Popover>

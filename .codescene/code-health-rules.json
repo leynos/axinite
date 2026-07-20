@@ -170,6 +170,46 @@
           "weight": 0.0
         }
       ]
+    },
+    {
+      "matching_content_path": "web-src/axinite/tests/**",
+      "matching_content_path_doc": "Browser workspace test suites: the same test-shape leniency as tests/** (parameterized cases, fixture staging, and assertion tables are deliberately repetitive).",
+      "rules": [
+        {
+          "name": "Code Duplication",
+          "weight": 0.0
+        },
+        {
+          "name": "Large Assertion Blocks",
+          "weight": 0.0
+        },
+        {
+          "name": "Duplicated Assertion Blocks",
+          "weight": 0.0
+        },
+        {
+          "name": "Large Method",
+          "weight": 0.0
+        },
+        {
+          "name": "String Heavy Function Arguments",
+          "weight": 0.0
+        }
+      ]
+    },
+    {
+      "matching_content_path": "web-src/mock-backend/**",
+      "matching_content_path_doc": "Daemon-free stub harness, not production code: it mirrors the gateway wire contract with deterministic in-memory fixtures, so fixture volume (file length) and contract-shaped response builders (duplication) are inherent to its job. Structural rules (Bumpy Road, Complex Method) stay at default weight and were refactored, not suppressed.",
+      "rules": [
+        {
+          "name": "Code Duplication",
+          "weight": 0.3
+        },
+        {
+          "name": "Lines of Code in a Single File",
+          "weight": 0.3
+        }
+      ]
     }
   ]
 }

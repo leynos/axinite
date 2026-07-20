@@ -13,46 +13,40 @@ export type StepperModel = {
 
 const STEP_COUNT = 3;
 
+// Per-status derivation of the stepper model: the furthest step index reached
+// and the state rendered at that index. Steps before the reached index are
+// always "completed" and steps after it are always "pending". Statuses absent
+// from the table fall back to DEFAULT_STATUS_ENTRY.
+type StatusEntry = { reachedIdx: number; reachedState: StepState };
+
+const STATUS_TABLE: Record<string, StatusEntry> = {
+  active: { reachedIdx: 2, reachedState: "completed" },
+  pairing: { reachedIdx: 2, reachedState: "in-progress" },
+  failed: { reachedIdx: 2, reachedState: "failed" },
+  configured: { reachedIdx: 1, reachedState: "completed" },
+  installed: { reachedIdx: 0, reachedState: "completed" },
+};
+
+const DEFAULT_STATUS_ENTRY: StatusEntry = {
+  reachedIdx: 0,
+  reachedState: "pending",
+};
+
 /**
  * Compute the three-step activation stepper model for a WASM channel, mirroring
  * the legacy `renderWasmChannelStepper` heuristic.
  */
 export function computeStepperModel(activationStatus?: string): StepperModel {
   const status = activationStatus || "installed";
+  const { reachedIdx, reachedState } =
+    STATUS_TABLE[status] ?? DEFAULT_STATUS_ENTRY;
 
-  let reachedIdx: number;
-  if (status === "active" || status === "pairing" || status === "failed") {
-    reachedIdx = 2;
-  } else if (status === "configured") {
-    reachedIdx = 1;
-  } else {
-    reachedIdx = 0;
-  }
-
-  const states: StepState[] = [];
-  for (let i = 0; i < STEP_COUNT; i += 1) {
+  const states: StepState[] = Array.from({ length: STEP_COUNT }, (_, i) => {
     if (i < reachedIdx) {
-      states.push("completed");
-      continue;
+      return "completed";
     }
-    if (i === reachedIdx) {
-      if (status === "failed") {
-        states.push("failed");
-      } else if (status === "pairing") {
-        states.push("in-progress");
-      } else if (
-        status === "active" ||
-        status === "configured" ||
-        status === "installed"
-      ) {
-        states.push("completed");
-      } else {
-        states.push("pending");
-      }
-      continue;
-    }
-    states.push("pending");
-  }
+    return i === reachedIdx ? reachedState : "pending";
+  });
 
   return { reachedIdx, states, awaitingPairing: status === "pairing" };
 }

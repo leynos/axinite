@@ -4,8 +4,14 @@ import {
   keepPreviousData,
   useQueryClient,
 } from "@tanstack/solid-query";
+import type { Accessor } from "solid-js";
 import { createEffect, createMemo, createSignal, For, Show } from "solid-js";
 
+import type {
+  RoutineDetailResponse,
+  RoutineInfo,
+  RoutineRunInfo,
+} from "@/lib/api/contracts";
 import {
   deleteRoutine,
   fetchRoutineDetail,
@@ -57,6 +63,267 @@ function formatTimestamp(
     minute: "2-digit",
   }).format(new Date(value));
 }
+
+type SummaryCard = { key: string; value: number };
+
+// Narrow-props subcomponent for the dashboard summary cards. The `cards`
+// accessor is passed through untouched so reactivity is preserved.
+const SummaryCards = (props: { cards: Accessor<SummaryCard[]> }) => {
+  const { t } = useI18n();
+  return (
+    <div class="dashboard-summary">
+      <For each={props.cards()}>
+        {(card) => (
+          <article class="dashboard-summary__card">
+            <p class="dashboard-summary__label">
+              {t(`routines-summary-${toKebabSegment(card.key)}`)}
+            </p>
+            <p class="dashboard-summary__value">{card.value}</p>
+          </article>
+        )}
+      </For>
+    </div>
+  );
+};
+
+// Narrow-props subcomponent for the routines table. Accessors are forwarded so
+// the selection highlight and row list stay reactive.
+const RoutinesTable = (props: {
+  routines: Accessor<RoutineInfo[]>;
+  activeRoutineId: Accessor<string | undefined>;
+  onSelect: (id: string) => void;
+}) => {
+  const { t } = useI18n();
+  return (
+    <section class="dashboard-panel">
+      <div class="dashboard-panel__header">
+        <div>
+          <h3 class="dashboard-panel__title">{t("routines-table-title")}</h3>
+          <p class="dashboard-panel__body">{t("page-routines-agenda")}</p>
+        </div>
+      </div>
+
+      <div class="dashboard-table-wrap">
+        <table class="dashboard-table dashboard-table--routines">
+          <thead>
+            <tr>
+              <th scope="col">{t("routines-column-name")}</th>
+              <th scope="col">{t("routines-column-trigger")}</th>
+              <th scope="col">{t("routines-column-action")}</th>
+              <th scope="col">{t("routines-column-last-run")}</th>
+              <th scope="col">{t("routines-column-next-run")}</th>
+              <th scope="col">{t("routines-column-runs")}</th>
+              <th scope="col">{t("routines-column-status")}</th>
+              <th scope="col">{t("routines-column-actions")}</th>
+            </tr>
+          </thead>
+          <tbody>
+            <For each={props.routines()}>
+              {(routine) => (
+                <tr
+                  class={
+                    props.activeRoutineId() === routine.id
+                      ? "dashboard-table__row dashboard-table__row--active"
+                      : "dashboard-table__row"
+                  }
+                >
+                  <td>
+                    <button
+                      class="dashboard-table__title-button"
+                      onClick={() => props.onSelect(routine.id)}
+                      type="button"
+                    >
+                      {routine.name}
+                    </button>
+                  </td>
+                  <td>
+                    <span
+                      class={
+                        TRIGGER_CLASS[routine.trigger_type] ??
+                        "pill pill--neutral"
+                      }
+                    >
+                      {routine.trigger_type}
+                    </span>
+                  </td>
+                  <td>
+                    <span
+                      class={
+                        ACTION_CLASS[routine.action_type] ??
+                        "pill pill--neutral"
+                      }
+                    >
+                      {routine.action_type}
+                    </span>
+                  </td>
+                  <td class="dashboard-table__meta">
+                    {formatTimestamp(
+                      routine.last_run_at,
+                      t("timestamp-pending")
+                    )}
+                  </td>
+                  <td class="dashboard-table__meta">
+                    {formatTimestamp(
+                      routine.next_fire_at,
+                      t("timestamp-pending")
+                    )}
+                  </td>
+                  <td class="dashboard-table__meta">{routine.run_count}</td>
+                  <td>
+                    <span
+                      class={
+                        STATUS_CLASS[routine.status] ?? "pill pill--neutral"
+                      }
+                    >
+                      {t(
+                        `routines-status-${capitalize(routine.status).toLowerCase()}`
+                      )}
+                    </span>
+                  </td>
+                  <td>
+                    <button
+                      class="dashboard-table__action"
+                      onClick={() => props.onSelect(routine.id)}
+                      type="button"
+                    >
+                      {t("routines-action-inspect")}
+                    </button>
+                  </td>
+                </tr>
+              )}
+            </For>
+          </tbody>
+        </table>
+      </div>
+    </section>
+  );
+};
+
+// Narrow-props subcomponent for the active routine detail panel. The `routine`
+// and `runs` accessors are forwarded verbatim, and the mutation triggers are
+// passed as plain callbacks, so behaviour and reactivity are unchanged.
+const RoutineDetailPanel = (props: {
+  routine: Accessor<RoutineDetailResponse>;
+  runs: Accessor<RoutineRunInfo[]>;
+  onTrigger: () => void;
+  onToggle: () => void;
+  onDelete: () => void;
+}) => {
+  const { t } = useI18n();
+  return (
+    <section class="dashboard-detail">
+      <div class="dashboard-detail__header">
+        <div>
+          <p class="dashboard-detail__eyebrow">
+            {t("routines-detail-eyebrow")}
+          </p>
+          <h3 class="dashboard-detail__title">{props.routine().name}</h3>
+        </div>
+        <div class="dashboard-detail__pills">
+          <span
+            class={
+              TRIGGER_CLASS[String(props.routine().trigger.type)] ??
+              "pill pill--neutral"
+            }
+          >
+            {String(props.routine().trigger.type ?? "manual")}
+          </span>
+          <span
+            class={
+              STATUS_CLASS[
+                props.routine().enabled
+                  ? props.routine().consecutive_failures > 0
+                    ? "failing"
+                    : "active"
+                  : "disabled"
+              ] ?? "pill pill--neutral"
+            }
+          >
+            {props.routine().enabled
+              ? t("routines-enabled-label")
+              : t("routines-disabled-label")}
+          </span>
+        </div>
+      </div>
+
+      <p class="dashboard-detail__body">{props.routine().description}</p>
+
+      <dl class="dashboard-detail__meta-grid">
+        <div>
+          <dt>{t("routines-meta-last-run")}</dt>
+          <dd>
+            {formatTimestamp(
+              props.routine().last_run_at,
+              t("timestamp-pending")
+            )}
+          </dd>
+        </div>
+        <div>
+          <dt>{t("routines-meta-next-run")}</dt>
+          <dd>
+            {formatTimestamp(
+              props.routine().next_fire_at,
+              t("timestamp-pending")
+            )}
+          </dd>
+        </div>
+        <div>
+          <dt>{t("routines-meta-guardrail")}</dt>
+          <dd>{t("page-routines-guardrail")}</dd>
+        </div>
+      </dl>
+
+      <div class="dashboard-detail__actions">
+        <button
+          class="dashboard-detail__ghost"
+          type="button"
+          onClick={() => props.onTrigger()}
+        >
+          {t("routines-action-run-now")}
+        </button>
+        <button
+          class="dashboard-detail__ghost"
+          type="button"
+          onClick={() => props.onToggle()}
+        >
+          {props.routine().enabled
+            ? t("routines-action-disable")
+            : t("routines-action-enable")}
+        </button>
+        <button
+          class="dashboard-detail__ghost"
+          type="button"
+          onClick={() => props.onDelete()}
+        >
+          {t("routines-action-delete")}
+        </button>
+      </div>
+
+      <section class="catalogue-panel">
+        <div class="catalogue-panel__content">
+          <h3 class="catalogue-panel__title">{t("routines-runs-title")}</h3>
+          <div class="catalogue-list catalogue-list--extensions">
+            <For each={props.runs()}>
+              {(run) => (
+                <article class="catalogue-list__row">
+                  <div class="catalogue-list__key">{run.status}</div>
+                  <div class="catalogue-list__content">
+                    <p class="catalogue-list__source">
+                      {formatTimestamp(run.started_at, t("timestamp-pending"))}
+                    </p>
+                    <p class="catalogue-list__body">
+                      {run.result_summary ?? t("routines-run-no-summary")}
+                    </p>
+                  </div>
+                </article>
+              )}
+            </For>
+          </div>
+        </div>
+      </section>
+    </section>
+  );
+};
 
 export const RoutinesPreview = () => {
   const { t } = useI18n();
@@ -144,242 +411,23 @@ export const RoutinesPreview = () => {
           <p class="route-preview__summary">{t("page-routines-summary")}</p>
         </header>
 
-        <div class="dashboard-summary">
-          <For each={summaryCards()}>
-            {(card) => (
-              <article class="dashboard-summary__card">
-                <p class="dashboard-summary__label">
-                  {t(`routines-summary-${toKebabSegment(card.key)}`)}
-                </p>
-                <p class="dashboard-summary__value">{card.value}</p>
-              </article>
-            )}
-          </For>
-        </div>
+        <SummaryCards cards={summaryCards} />
 
-        <section class="dashboard-panel">
-          <div class="dashboard-panel__header">
-            <div>
-              <h3 class="dashboard-panel__title">
-                {t("routines-table-title")}
-              </h3>
-              <p class="dashboard-panel__body">{t("page-routines-agenda")}</p>
-            </div>
-          </div>
-
-          <div class="dashboard-table-wrap">
-            <table class="dashboard-table dashboard-table--routines">
-              <thead>
-                <tr>
-                  <th scope="col">{t("routines-column-name")}</th>
-                  <th scope="col">{t("routines-column-trigger")}</th>
-                  <th scope="col">{t("routines-column-action")}</th>
-                  <th scope="col">{t("routines-column-last-run")}</th>
-                  <th scope="col">{t("routines-column-next-run")}</th>
-                  <th scope="col">{t("routines-column-runs")}</th>
-                  <th scope="col">{t("routines-column-status")}</th>
-                  <th scope="col">{t("routines-column-actions")}</th>
-                </tr>
-              </thead>
-              <tbody>
-                <For each={routines.data?.routines ?? []}>
-                  {(routine) => (
-                    <tr
-                      class={
-                        activeRoutineId() === routine.id
-                          ? "dashboard-table__row dashboard-table__row--active"
-                          : "dashboard-table__row"
-                      }
-                    >
-                      <td>
-                        <button
-                          class="dashboard-table__title-button"
-                          onClick={() => setActiveRoutineId(routine.id)}
-                          type="button"
-                        >
-                          {routine.name}
-                        </button>
-                      </td>
-                      <td>
-                        <span
-                          class={
-                            TRIGGER_CLASS[routine.trigger_type] ??
-                            "pill pill--neutral"
-                          }
-                        >
-                          {routine.trigger_type}
-                        </span>
-                      </td>
-                      <td>
-                        <span
-                          class={
-                            ACTION_CLASS[routine.action_type] ??
-                            "pill pill--neutral"
-                          }
-                        >
-                          {routine.action_type}
-                        </span>
-                      </td>
-                      <td class="dashboard-table__meta">
-                        {formatTimestamp(
-                          routine.last_run_at,
-                          t("timestamp-pending")
-                        )}
-                      </td>
-                      <td class="dashboard-table__meta">
-                        {formatTimestamp(
-                          routine.next_fire_at,
-                          t("timestamp-pending")
-                        )}
-                      </td>
-                      <td class="dashboard-table__meta">{routine.run_count}</td>
-                      <td>
-                        <span
-                          class={
-                            STATUS_CLASS[routine.status] ?? "pill pill--neutral"
-                          }
-                        >
-                          {t(
-                            `routines-status-${capitalize(routine.status).toLowerCase()}`
-                          )}
-                        </span>
-                      </td>
-                      <td>
-                        <button
-                          class="dashboard-table__action"
-                          onClick={() => setActiveRoutineId(routine.id)}
-                          type="button"
-                        >
-                          {t("routines-action-inspect")}
-                        </button>
-                      </td>
-                    </tr>
-                  )}
-                </For>
-              </tbody>
-            </table>
-          </div>
-        </section>
+        <RoutinesTable
+          routines={() => routines.data?.routines ?? []}
+          activeRoutineId={activeRoutineId}
+          onSelect={(id) => setActiveRoutineId(id)}
+        />
 
         <Show when={activeRoutine.data}>
           {(routine) => (
-            <section class="dashboard-detail">
-              <div class="dashboard-detail__header">
-                <div>
-                  <p class="dashboard-detail__eyebrow">
-                    {t("routines-detail-eyebrow")}
-                  </p>
-                  <h3 class="dashboard-detail__title">{routine().name}</h3>
-                </div>
-                <div class="dashboard-detail__pills">
-                  <span
-                    class={
-                      TRIGGER_CLASS[String(routine().trigger.type)] ??
-                      "pill pill--neutral"
-                    }
-                  >
-                    {String(routine().trigger.type ?? "manual")}
-                  </span>
-                  <span
-                    class={
-                      STATUS_CLASS[
-                        routine().enabled
-                          ? routine().consecutive_failures > 0
-                            ? "failing"
-                            : "active"
-                          : "disabled"
-                      ] ?? "pill pill--neutral"
-                    }
-                  >
-                    {routine().enabled
-                      ? t("routines-enabled-label")
-                      : t("routines-disabled-label")}
-                  </span>
-                </div>
-              </div>
-
-              <p class="dashboard-detail__body">{routine().description}</p>
-
-              <dl class="dashboard-detail__meta-grid">
-                <div>
-                  <dt>{t("routines-meta-last-run")}</dt>
-                  <dd>
-                    {formatTimestamp(
-                      routine().last_run_at,
-                      t("timestamp-pending")
-                    )}
-                  </dd>
-                </div>
-                <div>
-                  <dt>{t("routines-meta-next-run")}</dt>
-                  <dd>
-                    {formatTimestamp(
-                      routine().next_fire_at,
-                      t("timestamp-pending")
-                    )}
-                  </dd>
-                </div>
-                <div>
-                  <dt>{t("routines-meta-guardrail")}</dt>
-                  <dd>{t("page-routines-guardrail")}</dd>
-                </div>
-              </dl>
-
-              <div class="dashboard-detail__actions">
-                <button
-                  class="dashboard-detail__ghost"
-                  type="button"
-                  onClick={() => triggerMutation.mutate()}
-                >
-                  {t("routines-action-run-now")}
-                </button>
-                <button
-                  class="dashboard-detail__ghost"
-                  type="button"
-                  onClick={() => toggleMutation.mutate()}
-                >
-                  {routine().enabled
-                    ? t("routines-action-disable")
-                    : t("routines-action-enable")}
-                </button>
-                <button
-                  class="dashboard-detail__ghost"
-                  type="button"
-                  onClick={() => deleteMutation.mutate()}
-                >
-                  {t("routines-action-delete")}
-                </button>
-              </div>
-
-              <section class="catalogue-panel">
-                <div class="catalogue-panel__content">
-                  <h3 class="catalogue-panel__title">
-                    {t("routines-runs-title")}
-                  </h3>
-                  <div class="catalogue-list catalogue-list--extensions">
-                    <For each={runs.data?.runs ?? []}>
-                      {(run) => (
-                        <article class="catalogue-list__row">
-                          <div class="catalogue-list__key">{run.status}</div>
-                          <div class="catalogue-list__content">
-                            <p class="catalogue-list__source">
-                              {formatTimestamp(
-                                run.started_at,
-                                t("timestamp-pending")
-                              )}
-                            </p>
-                            <p class="catalogue-list__body">
-                              {run.result_summary ??
-                                t("routines-run-no-summary")}
-                            </p>
-                          </div>
-                        </article>
-                      )}
-                    </For>
-                  </div>
-                </div>
-              </section>
-            </section>
+            <RoutineDetailPanel
+              routine={routine}
+              runs={() => runs.data?.runs ?? []}
+              onTrigger={() => triggerMutation.mutate()}
+              onToggle={() => toggleMutation.mutate()}
+              onDelete={() => deleteMutation.mutate()}
+            />
           )}
         </Show>
       </div>
