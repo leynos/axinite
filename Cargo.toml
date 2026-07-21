@@ -84,7 +84,7 @@ rust_decimal_macros = "1"
 clap = { version = "4", features = ["derive", "env"] }
 
 # Terminal
-crossterm = "0.28"
+crossterm = "0.29"
 rustyline = { version = "18", features = ["custom-bindings", "derive", "with-file-history"] }
 termimad = "0.34"
 
