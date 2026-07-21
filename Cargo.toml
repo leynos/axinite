@@ -86,7 +86,7 @@ clap = { version = "4", features = ["derive", "env"] }
 # Terminal
 crossterm = "0.28"
 rustyline = { version = "18", features = ["custom-bindings", "derive", "with-file-history"] }
-termimad = "0.34"
+termimad = "0.35"
 
 # Channel integrations
 axum = { version = "0.8", features = ["multipart", "ws"] }
