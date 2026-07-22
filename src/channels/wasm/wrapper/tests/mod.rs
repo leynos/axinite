@@ -6,6 +6,7 @@ mod channel;
 mod clone;
 mod convert;
 mod dispatch;
+mod recording_store;
 mod store;
 
 use std::sync::Arc;

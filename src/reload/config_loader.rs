@@ -145,6 +145,22 @@ mod tests {
     }
 
     impl NativeSettingsStore for MockSettingsStore {
+        async fn list_deployment_flags(
+            &self,
+            _deployment_id: &str,
+        ) -> Result<Vec<(String, bool)>, DatabaseError> {
+            Ok(Vec::new())
+        }
+
+        async fn set_deployment_flag(
+            &self,
+            _deployment_id: &str,
+            _flag_name: &str,
+            _enabled: bool,
+        ) -> Result<(), DatabaseError> {
+            Ok(())
+        }
+
         async fn get_setting(
             &self,
             user_id: UserId,

@@ -138,6 +138,26 @@ ALTER TABLE agent_jobs ADD COLUMN total_tokens_used INTEGER NOT NULL DEFAULT 0;
         include_str!("../../migrations/V15__assistant_conversation_unique_index.sql"),
     ),
     (16, v16_context::V16_NAME, v16_context::V16_SQL_MARKER),
+    (
+        18,
+        "feature_flag_overrides",
+        // Deployment-scoped feature-flag overrides (RFC 0009). Adds the table to
+        // existing databases; new databases already have it from the base
+        // `libsql_schema.sql`. Version 17 is deliberately skipped: PostgreSQL V17
+        // (`widen_llm_call_token_counts`) widens INTEGER columns to BIGINT, which
+        // is a no-op for libSQL's dynamically typed INTEGER storage, so there is
+        // no corresponding libSQL incremental. This backend-specific gap follows
+        // the same convention as the 9 -> 12 jump documented above.
+        r#"
+CREATE TABLE IF NOT EXISTS feature_flag_overrides (
+    deployment_id TEXT NOT NULL,
+    flag_name TEXT NOT NULL,
+    enabled INTEGER NOT NULL,
+    updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+    PRIMARY KEY (deployment_id, flag_name)
+);
+"#,
+    ),
 ];
 
 pub(crate) use v12_wasm::v12_wasm_wit_default_migration_sql;

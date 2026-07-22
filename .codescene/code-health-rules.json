@@ -2,6 +2,56 @@
   "usage": "Repository overrides for CodeScene code health scoring. Test code is relaxed for inherently similar test structure, and one repo-wide false positive (String Heavy Function Arguments) is disabled with its rationale below. Production code keeps every other rule at default weight.",
   "rule_sets": [
     {
+      "matching_content_path": "src/channels/web/static/solid/**",
+      "matching_content_path_doc": "Generated, minified SolidJS build output embedded into the binary (refreshed by `make frontend-build`). Not hand-maintained source; code-health findings here are false positives against the bundler's output. The corresponding sources under web-src/ are analysed at full weight.",
+      "rules": [
+        {
+          "name": "Complex Method",
+          "weight": 0.0
+        },
+        {
+          "name": "Complex Conditional",
+          "weight": 0.0
+        },
+        {
+          "name": "Bumpy Road Ahead",
+          "weight": 0.0
+        },
+        {
+          "name": "Overall Code Complexity",
+          "weight": 0.0
+        },
+        {
+          "name": "Deep, Nested Complexity",
+          "weight": 0.0
+        },
+        {
+          "name": "Excess Number of Function Arguments",
+          "weight": 0.0
+        },
+        {
+          "name": "Lines of Code in a Single File",
+          "weight": 0.0
+        },
+        {
+          "name": "Code Duplication",
+          "weight": 0.0
+        },
+        {
+          "name": "Large Method",
+          "weight": 0.0
+        },
+        {
+          "name": "Primitive Obsession",
+          "weight": 0.0
+        },
+        {
+          "name": "String Heavy Function Arguments",
+          "weight": 0.0
+        }
+      ]
+    },
+    {
       "matching_content_path": "tests/**",
       "matching_content_path_doc": "Integration test crates: parameterized cases, fixture staging, and assertion tables are deliberately repetitive.",
       "rules": [
@@ -153,6 +203,54 @@
       "rules": [
         {
           "name": "Code Duplication",
+          "weight": 0.0
+        },
+        {
+          "name": "String Heavy Function Arguments",
+          "weight": 0.0
+        }
+      ]
+    },
+    {
+      "matching_content_path": "web-src/axinite/tests/**",
+      "matching_content_path_doc": "Browser workspace test suites: the same test-shape leniency as tests/** (parameterized cases, fixture staging, and assertion tables are deliberately repetitive).",
+      "rules": [
+        {
+          "name": "Code Duplication",
+          "weight": 0.0
+        },
+        {
+          "name": "Large Assertion Blocks",
+          "weight": 0.0
+        },
+        {
+          "name": "Duplicated Assertion Blocks",
+          "weight": 0.0
+        },
+        {
+          "name": "Large Method",
+          "weight": 0.0
+        },
+        {
+          "name": "String Heavy Function Arguments",
+          "weight": 0.0
+        }
+      ]
+    },
+    {
+      "matching_content_path": "web-src/mock-backend/**",
+      "matching_content_path_doc": "Daemon-free stub harness, not production code: it mirrors the gateway wire contract with deterministic in-memory fixtures, so fixture volume (file length) and contract-shaped response builders (duplication) are down-weighted, and stringly wire identifiers (primitive obsession, string-heavy arguments) are disabled outright \u2014 the public mock API deliberately takes the same string ids the wire carries. Structural rules (Bumpy Road, Complex Method) stay at default weight and were refactored, not suppressed. Note CodeScene applies one rule set per file, so this set restates the repo-wide String Heavy disable.",
+      "rules": [
+        {
+          "name": "Code Duplication",
+          "weight": 0.3
+        },
+        {
+          "name": "Lines of Code in a Single File",
+          "weight": 0.3
+        },
+        {
+          "name": "Primitive Obsession",
           "weight": 0.0
         },
         {

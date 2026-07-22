@@ -19,15 +19,6 @@ use crate::bootstrap::axinite_base_dir;
 use crate::channels::web::server::GatewayState;
 use crate::channels::web::types::*;
 
-pub fn public_routes() -> Router<Arc<GatewayState>> {
-    Router::new()
-        .route("/", get(index_handler))
-        .route("/style.css", get(css_handler))
-        .route("/app.js", get(js_handler))
-        .route("/favicon.ico", get(favicon_handler))
-        .route("/api/health", get(health_handler))
-}
-
 pub fn protected_routes() -> Router<Arc<GatewayState>> {
     Router::new()
         .route("/api/logs/events", get(logs_events_handler))
@@ -37,46 +28,6 @@ pub fn protected_routes() -> Router<Arc<GatewayState>> {
         .route("/projects/{project_id}", get(project_redirect_handler))
         .route("/projects/{project_id}/", get(project_index_handler))
         .route("/projects/{project_id}/{*path}", get(project_file_handler))
-}
-
-pub async fn index_handler() -> impl IntoResponse {
-    (
-        [
-            (header::CONTENT_TYPE, "text/html; charset=utf-8"),
-            (header::CACHE_CONTROL, "no-cache"),
-        ],
-        include_str!("../static/index.html"),
-    )
-}
-
-pub async fn css_handler() -> impl IntoResponse {
-    (
-        [
-            (header::CONTENT_TYPE, "text/css"),
-            (header::CACHE_CONTROL, "no-cache"),
-        ],
-        include_str!("../static/style.css"),
-    )
-}
-
-pub async fn js_handler() -> impl IntoResponse {
-    (
-        [
-            (header::CONTENT_TYPE, "application/javascript"),
-            (header::CACHE_CONTROL, "no-cache"),
-        ],
-        include_str!("../static/app.js"),
-    )
-}
-
-pub async fn favicon_handler() -> impl IntoResponse {
-    (
-        [
-            (header::CONTENT_TYPE, "image/x-icon"),
-            (header::CACHE_CONTROL, "public, max-age=86400"),
-        ],
-        include_bytes!("../static/favicon.ico").as_slice(),
-    )
 }
 
 pub async fn health_handler() -> Json<HealthResponse> {

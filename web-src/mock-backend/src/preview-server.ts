@@ -1,0 +1,89 @@
+import { existsSync, statSync } from "node:fs";
+import path from "node:path";
+
+import { isStreamingApiPath } from "./streaming-routes";
+
+const previewPort = Number(process.env.PREVIEW_PORT ?? "2020");
+const apiPort = Number(process.env.MOCK_API_PORT ?? "8787");
+const distDir = path.join(process.cwd(), "dist");
+
+function fileExists(filePath: string): boolean {
+  if (!existsSync(filePath)) {
+    return false;
+  }
+
+  return statSync(filePath).isFile();
+}
+
+// Ordered list of on-disk paths a request may resolve to. Extension-less routes
+// additionally try a sibling `.html` file, the directory index, and finally the
+// single-page-app shell (for example /chat), matching the gateway's serving
+// behaviour. Building the full list here keeps `resolveStaticPath` free of
+// nested control flow.
+function candidatePaths(pathname: string): string[] {
+  const cleanPath = pathname === "/" ? "/index.html" : pathname;
+  const relative = cleanPath.replace(/^\/+/, "");
+  const hasExtension = Boolean(path.extname(cleanPath));
+
+  return [
+    path.join(distDir, relative),
+    path.join(distDir, relative, "index.html"),
+    ...(hasExtension
+      ? []
+      : [
+          path.join(distDir, `${relative}.html`),
+          path.join(distDir, relative, "index.html"),
+          path.join(distDir, "index.html"),
+        ]),
+  ];
+}
+
+function resolveStaticPath(pathname: string): string | null {
+  return candidatePaths(pathname).find(fileExists) ?? null;
+}
+
+async function proxyRequest(request: Request): Promise<Response> {
+  const url = new URL(request.url);
+  const upstream = new URL(url.pathname + url.search, `http://127.0.0.1:${apiPort}`);
+  const response = await fetch(upstream, {
+    method: request.method,
+    headers: request.headers,
+    body:
+      request.method === "GET" || request.method === "HEAD"
+        ? undefined
+        : request.body,
+  });
+
+  return new Response(response.body, {
+    headers: response.headers,
+    status: response.status,
+    statusText: response.statusText,
+  });
+}
+
+function serveStatic(pathname: string): Response {
+  const resolvedPath = resolveStaticPath(pathname);
+  if (!resolvedPath) {
+    return new Response("Not found", { status: 404 });
+  }
+  return new Response(Bun.file(resolvedPath));
+}
+
+const server = Bun.serve({
+  port: previewPort,
+  async fetch(request, server) {
+    const url = new URL(request.url);
+    if (isStreamingApiPath(url.pathname)) {
+      server.timeout(request, 0);
+    }
+    if (url.pathname.startsWith("/api/")) {
+      return proxyRequest(request);
+    }
+
+    return serveStatic(url.pathname);
+  },
+});
+
+console.log(
+  `[preview] serving dist on http://localhost:${server.port ?? previewPort} with API proxy http://localhost:${apiPort}`
+);

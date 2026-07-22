@@ -1,0 +1,45 @@
+@import "https://fonts.googleapis.com/css2?family=Buenard:wght@400;700&family=Molengo&display=swap";
+@import "tailwindcss";
+@import "./semantic.css";
+@plugin "daisyui";
+@source "../";
+@source "../../tests";
+
+:root {
+  color-scheme: dark;
+  --ax-bg: #0b1116;
+  --ax-panel: rgb(12 18 24 / 0.8);
+  --ax-panel-strong: rgb(16 24 31 / 0.92);
+  --ax-border: rgb(157 255 122 / 0.16);
+  --ax-accent: #8bff72;
+  --ax-accent-strong: #c6ff6f;
+  --ax-copy: #e8f3ee;
+  --ax-copy-muted: #9fb1aa;
+  --ax-shadow: 0 24px 80px rgb(0 0 0 / 0.45);
+  --font-sans: "Molengo", sans-serif;
+  --font-serif: "Buenard", serif;
+}
+
+html,
+body,
+#app {
+  min-height: 100%;
+}
+
+body {
+  margin: 0;
+  background:
+    radial-gradient(
+      circle at top left,
+      rgb(139 255 114 / 0.14),
+      transparent 28%
+    ),
+    radial-gradient(
+      circle at bottom right,
+      rgb(100 196 255 / 0.12),
+      transparent 30%
+    ),
+    var(--ax-bg);
+  color: var(--ax-copy);
+  font-family: var(--font-sans);
+}

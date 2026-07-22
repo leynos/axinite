@@ -22,7 +22,8 @@ use crate::agent::SessionManager;
 use crate::channels::IncomingMessage;
 use crate::channels::web::auth::{AuthState, auth_middleware};
 use crate::channels::web::handlers::{
-    chat, extensions, jobs, memory, oauth, pairing, routines, settings, skills, static_files,
+    chat, extensions, features, jobs, memory, oauth, pairing, routines, settings, skills,
+    static_files, ui_assets,
 };
 use crate::channels::web::log_layer::LogBroadcaster;
 use crate::channels::web::sse::SseManager;
@@ -164,6 +165,14 @@ pub struct GatewayState {
     pub routine_engine: RoutineEngineSlot,
     /// Server startup time for uptime calculation.
     pub startup_time: std::time::Instant,
+    /// Deployment-scoped feature-flag override registry (RFC 0009).
+    ///
+    /// Caches operator overrides per deployment; resolution against
+    /// environment variables and compiled defaults happens in the
+    /// `features` handler. Lazily hydrated from `store` on first read.
+    pub feature_flags: Arc<
+        tokio::sync::RwLock<crate::channels::web::handlers::feature_registry::FeatureFlagRegistry>,
+    >,
 }
 
 /// Bind the TCP listener and resolve the actual bound address.
@@ -190,6 +199,7 @@ async fn bind_listener(
 fn protected_routes(auth_token: String) -> Router<Arc<GatewayState>> {
     let auth_state = AuthState { token: auth_token };
     chat::routes()
+        .merge(features::routes())
         .merge(memory::routes())
         .merge(jobs::routes())
         .merge(static_files::protected_routes())
@@ -243,7 +253,7 @@ fn build_cors_layer(addr: SocketAddr) -> Result<CorsLayer, crate::error::Channel
 /// Assemble the full application router with body limits, CORS, and
 /// security headers.
 fn build_app(state: Arc<GatewayState>, auth_token: String, cors: CorsLayer) -> Router {
-    let public = oauth::public_routes().merge(static_files::public_routes());
+    let public = oauth::public_routes().merge(ui_assets::public_routes());
     Router::new()
         .merge(public)
         .merge(protected_routes(auth_token))
