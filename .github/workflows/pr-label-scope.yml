@@ -12,7 +12,7 @@ jobs:
   scope:
     runs-on: ubicloud-standard-8
     steps:
-      - uses: actions/labeler@v6
+      - uses: actions/labeler@v7
         with:
           configuration-path: .github/labeler.yml
           sync-labels: false          # additive only — never remove scope labels
