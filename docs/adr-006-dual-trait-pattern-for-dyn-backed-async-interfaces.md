@@ -14,23 +14,22 @@ Accepted.
 The repository has already removed `async-trait` from the small set of
 interfaces that never participate in dynamic dispatch, notably
 `WasmChannelStore` and `SuccessEvaluator`.[^1] The remaining high-value
-compile-time targets are the dyn-backed interfaces such as `Tool`,
-`Channel`, `LlmProvider`, `Database`, `McpTransport`, and several
-smaller internal traits.[^2]
+compile-time targets are the dyn-backed interfaces such as `Tool`, `Channel`,
+`LlmProvider`, `Database`, `McpTransport`, and several smaller internal
+traits.[^2]
 
 Those interfaces still rely on `Arc<dyn Trait>`, `Box<dyn Trait>`, or
-`&dyn Trait` call sites. Native `async fn` in traits do not support
-dynamic dispatch today, so those interfaces cannot be migrated by simply
-dropping `#[async_trait]`.[^3]
+`&dyn Trait` call sites. Native `async fn` in traits do not support dynamic
+dispatch today, so those interfaces cannot be migrated by simply dropping
+`#[async_trait]`.[^3]
 
-That is not just a theoretical limitation in older toolchains. A direct
-check on `rustc 1.93.0` still rejects `&dyn McpTransport` when
-`McpTransport` is written with native `async fn` methods, so the dyn
-boundary must remain explicitly boxed for this repository's current
-minimum toolchain.[^6]
+That is not just a theoretical limitation in older toolchains. A direct check on
+`rustc 1.93.0` still rejects `&dyn McpTransport` when `McpTransport` is
+written with native `async fn` methods, so the dyn boundary must remain
+explicitly boxed for this repository's current minimum toolchain.[^6]
 
-The remaining work therefore needs a design decision, not just a search
-and replace. The design must optimize for:
+The remaining work therefore needs a design decision, not just a search and
+replace. The design must optimize for:
 
 - compilation speed;
 - maintainability of implementations and call sites; and
@@ -41,8 +40,8 @@ and replace. The design must optimize for:
 - Remove as much `async-trait` proc-macro expansion as possible from the
   remaining dyn-backed surfaces.
 - Preserve existing dynamic-dispatch call sites where practical, because
-  `Arc<dyn Tool>`, `Arc<dyn LlmProvider>`, and `Arc<dyn Database>` are
-  part of the current architecture.
+  `Arc<dyn Tool>`, `Arc<dyn LlmProvider>`, and `Arc<dyn Database>` are part of
+  the current architecture.
 - Keep implementation bodies readable. Repository maintainers should not
   have to hand-write `Box::pin(async move { ... })` in every adapter and
   business-logic method.
@@ -112,9 +111,9 @@ generic/static callers
  `Arc<dyn McpTransport>` consumers
 ```
 
-The boxed-future cost remains at the object-safe boundary, which matches
-the current runtime behaviour. The difference is that the boxing becomes
-explicit and local rather than being generated through a proc macro.
+The boxed-future cost remains at the object-safe boundary, which matches the
+current runtime behaviour. The difference is that the boxing becomes explicit
+and local rather than being generated through a proc macro.
 
 ## Interface conventions
 
@@ -139,8 +138,8 @@ long-form signatures.
 - Name the ergonomic sibling trait `NativeMcpTransport`,
   `NativeTool`, `NativeLlmProvider`, and so on.
 
-This preserves current consumer vocabulary while making the new
-implementation path explicit.
+This preserves current consumer vocabulary while making the new implementation
+path explicit.
 
 ### Default policy
 
@@ -153,8 +152,8 @@ implementation path explicit.
 ## Worked example: `McpTransport`
 
 `McpTransport` is the preferred proof point because it has a small async
-surface and already sits behind `Arc<dyn McpTransport>` in a narrow part
-of the tree.[^2]
+surface and already sits behind `Arc<dyn McpTransport>` in a narrow part of the
+tree.[^2]
 
 ### Today
 
@@ -238,10 +237,9 @@ where
 
 ## Worked example: `Tool`
 
-`Tool` is a larger and more central surface, so it should not be the
-first pilot. It is still the most important worked example because
-compilation speed will not materially improve unless large trait families
-eventually move.[^1]
+`Tool` is a larger and more central surface, so it should not be the first
+pilot. It is still the most important worked example because compilation speed
+will not materially improve unless large trait families eventually move.[^1]
 
 ### Proposed shape
 
@@ -335,8 +333,7 @@ sequenceDiagram
 ### Positive consequences
 
 - Removes the large tail of `#[async_trait]` usage from implementation
-  blocks, which is the largest remaining compile-time hotspot in this
-  stream.
+  blocks, which is the largest remaining compile-time hotspot in this stream.
 - Keeps implementation bodies in normal `async fn` form.
 - Preserves existing dyn call sites for the most heavily used traits.
 - Supports a measured, per-trait migration path instead of demanding a
@@ -352,15 +349,14 @@ sequenceDiagram
 
 ## Rejected direction: `trait_variant` for dyn-backed traits
 
-`trait_variant` is not the selected direction for the remaining work
-because it does not currently solve the repository's main blocker:
-dynamic dispatch. Its generated traits use `-> impl Future`, which is
-still not dyn-compatible, and the Rust blog explicitly frame dynamic
-dispatch support as future work for the crate.[^4][^5]
+`trait_variant` is not the selected direction for the remaining work because it
+does not currently solve the repository's main blocker: dynamic dispatch. Its
+generated traits use `-> impl Future`, which is still not dyn-compatible, and
+the Rust blog explicitly frame dynamic dispatch support as future work for the
+crate.[^4][^5]
 
-That makes `trait_variant` useful background for native async trait
-design, but not the correct tool for the remaining dyn-backed surfaces in
-this repository.
+That makes `trait_variant` useful background for native async trait design, but
+not the correct tool for the remaining dyn-backed surfaces in this repository.
 
 ## Migration plan
 
@@ -368,25 +364,24 @@ this repository.
    the dyn-facing signatures stay readable without reintroducing
    `#[async_trait]`.
 2. Completed the `McpTransport` pilot. The pilot confirmed that
-   `Arc<dyn McpTransport>` call sites could stay unchanged, concrete
-   transports could move to `NativeMcpTransport` with ordinary `async fn`
-   implementations, and the dyn boundary still needs explicit boxing on
-   the current compiler.
+   `Arc<dyn McpTransport>` call sites could stay unchanged, concrete transports
+   could move to `NativeMcpTransport` with ordinary `async fn` implementations,
+   and the dyn boundary still needs explicit boxing on the current compiler.
 3. Completed the next two smaller migrations on `SettingsStore` and
-   `SoftwareBuilder`. Those follow-on conversions showed that the
-   sibling-trait pattern scales beyond the transport layer while keeping
-   existing dyn-backed consumers intact.
+   `SoftwareBuilder`. Those follow-on conversions showed that the sibling-trait
+   pattern scales beyond the transport layer while keeping existing dyn-backed
+   consumers intact.
 4. Completed the ADR 006 broad rollout across all remaining dyn-backed
    families via the approval-gated plan in
    `docs/execplans/adr-006-broad-rollout.md`. In order: 7 narrow internal
    traits (Milestone 2), 6 infrastructure extension seams (Milestone 3), and
-   the 4 high-fanout core trait families — `Tool`, `LlmProvider`, `Channel`,
-   and `Database` — in separate sub-waves (Milestone 4). As of 2026-03-23,
-   zero production `#[async_trait]` attribute usages remain in `src/`.
+   the 4 high-fanout core trait families — `Tool`, `LlmProvider`, `Channel`, and
+   `Database` — in separate sub-waves (Milestone 4). As of 2026-03-23, zero
+   production `#[async_trait]` attribute usages remain in `src/`.
 5. Removed `async-trait` from `Cargo.toml` (Milestone 5, 2026-03-24). A
-   fresh tree audit confirmed zero attribute usages and zero imports in
-   the codebase. The crate remains as a transitive dependency through
-   upstream crates.
+   fresh tree audit confirmed zero attribute usages and zero imports in the
+   codebase. The crate remains as a transitive dependency through upstream
+   crates.
 
 ### Refinements discovered during the broad rollout
 
@@ -407,31 +402,31 @@ fulfill the required lifetime") because the returned future also captures the
 second borrow. This affected `respond`, `send_status`, and `broadcast` in
 `NativeChannel`, and any similarly shaped method on other native traits.
 
-**E0034 ambiguity from blanket adapters.** Once a concrete type implements
-both `NativeFoo` directly and `Foo` via the blanket adapter, a plain
-`self.method()` call is ambiguous. Use fully qualified syntax to resolve it:
+**E0034 ambiguity from blanket adapters.** Once a concrete type implements both
+`NativeFoo` directly and `Foo` via the blanket adapter, a plain `self.method()`
+call is ambiguous. Use fully qualified syntax to resolve it:
 
 ```rust,no_run
 NativeFoo::method_name(self, arg1, arg2)
 ```
 
 This was required in `Tool`, `Database` (for `run_migrations`), and in
-`EmbeddingProvider`, `SecretsStore`, and `WorkspaceStore` default methods
-that call sibling methods on `self`.
+`EmbeddingProvider`, `SecretsStore`, and `WorkspaceStore` default methods that
+call sibling methods on `self`.
 
 **Default method bodies reduce test-double friction.** Providing
-`async { Ok(()) }` or equivalent default bodies for optional or no-op
-methods (`send_status`, `broadcast`, `shutdown` in `NativeChannel`;
-`list_models` and `model_metadata` in `NativeLlmProvider`) allows test
-doubles to implement only the methods relevant to their scenario. This is
-preferable to requiring boilerplate in every test double.
+`async { Ok(()) }` or equivalent default bodies for optional or no-op methods
+(`send_status`, `broadcast`, `shutdown` in `NativeChannel`; `list_models` and
+`model_metadata` in `NativeLlmProvider`) allows test doubles to implement only
+the methods relevant to their scenario. This is preferable to requiring
+boilerplate in every test double.
 
 ## Decision summary
 
-For the remaining async-trait work, prefer a local dual-trait pattern
-over `trait_variant` or direct boxed-future rewrites. It is the best fit
-for the repository's actual blocker, and it balances the two key goals:
-compilation speed and maintainability.
+For the remaining async-trait work, prefer a local dual-trait pattern over
+`trait_variant` or direct boxed-future rewrites. It is the best fit for the
+repository's actual blocker, and it balances the two key goals: compilation
+speed and maintainability.
 
 ## References
 

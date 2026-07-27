@@ -22,8 +22,8 @@ activation:
 
 # Local Testing with Docker + Chrome MCP
 
-Use this skill to build, run, and test Axinite web gateway changes locally
-using `Dockerfile.test` and Chrome MCP browser automation tools.
+Use this skill to build, run, and test Axinite web gateway changes locally using
+`Dockerfile.test` and Chrome MCP browser automation tools.
 
 ## Quick Start
 

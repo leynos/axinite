@@ -213,9 +213,8 @@ MCP-plus-WASM, without redesigning the transport.
 Make the policy change at the inward boundary and keep adapters thin.
 
 1. Update the hosted remote-tool policy in
-   `src/orchestrator/api/remote_tools.rs`
-   so it consumes both `HostedToolCatalogSource::Mcp` and
-   `HostedToolCatalogSource::Wasm`.
+   `src/orchestrator/api/remote_tools.rs` so it consumes both
+   `HostedToolCatalogSource::Mcp` and `HostedToolCatalogSource::Wasm`.
 2. Keep `src/tools/registry/hosted.rs` as the single place that decides whether
    a tool is hosted-visible or executable by name. If helper extraction is
    needed to keep source-family logic readable, place it near the registry and

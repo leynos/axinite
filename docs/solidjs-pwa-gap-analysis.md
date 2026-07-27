@@ -22,22 +22,31 @@ developer can work through directly.
 
 This analysis is based on code inspection of:
 
-- the current gateway UI and browser-facing API in
-  [Axinite `src/channels/web/static/app.js`](https://github.com/leynos/axinite/blob/main/src/channels/web/static/app.js),
-  [Axinite `src/channels/web/types.rs`](https://github.com/leynos/axinite/blob/main/src/channels/web/types.rs),
-  [Axinite `src/channels/web/handlers/`](https://github.com/leynos/axinite/tree/main/src/channels/web/handlers),
-  [Axinite `src/channels/web/log_layer.rs`](https://github.com/leynos/axinite/blob/main/src/channels/web/log_layer.rs),
-  and
-  [Axinite `docs/front-end-architecture.md`](https://github.com/leynos/axinite/blob/main/docs/front-end-architecture.md)
-- the SolidJS PWA in
-  [axinite-mockup `axinite/src/components/`](https://github.com/leynos/axinite-mockup/tree/main/axinite/src/components),
-  [axinite-mockup `axinite/src/lib/api/`](https://github.com/leynos/axinite-mockup/tree/main/axinite/src/lib/api),
-  [axinite-mockup `axinite/src/lib/api/contracts.ts`](https://github.com/leynos/axinite-mockup/blob/main/axinite/src/lib/api/contracts.ts),
-  [axinite-mockup `axinite/src/lib/feature-flags/`](https://github.com/leynos/axinite-mockup/tree/main/axinite/src/lib/feature-flags),
-  and
-  [axinite-mockup `axinite/src/app/router.tsx`](https://github.com/leynos/axinite-mockup/blob/main/axinite/src/app/router.tsx)
+- the current gateway UI and browser-facing API:
+  - [static application][axinite-app]
+  - [web types][axinite-types]
+  - [request handlers][axinite-handlers]
+  - [log layer][axinite-log-layer]
+  - [front-end architecture][axinite-front-end]
+- the SolidJS PWA:
+  - [components][mockup-components]
+  - [API client][mockup-api]
+  - [API contracts][mockup-contracts]
+  - [feature flags][mockup-feature-flags]
+  - [application router][mockup-router]
 - the Bun mock backend in
   [axinite-mockup `mock-backend/src/server.ts`](https://github.com/leynos/axinite-mockup/blob/main/mock-backend/src/server.ts)
+
+[axinite-app]: https://github.com/leynos/axinite/blob/main/src/channels/web/static/app.js
+[axinite-types]: https://github.com/leynos/axinite/blob/main/src/channels/web/types.rs
+[axinite-handlers]: https://github.com/leynos/axinite/tree/main/src/channels/web/handlers
+[axinite-log-layer]: https://github.com/leynos/axinite/blob/main/src/channels/web/log_layer.rs
+[axinite-front-end]: https://github.com/leynos/axinite/blob/main/docs/front-end-architecture.md
+[mockup-components]: https://github.com/leynos/axinite-mockup/tree/main/axinite/src/components
+[mockup-api]: https://github.com/leynos/axinite-mockup/tree/main/axinite/src/lib/api
+[mockup-contracts]: https://github.com/leynos/axinite-mockup/blob/main/axinite/src/lib/api/contracts.ts
+[mockup-feature-flags]: https://github.com/leynos/axinite-mockup/tree/main/axinite/src/lib/feature-flags
+[mockup-router]: https://github.com/leynos/axinite-mockup/blob/main/axinite/src/app/router.tsx
   and
   [axinite-mockup `mock-backend/src/state.ts`](https://github.com/leynos/axinite-mockup/blob/main/mock-backend/src/state.ts)
 

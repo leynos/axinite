@@ -356,8 +356,8 @@ conflict in `Decision Log`, and ask for direction.
   `skills_upload` and listed `channels` as the available target in
   `/tmp/focused-upload-stage-d-1-3-5-axinite-1-3-5-installation-and-runtime-tests-for-bundled-skills.out`.
   Impact: use
-  `cargo nextest run -p axinite --test channels -E 'test(/skills_upload/)'`
-  for targeted gateway upload validation.
+  `cargo nextest run -p axinite --test channels -E 'test(/skills_upload/)'` for
+  targeted gateway upload validation.
 
 - Observation: the Stage D happy-path upload test now uses the same
   documented bundle fixture as the new read-after-upload cases, including
@@ -524,8 +524,8 @@ conflict in `Decision Log`, and ask for direction.
   InstalledBundleFixture { _tempdir, registry: SkillRegistry, loaded_skill: LoadedSkill }
   ```
 
-  Tests that need an `Arc<RwLock<SkillRegistry>>` (for example, the
-  tool adapter) wrap the registry locally via
+  Tests that need an `Arc<RwLock<SkillRegistry>>` (for example, the tool
+  adapter) wrap the registry locally via
   `Arc::new(RwLock::new(fixture.registry))` at the call site. Rationale:
   returning the registry by value rules out shared lock-poisoning between
   cases. The `Arc<RwLock<_>>` wrap is a one-liner at the call site and keeps

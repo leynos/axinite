@@ -73,29 +73,27 @@ behave exactly as it does today.
 
 - Risk: The worker currently has only a concrete `WorkerHttpClient`, so testing
   real hosted-worker behaviour may require extracting a small seam before any
-  regression test can be written.
-  Severity: medium Likelihood: high Mitigation: Make the first implementation
-  step a pure or test-only bootstrap helper so the tool inventory can be
-  asserted without network setup. Add the full behaviour harness only after the
-  seam is in place.
+  regression test can be written. Severity: medium Likelihood: high Mitigation:
+  Make the first implementation step a pure or test-only bootstrap helper so
+  the tool inventory can be asserted without network setup. Add the full
+  behaviour harness only after the seam is in place.
 
 - Risk: A worker-local `ExtensionManager` would create a second source of truth
-  for installed extensions, authentication state, and registry-backed discovery.
-  Severity: high Likelihood: medium Mitigation: Prefer a narrow orchestrator
-  proxy for extension-management tool execution. Treat worker-local extension
-  state as an escalation path, not the default plan.
+  for installed extensions, authentication state, and registry-backed
+  discovery. Severity: high Likelihood: medium Mitigation: Prefer a narrow
+  orchestrator proxy for extension-management tool execution. Treat
+  worker-local extension state as an escalation path, not the default plan.
 
 - Risk: Existing worker-focused tests do not instantiate `WorkerRuntime`, so
   adding more tests to `tests/e2e_worker_coverage.rs` alone could create a
-  false sense of coverage.
-  Severity: high Likelihood: high Mitigation: Add a dedicated hosted-worker
-  inventory or behaviour test that constructs `WorkerRuntime` or a directly
-  extracted hosted-worker bootstrap path.
+  false sense of coverage. Severity: high Likelihood: high Mitigation: Add a
+  dedicated hosted-worker inventory or behaviour test that constructs
+  `WorkerRuntime` or a directly extracted hosted-worker bootstrap path.
 
 - Risk: Extension-management tools have approval and auth behaviour that is
-  more complex than their current schema-only coverage suggests.
-  Severity: medium Likelihood: medium Mitigation: Separate inventory coverage
-  from execution-behaviour coverage. Use deterministic temp-dir and stub-backed
+  more complex than their current schema-only coverage suggests. Severity:
+  medium Likelihood: medium Mitigation: Separate inventory coverage from
+  execution-behaviour coverage. Use deterministic temp-dir and stub-backed
   tests for `tool_list`, `tool_search`, `tool_activate`, and `tool_auth` before
   relying on a worker end-to-end trace.
 
@@ -128,27 +126,26 @@ behave exactly as it does today.
 
 - Observation: `tests/e2e_worker_coverage.rs` is not a real `WorkerRuntime`
   harness. It uses `TestRigBuilder` and the normal app stack rather than
-  constructing the hosted worker.
-  Evidence: `tests/e2e_worker_coverage.rs` builds through `TestRigBuilder`,
-  while `tests/support/test_rig.rs` uses `AppBuilder::build_all()`. Impact: A
-  new hosted-worker-specific regression test is required; extending the
-  existing worker trace file alone is not enough.
+  constructing the hosted worker. Evidence: `tests/e2e_worker_coverage.rs`
+  builds through `TestRigBuilder`, while `tests/support/test_rig.rs` uses
+  `AppBuilder::build_all()`. Impact: A new hosted-worker-specific regression
+  test is required; extending the existing worker trace file alone is not
+  enough.
 
 - Observation: Extension-management tools already have only schema metadata
   coverage in `src/tools/builtin/extension_tools.rs`, while
   `src/extensions/manager.rs` already contains temp-dir helpers and
-  activation-oriented tests.
-  Evidence: `src/tools/builtin/extension_tools.rs` tests only tool names,
-  approval requirements, and schema presence; `src/extensions/manager.rs` has
-  test helpers such as `make_test_manager`. Impact: The fastest
-  surrounding-coverage gains are to extend registry and extension-tool tests
-  rather than inventing all fixtures from scratch.
+  activation-oriented tests. Evidence: `src/tools/builtin/extension_tools.rs`
+  tests only tool names, approval requirements, and schema presence;
+  `src/extensions/manager.rs` has test helpers such as `make_test_manager`.
+  Impact: The fastest surrounding-coverage gains are to extend registry and
+  extension-tool tests rather than inventing all fixtures from scratch.
 
 - Observation: The normal in-process agent path already proves `tool_list`
-  behaviour through the recorded Telegram check trace.
-  Evidence: `tests/e2e_recorded_trace.rs` replays `telegram_check.json`, and
-  that fixture expects `tool_list`. Impact: The fix must preserve the normal
-  app path while closing only the hosted-worker gap.
+  behaviour through the recorded Telegram check trace. Evidence:
+  `tests/e2e_recorded_trace.rs` replays `telegram_check.json`, and that fixture
+  expects `tool_list`. Impact: The fix must preserve the normal app path while
+  closing only the hosted-worker gap.
 
 - Observation: This repository does not provide a `Makefile`.
   Evidence: `Makefile` is absent at the repository root. Impact: Validation
@@ -157,49 +154,47 @@ behave exactly as it does today.
 
 - Observation: Reusing the exact extension-tool metadata across both the normal
   app path and the hosted-worker proxy path was cheaper and safer than
-  maintaining parallel name/schema definitions.
-  Evidence: Centralizing names, descriptions, schemas, and approval
-  requirements in `ExtensionToolKind` removed duplicate strings from the tool
-  implementations and let the proxy tool reflect the same contract. Impact:
-  Future extension-tool additions now have a single metadata source, reducing
-  the risk of another inventory/schema drift between runtimes.
+  maintaining parallel name/schema definitions. Evidence: Centralizing names,
+  descriptions, schemas, and approval requirements in `ExtensionToolKind`
+  removed duplicate strings from the tool implementations and let the proxy
+  tool reflect the same contract. Impact: Future extension-tool additions now
+  have a single metadata source, reducing the risk of another inventory/schema
+  drift between runtimes.
 
 - Observation: The `--no-default-features --features libsql` test matrix has a
   very slow first local compile because it fully rebuilds the large `libsql` and
-  `wasmtime` graph for a distinct unit-test target.
-  Evidence: The first local run spent about eight minutes in the initial
-  `src/lib.rs` test binary compilation before the test execution phase began.
-  Impact: Broad validation is still feasible locally, but it should be expected
-  to take materially longer than the default or pre-warmed matrices.
+  `wasmtime` graph for a distinct unit-test target. Evidence: The first local
+  run spent about eight minutes in the initial `src/lib.rs` test binary
+  compilation before the test execution phase began. Impact: Broad validation
+  is still feasible locally, but it should be expected to take materially
+  longer than the default or pre-warmed matrices.
 
 ## Decision Log
 
 - Decision: Keep the plan in
-  `docs/plans/2026-03-09-resolve-meta-tooling-unavailability.md`.
-  Rationale: Repository guidance prefers `docs/execplans/...`, but the user
-  explicitly requested the `docs/plans/...` location, which takes priority.
-  Date/Author: 2026-03-09 12:57Z / Codex
+  `docs/plans/2026-03-09-resolve-meta-tooling-unavailability.md`. Rationale:
+  Repository guidance prefers `docs/execplans/...`, but the user explicitly
+  requested the `docs/plans/...` location, which takes priority. Date/Author:
+  2026-03-09 12:57Z / Codex
 
 - Decision: Treat the work as three separate coverage layers: hosted-worker
   inventory regression, surrounding registration and tool-behaviour coverage,
-  and hosted feature behaviour.
-  Rationale: The current regression exists because no test covers the middle
-  layer between isolated tool schemas and the full app-path trace harness.
-  Date/Author: 2026-03-09 12:57Z / Codex
+  and hosted feature behaviour. Rationale: The current regression exists
+  because no test covers the middle layer between isolated tool schemas and the
+  full app-path trace harness. Date/Author: 2026-03-09 12:57Z / Codex
 
 - Decision: Prefer a narrow orchestrator-side extension-tool proxy over
-  constructing a second `ExtensionManager` inside the worker.
-  Rationale: The comments and history around sandbox jobs indicate that worker
-  and orchestrator were intentionally split. Reusing orchestrator-owned
-  extension state is safer than inventing container-local extension state that
-  may drift. Date/Author: 2026-03-09 12:57Z / Codex
+  constructing a second `ExtensionManager` inside the worker. Rationale: The
+  comments and history around sandbox jobs indicate that worker and
+  orchestrator were intentionally split. Reusing orchestrator-owned extension
+  state is safer than inventing container-local extension state that may drift.
+  Date/Author: 2026-03-09 12:57Z / Codex
 
 - Decision: Do not change the meaning of `register_container_tools`; introduce
-  a separate hosted-worker registration path.
-  Rationale: `register_container_tools` is currently documented as the
-  container-local development tool set. Preserving that meaning reduces blast
-  radius and makes the final tests easier to read. Date/Author: 2026-03-09
-  12:57Z / Codex
+  a separate hosted-worker registration path. Rationale:
+  `register_container_tools` is currently documented as the container-local
+  development tool set. Preserving that meaning reduces blast radius and makes
+  the final tests easier to read. Date/Author: 2026-03-09 12:57Z / Codex
 
 ## Outcomes & Retrospective
 
@@ -248,8 +243,8 @@ runnable in this Linux workspace.
 
 ## Context and orientation
 
-Axinite currently has two relevant execution paths. The normal application
-path builds the full app in `src/app.rs`, creates an `ExtensionManager`, and
+Axinite currently has two relevant execution paths. The normal application path
+builds the full app in `src/app.rs`, creates an `ExtensionManager`, and
 registers extension-management tools into the main `ToolRegistry`. The hosted
 worker path builds `WorkerRuntime` in `src/worker/runtime.rs`, creates a fresh
 `ToolRegistry`, and registers only container-local development tools through

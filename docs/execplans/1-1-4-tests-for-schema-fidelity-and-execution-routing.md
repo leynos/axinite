@@ -838,8 +838,8 @@ addressed in a subsequent pass (see progress checklist above).
 - `docs/rfcs/0001-expose-mcp-tool-definitions.md`: updated implementation status
   to reflect that all roadmap items in section `1.1` are complete.
 - `docs/contents.md`: added ExecPlan
-  `1-1-4-tests-for-schema-fidelity-and-execution-routing.md`
-  to the ExecPlans directory listing.
+  `1-1-4-tests-for-schema-fidelity-and-execution-routing.md` to the ExecPlans
+  directory listing.
 - `docs/execplans/1-1-4-tests-for-schema-fidelity-and-execution-routing.md`:
   updated status to `COMPLETE` and recorded progress, decisions, and
   discoveries.
@@ -852,8 +852,7 @@ The implementation added 9 new test functions covering:
    (milestone 2).
 2. Proxy-reported fields matching input definitions exactly (milestone 2).
 3. End-to-end definition fidelity from orchestrator canonical to
-   worker-advertised
-   proxy (milestone 2).
+   worker-advertised proxy (milestone 2).
 4. Catalogue version determinism and content sensitivity (milestone 2).
 5. Proxy execution routing through the correct orchestrator endpoint path
    (milestone 3).

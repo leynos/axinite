@@ -27,8 +27,8 @@ messages deserve their token cost.
 
 RFC 0007's proposed `Recall` method is intentionally small and safe, but it is
 still shaped around flat search over retrievable units.[^2] Once `memoryd`
-stores episodes, semantic carriers, and themes, flat search leaves value on
-the table:
+stores episodes, semantic carriers, and themes, flat search leaves value on the
+table:
 
 - multi-fact questions need several connected semantics rather than one best
   chunk
@@ -38,22 +38,21 @@ the table:
 - pruning inside evidence units risks breaking the very temporal links the
   hierarchy was meant to preserve
 
-The xMemory paper's answer is a two-stage recall path: representative
-selection over a high-level graph, followed by uncertainty-gated expansion
-over intact evidence units.[^3] `memoryd` needs an implementation of that idea
-that fits its local-only architecture and its narrow RPC surface.
+The xMemory paper's answer is a two-stage recall path: representative selection
+over a high-level graph, followed by uncertainty-gated expansion over intact
+evidence units.[^3] `memoryd` needs an implementation of that idea that fits
+its local-only architecture and its narrow RPC surface.
 
 ## Current state
 
 RFC 0015 provides durable episode nodes, semantic carriers, and theme nodes,
-together with provenance and temporal edges.[^1] RFC 0016 provides a
-maintained theme partition and sparse theme and semantic-carrier
-k-nearest neighbour (kNN) graphs.[^4] RFC 0014 already defines the normative
-rule that recall should
-keep projection classes and epistemic status visible rather than flattening
-them into one undifferentiated memory stream.[^5] RFC 0007 already allows
-`Recall` over Unix domain socket (UDS) and keeps read scopes separate from
-write scopes.[^2]
+together with provenance and temporal edges.[^1] RFC 0016 provides a maintained
+theme partition and sparse theme and semantic-carrier k-nearest neighbour (kNN)
+graphs.[^4] RFC 0014 already defines the normative rule that recall should keep
+projection classes and epistemic status visible rather than flattening them
+into one undifferentiated memory stream.[^5] RFC 0007 already allows `Recall`
+over Unix domain socket (UDS) and keeps read scopes separate from write
+scopes.[^2]
 
 What is missing is a query-time read path that can:
 
@@ -102,9 +101,8 @@ This RFC therefore constrains hierarchical recall in four ways:
 
 ### `Recall` profiles
 
-`Recall` remains the same RPC method, but gains a `profile` field. Profiles
-are explicit because hierarchical retrieval has more moving parts than flat
-search.
+`Recall` remains the same RPC method, but gains a `profile` field. Profiles are
+explicit because hierarchical retrieval has more moving parts than flat search.
 
 Required profiles:
 
@@ -116,9 +114,9 @@ Required profiles:
 - `evidence_v2`: hierarchical retrieval with model-assisted expansion gating
   and optional raw-message expansion
 
-The existing `memory.recall` capability scope remains sufficient. The method
-is already read-only but potentially sensitive, and hierarchical recall does
-not change that basic truth.
+The existing `memory.recall` capability scope remains sufficient. The method is
+already read-only but potentially sensitive, and hierarchical recall does not
+change that basic truth.
 
 ### Request contract
 
@@ -156,14 +154,14 @@ Candidate generation is intentionally simple and fast:
    hits
 6. apply workspace, lifecycle, scope, retraction, and time filters
 
-This stage is still vector retrieval, but it no longer decides the final
-answer context on its own. It only builds the candidate pool for the
-structured selection stages.
+This stage is still vector retrieval, but it no longer decides the final answer
+context on its own. It only builds the candidate pool for the structured
+selection stages.
 
 ### Stage I: Representative selection over the high-level graph
 
-Stage I works over the candidate theme and semantic-carrier sets plus their
-kNN edges from RFC 0016. The goal is to avoid choosing six near-identical
+Stage I works over the candidate theme and semantic-carrier sets plus their kNN
+edges from RFC 0016. The goal is to avoid choosing six near-identical
 neighbours when two or three representatives would cover the same region.
 
 The selection procedure is greedy and coverage-aware:
@@ -180,9 +178,9 @@ This stage is run twice:
 - once over the induced semantic-carrier candidates inside or near those
   themes
 
-The output of Stage I is therefore a small set of themes and semantic
-carriers, not yet the full evidence pack. That skeleton is what later allows a
-multi-fact query to stay broad without spraying tokens everywhere.
+The output of Stage I is therefore a small set of themes and semantic carriers,
+not yet the full evidence pack. That skeleton is what later allows a multi-fact
+query to stay broad without spraying tokens everywhere.
 
 ### Stage II: Episode and message expansion
 
@@ -272,8 +270,7 @@ Required response fields:
 
 ### Fallback behaviour
 
-Hierarchical recall must fail soft, not dramatically and with theatrical
-smoke.
+Hierarchical recall must fail soft, not dramatically and with theatrical smoke.
 
 Fallback triggers include:
 
@@ -282,14 +279,14 @@ Fallback triggers include:
 - expansion scoring is unavailable for the chosen profile
 - the hierarchical data store is degraded
 
-When a fallback trigger fires, `memoryd` returns `flat_v1` recall together
-with a `fallback_reason`. This keeps the read path available while making the
+When a fallback trigger fires, `memoryd` returns `flat_v1` recall together with
+a `fallback_reason`. This keeps the read path available while making the
 degradation inspectable.
 
 ### Shadow evaluation
 
-Before `hierarchical_v2` becomes the default, shadow mode should compare it
-with `flat_v1` on the same golden-set workloads.
+Before `hierarchical_v2` becomes the default, shadow mode should compare it with
+`flat_v1` on the same golden-set workloads.
 
 Required shadow metrics:
 

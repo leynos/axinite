@@ -306,8 +306,8 @@ Rust test code without a new app-level server harness.
   `install_source`, and developer-guide notes for `ArchiveBytes`,
   `install_source`, `TestGatewayBuilder`, and the request-based web handler.
 - [x] 2026-04-26: Follow-up validation passed. Targeted checks
-  `cargo test -p axinite skill` and
-  `node --test tests/web_static_app.test.mjs` passed, and the full gate
+  `cargo test -p axinite skill` and `node --test tests/web_static_app.test.mjs`
+  passed, and the full gate
   `make all 2>&1 | tee /tmp/make-all-ci-warnings-axinite-1-3-2-extend-skill-installation-flows-bundles.out`
   passed with 3,989 nextest tests and the GitHub tool tests.
 

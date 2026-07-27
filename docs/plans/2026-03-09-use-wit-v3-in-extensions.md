@@ -147,8 +147,7 @@ Begin by proving the current state rather than editing files immediately.
 2. Rebuild the full extension matrix with
    `./scripts/build-wasm-extensions.sh`.
 3. Run `cargo test --all-features --test wit_compat -- --nocapture` to prove
-   the built
-   matrix instantiates against the current host linker.
+   the built matrix instantiates against the current host linker.
 4. Record which surfaces are already aligned and which ones still leak older
    values such as `0.1.0`.
 
@@ -235,8 +234,8 @@ Files to review:
 - `tests/wit_compat.rs`
 
 The key outcome is that contributors can tell, from repository docs and test
-guidance alone, that new or rebuilt Axinite extensions and channels must
-target WIT `0.3.0`.
+guidance alone, that new or rebuilt Axinite extensions and channels must target
+WIT `0.3.0`.
 
 If the audit in Milestone 1 found zero extension-matrix drift, this milestone
 may be mostly wording and evidence updates. If Milestone 2 changed no
@@ -347,8 +346,8 @@ Record the exact log paths in the final implementation summary.
   `/tmp/test-behavior-wit-defaults-green-axinite-use-wit-v3-in-extensions.out`.
 - [x] 2026-03-09T17:33:00+00:00 Imported the sibling authoring guide as
   `docs/writing-web-assembly-tools-for-axinite.md` and rewrote it around the
-  actual Axinite `0.3.0` WIT format, sidecar `wit_version`, packaging
-  contract, and host capability limitations.
+  actual Axinite `0.3.0` WIT format, sidecar `wit_version`, packaging contract,
+  and host capability limitations.
 - [x] 2026-03-09T17:47:00+00:00 Added and passed focused unit tests for the
   libSQL schema and V10 incremental migration content in
   `src/db/libsql_migrations.rs`, with green evidence in

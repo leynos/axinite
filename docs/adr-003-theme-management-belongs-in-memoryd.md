@@ -12,14 +12,13 @@ Proposed.
 
 RFC 0015 allows `memoryd` to materialize optional theme nodes as derived
 navigation structures over semantic carriers.[^1] RFC 0016 then needs a
-practical controller that can attach carriers to themes, split or merge
-crowded regions, and preserve stable theme identity across ordinary
-maintenance.[^2]
+practical controller that can attach carriers to themes, split or merge crowded
+regions, and preserve stable theme identity across ordinary maintenance.[^2]
 
 Chutoro is the intended clustering substrate and, under the planned work,
-provides incremental sessions, snapshots, local reclustering, and diagnostics.
-[^3] The unresolved design question is where theme identity and balancing
-policy should live.
+provides incremental sessions, snapshots, local reclustering, and
+diagnostics.[^3] The unresolved design question is where theme identity and
+balancing policy should live.
 
 Three facts shape the decision:
 
@@ -63,24 +62,24 @@ mechanics and memory-specific control logic.
 ## Options considered
 
 <!-- markdownlint-disable MD013 -->
-| Option | Key dimensions | Tradeoffs |
-| --- | --- | --- |
-| Option A: Chutoro manages themes | Chutoro owns theme identity, balancing, `ThemeId` semantics, lineage, workspace isolation, curated-memory precedence, and retrieval policy alongside clustering. | Gives one component for clustering and theme structure, but pushes memory-specific control logic into the clustering engine and makes durable theme behaviour harder to audit or purge inside `memoryd`. |
-| Option B: Chutoro substrate + `memoryd` controller | Chutoro provides incremental sessions, local reclustering, snapshots, and diagnostics; `memoryd` owns stable `ThemeId` allocation, lineage, workspace isolation, curated-memory precedence, retrieval policy, and rebuild rules. | Preserves a clean boundary between clustering mechanics and memory semantics, and allows rebuild from semantic carriers, at the cost of maintaining both clustering snapshots and durable theme state. |
-| Option C: `memoryd`-only detector | `memoryd` owns clustering, balancing, identity, lineage, workspace isolation, curated-memory precedence, and retrieval policy without Chutoro. | Keeps all logic in one service, but duplicates planned density-based clustering machinery and throws away Chutoro's incremental-session and diagnostics work. |
+| Option                                             | Key dimensions                                                                                                                                                                                                                   | Tradeoffs                                                                                                                                                                                                |
+| -------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Option A: Chutoro manages themes                   | Chutoro owns theme identity, balancing, `ThemeId` semantics, lineage, workspace isolation, curated-memory precedence, and retrieval policy alongside clustering.                                                                 | Gives one component for clustering and theme structure, but pushes memory-specific control logic into the clustering engine and makes durable theme behaviour harder to audit or purge inside `memoryd`. |
+| Option B: Chutoro substrate + `memoryd` controller | Chutoro provides incremental sessions, local reclustering, snapshots, and diagnostics; `memoryd` owns stable `ThemeId` allocation, lineage, workspace isolation, curated-memory precedence, retrieval policy, and rebuild rules. | Preserves a clean boundary between clustering mechanics and memory semantics, and allows rebuild from semantic carriers, at the cost of maintaining both clustering snapshots and durable theme state.   |
+| Option C: `memoryd`-only detector                  | `memoryd` owns clustering, balancing, identity, lineage, workspace isolation, curated-memory precedence, and retrieval policy without Chutoro.                                                                                   | Keeps all logic in one service, but duplicates planned density-based clustering machinery and throws away Chutoro's incremental-session and diagnostics work.                                            |
 <!-- markdownlint-enable MD013 -->
 
-_Table 1: Comparison of design options against stability, semantic
-complexity, and duplication risk._
+_Table 1: Comparison of design options against stability, semantic complexity,
+and duplication risk._
 
 ## Decision outcome / proposed direction
 
 Choose **Option B**.
 
-`memoryd` will own the `ThemeManager` controller, the stable theme
-identifiers, the balancing policy, the lineage log, and the high-level
-k-nearest neighbour (kNN) graph. Chutoro will remain the clustering substrate
-used for bootstrap clustering, local split proposals, and diagnostics.
+`memoryd` will own the `ThemeManager` controller, the stable theme identifiers,
+the balancing policy, the lineage log, and the high-level k-nearest neighbour
+(kNN) graph. Chutoro will remain the clustering substrate used for bootstrap
+clustering, local split proposals, and diagnostics.
 
 The controller may store Chutoro snapshots as acceleration artefacts, but the
 authoritative membership edges and lineage state remain in `memoryd` stores.

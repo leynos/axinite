@@ -129,10 +129,10 @@ rather than a broad redesign.
 - Risk: Implementing real schema extraction too early inside
   `WasmToolRuntime::prepare(...)` may require a lightweight instantiation path
   that could accidentally introduce side effects or dependency on runtime-only
-  host state.
-  Severity: high Likelihood: medium Mitigation: Keep extraction scoped to
-  calling pure metadata exports such as `description()` and `schema()` only,
-  with minimal host scaffolding and no tool `execute(...)` invocation.
+  host state. Severity: high Likelihood: medium Mitigation: Keep extraction
+  scoped to calling pure metadata exports such as `description()` and
+  `schema()` only, with minimal host scaffolding and no tool `execute(...)`
+  invocation.
 
 - Risk: Fixing only the runtime placeholder extractor may still leave some
   loader or storage path using stale overrides or inconsistent precedence.
@@ -142,16 +142,15 @@ rather than a broad redesign.
 
 - Risk: Existing schema validation tests use representative schemas or
   already-overridden paths, so they may stay green even while real file-loaded
-  tools continue to publish `{}` externally.
-  Severity: high Likelihood: high Mitigation: Add a failing test that exercises
-  a real file-loaded WASM tool and inspects `ToolRegistry::tool_definitions()`
-  directly.
+  tools continue to publish `{}` externally. Severity: high Likelihood: high
+  Mitigation: Add a failing test that exercises a real file-loaded WASM tool
+  and inspects `ToolRegistry::tool_definitions()` directly.
 
 - Risk: The GitHub tool is only one representative. A fix that special-cases
-  GitHub would miss other file-loaded WASM tools.
-  Severity: high Likelihood: low Mitigation: Use GitHub as the regression
-  reproducer because it is already reported, but implement and validate the fix
-  generically at the runtime/loader layer.
+  GitHub would miss other file-loaded WASM tools. Severity: high Likelihood:
+  low Mitigation: Use GitHub as the regression reproducer because it is already
+  reported, but implement and validate the fix generically at the
+  runtime/loader layer.
 
 ## Milestone 1: Reproduce the exact registration failure with a real file-loaded WASM tool
 

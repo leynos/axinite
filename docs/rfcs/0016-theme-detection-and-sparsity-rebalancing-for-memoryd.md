@@ -13,9 +13,9 @@
 This RFC introduces a `ThemeManager` inside `memoryd` that organizes accepted
 semantic carriers into durable, workspace-local themes using Chutoro as the
 clustering substrate.[^1][^2][^3] The manager owns stable theme identifiers,
-attach, split, and merge policy, lineage, k-nearest neighbour (kNN)
-navigation, and an implementation-friendly sparsity-balancing objective
-inspired by xMemory.[^3]
+attach, split, and merge policy, lineage, k-nearest neighbour (kNN) navigation,
+and an implementation-friendly sparsity-balancing objective inspired by
+xMemory.[^3]
 
 The key design rule is simple: Chutoro proposes cluster structure, but
 `memoryd` owns theme identity and balancing policy. This keeps Chutoro useful
@@ -32,8 +32,8 @@ high-level organization, top-level retrieval collapses into dense local
 regions, and near-duplicate carriers keep crowding the same query
 neighbourhood.[^1][^3]
 
-A batch clustering pass is not enough on its own. Theme management needs all
-of the following:
+A batch clustering pass is not enough on its own. Theme management needs all of
+the following:
 
 - stable theme identifiers that survive ordinary attaches and most merges
 - lineage for split and merge history
@@ -42,9 +42,9 @@ of the following:
 - local maintenance so a single crowded region does not trigger a full rebuild
 
 Chutoro can supply incremental clustering, subset reclustering, snapshots, and
-diagnostics, but its cluster labels are not theme IDs and should not be
-treated as such.[^2] The missing piece is a controller that turns clustering
-output into durable memory structure.
+diagnostics, but its cluster labels are not theme IDs and should not be treated
+as such.[^2] The missing piece is a controller that turns clustering output
+into durable memory structure.
 
 ## Current state
 
@@ -120,10 +120,10 @@ A workspace starts in one of two modes:
 - **active themes:** enough semantic carriers exist for clustering and
   balancing
 
-During pre-bootstrap, each semantic carrier either becomes a singleton theme
-or enters a short-lived pending queue. Once `bootstrap_min_semantics` is
-reached, the manager runs a batch Chutoro clustering pass over all active
-semantic carriers and materializes theme records from the result.
+During pre-bootstrap, each semantic carrier either becomes a singleton theme or
+enters a short-lived pending queue. Once `bootstrap_min_semantics` is reached,
+the manager runs a batch Chutoro clustering pass over all active semantic
+carriers and materializes theme records from the result.
 
 Bootstrap must produce:
 
@@ -205,8 +205,8 @@ defaults are:
 
 The size cap of `12` is the notable one. xMemory's appendix reports the best
 average LoCoMo F1 at that cap relative to `14`, `10`, and `8`, so it is a
-reasonable shadow-mode default rather than a mystical number from the heavens.
-[^3]
+reasonable shadow-mode default rather than a mystical number from the
+heavens.[^3]
 
 ### Split proposals
 
@@ -258,8 +258,8 @@ Merge rules:
 
 ### Stable identity and lineage
 
-Theme IDs are sidecar-owned UUIDs, not Chutoro labels. This gives the manager
-a stable handle even when Chutoro snapshots change cluster numbering or local
+Theme IDs are sidecar-owned UUIDs, not Chutoro labels. This gives the manager a
+stable handle even when Chutoro snapshots change cluster numbering or local
 reclustering produces different label assignments.
 
 Required lineage events:
@@ -316,8 +316,8 @@ semantic carriers when either of these triggers fire:
 - active-to-retracted ratio exceeds a configured threshold
 - checkpoint age or snapshot drift exceeds a configured threshold
 
-Compaction does not change theme IDs by itself. It only rebuilds the
-clustering substrate and recomputes diagnostics.
+Compaction does not change theme IDs by itself. It only rebuilds the clustering
+substrate and recomputes diagnostics.
 
 ### Background jobs
 

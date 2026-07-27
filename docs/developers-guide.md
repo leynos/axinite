@@ -2166,8 +2166,8 @@ Markdown in three stages:
    media-removal and restoration passes above.
 
 The two restoration passes deliberately share one parse of the raw document
-instead of each re-parsing the same HTML; see the comment above the
-`document` binding in `convert_html_to_markdown` for the rationale.
+instead of each re-parsing the same HTML; see the comment above the `document`
+binding in `convert_html_to_markdown` for the rationale.
 
 The pipeline sits behind the `html-to-markdown` cargo feature, which gates
 `dep:html-to-markdown-rs`, `dep:kuchiki`, and `dep:readability-js`. It is part

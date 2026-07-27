@@ -20,10 +20,10 @@ Axinite is a local-first agent runtime that combines interactive channels,
 persistent memory, configurable language model providers, and an extension
 system that can load both WebAssembly (WASM) components and Model Context
 Protocol (MCP) servers at runtime. In the current implementation the code,
-binary, package metadata, and many documents still use the `axinite` name.
-This overview uses `axinite` for the system narrative, but retains `axinite`
-when referring to commands, APIs, package names, and filenames that still use
-that identifier.
+binary, package metadata, and many documents still use the `axinite` name. This
+overview uses `axinite` for the system narrative, but retains `axinite` when
+referring to commands, APIs, package names, and filenames that still use that
+identifier.
 
 The design centres on four requirements that show up repeatedly in the source:
 
@@ -327,9 +327,9 @@ rather than downloaded.
 
 The authoritative packaging and interface contract for WASM extensions lives
 outside this overview. New extension work should follow
-`docs/writing-web-assembly-tools-for-axinite.md`, which names `wit/tool.wit`
-and `wit/channel.wit` as the host contracts and requires `0.3.0` WIT metadata
-for rebuilt extensions.
+`docs/writing-web-assembly-tools-for-axinite.md`, which names `wit/tool.wit` and
+`wit/channel.wit` as the host contracts and requires `0.3.0` WIT metadata for
+rebuilt extensions.
 
 ### 4.5 Safety and sandbox boundaries
 
@@ -459,9 +459,9 @@ maintainer should understand before reshaping the system.
   and shutdown logic now spans `src/main_cli.rs` and the phased helpers in
   `src/startup/`.
 - Configuration resolution is intentionally multi-pass. That keeps env
-  bootstraps,
-  persisted settings, and encrypted secrets compatible, but it makes the
-  configuration story harder to explain than a single immutable config load.
+  bootstraps, persisted settings, and encrypted secrets compatible, but it
+  makes the configuration story harder to explain than a single immutable
+  config load.
 - Dynamic extensions are a core strength, but they also create several sources
   of truth: the host runtime, registry metadata, WIT contracts, bundled
   artefacts, and persisted activation state must stay aligned.

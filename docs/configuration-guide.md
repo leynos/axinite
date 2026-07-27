@@ -3,8 +3,8 @@
 This guide is for operators and contributors who need a complete reference for
 the current `axinite` command-line interface (CLI) surface and the environment
 variables that shape axinite at runtime. The system narrative uses the name
-axinite, but commands, APIs, and filenames retain `axinite` where that is
-still the implemented identifier.
+axinite, but commands, APIs, and filenames retain `axinite` where that is still
+the implemented identifier.
 
 ## 1. Configuration sources and precedence
 

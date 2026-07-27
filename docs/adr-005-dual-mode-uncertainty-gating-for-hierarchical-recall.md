@@ -12,10 +12,10 @@ Proposed.
 ## Context and problem statement
 
 xMemory's retrieval design expands from high-level structure down to episodes
-and raw messages only when the extra detail reduces the reader's uncertainty.
-[^1] That idea is attractive, but practical deployments run into an awkward
-engineering fact: not every local model exposes calibrated uncertainty, token
-log-probabilities, or even stable enough self-reports to make the gating
+and raw messages only when the extra detail reduces the reader's
+uncertainty.[^1] That idea is attractive, but practical deployments run into an
+awkward engineering fact: not every local model exposes calibrated uncertainty,
+token log-probabilities, or even stable enough self-reports to make the gating
 signal trustworthy on its own.
 
 A mandatory model-led gate would produce the richest behaviour, but it would
@@ -57,15 +57,15 @@ turning it into all-or-nothing wizardry.
 ## Options considered
 
 <!-- markdownlint-disable MD013 -->
-| Option | Description | Cost/Latency | Portability | Coverage/Accuracy | Risk |
-| --- | --- | --- | --- | --- | --- |
-| Option A: Mandatory model-assisted uncertainty gating | Use a local reader or judge model for every stage-II expansion decision. | Highest cost and latency because every expansion depends on a model call. | Weak in cheap or air-gapped deployments that lack a suitable judge model. | Best fit for the xMemory paper's intent when a capable local model exists. | Couples recall to model availability and whatever uncertainty surface the model exposes. |
-| Option B: Proxy-only gating | Use a deterministic score from novelty, support density, temporal fit, reinforcement, and token cost. | Lowest cost and latency. | Strong portability across cheap and local-only deployments. | Misses cases where a judge model could detect that extra evidence materially changes the answer. | Leaves quality on the floor in richer deployments. |
-| Option C: Dual-mode gating with a shared gain interface | Define one stage-II gain interface with model-assisted and proxy-based implementations selected by retrieval profile. | Mixed: proxy mode stays cheap, while richer deployments can spend more selectively. | Strong because hierarchical recall still works without a judge model. | Better coverage than proxy-only, while preserving bounded fallback and shadow comparison. | More implementation complexity because two gates must stay comparable behind one interface. |
+| Option                                                  | Description                                                                                                           | Cost/Latency                                                                        | Portability                                                               | Coverage/Accuracy                                                                                | Risk                                                                                        |
+| ------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------- | ------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------- |
+| Option A: Mandatory model-assisted uncertainty gating   | Use a local reader or judge model for every stage-II expansion decision.                                              | Highest cost and latency because every expansion depends on a model call.           | Weak in cheap or air-gapped deployments that lack a suitable judge model. | Best fit for the xMemory paper's intent when a capable local model exists.                       | Couples recall to model availability and whatever uncertainty surface the model exposes.    |
+| Option B: Proxy-only gating                             | Use a deterministic score from novelty, support density, temporal fit, reinforcement, and token cost.                 | Lowest cost and latency.                                                            | Strong portability across cheap and local-only deployments.               | Misses cases where a judge model could detect that extra evidence materially changes the answer. | Leaves quality on the floor in richer deployments.                                          |
+| Option C: Dual-mode gating with a shared gain interface | Define one stage-II gain interface with model-assisted and proxy-based implementations selected by retrieval profile. | Mixed: proxy mode stays cheap, while richer deployments can spend more selectively. | Strong because hierarchical recall still works without a judge model.     | Better coverage than proxy-only, while preserving bounded fallback and shadow comparison.        | More implementation complexity because two gates must stay comparable behind one interface. |
 <!-- markdownlint-enable MD013 -->
 
-_Table 1: Comparison of gating strategies across cost, latency,
-portability, and coverage._
+_Table 1: Comparison of gating strategies across cost, latency, portability,
+and coverage._
 
 ## Decision outcome / proposed direction
 
@@ -121,9 +121,9 @@ optional improvement path.
 
 ## Architectural rationale
 
-This decision keeps the xMemory idea intact without making the entire read
-path dependent on one fragile uncertainty source. It gives `memoryd` a sane
-default, a richer optional path, and a clean place to compare them.
+This decision keeps the xMemory idea intact without making the entire read path
+dependent on one fragile uncertainty source. It gives `memoryd` a sane default,
+a richer optional path, and a clean place to compare them.
 
 ## References
 

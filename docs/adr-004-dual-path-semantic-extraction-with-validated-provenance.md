@@ -53,15 +53,15 @@ the evidence trail.
 ## Options considered
 
 <!-- markdownlint-disable MD013 -->
-| Option | Provenance reliability | Quality | Cost | Fallback behaviour |
-| --- | --- | --- | --- | --- |
-| Option A: LLM-only structured extraction | Weak unless support references are validated strictly, because the model can hallucinate polished but unsupported claims. | Rich canonical statements, temporal inference, and high-quality summaries. | Higher local generative-model cost. | Poor: hierarchical extraction depends on one generative path. |
-| Option B: Bidirectional-encoder-only extractive projection | Strong because the pipeline works directly over spans and support references stay structural. | Lower abstraction quality; extractive text is clunky and theme summaries become template-driven. | Cheaper and easier to bound. | Strong bounded fallback, but no richer abstraction path. |
-| Option C: Dual-path extraction with shared schema and validated support | Strong once both paths pass the same support-reference validator before promotion. | Rich when the LLM path is available, with encoder fallback for stricter baseline and shadow comparison. | Mixed: supports cheap mode and richer local mode behind one schema. | Strong: encoder path remains available for cheap mode, bounded fallback, and shadow runs. |
+| Option                                                                  | Provenance reliability                                                                                                    | Quality                                                                                                 | Cost                                                                | Fallback behaviour                                                                        |
+| ----------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------- | ----------------------------------------------------------------------------------------- |
+| Option A: LLM-only structured extraction                                | Weak unless support references are validated strictly, because the model can hallucinate polished but unsupported claims. | Rich canonical statements, temporal inference, and high-quality summaries.                              | Higher local generative-model cost.                                 | Poor: hierarchical extraction depends on one generative path.                             |
+| Option B: Bidirectional-encoder-only extractive projection              | Strong because the pipeline works directly over spans and support references stay structural.                             | Lower abstraction quality; extractive text is clunky and theme summaries become template-driven.        | Cheaper and easier to bound.                                        | Strong bounded fallback, but no richer abstraction path.                                  |
+| Option C: Dual-path extraction with shared schema and validated support | Strong once both paths pass the same support-reference validator before promotion.                                        | Rich when the LLM path is available, with encoder fallback for stricter baseline and shadow comparison. | Mixed: supports cheap mode and richer local mode behind one schema. | Strong: encoder path remains available for cheap mode, bounded fallback, and shadow runs. |
 <!-- markdownlint-enable MD013 -->
 
-_Table 1: Comparison of extraction options across provenance,
-quality, cost, and fallback behaviour._
+_Table 1: Comparison of extraction options across provenance, quality, cost,
+and fallback behaviour._
 
 ## Decision outcome / proposed direction
 

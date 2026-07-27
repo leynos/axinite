@@ -225,9 +225,8 @@ Concrete implementation expectations:
 2. Keep protected-name checks, `ToolDomain`, and hosted-eligibility decisions in
    one place.
 3. If the filter must distinguish MCP-backed tools from other orchestrator
-   tools,
-   add that distinction through the tool layer, not through handler-local type
-   tests or tool-name heuristics.
+   tools, add that distinction through the tool layer, not through
+   handler-local type tests or tool-name heuristics.
 4. Keep execution-time guards aligned with catalogue visibility. A tool omitted
    from the hosted-visible catalogue must also fail closed if called directly.
 

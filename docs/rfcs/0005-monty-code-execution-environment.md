@@ -11,9 +11,9 @@
 ## Summary
 
 Axinite should integrate [Monty](https://github.com/pydantic/monty) as a
-capability-brokered Python code execution environment for agent-written code and
-pre-written scripts. The initial product shape should be a codemode runner, not
-a classic line-oriented REPL.
+capability-brokered Python code execution environment for agent-written code
+and pre-written scripts. The initial product shape should be a codemode runner,
+not a classic line-oriented REPL.
 
 The proposed surface is three operations:
 
@@ -22,15 +22,16 @@ The proposed surface is three operations:
 3. `exec_code(code, allowed_tools, params=None, state=None)`
 
 Saved scripts give Axinite a durable, reviewable automation format. `exec_code`
-covers ephemeral scratch execution. Both run through the same host-mediated tool
-broker, use a JSON-only ABI across the guest/host boundary, and return updated
-`state` explicitly rather than depending on hidden interpreter globals.
+covers ephemeral scratch execution. Both run through the same host-mediated
+tool broker, use a JSON-only ABI across the guest/host boundary, and return
+updated `state` explicitly rather than depending on hidden interpreter globals.
 
 Monty is a strong fit because it is designed to run code written by agents,
-supports host-controlled external functions, type checking, resource limits, and
-pause/resume snapshots at external calls. It is a weaker fit for a persistent
-live REPL because the upstream REPL surface is still moving and current open
-issues show both missing ergonomics and panic-related stability risks.[^1][^2][^3]
+supports host-controlled external functions, type checking, resource limits,
+and pause/resume snapshots at external calls. It is a weaker fit for a
+persistent live REPL because the upstream REPL surface is still moving and
+current open issues show both missing ergonomics and panic-related stability
+risks.[^1][^2][^3]
 
 ## Problem
 
@@ -41,8 +42,7 @@ tool use in Python.
 That gap shows up in three places:
 
 1. Traditional language model (LLM) tool calling is awkward for loops,
-   filtering, retries, and
-   conditional multi-step tool use.
+   filtering, retries, and conditional multi-step tool use.
 2. Pre-written automations are currently forced into either free-form prompt
    text or bespoke Rust/WebAssembly (WASM) tools.
 3. A full containerized Python runtime would duplicate existing safety layers
@@ -113,8 +113,8 @@ justify optimistic availability claims.
 
 ### 2. REPL support is not the stable centre of gravity
 
-The most important current upstream evidence points away from a "persistent live
-REPL first" design:
+The most important current upstream evidence points away from a "persistent
+live REPL first" design:
 
 - Issue [#190](https://github.com/pydantic/monty/issues/190) requests
   suspendable `feed` support plus dynamic per-call external functions for REPL
@@ -122,11 +122,11 @@ REPL first" design:
   than the same pause/resume loop available in one-shot execution.[^2]
 - Issue [#239](https://github.com/pydantic/monty/issues/239) requests external
   function support for `MontyRepl`; a maintainer comment says it "should be
-  fixed by #235", but the issue remained open on 2026-03-11 and the next release
-  status was not resolved in the visible thread.[^3]
+  fixed by #235", but the issue remained open on 2026-03-11 and the next
+  release status was not resolved in the visible thread.[^3]
 
-That means a classic REPL may become viable, but it is not the safest foundation
-for Axinite phase one.
+That means a classic REPL may become viable, but it is not the safest
+foundation for Axinite phase one.
 
 ### 3. Availability risks are real
 
@@ -136,8 +136,8 @@ Two open issues matter directly for host reliability:
   panic can crash the whole server; the maintainer response does not claim a
   host-side workaround beyond fixing the panic upstream.[^4]
 - Issue [#240](https://github.com/pydantic/monty/issues/240) reports another
-  Rust panic path around future snapshots, with a proposed fix under
-  PR [#251](https://github.com/pydantic/monty/pull/251).[^5]
+  Rust panic path around future snapshots, with a proposed fix under PR
+  [#251](https://github.com/pydantic/monty/pull/251).[^5]
 
 These issues do not kill the proposal. They do rule out an in-process-only
 integration as the default safety posture.
@@ -166,8 +166,8 @@ boundary:
 - inside the worker/container when Docker sandboxing is enabled,
 - in a local helper subprocess when sandboxing is disabled.
 
-This keeps the Monty child on the same side of policy decisions as the code that
-would actually execute tools.
+This keeps the Monty child on the same side of policy decisions as the code
+that would actually execute tools.
 
 ### Workspace-backed persistence
 
@@ -211,12 +211,13 @@ Behaviour:
 - Records an allowlist ceiling for future runs.
 - Requires an explicit `allowed_tools` allowlist. Callers that want no tool
   access must pass an empty list so the API stays fail-closed.
-- Optionally compiles and type-checks up front so errors are caught at save time.
+- Optionally compiles and type-checks up front so errors are caught at save
+  time.
 
 Recommended workspace layout:
 
-Screen-reader description: recommended workspace file layout for saved
-scripts and optional persistent state.
+Screen-reader description: recommended workspace file layout for saved scripts
+and optional persistent state.
 
 ```text
 scripts/<safe_name>/script.py
@@ -264,8 +265,8 @@ tool access. The effective allowlist must never widen the saved allowlist.
 
 #### `exec_code`
 
-Screen-reader description: public operation signature for ad hoc code
-execution with explicit tool limits.
+Screen-reader description: public operation signature for ad hoc code execution
+with explicit tool limits.
 
 ```text
 exec_code(
@@ -297,8 +298,8 @@ The guest contract should stay narrow and unsurprising.
 
 The design should standardize on a simple async entrypoint:
 
-Screen-reader description: canonical async Python entrypoint receiving
-explicit params and state.
+Screen-reader description: canonical async Python entrypoint receiving explicit
+params and state.
 
 ```python
 from typing import Any
@@ -313,7 +314,8 @@ await main(params, state)
 ```
 
 This gives the script explicit inputs and explicit persisted state. It avoids a
-large implicit global namespace and maps directly onto Monty's named input model.
+large implicit global namespace and maps directly onto Monty's named input
+model.
 
 ### Return value
 
@@ -405,8 +407,8 @@ Notes:
 - Tool descriptions should be emitted into docstrings to keep scripts legible to
   both humans and models.
 
-This is enough to get useful type checking without pretending the schema mapping
-is richer than it really is.
+This is enough to get useful type checking without pretending the schema
+mapping is richer than it really is.
 
 ### Execution loop
 
@@ -498,8 +500,7 @@ Handling rules:
 4. Child-side guest exceptions should be returned as `script_error`, with a
    redacted traceback summary suitable for logs and operator inspection.
 5. Tool denials, approval rejections, and ordinary tool execution failures
-   should remain distinct from guest exceptions and be returned as
-   `tool_error`.
+   should remain distinct from guest exceptions and be returned as `tool_error`.
 
 Logging rules:
 
@@ -576,8 +577,8 @@ Monty's snapshot support is useful, but phase one should use it conservatively.
 - User-visible resume tokens.
 - Arbitrary REPL checkpointing.
 
-This keeps the first implementation focused on the thing Monty already does well:
-codemode-style host callback execution.
+This keeps the first implementation focused on the thing Monty already does
+well: codemode-style host callback execution.
 
 ## Example
 

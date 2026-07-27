@@ -35,9 +35,8 @@ table of survivors.
 - The workflow file must live at `.github/workflows/mutation-testing.yml`.
 - All prose in the workflow file and ADR must follow `en-GB-oxendict` spelling.
 - The `tools-src/github` crate (WebAssembly (WASM) target) is excluded from the
-  workspace
-  and uses a separate manifest. It must be excluded from the mutation run
-  because `cargo-mutants` operates on workspace members.
+  workspace and uses a separate manifest. It must be excluded from the mutation
+  run because `cargo-mutants` operates on workspace members.
 - The nightly scheduled run must scope mutations to files changed in the past
   24 hours on the target branch, not the entire codebase, to keep compute time
   manageable.
@@ -158,10 +157,9 @@ Existing CI workflows live in `.github/workflows/`. The patterns relevant to
 this plan are:
 
 - `test.yml`: Pull Request (PR) and push gate. Uses
-  `dtolnay/rust-toolchain@stable`,
-  `rui314/setup-mold@v1`, `Swatinem/rust-cache@v2`,
-  `taiki-e/install-action@cargo-nextest`. Runs `make build-github-tool-wasm`
-  before tests.
+  `dtolnay/rust-toolchain@stable`, `rui314/setup-mold@v1`,
+  `Swatinem/rust-cache@v2`, `taiki-e/install-action@cargo-nextest`. Runs
+  `make build-github-tool-wasm` before tests.
 - `coverage.yml`: push-to-main only. Uses `cargo-llvm-cov` installed via
   `taiki-e/install-action`. Uploads artefacts to Codecov.
 - `staging-ci.yml`: hourly schedule with `workflow_dispatch`. Uses a

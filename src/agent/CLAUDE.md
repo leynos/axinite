@@ -206,34 +206,34 @@ NOT notify the user (to avoid spam).
 
 All commands parsed by `SubmissionParser::parse()`:
 
-| Input | Variant | Notes |
-| ----- | ------- | ----- |
-| `/undo` | `Undo` | |
-| `/redo` | `Redo` | |
-| `/interrupt`, `/stop` | `Interrupt` | |
-| `/compact` | `Compact` | |
-| `/clear` | `Clear` | |
-| `/heartbeat` | `Heartbeat` | |
-| `/summarize`, `/summary` | `Summarize` | |
-| `/suggest` | `Suggest` | |
-| `/new`, `/thread new` | `NewThread` | |
-| `/thread <uuid>` | `SwitchThread` | Must be valid UUID |
-| `/resume <uuid>` | `Resume` | Must be valid UUID |
-| `/status [id]`, `/progress [id]`, `/list` | `JobStatus` | `/list` = all jobs |
-| `/cancel <id>` | `JobCancel` | |
-| `/quit`, `/exit`, `/shutdown` | `Quit` | |
-| `yes/y/approve/ok` and aliases | `ApprovalResponse { approved: true, always: false }` | |
-| `always/a` and aliases | `ApprovalResponse { approved: true, always: true }` | |
-| `no/n/deny/reject/cancel` and aliases | `ApprovalResponse { approved: false }` | |
-| JSON `ExecApproval{...}` | `ExecApproval` | From web gateway approval endpoint |
-| `/help`, `/?` | `SystemCommand { "help" }` | Bypasses thread-state checks |
-| `/version` | `SystemCommand { "version" }` | |
-| `/tools` | `SystemCommand { "tools" }` | |
-| `/skills [search <q>]` | `SystemCommand { "skills" }` | |
-| `/ping` | `SystemCommand { "ping" }` | |
-| `/debug` | `SystemCommand { "debug" }` | |
-| `/model [name]` | `SystemCommand { "model" }` | |
-| Everything else | `UserInput` | Starts a new agentic turn |
+| Input                                     | Variant                                              | Notes                              |
+| ----------------------------------------- | ---------------------------------------------------- | ---------------------------------- |
+| `/undo`                                   | `Undo`                                               |                                    |
+| `/redo`                                   | `Redo`                                               |                                    |
+| `/interrupt`, `/stop`                     | `Interrupt`                                          |                                    |
+| `/compact`                                | `Compact`                                            |                                    |
+| `/clear`                                  | `Clear`                                              |                                    |
+| `/heartbeat`                              | `Heartbeat`                                          |                                    |
+| `/summarize`, `/summary`                  | `Summarize`                                          |                                    |
+| `/suggest`                                | `Suggest`                                            |                                    |
+| `/new`, `/thread new`                     | `NewThread`                                          |                                    |
+| `/thread <uuid>`                          | `SwitchThread`                                       | Must be valid UUID                 |
+| `/resume <uuid>`                          | `Resume`                                             | Must be valid UUID                 |
+| `/status [id]`, `/progress [id]`, `/list` | `JobStatus`                                          | `/list` = all jobs                 |
+| `/cancel <id>`                            | `JobCancel`                                          |                                    |
+| `/quit`, `/exit`, `/shutdown`             | `Quit`                                               |                                    |
+| `yes/y/approve/ok` and aliases            | `ApprovalResponse { approved: true, always: false }` |                                    |
+| `always/a` and aliases                    | `ApprovalResponse { approved: true, always: true }`  |                                    |
+| `no/n/deny/reject/cancel` and aliases     | `ApprovalResponse { approved: false }`               |                                    |
+| JSON `ExecApproval{...}`                  | `ExecApproval`                                       | From web gateway approval endpoint |
+| `/help`, `/?`                             | `SystemCommand { "help" }`                           | Bypasses thread-state checks       |
+| `/version`                                | `SystemCommand { "version" }`                        |                                    |
+| `/tools`                                  | `SystemCommand { "tools" }`                          |                                    |
+| `/skills [search <q>]`                    | `SystemCommand { "skills" }`                         |                                    |
+| `/ping`                                   | `SystemCommand { "ping" }`                           |                                    |
+| `/debug`                                  | `SystemCommand { "debug" }`                          |                                    |
+| `/model [name]`                           | `SystemCommand { "model" }`                          |                                    |
+| Everything else                           | `UserInput`                                          | Starts a new agentic turn          |
 
 **`SystemCommand` vs control**: `SystemCommand` variants bypass thread-state
 checks entirely (no session lock, no turn creation). `Quit` returns `Ok(None)`

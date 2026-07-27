@@ -101,8 +101,8 @@ the documentation set.
 
 ### Users guide
 
-Use the users guide, canonically `docs/users-guide.md`, for readers who need
-to apply the project rather than modify its internals. In a library, this means
+Use the users guide, canonically `docs/users-guide.md`, for readers who need to
+apply the project rather than modify its internals. In a library, this means
 consumers of the application programming interface (API). In an application,
 this means operators, end users, or integrators.
 
@@ -175,10 +175,10 @@ decision, and an RFC to propose a change.
 ### Design document
 
 Use a dedicated design document, conventionally named
-`docs/<product-or-topic>-design.md`, to explain the architecture,
-constraints, rationale, and intended evolution of a system or subsystem. This
-document is the correct location for design intent; that material must not be
-buried in the users guide or developers guide.
+`docs/<product-or-topic>-design.md`, to explain the architecture, constraints,
+rationale, and intended evolution of a system or subsystem. This document is
+the correct location for design intent; that material must not be buried in the
+users guide or developers guide.
 
 - Start with a concise front matter section that states status, scope, primary
   audience, and the decision records or other documents that take precedence.

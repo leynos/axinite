@@ -3,8 +3,8 @@
 This document describes the crate-wide testing abstractions available in the
 `axinite::testing` module and when to use each one.
 
-Note: `axinite::testing` and all of its re-exports are test-only surfaces.
-They are compiled only when `#[cfg(test)]` is active, so these symbols are
+Note: `axinite::testing` and all of its re-exports are test-only surfaces. They
+are compiled only when `#[cfg(test)]` is active, so these symbols are
 unavailable in non-test builds and will fail with unresolved import or
 visibility errors if used from production code or library consumers. Use the
 `axinite::testing` module and its re-exports only from tests or
@@ -167,5 +167,5 @@ Figure: Choosing the right testing abstraction
 ## Additional resources
 
 - `crate::testing::TestHarnessBuilder` — Full harness builder
-- `crate::testing::null_db::{NullDatabase, CapturingStore, EventCall,
-  StatusCall}` — Database test doubles
+- `crate::testing::null_db` — database test doubles:
+  `NullDatabase`, `CapturingStore`, `EventCall`, and `StatusCall`

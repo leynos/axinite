@@ -158,12 +158,12 @@ Markdown before returning it to the model. This behaviour is controlled by the
 `html-to-markdown` cargo feature, which is enabled by default.
 
 The conversion uses readability-based article extraction to strip navigation,
-adverts, and other boilerplate, keeping only the main article content.
-Embedded media placeholders (images, audio, video, and similar embeds) are
-removed rather than rendered as broken links. Article titles that the
-extraction step demotes out of the body are restored as headings, and figure
-captions are preserved, including a caption in the document's final section
-that has no following heading to anchor it.
+adverts, and other boilerplate, keeping only the main article content. Embedded
+media placeholders (images, audio, video, and similar embeds) are removed
+rather than rendered as broken links. Article titles that the extraction step
+demotes out of the body are restored as headings, and figure captions are
+preserved, including a caption in the document's final section that has no
+following heading to anchor it.
 
 Responses whose body exceeds the 5 MB size limit are rejected regardless of
 whether HTML conversion applies. When the `html-to-markdown` feature is

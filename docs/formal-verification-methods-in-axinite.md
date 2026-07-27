@@ -3,14 +3,14 @@
 ## Executive summary
 
 Axinite already does substantially more than basic unit testing. The
-repository’s testing strategy explicitly uses layered validation rather than one
-monolithic test command: fast local checks, deterministic Rust suites, browser
-end-to-end (E2E), feature-matrix continuous integration (CI), coverage
+repository’s testing strategy explicitly uses layered validation rather than
+one monolithic test command: fast local checks, deterministic Rust suites,
+browser end-to-end (E2E), feature-matrix continuous integration (CI), coverage
 workflows, and regression enforcement.[^1] The current root `Makefile` and
 GitHub Actions workflows reinforce that split, and the repository already
-carries a dedicated `fuzz/` crate with five libFuzzer
-targets.[^2][^3][^4][^5][^6] That existing investment matters, because it
-changes where formal methods will pay for themselves.
+carries a dedicated `fuzz/` crate with five libFuzzer targets.[^2][^3][^4][^5]
+[^6] That existing investment matters, because it changes where formal methods
+will pay for themselves.
 
 The highest-return additions are not “formalize everything”. They are:
 
@@ -18,8 +18,8 @@ The highest-return additions are not “formalize everything”. They are:
    `src/worker/job.rs`, `src/context/state.rs`,
    `src/orchestrator/job_manager.rs`, `src/orchestrator/reaper.rs`, and
    `src/orchestrator/auth.rs`, where the real bug surface comes from
-   interleavings and split responsibility across background
-   tasks.[^7][^8][^9][^10][^11][^12]
+   interleavings and split responsibility across background tasks.[^7][^8][^9]
+   [^10][^11][^12]
 2. **Kani** for small, deterministic, security-critical logic in
    `src/tools/wasm/allowlist.rs`, plus a shared host/domain matcher extracted
    from the current WebAssembly (WASM) and sandbox allowlist
@@ -39,8 +39,8 @@ The best integration path in Axinite is a split one:
 - Keep **Kani harnesses inside the main `axinite` package**, next to the
   internal helpers they verify.
 - Put **Stateright models in a dedicated internal verification crate**, because
-  those models should be abstractions of policy rather than thin wrappers around
-  the runtime.
+  those models should be abstractions of policy rather than thin wrappers
+  around the runtime.
 - Keep **Verus proofs outside Cargo** under a proof-only directory with pinned
   tools and wrapper scripts.
 - Add **Proptest as an ordinary dev-dependency**, and keep those property tests
@@ -90,11 +90,11 @@ defines:
 - `fuzz_config_env`[^6]
 
 Those targets exercise the safety layer and schema validation paths: the
-sanitizer, validator, leak detector, and tool-schema
-validation.[^21][^22][^23][^24] Crucially, despite its name, `fuzz_config_env`
-currently fuzzes the same safety-layer pipeline rather than configuration
-precedence or merge semantics.[^25] That is one reason configuration layering
-still looks like a strong Proptest target.
+sanitizer, validator, leak detector, and tool-schema validation.[^21][^22][^23]
+[^24] Crucially, despite its name, `fuzz_config_env` currently fuzzes the same
+safety-layer pipeline rather than configuration precedence or merge
+semantics.[^25] That is one reason configuration layering still looks like a
+strong Proptest target.
 
 There is also a useful alignment with the current coverage plan. The current
 `COVERAGE_PLAN.md` calls out `src/registry/installer.rs`,
@@ -123,20 +123,20 @@ composed.
 `Scheduler::schedule_with_context()` deliberately holds a write lock across the
 check-and-insert path to avoid time-of-check to time-of-use (TOCTOU)
 double-scheduling. `Scheduler::stop()` removes the scheduled job entry, sends
-`Stop`, waits briefly, aborts if the task is still running, and then attempts to
-transition the context to `Cancelled`.[^7] The worker, after a successful run,
-only marks a job `Completed` if the state is not already terminal, `Completed`,
-or `Stuck`, and its loop stops not just on `Cancelled`, `Failed`, and
-`Accepted`, but also on `Stuck`, `Completed`, and `Submitted`.[^8] Meanwhile,
-`JobState::is_terminal()` only treats `Accepted`, `Failed`, and `Cancelled` as
-terminal; `Completed`, `Submitted`, and `Stuck` remain active according to
-`is_active()`.[^9]
+`Stop`, waits briefly, aborts if the task is still running, and then attempts
+to transition the context to `Cancelled`.[^7] The worker, after a successful
+run, only marks a job `Completed` if the state is not already terminal,
+`Completed`, or `Stuck`, and its loop stops not just on `Cancelled`, `Failed`,
+and `Accepted`, but also on `Stuck`, `Completed`, and `Submitted`.[^8]
+Meanwhile, `JobState::is_terminal()` only treats `Accepted`, `Failed`, and
+`Cancelled` as terminal; `Completed`, `Submitted`, and `Stuck` remain active
+according to `is_active()`.[^9]
 
 On the container side, `complete_job()` stores the completion result, marks the
 handle stopped, removes the Docker container, and revokes the token, but
-intentionally keeps the handle in memory until the separate `cleanup_job()` call
-removes it after the result has been read.[^10] The reaper, in turn, treats any
-non-terminal state as active and explicitly comments that `Pending`,
+intentionally keeps the handle in memory until the separate `cleanup_job()`
+call removes it after the result has been read.[^10] The reaper, in turn,
+treats any non-terminal state as active and explicitly comments that `Pending`,
 `InProgress`, `Completed`, `Submitted`, and `Stuck` all prevent reaping.[^11]
 The token store is also job-scoped, constant-time compared, in-memory only, and
 revoked on cleanup paths.[^12]
@@ -175,8 +175,8 @@ policy:
 
 That is exactly the kind of code that benefits from bounded exhaustive checking.
 
-The current unit tests are good, but they remain hand-chosen examples. Kani adds
-value by checking properties such as:
+The current unit tests are good, but they remain hand-chosen examples. Kani
+adds value by checking properties such as:
 
 - **normalization idempotence** for small bounded paths;
 - **no successful decision after invalid percent-encoding**;
@@ -203,8 +203,8 @@ That mismatch might be deliberate. It might also be accidental drift. Either
 way, it is exactly the sort of rule that should not live in two different
 implementations without an explicit contract.
 
-This is another place where stronger verification would help, but only **after a
-small refactor**:
+This is another place where stronger verification would help, but only **after
+a small refactor**:
 
 1. extract a shared pure matcher;
 2. decide whether wildcard patterns include or exclude the apex domain;
@@ -226,9 +226,9 @@ Axinite now has at least two distinct loading paths:
 - `Config::from_env_with_toml()` loads from the environment and falls back to
   legacy `settings.json`, then overlays TOML on top.[^16][^17]
 
-On top of that, `Settings::merge_from()` only applies overlay values that differ
-from `Default`, and `merge_non_default()` recursively preserves the base when
-the overlay leaves a field at its default.[^17]
+On top of that, `Settings::merge_from()` only applies overlay values that
+differ from `Default`, and `merge_non_default()` recursively preserves the base
+when the overlay leaves a field at its default.[^17]
 
 Those are not good Kani targets. They are good **generated property** targets.
 
@@ -294,8 +294,8 @@ Docker bind mount and explicitly accepts that gap in Axinite’s current
 single-tenant design. That is a **design-boundary** issue, not a good Kani or
 Verus target in the current architecture.
 
-Keep that path under ordinary tests, code review, and threat-model review unless
-the multi-tenant story changes.
+Keep that path under ordinary tests, code review, and threat-model review
+unless the multi-tenant story changes.
 
 ## Decisions Axinite should make before writing proofs
 
@@ -335,13 +335,13 @@ That might be the right design. But it is not one contract; it is several.
 Choose one of these positions:
 
 - **Position A:** introduce explicit predicates such as `should_worker_stop`,
-  `is_reapable`, and `keeps_result_handle`, and stop asking a single enum helper
-  to do all the semantic work.
+  `is_reapable`, and `keeps_result_handle`, and stop asking a single enum
+  helper to do all the semantic work.
 - **Position B:** keep the current split implicit and document the special cases
   in comments.
 
-**Position A** is preferable. A Stateright model needs explicit semantics, not a
-pile of partially overlapping helper methods.
+**Position A** is preferable. A Stateright model needs explicit semantics, not
+a pile of partially overlapping helper methods.
 
 ### 3. What is the post-completion retention contract?
 
@@ -438,8 +438,8 @@ public API, make local execution awkward, or both.
 The current root manifest already has a workspace section, so the change is
 small.[^20]
 
-Add the verification crate to `members`, keep the current `exclude` list intact,
-and add `proptest` as a normal dev-dependency:
+Add the verification crate to `members`, keep the current `exclude` list
+intact, and add `proptest` as a normal dev-dependency:
 
 ```toml
 [workspace]
@@ -479,8 +479,8 @@ Axinite’s best Kani targets sit close to internal helpers:
   allowlists.[^13][^14][^15]
 
 Moving those harnesses into an external crate would either lose access to
-non-public helpers or start exporting internals only for the verifier. That is a
-poor trade.
+non-public helpers or start exporting internals only for the verifier. That is
+a poor trade.
 
 Instead, add module-adjacent harnesses under `#[cfg(kani)]`, for example:
 
@@ -754,8 +754,8 @@ crates/axinite-verification/
 ### Why not use Stateright’s actor API first?
 
 Stateright does have an actor framework and `ActorModel`.[^36] That may become
-useful later if Axinite wants to model multiple interacting jobs or higher-level
-service behaviour.
+useful later if Axinite wants to model multiple interacting jobs or
+higher-level service behaviour.
 
 For the first Axinite model, Axinite should still implement `Model` directly,
 because:
@@ -770,9 +770,9 @@ because:
 
 Verus is a tool for verifying the correctness of Rust code against explicit
 specifications, with a focus on full functional correctness of low-level systems
-code.[^19] Its installation model is separate from Cargo: the upstream guidance
-is to download a release, unzip it, run `./verus`, and install the Rust
-toolchain it requests.[^30]
+code.[^19] Its installation model is separate from Cargo: the upstream
+guidance is to download a release, unzip it, run `./verus`, and install the
+Rust toolchain it requests.[^30]
 
 That means Axinite should treat Verus as a separate proof runner, not as “just
 another cargo test”.
@@ -914,9 +914,9 @@ formal: formal-pr ## Default formal suite
 Two notes matter here.
 
 First, this layout uses ordinary `cargo test` for the Stateright crate rather
-than `cargo nextest run`. That keeps the first model-checking harness simple and
-predictable. If it later behaves cleanly under Nextest, switching the target is
-trivial.
+than `cargo nextest run`. That keeps the first model-checking harness simple
+and predictable. If it later behaves cleanly under Nextest, switching the
+target is trivial.
 
 Second, Verus stays **out** of `formal-pr`. That is deliberate. On Axinite’s
 current priorities, Verus should arrive only after there is something small and

@@ -77,8 +77,8 @@ declare *what* they want to do and the host assembles every HTTP request,
 injects credentials only into harness-controlled sinks, and enforces
 noninterference-like constraints via runtime provenance tracking and a Rego
 policy engine. That's not a hardening patch. It's a different contract between
-extensions and the runtime – one that existing Axinite extensions would need
-to adapt to.
+extensions and the runtime – one that existing Axinite extensions would need to
+adapt to.
 
 **The memory subsystem becomes a separate process.** IronClaw's memory is
 in-process: PostgreSQL tables with hybrid full-text and vector search fused via

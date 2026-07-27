@@ -289,8 +289,8 @@ return only after the full response is available.
 
 ## Trace Recording
 
-Set `AXINITE_RECORD_TRACE=1` to enable live trace recording via
-`RecordingLlm`. Traces are JSON files containing: memory snapshot, HTTP
-exchanges from tools, and LLM steps (user inputs, text responses, tool call
-responses). Replay these in E2E tests via `TraceLlm`. Configure output path with
-`AXINITE_TRACE_OUTPUT` (default: `trace_{timestamp}.json`).
+Set `AXINITE_RECORD_TRACE=1` to enable live trace recording via `RecordingLlm`.
+Traces are JSON files containing: memory snapshot, HTTP exchanges from tools,
+and LLM steps (user inputs, text responses, tool call responses). Replay these
+in E2E tests via `TraceLlm`. Configure output path with `AXINITE_TRACE_OUTPUT`
+(default: `trace_{timestamp}.json`).

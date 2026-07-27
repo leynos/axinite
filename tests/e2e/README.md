@@ -74,8 +74,8 @@ DOM assertions.
 
 For tabs that depend on external data (extensions, jobs, memory, routines), use
 Playwright's `page.route()` to intercept the browser's HTTP requests to the
-axinite gateway and return deterministic fixture JSON. This avoids needing
-real installed binaries, live external services, or complex database setup.
+axinite gateway and return deterministic fixture JSON. This avoids needing real
+installed binaries, live external services, or complex database setup.
 
 ### Basic pattern
 

@@ -26,8 +26,8 @@ The motivating example is a hypothetical JSON Meta Application Protocol (JMAP)
 WASM extension. A user should be able to configure a JMAP endpoint once in the
 web UI. The extension should then receive only an opaque endpoint identity such
 as `primary` or `jmap-default`. When the tool needs to check email, it should
-call a new host-managed authorized request service using that identity.
-Axinite should then:
+call a new host-managed authorized request service using that identity. Axinite
+should then:
 
 1. resolve the opaque identity to a host-owned endpoint binding,
 2. apply authorization and internal network policy,

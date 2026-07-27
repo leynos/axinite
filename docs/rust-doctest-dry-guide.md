@@ -14,8 +14,8 @@ the power and the inherent limitations of doctests.
 ### 1.1 The "separate crate" paradigm
 
 At its heart, `rustdoc` treats each documentation test not as a snippet of code
-running within the library's own context, but as an entirely separate,
-temporary crate.[^1] When a developer executes
+running within the library's own context, but as an entirely separate, temporary
+crate.[^1] When a developer executes
 
 `cargo test --doc`, `rustdoc` initiates a multi-stage process for every code
 block found in the documentation comments[^2]:
@@ -104,11 +104,11 @@ Doctests reside within documentation comments. Rust recognizes two types:
   (e.g., a module or the crate itself). They are typically used at the top of
   `lib.rs` or `mod.rs` to provide crate- or module-level documentation.[^6]
 
-Within these comments, a code block is denoted by triple back-ticks (```).
-While `rustdoc` defaults to Rust syntax, explicitly add the `rust` language
-specifier for clarity.[^2] A doctest "passes" when it compiles and runs
-without panicking. To assert specific outcomes, use the standard macros
-`assert!`, `assert_eq!`, and `assert_ne!`.[^2]
+Within these comments, a code block is denoted by triple back-ticks (```). While
+`rustdoc` defaults to Rust syntax, explicitly add the `rust` language
+specifier for clarity.[^2] A doctest "passes" when it compiles and runs without
+panicking. To assert specific outcomes, use the standard macros `assert!`,
+`assert_eq!`, and `assert_ne!`.[^2]
 
 ### 2.2 The philosophy of a good example
 
@@ -123,8 +123,9 @@ purpose. For instance, an example for
 a scenario where ownership rules necessitate creating a copy.[^7]
 
 To achieve this, examples must be clear, concise, and purposeful. Any code that
-is directly relevant to the point being made—such as complex setup, boilerplate,
-or unrelated logic—should be hidden to avoid distracting the reader.[^2]
+is directly relevant to the point being made—such as complex setup,
+boilerplate, or unrelated logic—should be hidden to avoid distracting the
+reader.[^2]
 
 ### 2.3 Ergonomic error handling: taming the `?` operator
 
@@ -299,8 +300,8 @@ change to the setup process would require updating dozens of doctests.
 ### 4.2 Hidden inline helpers for shared doctest setup
 
 One common mistake is to place shared doctest logic behind `#[cfg(test)]` or to
-import crate-internal helper modules as though doctests were compiled inside the
-library. That will not work because `rustdoc` compiles doctests as external
+import crate-internal helper modules as though doctests were compiled inside
+the library. That will not work because `rustdoc` compiles doctests as external
 crates, and `#[cfg(test)]` is reserved for unit and integration tests run
 directly by `cargo test`.[^10]
 
@@ -388,10 +389,10 @@ builds.[^12]
 pub struct UnixSocket;
 ```
 
-This `any` directive ensures the struct is compiled either when the target OS
-is `unix` OR when `rustdoc` is running. This correctly makes the item visible
-in the generated HTML. However, it is crucial to understand that this **does
-not** make the doctest for `UnixSocket` pass on non-Unix platforms.
+This `any` directive ensures the struct is compiled either when the target OS is
+`unix` OR when `rustdoc` is running. This correctly makes the item visible in
+the generated HTML. However, it is crucial to understand that this **does not**
+make the doctest for `UnixSocket` pass on non-Unix platforms.
 
 This distinction highlights the "cfg duality." The `#[cfg(doc)]` attribute
 controls the *table of contents* of the documentation; it determines which
@@ -562,8 +563,8 @@ real-world challenges when working with doctests.
 
   `#[test]` function in a temporary file or test module. This allows the
   developer to leverage the full power of the IDE. Once the code is working
-  correctly, it can be copied into the doc comment, and the necessary
-  formatting (`///`, `#`, etc.) can be applied.[^15]
+  correctly, it can be copied into the doc comment, and the necessary formatting
+  (`///`, `#`, etc.) can be applied.[^15]
 
 ## Conclusion and recommendations
 
@@ -612,8 +613,8 @@ July 15, 2025, <https://doc.rust-lang.org/rustdoc/documentation-tests.html>
 [^3]: Rustdoc doctests need fixing - Swatinem, accessed on July 15, 2025,
 <https://swatinem.de/blog/fix-rustdoc/>
 [^4]: LogRocket Blog — Organizing Rust tests, accessed on July 15, 2025,
-<https://blog.logrocket.com/how-to-organize-rust-tests/>
-Reddit — Best way to organise tests in Rust, accessed on July 15, 2025,
+<https://blog.logrocket.com/how-to-organize-rust-tests/> Reddit — Best way to
+organise tests in Rust, accessed on July 15, 2025,
 <https://www.reddit.com/r/rust/comments/qk77iu/best_way_to_organise_tests_in_rust/>
 [^5]: Writing Rust documentation - Dev Community, accessed on July 15, 2025,
 <https://dev.to/gritmax/writing-rust-documentation-5hn5>

@@ -219,6 +219,6 @@ async def test_my_ui_feature(page):
 ## CI Integration
 
 E2E tests run in CI with `cargo-llvm-cov` for coverage collection. The CI
-workflow (`fix(ci): persist all cargo-llvm-cov env vars for E2E coverage` —
-PR #559) sets `LLVM_PROFILE_FILE` and related vars before spawning the axinite
-binary so coverage from E2E runs is captured.
+workflow (`fix(ci): persist all cargo-llvm-cov env vars for E2E coverage`, pull
+request 559) sets `LLVM_PROFILE_FILE` and related variables before spawning the
+axinite binary so coverage from E2E runs is captured.

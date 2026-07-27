@@ -144,9 +144,8 @@ to intended semantics rather than a new behavioural expansion.
 
 - Risk: A naive “skip Authorization header” exception in the leak detector
   would mask real exfiltration attempts from WASM code and weaken the security
-  model.
-  Severity: high Likelihood: medium Mitigation: Fix the ordering in the host
-  wrapper so leak scanning sees only WASM-provided request data, not
+  model. Severity: high Likelihood: medium Mitigation: Fix the ordering in the
+  host wrapper so leak scanning sees only WASM-provided request data, not
   host-injected credentials. Avoid token-pattern exemptions based on header
   name alone.
 
@@ -163,18 +162,17 @@ to intended semantics rather than a new behavioural expansion.
   success-adjacent paths.
 
 - Risk: Hosted-worker proxying added in the meta-tooling work could obscure
-  whether the bug is in hosted-only code or the generic tool runtime.
-  Severity: medium Likelihood: medium Mitigation: Prove the bug at the generic
+  whether the bug is in hosted-only code or the generic tool runtime. Severity:
+  medium Likelihood: medium Mitigation: Prove the bug at the generic
   `src/tools/wasm/wrapper.rs` layer with a focused unit or integration test
   that does not depend on the worker proxy.
 
 - Risk: Existing tests cover helper pieces such as credential resolution,
   direct leak-detector matching, and redaction, but do not cover the full
-  tool-wrapper request pipeline where the regression actually lives.
-  Severity: high Likelihood: high Mitigation: Add both a failing
-  request-pipeline test and a behavioural test that exercise the wrapper’s
-  request preparation and outbound execution path instead of only helper
-  functions.
+  tool-wrapper request pipeline where the regression actually lives. Severity:
+  high Likelihood: high Mitigation: Add both a failing request-pipeline test
+  and a behavioural test that exercise the wrapper’s request preparation and
+  outbound execution path instead of only helper functions.
 
 ## Milestone 1: Reproduce the failure and pin the exact generic cause
 
@@ -608,9 +606,9 @@ Work from the repository root.
 
 ## Outcomes & Retrospective
 
-Axinite’s GitHub PAT was not being blocked because GitHub auth was
-unsupported; it was being blocked because the generic WASM tool wrapper scanned
-the already-injected outbound request and therefore mistook host-managed
+Axinite’s GitHub PAT was not being blocked because GitHub auth was unsupported;
+it was being blocked because the generic WASM tool wrapper scanned the
+already-injected outbound request and therefore mistook host-managed
 credentials for exfiltrated secrets. Historical evidence strengthened
 confidence in a narrow fix: the introducing tool-side commit was trying to add
 host-based credential injection and related runtime support, and the later

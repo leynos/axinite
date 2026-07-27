@@ -1,9 +1,8 @@
 # Add the `skill_read_file` interface for bundled skill resources
 
-This ExecPlan (execution plan) is a living document. The sections
-`Constraints`, `Tolerances`, `Risks`, `Progress`,
-`Surprises & Discoveries`, `Decision Log`, and
-`Outcomes & Retrospective` must be kept up to date as work proceeds.
+This ExecPlan (execution plan) is a living document. The sections `Constraints`,
+`Tolerances`, `Risks`, `Progress`, `Surprises & Discoveries`, `Decision Log`,
+and `Outcomes & Retrospective` must be kept up to date as work proceeds.
 
 Status: COMPLETE
 
@@ -18,13 +17,13 @@ read-only interface that can read a specific bundle-relative file without
 giving the model raw host filesystem access.
 
 After this change, a model can call `skill_read_file` with a canonical skill
-identifier such as `deploy-docs` and a path such as `references/usage.md`.
-Text files under `SKILL.md`, `references/**`, and text-compatible
-`assets/**` are returned inline through a stable JSON payload. Absolute paths,
-path traversal, unsupported locations, unknown skills, binary assets, and
-oversized files return deterministic skill-scoped error payloads. This lets
-skills use progressive disclosure: activate the skill, read `SKILL.md`, and
-then lazily read only the referenced bundled resources that are needed.
+identifier such as `deploy-docs` and a path such as `references/usage.md`. Text
+files under `SKILL.md`, `references/**`, and text-compatible `assets/**` are
+returned inline through a stable JSON payload. Absolute paths, path traversal,
+unsupported locations, unknown skills, binary assets, and oversized files
+return deterministic skill-scoped error payloads. This lets skills use
+progressive disclosure: activate the skill, read `SKILL.md`, and then lazily
+read only the referenced bundled resources that are needed.
 
 The implementation must not start until this plan is explicitly approved.
 
@@ -34,9 +33,8 @@ The first gate is plan approval. A human reviewer must explicitly approve this
 ExecPlan before implementation starts. Silence is not approval.
 
 The second gate is implementation completion. The implementer must finish the
-domain path policy, tool adapter, tool registration, attenuation update,
-tests, documentation, and roadmap update without widening generic filesystem
-access.
+domain path policy, tool adapter, tool registration, attenuation update, tests,
+documentation, and roadmap update without widening generic filesystem access.
 
 The third gate is milestone review. After each major milestone, run
 `coderabbit review --agent`, resolve or record every concern, and continue only
@@ -53,27 +51,26 @@ documents before marking roadmap item `1.3.4` done.
 
 ## Repository orientation
 
-Start with `AGENTS.md`, `docs/contents.md`,
-`docs/welcome-to-axinite.md`, and
+Start with `AGENTS.md`, `docs/contents.md`, `docs/welcome-to-axinite.md`, and
 `docs/axinite-architecture-overview.md`. These describe the repository rules,
-product direction, and top-level runtime shape. `docs/roadmap.md` defines
-item `1.3.4` as the read-only bundled-resource access task and states the
-success rule: the model can read bundle-relative files, oversized or
-disallowed files fail through a skill-scoped error path, and raw filesystem
-access is not exposed.
+product direction, and top-level runtime shape. `docs/roadmap.md` defines item
+`1.3.4` as the read-only bundled-resource access task and states the success
+rule: the model can read bundle-relative files, oversized or disallowed files
+fail through a skill-scoped error path, and raw filesystem access is not
+exposed.
 
 `docs/rfcs/0003-skill-bundle-installation.md` is the design authority for this
-feature. Keep the sections `Problem`, `Reference Model`, `Runtime Model
-Interface`, `Why A Dedicated Tool Instead Of Raw File Paths`, `Security
-Considerations`, `Testing`, and `Rollout Plan` open while implementing. The
-RFC suggests the model-facing schema, successful response, typed non-inline
-error response, and tool semantics for `skill_read_file`.
+feature. Keep the sections `Problem`, `Reference Model`,
+`Runtime Model Interface`, `Why A Dedicated Tool Instead Of Raw File Paths`,
+`Security Considerations`, `Testing`, and `Rollout Plan` open while
+implementing. The RFC suggests the model-facing schema, successful response,
+typed non-inline error response, and tool semantics for `skill_read_file`.
 
 `docs/execplans/1-3-2-extend-skill-installation-flows-bundles.md` and
 `docs/execplans/1-3-3-persist-canonical-skill-roots-in-the-loaded-model.md`
 record the completed prerequisites. The important inherited invariant is that
-archive and install policy lives in `src/skills/`, while web handlers and
-tool adapters only translate transport input into those shared policies.
+archive and install policy lives in `src/skills/`, while web handlers and tool
+adapters only translate transport input into those shared policies.
 
 `src/skills/mod.rs` contains the core runtime model. `LoadedSkillLocation`
 stores a private filesystem root, a bundle-relative entrypoint, a canonical
@@ -94,11 +91,10 @@ add the smallest registry helper in `src/skills/registry.rs` rather than
 letting the tool adapter scan private fields or infer install paths itself.
 
 `src/tools/builtin/skill_tools.rs`, `src/tools/builtin/skill_tools/install.rs`,
-and `src/tools/builtin/skill_tools/remove.rs` show the existing
-registry-backed skill tools. `src/tools/registry/builtins.rs` registers skill
-management tools with the active `ToolRegistry`. `src/tools/builtin/mod.rs`
-re-exports built-in tool types. The new tool should follow these local
-patterns.
+and `src/tools/builtin/skill_tools/remove.rs` show the existing registry-backed
+skill tools. `src/tools/registry/builtins.rs` registers skill management tools
+with the active `ToolRegistry`. `src/tools/builtin/mod.rs` re-exports built-in
+tool types. The new tool should follow these local patterns.
 
 `src/skills/attenuation.rs` contains `READ_ONLY_TOOLS`, the conservative list
 of tools available when installed skills lower the visible tool ceiling.
@@ -123,9 +119,9 @@ The implementation should load these skills before editing:
 
 - `leta`, for symbol navigation and reference checks.
 - `rust-router`, then the smallest relevant Rust follow-on skill. For this
-  work, expect `rust-types-and-apis` for schema and value types,
-  `rust-errors` for response/error shape, and `rust-memory-and-state` only if
-  registry sharing or locks become unclear.
+  work, expect `rust-types-and-apis` for schema and value types, `rust-errors`
+  for response/error shape, and `rust-memory-and-state` only if registry
+  sharing or locks become unclear.
 - `hexagonal-architecture`, as boundary discipline: domain policy belongs in
   `src/skills/`; built-in tools and web/e2e paths are adapters.
 - `domain-web-services`, only if the implementation adds or changes web
@@ -135,9 +131,9 @@ The implementation should load these skills before editing:
 - `commit-message` and `pr-creation`, when committing or updating the pull
   request.
 
-External prior art supports the same narrow shape. Model Context Protocol
-(MCP) resources describe file-like context as resources read by URI, with
-explicit URI validation and permission checks before reads. OpenAI Apps SDK tool
+External prior art supports the same narrow shape. Model Context Protocol (MCP)
+resources describe file-like context as resources read by URI, with explicit
+URI validation and permission checks before reads. OpenAI Apps SDK tool
 annotations include `readOnlyHint` for tools that retrieve information without
 modifying external state. Axinite does not need to adopt either protocol
 wholesale, but these references support an explicit read-only descriptor,
@@ -172,8 +168,8 @@ structured input/output schema, and validation before resource access.[^1][^2]
   already available.
 - Use `rstest` fixtures for Rust unit and integration tests. Use
   `rstest-bdd` for behavioural Rust coverage where the behaviour is best
-  expressed as a scenario. Use the existing Python `pytest` e2e style only
-  when the change affects externally observable server workflows.
+  expressed as a scenario. Use the existing Python `pytest` e2e style only when
+  the change affects externally observable server workflows.
 - Use `proptest` for path-policy invariants over a range of path inputs.
   Do not add Kani or Verus unless the implementation introduces a stronger
   invariant that cannot be covered credibly by property tests and review.
@@ -215,43 +211,35 @@ conflict in `Decision Log`, and ask for direction.
 ## Risks
 
 - Risk: the current `ToolError` type is flat and string-oriented, while RFC
-  0003 requires structured skill-scoped errors.
-  Severity: medium.
-  Likelihood: high.
-  Mitigation: return RFC-shaped JSON as a successful `ToolOutput` for expected
-  domain denials, and use `ToolError::InvalidParameters` only for malformed
-  tool-call parameters.
+  0003 requires structured skill-scoped errors. Severity: medium. Likelihood:
+  high. Mitigation: return RFC-shaped JSON as a successful `ToolOutput` for
+  expected domain denials, and use `ToolError::InvalidParameters` only for
+  malformed tool-call parameters.
 
 - Risk: symlinks or time-of-check/time-of-use races could escape the skill
-  root even though archive validation rejects symlinks.
-  Severity: high.
-  Likelihood: medium.
-  Mitigation: validate the lexical bundle path before joining, canonicalize the
-  final target where practical, reject symlink metadata, and verify the
-  resolved file remains below the loaded skill root.
+  root even though archive validation rejects symlinks. Severity: high.
+  Likelihood: medium. Mitigation: validate the lexical bundle path before
+  joining, canonicalize the final target where practical, reject symlink
+  metadata, and verify the resolved file remains below the loaded skill root.
 
 - Risk: adding `skill_read_file` to `READ_ONLY_TOOLS` before the behaviour is
-  fully constrained would weaken installed-skill attenuation.
-  Severity: high.
-  Likelihood: low.
-  Mitigation: add attenuation only after unit tests prove no writes, network
-  calls, generic filesystem paths, or state mutation are involved.
+  fully constrained would weaken installed-skill attenuation. Severity: high.
+  Likelihood: low. Mitigation: add attenuation only after unit tests prove no
+  writes, network calls, generic filesystem paths, or state mutation are
+  involved.
 
 - Risk: Python e2e coverage may need deterministic tool-call plumbing rather
-  than a direct unit-level invocation.
-  Severity: medium.
-  Likelihood: medium.
+  than a direct unit-level invocation. Severity: medium. Likelihood: medium.
   Mitigation: prefer the existing Python `pytest` e2e style if this becomes
   externally observable. If the existing mock model or HTTP route cannot drive
-  a deterministic tool call, record the blocker and keep the Rust
-  `rstest-bdd` behavioural coverage as the primary scenario layer.
+  a deterministic tool call, record the blocker and keep the Rust `rstest-bdd`
+  behavioural coverage as the primary scenario layer.
 
 - Risk: response-size caps may conflict with existing `SKILL.md` loading caps.
-  Severity: low.
-  Likelihood: medium.
-  Mitigation: define a named read cap in the skill read policy, keep it at or
-  below the existing prompt-oriented cap unless RFC review dictates otherwise,
-  and snapshot the error payload for oversized reads.
+  Severity: low. Likelihood: medium. Mitigation: define a named read cap in the
+  skill read policy, keep it at or below the existing prompt-oriented cap
+  unless RFC review dictates otherwise, and snapshot the error payload for
+  oversized reads.
 
 ## Progress
 
@@ -281,9 +269,9 @@ conflict in `Decision Log`, and ask for direction.
 - [x] (2026-05-20 12:00+02:00) Used a Wyvern agent team for a fresh read-only
   planning brief and incorporated its boundary and testing cautions.
 - [x] (2026-05-20 12:00+02:00) Corrected stale plan assumptions about Python
-  `pytest-bdd`; the implementation should use Rust `rstest-bdd` for
-  behavioural coverage and existing Python `pytest` e2e patterns only where
-  system-level behaviour changes.
+  `pytest-bdd`; the implementation should use Rust `rstest-bdd` for behavioural
+  coverage and existing Python `pytest` e2e patterns only where system-level
+  behaviour changes.
 - [x] (2026-05-20 21:46+02:00) Received explicit user instruction to proceed
   with implementation under this ExecPlan.
 - [x] (2026-05-20 21:46+02:00) Confirmed the working branch is
@@ -291,13 +279,15 @@ conflict in `Decision Log`, and ask for direction.
   `origin/1-3-4-skill-read-file-interface`.
 - [x] (2026-05-20 21:57+02:00) Implemented the first Rust slice:
   domain-owned `src/skills/file_read.rs`, `SkillReadFileTool`, built-in tool
-  registration, attenuation allow-listing, `rstest` unit coverage,
-  `proptest` path-policy coverage, and `rstest-bdd` behavioural scenarios.
+  registration, attenuation allow-listing, `rstest` unit coverage, `proptest`
+  path-policy coverage, and `rstest-bdd` behavioural scenarios.
 - [x] (2026-05-20 21:57+02:00) Ran targeted validation:
-  `cargo test --features test-helpers skills::file_read -- --nocapture`
-  passed 11 tests; `cargo test --features test-helpers
-  skill_read_file_tool -- --nocapture` passed 2 tests; `cargo test --features
-  test-helpers skill_read_file_schema -- --nocapture` passed 1 test; and
+  `cargo test --features test-helpers skills::file_read -- --nocapture` passed
+  11 tests;
+  `cargo test --features test-helpers skill_read_file_tool -- --nocapture`
+  passed 2 tests;
+  `cargo test --features test-helpers skill_read_file_schema -- --nocapture`
+  passed 1 test; and
   `cargo test --features test-helpers bdd_model -- --nocapture` passed 2
   `rstest-bdd` scenario tests.
 - [x] Implement domain path policy and typed response model.
@@ -313,260 +303,236 @@ conflict in `Decision Log`, and ask for direction.
 
 - Observation: `leta workspace add` succeeded, but the first Rust Language
   Server Protocol (LSP) query failed because `rust-analyzer` was not installed
-  for the active toolchain.
-  Evidence: `leta grep ...` reported that the Rust language server failed to
-  start and suggested `rustup component add rust-analyzer`.
-  Impact: install the component and restart the `leta` daemon before relying
-  on semantic Rust navigation.
+  for the active toolchain. Evidence: `leta grep ...` reported that the Rust
+  language server failed to start and suggested
+  `rustup component add rust-analyzer`. Impact: install the component and
+  restart the `leta` daemon before relying on semantic Rust navigation.
 
-- Observation: after resuming implementation on 2026-05-20, `leta workspace
-  add` reported the workspace was already present, but `leta show` and
-  `leta refs` failed with `EOF while parsing a value at line 1 column 0`.
-  Evidence: direct calls for `LoadedSkillLocation`,
-  `register_skill_tools`, and `READ_ONLY_TOOLS` all failed with the same
-  parser error.
-  Impact: continue with direct source inspection and `rg` for this milestone,
-  and keep the failure documented so navigation assumptions are not hidden.
+- Observation: after resuming implementation on 2026-05-20,
+  `leta workspace add` reported the workspace was already present, but
+  `leta show` and `leta refs` failed with
+  `EOF while parsing a value at line 1 column 0`. Evidence: direct calls for
+  `LoadedSkillLocation`, `register_skill_tools`, and `READ_ONLY_TOOLS` all
+  failed with the same parser error. Impact: continue with direct source
+  inspection and `rg` for this milestone, and keep the failure documented so
+  navigation assumptions are not hidden.
 
 - Observation: `pytest` is used for Python/Playwright e2e tests, but
-  `pytest-bdd` is not currently in `tests/e2e/pyproject.toml`.
-  Evidence: the e2e package lists `pytest`, `pytest-asyncio`,
-  `pytest-playwright`, `pytest-timeout`, `playwright`, `aiohttp`, and `httpx`,
-  while Rust-side BDD is already present through `rstest-bdd`.
-  Impact: do not add Python `pytest-bdd` for this roadmap item unless a later
-  approved design specifically needs it. Use Rust `rstest-bdd` for
-  behavioural coverage and the existing Python `pytest` style for any
-  necessary e2e checks.
+  `pytest-bdd` is not currently in `tests/e2e/pyproject.toml`. Evidence: the
+  e2e package lists `pytest`, `pytest-asyncio`, `pytest-playwright`,
+  `pytest-timeout`, `playwright`, `aiohttp`, and `httpx`, while Rust-side BDD
+  is already present through `rstest-bdd`. Impact: do not add Python
+  `pytest-bdd` for this roadmap item unless a later approved design
+  specifically needs it. Use Rust `rstest-bdd` for behavioural coverage and the
+  existing Python `pytest` style for any necessary e2e checks.
 
 - Observation: RFC 0003 asks for stable structured error payloads, but the
-  native tool error enum is not shaped for domain-denial JSON.
-  Evidence: `src/tools/tool/traits.rs` and `src/error/tool.rs` expose variants
-  such as `InvalidParameters` and `ExecutionFailed`, while existing tools
-  return structured successful `ToolOutput` values for normal results.
-  Impact: expected skill-scoped denials should be JSON tool results, not
-  generic execution failures.
+  native tool error enum is not shaped for domain-denial JSON. Evidence:
+  `src/tools/tool/traits.rs` and `src/error/tool.rs` expose variants such as
+  `InvalidParameters` and `ExecutionFailed`, while existing tools return
+  structured successful `ToolOutput` values for normal results. Impact:
+  expected skill-scoped denials should be JSON tool results, not generic
+  execution failures.
 
 - Observation: `mime_guess` is already a normal dependency.
-  Evidence: `Cargo.toml` contains `mime_guess = "2.0.5"`.
-  Impact: media type inference for non-inline asset metadata does not require
-  a new Rust dependency.
+  Evidence: `Cargo.toml` contains `mime_guess = "2.0.5"`. Impact: media type
+  inference for non-inline asset metadata does not require a new Rust
+  dependency.
 
 - Observation: the initial filtered test command
   `cargo test --features test-helpers skill_read_file -- --nocapture` matched
   no tests because the new tests live under module and scenario names rather
-  than a single shared test name.
-  Evidence: the command passed while reporting zero executed tests; the later
-  module-specific commands executed the intended domain, adapter, schema, and
-  BDD tests.
-  Impact: use explicit module filters such as `skills::file_read`,
-  `skill_read_file_tool`, `skill_read_file_schema`, and `bdd_model` when
-  rerunning the targeted suite.
+  than a single shared test name. Evidence: the command passed while reporting
+  zero executed tests; the later module-specific commands executed the intended
+  domain, adapter, schema, and BDD tests. Impact: use explicit module filters
+  such as `skills::file_read`, `skill_read_file_tool`,
+  `skill_read_file_schema`, and `bdd_model` when rerunning the targeted suite.
 
 - Observation: CodeRabbit caught four useful implementation concerns during
   the first milestone review: incomplete Rustdoc, excessive function
   complexity, an over-large inline test module, and a size-cast comment that
-  needed to match the bounded comparison.
-  Evidence: `/tmp/coderabbit-skill-read-file-slice-axinite-1-3-4-skill-read-file-interface.out`.
+  needed to match the bounded comparison. Evidence:
+  `/tmp/coderabbit-skill-read-file-slice-axinite-1-3-4-skill-read-file-interface.out`.
   Impact: split policy I/O and validation into submodules, moved tests into
   `src/skills/file_read/tests.rs`, completed public docs, and simplified the
   size conversion explanation before continuing.
 
 - Observation: a second CodeRabbit pass identified a replacement race between
-  lexical validation and file reads.
-  Evidence:
+  lexical validation and file reads. Evidence:
   `/tmp/coderabbit-skill-read-file-slice-rerun-axinite-1-3-4-skill-read-file-interface.out`.
   Impact: revalidate the opened file metadata after opening so symlinks,
-  non-regular files, and oversized files still fail through the
-  skill-scoped error path even if a bundle file changes between checks.
+  non-regular files, and oversized files still fail through the skill-scoped
+  error path even if a bundle file changes between checks.
 
 - Observation: the CodeRabbit review after the split reported one valid
-  cleanup finding: an opened file descriptor's metadata cannot report the
-  path as a symlink, so the post-open symlink check was dead code.
-  Evidence:
+  cleanup finding: an opened file descriptor's metadata cannot report the path
+  as a symlink, so the post-open symlink check was dead code. Evidence:
   `/tmp/coderabbit-skill-read-file-docs-final-axinite-1-3-4-skill-read-file-interface.out`.
   Impact: remove the ineffective `is_symlink()` branch while retaining the
   pre-open symlink rejection, post-open regular-file check, and size
   revalidation.
 
 - Observation: the final CodeRabbit pass asked for explicit symlink
-  regression coverage.
-  Evidence:
+  regression coverage. Evidence:
   `/tmp/coderabbit-skill-read-file-clean-final-axinite-1-3-4-skill-read-file-interface.out`.
   Impact: add a Unix unit test that creates a bundle-relative symlink under
   `references/` and verifies `read_skill_file` returns `path_not_readable`.
 
 - Observation: the follow-up CodeRabbit pass identified missing positive path
   policy property coverage, bare-directory cases, unclear PNG fixture bytes,
-  and a remaining symlink time-of-check/time-of-use gap.
-  Evidence:
+  and a remaining symlink time-of-check/time-of-use gap. Evidence:
   `/tmp/coderabbit-skill-read-file-final-clear-axinite-1-3-4-skill-read-file-interface.out`.
   Impact: add positive generated cases for `references/**` and `assets/**`,
   assert `SKILL.md` validates, cover bare `references/` and `assets/`, use a
-  real PNG signature for the binary fixture, and open files with
-  `O_NOFOLLOW` on Unix before post-open metadata validation.
+  real PNG signature for the binary fixture, and open files with `O_NOFOLLOW`
+  on Unix before post-open metadata validation.
 
 - Observation: the next CodeRabbit retry hit a recoverable rate limit.
   Evidence:
   `/tmp/coderabbit-skill-read-file-final-after-fixes-axinite-1-3-4-skill-read-file-interface.out`
-  reported `rate_limit` with a suggested wait time of 55 seconds.
-  Impact: continue with local gates and retry CodeRabbit before committing.
+  reported `rate_limit` with a suggested wait time of 55 seconds. Impact:
+  continue with local gates and retry CodeRabbit before committing.
 
 - Observation: the post-gate CodeRabbit review asked for a clearer audit
-  trail on the non-Unix fallback, which cannot use Unix `O_NOFOLLOW`.
-  Evidence:
+  trail on the non-Unix fallback, which cannot use Unix `O_NOFOLLOW`. Evidence:
   `/tmp/coderabbit-skill-read-file-after-gates-axinite-1-3-4-skill-read-file-interface.out`.
   Impact: document that non-Unix currently relies on the earlier
   `symlink_metadata` rejection plus the later opened-file size revalidation,
   and leave a TODO for platform-specific atomic no-follow semantics.
 
 - Observation: the immediate CodeRabbit retry after the non-Unix fallback
-  comment hit another recoverable rate limit.
-  Evidence:
+  comment hit another recoverable rate limit. Evidence:
   `/tmp/coderabbit-skill-read-file-final-reviewed-axinite-1-3-4-skill-read-file-interface.out`
-  reported `rate_limit` with a suggested wait time of 2 minutes and
-  28 seconds.
-  Impact: wait and retry before committing so the latest CodeRabbit concern
-  has a clean follow-up result if the service quota permits it.
+  reported `rate_limit` with a suggested wait time of 2 minutes and 28
+  seconds. Impact: wait and retry before committing so the latest CodeRabbit
+  concern has a clean follow-up result if the service quota permits it.
 
 - Observation: the waited CodeRabbit retry still hit a recoverable rate
-  limit, with a longer suggested delay.
-  Evidence:
+  limit, with a longer suggested delay. Evidence:
   `/tmp/coderabbit-skill-read-file-final-retry-axinite-1-3-4-skill-read-file-interface.out`
-  reported `rate_limit` with a suggested wait time of 5 minutes and
-  34 seconds.
-  Impact: treat CodeRabbit availability as the only remaining external review
-  constraint; local gates continue to run, and one more retry will be made
-  before commit.
+  reported `rate_limit` with a suggested wait time of 5 minutes and 34
+  seconds. Impact: treat CodeRabbit availability as the only remaining external
+  review constraint; local gates continue to run, and one more retry will be
+  made before commit.
 
 - Observation: a final CodeRabbit retry after the clean aggregate gate still
-  hit the same service-side rate limit.
-  Evidence:
+  hit the same service-side rate limit. Evidence:
   `/tmp/coderabbit-skill-read-file-final-last-axinite-1-3-4-skill-read-file-interface.out`
-  reported `rate_limit` with a suggested wait time of 5 minutes and
-  36 seconds.
-  Impact: all previously reported CodeRabbit concerns are fixed, but the
-  final clean-review confirmation is blocked by CodeRabbit service quota. Do
-  not treat this as a code concern; include it in the handoff and PR context.
+  reported `rate_limit` with a suggested wait time of 5 minutes and 36
+  seconds. Impact: all previously reported CodeRabbit concerns are fixed, but
+  the final clean-review confirmation is blocked by CodeRabbit service quota.
+  Do not treat this as a code concern; include it in the handoff and PR context.
 
 - Observation: final local validation passed after the last source and
-  ExecPlan changes.
-  Evidence: `/tmp/markdownlint-final-axinite-1-3-4-skill-read-file-interface.out`
-  reported zero Markdown errors; `/tmp/diff-check-final-axinite-1-3-4-skill-read-file-interface.out`
-  was clean; `/tmp/all-final-axinite-1-3-4-skill-read-file-interface.out`
-  passed `make all`, including 4091 nextest tests and 5 GitHub tool tests.
-  Impact: the implementation is locally gated and ready to commit.
+  ExecPlan changes. Evidence:
+  `/tmp/markdownlint-final-axinite-1-3-4-skill-read-file-interface.out`
+  reported zero Markdown errors;
+  `/tmp/diff-check-final-axinite-1-3-4-skill-read-file-interface.out` was clean;
+  `/tmp/all-final-axinite-1-3-4-skill-read-file-interface.out` passed
+  `make all`, including 4091 nextest tests and 5 GitHub tool tests. Impact: the
+  implementation is locally gated and ready to commit.
 
 - Observation: the 2026-05-25 review correctly identified that canonicalizing
   a target and then reopening it by path was still a time-of-check/time-of-use
-  gap, including for intermediate symlink components.
-  Evidence: `src/skills/file_read/io.rs` previously stored a canonical target
-  path in `CanonicalTarget` and later opened that path in
-  `read_file_contents`.
-  Impact: replace the path reopen with a Linux `openat2` call anchored to the
-  canonical skill-root directory file descriptor and using
+  gap, including for intermediate symlink components. Evidence:
+  `src/skills/file_read/io.rs` previously stored a canonical target path in
+  `CanonicalTarget` and later opened that path in `read_file_contents`. Impact:
+  replace the path reopen with a Linux `openat2` call anchored to the canonical
+  skill-root directory file descriptor and using
   `RESOLVE_BENEATH | RESOLVE_NO_SYMLINKS`, then read from that opened handle.
   Non-Linux targets now fail closed with a skill-scoped I/O error rather than
   using a weaker plain `File::open` fallback.
 
 - Observation: the same review requested exact maximum-size coverage and
-  clearer documentation/comment spelling.
-  Evidence: review comments called out the missing
-  `MAX_SKILL_READ_FILE_BYTES` boundary case, two Rustdoc comments using
-  non-Oxford spelling, the stale skill tool registry summary, and first-use
-  definitions for `e2e` and `LSP`.
-  Impact: add an exact-size success test, update the Rustdoc and registry
-  comments, and define end-to-end (e2e) and Language Server Protocol (LSP) in
-  the ExecPlan.
+  clearer documentation/comment spelling. Evidence: review comments called out
+  the missing `MAX_SKILL_READ_FILE_BYTES` boundary case, two Rustdoc comments
+  using non-Oxford spelling, the stale skill tool registry summary, and
+  first-use definitions for `e2e` and `LSP`. Impact: add an exact-size success
+  test, update the Rustdoc and registry comments, and define end-to-end (e2e)
+  and Language Server Protocol (LSP) in the ExecPlan.
 
 - Observation: no Python e2e test was added for this slice.
   Evidence: the implementation changes a model-facing built-in tool contract
   but does not add a new HTTP route, CLI command, persistence workflow, UI
   flow, or network boundary. Rust `rstest-bdd` scenarios exercise the
-  externally visible tool contract through the built-in tool adapter.
-  Impact: keep system-level coverage focused on the Rust tool contract and
-  avoid adding a Python e2e path that would duplicate lower-level assertions
-  without covering a distinct server workflow.
+  externally visible tool contract through the built-in tool adapter. Impact:
+  keep system-level coverage focused on the Rust tool contract and avoid adding
+  a Python e2e path that would duplicate lower-level assertions without
+  covering a distinct server workflow.
 
 - Observation: the requested branch already existed locally and remotely.
-  Evidence: `git branch --list --verbose --verbose
-  '*1-3-4-skill-read-file-interface*'` showed a local branch tracking
-  `origin/1-3-4-skill-read-file-interface`, and `gh pr view` showed the
-  associated pull request `#187` was closed.
-  Impact: continue on the existing tracking branch, update the plan in place,
-  and create a new draft pull request after the refreshed plan is committed and
+  Evidence:
+  `git branch --list --verbose --verbose '*1-3-4-skill-read-file-interface*'`
+  showed a local branch tracking `origin/1-3-4-skill-read-file-interface`, and
+  `gh pr view` showed the associated pull request `#187` was closed. Impact:
+  continue on the existing tracking branch, update the plan in place, and
+  create a new draft pull request after the refreshed plan is committed and
   pushed.
 
 ## Decision log
 
 - Decision: Write this as a pre-implementation plan only and do not implement
-  `skill_read_file` until approval.
-  Rationale: the `execplans` skill requires an explicit approval gate, and the
-  user specifically stated that the plan must be approved before
-  implementation.
-  Date/Author: 2026-05-19 / Codex.
+  `skill_read_file` until approval. Rationale: the `execplans` skill requires
+  an explicit approval gate, and the user specifically stated that the plan
+  must be approved before implementation. Date/Author: 2026-05-19 / Codex.
 
 - Decision: Treat `skill_read_file` as a built-in tool adapter backed by a
-  domain-owned path policy in `src/skills/`.
-  Rationale: hexagonal architecture applies here as boundary discipline. The
-  skill subsystem owns bundle roots and path rules; the built-in tool is only
-  the driving adapter that accepts JSON and returns JSON.
-  Date/Author: 2026-05-19 / Codex.
+  domain-owned path policy in `src/skills/`. Rationale: hexagonal architecture
+  applies here as boundary discipline. The skill subsystem owns bundle roots
+  and path rules; the built-in tool is only the driving adapter that accepts
+  JSON and returns JSON. Date/Author: 2026-05-19 / Codex.
 
 - Decision: Use structured JSON `ToolOutput` for expected policy denials such
-  as `path_not_readable`, `non_inline_asset`, and `file_too_large`.
-  Rationale: RFC 0003 defines model-facing error payloads, and using native
-  `ToolError` for normal denials would collapse useful error codes into
-  generic execution failures.
-  Date/Author: 2026-05-19 / Codex.
+  as `path_not_readable`, `non_inline_asset`, and `file_too_large`. Rationale:
+  RFC 0003 defines model-facing error payloads, and using native `ToolError`
+  for normal denials would collapse useful error codes into generic execution
+  failures. Date/Author: 2026-05-19 / Codex.
 
 - Decision: Plan both Rust `rstest-bdd` coverage and Python `pytest-bdd` e2e
-  coverage.
-  Rationale: this decision was superseded on 2026-05-20 after re-reading the
-  task. The request names `rstest-bdd`, not Python `pytest-bdd`, and the
-  repository already has Python e2e tests in plain `pytest`.
+  coverage. Rationale: this decision was superseded on 2026-05-20 after
+  re-reading the task. The request names `rstest-bdd`, not Python `pytest-bdd`,
+  and the repository already has Python e2e tests in plain `pytest`.
   Date/Author: 2026-05-19 / Codex. Superseded 2026-05-20 / Codex.
 
 - Decision: Use Rust `rstest-bdd` for behavioural coverage and keep Python e2e
   tests in the existing `pytest` style when system-level coverage is needed.
   Rationale: this matches the user request and avoids adding a second BDD
-  framework to the Python e2e package without a concrete need.
-  Date/Author: 2026-05-20 / Codex.
+  framework to the Python e2e package without a concrete need. Date/Author:
+  2026-05-20 / Codex.
 
 - Decision: Use `proptest` for path policy and decline Kani/Verus unless a
-  stronger proof obligation emerges during implementation.
-  Rationale: the new invariant is bounded input validation over path strings
-  and file classifications. Property tests are proportionate and already used
-  in nearby skill and dispatcher tests; Kani or Verus would be disproportionate
-  unless the design introduces a formal business axiom or unsafe code.
-  Date/Author: 2026-05-19 / Codex.
+  stronger proof obligation emerges during implementation. Rationale: the new
+  invariant is bounded input validation over path strings and file
+  classifications. Property tests are proportionate and already used in nearby
+  skill and dispatcher tests; Kani or Verus would be disproportionate unless
+  the design introduces a formal business axiom or unsafe code. Date/Author:
+  2026-05-19 / Codex.
 
 - Decision: begin implementation after the 2026-05-20 user approval message
-  and keep this ExecPlan as the live delivery log.
-  Rationale: the approval gate is satisfied by the explicit request to
-  proceed with implementation of this plan.
-  Date/Author: 2026-05-20 / Codex.
+  and keep this ExecPlan as the live delivery log. Rationale: the approval gate
+  is satisfied by the explicit request to proceed with implementation of this
+  plan. Date/Author: 2026-05-20 / Codex.
 
 - Decision: do not add snapshot tests for this change.
   Rationale: the stable model-facing JSON shape is asserted directly in unit
   and behavioural tests, including success, policy-denial, and unknown-skill
-  responses. Snapshot files would add review churn without making the
-  contract more precise for this small response vocabulary.
-  Date/Author: 2026-05-20 / Codex.
+  responses. Snapshot files would add review churn without making the contract
+  more precise for this small response vocabulary. Date/Author: 2026-05-20 /
+  Codex.
 
 - Decision: mark roadmap item `1.3.4` done as part of the implementation
-  branch, before the final commit.
-  Rationale: the code, user documentation, internal documentation, and feature
-  parity notes now describe the implemented behaviour; final gates remain as
-  the commit condition rather than a separate roadmap semantics change.
-  Date/Author: 2026-05-20 / Codex.
+  branch, before the final commit. Rationale: the code, user documentation,
+  internal documentation, and feature parity notes now describe the implemented
+  behaviour; final gates remain as the commit condition rather than a separate
+  roadmap semantics change. Date/Author: 2026-05-20 / Codex.
 
 ## Outcomes & retrospective
 
-Implementation is complete and awaiting final repository gates and commit.
-The branch now contains a single read-only `skill_read_file` tool that reads
-only loaded skill bundle resources through stable bundle-relative paths, plus
-tests and documentation proving the feature works without exposing raw
-filesystem access.
+Implementation is complete and awaiting final repository gates and commit. The
+branch now contains a single read-only `skill_read_file` tool that reads only
+loaded skill bundle resources through stable bundle-relative paths, plus tests
+and documentation proving the feature works without exposing raw filesystem
+access.
 
 ## Plan of work
 
@@ -587,34 +553,32 @@ pub async fn read_skill_file(
 
 The exact signature may change if the implementation requires injection of
 filesystem operations for tests, but the policy must accept a `LoadedSkill` or
-equivalent domain object rather than a raw root path from the model.
-Validation in this stage should cover allowed paths, rejected paths, unknown
-or unsupported path forms, file size limits, binary detection, invalid UTF-8,
-and metadata for non-inline responses. Use `proptest` for the lexical path
-invariant: generated
-absolute paths, traversal segments, alternate separators, and repeated root
-prefixes must never produce a resolved path outside the skill root.
+equivalent domain object rather than a raw root path from the model. Validation
+in this stage should cover allowed paths, rejected paths, unknown or
+unsupported path forms, file size limits, binary detection, invalid UTF-8, and
+metadata for non-inline responses. Use `proptest` for the lexical path
+invariant: generated absolute paths, traversal segments, alternate separators,
+and repeated root prefixes must never produce a resolved path outside the skill
+root.
 
 Stage B adds the tool adapter. Add `SkillReadFileTool` alongside the existing
 skill tools, either in `src/tools/builtin/skill_tools/read_file.rs` or a
 dedicated `src/tools/builtin/skill_read_file.rs` if that keeps the file under
-the repository's size guidance. The tool schema should match RFC 0003:
-`skill` and `path` are required strings, and `additionalProperties` is false.
-The tool should acquire the registry read lock, find the loaded skill by
+the repository's size guidance. The tool schema should match RFC 0003: `skill`
+and `path` are required strings, and `additionalProperties` is false. The tool
+should acquire the registry read lock, find the loaded skill by
 `manifest.name`, call the domain policy, and return the structured JSON result
 through `ToolOutput::success`. Unknown skills should return a deterministic
 skill-scoped JSON error rather than leaking the registry layout.
 
 Stage C registers the tool and tightens attenuation. Export the new tool from
 `src/tools/builtin/mod.rs`, register it in
-`ToolRegistry::register_skill_tools()` in
-`src/tools/registry/builtins.rs`, and update the log message and any registry
-tests that assert tool counts. Add `skill_read_file` to
-`src/skills/attenuation.rs::READ_ONLY_TOOLS` after tests prove the tool reads
-only bundled skill files and remains scoped. If hosted or worker catalogue
-tests assert built-in tool
-schemas, update those expectations so hosted workers see the same explicit
-tool contract.
+`ToolRegistry::register_skill_tools()` in `src/tools/registry/builtins.rs`, and
+update the log message and any registry tests that assert tool counts. Add
+`skill_read_file` to `src/skills/attenuation.rs::READ_ONLY_TOOLS` after tests
+prove the tool reads only bundled skill files and remains scoped. If hosted or
+worker catalogue tests assert built-in tool schemas, update those expectations
+so hosted workers see the same explicit tool contract.
 
 Stage D adds behavioural and end-to-end coverage. Extend Rust tests with
 `rstest` fixtures and a focused `rstest-bdd` feature that proves an active
@@ -793,10 +757,10 @@ Quality criteria:
 ## Idempotence and recovery
 
 The implementation steps are additive and can be repeated. If a targeted test
-fails, inspect the corresponding `/tmp/*-axinite-1-3-4-skill-read-file-interface.out`
-log before rerunning. If a staged design begins to duplicate path policy in the
-tool adapter, stop and move that logic back into `src/skills/` before
-continuing.
+fails, inspect the corresponding
+`/tmp/*-axinite-1-3-4-skill-read-file-interface.out` log before rerunning. If a
+staged design begins to duplicate path policy in the tool adapter, stop and
+move that logic back into `src/skills/` before continuing.
 
 If `coderabbit review --agent` reports concerns, fix them in the smallest
 logical commit or record why the concern is not applicable in `Decision Log`.
@@ -808,8 +772,7 @@ ask for approval before dropping system-level e2e coverage.
 
 If the implementation has to be rolled back before commit, use ordinary Git
 diff review and reverse patches for the files changed by this task. Do not use
-`git reset --hard` or checkout commands that would discard unrelated user
-work.
+`git reset --hard` or checkout commands that would discard unrelated user work.
 
 ## Interfaces and dependencies
 

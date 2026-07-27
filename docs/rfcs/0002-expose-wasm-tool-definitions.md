@@ -68,8 +68,8 @@ The LLM-visible interface remains the existing `ToolDefinition` shape:
 
 ### There are two competing schema surfaces today
 
-Axinite currently has two different ways a WASM tool schema can reach the
-model path:
+Axinite currently has two different ways a WASM tool schema can reach the model
+path:
 
 1. Proactive tool advertisement through `ToolRegistry::tool_definitions()`.
 2. Reactive retry hints built from guest `description()` and `schema()` after a
@@ -122,8 +122,8 @@ The registration path is much healthier than it used to be:
   regression tests that fail if the GitHub WASM fixture regresses back to a
   placeholder schema
 
-This means Axinite does not need a new schema format for WASM tools. It
-already has the right outward-facing structure.
+This means Axinite does not need a new schema format for WASM tools. It already
+has the right outward-facing structure.
 
 ### What is still wrong
 
@@ -529,8 +529,7 @@ the schema from the normal tool interface.
 2. Should Axinite store both canonical guest schema and provider-normalized
    advertised schema explicitly for observability?
 3. Should hosted workers fetch the remote tool catalogue only at startup, or
-   also
-   after dynamic tool activation events involving WASM tools?
+   also after dynamic tool activation events involving WASM tools?
 4. Should UI diagnostics show whether a WASM tool's advertised schema came from
    a guest export or an explicit host override?
 
