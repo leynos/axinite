@@ -88,7 +88,7 @@ jobs:
           large-packages: true
           docker-images: false
           swap-storage: false
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
 
       - uses: dtolnay/rust-toolchain@stable
         with:
@@ -115,7 +115,7 @@ jobs:
         uses: taiki-e/install-action@cargo-nextest
 
       - name: Install cargo-component
-        uses: taiki-e/install-action@v2.83.0
+        uses: taiki-e/install-action@v2.85.0
         with:
           tool: cargo-component
 
@@ -175,7 +175,7 @@ jobs:
         env:
           CS_ACCESS_TOKEN: ${{ secrets.CS_ACCESS_TOKEN }}
         if: matrix.name == 'libsql-only' && env.CS_ACCESS_TOKEN != ''
-        uses: leynos/shared-actions/.github/actions/upload-codescene-coverage@e0d9b652b137eb15314fff188f09e1ba18d3cc5b
+        uses: leynos/shared-actions/.github/actions/upload-codescene-coverage@19a7f5d1b8d5c1b2236c39720a5744492b3fc129
         with:
           format: lcov
           mode: upload
@@ -184,7 +184,7 @@ jobs:
           installer-checksum: ${{ vars.CODESCENE_CLI_SHA256 }}
 
       - name: Upload to Codecov
-        uses: codecov/codecov-action@v5
+        uses: codecov/codecov-action@v7
         with:
           files: lcov.info
           flags: ${{ matrix.name }}
@@ -209,7 +209,7 @@ jobs:
       CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_RUSTFLAGS: >-
         -C link-arg=-fuse-ld=mold
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
 
       - uses: dtolnay/rust-toolchain@stable
         with:
@@ -227,7 +227,7 @@ jobs:
         uses: taiki-e/install-action@cargo-llvm-cov
 
       - name: Install cargo-component
-        uses: taiki-e/install-action@v2.83.0
+        uses: taiki-e/install-action@v2.85.0
         with:
           tool: cargo-component
 
@@ -248,7 +248,7 @@ jobs:
       - name: Build instrumented binary
         run: cargo build --no-default-features --features libsql
 
-      - uses: actions/setup-python@v6.3.0
+      - uses: actions/setup-python@v7.0.0
         with:
           python-version: "3.12"
 
@@ -284,7 +284,7 @@ jobs:
 
       - name: Upload to Codecov
         if: always()
-        uses: codecov/codecov-action@v5
+        uses: codecov/codecov-action@v7
         with:
           files: e2e-coverage.info
           flags: e2e
