@@ -29,7 +29,7 @@ jobs:
           docker-images: false
           swap-storage: false
 
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0
 
@@ -55,7 +55,7 @@ jobs:
         uses: taiki-e/install-action@cargo-nextest
 
       - name: Install cargo-component
-        uses: taiki-e/install-action@v2.83.0
+        uses: taiki-e/install-action@v2.85.0
         with:
           tool: cargo-component
 
@@ -75,7 +75,7 @@ jobs:
         env:
           CS_ACCESS_TOKEN: ${{ secrets.CS_ACCESS_TOKEN }}
         if: github.event_name == 'pull_request' && env.CS_ACCESS_TOKEN != ''
-        uses: leynos/shared-actions/.github/actions/upload-codescene-coverage@e0d9b652b137eb15314fff188f09e1ba18d3cc5b
+        uses: leynos/shared-actions/.github/actions/upload-codescene-coverage@19a7f5d1b8d5c1b2236c39720a5744492b3fc129
         with:
           format: lcov
           mode: check
