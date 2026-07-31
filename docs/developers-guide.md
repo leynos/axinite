@@ -2177,3 +2177,88 @@ of the default feature set. When the feature is disabled,
 Golden tests live in `tests/html_to_markdown.rs`, which loads fixtures from
 `tests/test-pages/`: each fixture directory provides a `source.html` file and
 the harness asserts the converter's output against the fixture's expectations.
+
+## 37. Mutation-testing workflow contract tests
+
+This repository runs scheduled, informational mutation testing through a thin
+caller workflow, [`.github/workflows/mutation-testing.yml`](../.github/workflows/mutation-testing.yml),
+which delegates to the shared reusable workflow
+`leynos/shared-actions/.github/workflows/mutation-cargo.yml`. The heavy lifting
+— running `cargo-mutants`, sharding, and summarizing survivors — lives in
+`shared-actions`; this repository carries only declarative configuration. The
+run is **informational only**: it never gates a pull request. Survivors are
+reported through the job summary and downloadable artefacts so they can be
+triaged into tests, not enforced as a blocking check.
+
+The workflow runs in two modes. A **daily schedule** fires a change-scoped run
+that mutates only the source files touched within the detection window, so
+quiet days are cheap no-ops. A **manual dispatch** (the Actions "Run workflow"
+control) mutates the whole workspace, fanned out across shards; select a
+branch in that control to exercise a feature branch.
+
+The caller passes a small set of configuration inputs, each carrying intent:
+
+- `paths` — scoped to `src/` only, the change-detection glob that decides
+  whether a scheduled run has anything to mutate. This keeps the
+  out-of-workspace `tools-src/`, `channels-src/`, and `fuzz/` crates, and the
+  vendored `grammers-crypto` patch crate, out of scope.
+- `exclude-globs` — test-support scaffolding compiled into non-test builds
+  (`src/testing/**`, `src/testing_wasm.rs`, `src/skills/test_support.rs`,
+  `src/channels/web/test_helpers.rs`), whose surviving mutants are noise
+  rather than genuine test gaps. `src/tools/builder/testing.rs` is production
+  code (the built-tool testing pipeline phase) and stays in scope.
+- `extra-args` — `--features test-helpers --test-workspace=true
+  --test-tool=nextest -- -E "not binary(schema_helpers_ui)"`. This mirrors
+  the CI default test leg (`make test` runs with `--features test-helpers`),
+  runs workspace tests against each mutant with `--test-workspace=true` so
+  every workspace member is mutated against the full workspace test run
+  (matching the `nextest --workspace` CI baseline), and selects `nextest` as
+  the test tool because the boot-screen snapshot test needs
+  process-per-test isolation that plain `cargo test` cannot provide (issue
+  #237). The trailing filter drops the `schema_helpers_ui` trybuild binary
+  from per-mutant runs, since it recompiles the crate inside its own sandbox
+  for every case and asserts compile-time contracts that mutants do not
+  usefully exercise.
+- `shard-count` — `8`, keeping full manual-dispatch runs of this heavy crate
+  (roughly 760 source files atop wasmtime and libsql) inside the per-step
+  timeout.
+- `setup-commands` — installs the same toolchain and environment as the CI
+  `test.yml` job (freeing runner disk, installing `clang`/`mold`, adding the
+  `wasm32-wasip2` target, installing `cargo-component` and `cargo-nextest`,
+  and building the WASM tool and channel extensions), so mutants run against
+  the same environment as ordinary test runs, including the Telegram channel
+  integration tests that hard-fail when the prebuilt WASM artefacts are
+  missing.
+
+The `uses:` reference pins the shared workflow to a full 40-character commit
+SHA rather than a branch or tag, so a force-push upstream cannot silently
+change what runs here. The contract test asserts only that the pin is a full
+commit SHA, not a particular value, so Dependabot bumps it automatically
+without any accompanying test edit.
+
+Because the caller is configuration rather than code, a contract test in
+`tests/workflow_contracts/mutation_testing_test.py` pins the shape it must
+uphold, failing the pull request when the caller drifts — repointing the pin
+at a branch, widening the token scope, or dropping a configuration input —
+rather than letting the breakage surface only in a scheduled run. Run it
+locally with `make test-workflow-contracts`. The test module self-skips (via
+a `pytestmark = pytest.mark.skipif(...)` guard) when the workflow file is
+absent, since a mutation-testing sandbox run does not copy `.github/`. The
+test validates:
+
+- the `uses:` reference targets `mutation-cargo.yml` pinned to a full commit
+  SHA;
+- the `with:` block carries exactly the expected `paths`, `exclude-globs`,
+  `extra-args`, `shard-count`, and `setup-commands` configuration described
+  above;
+- job permissions are least-privilege (`contents: read`, `id-token: write`)
+  and the workflow-level default token scope is empty;
+- `concurrency` serializes runs per ref without cancelling one in progress;
+  and
+- the triggers keep the daily schedule and a plain `workflow_dispatch` with
+  no legacy branch input.
+
+A separate contract test, `tests/workflow_contracts/codescene_coverage_test.py`,
+covers the unrelated CodeScene coverage-upload workflow, which pins a
+different `leynos/shared-actions` action at its own commit SHA; the two
+contract tests are independent and should not be conflated.
