@@ -1,9 +1,17 @@
 # Axinite front-end architecture
 
+> **Transitional note (RFC 0018 adoption).** The default browser UI is now
+> the SolidJS single-page application authored in `web-src/` and served from
+> embedded `src/channels/web/static/solid/` assets. This document describes
+> the **legacy** handwritten shell, which remains embedded solely as an
+> operator rollback path selected with `AXINITE_WEB_UI=legacy`. For the
+> current front-end, its stub runtime, and its commands, see
+> `docs/solidjs-frontend.md`.
+
 ## Front matter
 
-- **Status:** Draft design reference for the currently implemented web front
-  end.
+- **Status:** Legacy reference for the fallback web front end (superseded by
+  `docs/solidjs-frontend.md` for the default UI).
 - **Scope:** The browser-facing web gateway, including static asset delivery,
   client-side interface generation, backend integration, and runtime
   communication paths.

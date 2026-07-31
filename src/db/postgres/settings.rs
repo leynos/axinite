@@ -19,5 +19,7 @@ impl NativeSettingsStore for PgBackend {
         async fn get_all_settings(&self, user_id: UserId) -> Result<HashMap<String, serde_json::Value>, DatabaseError>;
         async fn set_all_settings(&self, user_id: UserId, settings: &HashMap<String, serde_json::Value>) -> Result<(), DatabaseError>;
         async fn has_settings(&self, user_id: UserId) -> Result<bool, DatabaseError>;
+        async fn list_deployment_flags(&self, deployment_id: &str) -> Result<Vec<(String, bool)>, DatabaseError>;
+        async fn set_deployment_flag(&self, deployment_id: &str, flag_name: &str, enabled: bool) -> Result<(), DatabaseError>;
     }
 }

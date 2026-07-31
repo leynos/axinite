@@ -89,6 +89,8 @@ ______________________________________________________________________
   and tools.
 - [Building channels](docs/BUILDING_CHANNELS.md) — rebuilding bundled channel
   artefacts.
+- [SolidJS front-end](docs/solidjs-frontend.md) — the browser UI, its
+  daemon-free stub runtime (`make frontend-stub`), and feature flags.
 - [Contributing](CONTRIBUTING.md) — development workflow and review tracks.
 - [Changelog](CHANGELOG.md) — release history.
 

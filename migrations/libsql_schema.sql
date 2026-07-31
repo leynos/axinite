@@ -499,6 +499,19 @@ CREATE TABLE IF NOT EXISTS settings (
     PRIMARY KEY (user_id, key)
 );
 
+-- ==================== Feature flags (RFC 0009) ====================
+
+-- Deployment-scoped feature-flag overrides. Booleans store as INTEGER (0/1)
+-- per the libSQL dialect. Mirrors PostgreSQL migration V18. Existing databases
+-- gain this table via the incremental migration in `libsql_migrations.rs`.
+CREATE TABLE IF NOT EXISTS feature_flag_overrides (
+    deployment_id TEXT NOT NULL,
+    flag_name TEXT NOT NULL,
+    enabled INTEGER NOT NULL,
+    updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+    PRIMARY KEY (deployment_id, flag_name)
+);
+
 -- ==================== Missing indexes (parity with PostgreSQL) ====================
 
 -- agent_jobs

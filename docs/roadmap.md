@@ -1160,6 +1160,16 @@ out behind flags.
     access to the mutable registry, endpoint response shape (boolean map), and
     no hot-path database hits, and prove that invalid flag names are discarded
     with warnings.
+- [ ] 4.5.7. Emit a `feature_flags_changed` Server-Sent Events (SSE) event
+      when a deployment-scoped override changes. Requires 4.5.3.
+  - See
+    [RFC 0009 §Open questions](./rfcs/0009-feature-flags-frontend.md#open-questions).
+  - Success: applying a `feature_flag:` override through the settings API
+    broadcasts a `feature_flags_changed` event (carrying the deployment
+    identifier) on the chat SSE stream, the SolidJS front end invalidates its
+    cached flag map and re-fetches `GET /api/features` on receipt, connected
+    browsers reflect the new flag state without a page reload, and the mock
+    backend mirrors the event for stub-driven tests.
 
 ## 5. Add model, reasoning, and citation control
 
