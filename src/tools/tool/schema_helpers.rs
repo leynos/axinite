@@ -240,22 +240,33 @@ fn validate_property_schema(
     out: &mut Vec<String>,
 ) {
     let prop_path = path.child(name);
-    if let Some(prop_type) = prop.get("type").and_then(|t| t.as_str()) {
-        match prop_type {
-            "object" => out.extend(validate_tool_schema_at(prop, &prop_path)),
-            "array" => {
-                if let Some(items) = prop.get("items") {
-                    if items.get("type").and_then(|t| t.as_str()) == Some("object") {
-                        let items_path = prop_path.child("items");
-                        out.extend(validate_tool_schema_at(items, &items_path));
-                    }
-                } else {
-                    out.push(format!("{prop_path}: array property missing \"items\""));
-                }
-            }
-            _ => {}
-        }
+    let Some(prop_type) = prop.get("type").and_then(|t| t.as_str()) else {
+        return;
+    };
+
+    match prop_type {
+        "object" => validate_nested_object_schema(prop, &prop_path, out),
+        "array" => validate_array_items(prop, &prop_path, out),
+        _ => {}
     }
+}
+
+fn validate_nested_object_schema(prop: &Value, prop_path: &SchemaPath, out: &mut Vec<String>) {
+    out.extend(validate_tool_schema_at(prop, prop_path));
+}
+
+fn validate_array_items(prop: &Value, prop_path: &SchemaPath, out: &mut Vec<String>) {
+    let Some(items) = prop.get("items") else {
+        out.push(format!("{prop_path}: array property missing \"items\""));
+        return;
+    };
+
+    if !is_object_type(items) {
+        return;
+    }
+
+    let items_path = prop_path.child("items");
+    out.extend(validate_tool_schema_at(items, &items_path));
 }
 
 /// Lenient runtime validation of a tool's `parameters_schema()`.
