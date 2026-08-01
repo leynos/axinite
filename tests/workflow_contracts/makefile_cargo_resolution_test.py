@@ -16,19 +16,33 @@ REPOSITORY_ROOT = Path(__file__).resolve().parents[2]
 
 
 @pytest.mark.parametrize(
-    ("resolution_case", "cargo_override", "cargo_location"),
+    (
+        "resolution_case",
+        "cargo_override",
+        "has_path_cargo",
+        "has_home_cargo",
+        "expected_location",
+    ),
     [
-        ("path-resolution", "", "path"),
-        ("home-fallback", "", "home"),
-        ("caller-override", "/caller/cargo", "override"),
+        ("path-resolution", "", True, False, "path"),
+        ("path-precedence", "", True, True, "path"),
+        ("home-fallback", "", False, True, "home"),
+        ("caller-override", "/caller/cargo", False, False, "override"),
     ],
-    ids=("path-resolution", "home-fallback", "caller-override"),
+    ids=(
+        "path-resolution",
+        "path-precedence",
+        "home-fallback",
+        "caller-override",
+    ),
 )
 def test_check_fmt_resolves_cargo_override(
     tmp_path: Path,
     resolution_case: str,
     cargo_override: str,
-    cargo_location: str,
+    has_path_cargo: bool,
+    has_home_cargo: bool,
+    expected_location: str,
 ) -> None:
     """Resolve an empty override and preserve a non-empty one."""
     fake_bin = tmp_path / "bin"
@@ -37,9 +51,9 @@ def test_check_fmt_resolves_cargo_override(
     fake_home = tmp_path / "home"
     home_cargo = fake_home / ".cargo" / "bin" / "cargo"
 
-    if cargo_location == "path":
+    if has_path_cargo:
         path_cargo.touch(mode=0o755)
-    elif cargo_location == "home":
+    if has_home_cargo:
         home_cargo.parent.mkdir(parents=True)
         home_cargo.touch(mode=0o755)
 
@@ -47,7 +61,7 @@ def test_check_fmt_resolves_cargo_override(
         "path": str(path_cargo),
         "home": str(home_cargo),
         "override": cargo_override,
-    }[cargo_location]
+    }[expected_location]
     make_executable = shutil.which("make")
     assert make_executable is not None, "make must be available to run this contract"
 
