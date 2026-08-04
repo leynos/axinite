@@ -21,21 +21,75 @@ fn normalize(s: &str) -> String {
     let s = s.replace("\r\n", "\n");
     let s = s.trim();
 
-    // Collapse runs of two or more blank lines down to a single blank line,
-    // but keep lone blank lines intact: paragraph boundaries (a single blank
-    // line) are meaningful and must not be erased by normalization.
-    let mut lines: Vec<&str> = Vec::new();
-    let mut previous_was_blank = false;
-    for line in s.lines().map(|l| l.trim()) {
-        let is_blank = line.is_empty();
-        if is_blank && previous_was_blank {
+    let mut lines = Vec::new();
+    let mut paragraph = String::new();
+    let mut is_in_fence = false;
+    for line in s.lines().map(str::trim) {
+        if is_markdown_fence(line) {
+            push_paragraph(&mut lines, &mut paragraph);
+            lines.push(line.to_string());
+            is_in_fence = !is_in_fence;
             continue;
         }
-        lines.push(line);
-        previous_was_blank = is_blank;
+
+        if is_in_fence {
+            lines.push(line.to_string());
+        } else if line.is_empty() {
+            push_paragraph(&mut lines, &mut paragraph);
+            if lines.last().is_some_and(|previous| !previous.is_empty()) {
+                lines.push(String::new());
+            }
+        } else if is_markdown_block_line(line) {
+            push_paragraph(&mut lines, &mut paragraph);
+            lines.push(line.to_string());
+        } else if paragraph.is_empty()
+            && lines
+                .last()
+                .is_some_and(|previous| is_markdown_list_item(previous))
+        {
+            if let Some(previous) = lines.last_mut() {
+                previous.push(' ');
+                previous.push_str(line);
+            }
+        } else {
+            if needs_soft_wrap_separator(&paragraph, line) {
+                paragraph.push(' ');
+            }
+            paragraph.push_str(line);
+        }
     }
+    push_paragraph(&mut lines, &mut paragraph);
 
     lines.join("\n").trim_end().to_string()
+}
+
+fn needs_soft_wrap_separator(paragraph: &str, line: &str) -> bool {
+    !paragraph.is_empty() && !(paragraph.ends_with('"') && line.starts_with('['))
+}
+
+fn push_paragraph(lines: &mut Vec<String>, paragraph: &mut String) {
+    if !paragraph.is_empty() {
+        lines.push(std::mem::take(paragraph));
+    }
+}
+
+fn is_markdown_fence(line: &str) -> bool {
+    line.starts_with("```") || line.starts_with("~~~")
+}
+
+fn is_markdown_block_line(line: &str) -> bool {
+    matches!(line.chars().next(), Some('#' | '>' | '|'))
+        || is_markdown_list_item(line)
+        || ["---", "***"].iter().any(|prefix| line.starts_with(prefix))
+}
+
+fn is_markdown_list_item(line: &str) -> bool {
+    ["- ", "* ", "+ "]
+        .iter()
+        .any(|prefix| line.starts_with(prefix))
+        || line.split_once(". ").is_some_and(|(prefix, _)| {
+            !prefix.is_empty() && prefix.chars().all(|character| character.is_ascii_digit())
+        })
 }
 
 /// Normalize typographic/smart punctuation to ASCII so tests match converter output
@@ -43,6 +97,22 @@ fn normalize(s: &str) -> String {
 fn normalize_smart_punctuation(s: &str) -> String {
     s.replace(['\u{2019}', '\u{2018}'], "'")
         .replace(['\u{201C}', '\u{201D}'], "\"")
+}
+
+#[test]
+fn normalize_ignores_soft_wrapping_without_merging_markdown_blocks() {
+    let wrapped = concat!(
+        "A paragraph split\nacross lines.\n\n",
+        "A quote: \"\n[T]ext.\n\n",
+        "## Heading\n\n- first\n- second",
+    );
+    let unwrapped = concat!(
+        "A paragraph split across lines.\n\n",
+        "A quote: \"[T]ext.\n\n",
+        "## Heading\n\n- first\n- second",
+    );
+
+    assert_eq!(normalize(wrapped), normalize(unwrapped));
 }
 
 #[test]
