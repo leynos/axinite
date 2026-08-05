@@ -56,6 +56,10 @@ GITHUB_TOOL_WASM_TARGET := wasm32-wasip2
 # kuchikikiki 0.9.2 is yanked via readabilityrs. cargo-audit exposes no
 # advisory ID to ignore for this warning; track removal in
 # https://github.com/leynos/axinite/issues/214.
+# RUSTSEC-2026-0235: rkyv 0.7.46 out-of-bounds reads. rkyv is an optional
+# dependency of rust_decimal that no enabled feature activates, so it is
+# locked but never compiled (`cargo tree -i rkyv` prints nothing). Remove
+# when rust_decimal drops or upgrades its rkyv 0.7 optional dependency.
 AUDIT_FLAGS ?= \
 	--ignore RUSTSEC-2026-0049 \
 	--ignore RUSTSEC-2026-0098 \
@@ -64,7 +68,8 @@ AUDIT_FLAGS ?= \
 	--ignore RUSTSEC-2026-0185 \
 	--ignore RUSTSEC-2025-0141 \
 	--ignore RUSTSEC-2024-0370 \
-	--ignore RUSTSEC-2025-0134
+	--ignore RUSTSEC-2025-0134 \
+	--ignore RUSTSEC-2026-0235
 
 .PHONY: all install install-with-overrides sync-local-wasm-overrides build-github-tool-wasm fmt check-fmt typecheck lint lint-clippy lint-whitaker markdownlint spelling spelling-phrase-check spelling-config spelling-config-write spelling-helper-test nixie audit rust-audit test test-cargo test-matrix test-matrix-cargo test-workflow-contracts clean
 
