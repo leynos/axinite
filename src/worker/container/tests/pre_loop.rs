@@ -2,6 +2,7 @@
 
 use std::sync::Arc;
 
+use anyhow::Context as _;
 use axum::http::StatusCode;
 use rstest::rstest;
 use uuid::Uuid;
@@ -104,26 +105,32 @@ async fn assert_startup_failure_completions(state: &RuntimeTestState) {
     assert_eq!(result_event["success"], false);
 }
 
-async fn assert_startup_failure(state: &RuntimeTestState) {
+/// Checks that `state` recorded exactly one sanitized terminal failure.
+///
+/// Locating the terminal status update can fail, so the helper returns a
+/// `Result` and leaves the verdict to the calling test body.
+async fn assert_startup_failure(state: &RuntimeTestState) -> anyhow::Result<()> {
     let statuses = state.statuses.lock().await;
-    assert_eq!(
-        statuses.len(),
-        1,
+    anyhow::ensure!(
+        statuses.len() == 1,
         "expected exactly one terminal status update, got {statuses:?}"
     );
     let failed_status = statuses
         .first()
         .filter(|status| status.state == WorkerState::Failed)
-        .expect("expected a terminal failed status update");
-    assert_eq!(failed_status.iteration, 0);
-    assert_eq!(
-        failed_status.message.as_deref(),
-        Some("pre-loop failure"),
+        .context("expected a terminal failed status update")?;
+    anyhow::ensure!(
+        failed_status.iteration == 0,
+        "expected a terminal status update for iteration 0, got {failed_status:?}"
+    );
+    anyhow::ensure!(
+        failed_status.message.as_deref() == Some("pre-loop failure"),
         "expected a sanitized pre-loop failure message, got {failed_status:?}"
     );
     drop(statuses);
 
     assert_startup_failure_completions(state).await;
+    Ok(())
 }
 
 #[rstest]
@@ -168,7 +175,7 @@ async fn worker_runtime_reports_failed_status_for_pre_loop_errors(
         "pre-loop failure should preserve the original error"
     );
 
-    assert_startup_failure(&state).await;
+    assert_startup_failure(&state).await?;
 
     Ok(())
 }

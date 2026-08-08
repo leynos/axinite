@@ -11,14 +11,22 @@ fn would_autodetect_libsql(db_path: &std::path::Path) -> bool {
     std::env::var("DATABASE_BACKEND").is_err() && db_path.exists()
 }
 
-fn assert_bootstrap_env_written(env_path: &std::path::Path, expected_url: &str) {
+/// Assert the migrated `.env` holds `expected_url`.
+///
+/// Reading the file is arrangement, so it propagates as an
+/// [`std::io::Error`]; the caller unwraps in the test body.
+fn assert_bootstrap_env_written(
+    env_path: &std::path::Path,
+    expected_url: &str,
+) -> std::io::Result<()> {
     assert!(env_path.exists(), ".env must exist after migration");
-    let content = ambient_fs::read_to_string(env_path).expect("read migrated .env");
+    let content = ambient_fs::read_to_string(env_path)?;
     assert_eq!(
         content,
         format!("DATABASE_URL=\"{expected_url}\"\n"),
         ".env content must contain the migrated DATABASE_URL"
     );
+    Ok(())
 }
 
 fn assert_bootstrap_file_renamed(dir_path: &std::path::Path) {
@@ -55,7 +63,8 @@ fn test_migrate_bootstrap_json_to_env() {
 
     migrate_bootstrap_json_to_env(&env_path);
 
-    assert_bootstrap_env_written(&env_path, "postgres://localhost/axinite_upgrade");
+    assert_bootstrap_env_written(&env_path, "postgres://localhost/axinite_upgrade")
+        .expect("read migrated .env");
     assert_bootstrap_file_renamed(dir.path());
 }
 
@@ -69,7 +78,8 @@ fn load_axinite_env_migrates_bootstrap_json_to_env() {
 
         load_axinite_env();
 
-        assert_bootstrap_env_written(&env_path, "postgres://localhost/axinite_public_boundary");
+        assert_bootstrap_env_written(&env_path, "postgres://localhost/axinite_public_boundary")
+            .expect("read migrated .env");
         assert_bootstrap_file_renamed(&base_dir);
         return;
     }

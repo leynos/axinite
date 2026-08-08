@@ -1,5 +1,7 @@
 //! Auth detection tests.
 
+use anyhow::Context as _;
+
 use super::super::{check_auth_required, parse_auth_result};
 use super::*;
 
@@ -13,14 +15,17 @@ fn check_auth_json(tool_name: &str, json: serde_json::Value) -> Option<(String, 
 
 /// Assert that an auth-awaiting detection result is `Some`, and that the
 /// returned name and instructions match the expected values.
+///
+/// Returns an error when detection did not fire, leaving the calling test to
+/// decide how that failure surfaces.
 fn assert_auth_detected(
     detected: Option<(String, String)>,
     expected_name: &str,
     expected_instructions_fragment: &str,
-) {
+) -> anyhow::Result<()> {
     assert!(detected.is_some(), "expected auth detection to fire");
     let (name, instructions) =
-        detected.expect("expected auth detection to fire and return (name, instructions)");
+        detected.context("expected auth detection to fire and return (name, instructions)")?;
     assert_eq!(name, expected_name);
     assert!(
         instructions.contains(expected_instructions_fragment),
@@ -28,6 +33,7 @@ fn assert_auth_detected(
         expected_instructions_fragment,
         instructions,
     );
+    Ok(())
 }
 
 #[test]
@@ -45,7 +51,8 @@ fn test_detect_auth_awaiting_positive() {
         ),
         "telegram",
         "Telegram Bot API",
-    );
+    )
+    .expect("expected auth detection to fire");
 }
 
 #[test]
@@ -129,7 +136,8 @@ fn test_detect_auth_awaiting_tool_activate() {
         ),
         "slack",
         "Slack Bot",
-    );
+    )
+    .expect("expected auth detection to fire");
 }
 
 #[test]

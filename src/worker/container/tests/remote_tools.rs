@@ -109,11 +109,12 @@ pub(super) struct TestState;
 /// Spawns an ephemeral Axum server that serves the remote-tool catalogue route.
 ///
 /// `H` is any Axum handler compatible with [`TestState`], and `T` is its
-/// extractor tuple. Returns the `http://host:port` base URL and a join
-/// handle for the background server task.
+/// extractor tuple. Binding is fallible, so the `http://host:port` base URL is
+/// returned as a `Result`. The background task cannot propagate with `?`, so
+/// it yields the serve outcome through its join handle instead of unwrapping.
 pub(super) async fn spawn_test_server<H, T>(
     handler: H,
-) -> Result<(String, tokio::task::JoinHandle<()>), anyhow::Error>
+) -> Result<(String, tokio::task::JoinHandle<std::io::Result<()>>), anyhow::Error>
 where
     H: axum::handler::Handler<T, TestState> + Clone + Send + 'static,
     T: 'static,
@@ -123,16 +124,12 @@ where
     let router = Router::new()
         .route(REMOTE_TOOL_CATALOG_ROUTE, get(handler))
         .with_state(TestState);
-    let server = tokio::spawn(async move {
-        axum::serve(listener, router)
-            .await
-            .expect("serve router in test server")
-    });
+    let server = tokio::spawn(async move { axum::serve(listener, router).await });
     Ok((format!("http://{addr}"), server))
 }
 
 async fn spawn_hosted_guidance_catalogue_server()
--> Result<(String, tokio::task::JoinHandle<()>), anyhow::Error> {
+-> Result<(String, tokio::task::JoinHandle<std::io::Result<()>>), anyhow::Error> {
     spawn_test_server(remote_tool_catalogue).await
 }
 

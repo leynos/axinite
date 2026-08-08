@@ -4,6 +4,8 @@
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
+use anyhow::Context as _;
+
 mod lifecycle;
 mod payloads;
 
@@ -29,26 +31,37 @@ fn documented_bundle_entries() -> Vec<(&'static str, &'static [u8])> {
     ]
 }
 
-fn collect_installed_files(root: &Path) -> BTreeMap<PathBuf, Vec<u8>> {
-    fn visit(base: &Path, current: &Path, files: &mut BTreeMap<PathBuf, Vec<u8>>) {
-        for entry in ambient_fs::read_dir(current).expect("installed directory should be readable")
-        {
-            let entry = entry.expect("installed directory entry should be readable");
+/// Recursively collects every installed file under `root`, keyed by its
+/// path relative to `root`.
+///
+/// Returns an error if the tree cannot be walked or a file cannot be read.
+fn collect_installed_files(root: &Path) -> anyhow::Result<BTreeMap<PathBuf, Vec<u8>>> {
+    fn visit(
+        base: &Path,
+        current: &Path,
+        files: &mut BTreeMap<PathBuf, Vec<u8>>,
+    ) -> anyhow::Result<()> {
+        let entries =
+            ambient_fs::read_dir(current).context("installed directory should be readable")?;
+        for entry in entries {
+            let entry = entry.context("installed directory entry should be readable")?;
             let path = entry.path();
             if path.is_dir() {
-                visit(base, &path, files);
+                visit(base, &path, files)?;
             } else {
                 let relative = path
                     .strip_prefix(base)
-                    .expect("installed file should be under bundle root")
+                    .context("installed file should be under bundle root")?
                     .to_path_buf();
-                let contents = ambient_fs::read(&path).expect("installed file should be readable");
+                let contents =
+                    ambient_fs::read(&path).context("installed file should be readable")?;
                 files.insert(relative, contents);
             }
         }
+        Ok(())
     }
 
     let mut files = BTreeMap::new();
-    visit(root, root, &mut files);
-    files
+    visit(root, root, &mut files)?;
+    Ok(files)
 }

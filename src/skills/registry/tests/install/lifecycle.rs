@@ -27,18 +27,19 @@ async fn test_install_duplicate_rejected() {
 #[rstest]
 #[tokio::test]
 async fn test_cleanup_prepared_install_removes_staged_bundle_on_commit_failure(
-    bundle_install_fixture: BundleInstallFixture,
+    bundle_install_fixture: std::io::Result<BundleInstallFixture>,
 ) {
     let BundleInstallFixture {
         user_dir: _user_dir,
         installed_dir: _installed_dir,
         mut registry,
-    } = bundle_install_fixture;
+    } = bundle_install_fixture.expect("bundle install fixture should be created");
 
     let archive = build_bundle_archive(&[(
         "deploy-docs/SKILL.md",
         skill_markdown("deploy-docs").as_bytes(),
-    )]);
+    )])
+    .expect("test bundle archive should build");
 
     let first = SkillRegistry::prepare_install_to_disk(
         registry.install_target_dir(),
@@ -79,12 +80,14 @@ async fn test_cleanup_prepared_install_removes_staged_bundle_on_commit_failure(
 
 #[rstest]
 #[tokio::test]
-async fn test_remove_bundle_skill_allows_reinstall(bundle_install_fixture: BundleInstallFixture) {
+async fn test_remove_bundle_skill_allows_reinstall(
+    bundle_install_fixture: std::io::Result<BundleInstallFixture>,
+) {
     let BundleInstallFixture {
         installed_dir,
         mut registry,
         ..
-    } = bundle_install_fixture;
+    } = bundle_install_fixture.expect("bundle install fixture should be created");
 
     let archive = build_bundle_archive(&[
         (
@@ -93,7 +96,8 @@ async fn test_remove_bundle_skill_allows_reinstall(bundle_install_fixture: Bundl
         ),
         ("deploy-docs/references/usage.md", b"# Usage\n"),
         ("deploy-docs/assets/logo.txt", b"logo"),
-    ]);
+    ])
+    .expect("test bundle archive should build");
 
     let prepared = SkillRegistry::prepare_install_to_disk(
         registry.install_target_dir(),
@@ -133,15 +137,16 @@ async fn test_remove_bundle_skill_allows_reinstall(bundle_install_fixture: Bundl
 #[rstest]
 #[tokio::test]
 async fn test_prepare_install_cleans_staged_dir_when_validation_fails(
-    bundle_install_fixture: BundleInstallFixture,
+    bundle_install_fixture: std::io::Result<BundleInstallFixture>,
 ) {
     let BundleInstallFixture {
         installed_dir,
         registry,
         ..
-    } = bundle_install_fixture;
+    } = bundle_install_fixture.expect("bundle install fixture should be created");
 
-    let archive = build_bundle_archive(&[("deploy-docs/SKILL.md", b"not valid skill markdown")]);
+    let archive = build_bundle_archive(&[("deploy-docs/SKILL.md", b"not valid skill markdown")])
+        .expect("test bundle archive should build");
 
     let prepare_result = SkillRegistry::prepare_install_to_disk(
         registry.install_target_dir(),

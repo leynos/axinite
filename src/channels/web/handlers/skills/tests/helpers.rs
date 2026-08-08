@@ -3,6 +3,7 @@
 use std::io::Write;
 use std::sync::Arc;
 
+use anyhow::Context as _;
 use axum::body::to_bytes;
 use axum::{Router, routing::post};
 use rstest::fixture;
@@ -18,22 +19,26 @@ pub(crate) struct SkillsApiFixture {
     pub(crate) installed_root: std::path::PathBuf,
 }
 
+/// Build the Skills API test fixture.
+///
+/// Arrangement can fail, so the fixture is fallible: consumers take the
+/// `Result` and unwrap it in the test body, where a failure is the verdict.
 #[fixture]
-pub(crate) fn skills_api_fixture() -> SkillsApiFixture {
-    let user_dir = tempfile::tempdir().expect("user tempdir should be created");
-    let installed_dir = tempfile::tempdir().expect("installed tempdir should be created");
+pub(crate) fn skills_api_fixture() -> anyhow::Result<SkillsApiFixture> {
+    let user_dir = tempfile::tempdir().context("user tempdir should be created")?;
+    let installed_dir = tempfile::tempdir().context("installed tempdir should be created")?;
     let installed_root = installed_dir.path().to_path_buf();
     let registry = SkillRegistry::new(user_dir.path().to_path_buf())
         .with_installed_dir(installed_root.clone());
     let registry = Arc::new(std::sync::RwLock::new(registry));
     let state = TestGatewayBuilder::new().skill_registry(registry).build();
 
-    SkillsApiFixture {
+    Ok(SkillsApiFixture {
         _installed_dir: installed_dir,
         _user_dir: user_dir,
         state,
         installed_root,
-    }
+    })
 }
 
 pub(crate) fn skills_router(state: Arc<crate::channels::web::server::GatewayState>) -> Router {
@@ -46,10 +51,11 @@ pub(crate) fn skill_markdown(name: &str) -> String {
     format!("---\nname: {name}\n---\n\n# {name}\n")
 }
 
-pub(crate) fn build_bundle_archive(entries: &[(&str, &[u8])]) -> Vec<u8> {
-    crate::skills::test_support::build_bundle_archive(entries)
-        .expect("test bundle archive should build")
-}
+/// Re-exported bundle archive builder.
+///
+/// Archive construction can fail, so callers unwrap the `Result` in the test
+/// body rather than having the helper panic during arrangement.
+pub(crate) use crate::skills::test_support::build_bundle_archive;
 
 pub(crate) enum MultipartPart<'a> {
     File {
@@ -67,11 +73,15 @@ pub(crate) enum MultipartPart<'a> {
     },
 }
 
+/// Build a single-file multipart body, returning the content type and payload.
+///
+/// Body assembly writes into an in-memory buffer, so the write errors are
+/// propagated for the test body to unwrap.
 pub(crate) fn multipart_file_body(
     field_name: &str,
     file_name: &str,
     bytes: &[u8],
-) -> (String, Vec<u8>) {
+) -> std::io::Result<(String, Vec<u8>)> {
     multipart_body(&[MultipartPart::File {
         field_name,
         file_name,
@@ -79,7 +89,12 @@ pub(crate) fn multipart_file_body(
     }])
 }
 
-pub(crate) fn multipart_body(parts: &[MultipartPart<'_>]) -> (String, Vec<u8>) {
+/// Build a multipart body from the supplied parts, returning the content type
+/// and payload.
+///
+/// Body assembly writes into an in-memory buffer, so the write errors are
+/// propagated for the test body to unwrap.
+pub(crate) fn multipart_body(parts: &[MultipartPart<'_>]) -> std::io::Result<(String, Vec<u8>)> {
     let boundary = "axinite-skill-boundary";
     let mut body = Vec::new();
 
@@ -93,36 +108,37 @@ pub(crate) fn multipart_body(parts: &[MultipartPart<'_>]) -> (String, Vec<u8>) {
                 write!(
                     body,
                     "--{boundary}\r\nContent-Disposition: form-data; name=\"{field_name}\"; filename=\"{file_name}\"\r\nContent-Type: application/octet-stream\r\n\r\n"
-                )
-                .expect("multipart file header should write");
+                )?;
                 body.extend_from_slice(bytes);
             }
             MultipartPart::FileWithoutFilename { field_name, bytes } => {
                 write!(
                     body,
                     "--{boundary}\r\nContent-Disposition: form-data; name=\"{field_name}\"\r\nContent-Type: application/octet-stream\r\n\r\n"
-                )
-                .expect("multipart file header should write");
+                )?;
                 body.extend_from_slice(bytes);
             }
             MultipartPart::Text { field_name, value } => {
                 write!(
                     body,
                     "--{boundary}\r\nContent-Disposition: form-data; name=\"{field_name}\"\r\n\r\n{value}"
-                )
-                .expect("multipart text field should write");
+                )?;
             }
         }
-        write!(body, "\r\n").expect("multipart separator should write");
+        write!(body, "\r\n")?;
     }
 
-    write!(body, "\r\n--{boundary}--\r\n").expect("multipart footer should write");
-    (format!("multipart/form-data; boundary={boundary}"), body)
+    write!(body, "\r\n--{boundary}--\r\n")?;
+    Ok((format!("multipart/form-data; boundary={boundary}"), body))
 }
 
-pub(crate) async fn response_text(response: axum::response::Response) -> String {
+/// Read a response body as UTF-8 text.
+///
+/// Reading and decoding can both fail, so the errors are propagated for the
+/// test body to unwrap.
+pub(crate) async fn response_text(response: axum::response::Response) -> anyhow::Result<String> {
     let bytes = to_bytes(response.into_body(), 1024 * 1024)
         .await
-        .expect("response body should be readable");
-    String::from_utf8(bytes.to_vec()).expect("response body should be UTF-8")
+        .context("response body should be readable")?;
+    String::from_utf8(bytes.to_vec()).context("response body should be UTF-8")
 }

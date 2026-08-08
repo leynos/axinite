@@ -50,7 +50,8 @@ async fn remote_tool_execute_rejects_non_catalog_tools(test_state: OrchestratorS
         build_tool_fixture(ToolFixture::ContainerOnly),
         "remote_tool_execute_container",
     )
-    .await;
+    .await
+    .expect("execute hosted remote tool");
     assert_eq!(status, StatusCode::BAD_REQUEST);
 }
 
@@ -71,7 +72,8 @@ async fn remote_tool_execute_rejects_protected_orchestration_tools(test_state: O
         }),
         "create_job",
     )
-    .await;
+    .await
+    .expect("execute hosted remote tool");
     assert_eq!(status, StatusCode::BAD_REQUEST);
 }
 
@@ -83,7 +85,8 @@ async fn remote_tool_execute_rejects_approval_gated_tools(test_state: Orchestrat
         build_tool_fixture(ToolFixture::ApprovalGated),
         "remote_tool_execute_gated",
     )
-    .await;
+    .await
+    .expect("execute hosted remote tool");
     assert_eq!(status, StatusCode::FORBIDDEN);
 }
 
@@ -95,7 +98,8 @@ async fn remote_tool_execute_allows_hosted_wasm_tools(test_state: OrchestratorSt
         build_tool_fixture(ToolFixture::CatalogWasm),
         "remote_tool_catalog_fixture_wasm",
     )
-    .await;
+    .await
+    .expect("execute hosted remote tool");
     assert_eq!(status, StatusCode::OK);
 }
 
@@ -135,7 +139,8 @@ async fn remote_tool_execute_maps_error_statuses(
         }),
         tool_name,
     )
-    .await;
+    .await
+    .expect("execute hosted remote tool");
 
     assert_eq!(status, expected_status);
 }

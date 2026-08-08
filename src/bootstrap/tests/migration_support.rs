@@ -25,6 +25,10 @@
 //! (containing `onboard_completed` and `database_backend` keys) into the
 //! provided [`TempDir`] and returns the path to the written file.
 //!
+//! Arrangement can fail, so these fixture helpers return [`std::io::Result`]
+//! and propagate errors; only the test body unwraps, because a failure there
+//! is the test verdict.
+//!
 //! ## In-memory `SettingsStore` mock
 //!
 //! [`MigrationStore`] implements [`SettingsStore`] entirely in memory,
@@ -41,13 +45,16 @@
 //! ## Assertion helpers
 //!
 //! [`assert_store_state`] asserts expected call counts for `has_settings` and
-//! `set_all_settings` and that `set_setting` was never invoked.
+//! `set_all_settings` and that `set_setting` was never invoked. It takes a
+//! borrowed [`MigrationStoreState`], so the caller unwraps
+//! [`MigrationStore::state`] in the test body.
 //!
 //! [`assert_legacy_file_renamed`] and [`assert_legacy_file_not_renamed`]
 //! assert the post-migration filesystem state: whether `settings.json` has
 //! been replaced by `settings.json.migrated`.
 
 use std::collections::HashMap;
+use std::io;
 use std::sync::Mutex;
 
 use tempfile::{TempDir, tempdir};
@@ -103,8 +110,16 @@ impl MigrationStore {
         }
     }
 
-    pub(super) fn state(&self) -> std::sync::MutexGuard<'_, MigrationStoreState> {
-        self.state.lock().expect("migration store state lock")
+    /// Borrow the recorded call state.
+    ///
+    /// Locking is arrangement, not a verdict, so a poisoned mutex is reported
+    /// as a [`DatabaseError`] rather than panicking; test bodies unwrap.
+    pub(super) fn state(
+        &self,
+    ) -> Result<std::sync::MutexGuard<'_, MigrationStoreState>, DatabaseError> {
+        self.state
+            .lock()
+            .map_err(|_| DatabaseError::Query("migration store state lock poisoned".to_string()))
     }
 }
 
@@ -132,7 +147,7 @@ impl SettingsStore for MigrationStore {
         _value: &'a serde_json::Value,
     ) -> DbFuture<'a, Result<(), DatabaseError>> {
         Box::pin(async {
-            self.state().set_setting_calls += 1;
+            self.state()?.set_setting_calls += 1;
             Ok(())
         })
     }
@@ -165,7 +180,7 @@ impl SettingsStore for MigrationStore {
         settings: &'a HashMap<String, serde_json::Value>,
     ) -> DbFuture<'a, Result<(), DatabaseError>> {
         Box::pin(async move {
-            let mut state = self.state();
+            let mut state = self.state()?;
             state.set_all_settings_calls += 1;
             state.captured_settings = settings.clone();
             drop(state);
@@ -177,7 +192,7 @@ impl SettingsStore for MigrationStore {
 
     fn has_settings<'a>(&'a self, _user_id: UserId) -> DbFuture<'a, Result<bool, DatabaseError>> {
         Box::pin(async {
-            self.state().has_settings_calls += 1;
+            self.state()?.has_settings_calls += 1;
             self.has_settings_result
                 .map_err(|message| DatabaseError::Query(message.to_string()))
         })
@@ -185,31 +200,28 @@ impl SettingsStore for MigrationStore {
 }
 
 impl RenameFixture {
-    pub(super) fn prepare(&mut self, setup: RenameSetup) {
+    /// Arrange the filesystem for `setup`, reporting arrangement failures.
+    pub(super) fn prepare(&mut self, setup: RenameSetup) -> io::Result<()> {
         match setup {
-            RenameSetup::ExistingFile => self.write_legacy_file(),
+            RenameSetup::ExistingFile => self.write_legacy_file()?,
             RenameSetup::MissingFile => {}
             #[cfg(unix)]
             RenameSetup::ReadOnlyDirectory => {
-                self.write_legacy_file();
-                self.make_dir_read_only();
+                self.write_legacy_file()?;
+                self.make_dir_read_only()?;
             }
         }
+        Ok(())
     }
 
-    fn write_legacy_file(&self) {
-        ambient_fs::write(&self.path, "{}").expect("write legacy settings file");
+    fn write_legacy_file(&self) -> io::Result<()> {
+        ambient_fs::write(&self.path, "{}")
     }
 
     #[cfg(unix)]
-    fn make_dir_read_only(&mut self) {
-        self.original_dir_permissions = Some(
-            ambient_fs::metadata(self.dir.path())
-                .expect("read directory metadata")
-                .permissions(),
-        );
+    fn make_dir_read_only(&mut self) -> io::Result<()> {
+        self.original_dir_permissions = Some(ambient_fs::metadata(self.dir.path())?.permissions());
         ambient_fs::set_permissions(self.dir.path(), ambient_fs::Permissions::from_mode(0o555))
-            .expect("make directory read-only");
     }
 
     pub(super) fn migrated_path(&self) -> std::path::PathBuf {
@@ -228,18 +240,18 @@ impl Drop for RenameFixture {
     }
 }
 
-pub(super) fn rename_fixture() -> RenameFixture {
-    let dir = tempdir().expect("create temp dir for rename test");
+pub(super) fn rename_fixture() -> io::Result<RenameFixture> {
+    let dir = tempdir()?;
     let path = dir.path().join("settings.json");
-    RenameFixture {
+    Ok(RenameFixture {
         dir,
         path,
         #[cfg(unix)]
         original_dir_permissions: None,
-    }
+    })
 }
 
-pub(super) fn write_legacy_settings(dir: &TempDir) -> std::path::PathBuf {
+pub(super) fn write_legacy_settings(dir: &TempDir) -> io::Result<std::path::PathBuf> {
     let settings_path = dir.path().join("settings.json");
     ambient_fs::write(
         &settings_path,
@@ -248,17 +260,15 @@ pub(super) fn write_legacy_settings(dir: &TempDir) -> std::path::PathBuf {
             "database_backend": "libsql"
         })
         .to_string(),
-    )
-    .expect("write legacy settings.json");
-    settings_path
+    )?;
+    Ok(settings_path)
 }
 
 pub(super) fn assert_store_state(
-    store: &MigrationStore,
+    state: &MigrationStoreState,
     expected_has_settings: usize,
     expected_set_all_settings: usize,
 ) {
-    let state = store.state();
     assert_eq!(
         state.has_settings_calls, expected_has_settings,
         "unexpected has_settings call count"

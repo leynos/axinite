@@ -188,16 +188,23 @@ fn build_test_agent_config(max_tool_iterations: usize) -> AgentConfig {
 }
 
 /// Assert that the timeout-wrapped agentic loop result is a text response.
+///
+/// Returns an error if the loop timed out or the dispatcher returned `Err`,
+/// leaving the calling test to decide how the failure surfaces.
 fn assert_agentic_loop_text_response<E: std::fmt::Debug>(
     result: Result<Result<super::super::AgenticLoopResult, E>, tokio::time::error::Elapsed>,
     expected_text: &str,
-) {
+) -> anyhow::Result<()> {
     assert!(
         result.is_ok(),
         "Dispatcher timed out -- max_iterations guard failed to terminate the loop"
     );
-    let inner = result.expect("test timed out or dispatcher context lost");
-    match inner.expect("Expected Ok(AgenticLoopResult) but dispatcher returned Err") {
+    let inner =
+        result.map_err(|e| anyhow::anyhow!("test timed out or dispatcher context lost: {e}"))?;
+    let outcome = inner.map_err(|e| {
+        anyhow::anyhow!("Expected Ok(AgenticLoopResult) but dispatcher returned Err: {e:?}")
+    })?;
+    match outcome {
         super::super::AgenticLoopResult::Response(text) => {
             assert_eq!(text, expected_text);
         }
@@ -205,6 +212,7 @@ fn assert_agentic_loop_text_response<E: std::fmt::Debug>(
             panic!("Expected text response, got NeedApproval");
         }
     }
+    Ok(())
 }
 
 /// Verify that the max_iterations guard terminates the loop even when the
@@ -232,5 +240,6 @@ async fn test_dispatcher_terminates_with_max_iterations() {
     )
     .await;
 
-    assert_agentic_loop_text_response(result, "forced text response");
+    assert_agentic_loop_text_response(result, "forced text response")
+        .expect("dispatcher should return a text response");
 }

@@ -4,6 +4,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::path::Path;
 use std::path::PathBuf;
 
+use anyhow::Context as _;
 use proptest::prelude::*;
 
 use crate::skills::registry::{SkillInstallPayload, SkillRegistry};
@@ -55,28 +56,39 @@ fn skill_markdown(name: &str) -> Vec<u8> {
     format!("---\nname: {name}\n---\n\n# {name}\n").into_bytes()
 }
 
-fn collect_installed_files(root: &Path) -> BTreeMap<PathBuf, Vec<u8>> {
-    fn visit(base: &Path, current: &Path, files: &mut BTreeMap<PathBuf, Vec<u8>>) {
-        for entry in ambient_fs::read_dir(current).expect("installed directory should be readable")
-        {
-            let entry = entry.expect("installed directory entry should be readable");
+/// Recursively collects every installed file under `root`, keyed by its
+/// path relative to `root`.
+///
+/// Returns an error if the tree cannot be walked or a file cannot be read.
+fn collect_installed_files(root: &Path) -> anyhow::Result<BTreeMap<PathBuf, Vec<u8>>> {
+    fn visit(
+        base: &Path,
+        current: &Path,
+        files: &mut BTreeMap<PathBuf, Vec<u8>>,
+    ) -> anyhow::Result<()> {
+        let entries =
+            ambient_fs::read_dir(current).context("installed directory should be readable")?;
+        for entry in entries {
+            let entry = entry.context("installed directory entry should be readable")?;
             let path = entry.path();
             if path.is_dir() {
-                visit(base, &path, files);
+                visit(base, &path, files)?;
             } else {
                 let relative = path
                     .strip_prefix(base)
-                    .expect("installed file should be under bundle root")
+                    .context("installed file should be under bundle root")?
                     .to_path_buf();
-                let contents = ambient_fs::read(&path).expect("installed file should be readable");
+                let contents =
+                    ambient_fs::read(&path).context("installed file should be readable")?;
                 files.insert(relative, contents);
             }
         }
+        Ok(())
     }
 
     let mut files = BTreeMap::new();
-    visit(root, root, &mut files);
-    files
+    visit(root, root, &mut files)?;
+    Ok(files)
 }
 
 proptest! {
@@ -217,7 +229,10 @@ proptest! {
                 .commit_install(prepared)
                 .expect("generated valid bundle should commit");
             let installed_root = installed_dir.path().join("deploy-docs");
-            prop_assert_eq!(collect_installed_files(&installed_root), expected);
+            let installed = collect_installed_files(&installed_root).map_err(|error| {
+                proptest::test_runner::TestCaseError::fail(error.to_string())
+            })?;
+            prop_assert_eq!(installed, expected);
 
             Ok(())
         })?;

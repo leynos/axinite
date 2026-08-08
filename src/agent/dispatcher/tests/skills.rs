@@ -14,12 +14,15 @@ use crate::skills::{
 
 /// Build a [`LoadedSkill`] with the given name, version, description, and
 /// keyword list, using sensible defaults for the remaining fields.
+///
+/// Returns an error if the constructed location or manifest is rejected by
+/// [`LoadedSkill::new`].
 fn make_test_skill(
     name: &str,
     version: &str,
     description: &str,
     keywords: Vec<String>,
-) -> LoadedSkill {
+) -> anyhow::Result<LoadedSkill> {
     let lowercased_keywords: Vec<String> =
         keywords.iter().map(|k| k.to_ascii_lowercase()).collect();
     LoadedSkill::new(LoadedSkillParts {
@@ -45,14 +48,14 @@ fn make_test_skill(
             PathBuf::from("SKILL.md"),
             SkillPackageKind::SingleFile,
         )
-        .expect("test entrypoint is bundle-relative"),
+        .map_err(|e| anyhow::anyhow!("test entrypoint is bundle-relative: {e}"))?,
         content_hash: format!("{name}-hash"),
         compiled_patterns: vec![],
         lowercased_keywords,
         lowercased_exclude_keywords: vec![],
         lowercased_tags: vec![],
     })
-    .expect("test skill location should match manifest")
+    .map_err(|e| anyhow::anyhow!("test skill location should match manifest: {e}"))
 }
 
 /// Insert a skill into `registry` under the given name.
@@ -69,11 +72,13 @@ fn install_skill(
     Ok(())
 }
 
-fn make_context_skill(trust: SkillTrust) -> LoadedSkill {
-    let mut skill = make_test_skill("my-skill", "1.2.3", "Does stuff", vec!["test".to_string()]);
+/// Build the shared context-block skill, returning an error if the underlying
+/// skill cannot be constructed.
+fn make_context_skill(trust: SkillTrust) -> anyhow::Result<LoadedSkill> {
+    let mut skill = make_test_skill("my-skill", "1.2.3", "Does stuff", vec!["test".to_string()])?;
     skill.trust = trust;
     skill.prompt_content = "Use <b>bold</b> & 'quotes' here".to_string();
-    skill
+    Ok(skill)
 }
 
 #[test]
@@ -84,7 +89,8 @@ fn test_select_active_skills_returns_empty_when_disabled() {
         "1.0.0",
         "Test skill for disabled check",
         vec!["test".to_string()],
-    );
+    )
+    .expect("test skill should be constructible");
     install_skill(&registry, "test-skill", skill).expect("install_skill should succeed");
 
     let skills_cfg = SkillsConfig {
@@ -107,7 +113,8 @@ fn test_select_active_skills_returns_empty_when_registry_lock_is_poisoned() {
         "1.0.0",
         "Skill to ensure non-empty registry before poisoning",
         vec!["hello".to_string()],
-    );
+    )
+    .expect("test skill should be constructible");
     install_skill(&registry, "poison-skill", skill).expect("install_skill should succeed");
 
     let poison_registry = Arc::clone(&registry);
@@ -141,7 +148,8 @@ fn test_select_active_skills_selects_matching_skill() {
         "2.1.0",
         "Provides weather-related assistance",
         vec!["weather".to_string(), "forecast".to_string()],
-    );
+    )
+    .expect("test skill should be constructible");
     install_skill(&registry, "weather-helper", skill).expect("install_skill should succeed");
 
     let skills_cfg = SkillsConfig {
@@ -166,7 +174,7 @@ fn test_select_active_skills_selects_matching_skill() {
 #[test]
 fn test_build_skill_context_block_trusted() {
     let agent = make_test_agent();
-    let skill = make_context_skill(SkillTrust::Trusted);
+    let skill = make_context_skill(SkillTrust::Trusted).expect("context skill should be built");
     let result = agent.build_skill_context_block(&[skill]);
 
     assert_snapshot!(result.expect("trusted skill should produce context"));
@@ -175,7 +183,7 @@ fn test_build_skill_context_block_trusted() {
 #[test]
 fn test_build_skill_context_block_installed() {
     let agent = make_test_agent();
-    let skill = make_context_skill(SkillTrust::Installed);
+    let skill = make_context_skill(SkillTrust::Installed).expect("context skill should be built");
     let result = agent
         .build_skill_context_block(&[skill])
         .expect("installed skill should produce context");
@@ -190,7 +198,8 @@ fn test_build_skill_context_block_installed() {
 #[test]
 fn test_build_skill_context_block_includes_bundle_relative_metadata() {
     let agent = make_test_agent();
-    let mut skill = make_context_skill(SkillTrust::Installed);
+    let mut skill =
+        make_context_skill(SkillTrust::Installed).expect("context skill should be built");
     skill
         .set_location(
             LoadedSkillLocation::new(
@@ -240,8 +249,9 @@ fn test_build_skill_context_block_includes_bundle_relative_metadata() {
 #[test]
 fn test_build_skill_context_block_both_variants() {
     let agent = make_test_agent();
-    let trusted = make_context_skill(SkillTrust::Trusted);
-    let installed = make_context_skill(SkillTrust::Installed);
+    let trusted = make_context_skill(SkillTrust::Trusted).expect("context skill should be built");
+    let installed =
+        make_context_skill(SkillTrust::Installed).expect("context skill should be built");
     let result = agent.build_skill_context_block(&[trusted, installed]);
 
     assert_snapshot!(result.expect("both skills should produce combined context"));

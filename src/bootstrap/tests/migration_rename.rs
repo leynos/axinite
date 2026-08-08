@@ -19,8 +19,8 @@ fn rename_to_migrated_cases(
     #[case] setup: RenameSetup,
     #[case] expected_error_kind: Option<ErrorKind>,
 ) {
-    let mut fixture = rename_fixture();
-    fixture.prepare(setup);
+    let mut fixture = rename_fixture().expect("create temp dir for rename test");
+    fixture.prepare(setup).expect("prepare rename fixture");
 
     let result = super::super::migration::rename_to_migrated(&fixture.path);
 
@@ -41,9 +41,11 @@ fn rename_to_migrated_cases(
 #[traced_test]
 #[rstest]
 fn rename_legacy_bootstrap_success() {
-    let mut fixture = rename_fixture();
+    let mut fixture = rename_fixture().expect("create temp dir for rename test");
     fixture.path = fixture.dir.path().join("bootstrap.json");
-    fixture.prepare(RenameSetup::ExistingFile);
+    fixture
+        .prepare(RenameSetup::ExistingFile)
+        .expect("prepare rename fixture");
 
     super::super::migration::rename_legacy_bootstrap(fixture.dir.path());
 
@@ -55,9 +57,11 @@ fn rename_legacy_bootstrap_success() {
 #[traced_test]
 #[rstest]
 fn rename_legacy_bootstrap_permission_denied() {
-    let mut fixture = rename_fixture();
+    let mut fixture = rename_fixture().expect("create temp dir for rename test");
     fixture.path = fixture.dir.path().join("bootstrap.json");
-    fixture.prepare(RenameSetup::ReadOnlyDirectory);
+    fixture
+        .prepare(RenameSetup::ReadOnlyDirectory)
+        .expect("prepare rename fixture");
 
     super::super::migration::rename_legacy_bootstrap(fixture.dir.path());
 

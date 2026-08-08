@@ -15,17 +15,21 @@ use super::fixtures::{
     sample_catalog_response, sample_execution_request, sample_execution_response,
 };
 
-/// Serialise `value` to JSON and immediately deserialise it back, asserting that the round-trip produces an equal value without field loss.
-fn assert_round_trips<T>(value: T)
+/// Serialise `value` to JSON and immediately deserialise it back, checking that the round-trip produces an equal value without field loss.
+///
+/// Serialisation and deserialisation can both fail, so the helper returns a
+/// `Result` and leaves the verdict to the calling test body.
+fn assert_round_trips<T>(value: T) -> anyhow::Result<()>
 where
     T: Serialize + DeserializeOwned + Debug + PartialEq,
 {
-    let serialized = serde_json::to_string(&value).expect("serialise");
-    let deserialized: T = serde_json::from_str(&serialized).expect("deserialise");
-    assert_eq!(
-        deserialized, value,
-        "value must round-trip without field loss"
+    let serialized = serde_json::to_string(&value)?;
+    let deserialized: T = serde_json::from_str(&serialized)?;
+    anyhow::ensure!(
+        deserialized == value,
+        "value must round-trip without field loss: {deserialized:?} != {value:?}"
     );
+    Ok(())
 }
 
 const fn const_str_eq(left: &str, right: &str) -> bool {
@@ -118,28 +122,28 @@ fn worker_and_orchestrator_share_remote_tool_route_constants() {
 fn remote_tool_catalog_response_round_trip_without_field_loss(
     sample_catalog_response: RemoteToolCatalogResponse,
 ) {
-    assert_round_trips(sample_catalog_response);
+    assert_round_trips(sample_catalog_response).expect("catalog response should round-trip");
 }
 
 #[rstest]
 fn remote_tool_execution_request_round_trip_without_field_loss(
     sample_execution_request: RemoteToolExecutionRequest,
 ) {
-    assert_round_trips(sample_execution_request);
+    assert_round_trips(sample_execution_request).expect("execution request should round-trip");
 }
 
 #[rstest]
 fn remote_tool_execution_response_round_trip_without_field_loss(
     sample_execution_response: RemoteToolExecutionResponse,
 ) {
-    assert_round_trips(sample_execution_response);
+    assert_round_trips(sample_execution_response).expect("execution response should round-trip");
 }
 
 #[test]
 fn terminal_result_round_trip_preserves_all_fields() {
     let result = TerminalResult::success("completed", Some(11));
 
-    assert_round_trips(result);
+    assert_round_trips(result).expect("terminal result should round-trip");
 }
 
 #[test]

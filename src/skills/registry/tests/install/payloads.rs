@@ -45,7 +45,7 @@ async fn test_install_skill_from_content() {
 )]
 #[tokio::test]
 async fn test_archive_payload_preserves_files(
-    bundle_install_fixture: BundleInstallFixture,
+    bundle_install_fixture: std::io::Result<BundleInstallFixture>,
     #[case] make_payload: impl FnOnce(Vec<u8>) -> SkillInstallPayload,
     #[case] prepare_msg: &'static str,
     #[case] commit_msg: &'static str,
@@ -54,7 +54,7 @@ async fn test_archive_payload_preserves_files(
         user_dir: _user_dir,
         installed_dir,
         mut registry,
-    } = bundle_install_fixture;
+    } = bundle_install_fixture.expect("bundle install fixture should be created");
 
     let archive = build_bundle_archive(&[
         (
@@ -63,7 +63,8 @@ async fn test_archive_payload_preserves_files(
         ),
         ("deploy-docs/references/usage.md", b"# Usage\n"),
         ("deploy-docs/assets/logo.txt", b"logo"),
-    ]);
+    ])
+    .expect("test bundle archive should build");
 
     let prepared = SkillRegistry::prepare_install_to_disk(
         registry.install_target_dir(),
@@ -104,17 +105,17 @@ async fn test_archive_payload_preserves_files(
 #[case::archive_bytes(|b| SkillInstallPayload::ArchiveBytes(b))]
 #[tokio::test]
 async fn test_install_preserves_references_and_assets_regression_rfc0003(
-    bundle_install_fixture: BundleInstallFixture,
+    bundle_install_fixture: std::io::Result<BundleInstallFixture>,
     #[case] make_payload: impl FnOnce(Vec<u8>) -> SkillInstallPayload,
 ) {
     let BundleInstallFixture {
         installed_dir,
         mut registry,
         ..
-    } = bundle_install_fixture;
+    } = bundle_install_fixture.expect("bundle install fixture should be created");
 
     let entries = documented_bundle_entries();
-    let archive = build_bundle_archive(&entries);
+    let archive = build_bundle_archive(&entries).expect("test bundle archive should build");
     let prepared = SkillRegistry::prepare_install_to_disk(
         registry.install_target_dir(),
         make_payload(archive),
@@ -143,7 +144,9 @@ async fn test_install_preserves_references_and_assets_regression_rfc0003(
             )
         })
         .collect::<BTreeMap<_, _>>();
-    assert_eq!(collect_installed_files(&installed_root), expected);
+    let installed =
+        collect_installed_files(&installed_root).expect("installed bundle tree should be readable");
+    assert_eq!(installed, expected);
 
     let skill = registry
         .find_by_name("deploy-docs")
@@ -155,9 +158,10 @@ async fn test_install_preserves_references_and_assets_regression_rfc0003(
 #[rstest]
 #[tokio::test]
 async fn test_uploaded_archive_bytes_reject_plain_markdown(
-    bundle_install_fixture: BundleInstallFixture,
+    bundle_install_fixture: std::io::Result<BundleInstallFixture>,
 ) {
-    let BundleInstallFixture { registry, .. } = bundle_install_fixture;
+    let BundleInstallFixture { registry, .. } =
+        bundle_install_fixture.expect("bundle install fixture should be created");
 
     let error = SkillRegistry::prepare_install_to_disk(
         registry.install_target_dir(),
@@ -174,12 +178,14 @@ async fn test_uploaded_archive_bytes_reject_plain_markdown(
 
 #[rstest]
 #[tokio::test]
-async fn test_downloaded_bytes_accept_plain_markdown(bundle_install_fixture: BundleInstallFixture) {
+async fn test_downloaded_bytes_accept_plain_markdown(
+    bundle_install_fixture: std::io::Result<BundleInstallFixture>,
+) {
     let BundleInstallFixture {
         installed_dir,
         mut registry,
         ..
-    } = bundle_install_fixture;
+    } = bundle_install_fixture.expect("bundle install fixture should be created");
 
     let prepared = SkillRegistry::prepare_install_to_disk(
         registry.install_target_dir(),
