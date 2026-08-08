@@ -360,7 +360,7 @@ def test_label_workflows_run_scripts_without_a_toolchain() -> None:
     scope_steps = _steps(scope_job)
     assert len(scope_steps) == 1, "scope must remain a single labeller step"
     assert str(scope_steps[0].get("uses", "")).startswith("actions/labeler@"), (
-        "scope must delegate to the labeler action"
+        "scope must delegate to the upstream labelling action"
     )
     assert scope_steps[0].get("with") == {
         "configuration-path": ".github/labeler.yml",
