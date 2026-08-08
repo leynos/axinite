@@ -148,7 +148,14 @@ fn sentinel_json(data: Option<&str>, path: Option<&str>) -> String {
     serde_json::Value::Object(sentinel).to_string()
 }
 
-async fn run_image_generate_and_count_statuses(data_url: Option<&str>) -> (bool, usize) {
+/// Run `image_generate` through the sentinel path and report whether a
+/// sentinel was detected along with the number of statuses broadcast.
+///
+/// Returns an error if the captured-status lock is poisoned; a poisoned lock
+/// means the stub channel panicked, so the recorded statuses cannot be trusted.
+async fn run_image_generate_and_count_statuses(
+    data_url: Option<&str>,
+) -> anyhow::Result<(bool, usize)> {
     let (channels, statuses) = new_stubbed_channels("test-chan").await;
     let agent = build_agent_with_stub_channel(channels);
     let session = Arc::new(Mutex::new(Session::new("test-user")));
@@ -158,8 +165,11 @@ async fn run_image_generate_and_count_statuses(data_url: Option<&str>) -> (bool,
     let result = delegate
         .maybe_emit_image_sentinel("image_generate", &output)
         .await;
-    let count = statuses.lock().expect("statuses lock poisoned").len();
-    (result, count)
+    let count = statuses
+        .lock()
+        .map_err(|_| anyhow::anyhow!("statuses lock poisoned"))?
+        .len();
+    Ok((result, count))
 }
 
 struct ImageSentinelHarness {
@@ -232,7 +242,9 @@ async fn delegate_skips_broadcast_for_invalid_data_urls(
     #[case] data_url: Option<&str>,
     #[case] expected_message: &str,
 ) {
-    let (result, count) = run_image_generate_and_count_statuses(data_url).await;
+    let (result, count) = run_image_generate_and_count_statuses(data_url)
+        .await
+        .expect("image_generate run should complete without a poisoned lock");
 
     assert!(
         result,

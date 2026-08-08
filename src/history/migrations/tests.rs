@@ -61,14 +61,20 @@ async fn run_repair_postgres_refinery_history_case(
         .await
         .context("Failed to connect to database")?;
     let mut client = store.conn().await.context("Failed to get connection")?;
-    create_temp_refinery_history_table(&client).await;
+    create_temp_refinery_history_table(&client)
+        .await
+        .context("Failed to create temp history table")?;
 
     match seed {
         RepairSeed::RenumberedReleaseWindow => {
-            seed_history_rows(&**client, RENUMBERED_RELEASE_WINDOW_ROWS).await;
+            seed_history_rows(&**client, RENUMBERED_RELEASE_WINDOW_ROWS)
+                .await
+                .context("Failed to seed history row")?;
         }
         RepairSeed::LegacyChecksumOnlyV12 => {
-            seed_legacy_released_rows(&**client).await;
+            seed_legacy_released_rows(&**client)
+                .await
+                .context("Failed to seed history row")?;
         }
     }
 
@@ -141,8 +147,12 @@ async fn stage_and_finalize_migration_history_rewrites_two_phases() {
         .await
         .expect("Failed to connect to database");
     let mut client = store.conn().await.expect("Failed to get connection");
-    create_temp_refinery_history_table(&client).await;
-    seed_history_rows(&**client, RENUMBERED_RELEASE_WINDOW_ROWS).await;
+    create_temp_refinery_history_table(&client)
+        .await
+        .expect("Failed to create temp history table");
+    seed_history_rows(&**client, RENUMBERED_RELEASE_WINDOW_ROWS)
+        .await
+        .expect("Failed to seed history row");
 
     let rewrites = plan_migration_history_rewrites(&renumbered_release_window_applied_rows())
         .expect("released migration identities parse");

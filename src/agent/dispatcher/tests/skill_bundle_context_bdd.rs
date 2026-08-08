@@ -2,6 +2,7 @@
 
 use std::path::PathBuf;
 
+use anyhow::Context as _;
 use rstest::fixture;
 use rstest_bdd_macros::{given, scenario, then, when};
 use tempfile::TempDir;
@@ -29,11 +30,15 @@ const PROMPT_MARKER: &str = "PROMPT-MARKER";
 const REFERENCES_MARKER: &str = "REFERENCES-MARKER";
 const ASSETS_MARKER: &str = "ASSETS-MARKER";
 
+/// Build the bundled skill used by these scenarios.
+///
+/// Returns an error if the constructed location or manifest is rejected by
+/// [`LoadedSkill::new`].
 fn make_loaded_bundle_skill(
     skill: &str,
     filesystem_root: PathBuf,
     prompt_content: &str,
-) -> LoadedSkill {
+) -> anyhow::Result<LoadedSkill> {
     LoadedSkill::new(LoadedSkillParts {
         manifest: SkillManifest {
             name: skill.to_string(),
@@ -55,43 +60,49 @@ fn make_loaded_bundle_skill(
             PathBuf::from("SKILL.md"),
             SkillPackageKind::Bundle,
         )
-        .expect("test entrypoint is bundle-relative"),
+        .map_err(|e| anyhow::anyhow!("test entrypoint is bundle-relative: {e}"))?,
         content_hash: format!("sha256:{skill}"),
         compiled_patterns: Vec::new(),
         lowercased_keywords: vec!["deploy".to_string(), "docs".to_string()],
         lowercased_exclude_keywords: Vec::new(),
         lowercased_tags: Vec::new(),
     })
-    .expect("BDD skill location should match manifest")
+    .map_err(|e| anyhow::anyhow!("BDD skill location should match manifest: {e}"))
 }
 
 #[given("an installed bundled skill with supporting files")]
-fn installed_bundled_skill(skill_context_world: &mut SkillContextWorld) {
+fn installed_bundled_skill(
+    skill_context_world: &mut SkillContextWorld,
+) -> Result<(), anyhow::Error> {
     let filesystem_root = PathBuf::from("/tmp/axinite-test-installed/deploy-docs");
     skill_context_world.filesystem_root = Some(filesystem_root.clone());
     skill_context_world.active_skill = Some(make_loaded_bundle_skill(
         "deploy-docs",
         filesystem_root,
         "Use references/usage.md for deployment details.",
-    ));
+    )?);
+    Ok(())
 }
 
 #[given("an installed bundled skill with a references file and an assets file")]
-fn installed_bundled_skill_with_ancillary_files(skill_context_world: &mut SkillContextWorld) {
-    let installed_dir = tempfile::tempdir().expect("installed bundle tempdir should be created");
+fn installed_bundled_skill_with_ancillary_files(
+    skill_context_world: &mut SkillContextWorld,
+) -> Result<(), anyhow::Error> {
+    let installed_dir =
+        tempfile::tempdir().context("installed bundle tempdir should be created")?;
     ambient_fs::create_dir_all(installed_dir.path().join("references"))
-        .expect("references directory should be created");
+        .context("references directory should be created")?;
     ambient_fs::create_dir_all(installed_dir.path().join("assets"))
-        .expect("assets directory should be created");
+        .context("assets directory should be created")?;
     ambient_fs::write(installed_dir.path().join("SKILL.md"), PROMPT_MARKER)
-        .expect("SKILL.md should be written");
+        .context("SKILL.md should be written")?;
     ambient_fs::write(
         installed_dir.path().join("references/usage.md"),
         REFERENCES_MARKER,
     )
-    .expect("reference file should be written");
+    .context("reference file should be written")?;
     ambient_fs::write(installed_dir.path().join("assets/note.txt"), ASSETS_MARKER)
-        .expect("asset file should be written");
+        .context("asset file should be written")?;
 
     let filesystem_root = installed_dir.path().to_path_buf();
     skill_context_world.filesystem_root = Some(filesystem_root.clone());
@@ -99,21 +110,25 @@ fn installed_bundled_skill_with_ancillary_files(skill_context_world: &mut SkillC
         "deploy-docs",
         filesystem_root,
         PROMPT_MARKER,
-    ));
+    )?);
     skill_context_world._installed_dir = Some(installed_dir);
+    Ok(())
 }
 
 #[when("the skill is selected for an agent turn")]
-fn selected_for_agent_turn(skill_context_world: &mut SkillContextWorld) {
+fn selected_for_agent_turn(
+    skill_context_world: &mut SkillContextWorld,
+) -> Result<(), anyhow::Error> {
     let agent = make_test_agent();
     let skill = skill_context_world
         .active_skill
         .clone()
-        .expect("Given step should install an active skill");
+        .context("Given step should install an active skill")?;
     let rendered = agent
         .build_skill_context_block(&[skill])
-        .expect("installed bundle skill should produce context");
+        .context("installed bundle skill should produce context")?;
     skill_context_world.rendered_context = Some(rendered);
+    Ok(())
 }
 
 #[then("the active skill context names the skill identifier")]
@@ -137,19 +152,22 @@ fn context_names_entrypoint(skill_context_world: &SkillContextWorld) {
 }
 
 #[then("the active skill context does not expose the filesystem root")]
-fn context_hides_filesystem_root(skill_context_world: &SkillContextWorld) {
-    let rendered = match skill_context_world.rendered_context.as_deref() {
-        Some(rendered) => rendered,
-        None => panic!("When step should render active skill context"),
-    };
+fn context_hides_filesystem_root(
+    skill_context_world: &SkillContextWorld,
+) -> Result<(), anyhow::Error> {
+    let rendered = skill_context_world
+        .rendered_context
+        .as_deref()
+        .context("When step should render active skill context")?;
     let filesystem_root = skill_context_world
         .filesystem_root
         .as_ref()
-        .expect("Given step should record the runtime root");
+        .context("Given step should record the runtime root")?;
     assert!(
         !rendered.contains(&filesystem_root.to_string_lossy().to_string()),
         "active skill context must not expose the private runtime root"
     );
+    Ok(())
 }
 
 #[then("only SKILL.md content is injected into the active skill context")]
@@ -179,11 +197,19 @@ fn assets_content_is_absent(skill_context_world: &SkillContextWorld) {
     assert!(!rendered.contains(ASSETS_MARKER));
 }
 
-fn assert_rendered_snapshot(skill_context_world: SkillContextWorld, snapshot_name: &str) {
+/// Snapshot the rendered context recorded by the When step.
+///
+/// Returns an error if no context was rendered, so the calling scenario body
+/// decides how the failure surfaces.
+fn assert_rendered_snapshot(
+    skill_context_world: SkillContextWorld,
+    snapshot_name: &str,
+) -> Result<(), anyhow::Error> {
     let rendered = skill_context_world
         .rendered_context
-        .expect("When step should render active skill context");
+        .context("When step should render active skill context")?;
     insta::assert_snapshot!(snapshot_name, rendered);
+    Ok(())
 }
 
 #[scenario(
@@ -193,7 +219,8 @@ fn assert_rendered_snapshot(skill_context_world: SkillContextWorld, snapshot_nam
 fn selected_bundle_skill_exposes_stable_bundle_relative_metadata(
     skill_context_world: SkillContextWorld,
 ) {
-    assert_rendered_snapshot(skill_context_world, "selected_bundle_skill_context_block");
+    assert_rendered_snapshot(skill_context_world, "selected_bundle_skill_context_block")
+        .expect("When step should render active skill context");
 }
 
 #[scenario(
@@ -203,5 +230,6 @@ fn selected_bundle_skill_exposes_stable_bundle_relative_metadata(
 fn activated_bundle_skill_does_not_eagerly_load_ancillary_files(
     skill_context_world: SkillContextWorld,
 ) {
-    assert_rendered_snapshot(skill_context_world, "activated_bundle_skill_context_block");
+    assert_rendered_snapshot(skill_context_world, "activated_bundle_skill_context_block")
+        .expect("When step should render active skill context");
 }

@@ -93,9 +93,10 @@ async fn test_load_skill_layout(
     #[case] skill_name: &str,
     #[case] content: &str,
     #[case] content_fragment: &str,
-    fresh_registry_fixture: FreshRegistryFixture,
+    fresh_registry_fixture: std::io::Result<FreshRegistryFixture>,
 ) {
-    let FreshRegistryFixture { dir, mut registry } = fresh_registry_fixture;
+    let FreshRegistryFixture { dir, mut registry } =
+        fresh_registry_fixture.expect("fresh registry fixture should be created");
     let expected_root = match layout {
         LayoutKind::Flat => dir.path().to_path_buf(),
         LayoutKind::Subdirectory => dir.path().join(skill_name),
@@ -104,6 +105,7 @@ async fn test_load_skill_layout(
         LayoutKind::Flat => write_skill_flat(dir.path(), content),
         LayoutKind::Subdirectory => write_skill_subdir(dir.path(), skill_name, content),
     }
+    .expect("skill under test should be written");
     assert_single_skill_loaded(&mut registry, skill_name, content_fragment).await;
     let skill = registry
         .find_by_name(skill_name)
@@ -146,13 +148,17 @@ async fn test_workspace_overrides_user() {
 
 #[rstest]
 #[tokio::test]
-async fn test_gating_failure_skips_skill(fresh_registry_fixture: FreshRegistryFixture) {
-    let FreshRegistryFixture { dir, mut registry } = fresh_registry_fixture;
+async fn test_gating_failure_skips_skill(
+    fresh_registry_fixture: std::io::Result<FreshRegistryFixture>,
+) {
+    let FreshRegistryFixture { dir, mut registry } =
+        fresh_registry_fixture.expect("fresh registry fixture should be created");
     write_skill_subdir(
         dir.path(),
         "gated-skill",
         "---\nname: gated-skill\nmetadata:\n  openclaw:\n    requires:\n      bins: [\"__nonexistent_bin__\"]\n---\n\nGated prompt.\n",
-    );
+    )
+    .expect("skill under test should be written");
     let loaded = registry.discover_all().await;
     assert!(loaded.is_empty());
 }
@@ -181,35 +187,45 @@ async fn test_symlink_rejected() {
 
 #[rstest]
 #[tokio::test]
-async fn test_file_size_limit(fresh_registry_fixture: FreshRegistryFixture) {
-    let FreshRegistryFixture { dir, mut registry } = fresh_registry_fixture;
+async fn test_file_size_limit(fresh_registry_fixture: std::io::Result<FreshRegistryFixture>) {
+    let FreshRegistryFixture { dir, mut registry } =
+        fresh_registry_fixture.expect("fresh registry fixture should be created");
     let big_content = format!(
         "---\nname: big-skill\n---\n\n{}",
         "x".repeat((crate::skills::MAX_PROMPT_FILE_SIZE + 1) as usize)
     );
-    write_skill_subdir(dir.path(), "big-skill", &big_content);
+    write_skill_subdir(dir.path(), "big-skill", &big_content)
+        .expect("skill under test should be written");
     let loaded = registry.discover_all().await;
     assert!(loaded.is_empty());
 }
 
 #[rstest]
 #[tokio::test]
-async fn test_invalid_skill_md_skipped(fresh_registry_fixture: FreshRegistryFixture) {
-    let FreshRegistryFixture { dir, mut registry } = fresh_registry_fixture;
-    write_skill_subdir(dir.path(), "bad-skill", "Just plain text");
+async fn test_invalid_skill_md_skipped(
+    fresh_registry_fixture: std::io::Result<FreshRegistryFixture>,
+) {
+    let FreshRegistryFixture { dir, mut registry } =
+        fresh_registry_fixture.expect("fresh registry fixture should be created");
+    write_skill_subdir(dir.path(), "bad-skill", "Just plain text")
+        .expect("skill under test should be written");
     let loaded = registry.discover_all().await;
     assert!(loaded.is_empty());
 }
 
 #[rstest]
 #[tokio::test]
-async fn test_line_ending_normalization(fresh_registry_fixture: FreshRegistryFixture) {
-    let FreshRegistryFixture { dir, mut registry } = fresh_registry_fixture;
+async fn test_line_ending_normalization(
+    fresh_registry_fixture: std::io::Result<FreshRegistryFixture>,
+) {
+    let FreshRegistryFixture { dir, mut registry } =
+        fresh_registry_fixture.expect("fresh registry fixture should be created");
     write_skill_subdir(
         dir.path(),
         "crlf-skill",
         "---\r\nname: crlf-skill\r\n---\r\n\r\nline1\r\nline2\r\n",
-    );
+    )
+    .expect("skill under test should be written");
     registry.discover_all().await;
 
     assert_eq!(registry.count(), 1);
@@ -219,14 +235,18 @@ async fn test_line_ending_normalization(fresh_registry_fixture: FreshRegistryFix
 
 #[rstest]
 #[tokio::test]
-async fn test_token_budget_rejection(fresh_registry_fixture: FreshRegistryFixture) {
-    let FreshRegistryFixture { dir, mut registry } = fresh_registry_fixture;
+async fn test_token_budget_rejection(
+    fresh_registry_fixture: std::io::Result<FreshRegistryFixture>,
+) {
+    let FreshRegistryFixture { dir, mut registry } =
+        fresh_registry_fixture.expect("fresh registry fixture should be created");
     let big_prompt = "word ".repeat(4000);
     let content = format!(
         "---\nname: big-prompt\nactivation:\n  max_context_tokens: 100\n---\n\n{}",
         big_prompt
     );
-    write_skill_subdir(dir.path(), "big-prompt", &content);
+    write_skill_subdir(dir.path(), "big-prompt", &content)
+        .expect("skill under test should be written");
     let loaded = registry.discover_all().await;
     assert!(loaded.is_empty());
 }
@@ -237,14 +257,16 @@ async fn test_token_budget_rejection(fresh_registry_fixture: FreshRegistryFixtur
 #[tokio::test]
 async fn test_bundle_layout_records_bundle_package_kind(
     #[case] marker_file: &str,
-    fresh_registry_fixture: FreshRegistryFixture,
+    fresh_registry_fixture: std::io::Result<FreshRegistryFixture>,
 ) {
-    let FreshRegistryFixture { dir, mut registry } = fresh_registry_fixture;
+    let FreshRegistryFixture { dir, mut registry } =
+        fresh_registry_fixture.expect("fresh registry fixture should be created");
     write_skill_subdir(
         dir.path(),
         "bundle-skill",
         "---\nname: bundle-skill\n---\n\nBundle prompt.\n",
-    );
+    )
+    .expect("skill under test should be written");
     let marker_path = dir.path().join("bundle-skill").join(marker_file);
     fs::create_dir_all(
         marker_path
@@ -273,14 +295,16 @@ async fn test_bundle_layout_records_bundle_package_kind(
 #[tokio::test]
 async fn test_bundle_marker_files_do_not_change_package_kind(
     #[case] marker_name: &str,
-    fresh_registry_fixture: FreshRegistryFixture,
+    fresh_registry_fixture: std::io::Result<FreshRegistryFixture>,
 ) {
-    let FreshRegistryFixture { dir, mut registry } = fresh_registry_fixture;
+    let FreshRegistryFixture { dir, mut registry } =
+        fresh_registry_fixture.expect("fresh registry fixture should be created");
     write_skill_subdir(
         dir.path(),
         "plain-skill",
         "---\nname: plain-skill\n---\n\nPlain prompt.\n",
-    );
+    )
+    .expect("skill under test should be written");
     fs::write(
         dir.path().join("plain-skill").join(marker_name),
         "not a directory\n",
@@ -325,13 +349,17 @@ async fn test_mixed_flat_and_subdirectory_layout() {
 
 #[rstest]
 #[tokio::test]
-async fn test_lowercased_fields_populated(fresh_registry_fixture: FreshRegistryFixture) {
-    let FreshRegistryFixture { dir, mut registry } = fresh_registry_fixture;
+async fn test_lowercased_fields_populated(
+    fresh_registry_fixture: std::io::Result<FreshRegistryFixture>,
+) {
+    let FreshRegistryFixture { dir, mut registry } =
+        fresh_registry_fixture.expect("fresh registry fixture should be created");
     write_skill_subdir(
         dir.path(),
         "case-skill",
         "---\nname: case-skill\nactivation:\n  keywords: [\"Write\", \"EDIT\"]\n  tags: [\"Email\", \"PROSE\"]\n---\n\nTest prompt.\n",
-    );
+    )
+    .expect("skill under test should be written");
     registry.discover_all().await;
 
     let skill = registry
@@ -343,13 +371,17 @@ async fn test_lowercased_fields_populated(fresh_registry_fixture: FreshRegistryF
 
 #[rstest]
 #[tokio::test]
-async fn test_reload_clears_and_rediscovers(fresh_registry_fixture: FreshRegistryFixture) {
-    let FreshRegistryFixture { dir, mut registry } = fresh_registry_fixture;
+async fn test_reload_clears_and_rediscovers(
+    fresh_registry_fixture: std::io::Result<FreshRegistryFixture>,
+) {
+    let FreshRegistryFixture { dir, mut registry } =
+        fresh_registry_fixture.expect("fresh registry fixture should be created");
     write_skill_subdir(
         dir.path(),
         "persist-skill",
         "---\nname: persist-skill\n---\n\nPrompt.\n",
-    );
+    )
+    .expect("skill under test should be written");
     registry.discover_all().await;
     assert_eq!(registry.count(), 1);
 

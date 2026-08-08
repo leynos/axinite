@@ -28,8 +28,8 @@ use crate::worker::container::{WorkerConfig, WorkerRuntime};
 pub struct HostedCatalogHarness {
     /// The worker runtime with remote tools registered.
     pub runtime: WorkerRuntime,
-    /// Join handle for the background test server.
-    pub server: tokio::task::JoinHandle<()>,
+    /// Join handle for the background test server, yielding the serve outcome.
+    pub server: tokio::task::JoinHandle<std::io::Result<()>>,
     /// Captured proxied LLM tool-completion requests sent by the worker.
     pub captured_requests: Arc<Mutex<Vec<ProxyToolCompletionRequest>>>,
 }
@@ -94,12 +94,14 @@ async fn capture_llm_complete_with_tools(
 /// captures proxied LLM tool-completion requests.
 ///
 /// Returns the base URL, a handle to the captured-requests buffer, and the
-/// server join handle.
+/// server join handle. Binding is fallible, so the tuple is returned as a
+/// `Result`; the background task cannot propagate with `?`, so it yields the
+/// serve outcome through its join handle instead of unwrapping.
 async fn spawn_hosted_catalog_server() -> Result<
     (
         String,
         Arc<Mutex<Vec<ProxyToolCompletionRequest>>>,
-        tokio::task::JoinHandle<()>,
+        tokio::task::JoinHandle<std::io::Result<()>>,
     ),
     anyhow::Error,
 > {
@@ -117,11 +119,7 @@ async fn spawn_hosted_catalog_server() -> Result<
             post(capture_llm_complete_with_tools),
         )
         .with_state(state);
-    let server = tokio::spawn(async move {
-        axum::serve(listener, router)
-            .await
-            .expect("serve hosted fidelity test router")
-    });
+    let server = tokio::spawn(async move { axum::serve(listener, router).await });
 
     Ok((format!("http://{addr}"), captured_requests, server))
 }

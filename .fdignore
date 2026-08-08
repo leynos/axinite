@@ -1,0 +1,17 @@
+# Paths hidden from `fd`, and therefore from the estate-wide `mdformat-all`
+# formatter, which discovers Markdown with `fd` and pipes it through
+# `mdtablefix --wrap`.
+#
+# `mdtablefix` has no exclusion flag, so a file it must not touch has to be
+# withheld at discovery. `markdownlint-cli2` already skips the paths below via
+# `.markdownlint-cli2.jsonc`; this file closes the other half of `make fmt`.
+#
+# This is deliberately `.fdignore` rather than `.ignore`: ripgrep does not read
+# it, so these paths stay searchable.
+
+# Expected-output fixtures for the html_to_markdown converter tests. Their
+# content is a byte-for-byte record of converter output, which does not wrap
+# prose. Reflowing them to 80 columns makes
+# `convert_test_pages_to_markdown` fail against a fixture that no longer
+# describes any real conversion.
+tests/test-pages/

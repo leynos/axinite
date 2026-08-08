@@ -1,17 +1,22 @@
 //! Tests for Claude filesystem setup utilities.
 
+use anyhow::Context as _;
 use rstest::rstest;
 
 use super::{build_permission_settings, copy_dir_recursive};
 
-fn parse_allow_list(tools: &[String]) -> Vec<serde_json::Value> {
-    let json_str = build_permission_settings(tools).expect("permission settings should build");
+/// Build the permission settings for `tools` and return the parsed allow list.
+///
+/// Building and parsing the settings are both fallible, so the helper
+/// propagates failures to the calling test body.
+fn parse_allow_list(tools: &[String]) -> anyhow::Result<Vec<serde_json::Value>> {
+    let json_str = build_permission_settings(tools).context("permission settings should build")?;
     let parsed: serde_json::Value =
-        serde_json::from_str(&json_str).expect("settings JSON should parse");
-    parsed["permissions"]["allow"]
+        serde_json::from_str(&json_str).context("settings JSON should parse")?;
+    let allow = parsed["permissions"]["allow"]
         .as_array()
-        .expect("allow list should be an array")
-        .clone()
+        .context("allow list should be an array")?;
+    Ok(allow.clone())
 }
 
 #[rstest]
@@ -31,7 +36,7 @@ fn test_build_permission_settings(
     #[case] expected_len: usize,
     #[case] expected_entries: Vec<Option<&str>>,
 ) {
-    let allow = parse_allow_list(&tools);
+    let allow = parse_allow_list(&tools).expect("allow list should parse");
     assert_eq!(allow.len(), expected_len);
     for (i, expected) in expected_entries.iter().enumerate() {
         if let Some(val) = expected {

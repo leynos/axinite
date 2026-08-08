@@ -76,6 +76,36 @@ that assert on printed startup or boot-screen content — for example, the
 `print_startup_info_matches_snapshot` test in `src/startup/boot.rs`. The crate
 is compiled only when running tests and has no effect on the production binary.
 
+### Runner selection
+
+Runners are chosen per job, from the job's compile cost:
+
+- A job that compiles the workspace runs on `ubicloud-standard-8`. That covers
+  `test.yml`, `code_style.yml`, `coverage.yml`, `codescene-coverage.yml`,
+  `e2e.yml`, and `staging-ci.yml` — anything invoking `cargo build`,
+  `cargo test`, `cargo nextest`, `cargo clippy`, `cargo llvm-cov`,
+  `cargo component`, or the `make` targets that wrap them.
+- A job that does not compile runs on GitHub-hosted `ubuntu-latest`, which is
+  free for this public repository. That covers `pr-label-classify.yml`,
+  `pr-label-scope.yml`, `regression-test-check.yml`, `claude-review.yml`, and
+  `audit.yml`. These are single-threaded shell scripts, action calls, or
+  API-bound agent runs; the scheduled audit installs `cargo-audit` as a
+  prebuilt binary and only reads the lockfile.
+
+Windows jobs use `windows-latest` and `release.yml` pins `ubuntu-22.04`, both
+for reproducibility rather than cost. `release-plz.yml` is left on Ubicloud
+because its jobs are gated to the `nearai` repository owner and never execute
+here.
+
+`tests/workflow_contracts/runner_policy_test.py` records the runner for every
+job in the repository and fails when the mapping drifts, so adding a job or
+moving one between pools requires a deliberate edit to `RUNNER_POLICY`. The
+same suite asserts that no job on the free pool runs a compile command or
+installs a Rust build cache. Run it with `make test-workflow-contracts`.
+
+The rationale is recorded in
+[ADR 013](adr-013-split-ci-runners-by-compile-cost.md).
+
 ### Workflow pins and Dependabot
 
 Dependabot owns the upgrade of GitHub Actions and reusable workflows, including

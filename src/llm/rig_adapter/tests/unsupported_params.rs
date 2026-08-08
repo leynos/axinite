@@ -4,8 +4,12 @@ use super::*;
 use rig::completion::CompletionModel;
 use rstest::fixture;
 
+/// Build a rig adapter backed by a throwaway OpenAI client.
+///
+/// Constructing the client is arrangement and can fail, so the fixture yields
+/// a [`Result`] that each test body unwraps.
 #[fixture]
-fn openai_rig_adapter() -> RigAdapter<impl CompletionModel> {
+fn openai_rig_adapter() -> anyhow::Result<RigAdapter<impl CompletionModel>> {
     use rig::client::CompletionClient;
     use rig::providers::openai;
 
@@ -13,28 +17,34 @@ fn openai_rig_adapter() -> RigAdapter<impl CompletionModel> {
         .api_key("test-key")
         .base_url("http://localhost:0")
         .build()
-        .expect("failed to build test client");
+        .map_err(|error| anyhow::anyhow!("failed to build test client: {error}"))?;
     let client = client.completions_api();
     let model = client.completion_model("test-model");
-    RigAdapter::new(model, "test-model")
+    Ok(RigAdapter::new(model, "test-model"))
 }
 
 #[rstest]
 fn test_with_unsupported_params_populates_set(
-    openai_rig_adapter: RigAdapter<impl CompletionModel>,
+    openai_rig_adapter: anyhow::Result<RigAdapter<impl CompletionModel>>,
 ) {
-    let adapter = openai_rig_adapter.with_unsupported_params(vec!["temperature".to_string()]);
+    let adapter = openai_rig_adapter
+        .expect("build test rig adapter")
+        .with_unsupported_params(vec!["temperature".to_string()]);
 
     assert!(adapter.unsupported_params.contains("temperature"));
     assert!(!adapter.unsupported_params.contains("max_tokens"));
 }
 
 #[rstest]
-fn test_strip_unsupported_completion_params(openai_rig_adapter: RigAdapter<impl CompletionModel>) {
-    let adapter = openai_rig_adapter.with_unsupported_params(vec![
-        "temperature".to_string(),
-        "stop_sequences".to_string(),
-    ]);
+fn test_strip_unsupported_completion_params(
+    openai_rig_adapter: anyhow::Result<RigAdapter<impl CompletionModel>>,
+) {
+    let adapter = openai_rig_adapter
+        .expect("build test rig adapter")
+        .with_unsupported_params(vec![
+            "temperature".to_string(),
+            "stop_sequences".to_string(),
+        ]);
 
     let mut req = CompletionRequest::new(vec![ChatMessage::user("hi")]);
     req.temperature = Some(0.7);
@@ -52,8 +62,11 @@ fn test_strip_unsupported_completion_params(openai_rig_adapter: RigAdapter<impl 
 }
 
 #[rstest]
-fn test_strip_unsupported_tool_params(openai_rig_adapter: RigAdapter<impl CompletionModel>) {
+fn test_strip_unsupported_tool_params(
+    openai_rig_adapter: anyhow::Result<RigAdapter<impl CompletionModel>>,
+) {
     let adapter = openai_rig_adapter
+        .expect("build test rig adapter")
         .with_unsupported_params(vec!["temperature".to_string(), "max_tokens".to_string()]);
 
     let mut req = ToolCompletionRequest::new(vec![ChatMessage::user("hi")], vec![]);
@@ -67,6 +80,10 @@ fn test_strip_unsupported_tool_params(openai_rig_adapter: RigAdapter<impl Comple
 }
 
 #[rstest]
-fn test_unsupported_params_empty_by_default(openai_rig_adapter: RigAdapter<impl CompletionModel>) {
-    assert!(openai_rig_adapter.unsupported_params.is_empty());
+fn test_unsupported_params_empty_by_default(
+    openai_rig_adapter: anyhow::Result<RigAdapter<impl CompletionModel>>,
+) {
+    let adapter = openai_rig_adapter.expect("build test rig adapter");
+
+    assert!(adapter.unsupported_params.is_empty());
 }

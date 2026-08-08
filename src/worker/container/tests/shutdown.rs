@@ -32,19 +32,20 @@ async fn event_handler(
     StatusCode::OK
 }
 
+/// Spawns an ephemeral Axum server that records posted job events.
+///
+/// Binding is fallible, so the base URL is returned as a `Result`. The spawned
+/// task cannot propagate with `?`, so it yields the serve outcome through its
+/// join handle instead of unwrapping.
 async fn spawn_event_server(
     state: Arc<EventState>,
-) -> Result<(String, tokio::task::JoinHandle<()>)> {
+) -> Result<(String, tokio::task::JoinHandle<std::io::Result<()>>)> {
     let listener = TcpListener::bind("127.0.0.1:0").await?;
     let addr = listener.local_addr()?;
     let app = Router::new()
         .route(EVENT_ROUTE, post(event_handler))
         .with_state(state);
-    let handle = tokio::spawn(async move {
-        axum::serve(listener, app)
-            .await
-            .expect("event test server should run");
-    });
+    let handle = tokio::spawn(async move { axum::serve(listener, app).await });
     Ok((format!("http://{addr}"), handle))
 }
 

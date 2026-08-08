@@ -254,3 +254,7 @@
 - [ADR 012: Monotonic clock seam for build duration measurement](adr-012-monotonic-clock-seam-for-build-duration.md)
   records why `BuildSoftwareTool` uses an `Instant`-backed duration seam
   instead of `mockable::Clock` for elapsed-time assertions.
+- [ADR 013: Split CI runners by compile cost](adr-013-split-ci-runners-by-compile-cost.md)
+  records why compile-bound jobs stay on the paid Ubicloud pool while
+  non-compiling jobs run on GitHub-hosted runners, and how the split is
+  enforced.

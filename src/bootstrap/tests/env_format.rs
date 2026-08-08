@@ -4,17 +4,24 @@ use tempfile::tempdir;
 
 use super::super::*;
 
-fn assert_env_roundtrip(key: &str, value: &str) {
-    let dir = tempdir().expect("create temp dir for env round-trip test");
+/// Round-trip `key`/`value` through a temporary `.env` file.
+///
+/// Arrangement (temporary directory, write, parse) is fallible and propagates
+/// with `?`; the generated tests return the same [`anyhow::Result`] so a
+/// failure there is the test verdict.
+fn assert_env_roundtrip(key: &str, value: &str) -> anyhow::Result<()> {
+    use anyhow::Context as _;
+
+    let dir = tempdir().context("create temp dir for env round-trip test")?;
     let env_path = dir.path().join(".env");
     let write_error = format!("write round-trip env at {}", env_path.display());
     let parse_error = format!("parse round-trip env at {}", env_path.display());
     let vars = [(key, value)];
 
-    upsert_bootstrap_vars_to(&env_path, &vars).expect(write_error.as_str());
+    upsert_bootstrap_vars_to(&env_path, &vars).context(write_error)?;
 
     let parsed: Vec<(String, String)> = dotenvy::from_path_iter(&env_path)
-        .expect(parse_error.as_str())
+        .context(parse_error)?
         .filter_map(|result| result.ok())
         .collect();
 
@@ -23,20 +30,23 @@ fn assert_env_roundtrip(key: &str, value: &str) {
         1,
         "{key} round-trip should produce one env var"
     );
-    let found = parsed.iter().find(|(parsed_key, _)| parsed_key == key);
-    assert!(found.is_some(), "{key} must be present");
+    let (_, found_value) = parsed
+        .iter()
+        .find(|(parsed_key, _)| parsed_key == key)
+        .with_context(|| format!("{key} must be present"))?;
     assert_eq!(
-        found.expect("round-trip env entry present").1,
+        found_value.as_str(),
         value,
         "{key} must survive .env round-trip"
     );
+    Ok(())
 }
 
 macro_rules! env_roundtrip_test {
     ($name:ident, $key:expr, $value:expr) => {
         #[test]
-        fn $name() {
-            assert_env_roundtrip($key, $value);
+        fn $name() -> anyhow::Result<()> {
+            assert_env_roundtrip($key, $value)
         }
     };
 }

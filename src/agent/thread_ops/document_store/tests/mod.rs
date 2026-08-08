@@ -33,20 +33,27 @@ fn make_incoming_attachment(
     }
 }
 
-async fn make_workspace() -> (tempfile::TempDir, std::sync::Arc<Workspace>) {
+/// Create a temporary directory and a workspace backed by a migrated local
+/// database.
+///
+/// Returns an error if the temporary directory, the backend, or the migrations
+/// cannot be prepared.
+async fn make_workspace() -> anyhow::Result<(tempfile::TempDir, std::sync::Arc<Workspace>)> {
+    use anyhow::Context as _;
+
     use crate::db::Database;
     use std::sync::Arc;
 
-    let tmp_dir = tempfile::tempdir().expect("create tempdir");
+    let tmp_dir = tempfile::tempdir().context("create tempdir")?;
     let db_path = tmp_dir.path().join("doc_store_test.db");
     let backend = crate::db::libsql::LibSqlBackend::new_local(&db_path)
         .await
-        .expect("failed to create local backend");
+        .context("failed to create local backend")?;
     Database::run_migrations(&backend)
         .await
-        .expect("failed to run migrations");
+        .context("failed to run migrations")?;
     let workspace = Arc::new(Workspace::new_with_db("test-user", Arc::new(backend)));
-    (tmp_dir, workspace)
+    Ok((tmp_dir, workspace))
 }
 
 fn new_doc(id: &str, filename: &str, text: Option<&str>, size: u64) -> IncomingAttachment {
@@ -184,7 +191,9 @@ fn build_document_path_uses_sanitized_id_and_filename() {
 async fn store_extracted_documents_filters_and_stores_only_usable_documents() {
     use uuid::Uuid;
 
-    let (_tmp_dir, workspace) = make_workspace().await;
+    let (_tmp_dir, workspace) = make_workspace()
+        .await
+        .expect("workspace fixture should be created");
 
     // Build message with: usable doc1, non-document audio1, sentinel doc2, and no-text doc3
     let message_id = Uuid::new_v4();
@@ -228,7 +237,9 @@ async fn store_extracted_documents_filters_and_stores_only_usable_documents() {
 async fn store_extracted_documents_writes_expected_header_and_body() {
     use uuid::Uuid;
 
-    let (_tmp_dir, workspace) = make_workspace().await;
+    let (_tmp_dir, workspace) = make_workspace()
+        .await
+        .expect("workspace fixture should be created");
 
     // Build message with only usable doc1
     let message_id = Uuid::new_v4();

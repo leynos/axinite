@@ -16,7 +16,8 @@ async fn test_relay_oauth_callback_missing_state_param(
     test_gateway_state: TestGatewayStateFactory,
     test_relay_oauth_router: TestRelayOAuthRouterFactory,
 ) {
-    let ext_mgr = build_test_ext_mgr(build_test_secrets_store());
+    let secrets = build_test_secrets_store().expect("test secrets store should build");
+    let ext_mgr = build_test_ext_mgr(secrets);
     let state = test_gateway_state.build(Some(ext_mgr), None);
     let app = test_relay_oauth_router.build(state);
 
@@ -46,7 +47,7 @@ async fn test_relay_oauth_callback_wrong_state_param(
     test_gateway_state: TestGatewayStateFactory,
     test_relay_oauth_router: TestRelayOAuthRouterFactory,
 ) {
-    let secrets = build_test_secrets_store();
+    let secrets = build_test_secrets_store().expect("test secrets store should build");
     secrets
         .create(
             "test",
@@ -88,7 +89,7 @@ async fn test_relay_oauth_callback_correct_state_proceeds(
     test_gateway_state: TestGatewayStateFactory,
     test_relay_oauth_router: TestRelayOAuthRouterFactory,
 ) {
-    let secrets = build_test_secrets_store();
+    let secrets = build_test_secrets_store().expect("test secrets store should build");
     let nonce = "valid-test-nonce-12345";
 
     secrets

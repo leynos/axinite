@@ -11,12 +11,15 @@ use super::*;
 /// 3. Send `second_status` and assert the typing task is either
 ///    cancelled (`expect_cancelled = true`) or still live (`false`).
 /// 4. Shut down cleanly.
+///
+/// Channel start-up and shutdown are arrangement, so their errors are
+/// propagated for the calling test body to unwrap.
 async fn assert_typing_task_after_status(
     second_status: crate::channels::StatusUpdate,
     expect_cancelled: bool,
-) {
+) -> Result<(), crate::error::ChannelError> {
     let channel = create_test_channel();
-    let _stream = channel.start().await.expect("Channel should start");
+    let _stream = channel.start().await?;
 
     let metadata = serde_json::json!({"chat_id": 123});
 
@@ -44,7 +47,7 @@ async fn assert_typing_task_after_status(
         );
     }
 
-    channel.shutdown().await.expect("Shutdown should succeed");
+    channel.shutdown().await
 }
 
 #[tokio::test]
@@ -74,7 +77,8 @@ async fn test_typing_task_starts_on_thinking() {
 #[tokio::test]
 async fn test_typing_task_cancelled_on_done() {
     assert_typing_task_after_status(crate::channels::StatusUpdate::Status("Done".into()), true)
-        .await;
+        .await
+        .expect("typing-task lifecycle should complete");
 }
 
 #[tokio::test]
@@ -85,7 +89,8 @@ async fn test_typing_task_persists_on_tool_started() {
         },
         false,
     )
-    .await;
+    .await
+    .expect("typing-task lifecycle should complete");
 }
 
 #[tokio::test]
@@ -99,7 +104,8 @@ async fn test_typing_task_cancelled_on_approval_needed() {
         },
         true,
     )
-    .await;
+    .await
+    .expect("typing-task lifecycle should complete");
 }
 
 #[tokio::test]
@@ -108,7 +114,8 @@ async fn test_typing_task_cancelled_on_awaiting_approval_status() {
         crate::channels::StatusUpdate::Status("Awaiting approval".into()),
         true,
     )
-    .await;
+    .await
+    .expect("typing-task lifecycle should complete");
 }
 
 #[tokio::test]

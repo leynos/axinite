@@ -65,7 +65,7 @@ fn job_tool_schemas() -> Vec<(String, serde_json::Value)> {
         .collect()
 }
 
-fn skill_tool_schemas() -> Vec<(String, serde_json::Value)> {
+fn skill_tool_schemas() -> anyhow::Result<Vec<(String, serde_json::Value)>> {
     use std::sync::Arc;
 
     use crate::skills::catalog::SkillCatalog;
@@ -75,7 +75,7 @@ fn skill_tool_schemas() -> Vec<(String, serde_json::Value)> {
         SkillInstallTool, SkillListTool, SkillRemoveTool, SkillSearchTool,
     };
 
-    let dir = tempfile::tempdir().expect("tempdir");
+    let dir = tempfile::tempdir().context("failed to create temp skills dir")?;
     let path = dir.path().to_path_buf();
     let registry = Arc::new(std::sync::RwLock::new(SkillRegistry::new(path)));
     let catalogue = Arc::new(SkillCatalog::with_url("http://127.0.0.1:1"));
@@ -93,10 +93,10 @@ fn skill_tool_schemas() -> Vec<(String, serde_json::Value)> {
         Box::new(SkillRemoveTool::new(Arc::clone(&registry))),
     ];
 
-    tools
+    Ok(tools
         .into_iter()
         .map(|tool| (tool.name().to_string(), tool.parameters_schema()))
-        .collect()
+        .collect())
 }
 
 /// Validate schemas from tools that cannot be easily constructed by
@@ -143,7 +143,7 @@ fn validate_named_schemas(schemas: Vec<(String, serde_json::Value)>, context: &s
 #[rstest]
 #[case::simple(simple_tool_schemas().expect("simple tool schemas should build"), "simple tool schemas")]
 #[case::jobs(job_tool_schemas(), "job tool schemas")]
-#[case::skills(skill_tool_schemas(), "skill tool schemas")]
+#[case::skills(skill_tool_schemas().expect("skill tool schemas should build"), "skill tool schemas")]
 #[case::complex(complex_tool_schemas().expect("complex tool schema fixtures should load"), "inline schemas")]
 fn test_schema_fixture_groups(
     #[case] schemas: Vec<(String, serde_json::Value)>,

@@ -2,6 +2,7 @@
 
 use std::sync::Arc;
 
+use anyhow::Context as _;
 use rstest::{fixture, rstest};
 use rstest_bdd_macros::{given, scenario, then, when};
 
@@ -31,14 +32,17 @@ fn skill_read_file_world() -> SkillReadFileWorld {
     SkillReadFileWorld::default()
 }
 
+/// Builds an empty registry backed by a temporary directory.
+///
+/// Returns an error if the temporary directory cannot be created.
 #[fixture]
-fn test_registry() -> TestRegistryHandle {
-    let dir = tempfile::tempdir().expect("tempdir creation failed");
+fn test_registry() -> std::io::Result<TestRegistryHandle> {
+    let dir = tempfile::tempdir()?;
     let path = dir.path().to_path_buf();
-    TestRegistryHandle {
+    Ok(TestRegistryHandle {
         _dir: dir,
         registry: Arc::new(std::sync::RwLock::new(SkillRegistry::new(path))),
-    }
+    })
 }
 
 #[cfg(target_os = "linux")]
@@ -58,6 +62,10 @@ fn documented_bundle_entries() -> Vec<(&'static str, &'static [u8])> {
     ]
 }
 
+/// Inserts a `deploy-docs` bundle skill rooted at `root` into `registry`.
+///
+/// Returns an error if the location is invalid, the skill cannot be built,
+/// the registry lock is poisoned, or the skill cannot be committed.
 fn insert_deploy_docs_bundle(
     registry: &Arc<std::sync::RwLock<SkillRegistry>>,
     root: &std::path::Path,
@@ -68,21 +76,24 @@ fn insert_deploy_docs_bundle(
         std::path::PathBuf::from("SKILL.md"),
         SkillPackageKind::Bundle,
     )
-    .expect("bundle location should be valid");
+    .context("bundle location should be valid")?;
     let skill = crate::skills::test_support::TestSkillBuilder::new("deploy-docs")
         .location(location)
         .build()?;
     registry
         .write()
-        .expect("registry lock should be writable")
+        .map_err(|_| anyhow::anyhow!("registry lock should be writable"))?
         .commit_loaded_skill("deploy-docs", skill)
-        .expect("skill should be inserted");
+        .context("skill should be inserted")?;
     Ok(())
 }
 
 #[rstest]
 #[tokio::test]
-async fn skill_read_file_tool_reads_bundle_reference(test_registry: TestRegistryHandle) {
+async fn skill_read_file_tool_reads_bundle_reference(
+    test_registry: std::io::Result<TestRegistryHandle>,
+) {
+    let handle = test_registry.expect("test registry should be created");
     let bundle_dir = tempfile::tempdir().expect("bundle tempdir should be created");
     ambient_fs::create_dir_all(bundle_dir.path().join("references"))
         .expect("references dir should be created");
@@ -90,10 +101,10 @@ async fn skill_read_file_tool_reads_bundle_reference(test_registry: TestRegistry
         .expect("SKILL.md should be written");
     ambient_fs::write(bundle_dir.path().join("references/usage.md"), "# Usage\n")
         .expect("reference should be written");
-    insert_deploy_docs_bundle(&test_registry.registry, bundle_dir.path())
+    insert_deploy_docs_bundle(&handle.registry, bundle_dir.path())
         .expect("deploy-docs bundle should be inserted");
 
-    let tool = SkillReadFileTool::new(Arc::clone(&test_registry.registry));
+    let tool = SkillReadFileTool::new(Arc::clone(&handle.registry));
     let output = NativeTool::execute(
         &tool,
         serde_json::json!({
@@ -189,8 +200,11 @@ async fn test_skill_read_file_tool_after_install_returns_non_inline_for_png()
 
 #[rstest]
 #[tokio::test]
-async fn skill_read_file_tool_reports_unknown_skill(test_registry: TestRegistryHandle) {
-    let tool = SkillReadFileTool::new(Arc::clone(&test_registry.registry));
+async fn skill_read_file_tool_reports_unknown_skill(
+    test_registry: std::io::Result<TestRegistryHandle>,
+) {
+    let handle = test_registry.expect("test registry should be created");
+    let tool = SkillReadFileTool::new(Arc::clone(&handle.registry));
 
     let output = NativeTool::execute(
         &tool,
@@ -208,54 +222,62 @@ async fn skill_read_file_tool_reports_unknown_skill(test_registry: TestRegistryH
     assert_eq!(output.result["error"]["code"], "unknown_skill");
 }
 
+/// Arranges a bundle on disk and registers it, so the step is fallible.
 #[given("a loaded skill bundle with a referenced usage file")]
-fn bdd_loaded_skill_bundle(skill_read_file_world: &mut SkillReadFileWorld) {
-    let bundle_dir = tempfile::tempdir().expect("bundle tempdir should be created");
+fn bdd_loaded_skill_bundle(skill_read_file_world: &mut SkillReadFileWorld) -> anyhow::Result<()> {
+    let bundle_dir = tempfile::tempdir().context("bundle tempdir should be created")?;
     ambient_fs::create_dir_all(bundle_dir.path().join("references"))
-        .expect("references dir should be created");
+        .context("references dir should be created")?;
     ambient_fs::write(bundle_dir.path().join("SKILL.md"), "# Deploy docs\n")
-        .expect("SKILL.md should be written");
+        .context("SKILL.md should be written")?;
     ambient_fs::write(bundle_dir.path().join("references/usage.md"), "# Usage\n")
-        .expect("reference should be written");
+        .context("reference should be written")?;
 
     let registry = Arc::new(std::sync::RwLock::new(SkillRegistry::new(
         bundle_dir.path().join("unused-user-dir"),
     )));
     insert_deploy_docs_bundle(&registry, bundle_dir.path())
-        .expect("deploy-docs bundle should be inserted");
+        .context("deploy-docs bundle should be inserted")?;
 
     skill_read_file_world.bundle_dir = Some(bundle_dir);
     skill_read_file_world.registry = Some(registry);
+    Ok(())
 }
 
 #[when("the model calls skill_read_file for the usage file")]
-fn bdd_model_reads_usage_file(skill_read_file_world: &mut SkillReadFileWorld) {
+fn bdd_model_reads_usage_file(
+    skill_read_file_world: &mut SkillReadFileWorld,
+) -> anyhow::Result<()> {
     execute_bdd_read(
         skill_read_file_world,
         serde_json::json!({
             "skill": "deploy-docs",
             "path": "references/usage.md",
         }),
-    );
+    )
 }
 
 #[when("the model calls skill_read_file with a traversal path")]
-fn bdd_model_reads_traversal_path(skill_read_file_world: &mut SkillReadFileWorld) {
+fn bdd_model_reads_traversal_path(
+    skill_read_file_world: &mut SkillReadFileWorld,
+) -> anyhow::Result<()> {
     execute_bdd_read(
         skill_read_file_world,
         serde_json::json!({
             "skill": "deploy-docs",
             "path": "../secrets.txt",
         }),
-    );
+    )
 }
 
 #[then("the tool returns the referenced text without a host filesystem path")]
-fn bdd_tool_returns_reference_text(skill_read_file_world: &SkillReadFileWorld) {
+fn bdd_tool_returns_reference_text(
+    skill_read_file_world: &SkillReadFileWorld,
+) -> anyhow::Result<()> {
     let output = skill_read_file_world
         .output
         .as_ref()
-        .expect("When step should execute tool");
+        .context("When step should execute tool")?;
     assert_eq!(output["skill"], "deploy-docs");
     assert_eq!(output["path"], "references/usage.md");
     assert_eq!(output["content"], "# Usage\n");
@@ -263,36 +285,48 @@ fn bdd_tool_returns_reference_text(skill_read_file_world: &SkillReadFileWorld) {
     let root = skill_read_file_world
         .bundle_dir
         .as_ref()
-        .expect("Given step should create bundle")
+        .context("Given step should create bundle")?
         .path()
         .to_string_lossy();
     assert!(!output.to_string().contains(root.as_ref()));
+    Ok(())
 }
 
 #[then("the tool returns a skill-scoped path_not_readable error")]
-fn bdd_tool_returns_path_not_readable(skill_read_file_world: &SkillReadFileWorld) {
+fn bdd_tool_returns_path_not_readable(
+    skill_read_file_world: &SkillReadFileWorld,
+) -> anyhow::Result<()> {
     let output = skill_read_file_world
         .output
         .as_ref()
-        .expect("When step should execute tool");
+        .context("When step should execute tool")?;
     assert_eq!(output["skill"], "deploy-docs");
     assert_eq!(output["path"], "../secrets.txt");
     assert_eq!(output["error"]["code"], "path_not_readable");
+    Ok(())
 }
 
-fn execute_bdd_read(skill_read_file_world: &mut SkillReadFileWorld, params: serde_json::Value) {
+/// Runs the tool against the world's registry and records the result.
+///
+/// Returns an error if the Given step has not run, the runtime cannot start,
+/// or the tool call fails.
+fn execute_bdd_read(
+    skill_read_file_world: &mut SkillReadFileWorld,
+    params: serde_json::Value,
+) -> anyhow::Result<()> {
     let registry = Arc::clone(
         skill_read_file_world
             .registry
             .as_ref()
-            .expect("Given step should create registry"),
+            .context("Given step should create registry")?,
     );
     let tool = SkillReadFileTool::new(registry);
-    let runtime = tokio::runtime::Runtime::new().expect("tokio runtime should start");
+    let runtime = tokio::runtime::Runtime::new().context("tokio runtime should start")?;
     let output = runtime
         .block_on(NativeTool::execute(&tool, params, &JobContext::default()))
-        .expect("skill_read_file should return a tool output");
+        .context("skill_read_file should return a tool output")?;
     skill_read_file_world.output = Some(output.result);
+    Ok(())
 }
 
 #[scenario(

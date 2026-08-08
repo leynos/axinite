@@ -179,7 +179,8 @@ test-matrix-cargo:
 	$(CARGO) test --features postgres,libsql-test-helpers,html-to-markdown -- --nocapture
 	$(CARGO) test --manifest-path $(GITHUB_TOOL_MANIFEST) -- --nocapture
 
-# Validate the mutation-testing caller workflow contract.
+# Validate the GitHub Actions workflow contracts: reusable-workflow callers,
+# the isolated CodeScene coverage job, and the per-job runner policy.
 test-workflow-contracts:
 	uv run --with 'pytest>=8' --with 'pyyaml>=6' pytest tests/workflow_contracts -q
 

@@ -18,37 +18,41 @@ async fn migrate_disk_to_db_from_dir_missing_legacy_file_is_noop() {
         .await
         .expect("missing settings migration should succeed");
 
-    assert_store_state(&store, 0, 0);
+    assert_store_state(&store.state().expect("lock migration store state"), 0, 0);
     assert!(!dir.path().join("settings.json.migrated").exists());
 }
 
 #[tokio::test]
 async fn migrate_disk_to_db_from_dir_renames_when_db_already_has_settings() {
     let dir = tempdir().expect("create temp dir for stale settings migration");
-    let _settings_path = write_legacy_settings(&dir);
+    let _settings_path = write_legacy_settings(&dir).expect("write legacy settings.json");
     let store = MigrationStore::new(Ok(true));
 
     super::super::migration::migrate_disk_to_db_from_dir(&store, "test-user", dir.path())
         .await
         .expect("stale settings migration should succeed");
 
-    assert_store_state(&store, 1, 0);
+    assert_store_state(&store.state().expect("lock migration store state"), 1, 0);
     assert_legacy_file_renamed(&dir);
 }
 
 #[tokio::test]
 async fn migrate_disk_to_db_from_dir_writes_settings_and_renames_legacy_file() {
     let dir = tempdir().expect("create temp dir for settings migration");
-    let _settings_path = write_legacy_settings(&dir);
+    let _settings_path = write_legacy_settings(&dir).expect("write legacy settings.json");
     let store = MigrationStore::new(Ok(false));
 
     super::super::migration::migrate_disk_to_db_from_dir(&store, "test-user", dir.path())
         .await
         .expect("settings migration should succeed");
 
-    assert_store_state(&store, 1, 1);
+    assert_store_state(&store.state().expect("lock migration store state"), 1, 1);
     assert_eq!(
-        store.state().captured_settings.get("onboard_completed"),
+        store
+            .state()
+            .expect("lock migration store state")
+            .captured_settings
+            .get("onboard_completed"),
         Some(&serde_json::Value::Bool(true))
     );
     assert_legacy_file_renamed(&dir);
@@ -57,7 +61,7 @@ async fn migrate_disk_to_db_from_dir_writes_settings_and_renames_legacy_file() {
 #[tokio::test]
 async fn migrate_disk_to_db_from_dir_db_failure_leaves_legacy_file_unmigrated() {
     let dir = tempdir().expect("create temp dir for failed settings migration");
-    let _settings_path = write_legacy_settings(&dir);
+    let _settings_path = write_legacy_settings(&dir).expect("write legacy settings.json");
     let store = MigrationStore::with_set_all_error();
 
     let error =
@@ -68,14 +72,14 @@ async fn migrate_disk_to_db_from_dir_db_failure_leaves_legacy_file_unmigrated() 
     assert!(
         matches!(error, MigrationError::Database(ref message) if message.contains("Failed to write settings to DB"))
     );
-    assert_store_state(&store, 1, 1);
+    assert_store_state(&store.state().expect("lock migration store state"), 1, 1);
     assert_legacy_file_not_renamed(&dir);
 }
 
 #[tokio::test]
 async fn migrate_disk_to_db_from_dir_is_ok_after_best_effort_rename_removed_source() {
     let dir = tempdir().expect("create temp dir for repeated settings migration");
-    let _settings_path = write_legacy_settings(&dir);
+    let _settings_path = write_legacy_settings(&dir).expect("write legacy settings.json");
     let store = MigrationStore::new(Ok(false));
 
     super::super::migration::migrate_disk_to_db_from_dir(&store, "test-user", dir.path())
@@ -85,6 +89,6 @@ async fn migrate_disk_to_db_from_dir_is_ok_after_best_effort_rename_removed_sour
         .await
         .expect("second settings migration should succeed after source was renamed");
 
-    assert_store_state(&store, 1, 1);
+    assert_store_state(&store.state().expect("lock migration store state"), 1, 1);
     assert_legacy_file_renamed(&dir);
 }

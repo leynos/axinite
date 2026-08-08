@@ -34,16 +34,17 @@ async fn record_auth(headers: &HeaderMap, state: &ClientMethodTestState) {
     state.auth_headers.lock().await.push(auth);
 }
 
+/// Bind an ephemeral listener and serve `router` on a background task.
+///
+/// Binding is fallible, so the base URL is returned as a `Result`. The spawned
+/// task cannot propagate with `?`, so it yields the serve outcome through the
+/// join handle rather than unwrapping inside the task.
 async fn spawn_test_server(
     router: Router,
-) -> anyhow::Result<(String, tokio::task::JoinHandle<()>)> {
+) -> anyhow::Result<(String, tokio::task::JoinHandle<std::io::Result<()>>)> {
     let listener = TcpListener::bind("127.0.0.1:0").await?;
     let addr = listener.local_addr()?;
-    let handle = tokio::spawn(async move {
-        axum::serve(listener, router)
-            .await
-            .expect("client method test server should run");
-    });
+    let handle = tokio::spawn(async move { axum::serve(listener, router).await });
     Ok((format!("http://{addr}"), handle))
 }
 
@@ -57,7 +58,7 @@ async fn setup_for_test(
 ) -> anyhow::Result<(
     Arc<ClientMethodTestState>,
     WorkerHttpClient,
-    tokio::task::JoinHandle<()>,
+    tokio::task::JoinHandle<std::io::Result<()>>,
 )> {
     let state = Arc::new(ClientMethodTestState::default());
     let (base_url, handle) = spawn_test_server(make_router(Arc::clone(&state))).await?;

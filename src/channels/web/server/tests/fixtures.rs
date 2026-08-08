@@ -2,6 +2,7 @@
 
 use std::sync::Arc;
 
+use anyhow::Context as _;
 use axum::{Router, routing::get};
 use rstest::fixture;
 
@@ -88,12 +89,18 @@ pub(super) fn test_relay_oauth_router() -> TestRelayOAuthRouterFactory {
     TestRelayOAuthRouterFactory
 }
 
-pub(super) fn build_test_secrets_store() -> Arc<dyn crate::secrets::SecretsStore + Send + Sync> {
-    Arc::new(crate::secrets::InMemorySecretsStore::new(Arc::new(
-        crate::secrets::SecretsCrypto::new(secrecy::SecretString::from(
-            TEST_GATEWAY_CRYPTO_KEY.to_string(),
-        ))
-        .expect("construct test gateway secrets crypto"),
+/// Build an in-memory secrets store backed by the test gateway crypto key.
+///
+/// Crypto construction can fail, so the error is propagated for the test body
+/// to unwrap.
+pub(super) fn build_test_secrets_store()
+-> anyhow::Result<Arc<dyn crate::secrets::SecretsStore + Send + Sync>> {
+    let crypto = crate::secrets::SecretsCrypto::new(secrecy::SecretString::from(
+        TEST_GATEWAY_CRYPTO_KEY.to_string(),
+    ))
+    .context("construct test gateway secrets crypto")?;
+    Ok(Arc::new(crate::secrets::InMemorySecretsStore::new(
+        Arc::new(crypto),
     )))
 }
 
@@ -125,10 +132,14 @@ pub(super) fn build_test_ext_mgr(
     ))
 }
 
+/// Build a pending OAuth flow whose creation timestamp is already expired.
+///
+/// The backdated timestamp can fail on a freshly booted host, so the error is
+/// propagated for the test body to unwrap.
 pub(super) fn expired_pending_oauth_flow(
     secrets: Arc<dyn crate::secrets::SecretsStore + Send + Sync>,
-) -> crate::cli::oauth_defaults::PendingOAuthFlow {
-    crate::cli::oauth_defaults::PendingOAuthFlow {
+) -> anyhow::Result<crate::cli::oauth_defaults::PendingOAuthFlow> {
+    Ok(crate::cli::oauth_defaults::PendingOAuthFlow {
         extension_name: "test_tool".to_string(),
         display_name: "Test Tool".to_string(),
         token_url: "https://example.com/token".to_string(),
@@ -147,6 +158,6 @@ pub(super) fn expired_pending_oauth_flow(
         gateway_token: None,
         created_at: std::time::Instant::now()
             .checked_sub(std::time::Duration::from_secs(600))
-            .expect("system uptime is too low to run expired OAuth flow tests"),
-    }
+            .context("system uptime is too low to run expired OAuth flow tests")?,
+    })
 }

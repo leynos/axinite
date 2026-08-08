@@ -107,24 +107,33 @@ async fn setup_tools_and_job() -> Result<ToolGatingFixture> {
     })
 }
 
+/// Assert that `result` was rejected with an auth-required error for
+/// `tool_name`. Shares a signature with [`assert_executed`] so both can be
+/// selected per `#[case]`.
 fn assert_auth_required(
     result: Result<TaskOutput, Error>,
     tool_name: &'static str,
     msg: &'static str,
-) {
+) -> Result<()> {
     match result.expect_err(msg) {
         Error::Tool(AppToolError::AuthRequired { name }) => assert_eq!(name, tool_name),
         other => panic!("{msg}: unexpected error {other}"),
     }
+    Ok(())
 }
 
+/// Assert that `result` executed and produced `expected_text`.
+///
+/// Returns an error when execution failed, leaving the calling test to
+/// propagate it.
 fn assert_executed(
     result: Result<TaskOutput, Error>,
     expected_text: &'static str,
     msg: &'static str,
-) {
-    let output = result.expect(msg);
+) -> Result<()> {
+    let output = result.map_err(|e| anyhow!("{msg}: {e}"))?;
     assert_eq!(output.result.as_str(), Some(expected_text), "{msg}");
+    Ok(())
 }
 
 #[tokio::test]
@@ -134,12 +143,12 @@ async fn test_execute_tool_task_blocks_without_context() -> Result<()> {
         f.run(None, "soft_gate").await,
         "soft_gate",
         "soft_gate should be blocked without context",
-    );
+    )?;
     assert_auth_required(
         f.run(None, "hard_gate").await,
         "hard_gate",
         "hard_gate should be blocked without context",
-    );
+    )?;
     Ok(())
 }
 
@@ -161,7 +170,11 @@ async fn test_execute_tool_task_blocks_without_context() -> Result<()> {
 #[tokio::test]
 async fn test_execute_tool_task_with_approval_context(
     #[case] ctx: ApprovalContext,
-    #[case] hard_gate_assert: fn(Result<TaskOutput, Error>, &'static str, &'static str),
+    #[case] hard_gate_assert: fn(
+        Result<TaskOutput, Error>,
+        &'static str,
+        &'static str,
+    ) -> Result<()>,
     #[case] hard_gate_expected: &'static str,
     #[case] soft_gate_msg: &'static str,
     #[case] hard_gate_msg: &'static str,
@@ -171,11 +184,11 @@ async fn test_execute_tool_task_with_approval_context(
         f.run(Some(ctx.clone()), "soft_gate").await,
         "soft_ok",
         soft_gate_msg,
-    );
+    )?;
     hard_gate_assert(
         f.run(Some(ctx), "hard_gate").await,
         hard_gate_expected,
         hard_gate_msg,
-    );
+    )?;
     Ok(())
 }
