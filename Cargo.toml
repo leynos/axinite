@@ -176,7 +176,7 @@ clap_complete = "4.5.0"
 lru = "0.18.0"
 
 # HTML to Markdown conversion (feature gated)
-html-to-markdown-rs = { version = "2.3", optional = true }
+html-to-markdown-rs = { version = "3.8", optional = true }
 readability-js = { version = "0.1.5", optional = true }
 kuchiki = { version = "0.8", optional = true }
 ed25519-dalek = { version = "2.2.0", features = ["std"] }
