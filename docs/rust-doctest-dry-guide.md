@@ -614,7 +614,7 @@ July 15, 2025, <https://doc.rust-lang.org/rustdoc/documentation-tests.html>
 <https://swatinem.de/blog/fix-rustdoc/>
 [^4]: LogRocket Blog — Organizing Rust tests, accessed on July 15, 2025,
 <https://blog.logrocket.com/how-to-organize-rust-tests/> Reddit — Best way to
-organize tests in Rust, accessed on July 15, 2025,
+organise tests in Rust, accessed on July 15, 2025,
 <https://www.reddit.com/r/rust/comments/qk77iu/best_way_to_organise_tests_in_rust/>
 [^5]: Writing Rust documentation - Dev Community, accessed on July 15, 2025,
 <https://dev.to/gritmax/writing-rust-documentation-5hn5>
