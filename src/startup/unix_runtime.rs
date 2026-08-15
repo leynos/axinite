@@ -150,6 +150,22 @@ mod tests {
     struct DummySettingsStore;
 
     impl NativeSettingsStore for DummySettingsStore {
+        async fn list_deployment_flags(
+            &self,
+            _deployment_id: &str,
+        ) -> Result<Vec<(String, bool)>, axinite::error::DatabaseError> {
+            Ok(Vec::new())
+        }
+
+        async fn set_deployment_flag(
+            &self,
+            _deployment_id: &str,
+            _flag_name: &str,
+            _enabled: bool,
+        ) -> Result<(), axinite::error::DatabaseError> {
+            Ok(())
+        }
+
         async fn get_setting(
             &self,
             _user_id: UserId,

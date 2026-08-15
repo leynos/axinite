@@ -200,5 +200,8 @@ async fn make_test_state(msg_tx: Option<mpsc::Sender<IncomingMessage>>) -> Gatew
         cost_guard: None,
         routine_engine: Arc::new(tokio::sync::RwLock::new(None)),
         startup_time: std::time::Instant::now(),
+        feature_flags: Arc::new(tokio::sync::RwLock::new(
+            crate::channels::web::handlers::feature_registry::FeatureFlagRegistry::new(),
+        )),
     }
 }

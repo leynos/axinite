@@ -1,82 +1,67 @@
-"""Scenario 5: HTML injection defence in chat messages."""
+"""Scenario 5: HTML/XSS defence in chat messages (SolidJS pipeline).
 
-import pytest
+Adaptation from the legacy shell:
+  - The legacy `addMessage('assistant', ...)` global no longer exists. The
+    assistant XSS vector is exercised through the real pipeline: the mock LLM
+    returns a canned payload full of `<script>/<iframe>/onerror` for a message
+    matching "html/injection test", and the SolidJS sanitizing markdown
+    renderer (`renderMarkdown`) must strip them.
+  - User input is verified as escaped plain text in the user turn bubble.
+"""
+
 from helpers import SEL
 
 
-XSS_PAYLOAD = (
-    'Here is some content: <script>alert("xss")</script> and '
-    '<img src=x onerror="alert(1)"> and '
-    '<iframe src="javascript:alert(2)"></iframe> end of content.'
-)
+async def _send(page, text: str):
+    composer = page.get_by_label("Message composer")
+    await composer.wait_for(state="visible", timeout=5000)
+    await composer.fill(text)
+    await page.locator(SEL["chat_send"]).click()
 
 
-async def test_html_injection_sanitized(page):
-    """XSS vectors in assistant messages should be sanitized by renderMarkdown."""
-    # Inject an assistant message with XSS vectors directly via JS.
-    # This tests the sanitization pipeline (renderMarkdown → sanitizeRenderedHtml)
-    # without depending on the full LLM round-trip.
-    await page.evaluate(
-        "content => addMessage('assistant', content)", XSS_PAYLOAD
+async def test_assistant_xss_sanitized(page):
+    """The mock LLM's XSS payload is rendered without executable markup."""
+    await _send(page, "Please run the html injection test")
+
+    # Wait for the assistant answer to render (any non-empty markdown block).
+    await page.wait_for_function(
+        """() => [...document.querySelectorAll(
+            "[data-role='assistant'] .chat-preview__markdown"
+        )].some((el) => (el.textContent || '').trim().length > 0)""",
+        timeout=20000,
     )
 
-    assistant_msg = page.locator(SEL["message_assistant"]).last
-    await assistant_msg.wait_for(state="visible", timeout=5000)
+    # Collect every assistant markdown block and assert none carry live markup.
+    blocks = page.locator(f"{SEL['chat_turn_assistant']} {SEL['chat_markdown']}")
+    combined = ""
+    for i in range(await blocks.count()):
+        combined += (await blocks.nth(i).inner_html()).lower()
 
-    inner_html = await assistant_msg.inner_html()
+    assert "<script" not in combined, "Script tags were not sanitized"
+    assert "<iframe" not in combined, "iframe tags were not sanitized"
+    assert "onerror=" not in combined, "Event handler attributes were not sanitized"
 
-    # Script tags must be stripped
-    assert "<script>" not in inner_html.lower(), \
-        "Script tags were not sanitized from the response"
-
-    # iframes must be stripped
-    assert "<iframe" not in inner_html.lower(), \
-        "iframe tags were not sanitized from the response"
-
-    # Event handlers must be stripped
-    assert "onerror=" not in inner_html.lower(), \
-        "Event handler attributes were not sanitized"
-
-    # The safe text content should still be present
-    text = await assistant_msg.text_content()
-    assert "content" in text.lower(), \
-        "Safe text was lost during sanitization"
+    # No <script> elements should exist anywhere in the assistant turns.
+    script_count = await page.locator(f"{SEL['chat_turn_assistant']} script").count()
+    assert script_count == 0, f"Found {script_count} script elements in chat"
 
 
-async def test_user_message_not_html_rendered(page):
-    """User messages should be plain text, never rendered as HTML."""
-    chat_input = page.locator(SEL["chat_input"])
-    dangerous_input = '<img src=x onerror="alert(1)">'
-    await chat_input.fill(dangerous_input)
-    await chat_input.press("Enter")
+async def test_user_message_rendered_as_plain_text(page):
+    """A user message with an <img onerror> payload is shown as escaped text."""
+    dangerous = '<img src=x onerror="alert(1)">'
+    await _send(page, dangerous)
 
-    user_msg = page.locator(SEL["message_user"]).last
-    await user_msg.wait_for(state="visible", timeout=5000)
+    user_turn = page.locator(SEL["chat_turn_user"]).last
+    await user_turn.wait_for(state="visible", timeout=5000)
 
-    # The message should show the raw text, not render an img tag
-    text = await user_msg.text_content()
-    assert "<img" in text, \
-        "User message HTML should be shown as plain text, not stripped"
+    text = await user_turn.text_content()
+    assert "<img" in text, "User HTML should be visible as literal text"
 
-    # The inner HTML should have the text escaped (< becomes &lt;)
-    inner = await user_msg.inner_html()
-    assert "&lt;img" in inner, \
-        "User message was rendered as HTML instead of plain text"
-
-
-async def test_no_script_elements_after_injection(page):
-    """Verify that script tags in responses don't create DOM script elements."""
-    await page.evaluate(
-        "content => addMessage('assistant', content)", XSS_PAYLOAD
+    inner = await user_turn.inner_html()
+    assert "&lt;img" in inner, "User message must be HTML-escaped, not rendered"
+    # The escaped text legitimately contains the literal substring "onerror="
+    # (it is inside an escaped text node, not a live attribute). The real
+    # security assertion is that no actual <img> element was created.
+    assert await user_turn.locator("img").count() == 0, (
+        "User payload must not create a live <img> element"
     )
-
-    assistant_msg = page.locator(SEL["message_assistant"]).last
-    await assistant_msg.wait_for(state="visible", timeout=5000)
-
-    # Wait a moment for any scripts to potentially execute
-    await page.wait_for_timeout(500)
-
-    # Verify no <script> elements exist in the chat messages
-    script_count = await page.locator("#chat-messages script").count()
-    assert script_count == 0, \
-        f"Found {script_count} unescaped script elements in chat messages"

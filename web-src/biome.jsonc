@@ -1,0 +1,46 @@
+{
+  "$schema": "https://biomejs.dev/schemas/2.4.9/schema.json",
+  "formatter": {
+    "enabled": true,
+    "indentStyle": "space",
+    "indentWidth": 2
+  },
+  "linter": {
+    "enabled": true,
+    "rules": {
+      "recommended": true,
+      "suspicious": {
+        "noConsole": "off"
+      },
+      "style": {
+        "useTemplate": "error"
+      }
+    }
+  },
+  "files": {
+    "includes": [
+      "axinite/src/**",
+      "axinite/tests/**",
+      "scripts/**",
+      "docs/**",
+      "package.json",
+      "tsconfig.json",
+      "vite.config.ts",
+      "playwright.config.ts",
+      "vitest.config.ts",
+      "vitest.a11y.config.ts"
+    ]
+  },
+  "javascript": {
+    "formatter": {
+      "quoteStyle": "double",
+      "semicolons": "always",
+      "trailingCommas": "es5"
+    }
+  },
+  "css": {
+    "parser": {
+      "tailwindDirectives": true
+    }
+  }
+}

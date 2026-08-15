@@ -85,6 +85,21 @@ pub trait SettingsStore: Send + Sync {
     ) -> DbFuture<'a, Result<(), DatabaseError>>;
     /// Report whether any settings exist for `user_id`.
     fn has_settings<'a>(&'a self, user_id: UserId) -> DbFuture<'a, Result<bool, DatabaseError>>;
+    /// List deployment-scoped feature-flag overrides for `deployment_id`.
+    ///
+    /// Feature flags (RFC 0009) are deployment-scoped, not user-scoped, so they
+    /// live in `feature_flag_overrides` rather than the `settings` table.
+    fn list_deployment_flags<'a>(
+        &'a self,
+        deployment_id: &'a str,
+    ) -> DbFuture<'a, Result<Vec<(String, bool)>, DatabaseError>>;
+    /// Insert or replace the deployment-scoped override for `flag_name`.
+    fn set_deployment_flag<'a>(
+        &'a self,
+        deployment_id: &'a str,
+        flag_name: &'a str,
+        enabled: bool,
+    ) -> DbFuture<'a, Result<(), DatabaseError>>;
 }
 
 /// Native async sibling trait for concrete settings-store implementations.
@@ -135,4 +150,19 @@ pub trait NativeSettingsStore: Send + Sync {
         &'a self,
         user_id: UserId,
     ) -> impl Future<Output = Result<bool, DatabaseError>> + Send + 'a;
+    /// List deployment-scoped feature-flag overrides for `deployment_id`.
+    ///
+    /// Feature flags (RFC 0009) are deployment-scoped, not user-scoped, so they
+    /// live in `feature_flag_overrides` rather than the `settings` table.
+    fn list_deployment_flags<'a>(
+        &'a self,
+        deployment_id: &'a str,
+    ) -> impl Future<Output = Result<Vec<(String, bool)>, DatabaseError>> + Send + 'a;
+    /// Insert or replace the deployment-scoped override for `flag_name`.
+    fn set_deployment_flag<'a>(
+        &'a self,
+        deployment_id: &'a str,
+        flag_name: &'a str,
+        enabled: bool,
+    ) -> impl Future<Output = Result<(), DatabaseError>> + Send + 'a;
 }

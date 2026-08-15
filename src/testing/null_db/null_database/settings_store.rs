@@ -64,4 +64,20 @@ impl crate::db::NativeSettingsStore for NullDatabase {
     async fn has_settings(&self, _user_id: UserId) -> Result<bool, DatabaseError> {
         Ok(false)
     }
+
+    async fn list_deployment_flags(
+        &self,
+        _deployment_id: &str,
+    ) -> Result<Vec<(String, bool)>, DatabaseError> {
+        Ok(vec![])
+    }
+
+    async fn set_deployment_flag(
+        &self,
+        _deployment_id: &str,
+        _flag_name: &str,
+        _enabled: bool,
+    ) -> Result<(), DatabaseError> {
+        Ok(())
+    }
 }
