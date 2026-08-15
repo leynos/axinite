@@ -3,12 +3,17 @@ CARGO_RESOLVED := $(shell command -v cargo 2>/dev/null || printf '%s' "$$HOME/.c
 ifeq ($(strip $(CARGO)),)
 override CARGO := $(CARGO_RESOLVED)
 endif
-NEXTEST ?= $(CARGO) nextest
+# Keep resolved executable paths as one shell argument, including paths with
+# spaces or shell metacharacters. The replacement is the POSIX single-quote
+# escape sequence for an embedded single quote.
+shell_quote = '$(subst ','"'"',$(1))'
+CARGO_COMMAND = $(call shell_quote,$(CARGO))
+NEXTEST ?= $(CARGO_COMMAND) nextest
 BUNX ?= $(shell command -v bunx 2>/dev/null || printf '%s' "$$HOME/.bun/bin/bunx")
 TEST_FEATURES ?= --features test-helpers
 NEXTEST_PROFILE ?= default
 MARKDOWNLINT_BASE ?= origin/main
-CARGO_AUDIT ?= $(CARGO) audit
+CARGO_AUDIT ?= $(CARGO_COMMAND) audit
 WHITAKER ?= whitaker
 NIXIE ?= nixie
 UV ?= uv
@@ -86,7 +91,7 @@ all: check-fmt lint test spelling
 
 install:
 	./scripts/build-wasm-extensions.sh
-	$(CARGO) install --path .
+	$(CARGO_COMMAND) install --path .
 
 install-with-overrides: install sync-local-wasm-overrides
 
@@ -94,31 +99,31 @@ sync-local-wasm-overrides:
 	./scripts/sync-local-wasm-overrides.sh
 
 build-github-tool-wasm:
-	$(CARGO) build --manifest-path $(GITHUB_TOOL_MANIFEST) --release --target $(GITHUB_TOOL_WASM_TARGET)
+	$(CARGO_COMMAND) build --manifest-path $(GITHUB_TOOL_MANIFEST) --release --target $(GITHUB_TOOL_WASM_TARGET)
 
 # Format Rust and Markdown sources with the estate-wide formatter.
 fmt:
-	$(CARGO) fmt --all
-	$(CARGO) fmt --manifest-path $(GITHUB_TOOL_MANIFEST) --all
+	$(CARGO_COMMAND) fmt --all
+	$(CARGO_COMMAND) fmt --manifest-path $(GITHUB_TOOL_MANIFEST) --all
 	mdformat-all
 
 check-fmt:
-	$(CARGO) fmt --all -- --check
-	$(CARGO) fmt --manifest-path $(GITHUB_TOOL_MANIFEST) --all -- --check
+	$(CARGO_COMMAND) fmt --all -- --check
+	$(CARGO_COMMAND) fmt --manifest-path $(GITHUB_TOOL_MANIFEST) --all -- --check
 
 typecheck:
-	$(CARGO) check --all --benches --tests --examples $(TEST_FEATURES)
-	$(CARGO) check --all --benches --tests --examples --no-default-features --features libsql-test-helpers
-	$(CARGO) check --all --benches --tests --examples --all-features $(TEST_FEATURES)
-	$(CARGO) check --manifest-path $(GITHUB_TOOL_MANIFEST) --tests
+	$(CARGO_COMMAND) check --all --benches --tests --examples $(TEST_FEATURES)
+	$(CARGO_COMMAND) check --all --benches --tests --examples --no-default-features --features libsql-test-helpers
+	$(CARGO_COMMAND) check --all --benches --tests --examples --all-features $(TEST_FEATURES)
+	$(CARGO_COMMAND) check --manifest-path $(GITHUB_TOOL_MANIFEST) --tests
 
 lint: lint-clippy lint-whitaker
 
 lint-clippy:
-	$(CARGO) clippy --all --benches --tests --examples $(TEST_FEATURES) -- -D warnings
-	$(CARGO) clippy --all --benches --tests --examples --no-default-features --features libsql-test-helpers -- -D warnings
-	$(CARGO) clippy --all --benches --tests --examples --all-features $(TEST_FEATURES) -- -D warnings
-	$(CARGO) clippy --manifest-path $(GITHUB_TOOL_MANIFEST) --tests -- -D warnings
+	$(CARGO_COMMAND) clippy --all --benches --tests --examples $(TEST_FEATURES) -- -D warnings
+	$(CARGO_COMMAND) clippy --all --benches --tests --examples --no-default-features --features libsql-test-helpers -- -D warnings
+	$(CARGO_COMMAND) clippy --all --benches --tests --examples --all-features $(TEST_FEATURES) -- -D warnings
+	$(CARGO_COMMAND) clippy --manifest-path $(GITHUB_TOOL_MANIFEST) --tests -- -D warnings
 
 lint-whitaker:
 	RUSTFLAGS="-D warnings" $(WHITAKER) --all -- --all-targets --all-features
@@ -172,12 +177,12 @@ rust-audit:
 test:
 	$(MAKE) build-github-tool-wasm
 	$(NEXTEST) run --workspace $(TEST_FEATURES) --profile $(NEXTEST_PROFILE)
-	$(CARGO) test --manifest-path $(GITHUB_TOOL_MANIFEST)
+	$(CARGO_COMMAND) test --manifest-path $(GITHUB_TOOL_MANIFEST)
 
 test-cargo:
 	$(MAKE) build-github-tool-wasm
-	$(CARGO) test $(TEST_FEATURES)
-	$(CARGO) test --manifest-path $(GITHUB_TOOL_MANIFEST)
+	$(CARGO_COMMAND) test $(TEST_FEATURES)
+	$(CARGO_COMMAND) test --manifest-path $(GITHUB_TOOL_MANIFEST)
 
 test-matrix:
 	$(MAKE) build-github-tool-wasm
@@ -188,16 +193,16 @@ test-matrix:
 
 test-matrix-cargo:
 	$(MAKE) build-github-tool-wasm
-	$(CARGO) test $(TEST_FEATURES) -- --nocapture
-	$(CARGO) test --no-default-features --features libsql-test-helpers -- --nocapture
-	$(CARGO) test --features postgres,libsql-test-helpers,html-to-markdown -- --nocapture
-	$(CARGO) test --manifest-path $(GITHUB_TOOL_MANIFEST) -- --nocapture
+	$(CARGO_COMMAND) test $(TEST_FEATURES) -- --nocapture
+	$(CARGO_COMMAND) test --no-default-features --features libsql-test-helpers -- --nocapture
+	$(CARGO_COMMAND) test --features postgres,libsql-test-helpers,html-to-markdown -- --nocapture
+	$(CARGO_COMMAND) test --manifest-path $(GITHUB_TOOL_MANIFEST) -- --nocapture
 
 # Validate the mutation-testing caller workflow contract.
 test-workflow-contracts:
 	uv run --with 'pytest>=8' --with 'pyyaml>=6' pytest tests/workflow_contracts -q
 
 clean:
-	$(CARGO) clean
-	$(CARGO) clean --manifest-path $(GITHUB_TOOL_MANIFEST)
+	$(CARGO_COMMAND) clean
+	$(CARGO_COMMAND) clean --manifest-path $(GITHUB_TOOL_MANIFEST)
 	rm -rf $(WASM_SHARED_TARGET_DIR)
