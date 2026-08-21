@@ -206,9 +206,10 @@ The current `Makefile` also includes:
 
 The Makefile resolves an unset or empty `CARGO` with `command -v cargo`,
 falling back to `~/.cargo/bin/cargo` when Cargo is not on `$PATH`. A non-empty
-caller override is preserved. `NEXTEST` is derived as `$(CARGO) nextest`, so
-both variables consistently use the same Cargo binary. Override them by setting
-`CARGO` or `NEXTEST` in the environment before invoking `make`.
+caller override is preserved. `NEXTEST` defaults to the same resolved Cargo
+executable, quoted as one shell argument, so both variables consistently use
+the same Cargo binary. Override them by setting `CARGO` or `NEXTEST` in the
+environment before invoking `make`.
 
 ## 10. Integration test fixture wiring
 
