@@ -164,17 +164,144 @@ def test_test_target_uses_expected_nextest_command(
     )
 
     expected_command = expected_nextest.format(cargo=shell_quote(str(path_cargo)))
-    assert f"{expected_command} run --workspace --features test-helpers --profile default" in result.stdout.splitlines()
+    emitted_commands = result.stdout.splitlines()
+    assert (
+        f"{expected_command} run --workspace --features test-helpers --profile default"
+        in emitted_commands
+    ), (
+        f"NEXTEST override {nextest_override!r} emitted unexpected commands: "
+        f"{emitted_commands!r}"
+    )
 
 
+def test_test_matrix_uses_quoted_cargo_command(tmp_path: Path) -> None:
+    """Use the resolved Cargo command for the final test-matrix invocation."""
+    fake_bin = tmp_path / "bin"
+    fake_bin.mkdir()
+    path_cargo = fake_bin / "cargo"
+    path_cargo.touch(mode=0o755)
+    make_executable = shutil.which("make")
+    assert make_executable is not None, "make must be available to run this contract"
+
+    environment = os.environ.copy()
+    environment.update({"CARGO": "", "HOME": str(tmp_path / "home"), "PATH": str(fake_bin)})
+    result = subprocess.run(
+        [make_executable, "--no-print-directory", "-n", "test-matrix"],
+        cwd=REPOSITORY_ROOT,
+        env=environment,
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+
+    emitted_commands = result.stdout.splitlines()
+    expected_command = (
+        f"{shell_quote(str(path_cargo))} test --manifest-path "
+        "tools-src/github/Cargo.toml -- --nocapture"
+    )
+    assert expected_command in emitted_commands, (
+        f"test-matrix emitted unexpected commands: {emitted_commands!r}"
+    )
+
+
+@dataclass(frozen=True)
+class CargoAuditCase:
+    """Inputs and expected executable for one audit-resolution scenario."""
+
+    cargo_override: str | None
+    has_path_cargo: bool
+    has_home_cargo: bool
+    expected_location: str
+
+
+@pytest.mark.parametrize(
+    "case",
+    [
+        CargoAuditCase(
+            cargo_override=None,
+            has_path_cargo=True,
+            has_home_cargo=False,
+            expected_location="path",
+        ),
+        CargoAuditCase(
+            cargo_override="",
+            has_path_cargo=True,
+            has_home_cargo=False,
+            expected_location="path",
+        ),
+        CargoAuditCase(
+            cargo_override="",
+            has_path_cargo=False,
+            has_home_cargo=True,
+            expected_location="home",
+        ),
+        CargoAuditCase(
+            cargo_override="/caller/cargo",
+            has_path_cargo=False,
+            has_home_cargo=False,
+            expected_location="override",
+        ),
+    ],
+    ids=("unset", "empty", "home-fallback", "caller-override"),
+)
+def test_audit_uses_resolved_cargo_command(
+    tmp_path: Path,
+    case: CargoAuditCase,
+) -> None:
+    """Pass the resolved Cargo executable to each audit subprocess."""
+    fake_bin = tmp_path / "bin"
+    fake_bin.mkdir()
+    path_cargo = fake_bin / "cargo"
+    fake_home = tmp_path / "home"
+    home_cargo = fake_home / ".cargo" / "bin" / "cargo"
+
+    if case.has_path_cargo:
+        path_cargo.touch(mode=0o755)
+    if case.has_home_cargo:
+        home_cargo.parent.mkdir(parents=True)
+        home_cargo.touch(mode=0o755)
+
+    expected_cargo = {
+        "path": str(path_cargo),
+        "home": str(home_cargo),
+        "override": case.cargo_override,
+    }[case.expected_location]
+    make_executable = shutil.which("make")
+    assert make_executable is not None, "make must be available to run this contract"
+
+    environment = os.environ.copy()
+    environment.update({"HOME": str(fake_home), "PATH": str(fake_bin)})
+    if case.cargo_override is None:
+        environment.pop("CARGO", None)
+    else:
+        environment["CARGO"] = case.cargo_override
+
+    result = subprocess.run(
+        [make_executable, "--no-print-directory", "-n", "audit"],
+        cwd=REPOSITORY_ROOT,
+        env=environment,
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+
+    emitted_audit_command = f"sh {shell_quote(expected_cargo)} 'audit' {{}} +"
+    assert emitted_audit_command in result.stdout, (
+        f"{case!r} emitted unexpected audit command: {result.stdout!r}"
+    )
+
+
+@pytest.mark.parametrize("make_target", ("check-fmt", "test-matrix", "audit"))
 @pytest.mark.parametrize("resolution_source", ("home", "path"))
-def test_check_fmt_escapes_resolved_cargo_paths(
+def test_targets_escape_resolved_cargo_paths(
     tmp_path: Path,
     resolution_source: str,
+    make_target: str,
 ) -> None:
     """Execute metacharacter paths without evaluating their shell syntax."""
     marker = tmp_path / "injected"
-    unsafe_root = Path(f"{tmp_path}/cargo; printf injected > {marker}; #")
+    marker_relative = os.path.relpath(marker, REPOSITORY_ROOT)
+    unsafe_root = tmp_path / f"cargo; printf injected > {marker_relative}; #"
     fake_bin = unsafe_root if resolution_source == "path" else tmp_path / "bin"
     fake_home = unsafe_root if resolution_source == "home" else tmp_path / "home"
     cargo_path = (
@@ -189,12 +316,20 @@ def test_check_fmt_escapes_resolved_cargo_paths(
     assert make_executable is not None, "make must be available to run this contract"
 
     environment = os.environ.copy()
-    environment.update({"CARGO": "", "HOME": str(fake_home), "PATH": str(fake_bin)})
+    environment.update(
+        {
+            "CARGO": "",
+            "HOME": str(fake_home),
+            "PATH": os.pathsep.join((str(fake_bin), "/usr/bin", "/bin")),
+        }
+    )
     subprocess.run(
-        [make_executable, "--no-print-directory", "check-fmt"],
+        [make_executable, "--no-print-directory", make_target],
         cwd=REPOSITORY_ROOT,
         env=environment,
         check=True,
     )
 
-    assert not marker.exists(), f"{resolution_source} path evaluated shell syntax"
+    assert not marker.exists(), (
+        f"{make_target} evaluated {resolution_source} path shell syntax"
+    )

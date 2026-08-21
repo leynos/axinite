@@ -13,7 +13,8 @@ BUNX ?= $(shell command -v bunx 2>/dev/null || printf '%s' "$$HOME/.bun/bin/bunx
 TEST_FEATURES ?= --features test-helpers
 NEXTEST_PROFILE ?= default
 MARKDOWNLINT_BASE ?= origin/main
-CARGO_AUDIT ?= $(CARGO_COMMAND) audit
+CARGO_AUDIT ?= audit
+CARGO_AUDIT_COMMAND = $(CARGO_COMMAND) $(call shell_quote,$(CARGO_AUDIT))
 WHITAKER ?= whitaker
 NIXIE ?= nixie
 UV ?= uv
@@ -161,11 +162,11 @@ audit: rust-audit
 rust-audit:
 	find . \
 		\( -path '*/target/*' -o -path '*/node_modules/*' -o -path '*/.venv/*' -o -path './crates/*' \) -prune -o \
-		-name Cargo.toml -exec sh -c 'set -e; for manifest do \
+		-name Cargo.toml -exec sh -c 'set -e; cargo_command=$$1; audit_command=$$2; shift 2; for manifest do \
 			manifest_dir=$$(dirname "$$manifest"); \
 			printf "Auditing Rust manifest %s\n" "$$manifest"; \
-			(cd "$$manifest_dir" && $(CARGO_AUDIT) $(AUDIT_FLAGS)); \
-		done' sh {} +
+			(cd "$$manifest_dir" && "$$cargo_command" "$$audit_command" $(AUDIT_FLAGS)); \
+		done' sh $(CARGO_AUDIT_COMMAND) {} +
 
 test:
 	$(MAKE) build-github-tool-wasm
@@ -182,7 +183,7 @@ test-matrix:
 	$(NEXTEST) run --workspace $(TEST_FEATURES) --profile $(NEXTEST_PROFILE)
 	$(NEXTEST) run --workspace --no-default-features --features libsql-test-helpers --profile $(NEXTEST_PROFILE)
 	$(NEXTEST) run --workspace --features postgres,libsql-test-helpers,html-to-markdown --profile $(NEXTEST_PROFILE)
-	$(CARGO) test --manifest-path $(GITHUB_TOOL_MANIFEST) -- --nocapture
+	$(CARGO_COMMAND) test --manifest-path $(GITHUB_TOOL_MANIFEST) -- --nocapture
 
 test-matrix-cargo:
 	$(MAKE) build-github-tool-wasm
