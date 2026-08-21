@@ -92,11 +92,11 @@ pub(super) fn deserialize_embedding(blob: &[u8]) -> Vec<f32> {
         return Vec::new();
     }
 
-    blob.chunks_exact(4)
-        .map(|chunk| {
-            let bytes = [chunk[0], chunk[1], chunk[2], chunk[3]];
-            f32::from_le_bytes(bytes)
-        })
+    blob.as_chunks::<4>()
+        .0
+        .iter()
+        .copied()
+        .map(f32::from_le_bytes)
         .collect()
 }
 
