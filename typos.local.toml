@@ -63,7 +63,7 @@ ignore = [
   '\b(?:manifest|self)\.artifacts\b',
   '\.artifacts\["wasm32-wasip2"\]',
   '\bartifacts_matrix\b',
-  "Reddit\\ \u2014\\ Best\\ way\\ to\\ organise\\ tests\\ in\\ Rust,\\ accessed\\ on\\ July\\ 15,\\ 2025,",
+  "organise\\ tests\\ in\\ Rust,\\ accessed\\ on\\ July\\ 15,\\ 2025,",
   "\\ \\ \\ \\ \\ \\ \\ \\ \"Analyze\\ an\\ image\\ using\\ a\\ vision\\-capable\\ AI\\ model\\.\\ Provide\\ a\\ workspace\\ path\\ to\\ the\\ image\\ and\\ an\\ optional\\ analysis\\ question\\.\"",
   "\\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \"artifact_path\":\\ result\\.artifact_path\\.display\\(\\)\\.to_string\\(\\),",
   "\\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \"description\":\\ \"Cell\\ background\\ color\\ as\\ hex\\ \\(e\\.g\\.,\\ '\\#FFFF00'\\)\\.\\ Used\\ by:\\ format_cells\"",
