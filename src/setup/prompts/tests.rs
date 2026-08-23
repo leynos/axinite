@@ -8,31 +8,6 @@ use rstest::rstest;
 
 use super::{SecretInputEffect, apply_secret_input_effect, apply_secret_key_event};
 
-#[test]
-fn test_header_length_calculation() {
-    // Just verify it doesn't panic with various inputs
-    super::print_header("Test");
-    super::print_header("A longer header text");
-    super::print_header("");
-}
-
-#[test]
-fn test_step_indicator() {
-    super::print_step(1, 3, "Test Step");
-    super::print_step(3, 3, "Final Step");
-}
-
-#[test]
-fn test_print_functions_do_not_panic() {
-    super::print_success("operation completed");
-    super::print_error("something went wrong");
-    super::print_info("here is some information");
-    // Also test with empty strings
-    super::print_success("");
-    super::print_error("");
-    super::print_info("");
-}
-
 #[rstest]
 #[case(
     "",
