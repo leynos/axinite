@@ -12,6 +12,8 @@ from dataclasses import dataclass
 from pathlib import Path
 
 import pytest
+from hypothesis import HealthCheck, given, settings
+from hypothesis import strategies as st
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[2]
 
@@ -119,6 +121,58 @@ def test_check_fmt_resolves_cargo_override(
     assert emitted_commands == expected_commands, (
         f"{case!r} emitted unexpected commands: {emitted_commands!r}"
     )
+
+
+@settings(
+    max_examples=16,
+    deadline=None,
+    suppress_health_check=[HealthCheck.function_scoped_fixture],
+)
+@given(
+    uses_resolved_path=st.booleans(),
+    whitespace_override=st.text(alphabet=" \t", max_size=8),
+    path_suffix=st.text(alphabet="abcXYZ0123 $;()'", min_size=1, max_size=12),
+)
+def test_check_fmt_shell_quotes_generated_cargo_paths(
+    tmp_path: Path,
+    uses_resolved_path: bool,
+    whitespace_override: str,
+    path_suffix: str,
+) -> None:
+    """Quote generated paths and resolve whitespace-only Cargo overrides."""
+    fake_bin = tmp_path / "generated-bin"
+    fake_bin.mkdir(exist_ok=True)
+    path_cargo = fake_bin / "cargo"
+    path_cargo.touch(exist_ok=True, mode=0o755)
+    override_cargo = tmp_path / f"cargo{path_suffix}"
+    override_cargo.touch(exist_ok=True, mode=0o755)
+    cargo_override = whitespace_override if uses_resolved_path else str(override_cargo)
+    expected_cargo = str(path_cargo) if uses_resolved_path else cargo_override
+    make_executable = shutil.which("make")
+    assert make_executable is not None, "make must be available to run this contract"
+
+    environment = os.environ.copy()
+    environment.update(
+        {
+            "CARGO": cargo_override,
+            "HOME": str(tmp_path / "home"),
+            "PATH": str(fake_bin),
+        }
+    )
+    result = subprocess.run(
+        [make_executable, "--no-print-directory", "-n", "check-fmt"],
+        cwd=REPOSITORY_ROOT,
+        env=environment,
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+
+    quoted_cargo = shell_quote(expected_cargo)
+    assert result.stdout.splitlines() == [
+        f"{quoted_cargo} fmt --all -- --check",
+        f"{quoted_cargo} fmt --manifest-path tools-src/github/Cargo.toml --all -- --check",
+    ], f"CARGO={cargo_override!r} emitted unexpected commands: {result.stdout!r}"
 
 
 def shell_quote(value: str) -> str:
@@ -271,6 +325,7 @@ def test_audit_uses_resolved_cargo_command(
 
     environment = os.environ.copy()
     environment.update({"HOME": str(fake_home), "PATH": str(fake_bin)})
+    environment.pop("CARGO_AUDIT", None)
     if case.cargo_override is None:
         environment.pop("CARGO", None)
     else:
@@ -301,7 +356,7 @@ def test_targets_escape_resolved_cargo_paths(
     """Execute metacharacter paths without evaluating their shell syntax."""
     marker = tmp_path / "injected"
     marker_relative = os.path.relpath(marker, REPOSITORY_ROOT)
-    unsafe_root = tmp_path / f"cargo; printf injected > {marker_relative}; #"
+    unsafe_root = tmp_path / f"cargo$literal; printf injected > {marker_relative}; #"
     fake_bin = unsafe_root if resolution_source == "path" else tmp_path / "bin"
     fake_home = unsafe_root if resolution_source == "home" else tmp_path / "home"
     cargo_path = (
@@ -316,6 +371,8 @@ def test_targets_escape_resolved_cargo_paths(
     assert make_executable is not None, "make must be available to run this contract"
 
     environment = os.environ.copy()
+    environment.pop("NEXTEST", None)
+    environment.pop("CARGO_AUDIT", None)
     environment.update(
         {
             "CARGO": "",
