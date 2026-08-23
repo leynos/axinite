@@ -1,4 +1,4 @@
-//! Markdown normalisation helpers shared by conversion integration tests.
+//! Helpers that normalize Markdown for conversion integration tests.
 
 #[derive(Clone, Copy)]
 struct FenceDelimiter {
