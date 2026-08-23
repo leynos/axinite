@@ -4,10 +4,10 @@ ifeq ($(strip $(CARGO)),)
 override CARGO := $(CARGO_RESOLVED)
 endif
 # Keep resolved executable paths as one shell argument, including paths with
-# spaces or shell metacharacters. The replacement is the POSIX single-quote
-# escape sequence for an embedded single quote.
+# spaces, literal dollar signs, or shell metacharacters. The replacement is
+# the POSIX single-quote escape sequence for an embedded single quote.
 shell_quote = '$(subst ','"'"',$(1))'
-CARGO_COMMAND = $(call shell_quote,$(CARGO))
+CARGO_COMMAND = $(call shell_quote,$(value CARGO))
 NEXTEST ?= $(CARGO_COMMAND) nextest
 BUNX ?= $(shell command -v bunx 2>/dev/null || printf '%s' "$$HOME/.bun/bin/bunx")
 TEST_FEATURES ?= --features test-helpers
