@@ -204,8 +204,9 @@ The current `Makefile` also includes:
 - `make clean` to remove Cargo build outputs for the root crate and the
   GitHub tool crate.
 
-The Makefile resolves an unset or empty `CARGO` with `command -v cargo`,
-falling back to `~/.cargo/bin/cargo` when Cargo is not on `$PATH`. A non-empty
+The Makefile resolves an unset, empty, or whitespace-only `CARGO` with
+`command -v cargo`, falling back to `~/.cargo/bin/cargo` when Cargo is not on
+`$PATH`. A non-empty
 caller override is preserved. `NEXTEST` defaults to the same resolved Cargo
 executable, quoted as one shell argument, so both variables consistently use
 the same Cargo binary. Override them by setting `CARGO` or `NEXTEST` in the
