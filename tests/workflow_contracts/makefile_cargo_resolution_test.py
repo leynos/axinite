@@ -12,7 +12,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 import pytest
-from hypothesis import HealthCheck, given, settings
+from hypothesis import HealthCheck, example, given, settings
 from hypothesis import strategies as st
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[2]
@@ -127,6 +127,11 @@ def test_check_fmt_resolves_cargo_override(
     max_examples=16,
     deadline=None,
     suppress_health_check=[HealthCheck.function_scoped_fixture],
+)
+@example(
+    uses_resolved_path=False,
+    whitespace_override="",
+    path_suffix="$tool",
 )
 @given(
     uses_resolved_path=st.booleans(),
