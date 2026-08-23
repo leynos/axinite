@@ -1,5 +1,6 @@
 //! Tests for extracted-document storage helpers.
 
+use crate::test_support::ExpectValid;
 use rstest::rstest;
 
 use crate::channels::{AttachmentKind, IncomingAttachment};
@@ -37,14 +38,14 @@ async fn make_workspace() -> (tempfile::TempDir, std::sync::Arc<Workspace>) {
     use crate::db::Database;
     use std::sync::Arc;
 
-    let tmp_dir = tempfile::tempdir().expect("create tempdir");
+    let tmp_dir = tempfile::tempdir().expect_valid("create tempdir");
     let db_path = tmp_dir.path().join("doc_store_test.db");
     let backend = crate::db::libsql::LibSqlBackend::new_local(&db_path)
         .await
-        .expect("failed to create local backend");
+        .expect_valid("failed to create local backend");
     Database::run_migrations(&backend)
         .await
-        .expect("failed to run migrations");
+        .expect_valid("failed to run migrations");
     let workspace = Arc::new(Workspace::new_with_db("test-user", Arc::new(backend)));
     (tmp_dir, workspace)
 }
@@ -161,7 +162,8 @@ fn sanitize_filename_defaults_when_empty() {
 
 #[test]
 fn build_document_path_uses_sanitized_id_and_filename() {
-    let date = chrono::NaiveDate::from_ymd_opt(2026, 4, 3).expect("2026-04-03 is a valid date");
+    let date =
+        chrono::NaiveDate::from_ymd_opt(2026, 4, 3).expect_valid("2026-04-03 is a valid date");
     let sanitized_id = sanitize_filename("abc/../123");
     let sanitized_filename = sanitize_filename("../report.pdf");
     let path = build_document_path(&PathParts {
@@ -175,7 +177,7 @@ fn build_document_path_uses_sanitized_id_and_filename() {
     assert!(!path.contains(".."));
     let suffix = path
         .strip_prefix("documents/2026-04-03/")
-        .expect("path should include date prefix");
+        .expect_valid("path should include date prefix");
     assert!(!suffix.contains('/'));
     assert!(!suffix.contains('\\'));
 }
@@ -206,7 +208,10 @@ async fn store_extracted_documents_filters_and_stores_only_usable_documents() {
     store_extracted_documents(&workspace, &message).await;
 
     // Query workspace for stored documents
-    let paths = workspace.list_all().await.expect("failed to list paths");
+    let paths = workspace
+        .list_all()
+        .await
+        .expect_valid("failed to list paths");
 
     // Only one document should be stored (doc1 with usable text)
     assert_eq!(paths.len(), 1, "expected exactly one stored document");
@@ -245,14 +250,17 @@ async fn store_extracted_documents_writes_expected_header_and_body() {
     store_extracted_documents(&workspace, &message).await;
 
     // Query workspace for stored documents
-    let paths = workspace.list_all().await.expect("failed to list paths");
+    let paths = workspace
+        .list_all()
+        .await
+        .expect_valid("failed to list paths");
     assert_eq!(paths.len(), 1, "expected exactly one stored document");
 
     // Verify content
     let doc = workspace
         .read(&paths[0])
         .await
-        .expect("failed to read document");
+        .expect_valid("failed to read document");
     assert!(
         doc.content.contains("This is extracted document text"),
         "document should contain extracted text"

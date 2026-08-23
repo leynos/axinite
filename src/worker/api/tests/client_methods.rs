@@ -1,5 +1,6 @@
 //! Tests for `WorkerHttpClient` status, event, prompt, credential, and completion methods.
 
+use crate::test_support::ExpectValid;
 use std::sync::Arc;
 
 use axum::extract::{Path, State};
@@ -42,7 +43,7 @@ async fn spawn_test_server(
     let handle = tokio::spawn(async move {
         axum::serve(listener, router)
             .await
-            .expect("client method test server should run");
+            .expect_valid("client method test server should run");
     });
     Ok((format!("http://{addr}"), handle))
 }
@@ -200,7 +201,7 @@ async fn worker_http_client_poll_prompt_returns_prompt_response() -> anyhow::Res
     let prompt = client
         .poll_prompt()
         .await?
-        .expect("prompt should be present");
+        .expect_valid("prompt should be present");
 
     assert_eq!(prompt.content, "follow up");
     assert!(!prompt.done);

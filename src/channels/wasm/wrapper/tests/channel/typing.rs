@@ -3,6 +3,7 @@
 //! starts, replacement on repeated `Thinking`, and cancellation on respond.
 
 use super::*;
+use crate::test_support::ExpectValid;
 
 /// Runs the canonical typing-task lifecycle test:
 ///
@@ -16,7 +17,7 @@ async fn assert_typing_task_after_status(
     expect_cancelled: bool,
 ) {
     let channel = create_test_channel();
-    let _stream = channel.start().await.expect("Channel should start");
+    let _stream = channel.start().await.expect_valid("Channel should start");
 
     let metadata = serde_json::json!({"chat_id": 123});
 
@@ -44,13 +45,16 @@ async fn assert_typing_task_after_status(
         );
     }
 
-    channel.shutdown().await.expect("Shutdown should succeed");
+    channel
+        .shutdown()
+        .await
+        .expect_valid("Shutdown should succeed");
 }
 
 #[tokio::test]
 async fn test_typing_task_starts_on_thinking() {
     let channel = create_test_channel();
-    let _stream = channel.start().await.expect("Channel should start");
+    let _stream = channel.start().await.expect_valid("Channel should start");
 
     let metadata = serde_json::json!({"chat_id": 123});
 
@@ -67,7 +71,10 @@ async fn test_typing_task_starts_on_thinking() {
     assert!(channel.typing_task.read().await.is_some());
 
     // Shutdown should cancel the typing task
-    channel.shutdown().await.expect("Shutdown should succeed");
+    channel
+        .shutdown()
+        .await
+        .expect_valid("Shutdown should succeed");
     assert!(channel.typing_task.read().await.is_none());
 }
 
@@ -114,7 +121,7 @@ async fn test_typing_task_cancelled_on_awaiting_approval_status() {
 #[tokio::test]
 async fn test_typing_task_replaced_on_new_thinking() {
     let channel = create_test_channel();
-    let _stream = channel.start().await.expect("Channel should start");
+    let _stream = channel.start().await.expect_valid("Channel should start");
 
     let metadata = serde_json::json!({"chat_id": 123});
 
@@ -150,7 +157,10 @@ async fn test_typing_task_replaced_on_new_thinking() {
     // The task IDs should differ (old one was aborted, new one spawned)
     assert_ne!(first_handle, second_handle);
 
-    channel.shutdown().await.expect("Shutdown should succeed");
+    channel
+        .shutdown()
+        .await
+        .expect_valid("Shutdown should succeed");
 }
 
 #[tokio::test]
@@ -158,7 +168,7 @@ async fn test_respond_cancels_typing_task() {
     use crate::channels::IncomingMessage;
 
     let channel = create_test_channel();
-    let _stream = channel.start().await.expect("Channel should start");
+    let _stream = channel.start().await.expect_valid("Channel should start");
 
     let metadata = serde_json::json!({"chat_id": 123});
 
@@ -180,13 +190,16 @@ async fn test_respond_cancels_typing_task() {
     // Typing task should be gone
     assert!(channel.typing_task.read().await.is_none());
 
-    channel.shutdown().await.expect("Shutdown should succeed");
+    channel
+        .shutdown()
+        .await
+        .expect_valid("Shutdown should succeed");
 }
 
 #[tokio::test]
 async fn test_stream_chunk_is_noop() {
     let channel = create_test_channel();
-    let _stream = channel.start().await.expect("Channel should start");
+    let _stream = channel.start().await.expect_valid("Channel should start");
 
     let metadata = serde_json::json!({"chat_id": 123});
 
@@ -200,5 +213,8 @@ async fn test_stream_chunk_is_noop() {
     assert!(result.is_ok());
     assert!(channel.typing_task.read().await.is_none());
 
-    channel.shutdown().await.expect("Shutdown should succeed");
+    channel
+        .shutdown()
+        .await
+        .expect_valid("Shutdown should succeed");
 }

@@ -1,5 +1,6 @@
 //! Shared helper functions for hosted remote-tool endpoint tests.
 
+use crate::test_support::ExpectValid;
 use std::sync::Arc;
 
 use axum::body::Body;
@@ -35,13 +36,13 @@ pub(crate) async fn execute_remote_tool_status(
                 "tool_name": tool_name,
                 "params": {}
             }))
-            .expect("serialize hosted remote-tool execute payload"),
+            .expect_valid("serialize hosted remote-tool execute payload"),
         ))
-        .expect("build hosted remote-tool execute request");
+        .expect_valid("build hosted remote-tool execute request");
 
     router
         .oneshot(req)
         .await
-        .expect("send hosted remote-tool execute request")
+        .expect_valid("send hosted remote-tool execute request")
         .status()
 }

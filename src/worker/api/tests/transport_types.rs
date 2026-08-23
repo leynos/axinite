@@ -1,5 +1,6 @@
 //! Transport type serialisation fidelity tests.
 
+use crate::test_support::ExpectValid;
 use rstest::rstest;
 use serde::Serialize;
 use serde::de::DeserializeOwned;
@@ -20,8 +21,8 @@ fn assert_round_trips<T>(value: T)
 where
     T: Serialize + DeserializeOwned + Debug + PartialEq,
 {
-    let serialized = serde_json::to_string(&value).expect("serialise");
-    let deserialized: T = serde_json::from_str(&serialized).expect("deserialise");
+    let serialized = serde_json::to_string(&value).expect_valid("serialise");
+    let deserialized: T = serde_json::from_str(&serialized).expect_valid("deserialise");
     assert_eq!(
         deserialized, value,
         "value must round-trip without field loss"
@@ -145,7 +146,7 @@ fn terminal_result_round_trip_preserves_all_fields() {
 #[test]
 fn terminal_result_omits_iterations_when_absent() {
     let serialized = serde_json::to_value(TerminalResult::failure("failed", None))
-        .expect("serialize TerminalResult");
+        .expect_valid("serialize TerminalResult");
 
     assert_eq!(serialized["success"], false);
     assert_eq!(serialized["message"], "failed");

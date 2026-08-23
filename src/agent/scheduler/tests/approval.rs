@@ -3,6 +3,7 @@
 
 use super::*;
 use crate::error::{Error, ToolError as AppToolError};
+use crate::test_support::ExpectValid;
 use crate::tools::{ApprovalRequirement, NativeTool, ToolError, ToolOutput};
 use anyhow::{Result, anyhow};
 use rstest::rstest;
@@ -123,7 +124,7 @@ fn assert_executed(
     expected_text: &'static str,
     msg: &'static str,
 ) {
-    let output = result.expect(msg);
+    let output = result.expect_valid(msg);
     assert_eq!(output.result.as_str(), Some(expected_text), "{msg}");
 }
 
