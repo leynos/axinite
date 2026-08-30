@@ -1,5 +1,6 @@
 //! Tests for pre-loop failure handling and startup error reporting.
 
+use crate::test_support::ExpectValid;
 use std::sync::Arc;
 
 use axum::http::StatusCode;
@@ -33,7 +34,7 @@ fn worker_runtime_new_returns_error_on_config_mismatch(
             Uuid::nil(),
             "test".to_string(),
         )
-        .expect("test client should build"),
+        .expect_valid("test client should build"),
     );
 
     let result = WorkerRuntime::new(
@@ -114,7 +115,7 @@ async fn assert_startup_failure(state: &RuntimeTestState) {
     let failed_status = statuses
         .first()
         .filter(|status| status.state == WorkerState::Failed)
-        .expect("expected a terminal failed status update");
+        .expect_valid("expected a terminal failed status update");
     assert_eq!(failed_status.iteration, 0);
     assert_eq!(
         failed_status.message.as_deref(),
@@ -159,7 +160,7 @@ async fn worker_runtime_reports_failed_status_for_pre_loop_errors(
 
     let error = harness
         .take_runtime()
-        .expect("harness must contain a runtime")
+        .expect_valid("harness must contain a runtime")
         .run()
         .await
         .expect_err("expected runtime to fail before the execution loop");
@@ -189,7 +190,7 @@ async fn worker_runtime_emits_failed_status_for_initial_status_rejections() -> a
 
     let error = harness
         .take_runtime()
-        .expect("harness must contain a runtime")
+        .expect_valid("harness must contain a runtime")
         .run()
         .await;
     let error = error.expect_err("expected runtime to fail when the initial status is rejected");
@@ -241,10 +242,10 @@ async fn worker_runtime_sanitizes_failure_messages(
 
     harness
         .runtime()
-        .expect("runtime test harness should contain a runtime")
+        .expect_valid("runtime test harness should contain a runtime")
         .report_completion(execution, 7)
         .await
-        .expect("report_completion should succeed in test harness");
+        .expect_valid("report_completion should succeed in test harness");
 
     let completions = state.completions.lock().await;
     assert_eq!(completions.len(), 1);
@@ -278,7 +279,7 @@ fn worker_runtime_from_env_reads_worker_token() {
         orchestrator_url: "http://localhost:50051/".to_string(),
         ..WorkerConfig::default()
     })
-    .expect("from_env should succeed when the worker token is present");
+    .expect_valid("from_env should succeed when the worker token is present");
 
     assert_eq!(
         runtime.client.orchestrator_url(),

@@ -1,20 +1,21 @@
 //! Tests for bootstrap `.env` formatting and round-trip behaviour.
 
+use crate::test_support::ExpectValid;
 use tempfile::tempdir;
 
 use super::super::*;
 
 fn assert_env_roundtrip(key: &str, value: &str) {
-    let dir = tempdir().expect("create temp dir for env round-trip test");
+    let dir = tempdir().expect_valid("create temp dir for env round-trip test");
     let env_path = dir.path().join(".env");
     let write_error = format!("write round-trip env at {}", env_path.display());
     let parse_error = format!("parse round-trip env at {}", env_path.display());
     let vars = [(key, value)];
 
-    upsert_bootstrap_vars_to(&env_path, &vars).expect(write_error.as_str());
+    upsert_bootstrap_vars_to(&env_path, &vars).expect_valid(write_error.as_str());
 
     let parsed: Vec<(String, String)> = dotenvy::from_path_iter(&env_path)
-        .expect(parse_error.as_str())
+        .expect_valid(parse_error.as_str())
         .filter_map(|result| result.ok())
         .collect();
 
@@ -26,7 +27,7 @@ fn assert_env_roundtrip(key: &str, value: &str) {
     let found = parsed.iter().find(|(parsed_key, _)| parsed_key == key);
     assert!(found.is_some(), "{key} must be present");
     assert_eq!(
-        found.expect("round-trip env entry present").1,
+        found.expect_valid("round-trip env entry present").1,
         value,
         "{key} must survive .env round-trip"
     );
@@ -43,7 +44,7 @@ macro_rules! env_roundtrip_test {
 
 #[test]
 fn test_save_and_load_database_url() {
-    let dir = tempdir().expect("create temp dir for test_save_and_load_database_url");
+    let dir = tempdir().expect_valid("create temp dir for test_save_and_load_database_url");
     let env_path = dir.path().join(".env");
     let write_error = format!("write .env at {}", env_path.display());
     let read_error = format!("read .env at {}", env_path.display());
@@ -51,16 +52,16 @@ fn test_save_and_load_database_url() {
 
     let url = "postgres://localhost:5432/axinite_test";
     ambient_fs::write(&env_path, format!("DATABASE_URL=\"{}\"\n", url))
-        .expect(write_error.as_str());
+        .expect_valid(write_error.as_str());
 
-    let content = ambient_fs::read_to_string(&env_path).expect(read_error.as_str());
+    let content = ambient_fs::read_to_string(&env_path).expect_valid(read_error.as_str());
     assert_eq!(
         content,
         "DATABASE_URL=\"postgres://localhost:5432/axinite_test\"\n"
     );
 
     let parsed: Vec<(String, String)> = dotenvy::from_path_iter(&env_path)
-        .expect(parse_error.as_str())
+        .expect_valid(parse_error.as_str())
         .filter_map(|result| result.ok())
         .collect();
     assert_eq!(parsed.len(), 1);
@@ -70,15 +71,15 @@ fn test_save_and_load_database_url() {
 
 #[test]
 fn test_save_database_url_with_hash_in_password() {
-    let dir = tempdir().expect("create temp dir for hash-in-password test");
+    let dir = tempdir().expect_valid("create temp dir for hash-in-password test");
     let env_path = dir.path().join(".env");
     let url = "postgres://user:p%23ss@localhost:5432/axinite";
 
     ambient_fs::write(&env_path, format!("DATABASE_URL=\"{}\"\n", url))
-        .expect("write .env for hash-in-password test");
+        .expect_valid("write .env for hash-in-password test");
 
     let parsed: Vec<(String, String)> = dotenvy::from_path_iter(&env_path)
-        .expect("parse dotenv for hash-in-password test")
+        .expect_valid("parse dotenv for hash-in-password test")
         .filter_map(|result| result.ok())
         .collect();
     assert_eq!(parsed.len(), 1);
@@ -88,31 +89,32 @@ fn test_save_database_url_with_hash_in_password() {
 
 #[test]
 fn test_save_database_url_creates_parent_dirs() {
-    let dir = tempdir().expect("create temp dir for parent-dir test");
+    let dir = tempdir().expect_valid("create temp dir for parent-dir test");
     let nested = dir.path().join("deep").join("nested");
     let env_path = nested.join(".env");
 
     assert!(!nested.exists());
-    ambient_fs::create_dir_all(&nested).expect("create nested directory for .env");
-    ambient_fs::write(&env_path, "DATABASE_URL=postgres://test\n").expect("write nested .env");
+    ambient_fs::create_dir_all(&nested).expect_valid("create nested directory for .env");
+    ambient_fs::write(&env_path, "DATABASE_URL=postgres://test\n")
+        .expect_valid("write nested .env");
 
     assert!(env_path.exists());
-    let content = ambient_fs::read_to_string(&env_path).expect("read nested .env");
+    let content = ambient_fs::read_to_string(&env_path).expect_valid("read nested .env");
     assert!(content.contains("DATABASE_URL=postgres://test"));
 }
 
 #[test]
 fn test_save_bootstrap_env_escapes_quotes() {
-    let dir = tempdir().expect("create temp dir for quote escaping test");
+    let dir = tempdir().expect_valid("create temp dir for quote escaping test");
     let env_path = dir.path().join(".env");
     let malicious = r#"http://evil.com"
 INJECTED="pwned"#;
     let escaped = malicious.replace('\\', "\\\\").replace('"', "\\\"");
     let content = format!("LLM_BASE_URL=\"{}\"\n", escaped);
-    ambient_fs::write(&env_path, &content).expect("write escaped bootstrap env");
+    ambient_fs::write(&env_path, &content).expect_valid("write escaped bootstrap env");
 
     let parsed: Vec<(String, String)> = dotenvy::from_path_iter(&env_path)
-        .expect("parse escaped bootstrap env")
+        .expect_valid("parse escaped bootstrap env")
         .filter_map(|result| result.ok())
         .collect();
 
@@ -126,24 +128,24 @@ INJECTED="pwned"#;
 
 #[test]
 fn test_save_bootstrap_env_multiple_vars() {
-    let dir = tempdir().expect("create temp dir for multi-var bootstrap env");
+    let dir = tempdir().expect_valid("create temp dir for multi-var bootstrap env");
     let env_path = dir.path().join("nested").join(".env");
     let vars = [
         ("DATABASE_BACKEND", "libsql"),
         ("LIBSQL_PATH", "/home/user/.axinite/axinite.db"),
     ];
 
-    ambient_fs::create_dir_all(env_path.parent().expect("env_path has parent"))
-        .expect("create nested env parent");
+    ambient_fs::create_dir_all(env_path.parent().expect_valid("env_path has parent"))
+        .expect_valid("create nested env parent");
 
     let mut content = String::new();
     for (key, value) in &vars {
         content.push_str(&format!("{}=\"{}\"\n", key, value));
     }
-    ambient_fs::write(&env_path, &content).expect("write multi-var bootstrap env");
+    ambient_fs::write(&env_path, &content).expect_valid("write multi-var bootstrap env");
 
     let parsed: Vec<(String, String)> = dotenvy::from_path_iter(&env_path)
-        .expect("parse multi-var bootstrap env")
+        .expect_valid("parse multi-var bootstrap env")
         .filter_map(|result| result.ok())
         .collect();
     assert_eq!(parsed.len(), 2);
@@ -162,16 +164,16 @@ fn test_save_bootstrap_env_multiple_vars() {
 
 #[test]
 fn test_save_bootstrap_env_overwrites_previous() {
-    let dir = tempdir().expect("create temp dir for overwrite bootstrap env");
+    let dir = tempdir().expect_valid("create temp dir for overwrite bootstrap env");
     let env_path = dir.path().join(".env");
 
     ambient_fs::write(&env_path, "DATABASE_URL=\"postgres://old\"\n")
-        .expect("write initial bootstrap env");
+        .expect_valid("write initial bootstrap env");
     let content = "DATABASE_BACKEND=\"libsql\"\nLIBSQL_PATH=\"/new/path.db\"\n";
-    ambient_fs::write(&env_path, content).expect("overwrite bootstrap env");
+    ambient_fs::write(&env_path, content).expect_valid("overwrite bootstrap env");
 
     let parsed: Vec<(String, String)> = dotenvy::from_path_iter(&env_path)
-        .expect("parse overwritten bootstrap env")
+        .expect_valid("parse overwritten bootstrap env")
         .filter_map(|result| result.ok())
         .collect();
     assert_eq!(parsed.len(), 2);
@@ -191,15 +193,15 @@ env_roundtrip_test!(
 
 #[test]
 fn bootstrap_env_special_chars_in_url() {
-    let dir = tempdir().expect("create temp dir for special-char URL round-trip");
+    let dir = tempdir().expect_valid("create temp dir for special-char URL round-trip");
     let env_path = dir.path().join(".env");
     let url = "postgres://user:p%23ss@host:5432/db?sslmode=require";
     let escaped = url.replace('\\', "\\\\").replace('"', "\\\"");
     let content = format!("DATABASE_URL=\"{}\"\n", escaped);
-    ambient_fs::write(&env_path, &content).expect("write special-char URL env");
+    ambient_fs::write(&env_path, &content).expect_valid("write special-char URL env");
 
     let parsed: Vec<(String, String)> = dotenvy::from_path_iter(&env_path)
-        .expect("parse special-char URL env")
+        .expect_valid("parse special-char URL env")
         .filter_map(|result| result.ok())
         .collect();
 
@@ -209,22 +211,22 @@ fn bootstrap_env_special_chars_in_url() {
 
 #[test]
 fn upsert_bootstrap_var_preserves_existing() {
-    let dir = tempdir().expect("create temp dir for single upsert test");
+    let dir = tempdir().expect_valid("create temp dir for single upsert test");
     let env_path = dir.path().join(".env");
     let initial = "DATABASE_BACKEND=\"libsql\"\nONBOARD_COMPLETED=\"true\"\n";
 
-    ambient_fs::write(&env_path, initial).expect("write initial env for single upsert test");
+    ambient_fs::write(&env_path, initial).expect_valid("write initial env for single upsert test");
 
     let content =
-        ambient_fs::read_to_string(&env_path).expect("read initial env for single upsert");
+        ambient_fs::read_to_string(&env_path).expect_valid("read initial env for single upsert");
     let new_line = "LLM_BACKEND=\"anthropic\"";
     let mut result = content.clone();
     result.push_str(new_line);
     result.push('\n');
-    ambient_fs::write(&env_path, &result).expect("write single upsert env");
+    ambient_fs::write(&env_path, &result).expect_valid("write single upsert env");
 
     let parsed: Vec<(String, String)> = dotenvy::from_path_iter(&env_path)
-        .expect("parse single upsert env")
+        .expect_valid("parse single upsert env")
         .filter_map(|result| result.ok())
         .collect();
 
@@ -251,7 +253,7 @@ fn upsert_bootstrap_var_preserves_existing() {
 
 #[test]
 fn bootstrap_env_all_wizard_vars_round_trip() {
-    let dir = tempdir().expect("create temp dir for full wizard round-trip");
+    let dir = tempdir().expect_valid("create temp dir for full wizard round-trip");
     let env_path = dir.path().join(".env");
     let vars = [
         ("DATABASE_BACKEND", "postgres"),
@@ -266,10 +268,10 @@ fn bootstrap_env_all_wizard_vars_round_trip() {
         let escaped = value.replace('\\', "\\\\").replace('"', "\\\"");
         content.push_str(&format!("{}=\"{}\"\n", key, escaped));
     }
-    ambient_fs::write(&env_path, &content).expect("write full wizard round-trip env");
+    ambient_fs::write(&env_path, &content).expect_valid("write full wizard round-trip env");
 
     let parsed: Vec<(String, String)> = dotenvy::from_path_iter(&env_path)
-        .expect("parse full wizard round-trip env")
+        .expect_valid("parse full wizard round-trip env")
         .filter_map(|result| result.ok())
         .collect();
 
@@ -278,7 +280,7 @@ fn bootstrap_env_all_wizard_vars_round_trip() {
         let found = parsed.iter().find(|(parsed_key, _)| parsed_key == key);
         assert!(found.is_some(), "{key} must be present");
         assert_eq!(
-            &found.expect("wizard key present").1,
+            &found.expect_valid("wizard key present").1,
             value,
             "{key} value mismatch"
         );
@@ -287,17 +289,17 @@ fn bootstrap_env_all_wizard_vars_round_trip() {
 
 #[test]
 fn upsert_bootstrap_vars_preserves_unknown_keys() {
-    let dir = tempdir().expect("create temp dir for multi-upsert preserve test");
+    let dir = tempdir().expect_valid("create temp dir for multi-upsert preserve test");
     let env_path = dir.path().join(".env");
     let initial = "HTTP_HOST=\"0.0.0.0\"\nDATABASE_BACKEND=\"postgres\"\nCUSTOM_VAR=\"keep_me\"\n";
 
-    ambient_fs::write(&env_path, initial).expect("write initial env for preserve test");
+    ambient_fs::write(&env_path, initial).expect_valid("write initial env for preserve test");
 
     let vars = [("DATABASE_BACKEND", "libsql"), ("LLM_BACKEND", "openai")];
-    upsert_bootstrap_vars_to(&env_path, &vars).expect("upsert wizard vars");
+    upsert_bootstrap_vars_to(&env_path, &vars).expect_valid("upsert wizard vars");
 
     let parsed: Vec<(String, String)> = dotenvy::from_path_iter(&env_path)
-        .expect("parse env after first upsert")
+        .expect_valid("parse env after first upsert")
         .filter_map(|result| result.ok())
         .collect();
 
@@ -332,10 +334,10 @@ fn upsert_bootstrap_vars_preserves_unknown_keys() {
     );
 
     let vars2 = [("LLM_BACKEND", "anthropic")];
-    upsert_bootstrap_vars_to(&env_path, &vars2).expect("upsert LLM backend a second time");
+    upsert_bootstrap_vars_to(&env_path, &vars2).expect_valid("upsert LLM backend a second time");
 
     let parsed2: Vec<(String, String)> = dotenvy::from_path_iter(&env_path)
-        .expect("parse env after second upsert")
+        .expect_valid("parse env after second upsert")
         .filter_map(|result| result.ok())
         .collect();
 

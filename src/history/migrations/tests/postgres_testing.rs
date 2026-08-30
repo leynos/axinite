@@ -1,6 +1,7 @@
 //! PostgreSQL-only test scaffolding for migration-history repair tests.
 
 #[cfg(feature = "postgres")]
+use crate::test_support::ExpectValid;
 use chrono::Utc;
 #[cfg(feature = "postgres")]
 use std::collections::BTreeSet;
@@ -90,7 +91,7 @@ pub(super) async fn create_temp_refinery_history_table(client: &Client) {
              checksum VARCHAR(255)) ON COMMIT DROP;",
         )
         .await
-        .expect("Failed to create temp history table");
+        .expect_valid("Failed to create temp history table");
 }
 
 #[cfg(feature = "postgres")]
@@ -108,7 +109,7 @@ pub(super) async fn seed_history_rows<C: GenericClient>(client: &C, rows: &[(i32
                 ],
             )
             .await
-            .expect("Failed to seed history row");
+            .expect_valid("Failed to seed history row");
     }
 }
 

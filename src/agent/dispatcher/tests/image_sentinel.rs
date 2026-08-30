@@ -5,6 +5,7 @@
 //! `ChannelManager` with a `StubChannel`, verifying that SSE status events
 //! are emitted or skipped correctly.
 
+use crate::test_support::ExpectValid;
 use std::sync::Arc;
 
 use rstest::{fixture, rstest};
@@ -158,7 +159,7 @@ async fn run_image_generate_and_count_statuses(data_url: Option<&str>) -> (bool,
     let result = delegate
         .maybe_emit_image_sentinel("image_generate", &output)
         .await;
-    let count = statuses.lock().expect("statuses lock poisoned").len();
+    let count = statuses.lock().expect_valid("statuses lock poisoned").len();
     (result, count)
 }
 
@@ -210,7 +211,10 @@ async fn delegate_emits_image_generated_for_valid_data_url(
         "should return true for {tool_name} with valid sentinel"
     );
 
-    let captured = harness.statuses.lock().expect("statuses lock poisoned");
+    let captured = harness
+        .statuses
+        .lock()
+        .expect_valid("statuses lock poisoned");
     assert_eq!(captured.len(), 1, "should have emitted exactly one status");
     match &captured[0] {
         StatusUpdate::ImageGenerated { data_url, path } => {
@@ -255,7 +259,10 @@ async fn delegate_returns_false_for_non_image_tool(
 
     assert!(!result, "should return false for non-image tool");
 
-    let captured = harness.statuses.lock().expect("statuses lock poisoned");
+    let captured = harness
+        .statuses
+        .lock()
+        .expect_valid("statuses lock poisoned");
     assert!(
         captured.is_empty(),
         "should NOT emit any status for non-image tool"

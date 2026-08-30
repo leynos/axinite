@@ -47,6 +47,7 @@
 //! assert the post-migration filesystem state: whether `settings.json` has
 //! been replaced by `settings.json.migrated`.
 
+use crate::test_support::ExpectValid;
 use std::collections::HashMap;
 use std::sync::Mutex;
 
@@ -104,7 +105,7 @@ impl MigrationStore {
     }
 
     pub(super) fn state(&self) -> std::sync::MutexGuard<'_, MigrationStoreState> {
-        self.state.lock().expect("migration store state lock")
+        self.state.lock().expect_valid("migration store state lock")
     }
 }
 
@@ -198,18 +199,18 @@ impl RenameFixture {
     }
 
     fn write_legacy_file(&self) {
-        ambient_fs::write(&self.path, "{}").expect("write legacy settings file");
+        ambient_fs::write(&self.path, "{}").expect_valid("write legacy settings file");
     }
 
     #[cfg(unix)]
     fn make_dir_read_only(&mut self) {
         self.original_dir_permissions = Some(
             ambient_fs::metadata(self.dir.path())
-                .expect("read directory metadata")
+                .expect_valid("read directory metadata")
                 .permissions(),
         );
         ambient_fs::set_permissions(self.dir.path(), ambient_fs::Permissions::from_mode(0o555))
-            .expect("make directory read-only");
+            .expect_valid("make directory read-only");
     }
 
     pub(super) fn migrated_path(&self) -> std::path::PathBuf {
@@ -229,7 +230,7 @@ impl Drop for RenameFixture {
 }
 
 pub(super) fn rename_fixture() -> RenameFixture {
-    let dir = tempdir().expect("create temp dir for rename test");
+    let dir = tempdir().expect_valid("create temp dir for rename test");
     let path = dir.path().join("settings.json");
     RenameFixture {
         dir,
@@ -249,7 +250,7 @@ pub(super) fn write_legacy_settings(dir: &TempDir) -> std::path::PathBuf {
         })
         .to_string(),
     )
-    .expect("write legacy settings.json");
+    .expect_valid("write legacy settings.json");
     settings_path
 }
 

@@ -1,5 +1,6 @@
 //! Behaviour tests for model-facing active skill bundle metadata.
 
+use crate::test_support::ExpectValid;
 use std::path::PathBuf;
 
 use rstest::fixture;
@@ -55,14 +56,14 @@ fn make_loaded_bundle_skill(
             PathBuf::from("SKILL.md"),
             SkillPackageKind::Bundle,
         )
-        .expect("test entrypoint is bundle-relative"),
+        .expect_valid("test entrypoint is bundle-relative"),
         content_hash: format!("sha256:{skill}"),
         compiled_patterns: Vec::new(),
         lowercased_keywords: vec!["deploy".to_string(), "docs".to_string()],
         lowercased_exclude_keywords: Vec::new(),
         lowercased_tags: Vec::new(),
     })
-    .expect("BDD skill location should match manifest")
+    .expect_valid("BDD skill location should match manifest")
 }
 
 #[given("an installed bundled skill with supporting files")]
@@ -78,20 +79,21 @@ fn installed_bundled_skill(skill_context_world: &mut SkillContextWorld) {
 
 #[given("an installed bundled skill with a references file and an assets file")]
 fn installed_bundled_skill_with_ancillary_files(skill_context_world: &mut SkillContextWorld) {
-    let installed_dir = tempfile::tempdir().expect("installed bundle tempdir should be created");
+    let installed_dir =
+        tempfile::tempdir().expect_valid("installed bundle tempdir should be created");
     ambient_fs::create_dir_all(installed_dir.path().join("references"))
-        .expect("references directory should be created");
+        .expect_valid("references directory should be created");
     ambient_fs::create_dir_all(installed_dir.path().join("assets"))
-        .expect("assets directory should be created");
+        .expect_valid("assets directory should be created");
     ambient_fs::write(installed_dir.path().join("SKILL.md"), PROMPT_MARKER)
-        .expect("SKILL.md should be written");
+        .expect_valid("SKILL.md should be written");
     ambient_fs::write(
         installed_dir.path().join("references/usage.md"),
         REFERENCES_MARKER,
     )
-    .expect("reference file should be written");
+    .expect_valid("reference file should be written");
     ambient_fs::write(installed_dir.path().join("assets/note.txt"), ASSETS_MARKER)
-        .expect("asset file should be written");
+        .expect_valid("asset file should be written");
 
     let filesystem_root = installed_dir.path().to_path_buf();
     skill_context_world.filesystem_root = Some(filesystem_root.clone());
@@ -109,10 +111,10 @@ fn selected_for_agent_turn(skill_context_world: &mut SkillContextWorld) {
     let skill = skill_context_world
         .active_skill
         .clone()
-        .expect("Given step should install an active skill");
+        .expect_valid("Given step should install an active skill");
     let rendered = agent
         .build_skill_context_block(&[skill])
-        .expect("installed bundle skill should produce context");
+        .expect_valid("installed bundle skill should produce context");
     skill_context_world.rendered_context = Some(rendered);
 }
 
@@ -145,7 +147,7 @@ fn context_hides_filesystem_root(skill_context_world: &SkillContextWorld) {
     let filesystem_root = skill_context_world
         .filesystem_root
         .as_ref()
-        .expect("Given step should record the runtime root");
+        .expect_valid("Given step should record the runtime root");
     assert!(
         !rendered.contains(&filesystem_root.to_string_lossy().to_string()),
         "active skill context must not expose the private runtime root"
@@ -182,7 +184,7 @@ fn assets_content_is_absent(skill_context_world: &SkillContextWorld) {
 fn assert_rendered_snapshot(skill_context_world: SkillContextWorld, snapshot_name: &str) {
     let rendered = skill_context_world
         .rendered_context
-        .expect("When step should render active skill context");
+        .expect_valid("When step should render active skill context");
     insta::assert_snapshot!(snapshot_name, rendered);
 }
 

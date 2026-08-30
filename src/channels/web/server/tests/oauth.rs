@@ -1,5 +1,6 @@
 //! Tests for the hosted gateway OAuth callback handler.
 
+use crate::test_support::ExpectValid;
 use axum::body::Body;
 use rstest::rstest;
 use tower::ServiceExt;
@@ -13,16 +14,16 @@ async fn oauth_failure_html(app: axum::Router, uri: &str, context: &str) -> Stri
     let req = axum::http::Request::builder()
         .uri(uri)
         .body(Body::empty())
-        .expect(context);
+        .expect_valid(context);
 
     let resp = ServiceExt::<axum::http::Request<Body>>::oneshot(app, req)
         .await
-        .expect("send OAuth callback failure-path request");
+        .expect_valid("send OAuth callback failure-path request");
     assert_eq!(resp.status(), axum::http::StatusCode::OK);
 
     let body = axum::body::to_bytes(resp.into_body(), 1024 * 64)
         .await
-        .expect("read OAuth callback failure-path response body");
+        .expect_valid("read OAuth callback failure-path response body");
     String::from_utf8_lossy(&body).into_owned()
 }
 
@@ -119,16 +120,16 @@ async fn test_oauth_callback_strips_instance_prefix(
     let req = axum::http::Request::builder()
         .uri("/oauth/callback?code=fake_code&state=myinstance:test_nonce")
         .body(Body::empty())
-        .expect("build OAuth callback request with instance-prefixed state");
+        .expect_valid("build OAuth callback request with instance-prefixed state");
 
     let resp = ServiceExt::<axum::http::Request<Body>>::oneshot(app, req)
         .await
-        .expect("send OAuth callback request with instance-prefixed state");
+        .expect_valid("send OAuth callback request with instance-prefixed state");
     assert_eq!(resp.status(), axum::http::StatusCode::OK);
 
     let body = axum::body::to_bytes(resp.into_body(), 1024 * 64)
         .await
-        .expect("read OAuth callback instance-prefix response body");
+        .expect_valid("read OAuth callback instance-prefix response body");
     let html = String::from_utf8_lossy(&body);
     assert!(
         html.contains("Authorization Failed"),

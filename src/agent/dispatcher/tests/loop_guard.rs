@@ -1,5 +1,6 @@
 //! Loop guard and termination tests.
 
+use crate::test_support::ExpectValid;
 use proptest::prelude::*;
 
 use super::*;
@@ -84,7 +85,7 @@ async fn force_text_prevents_infinite_tool_call_loop() {
     let output = reasoning
         .respond_with_tools(&ctx_normal)
         .await
-        .expect("respond_with_tools failed for normal context");
+        .expect_valid("respond_with_tools failed for normal context");
     assert!(
         matches!(output.result, RespondResult::ToolCalls { .. }),
         "Without force_text, should get tool calls"
@@ -98,7 +99,7 @@ async fn force_text_prevents_infinite_tool_call_loop() {
     let output = reasoning
         .respond_with_tools(&ctx_forced)
         .await
-        .expect("respond_with_tools failed for forced-text context");
+        .expect_valid("respond_with_tools failed for forced-text context");
     assert!(
         matches!(output.result, RespondResult::Text(_)),
         "With force_text, should get text response, got: {:?}",
@@ -149,7 +150,7 @@ async fn test_dispatcher_terminates_with_all_tool_calls_failing() {
 
     // The loop should complete (either with a text response from force_text,
     // or an error from the hard ceiling). Both are acceptable termination.
-    let inner = result.expect("test timed out or dispatcher context lost");
+    let inner = result.expect_valid("test timed out or dispatcher context lost");
     match inner {
         Ok(super::super::AgenticLoopResult::Response(text)) => {
             assert_eq!(text, "forced text");
@@ -188,7 +189,7 @@ fn build_test_agent_config(max_tool_iterations: usize) -> AgentConfig {
 }
 
 /// Assert that the timeout-wrapped agentic loop result is a text response.
-fn assert_agentic_loop_text_response<E: std::fmt::Debug>(
+fn assert_agentic_loop_text_response<E: std::fmt::Debug + std::fmt::Display>(
     result: Result<Result<super::super::AgenticLoopResult, E>, tokio::time::error::Elapsed>,
     expected_text: &str,
 ) {
@@ -196,8 +197,8 @@ fn assert_agentic_loop_text_response<E: std::fmt::Debug>(
         result.is_ok(),
         "Dispatcher timed out -- max_iterations guard failed to terminate the loop"
     );
-    let inner = result.expect("test timed out or dispatcher context lost");
-    match inner.expect("Expected Ok(AgenticLoopResult) but dispatcher returned Err") {
+    let inner = result.expect_valid("test timed out or dispatcher context lost");
+    match inner.expect_valid("Expected Ok(AgenticLoopResult) but dispatcher returned Err") {
         super::super::AgenticLoopResult::Response(text) => {
             assert_eq!(text, expected_text);
         }

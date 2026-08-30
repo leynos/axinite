@@ -1,5 +1,6 @@
 //! Adapter tests for the `skill_read_file` builtin tool.
 
+use crate::test_support::ExpectValid;
 use std::sync::Arc;
 
 use rstest::{fixture, rstest};
@@ -33,7 +34,7 @@ fn skill_read_file_world() -> SkillReadFileWorld {
 
 #[fixture]
 fn test_registry() -> TestRegistryHandle {
-    let dir = tempfile::tempdir().expect("tempdir creation failed");
+    let dir = tempfile::tempdir().expect_valid("tempdir creation failed");
     let path = dir.path().to_path_buf();
     TestRegistryHandle {
         _dir: dir,
@@ -68,30 +69,30 @@ fn insert_deploy_docs_bundle(
         std::path::PathBuf::from("SKILL.md"),
         SkillPackageKind::Bundle,
     )
-    .expect("bundle location should be valid");
+    .expect_valid("bundle location should be valid");
     let skill = crate::skills::test_support::TestSkillBuilder::new("deploy-docs")
         .location(location)
         .build()?;
     registry
         .write()
-        .expect("registry lock should be writable")
+        .expect_valid("registry lock should be writable")
         .commit_loaded_skill("deploy-docs", skill)
-        .expect("skill should be inserted");
+        .expect_valid("skill should be inserted");
     Ok(())
 }
 
 #[rstest]
 #[tokio::test]
 async fn skill_read_file_tool_reads_bundle_reference(test_registry: TestRegistryHandle) {
-    let bundle_dir = tempfile::tempdir().expect("bundle tempdir should be created");
+    let bundle_dir = tempfile::tempdir().expect_valid("bundle tempdir should be created");
     ambient_fs::create_dir_all(bundle_dir.path().join("references"))
-        .expect("references dir should be created");
+        .expect_valid("references dir should be created");
     ambient_fs::write(bundle_dir.path().join("SKILL.md"), "# Deploy docs\n")
-        .expect("SKILL.md should be written");
+        .expect_valid("SKILL.md should be written");
     ambient_fs::write(bundle_dir.path().join("references/usage.md"), "# Usage\n")
-        .expect("reference should be written");
+        .expect_valid("reference should be written");
     insert_deploy_docs_bundle(&test_registry.registry, bundle_dir.path())
-        .expect("deploy-docs bundle should be inserted");
+        .expect_valid("deploy-docs bundle should be inserted");
 
     let tool = SkillReadFileTool::new(Arc::clone(&test_registry.registry));
     let output = NativeTool::execute(
@@ -103,7 +104,7 @@ async fn skill_read_file_tool_reads_bundle_reference(test_registry: TestRegistry
         &JobContext::default(),
     )
     .await
-    .expect("skill_read_file should succeed");
+    .expect_valid("skill_read_file should succeed");
 
     assert_eq!(output.result["skill"], "deploy-docs");
     assert_eq!(output.result["path"], "references/usage.md");
@@ -142,7 +143,7 @@ async fn test_skill_read_file_tool_after_install_returns_each_documented_entry(
         &JobContext::default(),
     )
     .await
-    .expect("skill_read_file should return installed text entry");
+    .expect_valid("skill_read_file should return installed text entry");
 
     assert_eq!(output.result["skill"], "deploy-docs");
     assert_eq!(output.result["path"], path);
@@ -172,7 +173,7 @@ async fn test_skill_read_file_tool_after_install_returns_non_inline_for_png()
         &JobContext::default(),
     )
     .await
-    .expect("skill_read_file should return non-inline payload");
+    .expect_valid("skill_read_file should return non-inline payload");
 
     assert_eq!(output.result["skill"], "deploy-docs");
     assert_eq!(output.result["path"], "assets/logo.png");
@@ -201,7 +202,7 @@ async fn skill_read_file_tool_reports_unknown_skill(test_registry: TestRegistryH
         &JobContext::default(),
     )
     .await
-    .expect("unknown skill should be a structured tool result");
+    .expect_valid("unknown skill should be a structured tool result");
 
     assert_eq!(output.result["skill"], "missing");
     assert_eq!(output.result["path"], "SKILL.md");
@@ -210,19 +211,19 @@ async fn skill_read_file_tool_reports_unknown_skill(test_registry: TestRegistryH
 
 #[given("a loaded skill bundle with a referenced usage file")]
 fn bdd_loaded_skill_bundle(skill_read_file_world: &mut SkillReadFileWorld) {
-    let bundle_dir = tempfile::tempdir().expect("bundle tempdir should be created");
+    let bundle_dir = tempfile::tempdir().expect_valid("bundle tempdir should be created");
     ambient_fs::create_dir_all(bundle_dir.path().join("references"))
-        .expect("references dir should be created");
+        .expect_valid("references dir should be created");
     ambient_fs::write(bundle_dir.path().join("SKILL.md"), "# Deploy docs\n")
-        .expect("SKILL.md should be written");
+        .expect_valid("SKILL.md should be written");
     ambient_fs::write(bundle_dir.path().join("references/usage.md"), "# Usage\n")
-        .expect("reference should be written");
+        .expect_valid("reference should be written");
 
     let registry = Arc::new(std::sync::RwLock::new(SkillRegistry::new(
         bundle_dir.path().join("unused-user-dir"),
     )));
     insert_deploy_docs_bundle(&registry, bundle_dir.path())
-        .expect("deploy-docs bundle should be inserted");
+        .expect_valid("deploy-docs bundle should be inserted");
 
     skill_read_file_world.bundle_dir = Some(bundle_dir);
     skill_read_file_world.registry = Some(registry);
@@ -255,7 +256,7 @@ fn bdd_tool_returns_reference_text(skill_read_file_world: &SkillReadFileWorld) {
     let output = skill_read_file_world
         .output
         .as_ref()
-        .expect("When step should execute tool");
+        .expect_valid("When step should execute tool");
     assert_eq!(output["skill"], "deploy-docs");
     assert_eq!(output["path"], "references/usage.md");
     assert_eq!(output["content"], "# Usage\n");
@@ -263,7 +264,7 @@ fn bdd_tool_returns_reference_text(skill_read_file_world: &SkillReadFileWorld) {
     let root = skill_read_file_world
         .bundle_dir
         .as_ref()
-        .expect("Given step should create bundle")
+        .expect_valid("Given step should create bundle")
         .path()
         .to_string_lossy();
     assert!(!output.to_string().contains(root.as_ref()));
@@ -274,7 +275,7 @@ fn bdd_tool_returns_path_not_readable(skill_read_file_world: &SkillReadFileWorld
     let output = skill_read_file_world
         .output
         .as_ref()
-        .expect("When step should execute tool");
+        .expect_valid("When step should execute tool");
     assert_eq!(output["skill"], "deploy-docs");
     assert_eq!(output["path"], "../secrets.txt");
     assert_eq!(output["error"]["code"], "path_not_readable");
@@ -285,13 +286,13 @@ fn execute_bdd_read(skill_read_file_world: &mut SkillReadFileWorld, params: serd
         skill_read_file_world
             .registry
             .as_ref()
-            .expect("Given step should create registry"),
+            .expect_valid("Given step should create registry"),
     );
     let tool = SkillReadFileTool::new(registry);
-    let runtime = tokio::runtime::Runtime::new().expect("tokio runtime should start");
+    let runtime = tokio::runtime::Runtime::new().expect_valid("tokio runtime should start");
     let output = runtime
         .block_on(NativeTool::execute(&tool, params, &JobContext::default()))
-        .expect("skill_read_file should return a tool output");
+        .expect_valid("skill_read_file should return a tool output");
     skill_read_file_world.output = Some(output.result);
 }
 

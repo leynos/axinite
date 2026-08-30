@@ -1,5 +1,6 @@
 //! Shared fixtures and router factories for web gateway route tests.
 
+use crate::test_support::ExpectValid;
 use std::sync::Arc;
 
 use axum::{Router, routing::get};
@@ -93,7 +94,7 @@ pub(super) fn build_test_secrets_store() -> Arc<dyn crate::secrets::SecretsStore
         crate::secrets::SecretsCrypto::new(secrecy::SecretString::from(
             TEST_GATEWAY_CRYPTO_KEY.to_string(),
         ))
-        .expect("construct test gateway secrets crypto"),
+        .expect_valid("construct test gateway secrets crypto"),
     )))
 }
 
@@ -147,6 +148,6 @@ pub(super) fn expired_pending_oauth_flow(
         gateway_token: None,
         created_at: std::time::Instant::now()
             .checked_sub(std::time::Duration::from_secs(600))
-            .expect("system uptime is too low to run expired OAuth flow tests"),
+            .expect_valid("system uptime is too low to run expired OAuth flow tests"),
     }
 }

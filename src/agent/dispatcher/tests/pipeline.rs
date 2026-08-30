@@ -4,11 +4,11 @@ use std::sync::{Arc, Mutex as StdMutex};
 use std::time::Instant;
 
 use crate::agent::session::PendingApproval;
-use crate::channels::StatusUpdate;
 use crate::context::JobContext;
 use crate::llm::{ChatMessage, CompletionResponse, FinishReason, NativeLlmProvider, Role};
 use crate::testing::StubChannel;
 use crate::tools::{ApprovalRequirement, NativeTool, ToolError, ToolOutput};
+use crate::{channels::StatusUpdate, test_support::ExpectValid};
 
 use super::*;
 
@@ -95,7 +95,7 @@ impl NativeLlmProvider for PipelineProvider {
             .count();
         self.observed_tool_message_counts
             .lock()
-            .expect("tool message count lock poisoned")
+            .expect_valid("tool message count lock poisoned")
             .push(tool_message_count);
 
         if tool_message_count >= self.tool_calls.len().max(1) {
@@ -243,13 +243,13 @@ async fn pipeline_runs_inline_for_single_tool() {
     let tools: Vec<Arc<dyn crate::tools::Tool>> = Vec::new();
     let (agent, statuses) = make_pipeline_agent(provider, tools, 6, false)
         .await
-        .expect("make_pipeline_agent should build");
+        .expect_valid("make_pipeline_agent should build");
     let (_session, _thread_id, message, ctx) = build_run_loop_ctx("run echo").await;
 
     let result = agent
         .run_agentic_loop(&message, ctx)
         .await
-        .expect("inline pipeline should succeed");
+        .expect_valid("inline pipeline should succeed");
 
     match result {
         super::super::AgenticLoopResult::Response(text) => assert_eq!(text, "inline done"),
@@ -258,14 +258,14 @@ async fn pipeline_runs_inline_for_single_tool() {
         }
     }
 
-    let captured = statuses.lock().expect("statuses lock poisoned");
+    let captured = statuses.lock().expect_valid("statuses lock poisoned");
     assert_tool_started_status(&captured, "echo");
     assert_tool_completed_status(&captured, "echo");
     assert_tool_result_status(&captured, "echo");
 
     let observed = observed_tool_message_counts
         .lock()
-        .expect("tool message count lock poisoned")
+        .expect_valid("tool message count lock poisoned")
         .clone();
     assert_eq!(
         observed,
@@ -302,13 +302,13 @@ async fn pipeline_runs_parallel_for_multiple_tools() {
     })];
     let (agent, statuses) = make_pipeline_agent(provider, tools, 6, false)
         .await
-        .expect("make_pipeline_agent should build");
+        .expect_valid("make_pipeline_agent should build");
     let (session, thread_id, message, ctx) = build_run_loop_ctx("run both tools").await;
 
     let result = agent
         .run_agentic_loop(&message, ctx)
         .await
-        .expect("parallel pipeline should succeed");
+        .expect_valid("parallel pipeline should succeed");
 
     match result {
         super::super::AgenticLoopResult::Response(text) => assert_eq!(text, "parallel done"),
@@ -318,7 +318,7 @@ async fn pipeline_runs_parallel_for_multiple_tools() {
     }
 
     {
-        let captured = statuses.lock().expect("statuses lock poisoned");
+        let captured = statuses.lock().expect_valid("statuses lock poisoned");
         assert_thinking_status(&captured, "Executing 2 tool(s)...");
         assert_tool_completed_status(&captured, "echo");
         assert_tool_completed_status(&captured, "second_tool");
@@ -326,7 +326,7 @@ async fn pipeline_runs_parallel_for_multiple_tools() {
 
     let observed = observed_tool_message_counts
         .lock()
-        .expect("tool message count lock poisoned")
+        .expect_valid("tool message count lock poisoned")
         .clone();
     assert_eq!(
         observed,
@@ -338,8 +338,8 @@ async fn pipeline_runs_parallel_for_multiple_tools() {
     let thread = sess
         .threads
         .get(&thread_id)
-        .expect("thread should still exist");
-    let turn = thread.last_turn().expect("turn should exist");
+        .expect_valid("thread should still exist");
+    let turn = thread.last_turn().expect_valid("turn should exist");
     assert_eq!(
         turn.tool_calls.len(),
         2,
@@ -374,13 +374,13 @@ async fn pipeline_blocks_on_approval() {
     })];
     let (agent, _statuses) = make_pipeline_agent(provider, tools, 6, false)
         .await
-        .expect("make_pipeline_agent should build");
+        .expect_valid("make_pipeline_agent should build");
     let (_session, _thread_id, message, ctx) = build_run_loop_ctx("run approval tool").await;
 
     let result = agent
         .run_agentic_loop(&message, ctx)
         .await
-        .expect("approval pipeline should return NeedApproval");
+        .expect_valid("approval pipeline should return NeedApproval");
 
     match result {
         super::super::AgenticLoopResult::NeedApproval { pending } => {

@@ -1,5 +1,6 @@
 //! Tests for bootstrap JSON migration and upsert helpers.
 
+use crate::test_support::ExpectValid;
 use std::process::Command;
 
 use crate::testing::test_utils::EnvVarsGuard;
@@ -13,7 +14,7 @@ fn would_autodetect_libsql(db_path: &std::path::Path) -> bool {
 
 fn assert_bootstrap_env_written(env_path: &std::path::Path, expected_url: &str) {
     assert!(env_path.exists(), ".env must exist after migration");
-    let content = ambient_fs::read_to_string(env_path).expect("read migrated .env");
+    let content = ambient_fs::read_to_string(env_path).expect_valid("read migrated .env");
     assert_eq!(
         content,
         format!("DATABASE_URL=\"{expected_url}\"\n"),
@@ -34,7 +35,7 @@ fn assert_bootstrap_file_renamed(dir_path: &std::path::Path) {
 
 #[test]
 fn test_migrate_bootstrap_json_to_env() {
-    let dir = tempdir().expect("create temp dir for bootstrap migration");
+    let dir = tempdir().expect_valid("create temp dir for bootstrap migration");
     let env_path = dir.path().join(".env");
     let bootstrap_path = dir.path().join("bootstrap.json");
     let bootstrap_json = serde_json::json!({
@@ -46,9 +47,9 @@ fn test_migrate_bootstrap_json_to_env() {
 
     ambient_fs::write(
         &bootstrap_path,
-        serde_json::to_string_pretty(&bootstrap_json).expect("serialize bootstrap.json"),
+        serde_json::to_string_pretty(&bootstrap_json).expect_valid("serialize bootstrap.json"),
     )
-    .expect("write bootstrap.json");
+    .expect_valid("write bootstrap.json");
 
     assert!(!env_path.exists());
     assert!(bootstrap_path.exists());
@@ -63,7 +64,7 @@ fn test_migrate_bootstrap_json_to_env() {
 fn load_axinite_env_migrates_bootstrap_json_to_env() {
     if std::env::var("AXINITE_LOAD_ENV_CHILD").ok().as_deref() == Some("1") {
         let base_dir = std::path::PathBuf::from(
-            std::env::var("AXINITE_BASE_DIR").expect("AXINITE_BASE_DIR missing"),
+            std::env::var("AXINITE_BASE_DIR").expect_valid("AXINITE_BASE_DIR missing"),
         );
         let env_path = base_dir.join(".env");
 
@@ -74,18 +75,18 @@ fn load_axinite_env_migrates_bootstrap_json_to_env() {
         return;
     }
 
-    let dir = tempdir().expect("create temp dir for load_axinite_env migration");
+    let dir = tempdir().expect_valid("create temp dir for load_axinite_env migration");
     let bootstrap_path = dir.path().join("bootstrap.json");
     let bootstrap_json = serde_json::json!({
         "database_url": "postgres://localhost/axinite_public_boundary"
     });
     ambient_fs::write(
         &bootstrap_path,
-        serde_json::to_string_pretty(&bootstrap_json).expect("serialize bootstrap.json"),
+        serde_json::to_string_pretty(&bootstrap_json).expect_valid("serialize bootstrap.json"),
     )
-    .expect("write bootstrap.json");
+    .expect_valid("write bootstrap.json");
 
-    let current_exe = std::env::current_exe().expect("locate current test binary");
+    let current_exe = std::env::current_exe().expect_valid("locate current test binary");
     let status = Command::new(current_exe)
         .args([
             "--exact",
@@ -98,23 +99,24 @@ fn load_axinite_env_migrates_bootstrap_json_to_env() {
         .env_remove("DATABASE_URL")
         .env_remove("DATABASE_BACKEND")
         .status()
-        .expect("spawn load_axinite_env boundary test");
+        .expect_valid("spawn load_axinite_env boundary test");
 
     assert!(status.success(), "child boundary test failed: {status}");
 }
 
 #[test]
 fn test_migrate_bootstrap_json_no_database_url() {
-    let dir = tempdir().expect("create temp dir for no-database-url migration");
+    let dir = tempdir().expect_valid("create temp dir for no-database-url migration");
     let env_path = dir.path().join(".env");
     let bootstrap_path = dir.path().join("bootstrap.json");
     let bootstrap_json = serde_json::json!({ "onboard_completed": false });
 
     ambient_fs::write(
         &bootstrap_path,
-        serde_json::to_string_pretty(&bootstrap_json).expect("serialize bootstrap without url"),
+        serde_json::to_string_pretty(&bootstrap_json)
+            .expect_valid("serialize bootstrap without url"),
     )
-    .expect("write bootstrap without url");
+    .expect_valid("write bootstrap without url");
 
     migrate_bootstrap_json_to_env(&env_path);
 
@@ -124,7 +126,7 @@ fn test_migrate_bootstrap_json_no_database_url() {
 
 #[test]
 fn test_migrate_bootstrap_json_missing() {
-    let dir = tempdir().expect("create temp dir for missing bootstrap migration");
+    let dir = tempdir().expect_valid("create temp dir for missing bootstrap migration");
     let env_path = dir.path().join(".env");
 
     migrate_bootstrap_json_to_env(&env_path);
@@ -137,7 +139,7 @@ fn test_libsql_autodetect_sets_backend_when_db_exists() {
     let mut env_guard = EnvVarsGuard::new(&["DATABASE_BACKEND"]);
     env_guard.remove("DATABASE_BACKEND");
 
-    let dir = tempdir().expect("create temp dir for libsql autodetect");
+    let dir = tempdir().expect_valid("create temp dir for libsql autodetect");
     let db_path = dir.path().join("axinite.db");
 
     assert!(!db_path.exists());
@@ -146,7 +148,7 @@ fn test_libsql_autodetect_sets_backend_when_db_exists() {
         "should not auto-detect when db file is absent"
     );
 
-    ambient_fs::write(&db_path, "").expect("create libsql marker file");
+    ambient_fs::write(&db_path, "").expect_valid("create libsql marker file");
     assert!(
         would_autodetect_libsql(&db_path),
         "should detect libsql when db file is present and backend unset"
@@ -158,9 +160,9 @@ fn test_libsql_autodetect_does_not_override_explicit_backend() {
     let mut env_guard = EnvVarsGuard::new(&["DATABASE_BACKEND"]);
     env_guard.set("DATABASE_BACKEND", "postgres");
 
-    let dir = tempdir().expect("create temp dir for explicit backend autodetect test");
+    let dir = tempdir().expect_valid("create temp dir for explicit backend autodetect test");
     let db_path = dir.path().join("axinite.db");
-    ambient_fs::write(&db_path, "").expect("create libsql marker file");
+    ambient_fs::write(&db_path, "").expect_valid("create libsql marker file");
 
     let would_override = std::env::var("DATABASE_BACKEND").is_err() && db_path.exists();
     assert!(
@@ -171,17 +173,17 @@ fn test_libsql_autodetect_does_not_override_explicit_backend() {
 
 #[test]
 fn upsert_bootstrap_vars_creates_file_if_missing() {
-    let dir = tempdir().expect("create temp dir for missing-file upsert");
+    let dir = tempdir().expect_valid("create temp dir for missing-file upsert");
     let env_path = dir.path().join("subdir").join(".env");
 
     assert!(!env_path.exists());
 
     let vars = [("DATABASE_BACKEND", "libsql")];
-    upsert_bootstrap_vars_to(&env_path, &vars).expect("upsert vars into missing file");
+    upsert_bootstrap_vars_to(&env_path, &vars).expect_valid("upsert vars into missing file");
 
     assert!(env_path.exists());
     let parsed: Vec<(String, String)> = dotenvy::from_path_iter(&env_path)
-        .expect("parse newly created bootstrap env")
+        .expect_valid("parse newly created bootstrap env")
         .filter_map(|result| result.ok())
         .collect();
     assert_eq!(parsed.len(), 1);
@@ -197,7 +199,7 @@ fn migrate_bootstrap_json_to_env_rename_failure_leaves_env_written() {
     // bootstrap.json is absent after a previous partial run), the .env
     // file that was already written is NOT removed - the rename is
     // best-effort and its failure must not undo the env-write.
-    let dir = tempdir().expect("create temp dir for rename-failure migration");
+    let dir = tempdir().expect_valid("create temp dir for rename-failure migration");
     let env_path = dir.path().join(".env");
     let bootstrap_path = dir.path().join("bootstrap.json");
     let bootstrap_json = serde_json::json!({
@@ -206,9 +208,9 @@ fn migrate_bootstrap_json_to_env_rename_failure_leaves_env_written() {
 
     ambient_fs::write(
         &bootstrap_path,
-        serde_json::to_string_pretty(&bootstrap_json).expect("serialize"),
+        serde_json::to_string_pretty(&bootstrap_json).expect_valid("serialize"),
     )
-    .expect("write bootstrap.json");
+    .expect_valid("write bootstrap.json");
 
     // Run the migration once - this writes .env and renames bootstrap.json.
     migrate_bootstrap_json_to_env(&env_path);

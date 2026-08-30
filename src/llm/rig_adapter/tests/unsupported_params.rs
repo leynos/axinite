@@ -1,6 +1,7 @@
 //! Tests for unsupported-parameter stripping in provider-backed rig adapters.
 
 use super::*;
+use crate::test_support::ExpectValid;
 use rig::completion::CompletionModel;
 use rstest::fixture;
 
@@ -13,7 +14,7 @@ fn openai_rig_adapter() -> RigAdapter<impl CompletionModel> {
         .api_key("test-key")
         .base_url("http://localhost:0")
         .build()
-        .expect("failed to build test client");
+        .expect_valid("failed to build test client");
     let client = client.completions_api();
     let model = client.completion_model("test-model");
     RigAdapter::new(model, "test-model")

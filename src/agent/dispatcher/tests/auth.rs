@@ -2,6 +2,7 @@
 
 use super::super::{check_auth_required, parse_auth_result};
 use super::*;
+use crate::test_support::ExpectValid;
 
 /// Serialize `json` as a successful `Result<String, Error>` and call
 /// `check_auth_required`. Eliminates the repeated two-line setup in every
@@ -20,7 +21,7 @@ fn assert_auth_detected(
 ) {
     assert!(detected.is_some(), "expected auth detection to fire");
     let (name, instructions) =
-        detected.expect("expected auth detection to fire and return (name, instructions)");
+        detected.expect_valid("expected auth detection to fire and return (name, instructions)");
     assert_eq!(name, expected_name);
     assert!(
         instructions.contains(expected_instructions_fragment),
@@ -95,7 +96,7 @@ fn test_detect_auth_awaiting_default_instructions() {
     .to_string());
 
     let (_, instructions) = check_auth_required("tool_auth", &result)
-        .expect("expected auth detection to fire for tool_auth with awaiting_token");
+        .expect_valid("expected auth detection to fire for tool_auth with awaiting_token");
     assert_eq!(instructions, "Please provide your API token/key.");
 }
 
@@ -108,7 +109,7 @@ fn test_detect_auth_awaiting_type_field_without_name() {
     .to_string());
 
     let (name, instructions) = check_auth_required("tool_auth", &result)
-        .expect("expected auth detection to fire for type=awaiting_token");
+        .expect_valid("expected auth detection to fire for type=awaiting_token");
 
     assert_eq!(name, "tool_auth");
     assert_eq!(instructions, "Visit the auth flow.");

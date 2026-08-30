@@ -1,5 +1,6 @@
 //! Tests for container delegate shutdown behaviour.
 
+use crate::test_support::ExpectValid;
 use std::sync::Arc;
 
 use anyhow::Result;
@@ -43,7 +44,7 @@ async fn spawn_event_server(
     let handle = tokio::spawn(async move {
         axum::serve(listener, app)
             .await
-            .expect("event test server should run");
+            .expect_valid("event test server should run");
     });
     Ok((format!("http://{addr}"), handle))
 }

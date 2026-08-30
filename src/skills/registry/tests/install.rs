@@ -1,6 +1,7 @@
 //! Deterministic regression tests for skill bundle installation correctness
 //! and byte-for-byte file preservation across supported install transports.
 
+use crate::test_support::ExpectValid;
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
@@ -31,18 +32,20 @@ fn documented_bundle_entries() -> Vec<(&'static str, &'static [u8])> {
 
 fn collect_installed_files(root: &Path) -> BTreeMap<PathBuf, Vec<u8>> {
     fn visit(base: &Path, current: &Path, files: &mut BTreeMap<PathBuf, Vec<u8>>) {
-        for entry in ambient_fs::read_dir(current).expect("installed directory should be readable")
+        for entry in
+            ambient_fs::read_dir(current).expect_valid("installed directory should be readable")
         {
-            let entry = entry.expect("installed directory entry should be readable");
+            let entry = entry.expect_valid("installed directory entry should be readable");
             let path = entry.path();
             if path.is_dir() {
                 visit(base, &path, files);
             } else {
                 let relative = path
                     .strip_prefix(base)
-                    .expect("installed file should be under bundle root")
+                    .expect_valid("installed file should be under bundle root")
                     .to_path_buf();
-                let contents = ambient_fs::read(&path).expect("installed file should be readable");
+                let contents =
+                    ambient_fs::read(&path).expect_valid("installed file should be readable");
                 files.insert(relative, contents);
             }
         }

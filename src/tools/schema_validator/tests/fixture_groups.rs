@@ -1,5 +1,6 @@
 //! Fixture-backed schema test groups used by the strict tool schema validator.
 
+use crate::test_support::ExpectValid;
 use anyhow::Context as _;
 use rstest::rstest;
 
@@ -75,7 +76,7 @@ fn skill_tool_schemas() -> Vec<(String, serde_json::Value)> {
         SkillInstallTool, SkillListTool, SkillRemoveTool, SkillSearchTool,
     };
 
-    let dir = tempfile::tempdir().expect("tempdir");
+    let dir = tempfile::tempdir().expect_valid("tempdir");
     let path = dir.path().to_path_buf();
     let registry = Arc::new(std::sync::RwLock::new(SkillRegistry::new(path)));
     let catalogue = Arc::new(SkillCatalog::with_url("http://127.0.0.1:1"));
@@ -141,10 +142,10 @@ fn validate_named_schemas(schemas: Vec<(String, serde_json::Value)>, context: &s
 }
 
 #[rstest]
-#[case::simple(simple_tool_schemas().expect("simple tool schemas should build"), "simple tool schemas")]
+#[case::simple(simple_tool_schemas().expect_valid("simple tool schemas should build"), "simple tool schemas")]
 #[case::jobs(job_tool_schemas(), "job tool schemas")]
 #[case::skills(skill_tool_schemas(), "skill tool schemas")]
-#[case::complex(complex_tool_schemas().expect("complex tool schema fixtures should load"), "inline schemas")]
+#[case::complex(complex_tool_schemas().expect_valid("complex tool schema fixtures should load"), "inline schemas")]
 fn test_schema_fixture_groups(
     #[case] schemas: Vec<(String, serde_json::Value)>,
     #[case] context: &str,

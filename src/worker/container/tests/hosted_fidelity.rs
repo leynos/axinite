@@ -4,6 +4,7 @@
 //! orchestrator catalogue endpoint and the worker-side proxy without
 //! field loss or transformation.
 
+use crate::test_support::ExpectValid;
 use std::sync::Arc;
 
 use anyhow::Context as _;
@@ -120,7 +121,7 @@ async fn spawn_hosted_catalog_server() -> Result<
     let server = tokio::spawn(async move {
         axum::serve(listener, router)
             .await
-            .expect("serve hosted fidelity test router")
+            .expect_valid("serve hosted fidelity test router")
     });
 
     Ok((format!("http://{addr}"), captured_requests, server))
@@ -168,7 +169,7 @@ async fn hosted_worker_proxy_definition_matches_orchestrator_canonical_definitio
         .tools
         .get("complex_orchestrator_wasm_fidelity_fixture")
         .await
-        .expect("complex tool proxy should be registered");
+        .expect_valid("complex tool proxy should be registered");
 
     let proxy_definition = ToolDefinition {
         name: proxy_tool.name().to_string(),
@@ -224,12 +225,14 @@ async fn hosted_worker_first_llm_request_forwards_wasm_schema_on_first_call(
     let captured_requests = captured_requests.lock().await;
     let first_request = captured_requests
         .first()
-        .expect("expected one proxied tool-completion request");
+        .expect_valid("expected one proxied tool-completion request");
     let forwarded_wasm_tool = first_request
         .tools
         .iter()
         .find(|tool| tool.name == "complex_orchestrator_wasm_fidelity_fixture")
-        .expect("worker should forward the orchestrator-owned WASM tool on the first request");
+        .expect_valid(
+            "worker should forward the orchestrator-owned WASM tool on the first request",
+        );
 
     assert_eq!(
         forwarded_wasm_tool,
