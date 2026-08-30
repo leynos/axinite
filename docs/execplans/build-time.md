@@ -17,7 +17,7 @@ actionable improvements to reduce overall build and test time.
 
 ## Baseline Measurements
 
-**Environment:** Rust 1.92.0, 32 cores, mold linker configured, no sccache.
+**Environment:** Rust 1.94.0, 32 cores, mold linker configured, no sccache.
 
 Table 1. Baseline build and test metrics.
 
@@ -132,7 +132,7 @@ channels, agent) are too tightly coupled for cost-effective splitting, but llm
 ### 7. 261 async-trait proc macro uses
 
 `async-trait` is used 261 times across the codebase. Each use generates
-significant expansion code. The project targets Rust 1.92, which supports
+significant expansion code. The project targets Rust 1.94, which supports
 native async traits — migration would eliminate this overhead.
 
 ## Recommendations
@@ -246,7 +246,7 @@ wasmtime gating.
 
 **Impact:** MEDIUM — eliminates 261 proc-macro expansions, reducing compilation
 and expansion overhead. **Effort:** HIGH — touching 261 call sites. Can be done
-incrementally. Rust 1.92 supports `async fn` in traits natively. Main
+incrementally. Rust 1.94 supports `async fn` in traits natively. Main
 limitation: native async traits are not object-safe without `#[trait_variant]`
 or boxing, so some uses may need to remain as `async-trait` where `dyn Trait`
 is used.

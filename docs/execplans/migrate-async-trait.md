@@ -6,7 +6,7 @@ subset of async traits that are not used as trait objects
 
 ## Big picture
 
-The migration from `async-trait` to native async traits in Rust 1.92+ is now
+The migration from `async-trait` to native async traits in Rust 1.94+ is now
 complete for production code in `src/`. The repository originally had 158
 `#[async_trait]` attribute usages across 74 source files. After the Milestone 4
 broad rollout (2026-03-23), **0 production `#[async_trait]` attribute usages**
@@ -47,7 +47,7 @@ This document tracks the phased migration: Phase 1 (audit/checklist), Phase 2
 
 ## Constraints
 
-- Rust edition 2024, minimum version 1.92.
+- Rust edition 2024, minimum version 1.94.
 - Traits used as `dyn Trait` (boxed trait objects) cannot use native async
   methods directly. Architectural decision record (ADR) 006 adopts a dual-trait
   pattern for those surfaces.
