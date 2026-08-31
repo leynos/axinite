@@ -133,6 +133,11 @@ def test_check_fmt_resolves_cargo_override(
     whitespace_override="",
     path_suffix="$tool",
 )
+@example(
+    uses_resolved_path=False,
+    whitespace_override="",
+    path_suffix="$(",
+)
 @given(
     uses_resolved_path=st.booleans(),
     whitespace_override=st.text(alphabet=" \t", max_size=8),
