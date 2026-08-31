@@ -6,6 +6,14 @@
 
 use std::path::Path;
 
+use proptest::prelude::*;
+use rstest::rstest;
+
+#[path = "support/markdown_normalization.rs"]
+mod markdown_normalization;
+
+use markdown_normalization::normalize;
+
 #[derive(Debug, Default, serde::Deserialize)]
 #[serde(default)]
 struct PageMetadata {
@@ -17,32 +25,126 @@ struct PageMetadata {
     url: Option<String>,
 }
 
-fn normalize(s: &str) -> String {
-    let s = s.replace("\r\n", "\n");
-    let s = s.trim();
-
-    // Collapse runs of two or more blank lines down to a single blank line,
-    // but keep lone blank lines intact: paragraph boundaries (a single blank
-    // line) are meaningful and must not be erased by normalization.
-    let mut lines: Vec<&str> = Vec::new();
-    let mut previous_was_blank = false;
-    for line in s.lines().map(|l| l.trim()) {
-        let is_blank = line.is_empty();
-        if is_blank && previous_was_blank {
-            continue;
-        }
-        lines.push(line);
-        previous_was_blank = is_blank;
-    }
-
-    lines.join("\n").trim_end().to_string()
-}
-
 /// Normalize typographic/smart punctuation to ASCII so tests match converter output
 /// regardless of apostrophe/quote variants (e.g. U+2019 ' → U+0027 ').
 fn normalize_smart_punctuation(s: &str) -> String {
     s.replace(['\u{2019}', '\u{2018}'], "'")
         .replace(['\u{201C}', '\u{201D}'], "\"")
+}
+
+#[test]
+fn normalize_ignores_soft_wrapping_without_merging_markdown_blocks() {
+    let wrapped = concat!(
+        "A paragraph split\nacross lines.\n\n",
+        "A quote: \"\n[T]ext.\n\n",
+        "## Heading\n\n- first\n- second",
+    );
+    let unwrapped = concat!(
+        "A paragraph split across lines.\n\n",
+        "A quote: \"[T]ext.\n\n",
+        "## Heading\n\n- first\n- second",
+    );
+
+    assert_eq!(normalize(wrapped), normalize(unwrapped));
+}
+
+#[rstest]
+#[case(
+    "before\n\n```rust\nlet one = 1;\nlet two = 2;\n```\n\nafter",
+    "before\n\n```rust\nlet one = 1;\nlet two = 2;\n```\n\nafter"
+)]
+#[case(
+    concat!(
+        "before\n\n",
+        "  ```rust  \n",
+        "\tlet one = 1;  \n",
+        "    let two = 2;\n",
+        "  ```  \n\n",
+        "after",
+    ),
+    concat!(
+        "before\n\n",
+        "  ```rust  \n",
+        "\tlet one = 1;  \n",
+        "    let two = 2;\n",
+        "  ```  \n\n",
+        "after",
+    )
+)]
+#[case(
+    "  ```rust\n    let value = 1;\n  ```",
+    "  ```rust\n    let value = 1;\n  ```"
+)]
+#[case(
+    "- outer\n  - nested\n    - deeper\n- next",
+    "- outer\n  - nested\n    - deeper\n- next"
+)]
+#[case(
+    "- outer\n  - nested\ncontinuation",
+    "- outer\n  - nested continuation"
+)]
+#[case("first line  \nsecond line", "first line  \nsecond line")]
+#[case("final line  ", "final line  ")]
+#[case("first\\\nsecond", "first\\\nsecond")]
+#[case("```\n~~~\n```", "```\n~~~\n```")]
+#[case("````\n```\n````", "````\n```\n````")]
+#[case(
+    "- first line\ncontinuation\n- second item",
+    "- first line continuation\n- second item"
+)]
+#[case("text\n  \n\t", "text")]
+fn normalize_matches_expected_markdown(#[case] input: &str, #[case] expected: &str) {
+    assert_eq!(normalize(input), expected);
+}
+
+proptest! {
+    #![proptest_config(ProptestConfig::with_cases(32))]
+
+    #[test]
+    fn normalize_matches_generated_soft_wraps(words in prop::collection::vec("[a-z]{1,12}", 1..8)) {
+        let input = words.join("\n");
+        prop_assert_eq!(normalize(&input), words.join(" "));
+    }
+
+    #[test]
+    fn normalize_preserves_generated_fenced_blocks(
+        indentation in prop_oneof![Just(" "), Just("  "), Just("\t")],
+        lines in prop::collection::vec("[a-zA-Z0-9 \\t]{0,24}", 0..8),
+    ) {
+        let input = format!(
+            "before\n{indentation}```rust\n{}\n{indentation}```\nafter",
+            lines.join("\n"),
+        );
+        prop_assert_eq!(normalize(&input), input);
+    }
+
+    #[test]
+    fn normalize_joins_generated_list_continuations(
+        item in "[a-z]{1,12}",
+        continuation in "[a-z]{1,12}",
+    ) {
+        let input = format!("- {item}\n{continuation}");
+        prop_assert_eq!(normalize(&input), format!("- {item} {continuation}"));
+    }
+
+    #[test]
+    fn normalize_is_idempotent_for_generated_line_sequences(
+        lines in prop::collection::vec(
+            prop_oneof![
+                Just(String::new()),
+                Just(" \t".to_string()),
+                Just("```".to_string()),
+                Just("~~~".to_string()),
+                Just("- item".to_string()),
+                Just("  - nested".to_string()),
+                "[a-z]{1,12}",
+            ],
+            0..16,
+        ),
+    ) {
+        let normalized = normalize(&lines.join("\n"));
+        prop_assert_eq!(normalize(&normalized), normalized);
+    }
 }
 
 #[test]

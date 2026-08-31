@@ -1,5 +1,6 @@
 //! Multipart install request tests for the Skills handler.
 
+use crate::test_support::ExpectValid;
 use std::sync::Arc;
 
 use axum::body::Body;
@@ -30,14 +31,14 @@ async fn upload_skill_bundle_preserves_references_and_assets(skills_api_fixture:
                 .header("x-confirm-action", "true")
                 .header("content-type", content_type)
                 .body(Body::from(body))
-                .expect("request should build"),
+                .expect_valid("request should build"),
         )
         .await
-        .expect("request should complete");
+        .expect_valid("request should complete");
 
     assert_eq!(response.status(), StatusCode::OK);
     let body: serde_json::Value =
-        serde_json::from_str(&response_text(response).await).expect("JSON response expected");
+        serde_json::from_str(&response_text(response).await).expect_valid("JSON response expected");
     assert_eq!(body["success"], true);
 
     let installed = skills_api_fixture.installed_root.join("deploy-docs");
@@ -62,7 +63,8 @@ async fn upload_skill_bundle_accepts_case_insensitive_content_type(
         post_skill_bundle_install(Arc::clone(&skills_api_fixture.state), content_type, body).await;
 
     assert_eq!(status, StatusCode::OK);
-    let body: serde_json::Value = serde_json::from_str(&body).expect("JSON response expected");
+    let body: serde_json::Value =
+        serde_json::from_str(&body).expect_valid("JSON response expected");
     assert_eq!(body["success"], true);
 }
 
@@ -81,10 +83,10 @@ async fn post_skill_bundle_install(
                 .header("x-confirm-action", "true")
                 .header("content-type", content_type)
                 .body(Body::from(body))
-                .expect("request should build"),
+                .expect_valid("request should build"),
         )
         .await
-        .expect("request should complete");
+        .expect_valid("request should complete");
     let status = response.status();
     let body = response_text(response).await;
     (status, body)
@@ -191,10 +193,10 @@ async fn upload_skill_bundle_rejects_additional_source_fields(
                 .header("x-confirm-action", "true")
                 .header("content-type", content_type)
                 .body(Body::from(body))
-                .expect("request should build"),
+                .expect_valid("request should build"),
         )
         .await
-        .expect("request should complete");
+        .expect_valid("request should complete");
 
     assert_eq!(response.status(), StatusCode::BAD_REQUEST);
     let body = response_text(response).await;
@@ -236,10 +238,10 @@ async fn upload_skill_bundle_ignores_whitespace_only_source_fields(
                 .header("x-confirm-action", "true")
                 .header("content-type", content_type)
                 .body(Body::from(body))
-                .expect("request should build"),
+                .expect_valid("request should build"),
         )
         .await
-        .expect("request should complete");
+        .expect_valid("request should complete");
 
     assert_eq!(response.status(), StatusCode::OK);
 }

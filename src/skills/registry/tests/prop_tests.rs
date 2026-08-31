@@ -1,5 +1,6 @@
 //! Property tests for skill location and bundle install invariants.
 
+use crate::test_support::ExpectValid;
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::Path;
 use std::path::PathBuf;
@@ -57,18 +58,20 @@ fn skill_markdown(name: &str) -> Vec<u8> {
 
 fn collect_installed_files(root: &Path) -> BTreeMap<PathBuf, Vec<u8>> {
     fn visit(base: &Path, current: &Path, files: &mut BTreeMap<PathBuf, Vec<u8>>) {
-        for entry in ambient_fs::read_dir(current).expect("installed directory should be readable")
+        for entry in
+            ambient_fs::read_dir(current).expect_valid("installed directory should be readable")
         {
-            let entry = entry.expect("installed directory entry should be readable");
+            let entry = entry.expect_valid("installed directory entry should be readable");
             let path = entry.path();
             if path.is_dir() {
                 visit(base, &path, files);
             } else {
                 let relative = path
                     .strip_prefix(base)
-                    .expect("installed file should be under bundle root")
+                    .expect_valid("installed file should be under bundle root")
                     .to_path_buf();
-                let contents = ambient_fs::read(&path).expect("installed file should be readable");
+                let contents =
+                    ambient_fs::read(&path).expect_valid("installed file should be readable");
                 files.insert(relative, contents);
             }
         }
@@ -96,7 +99,7 @@ proptest! {
             PathBuf::from("SKILL.md"),
             SkillPackageKind::SingleFile,
         )
-        .expect("test entrypoint is bundle-relative");
+        .expect_valid("test entrypoint is bundle-relative");
         let skill = LoadedSkill::new(LoadedSkillParts {
             manifest: SkillManifest {
                 name: name.clone(),
@@ -114,7 +117,7 @@ proptest! {
             lowercased_keywords: vec![],
             lowercased_exclude_keywords: vec![],
             lowercased_tags: vec![],
-        }).expect("matching name and identifier should always succeed");
+        }).expect_valid("matching name and identifier should always succeed");
         prop_assert_eq!(skill.skill_identifier(), name.as_str());
         prop_assert_eq!(skill.manifest.name, name);
     }
@@ -132,7 +135,7 @@ proptest! {
             PathBuf::from("SKILL.md"),
             SkillPackageKind::SingleFile,
         )
-        .expect("test entrypoint is bundle-relative");
+        .expect_valid("test entrypoint is bundle-relative");
         let result = LoadedSkill::new(LoadedSkillParts {
             manifest: SkillManifest {
                 name: manifest_name,
@@ -166,7 +169,7 @@ proptest! {
             entry,
             SkillPackageKind::Bundle,
         )
-        .expect("test entrypoint is bundle-relative");
+        .expect_valid("test entrypoint is bundle-relative");
         prop_assert_eq!(location.bundle_relative_root(), std::path::Path::new("."));
     }
 
@@ -175,10 +178,10 @@ proptest! {
         let runtime = tokio::runtime::Builder::new_current_thread()
             .enable_all()
             .build()
-            .expect("test runtime should build");
+            .expect_valid("test runtime should build");
         runtime.block_on(async move {
-            let user_dir = tempfile::tempdir().expect("user tempdir should be created for test");
-            let installed_dir = tempfile::tempdir().expect("installed tempdir should be created for test");
+            let user_dir = tempfile::tempdir().expect_valid("user tempdir should be created for test");
+            let installed_dir = tempfile::tempdir().expect_valid("installed tempdir should be created for test");
             let mut registry = SkillRegistry::new(user_dir.path().to_path_buf())
                 .with_installed_dir(installed_dir.path().to_path_buf());
 
@@ -198,24 +201,24 @@ proptest! {
                     (
                         PathBuf::from(
                             path.strip_prefix("deploy-docs/")
-                                .expect("generated path should be bundle rooted"),
+                                .expect_valid("generated path should be bundle rooted"),
                         ),
                         contents.clone(),
                     )
                 })
                 .collect::<BTreeMap<_, _>>();
             let archive = build_bundle_archive_from_owned(entries)
-                .expect("generated test bundle archive should build");
+                .expect_valid("generated test bundle archive should build");
 
             let prepared = SkillRegistry::prepare_install_to_disk(
                 registry.install_target_dir(),
                 SkillInstallPayload::ArchiveBytes(archive),
             )
             .await
-            .expect("generated valid bundle should prepare");
+            .expect_valid("generated valid bundle should prepare");
             registry
                 .commit_install(prepared)
-                .expect("generated valid bundle should commit");
+                .expect_valid("generated valid bundle should commit");
             let installed_root = installed_dir.path().join("deploy-docs");
             prop_assert_eq!(collect_installed_files(&installed_root), expected);
 

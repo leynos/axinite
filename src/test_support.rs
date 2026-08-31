@@ -5,6 +5,43 @@
 //! and reduce duplication.
 
 use crate::llm::ToolDefinition;
+use std::fmt::Display;
+
+/// A named panic boundary for test-only helpers without an error channel.
+///
+/// Whitaker treats those helpers as non-test code, so direct `expect` calls
+/// would hide a fallible boundary from the caller. Tests retain the same
+/// diagnostics while recording this intentional assertion boundary explicitly.
+pub(crate) trait ExpectValid {
+    /// The value returned when the assertion succeeds.
+    type Value;
+
+    /// Returns the successful value or fails at the calling test location.
+    #[track_caller]
+    fn expect_valid(self, message: &str) -> Self::Value;
+}
+
+impl<T, E: Display> ExpectValid for Result<T, E> {
+    type Value = T;
+
+    fn expect_valid(self, message: &str) -> Self::Value {
+        match self {
+            Ok(value) => value,
+            Err(error) => panic!("{message}: {error}"),
+        }
+    }
+}
+
+impl<T> ExpectValid for Option<T> {
+    type Value = T;
+
+    fn expect_valid(self, message: &str) -> Self::Value {
+        match self {
+            Some(value) => value,
+            None => panic!("{message}"),
+        }
+    }
+}
 
 /// Returns the canonical complex parameters JSON schema used for fidelity testing.
 ///

@@ -53,6 +53,12 @@ GITHUB_TOOL_WASM_TARGET := wasm32-wasip2
 # https://github.com/leynos/axinite/issues/212.
 # RUSTSEC-2025-0134: rustls-pemfile 2.2.0 is unmaintained via the libsql TLS
 # chain. Track removal in https://github.com/leynos/axinite/issues/213.
+# RUSTSEC-2026-0235: rkyv 0.7.46 is an optional rust_decimal dependency. No
+# Axinite feature enables rust_decimal's rkyv feature; remove when rust_decimal
+# no longer records rkyv <0.8.17 in its published dependency metadata.
+# RUSTSEC-2026-0258: h2 0.3.27 is required by libsql 0.9's remote-replica
+# client stack. Remote replicas are supported, so remove when libsql no longer
+# requires h2 <0.4.16.
 # kuchikikiki 0.9.2 is yanked via readabilityrs. cargo-audit exposes no
 # advisory ID to ignore for this warning; track removal in
 # https://github.com/leynos/axinite/issues/214.
@@ -65,6 +71,10 @@ AUDIT_FLAGS ?= \
 	--ignore RUSTSEC-2025-0141 \
 	--ignore RUSTSEC-2024-0370 \
 	--ignore RUSTSEC-2025-0134
+RUST_DECIMAL_AUDIT_FLAGS := \
+	--ignore RUSTSEC-2026-0235
+LIBSQL_AUDIT_FLAGS := \
+	--ignore RUSTSEC-2026-0258
 
 .PHONY: all install install-with-overrides sync-local-wasm-overrides build-github-tool-wasm fmt check-fmt typecheck lint lint-clippy lint-whitaker markdownlint spelling spelling-phrase-check spelling-config spelling-config-write spelling-helper-test nixie audit rust-audit test test-cargo test-matrix test-matrix-cargo test-workflow-contracts clean
 
@@ -147,7 +157,12 @@ rust-audit:
 		-name Cargo.toml -exec sh -c 'set -e; for manifest do \
 			manifest_dir=$$(dirname "$$manifest"); \
 			printf "Auditing Rust manifest %s\n" "$$manifest"; \
-			(cd "$$manifest_dir" && $(CARGO_AUDIT) $(AUDIT_FLAGS)); \
+			if [ -f "$$manifest_dir/Cargo.lock" ]; then \
+				python3 scripts/verify_audit_ignore_paths.py "$$manifest_dir/Cargo.lock"; \
+				(cd "$$manifest_dir" && $(CARGO_AUDIT) $(AUDIT_FLAGS) $(RUST_DECIMAL_AUDIT_FLAGS) $(LIBSQL_AUDIT_FLAGS)); \
+			else \
+				(cd "$$manifest_dir" && $(CARGO_AUDIT) $(AUDIT_FLAGS)); \
+			fi; \
 		done' sh {} +
 
 test:

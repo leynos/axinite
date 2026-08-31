@@ -1,5 +1,6 @@
 //! Shared fixtures and request builders for Skills handler tests.
 
+use crate::test_support::ExpectValid;
 use std::io::Write;
 use std::sync::Arc;
 
@@ -20,8 +21,8 @@ pub(crate) struct SkillsApiFixture {
 
 #[fixture]
 pub(crate) fn skills_api_fixture() -> SkillsApiFixture {
-    let user_dir = tempfile::tempdir().expect("user tempdir should be created");
-    let installed_dir = tempfile::tempdir().expect("installed tempdir should be created");
+    let user_dir = tempfile::tempdir().expect_valid("user tempdir should be created");
+    let installed_dir = tempfile::tempdir().expect_valid("installed tempdir should be created");
     let installed_root = installed_dir.path().to_path_buf();
     let registry = SkillRegistry::new(user_dir.path().to_path_buf())
         .with_installed_dir(installed_root.clone());
@@ -48,7 +49,7 @@ pub(crate) fn skill_markdown(name: &str) -> String {
 
 pub(crate) fn build_bundle_archive(entries: &[(&str, &[u8])]) -> Vec<u8> {
     crate::skills::test_support::build_bundle_archive(entries)
-        .expect("test bundle archive should build")
+        .expect_valid("test bundle archive should build")
 }
 
 pub(crate) enum MultipartPart<'a> {
@@ -94,7 +95,7 @@ pub(crate) fn multipart_body(parts: &[MultipartPart<'_>]) -> (String, Vec<u8>) {
                     body,
                     "--{boundary}\r\nContent-Disposition: form-data; name=\"{field_name}\"; filename=\"{file_name}\"\r\nContent-Type: application/octet-stream\r\n\r\n"
                 )
-                .expect("multipart file header should write");
+                .expect_valid("multipart file header should write");
                 body.extend_from_slice(bytes);
             }
             MultipartPart::FileWithoutFilename { field_name, bytes } => {
@@ -102,7 +103,7 @@ pub(crate) fn multipart_body(parts: &[MultipartPart<'_>]) -> (String, Vec<u8>) {
                     body,
                     "--{boundary}\r\nContent-Disposition: form-data; name=\"{field_name}\"\r\nContent-Type: application/octet-stream\r\n\r\n"
                 )
-                .expect("multipart file header should write");
+                .expect_valid("multipart file header should write");
                 body.extend_from_slice(bytes);
             }
             MultipartPart::Text { field_name, value } => {
@@ -110,19 +111,19 @@ pub(crate) fn multipart_body(parts: &[MultipartPart<'_>]) -> (String, Vec<u8>) {
                     body,
                     "--{boundary}\r\nContent-Disposition: form-data; name=\"{field_name}\"\r\n\r\n{value}"
                 )
-                .expect("multipart text field should write");
+                .expect_valid("multipart text field should write");
             }
         }
-        write!(body, "\r\n").expect("multipart separator should write");
+        write!(body, "\r\n").expect_valid("multipart separator should write");
     }
 
-    write!(body, "\r\n--{boundary}--\r\n").expect("multipart footer should write");
+    write!(body, "\r\n--{boundary}--\r\n").expect_valid("multipart footer should write");
     (format!("multipart/form-data; boundary={boundary}"), body)
 }
 
 pub(crate) async fn response_text(response: axum::response::Response) -> String {
     let bytes = to_bytes(response.into_body(), 1024 * 1024)
         .await
-        .expect("response body should be readable");
-    String::from_utf8(bytes.to_vec()).expect("response body should be UTF-8")
+        .expect_valid("response body should be readable");
+    String::from_utf8(bytes.to_vec()).expect_valid("response body should be UTF-8")
 }

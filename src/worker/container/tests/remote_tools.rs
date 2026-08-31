@@ -1,5 +1,6 @@
 //! Tests for remote tool catalogue registration and toolset instruction merging.
 
+use crate::test_support::ExpectValid;
 use std::sync::Arc;
 
 use anyhow::Context;
@@ -126,7 +127,7 @@ where
     let server = tokio::spawn(async move {
         axum::serve(listener, router)
             .await
-            .expect("serve router in test server")
+            .expect_valid("serve router in test server")
     });
     Ok((format!("http://{addr}"), server))
 }
@@ -171,7 +172,7 @@ async fn hosted_worker_remote_tool_catalogue_registers_remote_tools()
 
     let remote_tool: Option<std::sync::Arc<dyn crate::tools::Tool>> =
         runtime.tools.get("hosted_worker_remote_tool_fixture").await;
-    let remote_tool = remote_tool.expect("hosted remote tool should be registered");
+    let remote_tool = remote_tool.expect_valid("hosted remote tool should be registered");
     let expected = expected_remote_tool_definition();
     assert_eq!(remote_tool.name(), expected.name);
     assert_eq!(remote_tool.description(), expected.description);
@@ -181,7 +182,7 @@ async fn hosted_worker_remote_tool_catalogue_registers_remote_tools()
         .tools
         .get("hosted_worker_remote_wasm_tool_fixture")
         .await
-        .expect("hosted remote WASM tool should be registered");
+        .expect_valid("hosted remote WASM tool should be registered");
     let expected_wasm = expected_remote_wasm_tool_definition();
     assert_eq!(remote_wasm_tool.name(), expected_wasm.name);
     assert_eq!(remote_wasm_tool.description(), expected_wasm.description);
@@ -214,7 +215,7 @@ async fn worker_runtime_build_reasoning_context_merges_local_and_remote_tools()
         .messages
         .iter()
         .find(|message| message.content.contains(HOSTED_GUIDANCE_HEADING))
-        .expect("expected hosted remote-tool guidance message");
+        .expect_valid("expected hosted remote-tool guidance message");
 
     assert!(
         guidance_message
@@ -236,7 +237,7 @@ async fn worker_runtime_build_reasoning_context_merges_local_and_remote_tools()
         .available_tools
         .iter()
         .find(|tool| tool.name == "hosted_worker_remote_tool_fixture")
-        .expect("reasoning context should expose the hosted remote tool");
+        .expect_valid("reasoning context should expose the hosted remote tool");
     let expected = expected_remote_tool_definition();
     assert_eq!(remote_tool.description, expected.description);
     assert_eq!(remote_tool.parameters, expected.parameters);
@@ -245,7 +246,7 @@ async fn worker_runtime_build_reasoning_context_merges_local_and_remote_tools()
         .available_tools
         .iter()
         .find(|tool| tool.name == "hosted_worker_remote_wasm_tool_fixture")
-        .expect("reasoning context should expose the hosted remote WASM tool");
+        .expect_valid("reasoning context should expose the hosted remote WASM tool");
     let expected_wasm = expected_remote_wasm_tool_definition();
     assert_eq!(remote_wasm_tool.description, expected_wasm.description);
     assert_eq!(remote_wasm_tool.parameters, expected_wasm.parameters);

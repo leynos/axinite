@@ -1,5 +1,6 @@
 //! Unit tests for WASM channel dispatch context wiring and settings writes.
 
+use crate::test_support::ExpectValid;
 use std::sync::Arc;
 
 use super::super::dispatch::DispatchContext;
@@ -19,7 +20,7 @@ impl RecordingSettingsStore {
     fn writes(&self) -> Vec<String> {
         self.writes
             .lock()
-            .expect("settings writes lock poisoned")
+            .expect_valid("settings writes lock poisoned")
             .clone()
     }
 }
@@ -60,7 +61,7 @@ impl crate::db::SettingsStore for RecordingSettingsStore {
         Box::pin(async move {
             self.writes
                 .lock()
-                .expect("settings writes lock poisoned")
+                .expect_valid("settings writes lock poisoned")
                 .push(key.to_string());
             Ok(())
         })
@@ -142,11 +143,11 @@ async fn test_dispatch_emitted_messages_sends_to_channel() {
     assert!(result.is_ok());
 
     // Verify messages were sent
-    let msg1 = rx.try_recv().expect("Should receive first message");
+    let msg1 = rx.try_recv().expect_valid("Should receive first message");
     assert_eq!(msg1.user_id, "user1");
     assert_eq!(msg1.content, "Hello from polling!");
 
-    let msg2 = rx.try_recv().expect("Should receive second message");
+    let msg2 = rx.try_recv().expect_valid("Should receive second message");
     assert_eq!(msg2.user_id, "user2");
     assert_eq!(msg2.content, "Another message");
 
@@ -358,7 +359,7 @@ async fn test_dispatch_emitted_messages_preserves_attachments() {
 
     assert!(result.is_ok());
 
-    let msg = rx.try_recv().expect("Should receive message");
+    let msg = rx.try_recv().expect_valid("Should receive message");
     assert_eq!(msg.content, "Check these files");
     assert_preserved_attachments(&msg);
 }
@@ -393,7 +394,7 @@ async fn test_dispatch_emitted_messages_no_attachments_backward_compat() {
 
     assert!(result.is_ok());
 
-    let msg = rx.try_recv().expect("Should receive message");
+    let msg = rx.try_recv().expect_valid("Should receive message");
     assert_eq!(msg.content, "Just text, no attachments");
     assert!(msg.attachments.is_empty());
 }
