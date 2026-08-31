@@ -13,8 +13,10 @@ EXPECTED_PATHS = {
     ("h2", "0.3.27"): "libsql",
 }
 
+PackageKey = tuple[str, str]
 
-def package_key(package: dict[str, object]) -> tuple[str, str] | None:
+
+def package_key(package: dict[str, object]) -> PackageKey | None:
     """Return a lockfile package's unambiguous name and version key."""
     name = package.get("name")
     version = package.get("version")
@@ -25,8 +27,8 @@ def package_key(package: dict[str, object]) -> tuple[str, str] | None:
 
 def dependency_keys(
     dependency: str,
-    packages_by_name: dict[str, set[tuple[str, str]]],
-) -> set[tuple[str, str]]:
+    packages_by_name: dict[str, set[PackageKey]],
+) -> set[PackageKey]:
     """Resolve one Cargo.lock dependency specification to package keys."""
     name, *version = dependency.split(" ", maxsplit=1)
     if version:
@@ -34,34 +36,60 @@ def dependency_keys(
     return packages_by_name[name]
 
 
-def has_only_expected_dependency_paths(
+def build_packages_by_name(
     packages: list[dict[str, object]],
-    vulnerable_package: tuple[str, str],
-    expected_ancestor: str,
-) -> bool:
-    """Check that every reverse dependency path crosses the expected ancestor."""
-    packages_by_name: dict[str, set[tuple[str, str]]] = defaultdict(set)
+) -> defaultdict[str, set[PackageKey]]:
+    """Index lockfile package keys by name for unversioned dependencies."""
+    packages_by_name: defaultdict[str, set[PackageKey]] = defaultdict(set)
     for package in packages:
         if package_key_value := package_key(package):
             packages_by_name[package_key_value[0]].add(package_key_value)
+    return packages_by_name
 
-    if vulnerable_package not in packages_by_name[vulnerable_package[0]]:
-        return True
 
-    parents: dict[tuple[str, str], set[tuple[str, str]]] = defaultdict(set)
+def dependency_parent_edges(
+    package: dict[str, object],
+    packages_by_name: dict[str, set[PackageKey]],
+) -> list[tuple[PackageKey, PackageKey]]:
+    """Return dependency-to-parent edges contributed by one lockfile package."""
+    package_key_value = package_key(package)
+    if package_key_value is None:
+        return []
+
+    dependencies = package.get("dependencies", [])
+    if not isinstance(dependencies, list):
+        return []
+
+    return [
+        (dependency_key, package_key_value)
+        for dependency in dependencies
+        if isinstance(dependency, str)
+        for dependency_key in dependency_keys(dependency, packages_by_name)
+    ]
+
+
+def build_parent_map(
+    packages: list[dict[str, object]],
+    packages_by_name: dict[str, set[PackageKey]],
+) -> defaultdict[PackageKey, set[PackageKey]]:
+    """Map each package to the packages that depend on it."""
+    parents: defaultdict[PackageKey, set[PackageKey]] = defaultdict(set)
     for package in packages:
-        if not (package_key_value := package_key(package)):
-            continue
-        dependencies = package.get("dependencies", [])
-        if not isinstance(dependencies, list):
-            continue
-        for dependency in dependencies:
-            if isinstance(dependency, str):
-                for dependency_key in dependency_keys(dependency, packages_by_name):
-                    parents[dependency_key].add(package_key_value)
+        for dependency_key, parent_key in dependency_parent_edges(
+            package, packages_by_name
+        ):
+            parents[dependency_key].add(parent_key)
+    return parents
 
+
+def reverse_paths_cross_expected_ancestor(
+    parents: dict[PackageKey, set[PackageKey]],
+    vulnerable_package: PackageKey,
+    expected_ancestor: str,
+) -> bool:
+    """Check whether every reverse path reaches the expected ancestor."""
     pending = deque(parents[vulnerable_package])
-    visited: set[tuple[str, str]] = set()
+    visited: set[PackageKey] = set()
     found_path = False
     while pending:
         parent = pending.popleft()
@@ -77,6 +105,23 @@ def has_only_expected_dependency_paths(
         pending.extend(parent_dependencies)
 
     return found_path
+
+
+def has_only_expected_dependency_paths(
+    packages: list[dict[str, object]],
+    vulnerable_package: PackageKey,
+    expected_ancestor: str,
+) -> bool:
+    """Check that every reverse dependency path crosses the expected ancestor."""
+    packages_by_name = build_packages_by_name(packages)
+
+    if vulnerable_package not in packages_by_name[vulnerable_package[0]]:
+        return True
+
+    parents = build_parent_map(packages, packages_by_name)
+    return reverse_paths_cross_expected_ancestor(
+        parents, vulnerable_package, expected_ancestor
+    )
 
 
 def verify(lockfile: Path) -> list[str]:

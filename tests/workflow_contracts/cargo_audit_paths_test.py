@@ -15,7 +15,11 @@ REPOSITORY_ROOT = Path(__file__).resolve().parents[2]
 VERIFY_SCRIPT = REPOSITORY_ROOT / "scripts" / "verify_audit_ignore_paths.py"
 
 
-def write_lockfile(path: Path, unrelated_dependency: str | None = None) -> None:
+def write_lockfile(
+    path: Path,
+    unrelated_dependency: str | None = None,
+    additional_packages: str = "",
+) -> None:
     """Write the minimum lock graph containing the two documented audit paths."""
     root_dependencies = ' "rust_decimal", "libsql",'
     if unrelated_dependency is not None:
@@ -47,6 +51,7 @@ dependencies = ["h2"]
 [[package]]
 name = "h2"
 version = "0.3.27"
+{additional_packages}
 '''
     )
 
@@ -98,3 +103,54 @@ def test_audit_ignores_reject_unrelated_dependency_paths(
 
     assert result.returncode == 1
     assert f"{unrelated_dependency} is not exclusively reachable" in result.stderr
+
+
+def test_audit_ignores_accept_cyclic_paths_to_expected_ancestor(
+    tmp_path: Path,
+) -> None:
+    """Permit cycles when every reverse path can still reach rust_decimal."""
+    lockfile = tmp_path / "Cargo.lock"
+    write_lockfile(
+        lockfile,
+        additional_packages='''\
+
+[[package]]
+name = "cycle_a"
+version = "1.0.0"
+dependencies = ["rkyv", "cycle_b"]
+
+[[package]]
+name = "cycle_b"
+version = "1.0.0"
+dependencies = ["cycle_a"]
+
+[[package]]
+name = "rust_decimal"
+version = "1.43.0"
+dependencies = ["cycle_a"]
+''',
+    )
+
+    assert verify(lockfile).returncode == 0
+
+
+def test_audit_ignores_reject_reverse_path_without_expected_ancestor(
+    tmp_path: Path,
+) -> None:
+    """Reject a reverse path that terminates before reaching rust_decimal."""
+    lockfile = tmp_path / "Cargo.lock"
+    write_lockfile(
+        lockfile,
+        additional_packages='''\
+
+[[package]]
+name = "orphan"
+version = "1.0.0"
+dependencies = ["rkyv"]
+''',
+    )
+
+    result = verify(lockfile)
+
+    assert result.returncode == 1
+    assert "rkyv is not exclusively reachable" in result.stderr
