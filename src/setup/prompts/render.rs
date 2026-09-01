@@ -1,28 +1,23 @@
 //! Rendering utilities for styled setup-prompt output.
 //!
-//! Provides [`print_header`] and [`print_step`] for writing formatted
-//! terminal output (bordered headers and numbered step indicators) used
-//! by the interactive setup wizard.
+//! Formats bordered headers and numbered step indicators for the interactive
+//! setup wizard.
 
-/// Print a styled header box.
+/// Format a styled header box.
 ///
 /// # Example
 ///
 /// ```ignore
 /// print_header("Axinite Setup Wizard");
 /// ```
-pub(super) fn print_header(text: &str) {
+pub(super) fn format_header(text: &str) -> String {
     let width = text.len() + 4;
     let border = "─".repeat(width);
 
-    println!();
-    println!("╭{}╮", border);
-    println!("│  {}  │", text);
-    println!("╰{}╯", border);
-    println!();
+    format!("\n╭{border}╮\n│  {text}  │\n╰{border}╯\n\n")
 }
 
-/// Print a step indicator.
+/// Format a step indicator.
 ///
 /// # Example
 ///
@@ -31,8 +26,6 @@ pub(super) fn print_header(text: &str) {
 /// // Output: Step 1/3: NEAR AI Authentication
 /// //         ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 /// ```
-pub(super) fn print_step(current: usize, total: usize, name: &str) {
-    println!("Step {}/{}: {}", current, total, name);
-    println!("{}", "━".repeat(32));
-    println!();
+pub(super) fn format_step(current: usize, total: usize, name: &str) -> String {
+    format!("Step {current}/{total}: {name}\n{}\n\n", "━".repeat(32))
 }
