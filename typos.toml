@@ -84,6 +84,7 @@ locale = "en-gb"
 extend-ignore-re = [
     "\"(?:LEFT|START)\", \"CENTER\", \"(?:RIGHT|END)\"",
     "\"(?:artifact_path|artifacts|catalog|catalog_count|catalog_error|catalog_version)\"\\s*:",
+    "\"build-(?:global|local)-artifacts\"",
     "\"caf%C3%A9\"",
     "\"color\"\\s*:",
     "\"hello worl\\.\\.\\.\"",

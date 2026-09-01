@@ -51,6 +51,7 @@ ignore = [
   '\b(?:find_(?:any_)?wasm_artifact|github_wasm_artifact|install_from_artifact|wasm_artifact_path)\b',
   '\bartifact_error\b',
   '\bartifacts:\s+artefacts\b',
+  '"build-(?:global|local)-artifacts"',
   '\bcatalog:\s+catalogue_json\b',
   '\b(?:pub )?mod (?:catalog|remote_tool_catalog);',
   '\bartifacts\.wasm32-wasip2\.(?:capabilities_url|url)\b',

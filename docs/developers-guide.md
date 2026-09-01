@@ -15,7 +15,7 @@ Their current jobs are explicitly provisioned for eight cores and cover the
 full Rust, WASM, Docker, browser, and promotion gates; migrate them only after
 an equivalent shared 8-vCPU Namespace profile is available and measured.
 Windows remains GitHub-hosted because this pilot has no shared Windows
-Namespace profile. The `cargo-dist` local-artifact matrix retains its
+Namespace profile. The `cargo-dist` local-artefact matrix retains its
 caller-computed runner selection because it is controlled by the release tool.
 
 For the current system architecture and subsystem boundaries, see
