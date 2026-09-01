@@ -6,7 +6,46 @@ use crossterm::event::{KeyCode, KeyModifiers};
 use proptest::prelude::*;
 use rstest::rstest;
 
-use super::{SecretInputEffect, apply_secret_input_effect, apply_secret_key_event};
+use super::{
+    SecretInputEffect, apply_secret_input_effect, apply_secret_key_event, format_status_suffix,
+    render,
+};
+
+#[test]
+fn test_format_header_snapshot() {
+    insta::assert_snapshot!(render::format_header("Axinite Setup"), @"
+
+╭─────────────────╮
+│  Axinite Setup  │
+╰─────────────────╯
+
+
+");
+}
+
+#[test]
+fn test_format_step_snapshot() {
+    insta::assert_snapshot!(render::format_step(2, 9, "Model Selection"), @"
+Step 2/9: Model Selection
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+");
+}
+
+#[test]
+fn test_format_success_snapshot() {
+    insta::assert_snapshot!(format!("✓{}", format_status_suffix("Configured")), @"✓ Configured\n");
+}
+
+#[test]
+fn test_format_error_snapshot() {
+    insta::assert_snapshot!(format!("✗{}", format_status_suffix("Connection failed")), @"✗ Connection failed\n");
+}
+
+#[test]
+fn test_format_info_snapshot() {
+    insta::assert_snapshot!(format!("ℹ{}", format_status_suffix("Using defaults")), @"ℹ Using defaults\n");
+}
 
 #[rstest]
 #[case(
