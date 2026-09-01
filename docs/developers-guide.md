@@ -3,6 +3,21 @@
 This guide explains the local prerequisites for working on Axinite and
 reproducing the build and test workflows on this branch.
 
+## GitHub Actions runner profiles
+
+The repository-owned Ubuntu 22.04 jobs in the generated release workflow use
+the shared uncached `namespace-profile-default` runner (amd64, 4 vCPU, and
+16 GB). Its cache volume is disabled, so existing GitHub Actions cache and
+artefact contracts remain unchanged during the initial baseline.
+
+The test, staging, and release-plz workflows retain `ubicloud-standard-8`.
+Their current jobs are explicitly provisioned for eight cores and cover the
+full Rust, WASM, Docker, browser, and promotion gates; migrate them only after
+an equivalent shared 8-vCPU Namespace profile is available and measured.
+Windows remains GitHub-hosted because this pilot has no shared Windows
+Namespace profile. The `cargo-dist` local-artifact matrix retains its
+caller-computed runner selection because it is controlled by the release tool.
+
 For the current system architecture and subsystem boundaries, see
 [`docs/axinite-architecture-overview.md`](axinite-architecture-overview.md).
 
