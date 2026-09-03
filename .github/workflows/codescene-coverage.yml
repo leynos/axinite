@@ -12,7 +12,11 @@ jobs:
     name: CodeScene Coverage
     if: github.event_name == 'pull_request'
     runs-on: ubicloud-standard-8
+    timeout-minutes: 60
     env:
+      CARGO_COMPONENT_VERSION: '0.21.1'
+      CARGO_LLVM_COV_VERSION: '0.9.0'
+      CARGO_NEXTEST_VERSION: '0.9.143'
       CARGO_INCREMENTAL: "0"
       CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_LINKER: clang
       CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_RUSTFLAGS: >-
@@ -44,20 +48,42 @@ jobs:
       - name: Install mold
         uses: rui314/setup-mold@v1
 
-      - uses: Swatinem/rust-cache@v2
+      - name: Restore Cargo registry and index
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9  # v6.1.0
         with:
-          key: coverage-libsql-only
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+          key: >-
+            cargo-v1-${{ runner.os }}-${{ runner.arch }}-${{ runner.environment
+            }}-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            cargo-v1-${{ runner.os }}-${{ runner.arch }}-${{ runner.environment }}-
 
       - name: Install cargo-llvm-cov
-        uses: taiki-e/install-action@cargo-llvm-cov
+        uses: taiki-e/install-action@c7eb1735f09259a5035e8e5d44b1406b1cddc0fb  # v2.83.0
+        with:
+          tool: cargo-llvm-cov@${{ env.CARGO_LLVM_COV_VERSION }}
+          fallback: none
 
       - name: Install cargo-nextest
-        uses: taiki-e/install-action@cargo-nextest
+        uses: taiki-e/install-action@c7eb1735f09259a5035e8e5d44b1406b1cddc0fb  # v2.83.0
+        with:
+          tool: cargo-nextest@${{ env.CARGO_NEXTEST_VERSION }}
+          fallback: none
 
       - name: Install cargo-component
-        uses: taiki-e/install-action@v2.83.0
+        uses: taiki-e/install-action@c7eb1735f09259a5035e8e5d44b1406b1cddc0fb  # v2.83.0
         with:
-          tool: cargo-component
+          tool: cargo-component@${{ env.CARGO_COMPONENT_VERSION }}
+          fallback: none
+
+      - name: Probe Cargo tooling
+        run: |
+          set -euo pipefail
+          cargo llvm-cov --version
+          cargo nextest --version
+          cargo component --version
 
       - name: Build GitHub WASM tool (for metadata/schema tests)
         run: make build-github-tool-wasm
@@ -75,7 +101,7 @@ jobs:
         env:
           CS_ACCESS_TOKEN: ${{ secrets.CS_ACCESS_TOKEN }}
         if: github.event_name == 'pull_request' && env.CS_ACCESS_TOKEN != ''
-        uses: leynos/shared-actions/.github/actions/upload-codescene-coverage@e0d9b652b137eb15314fff188f09e1ba18d3cc5b
+        uses: leynos/shared-actions/.github/actions/upload-codescene-coverage@7d46a399558914f5a05074e55a560fec0269fd0d
         with:
           format: lcov
           mode: check
@@ -83,10 +109,3 @@ jobs:
           access-token: ${{ env.CS_ACCESS_TOKEN }}
           installer-checksum: ${{ vars.CODESCENE_CLI_SHA256 }}
 
-      - name: Trim build artefacts before cache save
-        if: always()
-        run: |
-          rm -rf target/debug/incremental
-          rm -rf target/debug/.fingerprint
-          cargo clean --doc 2>/dev/null || true
-          find target -name "*.d" -delete 2>/dev/null || true

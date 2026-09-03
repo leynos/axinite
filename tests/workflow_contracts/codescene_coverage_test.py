@@ -100,16 +100,16 @@ def test_setup_and_generator_match_proven_libsql_coverage() -> None:
         "dtolnay/rust-toolchain@stable",
         "Install clang",
         "Install mold",
-        "Swatinem/rust-cache@v2",
+        "Restore Cargo registry and index",
         "Install cargo-llvm-cov",
         "Install cargo-nextest",
         "Install cargo-component",
+        "Probe Cargo tooling",
         "Build GitHub WASM tool (for metadata/schema tests)",
         "Build WASM channels (for integration tests)",
         "Generate coverage",
         "Check coverage against CodeScene gates",
-        "Trim build artefacts before cache save",
-    ], "coverage-check setup, report, check, and cleanup steps must stay ordered"
+    ], "coverage-check setup, report, and check steps must stay ordered"
 
     checkout = next(step for step in steps if step.get("uses") == "actions/checkout@v6")
     assert checkout.get("with") == {"fetch-depth": 0}, (
@@ -124,19 +124,26 @@ def test_setup_and_generator_match_proven_libsql_coverage() -> None:
         "targets": "wasm32-wasip2",
     }, "coverage-check must install the proven Rust components and WASM target"
 
-    cache = next(step for step in steps if step.get("uses") == "Swatinem/rust-cache@v2")
-    assert cache.get("with") == {"key": "coverage-libsql-only"}, (
-        "the cache key must remain scoped to libsql-only coverage"
+    # The registry cache carries no compiler output. sccache owns that from
+    # the migration wave onwards; a target archive here would be a second
+    # owner of the same state. The generic cache-ownership and tool-install
+    # contracts in workflow_policy_test.py cover the key and pin shapes.
+    cache = _find_step(job, "Restore Cargo registry and index")
+    cache_with = cache.get("with")
+    assert isinstance(cache_with, dict), "the cache step must declare inputs"
+    assert "target" not in str(cache_with.get("path", "")), (
+        "coverage-check must not archive a target tree"
     )
-    assert _find_step(job, "Install cargo-llvm-cov").get("uses") == (
-        "taiki-e/install-action@cargo-llvm-cov"
-    ), "coverage-check must reuse the proven cargo-llvm-cov installer"
-    assert _find_step(job, "Install cargo-nextest").get("uses") == (
-        "taiki-e/install-action@cargo-nextest"
-    ), "coverage-check must reuse the proven cargo-nextest installer"
-    assert _find_step(job, "Install cargo-component").get("with") == {
-        "tool": "cargo-component"
-    }, "coverage-check must install cargo-component for the WASM fixtures"
+    for tool in ("cargo-llvm-cov", "cargo-nextest", "cargo-component"):
+        step = _find_step(job, f"Install {tool}")
+        step_with = step.get("with")
+        assert isinstance(step_with, dict), f"Install {tool} must declare inputs"
+        assert str(step_with.get("tool", "")).startswith(f"{tool}@"), (
+            f"coverage-check must pin the {tool} version"
+        )
+        assert step_with.get("fallback") == "none", (
+            f"the {tool} installer must fail closed rather than build from source"
+        )
     assert (
         _find_step(job, "Build GitHub WASM tool (for metadata/schema tests)").get("run")
         == "make build-github-tool-wasm"

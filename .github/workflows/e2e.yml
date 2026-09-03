@@ -28,12 +28,17 @@ jobs:
       - name: Install mold
         uses: rui314/setup-mold@v1
 
-      - uses: actions/cache@v6
+      - name: Restore Cargo registry and index
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9  # v6.1.0
         with:
           path: |
-            target
             ~/.cargo/registry
-          key: e2e-${{ runner.os }}-${{ hashFiles('Cargo.lock') }}
+            ~/.cargo/git
+          key: >-
+            cargo-v1-${{ runner.os }}-${{ runner.arch }}-${{ runner.environment
+            }}-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            cargo-v1-${{ runner.os }}-${{ runner.arch }}-${{ runner.environment }}-
 
       - name: Build
         run: cargo build --no-default-features --features libsql
@@ -101,9 +106,11 @@ jobs:
           if-no-files-found: ignore
 
   # ── Roll-up for branch protection ────────────────────────────────────────
+  # Roll-up for branch protection. Compares upstream results only.
   e2e:
     name: E2E Tests
-    runs-on: ubicloud-standard-8
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
     if: always()
     needs: [test]
     steps:

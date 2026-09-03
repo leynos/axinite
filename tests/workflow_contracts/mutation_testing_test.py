@@ -55,7 +55,11 @@ SCAFFOLDING_EXCLUDES = (
 REQUIRED_SETUP_FRAGMENTS = (
     "apt-get install -y clang mold",
     "rustup target add wasm32-wasip2",
-    "cargo binstall --no-confirm cargo-component cargo-nextest",
+    # Fail closed: without an explicit strategy list, cargo-binstall falls
+    # back to `cargo install`, which compiles the tool from source.
+    "cargo binstall --no-confirm --strategies crate-meta-data,quick-install",
+    "cargo-component@",
+    "cargo-nextest@",
     "make build-github-tool-wasm",
     "./scripts/build-wasm-extensions.sh --channels",
 )

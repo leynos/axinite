@@ -11,7 +11,12 @@ jobs:
   release-plz-release:
     if: ${{ github.repository_owner == 'nearai' }}
     name: Release-plz release
-    runs-on: ubicloud-standard-8
+    # Release orchestration: creates tags, publishes crates, and calls the
+    # GitHub API. It compiles nothing on the developer feedback path, so it is
+    # GitHub-hosted. It owns no cache; a release job that writes the shared
+    # Cargo registry key would be a second writer.
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
     permissions:
       contents: write
     steps:
@@ -24,7 +29,6 @@ jobs:
       - &install-rust
         name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
-      - uses: Swatinem/rust-cache@v2
       # Generating a GitHub token, so that PRs and tags created by
       # the release-plz-action can trigger actions workflows.
       - name: Generate GitHub token
@@ -47,7 +51,9 @@ jobs:
   release-plz-pr:
     if: ${{ github.repository_owner == 'nearai' }}
     name: Release-plz PR
-    runs-on: ubicloud-standard-8
+    # Release orchestration; see release-plz-release.
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
     permissions:
       contents: write
       pull-requests: write
@@ -57,7 +63,6 @@ jobs:
     steps:
       - *checkout
       - *install-rust
-      - uses: Swatinem/rust-cache@v2
       - name: Run release-plz
         uses: release-plz/action@v0.5
         with:

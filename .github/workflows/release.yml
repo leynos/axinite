@@ -267,12 +267,12 @@ jobs:
         with:
           targets: wasm32-wasip2
       - name: Install cargo-component
-        uses: taiki-e/install-action@v2.83.0
+        uses: taiki-e/install-action@c7eb1735f09259a5035e8e5d44b1406b1cddc0fb  # v2.83.0
         with:
-          tool: cargo-component
-      - uses: swatinem/rust-cache@v2
-        with:
-          key: wasm-extensions
+          tool: cargo-component@0.21.1
+          fallback: none
+      - name: Probe cargo-component
+        run: cargo component --version
       - name: Build and package WASM extensions
         shell: bash
         run: |

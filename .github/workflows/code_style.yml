@@ -6,9 +6,11 @@ name: Code Style
 jobs:
   format:
     name: Formatting
+    # Build/test class: compiles nothing heavy but runs the repository's
+    # formatter, spelling, Mermaid, and workflow-contract gates on the
+    # developer feedback path.
     runs-on: ubicloud-standard-8
-    env:
-      MERMAN_CLI_VERSION: '0.7.0'
+    timeout-minutes: 20
     steps:
       - name: Checkout repository
         uses: actions/checkout@v6
@@ -23,19 +25,22 @@ jobs:
         with:
           python-version: '3.14'
           enable-cache: true
-      - name: Set up Rust for Merman
-        run: rustup toolchain install 1.95.0 --profile minimal
-      - name: Cache Merman CLI
-        id: cache-merman-cli
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9
+      # Installs pinned Nixie and a checksum-verified Merman CLI release
+      # archive. This replaces the previous `cargo install merman-cli`
+      # source build and its bespoke ~/.cargo/bin/merman-cli cache.
+      - name: Install Nixie and Merman CLI
+        uses: leynos/shared-actions/.github/actions/install-nixie@7d46a399558914f5a05074e55a560fec0269fd0d
         with:
-          path: ~/.cargo/bin/merman-cli
-          key: merman-cli-${{ runner.os }}-${{ runner.arch }}-${{ env.MERMAN_CLI_VERSION }}
-      - name: Install Merman CLI
-        if: steps.cache-merman-cli.outputs.cache-hit != 'true'
-        run: cargo +1.95.0 install merman-cli --version "=${MERMAN_CLI_VERSION}" --locked
-      - name: Install Nixie
-        run: uv tool install --python 3.14 nixie-cli==1.1.0
+          nixie-version: '1.1.0'
+          merman-version: '0.7.0'
+          python-version: '3.14'
+      - name: Probe Mermaid toolchain
+        run: |
+          set -euo pipefail
+          command -v nixie >/dev/null
+          command -v merman-cli >/dev/null
+          nixie --version
+          merman-cli --version
       - name: Enforce en-GB-oxendict spelling
         run: make spelling
       - name: Validate Mermaid diagrams
@@ -45,12 +50,13 @@ jobs:
 
   clippy:
     name: Clippy (${{ matrix.name }})
+    # Build/test class: compiles the workspace under three feature shapes.
     runs-on: ubicloud-standard-8
+    timeout-minutes: 45
     env:
       CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_LINKER: clang
       CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_RUSTFLAGS: >-
         -C link-arg=-fuse-ld=mold
-      WHITAKER_INSTALLER_VERSION: '0.2.6'
     strategy:
       fail-fast: false
       matrix:
@@ -74,33 +80,39 @@ jobs:
           components: clippy
       - name: Install mold
         uses: rui314/setup-mold@v1
-      - uses: Swatinem/rust-cache@v2
+      # Registry and Git index only. The `tests` job in test.yml is the sole
+      # writer of this key family; pull-request jobs restore and never save.
+      - name: Restore Cargo registry and index
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9  # v6.1.0
         with:
-          key: clippy-${{ matrix.name }}
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+          key: >-
+            cargo-v1-${{ runner.os }}-${{ runner.arch }}-${{ runner.environment
+            }}-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            cargo-v1-${{ runner.os }}-${{ runner.arch }}-${{ runner.environment }}-
       - name: Check lints
         run: >-
           cargo clippy --all --benches --tests --examples ${{ matrix.flags }}
           -- -D warnings
-      - name: Cache Whitaker installer
-        if: matrix.whitaker
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9  # v6.1.0
-        with:
-          path: |
-            ~/.cargo/bin/whitaker-installer
-            ~/.cache/cargo-binstall
-          key: whitaker-installer-${{ runner.os }}-${{ runner.arch }}-${{ env.WHITAKER_INSTALLER_VERSION }}
+      # Installs the pinned whitaker-installer release archive, verifies its
+      # published SHA-256 against the action's digest manifest, and owns the
+      # installer and suite cache. This replaces the previous cargo-binstall
+      # attempt with a `cargo install` source-build fallback.
       - name: Install Whitaker
         if: matrix.whitaker
+        uses: leynos/shared-actions/.github/actions/install-whitaker@7d46a399558914f5a05074e55a560fec0269fd0d
+        with:
+          installer-version: '0.2.7'
+          cache-provider: github
+      - name: Probe Whitaker
+        if: matrix.whitaker
         run: |
-          if ! command -v whitaker-installer >/dev/null 2>&1; then
-            if cargo binstall --version >/dev/null 2>&1; then
-              cargo binstall --no-confirm --locked "whitaker-installer@${WHITAKER_INSTALLER_VERSION}"
-            else
-              echo "cargo-binstall unavailable; building whitaker-installer from crates.io"
-              cargo install --locked whitaker-installer --version "${WHITAKER_INSTALLER_VERSION}"
-            fi
-          fi
-          whitaker-installer
+          set -euo pipefail
+          command -v whitaker >/dev/null
+          whitaker --version
       - name: Whitaker Dylint suite
         if: matrix.whitaker
         run: make lint-whitaker
@@ -108,7 +120,9 @@ jobs:
   clippy-windows:
     name: Clippy Windows (${{ matrix.name }})
     if: github.base_ref == 'main'
+    # Windows lanes stay on GitHub-hosted runners: Ubicloud offers Linux only.
     runs-on: windows-latest
+    timeout-minutes: 45
     strategy:
       fail-fast: false
       matrix:
@@ -126,18 +140,30 @@ jobs:
         uses: dtolnay/rust-toolchain@stable
         with:
           components: clippy
-      - uses: Swatinem/rust-cache@v2
+      # Keyed by runner.os, runner.arch, and runner.environment so a Linux
+      # archive is never restored onto Windows. windows-build in test.yml is
+      # the sole writer of the Windows key family.
+      - name: Restore Cargo registry and index
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9  # v6.1.0
         with:
-          key: clippy-windows-${{ matrix.name }}
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+          key: >-
+            cargo-v1-${{ runner.os }}-${{ runner.arch }}-${{ runner.environment
+            }}-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            cargo-v1-${{ runner.os }}-${{ runner.arch }}-${{ runner.environment }}-
       - name: Check lints
         run: >-
           cargo clippy --all --benches --tests --examples ${{ matrix.flags }}
           -- -D warnings
 
-  # Roll-up job for branch protection
+  # Roll-up job for branch protection. Compares upstream results and runs no
+  # build, so it belongs on a GitHub-hosted runner.
   code-style:
     name: Code Style (fmt + clippy)
-    runs-on: ubicloud-standard-8
+    runs-on: ubuntu-latest
     if: always()
     needs: [format, clippy, clippy-windows]
     steps:

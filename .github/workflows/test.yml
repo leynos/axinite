@@ -9,6 +9,15 @@ name: Run Tests
     branches:
       - main
 
+# Tool pins shared by every job. Each tool is installed from a pinned,
+# checksum-verified release archive by taiki-e/install-action with
+# `fallback: none`, so a missing prebuilt binary fails the job instead of
+# silently compiling from source.
+env:
+  CARGO_AUDIT_VERSION: '0.22.2'
+  CARGO_COMPONENT_VERSION: '0.21.1'
+  CARGO_NEXTEST_VERSION: '0.9.143'
+
 jobs:
   audit:
     name: Dependency Audit
@@ -20,22 +29,29 @@ jobs:
       (github.event_name == 'push' ||
       (github.event_name == 'pull_request' && github.base_ref != 'staging'))
       && github.actor != 'dependabot[bot]'
-    runs-on: ubicloud-standard-8
+    # API-bound: cargo-audit reads the lockfiles and the RustSec advisory
+    # database over the network. It compiles nothing, so it is GitHub-hosted.
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
     steps:
       - name: Checkout repository
         uses: actions/checkout@v6
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
       - name: Install cargo-audit
-        uses: taiki-e/install-action@v2.83.0
+        uses: taiki-e/install-action@c7eb1735f09259a5035e8e5d44b1406b1cddc0fb  # v2.83.0
         with:
-          tool: cargo-audit
+          tool: cargo-audit@${{ env.CARGO_AUDIT_VERSION }}
+          fallback: none
+      - name: Probe cargo-audit
+        run: cargo audit --version
       - name: Audit dependencies
         run: make audit
 
   tests:
     name: Tests (${{ matrix.name }})
     runs-on: ubicloud-standard-8
+    timeout-minutes: 60
     env:
       CARGO_INCREMENTAL: "0"
       CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_LINKER: clang
@@ -72,15 +88,37 @@ jobs:
         run: sudo apt-get update && sudo apt-get install -y clang
       - name: Install mold
         uses: rui314/setup-mold@v1
-      - uses: Swatinem/rust-cache@v2
+      # Sole writer of the Linux cargo-registry key family. The `target` tree
+      # is deliberately not archived: sccache owns compiler output from the
+      # migration wave onwards, and a target archive duplicates that
+      # ownership while inflating the weekly cache quota.
+      - name: Restore Cargo registry and index
+        id: cargo-registry
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9  # v6.1.0
         with:
-          key: ${{ matrix.name }}
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+          key: >-
+            cargo-v1-${{ runner.os }}-${{ runner.arch }}-${{ runner.environment
+            }}-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            cargo-v1-${{ runner.os }}-${{ runner.arch }}-${{ runner.environment }}-
       - name: Install cargo-nextest
-        uses: taiki-e/install-action@cargo-nextest
-      - name: Install cargo-component
-        uses: taiki-e/install-action@v2.83.0
+        uses: taiki-e/install-action@c7eb1735f09259a5035e8e5d44b1406b1cddc0fb  # v2.83.0
         with:
-          tool: cargo-component
+          tool: cargo-nextest@${{ env.CARGO_NEXTEST_VERSION }}
+          fallback: none
+      - name: Install cargo-component
+        uses: taiki-e/install-action@c7eb1735f09259a5035e8e5d44b1406b1cddc0fb  # v2.83.0
+        with:
+          tool: cargo-component@${{ env.CARGO_COMPONENT_VERSION }}
+          fallback: none
+      - name: Probe Cargo tooling
+        run: |
+          set -euo pipefail
+          cargo nextest --version
+          cargo component --version
       - name: Build GitHub WASM tool (for metadata/schema tests)
         run: make build-github-tool-wasm
       - name: Build WASM channels (for integration tests)
@@ -90,13 +128,21 @@ jobs:
           make test
           NEXTEST_PROFILE=ci
           TEST_FEATURES="${{ matrix.flags }} --features test-helpers"
-      - name: Trim build artefacts before cache save
-        if: always()
-        run: |
-          rm -rf target/debug/incremental
-          rm -rf target/debug/.fingerprint
-          cargo clean --doc 2>/dev/null || true
-          find target -name "*.d" -delete 2>/dev/null || true
+      # One writer per key: the all-features leg resolves the widest
+      # dependency graph, so it publishes the registry archive from main.
+      - name: Save Cargo registry and index
+        if: >-
+          matrix.name == 'all-features' && github.event_name == 'push' &&
+          github.ref == 'refs/heads/main' &&
+          steps.cargo-registry.outputs.cache-hit != 'true'
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9  # v6.1.0
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+          key: >-
+            cargo-v1-${{ runner.os }}-${{ runner.arch }}-${{ runner.environment
+            }}-${{ hashFiles('**/Cargo.lock') }}
 
   telegram-tests:
     name: Telegram Channel Tests
@@ -104,6 +150,7 @@ jobs:
       github.event_name == 'push' ||
       (github.event_name == 'pull_request' && github.base_ref != 'staging')
     runs-on: ubicloud-standard-8
+    timeout-minutes: 30
     env:
       CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_LINKER: clang
       CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_RUSTFLAGS: >-
@@ -115,7 +162,17 @@ jobs:
         uses: dtolnay/rust-toolchain@stable
       - name: Install mold
         uses: rui314/setup-mold@v1
-      - uses: Swatinem/rust-cache@v2
+      - name: Restore Cargo registry and index
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9  # v6.1.0
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+          key: >-
+            cargo-v1-${{ runner.os }}-${{ runner.arch }}-${{ runner.environment
+            }}-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            cargo-v1-${{ runner.os }}-${{ runner.arch }}-${{ runner.environment }}-
       - name: Run Telegram Channel Tests
         run: >-
           cargo test --manifest-path channels-src/telegram/Cargo.toml --
@@ -126,7 +183,9 @@ jobs:
     if: >
       github.event_name == 'push' ||
       (github.event_name == 'pull_request' && github.base_ref != 'staging')
+    # Windows lanes stay on GitHub-hosted runners: Ubicloud offers Linux only.
     runs-on: windows-latest
+    timeout-minutes: 45
     strategy:
       fail-fast: false
       matrix:
@@ -142,13 +201,36 @@ jobs:
         uses: actions/checkout@v6
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
-      - uses: Swatinem/rust-cache@v2
+      - name: Restore Cargo registry and index
+        id: cargo-registry
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9  # v6.1.0
         with:
-          key: windows-${{ matrix.name }}
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+          key: >-
+            cargo-v1-${{ runner.os }}-${{ runner.arch }}-${{ runner.environment
+            }}-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            cargo-v1-${{ runner.os }}-${{ runner.arch }}-${{ runner.environment }}-
       - name: Check compilation
         run: >-
           cargo check --all --benches --tests --examples
           ${{ matrix.flags }} --features test-helpers
+      # Sole writer of the Windows cargo-registry key family.
+      - name: Save Cargo registry and index
+        if: >-
+          matrix.name == 'all-features' && github.event_name == 'push' &&
+          github.ref == 'refs/heads/main' &&
+          steps.cargo-registry.outputs.cache-hit != 'true'
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9  # v6.1.0
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+          key: >-
+            cargo-v1-${{ runner.os }}-${{ runner.arch }}-${{ runner.environment
+            }}-${{ hashFiles('**/Cargo.lock') }}
 
   wasm-wit-compat:
     name: WASM WIT Compatibility
@@ -156,6 +238,7 @@ jobs:
       github.event_name == 'push' ||
       (github.event_name == 'pull_request' && github.base_ref != 'staging')
     runs-on: ubicloud-standard-8
+    timeout-minutes: 45
     env:
       CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_LINKER: clang
       CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_RUSTFLAGS: >-
@@ -169,13 +252,24 @@ jobs:
           targets: wasm32-wasip2
       - name: Install mold
         uses: rui314/setup-mold@v1
-      - uses: Swatinem/rust-cache@v2
+      - name: Restore Cargo registry and index
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9  # v6.1.0
         with:
-          key: wasm-extensions
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+          key: >-
+            cargo-v1-${{ runner.os }}-${{ runner.arch }}-${{ runner.environment
+            }}-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            cargo-v1-${{ runner.os }}-${{ runner.arch }}-${{ runner.environment }}-
       - name: Install cargo-component
-        uses: taiki-e/install-action@v2.83.0
+        uses: taiki-e/install-action@c7eb1735f09259a5035e8e5d44b1406b1cddc0fb  # v2.83.0
         with:
-          tool: cargo-component
+          tool: cargo-component@${{ env.CARGO_COMPONENT_VERSION }}
+          fallback: none
+      - name: Probe cargo-component
+        run: cargo component --version
       - name: Build all WASM extensions against current WIT
         run: ./scripts/build-wasm-extensions.sh
       - name: Instantiation test (host linker compatibility)
@@ -186,7 +280,11 @@ jobs:
     if: >
       github.event_name == 'push' ||
       (github.event_name == 'pull_request' && github.base_ref != 'staging')
+    # Stays on its current label. Moving a privileged, daemon-dependent job
+    # needs a Docker daemon and privilege preflight first; see the
+    # decomposition plan in docs/developers-guide.md.
     runs-on: ubicloud-standard-8
+    timeout-minutes: 30
     steps:
       - name: Checkout repository
         uses: actions/checkout@v6
@@ -195,7 +293,10 @@ jobs:
 
   version-check:
     name: Version Bump Check
-    runs-on: ubicloud-standard-8
+    # Metadata check over the Git history and PR labels. No build, so it is
+    # GitHub-hosted.
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
     if: github.event_name == 'pull_request'
     steps:
       - name: Checkout repository
@@ -207,10 +308,11 @@ jobs:
           PR_LABELS: ${{ join(github.event.pull_request.labels.*.name, ',') }}
         run: ./scripts/check-version-bumps.sh
 
-  # Roll-up job for branch protection
+  # Roll-up job for branch protection. Compares upstream results only.
   run-tests:
     name: Run Tests
-    runs-on: ubicloud-standard-8
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
     if: always()
     needs:
       - audit

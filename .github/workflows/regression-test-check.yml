@@ -6,7 +6,10 @@ on:
 jobs:
   regression-test:
     name: Regression test enforcement
-    runs-on: ubicloud-standard-8
+    # Metadata check: inspects the pull request diff and commit messages
+    # with git, grep, and awk. No build. GitHub-hosted.
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
