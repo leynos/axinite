@@ -213,7 +213,7 @@ jobs:
         env:
           CS_ACCESS_TOKEN: ${{ secrets.CS_ACCESS_TOKEN }}
         if: matrix.name == 'libsql-only' && env.CS_ACCESS_TOKEN != ''
-        uses: leynos/shared-actions/.github/actions/upload-codescene-coverage@7d46a399558914f5a05074e55a560fec0269fd0d
+        uses: leynos/shared-actions/.github/actions/upload-codescene-coverage@f6d4d5f549655c118f86f371b8d55c200d3efa50
         with:
           format: lcov
           mode: upload

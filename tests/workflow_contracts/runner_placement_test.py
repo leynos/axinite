@@ -17,9 +17,9 @@ import pytest
 import yaml
 from _workflow_policy import (
     REPOSITORY_ROOT,
-    UBICLOUD_ALLOW_LIST,
     UBICLOUD_LABEL,
     Job,
+    builds_or_tests,
     jobs,
 )
 
@@ -44,13 +44,16 @@ def test_workflow_estate_is_parsed() -> None:
 
 
 @pytest.mark.parametrize("job", _ubicloud_jobs(), ids=_ids(_ubicloud_jobs()))
-def test_only_allow_listed_jobs_use_ubicloud(job: Job) -> None:
-    """Restrict the paid runner shape to build and test work."""
-    assert (job.workflow, job.job_id) in UBICLOUD_ALLOW_LIST, (
-        f"{job} runs on {UBICLOUD_LABEL} but is not in the build/test "
-        "allow-list. Move it to ubuntu-latest, or add it to "
-        "UBICLOUD_ALLOW_LIST with the reason it must compile or execute "
-        "the product."
+def test_only_build_and_test_jobs_use_ubicloud(job: Job) -> None:
+    """Restrict the paid runner shape to work that compiles or executes.
+
+    The classification comes from the job's own steps, not from a list of job
+    names, so a job that stops building stops qualifying at the same moment.
+    """
+    assert builds_or_tests(job), (
+        f"{job} runs on {UBICLOUD_LABEL} but no step compiles or executes the "
+        "product. Move it to ubuntu-latest. If it genuinely does build or "
+        "test, add the command it runs to BUILD_OR_TEST_PATTERNS."
     )
 
 
@@ -64,13 +67,28 @@ def test_ubicloud_jobs_bound_their_runtime(job: Job) -> None:
     assert 0 < timeout <= 60, f"{job} declares an implausible timeout: {timeout}"
 
 
-def test_allow_list_has_no_stale_entries() -> None:
-    """Keep the allow-list honest when a job moves or is deleted."""
-    declared = {(job.workflow, job.job_id) for job in ALL_JOBS}
-    stale = UBICLOUD_ALLOW_LIST - declared
-    assert not stale, (
-        f"the Ubicloud allow-list names jobs that no longer exist: {stale}"
+def test_the_build_classification_discriminates() -> None:
+    """Guard against a predicate so loose that it accepts everything.
+
+    A pattern list that matched any shell at all would make the placement
+    contract vacuous. The roll-ups are the control group: their entire body
+    compares `needs.*.result`, so none of them may classify as a build.
+    """
+    by_identity = {(job.workflow, job.job_id): job for job in ALL_JOBS}
+    roll_ups = (
+        ("code_style.yml", "code-style"),
+        ("coverage.yml", "coverage-gate"),
+        ("e2e.yml", "e2e"),
+        ("test.yml", "run-tests"),
     )
+    for identity in roll_ups:
+        job = by_identity[identity]
+        assert not builds_or_tests(job), (
+            f"{job} only compares upstream results but classifies as a build; "
+            "BUILD_OR_TEST_PATTERNS is too permissive"
+        )
+    builders = [job for job in ALL_JOBS if builds_or_tests(job)]
+    assert len(builders) > 5, "the estate should still contain build jobs"
 
 
 def test_windows_jobs_stay_github_hosted() -> None:

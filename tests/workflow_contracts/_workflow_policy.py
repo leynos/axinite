@@ -30,28 +30,25 @@ SHA_RE: re.Pattern[str] = re.compile(r"^[0-9a-f]{40}$")
 #: together when it does.
 UBICLOUD_LABEL = "ubicloud-standard-8"
 
-#: Jobs permitted to run on an Ubicloud runner. Everything else must be
-#: GitHub-hosted. Membership means "this job compiles or executes the
-#: product", not "this job is important": roll-ups, gates, labelling,
-#: release orchestration, reports, and review jobs are API-bound and belong
-#: on GitHub-hosted runners regardless of how developer-visible they are.
-UBICLOUD_ALLOW_LIST: frozenset[tuple[str, str]] = frozenset(
-    {
-        ("code_style.yml", "format"),
-        ("code_style.yml", "clippy"),
-        ("codescene-coverage.yml", "coverage-check"),
-        ("coverage.yml", "coverage"),
-        ("coverage.yml", "e2e-coverage"),
-        ("e2e.yml", "build"),
-        ("e2e.yml", "test"),
-        ("test.yml", "tests"),
-        ("test.yml", "telegram-tests"),
-        ("test.yml", "wasm-wit-compat"),
-        # Privileged and daemon-dependent. It keeps its current label until a
-        # Docker daemon and privilege preflight passes; it is not a candidate
-        # for the first migration slice.
-        ("test.yml", "docker-build"),
-    }
+#: Commands that compile or execute the product. A job is a build or test job
+#: when one of its steps runs one of these; nothing else about the job matters.
+#: Deriving the classification from what a job runs, rather than from a list of
+#: job names, means a job that stops building also stops qualifying.
+#:
+#: `cargo audit` and `cargo binstall` are deliberately absent: they read
+#: metadata and download archives. `cargo fmt` is present because a formatter
+#: gate needs the Rust toolchain and runs on the same feedback path.
+BUILD_OR_TEST_PATTERNS: tuple[re.Pattern[str], ...] = tuple(
+    re.compile(pattern, re.MULTILINE)
+    for pattern in (
+        r"\bcargo\s+(?:\+\S+\s+)?"
+        r"(?:build|check|clippy|fmt|test|nextest|llvm-cov|component|run)\b",
+        r"\bdocker\s+build\b",
+        r"\bpytest\b",
+        r"\bmake\s+(?:all|test|test-matrix|lint|typecheck|check-fmt"
+        r"|build-github-tool-wasm)\b",
+        r"\./scripts/build-wasm-extensions\.sh",
+    )
 )
 
 #: Forms that build a CI tool from source. `cargo install` compiles by
@@ -158,3 +155,16 @@ def is_cache_step(step: dict[str, object]) -> bool:
     """Report whether a step invokes the Actions cache in any of its forms."""
     uses = step.get("uses")
     return isinstance(uses, str) and uses.startswith(CACHE_ACTION_PREFIXES)
+
+
+def builds_or_tests(job: Job) -> bool:
+    """Report whether a job compiles or executes the product.
+
+    Read from the job's own steps rather than its name, so a job that loses
+    its build step loses its claim on a paid runner at the same moment.
+    """
+    return any(
+        pattern.search(step_text(step))
+        for step in job.steps
+        for pattern in BUILD_OR_TEST_PATTERNS
+    )
