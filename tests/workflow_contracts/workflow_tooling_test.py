@@ -107,6 +107,26 @@ def test_tool_installers_pin_a_version_and_fail_closed(job: Job) -> None:
 
 
 @pytest.mark.parametrize("job", ALL_JOBS, ids=_ids(ALL_JOBS))
+def test_binstall_invocations_pin_every_package(job: Job) -> None:
+    """Pin the version of anything installed through cargo-binstall.
+
+    `taiki-e/install-action` carries no manifest for `cargo-component`, so
+    that tool comes from cargo-binstall instead. The fail-closed strategies
+    keep it from compiling, and the version pin keeps the installed binary
+    reproducible.
+    """
+    for step in job.steps:
+        body = step_text(step)
+        if "cargo binstall" not in body:
+            continue
+        packages = re.findall(r"\bcargo-[a-z0-9-]+(?:@[^\s\"']+)?", body)
+        installed = [name for name in packages if name != "cargo-binstall"]
+        assert installed, f"{job} runs cargo binstall without naming a package"
+        for name in installed:
+            assert "@" in name, f"{job} installs {name!r} without a version pin"
+
+
+@pytest.mark.parametrize("job", ALL_JOBS, ids=_ids(ALL_JOBS))
 def test_installers_precede_first_use(job: Job) -> None:
     """Order each installer before the first step that runs its command."""
     names = [str(step.get("name", "")) for step in job.steps]

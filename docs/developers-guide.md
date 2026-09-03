@@ -161,7 +161,13 @@ and makes the job's duration depend on an unrelated crate's build time.
 - Cargo tools come from `taiki-e/install-action`, pinned to a commit SHA, with
   an explicit `tool: name@version` pin and `fallback: none`. Without
   `fallback: none` the action can fall back to `cargo-binstall`, which in turn
-  falls back to `cargo install`.
+  falls back to `cargo install`. Pin only a version the pinned action's
+  manifest carries; a newer pin fails closed, which is correct but confusing.
+- `cargo-component` is the exception. `taiki-e/install-action` carries no
+  manifest for it, so it comes from `cargo-binstall` with
+  `--strategies crate-meta-data,quick-install` and an explicit version. Those
+  strategies exclude the `compile` strategy, so a missing prebuilt binary fails
+  the job rather than starting a build.
 - Where a workflow hands shell to a reusable workflow, `cargo binstall` must
   carry `--strategies crate-meta-data,quick-install` for the same reason.
 

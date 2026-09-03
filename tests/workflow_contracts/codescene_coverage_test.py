@@ -103,6 +103,7 @@ def test_setup_and_generator_match_proven_libsql_coverage() -> None:
         "Restore Cargo registry and index",
         "Install cargo-llvm-cov",
         "Install cargo-nextest",
+        "Install cargo-binstall",
         "Install cargo-component",
         "Probe Cargo tooling",
         "Build GitHub WASM tool (for metadata/schema tests)",
@@ -134,7 +135,7 @@ def test_setup_and_generator_match_proven_libsql_coverage() -> None:
     assert "target" not in str(cache_with.get("path", "")), (
         "coverage-check must not archive a target tree"
     )
-    for tool in ("cargo-llvm-cov", "cargo-nextest", "cargo-component"):
+    for tool in ("cargo-llvm-cov", "cargo-nextest", "cargo-binstall"):
         step = _find_step(job, f"Install {tool}")
         step_with = step.get("with")
         assert isinstance(step_with, dict), f"Install {tool} must declare inputs"
@@ -144,6 +145,12 @@ def test_setup_and_generator_match_proven_libsql_coverage() -> None:
         assert step_with.get("fallback") == "none", (
             f"the {tool} installer must fail closed rather than build from source"
         )
+    # cargo-component has no install-action manifest, so it comes from
+    # cargo-binstall with fail-closed strategies and a pinned version.
+    component = str(_find_step(job, "Install cargo-component").get("run", ""))
+    assert "--strategies crate-meta-data,quick-install" in component, (
+        "cargo-component must be installed with fail-closed binstall strategies"
+    )
     assert (
         _find_step(job, "Build GitHub WASM tool (for metadata/schema tests)").get("run")
         == "make build-github-tool-wasm"

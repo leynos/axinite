@@ -75,7 +75,7 @@ jobs:
         sudo apt-get install -y clang mold
         rustup target add wasm32-wasip2
         cargo binstall --no-confirm --strategies crate-meta-data,quick-install \
-          cargo-component@0.21.1 cargo-nextest@0.9.143
+          cargo-component@0.21.1 cargo-nextest@0.9.140
         cargo component --version
         cargo nextest --version
         make build-github-tool-wasm

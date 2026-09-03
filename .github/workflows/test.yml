@@ -16,7 +16,7 @@ name: Run Tests
 env:
   CARGO_AUDIT_VERSION: '0.22.2'
   CARGO_COMPONENT_VERSION: '0.21.1'
-  CARGO_NEXTEST_VERSION: '0.9.143'
+  CARGO_NEXTEST_VERSION: '0.9.140'
 
 jobs:
   audit:
@@ -109,11 +109,19 @@ jobs:
         with:
           tool: cargo-nextest@${{ env.CARGO_NEXTEST_VERSION }}
           fallback: none
-      - name: Install cargo-component
+      - name: Install cargo-binstall
         uses: taiki-e/install-action@c7eb1735f09259a5035e8e5d44b1406b1cddc0fb  # v2.83.0
         with:
-          tool: cargo-component@${{ env.CARGO_COMPONENT_VERSION }}
+          tool: cargo-binstall@1.20.1
           fallback: none
+
+      - name: Install cargo-component
+        env:
+          CARGO_COMPONENT_PIN: ${{ env.CARGO_COMPONENT_VERSION }}
+        run: >-
+          cargo binstall --no-confirm
+          --strategies crate-meta-data,quick-install
+          "cargo-component@${{ env.CARGO_COMPONENT_PIN }}"
       - name: Probe Cargo tooling
         run: |
           set -euo pipefail
@@ -263,11 +271,19 @@ jobs:
             }}-${{ hashFiles('**/Cargo.lock') }}
           restore-keys: |
             cargo-v1-${{ runner.os }}-${{ runner.arch }}-${{ runner.environment }}-
-      - name: Install cargo-component
+      - name: Install cargo-binstall
         uses: taiki-e/install-action@c7eb1735f09259a5035e8e5d44b1406b1cddc0fb  # v2.83.0
         with:
-          tool: cargo-component@${{ env.CARGO_COMPONENT_VERSION }}
+          tool: cargo-binstall@1.20.1
           fallback: none
+
+      - name: Install cargo-component
+        env:
+          CARGO_COMPONENT_PIN: ${{ env.CARGO_COMPONENT_VERSION }}
+        run: >-
+          cargo binstall --no-confirm
+          --strategies crate-meta-data,quick-install
+          "cargo-component@${{ env.CARGO_COMPONENT_PIN }}"
       - name: Probe cargo-component
         run: cargo component --version
       - name: Build all WASM extensions against current WIT

@@ -266,11 +266,19 @@ jobs:
         uses: dtolnay/rust-toolchain@stable
         with:
           targets: wasm32-wasip2
-      - name: Install cargo-component
+      - name: Install cargo-binstall
         uses: taiki-e/install-action@c7eb1735f09259a5035e8e5d44b1406b1cddc0fb  # v2.83.0
         with:
-          tool: cargo-component@0.21.1
+          tool: cargo-binstall@1.20.1
           fallback: none
+
+      - name: Install cargo-component
+        env:
+          CARGO_COMPONENT_PIN: '0.21.1'
+        run: >-
+          cargo binstall --no-confirm
+          --strategies crate-meta-data,quick-install
+          "cargo-component@${{ env.CARGO_COMPONENT_PIN }}"
       - name: Probe cargo-component
         run: cargo component --version
       - name: Build and package WASM extensions

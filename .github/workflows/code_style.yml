@@ -39,7 +39,9 @@ jobs:
           set -euo pipefail
           command -v nixie >/dev/null
           command -v merman-cli >/dev/null
-          nixie --version
+          # nixie exposes no --version flag; --help proves the shim resolves
+          # to a working interpreter and entry point.
+          nixie --help >/dev/null
           merman-cli --version
       - name: Enforce en-GB-oxendict spelling
         run: make spelling
