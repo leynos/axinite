@@ -30,7 +30,7 @@ jobs:
     permissions:
       contents: read
       id-token: write # OIDC workflow-source resolution
-    uses: leynos/shared-actions/.github/workflows/mutation-cargo.yml@18bed1ca49a6de3d8882bd72635a32ae3f023d57
+    uses: leynos/shared-actions/.github/workflows/mutation-cargo.yml@bffacaf91d3f3515110679a30fbf6dc781ddc549
     with:
       # Mutate only the root axinite crate. tools-src/, channels-src/
       # and fuzz/ sit outside the workspace (root Cargo.toml excludes
