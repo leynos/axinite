@@ -13,6 +13,7 @@ Run via ``make test-workflow-contracts``.
 from __future__ import annotations
 
 import re
+import typing as typ
 
 import pytest
 from _workflow_policy import (
@@ -21,12 +22,15 @@ from _workflow_policy import (
     SOURCE_BUILD_PATTERNS,
     Job,
     cache_paths,
+    declared_jobs,
     is_cache_step,
     jobs,
-    load,
     step_text,
     workflow_paths,
 )
+
+if typ.TYPE_CHECKING:  # pragma: no cover - typing only
+    from collections.abc import Iterator
 
 ALL_JOBS: tuple[Job, ...] = tuple(jobs())
 
@@ -51,35 +55,45 @@ def _ids(candidates: tuple[Job, ...]) -> list[str]:
     return [str(job) for job in candidates]
 
 
+def _assert_no_source_build(subject: str, body: str) -> None:
+    """Fail when a shell body matches any known source-build form."""
+    for pattern, reason in SOURCE_BUILD_PATTERNS:
+        assert not pattern.search(body), (
+            f"{subject} {reason}. Use a pinned, checksum-verified release "
+            "archive instead."
+        )
+
+
 @pytest.mark.parametrize("job", ALL_JOBS, ids=_ids(ALL_JOBS))
 def test_no_job_builds_a_tool_from_source(job: Job) -> None:
     """Reject any step that compiles a CI tool instead of downloading it."""
     for step in job.steps:
-        body = step_text(step)
-        for pattern, reason in SOURCE_BUILD_PATTERNS:
-            assert not pattern.search(body), (
-                f"{job} step {step.get('name', '<unnamed>')!r} {reason}. Use a "
-                "pinned, checksum-verified release archive instead."
-            )
+        subject = f"{job} step {step.get('name', '<unnamed>')!r}"
+        _assert_no_source_build(subject, step_text(step))
+
+
+def _setup_commands(body: object) -> str | None:
+    """Return the shell a reusable-workflow caller hands to its callee."""
+    inputs = body.get("with") if isinstance(body, dict) else None
+    if not isinstance(inputs, dict):
+        return None
+    commands = inputs.get("setup-commands")
+    return commands if isinstance(commands, str) else None
+
+
+def _reusable_setup_commands() -> Iterator[tuple[str, str]]:
+    """Yield every reusable-workflow caller's setup shell, with its subject."""
+    for path in workflow_paths():
+        for job_id, body in declared_jobs(path).items():
+            commands = _setup_commands(body)
+            if commands is not None:
+                yield f"{path.name}:{job_id} setup-commands", commands
 
 
 def test_setup_commands_passed_to_reusable_workflows_avoid_source_builds() -> None:
     """Apply the same rule to shell handed to a reusable workflow."""
-    for path in workflow_paths():
-        declared = load(path).get("jobs")
-        if not isinstance(declared, dict):
-            continue
-        for job_id, body in declared.items():
-            inputs = body.get("with") if isinstance(body, dict) else None
-            if not isinstance(inputs, dict):
-                continue
-            commands = inputs.get("setup-commands")
-            if not isinstance(commands, str):
-                continue
-            for pattern, reason in SOURCE_BUILD_PATTERNS:
-                assert not pattern.search(commands), (
-                    f"{path.name}:{job_id} setup-commands {reason}"
-                )
+    for subject, commands in _reusable_setup_commands():
+        _assert_no_source_build(subject, commands)
 
 
 @pytest.mark.parametrize("job", ALL_JOBS, ids=_ids(ALL_JOBS))

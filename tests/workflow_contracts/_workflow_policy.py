@@ -118,15 +118,23 @@ def load(path: Path) -> dict[str, object]:
     return document
 
 
+def declared_jobs(path: Path) -> dict[str, object]:
+    """Return one workflow's jobs mapping, or an empty mapping."""
+    declared = load(path).get("jobs")
+    return declared if isinstance(declared, dict) else {}
+
+
+def jobs_in(path: Path) -> Iterator[Job]:
+    """Yield the jobs one workflow file declares."""
+    for job_id, body in declared_jobs(path).items():
+        if isinstance(body, dict):
+            yield Job(path.name, job_id, body)
+
+
 def jobs() -> Iterator[Job]:
     """Yield every job declared across the workflow estate."""
     for path in workflow_paths():
-        declared = load(path).get("jobs")
-        if not isinstance(declared, dict):
-            continue
-        for job_id, body in declared.items():
-            if isinstance(body, dict):
-                yield Job(path.name, job_id, body)
+        yield from jobs_in(path)
 
 
 def step_text(step: dict[str, object]) -> str:
