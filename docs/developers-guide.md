@@ -298,6 +298,58 @@ including that no build step precedes the reset, and that GitHub-hosted jobs
 carry none of this: the endpoint export points at a proxy that exists only on
 an Ubicloud VM.
 
+### Writing a workflow contract
+
+Every contract in `tests/workflow_contracts/` reads one parsed view of
+`.github/workflows`, provided by `_workflow_policy.py`. The module has no
+`_test` suffix, so pytest imports it as a helper rather than collecting it.
+Run the suite with `make test-workflow-contracts`.
+
+`Job` is the unit of assertion. It carries the workflow file name, the job's
+key under `jobs:`, and the job's parsed body, and it prints as
+`workflow.yml:job-id` so an assertion message names the job without extra
+formatting. Its properties answer the questions the contracts actually ask:
+
+| Property | Answers |
+| --- | --- |
+| `runner_labels` | Every label the job requests, as a tuple |
+| `runs_on` | The single label, or `None` when there are none or several |
+| `runner_summary` | The labels joined for an assertion message, or `<none>` |
+| `uses_ubicloud`, `ubicloud_labels` | Whether and which labels carry the Ubicloud prefix |
+| `steps` | The job's step mappings, skipping anything that is not one |
+
+The free functions split in two, and the split is deliberate. `parse_workflow`,
+`declared_jobs_in`, and `jobs_of` are pure: they take workflow text or an
+already-parsed mapping, so a test can exercise them without writing a file.
+`load`, `declared_jobs`, `jobs_in`, and `jobs` are the file-reading edge and do
+nothing but read and delegate. `workflow_paths` takes the directory to scan and
+defaults to the estate's, which is what lets a test point the same scan at a
+temporary tree. Classification helpers, `step_text`, `cache_paths`,
+`is_cache_step`, and `builds_or_tests`, are pure as well.
+
+Two behaviours are load-bearing and easy to get wrong.
+
+**Every supported form must be read.** `runs-on` accepts a scalar label, a list
+of labels, and a `{group, labels}` mapping whose `labels` is itself a scalar or
+a list. `workflow_paths` accepts both `.yml` and `.yaml`, because GitHub does.
+A form the helpers fail to read reports no labels or no workflow, and the job
+then passes the placement, timeout, cache, and sccache contracts by being
+invisible to them. That is a worse outcome than a wrong answer, because the
+suite stays green. `workflow_policy_helpers_test.py` covers every form directly
+and adds Hypothesis properties asserting that the equivalent spellings agree.
+
+**Malformed input is skipped, never half-read.** A job body that is not a
+mapping yields no `Job`; a step that is not a mapping is dropped; a `path:`
+input that is not a string yields no cache paths. Only `parse_workflow` raises,
+because a document that is not a mapping is not a workflow at all. Contracts
+that care about a malformed job report it by name instead.
+
+When adding a contract, assert the behaviour rather than the decoration around
+it. Checking that an sccache export step logs the right messages proves nothing
+if the script never calls `core.exportVariable`; checking that an installer
+exists proves nothing if nothing runs the binary afterwards. A useful test for a
+new contract is to delete the thing it guards and confirm the suite goes red.
+
 ### Decomposition plan for the runner migration wave
 
 The migration wave right-sizes the remaining Ubicloud jobs. It proceeds one

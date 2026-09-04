@@ -188,6 +188,57 @@ def test_a_missing_cache_endpoint_is_reported(job: Job) -> None:
         )
 
 
+#: The variables the export step must write, and what each must carry. The
+#: endpoint and token come from the resolved locals; the protocol flag must be
+#: cleared to an empty string, because sccache reads any non-empty value as a
+#: request for GitHub's v2 service, which Ubicloud's proxy does not serve.
+REQUIRED_EXPORTS: tuple[tuple[str, str], ...] = (
+    ("ACTIONS_CACHE_URL", "cacheUrl"),
+    ("ACTIONS_RUNTIME_TOKEN", "runtimeToken"),
+    ("ACTIONS_CACHE_SERVICE_V2", "''"),
+)
+
+
+@pytest.mark.parametrize("job", WRAPPED, ids=_ids(WRAPPED))
+def test_the_export_step_actually_exports(job: Job) -> None:
+    """Assert the writes, not just the diagnostics around them.
+
+    A script that logged every message this suite looks for and exported
+    nothing would leave sccache on GitHub's service, miss every compilation,
+    and pass a contract that only checked the log lines. The exports are the
+    behaviour; the log lines only make a failure legible.
+    """
+    export = next(step for step in job.steps if step.get("name") == EXPORT_STEP)
+    script = str((export.get("with") or {}).get("script", ""))
+    for name, value in REQUIRED_EXPORTS:
+        call = f"core.exportVariable('{name}', {value})"
+        assert call in script, (
+            f"{job} must write {name} with `{call}`; without it the "
+            "endpoint export is decoration and sccache keeps the runner's "
+            "own settings"
+        )
+    # The endpoint is read from the runner's variable first and Ubicloud's
+    # second. Losing the fallback would strand the images that publish only
+    # CUSTOM_ACTIONS_CACHE_URL, and losing the empty default would export the
+    # string "undefined" as an endpoint.
+    collapsed = " ".join(script.split())
+    assert (
+        "process.env.ACTIONS_CACHE_URL || "
+        "process.env.CUSTOM_ACTIONS_CACHE_URL || ''" in collapsed
+    ), (
+        f"{job} must resolve the endpoint from ACTIONS_CACHE_URL, then "
+        "CUSTOM_ACTIONS_CACHE_URL, then an empty string"
+    )
+    assert "process.env.ACTIONS_RUNTIME_TOKEN || ''" in collapsed, (
+        f"{job} must default the runtime token to an empty string, so a "
+        "missing token exports nothing rather than the text 'undefined'"
+    )
+    assert "process.env.ACTIONS_RESULTS_URL" not in script, (
+        f"{job} must not export ACTIONS_RESULTS_URL; sccache's v1 backend "
+        "does not read it and Ubicloud's proxy does not serve v2"
+    )
+
+
 def test_github_hosted_jobs_are_left_alone() -> None:
     """Keep the wiring off GitHub-hosted runners.
 

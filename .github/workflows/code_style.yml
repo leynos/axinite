@@ -241,6 +241,7 @@ jobs:
   code-style:
     name: Code Style (fmt + clippy)
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     if: always()
     needs: [format, clippy, clippy-windows]
     steps:
