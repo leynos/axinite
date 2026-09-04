@@ -186,9 +186,11 @@ and makes the job's duration depend on an unrelated crate's build time.
 - Where a workflow hands shell to a reusable workflow, `cargo binstall` must
   carry `--strategies crate-meta-data,quick-install` for the same reason.
 
-Every installer is followed by a probe step that runs the command's `--version`,
-so a warm cache that restored an unusable binary fails at the probe rather
-than midway through a build.
+Every installer is followed by a probe step that runs the command, so a warm
+cache that restored an unusable binary fails at the probe rather than midway
+through a build. Use `--version` where the tool supports it. Nixie does not, so
+its probe runs `nixie --help` instead; the point is to execute the resolved
+binary, not to read a version string.
 
 `tests/workflow_contracts/workflow_tooling_test.py` enforces all of the above,
 including that each installer precedes the first step that uses its command.
