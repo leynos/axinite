@@ -24,7 +24,10 @@ import pytest
 import yaml
 
 WORKFLOW_PATH = (
-    Path(__file__).resolve().parents[2] / ".github" / "workflows" / "mutation-testing.yml"
+    Path(__file__).resolve().parents[2]
+    / ".github"
+    / "workflows"
+    / "mutation-testing.yml"
 )
 
 pytestmark = pytest.mark.skipif(
@@ -55,7 +58,11 @@ SCAFFOLDING_EXCLUDES = (
 REQUIRED_SETUP_FRAGMENTS = (
     "apt-get install -y clang mold",
     "rustup target add wasm32-wasip2",
-    "cargo binstall --no-confirm cargo-component cargo-nextest",
+    # Fail closed: without an explicit strategy list, cargo-binstall falls
+    # back to `cargo install`, which compiles the tool from source.
+    "cargo binstall --no-confirm --strategies crate-meta-data,quick-install",
+    "cargo-component@",
+    "cargo-nextest@",
     "make build-github-tool-wasm",
     "./scripts/build-wasm-extensions.sh --channels",
 )
@@ -168,10 +175,7 @@ def test_with_block_carries_the_caller_configuration() -> None:
     assert isinstance(excludes, str), "with.exclude-globs is missing"
     assert sorted(g.strip() for g in excludes.split(",")) == sorted(
         SCAFFOLDING_EXCLUDES
-    ), (
-        f"with.exclude-globs must cover exactly {SCAFFOLDING_EXCLUDES}, "
-        f"got {excludes!r}"
-    )
+    ), f"with.exclude-globs must cover exactly {SCAFFOLDING_EXCLUDES}, got {excludes!r}"
     assert with_block.get("extra-args") == (
         "--features test-helpers --test-workspace=true "
         '--test-tool=nextest -- -E "not binary(schema_helpers_ui)"'

@@ -10,7 +10,9 @@ permissions:
 
 jobs:
   scope:
-    runs-on: ubicloud-standard-8
+    # Labelling: a single GitHub API call, no build. GitHub-hosted.
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - uses: actions/labeler@v7
         with:

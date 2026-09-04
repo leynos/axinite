@@ -1,0 +1,12 @@
+# actionlint configuration.
+#
+# Register every intentional non-GitHub runner label so actionlint does not
+# report it as an unknown runner. List only labels this repository actually
+# references: an unused entry hides a typo in a real one.
+#
+# ubicloud-standard-8 is the current label for axinite's Linux build and test
+# jobs. The migration wave will right-size those jobs downwards, starting at
+# ubicloud-standard-2, and this list must be updated in the same change.
+self-hosted-runner:
+  labels:
+    - ubicloud-standard-8

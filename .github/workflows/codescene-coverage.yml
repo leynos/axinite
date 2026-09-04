@@ -3,6 +3,10 @@ name: CodeScene Coverage Check
 "on":
   pull_request:
     branches: [main]
+  # Manual runs exist to re-measure a warm cache on `main`. The registry
+  # cache is restore-only here and the CodeScene upload stays gated on
+  # `pull_request`, so a dispatch reports coverage to the log only.
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -10,10 +14,22 @@ permissions:
 jobs:
   coverage-check:
     name: CodeScene Coverage
-    if: github.event_name == 'pull_request'
+    if: >
+      github.event_name == 'pull_request' ||
+      github.event_name == 'workflow_dispatch'
     runs-on: ubicloud-standard-8
+    timeout-minutes: 60
     env:
+      # sccache is the sole owner of compiler output: no cache step archives a
+      # target tree. RUSTC_WRAPPER is what actually engages it; installing
+      # sccache without exporting this compiles everything as before.
+      RUSTC_WRAPPER: sccache
+      SCCACHE_GHA_ENABLED: "true"
+      # sccache cannot cache incremental compilation.
       CARGO_INCREMENTAL: "0"
+      CARGO_COMPONENT_VERSION: '0.21.1'
+      CARGO_LLVM_COV_VERSION: '0.8.7'
+      CARGO_NEXTEST_VERSION: '0.9.140'
       CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_LINKER: clang
       CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_RUSTFLAGS: >-
         -C link-arg=-fuse-ld=mold
@@ -44,20 +60,97 @@ jobs:
       - name: Install mold
         uses: rui314/setup-mold@v1
 
-      - uses: Swatinem/rust-cache@v2
+      # Ubicloud's transparent cache proxy serves the Actions cache from a
+      # local address. sccache's GitHub Actions backend reads
+      # ACTIONS_CACHE_URL and ACTIONS_RUNTIME_TOKEN from the runner's own
+      # environment, which is not visible to `run:` steps, so re-export them.
+      # Clearing ACTIONS_CACHE_SERVICE_V2 keeps sccache on the v1 protocol the
+      # proxy serves; exporting ACTIONS_RESULTS_URL instead does not work.
+      - name: Export the Actions cache endpoint for sccache
+        uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd  # v8.0.0
         with:
-          key: coverage-libsql-only
+          script: |
+            // Ubicloud's control plane writes the proxy address into the VM
+            // environment. Report which variable supplied it, and whether the
+            // token was present at all, so a misconfigured backend is
+            // diagnosable from the log rather than from a slower build. Never
+            // print the token itself.
+            const cacheUrl =
+              process.env.ACTIONS_CACHE_URL ||
+              process.env.CUSTOM_ACTIONS_CACHE_URL ||
+              '';
+            const runtimeToken = process.env.ACTIONS_RUNTIME_TOKEN || '';
+            const source = process.env.ACTIONS_CACHE_URL
+              ? 'ACTIONS_CACHE_URL'
+              : process.env.CUSTOM_ACTIONS_CACHE_URL
+                ? 'CUSTOM_ACTIONS_CACHE_URL'
+                : 'none';
+            core.info(`sccache cache endpoint source: ${source}`);
+            core.info(`sccache cache endpoint present: ${Boolean(cacheUrl)}`);
+            core.info(`sccache runtime token present: ${Boolean(runtimeToken)}`);
+            if (!cacheUrl || !runtimeToken) {
+              core.warning(
+                'sccache has no Actions cache endpoint; every compilation ' +
+                  'will miss and the wrapper will only add overhead',
+              );
+            }
+            core.exportVariable('ACTIONS_CACHE_URL', cacheUrl);
+            core.exportVariable('ACTIONS_RUNTIME_TOKEN', runtimeToken);
+            core.exportVariable('ACTIONS_CACHE_SERVICE_V2', '');
+      - name: Install sccache
+        uses: taiki-e/install-action@c7eb1735f09259a5035e8e5d44b1406b1cddc0fb  # v2.83.0
+        with:
+          tool: sccache@0.16.0
+          fallback: none
+      - name: Start sccache statistics
+        run: |
+          set -euo pipefail
+          sccache --version
+          sccache --zero-stats
+      - name: Restore Cargo registry and index
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9  # v6.1.0
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+          key: >-
+            cargo-v1-${{ runner.os }}-${{ runner.arch }}-${{ runner.environment
+            }}-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            cargo-v1-${{ runner.os }}-${{ runner.arch }}-${{ runner.environment }}-
 
       - name: Install cargo-llvm-cov
-        uses: taiki-e/install-action@cargo-llvm-cov
+        uses: taiki-e/install-action@c7eb1735f09259a5035e8e5d44b1406b1cddc0fb  # v2.83.0
+        with:
+          tool: cargo-llvm-cov@${{ env.CARGO_LLVM_COV_VERSION }}
+          fallback: none
 
       - name: Install cargo-nextest
-        uses: taiki-e/install-action@cargo-nextest
+        uses: taiki-e/install-action@c7eb1735f09259a5035e8e5d44b1406b1cddc0fb  # v2.83.0
+        with:
+          tool: cargo-nextest@${{ env.CARGO_NEXTEST_VERSION }}
+          fallback: none
+
+      - name: Install cargo-binstall
+        uses: taiki-e/install-action@c7eb1735f09259a5035e8e5d44b1406b1cddc0fb  # v2.83.0
+        with:
+          tool: cargo-binstall@1.20.1
+          fallback: none
 
       - name: Install cargo-component
-        uses: taiki-e/install-action@v2.83.0
-        with:
-          tool: cargo-component
+        env:
+          CARGO_COMPONENT_PIN: ${{ env.CARGO_COMPONENT_VERSION }}
+        run: >-
+          cargo binstall --no-confirm
+          --strategies crate-meta-data,quick-install
+          "cargo-component@$CARGO_COMPONENT_PIN"
+
+      - name: Probe Cargo tooling
+        run: |
+          set -euo pipefail
+          cargo llvm-cov --version
+          cargo nextest --version
+          cargo component --version
 
       - name: Build GitHub WASM tool (for metadata/schema tests)
         run: make build-github-tool-wasm
@@ -75,18 +168,27 @@ jobs:
         env:
           CS_ACCESS_TOKEN: ${{ secrets.CS_ACCESS_TOKEN }}
         if: github.event_name == 'pull_request' && env.CS_ACCESS_TOKEN != ''
-        uses: leynos/shared-actions/.github/actions/upload-codescene-coverage@e0d9b652b137eb15314fff188f09e1ba18d3cc5b
+        uses: leynos/shared-actions/.github/actions/upload-codescene-coverage@c6125f19593668cbfefd65a59c08cb7aefe90d93
         with:
           format: lcov
           mode: check
           project-url: https://api.codescene.io/v2/projects/77987
           access-token: ${{ env.CS_ACCESS_TOKEN }}
           installer-checksum: ${{ vars.CODESCENE_CLI_SHA256 }}
-
-      - name: Trim build artefacts before cache save
+      # Report the hit rate so a wrapper that is silently doing nothing shows
+      # up in the job summary rather than only in the duration.
+      - name: Report sccache statistics
         if: always()
         run: |
-          rm -rf target/debug/incremental
-          rm -rf target/debug/.fingerprint
-          cargo clean --doc 2>/dev/null || true
-          find target -name "*.d" -delete 2>/dev/null || true
+          set -euo pipefail
+          # Print to the log as well as the job summary. The summary is not
+          # readable through the REST API, so the log copy is what lets anyone
+          # confirm the hit rate, or a read or write error, after the fact.
+          stats="$(sccache --show-stats)"
+          printf '%s\n' "$stats"
+          {
+            printf '### sccache statistics (%s)\n\n' "${GITHUB_JOB}"
+            printf '```text\n'
+            printf '%s\n' "$stats"
+            printf '```\n'
+          } >> "${GITHUB_STEP_SUMMARY}"

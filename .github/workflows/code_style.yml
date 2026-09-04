@@ -2,13 +2,20 @@
 name: Code Style
 "on":
   pull_request:
+  # Manual runs exist to re-measure a warm cache on `main`. No
+  # `actions/cache` save step is keyed here, so a dispatch cannot take
+  # ownership of a key from the job that writes it on push. sccache's own
+  # store is content-addressed and has no single writer.
+  workflow_dispatch:
 
 jobs:
   format:
     name: Formatting
+    # Build/test class: compiles nothing heavy but runs the repository's
+    # formatter, spelling, Mermaid, and workflow-contract gates on the
+    # developer feedback path.
     runs-on: ubicloud-standard-8
-    env:
-      MERMAN_CLI_VERSION: '0.7.0'
+    timeout-minutes: 20
     steps:
       - name: Checkout repository
         uses: actions/checkout@v6
@@ -23,19 +30,24 @@ jobs:
         with:
           python-version: '3.14'
           enable-cache: true
-      - name: Set up Rust for Merman
-        run: rustup toolchain install 1.95.0 --profile minimal
-      - name: Cache Merman CLI
-        id: cache-merman-cli
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9
+      # Installs pinned Nixie and a checksum-verified Merman CLI release
+      # archive. This replaces the previous `cargo install merman-cli`
+      # source build and its bespoke ~/.cargo/bin/merman-cli cache.
+      - name: Install Nixie and Merman CLI
+        uses: leynos/shared-actions/.github/actions/install-nixie@c6125f19593668cbfefd65a59c08cb7aefe90d93
         with:
-          path: ~/.cargo/bin/merman-cli
-          key: merman-cli-${{ runner.os }}-${{ runner.arch }}-${{ env.MERMAN_CLI_VERSION }}
-      - name: Install Merman CLI
-        if: steps.cache-merman-cli.outputs.cache-hit != 'true'
-        run: cargo +1.95.0 install merman-cli --version "=${MERMAN_CLI_VERSION}" --locked
-      - name: Install Nixie
-        run: uv tool install --python 3.14 nixie-cli==1.1.0
+          nixie-version: '1.1.0'
+          merman-version: '0.7.0'
+          python-version: '3.14'
+      - name: Probe Mermaid toolchain
+        run: |
+          set -euo pipefail
+          command -v nixie >/dev/null
+          command -v merman-cli >/dev/null
+          # nixie exposes no --version flag; --help proves the shim resolves
+          # to a working interpreter and entry point.
+          nixie --help >/dev/null
+          merman-cli --version
       - name: Enforce en-GB-oxendict spelling
         run: make spelling
       - name: Validate Mermaid diagrams
@@ -45,12 +57,20 @@ jobs:
 
   clippy:
     name: Clippy (${{ matrix.name }})
+    # Build/test class: compiles the workspace under three feature shapes.
     runs-on: ubicloud-standard-8
+    timeout-minutes: 45
     env:
+      # sccache is the sole owner of compiler output: no cache step archives a
+      # target tree. RUSTC_WRAPPER is what actually engages it; installing
+      # sccache without exporting this compiles everything as before.
+      RUSTC_WRAPPER: sccache
+      SCCACHE_GHA_ENABLED: "true"
+      # sccache cannot cache incremental compilation.
+      CARGO_INCREMENTAL: "0"
       CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_LINKER: clang
       CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_RUSTFLAGS: >-
         -C link-arg=-fuse-ld=mold
-      WHITAKER_INSTALLER_VERSION: '0.2.6'
     strategy:
       fail-fast: false
       matrix:
@@ -74,41 +94,112 @@ jobs:
           components: clippy
       - name: Install mold
         uses: rui314/setup-mold@v1
-      - uses: Swatinem/rust-cache@v2
+      # Registry and Git index only. The `tests` job in test.yml is the sole
+      # writer of this key family; pull-request jobs restore and never save.
+      # Ubicloud's transparent cache proxy serves the Actions cache from a
+      # local address. sccache's GitHub Actions backend reads
+      # ACTIONS_CACHE_URL and ACTIONS_RUNTIME_TOKEN from the runner's own
+      # environment, which is not visible to `run:` steps, so re-export them.
+      # Clearing ACTIONS_CACHE_SERVICE_V2 keeps sccache on the v1 protocol the
+      # proxy serves; exporting ACTIONS_RESULTS_URL instead does not work.
+      - name: Export the Actions cache endpoint for sccache
+        uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd  # v8.0.0
         with:
-          key: clippy-${{ matrix.name }}
+          script: |
+            // Ubicloud's control plane writes the proxy address into the VM
+            // environment. Report which variable supplied it, and whether the
+            // token was present at all, so a misconfigured backend is
+            // diagnosable from the log rather than from a slower build. Never
+            // print the token itself.
+            const cacheUrl =
+              process.env.ACTIONS_CACHE_URL ||
+              process.env.CUSTOM_ACTIONS_CACHE_URL ||
+              '';
+            const runtimeToken = process.env.ACTIONS_RUNTIME_TOKEN || '';
+            const source = process.env.ACTIONS_CACHE_URL
+              ? 'ACTIONS_CACHE_URL'
+              : process.env.CUSTOM_ACTIONS_CACHE_URL
+                ? 'CUSTOM_ACTIONS_CACHE_URL'
+                : 'none';
+            core.info(`sccache cache endpoint source: ${source}`);
+            core.info(`sccache cache endpoint present: ${Boolean(cacheUrl)}`);
+            core.info(`sccache runtime token present: ${Boolean(runtimeToken)}`);
+            if (!cacheUrl || !runtimeToken) {
+              core.warning(
+                'sccache has no Actions cache endpoint; every compilation ' +
+                  'will miss and the wrapper will only add overhead',
+              );
+            }
+            core.exportVariable('ACTIONS_CACHE_URL', cacheUrl);
+            core.exportVariable('ACTIONS_RUNTIME_TOKEN', runtimeToken);
+            core.exportVariable('ACTIONS_CACHE_SERVICE_V2', '');
+      - name: Install sccache
+        uses: taiki-e/install-action@c7eb1735f09259a5035e8e5d44b1406b1cddc0fb  # v2.83.0
+        with:
+          tool: sccache@0.16.0
+          fallback: none
+      - name: Start sccache statistics
+        run: |
+          set -euo pipefail
+          sccache --version
+          sccache --zero-stats
+      - name: Restore Cargo registry and index
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9  # v6.1.0
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+          key: >-
+            cargo-v1-${{ runner.os }}-${{ runner.arch }}-${{ runner.environment
+            }}-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            cargo-v1-${{ runner.os }}-${{ runner.arch }}-${{ runner.environment }}-
       - name: Check lints
         run: >-
           cargo clippy --all --benches --tests --examples ${{ matrix.flags }}
           -- -D warnings
-      - name: Cache Whitaker installer
-        if: matrix.whitaker
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9  # v6.1.0
-        with:
-          path: |
-            ~/.cargo/bin/whitaker-installer
-            ~/.cache/cargo-binstall
-          key: whitaker-installer-${{ runner.os }}-${{ runner.arch }}-${{ env.WHITAKER_INSTALLER_VERSION }}
+      # Installs the pinned whitaker-installer release archive, verifies its
+      # published SHA-256 against the action's digest manifest, and owns the
+      # installer and suite cache. This replaces the previous cargo-binstall
+      # attempt with a `cargo install` source-build fallback.
       - name: Install Whitaker
         if: matrix.whitaker
+        uses: leynos/shared-actions/.github/actions/install-whitaker@c6125f19593668cbfefd65a59c08cb7aefe90d93
+        with:
+          installer-version: '0.2.7'
+          cache-provider: github
+      - name: Probe Whitaker
+        if: matrix.whitaker
         run: |
-          if ! command -v whitaker-installer >/dev/null 2>&1; then
-            if cargo binstall --version >/dev/null 2>&1; then
-              cargo binstall --no-confirm --locked "whitaker-installer@${WHITAKER_INSTALLER_VERSION}"
-            else
-              echo "cargo-binstall unavailable; building whitaker-installer from crates.io"
-              cargo install --locked whitaker-installer --version "${WHITAKER_INSTALLER_VERSION}"
-            fi
-          fi
-          whitaker-installer
+          set -euo pipefail
+          command -v whitaker >/dev/null
+          whitaker --version
       - name: Whitaker Dylint suite
         if: matrix.whitaker
         run: make lint-whitaker
-
+      # Report the hit rate so a wrapper that is silently doing nothing shows
+      # up in the job summary rather than only in the duration.
+      - name: Report sccache statistics
+        if: always()
+        run: |
+          set -euo pipefail
+          # Print to the log as well as the job summary. The summary is not
+          # readable through the REST API, so the log copy is what lets anyone
+          # confirm the hit rate, or a read or write error, after the fact.
+          stats="$(sccache --show-stats)"
+          printf '%s\n' "$stats"
+          {
+            printf '### sccache statistics (%s)\n\n' "${GITHUB_JOB}"
+            printf '```text\n'
+            printf '%s\n' "$stats"
+            printf '```\n'
+          } >> "${GITHUB_STEP_SUMMARY}"
   clippy-windows:
     name: Clippy Windows (${{ matrix.name }})
-    if: github.base_ref == 'main'
+    if: github.base_ref == 'main' || github.event_name == 'workflow_dispatch'
+    # Windows lanes stay on GitHub-hosted runners: Ubicloud offers Linux only.
     runs-on: windows-latest
+    timeout-minutes: 45
     strategy:
       fail-fast: false
       matrix:
@@ -126,18 +217,31 @@ jobs:
         uses: dtolnay/rust-toolchain@stable
         with:
           components: clippy
-      - uses: Swatinem/rust-cache@v2
+      # Keyed by runner.os, runner.arch, and runner.environment so a Linux
+      # archive is never restored onto Windows. windows-build in test.yml is
+      # the sole writer of the Windows key family.
+      - name: Restore Cargo registry and index
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9  # v6.1.0
         with:
-          key: clippy-windows-${{ matrix.name }}
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+          key: >-
+            cargo-v1-${{ runner.os }}-${{ runner.arch }}-${{ runner.environment
+            }}-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            cargo-v1-${{ runner.os }}-${{ runner.arch }}-${{ runner.environment }}-
       - name: Check lints
         run: >-
           cargo clippy --all --benches --tests --examples ${{ matrix.flags }}
           -- -D warnings
 
-  # Roll-up job for branch protection
+  # Roll-up job for branch protection. Compares upstream results and runs no
+  # build, so it belongs on a GitHub-hosted runner.
   code-style:
     name: Code Style (fmt + clippy)
-    runs-on: ubicloud-standard-8
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
     if: always()
     needs: [format, clippy, clippy-windows]
     steps:

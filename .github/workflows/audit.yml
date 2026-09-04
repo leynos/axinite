@@ -16,15 +16,24 @@ permissions:
 
 jobs:
   audit:
-    runs-on: ubicloud-standard-8
+    # Scheduled and API-bound: cargo-audit reads the lockfiles and the RustSec
+    # advisory database over the network, and this job is off the developer
+    # feedback path entirely. GitHub-hosted.
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      CARGO_AUDIT_VERSION: '0.22.2'
     steps:
       - name: Checkout repository
         uses: actions/checkout@v6
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
       - name: Install cargo-audit
-        uses: taiki-e/install-action@v2.83.0
+        uses: taiki-e/install-action@c7eb1735f09259a5035e8e5d44b1406b1cddc0fb  # v2.83.0
         with:
-          tool: cargo-audit
+          tool: cargo-audit@${{ env.CARGO_AUDIT_VERSION }}
+          fallback: none
+      - name: Probe cargo-audit
+        run: cargo audit --version
       - name: Audit dependencies
         run: make audit

@@ -17,6 +17,13 @@ jobs:
     runs-on: ubicloud-standard-8
     timeout-minutes: 30
     env:
+      # sccache is the sole owner of compiler output: no cache step archives a
+      # target tree. RUSTC_WRAPPER is what actually engages it; installing
+      # sccache without exporting this compiles everything as before.
+      RUSTC_WRAPPER: sccache
+      SCCACHE_GHA_ENABLED: "true"
+      # sccache cannot cache incremental compilation.
+      CARGO_INCREMENTAL: "0"
       CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_LINKER: clang
       CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_RUSTFLAGS: >-
         -C link-arg=-fuse-ld=mold
@@ -28,12 +35,64 @@ jobs:
       - name: Install mold
         uses: rui314/setup-mold@v1
 
-      - uses: actions/cache@v6
+      # Ubicloud's transparent cache proxy serves the Actions cache from a
+      # local address. sccache's GitHub Actions backend reads
+      # ACTIONS_CACHE_URL and ACTIONS_RUNTIME_TOKEN from the runner's own
+      # environment, which is not visible to `run:` steps, so re-export them.
+      # Clearing ACTIONS_CACHE_SERVICE_V2 keeps sccache on the v1 protocol the
+      # proxy serves; exporting ACTIONS_RESULTS_URL instead does not work.
+      - name: Export the Actions cache endpoint for sccache
+        uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd  # v8.0.0
+        with:
+          script: |
+            // Ubicloud's control plane writes the proxy address into the VM
+            // environment. Report which variable supplied it, and whether the
+            // token was present at all, so a misconfigured backend is
+            // diagnosable from the log rather than from a slower build. Never
+            // print the token itself.
+            const cacheUrl =
+              process.env.ACTIONS_CACHE_URL ||
+              process.env.CUSTOM_ACTIONS_CACHE_URL ||
+              '';
+            const runtimeToken = process.env.ACTIONS_RUNTIME_TOKEN || '';
+            const source = process.env.ACTIONS_CACHE_URL
+              ? 'ACTIONS_CACHE_URL'
+              : process.env.CUSTOM_ACTIONS_CACHE_URL
+                ? 'CUSTOM_ACTIONS_CACHE_URL'
+                : 'none';
+            core.info(`sccache cache endpoint source: ${source}`);
+            core.info(`sccache cache endpoint present: ${Boolean(cacheUrl)}`);
+            core.info(`sccache runtime token present: ${Boolean(runtimeToken)}`);
+            if (!cacheUrl || !runtimeToken) {
+              core.warning(
+                'sccache has no Actions cache endpoint; every compilation ' +
+                  'will miss and the wrapper will only add overhead',
+              );
+            }
+            core.exportVariable('ACTIONS_CACHE_URL', cacheUrl);
+            core.exportVariable('ACTIONS_RUNTIME_TOKEN', runtimeToken);
+            core.exportVariable('ACTIONS_CACHE_SERVICE_V2', '');
+      - name: Install sccache
+        uses: taiki-e/install-action@c7eb1735f09259a5035e8e5d44b1406b1cddc0fb  # v2.83.0
+        with:
+          tool: sccache@0.16.0
+          fallback: none
+      - name: Start sccache statistics
+        run: |
+          set -euo pipefail
+          sccache --version
+          sccache --zero-stats
+      - name: Restore Cargo registry and index
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9  # v6.1.0
         with:
           path: |
-            target
             ~/.cargo/registry
-          key: e2e-${{ runner.os }}-${{ hashFiles('Cargo.lock') }}
+            ~/.cargo/git
+          key: >-
+            cargo-v1-${{ runner.os }}-${{ runner.arch }}-${{ runner.environment
+            }}-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            cargo-v1-${{ runner.os }}-${{ runner.arch }}-${{ runner.environment }}-
 
       - name: Build
         run: cargo build --no-default-features --features libsql
@@ -46,6 +105,23 @@ jobs:
           retention-days: 1
 
   # ── Step 2: run test slices in parallel ───────────────────────────────────
+      # Report the hit rate so a wrapper that is silently doing nothing shows
+      # up in the job summary rather than only in the duration.
+      - name: Report sccache statistics
+        if: always()
+        run: |
+          set -euo pipefail
+          # Print to the log as well as the job summary. The summary is not
+          # readable through the REST API, so the log copy is what lets anyone
+          # confirm the hit rate, or a read or write error, after the fact.
+          stats="$(sccache --show-stats)"
+          printf '%s\n' "$stats"
+          {
+            printf '### sccache statistics (%s)\n\n' "${GITHUB_JOB}"
+            printf '```text\n'
+            printf '%s\n' "$stats"
+            printf '```\n'
+          } >> "${GITHUB_STEP_SUMMARY}"
   test:
     name: E2E (${{ matrix.group }})
     needs: build
@@ -101,9 +177,11 @@ jobs:
           if-no-files-found: ignore
 
   # ── Roll-up for branch protection ────────────────────────────────────────
+  # Roll-up for branch protection. Compares upstream results only.
   e2e:
     name: E2E Tests
-    runs-on: ubicloud-standard-8
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
     if: always()
     needs: [test]
     steps:

@@ -18,7 +18,10 @@ jobs:
   review:
     name: Claude Code Review
     if: contains(github.event.pull_request.labels.*.name, 'staging-promotion')
-    runs-on: ubicloud-standard-8
+    # Review: drives the Claude Code action, which is entirely
+    # API-bound and explicitly told not to build or test. GitHub-hosted.
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
     steps:
       - uses: actions/checkout@v6
         with:

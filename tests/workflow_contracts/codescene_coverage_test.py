@@ -51,6 +51,11 @@ def _steps(job: dict[str, object]) -> list[dict[str, object]]:
     return [step for step in steps if isinstance(step, dict)]
 
 
+def _collapse(value: object) -> str:
+    """Collapse a folded YAML condition to a single spaced line."""
+    return " ".join(str(value).split())
+
+
 def _find_step(job: dict[str, object], name: str) -> dict[str, object]:
     """Return a named coverage step."""
     matches = [step for step in _steps(job) if step.get("name") == name]
@@ -59,10 +64,17 @@ def _find_step(job: dict[str, object], name: str) -> dict[str, object]:
 
 
 def test_trigger_permissions_and_job_are_pr_only_and_isolated() -> None:
-    """The workflow runs one least-privilege job only for PRs to main."""
+    """The workflow runs one least-privilege job for PRs to main or a dispatch."""
     workflow = _load()
-    assert workflow.get("on") == {"pull_request": {"branches": ["main"]}}, (
-        "the CodeScene workflow must trigger only for pull requests to main"
+    # `workflow_dispatch` carries no inputs on purpose: the Actions UI and
+    # `gh workflow run --ref` already choose the ref, and a branch input would
+    # be a second, unvalidated way to say the same thing.
+    assert workflow.get("on") == {
+        "pull_request": {"branches": ["main"]},
+        "workflow_dispatch": None,
+    }, (
+        "the CodeScene workflow must trigger for pull requests to main and "
+        "for a manual warm-cache dispatch, and for nothing else"
     )
     assert workflow.get("permissions") == {"contents": "read"}, (
         "the CodeScene workflow must grant only read access to contents"
@@ -75,9 +87,10 @@ def test_trigger_permissions_and_job_are_pr_only_and_isolated() -> None:
     )
 
     job = _job(workflow)
-    assert job.get("if") == "github.event_name == 'pull_request'", (
-        "coverage-check must retain an explicit pull-request guard"
-    )
+    assert _collapse(job.get("if")) == (
+        "github.event_name == 'pull_request' || "
+        "github.event_name == 'workflow_dispatch'"
+    ), "coverage-check must run only for a pull request or a manual dispatch"
     assert job.get("runs-on") == "ubicloud-standard-8", (
         "coverage-check must use the standard Ubicloud runner"
     )
@@ -100,16 +113,21 @@ def test_setup_and_generator_match_proven_libsql_coverage() -> None:
         "dtolnay/rust-toolchain@stable",
         "Install clang",
         "Install mold",
-        "Swatinem/rust-cache@v2",
+        "Export the Actions cache endpoint for sccache",
+        "Install sccache",
+        "Start sccache statistics",
+        "Restore Cargo registry and index",
         "Install cargo-llvm-cov",
         "Install cargo-nextest",
+        "Install cargo-binstall",
         "Install cargo-component",
+        "Probe Cargo tooling",
         "Build GitHub WASM tool (for metadata/schema tests)",
         "Build WASM channels (for integration tests)",
         "Generate coverage",
         "Check coverage against CodeScene gates",
-        "Trim build artefacts before cache save",
-    ], "coverage-check setup, report, check, and cleanup steps must stay ordered"
+        "Report sccache statistics",
+    ], "coverage-check setup, report, and check steps must stay ordered"
 
     checkout = next(step for step in steps if step.get("uses") == "actions/checkout@v6")
     assert checkout.get("with") == {"fetch-depth": 0}, (
@@ -124,19 +142,56 @@ def test_setup_and_generator_match_proven_libsql_coverage() -> None:
         "targets": "wasm32-wasip2",
     }, "coverage-check must install the proven Rust components and WASM target"
 
-    cache = next(step for step in steps if step.get("uses") == "Swatinem/rust-cache@v2")
-    assert cache.get("with") == {"key": "coverage-libsql-only"}, (
-        "the cache key must remain scoped to libsql-only coverage"
+    # The registry cache carries no compiler output. sccache owns that from
+    # the migration wave onwards; a target archive here would be a second
+    # owner of the same state. The generic cache-ownership and tool-install
+    # contracts in workflow_policy_test.py cover the key and pin shapes.
+    cache = _find_step(job, "Restore Cargo registry and index")
+    cache_with = cache.get("with")
+    assert isinstance(cache_with, dict), "the cache step must declare inputs"
+    assert "target" not in str(cache_with.get("path", "")), (
+        "coverage-check must not archive a target tree"
     )
-    assert _find_step(job, "Install cargo-llvm-cov").get("uses") == (
-        "taiki-e/install-action@cargo-llvm-cov"
-    ), "coverage-check must reuse the proven cargo-llvm-cov installer"
-    assert _find_step(job, "Install cargo-nextest").get("uses") == (
-        "taiki-e/install-action@cargo-nextest"
-    ), "coverage-check must reuse the proven cargo-nextest installer"
-    assert _find_step(job, "Install cargo-component").get("with") == {
-        "tool": "cargo-component"
-    }, "coverage-check must install cargo-component for the WASM fixtures"
+    for tool in ("cargo-llvm-cov", "cargo-nextest", "cargo-binstall"):
+        step = _find_step(job, f"Install {tool}")
+        step_with = step.get("with")
+        assert isinstance(step_with, dict), f"Install {tool} must declare inputs"
+        assert str(step_with.get("tool", "")).startswith(f"{tool}@"), (
+            f"coverage-check must pin the {tool} version"
+        )
+        assert step_with.get("fallback") == "none", (
+            f"the {tool} installer must fail closed rather than build from source"
+        )
+    # cargo-component has no install-action manifest, so it comes from
+    # cargo-binstall with fail-closed strategies and a pinned version.
+    component_step = _find_step(job, "Install cargo-component")
+    component = str(component_step.get("run", ""))
+    assert "--strategies crate-meta-data,quick-install" in component, (
+        "cargo-component must be installed with fail-closed binstall strategies"
+    )
+    assert "cargo-component@$CARGO_COMPONENT_PIN" in component, (
+        "cargo-component must carry a version pin; strategies alone stop a "
+        "source build but not version drift"
+    )
+    assert "${{" not in component, (
+        "the installer must read the pin from the step environment; a "
+        "${{ }} expression is substituted into the script before the shell "
+        "sees it, which is the shape that makes a run: body injectable"
+    )
+    pin = (component_step.get("env") or {}).get("CARGO_COMPONENT_PIN")
+    assert pin == "${{ env.CARGO_COMPONENT_VERSION }}", (
+        "the pin must come from the job's CARGO_COMPONENT_VERSION, so one "
+        "edit moves every installer in the workflow"
+    )
+    # The alias only means something if the job actually defines the version.
+    job_env = job.get("env")
+    assert isinstance(job_env, dict), "coverage-check must declare a job env"
+    declared_version = job_env.get("CARGO_COMPONENT_VERSION")
+    assert isinstance(declared_version, str) and declared_version.strip(), (
+        "coverage-check must define a non-empty CARGO_COMPONENT_VERSION; "
+        "without it the step-local alias resolves to nothing and the "
+        "installer silently loses its version pin"
+    )
     assert (
         _find_step(job, "Build GitHub WASM tool (for metadata/schema tests)").get("run")
         == "make build-github-tool-wasm"

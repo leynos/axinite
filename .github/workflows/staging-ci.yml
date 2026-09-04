@@ -28,7 +28,9 @@ jobs:
   # ── Check for new commits ──────────────────────────────────────
   check-changes:
     name: Check for new commits
-    runs-on: ubicloud-standard-8
+    # Scheduled orchestration: a git rev-parse and a tag comparison.
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
     outputs:
       has_changes: ${{ steps.check.outputs.has_changes }}
       current_head: ${{ steps.check.outputs.current_head }}
@@ -103,7 +105,9 @@ jobs:
     name: Create Promotion PR
     needs: check-changes
     if: needs.check-changes.outputs.has_changes == 'true'
-    runs-on: ubicloud-standard-8
+    # Scheduled orchestration: creates a branch and a pull request.
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
     outputs:
       pr_number: ${{ steps.create-pr.outputs.pr_number }}
       promotion_branch: ${{ steps.branch.outputs.branch }}
@@ -217,7 +221,8 @@ jobs:
       needs.tests.result == 'success' &&
       needs.e2e.result == 'success' &&
       needs.create-promotion-pr.result == 'success'
-    runs-on: ubicloud-standard-8
+    # Gate: polls check runs and the review comments over the API.
+    runs-on: ubuntu-latest
     timeout-minutes: 25
     outputs:
       gate_passed: ${{ steps.evaluate.outputs.passed }}
@@ -432,7 +437,9 @@ jobs:
       needs.tests.result == 'success' &&
       needs.e2e.result == 'success' &&
       needs.create-promotion-pr.result == 'success'
-    runs-on: ubicloud-standard-8
+    # Scheduled orchestration: force-updates one tag.
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v6
         with:
@@ -450,7 +457,9 @@ jobs:
     name: Staging CI Summary
     needs: [check-changes, tests, e2e, create-promotion-pr, gate, update-tag]
     if: always() && needs.check-changes.outputs.has_changes == 'true'
-    runs-on: ubicloud-standard-8
+    # Report: writes the job summary. No build.
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - name: Summary
         run: |

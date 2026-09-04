@@ -191,7 +191,7 @@ test-matrix-cargo:
 
 # Validate the mutation-testing caller workflow contract.
 test-workflow-contracts:
-	uv run --with 'pytest>=8' --with 'pyyaml>=6' pytest tests/workflow_contracts -q
+	uv run --with 'pytest>=8' --with 'pyyaml>=6' --with 'hypothesis>=6' pytest tests/workflow_contracts -q
 
 clean:
 	$(CARGO) clean

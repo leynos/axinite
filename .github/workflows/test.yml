@@ -2,12 +2,25 @@
 name: Run Tests
 "on":
   workflow_call:
+  # Manual runs exist to re-measure a warm cache on `main`. They restore
+  # every cache and save none: each save step is gated on a `push` to
+  # `main`, so a dispatch cannot overwrite what the merge commit wrote.
+  workflow_dispatch:
   pull_request:
     branches:
       - main
   push:
     branches:
       - main
+
+# Tool pins shared by every job. Each tool is installed from a pinned,
+# checksum-verified release archive by taiki-e/install-action with
+# `fallback: none`, so a missing prebuilt binary fails the job instead of
+# silently compiling from source.
+env:
+  CARGO_AUDIT_VERSION: '0.22.2'
+  CARGO_COMPONENT_VERSION: '0.21.1'
+  CARGO_NEXTEST_VERSION: '0.9.140'
 
 jobs:
   audit:
@@ -18,25 +31,39 @@ jobs:
     # Dependabot merges instead.
     if: >
       (github.event_name == 'push' ||
+      github.event_name == 'workflow_dispatch' ||
       (github.event_name == 'pull_request' && github.base_ref != 'staging'))
       && github.actor != 'dependabot[bot]'
-    runs-on: ubicloud-standard-8
+    # API-bound: cargo-audit reads the lockfiles and the RustSec advisory
+    # database over the network. It compiles nothing, so it is GitHub-hosted.
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
     steps:
       - name: Checkout repository
         uses: actions/checkout@v6
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
       - name: Install cargo-audit
-        uses: taiki-e/install-action@v2.83.0
+        uses: taiki-e/install-action@c7eb1735f09259a5035e8e5d44b1406b1cddc0fb  # v2.83.0
         with:
-          tool: cargo-audit
+          tool: cargo-audit@${{ env.CARGO_AUDIT_VERSION }}
+          fallback: none
+      - name: Probe cargo-audit
+        run: cargo audit --version
       - name: Audit dependencies
         run: make audit
 
   tests:
     name: Tests (${{ matrix.name }})
     runs-on: ubicloud-standard-8
+    timeout-minutes: 60
     env:
+      # sccache is the sole owner of compiler output: no cache step archives a
+      # target tree. RUSTC_WRAPPER is what actually engages it; installing
+      # sccache without exporting this compiles everything as before.
+      RUSTC_WRAPPER: sccache
+      SCCACHE_GHA_ENABLED: "true"
+      # sccache cannot cache incremental compilation.
       CARGO_INCREMENTAL: "0"
       CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_LINKER: clang
       CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_RUSTFLAGS: >-
@@ -72,15 +99,92 @@ jobs:
         run: sudo apt-get update && sudo apt-get install -y clang
       - name: Install mold
         uses: rui314/setup-mold@v1
-      - uses: Swatinem/rust-cache@v2
+      # Sole writer of the Linux cargo-registry key family. The `target` tree
+      # is deliberately not archived: sccache owns compiler output from the
+      # migration wave onwards, and a target archive duplicates that
+      # ownership while inflating the weekly cache quota.
+      # Ubicloud's transparent cache proxy serves the Actions cache from a
+      # local address. sccache's GitHub Actions backend reads
+      # ACTIONS_CACHE_URL and ACTIONS_RUNTIME_TOKEN from the runner's own
+      # environment, which is not visible to `run:` steps, so re-export them.
+      # Clearing ACTIONS_CACHE_SERVICE_V2 keeps sccache on the v1 protocol the
+      # proxy serves; exporting ACTIONS_RESULTS_URL instead does not work.
+      - name: Export the Actions cache endpoint for sccache
+        uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd  # v8.0.0
         with:
-          key: ${{ matrix.name }}
+          script: |
+            // Ubicloud's control plane writes the proxy address into the VM
+            // environment. Report which variable supplied it, and whether the
+            // token was present at all, so a misconfigured backend is
+            // diagnosable from the log rather than from a slower build. Never
+            // print the token itself.
+            const cacheUrl =
+              process.env.ACTIONS_CACHE_URL ||
+              process.env.CUSTOM_ACTIONS_CACHE_URL ||
+              '';
+            const runtimeToken = process.env.ACTIONS_RUNTIME_TOKEN || '';
+            const source = process.env.ACTIONS_CACHE_URL
+              ? 'ACTIONS_CACHE_URL'
+              : process.env.CUSTOM_ACTIONS_CACHE_URL
+                ? 'CUSTOM_ACTIONS_CACHE_URL'
+                : 'none';
+            core.info(`sccache cache endpoint source: ${source}`);
+            core.info(`sccache cache endpoint present: ${Boolean(cacheUrl)}`);
+            core.info(`sccache runtime token present: ${Boolean(runtimeToken)}`);
+            if (!cacheUrl || !runtimeToken) {
+              core.warning(
+                'sccache has no Actions cache endpoint; every compilation ' +
+                  'will miss and the wrapper will only add overhead',
+              );
+            }
+            core.exportVariable('ACTIONS_CACHE_URL', cacheUrl);
+            core.exportVariable('ACTIONS_RUNTIME_TOKEN', runtimeToken);
+            core.exportVariable('ACTIONS_CACHE_SERVICE_V2', '');
+      - name: Install sccache
+        uses: taiki-e/install-action@c7eb1735f09259a5035e8e5d44b1406b1cddc0fb  # v2.83.0
+        with:
+          tool: sccache@0.16.0
+          fallback: none
+      - name: Start sccache statistics
+        run: |
+          set -euo pipefail
+          sccache --version
+          sccache --zero-stats
+      - name: Restore Cargo registry and index
+        id: cargo-registry
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9  # v6.1.0
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+          key: >-
+            cargo-v1-${{ runner.os }}-${{ runner.arch }}-${{ runner.environment
+            }}-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            cargo-v1-${{ runner.os }}-${{ runner.arch }}-${{ runner.environment }}-
       - name: Install cargo-nextest
-        uses: taiki-e/install-action@cargo-nextest
-      - name: Install cargo-component
-        uses: taiki-e/install-action@v2.83.0
+        uses: taiki-e/install-action@c7eb1735f09259a5035e8e5d44b1406b1cddc0fb  # v2.83.0
         with:
-          tool: cargo-component
+          tool: cargo-nextest@${{ env.CARGO_NEXTEST_VERSION }}
+          fallback: none
+      - name: Install cargo-binstall
+        uses: taiki-e/install-action@c7eb1735f09259a5035e8e5d44b1406b1cddc0fb  # v2.83.0
+        with:
+          tool: cargo-binstall@1.20.1
+          fallback: none
+
+      - name: Install cargo-component
+        env:
+          CARGO_COMPONENT_PIN: ${{ env.CARGO_COMPONENT_VERSION }}
+        run: >-
+          cargo binstall --no-confirm
+          --strategies crate-meta-data,quick-install
+          "cargo-component@$CARGO_COMPONENT_PIN"
+      - name: Probe Cargo tooling
+        run: |
+          set -euo pipefail
+          cargo nextest --version
+          cargo component --version
       - name: Build GitHub WASM tool (for metadata/schema tests)
         run: make build-github-tool-wasm
       - name: Build WASM channels (for integration tests)
@@ -90,21 +194,55 @@ jobs:
           make test
           NEXTEST_PROFILE=ci
           TEST_FEATURES="${{ matrix.flags }} --features test-helpers"
-      - name: Trim build artefacts before cache save
+      # One writer per key: the all-features leg resolves the widest
+      # dependency graph, so it publishes the registry archive from main.
+      # Report the hit rate so a wrapper that is silently doing nothing shows
+      # up in the job summary rather than only in the duration.
+      - name: Report sccache statistics
         if: always()
         run: |
-          rm -rf target/debug/incremental
-          rm -rf target/debug/.fingerprint
-          cargo clean --doc 2>/dev/null || true
-          find target -name "*.d" -delete 2>/dev/null || true
+          set -euo pipefail
+          # Print to the log as well as the job summary. The summary is not
+          # readable through the REST API, so the log copy is what lets anyone
+          # confirm the hit rate, or a read or write error, after the fact.
+          stats="$(sccache --show-stats)"
+          printf '%s\n' "$stats"
+          {
+            printf '### sccache statistics (%s)\n\n' "${GITHUB_JOB}"
+            printf '```text\n'
+            printf '%s\n' "$stats"
+            printf '```\n'
+          } >> "${GITHUB_STEP_SUMMARY}"
+      - name: Save Cargo registry and index
+        if: >-
+          matrix.name == 'all-features' && github.event_name == 'push' &&
+          github.ref == 'refs/heads/main' &&
+          steps.cargo-registry.outputs.cache-hit != 'true'
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9  # v6.1.0
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+          key: >-
+            cargo-v1-${{ runner.os }}-${{ runner.arch }}-${{ runner.environment
+            }}-${{ hashFiles('**/Cargo.lock') }}
 
   telegram-tests:
     name: Telegram Channel Tests
     if: >
       github.event_name == 'push' ||
+      github.event_name == 'workflow_dispatch' ||
       (github.event_name == 'pull_request' && github.base_ref != 'staging')
     runs-on: ubicloud-standard-8
+    timeout-minutes: 30
     env:
+      # sccache is the sole owner of compiler output: no cache step archives a
+      # target tree. RUSTC_WRAPPER is what actually engages it; installing
+      # sccache without exporting this compiles everything as before.
+      RUSTC_WRAPPER: sccache
+      SCCACHE_GHA_ENABLED: "true"
+      # sccache cannot cache incremental compilation.
+      CARGO_INCREMENTAL: "0"
       CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_LINKER: clang
       CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_RUSTFLAGS: >-
         -C link-arg=-fuse-ld=mold
@@ -115,18 +253,94 @@ jobs:
         uses: dtolnay/rust-toolchain@stable
       - name: Install mold
         uses: rui314/setup-mold@v1
-      - uses: Swatinem/rust-cache@v2
+      # Ubicloud's transparent cache proxy serves the Actions cache from a
+      # local address. sccache's GitHub Actions backend reads
+      # ACTIONS_CACHE_URL and ACTIONS_RUNTIME_TOKEN from the runner's own
+      # environment, which is not visible to `run:` steps, so re-export them.
+      # Clearing ACTIONS_CACHE_SERVICE_V2 keeps sccache on the v1 protocol the
+      # proxy serves; exporting ACTIONS_RESULTS_URL instead does not work.
+      - name: Export the Actions cache endpoint for sccache
+        uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd  # v8.0.0
+        with:
+          script: |
+            // Ubicloud's control plane writes the proxy address into the VM
+            // environment. Report which variable supplied it, and whether the
+            // token was present at all, so a misconfigured backend is
+            // diagnosable from the log rather than from a slower build. Never
+            // print the token itself.
+            const cacheUrl =
+              process.env.ACTIONS_CACHE_URL ||
+              process.env.CUSTOM_ACTIONS_CACHE_URL ||
+              '';
+            const runtimeToken = process.env.ACTIONS_RUNTIME_TOKEN || '';
+            const source = process.env.ACTIONS_CACHE_URL
+              ? 'ACTIONS_CACHE_URL'
+              : process.env.CUSTOM_ACTIONS_CACHE_URL
+                ? 'CUSTOM_ACTIONS_CACHE_URL'
+                : 'none';
+            core.info(`sccache cache endpoint source: ${source}`);
+            core.info(`sccache cache endpoint present: ${Boolean(cacheUrl)}`);
+            core.info(`sccache runtime token present: ${Boolean(runtimeToken)}`);
+            if (!cacheUrl || !runtimeToken) {
+              core.warning(
+                'sccache has no Actions cache endpoint; every compilation ' +
+                  'will miss and the wrapper will only add overhead',
+              );
+            }
+            core.exportVariable('ACTIONS_CACHE_URL', cacheUrl);
+            core.exportVariable('ACTIONS_RUNTIME_TOKEN', runtimeToken);
+            core.exportVariable('ACTIONS_CACHE_SERVICE_V2', '');
+      - name: Install sccache
+        uses: taiki-e/install-action@c7eb1735f09259a5035e8e5d44b1406b1cddc0fb  # v2.83.0
+        with:
+          tool: sccache@0.16.0
+          fallback: none
+      - name: Start sccache statistics
+        run: |
+          set -euo pipefail
+          sccache --version
+          sccache --zero-stats
+      - name: Restore Cargo registry and index
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9  # v6.1.0
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+          key: >-
+            cargo-v1-${{ runner.os }}-${{ runner.arch }}-${{ runner.environment
+            }}-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            cargo-v1-${{ runner.os }}-${{ runner.arch }}-${{ runner.environment }}-
       - name: Run Telegram Channel Tests
         run: >-
           cargo test --manifest-path channels-src/telegram/Cargo.toml --
           --nocapture
-
+      # Report the hit rate so a wrapper that is silently doing nothing shows
+      # up in the job summary rather than only in the duration.
+      - name: Report sccache statistics
+        if: always()
+        run: |
+          set -euo pipefail
+          # Print to the log as well as the job summary. The summary is not
+          # readable through the REST API, so the log copy is what lets anyone
+          # confirm the hit rate, or a read or write error, after the fact.
+          stats="$(sccache --show-stats)"
+          printf '%s\n' "$stats"
+          {
+            printf '### sccache statistics (%s)\n\n' "${GITHUB_JOB}"
+            printf '```text\n'
+            printf '%s\n' "$stats"
+            printf '```\n'
+          } >> "${GITHUB_STEP_SUMMARY}"
   windows-build:
     name: Windows Build (${{ matrix.name }})
     if: >
       github.event_name == 'push' ||
+      github.event_name == 'workflow_dispatch' ||
       (github.event_name == 'pull_request' && github.base_ref != 'staging')
+    # Windows lanes stay on GitHub-hosted runners: Ubicloud offers Linux only.
     runs-on: windows-latest
+    timeout-minutes: 45
     strategy:
       fail-fast: false
       matrix:
@@ -142,21 +356,53 @@ jobs:
         uses: actions/checkout@v6
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
-      - uses: Swatinem/rust-cache@v2
+      - name: Restore Cargo registry and index
+        id: cargo-registry
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9  # v6.1.0
         with:
-          key: windows-${{ matrix.name }}
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+          key: >-
+            cargo-v1-${{ runner.os }}-${{ runner.arch }}-${{ runner.environment
+            }}-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            cargo-v1-${{ runner.os }}-${{ runner.arch }}-${{ runner.environment }}-
       - name: Check compilation
         run: >-
           cargo check --all --benches --tests --examples
           ${{ matrix.flags }} --features test-helpers
+      # Sole writer of the Windows cargo-registry key family.
+      - name: Save Cargo registry and index
+        if: >-
+          matrix.name == 'all-features' && github.event_name == 'push' &&
+          github.ref == 'refs/heads/main' &&
+          steps.cargo-registry.outputs.cache-hit != 'true'
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9  # v6.1.0
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+          key: >-
+            cargo-v1-${{ runner.os }}-${{ runner.arch }}-${{ runner.environment
+            }}-${{ hashFiles('**/Cargo.lock') }}
 
   wasm-wit-compat:
     name: WASM WIT Compatibility
     if: >
       github.event_name == 'push' ||
+      github.event_name == 'workflow_dispatch' ||
       (github.event_name == 'pull_request' && github.base_ref != 'staging')
     runs-on: ubicloud-standard-8
+    timeout-minutes: 45
     env:
+      # sccache is the sole owner of compiler output: no cache step archives a
+      # target tree. RUSTC_WRAPPER is what actually engages it; installing
+      # sccache without exporting this compiles everything as before.
+      RUSTC_WRAPPER: sccache
+      SCCACHE_GHA_ENABLED: "true"
+      # sccache cannot cache incremental compilation.
+      CARGO_INCREMENTAL: "0"
       CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_LINKER: clang
       CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_RUSTFLAGS: >-
         -C link-arg=-fuse-ld=mold
@@ -169,24 +415,111 @@ jobs:
           targets: wasm32-wasip2
       - name: Install mold
         uses: rui314/setup-mold@v1
-      - uses: Swatinem/rust-cache@v2
+      # Ubicloud's transparent cache proxy serves the Actions cache from a
+      # local address. sccache's GitHub Actions backend reads
+      # ACTIONS_CACHE_URL and ACTIONS_RUNTIME_TOKEN from the runner's own
+      # environment, which is not visible to `run:` steps, so re-export them.
+      # Clearing ACTIONS_CACHE_SERVICE_V2 keeps sccache on the v1 protocol the
+      # proxy serves; exporting ACTIONS_RESULTS_URL instead does not work.
+      - name: Export the Actions cache endpoint for sccache
+        uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd  # v8.0.0
         with:
-          key: wasm-extensions
+          script: |
+            // Ubicloud's control plane writes the proxy address into the VM
+            // environment. Report which variable supplied it, and whether the
+            // token was present at all, so a misconfigured backend is
+            // diagnosable from the log rather than from a slower build. Never
+            // print the token itself.
+            const cacheUrl =
+              process.env.ACTIONS_CACHE_URL ||
+              process.env.CUSTOM_ACTIONS_CACHE_URL ||
+              '';
+            const runtimeToken = process.env.ACTIONS_RUNTIME_TOKEN || '';
+            const source = process.env.ACTIONS_CACHE_URL
+              ? 'ACTIONS_CACHE_URL'
+              : process.env.CUSTOM_ACTIONS_CACHE_URL
+                ? 'CUSTOM_ACTIONS_CACHE_URL'
+                : 'none';
+            core.info(`sccache cache endpoint source: ${source}`);
+            core.info(`sccache cache endpoint present: ${Boolean(cacheUrl)}`);
+            core.info(`sccache runtime token present: ${Boolean(runtimeToken)}`);
+            if (!cacheUrl || !runtimeToken) {
+              core.warning(
+                'sccache has no Actions cache endpoint; every compilation ' +
+                  'will miss and the wrapper will only add overhead',
+              );
+            }
+            core.exportVariable('ACTIONS_CACHE_URL', cacheUrl);
+            core.exportVariable('ACTIONS_RUNTIME_TOKEN', runtimeToken);
+            core.exportVariable('ACTIONS_CACHE_SERVICE_V2', '');
+      - name: Install sccache
+        uses: taiki-e/install-action@c7eb1735f09259a5035e8e5d44b1406b1cddc0fb  # v2.83.0
+        with:
+          tool: sccache@0.16.0
+          fallback: none
+      - name: Start sccache statistics
+        run: |
+          set -euo pipefail
+          sccache --version
+          sccache --zero-stats
+      - name: Restore Cargo registry and index
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9  # v6.1.0
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+          key: >-
+            cargo-v1-${{ runner.os }}-${{ runner.arch }}-${{ runner.environment
+            }}-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            cargo-v1-${{ runner.os }}-${{ runner.arch }}-${{ runner.environment }}-
+      - name: Install cargo-binstall
+        uses: taiki-e/install-action@c7eb1735f09259a5035e8e5d44b1406b1cddc0fb  # v2.83.0
+        with:
+          tool: cargo-binstall@1.20.1
+          fallback: none
+
       - name: Install cargo-component
-        uses: taiki-e/install-action@v2.83.0
-        with:
-          tool: cargo-component
+        env:
+          CARGO_COMPONENT_PIN: ${{ env.CARGO_COMPONENT_VERSION }}
+        run: >-
+          cargo binstall --no-confirm
+          --strategies crate-meta-data,quick-install
+          "cargo-component@$CARGO_COMPONENT_PIN"
+      - name: Probe cargo-component
+        run: cargo component --version
       - name: Build all WASM extensions against current WIT
         run: ./scripts/build-wasm-extensions.sh
       - name: Instantiation test (host linker compatibility)
         run: cargo test --all-features --features test-helpers wit_compat -- --nocapture
-
+      # Report the hit rate so a wrapper that is silently doing nothing shows
+      # up in the job summary rather than only in the duration.
+      - name: Report sccache statistics
+        if: always()
+        run: |
+          set -euo pipefail
+          # Print to the log as well as the job summary. The summary is not
+          # readable through the REST API, so the log copy is what lets anyone
+          # confirm the hit rate, or a read or write error, after the fact.
+          stats="$(sccache --show-stats)"
+          printf '%s\n' "$stats"
+          {
+            printf '### sccache statistics (%s)\n\n' "${GITHUB_JOB}"
+            printf '```text\n'
+            printf '%s\n' "$stats"
+            printf '```\n'
+          } >> "${GITHUB_STEP_SUMMARY}"
   docker-build:
     name: Docker Build
     if: >
       github.event_name == 'push' ||
+      github.event_name == 'workflow_dispatch' ||
       (github.event_name == 'pull_request' && github.base_ref != 'staging')
+    # Stays on its current label. Moving a privileged, daemon-dependent job
+    # needs a Docker daemon and privilege preflight first; see the
+    # decomposition plan in docs/developers-guide.md.
     runs-on: ubicloud-standard-8
+    timeout-minutes: 30
     steps:
       - name: Checkout repository
         uses: actions/checkout@v6
@@ -195,7 +528,10 @@ jobs:
 
   version-check:
     name: Version Bump Check
-    runs-on: ubicloud-standard-8
+    # Metadata check over the Git history and PR labels. No build, so it is
+    # GitHub-hosted.
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
     if: github.event_name == 'pull_request'
     steps:
       - name: Checkout repository
@@ -207,10 +543,11 @@ jobs:
           PR_LABELS: ${{ join(github.event.pull_request.labels.*.name, ',') }}
         run: ./scripts/check-version-bumps.sh
 
-  # Roll-up job for branch protection
+  # Roll-up job for branch protection. Compares upstream results only.
   run-tests:
     name: Run Tests
-    runs-on: ubicloud-standard-8
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
     if: always()
     needs:
       - audit
