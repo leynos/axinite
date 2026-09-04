@@ -3,10 +3,10 @@
 The contracts in this directory are only as trustworthy as the parsing they
 sit on. A helper that quietly returns nothing turns a policy assertion into a
 vacuous pass: a job whose `runs-on` is written in a form the helper does not
-recognise reports no labels, and every placement contract then waves it
-through. These tests exercise the pure half of `_workflow_policy` directly,
-so each supported shape is proven rather than assumed from whichever shapes
-the estate happens to use today.
+read reports no labels, and every placement contract then waves it through.
+These tests exercise the pure half of `_workflow_policy` directly, so each
+supported shape is proven rather than assumed from whichever shapes the estate
+happens to use today.
 
 Run via ``make test-workflow-contracts``.
 """
@@ -42,7 +42,7 @@ PROPERTY = settings(
 #: Runner labels wide enough to cover the estate's shapes without generating
 #: YAML that no workflow could contain.
 LABELS = st.text(
-    alphabet=st.characters(whitelist_categories=("Ll", "Nd"), whitelist_characters="-"),
+    alphabet="abcdefghijklmnopqrstuvwxyz0123456789-",
     min_size=1,
     max_size=12,
 )
