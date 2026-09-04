@@ -100,6 +100,9 @@ def test_setup_and_generator_match_proven_libsql_coverage() -> None:
         "dtolnay/rust-toolchain@stable",
         "Install clang",
         "Install mold",
+        "Export the Actions cache endpoint for sccache",
+        "Install sccache",
+        "Start sccache statistics",
         "Restore Cargo registry and index",
         "Install cargo-llvm-cov",
         "Install cargo-nextest",
@@ -110,6 +113,7 @@ def test_setup_and_generator_match_proven_libsql_coverage() -> None:
         "Build WASM channels (for integration tests)",
         "Generate coverage",
         "Check coverage against CodeScene gates",
+        "Report sccache statistics",
     ], "coverage-check setup, report, and check steps must stay ordered"
 
     checkout = next(step for step in steps if step.get("uses") == "actions/checkout@v6")

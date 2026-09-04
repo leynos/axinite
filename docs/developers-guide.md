@@ -209,10 +209,42 @@ Rules that follow from the table:
   version's traffic, so the deprecated `ubicloud/cache` fork is unnecessary and
   would diverge from the GitHub-hosted Windows lane.
 
-Removing the target archives means a cold Rust job now compiles from scratch.
-The migration wave restores that ground with `sccache`, which owns compiler
-output properly and reports its hit rate. Do not reintroduce a target cache as
-a stopgap.
+Do not reintroduce a target cache as a stopgap. `sccache` owns compiler output
+instead; see below.
+
+### sccache
+
+`sccache` is the only owner of compiler output. Every Ubicloud job that invokes
+rustc wraps the compiler with it. `code_style.yml` `format` does not, because
+`cargo fmt` needs the toolchain but compiles nothing, and `test.yml`
+`docker-build` does not, because compilation happens inside the image where
+sccache on the host cannot see it.
+
+The wiring has three halves, and omitting any one of them is silent. The build
+still succeeds; it just recompiles everything.
+
+1. **The wrapper.** `RUSTC_WRAPPER: sccache` at job level is what actually
+   routes compilation through the cache. Installing sccache without exporting
+   this changes nothing at all. `SCCACHE_GHA_ENABLED` selects the GitHub
+   Actions storage backend, and `CARGO_INCREMENTAL: "0"` is required because
+   sccache cannot cache incremental compilation.
+2. **The endpoint.** Ubicloud's transparent cache proxy serves the Actions
+   cache from a local address, and the runner holds that address in
+   `ACTIONS_CACHE_URL` and `ACTIONS_RUNTIME_TOKEN`. A `run:` step does not
+   inherit those, so a pinned `actions/github-script` step re-exports them into
+   `GITHUB_ENV` and clears `ACTIONS_CACHE_SERVICE_V2`, which keeps sccache on
+   the v1 protocol the proxy serves. Exporting `ACTIONS_RESULTS_URL` instead
+   does not work.
+3. **The evidence.** `sccache --zero-stats` runs before the build and
+   `sccache --show-stats` writes into the job summary afterwards, with
+   `if: always()` so a failing run still reports. Without the report, a wrapper
+   that is quietly doing nothing shows up only as a duration, and only if
+   somebody is watching durations.
+
+`tests/workflow_contracts/sccache_test.py` asserts all three halves together,
+including that no build step precedes the reset, and that GitHub-hosted jobs
+carry none of this: the endpoint export points at a proxy that exists only on
+an Ubicloud VM.
 
 ### Decomposition plan for the runner migration wave
 
@@ -224,8 +256,8 @@ evidence before the next begins.
    admission from the job log header and the runner list.
 2. `code_style.yml` `clippy` follows, with its cache wiring unchanged, so the
    only variable is the runner shape.
-3. `test.yml` `tests` follows, with `sccache` added in the same change so the
-   cold run populates a compiler cache from the first attempt.
+3. `test.yml` `tests` follows. `sccache` is already wired, so the first run on
+   the smaller shape populates a compiler cache rather than starting cold.
 4. The coverage lanes (`coverage.yml` `coverage`, `coverage.yml`
    `e2e-coverage`, `codescene-coverage.yml` `coverage-check`) follow, keeping
    LLVM codegen because Cranelift has no coverage instrumentation.
