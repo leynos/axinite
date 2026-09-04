@@ -176,8 +176,18 @@ Jobs are sized individually against measurement:
 
 | Shape | Carries |
 | --- | --- |
-| `ubicloud-standard-2` | Jobs that compile little or nothing |
+| `ubicloud-standard-2` | Jobs whose peak memory and wall time both fit it |
 | `ubicloud-standard-4` | Jobs that compile the workspace |
+| `ubicloud-standard-8` | Jobs measured outside the 1.5x wall-time tolerance on a smaller shape |
+
+A shape is accepted when warm wall time stays within 1.5x of the previous shape
+and the sampled peaks leave room for a cold run, which costs more than a warm
+one. Three jobs failed that test on first measurement and are recorded at the
+larger shape with the number that decided it: `docker-build` at 1.60x, because
+it compiles inside the image where sccache cannot help it; `coverage-check` at
+1.50x; and `format`, which is fast on the smallest shape but reached 6,741 MiB
+of its 7,940 MiB rendering Mermaid through a headless browser, so it has no room
+for a bad day.
 
 `tests/workflow_contracts/runner_sizing_test.py` holds the assignment as an
 explicit table, job by job, with the reason and the wall time it was decided

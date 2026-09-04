@@ -33,8 +33,9 @@ ALL_JOBS: tuple[Job, ...] = tuple(jobs())
 APPROVED_SHAPES: dict[str, str] = {
     "ubicloud-standard-2": "jobs that compile little or nothing",
     "ubicloud-standard-4": "jobs that compile the workspace",
-    "ubicloud-standard-8": "not chosen for any job; retained only while "
-    "e2e.yml is right-sized separately",
+    "ubicloud-standard-8": "jobs measured outside the 1.5x wall-time "
+    "tolerance on a smaller shape, and e2e.yml, which is right-sized "
+    "separately",
 }
 
 SAMPLER = "./scripts/ci-resource-sampler.sh"
@@ -138,17 +139,19 @@ def test_the_sampler_starts_after_the_checkout(job: Job) -> None:
 #: pull request that changes it.
 REVIEWED_SHAPES: dict[tuple[str, str], tuple[str, str]] = {
     ("code_style.yml", "format"): (
-        "ubicloud-standard-2",
-        "parses and lints; `cargo fmt` compiles nothing, 50 s",
+        "ubicloud-standard-4",
+        "compiles nothing, but `make nixie` renders Mermaid through a headless "
+        "browser and the sampler measured 6,741 MiB of the smaller shape's "
+        "7,940 MiB, which leaves no room for a cold run",
     ),
     ("code_style.yml", "clippy"): (
         "ubicloud-standard-4",
         "compiles the workspace under three feature shapes, 315 s on the widest leg",
     ),
     ("codescene-coverage.yml", "coverage-check"): (
-        "ubicloud-standard-4",
-        "instrumented workspace build, 455 s, and the llvm-cov scratch tree "
-        "wants the larger volume",
+        "ubicloud-standard-8",
+        "instrumented workspace build: 683 s on the halved shape against "
+        "455 s, or 1.50x, at the limit the resize was accepted on",
     ),
     ("coverage.yml", "coverage"): (
         "ubicloud-standard-4",
@@ -171,8 +174,10 @@ REVIEWED_SHAPES: dict[tuple[str, str], tuple[str, str]] = {
         "compiles the workspace to wasm32-wasip2, 277 s",
     ),
     ("test.yml", "docker-build"): (
-        "ubicloud-standard-4",
-        "compiles inside the image, where sccache cannot help it",
+        "ubicloud-standard-8",
+        "compiles inside the image, where sccache cannot help it, so it is "
+        "the most processor-bound job here: 605 s on the halved shape against "
+        "378 s, or 1.60x, outside the 1.5x the resize was accepted on",
     ),
     ("e2e.yml", "build"): (
         "ubicloud-standard-8",
