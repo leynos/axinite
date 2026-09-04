@@ -3,6 +3,10 @@ name: CodeScene Coverage Check
 "on":
   pull_request:
     branches: [main]
+  # Manual runs exist to re-measure a warm cache on `main`. The registry
+  # cache is restore-only here and the CodeScene upload stays gated on
+  # `pull_request`, so a dispatch reports coverage to the log only.
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -10,7 +14,9 @@ permissions:
 jobs:
   coverage-check:
     name: CodeScene Coverage
-    if: github.event_name == 'pull_request'
+    if: >
+      github.event_name == 'pull_request' ||
+      github.event_name == 'workflow_dispatch'
     runs-on: ubicloud-standard-8
     timeout-minutes: 60
     env:
@@ -137,7 +143,7 @@ jobs:
         run: >-
           cargo binstall --no-confirm
           --strategies crate-meta-data,quick-install
-          "cargo-component@${{ env.CARGO_COMPONENT_PIN }}"
+          "cargo-component@$CARGO_COMPONENT_PIN"
 
       - name: Probe Cargo tooling
         run: |

@@ -223,10 +223,19 @@ def test_the_cargo_registry_cache_has_exactly_one_writer_per_platform() -> None:
         for step in job.steps:
             uses = step.get("uses")
             if isinstance(uses, str) and uses.startswith("actions/cache/save@"):
-                condition = str(step.get("if", ""))
+                condition = " ".join(str(step.get("if", "")).split())
                 assert "refs/heads/main" in condition, (
                     f"{job} saves a cache without restricting the write to "
                     "main; pull requests must restore and never save"
+                )
+                # The ref alone is not enough. `github.ref` reads
+                # `refs/heads/main` for a manual dispatch against main just as
+                # it does for a push, so a guard on the ref would let a
+                # warm-cache measurement run overwrite what the merge wrote.
+                assert "github.event_name == 'push'" in condition, (
+                    f"{job} saves a cache without naming the push event; a "
+                    "workflow_dispatch on main would satisfy a ref-only guard "
+                    "and take the key from its real writer"
                 )
                 writers.append(str(job))
     # One Linux writer and one Windows writer, both in test.yml.

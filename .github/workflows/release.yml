@@ -278,7 +278,7 @@ jobs:
         run: >-
           cargo binstall --no-confirm
           --strategies crate-meta-data,quick-install
-          "cargo-component@${{ env.CARGO_COMPONENT_PIN }}"
+          "cargo-component@$CARGO_COMPONENT_PIN"
       - name: Probe cargo-component
         run: cargo component --version
       - name: Build and package WASM extensions

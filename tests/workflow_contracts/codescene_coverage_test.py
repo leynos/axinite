@@ -51,6 +51,11 @@ def _steps(job: dict[str, object]) -> list[dict[str, object]]:
     return [step for step in steps if isinstance(step, dict)]
 
 
+def _collapse(value: object) -> str:
+    """Collapse a folded YAML condition to a single spaced line."""
+    return " ".join(str(value).split())
+
+
 def _find_step(job: dict[str, object], name: str) -> dict[str, object]:
     """Return a named coverage step."""
     matches = [step for step in _steps(job) if step.get("name") == name]
@@ -59,10 +64,17 @@ def _find_step(job: dict[str, object], name: str) -> dict[str, object]:
 
 
 def test_trigger_permissions_and_job_are_pr_only_and_isolated() -> None:
-    """The workflow runs one least-privilege job only for PRs to main."""
+    """The workflow runs one least-privilege job for PRs to main or a dispatch."""
     workflow = _load()
-    assert workflow.get("on") == {"pull_request": {"branches": ["main"]}}, (
-        "the CodeScene workflow must trigger only for pull requests to main"
+    # `workflow_dispatch` carries no inputs on purpose: the Actions UI and
+    # `gh workflow run --ref` already choose the ref, and a branch input would
+    # be a second, unvalidated way to say the same thing.
+    assert workflow.get("on") == {
+        "pull_request": {"branches": ["main"]},
+        "workflow_dispatch": None,
+    }, (
+        "the CodeScene workflow must trigger for pull requests to main and "
+        "for a manual warm-cache dispatch, and for nothing else"
     )
     assert workflow.get("permissions") == {"contents": "read"}, (
         "the CodeScene workflow must grant only read access to contents"
@@ -75,9 +87,10 @@ def test_trigger_permissions_and_job_are_pr_only_and_isolated() -> None:
     )
 
     job = _job(workflow)
-    assert job.get("if") == "github.event_name == 'pull_request'", (
-        "coverage-check must retain an explicit pull-request guard"
-    )
+    assert _collapse(job.get("if")) == (
+        "github.event_name == 'pull_request' || "
+        "github.event_name == 'workflow_dispatch'"
+    ), "coverage-check must run only for a pull request or a manual dispatch"
     assert job.get("runs-on") == "ubicloud-standard-8", (
         "coverage-check must use the standard Ubicloud runner"
     )
@@ -156,9 +169,14 @@ def test_setup_and_generator_match_proven_libsql_coverage() -> None:
     assert "--strategies crate-meta-data,quick-install" in component, (
         "cargo-component must be installed with fail-closed binstall strategies"
     )
-    assert "cargo-component@${{ env.CARGO_COMPONENT_PIN }}" in component, (
+    assert "cargo-component@$CARGO_COMPONENT_PIN" in component, (
         "cargo-component must carry a version pin; strategies alone stop a "
         "source build but not version drift"
+    )
+    assert "${{" not in component, (
+        "the installer must read the pin from the step environment; a "
+        "${{ }} expression is substituted into the script before the shell "
+        "sees it, which is the shape that makes a run: body injectable"
     )
     pin = (component_step.get("env") or {}).get("CARGO_COMPONENT_PIN")
     assert pin == "${{ env.CARGO_COMPONENT_VERSION }}", (

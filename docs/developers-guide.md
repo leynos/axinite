@@ -177,7 +177,12 @@ and makes the job's duration depend on an unrelated crate's build time.
   manifest for it, so it comes from `cargo-binstall` with
   `--strategies crate-meta-data,quick-install` and an explicit version. Those
   strategies exclude the `compile` strategy, so a missing prebuilt binary fails
-  the job rather than starting a build.
+  the job rather than starting a build. The version is declared once per job as
+  `CARGO_COMPONENT_VERSION`, aliased into the step as `CARGO_COMPONENT_PIN`,
+  and read by the script as the shell variable `$CARGO_COMPONENT_PIN`. Writing
+  `${{ env.CARGO_COMPONENT_PIN }}` inside the `run:` body would defeat the
+  point: Actions substitutes an expression into the script before the shell
+  sees it, which is the shape that makes a `run:` body injectable.
 - Where a workflow hands shell to a reusable workflow, `cargo binstall` must
   carry `--strategies crate-meta-data,quick-install` for the same reason.
 
@@ -208,9 +213,11 @@ Rules that follow from the table:
   clippy and WASM archives of 0.7 to 1.4 GB, all of them target trees written
   by `Swatinem/rust-cache`. That action has been removed; the registry and Git
   index stay, the build trees go.
-- **Restore on pull requests, save on `main` only.** A pull-request branch
-  cannot publish a competing write, and the explicit condition also removes
-  the wasted upload time.
+- **Restore on pull requests, save on a push to `main` only.** A pull-request
+  branch cannot publish a competing write, and the explicit condition also
+  removes the wasted upload time. The guard names the `push` event as well as
+  the ref, because `github.ref` reads `refs/heads/main` for a manual dispatch
+  against `main` too.
 - **One writer per key.** Only the `all-features` matrix leg saves, because it
   resolves the widest dependency graph; the other legs would race it for the
   same key.
@@ -221,6 +228,23 @@ Rules that follow from the table:
 
 Do not reintroduce a target cache as a stopgap. `sccache` owns compiler output
 instead; see below.
+
+#### Manual warm-cache runs
+
+Cache behaviour on `main` cannot be read from a pull request, so `test.yml`,
+`code_style.yml`, and `codescene-coverage.yml` each accept `workflow_dispatch`.
+The intended use is the runner-migration exit evidence: merge, let the merge
+push write the caches, then dispatch the same workflow against `main` twice in
+sequence and compare queue time, wall time, and the sccache hit rate.
+
+A dispatch is a reader. No save step can run, because every save names the
+`push` event; the CodeScene upload stays gated on `pull_request` so a manual
+run reports coverage to the log only. Otherwise a dispatch behaves like a push:
+the jobs that skip on staging-base pull requests all run, including the
+GitHub-hosted Windows lanes, so a manual run is a full run and is billed like
+one. The trigger takes no inputs, because `gh workflow run --ref` and the
+Actions UI already choose the ref.
+`tests/workflow_contracts/warm_dispatch_test.py` asserts both halves.
 
 ### sccache
 

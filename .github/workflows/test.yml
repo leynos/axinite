@@ -2,6 +2,10 @@
 name: Run Tests
 "on":
   workflow_call:
+  # Manual runs exist to re-measure a warm cache on `main`. They restore
+  # every cache and save none: each save step is gated on a `push` to
+  # `main`, so a dispatch cannot overwrite what the merge commit wrote.
+  workflow_dispatch:
   pull_request:
     branches:
       - main
@@ -27,6 +31,7 @@ jobs:
     # Dependabot merges instead.
     if: >
       (github.event_name == 'push' ||
+      github.event_name == 'workflow_dispatch' ||
       (github.event_name == 'pull_request' && github.base_ref != 'staging'))
       && github.actor != 'dependabot[bot]'
     # API-bound: cargo-audit reads the lockfiles and the RustSec advisory
@@ -174,7 +179,7 @@ jobs:
         run: >-
           cargo binstall --no-confirm
           --strategies crate-meta-data,quick-install
-          "cargo-component@${{ env.CARGO_COMPONENT_PIN }}"
+          "cargo-component@$CARGO_COMPONENT_PIN"
       - name: Probe Cargo tooling
         run: |
           set -euo pipefail
@@ -226,6 +231,7 @@ jobs:
     name: Telegram Channel Tests
     if: >
       github.event_name == 'push' ||
+      github.event_name == 'workflow_dispatch' ||
       (github.event_name == 'pull_request' && github.base_ref != 'staging')
     runs-on: ubicloud-standard-8
     timeout-minutes: 30
@@ -330,6 +336,7 @@ jobs:
     name: Windows Build (${{ matrix.name }})
     if: >
       github.event_name == 'push' ||
+      github.event_name == 'workflow_dispatch' ||
       (github.event_name == 'pull_request' && github.base_ref != 'staging')
     # Windows lanes stay on GitHub-hosted runners: Ubicloud offers Linux only.
     runs-on: windows-latest
@@ -384,6 +391,7 @@ jobs:
     name: WASM WIT Compatibility
     if: >
       github.event_name == 'push' ||
+      github.event_name == 'workflow_dispatch' ||
       (github.event_name == 'pull_request' && github.base_ref != 'staging')
     runs-on: ubicloud-standard-8
     timeout-minutes: 45
@@ -477,7 +485,7 @@ jobs:
         run: >-
           cargo binstall --no-confirm
           --strategies crate-meta-data,quick-install
-          "cargo-component@${{ env.CARGO_COMPONENT_PIN }}"
+          "cargo-component@$CARGO_COMPONENT_PIN"
       - name: Probe cargo-component
         run: cargo component --version
       - name: Build all WASM extensions against current WIT
@@ -505,6 +513,7 @@ jobs:
     name: Docker Build
     if: >
       github.event_name == 'push' ||
+      github.event_name == 'workflow_dispatch' ||
       (github.event_name == 'pull_request' && github.base_ref != 'staging')
     # Stays on its current label. Moving a privileged, daemon-dependent job
     # needs a Docker daemon and privilege preflight first; see the

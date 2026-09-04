@@ -2,6 +2,11 @@
 name: Code Style
 "on":
   pull_request:
+  # Manual runs exist to re-measure a warm cache on `main`. No
+  # `actions/cache` save step is keyed here, so a dispatch cannot take
+  # ownership of a key from the job that writes it on push. sccache's own
+  # store is content-addressed and has no single writer.
+  workflow_dispatch:
 
 jobs:
   format:
@@ -191,7 +196,7 @@ jobs:
           } >> "${GITHUB_STEP_SUMMARY}"
   clippy-windows:
     name: Clippy Windows (${{ matrix.name }})
-    if: github.base_ref == 'main'
+    if: github.base_ref == 'main' || github.event_name == 'workflow_dispatch'
     # Windows lanes stay on GitHub-hosted runners: Ubicloud offers Linux only.
     runs-on: windows-latest
     timeout-minutes: 45
