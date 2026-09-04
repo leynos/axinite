@@ -29,7 +29,7 @@ jobs:
       # archive. This replaces the previous `cargo install merman-cli`
       # source build and its bespoke ~/.cargo/bin/merman-cli cache.
       - name: Install Nixie and Merman CLI
-        uses: leynos/shared-actions/.github/actions/install-nixie@f6d4d5f549655c118f86f371b8d55c200d3efa50
+        uses: leynos/shared-actions/.github/actions/install-nixie@c6125f19593668cbfefd65a59c08cb7aefe90d93
         with:
           nixie-version: '1.1.0'
           merman-version: '0.7.0'
@@ -159,7 +159,7 @@ jobs:
       # attempt with a `cargo install` source-build fallback.
       - name: Install Whitaker
         if: matrix.whitaker
-        uses: leynos/shared-actions/.github/actions/install-whitaker@f6d4d5f549655c118f86f371b8d55c200d3efa50
+        uses: leynos/shared-actions/.github/actions/install-whitaker@c6125f19593668cbfefd65a59c08cb7aefe90d93
         with:
           installer-version: '0.2.7'
           cache-provider: github

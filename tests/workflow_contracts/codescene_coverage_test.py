@@ -165,6 +165,15 @@ def test_setup_and_generator_match_proven_libsql_coverage() -> None:
         "the pin must come from the job's CARGO_COMPONENT_VERSION, so one "
         "edit moves every installer in the workflow"
     )
+    # The alias only means something if the job actually defines the version.
+    job_env = job.get("env")
+    assert isinstance(job_env, dict), "coverage-check must declare a job env"
+    declared_version = job_env.get("CARGO_COMPONENT_VERSION")
+    assert isinstance(declared_version, str) and declared_version.strip(), (
+        "coverage-check must define a non-empty CARGO_COMPONENT_VERSION; "
+        "without it the step-local alias resolves to nothing and the "
+        "installer silently loses its version pin"
+    )
     assert (
         _find_step(job, "Build GitHub WASM tool (for metadata/schema tests)").get("run")
         == "make build-github-tool-wasm"

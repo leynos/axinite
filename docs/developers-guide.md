@@ -245,7 +245,15 @@ still succeeds; it just recompiles everything.
    pinned `actions/github-script` step re-exports them into `GITHUB_ENV` and
    clears `ACTIONS_CACHE_SERVICE_V2`, which keeps sccache on the v1 protocol
    the proxy serves. Exporting `ACTIONS_RESULTS_URL` instead does not work.
-3. **The evidence.** `sccache --zero-stats` runs before the build and
+3. **The evidence.** Confirm the backend from the statistics header, which
+   must read `Cache location  ghac, ...` and not `Local disk`. On Ubicloud the
+   runner re-injects GitHub's v2 cache settings into every *action* step, so a
+   server started inside an action binds GitHub's service and its writes fail
+   silently. Axinite avoids that by construction: it does not use a shared
+   `setup-rust` action, and the server starts from a `run:` step after the
+   credentials export. Keep it that way.
+
+   `sccache --zero-stats` runs before the build and
    `sccache --show-stats` reports afterwards with `if: always()`, so a failing
    run still reports. The statistics go to the log as well as the job summary,
    because the summary is not readable through the REST API and the log copy is

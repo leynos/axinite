@@ -71,6 +71,40 @@ def test_ubicloud_jobs_bound_their_runtime(job: Job) -> None:
     assert 0 < timeout <= 60, f"{job} declares an implausible timeout: {timeout}"
 
 
+@pytest.mark.parametrize(
+    ("declared", "expected"),
+    [
+        ("ubicloud-standard-8", ("ubicloud-standard-8",)),
+        (
+            ["self-hosted", "ubicloud-standard-8"],
+            ("self-hosted", "ubicloud-standard-8"),
+        ),
+        (
+            {"group": "linux", "labels": ["ubicloud-standard-8"]},
+            ("ubicloud-standard-8",),
+        ),
+        # The mapping's `labels` key takes a bare string as readily as a list.
+        ({"group": "linux", "labels": "ubicloud-standard-8"}, ("ubicloud-standard-8",)),
+        ("${{ matrix.runner }}", ("${{ matrix.runner }}",)),
+        (None, ()),
+    ],
+    ids=["scalar", "list", "mapping-list", "mapping-scalar", "expression", "absent"],
+)
+def test_every_runs_on_form_is_read(
+    declared: object, expected: tuple[str, ...]
+) -> None:
+    """Read all three shapes `runs-on` accepts.
+
+    A job whose label the parser cannot see is excluded from the placement,
+    timeout, actionlint, and sccache contracts at once, and every test still
+    passes. Silent exclusion is the failure mode worth pinning.
+    """
+    body: dict[str, object] = {} if declared is None else {"runs-on": declared}
+    job = Job("fixture.yml", "fixture", body)
+    assert job.runner_labels == expected
+    assert job.uses_ubicloud == any(label.startswith("ubicloud-") for label in expected)
+
+
 def test_the_build_classification_discriminates() -> None:
     """Guard against a predicate so loose that it accepts everything.
 

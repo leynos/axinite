@@ -167,10 +167,19 @@ def test_a_missing_cache_endpoint_is_reported(job: Job) -> None:
         f"{job} must warn when no cache endpoint is available"
     )
     assert "process.env.ACTIONS_RUNTIME_TOKEN" in script
-    # The token must never be printed, only its presence.
-    assert "core.info(`sccache runtime token present:" in script, (
-        f"{job} must report only whether the token is present, never its value"
+    # The token must never be printed, only whether one was found. A prefix
+    # check is not enough: `token present: ${process.env.ACTIONS_RUNTIME_TOKEN}`
+    # would satisfy it while printing the secret into the log.
+    assert "sccache runtime token present: ${Boolean(runtimeToken)}" in script, (
+        f"{job} must report the token as a boolean, never as its value"
     )
+    for call in re.findall(r"core\.(?:info|warning|error|notice)\([^;]*", script):
+        assert "ACTIONS_RUNTIME_TOKEN" not in call, (
+            f"{job} interpolates the raw runtime token into a log call: {call[:80]!r}"
+        )
+        assert "runtimeToken}" not in call.replace("Boolean(runtimeToken)}", ""), (
+            f"{job} interpolates the runtime token into a log call"
+        )
 
 
 def test_github_hosted_jobs_are_left_alone() -> None:

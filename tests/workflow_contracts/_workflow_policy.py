@@ -113,10 +113,13 @@ class Job:
             caller or computes its label from a matrix expression.
         """
         declared = self.body.get("runs-on")
-        if isinstance(declared, str):
-            return (declared,)
+        # Unwrap the mapping form first. Its `labels` key takes either a list
+        # or a single string, so checking for a scalar before unwrapping would
+        # miss `runs-on: {group: ..., labels: ubicloud-standard-8}` entirely.
         if isinstance(declared, dict):
             declared = declared.get("labels")
+        if isinstance(declared, str):
+            return (declared,)
         if isinstance(declared, list):
             return tuple(label for label in declared if isinstance(label, str))
         return ()
