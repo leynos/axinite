@@ -243,9 +243,10 @@ A dispatch is a reader. No save step can run, because every save names the
 `push` event; the CodeScene upload stays gated on `pull_request` so a manual
 run reports coverage to the log only. Otherwise a dispatch behaves like a push:
 the jobs that skip on staging-base pull requests all run, including the
-GitHub-hosted Windows lanes, so a manual run is a full run and is billed like
-one. The trigger takes no inputs, because `gh workflow run --ref` and the
-Actions UI already choose the ref.
+GitHub-hosted Windows lanes, so a manual run is a full run. Its Ubicloud jobs
+are billed by the minute like any other; the GitHub-hosted lanes are not,
+because this repository is public. The trigger takes no inputs, because
+`gh workflow run --ref` and the Actions UI already choose the ref.
 `tests/workflow_contracts/warm_dispatch_test.py` asserts both halves.
 
 ### sccache
@@ -272,12 +273,16 @@ still succeeds; it just recompiles everything.
    clears `ACTIONS_CACHE_SERVICE_V2`, which keeps sccache on the v1 protocol
    the proxy serves. Exporting `ACTIONS_RESULTS_URL` instead does not work.
 3. **The evidence.** Confirm the backend from the statistics header, which
-   must read `Cache location  ghac, ...` and not `Local disk`. On Ubicloud the
-   runner re-injects GitHub's v2 cache settings into every *action* step, so a
-   server started inside an action binds GitHub's service and its writes fail
-   silently. Axinite avoids that by construction: it does not use a shared
-   `setup-rust` action, and the server starts from a `run:` step after the
-   credentials export. Keep it that way.
+   must read `Cache location  ghac, ...` and not `Local disk`. The failure
+   mode this ordering avoids has been measured elsewhere in the estate: the
+   `mozilla/sccache-action` used by the shared `setup-rust` action ends by
+   writing `ACTIONS_CACHE_SERVICE_V2=on`, GitHub's own results URL, and
+   GitHub's token to `GITHUB_ENV`, which clobbers the credentials export for
+   every step after it. The sccache server then binds GitHub's v2 service
+   instead of Ubicloud's proxy and its writes fail silently. `run:` steps do
+   see the export; the action overwriting it afterwards is the problem.
+   Axinite avoids this by construction: it never runs that action, and the
+   server starts from a `run:` step after the export. Keep it that way.
 
    `sccache --zero-stats` runs before the build and
    `sccache --show-stats` reports afterwards with `if: always()`, so a failing
