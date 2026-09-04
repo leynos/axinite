@@ -133,6 +133,16 @@ it compiles or executes the product. Everything else is GitHub-hosted. Windows
 lanes stay on GitHub-hosted runners because Ubicloud publishes Linux images
 only.
 
+`code_style.yml` `format` is the one deliberate exception, and the contract
+encodes it by counting `cargo fmt` as qualifying. The job compiles nothing:
+`cargo fmt`, `make spelling`, `make nixie`, and `make test-workflow-contracts`
+are all analysis. It keeps its label because it needs the Rust toolchain and
+sits on the developer feedback path, where it now finishes in about 47 seconds.
+Treat that as a placement to revisit when the migration wave right-sizes the
+labels, not as a precedent: no other non-compiling job qualifies, and `format`
+is excluded from the sccache wiring for exactly the reason it is the exception
+here.
+
 `tests/workflow_contracts/runner_placement_test.py` enforces the rule against
 an allow-list of the jobs permitted on Ubicloud. Adding a job to that
 allow-list is a deliberate decision that belongs in the same pull request as

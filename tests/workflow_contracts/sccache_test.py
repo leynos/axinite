@@ -38,7 +38,10 @@ REPORT_STEP = "Report sccache statistics"
 COMPILING_COMMANDS: tuple[re.Pattern[str], ...] = tuple(
     re.compile(pattern)
     for pattern in (
-        r"\bcargo\s+(?:build|check|clippy|test|nextest|llvm-cov)\b",
+        # The optional +toolchain segment matters: `cargo +nightly test`
+        # invokes rustc just as surely, and a selector that missed it would
+        # exempt that job from every assertion below.
+        r"\bcargo\s+(?:\+\S+\s+)?(?:build|check|clippy|test|nextest|llvm-cov)\b",
         r"\bmake\s+(?:test|lint-whitaker)\b(?!-)",
         r"\./scripts/build-wasm-extensions\.sh",
     )
@@ -101,6 +104,10 @@ def test_the_cache_endpoint_is_exported_before_any_build(job: Job) -> None:
         assert required in names, f"{job} is missing the {required!r} step"
     assert names.index(EXPORT_STEP) < names.index(INSTALL_STEP), (
         f"{job} installs sccache before exporting the cache endpoint"
+    )
+    assert names.index(INSTALL_STEP) < names.index(ZERO_STEP), (
+        f"{job} resets sccache statistics before sccache is installed; the "
+        "step names alone would still look correct"
     )
     assert names.index(ZERO_STEP) < names.index(REPORT_STEP), (
         f"{job} reports statistics before resetting them"

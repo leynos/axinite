@@ -55,8 +55,8 @@ def test_only_build_and_test_jobs_use_ubicloud(job: Job) -> None:
     names, so a job that stops building stops qualifying at the same moment.
     """
     assert builds_or_tests(job), (
-        f"{job} runs on {job.runs_on} but no step compiles or executes the "
-        "product. Move it to ubuntu-latest. If it genuinely does build or "
+        f"{job} runs on {job.runner_summary} but no step compiles or executes "
+        "the product. Move it to ubuntu-latest. If it genuinely does build or "
         "test, add the command it runs to BUILD_OR_TEST_PATTERNS."
     )
 
@@ -66,7 +66,7 @@ def test_ubicloud_jobs_bound_their_runtime(job: Job) -> None:
     """Cap paid runner time so a hung job cannot bill indefinitely."""
     timeout = job.body.get("timeout-minutes")
     assert isinstance(timeout, int), (
-        f"{job} runs on {job.runs_on} and must declare timeout-minutes"
+        f"{job} runs on {job.runner_summary} and must declare timeout-minutes"
     )
     assert 0 < timeout <= 60, f"{job} declares an implausible timeout: {timeout}"
 
@@ -100,9 +100,12 @@ def test_windows_jobs_stay_github_hosted() -> None:
     windows_jobs = [job for job in ALL_JOBS if "windows" in job.job_id]
     assert windows_jobs, "the estate must still declare its Windows lanes"
     for job in windows_jobs:
-        assert (job.runs_on or "").startswith("windows-"), (
-            f"{job} is a Windows lane but requests {job.runs_on!r}; Ubicloud "
-            "offers Linux runners only"
+        assert (
+            all(label.startswith("windows-") for label in job.runner_labels)
+            and job.runner_labels
+        ), (
+            f"{job} is a Windows lane but requests {job.runner_summary}; "
+            "Ubicloud offers Linux runners only"
         )
 
 
@@ -144,7 +147,7 @@ def test_actionlint_registers_every_referenced_ubicloud_label() -> None:
     """Keep the actionlint label list exactly in step with the workflows."""
     config = yaml.safe_load(ACTIONLINT_CONFIG.read_text(encoding="utf-8"))
     registered = set(config["self-hosted-runner"]["labels"])
-    referenced = {job.runs_on for job in ALL_JOBS if job.uses_ubicloud}
+    referenced = {label for job in ALL_JOBS for label in job.ubicloud_labels}
     assert registered == referenced, (
         "every Ubicloud label a workflow references must be registered with "
         "actionlint, and no unused label may linger to mask a typo"

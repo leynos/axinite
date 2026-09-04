@@ -99,17 +99,52 @@ class Job:
     body: dict[str, object]
 
     @property
+    def runner_labels(self) -> tuple[str, ...]:
+        """Return every runner label the job requests.
+
+        `runs-on` accepts a single label, a list of labels, or a mapping with
+        a `labels` key. Reading only the scalar form would let a job written
+        in either of the other two forms escape every placement contract.
+
+        Returns
+        -------
+        tuple of str
+            The declared labels, empty when the job is a reusable-workflow
+            caller or computes its label from a matrix expression.
+        """
+        declared = self.body.get("runs-on")
+        if isinstance(declared, str):
+            return (declared,)
+        if isinstance(declared, dict):
+            declared = declared.get("labels")
+        if isinstance(declared, list):
+            return tuple(label for label in declared if isinstance(label, str))
+        return ()
+
+    @property
     def runs_on(self) -> str | None:
-        """Return the job's runner label when it declares one directly.
+        """Return the job's runner label when it declares exactly one.
 
         Returns
         -------
         str or None
-            The literal `runs-on` label, or ``None`` when the job is a
-            reusable-workflow caller or computes its label from a matrix.
+            The single literal label, or ``None`` when the job declares none,
+            declares several, or computes one from a matrix.
         """
-        label = self.body.get("runs-on")
-        return label if isinstance(label, str) else None
+        labels = self.runner_labels
+        return labels[0] if len(labels) == 1 else None
+
+    @property
+    def runner_summary(self) -> str:
+        """Return the job's labels for an assertion message.
+
+        Returns
+        -------
+        str
+            The labels joined by commas, or ``<none>`` when the job declares
+            none directly.
+        """
+        return ", ".join(self.runner_labels) or "<none>"
 
     @property
     def uses_ubicloud(self) -> bool:
@@ -118,10 +153,27 @@ class Job:
         Returns
         -------
         bool
-            True for every `ubicloud-*` label, not only the one this
-            repository uses today.
+            True when any declared label carries the Ubicloud prefix, not only
+            the one label this repository uses today.
         """
-        return (self.runs_on or "").startswith(UBICLOUD_LABEL_PREFIX)
+        return any(
+            label.startswith(UBICLOUD_LABEL_PREFIX) for label in self.runner_labels
+        )
+
+    @property
+    def ubicloud_labels(self) -> tuple[str, ...]:
+        """Return the job's Ubicloud labels.
+
+        Returns
+        -------
+        tuple of str
+            Every declared label carrying the Ubicloud prefix.
+        """
+        return tuple(
+            label
+            for label in self.runner_labels
+            if label.startswith(UBICLOUD_LABEL_PREFIX)
+        )
 
     @property
     def steps(self) -> list[dict[str, object]]:

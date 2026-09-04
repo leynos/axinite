@@ -26,7 +26,7 @@ def write_lockfile(
         root_dependencies += f' "{unrelated_dependency}",'
 
     path.write_text(
-        f'''\
+        f"""\
 version = 4
 
 [[package]]
@@ -52,7 +52,7 @@ dependencies = ["h2"]
 name = "h2"
 version = "0.3.27"
 {additional_packages}
-'''
+"""
     )
 
 
@@ -78,13 +78,13 @@ def test_audit_ignores_allow_locks_without_the_ignored_packages(tmp_path: Path) 
     """Allow manifests whose lockfile contains neither path-scoped advisory."""
     lockfile = tmp_path / "Cargo.lock"
     lockfile.write_text(
-        '''\
+        """\
 version = 4
 
 [[package]]
 name = "extension"
 version = "1.0.0"
-'''
+"""
     )
 
     assert verify(lockfile).returncode == 0
@@ -112,7 +112,7 @@ def test_audit_ignores_accept_cyclic_paths_to_expected_ancestor(
     lockfile = tmp_path / "Cargo.lock"
     write_lockfile(
         lockfile,
-        additional_packages='''\
+        additional_packages="""\
 
 [[package]]
 name = "cycle_a"
@@ -128,7 +128,7 @@ dependencies = ["cycle_a"]
 name = "rust_decimal"
 version = "1.43.0"
 dependencies = ["cycle_a"]
-''',
+""",
     )
 
     assert verify(lockfile).returncode == 0
@@ -141,13 +141,13 @@ def test_audit_ignores_reject_reverse_path_without_expected_ancestor(
     lockfile = tmp_path / "Cargo.lock"
     write_lockfile(
         lockfile,
-        additional_packages='''\
+        additional_packages="""\
 
 [[package]]
 name = "orphan"
 version = "1.0.0"
 dependencies = ["rkyv"]
-''',
+""",
     )
 
     result = verify(lockfile)

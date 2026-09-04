@@ -151,9 +151,19 @@ def test_setup_and_generator_match_proven_libsql_coverage() -> None:
         )
     # cargo-component has no install-action manifest, so it comes from
     # cargo-binstall with fail-closed strategies and a pinned version.
-    component = str(_find_step(job, "Install cargo-component").get("run", ""))
+    component_step = _find_step(job, "Install cargo-component")
+    component = str(component_step.get("run", ""))
     assert "--strategies crate-meta-data,quick-install" in component, (
         "cargo-component must be installed with fail-closed binstall strategies"
+    )
+    assert "cargo-component@${{ env.CARGO_COMPONENT_PIN }}" in component, (
+        "cargo-component must carry a version pin; strategies alone stop a "
+        "source build but not version drift"
+    )
+    pin = (component_step.get("env") or {}).get("CARGO_COMPONENT_PIN")
+    assert pin == "${{ env.CARGO_COMPONENT_VERSION }}", (
+        "the pin must come from the job's CARGO_COMPONENT_VERSION, so one "
+        "edit moves every installer in the workflow"
     )
     assert (
         _find_step(job, "Build GitHub WASM tool (for metadata/schema tests)").get("run")
