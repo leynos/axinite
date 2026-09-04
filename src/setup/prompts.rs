@@ -113,11 +113,11 @@ pub fn confirm(prompt: &str, default: bool) -> io::Result<bool> {
 }
 
 pub fn print_header(text: &str) {
-    render::print_header(text);
+    print!("{}", render::format_header(text));
 }
 
 pub fn print_step(current: usize, total: usize, name: &str) {
-    render::print_step(current, total, name);
+    print!("{}", render::format_step(current, total, name));
 }
 
 /// Print a success message with green checkmark.
@@ -126,7 +126,7 @@ pub fn print_success(message: &str) {
     let _ = execute!(stdout, SetForegroundColor(Color::Green));
     print!("✓");
     let _ = execute!(stdout, ResetColor);
-    println!(" {}", message);
+    print!("{}", format_status_suffix(message));
 }
 
 /// Print an error message with red X.
@@ -135,7 +135,7 @@ pub fn print_error(message: &str) {
     let _ = execute!(stderr, SetForegroundColor(Color::Red));
     eprint!("✗");
     let _ = execute!(stderr, ResetColor);
-    eprintln!(" {}", message);
+    eprint!("{}", format_status_suffix(message));
 }
 
 /// Print a warning message with yellow exclamation.
@@ -144,7 +144,7 @@ pub fn print_warning(message: &str) {
     let _ = execute!(stdout, SetForegroundColor(Color::Yellow));
     print!("!");
     let _ = execute!(stdout, ResetColor);
-    println!(" {}", message);
+    print!("{}", format_status_suffix(message));
 }
 
 /// Print an info message with blue info icon.
@@ -153,7 +153,12 @@ pub fn print_info(message: &str) {
     let _ = execute!(stdout, SetForegroundColor(Color::Blue));
     print!("ℹ");
     let _ = execute!(stdout, ResetColor);
-    println!(" {}", message);
+    print!("{}", format_status_suffix(message));
+}
+
+/// Formats a stable message suffix separately from terminal styling for snapshots.
+fn format_status_suffix(message: &str) -> String {
+    format!(" {message}\n")
 }
 
 /// Read a simple line of input with a prompt.

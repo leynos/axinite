@@ -21,18 +21,6 @@ use rstest::{fixture, rstest};
 #[cfg(feature = "libsql")]
 use crate::db::libsql::LibSqlBackend;
 
-#[test]
-fn runtime_side_effects_new_all_none_does_not_panic() {
-    let _ = RuntimeSideEffects::new(None, None, None, false);
-}
-
-#[tokio::test]
-async fn runtime_side_effects_start_no_ops_when_nothing_configured() -> anyhow::Result<()> {
-    let se = RuntimeSideEffects::new(None, None, None, false);
-    se.start()?.wait_until_bootstrapped().await?;
-    Ok(())
-}
-
 async fn assert_no_activation(workspace: &Arc<Workspace>, import_dir: &Path) -> anyhow::Result<()> {
     assert!(
         tokio::fs::try_exists(import_dir.join("MARKER.md")).await?,

@@ -209,6 +209,28 @@ falling back to `cargo` on `$PATH`. `NEXTEST` is derived as `$(CARGO) nextest`
 so both variables consistently use the same Cargo binary. Override them by
 setting `CARGO` or `NEXTEST` in the environment before invoking `make`.
 
+### Whitaker linting
+
+`make lint` runs both `make lint-clippy` and `make lint-whitaker`. The latter
+uses the Whitaker Dylint suite, so install the pinned
+`whitaker-installer` version before running the complete lint gate. When
+`cargo-binstall` is available, use:
+
+```bash
+cargo binstall --no-confirm --locked whitaker-installer@0.2.7
+```
+
+Otherwise, install the same release from crates.io:
+
+```bash
+cargo install --locked whitaker-installer --version 0.2.7
+```
+
+Run `whitaker-installer` once after installation to provision the suite, then
+run `make lint` or `make lint-whitaker`. CI pins `whitaker-installer` to
+version `0.2.7` so the lint suite and its tool behaviour remain reproducible
+across workflow runs.
+
 ## 10. Integration test fixture wiring
 
 Integration test harnesses should load fixture-only helpers at the harness

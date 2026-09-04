@@ -6,31 +6,45 @@ use crossterm::event::{KeyCode, KeyModifiers};
 use proptest::prelude::*;
 use rstest::rstest;
 
-use super::{SecretInputEffect, apply_secret_input_effect, apply_secret_key_event};
+use super::{
+    SecretInputEffect, apply_secret_input_effect, apply_secret_key_event, format_status_suffix,
+    render,
+};
 
 #[test]
-fn test_header_length_calculation() {
-    // Just verify it doesn't panic with various inputs
-    super::print_header("Test");
-    super::print_header("A longer header text");
-    super::print_header("");
+fn test_format_header_snapshot() {
+    insta::assert_snapshot!(render::format_header("Axinite Setup"), @"
+
+╭─────────────────╮
+│  Axinite Setup  │
+╰─────────────────╯
+
+
+");
 }
 
 #[test]
-fn test_step_indicator() {
-    super::print_step(1, 3, "Test Step");
-    super::print_step(3, 3, "Final Step");
+fn test_format_step_snapshot() {
+    insta::assert_snapshot!(render::format_step(2, 9, "Model Selection"), @"
+Step 2/9: Model Selection
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+");
 }
 
 #[test]
-fn test_print_functions_do_not_panic() {
-    super::print_success("operation completed");
-    super::print_error("something went wrong");
-    super::print_info("here is some information");
-    // Also test with empty strings
-    super::print_success("");
-    super::print_error("");
-    super::print_info("");
+fn test_format_success_snapshot() {
+    insta::assert_snapshot!(format!("✓{}", format_status_suffix("Configured")), @"✓ Configured\n");
+}
+
+#[test]
+fn test_format_error_snapshot() {
+    insta::assert_snapshot!(format!("✗{}", format_status_suffix("Connection failed")), @"✗ Connection failed\n");
+}
+
+#[test]
+fn test_format_info_snapshot() {
+    insta::assert_snapshot!(format!("ℹ{}", format_status_suffix("Using defaults")), @"ℹ Using defaults\n");
 }
 
 #[rstest]
