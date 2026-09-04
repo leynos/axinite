@@ -14,11 +14,18 @@ jobs:
     # Build/test class: compiles nothing heavy but runs the repository's
     # formatter, spelling, Mermaid, and workflow-contract gates on the
     # developer feedback path.
-    runs-on: ubicloud-standard-8
-    timeout-minutes: 20
+    runs-on: ubicloud-standard-2
+    timeout-minutes: 30
     steps:
       - name: Checkout repository
         uses: actions/checkout@v6
+      # Right-sizing needs the peak memory and the low-water disk mark, and
+      # neither is visible in a job's own output. The sampler runs alongside
+      # the build and reports both at the end, with `if: always()` so a job
+      # that fails on resources still says so.
+      - name: Start resource sampler
+        run: ./scripts/ci-resource-sampler.sh start
+
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
         with:
@@ -54,12 +61,15 @@ jobs:
         run: make nixie
       - name: Workflow contract tests
         run: make test-workflow-contracts
+      - name: Report resource peaks
+        if: always()
+        run: ./scripts/ci-resource-sampler.sh report
 
   clippy:
     name: Clippy (${{ matrix.name }})
     # Build/test class: compiles the workspace under three feature shapes.
-    runs-on: ubicloud-standard-8
-    timeout-minutes: 45
+    runs-on: ubicloud-standard-4
+    timeout-minutes: 75
     env:
       # sccache is the sole owner of compiler output: no cache step archives a
       # target tree. RUSTC_WRAPPER is what actually engages it; installing
@@ -88,6 +98,13 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v6
+      # Right-sizing needs the peak memory and the low-water disk mark, and
+      # neither is visible in a job's own output. The sampler runs alongside
+      # the build and reports both at the end, with `if: always()` so a job
+      # that fails on resources still says so.
+      - name: Start resource sampler
+        run: ./scripts/ci-resource-sampler.sh start
+
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
         with:
@@ -194,6 +211,9 @@ jobs:
             printf '%s\n' "$stats"
             printf '```\n'
           } >> "${GITHUB_STEP_SUMMARY}"
+      - name: Report resource peaks
+        if: always()
+        run: ./scripts/ci-resource-sampler.sh report
   clippy-windows:
     name: Clippy Windows (${{ matrix.name }})
     if: github.base_ref == 'main' || github.event_name == 'workflow_dispatch'

@@ -164,6 +164,52 @@ privilege preflight before it moves anywhere.
 bump. Its build matrix keeps the cache wiring dist emits, runs only on a tag
 push, and never uses an Ubicloud runner, so it sits outside these contracts.
 
+
+#### Runner shape, and the sampler that justifies it
+
+Placement decides whether a job runs on a paid runner. Shape decides how much
+that minute costs, and the two are separate decisions. Every Linux job used to
+sit on `ubicloud-standard-8`, so the formatting gate, which compiles nothing,
+cost the same per minute as the test matrix.
+
+Jobs are sized individually against measurement:
+
+| Shape | Carries |
+| --- | --- |
+| `ubicloud-standard-2` | Jobs that compile little or nothing |
+| `ubicloud-standard-4` | Jobs that compile the workspace |
+
+`tests/workflow_contracts/runner_sizing_test.py` holds the assignment as an
+explicit table, job by job, with the reason and the wall time it was decided
+against. A structural rule cannot make this call: `cargo fmt` needs the
+toolchain but compiles nothing, and `telegram-tests` compiles a small
+out-of-workspace crate in 33 seconds, so any predicate keyed on "does it invoke
+the compiler" sizes both wrongly. Changing a shape means changing a reviewed
+line in the same pull request, and the contract fails in both directions if the
+table and the workflows disagree.
+
+Every job on a paid runner carries `scripts/ci-resource-sampler.sh`, started
+after the checkout and reported with `if: always()`. It records the peak memory
+in use and the low-water free disk mark, prints both to the log and writes them
+to the job summary. Two rules make it necessary rather than decorative:
+
+- **Peaks belong to the shape, not the workload.** Cargo scales parallelism with
+  the processor count, so a peak measured on one shape does not transfer to
+  another. Measure on the shape you intend to use.
+- **The cold writer sets the floor.** A shape that fits the warm run can still
+  kill the one run that has to succeed to create the cache generation, because
+  the cold run compiles everything. Quote both numbers when resizing.
+
+Reporting with `if: always()` is the point rather than a nicety: a job killed by
+its shape is exactly the job whose peak decides the next move, and a success-only
+report loses it. Timeouts are raised before a shape shrinks, never after; a
+smaller shape compiles for longer, and the budget is a hang detector sized at
+roughly three times the measured cold cost, not a target.
+
+Do not run the sampler on a job whose output is a timing. It wakes every ten
+seconds and shells out, which is negligible against a compile and is
+interference in a benchmark.
+
 #### Scheduled work never uses a paid runner
 
 A developer waiting on a gate is the only thing an Ubicloud runner is bought

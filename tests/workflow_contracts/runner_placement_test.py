@@ -95,7 +95,11 @@ def test_every_job_bounds_its_runtime(job: Job) -> None:
     assert isinstance(timeout, int), (
         f"{job} runs on {job.runner_summary} and must declare timeout-minutes"
     )
-    assert 0 < timeout <= 60, f"{job} declares an implausible timeout: {timeout}"
+    # The budget is a hang detector, not a target. The recipe sizes it at
+    # roughly three times the measured cold cost on the shape in use, and a
+    # smaller shape compiles for longer, so the ceiling has to leave room for
+    # that. Anything beyond two hours is a job nobody is waiting on.
+    assert 0 < timeout <= 120, f"{job} declares an implausible timeout: {timeout}"
 
 
 @pytest.mark.parametrize(

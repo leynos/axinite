@@ -17,8 +17,8 @@ jobs:
     if: >
       github.event_name == 'pull_request' ||
       github.event_name == 'workflow_dispatch'
-    runs-on: ubicloud-standard-8
-    timeout-minutes: 60
+    runs-on: ubicloud-standard-4
+    timeout-minutes: 90
     env:
       # sccache is the sole owner of compiler output: no cache step archives a
       # target tree. RUSTC_WRAPPER is what actually engages it; installing
@@ -48,6 +48,13 @@ jobs:
       - uses: actions/checkout@v6
         with:
           fetch-depth: 0
+
+      # Right-sizing needs the peak memory and the low-water disk mark, and
+      # neither is visible in a job's own output. The sampler runs alongside
+      # the build and reports both at the end, with `if: always()` so a job
+      # that fails on resources still says so.
+      - name: Start resource sampler
+        run: ./scripts/ci-resource-sampler.sh start
 
       - uses: dtolnay/rust-toolchain@stable
         with:
@@ -192,3 +199,6 @@ jobs:
             printf '%s\n' "$stats"
             printf '```\n'
           } >> "${GITHUB_STEP_SUMMARY}"
+      - name: Report resource peaks
+        if: always()
+        run: ./scripts/ci-resource-sampler.sh report
