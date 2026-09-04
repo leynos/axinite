@@ -230,16 +230,19 @@ still succeeds; it just recompiles everything.
    sccache cannot cache incremental compilation.
 2. **The endpoint.** Ubicloud's transparent cache proxy serves the Actions
    cache from a local address, and the runner holds that address in
-   `ACTIONS_CACHE_URL` and `ACTIONS_RUNTIME_TOKEN`. A `run:` step does not
-   inherit those, so a pinned `actions/github-script` step re-exports them into
-   `GITHUB_ENV` and clears `ACTIONS_CACHE_SERVICE_V2`, which keeps sccache on
-   the v1 protocol the proxy serves. Exporting `ACTIONS_RESULTS_URL` instead
-   does not work.
+   `ACTIONS_CACHE_URL`, or `CUSTOM_ACTIONS_CACHE_URL` on some images, together
+   with `ACTIONS_RUNTIME_TOKEN`. A `run:` step does not inherit those, so a
+   pinned `actions/github-script` step re-exports them into `GITHUB_ENV` and
+   clears `ACTIONS_CACHE_SERVICE_V2`, which keeps sccache on the v1 protocol
+   the proxy serves. Exporting `ACTIONS_RESULTS_URL` instead does not work.
 3. **The evidence.** `sccache --zero-stats` runs before the build and
-   `sccache --show-stats` writes into the job summary afterwards, with
-   `if: always()` so a failing run still reports. Without the report, a wrapper
-   that is quietly doing nothing shows up only as a duration, and only if
-   somebody is watching durations.
+   `sccache --show-stats` reports afterwards with `if: always()`, so a failing
+   run still reports. The statistics go to the log as well as the job summary,
+   because the summary is not readable through the REST API and the log copy is
+   what lets anyone confirm a hit rate, or a read or write error, after the
+   fact. The export step also reports whether it found an endpoint and a token,
+   never their values. Without all of this, a wrapper that is quietly doing
+   nothing looks exactly like a cold cache.
 
 `tests/workflow_contracts/sccache_test.py` asserts all three halves together,
 including that no build step precedes the reset, and that GitHub-hosted jobs

@@ -135,6 +135,35 @@ def test_statistics_are_reported_even_when_the_build_fails(job: Job) -> None:
     assert "GITHUB_STEP_SUMMARY" in body, (
         f"{job} must write the statistics to the job summary"
     )
+    # The job summary is not readable through the REST API, so the statistics
+    # must also reach the log, where anyone can confirm the hit rate or a read
+    # or write error after the run.
+    assert "printf '%s\\n' \"$stats\"" in body, (
+        f"{job} must print the statistics to the log as well as the summary"
+    )
+
+
+@pytest.mark.parametrize("job", WRAPPED, ids=_ids(WRAPPED))
+def test_a_missing_cache_endpoint_is_reported(job: Job) -> None:
+    """Warn when the proxy address is absent instead of failing silently.
+
+    With `SCCACHE_GHA_ENABLED` set and no endpoint, sccache misses every
+    compilation and the wrapper becomes pure overhead. That looks exactly like
+    a cold cache, so it has to announce itself.
+    """
+    export = next(step for step in job.steps if step.get("name") == EXPORT_STEP)
+    script = str((export.get("with") or {}).get("script", ""))
+    assert "CUSTOM_ACTIONS_CACHE_URL" in script, (
+        f"{job} must fall back to Ubicloud's CUSTOM_ACTIONS_CACHE_URL"
+    )
+    assert "core.warning" in script, (
+        f"{job} must warn when no cache endpoint is available"
+    )
+    assert "process.env.ACTIONS_RUNTIME_TOKEN" in script
+    # The token must never be printed, only its presence.
+    assert "core.info(`sccache runtime token present:" in script, (
+        f"{job} must report only whether the token is present, never its value"
+    )
 
 
 def test_github_hosted_jobs_are_left_alone() -> None:

@@ -108,14 +108,32 @@ jobs:
         uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd  # v8.0.0
         with:
           script: |
-            core.exportVariable(
-              'ACTIONS_CACHE_URL',
-              process.env.ACTIONS_CACHE_URL || '',
-            );
-            core.exportVariable(
-              'ACTIONS_RUNTIME_TOKEN',
-              process.env.ACTIONS_RUNTIME_TOKEN || '',
-            );
+            // Ubicloud's control plane writes the proxy address into the VM
+            // environment. Report which variable supplied it, and whether the
+            // token was present at all, so a misconfigured backend is
+            // diagnosable from the log rather than from a slower build. Never
+            // print the token itself.
+            const cacheUrl =
+              process.env.ACTIONS_CACHE_URL ||
+              process.env.CUSTOM_ACTIONS_CACHE_URL ||
+              '';
+            const runtimeToken = process.env.ACTIONS_RUNTIME_TOKEN || '';
+            const source = process.env.ACTIONS_CACHE_URL
+              ? 'ACTIONS_CACHE_URL'
+              : process.env.CUSTOM_ACTIONS_CACHE_URL
+                ? 'CUSTOM_ACTIONS_CACHE_URL'
+                : 'none';
+            core.info(`sccache cache endpoint source: ${source}`);
+            core.info(`sccache cache endpoint present: ${Boolean(cacheUrl)}`);
+            core.info(`sccache runtime token present: ${Boolean(runtimeToken)}`);
+            if (!cacheUrl || !runtimeToken) {
+              core.warning(
+                'sccache has no Actions cache endpoint; every compilation ' +
+                  'will miss and the wrapper will only add overhead',
+              );
+            }
+            core.exportVariable('ACTIONS_CACHE_URL', cacheUrl);
+            core.exportVariable('ACTIONS_RUNTIME_TOKEN', runtimeToken);
             core.exportVariable('ACTIONS_CACHE_SERVICE_V2', '');
       - name: Install sccache
         uses: taiki-e/install-action@c7eb1735f09259a5035e8e5d44b1406b1cddc0fb  # v2.83.0
@@ -179,10 +197,15 @@ jobs:
         if: always()
         run: |
           set -euo pipefail
+          # Print to the log as well as the job summary. The summary is not
+          # readable through the REST API, so the log copy is what lets anyone
+          # confirm the hit rate, or a read or write error, after the fact.
+          stats="$(sccache --show-stats)"
+          printf '%s\n' "$stats"
           {
             printf '### sccache statistics (%s)\n\n' "${GITHUB_JOB}"
             printf '```text\n'
-            sccache --show-stats
+            printf '%s\n' "$stats"
             printf '```\n'
           } >> "${GITHUB_STEP_SUMMARY}"
       - name: Save Cargo registry and index
@@ -234,14 +257,32 @@ jobs:
         uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd  # v8.0.0
         with:
           script: |
-            core.exportVariable(
-              'ACTIONS_CACHE_URL',
-              process.env.ACTIONS_CACHE_URL || '',
-            );
-            core.exportVariable(
-              'ACTIONS_RUNTIME_TOKEN',
-              process.env.ACTIONS_RUNTIME_TOKEN || '',
-            );
+            // Ubicloud's control plane writes the proxy address into the VM
+            // environment. Report which variable supplied it, and whether the
+            // token was present at all, so a misconfigured backend is
+            // diagnosable from the log rather than from a slower build. Never
+            // print the token itself.
+            const cacheUrl =
+              process.env.ACTIONS_CACHE_URL ||
+              process.env.CUSTOM_ACTIONS_CACHE_URL ||
+              '';
+            const runtimeToken = process.env.ACTIONS_RUNTIME_TOKEN || '';
+            const source = process.env.ACTIONS_CACHE_URL
+              ? 'ACTIONS_CACHE_URL'
+              : process.env.CUSTOM_ACTIONS_CACHE_URL
+                ? 'CUSTOM_ACTIONS_CACHE_URL'
+                : 'none';
+            core.info(`sccache cache endpoint source: ${source}`);
+            core.info(`sccache cache endpoint present: ${Boolean(cacheUrl)}`);
+            core.info(`sccache runtime token present: ${Boolean(runtimeToken)}`);
+            if (!cacheUrl || !runtimeToken) {
+              core.warning(
+                'sccache has no Actions cache endpoint; every compilation ' +
+                  'will miss and the wrapper will only add overhead',
+              );
+            }
+            core.exportVariable('ACTIONS_CACHE_URL', cacheUrl);
+            core.exportVariable('ACTIONS_RUNTIME_TOKEN', runtimeToken);
             core.exportVariable('ACTIONS_CACHE_SERVICE_V2', '');
       - name: Install sccache
         uses: taiki-e/install-action@c7eb1735f09259a5035e8e5d44b1406b1cddc0fb  # v2.83.0
@@ -274,10 +315,15 @@ jobs:
         if: always()
         run: |
           set -euo pipefail
+          # Print to the log as well as the job summary. The summary is not
+          # readable through the REST API, so the log copy is what lets anyone
+          # confirm the hit rate, or a read or write error, after the fact.
+          stats="$(sccache --show-stats)"
+          printf '%s\n' "$stats"
           {
             printf '### sccache statistics (%s)\n\n' "${GITHUB_JOB}"
             printf '```text\n'
-            sccache --show-stats
+            printf '%s\n' "$stats"
             printf '```\n'
           } >> "${GITHUB_STEP_SUMMARY}"
   windows-build:
@@ -371,14 +417,32 @@ jobs:
         uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd  # v8.0.0
         with:
           script: |
-            core.exportVariable(
-              'ACTIONS_CACHE_URL',
-              process.env.ACTIONS_CACHE_URL || '',
-            );
-            core.exportVariable(
-              'ACTIONS_RUNTIME_TOKEN',
-              process.env.ACTIONS_RUNTIME_TOKEN || '',
-            );
+            // Ubicloud's control plane writes the proxy address into the VM
+            // environment. Report which variable supplied it, and whether the
+            // token was present at all, so a misconfigured backend is
+            // diagnosable from the log rather than from a slower build. Never
+            // print the token itself.
+            const cacheUrl =
+              process.env.ACTIONS_CACHE_URL ||
+              process.env.CUSTOM_ACTIONS_CACHE_URL ||
+              '';
+            const runtimeToken = process.env.ACTIONS_RUNTIME_TOKEN || '';
+            const source = process.env.ACTIONS_CACHE_URL
+              ? 'ACTIONS_CACHE_URL'
+              : process.env.CUSTOM_ACTIONS_CACHE_URL
+                ? 'CUSTOM_ACTIONS_CACHE_URL'
+                : 'none';
+            core.info(`sccache cache endpoint source: ${source}`);
+            core.info(`sccache cache endpoint present: ${Boolean(cacheUrl)}`);
+            core.info(`sccache runtime token present: ${Boolean(runtimeToken)}`);
+            if (!cacheUrl || !runtimeToken) {
+              core.warning(
+                'sccache has no Actions cache endpoint; every compilation ' +
+                  'will miss and the wrapper will only add overhead',
+              );
+            }
+            core.exportVariable('ACTIONS_CACHE_URL', cacheUrl);
+            core.exportVariable('ACTIONS_RUNTIME_TOKEN', runtimeToken);
             core.exportVariable('ACTIONS_CACHE_SERVICE_V2', '');
       - name: Install sccache
         uses: taiki-e/install-action@c7eb1735f09259a5035e8e5d44b1406b1cddc0fb  # v2.83.0
@@ -426,10 +490,15 @@ jobs:
         if: always()
         run: |
           set -euo pipefail
+          # Print to the log as well as the job summary. The summary is not
+          # readable through the REST API, so the log copy is what lets anyone
+          # confirm the hit rate, or a read or write error, after the fact.
+          stats="$(sccache --show-stats)"
+          printf '%s\n' "$stats"
           {
             printf '### sccache statistics (%s)\n\n' "${GITHUB_JOB}"
             printf '```text\n'
-            sccache --show-stats
+            printf '%s\n' "$stats"
             printf '```\n'
           } >> "${GITHUB_STEP_SUMMARY}"
   docker-build:
