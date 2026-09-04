@@ -91,9 +91,9 @@ def test_trigger_permissions_and_job_are_pr_only_and_isolated() -> None:
         "github.event_name == 'pull_request' || "
         "github.event_name == 'workflow_dispatch'"
     ), "coverage-check must run only for a pull request or a manual dispatch"
-    assert job.get("runs-on") == "ubicloud-standard-8", (
-        "coverage-check measured 1.50x its wall time on the halved shape, at "
-        "the limit the resize was accepted on, so it keeps the larger one"
+    assert job.get("runs-on") == "ubicloud-standard-4", (
+        "coverage-check is off the critical path, so it takes the cheaper "
+        "shape: 683 s at half the rate beats 455 s at full"
     )
     assert {"strategy", "services", "needs"}.isdisjoint(job), (
         "coverage-check must not inherit the main matrix, PostgreSQL, or gate"

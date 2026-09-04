@@ -17,7 +17,7 @@ jobs:
     if: >
       github.event_name == 'pull_request' ||
       github.event_name == 'workflow_dispatch'
-    runs-on: ubicloud-standard-8
+    runs-on: ubicloud-standard-4
     timeout-minutes: 90
     env:
       # sccache is the sole owner of compiler output: no cache step archives a

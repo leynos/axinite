@@ -177,17 +177,28 @@ Jobs are sized individually against measurement:
 | Shape | Carries |
 | --- | --- |
 | `ubicloud-standard-2` | Jobs whose peak memory and wall time both fit it |
-| `ubicloud-standard-4` | Jobs that compile the workspace |
-| `ubicloud-standard-8` | Jobs measured outside the 1.5x wall-time tolerance on a smaller shape |
+| `ubicloud-standard-4` | Everything else that compiles |
+| `ubicloud-standard-8` | Nothing by choice; `e2e.yml` still holds it pending its own resize |
 
-A shape is accepted when warm wall time stays within 1.5x of the previous shape
-and the sampled peaks leave room for a cold run, which costs more than a warm
-one. Three jobs failed that test on first measurement and are recorded at the
-larger shape with the number that decided it: `docker-build` at 1.60x, because
-it compiles inside the image where sccache cannot help it; `coverage-check` at
-1.50x; and `format`, which is fast on the smallest shape but reached 6,741 MiB
-of its 7,940 MiB rendering Mermaid through a headless browser, so it has no room
-for a bad day.
+The acceptance rule has two arms, because wall time and cost pull in opposite
+directions and only one of them is felt by a person waiting:
+
+- **A job on the critical path** takes a smaller shape when warm wall time stays
+  within 1.5x. The critical path is whichever job finishes last, currently
+  `Tests (default)`.
+- **A job off the critical path** takes the cheaper shape whenever its memory
+  peak stays under 60% of that shape. Halving the shape halves the rate, so
+  anything short of doubling the wall time is a saving, and nobody waits on it.
+
+Both arms need the sampled peak to leave room for a cold run, which compiles
+everything and so costs more than the warm run being measured.
+
+The first measurement moved three jobs, and each is recorded in the table with
+the number that decided it. `docker-build` at 1.60x and `coverage-check` at
+1.50x are off the critical path and stay on the cheaper shape, at 35% and 46% of
+memory. `format` went the other way: it is fast on the smallest shape, at 1.10x,
+and still reached 6,741 MiB of its 7,940 MiB rendering Mermaid through a
+headless browser, so it has no room for a bad day and sits on `standard-4`.
 
 `tests/workflow_contracts/runner_sizing_test.py` holds the assignment as an
 explicit table, job by job, with the reason and the wall time it was decided

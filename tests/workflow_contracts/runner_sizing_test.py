@@ -33,9 +33,8 @@ ALL_JOBS: tuple[Job, ...] = tuple(jobs())
 APPROVED_SHAPES: dict[str, str] = {
     "ubicloud-standard-2": "jobs that compile little or nothing",
     "ubicloud-standard-4": "jobs that compile the workspace",
-    "ubicloud-standard-8": "jobs measured outside the 1.5x wall-time "
-    "tolerance on a smaller shape, and e2e.yml, which is right-sized "
-    "separately",
+    "ubicloud-standard-8": "no job chooses it; e2e.yml still holds it "
+    "because that workflow is right-sized separately",
 }
 
 SAMPLER = "./scripts/ci-resource-sampler.sh"
@@ -149,9 +148,10 @@ REVIEWED_SHAPES: dict[tuple[str, str], tuple[str, str]] = {
         "compiles the workspace under three feature shapes, 315 s on the widest leg",
     ),
     ("codescene-coverage.yml", "coverage-check"): (
-        "ubicloud-standard-8",
-        "instrumented workspace build: 683 s on the halved shape against "
-        "455 s, or 1.50x, at the limit the resize was accepted on",
+        "ubicloud-standard-4",
+        "off the critical path, so it takes the cheaper shape: 683 s at half "
+        "the rate beats 455 s at full, and it peaked at 7,311 MiB of 15,991, "
+        "or 46 %",
     ),
     ("coverage.yml", "coverage"): (
         "ubicloud-standard-4",
@@ -174,10 +174,10 @@ REVIEWED_SHAPES: dict[tuple[str, str], tuple[str, str]] = {
         "compiles the workspace to wasm32-wasip2, 277 s",
     ),
     ("test.yml", "docker-build"): (
-        "ubicloud-standard-8",
-        "compiles inside the image, where sccache cannot help it, so it is "
-        "the most processor-bound job here: 605 s on the halved shape against "
-        "378 s, or 1.60x, outside the 1.5x the resize was accepted on",
+        "ubicloud-standard-4",
+        "off the critical path, so it takes the cheaper shape: 605 s at half "
+        "the rate beats 378 s at full, and it peaked at 5,527 MiB of 15,991, "
+        "or 35 %",
     ),
     ("e2e.yml", "build"): (
         "ubicloud-standard-8",
