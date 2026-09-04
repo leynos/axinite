@@ -157,6 +157,39 @@ privilege preflight before it moves anywhere.
 bump. Its build matrix keeps the cache wiring dist emits, runs only on a tag
 push, and never uses an Ubicloud runner, so it sits outside these contracts.
 
+#### Scheduled work never uses a paid runner
+
+A developer waiting on a gate is the only thing an Ubicloud runner is bought
+for. Cron work has nobody waiting, so it runs GitHub-hosted, which costs this
+repository nothing because it is public.
+
+The rule is easy to break without touching a runner label, and Axinite did.
+`staging-ci.yml` put every job it owns on `ubuntu-latest`, and still spent about
+£22 a month on `ubicloud-standard-8`, because two of its jobs are `uses:`
+callers into `test.yml` and `e2e.yml`, whose jobs are Ubicloud by design for the
+developer path. Nothing in the calling workflow shows it.
+`tests/workflow_contracts/scheduled_placement_test.py` therefore follows a local
+reusable-workflow call into the workflow it names and applies the rule there
+too.
+
+A workflow that is both a developer gate and a cron cannot answer the question
+with a fixed label, so the label follows the event:
+
+```yaml
+    runs-on: >-
+      ${{ github.event_name == 'schedule' && 'ubuntu-latest'
+      || 'ubicloud-standard-8' }}
+```
+
+`e2e.yml` uses this for its `build` and `test` jobs: Ubicloud on the
+path-filtered pull-request run, where the wall time is felt, and GitHub-hosted
+for the Monday cron, where it is not. `Job.runner_labels` parses that form and
+reports both arms, so the job still answers `uses_ubicloud` and stays inside the
+timeout and sccache contracts; `Job.labels_for_event` answers which arm a given
+event selects. Reading the expression as one opaque label would have dropped the
+job out of every one of those contracts at once, which is the failure mode the
+helper tests pin.
+
 ### Tool installation
 
 CI must not compile a tool it could download. Compiling `whitaker-installer`

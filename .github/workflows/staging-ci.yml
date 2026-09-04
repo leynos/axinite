@@ -1,8 +1,15 @@
 name: Staging CI (Batched)
 
+# The hourly schedule is removed, not merely relaxed. Every one of the 488
+# scheduled runs in the 31 days to 2026-09-04 failed, because
+# `Create Promotion PR` cannot mint a token: `GH_RELEASES_MANAGER_APP_ID` does
+# not resolve in this repository. `gate` and `update-tag` need that job, so
+# nothing has ever been promoted. `tests` and `e2e` do not, so they ran in full
+# on `ubicloud-standard-8` every hour anyway, a median of 41.5 billed minutes a
+# run and about £22 a month for a result nothing consumed. See
+# https://github.com/leynos/axinite/issues/351 for the cause and for what has
+# to be true before the trigger comes back. Manual dispatch still works.
 on:
-  schedule:
-    - cron: "0 * * * *"            # Every 60 minutes
   workflow_dispatch:
     inputs:
       force:
