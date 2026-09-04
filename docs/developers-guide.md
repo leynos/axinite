@@ -164,9 +164,9 @@ for. Cron work has nobody waiting, so it runs GitHub-hosted, which costs this
 repository nothing because it is public.
 
 The rule is easy to break without touching a runner label, and Axinite did.
-`staging-ci.yml` put every job it owns on `ubuntu-latest`, and still spent about
-£22 a month on `ubicloud-standard-8`, because two of its jobs are `uses:`
-callers into `test.yml` and `e2e.yml`, whose jobs are Ubicloud by design for the
+`staging-ci.yml` put every job it owns on `ubuntu-latest` and still spent about
+£22 a month on `ubicloud-standard-8` because two of its jobs are `uses:` callers
+into `test.yml` and `e2e.yml`, whose jobs are Ubicloud by design for the
 developer path. Nothing in the calling workflow shows it.
 `tests/workflow_contracts/scheduled_placement_test.py` therefore follows a local
 reusable-workflow call into the workflow it names and applies the rule there

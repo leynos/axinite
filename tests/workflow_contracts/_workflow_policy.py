@@ -249,6 +249,12 @@ class Job:
             the event.
         """
         declared = self.body.get("runs-on")
+        # The mapping form has to be unwrapped first, exactly as
+        # `runner_labels` does. Reading `{labels: <conditional>}` without
+        # unwrapping would fall through to both arms and report the Ubicloud
+        # fallback as the label a schedule selects.
+        if isinstance(declared, dict):
+            declared = declared.get("labels")
         if isinstance(declared, str):
             conditional = _conditional_runner(declared)
             if conditional is not None:

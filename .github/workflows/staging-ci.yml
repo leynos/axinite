@@ -8,7 +8,9 @@ name: Staging CI (Batched)
 # on `ubicloud-standard-8` every hour anyway, a median of 41.5 billed minutes a
 # run and about £22 a month for a result nothing consumed. See
 # https://github.com/leynos/axinite/issues/351 for the cause and for what has
-# to be true before the trigger comes back. Manual dispatch still works.
+# to be true before the trigger comes back. Manual dispatch is retained so the
+# pipeline can be exercised once credentials exist; it reaches the same
+# unresolved secret today, so a manual run fails at the same step.
 on:
   workflow_dispatch:
     inputs:

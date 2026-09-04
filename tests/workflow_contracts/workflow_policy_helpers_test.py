@@ -150,20 +150,26 @@ class TestRunnerLabels:
         ("declared", "expected"),
         [
             (
-                "${{ github.event_name == 'schedule' && 'ubuntu-latest' "
-                "|| 'ubicloud-standard-8' }}",
+                (
+                    "${{ github.event_name == 'schedule' && 'ubuntu-latest' "
+                    "|| 'ubicloud-standard-8' }}"
+                ),
                 ("ubuntu-latest", "ubicloud-standard-8"),
             ),
             # A folded YAML scalar arrives with its line breaks already joined
             # into single spaces, which is how the workflows actually write it.
             (
-                "${{ github.event_name == 'schedule' && 'ubuntu-latest'   "
-                "|| 'ubicloud-standard-8' }}",
+                (
+                    "${{ github.event_name == 'schedule' && 'ubuntu-latest'   "
+                    "|| 'ubicloud-standard-8' }}"
+                ),
                 ("ubuntu-latest", "ubicloud-standard-8"),
             ),
             (
-                "${{ github.event_name == 'push' && 'ubicloud-standard-2' "
-                "|| 'ubuntu-latest' }}",
+                (
+                    "${{ github.event_name == 'push' && 'ubicloud-standard-2' "
+                    "|| 'ubuntu-latest' }}"
+                ),
                 ("ubicloud-standard-2", "ubuntu-latest"),
             ),
         ],
@@ -183,6 +189,31 @@ class TestRunnerLabels:
         assert job.uses_ubicloud is any(
             label.startswith("ubicloud-") for label in expected
         )
+
+    @pytest.mark.parametrize(
+        "wrap",
+        [lambda value: value, lambda value: {"labels": value}],
+        ids=["scalar", "mapping"],
+    )
+    def test_labels_for_event_unwraps_the_mapping_form(
+        self, wrap: typ.Callable[[str], object]
+    ) -> None:
+        """`{group, labels}` must resolve its conditional like a bare scalar.
+
+        Falling through without unwrapping returns both arms, which reads the
+        Ubicloud fallback as the label a schedule selects and turns a real
+        violation into a pass.
+        """
+        job = _job(
+            {
+                "runs-on": wrap(
+                    "${{ github.event_name == 'schedule' && "
+                    "'ubuntu-latest' || 'ubicloud-standard-8' }}"
+                )
+            }
+        )
+        assert job.labels_for_event("schedule") == ("ubuntu-latest",)
+        assert job.labels_for_event("push") == ("ubicloud-standard-8",)
 
     @pytest.mark.parametrize(
         ("event", "expected"),
