@@ -219,6 +219,12 @@ class Job:
         return f"{self.workflow}:{self.job_id}"
 
 
+#: Extensions GitHub accepts for a workflow file. Scanning only `.yml` would
+#: silently exempt a `.yaml` workflow from every contract in this directory,
+#: which is the same vacuous pass an unread `runs-on` produces.
+WORKFLOW_SUFFIXES: tuple[str, ...] = (".yml", ".yaml")
+
+
 def workflow_paths(directory: Path = WORKFLOW_DIR) -> list[Path]:
     """Return every workflow file in a directory.
 
@@ -233,9 +239,13 @@ def workflow_paths(directory: Path = WORKFLOW_DIR) -> list[Path]:
     -------
     list of Path
         Workflow paths sorted by name, so parameterized tests report in a
-        stable order.
+        stable order. Both extensions GitHub accepts are included.
     """
-    return sorted(directory.glob("*.yml"))
+    return sorted(
+        path
+        for path in directory.iterdir()
+        if path.is_file() and path.suffix in WORKFLOW_SUFFIXES
+    )
 
 
 def parse_workflow(text: str, name: str) -> dict[str, object]:

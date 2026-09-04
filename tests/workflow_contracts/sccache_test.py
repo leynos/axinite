@@ -177,8 +177,14 @@ def test_a_missing_cache_endpoint_is_reported(job: Job) -> None:
         assert "ACTIONS_RUNTIME_TOKEN" not in call, (
             f"{job} interpolates the raw runtime token into a log call: {call[:80]!r}"
         )
-        assert "runtimeToken}" not in call.replace("Boolean(runtimeToken)}", ""), (
-            f"{job} interpolates the runtime token into a log call"
+        # Remove the one permitted expression, then reject every remaining
+        # mention. Matching `runtimeToken}` alone would pass
+        # `core.info(runtimeToken)` and `core.warning(String(runtimeToken))`,
+        # both of which print the secret.
+        residue = call.replace("Boolean(runtimeToken)", "")
+        assert "runtimeToken" not in residue, (
+            f"{job} passes the runtime token to a log call other than as "
+            f"Boolean(runtimeToken): {call[:80]!r}"
         )
 
 

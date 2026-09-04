@@ -13,6 +13,8 @@ Run via ``make test-workflow-contracts``.
 
 from __future__ import annotations
 
+import typing as typ
+
 import pytest
 from _workflow_policy import (
     SOURCE_BUILD_PATTERNS,
@@ -29,6 +31,9 @@ from _workflow_policy import (
 )
 from hypothesis import HealthCheck, given, settings
 from hypothesis import strategies as st
+
+if typ.TYPE_CHECKING:  # pragma: no cover - typing only
+    from pathlib import Path
 
 #: Hypothesis runs these against pure functions, but the suite shares a
 #: machine with compiling CI jobs. A per-example deadline would turn host load
@@ -353,16 +358,25 @@ class TestSourceBuildPatterns:
 class TestWorkflowPaths:
     """The scan is the file-reading edge, and it reads only workflows."""
 
-    def test_it_returns_yml_files_in_name_order(self, tmp_path) -> None:
-        """A stable order keeps parameterized test ids stable."""
-        for name in ("test.yml", "audit.yml", "notes.md", "release.yaml"):
+    def test_it_returns_both_workflow_extensions_in_name_order(
+        self, tmp_path: Path
+    ) -> None:
+        """GitHub accepts `.yaml` too, and a stable order keeps test ids stable.
+
+        Scanning one extension would exempt a `.yaml` workflow from the
+        runner, timeout, cache, and tool-install contracts at once, with every
+        test still passing.
+        """
+        for name in ("test.yml", "audit.yml", "notes.md", "release.yaml", "a.txt"):
             (tmp_path / name).write_text("{}\n", encoding="utf-8")
+        (tmp_path / "nested.yml").mkdir()
         assert [path.name for path in workflow_paths(tmp_path)] == [
             "audit.yml",
+            "release.yaml",
             "test.yml",
         ]
 
-    def test_an_empty_directory_yields_nothing(self, tmp_path) -> None:
+    def test_an_empty_directory_yields_nothing(self, tmp_path: Path) -> None:
         """An empty scan must not raise."""
         assert workflow_paths(tmp_path) == []
 

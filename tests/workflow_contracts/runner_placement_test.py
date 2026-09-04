@@ -101,8 +101,17 @@ def test_every_runs_on_form_is_read(
     """
     body: dict[str, object] = {} if declared is None else {"runs-on": declared}
     job = Job("fixture.yml", "fixture", body)
-    assert job.runner_labels == expected
-    assert job.uses_ubicloud == any(label.startswith("ubicloud-") for label in expected)
+    assert job.runner_labels == expected, (
+        f"runs-on {declared!r} read as {job.runner_labels}, expected {expected}; "
+        "a shape the parser cannot see is exempt from every placement contract"
+    )
+    ubicloud = any(label.startswith("ubicloud-") for label in expected)
+    assert job.uses_ubicloud == ubicloud, (
+        f"runs-on {declared!r} classified as "
+        f"{'Ubicloud' if job.uses_ubicloud else 'GitHub-hosted'}, expected "
+        f"{'Ubicloud' if ubicloud else 'GitHub-hosted'}; the labels parsed "
+        f"as {job.runner_labels}"
+    )
 
 
 def test_the_build_classification_discriminates() -> None:
