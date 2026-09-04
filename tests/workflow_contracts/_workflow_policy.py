@@ -25,6 +25,11 @@ WORKFLOW_DIR = REPOSITORY_ROOT / ".github" / "workflows"
 #: "Workflow pins and Dependabot").
 SHA_RE: re.Pattern[str] = re.compile(r"^[0-9a-f]{40}$")
 
+#: Prefix shared by every Ubicloud runner label. Match on the prefix, not on
+#: one exact label: the migration wave introduces `ubicloud-standard-2`, and a
+#: contract keyed to the current label would wave the new one through.
+UBICLOUD_LABEL_PREFIX = "ubicloud-"
+
 #: The Ubicloud label this repository currently uses. The migration wave will
 #: right-size these jobs; update this constant and .github/actionlint.yaml
 #: together when it does.
@@ -76,7 +81,18 @@ CACHE_ACTION_PREFIXES = (
 
 @dataclass(frozen=True)
 class Job:
-    """One job, with the file it came from and its parsed body."""
+    """One job, carrying the file it came from alongside its parsed body.
+
+    Attributes
+    ----------
+    workflow
+        File name of the workflow that declares the job, such as
+        ``test.yml``.
+    job_id
+        The job's key under the workflow's `jobs` mapping.
+    body
+        The job's parsed mapping, exactly as PyYAML produced it.
+    """
 
     workflow: str
     job_id: str
@@ -84,30 +100,86 @@ class Job:
 
     @property
     def runs_on(self) -> str | None:
-        """Return the job's runner label when it declares one directly."""
+        """Return the job's runner label when it declares one directly.
+
+        Returns
+        -------
+        str or None
+            The literal `runs-on` label, or ``None`` when the job is a
+            reusable-workflow caller or computes its label from a matrix.
+        """
         label = self.body.get("runs-on")
         return label if isinstance(label, str) else None
 
     @property
+    def uses_ubicloud(self) -> bool:
+        """Report whether the job requests any Ubicloud runner.
+
+        Returns
+        -------
+        bool
+            True for every `ubicloud-*` label, not only the one this
+            repository uses today.
+        """
+        return (self.runs_on or "").startswith(UBICLOUD_LABEL_PREFIX)
+
+    @property
     def steps(self) -> list[dict[str, object]]:
-        """Return the job's step mappings, or an empty list for a caller."""
+        """Return the job's step mappings.
+
+        Returns
+        -------
+        list of dict
+            The job's steps, or an empty list when the job calls a reusable
+            workflow and therefore declares none.
+        """
         steps = self.body.get("steps")
         if not isinstance(steps, list):
             return []
         return [step for step in steps if isinstance(step, dict)]
 
     def __str__(self) -> str:
-        """Identify the job as ``workflow.yml:job-id`` in assertion output."""
+        """Identify the job in assertion output.
+
+        Returns
+        -------
+        str
+            The job as ``workflow.yml:job-id``.
+        """
         return f"{self.workflow}:{self.job_id}"
 
 
 def workflow_paths() -> list[Path]:
-    """Return every workflow file, sorted for deterministic test ordering."""
+    """Return every workflow file in the estate.
+
+    Returns
+    -------
+    list of Path
+        Workflow paths sorted by name, so parameterized tests report in a
+        stable order.
+    """
     return sorted(WORKFLOW_DIR.glob("*.yml"))
 
 
 def load(path: Path) -> dict[str, object]:
-    """Parse one workflow file into a mapping."""
+    """Parse one workflow file into a mapping.
+
+    Parameters
+    ----------
+    path
+        Workflow file to read.
+
+    Returns
+    -------
+    dict
+        The parsed workflow document.
+
+    Raises
+    ------
+    AssertionError
+        If the file does not parse as a mapping, which means it is not a
+        workflow at all.
+    """
     document = yaml.safe_load(path.read_text(encoding="utf-8"))
     if not isinstance(document, dict):
         message = f"{path.name} must parse as a mapping"
@@ -116,32 +188,84 @@ def load(path: Path) -> dict[str, object]:
 
 
 def declared_jobs(path: Path) -> dict[str, object]:
-    """Return one workflow's jobs mapping, or an empty mapping."""
+    """Return one workflow's jobs mapping.
+
+    Parameters
+    ----------
+    path
+        Workflow file to read.
+
+    Returns
+    -------
+    dict
+        The workflow's jobs, or an empty mapping when it declares none.
+    """
     declared = load(path).get("jobs")
     return declared if isinstance(declared, dict) else {}
 
 
 def jobs_in(path: Path) -> Iterator[Job]:
-    """Yield the jobs one workflow file declares."""
+    """Yield the jobs one workflow file declares.
+
+    Parameters
+    ----------
+    path
+        Workflow file to read.
+
+    Yields
+    ------
+    Job
+        Each job whose body is a mapping.
+    """
     for job_id, body in declared_jobs(path).items():
         if isinstance(body, dict):
             yield Job(path.name, job_id, body)
 
 
 def jobs() -> Iterator[Job]:
-    """Yield every job declared across the workflow estate."""
+    """Yield every job declared across the workflow estate.
+
+    Yields
+    ------
+    Job
+        Every job in every workflow, in workflow-name order.
+    """
     for path in workflow_paths():
         yield from jobs_in(path)
 
 
 def step_text(step: dict[str, object]) -> str:
-    """Return a step's shell body, or an empty string for an action step."""
+    """Return a step's shell body.
+
+    Parameters
+    ----------
+    step
+        One step mapping.
+
+    Returns
+    -------
+    str
+        The step's `run` script, or an empty string when the step invokes an
+        action instead.
+    """
     run = step.get("run")
     return run if isinstance(run, str) else ""
 
 
 def cache_paths(step: dict[str, object]) -> list[str]:
-    """Return the paths a cache step declares, one per line."""
+    """Return the paths a cache step declares.
+
+    Parameters
+    ----------
+    step
+        One step mapping, normally an `actions/cache` invocation.
+
+    Returns
+    -------
+    list of str
+        One entry per non-empty line of the step's `path` input, stripped of
+        surrounding whitespace. Empty when the step declares no paths.
+    """
     inputs = step.get("with")
     if not isinstance(inputs, dict):
         return []
@@ -152,7 +276,19 @@ def cache_paths(step: dict[str, object]) -> list[str]:
 
 
 def is_cache_step(step: dict[str, object]) -> bool:
-    """Report whether a step invokes the Actions cache in any of its forms."""
+    """Report whether a step invokes the Actions cache.
+
+    Parameters
+    ----------
+    step
+        One step mapping.
+
+    Returns
+    -------
+    bool
+        True for the combined action and for its `restore` and `save`
+        sub-actions alike.
+    """
     uses = step.get("uses")
     return isinstance(uses, str) and uses.startswith(CACHE_ACTION_PREFIXES)
 
@@ -160,8 +296,19 @@ def is_cache_step(step: dict[str, object]) -> bool:
 def builds_or_tests(job: Job) -> bool:
     """Report whether a job compiles or executes the product.
 
-    Read from the job's own steps rather than its name, so a job that loses
-    its build step loses its claim on a paid runner at the same moment.
+    The answer comes from the job's own steps rather than its name, so a job
+    that loses its build step loses its claim on a paid runner at the same
+    moment.
+
+    Parameters
+    ----------
+    job
+        The job to classify.
+
+    Returns
+    -------
+    bool
+        True when any step runs a command in `BUILD_OR_TEST_PATTERNS`.
     """
     return any(
         pattern.search(step_text(step))
