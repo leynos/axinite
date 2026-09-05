@@ -21,18 +21,39 @@ Run via ``make test-workflow-contracts``.
 
 from __future__ import annotations
 
-import pytest
+import re
+import typing as typ
+from urllib.parse import urlsplit
+
 from _workflow_policy import WORKFLOW_DIR, load, step_text
 
-WORKFLOW = "coverage.yml"
+WORKFLOW: typ.Final[str] = "coverage.yml"
 
 #: The variable `src/testing/postgres.rs` reads. Renaming the export without
 #: renaming the reader is the exact mistake this file exists to catch, so the
 #: constant is spelled out here rather than derived from the workflow.
-TEST_URL_VARIABLE = "TEST_DATABASE_URL"
+TEST_URL_VARIABLE: typ.Final[str] = "TEST_DATABASE_URL"
 
 #: The job that runs the Postgres-bearing coverage legs.
-JOB = "coverage"
+JOB: typ.Final[str] = "coverage"
+
+#: Matches the shell assignment of a URL to a variable, so the value tied to
+#: `TEST_DATABASE_URL` can be checked rather than any credentialed URL that
+#: happens to appear in the same script. A passwordless `TEST_DATABASE_URL`
+#: beside a credentialed `DATABASE_URL` reproduces the original failure exactly,
+#: and a contract that searched the joined script would pass it.
+ASSIGNMENT_RE: typ.Final[re.Pattern[str]] = re.compile(
+    r"^\s*(?P<name>[A-Za-z_][A-Za-z0-9_]*)=\"?(?P<value>[^\"\n]+?)\"?\s*$",
+    re.MULTILINE,
+)
+
+#: Matches `echo "NAME=${shell_var}" >> "$GITHUB_ENV"`, which is how a value
+#: reaches later steps. The exported name and the shell variable holding the
+#: value are both captured, so the two halves can be joined.
+EXPORT_RE: typ.Final[re.Pattern[str]] = re.compile(
+    r"echo\s+\"(?P<name>[A-Za-z_][A-Za-z0-9_]*)=\$\{(?P<source>[A-Za-z_]"
+    r"[A-Za-z0-9_]*)\}\"\s*>>",
+)
 
 
 def _postgres_job() -> dict[str, object]:
@@ -51,9 +72,55 @@ def _steps(job: dict[str, object]) -> list[dict[str, object]]:
     return [step for step in steps if isinstance(step, dict)]
 
 
-def _exporting_steps() -> list[dict[str, object]]:
-    """Return every step whose script writes to `GITHUB_ENV`."""
-    return [step for step in _steps(_postgres_job()) if "GITHUB_ENV" in step_text(step)]
+def _service_env() -> dict[str, object]:
+    """Return the Postgres service container's environment."""
+    services = _postgres_job().get("services")
+    assert isinstance(services, dict), f"{JOB} must declare a services mapping"
+    postgres = services.get("postgres")
+    assert isinstance(postgres, dict), f"{JOB} must declare a postgres service"
+    env = postgres.get("env")
+    assert isinstance(env, dict), "the postgres service must declare env"
+    return env
+
+
+def _exporting_step() -> dict[str, object]:
+    """Return the single step that exports the test database URL."""
+    matches = [
+        step
+        for step in _steps(_postgres_job())
+        if f"{TEST_URL_VARIABLE}=" in step_text(step)
+    ]
+    assert len(matches) == 1, (
+        f"expected exactly one step exporting {TEST_URL_VARIABLE}, found {len(matches)}"
+    )
+    return matches[0]
+
+
+def _exported_test_url() -> str:
+    """Return the URL value the step exports as `TEST_DATABASE_URL`.
+
+    The script assigns the URL to a shell variable and then exports that
+    variable, so both halves are resolved rather than assumed. Following the
+    indirection is the point: it is what ties the credentials being asserted to
+    the name the tests read.
+    """
+    script = step_text(_exporting_step())
+    exports = {m["name"]: m["source"] for m in EXPORT_RE.finditer(script)}
+    source = exports.get(TEST_URL_VARIABLE)
+    assert source is not None, (
+        f"the step must export {TEST_URL_VARIABLE} from a shell variable, as "
+        f'echo "{TEST_URL_VARIABLE}=${{...}}" >> "$GITHUB_ENV"'
+    )
+    assignments = {
+        m["name"]: m["value"]
+        for m in ASSIGNMENT_RE.finditer(script)
+        if not m.group(0).lstrip().startswith("echo")
+    }
+    value = assignments.get(source)
+    assert value is not None, (
+        f"{TEST_URL_VARIABLE} is exported from ${source}, which the step never assigns"
+    )
+    return value
 
 
 def test_the_coverage_job_exports_the_variable_the_tests_read() -> None:
@@ -63,9 +130,8 @@ def test_the_coverage_job_exports_the_variable_the_tests_read() -> None:
     runs, the tests still fail, and the workflow reports a database problem
     rather than a configuration one.
     """
-    exports = "\n".join(step_text(step) for step in _exporting_steps())
-    assert exports, f"{JOB} must export a database URL for the Postgres legs"
-    assert f"{TEST_URL_VARIABLE}=" in exports, (
+    script = step_text(_exporting_step())
+    assert f"{TEST_URL_VARIABLE}=" in script, (
         f"{JOB} must export {TEST_URL_VARIABLE}, which "
         "src/testing/postgres.rs reads. Without it the helper falls back to a "
         "URL with no credentials and every Postgres test fails on "
@@ -73,43 +139,46 @@ def test_the_coverage_job_exports_the_variable_the_tests_read() -> None:
     )
 
 
-def test_the_exported_url_carries_credentials() -> None:
-    """A URL without a user and password is the failure being prevented."""
-    exports = "\n".join(step_text(step) for step in _exporting_steps())
-    assert "postgres://postgres:postgres@" in exports, (
-        f"{JOB} must export a URL carrying the user and password the service "
-        "container declares; a bare host is what the unset fallback already "
-        "supplies, and it is what fails"
+def test_the_exported_test_url_matches_the_service_container() -> None:
+    """Check the URL bound to `TEST_DATABASE_URL`, not any URL nearby.
+
+    Searching the whole script would pass a passwordless `TEST_DATABASE_URL`
+    sitting beside a credentialed `DATABASE_URL`, which reproduces the original
+    failure exactly while every other assertion here holds. The expected values
+    come from the service container rather than being written out again, so the
+    two cannot drift apart.
+    """
+    env = _service_env()
+    parsed = urlsplit(_exported_test_url())
+    assert parsed.username == env.get("POSTGRES_USER"), (
+        f"the {TEST_URL_VARIABLE} value must carry the service's "
+        f"POSTGRES_USER, got {parsed.username!r}"
+    )
+    assert parsed.password == env.get("POSTGRES_PASSWORD"), (
+        f"the {TEST_URL_VARIABLE} value must carry the service's "
+        "POSTGRES_PASSWORD. Without a password the pool fails with "
+        '`kind: Config, cause: "password missing"`, which is the failure '
+        "this contract exists to prevent."
+    )
+    assert parsed.path.lstrip("/") == env.get("POSTGRES_DB"), (
+        f"the {TEST_URL_VARIABLE} value must name the service's POSTGRES_DB, "
+        f"got {parsed.path!r}"
+    )
+    assert parsed.hostname == "localhost", (
+        f"the service container is published on localhost; got {parsed.hostname!r}"
     )
 
 
 def test_the_export_is_guarded_to_the_postgres_legs() -> None:
-    """The libsql-only leg has no service container to point at."""
-    steps = [
-        step
-        for step in _exporting_steps()
-        if f"{TEST_URL_VARIABLE}=" in step_text(step)
-    ]
-    assert len(steps) == 1, (
-        f"expected exactly one step exporting {TEST_URL_VARIABLE}, found {len(steps)}"
-    )
-    assert steps[0].get("if") == "matrix.has_postgres", (
+    """Only the legs with a database configured may advertise one.
+
+    `services` is declared at job level, so the container starts for every
+    matrix leg including `libsql-only`. That leg is built with
+    `--no-default-features --features libsql` and must not be pointed at a
+    database it does not use, which is what `has_postgres` expresses.
+    """
+    assert _exporting_step().get("if") == "matrix.has_postgres", (
         f"the {TEST_URL_VARIABLE} export must be guarded on "
-        "matrix.has_postgres, so the libsql-only leg does not advertise a "
-        "database it has not been given"
-    )
-
-
-@pytest.mark.parametrize("variable", ["POSTGRES_USER", "POSTGRES_PASSWORD"])
-def test_the_service_container_declares_its_credentials(variable: str) -> None:
-    """Keep the exported URL and the service's own credentials in one place."""
-    services = _postgres_job().get("services")
-    assert isinstance(services, dict), f"{JOB} must declare a services mapping"
-    postgres = services.get("postgres")
-    assert isinstance(postgres, dict), f"{JOB} must declare a postgres service"
-    env = postgres.get("env")
-    assert isinstance(env, dict), "the postgres service must declare env"
-    assert env.get(variable) == "postgres", (
-        f"the postgres service must set {variable} to the value the exported "
-        "URL uses; if one changes the other has to change with it"
+        "matrix.has_postgres, so the libsql-only leg is not handed a database "
+        "URL its feature set does not use"
     )
