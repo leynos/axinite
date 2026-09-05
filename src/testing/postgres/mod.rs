@@ -114,8 +114,12 @@ impl Drop for TestDatabase {
 /// }
 /// ```
 pub async fn test_pg_db() -> Result<TestDatabase, DatabaseError> {
+    // The embedded cluster is preferred, but only when it can actually run.
+    // An explicit `TEST_DATABASE_URL` always wins, and a workflow with no
+    // worker installed falls through to the URL path and skips on a refused
+    // connection, exactly as it did before this fixture existed.
     #[cfg(feature = "test-helpers")]
-    if std::env::var("TEST_DATABASE_URL").is_err() {
+    if std::env::var("TEST_DATABASE_URL").is_err() && embedded::is_usable() {
         return embedded::provision().await;
     }
 

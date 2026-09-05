@@ -164,6 +164,33 @@ where
         .map_err(|error| DatabaseError::Pool(format!("cluster task: {error}")))?
 }
 
+/// Reports whether the embedded cluster can be used at all.
+///
+/// The library drives PostgreSQL through a helper binary, so without it there
+/// is no cluster to bootstrap. Deciding that here, rather than letting the
+/// bootstrap fail, keeps a workflow that installs no worker behaving exactly as
+/// it did before this fixture existed: `test.yml` has neither a worker nor a
+/// database, and its Postgres tests skip on a refused connection.
+///
+/// The alternative was to treat a failed bootstrap as "no database" and skip.
+/// That was rejected. `is_database_unavailable` deliberately excludes
+/// configuration and authentication errors so a misconfigured job fails rather
+/// than quietly reporting coverage for tests that never ran, which is the exact
+/// failure issue #350 was about. A missing worker is a checkable condition, not
+/// an error being swallowed.
+///
+/// Phase 2 installs the worker in the coverage lane and adds a contract that it
+/// is there, so the lane that is meant to run these tests cannot silently take
+/// this branch.
+fn worker_available() -> bool {
+    if let Ok(path) = std::env::var("PG_EMBEDDED_WORKER") {
+        return std::path::Path::new(&path).is_file();
+    }
+    std::env::var_os("PATH")
+        .map(|paths| std::env::split_paths(&paths).any(|dir| dir.join("pg_worker").is_file()))
+        .unwrap_or(false)
+}
+
 /// Returns the shared cluster, bootstrapping it on first use.
 ///
 /// The handle is process-wide and the library serializes the bootstrap
@@ -425,4 +452,13 @@ pub async fn provision() -> Result<TestDatabase, DatabaseError> {
         "could not clone template {template} after {CLONE_ATTEMPTS} attempts: {}",
         last.unwrap_or_else(|| "no error recorded".to_string())
     )))
+}
+
+/// Reports whether this fixture should be used for the current run.
+///
+/// See [`worker_available`] for why a missing worker means "not usable" rather
+/// than an error.
+#[must_use]
+pub fn is_usable() -> bool {
+    worker_available()
 }
