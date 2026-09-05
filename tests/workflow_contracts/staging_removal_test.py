@@ -57,6 +57,19 @@ def _quoted(value: str) -> tuple[str, ...]:
     return (f"'{value}'", f'"{value}"')
 
 
+def _as_strings(declared: object) -> tuple[str, ...]:
+    """Return the strings a filter declares, in either form it may take.
+
+    A branch filter accepts a single name or a list of them, and normalising
+    that here keeps the shape decision out of the caller.
+    """
+    if isinstance(declared, str):
+        return (declared,)
+    if isinstance(declared, list):
+        return tuple(item for item in declared if isinstance(item, str))
+    return ()
+
+
 def _trigger_branches(document: dict[str, object]) -> typ.Iterator[str]:
     """Yield every branch named by a trigger's filters.
 
@@ -66,15 +79,10 @@ def _trigger_branches(document: dict[str, object]) -> typ.Iterator[str]:
     triggers = document.get("on", document.get(True))
     if not isinstance(triggers, dict):
         return
-    for event in triggers.values():
-        if not isinstance(event, dict):
-            continue
+    events = (event for event in triggers.values() if isinstance(event, dict))
+    for event in events:
         for key in ("branches", "branches-ignore"):
-            declared = event.get(key)
-            if isinstance(declared, str):
-                yield declared
-            elif isinstance(declared, list):
-                yield from (item for item in declared if isinstance(item, str))
+            yield from _as_strings(event.get(key))
 
 
 def _jobs(document: dict[str, object]) -> typ.Iterator[dict[str, object]]:
@@ -102,17 +110,20 @@ def _checkout_refs(document: dict[str, object]) -> typ.Iterator[str]:
                 yield typ.cast("str", inputs["ref"])
 
 
+def _strings_at(mapping: dict[str, object], keys: tuple[str, ...]) -> typ.Iterator[str]:
+    """Yield the string values a mapping holds at any of `keys`."""
+    for key in keys:
+        value = mapping.get(key)
+        if isinstance(value, str):
+            yield value
+
+
 def _expressions(document: dict[str, object]) -> typ.Iterator[str]:
     """Yield every condition and script a branch name could be compared in."""
     for job in _jobs(document):
-        if isinstance(job.get("if"), str):
-            yield typ.cast("str", job["if"])
-        if isinstance(job.get("uses"), str):
-            yield typ.cast("str", job["uses"])
+        yield from _strings_at(job, ("if", "uses"))
         for step in _steps(job):
-            for key in ("if", "run", "uses"):
-                if isinstance(step.get(key), str):
-                    yield typ.cast("str", step[key])
+            yield from _strings_at(step, ("if", "run", "uses"))
 
 
 @pytest.mark.parametrize("name", REMOVED_WORKFLOWS, ids=list(REMOVED_WORKFLOWS))
