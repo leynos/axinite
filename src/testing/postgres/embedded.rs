@@ -15,6 +15,40 @@
 //! everything here and uses the external database, which is the escape hatch
 //! for a developer who already has one running and the fallback if the embedded
 //! path ever fails in CI.
+//!
+//! # The shared install root, and when this fails
+//!
+//! `pg-embed-setup-unpriv` 0.5.2 hard-codes where it installs PostgreSQL:
+//!
+//! ```text
+//! let base = Utf8PathBuf::from(format!("/var/tmp/pg-embed-{}", uid.as_raw()));
+//! ```
+//!
+//! `privileges.rs:235`, with no environment override and no setting. Every
+//! project on a machine therefore shares one root per user. The shared cluster
+//! also mints a fresh superuser password on each bootstrap while reusing the
+//! existing data directory, so the credentials it hands back do not match what
+//! the directory was initialized with.
+//!
+//! Together those mean the bootstrap is reliable on a clean machine and not on
+//! one that already has state. CI starts clean, so this path is sound there.
+//! A developer running a second project that uses the library, or returning to
+//! a machine where an earlier run left a directory behind, may see either
+//! `postgresql_embedded::setup() failed` or
+//! `password authentication failed for user "postgres"`.
+//!
+//! Two ways through, in order of preference:
+//!
+//! 1. Set `TEST_DATABASE_URL` to a PostgreSQL with pgvector installed. That
+//!    bypasses everything here and is the supported developer path today.
+//! 2. Remove `/var/tmp/pg-embed-<uid>` and let the next run rebuild it. Check
+//!    first that no other project is mid-run against it, because the root is
+//!    shared.
+//!
+//! The real fix is upstream: an install-root override so each test binary can
+//! have its own, and a password that survives a bootstrap. Both are in the
+//! packet for pg-embed-setup-unpriv v0.6.0. When that ships, a follow-up sets
+//! the override per test binary and this caveat goes.
 
 use std::sync::OnceLock;
 
@@ -94,7 +128,7 @@ pub const TOKEN_GUIDANCE: &str = concat!(
     "which bypasses the embedded cluster entirely.",
 );
 
-/// Name of the nextest group that serialises cluster bootstraps.
+/// Name of the nextest group that serializes cluster bootstraps.
 pub const NEXTEST_GROUP: &str = "pg-embed";
 
 /// Prefix for the migrated template database.
@@ -104,7 +138,7 @@ const TEMPLATE_PREFIX: &str = "axinite_template";
 ///
 /// Cloning fails if another connection is still attached to the template, which
 /// happens when two tests start close together. The clone is cheap, so a short
-/// retry is better than serialising every test behind one lock.
+/// retry is better than serializing every test behind one lock.
 const CLONE_ATTEMPTS: usize = 5;
 
 /// Delay between clone attempts.
@@ -132,7 +166,7 @@ where
 
 /// Returns the shared cluster, bootstrapping it on first use.
 ///
-/// The handle is process-wide and the library serialises the bootstrap
+/// The handle is process-wide and the library serializes the bootstrap
 /// internally, so the first test through pays for it and the rest join.
 ///
 /// # Errors
@@ -358,7 +392,7 @@ pub(crate) fn test_database_config(url: &str, pool_size: usize) -> crate::config
 /// Cloning retries because `CREATE DATABASE ... TEMPLATE` fails while any other
 /// connection is attached to the template, which happens when two tests start
 /// together. The clone itself is fast, so a short retry costs less than
-/// serialising every test behind a lock.
+/// serializing every test behind a lock.
 ///
 /// # Errors
 /// Returns [`DatabaseError::Pool`] when the cluster cannot be reached, the
