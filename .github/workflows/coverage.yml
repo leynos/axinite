@@ -240,10 +240,24 @@ jobs:
           PGPASSWORD: postgres
           PGDATABASE: axinite_test
 
-      - name: Set DATABASE_URL for postgres configs
+      # TEST_DATABASE_URL, not DATABASE_URL: `src/testing/postgres.rs` reads
+      # the former and falls back to `postgresql://localhost/axinite_test`,
+      # which carries no user and no password, so the pool fails with
+      # `kind: Config, cause: "password missing"`. That fallback is not
+      # skipped: `is_database_unavailable` deliberately excludes
+      # authentication and configuration errors so a misconfigured job fails
+      # loudly instead of quietly reporting coverage for tests that never
+      # ran. Dropping this export in #243 is what turned every push to `main`
+      # red from 2026-07-14 onwards; see issue #350.
+      #
+      # DATABASE_URL is exported alongside it because the runtime reads that
+      # name, so anything invoked here that goes through the normal
+      # configuration path sees the same database.
+      - name: Set the test database URL for postgres configs
         if: matrix.has_postgres
         run: |
           database_url="postgres://postgres:postgres@localhost/axinite_test"
+          echo "TEST_DATABASE_URL=${database_url}" >> "$GITHUB_ENV"
           echo "DATABASE_URL=${database_url}" >> "$GITHUB_ENV"
 
       # Instrument with nextest, not plain `cargo test`: the startup
