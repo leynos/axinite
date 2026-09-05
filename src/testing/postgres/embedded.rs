@@ -132,20 +132,20 @@ pub const TOKEN_GUIDANCE: &str = concat!(
 pub const NEXTEST_GROUP: &str = "pg-embed";
 
 /// Prefix for the migrated template database.
-const TEMPLATE_PREFIX: &str = "axinite_template";
+pub(super) const TEMPLATE_PREFIX: &str = "axinite_template";
 
 /// Attempts allowed when cloning the template.
 ///
 /// Cloning fails if another connection is still attached to the template, which
 /// happens when two tests start close together. The clone is cheap, so a short
 /// retry is better than serializing every test behind one lock.
-const CLONE_ATTEMPTS: usize = 5;
+pub(super) const CLONE_ATTEMPTS: usize = 5;
 
 /// Delay between clone attempts.
-const CLONE_RETRY_DELAY: std::time::Duration = std::time::Duration::from_millis(200);
+pub(super) const CLONE_RETRY_DELAY: std::time::Duration = std::time::Duration::from_millis(200);
 
 /// Caches the template name so migrations run once per process.
-static TEMPLATE: OnceLock<Result<String, String>> = OnceLock::new();
+pub(super) static TEMPLATE: OnceLock<Result<String, String>> = OnceLock::new();
 
 /// Runs a synchronous cluster operation where blocking is permitted.
 ///
@@ -154,7 +154,7 @@ static TEMPLATE: OnceLock<Result<String, String>> = OnceLock::new();
 /// a `#[tokio::test]` panics with "Cannot drop a runtime in a context where
 /// blocking is not allowed", so each such call is moved onto a blocking worker
 /// where it is allowed.
-async fn blocking<T, F>(operation: F) -> Result<T, DatabaseError>
+pub(super) async fn blocking<T, F>(operation: F) -> Result<T, DatabaseError>
 where
     F: FnOnce() -> Result<T, DatabaseError> + Send + 'static,
     T: Send + 'static,
@@ -206,208 +206,6 @@ pub async fn cluster() -> Result<&'static ClusterHandle, DatabaseError> {
             .map_err(|error| DatabaseError::Pool(format!("embedded cluster: {error}")))
     })
     .await
-}
-
-/// Names the template after the migrations it contains.
-///
-/// Hashing `migrations/` means a changed migration produces a different
-/// template rather than reusing a stale one, which is the failure this naming
-/// exists to prevent: a developer edits a migration, the old template survives,
-/// and the tests pass against a schema that no longer exists.
-fn template_name() -> Result<String, DatabaseError> {
-    let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("migrations");
-    let hash = pg_embedded_setup_unpriv::test_support::hash_directory(&dir)
-        .map_err(|error| DatabaseError::Pool(format!("hash migrations: {error}")))?;
-    let short = hash.get(..12).unwrap_or(hash.as_str());
-    Ok(format!("{TEMPLATE_PREFIX}_{short}"))
-}
-
-/// Points `postgresql_extensions` at the cluster's own installation.
-///
-/// The extension crate derives the library and share directories by running
-/// `pg_config` from the binary directory, so this only has to say where the
-/// binaries are. The connection fields are unused for an install but the trait
-/// requires them.
-struct ExtensionTarget {
-    binary_dir: std::path::PathBuf,
-}
-
-impl postgresql_commands::Settings for ExtensionTarget {
-    fn get_binary_dir(&self) -> std::path::PathBuf {
-        self.binary_dir.clone()
-    }
-    fn get_host(&self) -> std::ffi::OsString {
-        "localhost".into()
-    }
-    fn get_port(&self) -> u16 {
-        0
-    }
-    fn get_username(&self) -> std::ffi::OsString {
-        "postgres".into()
-    }
-    fn get_password(&self) -> std::ffi::OsString {
-        String::new().into()
-    }
-}
-
-/// Installs pgvector into the cluster's tree if it is not already there.
-///
-/// Theseus builds PostgreSQL with its in-tree contrib modules, and pgvector is
-/// out of tree, so the server arrives without it. The archive is prebuilt, so
-/// nothing is compiled here and the estate's no-source-builds rule holds.
-///
-/// Idempotent: the extension crate records what it installed and skips a second
-/// install, so every test can call this and only the first does work.
-///
-/// # Errors
-/// Returns [`DatabaseError::Pool`] carrying [`TOKEN_GUIDANCE`] when the archive
-/// cannot be fetched, because the overwhelmingly likely cause is the GitHub API
-/// rate limit and the underlying error says only `403 Forbidden`.
-async fn install_extension(cluster: &ClusterHandle) -> Result<(), DatabaseError> {
-    let target = ExtensionTarget {
-        binary_dir: cluster.settings().binary_dir(),
-    };
-    let installed = postgresql_extensions::get_installed_extensions(&target)
-        .await
-        .unwrap_or_default();
-    if installed
-        .iter()
-        .any(|extension| extension.name() == "pgvector_compiled")
-    {
-        return Ok(());
-    }
-    postgresql_extensions::install(
-        &target,
-        "portal-corp",
-        "pgvector_compiled",
-        &semver::VersionReq::STAR,
-    )
-    .await
-    .map_err(|error| DatabaseError::Pool(format!("{TOKEN_GUIDANCE}\n\nUnderlying error: {error}")))
-}
-
-/// Creates the migrated template if it is absent, and returns its name.
-///
-/// The template is built once per hash and reused by every test in every
-/// process, so the seventeen migrations run once rather than once per test.
-/// `ensure_template_exists` on the handle takes a synchronous closure, which
-/// cannot drive refinery's async runner from inside a test's runtime, so the
-/// steps are done here instead.
-///
-/// Two processes can reach this together. The loser of the create race sees the
-/// database already exists, waits for the winner to finish migrating, and then
-/// proceeds; that is what the readiness poll below is for. Without it the loser
-/// would clone a template whose migrations were half applied.
-async fn ensure_template(cluster: &'static ClusterHandle) -> Result<String, DatabaseError> {
-    let name = template_name()?;
-    if let Some(cached) = TEMPLATE.get() {
-        return cached
-            .clone()
-            .map_err(|error| DatabaseError::Pool(format!("template: {error}")));
-    }
-
-    let outcome = build_template(cluster, &name).await;
-    let stored = outcome
-        .as_ref()
-        .map(|()| name.clone())
-        .map_err(ToString::to_string);
-    let _ = TEMPLATE.set(stored);
-    outcome.map(|()| name)
-}
-
-/// Creates and migrates the template database.
-async fn build_template(cluster: &'static ClusterHandle, name: &str) -> Result<(), DatabaseError> {
-    install_extension(cluster).await?;
-
-    let owned = name.to_string();
-    let existed = blocking(move || {
-        cluster
-            .database_exists(owned.as_str())
-            .map_err(|error| DatabaseError::Pool(format!("template lookup: {error}")))
-    })
-    .await?;
-    if !existed {
-        let owned = name.to_string();
-        let created = blocking(move || Ok(cluster.create_database(owned.as_str()).is_ok())).await?;
-        if !created {
-            // Another process won the race. Its migrations may still be
-            // running, so fall through to the readiness poll rather than
-            // cloning a half-built template.
-            return wait_for_template(cluster, name).await;
-        }
-        let url = cluster.connection().database_url(name);
-        migrate(&url).await?;
-        return Ok(());
-    }
-    wait_for_template(cluster, name).await
-}
-
-/// Waits until the template carries the table the last migration creates.
-///
-/// Presence of the database says only that some process has started; presence
-/// of a migrated table says the schema is there to clone.
-async fn wait_for_template(
-    cluster: &'static ClusterHandle,
-    name: &str,
-) -> Result<(), DatabaseError> {
-    let url = cluster.connection().database_url(name);
-    for _ in 0..CLONE_ATTEMPTS {
-        if template_is_migrated(&url).await? {
-            return Ok(());
-        }
-        tokio::time::sleep(CLONE_RETRY_DELAY).await;
-    }
-    Err(DatabaseError::Pool(format!(
-        "template {name} did not finish migrating; another process may have \
-         failed part-way through. Drop it and retry."
-    )))
-}
-
-/// Reports whether the refinery history table names every migration.
-async fn template_is_migrated(url: &str) -> Result<bool, DatabaseError> {
-    let config = test_database_config(url, TEST_POOL_SIZE);
-    let Ok(backend) = crate::db::postgres::PgBackend::new(&config).await else {
-        return Ok(false);
-    };
-    // `PgBackend::store` is private outside its own module tree, so the store
-    // is rebuilt from the pool the backend exposes.
-    let store = crate::history::Store::from_pool(backend.pool());
-    let conn = store.conn().await?;
-    let row = conn
-        .query_one(
-            "SELECT count(*) FROM information_schema.tables \
-             WHERE table_schema = 'public' AND table_name = 'refinery_schema_history'",
-            &[],
-        )
-        .await
-        .map_err(|error| DatabaseError::Pool(error.to_string()))?;
-    let present: i64 = row.get(0);
-    Ok(present > 0)
-}
-
-/// Applies the embedded migrations to `url`.
-async fn migrate(url: &str) -> Result<(), DatabaseError> {
-    let config = test_database_config(url, TEST_POOL_SIZE);
-    let backend = crate::db::postgres::PgBackend::new(&config).await?;
-    crate::history::Store::from_pool(backend.pool())
-        .run_migrations()
-        .await
-}
-
-/// Builds the configuration a test's backend uses.
-///
-/// `pool_size` is the fixture's, not the production default: see
-/// [`TEST_POOL_SIZE`] for why the number is what the connection budget allows.
-pub(crate) fn test_database_config(url: &str, pool_size: usize) -> crate::config::DatabaseConfig {
-    crate::config::DatabaseConfig {
-        backend: crate::config::DatabaseBackend::Postgres,
-        url: secrecy::SecretString::from(url.to_string()),
-        pool_size,
-        ssl_mode: crate::config::SslMode::Prefer,
-        libsql_path: None,
-        libsql_url: None,
-        libsql_auth_token: None,
-    }
 }
 
 /// Provisions a fresh database cloned from the migrated template.
@@ -462,3 +260,24 @@ pub async fn provision() -> Result<TestDatabase, DatabaseError> {
 pub fn is_usable() -> bool {
     worker_available()
 }
+
+/// Builds the configuration a test's backend uses.
+///
+/// `pool_size` is the fixture's, not the production default: see
+/// [`TEST_POOL_SIZE`] for why the number is what the connection budget allows.
+pub(super) fn test_database_config(url: &str, pool_size: usize) -> crate::config::DatabaseConfig {
+    crate::config::DatabaseConfig {
+        backend: crate::config::DatabaseBackend::Postgres,
+        url: secrecy::SecretString::from(url.to_string()),
+        pool_size,
+        ssl_mode: crate::config::SslMode::Prefer,
+        libsql_path: None,
+        libsql_url: None,
+        libsql_auth_token: None,
+    }
+}
+
+mod extension;
+mod template;
+
+use template::ensure_template;
