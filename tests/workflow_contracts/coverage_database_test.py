@@ -50,9 +50,14 @@ ASSIGNMENT_RE: typ.Final[re.Pattern[str]] = re.compile(
 #: Matches `echo "NAME=${shell_var}" >> "$GITHUB_ENV"`, which is how a value
 #: reaches later steps. The exported name and the shell variable holding the
 #: value are both captured, so the two halves can be joined.
+#:
+#: The redirection target is part of the pattern on purpose. A line redirecting
+#: to an ordinary file looks identical up to the `>>`, and would satisfy every
+#: assertion here while later steps received nothing and the helper fell back to
+#: the unauthenticated URL.
 EXPORT_RE: typ.Final[re.Pattern[str]] = re.compile(
     r"echo\s+\"(?P<name>[A-Za-z_][A-Za-z0-9_]*)=\$\{(?P<source>[A-Za-z_]"
-    r"[A-Za-z0-9_]*)\}\"\s*>>",
+    r"[A-Za-z0-9_]*)\}\"\s*>>\s*\"?\$(?:\{)?GITHUB_ENV(?:\})?\"?",
 )
 
 
@@ -97,13 +102,11 @@ def _exporting_step() -> dict[str, object]:
 
 
 def _exported_test_url() -> str:
-    """Return the URL value the step exports as `TEST_DATABASE_URL`.
-
-    The script assigns the URL to a shell variable and then exports that
-    variable, so both halves are resolved rather than assumed. Following the
-    indirection is the point: it is what ties the credentials being asserted to
-    the name the tests read.
-    """
+    """Return the URL value the step exports as `TEST_DATABASE_URL`."""
+    # The script assigns the URL to a shell variable and then exports that
+    # variable, so both halves are resolved rather than assumed. Following the
+    # indirection is the point: it is what ties the credentials being asserted
+    # to the name the tests read.
     script = step_text(_exporting_step())
     exports = {m["name"]: m["source"] for m in EXPORT_RE.finditer(script)}
     source = exports.get(TEST_URL_VARIABLE)
