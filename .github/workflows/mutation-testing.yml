@@ -9,6 +9,14 @@ name: Mutation testing
 #
 # This workflow is NOT a required status check. Surviving mutants are
 # informational, not a merge gate.
+#
+# It also carries the daily full-suite run that the staging promotion pipeline
+# used to provide. That pipeline was removed: it had failed every one of its
+# 488 scheduled runs on a secret this repository does not hold, and it spent
+# about £22 a month on paid runners to do it. The checks it was meant to give
+# now run here, once a day rather than hourly, and entirely on GitHub-hosted
+# runners: `test.yml` and `e2e.yml` take their runner label from the event, so
+# a scheduled call lands on `ubuntu-latest`.
 
 "on":
   schedule:
@@ -80,3 +88,15 @@ jobs:
         cargo nextest --version
         make build-github-tool-wasm
         ./scripts/build-wasm-extensions.sh --channels
+
+  # ── Daily full suite, GitHub-hosted ──────────────────────────────
+  # These replace the hourly staging suite. They are informational in the
+  # same sense as the mutation job: nothing gates on them, and a failure
+  # here means `main` needs attention rather than that a merge is blocked.
+  tests:
+    name: Test Suite
+    uses: ./.github/workflows/test.yml
+
+  e2e:
+    name: E2E Browser Tests
+    uses: ./.github/workflows/e2e.yml

@@ -122,11 +122,11 @@ work a free runner does equally well.
 | Build and test | `code_style.yml` `format`, `code_style.yml` `clippy`, `test.yml` `tests`, `test.yml` `telegram-tests`, `test.yml` `wasm-wit-compat`, `coverage.yml` `coverage`, `coverage.yml` `e2e-coverage`, `codescene-coverage.yml` `coverage-check`, `e2e.yml` `build`, `e2e.yml` `test` | `ubicloud-standard-8` |
 | Docker | `test.yml` `docker-build` | `ubicloud-standard-8` |
 | Windows | `code_style.yml` `clippy-windows`, `test.yml` `windows-build` | `windows-latest` |
-| Release and promotion | `release-plz.yml` `release-plz-release`, `release-plz.yml` `release-plz-pr`, `staging-ci.yml` `create-promotion-pr`, `staging-ci.yml` `gate`, `staging-ci.yml` `update-tag` | `ubuntu-latest` |
+| Release | `release-plz.yml` `release-plz-release`, `release-plz.yml` `release-plz-pr` | `ubuntu-latest` |
 | Label and classify | `pr-label-scope.yml` `scope`, `pr-label-classify.yml` `classify` | `ubuntu-latest` |
 | Review | `claude-review.yml` `review` | `ubuntu-latest` |
-| Roll-up and report | `code_style.yml` `code-style`, `test.yml` `run-tests`, `coverage.yml` `coverage-gate`, `e2e.yml` `e2e`, `staging-ci.yml` `report` | `ubuntu-latest` |
-| Scheduled and metadata | `audit.yml` `audit`, `test.yml` `audit`, `test.yml` `version-check`, `regression-test-check.yml` `regression-test`, `staging-ci.yml` `check-changes`, `mutation-testing.yml` `mutation` | `ubuntu-latest` |
+| Roll-up and report | `code_style.yml` `code-style`, `test.yml` `run-tests`, `coverage.yml` `coverage-gate`, `e2e.yml` `e2e` | `ubuntu-latest` |
+| Scheduled and metadata | `audit.yml` `audit`, `test.yml` `audit`, `test.yml` `version-check`, `regression-test-check.yml` `regression-test`, `mutation-testing.yml` `mutation`, `mutation-testing.yml` `tests`, `mutation-testing.yml` `e2e` | `ubuntu-latest` |
 
 The placement rule is therefore: a job may run on an Ubicloud runner only when
 it compiles or executes the product. Everything else is GitHub-hosted. Windows
@@ -164,13 +164,38 @@ for. Cron work has nobody waiting, so it runs GitHub-hosted, which costs this
 repository nothing because it is public.
 
 The rule is easy to break without touching a runner label, and Axinite did.
-`staging-ci.yml` put every job it owns on `ubuntu-latest` and still spent about
-£22 a month on `ubicloud-standard-8` because two of its jobs are `uses:` callers
-into `test.yml` and `e2e.yml`, whose jobs are Ubicloud by design for the
-developer path. Nothing in the calling workflow shows it.
-`tests/workflow_contracts/scheduled_placement_test.py` therefore follows a local
-reusable-workflow call into the workflow it names and applies the rule there
-too.
+The removed `staging-ci.yml` put every job it owned on `ubuntu-latest` and still
+spent about £22 a month on `ubicloud-standard-8`, because two of its jobs were
+`uses:` callers into `test.yml` and `e2e.yml`, whose jobs are Ubicloud for the
+developer path. Nothing in the calling workflow showed it.
+`tests/workflow_contracts/scheduled_placement_test.py` therefore follows local
+reusable-workflow calls, transitively, and applies the rule to every job it
+reaches. It also skips a job whose own guard excludes a scheduled event, since
+such a job is never dispatched in that context and costs nothing.
+
+That contract is what makes the daily full-suite run safe. `mutation-testing.yml`
+calls `test.yml` and `e2e.yml`, so every job in both must land GitHub-hosted
+when a schedule triggers them, and the contract fails if any stops doing so.
+
+#### The daily full suite
+
+There is no staging promotion pipeline. It was removed: it had failed every one
+of its 488 scheduled runs on a `GH_RELEASES_MANAGER_APP_ID` this repository does
+not hold, so nothing was ever promoted, while the two jobs that did not depend
+on that secret ran the full suite hourly on paid runners and threw the result
+away.
+
+The signal it was meant to give, a regular full-suite run against the trunk,
+now sits in `mutation-testing.yml`, which already runs daily and is already
+informational. It calls `test.yml` and `e2e.yml` directly, so the suite it runs
+is the one a developer sees rather than a copy that can drift. Nothing gates on
+it: a failure there means `main` needs attention, not that a merge is blocked.
+
+The `staging` branch itself is untouched. Deleting a branch is not something a
+workflow change should do; if it is no longer wanted, remove it deliberately.
+`claude-review.yml` still triggers on a `staging-promotion` label that only the
+removed promotion job applied, so it can no longer fire on its own. It is left
+in place rather than deleted here, and wants its own decision.
 
 A workflow that is both a developer gate and a cron cannot answer the question
 with a fixed label, so the label follows the event:
@@ -275,8 +300,8 @@ sequence and compare queue time, wall time, and the sccache hit rate.
 A dispatch is a reader. No save step can run, because every save names the
 `push` event; the CodeScene upload stays gated on `pull_request` so a manual
 run reports coverage to the log only. Otherwise a dispatch behaves like a push:
-the jobs that skip on staging-base pull requests all run, including the
-GitHub-hosted Windows lanes, so a manual run is a full run. Its Ubicloud jobs
+every job runs, including the GitHub-hosted Windows lanes, so a manual run is
+a full run. Its Ubicloud jobs
 are billed by the minute like any other; the GitHub-hosted lanes are not,
 because this repository is public. The trigger takes no inputs, because
 `gh workflow run --ref` and the Actions UI already choose the ref.

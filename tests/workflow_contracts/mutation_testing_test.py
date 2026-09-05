@@ -80,15 +80,39 @@ def _triggers(workflow: dict[str, object]) -> dict[str, object]:
     return triggers
 
 
+#: Jobs this workflow declares. `mutation` is the caller these contracts
+#: describe; `tests` and `e2e` carry the daily full-suite run that replaced the
+#: hourly staging pipeline, and are asserted separately below.
+EXPECTED_JOBS = ["mutation", "tests", "e2e"]
+
+
 def _mutation_job(workflow: dict[str, object]) -> dict[str, object]:
-    """Return the single calling job."""
+    """Return the mutation calling job."""
     jobs = workflow.get("jobs")
     assert isinstance(jobs, dict), "the workflow must declare a jobs mapping"
-    assert jobs, "the workflow must declare at least one job"
-    assert list(jobs) == ["mutation"], (
-        f"expected a single job named 'mutation', found {sorted(jobs)}"
+    assert list(jobs) == EXPECTED_JOBS, (
+        f"expected jobs {EXPECTED_JOBS}, found {list(jobs)}"
     )
     return jobs["mutation"]
+
+
+def test_the_daily_full_suite_calls_the_developer_workflows() -> None:
+    """Keep the coverage the removed staging pipeline was meant to give.
+
+    The hourly staging suite ran `test.yml` and `e2e.yml` and threw the result
+    away, because the job that consumed it could never run. Deleting it removed
+    a cost, and would have removed a daily signal on `main` with it, so the two
+    callers move here.
+    """
+    jobs = _load().get("jobs")
+    assert isinstance(jobs, dict), "the workflow must declare a jobs mapping"
+    for job_id, called in (("tests", "test.yml"), ("e2e", "e2e.yml")):
+        job = jobs.get(job_id)
+        assert isinstance(job, dict), f"jobs.{job_id} is missing"
+        assert job.get("uses") == f"./.github/workflows/{called}", (
+            f"jobs.{job_id} must call {called} directly, so the suite it runs "
+            "is the same one a developer sees"
+        )
 
 
 def test_uses_reference_is_pinned_to_a_commit_sha() -> None:
