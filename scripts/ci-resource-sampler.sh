@@ -35,17 +35,27 @@ free_disk_kib() {
   df -Pk . | awk 'NR == 2 {print $4}'
 }
 
+# Write through a temporary file and rename, so a reader sees either the old
+# value or the new one and never a truncated file. This is not sufficient on
+# its own, because the update is a read-modify-write, but it removes the
+# empty-file window that `set -u` would turn into a failed report.
+write_atomic() {
+  local path="$1" value="$2"
+  printf '%s\n' "${value}" > "${path}.tmp"
+  mv -f "${path}.tmp" "${path}"
+}
+
 sample_once() {
   local used free previous
   used="$(used_memory_kib)"
   free="$(free_disk_kib)"
   previous="$(cat "${PEAK_FILE}")"
   if [ "${used}" -gt "${previous}" ]; then
-    printf '%s\n' "${used}" > "${PEAK_FILE}"
+    write_atomic "${PEAK_FILE}" "${used}"
   fi
   previous="$(cat "${FREE_FILE}")"
   if [ "${free}" -lt "${previous}" ]; then
-    printf '%s\n' "${free}" > "${FREE_FILE}"
+    write_atomic "${FREE_FILE}" "${free}"
   fi
 }
 
@@ -66,16 +76,42 @@ start_sampler() {
     "${INTERVAL}" "${STATE_DIR}"
 }
 
+# Stop the background loop and wait for it to go. Killing it and reading
+# immediately races the loop's own read-modify-write: the report can catch a
+# state file mid-rewrite, read an empty value, and then fail on arithmetic
+# under `set -u`. Waiting is the only way to be sure no writer remains.
+stop_sampler() {
+  local pid waited
+  [ -f "${PID_FILE}" ] || return 0
+  pid="$(cat "${PID_FILE}")"
+  [ -n "${pid}" ] || return 0
+  kill "${pid}" 2>/dev/null || true
+  # `wait` applies only to a child of this shell, which the loop is when
+  # `report` runs in the same process as `start`. It is not when they are
+  # separate steps, so poll for the process to disappear as well.
+  wait "${pid}" 2>/dev/null || true
+  waited=0
+  while kill -0 "${pid}" 2>/dev/null; do
+    sleep 1
+    waited=$((waited + 1))
+    if [ "${waited}" -ge 15 ]; then
+      printf 'resource sampler: sampler %s did not exit; killing\n' "${pid}"
+      kill -9 "${pid}" 2>/dev/null || true
+      break
+    fi
+  done
+  rm -f "${PID_FILE}"
+}
+
 report_sampler() {
-  if [ -f "${PID_FILE}" ]; then
-    kill "$(cat "${PID_FILE}")" 2>/dev/null || true
-  fi
+  stop_sampler
   if [ ! -f "${PEAK_FILE}" ] || [ ! -f "${FREE_FILE}" ]; then
     printf 'resource sampler: no samples recorded\n'
     return 0
   fi
   # Take one final sample, so a job that finishes inside a single interval
-  # still reports a real figure rather than the seed values.
+  # still reports a real figure rather than the seed values. No writer remains
+  # by this point, so this cannot race.
   sample_once
   local peak_mib free_mib total_mib
   peak_mib="$(( $(cat "${PEAK_FILE}") / 1024 ))"

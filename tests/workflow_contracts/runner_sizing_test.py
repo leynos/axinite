@@ -89,6 +89,16 @@ def test_every_ubicloud_job_samples_its_own_resources(job: Job) -> None:
     assert names.index(START_STEP) < names.index(REPORT_STEP), (
         f"{job} reports the sampler before starting it"
     )
+    # Assert the command, not the step name. A step renamed onto a no-op
+    # satisfies a name check, and the report then succeeds while printing "no
+    # samples recorded", so the measurement disappears with every test still
+    # green. This is the whole failure mode the contract exists to stop.
+    start = job.steps[names.index(START_STEP)]
+    assert f"{SAMPLER} start" in step_text(start), (
+        f"{job} has a {START_STEP!r} step that does not run "
+        f"`{SAMPLER} start`; a step that only carries the name measures "
+        "nothing and reports success"
+    )
 
 
 @pytest.mark.parametrize("job", _ubicloud_jobs(), ids=_ids(_ubicloud_jobs()))
