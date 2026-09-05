@@ -31,7 +31,7 @@ from _workflow_policy import (
 )
 
 if typ.TYPE_CHECKING:  # pragma: no cover - typing only
-    from collections.abc import Iterator
+    from collections.abc import Callable, Iterator
     from pathlib import Path
 
 #: Prefix identifying a `uses:` that names another workflow in this repository.
@@ -75,6 +75,7 @@ def _reachable_jobs(
     path: Path,
     directory: Path | None = None,
     seen: set[str] | None = None,
+    follow: Callable[[Job], bool] | None = None,
 ) -> Iterator[Job]:
     """Yield every job a workflow can reach, following local calls.
 
@@ -94,11 +95,18 @@ def _reachable_jobs(
         File names already walked, so a cycle terminates rather than recursing
         forever. A workflow calling itself is invalid to GitHub, but a
         contract that hangs on bad input is worse than one that reports it.
+    follow
+        Decides whether a calling job's target is walked at all. A caller that
+        cannot run dispatches nothing, so its target's jobs are never reached;
+        filtering them after the walk would be too late, because an
+        unconditional job in that target would be reported against a call that
+        never happens.
 
     Yields
     ------
     Job
-        Every job in the workflow and in every local workflow it reaches.
+        Every job in the workflow and in every local workflow it reaches
+        through a caller that `follow` accepts.
     """
     directory = WORKFLOW_DIR if directory is None else directory
     seen = set() if seen is None else seen
@@ -110,11 +118,13 @@ def _reachable_jobs(
         called = _called_workflow(job)
         if called is None:
             continue
+        if follow is not None and not follow(job):
+            continue
         target = directory / called
         assert target.is_file(), (
             f"{job} calls {called!r}, which is not a workflow in this repository"
         )
-        yield from _reachable_jobs(target, directory, seen)
+        yield from _reachable_jobs(target, directory, seen, follow)
 
 
 def _runs_on_schedule(job: Job) -> bool:
@@ -183,7 +193,7 @@ def test_a_scheduled_workflow_calls_no_ubicloud_job(path: Path) -> None:
     dispatched in this context and costs nothing, so reporting it would make
     the contract impossible to satisfy for reasons that are not real.
     """
-    for job in _reachable_jobs(path):
+    for job in _reachable_jobs(path, follow=_runs_on_schedule):
         if job.workflow == path.name:
             continue
         if not _runs_on_schedule(job):
@@ -232,6 +242,40 @@ class TestReachableJobs:
         ]
         deepest = found[-1]
         assert _ubicloud_labels_on_schedule(deepest) == ("ubicloud-standard-8",)
+
+    def test_it_does_not_follow_a_caller_a_schedule_cannot_dispatch(
+        self, tmp_path: Path
+    ) -> None:
+        """A call that never happens cannot cost anything.
+
+        Filtering the yielded jobs instead of the call would report the
+        target's unconditional Ubicloud job against a caller that a schedule
+        never dispatches.
+        """
+        _write(
+            tmp_path,
+            "outer.yml",
+            "jobs:\n"
+            "  call:\n"
+            "    if: github.event_name == 'push'\n"
+            "    uses: ./.github/workflows/inner.yml\n",
+        )
+        _write(
+            tmp_path,
+            "inner.yml",
+            "jobs:\n  build:\n    runs-on: ubicloud-standard-8\n",
+        )
+        walked = list(
+            _reachable_jobs(tmp_path / "outer.yml", tmp_path, follow=_runs_on_schedule)
+        )
+        assert [str(job) for job in walked] == ["outer.yml:call"]
+        # Without the guard the same walk reaches the paid job, which is the
+        # report this change exists to prevent.
+        unguarded = list(_reachable_jobs(tmp_path / "outer.yml", tmp_path))
+        assert [str(job) for job in unguarded] == [
+            "outer.yml:call",
+            "inner.yml:build",
+        ]
 
     def test_a_cycle_terminates(self, tmp_path: Path) -> None:
         """A malformed pair of workflows must fail the run, not hang it."""

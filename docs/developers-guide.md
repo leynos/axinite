@@ -117,10 +117,17 @@ runner. Ubicloud bills by the minute for a runner shape chosen to compile
 Rust, so a job that only calls the GitHub API consumes an expensive shape for
 work a free runner does equally well.
 
+Two workflows serve both a developer event and a cron, so their runner depends
+on the event. The table gives the developer runner, which is the one a
+contributor sees; on `schedule` those jobs run on `ubuntu-latest` instead, and
+`tests/workflow_contracts/scheduled_placement_test.py` fails if they stop doing
+so. The affected rows are marked.
+
 | Class | Jobs | Runner |
 | --- | --- | --- |
-| Build and test | `code_style.yml` `format`, `code_style.yml` `clippy`, `test.yml` `tests`, `test.yml` `telegram-tests`, `test.yml` `wasm-wit-compat`, `coverage.yml` `coverage`, `coverage.yml` `e2e-coverage`, `codescene-coverage.yml` `coverage-check`, `e2e.yml` `build`, `e2e.yml` `test` | `ubicloud-standard-8` |
-| Docker | `test.yml` `docker-build` | `ubicloud-standard-8` |
+| Build and test | `code_style.yml` `format`, `code_style.yml` `clippy`, `coverage.yml` `coverage`, `coverage.yml` `e2e-coverage`, `codescene-coverage.yml` `coverage-check` | `ubicloud-standard-8` |
+| Build and test, event-dependent | `test.yml` `tests`, `test.yml` `telegram-tests`, `test.yml` `wasm-wit-compat`, `e2e.yml` `build`, `e2e.yml` `test` | `ubicloud-standard-8` on a developer event, `ubuntu-latest` on `schedule` |
+| Docker, event-dependent | `test.yml` `docker-build` | `ubicloud-standard-8` on a developer event, `ubuntu-latest` on `schedule` |
 | Windows | `code_style.yml` `clippy-windows`, `test.yml` `windows-build` | `windows-latest` |
 | Release | `release-plz.yml` `release-plz-release`, `release-plz.yml` `release-plz-pr` | `ubuntu-latest` |
 | Label and classify | `pr-label-scope.yml` `scope`, `pr-label-classify.yml` `classify` | `ubuntu-latest` |
