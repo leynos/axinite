@@ -290,6 +290,72 @@ event selects. Reading the expression as one opaque label would have dropped the
 job out of every one of those contracts at once, which is the failure mode the
 helper tests pin.
 
+### Postgres tests and the embedded cluster
+
+The Postgres-backed tests run against a cluster the test process owns, not a
+service container. `src/testing/postgres/embedded.rs` bootstraps PostgreSQL 16,
+installs pgvector from a prebuilt archive, migrates one template database named
+after a hash of `migrations/`, and clones a fresh database per test that is
+dropped when the test ends.
+
+Isolation is the point. The tests used to share one database and keep out of
+each other's way by convention, with fresh UUIDs and targeted `DELETE`
+statements; one clean-up deletes by user id, which is safe only while no two
+tests choose the same user. A database per test removes the question.
+
+`TEST_DATABASE_URL` bypasses all of it and uses the database it names. That is
+the developer path today, and the fallback if the embedded path ever fails in
+CI.
+
+#### Three things that are not obvious
+
+**The connection budget is derived, not set.** The library offers no way to
+raise `max_connections` at bootstrap: no setting, no environment variable, and
+`ALTER SYSTEM` needs a restart the shared handle does not expose. So the
+cluster's 20 is taken as given and the tests are bounded to fit. Each test's
+pool takes 2 and the `pg-embed` nextest group caps concurrency at 8, using 16
+and leaving headroom for the template connection, the administrative connection
+that creates and drops each clone, and pools that have not yet released.
+Measured before that bound existed: two failures in eight runs, a different test
+each time, all `sorry, too many clients already`.
+
+**The version pin lives in `.cargo/config.toml`.** The library reads it from the
+environment during bootstrap, and a test process cannot safely set its own
+environment once threads exist. nextest's configuration has no `env` key: it
+warns `ignoring unknown configuration keys: env` and carries on. Cargo's `[env]`
+applies to every process it runs, so `cargo test`, `cargo nextest` and
+`cargo llvm-cov` all agree. The range is capped at 16 because the prebuilt
+pgvector archive publishes PostgreSQL 16 assets only; the minor is open because
+PostgreSQL's module magic block encodes the major and not the minor, so a module
+built for one 16.x loads into another.
+
+**Every synchronous cluster call runs on a blocking worker.** The handle's
+methods each build and tear down a Tokio runtime internally, and dropping a
+runtime inside a `#[tokio::test]` panics with "Cannot drop a runtime in a
+context where blocking is not allowed". The same applies to the guard that drops
+the cloned database, which is moved onto a plain thread and joined.
+
+#### When the bootstrap fails
+
+The library hard-codes its install root as `/var/tmp/pg-embed-<uid>`
+(`privileges.rs:235`), with no override, so every project on a machine shares
+one root per user. It also mints a fresh superuser password on each bootstrap
+while reusing the existing data directory, so the credentials it returns need
+not match what that directory was initialized with.
+
+The bootstrap is therefore reliable on a clean machine and not on one carrying
+state. CI starts clean, so the path is sound there. A developer running a second
+project that uses the library, or returning to a machine where an earlier run
+left a directory, may see `postgresql_embedded::setup() failed` or
+`password authentication failed for user "postgres"`.
+
+Set `TEST_DATABASE_URL` and carry on, or remove `/var/tmp/pg-embed-<uid>` and
+let the next run rebuild it, having checked that no other project is mid-run
+against it. The real fix is upstream, in the packet for
+`pg-embed-setup-unpriv` v0.6.0: an install-root override so each test binary can
+have its own, and a password that survives a bootstrap. When that ships, the
+override is set per test binary and this section loses its last two paragraphs.
+
 ### Tool installation
 
 CI must not compile a tool it could download. Compiling `whitaker-installer`

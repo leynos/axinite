@@ -10,3 +10,32 @@ default-filter = 'not binary(trybuild)'
 [profile.ci]
 # CI runs everything, including the trybuild compile-contract tests.
 default-filter = 'all()'
+
+# Bound the Postgres tests, not because they interfere with each other, but
+# because they share one cluster's connection limit.
+#
+# pg-embed-setup-unpriv 0.5.2 offers no way to raise `max_connections` at
+# bootstrap: there is no setting on the handle, no environment variable, and
+# `ALTER SYSTEM` would need a restart the shared handle does not expose. So the
+# budget is met from this side instead. The cluster allows 20 connections and
+# each test's pool takes 2 (`TEST_POOL_SIZE`), so 8 concurrent tests use 16 and
+# leave headroom for the template connection, the administrative connection
+# that creates and drops each clone, and pools that have not yet released.
+#
+# Measured before this bound existed: two failures in eight runs, a different
+# test each time, all `sorry, too many clients already`.
+#
+# `tests/workflow_contracts/nextest_postgres_test.py` asserts these numbers
+# against the constants in `src/testing/postgres/embedded.rs`, so raising one
+# without the other fails a contract rather than producing intermittent
+# connection errors.
+[test-groups]
+pg-embed = { max-threads = 8 }
+
+[[profile.default.overrides]]
+filter = 'test(/^db::postgres::/) or test(/^history::store::/)'
+test-group = 'pg-embed'
+
+[[profile.ci.overrides]]
+filter = 'test(/^db::postgres::/) or test(/^history::store::/)'
+test-group = 'pg-embed'
