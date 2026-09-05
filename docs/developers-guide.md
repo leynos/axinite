@@ -133,7 +133,6 @@ so. The affected rows are marked.
 | Windows | `code_style.yml` `clippy-windows`, `test.yml` `windows-build` | `windows-latest` |
 | Release | `release-plz.yml` `release-plz-release`, `release-plz.yml` `release-plz-pr` | `ubuntu-latest` |
 | Label and classify | `pr-label-scope.yml` `scope`, `pr-label-classify.yml` `classify` | `ubuntu-latest` |
-| Review | `claude-review.yml` `review` | `ubuntu-latest` |
 | Roll-up and report | `code_style.yml` `code-style`, `test.yml` `run-tests`, `coverage.yml` `coverage-gate`, `e2e.yml` `e2e` | `ubuntu-latest` |
 | Scheduled and metadata | `audit.yml` `audit`, `test.yml` `audit`, `test.yml` `version-check`, `regression-test-check.yml` `regression-test`, `mutation-testing.yml` `mutation`, `mutation-testing.yml` `tests`, `mutation-testing.yml` `e2e` | `ubuntu-latest` |
 
@@ -266,11 +265,18 @@ informational. It calls `test.yml` and `e2e.yml` directly, so the suite it runs
 is the one a developer sees rather than a copy that can drift. Nothing gates on
 it: a failure there means `main` needs attention, not that a merge is blocked.
 
-The `staging` branch itself is untouched. Deleting a branch is not something a
-workflow change should do; if it is no longer wanted, remove it deliberately.
-`claude-review.yml` still triggers on a `staging-promotion` label that only the
-removed promotion job applied, so it can no longer fire on its own. It is left
-in place rather than deleted here, and wants its own decision.
+The `staging` branch and `claude-review.yml` are gone too, removed deliberately
+once the pipeline was. The review workflow only ever fired on a
+`staging-promotion` label that the removed promotion job applied, and had been
+skipped or cancelled in all 567 of its runs.
+
+`tests/workflow_contracts/staging_removal_test.py` keeps all three removed.
+That is worth a contract because none of it fails loudly on its own: a workflow
+filtered on a branch that does not exist, or a job guarded by a label nobody
+applies, simply never runs. It costs nothing, reports nothing, and reads as
+working configuration. The contract inspects the parsed workflow rather than its
+text, so the history in a comment survives and only a reference that could make
+a workflow act on staging fails.
 
 A workflow that is both a developer gate and a cron cannot answer the question
 with a fixed label, so the label follows the event:

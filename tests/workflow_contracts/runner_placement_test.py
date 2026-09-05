@@ -189,7 +189,6 @@ def test_roll_up_and_administrative_jobs_are_github_hosted() -> None:
     # them explicitly means a revert fails here rather than on the invoice.
     github_hosted = {
         ("audit.yml", "audit"),
-        ("claude-review.yml", "review"),
         ("code_style.yml", "code-style"),
         ("coverage.yml", "coverage-gate"),
         ("e2e.yml", "e2e"),
