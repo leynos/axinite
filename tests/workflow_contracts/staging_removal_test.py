@@ -60,7 +60,7 @@ def _quoted(value: str) -> tuple[str, ...]:
 def _as_strings(declared: object) -> tuple[str, ...]:
     """Return the strings a filter declares, in either form it may take.
 
-    A branch filter accepts a single name or a list of them, and normalising
+    A branch filter accepts a single name or a list of them, and normalizing
     that here keeps the shape decision out of the caller.
     """
     if isinstance(declared, str):
