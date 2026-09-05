@@ -38,7 +38,7 @@ jobs:
     permissions:
       contents: read
       id-token: write # OIDC workflow-source resolution
-    uses: leynos/shared-actions/.github/workflows/mutation-cargo.yml@c6125f19593668cbfefd65a59c08cb7aefe90d93
+    uses: leynos/shared-actions/.github/workflows/mutation-cargo.yml@2b04a1ac2f4bfeb75804b44b46acf29a23c8d595
     with:
       # Mutate only the root axinite crate. tools-src/, channels-src/
       # and fuzz/ sit outside the workspace (root Cargo.toml excludes
@@ -65,8 +65,14 @@ jobs:
       # contracts that mutants do not usefully exercise (the larger
       # trybuild binary is already excluded by the default nextest
       # profile).
+      # --workspace: the root manifest is itself a package, so without
+      # it cargo-mutants mutates the root package only and every
+      # workspace member (crates/ambient-fs) is invisible to full
+      # dispatch runs; `cargo mutants --list --file
+      # crates/ambient-fs/src/fns.rs` prints nothing without the flag
+      # and 20 mutants with it.
       extra-args: >-
-        --features test-helpers --test-workspace=true
+        --workspace --features test-helpers --test-workspace=true
         --test-tool=nextest --
         -E "not binary(schema_helpers_ui)"
       # Heavy crate (~760 source files atop wasmtime/libsql); eight
