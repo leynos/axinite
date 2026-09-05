@@ -274,9 +274,13 @@ skipped or cancelled in all 567 of its runs.
 That is worth a contract because none of it fails loudly on its own: a workflow
 filtered on a branch that does not exist, or a job guarded by a label nobody
 applies, simply never runs. It costs nothing, reports nothing, and reads as
-working configuration. The contract inspects the parsed workflow rather than its
-text, so the history in a comment survives and only a reference that could make
-a workflow act on staging fails.
+working configuration. The contract inspects the fields where a branch name
+acts, trigger filters, checkout refs, and the conditions, scripts and action
+references a branch can be compared in, and inside those it matches only the
+forms that name a branch: `refs/heads/staging`, a quoted operand, or an `@`
+reference. History in a comment survives, and so does a job called
+`deploy-staging` or an `environment: staging`, because a contract that fails
+legitimate work is as much a defect as one that misses a real reference.
 
 A workflow that is both a developer gate and a cron cannot answer the question
 with a fixed label, so the label follows the event:

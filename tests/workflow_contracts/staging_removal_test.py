@@ -42,29 +42,80 @@ REMOVED_WORKFLOWS: typ.Final[tuple[str, ...]] = (
 )
 
 
-def _values(document: object) -> typ.Iterator[str]:
-    """Yield every string in a parsed workflow, keys included.
+#: Forms in which a branch name actually acts inside an expression or script:
+#: fully qualified, or quoted as a comparison operand. `deploy-staging`,
+#: `staging.example.com` and `environment: staging` match none of them, which is
+#: the point: a contract that fails a legitimate future workflow is as much a
+#: defect as one that misses a real reference.
+def _branch_patterns(branch: str) -> tuple[str, ...]:
+    """Return the textual forms that name `branch` as a branch."""
+    return (f"refs/heads/{branch}", f"'{branch}'", f'"{branch}"', f"@{branch}")
 
-    Keys matter as much as values: a branch filter can put the branch name in
-    either position depending on how the trigger is written.
 
-    Walks with an explicit stack rather than recursion, which keeps the
-    branching flat and cannot exhaust the interpreter stack on a deeply nested
-    workflow.
+def _quoted(value: str) -> tuple[str, ...]:
+    """Return the quoted spellings of an expression operand."""
+    return (f"'{value}'", f'"{value}"')
+
+
+def _trigger_branches(document: dict[str, object]) -> typ.Iterator[str]:
+    """Yield every branch named by a trigger's filters.
+
+    PyYAML resolves an unquoted `on:` key to the boolean ``True``, so a workflow
+    that drops the quotes would otherwise read as having no triggers.
     """
-    pending: list[object] = [document]
-    while pending:
-        node = pending.pop()
-        if isinstance(node, str):
-            yield node
-        elif isinstance(node, dict):
-            pending.extend(node.keys())
-            pending.extend(node.values())
-        elif isinstance(node, list):
-            pending.extend(node)
+    triggers = document.get("on", document.get(True))
+    if not isinstance(triggers, dict):
+        return
+    for event in triggers.values():
+        if not isinstance(event, dict):
+            continue
+        for key in ("branches", "branches-ignore"):
+            declared = event.get(key)
+            if isinstance(declared, str):
+                yield declared
+            elif isinstance(declared, list):
+                yield from (item for item in declared if isinstance(item, str))
 
 
-@pytest.mark.parametrize("name", REMOVED_WORKFLOWS)
+def _jobs(document: dict[str, object]) -> typ.Iterator[dict[str, object]]:
+    """Yield each job body that is a mapping."""
+    jobs = document.get("jobs")
+    if not isinstance(jobs, dict):
+        return
+    yield from (body for body in jobs.values() if isinstance(body, dict))
+
+
+def _steps(job: dict[str, object]) -> typ.Iterator[dict[str, object]]:
+    """Yield each step mapping in a job."""
+    steps = job.get("steps")
+    if not isinstance(steps, list):
+        return
+    yield from (step for step in steps if isinstance(step, dict))
+
+
+def _checkout_refs(document: dict[str, object]) -> typ.Iterator[str]:
+    """Yield every explicit `ref` a step checks out."""
+    for job in _jobs(document):
+        for step in _steps(job):
+            inputs = step.get("with")
+            if isinstance(inputs, dict) and isinstance(inputs.get("ref"), str):
+                yield typ.cast("str", inputs["ref"])
+
+
+def _expressions(document: dict[str, object]) -> typ.Iterator[str]:
+    """Yield every condition and script a branch name could be compared in."""
+    for job in _jobs(document):
+        if isinstance(job.get("if"), str):
+            yield typ.cast("str", job["if"])
+        if isinstance(job.get("uses"), str):
+            yield typ.cast("str", job["uses"])
+        for step in _steps(job):
+            for key in ("if", "run", "uses"):
+                if isinstance(step.get(key), str):
+                    yield typ.cast("str", step[key])
+
+
+@pytest.mark.parametrize("name", REMOVED_WORKFLOWS, ids=list(REMOVED_WORKFLOWS))
 def test_the_removed_workflows_stay_removed(name: str) -> None:
     """Neither the promotion pipeline nor its review job comes back.
 
@@ -89,8 +140,21 @@ def test_no_workflow_acts_on_the_staging_branch(path: Path) -> None:
     A filter on a branch that does not exist is not an error to GitHub; the
     workflow simply never matches. That is the failure worth catching, because
     nothing else reports it.
+
+    Only fields where a branch name acts are inspected, and inside expressions
+    only the forms that name a branch. A job called `deploy-staging`, an
+    `environment: staging`, or a URL containing the word are none of this
+    contract's business.
     """
-    offenders = [value for value in _values(load(path)) if BRANCH in value]
+    document = load(path)
+    offenders = [value for value in _trigger_branches(document) if value == BRANCH]
+    offenders += [value for value in _checkout_refs(document) if value == BRANCH]
+    patterns = _branch_patterns(BRANCH)
+    offenders += [
+        expression
+        for expression in _expressions(document)
+        if any(pattern in expression for pattern in patterns)
+    ]
     assert not offenders, (
         f"{path.name} still refers to the {BRANCH!r} branch in "
         f"{offenders!r}. That branch is deleted, so a workflow naming it "
@@ -102,10 +166,83 @@ def test_no_workflow_acts_on_the_staging_branch(path: Path) -> None:
     "path", workflow_paths(), ids=[p.name for p in workflow_paths()]
 )
 def test_no_workflow_waits_on_the_promotion_label(path: Path) -> None:
-    """No job is guarded by a label only the removed pipeline applied."""
-    offenders = [value for value in _values(load(path)) if LABEL in value]
+    """No job is guarded by a label only the removed pipeline applied.
+
+    Matched as a quoted operand, so a job or environment whose name merely
+    contains the words does not trip it.
+    """
+    document = load(path)
+    quoted = _quoted(LABEL)
+    offenders = [
+        expression
+        for expression in _expressions(document)
+        if any(spelling in expression for spelling in quoted)
+    ]
     assert not offenders, (
         f"{path.name} still checks for the {LABEL!r} label in {offenders!r}. "
         "Only the removed promotion job applied it, so the condition can "
         "never be true."
     )
+
+
+class TestMatchingIsNarrow:
+    """The contract must not fail a workflow that merely says "staging".
+
+    A contract that blocks legitimate work is as much a defect as one that
+    misses a real reference, and the first version of this file had exactly
+    that fault: it compared every parsed string, so `deploy-staging`, an
+    `environment: staging` and a URL all counted as branch references, and the
+    `staging-promotion` label counted as one too.
+    """
+
+    @staticmethod
+    def _document() -> dict[str, object]:
+        """Return a workflow that names staging without referring to the branch."""
+        return {
+            "on": {"pull_request": {"branches": ["main"]}},
+            "jobs": {
+                "deploy-staging": {
+                    "runs-on": "ubuntu-latest",
+                    "environment": "staging",
+                    "steps": [
+                        {"run": "echo https://staging.example.com"},
+                        {"uses": "actions/checkout@v6", "with": {"ref": "main"}},
+                    ],
+                }
+            },
+        }
+
+    def test_a_descriptive_use_is_not_a_branch_reference(self) -> None:
+        """A job name, an environment and a URL are none of this contract's business."""
+        document = self._document()
+        assert [v for v in _trigger_branches(document) if v == BRANCH] == []
+        assert [v for v in _checkout_refs(document) if v == BRANCH] == []
+        patterns = _branch_patterns(BRANCH)
+        assert [
+            e for e in _expressions(document) if any(p in e for p in patterns)
+        ] == []
+
+    def test_the_label_is_not_a_branch_reference(self) -> None:
+        """`staging-promotion` contains the branch name and is not the branch.
+
+        The first version of this contract reported the label as a branch
+        reference, so a mutation adding the label failed both tests and the
+        second failure looked like corroboration when it was noise.
+        """
+        patterns = _branch_patterns(BRANCH)
+        assert not any(pattern in f"'{LABEL}'" for pattern in patterns)
+
+    @pytest.mark.parametrize(
+        "expression",
+        [
+            "github.ref == 'refs/heads/staging'",
+            "github.base_ref == 'staging'",
+            'github.head_ref == "staging"',
+            "leynos/shared-actions/.github/workflows/x.yml@staging",
+        ],
+        ids=["qualified-ref", "single-quoted", "double-quoted", "action-ref"],
+    )
+    def test_a_real_reference_is_still_caught(self, expression: str) -> None:
+        """Every form in which a branch name actually acts still matches."""
+        patterns = _branch_patterns(BRANCH)
+        assert any(pattern in expression for pattern in patterns)
