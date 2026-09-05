@@ -92,8 +92,16 @@ mod tests {
     /// here. Only the columns without a default are supplied; nothing here is
     /// asserted on, because these rows exist to satisfy the constraints rather
     /// than to be the subject of the test.
-    async fn insert_parents(store: &Store, job_id: Uuid, conversation_id: Uuid) {
-        let conn = store.conn().await.expect("conn should succeed");
+    ///
+    /// Fallible rather than panicking because the Whitaker suite cannot tell
+    /// that a plain helper inside a `#[cfg(test)]` module is test-only; the
+    /// test bodies do the expecting.
+    async fn insert_parents(
+        store: &Store,
+        job_id: Uuid,
+        conversation_id: Uuid,
+    ) -> anyhow::Result<()> {
+        let conn = store.conn().await?;
         conn.execute(
             r#"
             INSERT INTO conversations (id, channel, user_id)
@@ -102,7 +110,7 @@ mod tests {
             &[&conversation_id, &"test", &"llm-call-test"],
         )
         .await
-        .expect("insert parent conversations row should succeed");
+        .context("insert parent conversations row")?;
         conn.execute(
             r#"
             INSERT INTO agent_jobs (id, conversation_id, title, description, status, source)
@@ -118,7 +126,8 @@ mod tests {
             ],
         )
         .await
-        .expect("insert parent agent_jobs row should succeed");
+        .context("insert parent agent_jobs row")?;
+        Ok(())
     }
 
     /// Read back a persisted call and assert every column round-trips.
@@ -127,8 +136,12 @@ mod tests {
     /// the call names its parents, which is the thing under test. The expected
     /// references are taken from the record itself, so a scenario cannot assert
     /// a value it did not ask for.
-    async fn assert_persisted(store: &Store, id: Uuid, record: &LlmCallRecord<'_>) {
-        let conn = store.conn().await.expect("conn should succeed");
+    async fn assert_persisted(
+        store: &Store,
+        id: Uuid,
+        record: &LlmCallRecord<'_>,
+    ) -> anyhow::Result<()> {
+        let conn = store.conn().await?;
         let row = conn
             .query_one(
                 r#"
@@ -139,7 +152,7 @@ mod tests {
                 &[&id],
             )
             .await
-            .expect("query llm_calls row should succeed");
+            .context("query llm_calls row")?;
 
         assert_eq!(row.get::<_, Option<Uuid>>("job_id"), record.job_id);
         assert_eq!(
@@ -161,29 +174,31 @@ mod tests {
             row.get::<_, Option<String>>("purpose"),
             record.purpose.map(String::from)
         );
+        Ok(())
     }
 
     /// Remove the rows a scenario created, child before parent.
     ///
-    /// The call goes first, then the job, then the conversation the job
-    /// itself references. Any other order trips the same constraints the
-    /// attached scenario exists to exercise.
-    async fn cleanup(store: &Store, id: Uuid, parents: Option<(Uuid, Uuid)>) {
-        let conn = store.conn().await.expect("conn should succeed");
+    /// The call goes first, then the job, then the conversation the job itself
+    /// references. Any other order trips the same constraints the attached
+    /// scenario exists to exercise.
+    async fn cleanup(store: &Store, id: Uuid, parents: Option<(Uuid, Uuid)>) -> anyhow::Result<()> {
+        let conn = store.conn().await?;
         conn.execute("DELETE FROM llm_calls WHERE id = $1", &[&id])
             .await
-            .expect("delete llm_calls row should succeed");
+            .context("delete llm_calls row")?;
         if let Some((job_id, conversation_id)) = parents {
             conn.execute("DELETE FROM agent_jobs WHERE id = $1", &[&job_id])
                 .await
-                .expect("delete agent_jobs row should succeed");
+                .context("delete agent_jobs row")?;
             conn.execute(
                 "DELETE FROM conversations WHERE id = $1",
                 &[&conversation_id],
             )
             .await
-            .expect("delete conversations row should succeed");
+            .context("delete conversations row")?;
         }
+        Ok(())
     }
 
     /// Persist a call attached to a job and a conversation.
@@ -209,7 +224,9 @@ mod tests {
         };
         let job_id = Uuid::new_v4();
         let conversation_id = Uuid::new_v4();
-        insert_parents(&store, job_id, conversation_id).await;
+        insert_parents(&store, job_id, conversation_id)
+            .await
+            .expect("parent rows should insert");
 
         let record = LlmCallRecord {
             job_id: Some(job_id),
@@ -227,8 +244,12 @@ mod tests {
             .await
             .expect("record_llm_call should succeed for an attached call");
 
-        assert_persisted(&store, id, &record).await;
-        cleanup(&store, id, Some((job_id, conversation_id))).await;
+        assert_persisted(&store, id, &record)
+            .await
+            .expect("persisted row should be readable");
+        cleanup(&store, id, Some((job_id, conversation_id)))
+            .await
+            .expect("cleanup should succeed");
     }
 
     /// Persist a call belonging to no job and no conversation.
@@ -263,7 +284,11 @@ mod tests {
             .await
             .expect("record_llm_call should succeed for an unattached call");
 
-        assert_persisted(&store, id, &record).await;
-        cleanup(&store, id, None).await;
+        assert_persisted(&store, id, &record)
+            .await
+            .expect("persisted row should be readable");
+        cleanup(&store, id, None)
+            .await
+            .expect("cleanup should succeed");
     }
 }
