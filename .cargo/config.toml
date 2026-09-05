@@ -1,3 +1,21 @@
+# The embedded PostgreSQL cluster's version is pinned here rather than in the
+# fixture, because the library reads it from the environment during bootstrap
+# and a test process cannot safely set its own environment once threads exist.
+# Cargo applies this to every process it runs, so `cargo test`, `cargo nextest`
+# and `cargo llvm-cov` all agree. nextest's own config has no `env` key: it
+# warns "ignoring unknown configuration keys: env" and carries on, which is why
+# this lives here.
+#
+# The version is exact, not a range, for two reasons that point the same way.
+# The prebuilt pgvector archive publishes PostgreSQL 16 assets only, so a range
+# admitting 17 or 18 resolves to a server the extension cannot be installed
+# into, and the failure reads as "asset not found" rather than as a version
+# problem. And the extension hook matches the running major and minor exactly
+# against its manifest, whose first release targets 16.15.0, so a range would
+# drift off the manifest at the next minor.
+[env]
+PG_VERSION_REQ = "=16.15.0"
+
 [target.x86_64-unknown-linux-gnu]
 linker = "clang"
 rustflags = ["-C", "link-arg=-fuse-ld=mold"]
