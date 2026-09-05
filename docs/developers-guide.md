@@ -611,7 +611,6 @@ falling back to `cargo` on `$PATH`. `NEXTEST` is derived as `$(CARGO) nextest`
 so both variables consistently use the same Cargo binary. Override them by
 setting `CARGO` or `NEXTEST` in the environment before invoking `make`.
 
-
 ### Whitaker linting
 
 `make lint` runs both `make lint-clippy` and `make lint-whitaker`. The latter
