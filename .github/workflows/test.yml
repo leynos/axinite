@@ -60,8 +60,8 @@ jobs:
     # where the wall time is felt.
     runs-on: >-
       ${{ github.event_name == 'schedule' && 'ubuntu-latest'
-      || 'ubicloud-standard-8' }}
-    timeout-minutes: 60
+      || 'ubicloud-standard-4' }}
+    timeout-minutes: 90
     env:
       # sccache is the sole owner of compiler output: no cache step archives a
       # target tree. RUSTC_WRAPPER is what actually engages it; installing
@@ -96,6 +96,13 @@ jobs:
           swap-storage: false
       - name: Checkout repository
         uses: actions/checkout@v6
+      # Right-sizing needs the peak memory and the low-water disk mark, and
+      # neither is visible in a job's own output. The sampler runs alongside
+      # the build and reports both at the end, with `if: always()` so a job
+      # that fails on resources still says so.
+      - name: Start resource sampler
+        run: ./scripts/ci-resource-sampler.sh start
+
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
         with:
@@ -231,6 +238,9 @@ jobs:
           key: >-
             cargo-v1-${{ runner.os }}-${{ runner.arch }}-${{ runner.environment
             }}-${{ hashFiles('**/Cargo.lock') }}
+      - name: Report resource peaks
+        if: always()
+        run: ./scripts/ci-resource-sampler.sh report
 
   telegram-tests:
     name: Telegram Channel Tests
@@ -240,8 +250,8 @@ jobs:
     # where the wall time is felt.
     runs-on: >-
       ${{ github.event_name == 'schedule' && 'ubuntu-latest'
-      || 'ubicloud-standard-8' }}
-    timeout-minutes: 30
+      || 'ubicloud-standard-2' }}
+    timeout-minutes: 45
     env:
       # sccache is the sole owner of compiler output: no cache step archives a
       # target tree. RUSTC_WRAPPER is what actually engages it; installing
@@ -256,6 +266,13 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v6
+      # Right-sizing needs the peak memory and the low-water disk mark, and
+      # neither is visible in a job's own output. The sampler runs alongside
+      # the build and reports both at the end, with `if: always()` so a job
+      # that fails on resources still says so.
+      - name: Start resource sampler
+        run: ./scripts/ci-resource-sampler.sh start
+
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
       - name: Install mold
@@ -339,6 +356,9 @@ jobs:
             printf '%s\n' "$stats"
             printf '```\n'
           } >> "${GITHUB_STEP_SUMMARY}"
+      - name: Report resource peaks
+        if: always()
+        run: ./scripts/ci-resource-sampler.sh report
   windows-build:
     name: Windows Build (${{ matrix.name }})
     # Windows lanes stay on GitHub-hosted runners: Ubicloud offers Linux only.
@@ -398,8 +418,8 @@ jobs:
     # where the wall time is felt.
     runs-on: >-
       ${{ github.event_name == 'schedule' && 'ubuntu-latest'
-      || 'ubicloud-standard-8' }}
-    timeout-minutes: 45
+      || 'ubicloud-standard-4' }}
+    timeout-minutes: 75
     env:
       # sccache is the sole owner of compiler output: no cache step archives a
       # target tree. RUSTC_WRAPPER is what actually engages it; installing
@@ -414,6 +434,13 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v6
+      # Right-sizing needs the peak memory and the low-water disk mark, and
+      # neither is visible in a job's own output. The sampler runs alongside
+      # the build and reports both at the end, with `if: always()` so a job
+      # that fails on resources still says so.
+      - name: Start resource sampler
+        run: ./scripts/ci-resource-sampler.sh start
+
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
         with:
@@ -514,6 +541,9 @@ jobs:
             printf '%s\n' "$stats"
             printf '```\n'
           } >> "${GITHUB_STEP_SUMMARY}"
+      - name: Report resource peaks
+        if: always()
+        run: ./scripts/ci-resource-sampler.sh report
   docker-build:
     name: Docker Build
     # Stays on its current label. Moving a privileged, daemon-dependent job
@@ -525,13 +555,23 @@ jobs:
     # where the wall time is felt.
     runs-on: >-
       ${{ github.event_name == 'schedule' && 'ubuntu-latest'
-      || 'ubicloud-standard-8' }}
-    timeout-minutes: 30
+      || 'ubicloud-standard-4' }}
+    timeout-minutes: 45
     steps:
       - name: Checkout repository
         uses: actions/checkout@v6
+      # Right-sizing needs the peak memory and the low-water disk mark, and
+      # neither is visible in a job's own output. The sampler runs alongside
+      # the build and reports both at the end, with `if: always()` so a job
+      # that fails on resources still says so.
+      - name: Start resource sampler
+        run: ./scripts/ci-resource-sampler.sh start
+
       - name: Build Docker image
         run: docker build -t axinite-test:ci .
+      - name: Report resource peaks
+        if: always()
+        run: ./scripts/ci-resource-sampler.sh report
 
   version-check:
     name: Version Bump Check

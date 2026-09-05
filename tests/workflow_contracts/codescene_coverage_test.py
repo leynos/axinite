@@ -91,8 +91,9 @@ def test_trigger_permissions_and_job_are_pr_only_and_isolated() -> None:
         "github.event_name == 'pull_request' || "
         "github.event_name == 'workflow_dispatch'"
     ), "coverage-check must run only for a pull request or a manual dispatch"
-    assert job.get("runs-on") == "ubicloud-standard-8", (
-        "coverage-check must use the standard Ubicloud runner"
+    assert job.get("runs-on") == "ubicloud-standard-4", (
+        "coverage-check is off the critical path, so it takes the cheaper "
+        "shape: 683 s at half the rate beats 455 s at full"
     )
     assert {"strategy", "services", "needs"}.isdisjoint(job), (
         "coverage-check must not inherit the main matrix, PostgreSQL, or gate"
@@ -110,6 +111,7 @@ def test_setup_and_generator_match_proven_libsql_coverage() -> None:
     assert identities == [
         "Free disk space",
         "actions/checkout@v6",
+        "Start resource sampler",
         "dtolnay/rust-toolchain@stable",
         "Install clang",
         "Install mold",
@@ -127,6 +129,7 @@ def test_setup_and_generator_match_proven_libsql_coverage() -> None:
         "Generate coverage",
         "Check coverage against CodeScene gates",
         "Report sccache statistics",
+        "Report resource peaks",
     ], "coverage-check setup, report, and check steps must stay ordered"
 
     checkout = next(step for step in steps if step.get("uses") == "actions/checkout@v6")

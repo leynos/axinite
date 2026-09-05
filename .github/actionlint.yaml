@@ -4,9 +4,13 @@
 # report it as an unknown runner. List only labels this repository actually
 # references: an unused entry hides a typo in a real one.
 #
-# ubicloud-standard-8 is the current label for axinite's Linux build and test
-# jobs. The migration wave will right-size those jobs downwards, starting at
-# ubicloud-standard-2, and this list must be updated in the same change.
+# The Linux jobs are right-sized per job rather than uniformly.
+# ubicloud-standard-4 carries the jobs that compile the workspace;
+# ubicloud-standard-2 carries the jobs that compile little or nothing.
+# `tests/workflow_contracts/runner_placement_test.py` keeps this list exactly
+# in step with the labels the workflows reference, in both directions.
 self-hosted-runner:
   labels:
+    - ubicloud-standard-2
+    - ubicloud-standard-4
     - ubicloud-standard-8

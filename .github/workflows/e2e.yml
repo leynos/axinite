@@ -36,6 +36,13 @@ jobs:
     steps:
       - uses: actions/checkout@v6
 
+      # Right-sizing needs the peak memory and the low-water disk mark, and
+      # neither is visible in a job's own output. The sampler runs alongside
+      # the build and reports both at the end, with `if: always()` so a job
+      # that fails on resources still says so.
+      - name: Start resource sampler
+        run: ./scripts/ci-resource-sampler.sh start
+
       - uses: dtolnay/rust-toolchain@stable
 
       - name: Install mold
@@ -128,6 +135,9 @@ jobs:
             printf '%s\n' "$stats"
             printf '```\n'
           } >> "${GITHUB_STEP_SUMMARY}"
+      - name: Report resource peaks
+        if: always()
+        run: ./scripts/ci-resource-sampler.sh report
   test:
     name: E2E (${{ matrix.group }})
     needs: build
@@ -154,6 +164,13 @@ jobs:
             files: "tests/e2e/scenarios/test_extensions.py"
     steps:
       - uses: actions/checkout@v6
+
+      # Right-sizing needs the peak memory and the low-water disk mark, and
+      # neither is visible in a job's own output. The sampler runs alongside
+      # the build and reports both at the end, with `if: always()` so a job
+      # that fails on resources still says so.
+      - name: Start resource sampler
+        run: ./scripts/ci-resource-sampler.sh start
 
       - name: Download binary
         uses: actions/download-artifact@v8
@@ -187,6 +204,9 @@ jobs:
 
   # ── Roll-up for branch protection ────────────────────────────────────────
   # Roll-up for branch protection. Compares upstream results only.
+      - name: Report resource peaks
+        if: always()
+        run: ./scripts/ci-resource-sampler.sh report
   e2e:
     name: E2E Tests
     runs-on: ubuntu-latest
