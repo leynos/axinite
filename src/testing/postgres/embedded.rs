@@ -24,17 +24,13 @@ use super::TestDatabase;
 
 use crate::error::DatabaseError;
 
-/// The exact PostgreSQL release the cluster runs.
+/// The PostgreSQL range the cluster runs, as set in `.cargo/config.toml`.
 ///
-/// Pinned to a single version rather than a caret range for two reasons that
-/// both point the same way. The prebuilt pgvector archive this fixture installs
-/// publishes PostgreSQL 16 assets only, so a range that admitted 17 or 18 would
-/// resolve to a server the extension cannot be installed into. And the
-/// extension hook in pg-embed-setup-unpriv matches the running major *and*
-/// minor exactly against its manifest, whose first release targets Theseus
-/// 16.15.0, so a caret would drift off the manifest at the next minor and fail
-/// with a missing asset rather than a version warning.
-pub const POSTGRES_VERSION: &str = "=16.15.0";
+/// Recorded here so a contract can hold the two in step. The cap is 16 because
+/// the prebuilt pgvector archive publishes PostgreSQL 16 assets only; the minor
+/// is open because PostgreSQL's module magic block encodes the major version
+/// and not the minor, so a module built for one 16.x loads into another.
+pub const POSTGRES_VERSION_REQ: &str = "^16";
 
 /// Connections the embedded cluster accepts at once.
 ///

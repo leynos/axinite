@@ -6,15 +6,19 @@
 # warns "ignoring unknown configuration keys: env" and carries on, which is why
 # this lives here.
 #
-# The version is exact, not a range, for two reasons that point the same way.
-# The prebuilt pgvector archive publishes PostgreSQL 16 assets only, so a range
-# admitting 17 or 18 resolves to a server the extension cannot be installed
-# into, and the failure reads as "asset not found" rather than as a version
-# problem. And the extension hook matches the running major and minor exactly
-# against its manifest, whose first release targets 16.15.0, so a range would
-# drift off the manifest at the next minor.
+# The range is capped at 16 because the prebuilt pgvector archive publishes
+# PostgreSQL 16 assets only. Installing into a 17 or 18 tree fails with "asset
+# not found", which reads as a missing file rather than as a version problem, so
+# the cap is what turns that into a decision recorded here.
+#
+# The minor is deliberately left open. PostgreSQL's own guard is the module
+# magic block, which encodes the major version and layout constants and not the
+# minor, so a module built for one 16.x loads into another: the archive's single
+# pg16 asset was built against 16.4 or earlier in October 2024 and loads into
+# 16.15 without complaint. Pinning the minor would buy nothing and would need
+# moving every time either side published.
 [env]
-PG_VERSION_REQ = "=16.15.0"
+PG_VERSION_REQ = "^16"
 
 [target.x86_64-unknown-linux-gnu]
 linker = "clang"
