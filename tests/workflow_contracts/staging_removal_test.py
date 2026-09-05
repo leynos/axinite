@@ -42,21 +42,26 @@ REMOVED_WORKFLOWS: typ.Final[tuple[str, ...]] = (
 )
 
 
-def _values(node: object) -> typ.Iterator[str]:
+def _values(document: object) -> typ.Iterator[str]:
     """Yield every string in a parsed workflow, keys included.
 
     Keys matter as much as values: a branch filter can put the branch name in
     either position depending on how the trigger is written.
+
+    Walks with an explicit stack rather than recursion, which keeps the
+    branching flat and cannot exhaust the interpreter stack on a deeply nested
+    workflow.
     """
-    if isinstance(node, str):
-        yield node
-    elif isinstance(node, dict):
-        for key, value in node.items():
-            yield from _values(key)
-            yield from _values(value)
-    elif isinstance(node, list):
-        for item in node:
-            yield from _values(item)
+    pending: list[object] = [document]
+    while pending:
+        node = pending.pop()
+        if isinstance(node, str):
+            yield node
+        elif isinstance(node, dict):
+            pending.extend(node.keys())
+            pending.extend(node.values())
+        elif isinstance(node, list):
+            pending.extend(node)
 
 
 @pytest.mark.parametrize("name", REMOVED_WORKFLOWS)
