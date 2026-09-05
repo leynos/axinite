@@ -32,6 +32,18 @@ WORKFLOW_DIR = REPOSITORY_ROOT / ".github" / "workflows"
 #: "Workflow pins and Dependabot").
 SHA_RE: re.Pattern[str] = re.compile(r"^[0-9a-f]{40}$")
 
+#: A `runs-on` that picks its label from the event, as
+#: `${{ github.event_name == 'schedule' && 'ubuntu-latest'
+#: || 'ubicloud-standard-8' }}`. A workflow that is both a developer gate and a
+#: cron needs the Ubicloud runner on one path and not the other, and the label
+#: is the only place that distinction can live. Reading such a value as one
+#: opaque label would hide the Ubicloud request from every placement contract,
+#: so the forms are parsed rather than passed through.
+CONDITIONAL_RUNNER_RE: re.Pattern[str] = re.compile(
+    r"^\$\{\{\s*github\.event_name\s*==\s*'(?P<event>[a-z_]+)'\s*&&\s*"
+    r"'(?P<when>[^']+)'\s*\|\|\s*'(?P<otherwise>[^']+)'\s*\}\}$"
+)
+
 #: Prefix shared by every Ubicloud runner label. Match on the prefix, not on
 #: one exact label: the migration wave introduces `ubicloud-standard-2`, and a
 #: contract keyed to the current label would wave the new one through.
@@ -94,6 +106,28 @@ CACHE_ACTION_PREFIXES = (
 )
 
 
+def _conditional_runner(declared: str) -> tuple[str, str, str] | None:
+    """Split an event-conditional `runs-on` into its event and two labels.
+
+    Parameters
+    ----------
+    declared
+        The raw `runs-on` scalar. A folded YAML scalar arrives with its line
+        breaks already joined into single spaces.
+
+    Returns
+    -------
+    tuple of str, or None
+        The event name, the label chosen for that event, and the label used
+        otherwise. ``None`` when the value is not the conditional form, which
+        includes a matrix expression and every plain label.
+    """
+    match = CONDITIONAL_RUNNER_RE.match(" ".join(declared.split()))
+    if match is None:
+        return None
+    return match["event"], match["when"], match["otherwise"]
+
+
 @dataclass(frozen=True)
 class Job:
     """One job, carrying the file it came from alongside its parsed body.
@@ -134,6 +168,12 @@ class Job:
         if isinstance(declared, dict):
             declared = declared.get("labels")
         if isinstance(declared, str):
+            conditional = _conditional_runner(declared)
+            if conditional is not None:
+                # Both arms are reported, so a job that reaches Ubicloud on any
+                # event still answers `uses_ubicloud` and stays inside the
+                # timeout and sccache contracts.
+                return conditional[1], conditional[2]
             return (declared,)
         if isinstance(declared, list):
             return tuple(label for label in declared if isinstance(label, str))
@@ -192,6 +232,35 @@ class Job:
             for label in self.runner_labels
             if label.startswith(UBICLOUD_LABEL_PREFIX)
         )
+
+    def labels_for_event(self, event: str) -> tuple[str, ...]:
+        """Return the labels this job requests when triggered by an event.
+
+        Parameters
+        ----------
+        event
+            A `github.event_name` value, such as ``schedule``.
+
+        Returns
+        -------
+        tuple of str
+            The single label the conditional form selects for this event, or
+            every declared label when the job's `runs-on` does not depend on
+            the event.
+        """
+        declared = self.body.get("runs-on")
+        # The mapping form has to be unwrapped first, exactly as
+        # `runner_labels` does. Reading `{labels: <conditional>}` without
+        # unwrapping would fall through to both arms and report the Ubicloud
+        # fallback as the label a schedule selects.
+        if isinstance(declared, dict):
+            declared = declared.get("labels")
+        if isinstance(declared, str):
+            conditional = _conditional_runner(declared)
+            if conditional is not None:
+                chosen, alternative = conditional[1], conditional[2]
+                return (chosen if conditional[0] == event else alternative,)
+        return self.runner_labels
 
     @property
     def steps(self) -> list[dict[str, object]]:

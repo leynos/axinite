@@ -14,7 +14,13 @@ jobs:
   # ── Step 1: compile once ──────────────────────────────────────────────────
   build:
     name: Build axinite (libsql)
-    runs-on: ubicloud-standard-8
+    # Scheduled work does not run on paid runners. This workflow is both a
+    # path-filtered pull-request gate and a weekly cron, so the label follows
+    # the event rather than the job: Ubicloud on the developer path, where the
+    # wall time is felt, GitHub-hosted for the Monday run, where it is not.
+    runs-on: >-
+      ${{ github.event_name == 'schedule' && 'ubuntu-latest'
+      || 'ubicloud-standard-8' }}
     timeout-minutes: 30
     env:
       # sccache is the sole owner of compiler output: no cache step archives a
@@ -125,7 +131,10 @@ jobs:
   test:
     name: E2E (${{ matrix.group }})
     needs: build
-    runs-on: ubicloud-standard-8
+    # Follows the same event rule as `build` above.
+    runs-on: >-
+      ${{ github.event_name == 'schedule' && 'ubuntu-latest'
+      || 'ubicloud-standard-8' }}
     timeout-minutes: 30
     strategy:
       fail-fast: false

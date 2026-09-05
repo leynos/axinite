@@ -146,6 +146,117 @@ class TestRunnerLabels:
         """Reading a shape as no labels would exempt the job from placement."""
         assert _job({"runs-on": declared}).runner_labels == expected
 
+    @pytest.mark.parametrize(
+        ("declared", "expected"),
+        [
+            (
+                (
+                    "${{ github.event_name == 'schedule' && 'ubuntu-latest' "
+                    "|| 'ubicloud-standard-8' }}"
+                ),
+                ("ubuntu-latest", "ubicloud-standard-8"),
+            ),
+            # A folded YAML scalar arrives with its line breaks already joined
+            # into single spaces, which is how the workflows actually write it.
+            (
+                (
+                    "${{ github.event_name == 'schedule' && 'ubuntu-latest'   "
+                    "|| 'ubicloud-standard-8' }}"
+                ),
+                ("ubuntu-latest", "ubicloud-standard-8"),
+            ),
+            (
+                (
+                    "${{ github.event_name == 'push' && 'ubicloud-standard-2' "
+                    "|| 'ubuntu-latest' }}"
+                ),
+                ("ubicloud-standard-2", "ubuntu-latest"),
+            ),
+        ],
+        ids=["schedule", "folded-whitespace", "reversed"],
+    )
+    def test_an_event_conditional_runner_reports_both_arms(
+        self, declared: str, expected: tuple[str, str]
+    ) -> None:
+        """Report both arms so a job that ever reaches Ubicloud is visible.
+
+        Reading the expression as one opaque label would answer
+        `uses_ubicloud` false and quietly drop the job from the placement,
+        timeout, and sccache contracts at once.
+        """
+        job = _job({"runs-on": declared})
+        assert job.runner_labels == expected
+        assert job.uses_ubicloud is any(
+            label.startswith("ubicloud-") for label in expected
+        )
+
+    @pytest.mark.parametrize(
+        "wrap",
+        [lambda value: value, lambda value: {"labels": value}],
+        ids=["scalar", "mapping"],
+    )
+    def test_labels_for_event_unwraps_the_mapping_form(
+        self, wrap: typ.Callable[[str], object]
+    ) -> None:
+        """`{group, labels}` must resolve its conditional like a bare scalar.
+
+        Falling through without unwrapping returns both arms, which reads the
+        Ubicloud fallback as the label a schedule selects and turns a real
+        violation into a pass.
+        """
+        job = _job(
+            {
+                "runs-on": wrap(
+                    "${{ github.event_name == 'schedule' && "
+                    "'ubuntu-latest' || 'ubicloud-standard-8' }}"
+                )
+            }
+        )
+        assert job.labels_for_event("schedule") == ("ubuntu-latest",)
+        assert job.labels_for_event("push") == ("ubicloud-standard-8",)
+
+    @pytest.mark.parametrize(
+        ("event", "expected"),
+        [("schedule", ("ubuntu-latest",)), ("pull_request", ("ubicloud-standard-8",))],
+        ids=["matching-event", "other-event"],
+    )
+    def test_labels_for_event_picks_the_arm_the_event_selects(
+        self, event: str, expected: tuple[str, ...]
+    ) -> None:
+        """The scheduled-placement contract asks exactly this question."""
+        job = _job(
+            {
+                "runs-on": "${{ github.event_name == 'schedule' && "
+                "'ubuntu-latest' || 'ubicloud-standard-8' }}"
+            }
+        )
+        assert job.labels_for_event(event) == expected
+
+    @pytest.mark.parametrize(
+        "declared",
+        [
+            "ubicloud-standard-8",
+            "${{ matrix.runner }}",
+            "${{ github.event_name == 'schedule' && 'a' }}",
+            "${{ github.event_name == \"schedule\" && 'a' || 'b' }}",
+        ],
+        ids=["plain", "matrix", "no-else-arm", "double-quoted"],
+    )
+    def test_a_value_that_is_not_the_conditional_form_is_left_alone(
+        self, declared: str
+    ) -> None:
+        """Only the exact shape is parsed; anything else stays one label."""
+        job = _job({"runs-on": declared})
+        assert job.runner_labels == (declared,)
+        assert job.labels_for_event("schedule") == (declared,)
+
+    def test_labels_for_event_matches_runner_labels_without_a_condition(
+        self,
+    ) -> None:
+        """A job whose runner does not depend on the event answers the same."""
+        job = _job({"runs-on": ["self-hosted", "linux"]})
+        assert job.labels_for_event("schedule") == job.runner_labels
+
     def test_a_job_without_runs_on_declares_no_labels(self) -> None:
         """A reusable-workflow caller declares no runner of its own."""
         assert (

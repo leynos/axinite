@@ -29,11 +29,10 @@ jobs:
     # newly published advisory would fail every Dependabot PR regardless of
     # content and deadlock auto-merge. The scheduled audit workflow covers
     # Dependabot merges instead.
-    if: >
-      (github.event_name == 'push' ||
-      github.event_name == 'workflow_dispatch' ||
-      (github.event_name == 'pull_request' && github.base_ref != 'staging'))
-      && github.actor != 'dependabot[bot]'
+    # Dependabot is still excluded: a newly published advisory would fail
+    # every Dependabot pull request regardless of content and deadlock
+    # auto-merge. The scheduled audit workflow covers those merges instead.
+    if: github.actor != 'dependabot[bot]'
     # API-bound: cargo-audit reads the lockfiles and the RustSec advisory
     # database over the network. It compiles nothing, so it is GitHub-hosted.
     runs-on: ubuntu-latest
@@ -55,7 +54,13 @@ jobs:
 
   tests:
     name: Tests (${{ matrix.name }})
-    runs-on: ubicloud-standard-8
+    # Scheduled work does not run on paid runners. The daily mutation run
+    # calls this workflow for its full-suite coverage, and a scheduled call
+    # must land GitHub-hosted; a developer's pull request still gets Ubicloud,
+    # where the wall time is felt.
+    runs-on: >-
+      ${{ github.event_name == 'schedule' && 'ubuntu-latest'
+      || 'ubicloud-standard-8' }}
     timeout-minutes: 60
     env:
       # sccache is the sole owner of compiler output: no cache step archives a
@@ -229,11 +234,13 @@ jobs:
 
   telegram-tests:
     name: Telegram Channel Tests
-    if: >
-      github.event_name == 'push' ||
-      github.event_name == 'workflow_dispatch' ||
-      (github.event_name == 'pull_request' && github.base_ref != 'staging')
-    runs-on: ubicloud-standard-8
+    # Scheduled work does not run on paid runners. The daily mutation run
+    # calls this workflow for its full-suite coverage, and a scheduled call
+    # must land GitHub-hosted; a developer's pull request still gets Ubicloud,
+    # where the wall time is felt.
+    runs-on: >-
+      ${{ github.event_name == 'schedule' && 'ubuntu-latest'
+      || 'ubicloud-standard-8' }}
     timeout-minutes: 30
     env:
       # sccache is the sole owner of compiler output: no cache step archives a
@@ -334,10 +341,6 @@ jobs:
           } >> "${GITHUB_STEP_SUMMARY}"
   windows-build:
     name: Windows Build (${{ matrix.name }})
-    if: >
-      github.event_name == 'push' ||
-      github.event_name == 'workflow_dispatch' ||
-      (github.event_name == 'pull_request' && github.base_ref != 'staging')
     # Windows lanes stay on GitHub-hosted runners: Ubicloud offers Linux only.
     runs-on: windows-latest
     timeout-minutes: 45
@@ -389,11 +392,13 @@ jobs:
 
   wasm-wit-compat:
     name: WASM WIT Compatibility
-    if: >
-      github.event_name == 'push' ||
-      github.event_name == 'workflow_dispatch' ||
-      (github.event_name == 'pull_request' && github.base_ref != 'staging')
-    runs-on: ubicloud-standard-8
+    # Scheduled work does not run on paid runners. The daily mutation run
+    # calls this workflow for its full-suite coverage, and a scheduled call
+    # must land GitHub-hosted; a developer's pull request still gets Ubicloud,
+    # where the wall time is felt.
+    runs-on: >-
+      ${{ github.event_name == 'schedule' && 'ubuntu-latest'
+      || 'ubicloud-standard-8' }}
     timeout-minutes: 45
     env:
       # sccache is the sole owner of compiler output: no cache step archives a
@@ -511,14 +516,16 @@ jobs:
           } >> "${GITHUB_STEP_SUMMARY}"
   docker-build:
     name: Docker Build
-    if: >
-      github.event_name == 'push' ||
-      github.event_name == 'workflow_dispatch' ||
-      (github.event_name == 'pull_request' && github.base_ref != 'staging')
     # Stays on its current label. Moving a privileged, daemon-dependent job
     # needs a Docker daemon and privilege preflight first; see the
     # decomposition plan in docs/developers-guide.md.
-    runs-on: ubicloud-standard-8
+    # Scheduled work does not run on paid runners. The daily mutation run
+    # calls this workflow for its full-suite coverage, and a scheduled call
+    # must land GitHub-hosted; a developer's pull request still gets Ubicloud,
+    # where the wall time is felt.
+    runs-on: >-
+      ${{ github.event_name == 'schedule' && 'ubuntu-latest'
+      || 'ubicloud-standard-8' }}
     timeout-minutes: 30
     steps:
       - name: Checkout repository
