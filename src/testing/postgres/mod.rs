@@ -1,6 +1,6 @@
 //! Postgres-specific test helpers.
 
-#[cfg(feature = "test-helpers")]
+#[cfg(all(feature = "test-helpers", target_os = "linux"))]
 pub mod embedded;
 
 use crate::config::{DatabaseBackend, DatabaseConfig, SslMode};
@@ -35,13 +35,13 @@ const UNAVAILABLE_PATTERNS: &[&str] = &[
 /// any connection is still attached.
 pub struct TestDatabase {
     backend: PgBackend,
-    #[cfg(feature = "test-helpers")]
+    #[cfg(all(feature = "test-helpers", target_os = "linux"))]
     _guard: Option<pg_embedded_setup_unpriv::TemporaryDatabase>,
 }
 
 impl TestDatabase {
     /// Wraps a backend whose database this guard owns and will drop.
-    #[cfg(feature = "test-helpers")]
+    #[cfg(all(feature = "test-helpers", target_os = "linux"))]
     pub(crate) fn owning(
         backend: PgBackend,
         database: pg_embedded_setup_unpriv::TemporaryDatabase,
@@ -56,7 +56,7 @@ impl TestDatabase {
     pub(crate) fn borrowed(backend: PgBackend) -> Self {
         Self {
             backend,
-            #[cfg(feature = "test-helpers")]
+            #[cfg(all(feature = "test-helpers", target_os = "linux"))]
             _guard: None,
         }
     }
@@ -70,7 +70,7 @@ impl std::ops::Deref for TestDatabase {
     }
 }
 
-#[cfg(feature = "test-helpers")]
+#[cfg(all(feature = "test-helpers", target_os = "linux"))]
 impl Drop for TestDatabase {
     /// Drops the cloned database from a thread that is allowed to block.
     ///
@@ -118,7 +118,7 @@ pub async fn test_pg_db() -> Result<TestDatabase, DatabaseError> {
     // An explicit `TEST_DATABASE_URL` always wins, and a workflow with no
     // worker installed falls through to the URL path and skips on a refused
     // connection, exactly as it did before this fixture existed.
-    #[cfg(feature = "test-helpers")]
+    #[cfg(all(feature = "test-helpers", target_os = "linux"))]
     if std::env::var("TEST_DATABASE_URL").is_err() && embedded::is_usable() {
         return embedded::provision().await;
     }
