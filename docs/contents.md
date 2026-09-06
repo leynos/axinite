@@ -23,6 +23,8 @@
   dependencies, and design checkpoints for planned delivery.
 - [Responses streaming roadmap](responses-streaming-roadmap.md) refines
   workstream 3.2 into contract, transport, recovery, and safe-delivery tasks.
+- [VTCode component import roadmap](vtcode-component-import-roadmap.md) stages
+  terminal, codec, and optional provider reuse behind independent gates.
 
 ## Architecture and subsystem design
 
@@ -30,6 +32,8 @@
   top-level runtime shape, major subsystems, and how the pieces fit together.
 - [Responses stream handling](responses-streaming-design.md) proposes native
   inference streaming, conservative recovery, and safe channel previews.
+- [VTCode component imports](vtcode-component-import-design.md) proposes
+  selective component reuse while preserving Axinite-owned execution policy.
 - [Formal verification methods in Axinite](formal-verification-methods-in-axinite.md)
   recommends where proof-oriented checks, model checking, and generated
   property tests should land first, and why those targets have the highest
