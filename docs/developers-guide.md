@@ -277,8 +277,10 @@ applies, simply never runs. It costs nothing, reports nothing, and reads as
 working configuration. The contract inspects the fields where a branch name
 acts, trigger filters, checkout refs, and the conditions, scripts and action
 references a branch can be compared in, and inside those it matches only the
-forms that name a branch: `refs/heads/staging`, a quoted operand, or an `@`
-reference. History in a comment survives, and so does a job called
+forms that name a branch, each bounded so a longer name cannot match:
+`refs/heads/staging`, a quoted operand, or an `@` reference. A checkout `ref` is
+compared against both the bare and the qualified spelling, because both check
+out the same branch. History in a comment survives, and so does a job called
 `deploy-staging` or an `environment: staging`, because a contract that fails
 legitimate work is as much a defect as one that misses a real reference.
 

@@ -20,6 +20,7 @@ Run via ``make test-workflow-contracts``.
 
 from __future__ import annotations
 
+import re
 import typing as typ
 
 import pytest
@@ -42,14 +43,30 @@ REMOVED_WORKFLOWS: typ.Final[tuple[str, ...]] = (
 )
 
 
-#: Forms in which a branch name actually acts inside an expression or script:
-#: fully qualified, or quoted as a comparison operand. `deploy-staging`,
-#: `staging.example.com` and `environment: staging` match none of them, which is
-#: the point: a contract that fails a legitimate future workflow is as much a
-#: defect as one that misses a real reference.
-def _branch_patterns(branch: str) -> tuple[str, ...]:
-    """Return the textual forms that name `branch` as a branch."""
-    return (f"refs/heads/{branch}", f"'{branch}'", f'"{branch}"', f"@{branch}")
+def _branch_expression_re(branch: str) -> re.Pattern[str]:
+    """Return a pattern matching the forms that name `branch` as a branch.
+
+    Three forms, each bounded so a longer branch name cannot match: fully
+    qualified as `refs/heads/<branch>`, quoted as a comparison operand, or as
+    the `@<branch>` suffix of an action reference.
+
+    The bound is what makes the contract safe to keep. Without it
+    `refs/heads/staging-preview` and `@staging-preview` both match `staging`,
+    and a workflow with nothing to do with the deleted branch fails a mandatory
+    gate. A contract that blocks legitimate work is as much a defect as one that
+    misses a real reference, and the quoted forms already carry their own bound
+    in the closing quote.
+    """
+    name = re.escape(branch)
+    return re.compile(rf"(?:refs/heads/{name}|@{name})(?![\w./-])|'{name}'|\"{name}\"")
+
+
+#: A checkout `ref` names a branch in either the bare or the qualified form, and
+#: both check out the same thing. Comparing against the bare form alone let
+#: `ref: refs/heads/staging` through, which is the gap this closes.
+def _branch_ref_values(branch: str) -> frozenset[str]:
+    """Return the values a checkout `ref` may use to name `branch`."""
+    return frozenset({branch, f"refs/heads/{branch}"})
 
 
 def _quoted(value: str) -> tuple[str, ...]:
@@ -158,13 +175,14 @@ def test_no_workflow_acts_on_the_staging_branch(path: Path) -> None:
     contract's business.
     """
     document = load(path)
-    offenders = [value for value in _trigger_branches(document) if value == BRANCH]
-    offenders += [value for value in _checkout_refs(document) if value == BRANCH]
-    patterns = _branch_patterns(BRANCH)
+    refs = _branch_ref_values(BRANCH)
+    pattern = _branch_expression_re(BRANCH)
+    offenders = [value for value in _trigger_branches(document) if value in refs]
+    offenders += [value for value in _checkout_refs(document) if value in refs]
     offenders += [
         expression
         for expression in _expressions(document)
-        if any(pattern in expression for pattern in patterns)
+        if pattern.search(expression)
     ]
     assert not offenders, (
         f"{path.name} still refers to the {BRANCH!r} branch in "
@@ -226,12 +244,13 @@ class TestMatchingIsNarrow:
     def test_a_descriptive_use_is_not_a_branch_reference(self) -> None:
         """A job name, an environment and a URL are none of this contract's business."""
         document = self._document()
-        assert [v for v in _trigger_branches(document) if v == BRANCH] == []
-        assert [v for v in _checkout_refs(document) if v == BRANCH] == []
-        patterns = _branch_patterns(BRANCH)
         assert [
-            e for e in _expressions(document) if any(p in e for p in patterns)
+            v for v in _trigger_branches(document) if v in _branch_ref_values(BRANCH)
         ] == []
+        refs = _branch_ref_values(BRANCH)
+        assert [v for v in _checkout_refs(document) if v in refs] == []
+        pattern = _branch_expression_re(BRANCH)
+        assert [e for e in _expressions(document) if pattern.search(e)] == []
 
     def test_the_label_is_not_a_branch_reference(self) -> None:
         """`staging-promotion` contains the branch name and is not the branch.
@@ -240,8 +259,7 @@ class TestMatchingIsNarrow:
         reference, so a mutation adding the label failed both tests and the
         second failure looked like corroboration when it was noise.
         """
-        patterns = _branch_patterns(BRANCH)
-        assert not any(pattern in f"'{LABEL}'" for pattern in patterns)
+        assert not _branch_expression_re(BRANCH).search(f"'{LABEL}'")
 
     @pytest.mark.parametrize(
         "expression",
@@ -255,5 +273,60 @@ class TestMatchingIsNarrow:
     )
     def test_a_real_reference_is_still_caught(self, expression: str) -> None:
         """Every form in which a branch name actually acts still matches."""
-        patterns = _branch_patterns(BRANCH)
-        assert any(pattern in expression for pattern in patterns)
+        assert _branch_expression_re(BRANCH).search(expression)
+
+    @pytest.mark.parametrize(
+        "expression",
+        [
+            "github.ref == 'refs/heads/staging-preview'",
+            "leynos/shared-actions/.github/workflows/x.yml@staging-preview",
+            "github.base_ref == 'staging-preview'",
+        ],
+        ids=["qualified-ref", "action-ref", "quoted"],
+    )
+    def test_a_longer_branch_name_is_not_a_match(self, expression: str) -> None:
+        """A branch whose name merely starts with `staging` is someone else's.
+
+        The unbounded version matched these, so a `staging-preview` branch could
+        not be referred to anywhere without failing a mandatory gate.
+        """
+        assert not _branch_expression_re(BRANCH).search(expression)
+
+    @pytest.mark.parametrize(
+        "ref",
+        ["staging", "refs/heads/staging"],
+        ids=["bare", "qualified"],
+    )
+    def test_both_checkout_spellings_are_caught(self, ref: str) -> None:
+        """A checkout names a branch bare or qualified, and both check it out.
+
+        Comparing against the bare form alone let `ref: refs/heads/staging`
+        through, so a workflow could check out the deleted branch while this
+        contract passed.
+        """
+        document: dict[str, object] = {
+            "jobs": {
+                "build": {
+                    "steps": [{"uses": "actions/checkout@v6", "with": {"ref": ref}}]
+                }
+            }
+        }
+        refs = _branch_ref_values(BRANCH)
+        assert [value for value in _checkout_refs(document) if value in refs] == [ref]
+
+    @pytest.mark.parametrize(
+        "ref",
+        ["main", "refs/heads/staging-preview", "staging-preview"],
+        ids=["unrelated", "qualified-longer", "bare-longer"],
+    )
+    def test_an_unrelated_checkout_ref_is_left_alone(self, ref: str) -> None:
+        """Only the deleted branch counts, not one that starts with its name."""
+        document: dict[str, object] = {
+            "jobs": {
+                "build": {
+                    "steps": [{"uses": "actions/checkout@v6", "with": {"ref": ref}}]
+                }
+            }
+        }
+        refs = _branch_ref_values(BRANCH)
+        assert [value for value in _checkout_refs(document) if value in refs] == []
