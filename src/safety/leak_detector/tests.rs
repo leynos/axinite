@@ -1,5 +1,7 @@
 //! Unit tests for secret leak detection and severity grading.
 
+use rstest::rstest;
+
 use crate::safety::leak_detector::{LeakDetector, LeakSeverity};
 
 #[test]
@@ -106,12 +108,15 @@ fn test_scan_and_clean_passes_clean() {
     assert_eq!(result.unwrap(), content);
 }
 
-#[test]
-fn test_mask_secret() {
-    use crate::safety::leak_detector::mask_secret;
-
-    assert_eq!(mask_secret("short"), "*****");
-    assert_eq!(mask_secret("sk-test1234567890abcdef"), "sk-t********cdef");
+#[rstest]
+#[case::empty("", "")]
+#[case::short("abc", "***")]
+#[case::eight_characters("12345678", "********")]
+#[case::nine_characters("123456789", "1234*6789")]
+#[case::typical_secret("short", "*****")]
+#[case::long_secret("sk-test1234567890abcdef", "sk-t********cdef")]
+fn test_mask_secret(#[case] secret: &str, #[case] expected: &str) {
+    assert_eq!(crate::safety::leak_detector::mask_secret(secret), expected);
 }
 
 #[test]
@@ -268,17 +273,6 @@ fn test_multiple_different_secret_types() {
         "expected 2+ matches for different secret types, got {}",
         result.matches.len()
     );
-}
-
-#[test]
-fn test_mask_secret_short_value() {
-    use crate::safety::leak_detector::mask_secret;
-    // Short secrets (<= 8 chars) should be fully masked
-    assert_eq!(mask_secret("abc"), "***");
-    assert_eq!(mask_secret(""), "");
-    assert_eq!(mask_secret("12345678"), "********");
-    // 9-char string shows first 4 + last 4 with one star in middle
-    assert_eq!(mask_secret("123456789"), "1234*6789");
 }
 
 #[test]
