@@ -26,7 +26,8 @@ extend `EnvContext::default()` with `with_env(...)`; they must never call
 
 `clippy.toml` disallows direct environment reads and writes. A remaining
 legacy reader may use a narrowly scoped
-`#[expect(clippy::disallowed_methods, reason = "transitional: migrate to EnvContext, see #...")]`.
+`#[expect(clippy::disallowed_methods, reason =
+"transitional: migrate to EnvContext, see #...")]`.
 The expectation is deliberately stale-detecting: remove it with the direct
 call when the dependency is injected. Owning composition boundaries use the
 same lint expectation with an explanation of why their ambient capture is
