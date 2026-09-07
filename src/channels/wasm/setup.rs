@@ -344,8 +344,10 @@ pub async fn inject_channel_credentials(
                 );
                 continue;
             }
-            if let Ok(env_value) = std::env::var(&placeholder)
-                && !env_value.is_empty()
+            if let Ok(env_value) = {
+                #[expect(clippy::disallowed_methods, reason = "transitional #333: EnvContext")]
+                std::env::var(&placeholder)
+            } && !env_value.is_empty()
             {
                 tracing::debug!(
                     channel = %channel_name,

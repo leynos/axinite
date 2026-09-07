@@ -6,6 +6,7 @@
 use serde::Serialize;
 use uuid::Uuid;
 
+use crate::config::EnvContext;
 use crate::error::WorkerError;
 use crate::llm::{
     CompletionRequest, CompletionResponse, ToolCompletionRequest, ToolCompletionResponse,
@@ -46,7 +47,18 @@ impl WorkerHttpClient {
     ///
     /// Reads `AXINITE_WORKER_TOKEN` from the environment.
     pub fn from_env(orchestrator_url: String, job_id: Uuid) -> Result<Self, WorkerError> {
-        let token = std::env::var("AXINITE_WORKER_TOKEN").map_err(|_| WorkerError::MissingToken)?;
+        Self::from_context(orchestrator_url, job_id, &EnvContext::capture_ambient())
+    }
+
+    /// Create a client from an explicit environment snapshot.
+    pub fn from_context(
+        orchestrator_url: String,
+        job_id: Uuid,
+        ctx: &EnvContext,
+    ) -> Result<Self, WorkerError> {
+        let token = ctx
+            .get_owned("AXINITE_WORKER_TOKEN")
+            .ok_or(WorkerError::MissingToken)?;
         Self::new(orchestrator_url, job_id, token)
     }
 

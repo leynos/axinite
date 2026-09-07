@@ -146,7 +146,13 @@ pub(super) async fn fetch_openai_models(cached_key: Option<&str>) -> Vec<(String
 
     let api_key = cached_key
         .map(String::from)
-        .or_else(|| std::env::var("OPENAI_API_KEY").ok())
+        .or_else(|| {
+            {
+                #[expect(clippy::disallowed_methods, reason = "transitional #333: EnvContext")]
+                std::env::var("OPENAI_API_KEY")
+            }
+            .ok()
+        })
         .filter(|k| !k.is_empty());
 
     let api_key = match api_key {

@@ -18,6 +18,7 @@ use std::sync::Arc;
 use rust_decimal::Decimal;
 use tokio::sync::Mutex;
 
+use crate::config::EnvContext;
 use crate::llm::error::LlmError;
 use crate::llm::provider::{
     ChatMessage, CompletionRequest, CompletionResponse, LlmProvider, ModelMetadata, Role,
@@ -69,23 +70,25 @@ impl RecordingLlm {
     /// - `AXINITE_TRACE_OUTPUT` — file path (default: `./trace_{timestamp}.json`)
     /// - `AXINITE_TRACE_MODEL_NAME` — model_name field (default: `recorded-{inner.model_name()}`)
     pub fn from_env(inner: Arc<dyn LlmProvider>) -> Option<Arc<Self>> {
-        let enabled = std::env::var("AXINITE_RECORD_TRACE")
-            .ok()
-            .filter(|v| !v.is_empty());
+        Self::from_context(inner, &EnvContext::capture_ambient())
+    }
+
+    /// Create from an explicit environment snapshot when recording is enabled.
+    pub fn from_context(inner: Arc<dyn LlmProvider>, ctx: &EnvContext) -> Option<Arc<Self>> {
+        let enabled = ctx.get("AXINITE_RECORD_TRACE");
         enabled?;
 
-        let output_path = std::env::var("AXINITE_TRACE_OUTPUT")
-            .ok()
-            .filter(|v| !v.is_empty())
+        let output_path = ctx
+            .get("AXINITE_TRACE_OUTPUT")
             .map(PathBuf::from)
             .unwrap_or_else(|| {
                 let ts = chrono::Local::now().format("%Y%m%dT%H%M%S");
                 PathBuf::from(format!("trace_{ts}.json"))
             });
 
-        let model_name = std::env::var("AXINITE_TRACE_MODEL_NAME")
-            .ok()
-            .filter(|v| !v.is_empty())
+        let model_name = ctx
+            .get("AXINITE_TRACE_MODEL_NAME")
+            .map(str::to_string)
             .unwrap_or_else(|| format!("recorded-{}", inner.model_name()));
 
         tracing::info!(

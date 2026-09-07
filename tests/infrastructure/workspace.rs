@@ -9,10 +9,12 @@
 mod files;
 #[path = "workspace/memory_and_search.rs"]
 mod memory_and_search;
-
 fn get_pool() -> deadpool_postgres::Pool {
-    let database_url = std::env::var("DATABASE_URL")
-        .unwrap_or_else(|_| "postgres://localhost/axinite_test".to_string());
+    let database_url = {
+        #[expect(clippy::disallowed_methods, reason = "transitional #333: EnvContext")]
+        std::env::var("DATABASE_URL")
+    }
+    .unwrap_or_else(|_| "postgres://localhost/axinite_test".to_string());
 
     let config: tokio_postgres::Config = database_url.parse().expect("Invalid DATABASE_URL");
 

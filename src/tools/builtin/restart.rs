@@ -25,6 +25,7 @@
 
 use std::time::Duration;
 
+use crate::config::EnvContext;
 use crate::context::JobContext;
 #[allow(unused_imports)]
 use crate::tools::tool::{ApprovalRequirement, NativeTool, ToolError, ToolOutput};
@@ -35,7 +36,27 @@ use crate::tools::tool::{ApprovalRequirement, NativeTool, ToolError, ToolOutput}
 /// (exit code 0). User approval happens at the command level (via the web modal confirmation),
 /// not at tool execution level. The `/restart` command is only callable via the web gateway
 /// interface to prevent unauthorized restarts.
-pub struct RestartTool;
+pub struct RestartTool {
+    env: EnvContext,
+}
+
+impl RestartTool {
+    /// Construct the restart adapter from the process environment at startup.
+    pub fn new() -> Self {
+        Self::from_context(EnvContext::capture_ambient())
+    }
+
+    /// Construct the restart adapter from an explicit environment snapshot.
+    pub fn from_context(env: EnvContext) -> Self {
+        Self { env }
+    }
+}
+
+impl Default for RestartTool {
+    fn default() -> Self {
+        Self::new()
+    }
+}
 
 impl NativeTool for RestartTool {
     fn name(&self) -> &str {
@@ -72,9 +93,10 @@ impl NativeTool for RestartTool {
         // Check if running inside a Docker container via AXINITE_IN_DOCKER env var.
         // The Docker entrypoint sets this to "true". For local development, it's unset or "false".
         // The entrypoint restart loop only works inside a Docker container (axinite-worker).
-        let in_docker = std::env::var("AXINITE_IN_DOCKER")
-            .map(|v| v.to_lowercase() == "true")
-            .unwrap_or(false);
+        let in_docker = self
+            .env
+            .get("AXINITE_IN_DOCKER")
+            .is_some_and(|value| value.eq_ignore_ascii_case("true"));
 
         tracing::debug!("[RestartTool::execute] AXINITE_IN_DOCKER={}", in_docker);
 
@@ -117,12 +139,10 @@ impl NativeTool for RestartTool {
         //   to properly drain Axum, close DB connections, and checkpoint jobs.
         // Check if restart is disabled (e.g., in tests). This allows tests to verify
         // parameter parsing and output without actually terminating the process.
-        let restart_disabled = std::env::var("AXINITE_DISABLE_RESTART")
-            .map(|v| {
-                let v = v.to_lowercase();
-                v == "1" || v == "true"
-            })
-            .unwrap_or(false);
+        let restart_disabled = self
+            .env
+            .get("AXINITE_DISABLE_RESTART")
+            .is_some_and(|value| value == "1" || value.eq_ignore_ascii_case("true"));
 
         tracing::info!(
             "[RestartTool::execute] Spawning background task to exit in {} seconds (disabled={})",
