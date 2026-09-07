@@ -162,6 +162,10 @@ pub async fn test_pg_db() -> Result<TestDatabase, DatabaseError> {
 }
 
 /// Read the URL a lane names for its test database, if it names one.
+#[expect(
+    clippy::disallowed_methods,
+    reason = "transitional: migrate test database environment reads to EnvContext, see #333"
+)]
 fn configured_database_url() -> Option<String> {
     std::env::var("TEST_DATABASE_URL").ok()
 }
@@ -258,6 +262,10 @@ impl PostgresRequirement {
     }
 
     /// Read the requirement this process was started with.
+    #[expect(
+        clippy::disallowed_methods,
+        reason = "transitional: migrate test database environment reads to EnvContext, see #333"
+    )]
     fn from_env() -> Self {
         Self::from_os_value(std::env::var_os(REQUIRE_POSTGRES_ENV).as_deref())
     }
