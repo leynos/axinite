@@ -2727,8 +2727,19 @@ nothing in the workflows names which profile a lane runs under.
 The per-test allowance it compares against is `period` multiplied by
 `terminate-after`, not `period` alone, so an override that raised the
 multiplier rather than the period is read at its real size. The readings it
-rests on live in `timeout_budgets.py` and `suite_lanes.py`, and are driven with
-controlled values in `timeout_reading_test.py`.
+rests on live in `nextest_config.py`, `timeout_budgets.py` and
+`suite_lanes.py`, and are driven with controlled values in
+`timeout_reading_test.py`.
+
+The nextest configuration is parsed with `tomllib` rather than matched as text.
+A text match finds a key inside a comment, inside a `filter` string, or in a
+table nextest never consults, and reports a budget the runner does not use. The
+commented-out `global-timeout` is the case that matters most, because this
+contract requires that tier to be present: a scraping reader would go on
+reporting a budget somebody had switched off. `terminate-after` is optional, and
+a `slow-timeout` without it marks a test slow and never stops it, so the reading
+refuses that form rather than reporting one period as the budget. Every table in
+`.config/nextest.toml` sets it explicitly, so no value here changes.
 
 It also pins the condition each lane carries. A skipped step runs no suite, so
 none of the budgets above says anything about it: `if: false` on the step or on

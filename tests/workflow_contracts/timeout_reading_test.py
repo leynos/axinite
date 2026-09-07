@@ -8,13 +8,36 @@ values here.
 """
 
 import pytest
+from nextest_config import (
+    NextestConfigurationError,
+    UnboundedTestError,
+    profiles,
+)
 from suite_lanes import COVERAGE_ACTION, WATCHDOG_VARIABLE, _watchdog_offences
 from timeout_budgets import (
     NEXTEST_DEFAULT_GRACE_PERIOD_SECONDS,
     TERMINATION_SAFETY_MARGIN_SECONDS,
     base_slow_timeout,
+    global_timeout,
+    largest_test_allowance,
     termination_allowance,
 )
+
+
+def example(config_text: str):
+    """Return the ``example`` profile parsed out of a document.
+
+    Parameters
+    ----------
+    config_text
+        A nextest configuration document declaring ``[profile.example]``.
+
+    Returns
+    -------
+    Profile
+        The parsed profile.
+    """
+    return profiles(config_text)["example"]
 
 
 def test_the_base_allowance_is_read_from_the_profile_not_its_overrides() -> None:
@@ -36,9 +59,10 @@ def test_the_base_allowance_is_read_from_the_profile_not_its_overrides() -> None
         "filter = 'binary(trybuild)'\n"
         'slow-timeout = { period = "900s", terminate-after = 4 }\n'
     )
-    assert base_slow_timeout(block) == {"period": "300s", "terminate-after": "1"}, (
-        "the base slow-timeout must come from the profile's own section"
-    )
+    assert base_slow_timeout(example(block)) == {
+        "period": "300s",
+        "terminate-after": "1",
+    }, "the base slow-timeout must come from the profile's own section"
 
 
 def test_a_profile_declaring_no_base_allowance_reads_as_empty() -> None:
@@ -57,7 +81,7 @@ def test_a_profile_declaring_no_base_allowance_reads_as_empty() -> None:
         "filter = 'binary(trybuild)'\n"
         'slow-timeout = { period = "900s", terminate-after = 1 }\n'
     )
-    assert base_slow_timeout(block) == {}, (
+    assert base_slow_timeout(example(block)) == {}, (
         "a profile whose only slow-timeout is an override's declares no base"
     )
 
@@ -72,19 +96,33 @@ def test_the_termination_allowance_is_the_grace_period_plus_the_margin() -> None
     both leave the requirement inside the ceiling, which is why the
     reading carries a test of its own.
     """
-    assert termination_allowance("") == pytest.approx(
+    unset = example(
+        '[profile.example]\nslow-timeout = { period = "300s", terminate-after = 1 }\n'
+    )
+    assert termination_allowance(unset) == pytest.approx(
         NEXTEST_DEFAULT_GRACE_PERIOD_SECONDS + TERMINATION_SAFETY_MARGIN_SECONDS
     ), "an unnamed grace period must fall back to nextest's own default"
     configured = termination_allowance(
-        'slow-timeout = { period = "300s", grace-period = "5s" }'
+        example(
+            "[profile.example]\n"
+            'slow-timeout = { period = "300s", terminate-after = 1, '
+            'grace-period = "5s" }\n'
+        )
     )
     assert configured == pytest.approx(5.0 + TERMINATION_SAFETY_MARGIN_SECONDS), (
         "a grace period below the margin must still raise the allowance; "
         "a maximum over the two terms would have discarded it"
     )
     largest = termination_allowance(
-        'slow-timeout = { grace-period = "5s" }\n'
-        'slow-timeout = { grace-period = "45s" }'
+        example(
+            "[profile.example]\n"
+            'slow-timeout = { period = "300s", terminate-after = 1, '
+            'grace-period = "5s" }\n'
+            "\n[[profile.example.overrides]]\n"
+            "filter = 'binary(trybuild)'\n"
+            'slow-timeout = { period = "300s", terminate-after = 1, '
+            'grace-period = "45s" }\n'
+        )
     )
     assert largest == pytest.approx(45.0 + TERMINATION_SAFETY_MARGIN_SECONDS), (
         "the largest grace period in the profile governs the allowance"
@@ -122,3 +160,103 @@ def test_both_halves_of_the_absent_tier_are_detected(
     assert len(offences) == expected, (
         f"{step} must yield {expected} offence(s), got {offences}"
     )
+
+
+def test_a_commented_out_global_timeout_is_absent() -> None:
+    """Tier two must read as missing when it has been switched off.
+
+    This is the reading the contract's presence assertion rests on. A
+    text match would keep reporting the budget from the comment, so the
+    tier could be commented out and the four-tier contract would go on
+    passing with three.
+    """
+    with pytest.raises(NextestConfigurationError, match=r"global-timeout"):
+        global_timeout(example('[profile.example]\n# global-timeout = "30m"\n'))
+    live = example('[profile.example]\nglobal-timeout = "30m"\n')
+    assert global_timeout(live) == pytest.approx(1800.0)
+
+
+def test_a_commented_out_slow_timeout_is_not_a_budget() -> None:
+    """A comment is not configuration, and TOML is what says so.
+
+    A reader that scraped the text would report an allowance from a line
+    nextest never reads, so deleting the live entry and leaving the
+    comment behind would look like a change of value rather than the
+    loss of a tier.
+    """
+    parsed = example(
+        "[profile.example]\n"
+        '# slow-timeout = { period = "30m", terminate-after = 1 }\n'
+        'slow-timeout = { period = "300s", terminate-after = 1 }\n'
+    )
+    assert largest_test_allowance(parsed) == pytest.approx(300.0)
+    with pytest.raises(NextestConfigurationError, match=r"no slow-timeout"):
+        largest_test_allowance(
+            example(
+                "[profile.example]\n"
+                '# slow-timeout = { period = "300s", terminate-after = 1 }\n'
+            )
+        )
+
+
+def test_a_commented_out_grace_period_is_not_in_force() -> None:
+    """The grace period is a term of the ceiling requirement.
+
+    A scraped comment would raise the termination allowance and with it
+    the ceiling this contract demands, so the file would appear to ask
+    more of the tier above it than nextest actually does.
+    """
+    parsed = example(
+        "[profile.example]\n"
+        '# slow-timeout = { period = "300s", terminate-after = 1, '
+        'grace-period = "30m" }\n'
+        'slow-timeout = { period = "300s", terminate-after = 1, '
+        'grace-period = "5s" }\n'
+    )
+    assert termination_allowance(parsed) == pytest.approx(
+        5.0 + TERMINATION_SAFETY_MARGIN_SECONDS
+    )
+
+
+def test_a_filter_naming_a_timeout_key_is_not_a_budget() -> None:
+    """An override's ``filter`` is a string, not configuration.
+
+    A binary named after one of these keys would be matched by a text
+    search and read as a budget nextest never applies.
+    """
+    parsed = example(
+        "[profile.example]\n"
+        'slow-timeout = { period = "300s", terminate-after = 1 }\n'
+        'global-timeout = "30m"\n'
+        "\n[[profile.example.overrides]]\n"
+        "filter = 'binary(global_timeout_probe) | binary(grace_period_probe)'\n"
+        'slow-timeout = { period = "600s", terminate-after = 1 }\n'
+    )
+    assert largest_test_allowance(parsed) == pytest.approx(600.0)
+    assert global_timeout(parsed) == pytest.approx(1800.0)
+    assert termination_allowance(parsed) == pytest.approx(
+        NEXTEST_DEFAULT_GRACE_PERIOD_SECONDS + TERMINATION_SAFETY_MARGIN_SECONDS
+    )
+
+
+@pytest.mark.parametrize(
+    "table",
+    [
+        pytest.param('slow-timeout = "300s"', id="a-bare-duration"),
+        pytest.param(
+            'slow-timeout = { period = "300s" }',
+            id="a-table-without-terminate-after",
+        ),
+    ],
+)
+def test_a_slow_timeout_that_never_terminates_is_refused(table: str) -> None:
+    """``terminate-after`` is optional, and without it nothing is bounded.
+
+    nextest marks the test slow, warns once per period, and lets it run
+    on. Reading such a configuration as a period-long budget would put a
+    number on the tier that is missing. Every table in
+    ``.config/nextest.toml`` sets it explicitly, so nothing here relies
+    on the looser reading.
+    """
+    with pytest.raises(UnboundedTestError, match=r"terminate-after"):
+        largest_test_allowance(example(f"[profile.example]\n{table}\n"))
