@@ -1,0 +1,11 @@
+# Runtime versions from rust-prover-tools 2a9884d6e88a7821c7c94d256268aaa114534982.
+# All are wheel-only; the CLI source is interpreted without a package build.
+attrs==26.1.0
+cuprum==0.1.0
+cyclopts==4.23.3
+docstring-parser==0.18.0
+markdown-it-py==4.2.0
+mdurl==0.1.2
+pygments==2.20.0
+rich==15.0.0
+rich-rst==2.0.1

@@ -605,6 +605,14 @@ make lint
 make test
 ```
 
+The repair-claims experiment adds a binary-only Kani prerequisite to `make all`.
+Run `make install-kani` once before `make kani` or `make all`. The current
+released verifier cannot model the registry's default `HashSet` entropy path,
+so the formal gate currently fails explicitly. See
+[formal verification methods](formal-verification-methods-in-axinite.md#repair-claims-shared-source-experiment-178)
+for the blocker, exact proof scope and binary pins. Do not install tools from
+source to work around it.
+
 The current `Makefile` also includes:
 
 - `make build-github-tool-wasm` to build the GitHub WASM tool used by
