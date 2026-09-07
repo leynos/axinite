@@ -83,7 +83,10 @@ impl SetupWizard {
         secret_name: &str,
         display_name: &str,
     ) -> Result<bool, SetupError> {
-        let Ok(existing) = std::env::var(env_var) else {
+        let Ok(existing) = ({
+            #[expect(clippy::disallowed_methods, reason = "transitional #333: EnvContext")]
+            std::env::var(env_var)
+        }) else {
             return Ok(false);
         };
 
@@ -204,7 +207,13 @@ impl SetupWizard {
             .settings
             .openai_compatible_base_url
             .clone()
-            .or_else(|| std::env::var("LLM_BASE_URL").ok());
+            .or_else(|| {
+                {
+                    #[expect(clippy::disallowed_methods, reason = "transitional #333: EnvContext")]
+                    std::env::var("LLM_BASE_URL")
+                }
+                .ok()
+            });
 
         if let Some(u) = existing_url {
             let url_input = optional_input("Base URL", Some(&format!("current: {}", u)))

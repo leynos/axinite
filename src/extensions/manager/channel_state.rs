@@ -266,10 +266,13 @@ impl ExtensionManager {
             .exists(&self.user_id, &auth.secret_name)
             .await
             .unwrap_or(false)
-            || auth
-                .env_var
-                .as_ref()
-                .is_some_and(|v| std::env::var(v).is_ok());
+            || auth.env_var.as_ref().is_some_and(|v| {
+                {
+                    #[expect(clippy::disallowed_methods, reason = "transitional #333: EnvContext")]
+                    std::env::var(v)
+                }
+                .is_ok()
+            });
         if has_token {
             ToolAuthState::Ready
         } else if auth.oauth.is_some() {

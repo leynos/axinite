@@ -28,6 +28,7 @@ pub(crate) struct LoadedConfigContext {
     pub(in crate::startup) session: Arc<axinite::llm::session::SessionManager>,
     pub(in crate::startup) log_broadcaster: Arc<LogBroadcaster>,
     pub(in crate::startup) log_level_handle: Arc<axinite::channels::web::log_layer::LogLevelHandle>,
+    pub(in crate::startup) workspace_import_dir: Option<std::path::PathBuf>,
 }
 
 /// Fully built application components handed from `AppBuilder` to the runtime

@@ -44,7 +44,12 @@ pub(super) async fn check_nearai_session() -> CheckResult {
 /// Result when no session file exists: pass in API-key mode, otherwise
 /// direct the user to onboarding.
 fn missing_session_result(session_path: &std::path::Path) -> CheckResult {
-    if std::env::var("NEARAI_API_KEY").is_ok() {
+    if {
+        #[expect(clippy::disallowed_methods, reason = "transitional #333: EnvContext")]
+        std::env::var("NEARAI_API_KEY")
+    }
+    .is_ok()
+    {
         return CheckResult::Pass("API key configured".into());
     }
     CheckResult::Fail(format!(
@@ -88,11 +93,13 @@ pub(super) fn check_llm_config_with_context(ctx: &EnvContext, settings: &Setting
 }
 
 // ── Database ────────────────────────────────────────────────
-
 pub(super) async fn check_database() -> CheckResult {
-    let backend = std::env::var("DATABASE_BACKEND")
-        .ok()
-        .unwrap_or_else(|| "postgres".into());
+    let backend = {
+        #[expect(clippy::disallowed_methods, reason = "transitional #333: EnvContext")]
+        std::env::var("DATABASE_BACKEND")
+    }
+    .ok()
+    .unwrap_or_else(|| "postgres".into());
 
     match backend.as_str() {
         "libsql" | "turso" | "sqlite" => check_libsql_database(),
@@ -102,9 +109,12 @@ pub(super) async fn check_database() -> CheckResult {
 
 /// Report whether the configured libSQL database file already exists.
 fn check_libsql_database() -> CheckResult {
-    let path = std::env::var("LIBSQL_PATH")
-        .map(PathBuf::from)
-        .unwrap_or_else(|_| crate::config::default_libsql_path());
+    let path = {
+        #[expect(clippy::disallowed_methods, reason = "transitional #333: EnvContext")]
+        std::env::var("LIBSQL_PATH")
+    }
+    .map(PathBuf::from)
+    .unwrap_or_else(|_| crate::config::default_libsql_path());
 
     if path.exists() {
         CheckResult::Pass(format!("libSQL database exists ({})", path.display()))
@@ -118,7 +128,12 @@ fn check_libsql_database() -> CheckResult {
 
 /// Attempt a PostgreSQL connection, or report the missing `DATABASE_URL`.
 async fn check_postgres_database() -> CheckResult {
-    if std::env::var("DATABASE_URL").is_err() {
+    if {
+        #[expect(clippy::disallowed_methods, reason = "transitional #333: EnvContext")]
+        std::env::var("DATABASE_URL")
+    }
+    .is_err()
+    {
         return CheckResult::Fail("DATABASE_URL not set".into());
     }
 
@@ -132,7 +147,11 @@ async fn check_postgres_database() -> CheckResult {
 /// connection timeout. Shared by the connection and pgvector checks.
 #[cfg(feature = "postgres")]
 async fn pg_client_from_env() -> Result<deadpool_postgres::Client, String> {
-    let url = std::env::var("DATABASE_URL").map_err(|_| "DATABASE_URL not set".to_string())?;
+    let url = {
+        #[expect(clippy::disallowed_methods, reason = "transitional #333: EnvContext")]
+        std::env::var("DATABASE_URL")
+    }
+    .map_err(|_| "DATABASE_URL not set".to_string())?;
 
     let config = deadpool_postgres::Config {
         url: Some(url),
@@ -165,11 +184,13 @@ async fn try_pg_connect() -> Result<(), String> {
 }
 
 // ── Workspace search ────────────────────────────────────────
-
 pub(super) async fn check_workspace_search() -> CheckResult {
-    let backend = std::env::var("DATABASE_BACKEND")
-        .ok()
-        .unwrap_or_else(|| "postgres".into());
+    let backend = {
+        #[expect(clippy::disallowed_methods, reason = "transitional #333: EnvContext")]
+        std::env::var("DATABASE_BACKEND")
+    }
+    .ok()
+    .unwrap_or_else(|| "postgres".into());
 
     match backend.as_str() {
         "libsql" | "turso" | "sqlite" => {
@@ -180,7 +201,12 @@ pub(super) async fn check_workspace_search() -> CheckResult {
             // PostgreSQL with pgvector
             #[cfg(feature = "postgres")]
             {
-                if std::env::var("DATABASE_URL").is_ok() {
+                if {
+                    #[expect(clippy::disallowed_methods, reason = "transitional #333: EnvContext")]
+                    std::env::var("DATABASE_URL")
+                }
+                .is_ok()
+                {
                     match try_pgvector_check().await {
                         Ok(()) => CheckResult::Pass("hybrid search (pgvector)".into()),
                         Err(e) => {
