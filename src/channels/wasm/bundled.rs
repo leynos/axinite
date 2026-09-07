@@ -35,7 +35,10 @@ pub fn bundled_channel_names() -> Vec<&'static str> {
 /// 1. `AXINITE_CHANNELS_SRC` env var
 /// 2. `<CARGO_MANIFEST_DIR>/channels-src/` (dev builds)
 fn channels_src_dir() -> PathBuf {
-    if let Ok(dir) = std::env::var("AXINITE_CHANNELS_SRC") {
+    if let Ok(dir) = {
+        #[expect(clippy::disallowed_methods, reason = "transitional #333: EnvContext")]
+        std::env::var("AXINITE_CHANNELS_SRC")
+    } {
         return PathBuf::from(dir);
     }
     PathBuf::from(CARGO_MANIFEST_DIR).join("channels-src")

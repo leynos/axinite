@@ -58,9 +58,15 @@ impl SkillCatalog {
     /// Reads `CLAWHUB_REGISTRY` (or legacy `CLAWDHUB_REGISTRY`) from the
     /// environment, falling back to the Convex backend.
     pub fn new() -> Self {
-        let registry_url = std::env::var("CLAWHUB_REGISTRY")
-            .or_else(|_| std::env::var("CLAWDHUB_REGISTRY"))
-            .unwrap_or_else(|_| DEFAULT_REGISTRY_URL.to_string());
+        let registry_url = {
+            #[expect(clippy::disallowed_methods, reason = "transitional #333: EnvContext")]
+            std::env::var("CLAWHUB_REGISTRY")
+        }
+        .or_else(|_| {
+            #[expect(clippy::disallowed_methods, reason = "transitional #333: EnvContext")]
+            std::env::var("CLAWDHUB_REGISTRY")
+        })
+        .unwrap_or_else(|_| DEFAULT_REGISTRY_URL.to_string());
 
         let client = reqwest::Client::builder()
             .timeout(REQUEST_TIMEOUT)

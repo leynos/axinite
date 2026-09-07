@@ -179,14 +179,18 @@ pub(super) async fn check_skills() -> CheckResult {
 }
 
 // ── Secrets ─────────────────────────────────────────────────
-
 pub(super) fn check_secrets(settings: &Settings) -> CheckResult {
     match settings.secrets_master_key_source {
         crate::settings::KeySource::Keychain => {
             CheckResult::Pass("master key source: OS keychain".into())
         }
         crate::settings::KeySource::Env => {
-            if std::env::var("SECRETS_MASTER_KEY").is_ok() {
+            if {
+                #[expect(clippy::disallowed_methods, reason = "transitional #333: EnvContext")]
+                std::env::var("SECRETS_MASTER_KEY")
+            }
+            .is_ok()
+            {
                 CheckResult::Pass("master key source: env var (set)".into())
             } else {
                 CheckResult::Fail(

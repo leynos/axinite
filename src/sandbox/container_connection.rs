@@ -99,8 +99,16 @@ pub(crate) fn docker_feature_disabled_error() -> SandboxError {
 #[cfg(all(unix, feature = "docker"))]
 fn unix_socket_candidates() -> Vec<PathBuf> {
     unix_socket_candidates_from_env(
-        std::env::var_os("HOME").map(PathBuf::from),
-        std::env::var_os("XDG_RUNTIME_DIR").map(PathBuf::from),
+        {
+            #[expect(clippy::disallowed_methods, reason = "transitional #333: EnvContext")]
+            std::env::var_os("HOME")
+        }
+        .map(PathBuf::from),
+        {
+            #[expect(clippy::disallowed_methods, reason = "transitional #333: EnvContext")]
+            std::env::var_os("XDG_RUNTIME_DIR")
+        }
+        .map(PathBuf::from),
         Some({
             // SAFETY: `geteuid` has no preconditions and simply returns the
             // effective user ID for the current process.
