@@ -20,8 +20,13 @@ ended a hang was the job's own, which cancels the run and discards the
 log that would have named the test.
 
 The per-test allowance is ``period`` multiplied by ``terminate-after``,
-not ``period`` alone, and the two profiles carry their own overrides
-because a profile does not inherit another's.
+not ``period`` alone. Both profiles declare their own budgets, which is
+repository policy rather than a nextest requirement: a custom profile
+inherits ``[profile.default]``, and nextest consults
+``[[profile.default.overrides]]`` for it too, so a profile declaring
+nothing would still be bounded. ``ci`` is the profile that includes the
+trybuild binaries the default profile excludes, and the budgets that
+govern CI belong where a reader of that profile will find them.
 
 See "Test timeouts: the tiers this repository sets" in
 ``docs/developers-guide.md``, and the canonical wording in
@@ -64,10 +69,16 @@ SUITE_MARKERS: typ.Final[tuple[str, ...]] = (
 #: of those runs was genuinely cold.
 OUTSIDE_RUN_ALLOWANCE_SECONDS: typ.Final[float] = 20 * 60.0
 
-#: Floor for the termination allowance, used when a profile sets no grace
-#: period. Generous against nextest's ten-second default and far too
-#: small to hide a real overrun.
-MINIMUM_TERMINATION_ALLOWANCE_SECONDS: typ.Final[float] = 60.0
+#: What nextest allows a test between `SIGTERM` and `SIGKILL` when a
+#: profile names no `grace-period`. Both profiles here name five seconds,
+#: so this is a fallback rather than the value in force.
+NEXTEST_DEFAULT_GRACE_PERIOD_SECONDS: typ.Final[float] = 10.0
+
+#: Added to that grace period to cover the teardown and report writing
+#: that follow it. A separate term rather than a floor over the two, so
+#: raising a grace period raises the requirement instead of vanishing
+#: into it.
+TERMINATION_SAFETY_MARGIN_SECONDS: typ.Final[float] = 60.0
 
 NEXTEST_CONFIG = REPOSITORY_ROOT / ".config" / "nextest.toml"
 
@@ -89,6 +100,12 @@ _SLOW_TIMEOUT: typ.Final[re.Pattern[str]] = re.compile(
 )
 
 _GRACE_PERIOD: typ.Final[re.Pattern[str]] = re.compile(r'grace-period\s*=\s*"([^"]+)"')
+
+#: One ``key = value`` pair inside a ``slow-timeout`` inline table, with
+#: the quotes stripped, so a period and a multiplier read alike.
+_FIELD: typ.Final[re.Pattern[str]] = re.compile(
+    r'([a-z-]+)\s*=\s*"?([^,"}]+)"?'
+)
 
 
 def seconds(duration: str) -> float:
@@ -113,9 +130,12 @@ def profile_blocks(config_text: str) -> dict[str, str]:
     """Return each profile's own text, keyed by profile name.
 
     Read textually rather than through a TOML parser, because every
-    assertion below must be attached to the profile it belongs to, and a
-    profile's overrides are its own: ``[[profile.default.overrides]]``
-    does not reach ``[profile.ci]``.
+    assertion below is about what one profile declares for itself. That
+    is deliberately narrower than what nextest would resolve: a custom
+    profile inherits ``[profile.default]``, and
+    ``[[profile.default.overrides]]`` are consulted for it too. The
+    contract holds each profile to stating its own budgets, which is
+    repository policy rather than a nextest requirement.
 
     Parameters
     ----------
@@ -171,14 +191,51 @@ def largest_test_allowance(block: str) -> float:
     return max(budgets)
 
 
+def base_slow_timeout(block: str) -> dict[str, str]:
+    """Return one profile's own ``slow-timeout``, field by field.
+
+    The base allowance is the one that governs every test the profile's
+    overrides do not name, so it is read on its own rather than as part
+    of the profile's text. The first inline table in a profile block is
+    the profile's own; the tables after it belong to that profile's
+    overrides.
+
+    Parameters
+    ----------
+    block
+        One profile's text.
+
+    Returns
+    -------
+    dict of str to str
+        The fields of the base ``slow-timeout``, empty when the profile
+        declares none of its own.
+    """
+    for line in block.splitlines():
+        stripped = line.strip()
+        if stripped.startswith("[["):
+            break
+        match = _SLOW_TIMEOUT.match(stripped)
+        if match is not None:
+            return {
+                key: value.strip()
+                for key, value in _FIELD.findall(match["body"])
+            }
+    return {}
+
+
 def termination_allowance(block: str) -> float:
     """Return the time nextest may take to stop the run, in seconds.
 
-    Hitting the global timeout starts nextest's ordinary termination
-    procedure rather than stopping the run: on Unix it signals the
-    process group and waits ``slow-timeout.grace-period`` before killing
-    it. Read from the configuration so a profile that raised its grace
-    period raises the requirement too.
+    Two terms, not one. Hitting the global timeout starts nextest's
+    ordinary termination procedure rather than stopping the run: on Unix
+    it signals the process group and waits ``slow-timeout.grace-period``
+    before killing it. That grace period is the first term, read from the
+    configuration so a profile that raised it raises the requirement too;
+    the second is a fixed margin for the teardown and report writing that
+    follow. A single floor over the two would absorb every grace period
+    below the margin, making a raised one look free until the run it
+    cancelled.
 
     Parameters
     ----------
@@ -188,11 +245,14 @@ def termination_allowance(block: str) -> float:
     Returns
     -------
     float
-        The largest configured grace period, or the floor.
+        The grace period plus the safety margin.
     """
     periods = _GRACE_PERIOD.findall(block)
-    largest = max((seconds(period) for period in periods), default=0.0)
-    return max(largest, MINIMUM_TERMINATION_ALLOWANCE_SECONDS)
+    grace = max(
+        (seconds(period) for period in periods),
+        default=NEXTEST_DEFAULT_GRACE_PERIOD_SECONDS,
+    )
+    return grace + TERMINATION_SAFETY_MARGIN_SECONDS
 
 
 def global_timeout(block: str) -> float:
@@ -330,16 +390,33 @@ def test_every_profile_bounds_a_single_test(
 ) -> None:
     """A test that hangs must be killed, not merely reported slow.
 
-    Both profiles need this, and a profile does not inherit another's
-    settings or its overrides. The `ci` profile is the one that includes
-    the trybuild binaries the default profile excludes, so it is the
-    profile with the longest tests and needs its own allowance for them.
+    Each profile must declare its own base allowance. nextest would fall
+    back to ``[profile.default]`` for a profile that declared none, so
+    this is repository policy rather than a nextest requirement: `ci` is
+    the profile that includes the trybuild binaries the default profile
+    excludes, and the budgets that govern CI belong where a reader of
+    that profile will find them.
+
+    The base ``slow-timeout`` is read specifically, not the profile's
+    text as a whole. An override carrying ``terminate-after`` would
+    satisfy a substring check while the base allowance had none, which
+    leaves every ordinary test reported slow for ever.
     """
     block = nextest_profiles.get(profile)
     assert block is not None, f"nextest.toml must declare [profile.{profile}]"
-    assert "terminate-after" in block, (
-        f"[profile.{profile}] must set slow-timeout with terminate-after, or a "
-        f"hung test is reported slow for ever and only the job timer ends it"
+    base = base_slow_timeout(block)
+    assert base, (
+        f"[profile.{profile}] must declare its own slow-timeout; an override "
+        f"bounds only the tests it names"
+    )
+    assert base.get("terminate-after") == "1", (
+        f"[profile.{profile}]'s base slow-timeout must set terminate-after = 1, "
+        f"got {base.get('terminate-after')}; without it a hung test is reported "
+        f"slow for ever and only the job timer ends it, by cancelling the run"
+    )
+    assert base.get("period") == "300s", (
+        f"[profile.{profile}]'s base slow-timeout must allow 300s, as the "
+        f"developers' guide states; got {base.get('period')}"
     )
 
 
@@ -398,6 +475,57 @@ def test_the_job_ceiling_covers_the_run_and_the_work_around_it(
         )
 
 
+def _steps_of(job_body: object) -> list[dict[str, object]]:
+    """Return one job's steps, or an empty list.
+
+    Parameters
+    ----------
+    job_body
+        The job's parsed value, which need not be a mapping.
+
+    Returns
+    -------
+    list of dict
+        The step mappings, in the order the job runs them.
+    """
+    if not isinstance(job_body, dict):
+        return []
+    steps = job_body.get("steps")
+    if not isinstance(steps, list):
+        return []
+    return [step for step in steps if isinstance(step, dict)]
+
+
+def _watchdog_offences(workflow: str, job_id: str, step: dict[str, object]) -> list[str]:
+    """Return what one step does that the absent tier forbids.
+
+    Two separate things are wrong, so they are reported separately: a
+    step may adopt the action without naming the variable, or name the
+    variable without adopting the action, and the fix differs.
+
+    Parameters
+    ----------
+    workflow
+        The workflow file's name.
+    job_id
+        The job's identifier.
+    step
+        One parsed step.
+
+    Returns
+    -------
+    list of str
+        One entry per offence, empty when the step commits none.
+    """
+    offences: list[str] = []
+    if COVERAGE_ACTION in str(step.get("uses", "")):
+        offences.append(f"{workflow}:{job_id} uses the action")
+    environment = step.get("env")
+    if isinstance(environment, dict) and WATCHDOG_VARIABLE in environment:
+        offences.append(f"{workflow}:{job_id} sets {WATCHDOG_VARIABLE}")
+    return offences
+
+
 def test_the_cargo_watchdog_tier_is_absent_rather_than_defaulted() -> None:
     """The third tier does not exist here, and must not appear unnoticed.
 
@@ -412,24 +540,121 @@ def test_the_cargo_watchdog_tier_is_absent_rather_than_defaulted() -> None:
     prevent, so both halves are asserted: the action is not used, and the
     variable is not set.
     """
-    offenders: list[str] = []
-    for path in workflow_paths():
-        document = load(path)
-        for job in jobs_of(path.name, document):
-            body = job.body
-            if not isinstance(body, dict):
-                continue
-            for step in body.get("steps") or []:
-                if not isinstance(step, dict):
-                    continue
-                if COVERAGE_ACTION in str(step.get("uses", "")):
-                    offenders.append(f"{job.workflow}:{job.job_id} uses the action")
-                environment = step.get("env")
-                if isinstance(environment, dict) and WATCHDOG_VARIABLE in environment:
-                    offenders.append(
-                        f"{job.workflow}:{job.job_id} sets {WATCHDOG_VARIABLE}"
-                    )
+    offenders = [
+        offence
+        for path in workflow_paths()
+        for job in jobs_of(path.name, load(path))
+        for step in _steps_of(job.body)
+        for offence in _watchdog_offences(job.workflow, job.job_id, step)
+    ]
     assert not offenders, (
         f"the cargo watchdog tier is documented as absent here, so adopting it "
         f"needs the developers' guide updated in the same change: {offenders}"
+    )
+
+
+def test_the_base_allowance_is_read_from_the_profile_not_its_overrides() -> None:
+    """The first inline table is the profile's; the rest are overrides'.
+
+    A reader that took the largest table, or the last, would report an
+    override's allowance as the base. The base is the one that governs
+    every test no override names, so the substitution would leave the
+    ordinary tests unbounded while the contract passed. Driven with a
+    controlled profile because this repository's own base and override
+    both set `terminate-after`, so a confused reader would agree with a
+    correct one against the real file.
+    """
+    block = (
+        '[profile.example]\n'
+        'slow-timeout = { period = "300s", terminate-after = 1 }\n'
+        '\n'
+        '[[profile.example.overrides]]\n'
+        'filter = \'binary(trybuild)\'\n'
+        'slow-timeout = { period = "900s", terminate-after = 4 }\n'
+    )
+    assert base_slow_timeout(block) == {"period": "300s", "terminate-after": "1"}, (
+        "the base slow-timeout must come from the profile's own section"
+    )
+
+
+def test_a_profile_declaring_no_base_allowance_reads_as_empty() -> None:
+    """An override alone is not a base allowance.
+
+    nextest would fall back to `[profile.default]` here, which is why
+    the contract states this as repository policy rather than as a
+    nextest requirement. The reading still has to distinguish the two
+    cases, or the policy cannot be enforced.
+    """
+    block = (
+        "[profile.example]\n"
+        "default-filter = 'all()'\n"
+        "\n"
+        "[[profile.example.overrides]]\n"
+        "filter = 'binary(trybuild)'\n"
+        'slow-timeout = { period = "900s", terminate-after = 1 }\n'
+    )
+    assert base_slow_timeout(block) == {}, (
+        "a profile whose only slow-timeout is an override's declares no base"
+    )
+
+
+def test_the_termination_allowance_is_the_grace_period_plus_the_margin() -> None:
+    """The two terms are added, not maximized over.
+
+    A single floor over the grace period and the margin would absorb
+    every grace period below the margin, so raising this file's five
+    seconds to thirty would demand nothing more of the job ceiling above
+    it. The ordering assertions cannot tell the readings apart, since
+    both leave the requirement inside the ceiling, which is why the
+    reading carries a test of its own.
+    """
+    assert termination_allowance("") == pytest.approx(
+        NEXTEST_DEFAULT_GRACE_PERIOD_SECONDS + TERMINATION_SAFETY_MARGIN_SECONDS
+    ), "an unnamed grace period must fall back to nextest's own default"
+    configured = termination_allowance(
+        'slow-timeout = { period = "300s", grace-period = "5s" }'
+    )
+    assert configured == pytest.approx(5.0 + TERMINATION_SAFETY_MARGIN_SECONDS), (
+        "a grace period below the margin must still raise the allowance; "
+        "a maximum over the two terms would have discarded it"
+    )
+    largest = termination_allowance(
+        'slow-timeout = { grace-period = "5s" }\n'
+        'slow-timeout = { grace-period = "45s" }'
+    )
+    assert largest == pytest.approx(45.0 + TERMINATION_SAFETY_MARGIN_SECONDS), (
+        "the largest grace period in the profile governs the allowance"
+    )
+
+
+@pytest.mark.parametrize(
+    ("step", "expected"),
+    [
+        pytest.param({"run": "cargo llvm-cov nextest run"}, 0, id="an-ordinary-step"),
+        pytest.param({"uses": f"{COVERAGE_ACTION}@abc123"}, 1, id="adopts-the-action"),
+        pytest.param(
+            {"run": "make test", "env": {WATCHDOG_VARIABLE: "1800"}},
+            1,
+            id="names-the-variable",
+        ),
+        pytest.param(
+            {"uses": f"{COVERAGE_ACTION}@abc123", "env": {WATCHDOG_VARIABLE: "1800"}},
+            2,
+            id="both-at-once",
+        ),
+    ],
+)
+def test_both_halves_of_the_absent_tier_are_detected(
+    step: dict[str, object], expected: int
+) -> None:
+    """Adopting the action and naming the variable are separate offences.
+
+    The tier is absent by construction here, so no workflow in the tree
+    commits either offence and the assertion over the tree is satisfied
+    by a reading that detects neither. Driving the reading directly is
+    the only way to show it would notice.
+    """
+    offences = _watchdog_offences("ci.yml", "test", step)
+    assert len(offences) == expected, (
+        f"{step} must yield {expected} offence(s), got {offences}"
     )
