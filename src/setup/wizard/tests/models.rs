@@ -4,12 +4,11 @@ use super::super::model_catalogue::{
     AnthropicAuth, fetch_anthropic_models, fetch_ollama_models, fetch_openai_models,
     is_openai_chat_model, resolve_anthropic_auth, sort_openai_models,
 };
-use super::helpers::{EnvGuard, OverlayGuard};
+use super::helpers::OverlayGuard;
 
 #[tokio::test]
 async fn test_fetch_anthropic_models_static_fallback() {
     // With no API key, should return static defaults
-    let _guard = EnvGuard::clear("ANTHROPIC_API_KEY");
     let models = fetch_anthropic_models(None).await;
     assert!(!models.is_empty());
     assert!(
@@ -33,7 +32,6 @@ fn test_resolve_anthropic_auth_reads_api_key_from_overlay_helper() {
 
 #[tokio::test]
 async fn test_fetch_openai_models_static_fallback() {
-    let _guard = EnvGuard::clear("OPENAI_API_KEY");
     let models = fetch_openai_models(None).await;
     assert!(!models.is_empty());
     assert_eq!(models[0].0, "gpt-5.3-codex");

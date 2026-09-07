@@ -102,7 +102,6 @@ pub(super) async fn auth_tool(
 
     auth_tool_manual(secrets_store.as_ref(), &user_id, &auth).await
 }
-
 async fn try_auth_from_env(
     store: &(dyn SecretsStore + Send + Sync),
     user_id: &str,
@@ -112,7 +111,10 @@ async fn try_auth_from_env(
     let Some(env_var) = auth.env_var.as_ref() else {
         return Ok(false);
     };
-    let Ok(token) = std::env::var(env_var) else {
+    let Ok(token) = ({
+        #[expect(clippy::disallowed_methods, reason = "transitional #333: EnvContext")]
+        std::env::var(env_var)
+    }) else {
         return Ok(false);
     };
     if token.is_empty() {

@@ -54,7 +54,6 @@ async fn matching_oauth_scopes(path: &Path, secret_name: &str) -> Option<Vec<Str
     }
     Some(auth.oauth?.scopes)
 }
-
 pub(super) async fn auth_tool_oauth(
     store: &(dyn SecretsStore + Send + Sync),
     user_id: &str,
@@ -70,10 +69,13 @@ pub(super) async fn auth_tool_oauth(
         .client_id
         .clone()
         .or_else(|| {
-            oauth
-                .client_id_env
-                .as_ref()
-                .and_then(|env| std::env::var(env).ok())
+            oauth.client_id_env.as_ref().and_then(|env| {
+                {
+                    #[expect(clippy::disallowed_methods, reason = "transitional #333: EnvContext")]
+                    std::env::var(env)
+                }
+                .ok()
+            })
         })
         .or_else(|| {
             builtin
@@ -92,10 +94,13 @@ pub(super) async fn auth_tool_oauth(
         .client_secret
         .clone()
         .or_else(|| {
-            oauth
-                .client_secret_env
-                .as_ref()
-                .and_then(|env| std::env::var(env).ok())
+            oauth.client_secret_env.as_ref().and_then(|env| {
+                {
+                    #[expect(clippy::disallowed_methods, reason = "transitional #333: EnvContext")]
+                    std::env::var(env)
+                }
+                .ok()
+            })
         })
         .or_else(|| {
             builtin

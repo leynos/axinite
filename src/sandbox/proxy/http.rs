@@ -68,7 +68,11 @@ pub struct EnvCredentialResolver;
 
 impl NativeCredentialResolver for EnvCredentialResolver {
     async fn resolve<'a>(&'a self, name: &'a str) -> Option<String> {
-        std::env::var(name).ok()
+        {
+            #[expect(clippy::disallowed_methods, reason = "transitional #333: EnvContext")]
+            std::env::var(name)
+        }
+        .ok()
     }
 }
 

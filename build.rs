@@ -5,6 +5,10 @@ use std::fs;
 use std::io;
 use std::path::{Path, PathBuf};
 
+#[expect(
+    clippy::disallowed_methods,
+    reason = "owning Cargo build-script boundary; Cargo supplies build inputs through its environment"
+)]
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let manifest_dir = env::var("CARGO_MANIFEST_DIR")?;
     let root = PathBuf::from(&manifest_dir);
@@ -31,6 +35,10 @@ fn embed_registry_catalogue(root: &Path) -> Result<(), Box<dyn std::error::Error
     println!("cargo:rerun-if-changed=registry/channels");
     println!("cargo:rerun-if-changed=registry/_bundles.json");
 
+    #[expect(
+        clippy::disallowed_methods,
+        reason = "owning Cargo build-script boundary; Cargo supplies build outputs through its environment"
+    )]
     let out_dir = PathBuf::from(env::var("OUT_DIR")?);
     let out_path = out_dir.join("embedded_catalogue.json");
 
