@@ -2621,12 +2621,12 @@ they must be ordered lives in the `generate-coverage` README in
 [`leynos/shared-actions`][shared-actions-coverage]. Three apply here, and two
 of those were unset until this was written.
 
-| Tier | What it bounds | Where it is set | Current value |
-| --- | --- | --- | --- |
-| Per-test `slow-timeout` | one test | `.config/nextest.toml`, both profiles | 300 s; 900 s for the trybuild binaries under `ci` |
-| nextest `global-timeout` | the whole test run | `.config/nextest.toml`, both profiles | 30 m |
-| Cargo watchdog | one `cargo` invocation, wall clock | not used here, see below | absent |
-| Job `timeout-minutes` | the whole job | job level | 90 m for the coverage lanes |
+| Tier                     | What it bounds                     | Where it is set                       | Current value                                     |
+| ------------------------ | ---------------------------------- | ------------------------------------- | ------------------------------------------------- |
+| Per-test `slow-timeout`  | one test                           | `.config/nextest.toml`, both profiles | 300 s; 900 s for the trybuild binaries under `ci` |
+| nextest `global-timeout` | the whole test run                 | `.config/nextest.toml`, both profiles | 30 m                                              |
+| Cargo watchdog           | one `cargo` invocation, wall clock | not used here, see below              | absent                                            |
+| Job `timeout-minutes`    | the whole job                      | job level                             | 90 m for the coverage lanes                       |
 
 *Table: the timers that can end a run, innermost first.*
 
@@ -2640,14 +2640,25 @@ fault rather than as a hung test.
 
 ### Both profiles carry their own budgets
 
-`[[profile.default.overrides]]` belongs to the default profile; another profile
-does not inherit it, and nor does it inherit that profile's scalar settings
-once it declares its own. The `ci` profile is also the one that *includes* the
-trybuild compile-contract binaries the default profile excludes, so it is the
-profile with the longest tests and needs its own allowance for them.
+This is repository policy, not a nextest requirement, and it is worth being
+exact about the difference. A custom profile inherits `[profile.default]`, and
+when a custom profile is selected nextest still consults
+`[[profile.default.overrides]]`, applying a matching default override ahead of
+the selected profile's own scalar setting. So a `ci` profile that declared no
+budgets at all would not be unbounded; it would run under the default profile's.
+
+The reason to repeat them is that `ci` is the profile that *includes* the
+trybuild compile-contract binaries the default profile excludes. It is the
+profile with the longest tests, and the budgets that govern CI belong where a
+reader of that profile will find them rather than one section away.
 
 Both therefore set a 300 second base allowance and a 30 minute whole-run
 budget, and `ci` adds a 900 second override for `binary(trybuild)`.
+
+The contract reads each profile's own base `slow-timeout` specifically, not its
+text as a whole. An override carrying `terminate-after` would satisfy a
+substring check while the base allowance had none, and every test the override
+does not name would then be reported slow for ever rather than killed.
 
 Both figures are bounds rather than measurements, and the configuration says
 so. No single test in the default profile approaches five minutes, and nobody
@@ -2657,8 +2668,8 @@ take about seven minutes, which is why the default profile excludes them.
 ### The tier that is absent, and why
 
 Coverage runs `cargo llvm-cov nextest` from a `run:` step rather than through
-the shared `generate-coverage` action, so there is no wall-clock watchdog on
-the `cargo` invocation and no third tier.
+the shared `generate-coverage` action, so there is no wall-clock watchdog on the
+`cargo` invocation and no third tier.
 
 That absence is asserted rather than assumed. A lane that adopted the action
 without setting `RUN_RUST_CARGO_WAIT_TIMEOUT` would inherit its undocumented
@@ -2675,10 +2686,10 @@ to spare, which is comfortably more than any observed run has needed.
 
 The 90 minute ceilings are unchanged, and the contract records why they hold:
 
-| Lane | Worst coverage step | Worst whole job | Outside the step | Run |
-| --- | --- | --- | --- | --- |
-| `coverage.yml` `Coverage (all-features)` | 900 s | 1,085 s | 185 s | 33966708901 |
-| `coverage.yml` `Coverage (default)` | 856 s | 1,031 s | 175 s | 34051006881 |
+| Lane                                     | Worst coverage step | Worst whole job | Outside the step | Run         |
+| ---------------------------------------- | ------------------- | --------------- | ---------------- | ----------- |
+| `coverage.yml` `Coverage (all-features)` | 900 s               | 1,085 s         | 185 s            | 33966708901 |
+| `coverage.yml` `Coverage (default)`      | 856 s               | 1,031 s         | 175 s            | 34051006881 |
 
 *Table: measured coverage-step and whole-job durations, read across six
 successful runs of `coverage.yml` covering three matrix legs each.*
