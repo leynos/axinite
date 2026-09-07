@@ -2684,6 +2684,19 @@ The 30 minute whole-run budget is a bound rather than a measurement. It has to
 exceed the 900 second trybuild allowance, and it does so with fifteen minutes
 to spare, which is comfortably more than any observed run has needed.
 
+The contract also refuses a step that names a suite command without plainly
+running one. `if false; then cargo nextest run; fi` keeps the text and runs
+nothing, so a reading that searched the whole `run` value would count the job
+as a suite lane and hold it to a ceiling it does not need;
+`cargo nextest run || true` runs the suite but discards its verdict. Neither is
+judged as an invocation, and both are reported.
+
+Every ceiling carries at least fifteen minutes above its requirement rather
+than merely reaching it, because a ceiling equal to the sum it contains cancels
+the job at the moment nextest would have reported the overrun, and the report
+is the only thing that makes an overrun actionable. That margin is a term of
+the requirement rather than a rounding, so it cannot go missing unnoticed.
+
 The 90 minute ceilings are unchanged, and the contract records why they hold:
 
 | Lane                                     | Worst coverage step | Worst whole job | Outside the step | Run         |
