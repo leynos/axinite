@@ -157,7 +157,8 @@ round-trip module in `src/bindings/`; the invocations expand to the
 canonical-ABI glue the host calls by symbol name. The crate denies, rather than
 forbids, `unsafe_code` in its own `[lints.rust]` table. The root workspace and
 every inventoried safe crate forbid unsafe code; the standalone
-`tests/verification/kani-smoke` crate is inventoried alongside them.
+`tests/verification/kani-smoke` and `tests/verification/repair-claims` crates
+are inventoried alongside them.
 `scripts/check_unsafe_boundaries.py` enforces the audited allow-list.
 
 ## Generated and unusual paths

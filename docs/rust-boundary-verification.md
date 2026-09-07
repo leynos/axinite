@@ -49,8 +49,9 @@ The historical site totals above exclude the path-patched
 was taken. It held platform FFI and process-control unsafe code and was exempt
 from this component-ABI contract while in tree. It has since moved to the
 published crate, so it is trusted dependency code and no in-tree exemption
-remains for it. The `tests/verification/kani-smoke` crate is inventoried as
-safe and standalone; it forbids unsafe code and is not part of the historical
+remains for it. The `tests/verification/kani-smoke` and
+`tests/verification/repair-claims` crates are inventoried as safe and
+standalone; they forbid unsafe code and are not part of the historical
 production-site totals.
 
 The word `unsafe` also appears in `src/tools/builder/templates/sources.rs`,
