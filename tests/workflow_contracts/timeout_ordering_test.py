@@ -39,6 +39,10 @@ import typing as typ
 
 import pytest
 from _workflow_policy import jobs_of, load, workflow_paths
+from nextest_config import (
+    Profile,
+    profiles,
+)
 from suite_lanes import (
     SUITE_MARKERS,
     SuiteLane,
@@ -56,21 +60,20 @@ from timeout_budgets import (
     base_slow_timeout,
     global_timeout,
     largest_test_allowance,
-    profile_blocks,
     required_ceiling,
 )
 
 
 @pytest.fixture(scope="module")
-def nextest_profiles() -> dict[str, str]:
-    """Return each nextest profile's block of the configuration.
+def nextest_profiles() -> dict[str, Profile]:
+    """Return each nextest profile the configuration declares.
 
     Returns
     -------
-    dict[str, str]
-        Profile name to the text of its block.
+    dict[str, Profile]
+        Profile name to its table and overrides.
     """
-    return profile_blocks(NEXTEST_CONFIG.read_text(encoding="utf-8"))
+    return profiles(NEXTEST_CONFIG.read_text(encoding="utf-8"))
 
 
 @pytest.fixture(scope="module")
@@ -100,7 +103,7 @@ def test_the_suite_runs_somewhere(suite_lanes: tuple[SuiteLane, ...]) -> None:
 
 @pytest.mark.parametrize("profile", ["default", "ci"], ids=str)
 def test_every_profile_bounds_a_single_test(
-    nextest_profiles: dict[str, str], profile: str
+    nextest_profiles: dict[str, Profile], profile: str
 ) -> None:
     """A test that hangs must be killed, not merely reported slow.
 
@@ -116,9 +119,9 @@ def test_every_profile_bounds_a_single_test(
     satisfy a substring check while the base allowance had none, which
     leaves every ordinary test reported slow for ever.
     """
-    block = nextest_profiles.get(profile)
-    assert block is not None, f"nextest.toml must declare [profile.{profile}]"
-    base = base_slow_timeout(block)
+    parsed = nextest_profiles.get(profile)
+    assert parsed is not None, f"nextest.toml must declare [profile.{profile}]"
+    base = base_slow_timeout(parsed)
     assert base, (
         f"[profile.{profile}] must declare its own slow-timeout; an override "
         f"bounds only the tests it names"
@@ -136,7 +139,7 @@ def test_every_profile_bounds_a_single_test(
 
 @pytest.mark.parametrize("profile", ["default", "ci"], ids=str)
 def test_the_global_timeout_sits_above_the_largest_single_test(
-    nextest_profiles: dict[str, str], profile: str
+    nextest_profiles: dict[str, Profile], profile: str
 ) -> None:
     """Tier two must not pre-empt tier one.
 
@@ -144,9 +147,9 @@ def test_the_global_timeout_sits_above_the_largest_single_test(
     before the test that allowance exists for can finish, and the failure
     names the run rather than the test.
     """
-    block = nextest_profiles[profile]
-    whole_run = global_timeout(block)
-    longest = largest_test_allowance(block)
+    parsed = nextest_profiles[profile]
+    whole_run = global_timeout(parsed)
+    longest = largest_test_allowance(parsed)
     assert whole_run > longest, (
         f"[profile.{profile}]'s {whole_run:.0f}s global-timeout is not above "
         f"its {longest:.0f}s largest per-test allowance; the run would end "
@@ -155,7 +158,7 @@ def test_the_global_timeout_sits_above_the_largest_single_test(
 
 
 def test_the_job_ceiling_covers_the_run_and_the_work_around_it(
-    suite_lanes: tuple[SuiteLane, ...], nextest_profiles: dict[str, str]
+    suite_lanes: tuple[SuiteLane, ...], nextest_profiles: dict[str, Profile]
 ) -> None:
     """Tier four must not pre-empt tier two.
 
@@ -251,25 +254,23 @@ def test_the_required_ceiling_carries_all_four_terms() -> None:
     the derivation with controlled profiles is what makes a missing
     term visible.
     """
-    profiles = {
-        "default": (
-            "[profile.default]\n"
-            'slow-timeout = { period = "300s", grace-period = "5s" }\n'
-            'global-timeout = "30m"\n'
-        ),
-        "ci": (
-            "[profile.ci]\n"
-            'slow-timeout = { period = "300s", grace-period = "5s" }\n'
-            'global-timeout = "40m"\n'
-        ),
-    }
+    parsed = profiles(
+        "[profile.default]\n"
+        'slow-timeout = { period = "300s", terminate-after = 1, '
+        'grace-period = "5s" }\n'
+        'global-timeout = "30m"\n'
+        "\n[profile.ci]\n"
+        'slow-timeout = { period = "300s", terminate-after = 1, '
+        'grace-period = "5s" }\n'
+        'global-timeout = "40m"\n'
+    )
     expected = (
         40 * 60.0
         + (5.0 + TERMINATION_SAFETY_MARGIN_SECONDS)
         + OUTSIDE_RUN_ALLOWANCE_SECONDS
         + CEILING_MARGIN_SECONDS
     )
-    assert required_ceiling(profiles) == pytest.approx(expected), (
+    assert required_ceiling(parsed) == pytest.approx(expected), (
         "the requirement takes the larger whole-run budget of the two "
         "profiles and adds the termination allowance, the outside allowance "
         f"and the margin; expected {expected}"
