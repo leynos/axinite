@@ -23,10 +23,12 @@ global-timeout = "30m"
 [profile.ci]
 # CI runs everything, including the trybuild compile-contract tests.
 default-filter = 'all()'
-# `[[profile.default.overrides]]` belongs to the default profile alone;
-# another profile does not inherit it. This profile therefore restates
-# both the base allowance and the trybuild exception below, because it is
-# the profile that includes the binaries the exception exists for.
+# A custom profile inherits `[profile.default]`, and nextest also consults
+# `[[profile.default.overrides]]` when this profile is selected, so these
+# lines are not required for the run to be bounded. They are repository
+# policy: this is the profile that includes the trybuild binaries, and
+# stating its own budgets here keeps the values that govern CI where a
+# reader of this profile will find them, rather than one section away.
 slow-timeout = { period = "300s", terminate-after = 1, grace-period = "5s" }
 global-timeout = "30m"
 
