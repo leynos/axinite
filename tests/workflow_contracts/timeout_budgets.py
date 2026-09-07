@@ -3,9 +3,11 @@
 Separated from ``timeout_ordering_test`` so the reading and the
 assertions stay legible apart, and so neither module outgrows the
 400-line limit ``AGENTS.md`` sets.
+
+The parsing lives in ``nextest_config``; the arithmetic over what it
+returns lives here.
 """
 
-import re
 import typing as typ
 
 from _workflow_policy import REPOSITORY_ROOT
@@ -42,84 +44,16 @@ TERMINATION_SAFETY_MARGIN_SECONDS: typ.Final[float] = 60.0
 
 NEXTEST_CONFIG = REPOSITORY_ROOT / ".config" / "nextest.toml"
 
-_DURATION: typ.Final[re.Pattern[str]] = re.compile(
-    r"^\s*(?P<value>\d+(?:\.\d+)?)\s*(?P<unit>ms|s|m|h)\s*$"
+from nextest_config import (
+    NextestConfigurationError,
+    Profile,
+    _budget_of,
+    _slow_timeout,
+    seconds,
 )
 
-_UNIT_SECONDS: typ.Final[dict[str, float]] = {
-    "ms": 0.001,
-    "s": 1.0,
-    "m": 60.0,
-    "h": 3600.0,
-}
 
-#: One `slow-timeout` inline table, captured whole so the period and the
-#: multiplier that scales it are read together.
-_SLOW_TIMEOUT: typ.Final[re.Pattern[str]] = re.compile(
-    r"slow-timeout\s*=\s*\{(?P<body>[^}]*)\}"
-)
-
-_GRACE_PERIOD: typ.Final[re.Pattern[str]] = re.compile(r'grace-period\s*=\s*"([^"]+)"')
-
-#: One ``key = value`` pair inside a ``slow-timeout`` inline table, with
-#: the quotes stripped, so a period and a multiplier read alike.
-_FIELD: typ.Final[re.Pattern[str]] = re.compile(r'([a-z-]+)\s*=\s*"?([^,"}]+)"?')
-
-
-def seconds(duration: str) -> float:
-    """Convert a nextest duration to seconds.
-
-    Parameters
-    ----------
-    duration
-        A duration as nextest spells it, such as ``"30m"``.
-
-    Returns
-    -------
-    float
-        The duration in seconds.
-    """
-    match = _DURATION.match(duration)
-    assert match is not None, f"unrecognized nextest duration {duration!r}"
-    return float(match["value"]) * _UNIT_SECONDS[match["unit"]]
-
-
-def profile_blocks(config_text: str) -> dict[str, str]:
-    """Return each profile's own text, keyed by profile name.
-
-    Read textually rather than through a TOML parser, because every
-    assertion below is about what one profile declares for itself. That
-    is deliberately narrower than what nextest would resolve: a custom
-    profile inherits ``[profile.default]``, and
-    ``[[profile.default.overrides]]`` are consulted for it too. The
-    contract holds each profile to stating its own budgets, which is
-    repository policy rather than a nextest requirement.
-
-    Parameters
-    ----------
-    config_text
-        The nextest configuration file's text.
-
-    Returns
-    -------
-    dict of str to str
-        Profile name to the text of its section and its overrides.
-    """
-    blocks: dict[str, list[str]] = {}
-    current: str | None = None
-    for line in config_text.splitlines(keepends=True):
-        header = re.match(r"^\[\[?profile\.([A-Za-z0-9_-]+)", line)
-        if header is not None:
-            current = header[1]
-            blocks.setdefault(current, [])
-        elif line.startswith("["):
-            current = None
-        if current is not None:
-            blocks[current].append(line)
-    return {name: "".join(lines) for name, lines in blocks.items()}
-
-
-def largest_test_allowance(block: str) -> float:
+def largest_test_allowance(profile: Profile) -> float:
     """Return the longest a single test may run under one profile.
 
     nextest warns once per ``period`` and terminates after
@@ -129,57 +63,60 @@ def largest_test_allowance(block: str) -> float:
 
     Parameters
     ----------
-    block
-        One profile's text.
+    profile
+        The profile to read.
 
     Returns
     -------
     float
         The longest per-test budget, in seconds.
+
+    Raises
+    ------
+    NextestConfigurationError
+        If the profile declares no ``slow-timeout`` at all.
     """
-    budgets: list[float] = []
-    for match in _SLOW_TIMEOUT.finditer(block):
-        body = match["body"]
-        period = re.search(r'period\s*=\s*"([^"]+)"', body)
-        assert period is not None, f"slow-timeout without a period: {body!r}"
-        terminate = re.search(r"terminate-after\s*=\s*(\d+)", body)
-        multiplier = 1 if terminate is None else int(terminate[1])
-        budgets.append(seconds(period[1]) * multiplier)
-    assert budgets, "the profile must set at least one slow-timeout"
+    budgets = [
+        _budget_of(f"profile.{profile.name}", value)
+        for table in profile.tables()
+        if (value := _slow_timeout(table)) is not None
+    ]
+    if not budgets:
+        message = (
+            f"[profile.{profile.name}] declares no slow-timeout, so no test is "
+            f"bounded and there is no per-test tier to compare against"
+        )
+        raise NextestConfigurationError(message)
     return max(budgets)
 
 
-def base_slow_timeout(block: str) -> dict[str, str]:
+def base_slow_timeout(profile: Profile) -> dict[str, str]:
     """Return one profile's own ``slow-timeout``, field by field.
 
-    The base allowance is the one that governs every test the profile's
-    overrides do not name, so it is read on its own rather than as part
-    of the profile's text. The first inline table in a profile block is
-    the profile's own; the tables after it belong to that profile's
-    overrides.
+    The base allowance governs every test the profile's overrides do not
+    name, so it is read from the profile's own table alone. A profile
+    whose only ``terminate-after`` sits in an override leaves every
+    unmatched test with no bound at all while the largest allowance
+    still reports a comfortable number.
 
     Parameters
     ----------
-    block
-        One profile's text.
+    profile
+        The profile to read.
 
     Returns
     -------
     dict of str to str
-        The fields of the base ``slow-timeout``, empty when the profile
-        declares none of its own.
+        The fields of the base ``slow-timeout`` as text, empty when the
+        profile declares none of its own.
     """
-    for line in block.splitlines():
-        stripped = line.strip()
-        if stripped.startswith("[["):
-            break
-        match = _SLOW_TIMEOUT.match(stripped)
-        if match is not None:
-            return {key: value.strip() for key, value in _FIELD.findall(match["body"])}
-    return {}
+    table = _slow_timeout(profile.own)
+    if not isinstance(table, dict):
+        return {}
+    return {str(key): str(value) for key, value in table.items()}
 
 
-def termination_allowance(block: str) -> float:
+def termination_allowance(profile: Profile) -> float:
     """Return the time nextest may take to stop the run, in seconds.
 
     Two terms, not one. Hitting the global timeout starts nextest's
@@ -194,45 +131,57 @@ def termination_allowance(block: str) -> float:
 
     Parameters
     ----------
-    block
-        One profile's text.
+    profile
+        The profile to read.
 
     Returns
     -------
     float
         The grace period plus the safety margin.
     """
-    periods = _GRACE_PERIOD.findall(block)
-    grace = max(
-        (seconds(period) for period in periods),
-        default=NEXTEST_DEFAULT_GRACE_PERIOD_SECONDS,
-    )
+    periods = [
+        seconds(grace)
+        for table in profile.tables()
+        if isinstance(entry := _slow_timeout(table), dict)
+        and isinstance(grace := entry.get("grace-period"), str)
+    ]
+    grace = max(periods, default=NEXTEST_DEFAULT_GRACE_PERIOD_SECONDS)
     return grace + TERMINATION_SAFETY_MARGIN_SECONDS
 
 
-def global_timeout(block: str) -> float:
+def global_timeout(profile: Profile) -> float:
     """Return one profile's whole-run budget in seconds.
+
+    Read from the profile's own table alone: ``global-timeout`` is a
+    profile key, and an ``[[overrides]]`` entry cannot carry one.
 
     Parameters
     ----------
-    block
-        One profile's text.
+    profile
+        The profile to read.
 
     Returns
     -------
     float
         The whole-run budget.
+
+    Raises
+    ------
+    NextestConfigurationError
+        If the profile declares no ``global-timeout``.
     """
-    match = re.search(r'^global-timeout\s*=\s*"([^"]+)"', block, re.MULTILINE)
-    assert match is not None, (
-        "the profile must set global-timeout; without it the whole-run budget "
-        "is unbounded and only the job timer ends a hung run, by cancelling "
-        "it and discarding the log"
-    )
-    return seconds(match[1])
+    budget = profile.own.get("global-timeout")
+    if not isinstance(budget, str):
+        message = (
+            f"[profile.{profile.name}] must set global-timeout; without it the "
+            f"whole-run budget is unbounded and only the job timer ends a hung "
+            f"run, by cancelling it and discarding the log"
+        )
+        raise NextestConfigurationError(message)
+    return seconds(budget)
 
 
-def required_ceiling(profiles: dict[str, str]) -> float:
+def required_ceiling(parsed: dict[str, Profile]) -> float:
     """Return the smallest acceptable ceiling for any suite lane.
 
     Four terms. The whole-run budget is what the suite may spend, the
@@ -247,8 +196,8 @@ def required_ceiling(profiles: dict[str, str]) -> float:
 
     Parameters
     ----------
-    profiles
-        Each nextest profile's text, keyed by name.
+    parsed
+        Each nextest profile, keyed by name.
 
     Returns
     -------
@@ -256,8 +205,8 @@ def required_ceiling(profiles: dict[str, str]) -> float:
         The smallest acceptable ceiling, in seconds.
     """
     return (
-        max(global_timeout(block) for block in profiles.values())
-        + max(termination_allowance(block) for block in profiles.values())
+        max(global_timeout(profile) for profile in parsed.values())
+        + max(termination_allowance(profile) for profile in parsed.values())
         + OUTSIDE_RUN_ALLOWANCE_SECONDS
         + CEILING_MARGIN_SECONDS
     )
