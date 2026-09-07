@@ -56,6 +56,18 @@ SUITE_MARKERS: typ.Final[tuple[str, ...]] = (
     "cargo nextest run",
 )
 
+#: Shapes that put a suite command on a line without running it as the
+#: line's own command, or without letting its failure end the step.
+#:
+#: `if false; then cargo nextest run; fi` keeps the text and runs
+#: nothing, so a substring search counts a lane that never runs the
+#: suite and demands a ceiling of it. `cargo nextest run || true` does
+#: run the suite but discards its verdict, so the lane's budgets are
+#: asserted while its result is not. Neither is judged here; both are
+#: reported, because a contract that cannot tell what a line does
+#: should say so rather than guess.
+DISGUISES: typ.Final[tuple[str, ...]] = ("|| true", "|| :", "if ", "&&", ";", "|")
+
 #: Everything the job timer covers that the whole-run budget does not:
 #: the checkout, the toolchain probe, the database fixtures, the
 #: instrumented build before nextest starts its clock, and the report
@@ -68,6 +80,12 @@ SUITE_MARKERS: typ.Final[tuple[str, ...]] = (
 #: matrix legs each. Twenty minutes covers the worse of those, and none
 #: of those runs was genuinely cold.
 OUTSIDE_RUN_ALLOWANCE_SECONDS: typ.Final[float] = 20 * 60.0
+
+#: How far a ceiling must sit above the sum it contains, rather than
+#: merely reaching it. A ceiling equal to that sum cancels the job at
+#: the moment nextest would have reported the overrun, and the report
+#: is the only thing that makes an overrun actionable.
+CEILING_MARGIN_SECONDS: typ.Final[float] = 15 * 60.0
 
 #: What nextest allows a test between `SIGTERM` and `SIGKILL` when a
 #: profile names no `grace-period`. Both profiles here name five seconds,
@@ -319,13 +337,114 @@ def _runs_the_suite(job_body: dict[str, object]) -> bool:
     bool
         True when a step runs one of :data:`SUITE_MARKERS`.
     """
-    for step in job_body.get("steps") or []:
-        if not isinstance(step, dict):
-            continue
-        script = str(step.get("run", ""))
-        if any(marker in script for marker in SUITE_MARKERS):
-            return True
-    return False
+    return any(
+        _is_suite_line(line)
+        for step in job_body.get("steps") or []
+        if isinstance(step, dict)
+        for line in str(step.get("run", "")).splitlines()
+    )
+
+
+def required_ceiling(profiles: dict[str, str]) -> float:
+    """Return the smallest acceptable ceiling for any suite lane.
+
+    Four terms. The whole-run budget is what the suite may spend, the
+    termination allowance is what nextest needs to stop it, the outside
+    allowance is the work either side that the job timer covers, and
+    the margin is added because a ceiling equal to that sum cancels the
+    job at the moment nextest would have reported the overrun.
+
+    The larger of the two profiles is taken for each of the first two,
+    because a lane passing ``--profile ci`` runs under that one and
+    nothing in the workflow names which it uses.
+
+    Parameters
+    ----------
+    profiles
+        Each nextest profile's text, keyed by name.
+
+    Returns
+    -------
+    float
+        The smallest acceptable ceiling, in seconds.
+    """
+    return (
+        max(global_timeout(block) for block in profiles.values())
+        + max(termination_allowance(block) for block in profiles.values())
+        + OUTSIDE_RUN_ALLOWANCE_SECONDS
+        + CEILING_MARGIN_SECONDS
+    )
+
+
+def _names_a_suite_command(line: str) -> bool:
+    """Return whether one line mentions a suite command at all.
+
+    Mentioning is weaker than invoking, and deliberately so: the two are
+    compared below, and a line that mentions one without invoking it is
+    the case this contract refuses to judge.
+
+    Parameters
+    ----------
+    line
+        One line of a step's script.
+
+    Returns
+    -------
+    bool
+        True when a suite marker appears on the line.
+    """
+    return any(marker in line for marker in SUITE_MARKERS)
+
+
+def _is_suite_line(line: str) -> bool:
+    """Return whether one line runs the suite plainly.
+
+    Plainly means the line is the command and its arguments, and
+    nothing else. Reading the whole ``run`` value as one string, as an
+    earlier version did, counted a lane whose only mention of the suite
+    was inside `if false; then ...; fi`, and would have demanded a
+    ceiling of a job that never runs it.
+
+    Parameters
+    ----------
+    line
+        One line of a step's script.
+
+    Returns
+    -------
+    bool
+        True when the line runs a suite command and nothing else.
+    """
+    stripped = line.strip()
+    if not _names_a_suite_command(stripped):
+        return False
+    if any(disguise in stripped for disguise in DISGUISES):
+        return False
+    return any(stripped.startswith(marker) for marker in SUITE_MARKERS)
+
+
+def _disguised_suite_lines(job_body: dict[str, typ.Any]) -> list[str]:
+    """Return lines naming a suite command without plainly running one.
+
+    Parameters
+    ----------
+    job_body
+        The job's parsed mapping.
+
+    Returns
+    -------
+    list[str]
+        The offending lines, stripped.
+    """
+    return [
+        stripped
+        for step in job_body.get("steps") or []
+        if isinstance(step, dict)
+        for line in str(step.get("run", "")).splitlines()
+        if (stripped := line.strip())
+        and _names_a_suite_command(stripped)
+        and not _is_suite_line(stripped)
+    ]
 
 
 @pytest.fixture(scope="module")
@@ -456,11 +575,7 @@ def test_the_job_ceiling_covers_the_run_and_the_work_around_it(
     because a lane that passed `--profile ci` would run under that one
     and nothing in the workflow names which it uses.
     """
-    required = (
-        max(global_timeout(block) for block in nextest_profiles.values())
-        + max(termination_allowance(block) for block in nextest_profiles.values())
-        + OUTSIDE_RUN_ALLOWANCE_SECONDS
-    )
+    required = required_ceiling(nextest_profiles)
     for lane in suite_lanes:
         assert lane.ceiling is not None, (
             f"{lane} runs the suite in a job with no timeout-minutes; the "
@@ -469,7 +584,7 @@ def test_the_job_ceiling_covers_the_run_and_the_work_around_it(
         assert lane.ceiling >= required, (
             f"{lane} has a ceiling of {lane.ceiling:.0f}s, below the "
             f"{required:.0f}s needed to cover the whole-run budget, nextest's "
-            f"termination procedure, and {OUTSIDE_RUN_ALLOWANCE_SECONDS:.0f}s "
+            f"termination procedure, {OUTSIDE_RUN_ALLOWANCE_SECONDS:.0f}s "
             f"of build and other work outside its window; an overrun would be "
             f"cancelled rather than reported"
         )
@@ -657,4 +772,66 @@ def test_both_halves_of_the_absent_tier_are_detected(
     offences = _watchdog_offences("ci.yml", "test", step)
     assert len(offences) == expected, (
         f"{step} must yield {expected} offence(s), got {offences}"
+    )
+
+
+def test_no_step_disguises_a_suite_command(suite_lanes: tuple[SuiteLane, ...]) -> None:
+    """A suite command must be the line's command, plainly.
+
+    Two shapes defeat a reading that searches the whole `run` value, and
+    they fail in opposite directions.
+    `if false; then cargo nextest run; fi` keeps the text and runs
+    nothing, so the job is counted as a suite lane and held to a ceiling
+    it does not need. `cargo nextest run || true` does run the suite but
+    discards its verdict, so the lane's budgets are asserted while its
+    result is thrown away.
+
+    Neither is judged as an invocation. Both are reported, because a
+    contract that cannot tell what a line does should say so rather than
+    guess.
+    """
+    assert suite_lanes, "the tree must have suite lanes for this to be about"
+    disguised = [
+        f"{file}:{job.job_id}: {line!r}"
+        for path in workflow_paths()
+        for file, job in [(path.name, job) for job in jobs_of(path.name, load(path))]
+        for line in _disguised_suite_lines(job.body if isinstance(job.body, dict) else {})
+    ]
+    assert not disguised, (
+        f"these steps name a suite command without plainly running one, so "
+        f"this contract cannot tell whether the lane runs the suite or "
+        f"whether its failure would end the step: {disguised}"
+    )
+
+
+def test_the_required_ceiling_carries_all_four_terms() -> None:
+    """Whole-run budget, termination, outside work, and the margin.
+
+    Every lane here sits well above the requirement, so dropping a term
+    changes nothing the assertion over the workflows can see. Driving
+    the derivation with controlled profiles is what makes a missing
+    term visible.
+    """
+    profiles = {
+        "default": (
+            '[profile.default]\n'
+            'slow-timeout = { period = "300s", grace-period = "5s" }\n'
+            'global-timeout = "30m"\n'
+        ),
+        "ci": (
+            '[profile.ci]\n'
+            'slow-timeout = { period = "300s", grace-period = "5s" }\n'
+            'global-timeout = "40m"\n'
+        ),
+    }
+    expected = (
+        40 * 60.0
+        + (5.0 + TERMINATION_SAFETY_MARGIN_SECONDS)
+        + OUTSIDE_RUN_ALLOWANCE_SECONDS
+        + CEILING_MARGIN_SECONDS
+    )
+    assert required_ceiling(profiles) == pytest.approx(expected), (
+        "the requirement takes the larger whole-run budget of the two "
+        "profiles and adds the termination allowance, the outside allowance "
+        f"and the margin; expected {expected}"
     )
