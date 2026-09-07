@@ -35,426 +35,40 @@ See "Test timeouts: the tiers this repository sets" in
 Run via ``make test-workflow-contracts``.
 """
 
-import re
 import typing as typ
 
 import pytest
-from _workflow_policy import REPOSITORY_ROOT, jobs_of, load, workflow_paths
-
-#: The environment variable the shared coverage action reads for its
-#: wall-clock cap on one `cargo` invocation. Asserted absent: this
-#: repository does not use that action.
-WATCHDOG_VARIABLE: typ.Final[str] = "RUN_RUST_CARGO_WAIT_TIMEOUT"
-COVERAGE_ACTION: typ.Final[str] = "shared-actions/.github/actions/generate-coverage"
-
-#: The commands that run the workspace suite under nextest. A step
-#: running one of these is bound by both nextest tiers. Matched as whole
-#: tokens on the line, because `cargo nextest --version` is a probe and
-#: not a run.
-SUITE_MARKERS: typ.Final[tuple[str, ...]] = (
-    "cargo llvm-cov nextest",
-    "cargo nextest run",
+from _workflow_policy import jobs_of, load, workflow_paths
+from suite_lanes import (
+    SUITE_MARKERS,
+    SuiteLane,
+    _disguised_suite_lines,
+    _steps_of,
+    _watchdog_offences,
+    normalized_condition,
+    suite_lanes_of,
 )
-
-#: Shapes that put a suite command on a line without running it as the
-#: line's own command, or without letting its failure end the step.
-#:
-#: `if false; then cargo nextest run; fi` keeps the text and runs
-#: nothing, so a substring search counts a lane that never runs the
-#: suite and demands a ceiling of it. `cargo nextest run || true` does
-#: run the suite but discards its verdict, so the lane's budgets are
-#: asserted while its result is not. Neither is judged here; both are
-#: reported, because a contract that cannot tell what a line does
-#: should say so rather than guess.
-DISGUISES: typ.Final[tuple[str, ...]] = ("|| true", "|| :", "if ", "&&", ";", "|")
-
-#: Everything the job timer covers that the whole-run budget does not:
-#: the checkout, the toolchain probe, the database fixtures, the
-#: instrumented build before nextest starts its clock, and the report
-#: upload afterwards.
-#:
-#: Measured from the worst of several runs rather than one. The coverage
-#: step reached 900 s on run 33966708901, of which the compile is the
-#: larger part, and the work outside the step reached 207 s on the same
-#: run, read across six successful runs of `coverage.yml` covering three
-#: matrix legs each. Twenty minutes covers the worse of those, and none
-#: of those runs was genuinely cold.
-OUTSIDE_RUN_ALLOWANCE_SECONDS: typ.Final[float] = 20 * 60.0
-
-#: How far a ceiling must sit above the sum it contains, rather than
-#: merely reaching it. A ceiling equal to that sum cancels the job at
-#: the moment nextest would have reported the overrun, and the report
-#: is the only thing that makes an overrun actionable.
-CEILING_MARGIN_SECONDS: typ.Final[float] = 15 * 60.0
-
-#: What nextest allows a test between `SIGTERM` and `SIGKILL` when a
-#: profile names no `grace-period`. Both profiles here name five seconds,
-#: so this is a fallback rather than the value in force.
-NEXTEST_DEFAULT_GRACE_PERIOD_SECONDS: typ.Final[float] = 10.0
-
-#: Added to that grace period to cover the teardown and report writing
-#: that follow it. A separate term rather than a floor over the two, so
-#: raising a grace period raises the requirement instead of vanishing
-#: into it.
-TERMINATION_SAFETY_MARGIN_SECONDS: typ.Final[float] = 60.0
-
-NEXTEST_CONFIG = REPOSITORY_ROOT / ".config" / "nextest.toml"
-
-_DURATION: typ.Final[re.Pattern[str]] = re.compile(
-    r"^\s*(?P<value>\d+(?:\.\d+)?)\s*(?P<unit>ms|s|m|h)\s*$"
+from timeout_budgets import (
+    CEILING_MARGIN_SECONDS,
+    NEXTEST_CONFIG,
+    OUTSIDE_RUN_ALLOWANCE_SECONDS,
+    TERMINATION_SAFETY_MARGIN_SECONDS,
+    base_slow_timeout,
+    global_timeout,
+    largest_test_allowance,
+    profile_blocks,
+    required_ceiling,
 )
-
-_UNIT_SECONDS: typ.Final[dict[str, float]] = {
-    "ms": 0.001,
-    "s": 1.0,
-    "m": 60.0,
-    "h": 3600.0,
-}
-
-#: One `slow-timeout` inline table, captured whole so the period and the
-#: multiplier that scales it are read together.
-_SLOW_TIMEOUT: typ.Final[re.Pattern[str]] = re.compile(
-    r"slow-timeout\s*=\s*\{(?P<body>[^}]*)\}"
-)
-
-_GRACE_PERIOD: typ.Final[re.Pattern[str]] = re.compile(r'grace-period\s*=\s*"([^"]+)"')
-
-#: One ``key = value`` pair inside a ``slow-timeout`` inline table, with
-#: the quotes stripped, so a period and a multiplier read alike.
-_FIELD: typ.Final[re.Pattern[str]] = re.compile(
-    r'([a-z-]+)\s*=\s*"?([^,"}]+)"?'
-)
-
-
-def seconds(duration: str) -> float:
-    """Convert a nextest duration to seconds.
-
-    Parameters
-    ----------
-    duration
-        A duration as nextest spells it, such as ``"30m"``.
-
-    Returns
-    -------
-    float
-        The duration in seconds.
-    """
-    match = _DURATION.match(duration)
-    assert match is not None, f"unrecognized nextest duration {duration!r}"
-    return float(match["value"]) * _UNIT_SECONDS[match["unit"]]
-
-
-def profile_blocks(config_text: str) -> dict[str, str]:
-    """Return each profile's own text, keyed by profile name.
-
-    Read textually rather than through a TOML parser, because every
-    assertion below is about what one profile declares for itself. That
-    is deliberately narrower than what nextest would resolve: a custom
-    profile inherits ``[profile.default]``, and
-    ``[[profile.default.overrides]]`` are consulted for it too. The
-    contract holds each profile to stating its own budgets, which is
-    repository policy rather than a nextest requirement.
-
-    Parameters
-    ----------
-    config_text
-        The nextest configuration file's text.
-
-    Returns
-    -------
-    dict of str to str
-        Profile name to the text of its section and its overrides.
-    """
-    blocks: dict[str, list[str]] = {}
-    current: str | None = None
-    for line in config_text.splitlines(keepends=True):
-        header = re.match(r"^\[\[?profile\.([A-Za-z0-9_-]+)", line)
-        if header is not None:
-            current = header[1]
-            blocks.setdefault(current, [])
-        elif line.startswith("["):
-            current = None
-        if current is not None:
-            blocks[current].append(line)
-    return {name: "".join(lines) for name, lines in blocks.items()}
-
-
-def largest_test_allowance(block: str) -> float:
-    """Return the longest a single test may run under one profile.
-
-    nextest warns once per ``period`` and terminates after
-    ``terminate-after`` of them, so the budget is their product. Reading
-    the period alone would understate an override that raised the
-    multiplier rather than the period.
-
-    Parameters
-    ----------
-    block
-        One profile's text.
-
-    Returns
-    -------
-    float
-        The longest per-test budget, in seconds.
-    """
-    budgets: list[float] = []
-    for match in _SLOW_TIMEOUT.finditer(block):
-        body = match["body"]
-        period = re.search(r'period\s*=\s*"([^"]+)"', body)
-        assert period is not None, f"slow-timeout without a period: {body!r}"
-        terminate = re.search(r"terminate-after\s*=\s*(\d+)", body)
-        multiplier = 1 if terminate is None else int(terminate[1])
-        budgets.append(seconds(period[1]) * multiplier)
-    assert budgets, "the profile must set at least one slow-timeout"
-    return max(budgets)
-
-
-def base_slow_timeout(block: str) -> dict[str, str]:
-    """Return one profile's own ``slow-timeout``, field by field.
-
-    The base allowance is the one that governs every test the profile's
-    overrides do not name, so it is read on its own rather than as part
-    of the profile's text. The first inline table in a profile block is
-    the profile's own; the tables after it belong to that profile's
-    overrides.
-
-    Parameters
-    ----------
-    block
-        One profile's text.
-
-    Returns
-    -------
-    dict of str to str
-        The fields of the base ``slow-timeout``, empty when the profile
-        declares none of its own.
-    """
-    for line in block.splitlines():
-        stripped = line.strip()
-        if stripped.startswith("[["):
-            break
-        match = _SLOW_TIMEOUT.match(stripped)
-        if match is not None:
-            return {
-                key: value.strip()
-                for key, value in _FIELD.findall(match["body"])
-            }
-    return {}
-
-
-def termination_allowance(block: str) -> float:
-    """Return the time nextest may take to stop the run, in seconds.
-
-    Two terms, not one. Hitting the global timeout starts nextest's
-    ordinary termination procedure rather than stopping the run: on Unix
-    it signals the process group and waits ``slow-timeout.grace-period``
-    before killing it. That grace period is the first term, read from the
-    configuration so a profile that raised it raises the requirement too;
-    the second is a fixed margin for the teardown and report writing that
-    follow. A single floor over the two would absorb every grace period
-    below the margin, making a raised one look free until the run it
-    cancelled.
-
-    Parameters
-    ----------
-    block
-        One profile's text.
-
-    Returns
-    -------
-    float
-        The grace period plus the safety margin.
-    """
-    periods = _GRACE_PERIOD.findall(block)
-    grace = max(
-        (seconds(period) for period in periods),
-        default=NEXTEST_DEFAULT_GRACE_PERIOD_SECONDS,
-    )
-    return grace + TERMINATION_SAFETY_MARGIN_SECONDS
-
-
-def global_timeout(block: str) -> float:
-    """Return one profile's whole-run budget in seconds.
-
-    Parameters
-    ----------
-    block
-        One profile's text.
-
-    Returns
-    -------
-    float
-        The whole-run budget.
-    """
-    match = re.search(r'^global-timeout\s*=\s*"([^"]+)"', block, re.MULTILINE)
-    assert match is not None, (
-        "the profile must set global-timeout; without it the whole-run budget "
-        "is unbounded and only the job timer ends a hung run, by cancelling "
-        "it and discarding the log"
-    )
-    return seconds(match[1])
-
-
-class SuiteLane(typ.NamedTuple):
-    """One job that runs the suite, with the ceiling enclosing it.
-
-    Attributes
-    ----------
-    workflow
-        The workflow file's name.
-    job
-        The job's identifier.
-    ceiling
-        The job's ``timeout-minutes`` in seconds, or None when it
-        declares none and so inherits GitHub's six-hour default.
-    """
-
-    workflow: str
-    job: str
-    ceiling: float | None
-
-    def __str__(self) -> str:
-        """Return a location suitable for a failure message.
-
-        Returns
-        -------
-        str
-            ``workflow:job`` for this lane.
-        """
-        return f"{self.workflow}:{self.job}"
-
-
-def _runs_the_suite(job_body: dict[str, object]) -> bool:
-    """Return whether a job runs the workspace suite under nextest.
-
-    Parameters
-    ----------
-    job_body
-        The job's parsed mapping.
-
-    Returns
-    -------
-    bool
-        True when a step runs one of :data:`SUITE_MARKERS`.
-    """
-    return any(
-        _is_suite_line(line)
-        for step in job_body.get("steps") or []
-        if isinstance(step, dict)
-        for line in str(step.get("run", "")).splitlines()
-    )
-
-
-def required_ceiling(profiles: dict[str, str]) -> float:
-    """Return the smallest acceptable ceiling for any suite lane.
-
-    Four terms. The whole-run budget is what the suite may spend, the
-    termination allowance is what nextest needs to stop it, the outside
-    allowance is the work either side that the job timer covers, and
-    the margin is added because a ceiling equal to that sum cancels the
-    job at the moment nextest would have reported the overrun.
-
-    The larger of the two profiles is taken for each of the first two,
-    because a lane passing ``--profile ci`` runs under that one and
-    nothing in the workflow names which it uses.
-
-    Parameters
-    ----------
-    profiles
-        Each nextest profile's text, keyed by name.
-
-    Returns
-    -------
-    float
-        The smallest acceptable ceiling, in seconds.
-    """
-    return (
-        max(global_timeout(block) for block in profiles.values())
-        + max(termination_allowance(block) for block in profiles.values())
-        + OUTSIDE_RUN_ALLOWANCE_SECONDS
-        + CEILING_MARGIN_SECONDS
-    )
-
-
-def _names_a_suite_command(line: str) -> bool:
-    """Return whether one line mentions a suite command at all.
-
-    Mentioning is weaker than invoking, and deliberately so: the two are
-    compared below, and a line that mentions one without invoking it is
-    the case this contract refuses to judge.
-
-    Parameters
-    ----------
-    line
-        One line of a step's script.
-
-    Returns
-    -------
-    bool
-        True when a suite marker appears on the line.
-    """
-    return any(marker in line for marker in SUITE_MARKERS)
-
-
-def _is_suite_line(line: str) -> bool:
-    """Return whether one line runs the suite plainly.
-
-    Plainly means the line is the command and its arguments, and
-    nothing else. Reading the whole ``run`` value as one string, as an
-    earlier version did, counted a lane whose only mention of the suite
-    was inside `if false; then ...; fi`, and would have demanded a
-    ceiling of a job that never runs it.
-
-    Parameters
-    ----------
-    line
-        One line of a step's script.
-
-    Returns
-    -------
-    bool
-        True when the line runs a suite command and nothing else.
-    """
-    stripped = line.strip()
-    if not _names_a_suite_command(stripped):
-        return False
-    if any(disguise in stripped for disguise in DISGUISES):
-        return False
-    return any(stripped.startswith(marker) for marker in SUITE_MARKERS)
-
-
-def _disguised_suite_lines(job_body: dict[str, typ.Any]) -> list[str]:
-    """Return lines naming a suite command without plainly running one.
-
-    Parameters
-    ----------
-    job_body
-        The job's parsed mapping.
-
-    Returns
-    -------
-    list[str]
-        The offending lines, stripped.
-    """
-    return [
-        stripped
-        for step in job_body.get("steps") or []
-        if isinstance(step, dict)
-        for line in str(step.get("run", "")).splitlines()
-        if (stripped := line.strip())
-        and _names_a_suite_command(stripped)
-        and not _is_suite_line(stripped)
-    ]
 
 
 @pytest.fixture(scope="module")
 def nextest_profiles() -> dict[str, str]:
-    """Return each nextest profile's text.
+    """Return each nextest profile's block of the configuration.
 
     Returns
     -------
-    dict of str to str
-        Profile name to its section and overrides.
+    dict[str, str]
+        Profile name to the text of its block.
     """
     return profile_blocks(NEXTEST_CONFIG.read_text(encoding="utf-8"))
 
@@ -463,31 +77,12 @@ def nextest_profiles() -> dict[str, str]:
 def suite_lanes() -> tuple[SuiteLane, ...]:
     """Return every job that runs the suite, with its ceiling.
 
-    Every such job is included, not only those declaring a ceiling, so a
-    job that never had one is visible as ``None`` rather than absent. An
-    absent entry would let a missing ``timeout-minutes`` pass unremarked.
-
     Returns
     -------
     tuple of SuiteLane
         One entry per suite-running job.
     """
-    lanes: list[SuiteLane] = []
-    for path in workflow_paths():
-        document = load(path)
-        for job in jobs_of(path.name, document):
-            body = job.body
-            if not isinstance(body, dict) or not _runs_the_suite(body):
-                continue
-            raw = body.get("timeout-minutes")
-            lanes.append(
-                SuiteLane(
-                    workflow=job.workflow,
-                    job=job.job_id,
-                    ceiling=None if raw is None else float(str(raw)) * 60.0,
-                )
-            )
-    return tuple(lanes)
+    return suite_lanes_of()
 
 
 def test_the_suite_runs_somewhere(suite_lanes: tuple[SuiteLane, ...]) -> None:
@@ -590,57 +185,6 @@ def test_the_job_ceiling_covers_the_run_and_the_work_around_it(
         )
 
 
-def _steps_of(job_body: object) -> list[dict[str, object]]:
-    """Return one job's steps, or an empty list.
-
-    Parameters
-    ----------
-    job_body
-        The job's parsed value, which need not be a mapping.
-
-    Returns
-    -------
-    list of dict
-        The step mappings, in the order the job runs them.
-    """
-    if not isinstance(job_body, dict):
-        return []
-    steps = job_body.get("steps")
-    if not isinstance(steps, list):
-        return []
-    return [step for step in steps if isinstance(step, dict)]
-
-
-def _watchdog_offences(workflow: str, job_id: str, step: dict[str, object]) -> list[str]:
-    """Return what one step does that the absent tier forbids.
-
-    Two separate things are wrong, so they are reported separately: a
-    step may adopt the action without naming the variable, or name the
-    variable without adopting the action, and the fix differs.
-
-    Parameters
-    ----------
-    workflow
-        The workflow file's name.
-    job_id
-        The job's identifier.
-    step
-        One parsed step.
-
-    Returns
-    -------
-    list of str
-        One entry per offence, empty when the step commits none.
-    """
-    offences: list[str] = []
-    if COVERAGE_ACTION in str(step.get("uses", "")):
-        offences.append(f"{workflow}:{job_id} uses the action")
-    environment = step.get("env")
-    if isinstance(environment, dict) and WATCHDOG_VARIABLE in environment:
-        offences.append(f"{workflow}:{job_id} sets {WATCHDOG_VARIABLE}")
-    return offences
-
-
 def test_the_cargo_watchdog_tier_is_absent_rather_than_defaulted() -> None:
     """The third tier does not exist here, and must not appear unnoticed.
 
@@ -668,113 +212,6 @@ def test_the_cargo_watchdog_tier_is_absent_rather_than_defaulted() -> None:
     )
 
 
-def test_the_base_allowance_is_read_from_the_profile_not_its_overrides() -> None:
-    """The first inline table is the profile's; the rest are overrides'.
-
-    A reader that took the largest table, or the last, would report an
-    override's allowance as the base. The base is the one that governs
-    every test no override names, so the substitution would leave the
-    ordinary tests unbounded while the contract passed. Driven with a
-    controlled profile because this repository's own base and override
-    both set `terminate-after`, so a confused reader would agree with a
-    correct one against the real file.
-    """
-    block = (
-        '[profile.example]\n'
-        'slow-timeout = { period = "300s", terminate-after = 1 }\n'
-        '\n'
-        '[[profile.example.overrides]]\n'
-        'filter = \'binary(trybuild)\'\n'
-        'slow-timeout = { period = "900s", terminate-after = 4 }\n'
-    )
-    assert base_slow_timeout(block) == {"period": "300s", "terminate-after": "1"}, (
-        "the base slow-timeout must come from the profile's own section"
-    )
-
-
-def test_a_profile_declaring_no_base_allowance_reads_as_empty() -> None:
-    """An override alone is not a base allowance.
-
-    nextest would fall back to `[profile.default]` here, which is why
-    the contract states this as repository policy rather than as a
-    nextest requirement. The reading still has to distinguish the two
-    cases, or the policy cannot be enforced.
-    """
-    block = (
-        "[profile.example]\n"
-        "default-filter = 'all()'\n"
-        "\n"
-        "[[profile.example.overrides]]\n"
-        "filter = 'binary(trybuild)'\n"
-        'slow-timeout = { period = "900s", terminate-after = 1 }\n'
-    )
-    assert base_slow_timeout(block) == {}, (
-        "a profile whose only slow-timeout is an override's declares no base"
-    )
-
-
-def test_the_termination_allowance_is_the_grace_period_plus_the_margin() -> None:
-    """The two terms are added, not maximized over.
-
-    A single floor over the grace period and the margin would absorb
-    every grace period below the margin, so raising this file's five
-    seconds to thirty would demand nothing more of the job ceiling above
-    it. The ordering assertions cannot tell the readings apart, since
-    both leave the requirement inside the ceiling, which is why the
-    reading carries a test of its own.
-    """
-    assert termination_allowance("") == pytest.approx(
-        NEXTEST_DEFAULT_GRACE_PERIOD_SECONDS + TERMINATION_SAFETY_MARGIN_SECONDS
-    ), "an unnamed grace period must fall back to nextest's own default"
-    configured = termination_allowance(
-        'slow-timeout = { period = "300s", grace-period = "5s" }'
-    )
-    assert configured == pytest.approx(5.0 + TERMINATION_SAFETY_MARGIN_SECONDS), (
-        "a grace period below the margin must still raise the allowance; "
-        "a maximum over the two terms would have discarded it"
-    )
-    largest = termination_allowance(
-        'slow-timeout = { grace-period = "5s" }\n'
-        'slow-timeout = { grace-period = "45s" }'
-    )
-    assert largest == pytest.approx(45.0 + TERMINATION_SAFETY_MARGIN_SECONDS), (
-        "the largest grace period in the profile governs the allowance"
-    )
-
-
-@pytest.mark.parametrize(
-    ("step", "expected"),
-    [
-        pytest.param({"run": "cargo llvm-cov nextest run"}, 0, id="an-ordinary-step"),
-        pytest.param({"uses": f"{COVERAGE_ACTION}@abc123"}, 1, id="adopts-the-action"),
-        pytest.param(
-            {"run": "make test", "env": {WATCHDOG_VARIABLE: "1800"}},
-            1,
-            id="names-the-variable",
-        ),
-        pytest.param(
-            {"uses": f"{COVERAGE_ACTION}@abc123", "env": {WATCHDOG_VARIABLE: "1800"}},
-            2,
-            id="both-at-once",
-        ),
-    ],
-)
-def test_both_halves_of_the_absent_tier_are_detected(
-    step: dict[str, object], expected: int
-) -> None:
-    """Adopting the action and naming the variable are separate offences.
-
-    The tier is absent by construction here, so no workflow in the tree
-    commits either offence and the assertion over the tree is satisfied
-    by a reading that detects neither. Driving the reading directly is
-    the only way to show it would notice.
-    """
-    offences = _watchdog_offences("ci.yml", "test", step)
-    assert len(offences) == expected, (
-        f"{step} must yield {expected} offence(s), got {offences}"
-    )
-
-
 def test_no_step_disguises_a_suite_command(suite_lanes: tuple[SuiteLane, ...]) -> None:
     """A suite command must be the line's command, plainly.
 
@@ -795,7 +232,9 @@ def test_no_step_disguises_a_suite_command(suite_lanes: tuple[SuiteLane, ...]) -
         f"{file}:{job.job_id}: {line!r}"
         for path in workflow_paths()
         for file, job in [(path.name, job) for job in jobs_of(path.name, load(path))]
-        for line in _disguised_suite_lines(job.body if isinstance(job.body, dict) else {})
+        for line in _disguised_suite_lines(
+            job.body if isinstance(job.body, dict) else {}
+        )
     ]
     assert not disguised, (
         f"these steps name a suite command without plainly running one, so "
@@ -814,12 +253,12 @@ def test_the_required_ceiling_carries_all_four_terms() -> None:
     """
     profiles = {
         "default": (
-            '[profile.default]\n'
+            "[profile.default]\n"
             'slow-timeout = { period = "300s", grace-period = "5s" }\n'
             'global-timeout = "30m"\n'
         ),
         "ci": (
-            '[profile.ci]\n'
+            "[profile.ci]\n"
             'slow-timeout = { period = "300s", grace-period = "5s" }\n'
             'global-timeout = "40m"\n'
         ),
@@ -834,4 +273,71 @@ def test_the_required_ceiling_carries_all_four_terms() -> None:
         "the requirement takes the larger whole-run budget of the two "
         "profiles and adds the termination allowance, the outside allowance "
         f"and the margin; expected {expected}"
+    )
+
+
+#: The condition each suite lane legitimately carries, keyed by workflow
+#: and job, as the step's ``if`` and its job's, with whitespace
+#: collapsed.
+#:
+#: A skipped step runs no suite, so none of the budgets above says
+#: anything about it. `if: false` on either would leave a lane that
+#: looks bounded and is not, and so would a plausible condition that
+#: quietly excluded the event the lane exists for.
+#:
+#: `codescene-coverage.yml`'s lane legitimately runs on pull requests
+#: and on manual dispatch, because `coverage.yml` covers the trunk.
+REQUIRED_CONDITIONS: typ.Final[dict[tuple[str, str], tuple[object, object]]] = {
+    ("codescene-coverage.yml", "coverage-check"): (
+        None,
+        "github.event_name == 'pull_request' || "
+        "github.event_name == 'workflow_dispatch'",
+    ),
+    ("coverage.yml", "coverage"): (None, None),
+}
+
+
+def test_each_suite_lane_carries_the_condition_it_is_meant_to(
+    suite_lanes: tuple[SuiteLane, ...],
+) -> None:
+    """A skipped step runs no suite, so no budget above bounds it.
+
+    Every assertion above reads a lane's declared budgets and says
+    nothing about whether the step runs. `if: false` on the step or on
+    its job would leave a lane that looks bounded and is not, and this
+    contract would certify it. So would a plausible condition that
+    quietly excluded the event the lane exists for, which is why the
+    conditions are pinned by value rather than checked for falsity:
+    YAML parses `false` to a boolean, and enumerating falsy spellings
+    would miss the plausible ones anyway.
+
+    The coordinates are compared both ways first, so a new lane with no
+    entry fails rather than passing unexamined.
+
+    Proved by mutation: `if: false` on the suite step, the same on its
+    job, the dispatch clause dropped from `coverage-check`, and a
+    coordinate dropped from ``REQUIRED_CONDITIONS`` each fail this test.
+    """
+    found: dict[tuple[str, str], set[tuple[object, object]]] = {}
+    for lane in suite_lanes:
+        collapsed = {
+            (normalized_condition(step), normalized_condition(job))
+            for step, job in lane.conditions
+        }
+        found.setdefault((lane.workflow, lane.job), set()).update(collapsed)
+    assert set(found) == set(REQUIRED_CONDITIONS), (
+        f"the suite lanes are not the ones this contract pins: "
+        f"unlisted {sorted(set(found) - set(REQUIRED_CONDITIONS))}, missing "
+        f"{sorted(set(REQUIRED_CONDITIONS) - set(found))}; a lane with no "
+        f"entry here is a lane whose condition nobody has judged"
+    )
+    wrong = {
+        coordinate: (expected, found[coordinate])
+        for coordinate, expected in REQUIRED_CONDITIONS.items()
+        if found[coordinate] != {expected}
+    }
+    assert not wrong, (
+        f"these suite lanes do not carry the conditions the developers' "
+        f"guide records, as expected versus found: {wrong}; a lane that is "
+        f"skipped runs no suite, so none of the budgets above bounds it"
     )
