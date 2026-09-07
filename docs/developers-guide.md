@@ -2726,6 +2726,20 @@ nothing in the workflows names which profile a lane runs under.
 
 The per-test allowance it compares against is `period` multiplied by
 `terminate-after`, not `period` alone, so an override that raised the
-multiplier rather than the period is read at its real size.
+multiplier rather than the period is read at its real size. The readings it
+rests on live in `timeout_budgets.py` and `suite_lanes.py`, and are driven with
+controlled values in `timeout_reading_test.py`.
+
+It also pins the condition each lane carries. A skipped step runs no suite, so
+none of the budgets above says anything about it: `if: false` on the step or on
+its job would leave a lane that looks bounded and is not, and so would a
+plausible condition that quietly excluded the event the lane exists for. The
+conditions are pinned by value rather than tested for falsity, because YAML
+parses `false` to a boolean and enumerating falsy spellings would miss the
+plausible ones anyway. `codescene-coverage.yml`'s lane legitimately runs on
+pull requests and on manual dispatch, because `coverage.yml` covers the trunk.
+Whitespace is collapsed before comparison, so refolding a long condition is not
+a change; dropping a clause is. The lane coordinates are compared both ways, so
+a lane appearing without an entry fails too.
 
 [shared-actions-coverage]: https://github.com/leynos/shared-actions/blob/main/.github/actions/generate-coverage/README.md
