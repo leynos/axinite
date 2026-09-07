@@ -16,8 +16,6 @@ use super::{
     plan_migration_history_rewrites, repair_postgres_refinery_history,
     stage_migration_history_rewrites,
 };
-#[cfg(feature = "postgres")]
-use crate::testing::test_utils::EnvVarsGuard;
 
 #[cfg(feature = "postgres")]
 mod fixtures;
@@ -52,7 +50,6 @@ async fn run_repair_postgres_refinery_history_case(
     use crate::config::Config;
     use crate::history::Store;
 
-    let _env_guard = EnvVarsGuard::new(&["DATABASE_URL"]);
     let _ = dotenvy::dotenv();
     let config = Config::from_env()
         .await
@@ -134,7 +131,6 @@ async fn stage_and_finalize_migration_history_rewrites_two_phases() {
     use crate::config::Config;
     use crate::history::Store;
 
-    let _env_guard = EnvVarsGuard::new(&["DATABASE_URL"]);
     let _ = dotenvy::dotenv();
     let config = Config::from_env().await.expect("Config::from_env failed");
     let store = Store::new(&config.database)

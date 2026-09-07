@@ -6,7 +6,7 @@ use axinite::{
     app::{AppBuilder, AppBuilderFlags, AppBuilderParams, AppComponents},
     channels::{ChannelManager, web::log_layer::LogBroadcaster},
     cli::Cli,
-    config::Config,
+    config::{Config, EnvContext},
     hooks::bootstrap_hooks,
     llm::create_session_manager,
 };
@@ -50,8 +50,16 @@ pub(crate) async fn phase_pid_and_onboard(
 pub(crate) async fn phase_load_config_and_tracing(
     cli: &Cli,
 ) -> anyhow::Result<LoadedConfigContext> {
+    phase_load_config_and_tracing_from(cli, &EnvContext::capture_ambient()).await
+}
+
+/// Load configuration and tracing from an explicit startup environment snapshot.
+pub(crate) async fn phase_load_config_and_tracing_from(
+    cli: &Cli,
+    env: &EnvContext,
+) -> anyhow::Result<LoadedConfigContext> {
     let toml_path = cli.config.clone();
-    let config = load_initial_config(toml_path.as_deref()).await?;
+    let config = load_initial_config_from(env, toml_path.as_deref()).await?;
 
     let session = create_session_manager(config.llm.session.clone()).await;
     let log_broadcaster = Arc::new(LogBroadcaster::new());
@@ -68,6 +76,9 @@ pub(crate) async fn phase_load_config_and_tracing(
         session,
         log_broadcaster,
         log_level_handle,
+        workspace_import_dir: env
+            .get("WORKSPACE_IMPORT_DIR")
+            .map(std::path::PathBuf::from),
     })
 }
 
@@ -79,9 +90,7 @@ pub(crate) async fn phase_build_components(
 ) -> anyhow::Result<BuiltComponentsContext> {
     let flags = AppBuilderFlags {
         no_db: cli.no_db,
-        workspace_import_dir: std::env::var("WORKSPACE_IMPORT_DIR")
-            .ok()
-            .map(std::path::PathBuf::from),
+        workspace_import_dir: loaded.workspace_import_dir,
     };
     let (components, side_effects) = AppBuilder::new(AppBuilderParams {
         config: loaded.config,
@@ -326,10 +335,16 @@ async fn run_first_run_onboarding_if_needed(cli: &Cli) -> anyhow::Result<()> {
     Ok(())
 }
 
-/// Loads resolved `Config` from environment variables and an optional TOML file
-/// path.
-async fn load_initial_config(toml_path: Option<&std::path::Path>) -> anyhow::Result<Config> {
-    match Config::from_env_with_toml(toml_path).await {
+async fn load_initial_config_from(
+    env: &EnvContext,
+    toml_path: Option<&std::path::Path>,
+) -> anyhow::Result<Config> {
+    let settings = axinite::settings::Settings::load();
+    let result = match toml_path {
+        Some(path) => Config::from_context_with_toml(env, &settings, path).await,
+        None => Config::from_context(env, &settings).await,
+    };
+    match result {
         Ok(c) => Ok(c),
         Err(axinite::error::ConfigError::MissingRequired { key, hint }) => {
             anyhow::bail!(
