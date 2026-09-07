@@ -2613,3 +2613,95 @@ of the default feature set. When the feature is disabled,
 Golden tests live in `tests/html_to_markdown.rs`, which loads fixtures from
 `tests/test-pages/`: each fixture directory provides a `source.html` file and
 the harness asserts the converter's output against the fixture's expectations.
+
+## 37. Test timeouts: the tiers this repository sets
+
+Four independent timers can end a test run, and the canonical statement of how
+they must be ordered lives in the `generate-coverage` README in
+[`leynos/shared-actions`][shared-actions-coverage]. Three apply here, and two
+of those were unset until this was written.
+
+| Tier | What it bounds | Where it is set | Current value |
+| --- | --- | --- | --- |
+| Per-test `slow-timeout` | one test | `.config/nextest.toml`, both profiles | 300 s; 900 s for the trybuild binaries under `ci` |
+| nextest `global-timeout` | the whole test run | `.config/nextest.toml`, both profiles | 30 m |
+| Cargo watchdog | one `cargo` invocation, wall clock | not used here, see below | absent |
+| Job `timeout-minutes` | the whole job | job level | 90 m for the coverage lanes |
+
+*Table: the timers that can end a run, innermost first.*
+
+### What was missing
+
+Neither profile set a per-test allowance or a whole-run budget. Nothing bounded
+a single test and nothing bounded the run, so the only timer that ended a hang
+was the job's own at 90 minutes, which cancels the run and discards the log
+that would have named the test. The failure then reads as an infrastructure
+fault rather than as a hung test.
+
+### Both profiles carry their own budgets
+
+`[[profile.default.overrides]]` belongs to the default profile; another profile
+does not inherit it, and nor does it inherit that profile's scalar settings
+once it declares its own. The `ci` profile is also the one that *includes* the
+trybuild compile-contract binaries the default profile excludes, so it is the
+profile with the longest tests and needs its own allowance for them.
+
+Both therefore set a 300 second base allowance and a 30 minute whole-run
+budget, and `ci` adds a 900 second override for `binary(trybuild)`.
+
+Both figures are bounds rather than measurements, and the configuration says
+so. No single test in the default profile approaches five minutes, and nobody
+has timed a single trybuild case; what is known is that the binaries together
+take about seven minutes, which is why the default profile excludes them.
+
+### The tier that is absent, and why
+
+Coverage runs `cargo llvm-cov nextest` from a `run:` step rather than through
+the shared `generate-coverage` action, so there is no wall-clock watchdog on
+the `cargo` invocation and no third tier.
+
+That absence is asserted rather than assumed. A lane that adopted the action
+without setting `RUN_RUST_CARGO_WAIT_TIMEOUT` would inherit its undocumented
+1,800 second default underneath a 30 minute nextest budget, which is exactly
+the inversion the canonical section exists to prevent, and it would do so
+silently. The contract fails if either the action appears or the variable is
+set, so adopting it needs this section updated in the same change.
+
+### What the values are sized against
+
+The 30 minute whole-run budget is a bound rather than a measurement. It has to
+exceed the 900 second trybuild allowance, and it does so with fifteen minutes
+to spare, which is comfortably more than any observed run has needed.
+
+The 90 minute ceilings are unchanged, and the contract records why they hold:
+
+| Lane | Worst coverage step | Worst whole job | Outside the step | Run |
+| --- | --- | --- | --- | --- |
+| `coverage.yml` `Coverage (all-features)` | 900 s | 1,085 s | 185 s | 33966708901 |
+| `coverage.yml` `Coverage (default)` | 856 s | 1,031 s | 175 s | 34051006881 |
+
+*Table: measured coverage-step and whole-job durations, read across six
+successful runs of `coverage.yml` covering three matrix legs each.*
+
+The requirement is the whole-run budget, plus a minute for nextest to
+terminate, plus the build and the steps either side of the suite. Twenty
+minutes covers the worst of those with room for a cold compile, making the
+requirement 51 minutes against ceilings of 90.
+
+None of those runs was genuinely cold. One run is the coldest seen so far, not
+a measurement of the cold case.
+
+### The contract
+
+`tests/workflow_contracts/timeout_ordering_test.py` asserts the ordering by
+value over every job that runs the suite, in both the `.yml` and `.yaml`
+extensions. It enumerates jobs that declare no ceiling, so a missing
+`timeout-minutes` reads as a lane with no budget rather than as no lane at all,
+and it holds every lane to the larger of the two profiles' budgets, because
+nothing in the workflows names which profile a lane runs under.
+
+The per-test allowance it compares against is `period` multiplied by
+`terminate-after`, not `period` alone, so an override that raised the
+multiplier rather than the period is read at its real size.
+
+[shared-actions-coverage]: https://github.com/leynos/shared-actions/blob/main/.github/actions/generate-coverage/README.md

@@ -6,7 +6,34 @@
 # run. These spawn a fresh rustc per case against the full crate and take
 # ~7 minutes. The ci profile below includes them.
 default-filter = 'not binary(trybuild)'
+# Kill a test that has run for five minutes rather than reporting it slow
+# for ever. Nothing else here bounds a single test, so without this the
+# only timer that ends a hang is the job's own, which cancels the run and
+# discards the log that would have named the test. Five minutes is a bound
+# rather than a measurement: no single test in this profile approaches it,
+# and the whole instrumented run, compilation included, has never exceeded
+# 900 s.
+slow-timeout = { period = "300s", terminate-after = 1, grace-period = "5s" }
+# The whole run's budget. Above the largest per-test allowance in either
+# profile, and twice the longest instrumented run measured.
+# See "Test timeouts: the tiers this repository sets" in the developers'
+# guide.
+global-timeout = "30m"
 
 [profile.ci]
 # CI runs everything, including the trybuild compile-contract tests.
 default-filter = 'all()'
+# `[[profile.default.overrides]]` belongs to the default profile alone;
+# another profile does not inherit it. This profile therefore restates
+# both the base allowance and the trybuild exception below, because it is
+# the profile that includes the binaries the exception exists for.
+slow-timeout = { period = "300s", terminate-after = 1, grace-period = "5s" }
+global-timeout = "30m"
+
+[[profile.ci.overrides]]
+# The trybuild compile-contract tests spawn a fresh rustc per case against
+# the full crate and take about seven minutes together, which is why the
+# default profile excludes them. Fifteen minutes is that with room, and is
+# a bound rather than a measurement: nobody has timed a single case.
+filter = 'binary(trybuild)'
+slow-timeout = { period = "900s", terminate-after = 1, grace-period = "5s" }
