@@ -288,8 +288,10 @@ pub async fn create_session_manager(config: SessionConfig) -> Arc<SessionManager
     // NEARAI_SESSION_TOKEN env var always takes precedence over file-based
     // tokens. Hosting providers set this env var and expect it to be used
     // directly — no file persistence needed.
-    if let Ok(token) = std::env::var("NEARAI_SESSION_TOKEN")
-        && !token.is_empty()
+    if let Ok(token) = {
+        #[expect(clippy::disallowed_methods, reason = "transitional #333: EnvContext")]
+        std::env::var("NEARAI_SESSION_TOKEN")
+    } && !token.is_empty()
     {
         tracing::info!("Using session token from NEARAI_SESSION_TOKEN env var");
         manager.set_token(SecretString::from(token)).await;

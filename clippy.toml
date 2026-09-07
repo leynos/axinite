@@ -6,3 +6,15 @@ cognitive-complexity-threshold = 15  # default: 25 (only active when lint is ena
 too-many-lines-threshold = 100      # default: 100 (only active when lint is enabled)
 too-many-arguments-threshold = 7    # default: 7 (keep default, avoids new violations)
 type-complexity-threshold = 250     # default: 250 (keep default, avoids new violations)
+
+# Environment is a process-global resource. Capture it once at the composition
+# boundary and pass EnvContext through the application instead of reading or
+# mutating it from production code or in-process tests.
+disallowed-methods = [
+  { path = "std::env::var", reason = "inject an environment reader" },
+  { path = "std::env::var_os", reason = "inject an environment reader" },
+  { path = "std::env::vars", reason = "inject an environment reader" },
+  { path = "std::env::vars_os", reason = "inject an environment reader" },
+  { path = "std::env::set_var", reason = "use a stub environment in tests" },
+  { path = "std::env::remove_var", reason = "use a stub environment in tests" },
+]
