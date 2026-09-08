@@ -10,10 +10,11 @@ values here.
 import pytest
 from nextest_config import (
     NextestConfigurationError,
+    Profile,
     UnboundedTestError,
     profiles,
+    seconds,
 )
-from suite_lanes import COVERAGE_ACTION, WATCHDOG_VARIABLE, _watchdog_offences
 from timeout_budgets import (
     NEXTEST_DEFAULT_GRACE_PERIOD_SECONDS,
     TERMINATION_SAFETY_MARGIN_SECONDS,
@@ -24,7 +25,7 @@ from timeout_budgets import (
 )
 
 
-def example(config_text: str):
+def example(config_text: str) -> Profile:
     """Return the ``example`` profile parsed out of a document.
 
     Parameters
@@ -129,39 +130,6 @@ def test_the_termination_allowance_is_the_grace_period_plus_the_margin() -> None
     )
 
 
-@pytest.mark.parametrize(
-    ("step", "expected"),
-    [
-        pytest.param({"run": "cargo llvm-cov nextest run"}, 0, id="an-ordinary-step"),
-        pytest.param({"uses": f"{COVERAGE_ACTION}@abc123"}, 1, id="adopts-the-action"),
-        pytest.param(
-            {"run": "make test", "env": {WATCHDOG_VARIABLE: "1800"}},
-            1,
-            id="names-the-variable",
-        ),
-        pytest.param(
-            {"uses": f"{COVERAGE_ACTION}@abc123", "env": {WATCHDOG_VARIABLE: "1800"}},
-            2,
-            id="both-at-once",
-        ),
-    ],
-)
-def test_both_halves_of_the_absent_tier_are_detected(
-    step: dict[str, object], expected: int
-) -> None:
-    """Adopting the action and naming the variable are separate offences.
-
-    The tier is absent by construction here, so no workflow in the tree
-    commits either offence and the assertion over the tree is satisfied
-    by a reading that detects neither. Driving the reading directly is
-    the only way to show it would notice.
-    """
-    offences = _watchdog_offences("ci.yml", "test", step)
-    assert len(offences) == expected, (
-        f"{step} must yield {expected} offence(s), got {offences}"
-    )
-
-
 def test_a_commented_out_global_timeout_is_absent() -> None:
     """Tier two must read as missing when it has been switched off.
 
@@ -260,3 +228,121 @@ def test_a_slow_timeout_that_never_terminates_is_refused(table: str) -> None:
     """
     with pytest.raises(UnboundedTestError, match=r"terminate-after"):
         largest_test_allowance(example(f"[profile.example]\n{table}\n"))
+
+
+@pytest.mark.parametrize(
+    ("duration", "expected"),
+    [
+        pytest.param("300s", 300.0, id="one-component"),
+        pytest.param("2h 37m", 9420.0, id="two-components-spaced"),
+        pytest.param("2h37m", 9420.0, id="two-components-joined"),
+        pytest.param("1h 30m 15s", 5415.0, id="three-components"),
+        pytest.param("15min", 900.0, id="a-long-unit-spelling"),
+        pytest.param("500ms", 0.5, id="milliseconds"),
+        pytest.param("1d", 86400.0, id="days"),
+    ],
+)
+def test_the_duration_grammar_matches_the_one_nextest_reads(
+    duration: str, expected: float
+) -> None:
+    """nextest deserializes durations with ``humantime``, not one unit.
+
+    A reader accepting a single component rejects `2h 37m`, which
+    nextest accepts, so the contract would fail on a configuration that
+    is correct and the failure would name the reader's limitation as
+    though it were the file's fault. Every spelling here is one
+    ``humantime`` accepts.
+    """
+    assert seconds(duration) == pytest.approx(expected), (
+        f"{duration!r} must read as {expected} seconds"
+    )
+
+
+@pytest.mark.parametrize(
+    "duration",
+    [
+        pytest.param("1.5s", id="a-fractional-value"),
+        pytest.param("300", id="no-unit"),
+        pytest.param("300 fortnights", id="an-unknown-unit"),
+        pytest.param("", id="empty"),
+    ],
+)
+def test_a_duration_nextest_would_refuse_is_refused_here(duration: str) -> None:
+    """The grammar is matched, not merely widened.
+
+    ``humantime`` takes whole numbers with units and nothing else, so a
+    reader that accepted more would put a number on a configuration
+    nextest fails to load, and the contract would certify a file that
+    cannot run.
+    """
+    with pytest.raises(NextestConfigurationError):
+        seconds(duration)
+
+
+def test_minutes_and_months_are_told_apart() -> None:
+    """``m`` is minutes and ``M`` is months, and ``humantime`` is exact.
+
+    Folding case here would read a thirty-minute budget as a
+    two-and-a-half-year one, or the reverse, and either reading puts a
+    plausible number on the wrong tier.
+    """
+    assert seconds("30m") == pytest.approx(1800.0)
+    assert seconds("30M") == pytest.approx(30 * 2630016.0)
+
+
+def test_a_custom_profile_reads_the_default_profile_s_overrides() -> None:
+    """nextest consults ``[[profile.default.overrides]]`` for it too.
+
+    An override written on the default profile governs any test the
+    selected profile's own overrides do not name, so a reading confined
+    to the selected profile understates the allowance in force. The
+    understatement is invisible in the ordering assertions, which then
+    certify a 3,600 s inherited allowance as sitting under a 1,800 s
+    whole-run budget.
+
+    This repository's default profile declares no overrides, so the real
+    file cannot tell a correct reading from a confined one.
+    """
+    parsed = profiles(
+        "[profile.default]\n"
+        'slow-timeout = { period = "300s", terminate-after = 1, '
+        'grace-period = "5s" }\n'
+        'global-timeout = "30m"\n'
+        "\n[[profile.default.overrides]]\n"
+        "filter = 'binary(slow)'\n"
+        'slow-timeout = { period = "1800s", terminate-after = 2, '
+        'grace-period = "45s" }\n'
+        "\n[profile.ci]\n"
+        'slow-timeout = { period = "300s", terminate-after = 1, '
+        'grace-period = "5s" }\n'
+        'global-timeout = "30m"\n'
+    )
+    assert largest_test_allowance(parsed["ci"]) == pytest.approx(3600.0), (
+        "the inherited override is the longest a test may run under ci"
+    )
+    assert termination_allowance(parsed["ci"]) == pytest.approx(
+        45.0 + TERMINATION_SAFETY_MARGIN_SECONDS
+    ), "the inherited grace period is the wait nextest takes under ci"
+    assert base_slow_timeout(parsed["ci"]) == {
+        "period": "300s",
+        "terminate-after": "1",
+        "grace-period": "5s",
+    }, "an inherited override is not the profile's own base allowance"
+
+
+def test_the_default_profile_does_not_inherit_from_itself() -> None:
+    """Its own overrides are already read once.
+
+    Counting them twice would be harmless for a maximum and wrong for
+    anything else, and the field is the record of what a profile
+    inherits rather than of what it declares.
+    """
+    parsed = profiles(
+        "[profile.default]\n"
+        'slow-timeout = { period = "300s", terminate-after = 1 }\n'
+        "\n[[profile.default.overrides]]\n"
+        "filter = 'binary(slow)'\n"
+        'slow-timeout = { period = "600s", terminate-after = 1 }\n'
+    )
+    assert parsed["default"].inherited == ()
+    assert len(parsed["default"].tables()) == 2

@@ -2678,6 +2678,14 @@ the inversion the canonical section exists to prevent, and it would do so
 silently. The contract fails if either the action appears or the variable is
 set, so adopting it needs this section updated in the same change.
 
+The variable is looked for in all three scopes a step inherits its environment
+from. GitHub hands a step the union of the workflow's `env`, its job's and its
+own, so one written at workflow or job level reaches the suite step exactly as
+one written on the step does. A check reading the step alone would report the
+tier as absent while the watchdog was in force, which is the same inversion
+read from the other end. Each scope is reported at the level that declares it,
+because that is the line that has to change.
+
 ### What the values are sized against
 
 The 30 minute whole-run budget is a bound rather than a measurement. It has to
@@ -2690,6 +2698,14 @@ nothing, so a reading that searched the whole `run` value would count the job
 as a suite lane and hold it to a ceiling it does not need;
 `cargo nextest run || true` runs the suite but discards its verdict. Neither is
 judged as an invocation, and both are reported.
+
+It also refuses a lane that runs the suite while tolerating its failure. Every
+budget here is about when the suite is stopped and none of them says anything
+about the verdict, so `continue-on-error` on the suite step or on its job
+satisfies each of them while a failing suite leaves the job, or the workflow,
+green. Both scopes are read because they differ in effect and in fix. Anything
+but an explicit `false` is reported, an expression included: a contract that
+cannot evaluate `${{ ... }}` must not certify the lane it guards.
 
 Every ceiling carries at least fifteen minutes above its requirement rather
 than merely reaching it, because a ceiling equal to the sum it contains cancels
@@ -2726,10 +2742,25 @@ nothing in the workflows names which profile a lane runs under.
 
 The per-test allowance it compares against is `period` multiplied by
 `terminate-after`, not `period` alone, so an override that raised the
-multiplier rather than the period is read at its real size. The readings it
-rests on live in `nextest_config.py`, `timeout_budgets.py` and
-`suite_lanes.py`, and are driven with controlled values in
-`timeout_reading_test.py`.
+multiplier rather than the period is read at its real size. It is read over the
+overrides nextest consults for the profile, which includes
+`[[profile.default.overrides]]` and not only the profile's own: an inherited
+override governs any test the selected profile's overrides do not name, so a
+reading confined to the selected profile would understate the allowance in
+force and certify an inherited allowance sitting above the whole-run budget.
+The result is an upper bound rather than the allowance any one test receives,
+because which override governs a test depends on a filterset this contract
+cannot evaluate statically.
+
+Durations are read with the grammar `humantime` accepts, which is what nextest
+deserializes them with: one or more whole-number components each carrying a
+unit, written `300s`, `2h 37m` or `2h37m`, with no fractional values. A reader
+taking a single component would reject configuration nextest accepts and blame
+the file for it. Case matters, so `m` is minutes and `M` is months.
+
+The readings rest on `nextest_config.py`, `timeout_budgets.py`,
+`suite_lanes.py` and `suite_guards.py`, and are driven with controlled values
+in `timeout_reading_test.py` and `suite_guards_test.py`.
 
 The nextest configuration is parsed with `tomllib` rather than matched as text.
 A text match finds a key inside a comment, inside a `filter` string, or in a
