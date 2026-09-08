@@ -4,6 +4,10 @@ Separated from ``timeout_budgets`` so the parsing and the arithmetic
 stay legible apart, and so neither module outgrows the 400-line limit
 ``AGENTS.md`` sets.
 
+The duration grammar lives in ``nextest_durations`` and the error
+types in ``nextest_errors``; both are re-exported here, because a
+reader of a budget wants one import rather than three.
+
 The configuration is parsed with ``tomllib`` rather than matched as
 text. A text match finds a key inside a comment, inside a ``filter``
 string, or in a table nextest never consults, and reports a budget the
@@ -14,82 +18,8 @@ import re
 import tomllib
 import typing as typ
 
-#: A duration as ``humantime`` spells it: one or more whole-number
-#: components, each with a unit, optionally separated by whitespace.
-#: nextest deserializes every duration with ``humantime_serde``, which
-#: accepts ``"2h 37m"`` and ``"2h37m"`` as readily as ``"300s"``, and
-#: rejects a fractional value such as ``"1.5s"`` outright. A reader
-#: accepting one component only rejects configuration nextest accepts,
-#: and the contract then fails on a file that is correct.
-_DURATION: typ.Final[re.Pattern[str]] = re.compile(r"\A\s*(?:\d+\s*[A-Za-z]+\s*)+\Z")
-
-#: One component of such a duration.
-_COMPONENT: typ.Final[re.Pattern[str]] = re.compile(
-    r"(?P<value>\d+)\s*(?P<unit>[A-Za-z]+)"
-)
-
-#: Every unit spelling ``humantime`` accepts, with its length in seconds.
-#: Case matters: ``m`` is minutes and ``M`` is months, so the table is
-#: consulted without folding case. A month is a twelfth of a Julian year
-#: and a year is 365.25 days, which is how ``humantime`` defines them.
-_UNIT_SECONDS: typ.Final[dict[str, float]] = {
-    "nanos": 1e-9,
-    "nsec": 1e-9,
-    "ns": 1e-9,
-    "usec": 1e-6,
-    "us": 1e-6,
-    "millis": 0.001,
-    "msec": 0.001,
-    "ms": 0.001,
-    "seconds": 1.0,
-    "second": 1.0,
-    "secs": 1.0,
-    "sec": 1.0,
-    "s": 1.0,
-    "minutes": 60.0,
-    "minute": 60.0,
-    "mins": 60.0,
-    "min": 60.0,
-    "m": 60.0,
-    "hours": 3600.0,
-    "hour": 3600.0,
-    "hrs": 3600.0,
-    "hr": 3600.0,
-    "h": 3600.0,
-    "days": 86400.0,
-    "day": 86400.0,
-    "d": 86400.0,
-    "weeks": 604800.0,
-    "week": 604800.0,
-    "w": 604800.0,
-    "months": 2630016.0,
-    "month": 2630016.0,
-    "M": 2630016.0,
-    "years": 31557600.0,
-    "year": 31557600.0,
-    "y": 31557600.0,
-}
-
-
-class NextestConfigurationError(ValueError):
-    """Raised when the configuration cannot be read as a set of budgets.
-
-    Separate from a budget in the wrong order. A file that is not TOML,
-    a profile declaring no ``slow-timeout``, or one whose
-    ``global-timeout`` has been commented out, is a configuration this
-    contract cannot reason about rather than one whose tiers are
-    inverted.
-    """
-
-
-class UnboundedTestError(NextestConfigurationError):
-    """Raised when a ``slow-timeout`` terminates no test.
-
-    ``terminate-after`` is optional, and without it nextest marks a test
-    slow and lets it run on, so the configuration parses, reads as
-    deliberate, and bounds nothing. Reporting that as a period-long
-    budget would put a number on the tier that is missing.
-    """
+from nextest_durations import seconds
+from nextest_errors import NextestConfigurationError, UnboundedTestError
 
 
 class Profile(typ.NamedTuple):
@@ -152,54 +82,6 @@ class Profile(typ.NamedTuple):
             *((own, table) for table in self.overrides),
             *(("profile.default", table) for table in self.inherited),
         )
-
-
-def seconds(duration: str) -> float:
-    """Convert a nextest duration to seconds.
-
-    Parameters
-    ----------
-    duration
-        A duration as nextest spells it, such as ``"300s"`` or the
-        multi-component ``"2h 37m"``.
-
-    Returns
-    -------
-    float
-        The duration in seconds.
-
-    Raises
-    ------
-    NextestConfigurationError
-        If the text is not a duration nextest would accept.
-
-    Examples
-    --------
-    >>> seconds("300s")
-    300.0
-    >>> seconds("2h 37m")
-    9420.0
-    """
-    if _DURATION.match(duration) is None:
-        message = (
-            f"unrecognized nextest duration {duration!r}; nextest reads "
-            f"durations with humantime, which wants whole-number components "
-            f'each carrying a unit, such as "300s" or "2h 37m"'
-        )
-        raise NextestConfigurationError(message)
-    total = 0.0
-    for component in _COMPONENT.finditer(duration):
-        unit = component["unit"]
-        length = _UNIT_SECONDS.get(unit)
-        if length is None:
-            message = (
-                f"nextest duration {duration!r} names the unit {unit!r}, which "
-                f"humantime does not accept; note that 'm' is minutes and 'M' "
-                f"is months"
-            )
-            raise NextestConfigurationError(message)
-        total += float(component["value"]) * length
-    return total
 
 
 def _table(value: object) -> dict[str, object]:
@@ -388,3 +270,42 @@ def _with_default_overrides(declared: dict[str, Profile]) -> dict[str, Profile]:
         name: profile if name == "default" else profile._replace(inherited=inherited)
         for name, profile in declared.items()
     }
+
+
+#: A ``binary(...)`` term inside a nextest filterset.
+_BINARY_TERM: typ.Final[re.Pattern[str]] = re.compile(r"binary\(\s*([^)\s]+)\s*\)")
+
+
+def binaries_named(filterset: object) -> frozenset[str]:
+    """Return the test binaries a filterset names.
+
+    Parsed as terms rather than searched as text, so a filterset naming
+    ``binary(a) | binary(b)`` reports both and one naming neither
+    reports nothing. Only the names matter here: whether a term is
+    negated is the caller's question, because ``not binary(x)`` in a
+    ``default-filter`` excludes the binary while the same term in an
+    override's filter selects it.
+
+    Parameters
+    ----------
+    filterset
+        A ``filter`` or ``default-filter`` value, which need not be a
+        string.
+
+    Returns
+    -------
+    frozenset of str
+        Every binary name the filterset mentions.
+
+    Examples
+    --------
+    >>> sorted(binaries_named("binary(trybuild) | binary(ui)"))
+    ['trybuild', 'ui']
+    >>> binaries_named(None)
+    frozenset()
+    """
+    match filterset:
+        case str():
+            return frozenset(_BINARY_TERM.findall(filterset))
+        case _:
+            return frozenset()

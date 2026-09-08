@@ -2653,7 +2653,34 @@ profile with the longest tests, and the budgets that govern CI belong where a
 reader of that profile will find them rather than one section away.
 
 Both therefore set a 300 second base allowance and a 30 minute whole-run
-budget, and `ci` adds a 900 second override for `binary(trybuild)`.
+budget, and both add a 900 second override for the compile-contract binaries.
+
+### The compile-contract binaries are not ordinary tests
+
+A binary that drives `rustc` spawns a fresh compiler per case against the full
+crate, so the whole binary is minutes rather than seconds and the base allowance
+sized for the ordinary tests does not fit one. There are two of them:
+`tests/trybuild.rs` and `tests/schema_helpers_ui/main.rs`, which Cargo names
+`trybuild` and `schema_helpers_ui`.
+
+Only the first was named when the base allowance was first written. The second
+was not excluded from the default profile and had no override, so it ran under
+the 300 second bound: it measured 244, 249 and 257 seconds on run 34159479674
+and then exceeded 300 on run 34271865377, ending the suite on all three legs.
+Nothing in the ordering was wrong, and that is the point. Every value sat above
+the one inside it; nothing recorded which tests the base allowance was sized
+for.
+
+Both profiles now carry an override for both binaries, and
+`tests/workflow_contracts/compile_contract_budget_test.py` asserts that every
+compile-contract binary a profile runs is allowed 900 seconds. The binaries are
+discovered from the sources by their call to `trybuild::TestCases` rather than
+listed, because a new one appearing is the failure being guarded against. The
+discovered set is then pinned by name, so a reading that stopped recognizing one
+fails instead of sweeping over a smaller set, and both Cargo target forms,
+`tests/<name>.rs` and `tests/<name>/main.rs`, are represented in it. Which
+profile excludes which binary is pinned too: `default` excludes `trybuild` by
+its `default-filter` and runs `schema_helpers_ui`, and `ci` runs both.
 
 The contract reads each profile's own base `slow-timeout` specifically, not its
 text as a whole. An override carrying `terminate-after` would satisfy a
@@ -2758,9 +2785,10 @@ unit, written `300s`, `2h 37m` or `2h37m`, with no fractional values. A reader
 taking a single component would reject configuration nextest accepts and blame
 the file for it. Case matters, so `m` is minutes and `M` is months.
 
-The readings rest on `nextest_config.py`, `timeout_budgets.py`,
-`suite_lanes.py` and `suite_guards.py`, and are driven with controlled values
-in `timeout_reading_test.py` and `suite_guards_test.py`.
+The readings rest on `nextest_config.py`, `nextest_durations.py`,
+`nextest_errors.py`, `timeout_budgets.py`, `suite_lanes.py` and
+`suite_guards.py`, and are driven with controlled values in
+`timeout_reading_test.py` and `suite_guards_test.py`.
 
 The nextest configuration is parsed with `tomllib` rather than matched as text.
 A text match finds a key inside a comment, inside a `filter` string, or in a

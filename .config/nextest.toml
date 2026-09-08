@@ -32,10 +32,20 @@ default-filter = 'all()'
 slow-timeout = { period = "300s", terminate-after = 1, grace-period = "5s" }
 global-timeout = "30m"
 
+# The compile-contract binaries spawn a fresh rustc per case against the
+# full crate, so a whole binary is minutes rather than seconds and the
+# 300 s base allowance does not fit one. `trybuild` takes about seven
+# minutes together, which is why the default profile excludes it;
+# `schema_helpers_ui` is not excluded and measured 244 s, 249 s and 257 s
+# on run 34159479674 and then exceeded 300 s on 34271865377, which is what
+# a bound sized to the ordinary tests does to a binary of this kind.
+#
+# Both profiles carry the override because both run `schema_helpers_ui`.
+# Fifteen minutes is a bound rather than a measurement.
+[[profile.default.overrides]]
+filter = 'binary(trybuild) | binary(schema_helpers_ui)'
+slow-timeout = { period = "900s", terminate-after = 1, grace-period = "5s" }
+
 [[profile.ci.overrides]]
-# The trybuild compile-contract tests spawn a fresh rustc per case against
-# the full crate and take about seven minutes together, which is why the
-# default profile excludes them. Fifteen minutes is that with room, and is
-# a bound rather than a measurement: nobody has timed a single case.
-filter = 'binary(trybuild)'
+filter = 'binary(trybuild) | binary(schema_helpers_ui)'
 slow-timeout = { period = "900s", terminate-after = 1, grace-period = "5s" }
