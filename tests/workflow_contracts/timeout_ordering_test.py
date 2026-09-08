@@ -43,12 +43,11 @@ from nextest_config import (
     Profile,
     profiles,
 )
+from suite_guards import failure_tolerances, watchdog_offences_of
 from suite_lanes import (
     SUITE_MARKERS,
     SuiteLane,
     _disguised_suite_lines,
-    _steps_of,
-    _watchdog_offences,
     normalized_condition,
     suite_lanes_of,
 )
@@ -201,13 +200,17 @@ def test_the_cargo_watchdog_tier_is_absent_rather_than_defaulted() -> None:
     budget, which is the inversion the canonical section exists to
     prevent, so both halves are asserted: the action is not used, and the
     variable is not set.
+
+    The variable is looked for in all three scopes a step inherits its
+    environment from. One written at workflow or job level reaches the
+    suite step exactly as one written on the step does, so a check
+    reading the step alone would report the tier as absent while the
+    watchdog was in force.
     """
     offenders = [
         offence
         for path in workflow_paths()
-        for job in jobs_of(path.name, load(path))
-        for step in _steps_of(job.body)
-        for offence in _watchdog_offences(job.workflow, job.job_id, step)
+        for offence in watchdog_offences_of(path.name, load(path))
     ]
     assert not offenders, (
         f"the cargo watchdog tier is documented as absent here, so adopting it "
@@ -341,4 +344,32 @@ def test_each_suite_lane_carries_the_condition_it_is_meant_to(
         f"these suite lanes do not carry the conditions the developers' "
         f"guide records, as expected versus found: {wrong}; a lane that is "
         f"skipped runs no suite, so none of the budgets above bounds it"
+    )
+
+
+def test_no_suite_lane_tolerates_the_suite_failing() -> None:
+    """A lane that discards the suite's verdict is not a bounded lane.
+
+    Every assertion above is about when the suite is stopped. None of
+    them says anything about what happens to the result, so a lane
+    carrying `continue-on-error` passes each of them while a failing
+    suite leaves the job, or the workflow, green.
+
+    Both scopes are read because they differ in effect and in fix: on
+    the step the job goes green with the step failed, on the job the
+    workflow goes green with the job failed. Anything but an explicit
+    false is reported, an expression included, because a contract that
+    cannot evaluate `${{ ... }}` must not certify the lane it guards.
+    """
+    tolerated = [
+        offence
+        for path in workflow_paths()
+        for job in jobs_of(path.name, load(path))
+        for offence in failure_tolerances(
+            job.workflow, job.job_id, job.body if isinstance(job.body, dict) else {}
+        )
+    ]
+    assert not tolerated, (
+        f"these suite lanes tolerate the suite failing, so the budgets this "
+        f"contract asserts bound a run whose verdict is discarded: {tolerated}"
     )

@@ -14,15 +14,60 @@ import re
 import tomllib
 import typing as typ
 
-_DURATION: typ.Final[re.Pattern[str]] = re.compile(
-    r"^\s*(?P<value>\d+(?:\.\d+)?)\s*(?P<unit>ms|s|m|h)\s*$"
+#: A duration as ``humantime`` spells it: one or more whole-number
+#: components, each with a unit, optionally separated by whitespace.
+#: nextest deserializes every duration with ``humantime_serde``, which
+#: accepts ``"2h 37m"`` and ``"2h37m"`` as readily as ``"300s"``, and
+#: rejects a fractional value such as ``"1.5s"`` outright. A reader
+#: accepting one component only rejects configuration nextest accepts,
+#: and the contract then fails on a file that is correct.
+_DURATION: typ.Final[re.Pattern[str]] = re.compile(r"\A\s*(?:\d+\s*[A-Za-z]+\s*)+\Z")
+
+#: One component of such a duration.
+_COMPONENT: typ.Final[re.Pattern[str]] = re.compile(
+    r"(?P<value>\d+)\s*(?P<unit>[A-Za-z]+)"
 )
 
+#: Every unit spelling ``humantime`` accepts, with its length in seconds.
+#: Case matters: ``m`` is minutes and ``M`` is months, so the table is
+#: consulted without folding case. A month is a twelfth of a Julian year
+#: and a year is 365.25 days, which is how ``humantime`` defines them.
 _UNIT_SECONDS: typ.Final[dict[str, float]] = {
+    "nanos": 1e-9,
+    "nsec": 1e-9,
+    "ns": 1e-9,
+    "usec": 1e-6,
+    "us": 1e-6,
+    "millis": 0.001,
+    "msec": 0.001,
     "ms": 0.001,
+    "seconds": 1.0,
+    "second": 1.0,
+    "secs": 1.0,
+    "sec": 1.0,
     "s": 1.0,
+    "minutes": 60.0,
+    "minute": 60.0,
+    "mins": 60.0,
+    "min": 60.0,
     "m": 60.0,
+    "hours": 3600.0,
+    "hour": 3600.0,
+    "hrs": 3600.0,
+    "hr": 3600.0,
     "h": 3600.0,
+    "days": 86400.0,
+    "day": 86400.0,
+    "d": 86400.0,
+    "weeks": 604800.0,
+    "week": 604800.0,
+    "w": 604800.0,
+    "months": 2630016.0,
+    "month": 2630016.0,
+    "M": 2630016.0,
+    "years": 31557600.0,
+    "year": 31557600.0,
+    "y": 31557600.0,
 }
 
 
@@ -62,11 +107,19 @@ class Profile(typ.NamedTuple):
         allowance be deleted unnoticed.
     overrides
         The profile's ``[[overrides]]`` entries, in file order.
+    inherited
+        ``[[profile.default.overrides]]``, in file order, for a profile
+        other than ``default``. nextest consults the default profile's
+        overrides for whichever profile is selected, after that
+        profile's own, so a test can be governed by an override the
+        selected profile never declares. Empty for ``default`` itself,
+        whose own overrides are already in :attr:`overrides`.
     """
 
     name: str
     own: dict[str, object]
     overrides: tuple[dict[str, object], ...]
+    inherited: tuple[dict[str, object], ...] = ()
 
     def tables(self) -> tuple[dict[str, object], ...]:
         """Return every table the profile reads a budget from.
@@ -74,9 +127,31 @@ class Profile(typ.NamedTuple):
         Returns
         -------
         tuple of dict
-            The profile's own table first, then each override.
+            The profile's own table, then each override, then each
+            override inherited from ``default``.
         """
-        return (self.own, *self.overrides)
+        return tuple(table for _, table in self.sources())
+
+    def sources(self) -> tuple[tuple[str, dict[str, object]], ...]:
+        """Return every table with the dotted path that declares it.
+
+        A budget inherited from ``[[profile.default.overrides]]`` is
+        reported against ``profile.default``, where it is written, so a
+        failure sends the reader to the line that has to change rather
+        than to the profile that inherits it.
+
+        Returns
+        -------
+        tuple of (str, dict)
+            The declaring path and the table, own first, then this
+            profile's overrides, then the inherited ones.
+        """
+        own = f"profile.{self.name}"
+        return (
+            (own, self.own),
+            *((own, table) for table in self.overrides),
+            *(("profile.default", table) for table in self.inherited),
+        )
 
 
 def seconds(duration: str) -> float:
@@ -85,7 +160,8 @@ def seconds(duration: str) -> float:
     Parameters
     ----------
     duration
-        A duration as nextest spells it, such as ``"300s"``.
+        A duration as nextest spells it, such as ``"300s"`` or the
+        multi-component ``"2h 37m"``.
 
     Returns
     -------
@@ -96,12 +172,34 @@ def seconds(duration: str) -> float:
     ------
     NextestConfigurationError
         If the text is not a duration nextest would accept.
+
+    Examples
+    --------
+    >>> seconds("300s")
+    300.0
+    >>> seconds("2h 37m")
+    9420.0
     """
-    match = _DURATION.match(duration)
-    if match is None:
-        message = f"unrecognized nextest duration {duration!r}"
+    if _DURATION.match(duration) is None:
+        message = (
+            f"unrecognized nextest duration {duration!r}; nextest reads "
+            f"durations with humantime, which wants whole-number components "
+            f'each carrying a unit, such as "300s" or "2h 37m"'
+        )
         raise NextestConfigurationError(message)
-    return float(match["value"]) * _UNIT_SECONDS[match["unit"]]
+    total = 0.0
+    for component in _COMPONENT.finditer(duration):
+        unit = component["unit"]
+        length = _UNIT_SECONDS.get(unit)
+        if length is None:
+            message = (
+                f"nextest duration {duration!r} names the unit {unit!r}, which "
+                f"humantime does not accept; note that 'm' is minutes and 'M' "
+                f"is months"
+            )
+            raise NextestConfigurationError(message)
+        total += float(component["value"]) * length
+    return total
 
 
 def _table(value: object) -> dict[str, object]:
@@ -117,7 +215,11 @@ def _table(value: object) -> dict[str, object]:
     dict of str to object
         The table, or an empty one when the value is not a table.
     """
-    return dict(value) if isinstance(value, dict) else {}
+    match value:
+        case dict():
+            return dict(value)
+        case _:
+            return {}
 
 
 def _entries(value: object) -> list[object]:
@@ -133,7 +235,11 @@ def _entries(value: object) -> list[object]:
     list of object
         The list, or an empty one when the value is not a list.
     """
-    return list(value) if isinstance(value, list) else []
+    match value:
+        case list():
+            return list(value)
+        case _:
+            return []
 
 
 def profiles(config_text: str) -> dict[str, Profile]:
@@ -147,7 +253,8 @@ def profiles(config_text: str) -> dict[str, Profile]:
     Returns
     -------
     dict of str to Profile
-        Profile name to its table and overrides.
+        Profile name to its table, its overrides, and the default
+        profile's overrides that nextest consults for it.
 
     Raises
     ------
@@ -159,13 +266,11 @@ def profiles(config_text: str) -> dict[str, Profile]:
     except tomllib.TOMLDecodeError as error:
         message = f"the nextest configuration is not valid TOML: {error}"
         raise NextestConfigurationError(message) from error
-    found: dict[str, Profile] = {}
-    for name, raw in _table(parsed.get("profile")).items():
-        table = _table(raw)
-        overrides = tuple(_table(entry) for entry in _entries(table.get("overrides")))
-        own = {key: value for key, value in table.items() if key != "overrides"}
-        found[str(name)] = Profile(name=str(name), own=own, overrides=overrides)
-    return found
+    declared = {
+        str(name): _declared_profile(str(name), raw)
+        for name, raw in _table(parsed.get("profile")).items()
+    }
+    return _with_default_overrides(declared)
 
 
 def _slow_timeout(table: dict[str, object]) -> object:
@@ -233,3 +338,53 @@ def _budget_of(path: str, value: object) -> float:
         )
         raise UnboundedTestError(message)
     return seconds(period) * float(str(multiplier))
+
+
+def _declared_profile(name: str, raw: object) -> Profile:
+    """Return one ``[profile.<name>]`` table as a profile.
+
+    Parameters
+    ----------
+    name
+        The profile's name.
+    raw
+        The parsed value of its table.
+
+    Returns
+    -------
+    Profile
+        The profile, with nothing inherited yet.
+    """
+    table = _table(raw)
+    return Profile(
+        name=name,
+        own={key: value for key, value in table.items() if key != "overrides"},
+        overrides=tuple(_table(entry) for entry in _entries(table.get("overrides"))),
+    )
+
+
+def _with_default_overrides(declared: dict[str, Profile]) -> dict[str, Profile]:
+    """Return each profile carrying the overrides it inherits.
+
+    nextest consults ``[[profile.default.overrides]]`` for whichever
+    profile is selected, so every profile but ``default`` itself takes
+    them. ``default`` does not, because its own overrides are already
+    recorded once.
+
+    Parameters
+    ----------
+    declared
+        Each profile as its own table declares it.
+
+    Returns
+    -------
+    dict of str to Profile
+        The same profiles, with ``inherited`` filled in.
+    """
+    inherited = declared["default"].overrides if "default" in declared else ()
+    if not inherited:
+        return declared
+    return {
+        name: profile if name == "default" else profile._replace(inherited=inherited)
+        for name, profile in declared.items()
+    }
