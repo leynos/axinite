@@ -11,12 +11,6 @@ import typing as typ
 
 from _workflow_policy import jobs_of, load, workflow_paths
 
-#: The environment variable the shared coverage action reads for its
-#: wall-clock cap on one `cargo` invocation. Asserted absent: this
-#: repository does not use that action.
-WATCHDOG_VARIABLE: typ.Final[str] = "RUN_RUST_CARGO_WAIT_TIMEOUT"
-COVERAGE_ACTION: typ.Final[str] = "shared-actions/.github/actions/generate-coverage"
-
 #: The commands that run the workspace suite under nextest. A step
 #: running one of these is bound by both nextest tiers. Matched as whole
 #: tokens on the line, because `cargo nextest --version` is a probe and
@@ -247,56 +241,3 @@ def suite_lanes_of() -> tuple[SuiteLane, ...]:
                 )
             )
     return tuple(lanes)
-
-
-def _steps_of(job_body: object) -> list[dict[str, object]]:
-    """Return one job's steps, or an empty list.
-
-    Parameters
-    ----------
-    job_body
-        The job's parsed value, which need not be a mapping.
-
-    Returns
-    -------
-    list of dict
-        The step mappings, in the order the job runs them.
-    """
-    if not isinstance(job_body, dict):
-        return []
-    steps = job_body.get("steps")
-    if not isinstance(steps, list):
-        return []
-    return [step for step in steps if isinstance(step, dict)]
-
-
-def _watchdog_offences(
-    workflow: str, job_id: str, step: dict[str, object]
-) -> list[str]:
-    """Return what one step does that the absent tier forbids.
-
-    Two separate things are wrong, so they are reported separately: a
-    step may adopt the action without naming the variable, or name the
-    variable without adopting the action, and the fix differs.
-
-    Parameters
-    ----------
-    workflow
-        The workflow file's name.
-    job_id
-        The job's identifier.
-    step
-        One parsed step.
-
-    Returns
-    -------
-    list of str
-        One entry per offence, empty when the step commits none.
-    """
-    offences: list[str] = []
-    if COVERAGE_ACTION in str(step.get("uses", "")):
-        offences.append(f"{workflow}:{job_id} uses the action")
-    environment = step.get("env")
-    if isinstance(environment, dict) and WATCHDOG_VARIABLE in environment:
-        offences.append(f"{workflow}:{job_id} sets {WATCHDOG_VARIABLE}")
-    return offences
