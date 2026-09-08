@@ -11,6 +11,13 @@ returns lives here.
 import typing as typ
 
 from _workflow_policy import REPOSITORY_ROOT
+from nextest_config import (
+    NextestConfigurationError,
+    Profile,
+    _budget_of,
+    _slow_timeout,
+    seconds,
+)
 
 #: Everything the job timer covers that the whole-run budget does not:
 #: the checkout, the toolchain probe, the database fixtures, the
@@ -44,14 +51,6 @@ TERMINATION_SAFETY_MARGIN_SECONDS: typ.Final[float] = 60.0
 
 NEXTEST_CONFIG = REPOSITORY_ROOT / ".config" / "nextest.toml"
 
-from nextest_config import (
-    NextestConfigurationError,
-    Profile,
-    _budget_of,
-    _slow_timeout,
-    seconds,
-)
-
 
 def largest_test_allowance(profile: Profile) -> float:
     """Return the longest a single test may run under one profile.
@@ -60,6 +59,20 @@ def largest_test_allowance(profile: Profile) -> float:
     ``terminate-after`` of them, so the budget is their product. Reading
     the period alone would understate an override that raised the
     multiplier rather than the period.
+
+    Read over the overrides nextest consults for this profile, which
+    includes ``[[profile.default.overrides]]`` and not only the
+    profile's own. A default override matching a test the selected
+    profile's overrides do not name governs that test, so omitting them
+    understates the effective allowance: an inherited 3,600 s override
+    would sit above a 1,800 s whole-run budget and be reported as
+    ordered.
+
+    The result is an upper bound rather than the allowance any one test
+    receives. Which override governs a test depends on a filterset this
+    contract cannot evaluate statically, so the largest is taken; that
+    errs towards demanding a whole-run budget above every allowance
+    declared, which is the direction the tiers have to hold in.
 
     Parameters
     ----------
@@ -77,8 +90,8 @@ def largest_test_allowance(profile: Profile) -> float:
         If the profile declares no ``slow-timeout`` at all.
     """
     budgets = [
-        _budget_of(f"profile.{profile.name}", value)
-        for table in profile.tables()
+        _budget_of(path, value)
+        for path, table in profile.sources()
         if (value := _slow_timeout(table)) is not None
     ]
     if not budgets:
@@ -128,6 +141,10 @@ def termination_allowance(profile: Profile) -> float:
     follow. A single floor over the two would absorb every grace period
     below the margin, making a raised one look free until the run it
     cancelled.
+
+    Read over the same tables as the per-test allowance, so a grace
+    period inherited from ``[[profile.default.overrides]]`` raises the
+    requirement here as it does the wait in force.
 
     Parameters
     ----------
