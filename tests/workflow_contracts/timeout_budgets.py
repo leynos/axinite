@@ -9,6 +9,7 @@ returns lives here.
 """
 
 import typing as typ
+from pathlib import Path
 
 from _workflow_policy import REPOSITORY_ROOT
 from nextest_config import (
@@ -16,6 +17,7 @@ from nextest_config import (
     Profile,
     _budget_of,
     _slow_timeout,
+    binaries_named,
     seconds,
 )
 
@@ -227,3 +229,145 @@ def required_ceiling(parsed: dict[str, Profile]) -> float:
         + OUTSIDE_RUN_ALLOWANCE_SECONDS
         + CEILING_MARGIN_SECONDS
     )
+
+
+#: What a compile-contract binary must be allowed, in seconds. These
+#: spawn a fresh `rustc` per case against the full crate, so a whole
+#: binary is minutes rather than seconds and the base allowance sized to
+#: the ordinary tests does not fit one.
+COMPILE_CONTRACT_ALLOWANCE_SECONDS: typ.Final[float] = 900.0
+
+#: The call that makes a test target a compile-contract binary.
+_COMPILE_CONTRACT_MARKER: typ.Final[str] = "trybuild::TestCases"
+
+
+def compile_contract_binaries(tests_directory: Path) -> frozenset[str]:
+    """Return the names of the test binaries that drive `rustc`.
+
+    Discovered from the sources rather than listed here, because the
+    failure this guards against is a new one appearing: `trybuild` was
+    named in the configuration and `schema_helpers_ui` was not, and the
+    second ran under the allowance sized for ordinary tests until a
+    slower runner ended it at 300 s.
+
+    Cargo names a test target after ``tests/<name>.rs`` or after the
+    directory in ``tests/<name>/main.rs``, and both forms are read.
+
+    Parameters
+    ----------
+    tests_directory
+        The crate's ``tests`` directory.
+
+    Returns
+    -------
+    frozenset of str
+        One name per compile-contract test binary.
+    """
+    flat = {
+        source.stem
+        for source in tests_directory.glob("*.rs")
+        if _drives_the_compiler(source)
+    }
+    nested = {
+        source.parent.name
+        for source in tests_directory.glob("*/main.rs")
+        if _drives_the_compiler(source)
+    }
+    return frozenset(flat | nested)
+
+
+def _drives_the_compiler(source: Path) -> bool:
+    """Return whether one test source builds cases with `rustc`.
+
+    Parameters
+    ----------
+    source
+        A test target's root source file.
+
+    Returns
+    -------
+    bool
+        True when the source constructs ``trybuild::TestCases``.
+    """
+    return _COMPILE_CONTRACT_MARKER in source.read_text(encoding="utf-8")
+
+
+def allowance_for_binary(profile: Profile, binary: str) -> float | None:
+    """Return what one profile allows a named binary, in seconds.
+
+    Returns
+    -------
+    float or None
+        The largest allowance an override naming the binary grants, or
+        None when no override names it and the profile's own base
+        allowance therefore governs it.
+
+    Parameters
+    ----------
+    profile
+        The profile to read.
+    binary
+        The test binary's name.
+    """
+    granted = [
+        _budget_of(path, value)
+        for path, table in profile.sources()
+        if table is not profile.own
+        and binary in binaries_named(table.get("filter"))
+        and (value := _slow_timeout(table)) is not None
+    ]
+    return max(granted) if granted else None
+
+
+def excluded_from(profile: Profile, binary: str) -> bool:
+    """Return whether a profile's default filter excludes a binary.
+
+    Parameters
+    ----------
+    profile
+        The profile to read.
+    binary
+        The test binary's name.
+
+    Returns
+    -------
+    bool
+        True when the profile's ``default-filter`` names the binary
+        under a negation, so the profile never runs it.
+    """
+    declared = profile.own.get("default-filter")
+    if not isinstance(declared, str):
+        return False
+    return f"not binary({binary})" in " ".join(declared.split())
+
+
+def binaries_short_of_allowance(
+    profile: Profile, binaries: frozenset[str]
+) -> dict[str, float | None]:
+    """Return the binaries a profile runs under too small an allowance.
+
+    A binary the profile excludes outright is not reported, since one
+    that never runs needs no allowance.
+
+    Parameters
+    ----------
+    profile
+        The profile to read.
+    binaries
+        The binaries that must carry the compile-contract allowance.
+
+    Returns
+    -------
+    dict of str to float or None
+        The offending binary and what it is allowed, None meaning the
+        profile's own base allowance governs it because no override
+        names it.
+    """
+    short: dict[str, float | None] = {}
+    for binary in sorted(binaries):
+        if excluded_from(profile, binary):
+            continue
+        allowance = allowance_for_binary(profile, binary)
+        if allowance is None or allowance < COMPILE_CONTRACT_ALLOWANCE_SECONDS:
+            short[binary] = allowance
+    return short
