@@ -9,6 +9,7 @@ WHITAKER ?= whitaker
 NIXIE ?= nixie
 UV ?= uv
 UV_ENV = UV_CACHE_DIR=.uv-cache UV_TOOL_DIR=.uv-tools
+RUST_PROVER_TOOLS_COMMIT := 2a9884d6e88a7821c7c94d256268aaa114534982
 RUFF_VERSION ?= 0.15.12
 PATHSPEC_VERSION ?= 1.1.1
 TYPOS_VERSION ?= 1.48.0
@@ -24,6 +25,7 @@ SPELLING_HELPER_PYTEST = PYTHONPATH=scripts $(UV_ENV) $(UV) run --no-project \
 	--python 3.14 --with pathspec==$(PATHSPEC_VERSION) --with pytest==9.0.2 \
 	--with pytest-cov==7.0.0 python -m pytest
 WASM_SHARED_TARGET_DIR ?= $(if $(CARGO_TARGET_DIR),$(CARGO_TARGET_DIR),target/wasm-extensions)
+REPAIR_CLAIMS_MANIFEST := verification/repair-claims/Cargo.toml
 GITHUB_TOOL_MANIFEST := tools-src/github/Cargo.toml
 GITHUB_TOOL_WASM_TARGET := wasm32-wasip2
 # Keep audit ignores centralized and remove each one as soon as the triggering
@@ -76,9 +78,30 @@ RUST_DECIMAL_AUDIT_FLAGS := \
 LIBSQL_AUDIT_FLAGS := \
 	--ignore RUSTSEC-2026-0258
 
+.PHONY: install-kani check-kani-version kani test-kani-tooling lint-kani-tooling
+
 .PHONY: all install install-with-overrides sync-local-wasm-overrides build-github-tool-wasm fmt check-fmt typecheck lint lint-clippy lint-whitaker markdownlint spelling spelling-phrase-check spelling-config spelling-config-write spelling-helper-test nixie audit rust-audit test test-cargo test-matrix test-matrix-cargo test-workflow-contracts clean
 
-all: check-fmt lint test spelling
+# Kani requires the binary-only `make install-kani` prerequisite.
+# The retained HashSet compatibility failure deliberately keeps this gate red.
+all: check-fmt lint test spelling kani
+
+install-kani:
+	python3 tools/kani/binary_tool.py install --prover-ref "$(RUST_PROVER_TOOLS_COMMIT)"
+
+check-kani-version:
+	python3 tools/kani/binary_tool.py check-version --prover-ref "$(RUST_PROVER_TOOLS_COMMIT)"
+
+kani: check-kani-version
+	python3 tools/kani/run_proofs.py
+
+lint-kani-tooling:
+	$(UV_ENV) $(UV) tool run --no-build ruff@$(RUFF_VERSION) format --check tools/kani/*.py tests/workflow_contracts/kani_binary_test.py
+	$(UV_ENV) $(UV) tool run --no-build ruff@$(RUFF_VERSION) check tools/kani/*.py tests/workflow_contracts/kani_binary_test.py
+
+test-kani-tooling:
+	$(UV_ENV) $(UV) run --no-project --no-build --python 3.14 --with pytest==9.0.2 --with pyyaml==6.0.3 \
+		python -m pytest tests/workflow_contracts/kani_binary_test.py -q
 
 install:
 	./scripts/build-wasm-extensions.sh
@@ -96,29 +119,36 @@ build-github-tool-wasm:
 fmt:
 	$(CARGO) fmt --all
 	$(CARGO) fmt --manifest-path $(GITHUB_TOOL_MANIFEST) --all
+	$(CARGO) fmt --manifest-path $(REPAIR_CLAIMS_MANIFEST) --all
+	rustfmt --edition 2024 tools/kani/*.rs
 	mdformat-all
 
 check-fmt:
 	$(CARGO) fmt --all -- --check
 	$(CARGO) fmt --manifest-path $(GITHUB_TOOL_MANIFEST) --all -- --check
+	$(CARGO) fmt --manifest-path $(REPAIR_CLAIMS_MANIFEST) --all -- --check
+	rustfmt --edition 2024 --check tools/kani/*.rs
 
 typecheck:
 	$(CARGO) check --all --benches --tests --examples $(TEST_FEATURES)
 	$(CARGO) check --all --benches --tests --examples --no-default-features --features libsql-test-helpers
 	$(CARGO) check --all --benches --tests --examples --all-features $(TEST_FEATURES)
 	$(CARGO) check --manifest-path $(GITHUB_TOOL_MANIFEST) --tests
+	$(CARGO) check --manifest-path $(REPAIR_CLAIMS_MANIFEST) --all-targets --locked
 
-lint: lint-clippy lint-whitaker
+lint: lint-clippy lint-whitaker lint-kani-tooling
 
 lint-clippy:
 	$(CARGO) clippy --all --benches --tests --examples $(TEST_FEATURES) -- -D warnings
 	$(CARGO) clippy --all --benches --tests --examples --no-default-features --features libsql-test-helpers -- -D warnings
 	$(CARGO) clippy --all --benches --tests --examples --all-features $(TEST_FEATURES) -- -D warnings
 	$(CARGO) clippy --manifest-path $(GITHUB_TOOL_MANIFEST) --tests -- -D warnings
+	$(CARGO) clippy --manifest-path $(REPAIR_CLAIMS_MANIFEST) --all-targets --locked -- -D warnings
 
 lint-whitaker:
 	RUSTFLAGS="-D warnings" $(WHITAKER) --all -- --all-targets --all-features
 	RUSTFLAGS="-D warnings" $(WHITAKER) --all --manifest-path $(GITHUB_TOOL_MANIFEST) -- --tests
+	RUSTFLAGS="-D warnings" $(WHITAKER) --all --manifest-path $(REPAIR_CLAIMS_MANIFEST) -- --tests
 
 markdownlint: spelling
 	MARKDOWNLINT_BASE="$(MARKDOWNLINT_BASE)" ./scripts/lint-changed-markdown.sh "$(BUNX)"
@@ -153,7 +183,7 @@ audit: rust-audit
 # them (cargo-audit needs a lockfile beside the manifest it audits).
 rust-audit:
 	find . \
-		\( -path '*/target/*' -o -path '*/node_modules/*' -o -path '*/.venv/*' -o -path './crates/*' \) -prune -o \
+		\( -path '*/target/*' -o -path '*/node_modules/*' -o -path '*/.venv/*' -o -path './crates/*' -o -path './.kani-binaries/*' \) -prune -o \
 		-name Cargo.toml -exec sh -c 'set -e; for manifest do \
 			manifest_dir=$$(dirname "$$manifest"); \
 			printf "Auditing Rust manifest %s\n" "$$manifest"; \
@@ -169,11 +199,15 @@ test:
 	$(MAKE) build-github-tool-wasm
 	$(NEXTEST) run --workspace $(TEST_FEATURES) --profile $(NEXTEST_PROFILE)
 	$(CARGO) test --manifest-path $(GITHUB_TOOL_MANIFEST)
+	$(CARGO) test --manifest-path $(REPAIR_CLAIMS_MANIFEST) --locked
+	$(MAKE) test-kani-tooling
 
 test-cargo:
 	$(MAKE) build-github-tool-wasm
 	$(CARGO) test $(TEST_FEATURES)
 	$(CARGO) test --manifest-path $(GITHUB_TOOL_MANIFEST)
+	$(CARGO) test --manifest-path $(REPAIR_CLAIMS_MANIFEST) --locked
+	$(MAKE) test-kani-tooling
 
 test-matrix:
 	$(MAKE) build-github-tool-wasm
@@ -196,4 +230,5 @@ test-workflow-contracts:
 clean:
 	$(CARGO) clean
 	$(CARGO) clean --manifest-path $(GITHUB_TOOL_MANIFEST)
+	$(CARGO) clean --manifest-path $(REPAIR_CLAIMS_MANIFEST)
 	rm -rf $(WASM_SHARED_TARGET_DIR)

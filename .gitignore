@@ -58,3 +58,6 @@ __pycache__/
 *.swp
 *.swo
 *~
+
+# Pinned verifier binary downloads and extracted components
+.kani-binaries/

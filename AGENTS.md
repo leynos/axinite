@@ -99,6 +99,13 @@ management.
   - `make check-fmt`
   - `make lint`
   - `make test`
+  - `make spelling`
+  - `make kani` (requires binary-only `make install-kani` first)
+- The isolated `verification/repair-claims` package shares production registry
+  source and is included explicitly in ordinary format, lint and test targets.
+  Kani 0.67.0 currently rejects the default `HashSet` entropy path; a failed
+  proof must remain a failure, never a skip or an inferred success. See
+  `docs/formal-verification-methods-in-axinite.md` for the current blocker.
 - Run `make audit` when dependency manifests, lockfiles, audit policy, or CI
   supply-chain gates change. It is intentionally separate from `make all`
   because it fetches the RustSec advisory database and requires network access.
