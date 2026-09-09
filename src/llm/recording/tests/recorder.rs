@@ -163,11 +163,9 @@ async fn request_hint_extraction() {
 }
 
 #[test]
-fn from_env_returns_none_when_unset() {
-    // SAFETY: This test is single-threaded and no other thread reads this var.
-    unsafe { std::env::remove_var("AXINITE_RECORD_TRACE") };
+fn from_context_returns_none_when_unset() {
     let stub = Arc::new(StubLlm::new("response"));
-    let result = RecordingLlm::from_env(stub);
+    let result = RecordingLlm::from_context(stub, &crate::config::EnvContext::default());
     assert!(result.is_none());
 }
 

@@ -1,12 +1,14 @@
-//! Unit tests for the restart tool's Docker environment handling.
+//! Unit tests for the restart tool's injected Docker environment handling.
 
 use super::*;
+use crate::config::EnvContext;
 
-/// Helper to simulate Docker environment for testing
-fn enable_docker_env() {
-    unsafe {
-        std::env::set_var("AXINITE_IN_DOCKER", "true");
-    }
+fn docker_tool() -> RestartTool {
+    RestartTool::from_context(
+        EnvContext::default()
+            .with_env("AXINITE_IN_DOCKER", "true")
+            .with_env("AXINITE_DISABLE_RESTART", "true"),
+    )
 }
 
 #[test]
@@ -14,7 +16,7 @@ fn test_restart_tool_approval_handled_at_command_level() {
     // Approval is handled at the /restart command level (web modal confirmation),
     // not at tool execution. Tool execution approval is for user-interactive approvals
     // that happen during job execution. The restart confirmation modal provides that gate.
-    let tool = RestartTool;
+    let tool = RestartTool::new();
     let approval = NativeTool::requires_approval(&tool, &serde_json::json!({}));
     // Default (Never) allows tool to execute in autonomous jobs created from approved commands
     assert!(matches!(approval, ApprovalRequirement::Never));
@@ -22,13 +24,13 @@ fn test_restart_tool_approval_handled_at_command_level() {
 
 #[test]
 fn test_restart_tool_name() {
-    let tool = RestartTool;
+    let tool = RestartTool::new();
     assert_eq!(NativeTool::name(&tool), "restart");
 }
 
 #[test]
 fn test_restart_tool_parameters_schema() {
-    let tool = RestartTool;
+    let tool = RestartTool::new();
     let schema = NativeTool::parameters_schema(&tool);
 
     // Verify schema has delay_secs property with bounds
@@ -42,14 +44,13 @@ fn test_restart_tool_parameters_schema() {
 
 #[test]
 fn test_restart_tool_requires_sanitization() {
-    let tool = RestartTool;
+    let tool = RestartTool::new();
     assert!(!NativeTool::requires_sanitization(&tool));
 }
 
 #[tokio::test]
 async fn test_restart_tool_delay_parameter_validation() {
-    enable_docker_env();
-    let tool = RestartTool;
+    let tool = docker_tool();
     let ctx = crate::context::JobContext::new("test", "test restart");
 
     // Test with valid delay
@@ -69,8 +70,7 @@ async fn test_restart_tool_delay_parameter_validation() {
 
 #[tokio::test]
 async fn test_restart_tool_delay_clamping() {
-    enable_docker_env();
-    let tool = RestartTool;
+    let tool = docker_tool();
     let ctx = crate::context::JobContext::new("test", "test restart");
 
     // Test with too small delay (should clamp to 1)
@@ -94,7 +94,7 @@ async fn test_restart_tool_delay_clamping() {
 
 #[test]
 fn test_restart_tool_description() {
-    let tool = RestartTool;
+    let tool = RestartTool::new();
     let desc = NativeTool::description(&tool);
     assert!(desc.contains("Restart"));
     assert!(desc.contains("Axinite"));
@@ -104,7 +104,7 @@ fn test_restart_tool_description() {
 
 #[test]
 fn test_restart_tool_schema_completeness() {
-    let tool = RestartTool;
+    let tool = RestartTool::new();
     let schema = NativeTool::parameters_schema(&tool);
 
     // Verify schema structure
@@ -123,8 +123,7 @@ fn test_restart_tool_schema_completeness() {
 
 #[tokio::test]
 async fn test_restart_tool_boundary_values() {
-    enable_docker_env();
-    let tool = RestartTool;
+    let tool = docker_tool();
     let ctx = crate::context::JobContext::new("test", "test restart");
 
     // Test minimum boundary (exactly 1)
@@ -157,8 +156,7 @@ async fn test_restart_tool_boundary_values() {
 
 #[tokio::test]
 async fn test_restart_tool_invalid_parameter_types() {
-    enable_docker_env();
-    let tool = RestartTool;
+    let tool = docker_tool();
     let ctx = crate::context::JobContext::new("test", "test restart");
 
     // String instead of integer - should use default
@@ -191,8 +189,7 @@ async fn test_restart_tool_invalid_parameter_types() {
 
 #[tokio::test]
 async fn test_restart_tool_output_structure() {
-    enable_docker_env();
-    let tool = RestartTool;
+    let tool = docker_tool();
     let ctx = crate::context::JobContext::new("test", "test restart");
 
     let result = tool
@@ -211,8 +208,7 @@ async fn test_restart_tool_output_structure() {
 
 #[tokio::test]
 async fn test_restart_tool_extra_parameters_ignored() {
-    enable_docker_env();
-    let tool = RestartTool;
+    let tool = docker_tool();
     let ctx = crate::context::JobContext::new("test", "test restart");
 
     // Extra parameters should be ignored
@@ -235,8 +231,7 @@ async fn test_restart_tool_extra_parameters_ignored() {
 
 #[tokio::test]
 async fn test_restart_tool_negative_numbers() {
-    enable_docker_env();
-    let tool = RestartTool;
+    let tool = docker_tool();
     let ctx = crate::context::JobContext::new("test", "test restart");
 
     // Negative number should clamp to 1
@@ -252,8 +247,7 @@ async fn test_restart_tool_negative_numbers() {
 
 #[tokio::test]
 async fn test_restart_tool_very_large_numbers() {
-    enable_docker_env();
-    let tool = RestartTool;
+    let tool = docker_tool();
     let ctx = crate::context::JobContext::new("test", "test restart");
 
     // Very large number should clamp to 30
@@ -268,8 +262,7 @@ async fn test_restart_tool_very_large_numbers() {
 
 #[tokio::test]
 async fn test_restart_tool_empty_object() {
-    enable_docker_env();
-    let tool = RestartTool;
+    let tool = docker_tool();
     let ctx = crate::context::JobContext::new("test", "test restart");
 
     // Empty object params should use all defaults
@@ -284,7 +277,7 @@ async fn test_restart_tool_empty_object() {
 
 #[test]
 fn test_restart_tool_approval_consistent_regardless_of_params() {
-    let tool = RestartTool;
+    let tool = RestartTool::new();
 
     // Approval requirement should be the same regardless of params
     let approval1 = NativeTool::requires_approval(&tool, &serde_json::json!({"delay_secs": 5}));
@@ -297,20 +290,11 @@ fn test_restart_tool_approval_consistent_regardless_of_params() {
     assert!(matches!(approval3, ApprovalRequirement::Never));
 }
 
-#[test]
-fn test_restart_tool_requires_docker_environment() {
-    // Test that restart is rejected when not in Docker (AXINITE_IN_DOCKER not set or false)
-    // Uses sync test to avoid async/env var ordering issues with test parallelization.
-    let in_docker = std::env::var("AXINITE_IN_DOCKER")
-        .map(|v| v.to_lowercase() == "true")
-        .unwrap_or(false);
+#[tokio::test]
+async fn test_restart_tool_requires_docker_environment() {
+    let tool = RestartTool::from_context(EnvContext::default());
+    let ctx = crate::context::JobContext::new("test", "test restart");
 
-    // Verify logic: when not in Docker, env var should be false/unset
-    if !in_docker {
-        // Simulating what the tool would do when AXINITE_IN_DOCKER is not set
-        assert!(
-            !in_docker,
-            "Test environment should have AXINITE_IN_DOCKER unset or false"
-        );
-    }
+    let result = tool.execute(serde_json::json!({}), &ctx).await;
+    assert!(matches!(result, Err(ToolError::ExecutionFailed(_))));
 }

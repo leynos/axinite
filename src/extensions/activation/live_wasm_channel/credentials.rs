@@ -112,7 +112,11 @@ pub(super) fn resolve_env_credentials(
     already_injected: &HashSet<String>,
 ) -> Vec<(String, String)> {
     resolve_env_credentials_with_reader(allowed_keys, already_injected, |placeholder| {
-        std::env::var(placeholder).ok()
+        {
+            #[expect(clippy::disallowed_methods, reason = "transitional #333: EnvContext")]
+            std::env::var(placeholder)
+        }
+        .ok()
     })
 }
 

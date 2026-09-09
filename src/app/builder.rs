@@ -68,7 +68,11 @@ impl AppBuilder {
             llm_override: None,
             handles: None,
             relay_config: crate::config::RelayConfig::from_env(),
-            gateway_token: std::env::var("GATEWAY_AUTH_TOKEN").ok(),
+            gateway_token: {
+                #[expect(clippy::disallowed_methods, reason = "transitional #333: EnvContext")]
+                std::env::var("GATEWAY_AUTH_TOKEN")
+            }
+            .ok(),
         }
     }
 

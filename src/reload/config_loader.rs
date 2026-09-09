@@ -4,7 +4,7 @@ use std::future::Future;
 use std::pin::Pin;
 use std::sync::Arc;
 
-use crate::config::Config;
+use crate::config::{Config, EnvContext};
 use crate::db::{SettingsStore, UserId};
 use crate::error::ConfigError;
 
@@ -40,6 +40,7 @@ where
 pub struct DbConfigLoader {
     settings_store: Arc<dyn SettingsStore>,
     user_id: UserId,
+    env: EnvContext,
 }
 
 impl DbConfigLoader {
@@ -49,16 +50,31 @@ impl DbConfigLoader {
     /// underlying store must live for the lifetime of the loader.
     /// `user_id` — identifier of the user whose configuration will be loaded.
     pub fn new(settings_store: Arc<dyn SettingsStore>, user_id: UserId) -> Self {
+        Self::from_context(settings_store, user_id, EnvContext::capture_ambient())
+    }
+
+    /// Create a database-backed loader with an explicit environment snapshot.
+    pub fn from_context(
+        settings_store: Arc<dyn SettingsStore>,
+        user_id: UserId,
+        env: EnvContext,
+    ) -> Self {
         Self {
             settings_store,
             user_id,
+            env,
         }
     }
 }
 
 impl NativeConfigLoader for DbConfigLoader {
     async fn load(&self) -> Result<Config, ConfigError> {
-        Config::from_db(self.settings_store.as_ref(), self.user_id.as_str()).await
+        Config::from_db_from_context(
+            self.settings_store.as_ref(),
+            self.user_id.as_str(),
+            &self.env,
+        )
+        .await
     }
 }
 
@@ -100,7 +116,6 @@ mod tests {
     use crate::db::settings::{NativeSettingsStore, SettingKey, UserId};
     use crate::error::DatabaseError;
     use crate::history::SettingRow;
-    use crate::testing::test_utils::EnvVarsGuard;
 
     #[automock]
     trait NativeSettingsStoreMock {
@@ -231,10 +246,6 @@ mod tests {
     /// `get_all_settings` and constructs a valid `Config` from the retrieved values.
     #[tokio::test]
     async fn db_config_loader_loads_config_from_store() {
-        let mut env_guard = EnvVarsGuard::new(&["DATABASE_URL", "AGENT_NAME"]);
-        env_guard.set("DATABASE_URL", "postgres://localhost/test");
-        env_guard.remove("AGENT_NAME");
-
         // Create mock store with some test settings
         let mut settings = HashMap::new();
         settings.insert(
@@ -251,7 +262,11 @@ mod tests {
             .returning(move |_| Ok(settings.clone()));
 
         let store = Arc::new(MockSettingsStore::new(inner));
-        let loader = DbConfigLoader::new(store, UserId::from("test_user"));
+        let loader = DbConfigLoader::from_context(
+            store,
+            UserId::from("test_user"),
+            EnvContext::default().with_env("DATABASE_URL", "postgres://localhost/axinite_test"),
+        );
 
         // Call load() and verify it returns a valid Config
         let config = NativeConfigLoader::load(&loader)

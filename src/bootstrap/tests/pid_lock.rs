@@ -93,17 +93,31 @@ fn test_pid_lock_creates_parent_dirs() {
 
 #[test]
 fn test_pid_lock_child_helper_holds_lock() {
-    if std::env::var("AXINITE_PID_LOCK_CHILD").ok().as_deref() != Some("1") {
+    if {
+        #[expect(clippy::disallowed_methods, reason = "transitional #333: EnvContext")]
+        std::env::var("AXINITE_PID_LOCK_CHILD")
+    }
+    .ok()
+    .as_deref()
+        != Some("1")
+    {
         return;
     }
 
     let pid_path = PathBuf::from(
-        std::env::var("AXINITE_PID_LOCK_PATH").expect("AXINITE_PID_LOCK_PATH missing"),
+        {
+            #[expect(clippy::disallowed_methods, reason = "transitional #333: EnvContext")]
+            std::env::var("AXINITE_PID_LOCK_PATH")
+        }
+        .expect("AXINITE_PID_LOCK_PATH missing"),
     );
-    let hold_ms = std::env::var("AXINITE_PID_LOCK_HOLD_MS")
-        .ok()
-        .and_then(|value| value.parse::<u64>().ok())
-        .unwrap_or(3000);
+    let hold_ms = {
+        #[expect(clippy::disallowed_methods, reason = "transitional #333: EnvContext")]
+        std::env::var("AXINITE_PID_LOCK_HOLD_MS")
+    }
+    .ok()
+    .and_then(|value| value.parse::<u64>().ok())
+    .unwrap_or(3000);
 
     let _lock = PidLock::acquire_at(pid_path).expect("child failed to acquire pid lock");
     thread::sleep(Duration::from_millis(hold_ms));

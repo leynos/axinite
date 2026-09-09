@@ -207,6 +207,10 @@ impl SslMode {
     /// Used by lightweight CLI tools (status, doctor) that don't run the
     /// full config pipeline.
     pub fn from_env() -> Self {
+        #[expect(
+            clippy::disallowed_methods,
+            reason = "owning ambient database-mode boundary for lightweight CLI tools"
+        )]
         std::env::var("DATABASE_SSLMODE")
             .ok()
             .and_then(|s| s.parse().ok())

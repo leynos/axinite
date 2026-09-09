@@ -82,7 +82,14 @@ async fn two_phase_fixture() -> anyhow::Result<(AppBuilder, PathBuf, tempfile::T
 #[cfg(feature = "libsql")]
 #[tokio::test]
 async fn init_database_migrates_legacy_disk_settings() -> anyhow::Result<()> {
-    if std::env::var("AXINITE_APP_MIGRATION_CHILD").ok().as_deref() == Some("1") {
+    if {
+        #[expect(clippy::disallowed_methods, reason = "transitional #333: EnvContext")]
+        std::env::var("AXINITE_APP_MIGRATION_CHILD")
+    }
+    .ok()
+    .as_deref()
+        == Some("1")
+    {
         run_init_database_migration_child().await?;
         return Ok(());
     }
@@ -130,11 +137,22 @@ async fn init_database_migrates_legacy_disk_settings() -> anyhow::Result<()> {
 
 #[cfg(feature = "libsql")]
 async fn run_init_database_migration_child() -> anyhow::Result<()> {
-    let axinite_dir = PathBuf::from(std::env::var("AXINITE_BASE_DIR")?);
-    let db_path = PathBuf::from(std::env::var("AXINITE_APP_MIGRATION_DB_PATH")?);
-    let skills_dir = PathBuf::from(std::env::var("AXINITE_APP_MIGRATION_SKILLS_DIR")?);
-    let installed_skills_dir =
-        PathBuf::from(std::env::var("AXINITE_APP_MIGRATION_INSTALLED_SKILLS_DIR")?);
+    let axinite_dir = PathBuf::from({
+        #[expect(clippy::disallowed_methods, reason = "transitional #333: EnvContext")]
+        std::env::var("AXINITE_BASE_DIR")
+    }?);
+    let db_path = PathBuf::from({
+        #[expect(clippy::disallowed_methods, reason = "transitional #333: EnvContext")]
+        std::env::var("AXINITE_APP_MIGRATION_DB_PATH")
+    }?);
+    let skills_dir = PathBuf::from({
+        #[expect(clippy::disallowed_methods, reason = "transitional #333: EnvContext")]
+        std::env::var("AXINITE_APP_MIGRATION_SKILLS_DIR")
+    }?);
+    let installed_skills_dir = PathBuf::from({
+        #[expect(clippy::disallowed_methods, reason = "transitional #333: EnvContext")]
+        std::env::var("AXINITE_APP_MIGRATION_INSTALLED_SKILLS_DIR")
+    }?);
 
     let config = Config::for_testing(db_path, skills_dir, installed_skills_dir).await?;
     let session = Arc::new(SessionManager::new(SessionConfig::default()));
