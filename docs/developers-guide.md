@@ -1069,6 +1069,15 @@ Table: Repair subsystem method summaries — signatures and purposes.
 | `load_persisted_broken_tool`    | `(store: &dyn Database, tool: &BrokenTool) -> Result<Option<BrokenTool>, RepairError>`                                                          | Reloads the current broken-tool row by name through `store.get_broken_tool_by_name` so repair-attempt limits are enforced against persisted state when available. Database errors are mapped to `RepairError::Failed`.                                               |
 | `execute_repair`                | `(&self, tool: &BrokenTool, builder: &dyn SoftwareBuilder, store: &dyn Database) -> Result<RepairResult, RepairError>`                          | Runs the post-claim repair body: enforces `max_repair_attempts`, builds the repair requirement, increments persisted repair attempts, and delegates the build to `attempt_repair_build`.                                                                             |
 
+The production `builder: Option<Arc<dyn SoftwareBuilder>>` field remains
+unconditional because `validate_repair_preconditions` reads it. Builder wiring
+through `DefaultSelfRepair::with_builder`, the `ToolRegistry`-backed `tools`
+state, and the related `extras` helper module are compiled only under
+`#[cfg(test)]`. Automatic broken-tool repair is therefore unwired in
+production and returns `RepairResult::ManualRequired` when no builder exists.
+Ordinary self-repair tests compile this support without a feature gate; the
+`self_repair_extras` feature was removed.
+
 Only `validate_repair_preconditions` and `execute_repair` access instance
 state. The other helper methods are static associated functions. Their unit
 tests live in `src/agent/self_repair/default_tests/`.
