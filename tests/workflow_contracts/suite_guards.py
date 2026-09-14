@@ -188,6 +188,13 @@ def failure_tolerances(
     the step the job goes green with the step failed, on the job the
     workflow goes green with the job failed.
 
+    A job that runs no suite step is not judged at all. The consumer
+    walks every job in every workflow, so reading the job-level key
+    unconditionally would report a documentation or lint lane that
+    tolerates its own failure as a lane discarding the suite's verdict,
+    which is an offence it has not committed and a fix that would change
+    the wrong line.
+
     Parameters
     ----------
     workflow
@@ -203,12 +210,15 @@ def failure_tolerances(
         One entry per offence, empty when the lane commits none.
     """
     offences: list[str] = []
+    suite_steps = _suite_steps(job_body)
+    if not suite_steps:
+        return offences
     declared = job_body.get("continue-on-error")
     if declared is not None and _tolerates_failure(declared):
         offences.append(
             f"{workflow}:{job_id} sets continue-on-error: {declared!r} on the job"
         )
-    for step in _suite_steps(job_body):
+    for step in suite_steps:
         on_step = step.get("continue-on-error")
         if on_step is not None and _tolerates_failure(on_step):
             offences.append(
