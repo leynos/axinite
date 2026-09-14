@@ -254,6 +254,8 @@ def test_a_slow_timeout_that_never_terminates_is_refused(table: str) -> None:
         pytest.param("1nanos", 1e-9, id="the-long-nanosecond-spelling"),
         pytest.param("1millis", 0.001, id="the-long-millisecond-spelling"),
         pytest.param("0", 0.0, id="the-bare-zero-humantime-reads-without-a-unit"),
+        pytest.param("1 0s", 10.0, id="whitespace-inside-the-number"),
+        pytest.param("1 2 . 3 4 s", 12.34, id="whitespace-throughout-the-number"),
     ],
 )
 def test_the_duration_grammar_matches_the_one_nextest_reads(
@@ -265,11 +267,12 @@ def test_the_duration_grammar_matches_the_one_nextest_reads(
     nextest accepts, so the contract would fail on a configuration that
     is correct and the failure would name the reader's limitation as
     though it were the file's fault. Every spelling here was measured
-    against humantime 2.4.0, the version nextest resolves, by running it
-    through that parser rather than inferring it from prose: fractional
-    values are accepted, whitespace is tolerated around the point, the
-    short week and year spellings are units, and the bare `0` is the one
-    duration humantime reads without a unit.
+    against humantime 2.3.0, which is what the lockfile of the pinned
+    cargo-nextest release resolves, by running it through that parser
+    rather than inferring it from prose: fractional values are accepted,
+    whitespace is tolerated around the point and inside the number
+    itself, the short week and year spellings are units, and the bare
+    `0` is the one duration humantime reads without a unit.
     """
     assert seconds(duration) == pytest.approx(expected), (
         f"{duration!r} must read as {expected} seconds"
@@ -287,6 +290,8 @@ def test_the_duration_grammar_matches_the_one_nextest_reads(
         pytest.param("300 fortnights", id="an-unknown-unit"),
         pytest.param("1S", id="a-unit-whose-case-is-wrong"),
         pytest.param("00", id="a-zero-that-is-not-the-bare-one"),
+        pytest.param(" 0 ", id="a-bare-zero-carrying-whitespace"),
+        pytest.param("0 ", id="a-bare-zero-with-a-trailing-space"),
         pytest.param("", id="empty"),
     ],
 )
@@ -296,8 +301,12 @@ def test_a_duration_nextest_would_refuse_is_refused_here(duration: str) -> None:
     ``humantime`` admits a fractional part but nothing looser, so a
     reader that accepted more would put a number on a configuration
     nextest fails to load, and the contract would certify a file that
-    cannot run. Each spelling here was refused by humantime 2.4.0 when
-    the cases were run through it.
+    cannot run. Each spelling here was refused by humantime 2.3.0, the
+    version the pinned cargo-nextest release resolves, when the cases
+    were run through it. The bare zero is the sharpest: humantime
+    special-cases the exact text before reading a character, so a reader
+    that stripped whitespace before comparing would accept `" 0 "`,
+    which nextest rejects.
     """
     with pytest.raises(NextestConfigurationError):
         seconds(duration)

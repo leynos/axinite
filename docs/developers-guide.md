@@ -2794,12 +2794,18 @@ Durations are read with the grammar `humantime` accepts, which is what nextest
 deserializes them with: a sequence of components each carrying a unit, written
 `300s`, `2h 37m` or `2h37m`. A reader taking a single component would reject
 configuration nextest accepts and blame the file for it. The grammar was
-measured against humantime 2.4.0, the version nextest resolves, by compiling
-that parser and running the cases through it. A value may carry a fractional
-part, and whitespace is tolerated around the point, so `1.5m` and `1 . 5 m` are
-both ninety seconds. The short spellings `wk`, `wks`, `yr` and `yrs` are units
-alongside the longer ones, and the bare `0` is the one duration humantime reads
-without a unit. Case matters, so `m` is minutes and `M` is months.
+measured against humantime 2.3.0, which is what the lockfile of the pinned
+cargo-nextest release resolves, by compiling that parser and running the cases
+through it. Naming the version matters: an earlier note here cited 2.4.0, which
+is the newest release rather than the one `cargo-nextest@0.9.140` pins. A value
+may carry a fractional part, and whitespace is tolerated around the point, so
+`1.5m` and `1 . 5 m` are both ninety seconds. Whitespace inside the number is
+ignored too, so `1 0s` is ten seconds and `1 2 . 3 4 s` is 12.34. The short
+spellings `wk`, `wks`, `yr` and `yrs` are units alongside the longer ones. The
+bare `0` is the one duration humantime reads without a unit, and it is the exact
+text: its parser special-cases `0` before reading a character, so `" 0 "` is
+refused and a reader that stripped whitespace first would accept a duration
+nextest rejects. Case matters, so `m` is minutes and `M` is months.
 
 The readings rest on `nextest_config.py`, `nextest_durations.py`,
 `nextest_errors.py`, `timeout_budgets.py`, `suite_lanes.py` and
