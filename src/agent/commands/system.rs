@@ -118,9 +118,12 @@ impl Agent {
             ));
         }
         // Environment check: restart is only available in Docker containers
-        let in_docker = std::env::var("AXINITE_IN_DOCKER")
-            .map(|v| v.to_lowercase() == "true")
-            .unwrap_or(false);
+        let in_docker = {
+            #[expect(clippy::disallowed_methods, reason = "transitional #333: EnvContext")]
+            std::env::var("AXINITE_IN_DOCKER")
+        }
+        .map(|v| v.to_lowercase() == "true")
+        .unwrap_or(false);
 
         tracing::debug!("[commands::restart] AXINITE_IN_DOCKER={}", in_docker);
 
@@ -136,7 +139,7 @@ impl Agent {
         // Execute restart tool directly (don't dispatch as a job for LLM planning)
         // This ensures the tool runs immediately without LLM involvement
         use crate::tools::Tool;
-        let tool = crate::tools::builtin::RestartTool;
+        let tool = crate::tools::builtin::RestartTool::new();
         let params = serde_json::json!({});
 
         // Create a minimal JobContext for the tool

@@ -45,22 +45,38 @@ pub use wizard::{SetupConfig, SetupWizard};
 /// session file on disk. Not safe to call concurrently with `env::set_var`.
 #[cfg(any(feature = "postgres", feature = "libsql"))]
 pub fn check_onboard_needed() -> Option<&'static str> {
-    let has_db = std::env::var("DATABASE_URL").is_ok()
-        || std::env::var("LIBSQL_PATH").is_ok()
+    let has_db = {
+        #[expect(clippy::disallowed_methods, reason = "transitional #333: EnvContext")]
+        std::env::var("DATABASE_URL")
+    }
+    .is_ok()
+        || {
+            #[expect(clippy::disallowed_methods, reason = "transitional #333: EnvContext")]
+            std::env::var("LIBSQL_PATH")
+        }
+        .is_ok()
         || crate::config::default_libsql_path().exists();
 
     if !has_db {
         return Some("Database not configured");
     }
 
-    if std::env::var("ONBOARD_COMPLETED")
-        .map(|v| v == "true")
-        .unwrap_or(false)
+    if {
+        #[expect(clippy::disallowed_methods, reason = "transitional #333: EnvContext")]
+        std::env::var("ONBOARD_COMPLETED")
+    }
+    .map(|v| v == "true")
+    .unwrap_or(false)
     {
         return None;
     }
 
-    if std::env::var("NEARAI_API_KEY").is_err() {
+    if {
+        #[expect(clippy::disallowed_methods, reason = "transitional #333: EnvContext")]
+        std::env::var("NEARAI_API_KEY")
+    }
+    .is_err()
+    {
         let session_path = crate::config::default_session_path();
         if !session_path.exists() {
             return Some("First run");

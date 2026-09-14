@@ -8,17 +8,26 @@ use std::sync::Arc;
 use secrecy::{ExposeSecret, SecretString};
 
 use super::print_info;
+use crate::config::EnvContext;
 use crate::llm::{SessionConfig, SessionManager, create_llm_provider};
 
 pub(super) async fn fetch_nearai_models(
     session_manager: Option<&Arc<SessionManager>>,
+) -> Vec<String> {
+    fetch_nearai_models_from(session_manager, &EnvContext::capture_ambient()).await
+}
+
+/// Fetch NEAR AI models using an explicit configuration snapshot.
+pub(super) async fn fetch_nearai_models_from(
+    session_manager: Option<&Arc<SessionManager>>,
+    ctx: &EnvContext,
 ) -> Vec<String> {
     let session = match session_manager {
         Some(session) => Arc::clone(session),
         None => return vec![],
     };
 
-    let config = build_nearai_model_fetch_config(session.get_api_key().await);
+    let config = build_nearai_model_fetch_config_from(session.get_api_key().await, ctx);
 
     match create_llm_provider(&config, session).await {
         Ok(provider) => match provider.list_models().await {
@@ -41,13 +50,10 @@ pub(super) async fn fetch_nearai_models(
     }
 }
 
-/// Build the `LlmConfig` used by `fetch_nearai_models` to list available models.
-///
-/// Uses the current in-memory NEAR AI Cloud API key, when present, so users
-/// who authenticated via option 4 do not get re-prompted during model
-/// selection.
-pub(super) fn build_nearai_model_fetch_config(
+/// Build the model-fetch configuration from an explicit environment snapshot.
+pub(super) fn build_nearai_model_fetch_config_from(
     api_key: Option<SecretString>,
+    ctx: &EnvContext,
 ) -> crate::config::LlmConfig {
     let api_key = api_key.filter(|key| !key.expose_secret().trim().is_empty());
 
@@ -58,9 +64,14 @@ pub(super) fn build_nearai_model_fetch_config(
     } else {
         "https://private.near.ai"
     };
-    let base_url = std::env::var("NEARAI_BASE_URL").unwrap_or_else(|_| default_base.to_string());
-    let auth_base_url =
-        std::env::var("NEARAI_AUTH_URL").unwrap_or_else(|_| "https://private.near.ai".to_string());
+    let base_url = ctx
+        .get("NEARAI_BASE_URL")
+        .unwrap_or(default_base)
+        .to_string();
+    let auth_base_url = ctx
+        .get("NEARAI_AUTH_URL")
+        .unwrap_or("https://private.near.ai")
+        .to_string();
 
     crate::config::LlmConfig {
         backend: "nearai".to_string(),

@@ -67,7 +67,11 @@ async fn run_import_openclaw(
     } else if let Some(path) = OpenClawImporter::detect() {
         path
     } else {
-        let home = std::env::var("HOME").unwrap_or_else(|_| ".".to_string());
+        let home = {
+            #[expect(clippy::disallowed_methods, reason = "transitional #333: EnvContext")]
+            std::env::var("HOME")
+        }
+        .unwrap_or_else(|_| ".".to_string());
         PathBuf::from(home).join(".openclaw")
     };
 
@@ -87,7 +91,10 @@ async fn run_import_openclaw(
         .map_err(|e| anyhow::anyhow!("Failed to initialize database: {}", e))?;
 
     // Initialize secrets store with master key from env or keychain
-    let secrets_crypto = if let Ok(master_key_hex) = std::env::var("SECRETS_MASTER_KEY") {
+    let secrets_crypto = if let Ok(master_key_hex) = {
+        #[expect(clippy::disallowed_methods, reason = "transitional #333: EnvContext")]
+        std::env::var("SECRETS_MASTER_KEY")
+    } {
         Arc::new(
             crate::secrets::SecretsCrypto::new(SecretString::from(master_key_hex))
                 .map_err(|e| anyhow::anyhow!("Failed to initialize secrets: {}", e))?,

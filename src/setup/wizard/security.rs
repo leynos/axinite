@@ -34,7 +34,11 @@ impl SetupWizard {
     /// Step 2: Security (secrets master key).
     pub(super) async fn step_security(&mut self) -> Result<(), SetupError> {
         // Check current configuration
-        let env_key_exists = std::env::var("SECRETS_MASTER_KEY").is_ok();
+        let env_key_exists = {
+            #[expect(clippy::disallowed_methods, reason = "transitional #333: EnvContext")]
+            std::env::var("SECRETS_MASTER_KEY")
+        }
+        .is_ok();
 
         if env_key_exists {
             print_info("Secrets master key found in SECRETS_MASTER_KEY environment variable.");
@@ -134,7 +138,12 @@ impl SetupWizard {
     /// (keychain on macOS, env var fallback).
     pub(super) async fn auto_setup_security(&mut self) -> Result<(), SetupError> {
         // Check env var first
-        if std::env::var("SECRETS_MASTER_KEY").is_ok() {
+        if {
+            #[expect(clippy::disallowed_methods, reason = "transitional #333: EnvContext")]
+            std::env::var("SECRETS_MASTER_KEY")
+        }
+        .is_ok()
+        {
             self.settings.secrets_master_key_source = KeySource::Env;
             print_success("Security configured (env var)");
             return Ok(());
@@ -194,7 +203,10 @@ impl SetupWizard {
         }
 
         // Try to load master key from keychain or env
-        let key = if let Ok(env_key) = std::env::var("SECRETS_MASTER_KEY") {
+        let key = if let Ok(env_key) = {
+            #[expect(clippy::disallowed_methods, reason = "transitional #333: EnvContext")]
+            std::env::var("SECRETS_MASTER_KEY")
+        } {
             env_key
         } else if let Ok(keychain_key) = crate::secrets::keychain::get_master_key().await {
             hex_encode_key(&keychain_key)
@@ -264,11 +276,13 @@ impl SetupWizard {
             p.clone()
         } else {
             // Fall back to creating one from settings/env
-            let url = self
-                .settings
-                .database_url
-                .clone()
-                .or_else(|| std::env::var("DATABASE_URL").ok());
+            let url = self.settings.database_url.clone().or_else(|| {
+                {
+                    #[expect(clippy::disallowed_methods, reason = "transitional #333: EnvContext")]
+                    std::env::var("DATABASE_URL")
+                }
+                .ok()
+            });
 
             if let Some(url) = url {
                 self.test_database_connection_postgres(&url).await?;

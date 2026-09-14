@@ -57,7 +57,12 @@ pub fn check_requirements_sync(requirements: &GatingRequirements) -> GatingResul
     }
 
     for var in &requirements.env {
-        if std::env::var(var).is_err() {
+        if {
+            #[expect(clippy::disallowed_methods, reason = "transitional #333: EnvContext")]
+            std::env::var(var)
+        }
+        .is_err()
+        {
             failures.push(format!("required env var not set: {}", var));
         }
     }

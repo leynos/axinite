@@ -41,22 +41,31 @@ fn default_tools_dir() -> PathBuf {
 fn default_channels_dir() -> PathBuf {
     axinite_base_dir().join("channels")
 }
-
 fn db_backend_name() -> String {
-    std::env::var("DATABASE_BACKEND")
-        .ok()
-        .unwrap_or_else(|| "postgres".to_string())
+    {
+        #[expect(clippy::disallowed_methods, reason = "transitional #333: EnvContext")]
+        std::env::var("DATABASE_BACKEND")
+    }
+    .ok()
+    .unwrap_or_else(|| "postgres".to_string())
 }
-
 async fn print_database_status(db_backend: &str) {
     print!("  Database:    ");
     match db_backend {
         "libsql" | "turso" | "sqlite" => {
-            let path = std::env::var("LIBSQL_PATH")
-                .map(std::path::PathBuf::from)
-                .unwrap_or_else(|_| crate::config::default_libsql_path());
+            let path = {
+                #[expect(clippy::disallowed_methods, reason = "transitional #333: EnvContext")]
+                std::env::var("LIBSQL_PATH")
+            }
+            .map(std::path::PathBuf::from)
+            .unwrap_or_else(|_| crate::config::default_libsql_path());
             if path.exists() {
-                let turso = if std::env::var("LIBSQL_URL").is_ok() {
+                let turso = if {
+                    #[expect(clippy::disallowed_methods, reason = "transitional #333: EnvContext")]
+                    std::env::var("LIBSQL_URL")
+                }
+                .is_ok()
+                {
                     " + Turso sync"
                 } else {
                     ""
@@ -67,7 +76,12 @@ async fn print_database_status(db_backend: &str) {
             }
         }
         _ => {
-            if std::env::var("DATABASE_URL").is_ok() {
+            if {
+                #[expect(clippy::disallowed_methods, reason = "transitional #333: EnvContext")]
+                std::env::var("DATABASE_URL")
+            }
+            .is_ok()
+            {
                 match check_database().await {
                     Ok(()) => println!("connected (PostgreSQL)"),
                     Err(e) => println!("error ({})", e),
@@ -100,12 +114,16 @@ fn print_session_status() {
         println!("not found (run `axinite onboard`)");
     }
 }
-
 fn print_secrets_status() {
     // Secrets (auto-detect from env only; skip keychain probe to avoid
     // triggering macOS system password dialogs on a simple status check)
     print!("  Secrets:     ");
-    if std::env::var("SECRETS_MASTER_KEY").is_ok() {
+    if {
+        #[expect(clippy::disallowed_methods, reason = "transitional #333: EnvContext")]
+        std::env::var("SECRETS_MASTER_KEY")
+    }
+    .is_ok()
+    {
         println!("configured (env)");
     } else {
         // We don't probe the keychain here because get_generic_password()
@@ -115,14 +133,20 @@ fn print_secrets_status() {
         println!("env not set (keychain may be configured)");
     }
 }
-
 fn print_embeddings_status(settings: &Settings) {
     print!("  Embeddings:  ");
     let emb_enabled = settings.embeddings.enabled
-        || std::env::var("OPENAI_API_KEY").is_ok()
-        || std::env::var("EMBEDDING_ENABLED")
-            .map(|v| v == "true")
-            .unwrap_or(false);
+        || {
+            #[expect(clippy::disallowed_methods, reason = "transitional #333: EnvContext")]
+            std::env::var("OPENAI_API_KEY")
+        }
+        .is_ok()
+        || {
+            #[expect(clippy::disallowed_methods, reason = "transitional #333: EnvContext")]
+            std::env::var("EMBEDDING_ENABLED")
+        }
+        .map(|v| v == "true")
+        .unwrap_or(false);
     if emb_enabled {
         println!(
             "enabled (provider: {}, model: {})",
@@ -165,13 +189,14 @@ fn print_channels_status(settings: &Settings) {
     }
     println!("{}", channel_info.join(", "));
 }
-
 fn print_heartbeat_status(settings: &Settings) {
     print!("  Heartbeat:   ");
-    let hb_enabled = settings.heartbeat.enabled
-        || std::env::var("HEARTBEAT_ENABLED")
-            .map(|v| v == "true")
-            .unwrap_or(false);
+    let hb_enabled = settings.heartbeat.enabled || {
+        #[expect(clippy::disallowed_methods, reason = "transitional #333: EnvContext")]
+        std::env::var("HEARTBEAT_ENABLED")
+    }
+    .map(|v| v == "true")
+    .unwrap_or(false);
     if hb_enabled {
         println!("enabled (interval: {}s)", settings.heartbeat.interval_secs);
     } else {
@@ -233,7 +258,11 @@ pub async fn run_status_command() -> anyhow::Result<()> {
 
 #[cfg(feature = "postgres")]
 async fn check_database() -> anyhow::Result<()> {
-    let url = std::env::var("DATABASE_URL").map_err(|_| anyhow::anyhow!("DATABASE_URL not set"))?;
+    let url = {
+        #[expect(clippy::disallowed_methods, reason = "transitional #333: EnvContext")]
+        std::env::var("DATABASE_URL")
+    }
+    .map_err(|_| anyhow::anyhow!("DATABASE_URL not set"))?;
 
     let config: deadpool_postgres::Config = deadpool_postgres::Config {
         url: Some(url),

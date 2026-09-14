@@ -5,6 +5,7 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Duration;
 
+use crate::config::EnvContext;
 use crate::context::JobContext;
 use crate::sandbox::{SandboxManager, SandboxPolicy};
 use crate::tools::tool::{
@@ -16,6 +17,8 @@ use super::requires_explicit_approval;
 
 /// Shell command execution tool.
 pub struct ShellTool {
+    /// Explicit snapshot used to forward safe process settings to direct commands.
+    pub(super) env: EnvContext,
     /// Working directory for commands (if None, uses job's working dir or cwd).
     pub(super) working_dir: Option<PathBuf>,
     /// Command timeout.
@@ -43,7 +46,13 @@ impl std::fmt::Debug for ShellTool {
 impl ShellTool {
     /// Create a new shell tool with default settings.
     pub fn new() -> Self {
+        Self::from_context(EnvContext::capture_ambient())
+    }
+
+    /// Create a shell tool that reads child-process settings from `env`.
+    pub fn from_context(env: EnvContext) -> Self {
         Self {
+            env,
             working_dir: None,
             timeout: DEFAULT_TIMEOUT,
             allow_dangerous: false,
@@ -143,7 +152,7 @@ impl NativeTool for ShellTool {
 
         let start = std::time::Instant::now();
         let (output, exit_code) = self
-            .execute_command(command, workdir, timeout, &ctx.extra_env)
+            .execute_command(command, workdir, timeout, &ctx.extra_env, &self.env)
             .await?;
         let duration = start.elapsed();
 
