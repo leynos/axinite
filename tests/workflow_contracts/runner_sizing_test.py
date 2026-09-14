@@ -33,8 +33,6 @@ ALL_JOBS: tuple[Job, ...] = tuple(jobs())
 APPROVED_SHAPES: dict[str, str] = {
     "ubicloud-standard-2": "jobs that compile little or nothing",
     "ubicloud-standard-4": "jobs that compile the workspace",
-    "ubicloud-standard-8": "no job chooses it; e2e.yml still holds it "
-    "because that workflow is right-sized separately",
 }
 
 SAMPLER = "./scripts/ci-resource-sampler.sh"
@@ -190,13 +188,16 @@ REVIEWED_SHAPES: dict[tuple[str, str], tuple[str, str]] = {
         "or 35 %",
     ),
     ("e2e.yml", "build"): (
-        "ubicloud-standard-8",
-        "not yet resized; its label is being changed by the scheduled-work "
-        "pull request and moves in the follow-up",
+        "ubicloud-standard-4",
+        "compiles the workspace under --no-default-features --features libsql "
+        "and peaked at 6,522 and 6,797 MiB on two cold runs, which leaves no "
+        "headroom in the 7,940 MiB a -2 presents",
     ),
     ("e2e.yml", "test"): (
-        "ubicloud-standard-8",
-        "not yet resized, as above",
+        "ubicloud-standard-2",
+        "compiles nothing: it downloads the binary `build` produced and "
+        "drives it from Playwright, peaking at 1,273 to 1,432 MiB across "
+        "nine legs",
     ),
 }
 
