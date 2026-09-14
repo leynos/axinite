@@ -2804,7 +2804,11 @@ without a unit. Case matters, so `m` is minutes and `M` is months.
 The readings rest on `nextest_config.py`, `nextest_durations.py`,
 `nextest_errors.py`, `timeout_budgets.py`, `suite_lanes.py` and
 `suite_guards.py`, and are driven with controlled values in
-`timeout_reading_test.py` and `suite_guards_test.py`.
+`timeout_reading_test.py` and `suite_guards_test.py`. Each reading takes
+what it reads rather than fetching it: `suite_lanes_in` queries supplied
+workflow documents and `suite_lanes_of` is the acquisition around it,
+which is how a lane that does not exist in this repository can be put to
+the reading at all.
 
 The nextest configuration is parsed with `tomllib` rather than matched as text.
 A text match finds a key inside a comment, inside a `filter` string, or in a

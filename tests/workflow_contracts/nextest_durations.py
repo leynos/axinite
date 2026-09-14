@@ -34,7 +34,10 @@ from nextest_errors import NextestConfigurationError
 #: trailing point, a second point, a sign and a digit separator are all
 #: refused there, and so are refused here.
 _COMPONENT: typ.Final[re.Pattern[str]] = re.compile(
-    r"(?P<value>\d+(?:\s*\.\s*\d+)?)\s*(?P<unit>[A-Za-zµ]+)\s*"
+    # The micro sign is written as an escape: the literal is visually
+    # indistinguishable from the Greek small letter mu, which humantime
+    # refuses, so the two must not be told apart by eye here.
+    r"(?P<value>\d+(?:\s*\.\s*\d+)?)\s*(?P<unit>[A-Za-z\u00b5]+)\s*"
 )
 
 #: The one duration humantime reads without a unit. ``00``, ``0.0`` and
