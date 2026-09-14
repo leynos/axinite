@@ -240,6 +240,17 @@ def test_a_slow_timeout_that_never_terminates_is_refused(table: str) -> None:
         pytest.param("15min", 900.0, id="a-long-unit-spelling"),
         pytest.param("500ms", 0.5, id="milliseconds"),
         pytest.param("1d", 86400.0, id="days"),
+        pytest.param("1.5m", 90.0, id="a-fractional-value"),
+        pytest.param("1 . 5 m", 90.0, id="a-fractional-value-spaced-around-the-point"),
+        pytest.param("4.2s", 4.2, id="a-fractional-value-in-seconds"),
+        pytest.param("2wk", 1209600.0, id="the-short-week-spelling"),
+        pytest.param("2wks", 1209600.0, id="the-short-plural-week-spelling"),
+        pytest.param("1yr", 31557600.0, id="the-short-year-spelling"),
+        pytest.param("3yrs", 94672800.0, id="the-short-plural-year-spelling"),
+        pytest.param("1\u00b5s", 1e-6, id="the-micro-sign-spelling"),
+        pytest.param("1nanos", 1e-9, id="the-long-nanosecond-spelling"),
+        pytest.param("1millis", 0.001, id="the-long-millisecond-spelling"),
+        pytest.param("0", 0.0, id="the-bare-zero-humantime-reads-without-a-unit"),
     ],
 )
 def test_the_duration_grammar_matches_the_one_nextest_reads(
@@ -250,8 +261,12 @@ def test_the_duration_grammar_matches_the_one_nextest_reads(
     A reader accepting a single component rejects `2h 37m`, which
     nextest accepts, so the contract would fail on a configuration that
     is correct and the failure would name the reader's limitation as
-    though it were the file's fault. Every spelling here is one
-    ``humantime`` accepts.
+    though it were the file's fault. Every spelling here was measured
+    against humantime 2.4.0, the version nextest resolves, by running it
+    through that parser rather than inferring it from prose: fractional
+    values are accepted, whitespace is tolerated around the point, the
+    short week and year spellings are units, and the bare `0` is the one
+    duration humantime reads without a unit.
     """
     assert seconds(duration) == pytest.approx(expected), (
         f"{duration!r} must read as {expected} seconds"
@@ -261,19 +276,25 @@ def test_the_duration_grammar_matches_the_one_nextest_reads(
 @pytest.mark.parametrize(
     "duration",
     [
-        pytest.param("1.5s", id="a-fractional-value"),
         pytest.param("300", id="no-unit"),
+        pytest.param(".5s", id="a-value-that-is-only-a-fractional-part"),
+        pytest.param("5.s", id="a-value-whose-fractional-part-is-missing"),
+        pytest.param("1.5.5s", id="a-value-with-a-second-point"),
+        pytest.param("-1s", id="a-signed-value"),
         pytest.param("300 fortnights", id="an-unknown-unit"),
+        pytest.param("1S", id="a-unit-whose-case-is-wrong"),
+        pytest.param("00", id="a-zero-that-is-not-the-bare-one"),
         pytest.param("", id="empty"),
     ],
 )
 def test_a_duration_nextest_would_refuse_is_refused_here(duration: str) -> None:
     """The grammar is matched, not merely widened.
 
-    ``humantime`` takes whole numbers with units and nothing else, so a
+    ``humantime`` admits a fractional part but nothing looser, so a
     reader that accepted more would put a number on a configuration
     nextest fails to load, and the contract would certify a file that
-    cannot run.
+    cannot run. Each spelling here was refused by humantime 2.4.0 when
+    the cases were run through it.
     """
     with pytest.raises(NextestConfigurationError):
         seconds(duration)
