@@ -93,6 +93,53 @@ _UNIT_SECONDS: typ.Final[dict[str, float]] = {
 }
 
 
+def _component_at(duration: str, text: str, position: int) -> tuple[float, int]:
+    """Return one component's length in seconds and where it ends.
+
+    Parameters
+    ----------
+    duration
+        The whole duration, carried for the error message so a failure
+        names what was configured rather than the tail being read.
+    text
+        The duration with its surrounding whitespace removed.
+    position
+        Where in ``text`` this component starts.
+
+    Returns
+    -------
+    tuple of (float, int)
+        The component's length in seconds, and the offset at which the
+        next component starts.
+
+    Raises
+    ------
+    NextestConfigurationError
+        If no component starts here, or its unit is not one humantime
+        accepts.
+    """
+    component = _COMPONENT.match(text, position)
+    if component is None:
+        message = (
+            f"unrecognized nextest duration {duration!r}; nextest reads "
+            f"durations with humantime, which wants a sequence of numbers "
+            f'each carrying a unit, such as "300s", "2h 37m" or "1.5m"'
+        )
+        raise NextestConfigurationError(message)
+    unit = component["unit"]
+    length = _UNIT_SECONDS.get(unit)
+    if length is None:
+        message = (
+            f"nextest duration {duration!r} names the unit {unit!r}, which "
+            f"humantime does not accept; note that 'm' is minutes and 'M' "
+            f"is months"
+        )
+        raise NextestConfigurationError(message)
+    # humantime tolerates whitespace around the fractional point, so the
+    # matched value can read "1 . 5", which float cannot.
+    return float("".join(component["value"].split())) * length, component.end()
+
+
 def seconds(duration: str) -> float:
     """Convert a nextest duration to seconds.
 
@@ -133,25 +180,6 @@ def seconds(duration: str) -> float:
     total = 0.0
     position = 0
     while position < len(text):
-        component = _COMPONENT.match(text, position)
-        if component is None:
-            message = (
-                f"unrecognized nextest duration {duration!r}; nextest reads "
-                f"durations with humantime, which wants a sequence of numbers "
-                f'each carrying a unit, such as "300s", "2h 37m" or "1.5m"'
-            )
-            raise NextestConfigurationError(message)
-        unit = component["unit"]
-        length = _UNIT_SECONDS.get(unit)
-        if length is None:
-            message = (
-                f"nextest duration {duration!r} names the unit {unit!r}, which "
-                f"humantime does not accept; note that 'm' is minutes and 'M' "
-                f"is months"
-            )
-            raise NextestConfigurationError(message)
-        # humantime tolerates whitespace around the fractional point, so
-        # the matched value can read "1 . 5", which float cannot.
-        total += float("".join(component["value"].split())) * length
-        position = component.end()
+        length, position = _component_at(duration, text, position)
+        total += length
     return total
