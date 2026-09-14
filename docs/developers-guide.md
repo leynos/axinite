@@ -2740,7 +2740,10 @@ about the verdict, so `continue-on-error` on the suite step or on its job
 satisfies each of them while a failing suite leaves the job, or the workflow,
 green. Both scopes are read because they differ in effect and in fix. Anything
 but an explicit `false` is reported, an expression included: a contract that
-cannot evaluate `${{ ... }}` must not certify the lane it guards.
+cannot evaluate `${{ ... }}` must not certify the lane it guards. A job that
+runs no suite step is not judged at all: the reading walks every job in every
+workflow, and a documentation or lint lane allowed to fail discards no suite
+verdict, so reporting it would name a line whose change would fix nothing.
 
 Every ceiling carries at least fifteen minutes above its requirement rather
 than merely reaching it, because a ceiling equal to the sum it contains cancels
@@ -2788,10 +2791,15 @@ because which override governs a test depends on a filterset this contract
 cannot evaluate statically.
 
 Durations are read with the grammar `humantime` accepts, which is what nextest
-deserializes them with: one or more whole-number components each carrying a
-unit, written `300s`, `2h 37m` or `2h37m`, with no fractional values. A reader
-taking a single component would reject configuration nextest accepts and blame
-the file for it. Case matters, so `m` is minutes and `M` is months.
+deserializes them with: a sequence of components each carrying a unit, written
+`300s`, `2h 37m` or `2h37m`. A reader taking a single component would reject
+configuration nextest accepts and blame the file for it. The grammar was
+measured against humantime 2.4.0, the version nextest resolves, by compiling
+that parser and running the cases through it. A value may carry a fractional
+part, and whitespace is tolerated around the point, so `1.5m` and `1 . 5 m` are
+both ninety seconds. The short spellings `wk`, `wks`, `yr` and `yrs` are units
+alongside the longer ones, and the bare `0` is the one duration humantime reads
+without a unit. Case matters, so `m` is minutes and `M` is months.
 
 The readings rest on `nextest_config.py`, `nextest_durations.py`,
 `nextest_errors.py`, `timeout_budgets.py`, `suite_lanes.py` and
