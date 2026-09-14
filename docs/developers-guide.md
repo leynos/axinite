@@ -2799,10 +2799,37 @@ text: its parser special-cases `0` before reading a character, so `" 0 "` is
 refused and a reader that stripped whitespace first would accept a duration
 nextest rejects. Case matters, so `m` is minutes and `M` is months.
 
+The arithmetic is exact and in integers, because humantime's is: its parser
+works in checked `u64` throughout and reports every failure as an overflow.
+Which integer depends on the unit. A fraction of an hour or anything longer is
+converted into whole *seconds*, so `0.000001h` is refused although 3,600 ns is a
+whole nanosecond, while `0.25h` is fifteen minutes. A fraction of a minute or
+anything shorter is converted into whole nanoseconds, so `1.999999999s` is
+accepted and `0.0000000015s` is not. A fraction of a nanosecond is refused
+outright, whatever it spells, so even `1.0ns` will not load. The unit tables in
+`nextest_units.py` are split by which of the two a unit is measured in, because
+one table in nanoseconds cannot express the rule at the hour.
+
+Three ceilings come with it, and they are different. A numeric literal must fit
+the `u64` humantime reads it into, so `1000000000000000000000ns` is refused even
+though its value in seconds is small. A fraction's own arithmetic is checked, so
+`0.1000000000000000000s` overflows on the multiplication and
+`1.00000000000000000000s` on the denominator, although both would fit as
+durations. And the accumulated seconds must fit the `u64` they are summed into,
+so `18446744073709551615s` loads and one second more does not.
+
+The reading was checked against the parser rather than against its
+documentation: 4,016 generated durations, spanning every unit spelling,
+fractions of up to twenty-one digits, values around the `u64` boundary and
+humantime's tolerated whitespace, were run through both this reader and
+humantime 2.3.0 compiled from the pinned release, and the two agreed on every
+one.
+
 The readings rest on `nextest_config.py`, `nextest_durations.py`,
-`nextest_errors.py`, `timeout_budgets.py`, `suite_lanes.py` and
-`suite_guards.py`, and are driven with controlled values in
-`timeout_reading_test.py` and `suite_guards_test.py`. Each reading takes
+`nextest_units.py`, `nextest_errors.py`, `timeout_budgets.py`,
+`suite_lanes.py` and `suite_guards.py`, and are driven with controlled values in
+`timeout_reading_test.py`, `duration_grammar_test.py` and
+`suite_guards_test.py`. Each reading takes
 what it reads rather than fetching it: `suite_lanes_in` queries supplied
 workflow documents and `suite_lanes_of` is the acquisition around it,
 which is how a lane that does not exist in this repository can be put to
