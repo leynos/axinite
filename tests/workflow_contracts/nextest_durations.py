@@ -9,25 +9,28 @@ grammar is wider than one number and a short unit, and a reader
 narrower than it refuses configuration nextest loads, which makes the
 contract fail on a correct file and blame the file for it.
 
-The grammar below was measured against humantime 2.4.0, the version
-nextest resolves, by compiling that parser and running the cases
-through it, rather than inferred from prose. A value may carry a
-fractional part with whitespace tolerated around the point, so ``1.5m``
-and ``1 . 5 m`` are both ninety seconds; ``wk``, ``wks``, ``yr`` and
-``yrs`` are accepted alongside the longer spellings; and the bare
-string ``0`` is the one duration humantime reads without a unit.
-
-One narrowness is deliberate and named here rather than left silent:
-humantime also skips whitespace inside a number, so it reads ``1 5s``
-as fifteen seconds. No configuration spells a number that way, and
-admitting it would cost the value pattern its legibility, so this
-reader refuses it.
+The grammar below was measured against humantime 2.3.0, which is what
+the lockfile of the pinned cargo-nextest release resolves (this
+repository pins ``cargo-nextest@0.9.140``), by compiling that parser
+and running the cases through it rather than inferring them from prose.
+A value may carry a fractional part with whitespace tolerated around
+the point, so ``1.5m`` and ``1 . 5 m`` are both ninety seconds;
+whitespace inside the number is ignored too, so ``1 0s`` is ten seconds
+and ``1 2 . 3 4 s`` is 12.34; ``wk``, ``wks``, ``yr`` and ``yrs`` are
+accepted alongside the longer spellings; and the bare string ``0`` is
+the one duration humantime reads without a unit.
 """
 
 import re
 import typing as typ
 
 from nextest_errors import NextestConfigurationError
+
+#: Digits with whitespace tolerated between them. humantime's parser
+#: skips whitespace while it accumulates a number, so ``1 0s`` is ten
+#: seconds rather than a malformed duration, and the same holds either
+#: side of the point: ``1 2 . 3 4 s`` is 12.34 seconds.
+_SPACED_DIGITS: typ.Final[str] = r"\d(?:\s*\d)*"
 
 #: One value-and-unit pair. The fractional part is optional and
 #: humantime tolerates whitespace around the point; a leading point, a
@@ -37,12 +40,15 @@ _COMPONENT: typ.Final[re.Pattern[str]] = re.compile(
     # The micro sign is written as an escape: the literal is visually
     # indistinguishable from the Greek small letter mu, which humantime
     # refuses, so the two must not be told apart by eye here.
-    r"(?P<value>\d+(?:\s*\.\s*\d+)?)\s*(?P<unit>[A-Za-z\u00b5]+)\s*"
+    rf"(?P<value>{_SPACED_DIGITS}(?:\s*\.\s*{_SPACED_DIGITS})?)"
+    r"\s*(?P<unit>[A-Za-z\u00b5]+)\s*"
 )
 
-#: The one duration humantime reads without a unit. ``00``, ``0.0`` and
-#: a trailing space all fail there, so the exception is this literal and
-#: nothing wider.
+#: The one duration humantime reads with no unit. Its parser
+#: special-cases the exact text before reading a single character, so
+#: the comparison is against the raw value rather than a stripped one:
+#: ``" 0 "``, ``"0 "``, ``"00"`` and ``"0.0"`` are each refused, and a
+#: reader that stripped first would accept a duration nextest rejects.
 _BARE_ZERO: typ.Final[str] = "0"
 
 #: Every unit spelling ``humantime`` accepts, with its length in seconds.
@@ -171,6 +177,8 @@ def seconds(duration: str) -> float:
     >>> seconds("1.5m")
     90.0
     """
+    if duration == _BARE_ZERO:
+        return 0.0
     text = duration.strip()
     if not text:
         message = (
@@ -178,8 +186,6 @@ def seconds(duration: str) -> float:
             f"humantime reads no duration from nothing"
         )
         raise NextestConfigurationError(message)
-    if text == _BARE_ZERO:
-        return 0.0
     total = 0.0
     position = 0
     while position < len(text):
