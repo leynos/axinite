@@ -128,7 +128,8 @@ so. The affected rows are marked.
 | Build and test | `code_style.yml` `format`, `code_style.yml` `clippy`, `coverage.yml` `coverage`, `coverage.yml` `e2e-coverage`, `codescene-coverage.yml` `coverage-check` | `ubicloud-standard-4` |
 | Build and test, event-dependent | `test.yml` `tests`, `test.yml` `wasm-wit-compat` | `ubicloud-standard-4` on a developer event, `ubuntu-latest` on `schedule` |
 | Build and test, event-dependent, small | `test.yml` `telegram-tests` | `ubicloud-standard-2` on a developer event, `ubuntu-latest` on `schedule` |
-| Build and test, event-dependent, not yet resized | `e2e.yml` `build`, `e2e.yml` `test` | `ubicloud-standard-8` on a developer event, `ubuntu-latest` on `schedule` |
+| Build and test, event-dependent | `e2e.yml` `build` | `ubicloud-standard-4` on a developer event, `ubuntu-latest` on `schedule` |
+| Test only, event-dependent, small | `e2e.yml` `test` | `ubicloud-standard-2` on a developer event, `ubuntu-latest` on `schedule` |
 | Docker, event-dependent | `test.yml` `docker-build` | `ubicloud-standard-4` on a developer event, `ubuntu-latest` on `schedule` |
 | Windows | `code_style.yml` `clippy-windows`, `test.yml` `windows-build` | `windows-latest` |
 | Release | `release-plz.yml` `release-plz-release`, `release-plz.yml` `release-plz-pr` | `ubuntu-latest` |
@@ -178,7 +179,11 @@ Jobs are sized individually against measurement:
 | --- | --- |
 | `ubicloud-standard-2` | Jobs whose peak memory and wall time both fit it |
 | `ubicloud-standard-4` | Everything else that compiles |
-| `ubicloud-standard-8` | Nothing by choice; `e2e.yml` still holds it pending its own resize |
+
+`ubicloud-standard-8` is no longer bought. It was removed from
+`.github/actionlint.yaml` and from `APPROVED_SHAPES` when `e2e.yml` left it, so
+a job written against it now fails actionlint and the sizing contract rather
+than quietly costing four times the rate.
 
 The acceptance rule has two arms, because wall time and cost pull in opposite
 directions and only one of them is felt by a person waiting:
@@ -290,7 +295,7 @@ with a fixed label, so the label follows the event:
 ```yaml
     runs-on: >-
       ${{ github.event_name == 'schedule' && 'ubuntu-latest'
-      || 'ubicloud-standard-8' }}
+      || 'ubicloud-standard-4' }}
 ```
 
 `e2e.yml` uses this for its `build` and `test` jobs: Ubicloud on the
@@ -509,11 +514,14 @@ seconds on `ubicloud-standard-4` with a 5,527 MiB peak, so the resize is
 preflighted by measurement. Moving it off Ubicloud entirely would still need
 that preflight.
 
-One slice remains:
-
-- `e2e.yml` `build` and `test`, still on `ubicloud-standard-8` for developer
-  events. They need their own sampled run before moving, on the same terms as
-  everything else.
+The last slice, `e2e.yml`, moved on the same terms. Its `build` job compiles
+the workspace under `--no-default-features --features libsql` and the sampler
+measured 6,522 and 6,797 MiB on two cold runs, which is 86% of the 7,940 MiB a
+`standard-2` presents, so it took `standard-4` for the same reason `format`
+did: no room for a bad day. Its `test` legs compile nothing, download the
+binary `build` produced and drive it from Playwright, and peaked at 1,273 to
+1,432 MiB across nine legs, under a fifth of a `standard-2`, so they took the
+smaller shape. No job now asks for `standard-8`.
 
 Two exclusions still stand:
 

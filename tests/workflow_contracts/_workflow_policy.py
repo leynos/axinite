@@ -49,10 +49,11 @@ CONDITIONAL_RUNNER_RE: re.Pattern[str] = re.compile(
 #: contract keyed to the current label would wave the new one through.
 UBICLOUD_LABEL_PREFIX = "ubicloud-"
 
-#: The Ubicloud label this repository currently uses. The migration wave will
-#: right-size these jobs; update this constant and .github/actionlint.yaml
-#: together when it does.
-UBICLOUD_LABEL = "ubicloud-standard-8"
+#: One Ubicloud label the estate uses, for the helper tests to quote as a
+#: sample. It is deliberately not "the" label: the jobs are right-sized per
+#: job, so the set in use lives in `runner_sizing_test.APPROVED_SHAPES` and in
+#: .github/actionlint.yaml, and no single constant can stand for it.
+UBICLOUD_LABEL = "ubicloud-standard-4"
 
 #: Commands that compile or execute the product. A job is a build or test job
 #: when one of its steps runs one of these; nothing else about the job matters.
