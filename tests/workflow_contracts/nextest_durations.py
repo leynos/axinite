@@ -25,6 +25,14 @@ import re
 import typing as typ
 
 from nextest_errors import NextestConfigurationError
+from nextest_units import (
+    NANOSECONDS_PER_SECOND,
+    SUBSECOND_NANOSECONDS,
+    U64_MAX,
+    UNIT_SECONDS,
+    HumantimeOverflowError,
+    component_parts,
+)
 
 #: Digits with whitespace tolerated between them. humantime's parser
 #: skips whitespace while it accumulates a number, so ``1 0s`` is ten
@@ -51,102 +59,64 @@ _COMPONENT: typ.Final[re.Pattern[str]] = re.compile(
 #: reader that stripped first would accept a duration nextest rejects.
 _BARE_ZERO: typ.Final[str] = "0"
 
-#: Every unit spelling ``humantime`` accepts, with its length in seconds.
-#: Case matters: ``m`` is minutes and ``M`` is months, so the table is
-#: consulted without folding case. A month is a twelfth of a Julian year
-#: and a year is 365.25 days, which is how ``humantime`` defines them.
-#: Spelt out in full rather than trimmed to the plausible spellings,
-#: because refusing a unit nextest accepts fails a configuration the
-#: runner is happy with.
-_UNIT_SECONDS: typ.Final[dict[str, float]] = {
-    "nanos": 1e-9,
-    "nsec": 1e-9,
-    "ns": 1e-9,
-    "usec": 1e-6,
-    "us": 1e-6,
-    "µs": 1e-6,
-    "millis": 0.001,
-    "msec": 0.001,
-    "ms": 0.001,
-    "seconds": 1.0,
-    "second": 1.0,
-    "secs": 1.0,
-    "sec": 1.0,
-    "s": 1.0,
-    "minutes": 60.0,
-    "minute": 60.0,
-    "mins": 60.0,
-    "min": 60.0,
-    "m": 60.0,
-    "hours": 3600.0,
-    "hour": 3600.0,
-    "hrs": 3600.0,
-    "hr": 3600.0,
-    "h": 3600.0,
-    "days": 86400.0,
-    "day": 86400.0,
-    "d": 86400.0,
-    "weeks": 604800.0,
-    "week": 604800.0,
-    "wks": 604800.0,
-    "wk": 604800.0,
-    "w": 604800.0,
-    "months": 2630016.0,
-    "month": 2630016.0,
-    "M": 2630016.0,
-    "years": 31557600.0,
-    "year": 31557600.0,
-    "yrs": 31557600.0,
-    "yr": 31557600.0,
-    "y": 31557600.0,
-}
 
-
-def _component_at(duration: str, text: str, position: int) -> tuple[float, int]:
-    """Return one component's length in seconds and where it ends.
+def _component_at(duration: str, text: str, position: int) -> tuple[int, int, int]:
+    """Return one component's seconds and nanoseconds, and where it ends.
 
     Parameters
     ----------
-    duration
-        The whole duration, carried for the error message so a failure
-        names what was configured rather than the tail being read.
-    text
+    duration : str
+        The whole duration, carried for the message so a failure names
+        what was configured rather than the tail being read.
+    text : str
         The duration with its surrounding whitespace removed.
-    position
+    position : int
         Where in ``text`` this component starts.
 
     Returns
     -------
-    tuple of (float, int)
-        The component's length in seconds, and the offset at which the
-        next component starts.
+    tuple of (int, int, int)
+        The component's whole seconds, its nanoseconds, and the offset
+        at which the next component starts.
 
     Raises
     ------
     NextestConfigurationError
-        If no component starts here, or its unit is not one humantime
-        accepts.
+        If no component starts here, if its unit is not one humantime
+        accepts, or if its value is one humantime cannot represent.
     """
     component = _COMPONENT.match(text, position)
     if component is None:
         message = (
             f"unrecognized nextest duration {duration!r}; nextest reads "
             f"durations with humantime, which wants a sequence of numbers "
-            f'each carrying a unit, such as "300s", "2h 37m" or "1.5m"'
+            f'each carrying a unit, such as "60s", "2h 37m" or "1.5m"'
         )
         raise NextestConfigurationError(message)
     unit = component["unit"]
-    length = _UNIT_SECONDS.get(unit)
-    if length is None:
+    if unit not in SUBSECOND_NANOSECONDS and unit not in UNIT_SECONDS:
         message = (
             f"nextest duration {duration!r} names the unit {unit!r}, which "
             f"humantime does not accept; note that 'm' is minutes and 'M' "
             f"is months"
         )
         raise NextestConfigurationError(message)
-    # humantime tolerates whitespace around the fractional point, so the
-    # matched value can read "1 . 5", which float cannot.
-    return float("".join(component["value"].split())) * length, component.end()
+    # humantime tolerates whitespace inside and around the number, so
+    # the matched value can read "1 . 5"; the digits are joined before
+    # the arithmetic reads them.
+    value = "".join(component["value"].split())
+    try:
+        seconds_part, nanoseconds_part = component_parts(value, unit)
+    except HumantimeOverflowError:
+        message = (
+            f"nextest duration {duration!r} carries a component humantime "
+            f"cannot represent: its arithmetic is checked u64 throughout, it "
+            f"converts a fraction of an hour or longer into whole seconds and "
+            f"a shorter one into whole nanoseconds, and it refuses any "
+            f"fraction of a nanosecond"
+        )
+        raise NextestConfigurationError(message) from None
+    return seconds_part, nanoseconds_part, component.end()
 
 
 def seconds(duration: str) -> float:
@@ -154,8 +124,8 @@ def seconds(duration: str) -> float:
 
     Parameters
     ----------
-    duration
-        A duration as nextest spells it, such as ``"300s"``, the
+    duration : str
+        A duration as nextest spells it, such as ``"60s"``, the
         multi-component ``"2h 37m"`` or the fractional ``"1.5m"``.
 
     Returns
@@ -167,15 +137,6 @@ def seconds(duration: str) -> float:
     ------
     NextestConfigurationError
         If the text is not a duration nextest would accept.
-
-    Examples
-    --------
-    >>> seconds("300s")
-    300.0
-    >>> seconds("2h 37m")
-    9420.0
-    >>> seconds("1.5m")
-    90.0
     """
     if duration == _BARE_ZERO:
         return 0.0
@@ -186,9 +147,25 @@ def seconds(duration: str) -> float:
             f"humantime reads no duration from nothing"
         )
         raise NextestConfigurationError(message)
-    total = 0.0
+    total_seconds = 0
+    total_nanoseconds = 0
     position = 0
     while position < len(text):
-        length, position = _component_at(duration, text, position)
-        total += length
-    return total
+        component_seconds, component_nanoseconds, position = _component_at(
+            duration, text, position
+        )
+        # humantime carries the running total as whole seconds beside a
+        # nanosecond remainder, and both are checked, so a sum past that
+        # ceiling will not load even though each component did.
+        total_nanoseconds += component_nanoseconds
+        if total_nanoseconds > NANOSECONDS_PER_SECOND:
+            component_seconds += total_nanoseconds // NANOSECONDS_PER_SECOND
+            total_nanoseconds %= NANOSECONDS_PER_SECOND
+        total_seconds += component_seconds
+        if total_seconds > U64_MAX:
+            message = (
+                f"nextest duration {duration!r} totals more seconds than the "
+                f"u64 humantime accumulates them in"
+            )
+            raise NextestConfigurationError(message)
+    return total_seconds + total_nanoseconds / NANOSECONDS_PER_SECOND
