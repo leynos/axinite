@@ -365,9 +365,7 @@ def test_no_suite_lane_tolerates_the_suite_failing() -> None:
         offence
         for path in workflow_paths()
         for job in jobs_of(path.name, load(path))
-        for offence in failure_tolerances(
-            job.workflow, job.job_id, job.body if isinstance(job.body, dict) else {}
-        )
+        for offence in failure_tolerances(job.workflow, job.job_id, job.body)
     ]
     assert not tolerated, (
         f"these suite lanes tolerate the suite failing, so the budgets this "

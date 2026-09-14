@@ -261,3 +261,46 @@ def test_tolerance_on_a_step_that_runs_no_suite_is_not_reported() -> None:
         "      - run: cargo nextest run --workspace\n"
     )
     assert failure_tolerances("controlled.yml", "test", body) == []
+
+
+def test_a_job_that_runs_no_suite_is_not_judged_on_its_own_tolerance() -> None:
+    """The guard reports lanes that discard the suite's verdict.
+
+    The consumer walks every job in every workflow, so a documentation
+    or lint job allowed to fail reaches this reading too. It runs no
+    suite, so its tolerance discards no verdict, and reporting it would
+    name a line whose change would fix nothing.
+    """
+    body = suite_job(
+        "name: controlled\n"
+        "on: push\n"
+        "jobs:\n"
+        "  test:\n"
+        "    runs-on: ubuntu-latest\n"
+        "    continue-on-error: true\n"
+        "    steps:\n"
+        "      - run: markdownlint docs\n"
+    )
+    assert failure_tolerances("controlled.yml", "test", body) == []
+
+
+def test_a_job_that_runs_the_suite_is_judged_on_its_own_tolerance() -> None:
+    """Scoping the reading to suite jobs must not disarm it.
+
+    This is the case the previous test's scoping could have taken with
+    it: the same job-level key, on a job that does run the suite, still
+    makes a failing suite a passing workflow and is still reported.
+    """
+    body = suite_job(
+        "name: controlled\n"
+        "on: push\n"
+        "jobs:\n"
+        "  test:\n"
+        "    runs-on: ubuntu-latest\n"
+        "    continue-on-error: true\n"
+        "    steps:\n"
+        "      - run: cargo nextest run --workspace\n"
+    )
+    offences = failure_tolerances("controlled.yml", "test", body)
+    assert len(offences) == 1, offences
+    assert "on the job" in offences[0]
