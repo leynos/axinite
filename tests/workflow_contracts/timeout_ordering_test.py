@@ -38,7 +38,7 @@ Run via ``make test-workflow-contracts``.
 import typing as typ
 
 import pytest
-from _workflow_policy import jobs_of, load, workflow_paths
+from _workflow_policy import jobs_of, load, parse_workflow, workflow_paths
 from nextest_config import (
     Profile,
     profiles,
@@ -49,6 +49,7 @@ from suite_lanes import (
     SuiteLane,
     _disguised_suite_lines,
     normalized_condition,
+    suite_lanes_in,
     suite_lanes_of,
 )
 from timeout_budgets import (
@@ -85,6 +86,41 @@ def suite_lanes() -> tuple[SuiteLane, ...]:
         One entry per suite-running job.
     """
     return suite_lanes_of()
+
+
+def test_a_supplied_workflow_is_read_without_touching_the_tree() -> None:
+    """The query answers about documents, not about this repository.
+
+    Reading the workflow files inside the query left no way to ask what
+    it makes of a lane that does not exist here: a job that runs the
+    suite under no ceiling, beside one that runs nothing. Driven with
+    supplied documents, both readings are visible, and the missing
+    ceiling reads as ``None`` rather than as an absent lane.
+    """
+    document = parse_workflow(
+        "name: controlled\n"
+        "on: push\n"
+        "jobs:\n"
+        "  bounded:\n"
+        "    runs-on: ubuntu-latest\n"
+        "    timeout-minutes: 30\n"
+        "    steps:\n"
+        "      - run: cargo nextest run --workspace\n"
+        "  unbounded:\n"
+        "    runs-on: ubuntu-latest\n"
+        "    steps:\n"
+        "      - run: cargo nextest run --workspace\n"
+        "  unrelated:\n"
+        "    runs-on: ubuntu-latest\n"
+        "    steps:\n"
+        "      - run: markdownlint docs\n",
+        "controlled.yml",
+    )
+    lanes = suite_lanes_in([("controlled.yml", document)])
+    assert [(lane.job, lane.ceiling) for lane in lanes] == [
+        ("bounded", 1800.0),
+        ("unbounded", None),
+    ], lanes
 
 
 def test_the_suite_runs_somewhere(suite_lanes: tuple[SuiteLane, ...]) -> None:

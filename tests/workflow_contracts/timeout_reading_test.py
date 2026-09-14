@@ -8,6 +8,8 @@ values here.
 """
 
 import pytest
+from hypothesis import given
+from hypothesis import strategies as st
 from nextest_config import (
     NextestConfigurationError,
     Profile,
@@ -15,6 +17,7 @@ from nextest_config import (
     profiles,
     seconds,
 )
+from nextest_durations import _UNIT_SECONDS
 from timeout_budgets import (
     NEXTEST_DEFAULT_GRACE_PERIOD_SECONDS,
     TERMINATION_SAFETY_MARGIN_SECONDS,
@@ -298,6 +301,47 @@ def test_a_duration_nextest_would_refuse_is_refused_here(duration: str) -> None:
     """
     with pytest.raises(NextestConfigurationError):
         seconds(duration)
+
+
+#: Every unit spelling the reader knows, as Hypothesis draws from it.
+#: Drawn from the reader's own table rather than a second copy, because
+#: the property below is about how components combine, and a unit the
+#: reader does not know is a different question, asked by the refusal
+#: cases above.
+_UNITS = st.sampled_from(sorted(_UNIT_SECONDS))
+_VALUES = st.integers(min_value=1, max_value=10_000)
+_FRACTIONS = st.integers(min_value=0, max_value=999)
+_SEPARATORS = st.sampled_from(["", " ", "  "])
+
+
+@given(
+    components=st.lists(st.tuples(_VALUES, _FRACTIONS, _UNITS), min_size=1, max_size=6),
+    separators=st.lists(_SEPARATORS, min_size=6, max_size=6),
+)
+def test_a_sequence_of_components_sums_to_its_parts(
+    components: list[tuple[int, int, str]], separators: list[str]
+) -> None:
+    """humantime sums a sequence, and the reader must sum the same one.
+
+    The cases above pin the spellings a configuration is likely to use.
+    This is the invariant underneath them: however many components a
+    duration carries, whatever their units, and whether or not they are
+    spaced apart, the reading is the sum of the components read
+    separately. A reader that stopped at the first component, or that
+    dropped one in the middle, would satisfy every fixed case whose
+    total happened to survive and fail here.
+    """
+    written = "".join(
+        f"{whole}.{fraction}{unit}{separator}"
+        for (whole, fraction, unit), separator in zip(components, separators)
+    )
+    expected = sum(
+        float(f"{whole}.{fraction}") * _UNIT_SECONDS[unit]
+        for whole, fraction, unit in components
+    )
+    assert seconds(written) == pytest.approx(expected), (
+        f"{written!r} must read as the sum of its components"
+    )
 
 
 def test_minutes_and_months_are_told_apart() -> None:
