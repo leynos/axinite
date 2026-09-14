@@ -286,6 +286,14 @@ def test_no_cache_step_archives_a_target_tree(job: Job) -> None:
         if not is_cache_step(step):
             continue
         for path in cache_paths(step):
+            # Kani uses its own compiler pipeline, not sccache. This one
+            # dependency-free proof package has a separately bounded cache.
+            if (
+                job.workflow == "formal.yml"
+                and job.job_id == "kani-smoke"
+                and path == "target/repair-claims-kani"
+            ):
+                continue
             assert not path.split("/")[0] == "target", (
                 f"{job} archives {path!r}. A target tree duplicates sccache's "
                 "ownership of compiler output and inflates the cache quota."
@@ -336,6 +344,13 @@ def test_the_cargo_registry_cache_has_exactly_one_writer_per_platform() -> None:
                     "workflow_dispatch on main would satisfy a ref-only guard "
                     "and take the key from its real writer"
                 )
+                # The verifier owns two separate non-application key families.
+                if job.workflow == "formal.yml" and job.job_id == "kani-smoke":
+                    assert tuple(cache_paths(step)) in (
+                        (".kani-binaries",),
+                        ("target/repair-claims-kani",),
+                    )
+                    continue
                 writers.append(str(job))
     # One Linux writer and one Windows writer, both in test.yml.
     assert sorted(writers) == ["test.yml:tests", "test.yml:windows-build"], (

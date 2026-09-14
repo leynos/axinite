@@ -36,8 +36,9 @@ The highest-return additions are not “formalize everything”. They are:
 
 The best integration path in Axinite is a split one:
 
-- Keep **Kani harnesses inside the main `axinite` package**, next to the
-  internal helpers they verify.
+- Keep **Kani harnesses next to the internal helpers they verify**. The
+  repair-claims experiment below shares production source with an independent
+  package to avoid coupling the verifier to application dependencies.
 - Put **Stateright models in a dedicated internal verification crate**, because
   those models should be abstractions of policy rather than thin wrappers
   around the runtime.
@@ -459,13 +460,127 @@ intent explicit once the verification crate exists.
 
 ## Kani integration
 
+### Repair-claims shared-source experiment (#178)
+
+The repair registry and its RAII guard live in
+`src/agent/self_repair/claim_registry.rs`. Axinite compiles this module through
+its self-repair module tree. The independent
+`verification/repair-claims/src/lib.rs` includes the **same file** with
+`#[path]`; acquisition and destructor-driven release are not copied or stubbed.
+The Axinite adapter retains `BrokenTool` handling, `RepairError` mapping,
+tracing and feature-gated metrics. An observational release callback runs after
+the shared transition and cannot decide whether removal happens.
+
+The independent package is explicitly excluded from the application workspace
+and declares its own workspace, edition 2024, Rust 1.85 minimum and lockfile.
+Cargo metadata and `cargo tree --locked` report only
+`repair-claims-verification`, with no dependencies. Neither Wasmtime nor the
+application build script is compiled. The root dependency versions and lockfile
+are unchanged. This is a targeted exception to the main-package recommendation
+below; the harness still has private access to the real implementation.
+
+**Status: blocked, not verified.** Released Kani 0.67.0 uses Rust
+`1.93.0-nightly (53732d5e0 2025-11-20)`. The isolated acquire/drop/reacquire
+harness compiled in 2.01 seconds, resolving the original Rust 1.94 application
+MSRV conflict. However, construction of the production `HashSet<String>` uses
+`RandomState`, whose Linux entropy path reaches an unsupported foreign C
+`syscall`. `tools/kani/hashset-reproducer.rs` retains the minimal reproducer:
+construct the default set and assert that it is empty. Kani reported zero
+verified harnesses, one failure, and a verification time of 1.22 seconds.
+Its diagnostic identifies
+`std::sys::random::linux::getrandom::getrandom` and the unsupported `syscall`.
+This is a verifier limitation, not a detected claim-lifecycle defect.
+
+The first lifecycle attempt was stopped during symbolic execution to isolate
+that failure; it is not a completed proof. Its provisional unwind bound of 8
+has not been validated and is insufficient for the 16-lane SIMD loops used by
+the bundled hash-table implementation. The compatibility reproducer uses an
+unwind bound of 2 and has no input vocabulary or operation sequence. The
+planned four lifecycle harnesses, two-name/four-operation model comparison,
+and deliberate-fault experiments remain outstanding. No counterexample from a
+mutated implementation has been established.
+
+The intended proofs cover bounded sequential transitions using shared source,
+not the exact production binary or exhaustive thread interleavings. Their
+relevance to concurrent callers relies on the standard mutex synchronization
+contract. Poisoning, panic unwinding, forgotten guards, process abort and
+fairness/liveness are outside their scope. Ordinary Rust tests cover actual
+lock poisoning: acquisition fails, and a guard dropped after poisoning reports
+failure and leaves its entry present. Existing generated-operation and
+concurrency tests remain in place.
+
+Monthly Kani binary production/hosting, compiler porting and future verifier
+distribution changes are outside this workstream. No source-build fallback is
+permitted for tools.
+
+### Binary-only repair-claims setup
+
+`tools/kani/VERSION` pins Kani 0.67.0. `tools/kani/binaries.json` pins Linux
+x86_64 GNU libc, the official Kani release archive and the dated Rust compiler,
+Cargo and standard-library binary archives. SHA-256 digests come from the
+[official Kani release asset metadata](https://api.github.com/repos/model-checking/kani/releases/tags/kani-0.67.0)
+and the
+[2025-11-21 Rust distribution manifest](https://static.rust-lang.org/dist/2025-11-21/channel-rust-nightly.toml).
+
+`tools/kani/binary_tool.py` verifies the archive digests and copies their binary
+components without running any archive installation scripts. It validates
+cached files, modes, symlinks, required components and the Rust compiler
+identity against those archives. Unsupported platforms, corrupt downloads,
+missing components and cache mismatches fail with actionable diagnostics.
+Neither Cargo installation nor rustup bootstrapping is used. The archives omit
+the Kani proxy launchers; the wrapper invokes the released `kani-driver` with
+its required `kani` or `cargo-kani` argument-zero identity instead.
+
+The version check retains `rust-prover-tools` at commit
+`2a9884d6e88a7821c7c94d256268aaa114534982` and uses only its supported
+`kani check-version` command. Its Kani installer would compile the launcher and
+is not invoked. The installer downloads the checksum-pinned
+Python source at that commit and creates a dedicated interpreter environment.
+Runtime versions are constrained to the upstream lockfile and installed with
+`uv pip sync --only-binary :all:`. The CLI runs directly as
+`python -m rust_prover_tools.cli`: no package builder or tool compiler runs.
+`make kani` requires this prepared environment and never installs it implicitly.
+The pinned CLI has no `kani run` subcommand.
+
+The default binary cache is `.kani-binaries/`; `KANI_BINARY_CACHE` selects a
+dedicated alternative without changing shared Cargo or rustup installations.
+The installation phase executes `binary_installation_smoke`, a real symbolic
+arithmetic proof, and rejects a missing or zero-harness result. This smoke
+compiles code under test, not tools, and does not establish the registry
+invariants. The final installer, including the prepared version checker and
+smoke proof, passed from an empty dedicated cache in 11.96 seconds. A warm
+repeat, including archive/file validation and the proof, passed in 11.67
+seconds. Each run
+verified exactly one harness, with zero failures and three successful checks.
+The default-cache installation also passed in 7.33 seconds using downloaded
+archives. These timings distinguish binary setup from lifecycle verification;
+the latter remains blocked.
+
+The wrapper scopes `PATH`, loader paths, compiler wrappers and linker flags to
+the binary bundle. An empty `CARGO_ENCODED_RUSTFLAGS` prevents application
+flags from leaking in before Kani adds its own compiler arguments. Cargo runs
+offline with two build jobs; proof outputs use `target/repair-claims-kani`.
+The pinned Kani CLI does not expose `--locked`; the gate checks the isolated
+lockfile bytes before and after Cargo proof execution instead.
+
+`make kani` first exposes the retained standard-library compatibility failure,
+then would select only `verification/repair-claims/Cargo.toml --lib`. It checks
+for all four required lifecycle harness names and an exact four-success,
+zero-failure summary. No installation happens implicitly. `make all` retains
+its ordinary prerequisites and requires Kani as its final gate; it cannot pass
+while this compatibility blocker remains. Ordinary format, Clippy, Whitaker
+and test targets include the excluded package explicitly. Its ordinary Rust
+tests use only the standard library so the proof dependency closure stays
+empty; they do not enable `cfg(kani)`.
+
 ### Kani tooling model
 
 Kani is a bounded model checker for Rust. The recommended project integration
 path is `cargo kani`, which runs proof harnesses against a Cargo package rather
-than acting as a completely separate build system.[^27] Installation is a
-two-step process: `cargo install --locked kani-verifier`, followed by
-`cargo kani setup` to install the backend binaries.[^32]
+than acting as a completely separate build system.[^27] For #178, installation
+is binary-only: run `make install-kani`, then `make check-kani-version` and
+`make kani`. The source-building upstream installation procedure[^32] is not
+permitted for this integration.
 
 That makes Kani a good fit for Axinite’s main crate, as long as the harnesses
 stay focused and local.
@@ -878,8 +993,8 @@ point for `make verus`.
 
 ## Recommended Makefile changes
 
-Axinite’s current top-level `Makefile` has no formal-verification targets.[^2]
-The repository should add these:
+The top-level `Makefile` now has the targeted repair-claims Kani gate described
+above.[^2] The remaining formal-method targets below are recommendations:
 
 ```make
 .PHONY: test-verification stateright proptest-properties kani kani-full verus formal-pr formal-nightly formal
@@ -958,31 +1073,14 @@ stateright-models:
 
 Run on every pull request.
 
-```yaml
-kani-smoke:
-  runs-on: ubuntu-latest
-  steps:
-    - uses: actions/checkout@v6
-    - uses: dtolnay/rust-toolchain@stable
-    - uses: Swatinem/rust-cache@v2
-    - name: Install Kani
-      run: scripts/install-kani.sh
-    - name: Run Kani smoke harnesses
-      run: make kani
-```
+The implemented job is `.github/workflows/formal.yml`: a Linux x86_64 job
+with a 20-minute timeout, a pinned uv setup action, independent binary and proof
+caches, `make install-kani`, and `make kani`. It does not compile Axinite or run
+its feature matrix. The installation smoke proof and required lifecycle gate
+have separate outcomes; a failed compatibility probe fails the job.
 
-Where `scripts/install-kani.sh` does roughly this:
-
-```bash
-#!/usr/bin/env bash
-set -euo pipefail
-KANI_VERSION="$(cat tools/kani/VERSION)"
-cargo install --locked kani-verifier --version "${KANI_VERSION}"
-cargo kani setup
-```
-
-That keeps local and CI execution aligned with the tool’s documented
-installation path.[^32]
+Local and CI execution use the same binary-only consumer and the pinned tool’s
+version-checking command.[^32]
 
 #### 3. `verus-proofs`
 

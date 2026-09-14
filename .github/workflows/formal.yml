@@ -1,0 +1,58 @@
+---
+name: Formal verification
+"on":
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: formal-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  kani-smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      KANI_BINARY_CACHE: ${{ github.workspace }}/.kani-binaries
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+      - name: Set up uv and Python
+        uses: astral-sh/setup-uv@11f9893b081a58869d3b5fccaea48c9e9e46f990
+        with:
+          python-version: '3.14'
+          enable-cache: false
+      - name: Restore verified binary archives and installation
+        id: kani_binaries
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9
+        with:
+          path: .kani-binaries
+          key: kani-binaries-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('tools/kani/VERSION', 'tools/kani/binaries.json', 'tools/kani/binary_tool.py', 'tools/kani/prover-constraints.txt') }}
+      - name: Restore isolated proof build
+        id: kani_proofs
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9
+        with:
+          path: target/repair-claims-kani
+          key: kani-proofs-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('tools/kani/VERSION', 'tools/kani/binaries.json', 'verification/repair-claims/**', 'src/agent/self_repair/claim_registry*.rs') }}
+      - name: Validate binary installation and run installation smoke proof
+        run: make install-kani
+      - name: Save verified binary installation
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9
+        with:
+          path: .kani-binaries
+          key: kani-binaries-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('tools/kani/VERSION', 'tools/kani/binaries.json', 'tools/kani/binary_tool.py', 'tools/kani/prover-constraints.txt') }}
+      - name: Verify the shared-source lifecycle
+        run: make kani
+      - name: Save isolated proof build
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9
+        with:
+          path: target/repair-claims-kani
+          key: kani-proofs-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('tools/kani/VERSION', 'tools/kani/binaries.json', 'verification/repair-claims/**', 'src/agent/self_repair/claim_registry*.rs') }}

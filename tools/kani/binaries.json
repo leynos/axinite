@@ -1,0 +1,38 @@
+{
+  "version": "0.67.0",
+  "platform": "x86_64-unknown-linux-gnu",
+  "rustc": "rustc 1.93.0-nightly (53732d5e0 2025-11-20)",
+  "assets": [
+    {
+      "url": "https://github.com/model-checking/kani/releases/download/kani-0.67.0/kani-0.67.0-x86_64-unknown-linux-gnu.tar.gz",
+      "sha256": "3b5f7afd3b51603ee720db7bc1bc4fe46b5a4f5d36daad9939c4b4c658b51ac0",
+      "prefix": "kani-0.67.0/",
+      "destination": "."
+    },
+    {
+      "url": "https://static.rust-lang.org/dist/2025-11-21/rustc-nightly-x86_64-unknown-linux-gnu.tar.xz",
+      "sha256": "b5727e9c6cd7eff47f3a7b21032302236ab8f592b892b0d4c90da2ea45cd481c",
+      "prefix": "rustc-nightly-x86_64-unknown-linux-gnu/rustc/",
+      "destination": "toolchain"
+    },
+    {
+      "url": "https://static.rust-lang.org/dist/2025-11-21/cargo-nightly-x86_64-unknown-linux-gnu.tar.xz",
+      "sha256": "03838885f9915f90fe71076d2f7ff9535171128bf8c6dbfe72febb532e3b18af",
+      "prefix": "cargo-nightly-x86_64-unknown-linux-gnu/cargo/",
+      "destination": "toolchain"
+    },
+    {
+      "url": "https://static.rust-lang.org/dist/2025-11-21/rust-std-nightly-x86_64-unknown-linux-gnu.tar.xz",
+      "sha256": "323fcadc489ac7d6cbb99a6e18a6427f762cebe6b8a8253e04ccdc564caa11e0",
+      "prefix": "rust-std-nightly-x86_64-unknown-linux-gnu/rust-std-x86_64-unknown-linux-gnu/",
+      "destination": "toolchain"
+    }
+  ],
+  "checker": {
+    "ref": "2a9884d6e88a7821c7c94d256268aaa114534982",
+    "url": "https://codeload.github.com/leynos/rust-prover-tools/tar.gz/2a9884d6e88a7821c7c94d256268aaa114534982",
+    "sha256": "21807783a3e1fb82dd445a303b3de203a229b64989d4b63fda59a953e28f3344",
+    "prefix": "rust-prover-tools-2a9884d6e88a7821c7c94d256268aaa114534982/rust_prover_tools/",
+    "destination": "checker/rust_prover_tools"
+  }
+}

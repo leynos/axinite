@@ -167,14 +167,3 @@ proptest! {
         }
     }
 }
-
-// === Poison-lock handling ===
-
-#[test]
-#[ignore = "RepairClaims does not expose a way to poison its private mutex from this module"]
-fn claim_tool_returns_error_when_mutex_is_poisoned() {
-    // `RepairClaims::claim_tool` releases its internal mutex before returning
-    // `ToolRepairClaim`. A spawned thread that panics after `claim_tool`
-    // returns therefore panics after the lock guard has been dropped, so it
-    // cannot poison the mutex through the public API.
-}

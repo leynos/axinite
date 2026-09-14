@@ -2,6 +2,7 @@
 
 use core::marker::PhantomData;
 
+mod claim_registry;
 mod default;
 mod repair_claim;
 mod task;
