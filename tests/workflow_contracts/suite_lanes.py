@@ -7,9 +7,11 @@ line is judged as a plain invocation and a disguised one is reported
 rather than counted.
 """
 
+import collections.abc as cabc
+import pathlib
 import typing as typ
 
-from _workflow_policy import jobs_of, load, workflow_paths
+from _workflow_policy import WORKFLOW_DIR, jobs_of, load, workflow_paths
 
 #: The commands that run the workspace suite under nextest. A step
 #: running one of these is bound by both nextest tiers. Matched as whole
@@ -211,11 +213,25 @@ def normalized_condition(condition: object) -> object:
     return condition
 
 
-def suite_lanes_of() -> tuple[SuiteLane, ...]:
-    """Return every job that runs the suite, with its ceiling.
+def suite_lanes_in(
+    documents: cabc.Iterable[tuple[str, dict[str, object]]],
+) -> tuple[SuiteLane, ...]:
+    """Return every job in those documents that runs the suite.
 
-    Every such job is included, not only those declaring a ceiling, so a
-    job that never had one is visible as ``None`` rather than absent.
+    The query is separate from the acquisition so it can be driven with
+    controlled workflows. Reading the repository's own files inside the
+    query left no way to ask what this reading makes of a lane that does
+    not exist here, and a contract that can only be exercised against
+    the tree it guards is one whose own behaviour goes unasserted.
+
+    Every suite-running job is included, not only those declaring a
+    ceiling, so a job that never had one is visible as ``None`` rather
+    than absent.
+
+    Parameters
+    ----------
+    documents
+        Pairs of workflow file name and parsed document.
 
     Returns
     -------
@@ -223,11 +239,10 @@ def suite_lanes_of() -> tuple[SuiteLane, ...]:
         One entry per suite-running job.
     """
     lanes: list[SuiteLane] = []
-    for path in workflow_paths():
-        document = load(path)
-        for job in jobs_of(path.name, document):
+    for name, document in documents:
+        for job in jobs_of(name, document):
             body = job.body
-            if not isinstance(body, dict) or not _runs_the_suite(body):
+            if not _runs_the_suite(body):
                 continue
             raw = body.get("timeout-minutes")
             lanes.append(
@@ -241,3 +256,24 @@ def suite_lanes_of() -> tuple[SuiteLane, ...]:
                 )
             )
     return tuple(lanes)
+
+
+def suite_lanes_of(directory: pathlib.Path = WORKFLOW_DIR) -> tuple[SuiteLane, ...]:
+    """Return every job in the workflows that runs the suite.
+
+    This is the acquisition half: it reads the workflow files and hands
+    the parsed documents to the query. The directory is a parameter for
+    the same reason it is one on ``workflow_paths``, so the same reading
+    can be pointed at a temporary tree.
+
+    Parameters
+    ----------
+    directory
+        Directory of workflow files. Defaults to the repository's own.
+
+    Returns
+    -------
+    tuple of SuiteLane
+        One entry per suite-running job.
+    """
+    return suite_lanes_in((path.name, load(path)) for path in workflow_paths(directory))
