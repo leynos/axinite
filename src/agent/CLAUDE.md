@@ -166,8 +166,10 @@ input order.
 4. Detects broken tools via `store.get_broken_tools(5)` (threshold: 5
    failures). Requires `with_store()` to be called; returns empty without a
    store.
-5. Attempts to rebuild broken tools via `SoftwareBuilder`. Requires
-   `with_builder()` to be called; returns `ManualRequired` without a builder.
+5. Attempts to rebuild broken tools via `SoftwareBuilder`. The test-only
+   `with_builder()` helper supplies a builder for tests; automatic broken-tool
+   repair remains unwired in production, where repair returns `ManualRequired`
+   when no builder is configured.
 
 Note: the `stuck_threshold` duration is stored but currently unused (marked
 `#[allow(dead_code)]`). Stuck detection relies on `JobState::Stuck` being set

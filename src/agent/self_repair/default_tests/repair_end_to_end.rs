@@ -47,7 +47,6 @@ fn e2e_broken_tool(last_error: Option<&str>) -> BrokenTool {
     }
 }
 
-#[cfg(any(test, feature = "self_repair_extras"))]
 #[tokio::test]
 async fn repair_broken_tool_end_to_end_returns_success() {
     let store = Arc::new(CapturingStore::new());
@@ -130,7 +129,6 @@ async fn run_concurrent_repairs(
     ])
 }
 
-#[cfg(any(test, feature = "self_repair_extras"))]
 #[tokio::test]
 async fn repair_broken_tool_allows_one_concurrent_repair_for_same_tool() {
     let (repair, store) = build_concurrent_repair_fixture();
@@ -172,7 +170,6 @@ async fn repair_broken_tool_allows_one_concurrent_repair_for_same_tool() {
     );
 }
 
-#[cfg(any(test, feature = "self_repair_extras"))]
 #[tokio::test]
 async fn repair_broken_tool_returns_retry_when_build_fails() {
     let store = Arc::new(CapturingStore::new());
@@ -214,7 +211,6 @@ async fn repair_broken_tool_returns_retry_when_build_fails() {
     }),
     "mark_tool_repaired"
 )]
-#[cfg(any(test, feature = "self_repair_extras"))]
 #[tokio::test]
 async fn repair_broken_tool_propagates_db_operation_failure(
     #[case] store: CapturingStore,
@@ -245,7 +241,6 @@ async fn repair_broken_tool_propagates_db_operation_failure(
     );
 }
 
-#[cfg(any(test, feature = "self_repair_extras"))]
 #[rstest]
 #[case("")]
 #[case("bad name")]
@@ -290,7 +285,6 @@ async fn repair_broken_tool_fails_on_invalid_tool_name(#[case] name: &str) {
     );
 }
 
-#[cfg(any(test, feature = "self_repair_extras"))]
 #[tokio::test]
 async fn repair_broken_tool_returns_retry_when_builder_itself_errors() {
     let store = Arc::new(CapturingStore::new());
@@ -317,7 +311,6 @@ async fn repair_broken_tool_returns_retry_when_builder_itself_errors() {
     );
 }
 
-#[cfg(any(test, feature = "self_repair_extras"))]
 #[tokio::test]
 async fn repair_broken_tool_records_mark_repaired_on_each_successful_call() {
     let store = Arc::new(CapturingStore::new());
@@ -346,7 +339,6 @@ async fn repair_broken_tool_records_mark_repaired_on_each_successful_call() {
     );
 }
 
-#[cfg(any(test, feature = "self_repair_extras"))]
 #[tokio::test]
 async fn repair_broken_tool_retry_message_uses_unknown_error_when_no_build_error() {
     let store = Arc::new(CapturingStore::new());
