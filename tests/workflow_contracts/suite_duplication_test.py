@@ -160,6 +160,54 @@ class SuiteRun:
         return f"{self.job} ({self.leg})" if self.leg else str(self.job)
 
 
+def _features_named_by(token: str, following: tuple[str, ...]) -> tuple[str, ...]:
+    """Return the features one argument selects.
+
+    Parameters
+    ----------
+    token
+        One shell word of the command.
+    following
+        The word after it, when there is one. `--features` takes its value
+        separately; the other spellings carry it.
+
+    Returns
+    -------
+    tuple of str
+        The feature names, or a sentinel for the flags that select features
+        without naming any. Empty for every other argument: a profile, an
+        output path or a test filter changes how a run is reported, not which
+        tests it compiles and executes.
+    """
+    if token == "--all-features":
+        return (ALL_FEATURES,)
+    if token == "--no-default-features":
+        return (NO_DEFAULT_FEATURES,)
+    if token == "--features" and following:
+        return tuple(following[0].split(","))
+    if token.startswith("--features="):
+        return tuple(token.partition("=")[2].split(","))
+    return ()
+
+
+def _unpack_feature_variable(tokens: list[str]) -> list[str]:
+    """Return the tokens with `TEST_FEATURES="..."` expanded in place.
+
+    A `make` step passes the selection as one assignment word. Unpacking it
+    here, rather than at the call site, means the two command shapes are keyed
+    the same way and a coverage lane can be compared with a test lane.
+    """
+    return [
+        part
+        for token in tokens
+        for part in (
+            shlex.split(token.partition("=")[2])
+            if token.startswith(f"{FEATURE_VARIABLE}=")
+            else [token]
+        )
+    ]
+
+
 def _feature_key(args: str) -> frozenset[str]:
     """Return the feature selection a command's arguments make.
 
@@ -173,33 +221,14 @@ def _feature_key(args: str) -> frozenset[str]:
     -------
     frozenset of str
         Each named feature, plus a sentinel for `--all-features` and for
-        `--no-default-features`. Everything else is ignored: a profile, an
-        output path or a test filter changes how the run is reported, not
-        which tests it compiles and executes.
+        `--no-default-features`.
     """
-    selected: set[str] = set()
-    tokens = shlex.split(args, comments=False, posix=True)
-    # A `make` step passes the selection as one assignment word. Unpacking it
-    # here, rather than at the call site, means the two command shapes are
-    # keyed the same way and a coverage lane can be compared with a test lane.
-    tokens = [
-        part
-        for token in tokens
-        for part in (
-            shlex.split(token.partition("=")[2])
-            if token.startswith(f"{FEATURE_VARIABLE}=")
-            else [token]
-        )
-    ]
-    for index, token in enumerate(tokens):
-        if token == "--all-features":
-            selected.add(ALL_FEATURES)
-        elif token == "--no-default-features":
-            selected.add(NO_DEFAULT_FEATURES)
-        elif token == "--features" and index + 1 < len(tokens):
-            selected.update(tokens[index + 1].split(","))
-        elif token.startswith("--features="):
-            selected.update(token.partition("=")[2].split(","))
+    tokens = _unpack_feature_variable(shlex.split(args, comments=False, posix=True))
+    selected = {
+        name
+        for index, token in enumerate(tokens)
+        for name in _features_named_by(token, tuple(tokens[index + 1 : index + 2]))
+    }
     return frozenset(name for name in selected if name)
 
 
@@ -293,33 +322,44 @@ def _suite_runs_in(job: Job, event: str) -> Iterator[SuiteRun]:
                 )
 
 
+def _dispatched_jobs(
+    documents: dict[str, dict[str, object]], event: str
+) -> Iterator[Job]:
+    """Yield every job an event can dispatch.
+
+    A workflow that does not declare the trigger contributes nothing, and
+    neither does a job whose own guard excludes it.
+    """
+    for name, document in documents.items():
+        if event not in triggers(document):
+            continue
+        yield from (
+            job for job in jobs_of(name, document) if runs_on_event(job, event)
+        )
+
+
 def suite_runs_for(
     documents: dict[str, dict[str, object]], event: str
 ) -> list[SuiteRun]:
-    """Return every workspace-suite run an event dispatches.
+    """Return every suite run an event dispatches.
 
     Parameters
     ----------
     documents
         Parsed workflows, keyed by file name.
     event
-        The trigger to resolve against: a workflow that does not declare it,
-        and a job whose guard excludes it, contribute nothing.
+        The trigger to resolve against.
 
     Returns
     -------
     list of SuiteRun
         One entry per leg per suite command, in workflow order.
     """
-    found: list[SuiteRun] = []
-    for name, document in documents.items():
-        if event not in triggers(document):
-            continue
-        for job in jobs_of(name, document):
-            if not runs_on_event(job, event):
-                continue
-            found.extend(_suite_runs_in(job, event))
-    return found
+    return [
+        run
+        for job in _dispatched_jobs(documents, event)
+        for run in _suite_runs_in(job, event)
+    ]
 
 
 def duplicates_in(

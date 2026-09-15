@@ -130,6 +130,55 @@ CACHE_ACTION_PREFIXES = (
 )
 
 
+def _expression_body(declared: str) -> str | None:
+    """Return the inside of a `${{ ... }}` scalar, or None if it is not one.
+
+    Parameters
+    ----------
+    declared
+        The raw scalar. A folded YAML scalar arrives with its line breaks
+        already joined into single spaces.
+
+    Returns
+    -------
+    str or None
+        The expression's body, stripped, or ``None`` for a plain label.
+    """
+    joined = " ".join(declared.split())
+    if not (joined.startswith("${{") and joined.endswith("}}")):
+        return None
+    return joined[3:-2].strip()
+
+
+def _parse_arm(part: str, *, last: bool) -> tuple[str | None, str] | None:
+    """Return one arm of a `runs-on` chain as a condition and a label.
+
+    Parameters
+    ----------
+    part
+        One `||`-separated piece of the expression.
+    last
+        Whether this is the final piece, which is the only place a bare label
+        may appear: an unguarded arm earlier in the chain would make every
+        arm after it unreachable.
+
+    Returns
+    -------
+    tuple, or None
+        ``(condition, label)``, with ``None`` as the condition of the final
+        fallback. ``None`` when the piece is not an arm these helpers read.
+    """
+    fallback = RUNNER_FALLBACK_RE.match(part)
+    if fallback is not None:
+        return (None, fallback["label"]) if last else None
+    if last:
+        return None
+    arm = RUNNER_ARM_RE.match(part)
+    if arm is None or not _recognized_condition(arm["condition"]):
+        return None
+    return arm["condition"], arm["label"]
+
+
 def _runs_on_chain(declared: str) -> tuple[tuple[str | None, str], ...] | None:
     """Split a context-dependent `runs-on` into its arms.
 
@@ -141,8 +190,7 @@ def _runs_on_chain(declared: str) -> tuple[tuple[str | None, str], ...] | None:
     Parameters
     ----------
     declared
-        The raw `runs-on` scalar. A folded YAML scalar arrives with its line
-        breaks already joined into single spaces.
+        The raw `runs-on` scalar.
 
     Returns
     -------
@@ -152,31 +200,19 @@ def _runs_on_chain(declared: str) -> tuple[tuple[str | None, str], ...] | None:
         includes a plain label, a matrix expression, a chain with no fallback,
         and any chain naming a condition these helpers do not recognize.
     """
-    joined = " ".join(declared.split())
-    if not (joined.startswith("${{") and joined.endswith("}}")):
+    body = _expression_body(declared)
+    if body is None:
         return None
-    body = joined[3:-2].strip()
     parts = [part.strip() for part in body.split("||")]
     if len(parts) < 2:
         return None
-    arms: list[tuple[str | None, str]] = []
-    for index, part in enumerate(parts):
-        last = index == len(parts) - 1
-        fallback = RUNNER_FALLBACK_RE.match(part)
-        if fallback is not None:
-            # A bare label anywhere but the end would make every later arm
-            # unreachable, which is a defect rather than a form to parse.
-            if not last:
-                return None
-            arms.append((None, fallback["label"]))
-            continue
-        if last:
-            return None
-        arm = RUNNER_ARM_RE.match(part)
-        if arm is None or not _recognized_condition(arm["condition"]):
-            return None
-        arms.append((arm["condition"], arm["label"]))
-    return tuple(arms)
+    arms = [
+        _parse_arm(part, last=index == len(parts) - 1)
+        for index, part in enumerate(parts)
+    ]
+    if any(arm is None for arm in arms):
+        return None
+    return typ.cast("tuple[tuple[str | None, str], ...]", tuple(arms))
 
 
 def _recognized_condition(condition: str) -> bool:
@@ -472,6 +508,53 @@ def runs_on_event(job: Job, event: str) -> bool:
     return True
 
 
+def _declared_matrix(job: Job) -> dict[str, object] | None:
+    """Return a job's `strategy.matrix` mapping, or None when it has none.
+
+    Raises
+    ------
+    AssertionError
+        If the matrix is a form these helpers cannot read. Returning "no legs"
+        for an unreadable matrix would exempt the job from every contract
+        keyed on what its legs run, which is the silent pass they exist to
+        prevent.
+    """
+    strategy = job.body.get("strategy")
+    if not isinstance(strategy, dict) or "matrix" not in strategy:
+        return None
+    matrix = strategy["matrix"]
+    if not isinstance(matrix, dict) or set(matrix) != {"include"}:
+        message = (
+            f"{job} declares a matrix this helper cannot read: {matrix!r}. "
+            "Every matrix in this estate is an `include` list, literal or "
+            "chosen by the event; teach the helper before writing another."
+        )
+        raise AssertionError(message)
+    return matrix
+
+
+def _resolve_include(job: Job, declared: object, event: str) -> list[object]:
+    """Return a matrix `include` as a list, resolving an event-chosen one.
+
+    Raises
+    ------
+    AssertionError
+        If the value is neither a list nor a conditional expression these
+        helpers can read.
+    """
+    if isinstance(declared, str):
+        match = CONDITIONAL_INCLUDE_RE.match(" ".join(declared.split()))
+        if match is None:
+            message = f"{job} computes its legs in a form this cannot read"
+            raise AssertionError(message)
+        arm = match["when"] if match["event"] == event else match["otherwise"]
+        declared = json.loads(arm)
+    if not isinstance(declared, list):
+        message = f"{job} declares a matrix include that is not a list"
+        raise AssertionError(message)
+    return declared
+
+
 def matrix_legs(job: Job, event: str) -> tuple[dict[str, str], ...]:
     """Return the matrix legs a job expands to on an event.
 
@@ -488,40 +571,13 @@ def matrix_legs(job: Job, event: str) -> tuple[dict[str, str], ...]:
     tuple of dict
         One mapping per leg. A job with no matrix expands to a single empty
         leg, so a caller can treat every job the same way.
-
-    Raises
-    ------
-    AssertionError
-        If the matrix is a form this cannot read. Returning "no legs" for an
-        unreadable matrix would exempt the job from every contract keyed on
-        what its legs run, which is the silent pass these helpers exist to
-        prevent.
     """
-    strategy = job.body.get("strategy")
-    if not isinstance(strategy, dict) or "matrix" not in strategy:
+    matrix = _declared_matrix(job)
+    if matrix is None:
         return ({},)
-    matrix = strategy["matrix"]
-    if not isinstance(matrix, dict) or set(matrix) != {"include"}:
-        message = (
-            f"{job} declares a matrix this helper cannot read: {matrix!r}. "
-            "Every matrix in this estate is an `include` list, literal or "
-            "chosen by the event; teach the helper before writing another."
-        )
-        raise AssertionError(message)
-    declared = matrix["include"]
-    if isinstance(declared, str):
-        match = CONDITIONAL_INCLUDE_RE.match(" ".join(declared.split()))
-        if match is None:
-            message = f"{job} computes its legs in a form this cannot read"
-            raise AssertionError(message)
-        arm = match["when"] if match["event"] == event else match["otherwise"]
-        declared = json.loads(arm)
-    if not isinstance(declared, list):
-        message = f"{job} declares a matrix include that is not a list"
-        raise AssertionError(message)
     return tuple(
         {str(key): str(value) for key, value in leg.items()}
-        for leg in declared
+        for leg in _resolve_include(job, matrix["include"], event)
         if isinstance(leg, dict)
     )
 
