@@ -386,3 +386,12 @@ task warrants them:
 
 These practices exist to keep the repository accurate, testable, maintainable,
 and honest about its current state.
+
+## Fast development builds
+
+`make dev-build` and `make dev-test` compile with the opt-in Cranelift
+backend and the mold linker configured in `tools/dev-fast/config.toml`.
+They require a nightly toolchain and, on Linux, a `mold` binary on the
+`PATH`. The fragment is passed explicitly with `--config`, so release,
+coverage, and verification builds are unaffected; never copy its contents
+into `.cargo/config.toml`, which Cargo applies to every build.
