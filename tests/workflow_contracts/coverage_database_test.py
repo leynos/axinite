@@ -22,10 +22,12 @@ Run via ``make test-workflow-contracts``.
 from __future__ import annotations
 
 import re
+import shlex
+import tomllib
 import typing as typ
 from urllib.parse import urlsplit
 
-from _workflow_policy import WORKFLOW_DIR, load, step_text
+from _workflow_policy import REPOSITORY_ROOT, WORKFLOW_DIR, load, step_text
 
 WORKFLOW: typ.Final[str] = "coverage.yml"
 
@@ -184,4 +186,140 @@ def test_the_export_is_guarded_to_the_postgres_legs() -> None:
         f"the {TEST_URL_VARIABLE} export must be guarded on "
         "matrix.has_postgres, so the libsql-only leg is not handed a database "
         "URL its feature set does not use"
+    )
+
+
+#: The variable a lane sets to say that Postgres is not optional on this run.
+#: `src/testing/postgres.rs` skips its Postgres tests when the database is
+#: unreachable, which is what a developer without one needs. On a lane that
+#: starts a Postgres service and points the tests at it, the same skip reports
+#: success for tests that never connected.
+REQUIRE_VARIABLE: typ.Final[str] = "AXINITE_REQUIRE_POSTGRES"
+
+#: The feature whose presence makes a leg Postgres-bearing.
+POSTGRES_FEATURE: typ.Final[str] = "postgres"
+
+#: The guard a step carries to run only on the Postgres-bearing legs.
+POSTGRES_GUARD: typ.Final[str] = "matrix.has_postgres"
+
+
+def _default_features() -> frozenset[str]:
+    """Return the root package's default feature set.
+
+    Read rather than restated, because `postgres` being a default feature is
+    the whole reason a leg can bear Postgres without naming it.
+    """
+    manifest = tomllib.loads(
+        (REPOSITORY_ROOT / "Cargo.toml").read_text(encoding="utf-8")
+    )
+    declared = manifest.get("features", {}).get("default", [])
+    return frozenset(str(name) for name in declared)
+
+
+def _enables_postgres(flags: str) -> bool:
+    """Report whether a leg's flags compile the `postgres` feature.
+
+    Parameters
+    ----------
+    flags
+        The leg's `flags` value, as handed to `cargo llvm-cov nextest`.
+
+    Returns
+    -------
+    bool
+        True when the resolved feature set contains `postgres`.
+    """
+    tokens = shlex.split(flags, comments=False, posix=True)
+    if "--all-features" in tokens:
+        return True
+    named: set[str] = set()
+    for index, token in enumerate(tokens):
+        if token == "--features" and index + 1 < len(tokens):
+            named.update(tokens[index + 1].split(","))
+        elif token.startswith("--features="):
+            named.update(token.partition("=")[2].split(","))
+    # Cargo enables the defaults unless the command turns them off, so a leg
+    # that names nothing still gets every member of `default`.
+    if "--no-default-features" not in tokens:
+        named |= _default_features()
+    return POSTGRES_FEATURE in named
+
+
+def _legs() -> list[dict[str, object]]:
+    """Return the coverage job's matrix legs."""
+    strategy = _postgres_job().get("strategy")
+    assert isinstance(strategy, dict), f"{JOB} must declare a strategy"
+    matrix = strategy.get("matrix")
+    assert isinstance(matrix, dict), f"{JOB} must declare a matrix"
+    include = matrix.get("include")
+    assert isinstance(include, list), f"{JOB}'s matrix must declare include"
+    return [leg for leg in include if isinstance(leg, dict)]
+
+
+def test_every_postgres_bearing_leg_declares_it() -> None:
+    """A leg's `has_postgres` must match the features it actually compiles.
+
+    The flag decides whether the service is used, the migrations run and the
+    database URL is exported. A leg that compiles `postgres` without the flag
+    runs every Postgres test against nothing and skips them all, and one that
+    carries the flag without the feature pays for a service it cannot use.
+    """
+    for leg in _legs():
+        name = leg.get("name")
+        declared = bool(leg.get("has_postgres"))
+        actual = _enables_postgres(str(leg.get("flags", "")))
+        assert declared == actual, (
+            f"the {name!r} leg declares has_postgres={declared} but its flags "
+            f"{leg.get('flags')!r} resolve to postgres={actual}; `postgres` is "
+            "a default feature, so a leg gets it unless it passes "
+            "--no-default-features"
+        )
+
+
+def test_the_leg_that_provides_postgres_tells_the_tests_it_is_not_optional() -> None:
+    """The database URL and the promise of a database ship in one step.
+
+    Separating them is the failure this guards. A lane that exports the URL
+    without the promise leaves the skip available, so a Postgres service that
+    failed to start reports success for every test that needed it; a lane that
+    exports the promise without the URL fails on the passwordless fallback,
+    which is issue #350 again.
+    """
+    step = _exporting_step()
+    script = step_text(step)
+    assert f"{REQUIRE_VARIABLE}=" in script, (
+        f"the step exporting {TEST_URL_VARIABLE} must also export "
+        f"{REQUIRE_VARIABLE}, so a leg cannot receive the database without "
+        "also being told that the database is not optional"
+    )
+    assert re.search(
+        rf'echo\s+"{REQUIRE_VARIABLE}=[^"\n]+"\s*>>\s*"?\$(?:\{{)?GITHUB_ENV',
+        script,
+    ), (
+        f"{REQUIRE_VARIABLE} must be appended to $GITHUB_ENV; setting it in "
+        "the step's own shell reaches nothing that runs the tests"
+    )
+
+
+def test_the_promise_is_confined_to_the_postgres_bearing_legs() -> None:
+    """A leg with no database must keep its skip.
+
+    The narrow direction. Exporting the requirement unconditionally would fail
+    the libsql-only leg, which is meant to run without a database, and a
+    developer's checkout inherits nothing from here either way.
+    """
+    exporting = [
+        step
+        for step in _steps(_postgres_job())
+        if f"{REQUIRE_VARIABLE}=" in step_text(step)
+    ]
+    assert len(exporting) == 1, (
+        f"expected exactly one step exporting {REQUIRE_VARIABLE}, found "
+        f"{len(exporting)}"
+    )
+    condition = " ".join(str(exporting[0].get("if", "")).split())
+    assert condition == POSTGRES_GUARD, (
+        f"the step exporting {REQUIRE_VARIABLE} is guarded by {condition!r}, "
+        f"not {POSTGRES_GUARD!r}; a leg without a database would be told that "
+        "one is mandatory and fail"
     )
