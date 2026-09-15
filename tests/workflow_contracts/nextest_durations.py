@@ -127,6 +127,79 @@ def _component_at(duration: str, text: str, position: int) -> tuple[int, int, in
     return seconds_part, nanoseconds_part, component.end()
 
 
+def _add_component(
+    duration: str,
+    total: tuple[int, int],
+    component: tuple[int, int],
+) -> tuple[int, int]:
+    """Add one component to the running total, as ``add_current`` does.
+
+    humantime carries the running total as whole seconds beside a
+    nanosecond remainder, and every product and sum between them is a
+    checked ``u64``, so a total past either ceiling will not load even
+    though each component did. Both ceilings are enforced here, in
+    humantime's order.
+
+    The remainder is bounded first, before any carry: ``add_current``
+    opens with ``(out.subsec_nanos() as u64).add(nsec)?``, so the
+    remainder held so far plus this component's nanoseconds must fit a
+    ``u64`` by themselves. Two values of ``u64::MAX`` nanoseconds carry
+    the first to 18,446,744,073 seconds and then overflow on the second,
+    although the duration they name is about thirty-six seconds; a
+    reader summing into Python's unbounded integer and checking only the
+    seconds afterwards reports a duration for text nextest will not
+    start under.
+
+    The carry then happens at a complete second rather than past one.
+    humantime's own ``add_current`` leaves exactly a billion in the
+    remainder and hands it to ``Duration::new``, which carries it
+    regardless and panics when the seconds then leave the ``u64``.
+    Comparing with ``>`` alone reads ``"18446744073709551615s 1000ms"``
+    as a duration one second past the ceiling, and nextest cannot load
+    that text by either route. Carrying at a complete second keeps
+    ``"0.5s 0.5s"`` a duration of one second, which humantime reads.
+
+    Parameters
+    ----------
+    duration : str
+        The duration text being read, named in any refusal.
+    total : tuple[int, int]
+        The whole seconds and nanosecond remainder accumulated so far.
+    component : tuple[int, int]
+        The whole seconds and nanoseconds of the component to add.
+
+    Returns
+    -------
+    tuple[int, int]
+        The whole seconds and nanosecond remainder after the addition.
+
+    Raises
+    ------
+    NextestConfigurationError
+        If either ceiling is passed.
+    """
+    total_seconds, total_nanoseconds = total
+    component_seconds, component_nanoseconds = component
+    total_nanoseconds += component_nanoseconds
+    if total_nanoseconds > U64_MAX:
+        message = (
+            f"nextest duration {duration!r} sums more nanoseconds than the "
+            f"u64 humantime holds them in before it carries them into seconds"
+        )
+        raise NextestConfigurationError(message)
+    if total_nanoseconds >= NANOSECONDS_PER_SECOND:
+        component_seconds += total_nanoseconds // NANOSECONDS_PER_SECOND
+        total_nanoseconds %= NANOSECONDS_PER_SECOND
+    total_seconds += component_seconds
+    if total_seconds > U64_MAX:
+        message = (
+            f"nextest duration {duration!r} totals more seconds than the "
+            f"u64 humantime accumulates them in"
+        )
+        raise NextestConfigurationError(message)
+    return total_seconds, total_nanoseconds
+
+
 def seconds(duration: str) -> float:
     """Convert a nextest duration to seconds.
 
@@ -155,46 +228,14 @@ def seconds(duration: str) -> float:
             f"humantime reads no duration from nothing"
         )
         raise NextestConfigurationError(message)
-    total_seconds = 0
-    total_nanoseconds = 0
+    total = (0, 0)
     position = 0
     while position < len(text):
         component_seconds, component_nanoseconds, position = _component_at(
             duration, text, position
         )
-        # humantime carries the running total as whole seconds beside a
-        # nanosecond remainder, and both are checked, so a sum past that
-        # ceiling will not load even though each component did. The carry
-        # happens at a complete second rather than past one: humantime's
-        # own ``add_current`` leaves exactly a billion in the remainder
-        # and hands it to ``Duration::new``, which carries it regardless
-        # and panics when the seconds then leave the ``u64``. Comparing
-        # with ``>`` alone reads ``"18446744073709551615s 1000ms"`` as a
-        # duration one second past the ceiling, and nextest cannot load
-        # that text by either route.
-        # The remainder plus this component's nanoseconds must itself fit
-        # the u64, before any carry: humantime's ``add_current`` opens
-        # with ``(out.subsec_nanos() as u64).add(nsec)?``, so
-        # ``"18446744073709551615ns 18446744073709551615ns"`` overflows
-        # on the second component although its value is thirty-six
-        # seconds. Accumulating into Python's unbounded integer and
-        # checking only the seconds afterwards reports a duration for it.
-        total_nanoseconds += component_nanoseconds
-        if total_nanoseconds > U64_MAX:
-            message = (
-                f"nextest duration {duration!r} sums more nanoseconds than "
-                f"the u64 humantime holds them in before it carries them "
-                f"into seconds"
-            )
-            raise NextestConfigurationError(message)
-        if total_nanoseconds >= NANOSECONDS_PER_SECOND:
-            component_seconds += total_nanoseconds // NANOSECONDS_PER_SECOND
-            total_nanoseconds %= NANOSECONDS_PER_SECOND
-        total_seconds += component_seconds
-        if total_seconds > U64_MAX:
-            message = (
-                f"nextest duration {duration!r} totals more seconds than the "
-                f"u64 humantime accumulates them in"
-            )
-            raise NextestConfigurationError(message)
+        total = _add_component(
+            duration, total, (component_seconds, component_nanoseconds)
+        )
+    total_seconds, total_nanoseconds = total
     return total_seconds + total_nanoseconds / NANOSECONDS_PER_SECOND
