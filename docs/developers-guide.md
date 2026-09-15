@@ -639,6 +639,15 @@ binary `build` produced and drive it from Playwright, and peaked at 1,273 to
 1,432 MiB across nine legs, under a fifth of a `standard-2`, so they took the
 smaller shape. No job now asks for `standard-8`.
 
+The first run on the new shapes confirms the memory side and leaves the wall
+time unsettled, which is worth stating plainly. `build` peaked at 5,746 MiB of
+the 15,991 a `standard-4` presents, 36%, and its legs at 916 to 997 MiB of
+7,940, 12%. It took 582 seconds against a warm `standard-8` history of 330,
+but with a Rust cache hit rate of 12%: the run was the first on a new branch,
+so it compiled what a warm run would have fetched. The two numbers are not
+comparable, and the shape is confirmed on memory alone until a warm run on
+`standard-4` exists. Its legs took 198 to 264 seconds against 120 to 216.
+
 `release.yml` stays GitHub-hosted in full, and the reasoning is worth
 recording because the file looks like the largest unmigrated slice in the
 estate. It has never run: there has been no tag push, so there is no duration,
