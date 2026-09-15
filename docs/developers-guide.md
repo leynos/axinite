@@ -520,9 +520,9 @@ on the trigger:
 
 | Trigger | Workspace suite | GitHub tool crate | Telegram channel crate |
 | --- | --- | --- | --- |
-| `pull_request` | `test.yml` `tests`, all-features and default legs; `codescene-coverage.yml` `coverage-check` for libsql-only | `test.yml` `github-tool-tests` | `test.yml` `telegram-tests` |
+| `pull_request` | `test.yml` `tests`, default leg; `codescene-coverage.yml` `coverage-check` for libsql-only | `test.yml` `github-tool-tests` | `test.yml` `telegram-tests` |
 | `push` to `main` | `coverage.yml` `coverage`, all three legs | `test.yml` `github-tool-tests` | `test.yml` `telegram-tests` |
-| `schedule` (through `mutation-testing.yml`) | `test.yml` `tests`, all three legs | `test.yml` `github-tool-tests` | `test.yml` `telegram-tests` |
+| `schedule` (through `mutation-testing.yml`) | `test.yml` `tests`, default and libsql-only legs | `test.yml` `github-tool-tests` | `test.yml` `telegram-tests` |
 
 Three mechanisms carry that, and each is worth knowing before changing a lane:
 
@@ -537,6 +537,14 @@ Three mechanisms carry that, and each is worth knowing before changing a lane:
   `run-tests` computes `EXPECTED_TESTS_RESULT` from the event, `skipped` on a
   push and `success` everywhere else, so a leg that vanishes for any other
   reason is still a failure.
+- **A leg is what it runs, not what it is called.** `tests` had a leg named
+  `all-features` which passed `--features postgres,libsql,html-to-markdown`
+  and no `--no-default-features`. All three are members of `default`, so
+  Cargo built that leg exactly as it built the leg passing no flags at all,
+  `docker` included: two paid legs, one suite, for as long as anyone had
+  been reading the names. It is gone. Running the suite under the features
+  `default` leaves out is `coverage.yml`'s all-features leg, which passes
+  `--all-features` and means it.
 
 The profile is part of that, and it is the half most easily missed. Both
 coverage lanes ran nextest's default profile, which drops the trybuild
@@ -560,7 +568,11 @@ rule. It reads what each lane runs rather than what it is called, resolving a
 leg's `${{ matrix.flags }}` and a step's `TEST_FEATURES` and comparing feature
 selections as sets, so `--features a,b` and `--features a --features b` are
 one run while `--all-features` stays distinct from a list that happens to name
-every feature today. It then asserts three things: that no trigger runs one
+every feature today. It resolves each command's defaults before comparing,
+reading the `default` list from the root `Cargo.toml`, because a command that
+does not pass `--no-default-features` gets them whether it names them or not;
+without that step the duplicate leg above keyed as distinct work and the
+contract passed over it. It then asserts three things: that no trigger runs one
 scope twice, that every scope still runs on every trigger, and that the
 workspace suite runs under the `ci` profile wherever it runs. The second and
 third are there because removing a duplicate lane, removing the only lane, and
