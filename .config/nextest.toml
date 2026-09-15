@@ -2,9 +2,20 @@
 # https://nexte.st/docs/configuration/
 
 [profile.default]
-# Exclude expensive trybuild compile-contract tests from the local default
-# run. These spawn a fresh rustc per case against the full crate and take
-# ~7 minutes. The ci profile below includes them.
+# Exclude `trybuild` from the local default run. It spawns a fresh rustc
+# per case against the full crate and takes ~7 minutes, which is most of
+# what a local run costs.
+#
+# It is the only compile-contract binary this filter excludes, and there
+# are two. `schema_helpers_ui` is not excluded and runs in both
+# profiles: it is two pass-only cases proving `require_str` and
+# `require_param` accept both a `&str` and a `ParamName` at their call
+# sites, and it measured 244s, 249s and 257s rather than seven minutes.
+# The 900s override below is what keeps it from being terminated by the
+# 300s base allowance; `compile_contract_budget_test.py` pins both the
+# discovered set and which profile excludes which.
+#
+# The ci profile below runs both.
 default-filter = 'not binary(trybuild)'
 # Kill a test that has run for five minutes rather than reporting it slow
 # for ever. Nothing else here bounds a single test, so without this the
