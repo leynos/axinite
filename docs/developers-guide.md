@@ -2843,13 +2843,22 @@ outright, whatever it spells, so even `1.0ns` will not load. The unit tables in
 `nextest_units.py` are split by which of the two a unit is measured in, because
 one table in nanoseconds cannot express the rule at the hour.
 
-Three ceilings come with it, and they are different. A numeric literal must fit
+Four ceilings come with it, and they are different. A numeric literal must fit
 the `u64` humantime reads it into, so `1000000000000000000000ns` is refused even
 though its value in seconds is small. A fraction's own arithmetic is checked, so
 `0.1000000000000000000s` overflows on the multiplication and
 `1.00000000000000000000s` on the denominator, although both would fit as
-durations. And the accumulated seconds must fit the `u64` they are summed into,
+durations. The accumulated seconds must fit the `u64` they are summed into,
 so `18446744073709551615s` loads and one second more does not.
+
+And the nanosecond remainder has a ceiling of its own, which is the one that
+catches a reader summing into an unbounded integer. `add_current` opens with
+`(out.subsec_nanos() as u64).add(nsec)?`, before any carry, so the remainder
+held so far plus the component's nanoseconds must fit a `u64` by themselves.
+Two values of `u64::MAX` nanoseconds carry the first to 18,446,744,073 seconds
+and then overflow on the second, although the duration they name is about
+thirty-six seconds. Checking only the accumulated seconds afterwards reports a
+duration for text nextest will not start under.
 
 The reading was checked against the parser rather than against its
 documentation: 4,016 generated durations, spanning every unit spelling,
