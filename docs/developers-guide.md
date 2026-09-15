@@ -592,6 +592,27 @@ binary `build` produced and drive it from Playwright, and peaked at 1,273 to
 1,432 MiB across nine legs, under a fifth of a `standard-2`, so they took the
 smaller shape. No job now asks for `standard-8`.
 
+`release.yml` stays GitHub-hosted in full, and the reasoning is worth
+recording because the file looks like the largest unmigrated slice in the
+estate. It has never run: there has been no tag push, so there is no duration,
+no peak and no cache behaviour to size anything against, and the recipe's
+first rule is that a shape follows a measurement. Two of its seven jobs
+compile, `build-local-artifacts` and `build-wasm-extensions`; the other five,
+`plan`, `build-global-artifacts`, `host`, `update-registry-checksums` and
+`announce`, install dist, assemble installers, upload and announce, which is
+API-bound work that belongs on a free runner whatever happens to the rest. Of
+the two that compile, only the `x86_64-unknown-linux-gnu` leg of
+`build-local-artifacts` is a candidate: the macOS and Windows legs cannot
+move, and the `aarch64-unknown-linux-gnu` leg would need an Arm shape this
+estate has not reviewed. Its label is not editable here in any case. dist
+regenerates `release.yml` wholesale on a version bump, so the runner comes
+from `[workspace.metadata.dist.github-custom-runners]` in the root
+`Cargo.toml`, where `x86_64-unknown-linux-gnu = "ubuntu-22.04"` would become
+the Ubicloud label; `build-wasm-extensions` is a hand-added job kept alive by
+`allow-dirty = ["ci"]`, so its label is editable in the file but is equally
+unmeasured. Revisit all of this after the first release run, with the
+durations that run produces.
+
 Two exclusions still stand:
 
 - Any job that gains a `services:` block, because a service container's
