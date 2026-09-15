@@ -2697,8 +2697,11 @@ does not name would then be reported slow for ever rather than killed.
 
 Both figures are bounds rather than measurements, and the configuration says
 so. No single test in the default profile approaches five minutes, and nobody
-has timed a single trybuild case; what is known is that the binaries together
-take about seven minutes, which is why the default profile excludes them.
+has timed a single trybuild case; what is known is that `trybuild` takes about
+seven minutes, which is why the default profile excludes it. It excludes that
+one binary and not the other: `schema_helpers_ui` measured 244s, 249s and 257s
+and runs in both profiles, which is why it needs the 900s override rather than
+the exclusion.
 
 ### The tier that is absent, and why
 
