@@ -564,11 +564,13 @@ developer runs the whole, CI runs the halves on different lanes, and the whole
 is the sum of the parts by construction rather than by memory.
 
 `tests/workflow_contracts/suite_duplication_test.py` holds both halves of the
-rule. It reads what each lane runs rather than what it is called, resolving a
-leg's `${{ matrix.flags }}` and a step's `TEST_FEATURES` and comparing feature
-selections as sets, so `--features a,b` and `--features a --features b` are
-one run while `--all-features` stays distinct from a list that happens to name
-every feature today. It resolves each command's defaults before comparing,
+rule, over a reading in `_suite_reader.py` and `_suite_targets.py` that
+`suite_reader_test.py` unit-tests on its own. It reads what each lane runs
+rather than what it is called, resolving a leg's `${{ matrix.flags }}` and a
+step's `TEST_FEATURES` and comparing feature selections as sets, so
+`--features a,b` and `--features a --features b` are one run while
+`--all-features` stays distinct from a list that happens to name every
+feature today. It resolves each command's defaults before comparing,
 reading the `default` list from the root `Cargo.toml`, because a command that
 does not pass `--no-default-features` gets them whether it names them or not;
 without that step the duplicate leg above keyed as distinct work and the

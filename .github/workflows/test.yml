@@ -116,8 +116,8 @@ jobs:
       # `exclude` cannot remove an `include` entry: GitHub processes `include`
       # afterwards and documents it as the way to add an excluded combination
       # back, which is exactly what it would do here.
-      # `tests/workflow_contracts/suite_duplication_test.py` reads both arms,
-      # and resolves each leg's defaults before comparing them.
+      # `tests/workflow_contracts/_suite_reader.py` reads both arms, and
+      # resolves each leg's defaults before comparing them.
       matrix:
         include: >-
           ${{ github.event_name == 'pull_request' && fromJSON('[
