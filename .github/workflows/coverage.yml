@@ -253,12 +253,21 @@ jobs:
       # DATABASE_URL is exported alongside it because the runtime reads that
       # name, so anything invoked here that goes through the normal
       # configuration path sees the same database.
+      #
+      # AXINITE_REQUIRE_POSTGRES is exported from this same step on purpose.
+      # `try_test_pg_db` skips when the database is unreachable, which is what
+      # a developer without a local Postgres needs; on a leg that starts a
+      # Postgres service and points the tests at it, the same skip reports
+      # success for tests that never connected. Setting it here means the URL
+      # and the promise arrive together or not at all, so the step's own
+      # absence cannot leave a leg that believes Postgres is optional.
       - name: Set the test database URL for postgres configs
         if: matrix.has_postgres
         run: |
           database_url="postgres://postgres:postgres@localhost/axinite_test"
           echo "TEST_DATABASE_URL=${database_url}" >> "$GITHUB_ENV"
           echo "DATABASE_URL=${database_url}" >> "$GITHUB_ENV"
+          echo "AXINITE_REQUIRE_POSTGRES=1" >> "$GITHUB_ENV"
 
       # Instrument with nextest, not plain `cargo test`: the startup
       # boot-screen snapshot test captures stdout at file-descriptor
@@ -274,11 +283,17 @@ jobs:
 
       # Feed CodeScene's stored coverage from the analysed branch (main).
       # Upload from ONE leg only so CodeScene receives a single report
-      # per commit. The libsql-only leg is chosen because it is the leg
-      # that reliably builds a coverage report: the postgres-bearing legs
-      # (default, all-features) currently fail their Postgres integration
-      # tests for pre-existing reasons unrelated to coverage wiring (see
-      # the PR description). The guard skips the step when the project
+      # per commit. The libsql-only leg is chosen because one leg has to be,
+      # and it is the cheapest: it compiles the narrowest feature set and
+      # needs no Postgres service.
+      #
+      # It is no longer chosen because the others fail. They did, for the
+      # reason recorded against the database URL above, and this comment said
+      # so long after it stopped being true. Dispatch 34991999565 on
+      # 3301e095e is green on all three legs under `--profile ci`: 4,372 tests
+      # run and 4,372 passed on `all-features`, including the five
+      # `db::postgres::sandbox::tests::behavioural` tests from issue #350.
+      # The guard skips the step when the project
       # access token is absent (forks). The PR "Code Coverage" gate
       # (mode: check) is deferred until the CodeScene project's gates
       # configuration is enabled operator-side (project 77987 posts only
