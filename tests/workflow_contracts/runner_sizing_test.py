@@ -173,6 +173,12 @@ REVIEWED_SHAPES: dict[tuple[str, str], tuple[str, str]] = {
         "ubicloud-standard-4",
         "the workspace test matrix, 484 to 551 s",
     ),
+    ("test.yml", "github-tool-tests"): (
+        "ubicloud-standard-2",
+        "one small out-of-workspace crate, on the same terms as "
+        "telegram-tests; the shape is provisional until the first run on it "
+        "reports a peak",
+    ),
     ("test.yml", "telegram-tests"): (
         "ubicloud-standard-2",
         "one small out-of-workspace crate, 33 s",

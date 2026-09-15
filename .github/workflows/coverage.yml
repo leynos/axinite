@@ -266,10 +266,14 @@ jobs:
       # the `cargo test` baseline llvm-cov drives otherwise fails
       # (issue #237). nextest also skips doctests; the default profile
       # additionally drops the slow trybuild binaries.
+      # `--profile ci` is what makes this the execution of record for a push.
+      # The default profile drops the trybuild compile contracts, and since
+      # `test.yml` stands down on a push, a default-profile run here would
+      # leave them unexecuted on `main` altogether.
       - name: Generate coverage
         run: >-
           cargo llvm-cov nextest ${{ matrix.flags }} --features test-helpers
-          --workspace --lcov
+          --workspace --profile ci --lcov
           --output-path lcov.info
 
       # Feed CodeScene's stored coverage from the analysed branch (main).

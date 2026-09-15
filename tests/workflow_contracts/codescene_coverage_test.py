@@ -206,9 +206,14 @@ def test_setup_and_generator_match_proven_libsql_coverage() -> None:
 
     generator = _find_step(job, "Generate coverage").get("run")
     assert isinstance(generator, str), "Generate coverage must declare a command"
+    # `--profile ci` joined the proven command when this lane became the only
+    # libsql-only run on a pull request: `test.yml`'s leg ran that profile, and
+    # the default profile drops the trybuild compile contracts, so without it
+    # the replacement would be narrower than the leg it replaced.
     assert " ".join(generator.split()) == (
         "cargo llvm-cov nextest --no-default-features --features libsql "
-        "--features test-helpers --workspace --lcov --output-path lcov.info"
+        "--features test-helpers --workspace --profile ci --lcov "
+        "--output-path lcov.info"
     ), "coverage-check must preserve the proven libsql-only LCOV generator"
 
 
