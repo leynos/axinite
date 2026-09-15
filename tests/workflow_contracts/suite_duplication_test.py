@@ -13,7 +13,11 @@ a trigger a developer waits for, no two lanes may run the same suite over the
 same feature set under the same nextest profile. Feature sets are compared as
 sets, so a leg rewritten from `--features a,b` to `--features a --features b`
 is still the same run, and `--all-features` stays distinct from a list that
-happens to name every feature today, because tomorrow it will not. The profile
+happens to name every feature today, because tomorrow it will not. A command
+that does not pass `--no-default-features` is keyed with the root manifest's
+`default` list folded in, because Cargo enables those whether the command
+names them or not: without that, a leg naming three members of `default` read
+as different work from the leg naming none, and `test.yml` ran both. The profile
 is part of the identity because it selects which tests run at all: the default
 profile drops the trybuild compile contracts, so a default-profile lane does
 not stand in for a `ci` one, however identical the flags.
@@ -29,6 +33,7 @@ from __future__ import annotations
 
 import re
 import shlex
+import tomllib
 import typing as typ
 from dataclasses import dataclass
 
@@ -49,7 +54,6 @@ from _workflow_policy import (
 
 if typ.TYPE_CHECKING:  # pragma: no cover - typing only
     from collections.abc import Iterator
-    from pathlib import Path
 
 #: The triggers a developer waits on, and the only ones that reach a paid
 #: runner. A scheduled duplicate is free and blocks nobody.
@@ -104,20 +108,45 @@ CARGO_COMMANDS: tuple[re.Pattern[str], ...] = (
 #: `test` matching the first half of `test-workflow-contracts`, which is a
 #: PyYAML parse rather than a suite.
 MAKE_COMMAND: re.Pattern[str] = re.compile(
-    r"\bmake\s+(?P<target>" + "|".join(sorted(MAKE_TARGETS, key=len, reverse=True))
+    r"\bmake\s+(?P<target>"
+    + "|".join(sorted(MAKE_TARGETS, key=len, reverse=True))
     + r")\b(?!-)(?P<args>[^\n]*)"
 )
 
 #: Where a Cargo command names the crate it runs against.
-MANIFEST_RE: re.Pattern[str] = re.compile(
-    r"--manifest-path[= ](?P<path>\S+)"
-)
+MANIFEST_RE: re.Pattern[str] = re.compile(r"--manifest-path[= ](?P<path>\S+)")
 
 #: Sentinels for the flags that select features without naming any. They are
 #: part of the key so that `--all-features` and `--no-default-features
 #: --features libsql` cannot collide with each other or with a feature list.
 ALL_FEATURES = ":all-features"
 NO_DEFAULT_FEATURES = ":no-default-features"
+
+#: The manifest whose `default` feature list every command inherits unless it
+#: passes `--no-default-features`.
+ROOT_MANIFEST = REPOSITORY_ROOT / "Cargo.toml"
+
+
+def _default_features() -> frozenset[str]:
+    """Return the root package's default feature set.
+
+    Cargo enables these on every command that does not pass
+    `--no-default-features`, so a leg that names three of them and a leg that
+    names none compile and run exactly the same thing. Reading them here is
+    what stops the contract comparing what a command says against what
+    another command says, rather than what each one runs.
+
+    Returns
+    -------
+    frozenset of str
+        Every feature in the root manifest's `default` list.
+    """
+    manifest = tomllib.loads(ROOT_MANIFEST.read_text(encoding="utf-8"))
+    declared = manifest.get("features", {}).get("default", [])
+    return frozenset(str(name) for name in declared)
+
+
+DEFAULT_FEATURES: frozenset[str] = _default_features()
 
 #: `${{ matrix.<key> }}`, which is how a leg's flags reach the command.
 MATRIX_REFERENCE_RE: re.Pattern[str] = re.compile(
@@ -220,8 +249,9 @@ def _feature_key(args: str) -> frozenset[str]:
     Returns
     -------
     frozenset of str
-        Each named feature, plus a sentinel for `--all-features` and for
-        `--no-default-features`.
+        The features the command actually enables: each named feature, the
+        root manifest's defaults unless the command turns them off, and a
+        sentinel for `--all-features` and for `--no-default-features`.
     """
     tokens = _unpack_feature_variable(shlex.split(args, comments=False, posix=True))
     selected = {
@@ -229,7 +259,15 @@ def _feature_key(args: str) -> frozenset[str]:
         for index, token in enumerate(tokens)
         for name in _features_named_by(token, tuple(tokens[index + 1 : index + 2]))
     }
-    return frozenset(name for name in selected if name)
+    named = frozenset(name for name in selected if name)
+    # `--no-default-features` says the defaults are off, so the explicit list
+    # is the whole of the selection. Everything else gets them whether it
+    # names them or not, which is the point: a leg naming three members of
+    # `default` is the leg that names nothing. `--all-features` needs no
+    # exception, because its sentinel already keeps it apart from every list.
+    if NO_DEFAULT_FEATURES in named:
+        return named
+    return named | DEFAULT_FEATURES
 
 
 def _profile(args: str) -> str:
@@ -265,9 +303,7 @@ def _substitute(text: str, leg: dict[str, str]) -> str:
     typo in a matrix key shows up in the key instead of quietly widening two
     different runs into one.
     """
-    return MATRIX_REFERENCE_RE.sub(
-        lambda match: leg.get(match["key"], match[0]), text
-    )
+    return MATRIX_REFERENCE_RE.sub(lambda match: leg.get(match["key"], match[0]), text)
 
 
 def _cargo_runs(script: str) -> Iterator[tuple[str, str, frozenset[str]]]:
@@ -333,9 +369,7 @@ def _dispatched_jobs(
     for name, document in documents.items():
         if event not in triggers(document):
             continue
-        yield from (
-            job for job in jobs_of(name, document) if runs_on_event(job, event)
-        )
+        yield from (job for job in jobs_of(name, document) if runs_on_event(job, event))
 
 
 def suite_runs_for(
@@ -545,8 +579,7 @@ def test_no_trigger_runs_the_same_suite_twice(event: str) -> None:
     duplicated = duplicates_in(suite_runs_for(ESTATE, event))
     assert not duplicated, "\n".join(
         f"on {event}, {scope} under {sorted(features) or 'no features'} and "
-        f"the {profile} profile is run by "
-        + ", ".join(str(run) for run in runs)
+        f"the {profile} profile is run by " + ", ".join(str(run) for run in runs)
         for (scope, profile, features), runs in duplicated.items()
     )
 
@@ -593,6 +626,46 @@ class TestFeatureKey:
         """
         assert _feature_key(left) != _feature_key(right)
 
+    def test_the_default_set_comes_from_the_manifest(self) -> None:
+        """Read the defaults rather than restating them.
+
+        A reader that returned an empty set would restore the old behaviour
+        silently: every equality below would still hold for a command that
+        names nothing, and the only evidence would be a duplicate the
+        contract failed to report.
+        """
+        declared = tomllib.loads(ROOT_MANIFEST.read_text(encoding="utf-8"))
+        assert DEFAULT_FEATURES == frozenset(declared["features"]["default"])
+        assert DEFAULT_FEATURES, "the root manifest declares no default features"
+
+    def test_naming_a_default_feature_is_naming_nothing(self) -> None:
+        """A list of members of `default` selects what `default` selects.
+
+        This is the defect the key was written without. `test.yml`'s leg
+        named `all-features` passed three members of `default` and no
+        `--no-default-features`, so Cargo built it exactly as it built the
+        leg that passed no flags at all, and two paid legs ran one suite.
+        """
+        named = " ".join(f"--features {feature}" for feature in DEFAULT_FEATURES)
+        assert _feature_key(f"{named} --features test-helpers") == _feature_key(
+            "--features test-helpers"
+        )
+
+    def test_turning_the_defaults_off_keeps_two_narrow_legs_apart(self) -> None:
+        """Two `--no-default-features` legs differ by what they name.
+
+        The direction that stops the resolution above becoming a blanket
+        merge, and it has to compare two narrow legs to bite. Add the
+        defaults to a command that has just turned them off and every narrow
+        leg keys as the default set, because the features such a leg names
+        are usually members of it: a libsql-only run and a postgres-only run
+        would read as one run, and the contract would report a duplicate
+        where there are two different suites.
+        """
+        assert _feature_key("--no-default-features --features libsql") != _feature_key(
+            "--no-default-features --features postgres"
+        )
+
 
 class TestProfile:
     """The profile decides which tests run, so it decides identity."""
@@ -603,8 +676,8 @@ class TestProfile:
             ("--workspace --lcav", DEFAULT_PROFILE),
             ("--workspace --profile ci", "ci"),
             ("--workspace --profile=ci", "ci"),
-            ("NEXTEST_PROFILE=ci TEST_FEATURES=\"--features x\"", "ci"),
-            ("TEST_FEATURES=\"--features x\"", DEFAULT_PROFILE),
+            ('NEXTEST_PROFILE=ci TEST_FEATURES="--features x"', "ci"),
+            ('TEST_FEATURES="--features x"', DEFAULT_PROFILE),
         ],
         ids=["absent", "cargo", "cargo-equals", "make", "make-absent"],
     )
@@ -645,7 +718,9 @@ class TestDuplicateDetection:
 
     def test_it_reports_a_coverage_lane_repeating_a_test_lane(self) -> None:
         """The exact shape removed from `test.yml` must not pass unseen."""
-        estate = {"one.yml": self._workflow("pull_request", self._TESTS, self._COVERAGE)}
+        estate = {
+            "one.yml": self._workflow("pull_request", self._TESTS, self._COVERAGE)
+        }
         duplicated = duplicates_in(suite_runs_for(estate, "pull_request"))
         assert len(duplicated) == 1
         assert sorted(str(run) for run in next(iter(duplicated.values()))) == [
@@ -703,7 +778,8 @@ class TestDuplicateDetection:
         contracts, so standing the legs down would have left those unexecuted.
         """
         narrower = self._TESTS.replace(
-            "cargo nextest run --workspace", "cargo nextest run --profile ci --workspace"
+            "cargo nextest run --workspace",
+            "cargo nextest run --profile ci --workspace",
         )
         estate = {"one.yml": self._workflow("pull_request", narrower, self._COVERAGE)}
         assert not duplicates_in(suite_runs_for(estate, "pull_request"))
