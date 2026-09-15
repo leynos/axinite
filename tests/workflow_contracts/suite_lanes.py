@@ -9,6 +9,7 @@ rather than counted.
 
 import collections.abc as cabc
 import pathlib
+import shlex
 import typing as typ
 
 from _workflow_policy import WORKFLOW_DIR, jobs_of, load, workflow_paths
@@ -33,6 +34,33 @@ SUITE_MARKERS: typ.Final[tuple[str, ...]] = (
 #: reported, because a contract that cannot tell what a line does
 #: should say so rather than guess.
 DISGUISES: typ.Final[tuple[str, ...]] = ("|| true", "|| :", "if ", "&&", ";", "|")
+
+#: Arguments that turn a suite command into a probe. `cargo nextest run
+#: --help` and `--version` print and exit without running a test, so a
+#: job whose only suite line is one of these runs no suite and must not
+#: be held to a ceiling, nor counted as the lane the tree needs.
+PROBE_ARGUMENTS: typ.Final[frozenset[str]] = frozenset(
+    {"--help", "-h", "--version", "-V"}
+)
+
+
+def _tokens_of(line: str) -> list[str] | None:
+    """Return the shell words of one line, or None if it is unreadable.
+
+    Parameters
+    ----------
+    line
+        One line of a step's script.
+
+    Returns
+    -------
+    list of str or None
+        The words, or None when the quoting does not close.
+    """
+    try:
+        return shlex.split(line)
+    except ValueError:
+        return None
 
 
 def _names_a_suite_command(line: str) -> bool:
@@ -64,6 +92,15 @@ def _is_suite_line(line: str) -> bool:
     was inside `if false; then ...; fi`, and would have demanded a
     ceiling of a job that never runs it.
 
+    The marker is matched as whole shell words rather than as a text
+    prefix, because `cargo nextest runbook` begins with the same
+    characters as `cargo nextest run` and runs no test. A probe is
+    rejected for the same reason: `cargo nextest run --help` prints and
+    exits, so a job whose only suite line is a probe would satisfy the
+    assertion that the suite runs somewhere while running no test.
+    Neither is silently dropped; both still name a suite command, so
+    both are reported as lines this reading cannot judge.
+
     Parameters
     ----------
     line
@@ -79,7 +116,15 @@ def _is_suite_line(line: str) -> bool:
         return False
     if any(disguise in stripped for disguise in DISGUISES):
         return False
-    return any(stripped.startswith(marker) for marker in SUITE_MARKERS)
+    tokens = _tokens_of(stripped)
+    if tokens is None:
+        return False
+    if PROBE_ARGUMENTS.intersection(tokens):
+        return False
+    return any(
+        tokens[: len(marker_tokens)] == marker_tokens
+        for marker_tokens in (marker.split() for marker in SUITE_MARKERS)
+    )
 
 
 def _disguised_suite_lines(job_body: dict[str, typ.Any]) -> list[str]:
@@ -118,6 +163,11 @@ class SuiteLane(typ.NamedTuple):
     ceiling
         The job's ``timeout-minutes`` in seconds, or None when it
         declares none and so inherits GitHub's six-hour default.
+    invocations
+        How many times the job runs the suite. One ceiling encloses all
+        of them, so the requirement below it scales with this count; a
+        lane reported as one run when it makes two is budgeted a single
+        whole-run window and cancelled part way through the second.
     conditions
         The ``if`` on each suite step and on its job, in step order. A
         skipped step runs no suite, so every budget here says nothing
@@ -128,6 +178,7 @@ class SuiteLane(typ.NamedTuple):
     workflow: str
     job: str
     ceiling: float | None
+    invocations: int = 1
     conditions: tuple[tuple[object, object], ...] = ()
 
     def __str__(self) -> str:
@@ -141,8 +192,14 @@ class SuiteLane(typ.NamedTuple):
         return f"{self.workflow}:{self.job}"
 
 
-def _runs_the_suite(job_body: dict[str, object]) -> bool:
-    """Return whether a job runs the workspace suite under nextest.
+def _suite_invocations(job_body: dict[str, object]) -> int:
+    """Return how many times a job runs the suite.
+
+    Every plain suite line counts, wherever it sits: two commands in one
+    step's script are two runs exactly as two steps are. Each carries
+    its own whole-run budget, because nextest starts that clock when
+    tests begin and starts it again for the next invocation, while the
+    job timer above them runs once.
 
     Parameters
     ----------
@@ -151,10 +208,10 @@ def _runs_the_suite(job_body: dict[str, object]) -> bool:
 
     Returns
     -------
-    bool
-        True when a step runs one of :data:`SUITE_MARKERS`.
+    int
+        The number of plain suite invocations in the job.
     """
-    return any(
+    return sum(
         _is_suite_line(line)
         for step in job_body.get("steps") or []
         if isinstance(step, dict)
@@ -242,7 +299,8 @@ def suite_lanes_in(
     for name, document in documents:
         for job in jobs_of(name, document):
             body = job.body
-            if not _runs_the_suite(body):
+            invocations = _suite_invocations(body)
+            if not invocations:
                 continue
             raw = body.get("timeout-minutes")
             lanes.append(
@@ -250,6 +308,7 @@ def suite_lanes_in(
                     workflow=job.workflow,
                     job=job.job_id,
                     ceiling=None if raw is None else float(str(raw)) * 60.0,
+                    invocations=invocations,
                     conditions=tuple(
                         (step.get("if"), body.get("if")) for step in _suite_steps(body)
                     ),
