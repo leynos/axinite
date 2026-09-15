@@ -55,7 +55,7 @@ jobs:
     env:
       GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           persist-credentials: false
           submodules: recursive
@@ -117,7 +117,7 @@ jobs:
       - name: enable windows longpaths
         run: |
           git config --global core.longpaths true
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           persist-credentials: false
           submodules: recursive
@@ -212,7 +212,7 @@ jobs:
       GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       BUILD_MANIFEST_NAME: target/distrib/global-dist-manifest.json
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           persist-credentials: false
           submodules: recursive
@@ -258,7 +258,7 @@ jobs:
       CARGO_TARGET_DIR: target/wasm-extensions
       GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           persist-credentials: false
           submodules: recursive
@@ -267,7 +267,7 @@ jobs:
         with:
           targets: wasm32-wasip2
       - name: Install cargo-binstall
-        uses: taiki-e/install-action@c7eb1735f09259a5035e8e5d44b1406b1cddc0fb  # v2.83.0
+        uses: taiki-e/install-action@e67fa11c4b9316fa714ddf0abed07a0c3143b95b  # v2.87.4
         with:
           tool: cargo-binstall@1.20.1
           fallback: none
@@ -405,7 +405,7 @@ jobs:
     outputs:
       val: ${{ steps.host.outputs.manifest }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           persist-credentials: false
           submodules: recursive
@@ -473,7 +473,7 @@ jobs:
     env:
       GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           ref: main
       - name: Fetch WASM checksums
@@ -540,7 +540,7 @@ jobs:
     env:
       GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           persist-credentials: false
           submodules: recursive

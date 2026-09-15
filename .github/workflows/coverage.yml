@@ -102,7 +102,7 @@ jobs:
           large-packages: true
           docker-images: false
           swap-storage: false
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
 
       # Right-sizing needs the peak memory and the low-water disk mark, and
       # neither is visible in a job's own output. The sampler runs alongside
@@ -132,7 +132,7 @@ jobs:
       # Clearing ACTIONS_CACHE_SERVICE_V2 keeps sccache on the v1 protocol the
       # proxy serves; exporting ACTIONS_RESULTS_URL instead does not work.
       - name: Export the Actions cache endpoint for sccache
-        uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd  # v8.0.0
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3  # v9.0.0
         with:
           script: |
             // Ubicloud's control plane writes the proxy address into the VM
@@ -163,7 +163,7 @@ jobs:
             core.exportVariable('ACTIONS_RUNTIME_TOKEN', runtimeToken);
             core.exportVariable('ACTIONS_CACHE_SERVICE_V2', '');
       - name: Install sccache
-        uses: taiki-e/install-action@c7eb1735f09259a5035e8e5d44b1406b1cddc0fb  # v2.83.0
+        uses: taiki-e/install-action@e67fa11c4b9316fa714ddf0abed07a0c3143b95b  # v2.87.4
         with:
           tool: sccache@0.16.0
           fallback: none
@@ -185,19 +185,19 @@ jobs:
             cargo-v1-${{ runner.os }}-${{ runner.arch }}-${{ runner.environment }}-
 
       - name: Install cargo-llvm-cov
-        uses: taiki-e/install-action@c7eb1735f09259a5035e8e5d44b1406b1cddc0fb  # v2.83.0
+        uses: taiki-e/install-action@e67fa11c4b9316fa714ddf0abed07a0c3143b95b  # v2.87.4
         with:
           tool: cargo-llvm-cov@${{ env.CARGO_LLVM_COV_VERSION }}
           fallback: none
 
       - name: Install cargo-nextest
-        uses: taiki-e/install-action@c7eb1735f09259a5035e8e5d44b1406b1cddc0fb  # v2.83.0
+        uses: taiki-e/install-action@e67fa11c4b9316fa714ddf0abed07a0c3143b95b  # v2.87.4
         with:
           tool: cargo-nextest@${{ env.CARGO_NEXTEST_VERSION }}
           fallback: none
 
       - name: Install cargo-binstall
-        uses: taiki-e/install-action@c7eb1735f09259a5035e8e5d44b1406b1cddc0fb  # v2.83.0
+        uses: taiki-e/install-action@e67fa11c4b9316fa714ddf0abed07a0c3143b95b  # v2.87.4
         with:
           tool: cargo-binstall@1.20.1
           fallback: none
@@ -296,7 +296,7 @@ jobs:
           installer-checksum: ${{ vars.CODESCENE_CLI_SHA256 }}
 
       - name: Upload to Codecov
-        uses: codecov/codecov-action@v5
+        uses: codecov/codecov-action@v7
         with:
           files: lcov.info
           flags: ${{ matrix.name }}
@@ -339,7 +339,7 @@ jobs:
       CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_RUSTFLAGS: >-
         -C link-arg=-fuse-ld=mold
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
 
       # Right-sizing needs the peak memory and the low-water disk mark, and
       # neither is visible in a job's own output. The sampler runs alongside
@@ -363,7 +363,7 @@ jobs:
       # Clearing ACTIONS_CACHE_SERVICE_V2 keeps sccache on the v1 protocol the
       # proxy serves; exporting ACTIONS_RESULTS_URL instead does not work.
       - name: Export the Actions cache endpoint for sccache
-        uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd  # v8.0.0
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3  # v9.0.0
         with:
           script: |
             // Ubicloud's control plane writes the proxy address into the VM
@@ -394,7 +394,7 @@ jobs:
             core.exportVariable('ACTIONS_RUNTIME_TOKEN', runtimeToken);
             core.exportVariable('ACTIONS_CACHE_SERVICE_V2', '');
       - name: Install sccache
-        uses: taiki-e/install-action@c7eb1735f09259a5035e8e5d44b1406b1cddc0fb  # v2.83.0
+        uses: taiki-e/install-action@e67fa11c4b9316fa714ddf0abed07a0c3143b95b  # v2.87.4
         with:
           tool: sccache@0.16.0
           fallback: none
@@ -416,13 +416,13 @@ jobs:
             cargo-v1-${{ runner.os }}-${{ runner.arch }}-${{ runner.environment }}-
 
       - name: Install cargo-llvm-cov
-        uses: taiki-e/install-action@c7eb1735f09259a5035e8e5d44b1406b1cddc0fb  # v2.83.0
+        uses: taiki-e/install-action@e67fa11c4b9316fa714ddf0abed07a0c3143b95b  # v2.87.4
         with:
           tool: cargo-llvm-cov@${{ env.CARGO_LLVM_COV_VERSION }}
           fallback: none
 
       - name: Install cargo-binstall
-        uses: taiki-e/install-action@c7eb1735f09259a5035e8e5d44b1406b1cddc0fb  # v2.83.0
+        uses: taiki-e/install-action@e67fa11c4b9316fa714ddf0abed07a0c3143b95b  # v2.87.4
         with:
           tool: cargo-binstall@1.20.1
           fallback: none
@@ -458,7 +458,7 @@ jobs:
       - name: Build instrumented binary
         run: cargo build --no-default-features --features libsql
 
-      - uses: actions/setup-python@v6.3.0
+      - uses: actions/setup-python@v7.0.0
         with:
           python-version: "3.12"
 
@@ -494,7 +494,7 @@ jobs:
 
       - name: Upload to Codecov
         if: always()
-        uses: codecov/codecov-action@v5
+        uses: codecov/codecov-action@v7
         with:
           files: e2e-coverage.info
           flags: e2e
