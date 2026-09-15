@@ -21,12 +21,16 @@ from _workflow_policy import (
     DIST_GENERATED,
     SHA_RE,
     SOURCE_BUILD_PATTERNS,
+    WORKFLOW_DIR,
     Job,
     cache_paths,
     declared_jobs,
     is_cache_step,
     jobs,
+    load,
+    runs_on_event,
     step_text,
+    triggers,
     workflow_paths,
 )
 
@@ -83,6 +87,7 @@ PROBE_COMMANDS: dict[str, tuple[str, ...]] = {
     ),
     "Probe Whitaker": ("command -v whitaker", "whitaker --version"),
 }
+
 
 def _ids(candidates: tuple[Job, ...]) -> list[str]:
     """Return readable parameter identifiers for a job sequence."""
@@ -309,6 +314,45 @@ def test_each_cache_path_has_one_owner_within_a_job(job: Job) -> None:
         )
 
 
+def _pushes_to_main(workflow: str) -> bool:
+    """Report whether a workflow is triggered by a push to `main`.
+
+    Parameters
+    ----------
+    workflow
+        A workflow file name, such as ``coverage.yml``.
+
+    Returns
+    -------
+    bool
+        True when the workflow declares a push trigger that includes `main`.
+    """
+    push = triggers(load(WORKFLOW_DIR / workflow)).get("push")
+    if push is None:
+        return False
+    # A bare `push:`, or a mapping without `branches`, accepts every branch.
+    # Only an explicit branch list can leave main out.
+    branches = push.get("branches") if isinstance(push, dict) else None
+    return branches is None or "main" in branches
+
+
+def _cache_platform(job: Job) -> str:
+    """Name the `runner.os` value a job's cache keys resolve to.
+
+    Parameters
+    ----------
+    job
+        The job whose runner labels are read.
+
+    Returns
+    -------
+    str
+        ``Windows`` when any label names Windows, otherwise ``Linux``.
+    """
+    labels = job.runner_labels
+    return "Windows" if any("windows" in label for label in labels) else "Linux"
+
+
 def test_the_cargo_registry_cache_has_exactly_one_writer_per_platform() -> None:
     """Keep one save step per key family so no two jobs race to publish."""
     writers: list[str] = []
@@ -330,10 +374,56 @@ def test_the_cargo_registry_cache_has_exactly_one_writer_per_platform() -> None:
                     "workflow_dispatch on main would satisfy a ref-only guard "
                     "and take the key from its real writer"
                 )
+                # A step condition naming the push event is worth nothing if
+                # the step can never see one. Standing `tests` down on a push
+                # left its save step guarded on the one event its own job had
+                # just refused, and every reader of that key went unwritten
+                # while this contract stayed green on the step alone.
+                assert _pushes_to_main(job.workflow), (
+                    f"{job} saves the registry cache, but {job.workflow} is "
+                    "not triggered by a push to main, so the write never runs"
+                )
+                assert runs_on_event(job, "push"), (
+                    f"{job} saves the registry cache on a push, but its own "
+                    "condition refuses that event: the step is unreachable "
+                    "and the key has no writer"
+                )
                 writers.append(str(job))
-    # One Linux writer and one Windows writer, both in test.yml.
-    assert sorted(writers) == ["test.yml:tests", "test.yml:windows-build"], (
+    # One Linux writer and one Windows writer. The Linux write sits in
+    # `coverage.yml` because that is the job which still runs on a push.
+    assert sorted(writers) == ["coverage.yml:coverage", "test.yml:windows-build"], (
         f"unexpected set of cache writers: {sorted(writers)}"
+    )
+
+
+def test_every_restored_cargo_registry_key_has_a_writer() -> None:
+    """Every platform that restores the registry key needs one to fill it.
+
+    A restore-only estate is silent. Each lane simply downloads the registry
+    and the git index again, and the only evidence is the duration.
+    """
+    restorers: set[str] = set()
+    written: set[str] = set()
+    for job in ALL_JOBS:
+        for step in job.steps:
+            uses = step.get("uses")
+            if not isinstance(uses, str):
+                continue
+            with_block = step.get("with")
+            key = with_block.get("key", "") if isinstance(with_block, dict) else ""
+            if "cargo-v1-" not in str(key):
+                continue
+            # The keys differ by `runner.os`, so the platform the job runs on
+            # is what decides which family it touches.
+            platform = _cache_platform(job)
+            if uses.startswith("actions/cache/restore@"):
+                restorers.add(platform)
+            elif uses.startswith("actions/cache/save@") and runs_on_event(job, "push"):
+                written.add(platform)
+    assert restorers, "no job restores the cargo registry cache at all"
+    assert restorers <= written, (
+        "these platforms restore the cargo registry cache with no reachable "
+        f"writer: {sorted(restorers - written)}"
     )
 
 

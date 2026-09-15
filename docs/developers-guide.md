@@ -417,9 +417,18 @@ Rules that follow from the table:
   removes the wasted upload time. The guard names the `push` event as well as
   the ref, because `github.ref` reads `refs/heads/main` for a manual dispatch
   against `main` too.
-- **One writer per key.** Only the `all-features` matrix leg saves, because it
-  resolves the widest dependency graph; the other legs would race it for the
-  same key.
+- **One writer per key, and it has to be in a job that runs on a push.** The
+  write sits in `coverage.yml`'s `coverage` job. `test.yml`'s `tests` job
+  stands down on a push, so a save step there could never run however its own
+  condition read, and for a while none did: every lane restored the key and
+  nothing filled it. Only the `all-features` leg saves, because it resolves
+  the widest dependency graph under `--all-features`; the other legs would
+  race it for the same key.
+  `tests/workflow_contracts/workflow_tooling_test.py` asserts that the
+  writer's workflow is triggered by a push to `main`, that the job's own guard
+  admits that event, and that every platform restoring the key has a reachable
+  writer. The earlier contract read the save step's condition alone and stayed
+  green while the step could not run at all.
 - Every cache step pins `actions/cache` to `55cc8345863c7cc4c66a329aec7e433d2d1c52a9`
   (v6.1.0). Ubicloud's transparent cache proxy is confirmed to intercept that
   version's traffic, so the deprecated `ubicloud/cache` fork is unnecessary and
