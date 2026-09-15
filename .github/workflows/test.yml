@@ -103,20 +103,26 @@ jobs:
       # exact flags, so that leg would compile and run the workspace a second
       # time for the same commit; everywhere else it is the only run there is.
       #
+      # There is no all-features leg. There was one in name: it passed
+      # `--features postgres,libsql,html-to-markdown`, every one of which is
+      # already a member of `default`, and it did not pass
+      # `--no-default-features`. It therefore resolved to the default leg's
+      # feature set exactly, `docker` included, and the two legs compiled and
+      # ran the same thing. Running the suite under the features `default`
+      # leaves out is `coverage.yml`'s all-features leg, which passes
+      # `--all-features` and means it.
+      #
       # It is an expression rather than a static list with `exclude`, because
       # `exclude` cannot remove an `include` entry: GitHub processes `include`
       # afterwards and documents it as the way to add an excluded combination
       # back, which is exactly what it would do here.
-      # `tests/workflow_contracts/suite_duplication_test.py` reads both arms.
+      # `tests/workflow_contracts/suite_duplication_test.py` reads both arms,
+      # and resolves each leg's defaults before comparing them.
       matrix:
         include: >-
           ${{ github.event_name == 'pull_request' && fromJSON('[
-          {"name": "all-features",
-          "flags": "--features postgres,libsql,html-to-markdown"},
           {"name": "default", "flags": ""}
           ]') || fromJSON('[
-          {"name": "all-features",
-          "flags": "--features postgres,libsql,html-to-markdown"},
           {"name": "default", "flags": ""},
           {"name": "libsql-only",
           "flags": "--no-default-features --features libsql"}
