@@ -32,17 +32,18 @@ from __future__ import annotations
 
 import pytest
 from _suite_reader import ESTATE, PAID_EVENTS, duplicates_in, suite_runs_for
+from _workflow_policy import REPOSITORY_ROOT, jobs_of, matrix_legs
 from _suite_targets import (
     DEFAULT_PROFILE,
     GITHUB_TOOL_MANIFEST,
     GITHUB_TOOL_RECIPE,
     GITHUB_TOOL_SCOPE,
     MAKEFILE_PROFILE_DEFAULT,
+    WASM_PREREQUISITE,
     WORKSPACE,
     WORKSPACE_RECIPE,
     make_rule,
 )
-from _workflow_policy import REPOSITORY_ROOT
 
 
 def test_the_scan_finds_the_suite_at_all() -> None:
@@ -87,10 +88,35 @@ def test_the_make_targets_still_run_what_this_module_reads_them_as() -> None:
     reading correctly.
     """
     _, workspace = make_rule("test-workspace")
-    assert any(line.startswith(WORKSPACE_RECIPE) for line in workspace), (
+    suite_line = next(
+        (
+            index
+            for index, line in enumerate(workspace)
+            if line.startswith(WORKSPACE_RECIPE)
+        ),
+        None,
+    )
+    assert suite_line is not None, (
         f"`make test-workspace` no longer runs {WORKSPACE_RECIPE!r}, so the "
         "workflow steps that call it do not run what this contract reads "
         f"them as running. Its recipe is {workspace}."
+    )
+    # The order is part of the target, not a detail of it. The metadata and
+    # schema tests load the artefact the WASM build produces, so a recipe
+    # that ran the suite first would test the previous build on a warm tree
+    # and fail outright on a clean checkout.
+    wasm_line = next(
+        (
+            index
+            for index, line in enumerate(workspace)
+            if line.startswith(WASM_PREREQUISITE)
+        ),
+        None,
+    )
+    assert wasm_line is not None and wasm_line < suite_line, (
+        f"`make test-workspace` does not run {WASM_PREREQUISITE!r} before its "
+        "suite, so the tests that load the WASM artefact read whatever the "
+        f"last build left behind. Its recipe is {workspace}."
     )
     assert not any("--manifest-path" in line for line in workspace), (
         "`make test-workspace` builds or tests an out-of-workspace crate, "
@@ -113,6 +139,49 @@ def test_the_make_targets_still_run_what_this_module_reads_them_as() -> None:
         f"the GitHub tool manifest is no longer {GITHUB_TOOL_MANIFEST}, so "
         "its lane and a Cargo command naming the same crate would be read as "
         "two different scopes and never compared"
+    )
+
+
+#: The legs `test.yml`'s `tests` job resolves to, per event. The matrix is an
+#: expression, so a typo in either arm silently changes what runs and the
+#: duplication contract below would report the result as merely fewer runs.
+#: Naming both arms here means the leg list is asserted rather than inferred.
+#:
+#: There is no all-features leg. There was one in name: it passed three
+#: features that are already members of `default` and no
+#: `--no-default-features`, so it resolved to the default leg exactly.
+REVIEWED_TEST_LEGS: dict[str, tuple[tuple[str, str], ...]] = {
+    "pull_request": (("default", ""),),
+    "push": (
+        ("default", ""),
+        ("libsql-only", "--no-default-features --features libsql"),
+    ),
+    "schedule": (
+        ("default", ""),
+        ("libsql-only", "--no-default-features --features libsql"),
+    ),
+}
+
+
+@pytest.mark.parametrize("event", sorted(REVIEWED_TEST_LEGS))
+def test_the_tests_matrix_resolves_to_the_reviewed_legs(event: str) -> None:
+    """Assert the leg names and flags each event produces, both arms.
+
+    `matrix_legs` resolves the expression the way GitHub does, so this reads
+    what the job runs rather than what the expression looks like. The `push`
+    entry is the arm a schedule also takes; the job stands down on a push, and
+    the leg list is still what it would run, which is what the mutation-proof
+    for the guard needs to stay meaningful.
+    """
+    job = next(
+        job for job in jobs_of("test.yml", ESTATE["test.yml"]) if job.job_id == "tests"
+    )
+    resolved = tuple(
+        (leg.get("name", ""), leg.get("flags", "")) for leg in matrix_legs(job, event)
+    )
+    assert resolved == REVIEWED_TEST_LEGS[event], (
+        f"on {event} the tests matrix resolves to {resolved}, not "
+        f"{REVIEWED_TEST_LEGS[event]}"
     )
 
 
