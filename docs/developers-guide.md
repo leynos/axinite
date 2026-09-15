@@ -126,8 +126,8 @@ so. The affected rows are marked.
 | Class | Jobs | Runner |
 | --- | --- | --- |
 | Build and test | `code_style.yml` `format`, `code_style.yml` `clippy`, `coverage.yml` `coverage`, `coverage.yml` `e2e-coverage`, `codescene-coverage.yml` `coverage-check` | `ubicloud-standard-4` |
-| Build and test, event-dependent | `test.yml` `tests`, `test.yml` `wasm-wit-compat` | `ubicloud-standard-4` on a developer event, `ubuntu-latest` on `schedule` |
-| Build and test, event-dependent, small | `test.yml` `telegram-tests` | `ubicloud-standard-2` on a developer event, `ubuntu-latest` on `schedule` |
+| Build and test, event-dependent | `test.yml` `tests` (not on `push`), `test.yml` `wasm-wit-compat` | `ubicloud-standard-4` on a developer event, `ubuntu-latest` on `schedule` |
+| Build and test, event-dependent, small | `test.yml` `telegram-tests`, `test.yml` `github-tool-tests` | `ubicloud-standard-2` on a developer event, `ubuntu-latest` on `schedule` |
 | Build and test, event-dependent | `e2e.yml` `build` | `ubicloud-standard-4` on a developer event, `ubuntu-latest` on `schedule` |
 | Test only, event-dependent, small | `e2e.yml` `test` | `ubicloud-standard-2` on a developer event, `ubuntu-latest` on `schedule` |
 | Docker, event-dependent | `test.yml` `docker-build` | `ubicloud-standard-4` on a developer event, `ubuntu-latest` on `schedule` |
@@ -447,6 +447,75 @@ still succeeds; it just recompiles everything.
 including that no build step precedes the reset, and that GitHub-hosted jobs
 carry none of this: the endpoint export points at a proxy that exists only on
 an Ubicloud VM.
+
+### One suite, one run per trigger
+
+Nothing fails when a suite runs twice. Both runs pass, both report, and the
+only evidence is the bill and the wait. This repository paid that twice over.
+On a pull request `test.yml`'s libsql-only leg ran
+`--no-default-features --features libsql --features test-helpers` over the
+workspace, which is exactly what `codescene-coverage.yml` was already running
+under instrumentation. On a push to `main` all three `test.yml` legs repeated
+what `coverage.yml` had just done. The GitHub tool crate was worse: it rode
+along inside `make test`, so it ran once per leg, three times a trigger.
+
+The rule is now one lane per suite per trigger, and which lane it is depends
+on the trigger:
+
+| Trigger | Workspace suite | GitHub tool crate | Telegram channel crate |
+| --- | --- | --- | --- |
+| `pull_request` | `test.yml` `tests`, all-features and default legs; `codescene-coverage.yml` `coverage-check` for libsql-only | `test.yml` `github-tool-tests` | `test.yml` `telegram-tests` |
+| `push` to `main` | `coverage.yml` `coverage`, all three legs | `test.yml` `github-tool-tests` | `test.yml` `telegram-tests` |
+| `schedule` (through `mutation-testing.yml`) | `test.yml` `tests`, all three legs | `test.yml` `github-tool-tests` | `test.yml` `telegram-tests` |
+
+Three mechanisms carry that, and each is worth knowing before changing a lane:
+
+- **`tests` stands down on a push.** Its guard is
+  `github.event_name != 'push'`, an inequality on purpose: a trigger added
+  later runs the suite by default rather than silently losing it.
+- **Its leg list follows the event.** The legs are an expression, not a static
+  list with `exclude`, because `exclude` cannot remove an `include` entry:
+  GitHub processes `include` afterwards and documents it as the way to add an
+  excluded combination back, which is precisely what it would do here.
+- **The roll-up asserts the result it expects rather than tolerating a skip.**
+  `run-tests` computes `EXPECTED_TESTS_RESULT` from the event, `skipped` on a
+  push and `success` everywhere else, so a leg that vanishes for any other
+  reason is still a failure.
+
+The profile is part of that, and it is the half most easily missed. Both
+coverage lanes ran nextest's default profile, which drops the trybuild
+compile-contract binary, about seven minutes of work that spawns a fresh
+`rustc` per case. The `test.yml` legs ran `NEXTEST_PROFILE=ci`, which runs
+everything. A lane running the default profile therefore could not stand in
+for one running `ci`, however identical its flags, so both coverage lanes now
+pass `--profile ci` and the replacement is the whole of what it replaced.
+Without that, standing `tests` down on a push would have left the compile
+contracts unexecuted on `main` altogether.
+
+`tools-src/github` and `channels-src/telegram` are excluded from the
+workspace, so `--workspace` cannot reach either however wide the feature set.
+Each therefore needs a lane of its own or it is not tested at all, which is
+why `make test` is now exactly `test-workspace` plus `test-github-tool`: a
+developer runs the whole, CI runs the halves on different lanes, and the whole
+is the sum of the parts by construction rather than by memory.
+
+`tests/workflow_contracts/suite_duplication_test.py` holds both halves of the
+rule. It reads what each lane runs rather than what it is called, resolving a
+leg's `${{ matrix.flags }}` and a step's `TEST_FEATURES` and comparing feature
+selections as sets, so `--features a,b` and `--features a --features b` are
+one run while `--all-features` stays distinct from a list that happens to name
+every feature today. It then asserts three things: that no trigger runs one
+scope twice, that every scope still runs on every trigger, and that the
+workspace suite runs under the `ci` profile wherever it runs. The second and
+third are there because removing a duplicate lane, removing the only lane, and
+replacing a lane with a narrower one look identical in a diff and identical in
+a green run.
+
+The required contexts do not change. `main`'s ruleset requires the roll-ups,
+`Run Tests`, `Code Style (fmt + clippy)` and `Regression test enforcement`,
+not the individual legs, so a leg that stops running on a trigger is not a
+missing required check. `Run Tests` gains `GitHub Tool Tests` as a dependency,
+which keeps the new lane inside the gate.
 
 ### Writing a workflow contract
 
