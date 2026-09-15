@@ -197,13 +197,16 @@ REVIEWED_SHAPES: dict[tuple[str, str], tuple[str, str]] = {
         "ubicloud-standard-4",
         "compiles the workspace under --no-default-features --features libsql "
         "and peaked at 6,522 and 6,797 MiB on two cold runs, which leaves no "
-        "headroom in the 7,940 MiB a -2 presents",
+        "headroom in the 7,940 MiB a -2 presents; the first run on the new "
+        "shape peaked at 5,746 MiB of 15,991, or 36 %, in 582 s against a "
+        "12 % Rust cache hit rate, where the -8 history is 330 s warm",
     ),
     ("e2e.yml", "test"): (
         "ubicloud-standard-2",
         "compiles nothing: it downloads the binary `build` produced and "
         "drives it from Playwright, peaking at 1,273 to 1,432 MiB across "
-        "nine legs",
+        "nine legs; the first run on the new shape peaked at 916 to 997 MiB "
+        "of 7,940, or 12 %, in 198 to 264 s against 120 to 216 s on the -8",
     ),
 }
 
