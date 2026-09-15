@@ -38,7 +38,15 @@ from nextest_units import (
 #: skips whitespace while it accumulates a number, so ``1 0s`` is ten
 #: seconds rather than a malformed duration, and the same holds either
 #: side of the point: ``1 2 . 3 4 s`` is 12.34 seconds.
-_SPACED_DIGITS: typ.Final[str] = r"\d(?:\s*\d)*"
+#:
+#: The class is ``[0-9]`` and not ``\d``, which is the whole of the
+#: difference between the two parsers here. Python's ``\d`` matches
+#: every Unicode decimal digit and ``int`` reads them, so ``"\u0663\u0660\u0660s"``
+#: became three hundred seconds; humantime's parser compares against
+#: ``'0'..='9'`` and refuses the text, at offset 0 when the run opens
+#: with one and at the first such character otherwise. A reader wider
+#: than the parser certifies a configuration nextest cannot load.
+_SPACED_DIGITS: typ.Final[str] = r"[0-9](?:\s*[0-9])*"
 
 #: One value-and-unit pair. The fractional part is optional and
 #: humantime tolerates whitespace around the point; a leading point, a
