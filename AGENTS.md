@@ -130,7 +130,8 @@ management.
   - `make test` (runs `make test-workspace` then `make test-github-tool`)
     - `make test-workspace`
       - `make build-github-tool-wasm`
-      - `cargo nextest run --workspace --profile $NEXTEST_PROFILE`
+      - `cargo nextest run --workspace $TEST_FEATURES \
+        --profile $NEXTEST_PROFILE`
     - `make test-github-tool`
       - `cargo test --manifest-path tools-src/github/Cargo.toml`
 - The halves are separate targets because CI runs them on separate lanes and
