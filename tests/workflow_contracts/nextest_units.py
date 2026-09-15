@@ -87,7 +87,6 @@ NANOSECOND_UNITS: typ.Final[frozenset[str]] = frozenset(
 )
 
 
-#: How many nanoseconds humantime counts to a second.
 class HumantimeOverflowError(Exception):
     """Raised where humantime's checked ``u64`` arithmetic would fail.
 
@@ -213,14 +212,14 @@ def integer_parts(magnitude: int, unit: str) -> tuple[int, int]:
     return checked(magnitude * UNIT_SECONDS[unit]), 0
 
 
-def fraction_ofal_parts(numerator: int, denominator: int, unit: str) -> tuple[int, int]:
+def fractional_parts(numerator: int, denominator: int, unit: str) -> tuple[int, int]:
     """Return a component's fractional part as seconds and nanoseconds.
 
     The unit decides which of the two the fraction lands in, and this is
     the rule a reader working in nanoseconds alone gets wrong. humantime
     converts a fraction of an hour or anything longer into whole
-    *seconds*, so ``"0.000001h"`` is refused although 3,600 ns is a
-    whole nanosecond, while ``"0.25h"`` is fifteen minutes. A fraction
+    *seconds*, so ``"0.000001h"`` is refused although its value is a
+    whole 3,600,000 ns, while ``"0.25h"`` is fifteen minutes. A fraction
     of a minute or anything shorter converts into whole nanoseconds. A
     fraction of a nanosecond is refused outright, so ``"1.0ns"`` will
     not load even though it spells a whole nanosecond.
@@ -283,7 +282,7 @@ def component_parts(value: str, unit: str) -> tuple[int, int]:
     if not point:
         return seconds_part, nanoseconds_part
     numerator, denominator = fraction_of(digits)
-    fraction_seconds, fraction_nanoseconds = fraction_ofal_parts(
+    fraction_seconds, fraction_nanoseconds = fractional_parts(
         numerator, denominator, unit
     )
     return seconds_part + fraction_seconds, nanoseconds_part + fraction_nanoseconds

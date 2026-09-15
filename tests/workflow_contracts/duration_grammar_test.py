@@ -15,7 +15,11 @@ import pytest
 from hypothesis import given
 from hypothesis import strategies as st
 from nextest_config import NextestConfigurationError, seconds
-from nextest_units import SUBSECOND_NANOSECONDS, UNIT_SECONDS
+from nextest_units import (
+    SUBSECOND_NANOSECONDS,
+    UNIT_SECONDS,
+    HumantimeOverflowError,
+)
 
 
 @pytest.mark.parametrize(
@@ -103,6 +107,10 @@ def test_the_duration_grammar_matches_the_one_nextest_reads(
             "18446744073709551615s 1s",
             id="a-sum-past-the-u64-humantime-accumulates-into",
         ),
+        pytest.param(
+            "18446744073709551615s 1000ms",
+            id="a-carry-that-completes-a-second-past-the-u64",
+        ),
         pytest.param("", id="empty"),
     ],
 )
@@ -118,9 +126,34 @@ def test_a_duration_nextest_would_refuse_is_refused_here(duration: str) -> None:
     special-cases the exact text before reading a character, so a reader
     that stripped whitespace before comparing would accept `" 0 "`,
     which nextest rejects.
+
+    One case leaves the parser by a different door. A thousand
+    milliseconds on top of the largest whole second reach exactly a
+    billion nanoseconds, which humantime's carry declines to move and
+    ``Duration::new`` then moves regardless, panicking on the overflow.
+    humantime returns no error for that text because it never returns
+    at all, so nextest cannot load it either way, and a reader carrying
+    only past a complete second would report a duration for it.
     """
     with pytest.raises(NextestConfigurationError):
         seconds(duration)
+
+
+def test_a_refusal_names_the_arithmetic_that_produced_it() -> None:
+    """The overflow that refused a component survives the translation.
+
+    ``NextestConfigurationError`` says which configuration is at fault;
+    ``HumantimeOverflowError`` says which of humantime's checked
+    operations declined. The message names all three rules in one
+    sentence, so on its own a traceback cannot separate a literal past
+    the ``u64`` from a multiplication that left it from a division with
+    a remainder. Suppressing the cause throws that away.
+    """
+    with pytest.raises(NextestConfigurationError) as refusal:
+        seconds("1.0ns")
+    assert isinstance(refusal.value.__cause__, HumantimeOverflowError), (
+        "the parser failure is the cause of the refusal, not a detail to drop"
+    )
 
 
 #: Every unit spelling the reader knows, with its length in seconds.

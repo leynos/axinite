@@ -2734,6 +2734,27 @@ as a suite lane and hold it to a ceiling it does not need;
 `cargo nextest run || true` runs the suite but discards its verdict. Neither is
 judged as an invocation, and both are reported.
 
+A suite command is matched as whole shell words, not as a text prefix.
+`cargo nextest runbook` begins with the same characters as
+`cargo nextest run` and runs no test, and `cargo nextest run --help` prints
+and exits, so a reading matching on the prefix alone would report a lane for
+either. That is the dangerous direction: a job whose only suite line is a
+probe would satisfy the assertion that the suite runs somewhere while running
+no test, and the ordering assertions below would all pass over a lane that
+does nothing. Both still name a suite command, so both are reported as lines
+the reading cannot judge rather than dropped silently.
+
+A lane's runs are counted rather than detected. Two suite commands in one job
+spend two whole-run budgets under one job timer, because nextest starts that
+clock when tests begin and starts it afresh for the next run, so the ceiling
+requirement is the per-run terms multiplied by the count with the per-job
+terms added once. Counting per command rather than per step is what makes two
+runs in one script read the same as two runs in two steps. Every lane here
+makes one run, so the multiplier is unobservable through the workflows and is
+driven with controlled values instead; the counts are also pinned by
+coordinate, because deleting a suite command would otherwise lower the
+requirement while every timing assertion still passed.
+
 It also refuses a lane that runs the suite while tolerating its failure. Every
 budget here is about when the suite is stopped and none of them says anything
 about the verdict, so `continue-on-error` on the suite step or on its job
@@ -2762,9 +2783,10 @@ The 90 minute ceilings are unchanged, and the contract records why they hold:
 successful runs of `coverage.yml` covering three matrix legs each.*
 
 The requirement is the whole-run budget, plus a minute for nextest to
-terminate, plus the build and the steps either side of the suite. Twenty
-minutes covers the worst of those with room for a cold compile, making the
-requirement 51 minutes against ceilings of 90.
+terminate, both taken once per run the lane makes, plus the build and the
+steps either side of the suite, taken once for the job. Twenty minutes covers
+the worst of those with room for a cold compile, making the requirement 51
+minutes for a one-run lane against ceilings of 90.
 
 None of those runs was genuinely cold. One run is the coldest seen so far, not
 a measurement of the cold case.
@@ -2810,9 +2832,9 @@ nextest rejects. Case matters, so `m` is minutes and `M` is months.
 The arithmetic is exact and in integers, because humantime's is: its parser
 works in checked `u64` throughout and reports every failure as an overflow.
 Which integer depends on the unit. A fraction of an hour or anything longer is
-converted into whole *seconds*, so `0.000001h` is refused although 3,600 ns is a
-whole nanosecond, while `0.25h` is fifteen minutes. A fraction of a minute or
-anything shorter is converted into whole nanoseconds, so `1.999999999s` is
+converted into whole *seconds*, so `0.000001h` is refused although its value is
+a whole 3,600,000 ns, while `0.25h` is fifteen minutes. A fraction of a minute
+or anything shorter is converted into whole nanoseconds, so `1.999999999s` is
 accepted and `0.0000000015s` is not. A fraction of a nanosecond is refused
 outright, whatever it spells, so even `1.0ns` will not load. The unit tables in
 `nextest_units.py` are split by which of the two a unit is measured in, because
@@ -2836,8 +2858,8 @@ one.
 The readings rest on `nextest_config.py`, `nextest_durations.py`,
 `nextest_units.py`, `nextest_errors.py`, `timeout_budgets.py`,
 `suite_lanes.py` and `suite_guards.py`, and are driven with controlled values in
-`timeout_reading_test.py`, `duration_grammar_test.py` and
-`suite_guards_test.py`. Each reading takes
+`timeout_reading_test.py`, `duration_grammar_test.py`, `suite_lanes_test.py`
+and `suite_guards_test.py`. Each reading takes
 what it reads rather than fetching it: `suite_lanes_in` queries supplied
 workflow documents and `suite_lanes_of` is the acquisition around it,
 which is how a lane that does not exist in this repository can be put to

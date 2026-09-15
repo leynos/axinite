@@ -200,8 +200,8 @@ def global_timeout(profile: Profile) -> float:
     return seconds(budget)
 
 
-def required_ceiling(parsed: dict[str, Profile]) -> float:
-    """Return the smallest acceptable ceiling for any suite lane.
+def required_ceiling(parsed: dict[str, Profile], invocations: int = 1) -> float:
+    """Return the smallest acceptable ceiling for a suite lane.
 
     Four terms. The whole-run budget is what the suite may spend, the
     termination allowance is what nextest needs to stop it, the outside
@@ -213,21 +213,44 @@ def required_ceiling(parsed: dict[str, Profile]) -> float:
     because a lane passing ``--profile ci`` runs under that one and
     nothing in the workflow names which it uses.
 
+    The first two terms are per invocation and the last two are per job.
+    nextest starts its whole-run clock when tests begin and starts it
+    afresh for the next run, so a job making two runs may spend two
+    whole-run budgets and two terminations under one job timer, while
+    the checkout, the build and the report happen once. Summing the
+    per-run terms over the invocations is what stops the job timer
+    cancelling the second run at the moment the first run's budget
+    would have been enough.
+
     Parameters
     ----------
     parsed
         Each nextest profile, keyed by name.
+    invocations
+        How many times the lane runs the suite. One by default.
 
     Returns
     -------
     float
         The smallest acceptable ceiling, in seconds.
+
+    Raises
+    ------
+    ValueError
+        If the lane makes no run, which is not a lane.
     """
+    if invocations < 1:
+        message = (
+            f"a suite lane makes at least one run; {invocations} is not a "
+            f"lane, and a requirement derived from it would be smaller than "
+            f"one run needs"
+        )
+        raise ValueError(message)
+    per_run = max(global_timeout(profile) for profile in parsed.values()) + max(
+        termination_allowance(profile) for profile in parsed.values()
+    )
     return (
-        max(global_timeout(profile) for profile in parsed.values())
-        + max(termination_allowance(profile) for profile in parsed.values())
-        + OUTSIDE_RUN_ALLOWANCE_SECONDS
-        + CEILING_MARGIN_SECONDS
+        invocations * per_run + OUTSIDE_RUN_ALLOWANCE_SECONDS + CEILING_MARGIN_SECONDS
     )
 
 
