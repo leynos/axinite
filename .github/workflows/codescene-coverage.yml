@@ -165,10 +165,14 @@ jobs:
       - name: Build WASM channels (for integration tests)
         run: ./scripts/build-wasm-extensions.sh --channels
 
+      # `--profile ci` matches what `test.yml`'s libsql-only leg ran before
+      # this lane replaced it. Without it the default profile would drop the
+      # trybuild compile contracts, and the replacement would be narrower than
+      # the leg it stands in for.
       - name: Generate coverage
         run: >-
           cargo llvm-cov nextest --no-default-features --features libsql
-          --features test-helpers --workspace --lcov
+          --features test-helpers --workspace --profile ci --lcov
           --output-path lcov.info
 
       - name: Check coverage against CodeScene gates
