@@ -22,7 +22,13 @@ jobs:
     # Build/test class: compiles nothing heavy but runs the repository's
     # formatter, spelling, Mermaid, and workflow-contract gates on the
     # developer feedback path.
-    runs-on: ubicloud-standard-4
+    # A pull request from a fork cannot obtain an Ubicloud
+    # runner, so it falls back to a GitHub-hosted one. Branch
+    # pull requests, which are the ones a maintainer waits on,
+    # keep the paid shape.
+    runs-on: >-
+      ${{ github.event.pull_request.head.repo.fork && 'ubuntu-latest'
+      || 'ubicloud-standard-4' }}
     timeout-minutes: 30
     steps:
       - name: Checkout repository
@@ -93,7 +99,13 @@ jobs:
   clippy:
     name: Clippy (${{ matrix.name }})
     # Build/test class: compiles the workspace under three feature shapes.
-    runs-on: ubicloud-standard-4
+    # A pull request from a fork cannot obtain an Ubicloud
+    # runner, so it falls back to a GitHub-hosted one. Branch
+    # pull requests, which are the ones a maintainer waits on,
+    # keep the paid shape.
+    runs-on: >-
+      ${{ github.event.pull_request.head.repo.fork && 'ubuntu-latest'
+      || 'ubicloud-standard-4' }}
     timeout-minutes: 75
     env:
       # sccache is the sole owner of compiler output: no cache step archives a

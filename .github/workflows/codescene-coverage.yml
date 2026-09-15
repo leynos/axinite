@@ -25,7 +25,13 @@ jobs:
     if: >
       github.event_name == 'pull_request' ||
       github.event_name == 'workflow_dispatch'
-    runs-on: ubicloud-standard-4
+    # A pull request from a fork cannot obtain an Ubicloud
+    # runner, so it falls back to a GitHub-hosted one. Branch
+    # pull requests, which are the ones a maintainer waits on,
+    # keep the paid shape.
+    runs-on: >-
+      ${{ github.event.pull_request.head.repo.fork && 'ubuntu-latest'
+      || 'ubicloud-standard-4' }}
     timeout-minutes: 90
     env:
       # sccache is the sole owner of compiler output: no cache step archives a

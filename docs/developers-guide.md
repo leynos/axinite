@@ -121,11 +121,14 @@ Two workflows serve both a developer event and a cron, so their runner depends
 on the event. The table gives the developer runner, which is the one a
 contributor sees; on `schedule` those jobs run on `ubuntu-latest` instead, and
 `tests/workflow_contracts/scheduled_placement_test.py` fails if they stop doing
-so. The affected rows are marked.
+so. The affected rows are marked. Every row that a `pull_request` can
+dispatch also falls back to `ubuntu-latest` for a pull request from a fork,
+which cannot obtain an Ubicloud runner at all; see "The fork fallback" below.
 
 | Class | Jobs | Runner |
 | --- | --- | --- |
-| Build and test | `code_style.yml` `format`, `code_style.yml` `clippy`, `coverage.yml` `coverage`, `coverage.yml` `e2e-coverage`, `codescene-coverage.yml` `coverage-check` | `ubicloud-standard-4` |
+| Build and test | `coverage.yml` `coverage`, `coverage.yml` `e2e-coverage` | `ubicloud-standard-4` |
+| Build and test, fork-dependent | `code_style.yml` `format`, `code_style.yml` `clippy`, `codescene-coverage.yml` `coverage-check` | `ubicloud-standard-4` on a branch pull request, `ubuntu-latest` on a fork's |
 | Build and test, event-dependent | `test.yml` `tests` (not on `push`), `test.yml` `wasm-wit-compat` | `ubicloud-standard-4` on a developer event, `ubuntu-latest` on `schedule` |
 | Build and test, event-dependent, small | `test.yml` `telegram-tests`, `test.yml` `github-tool-tests` | `ubicloud-standard-2` on a developer event, `ubuntu-latest` on `schedule` |
 | Build and test, event-dependent | `e2e.yml` `build` | `ubicloud-standard-4` on a developer event, `ubuntu-latest` on `schedule` |
@@ -300,12 +303,56 @@ with a fixed label, so the label follows the event:
 
 `e2e.yml` uses this for its `build` and `test` jobs: Ubicloud on the
 path-filtered pull-request run, where the wall time is felt, and GitHub-hosted
-for the Monday cron, where it is not. `Job.runner_labels` parses that form and
-reports both arms, so the job still answers `uses_ubicloud` and stays inside the
-timeout and sccache contracts; `Job.labels_for_event` answers which arm a given
-event selects. Reading the expression as one opaque label would have dropped the
-job out of every one of those contracts at once, which is the failure mode the
-helper tests pin.
+for the Monday cron, where it is not.
+
+#### The fork fallback
+
+A pull request from a fork cannot obtain an Ubicloud runner. The pool belongs
+to this repository and the fork's run does not reach it, so a lane that asks
+for one does not fail: it queues, waits, and is eventually reported as a stuck
+or cancelled check on somebody else's contribution, which reads as this
+repository being broken. Every lane a `pull_request` can dispatch therefore
+names a GitHub-hosted runner for that case:
+
+```yaml
+    runs-on: >-
+      ${{ github.event.pull_request.head.repo.fork && 'ubuntu-latest'
+      || 'ubicloud-standard-4' }}
+```
+
+A lane that also serves a cron composes both conditions in one expression, in
+that order, because `runs-on` is the only place either distinction can live:
+
+```yaml
+    runs-on: >-
+      ${{ github.event_name == 'schedule' && 'ubuntu-latest'
+      || github.event.pull_request.head.repo.fork && 'ubuntu-latest'
+      || 'ubicloud-standard-2' }}
+```
+
+`Job.runner_labels` reads a chain of any length and reports every distinct
+label, so a lane still answers `uses_ubicloud` and stays inside the timeout,
+sizing and sccache contracts. `Job.labels_for_event` answers which arm an
+event selects, and it answers a fork condition false on purpose: these
+contracts ask what a lane costs this repository, a fork's run costs nothing
+here, and reading the fork arm as the pull-request answer would report every
+one of these lanes as free while hiding the shape they buy for a branch pull
+request. A chain the helpers cannot read, one with no fallback arm or naming a
+condition they cannot evaluate, stays one opaque label rather than being split
+into arms nobody checked.
+
+`tests/workflow_contracts/fork_fallback_test.py` asserts the field rather than
+the shape, because the failure worth stopping looks right. Swapping
+`head.repo.fork` for `head.repo.private` leaves an expression of the same
+shape with the same two labels; it sends every branch pull request to a free
+runner while a fork's still queues for a paid one, and nothing in the workflow
+shows it. The contract also asserts the other direction, that a branch pull
+request still selects the Ubicloud shape, so a lane rewritten to send every
+pull request to `ubuntu-latest` fails rather than passing as a fallback.
+
+Reading either expression as one opaque label would drop the job out of the
+placement, timeout, sizing and sccache contracts at once, which is the failure
+mode the helper tests pin.
 
 ### Tool installation
 

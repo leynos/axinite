@@ -33,17 +33,39 @@ WORKFLOW_DIR = REPOSITORY_ROOT / ".github" / "workflows"
 #: "Workflow pins and Dependabot").
 SHA_RE: re.Pattern[str] = re.compile(r"^[0-9a-f]{40}$")
 
-#: A `runs-on` that picks its label from the event, as
-#: `${{ github.event_name == 'schedule' && 'ubuntu-latest'
-#: || 'ubicloud-standard-8' }}`. A workflow that is both a developer gate and a
-#: cron needs the Ubicloud runner on one path and not the other, and the label
-#: is the only place that distinction can live. Reading such a value as one
+#: One arm of a `runs-on` that chooses its label from the context, as
+#: `<condition> && 'ubuntu-latest'`. A workflow that is both a developer gate
+#: and a cron, or that must hand a fork a runner it can actually get, has
+#: nowhere but the label to put the distinction. Reading such a value as one
 #: opaque label would hide the Ubicloud request from every placement contract,
-#: so the forms are parsed rather than passed through.
-CONDITIONAL_RUNNER_RE: re.Pattern[str] = re.compile(
-    r"^\$\{\{\s*github\.event_name\s*==\s*'(?P<event>[a-z_]+)'\s*&&\s*"
-    r"'(?P<when>[^']+)'\s*\|\|\s*'(?P<otherwise>[^']+)'\s*\}\}$"
+#: so the arms are parsed.
+RUNNER_ARM_RE: re.Pattern[str] = re.compile(
+    r"^(?P<condition>.+?)\s*&&\s*'(?P<label>[^']+)'$"
 )
+
+#: A bare label, which can only be the last arm: the value everything else
+#: falls through to.
+RUNNER_FALLBACK_RE: re.Pattern[str] = re.compile(r"^'(?P<label>[^']+)'$")
+
+#: The conditions an arm may test. Anything else leaves the whole expression
+#: unparsed and therefore opaque, which is the safe direction: a shape the
+#: helpers cannot read is reported as one label rather than silently split
+#: into arms nobody checked.
+EVENT_CONDITION_RE: re.Pattern[str] = re.compile(
+    r"^github\.event_name\s*==\s*'(?P<event>[a-z_]+)'$"
+)
+
+#: A field of the pull request's head repository, `fork` above all. A pull
+#: request from a fork cannot obtain an Ubicloud runner, so those lanes fall
+#: back to a GitHub-hosted one. The pattern admits any field of that object so
+#: that swapping `fork` for a sibling leaves the expression parseable and the
+#: fork contract, not the parser, is what reports the swap.
+HEAD_REPO_CONDITION_RE: re.Pattern[str] = re.compile(
+    r"^github\.event\.pull_request\.head\.repo\.(?P<field>[a-z_]+)$"
+)
+
+#: The field that decides whether a pull request came from a fork.
+FORK_CONDITION = "github.event.pull_request.head.repo.fork"
 
 #: Prefix shared by every Ubicloud runner label. Match on the prefix, not on
 #: one exact label: the migration wave introduces `ubicloud-standard-2`, and a
@@ -108,8 +130,13 @@ CACHE_ACTION_PREFIXES = (
 )
 
 
-def _conditional_runner(declared: str) -> tuple[str, str, str] | None:
-    """Split an event-conditional `runs-on` into its event and two labels.
+def _runs_on_chain(declared: str) -> tuple[tuple[str | None, str], ...] | None:
+    """Split a context-dependent `runs-on` into its arms.
+
+    The value is a chain of guarded labels ending in an unguarded one, as
+    `${{ a && 'x' || b && 'y' || 'z' }}`. GitHub binds `&&` tighter than `||`
+    and yields the first truthy operand, so the arms are tried in order and
+    the bare label is what everything falls through to.
 
     Parameters
     ----------
@@ -119,15 +146,66 @@ def _conditional_runner(declared: str) -> tuple[str, str, str] | None:
 
     Returns
     -------
-    tuple of str, or None
-        The event name, the label chosen for that event, and the label used
-        otherwise. ``None`` when the value is not the conditional form, which
-        includes a matrix expression and every plain label.
+    tuple of tuple, or None
+        One `(condition, label)` pair per arm, with ``None`` as the condition
+        of the final fallback. ``None`` when the value is not this form, which
+        includes a plain label, a matrix expression, a chain with no fallback,
+        and any chain naming a condition these helpers do not recognize.
     """
-    match = CONDITIONAL_RUNNER_RE.match(" ".join(declared.split()))
-    if match is None:
+    joined = " ".join(declared.split())
+    if not (joined.startswith("${{") and joined.endswith("}}")):
         return None
-    return match["event"], match["when"], match["otherwise"]
+    body = joined[3:-2].strip()
+    parts = [part.strip() for part in body.split("||")]
+    if len(parts) < 2:
+        return None
+    arms: list[tuple[str | None, str]] = []
+    for index, part in enumerate(parts):
+        last = index == len(parts) - 1
+        fallback = RUNNER_FALLBACK_RE.match(part)
+        if fallback is not None:
+            # A bare label anywhere but the end would make every later arm
+            # unreachable, which is a defect rather than a form to parse.
+            if not last:
+                return None
+            arms.append((None, fallback["label"]))
+            continue
+        if last:
+            return None
+        arm = RUNNER_ARM_RE.match(part)
+        if arm is None or not _recognized_condition(arm["condition"]):
+            return None
+        arms.append((arm["condition"], arm["label"]))
+    return tuple(arms)
+
+
+def _recognized_condition(condition: str) -> bool:
+    """Report whether an arm's condition is one these helpers can answer.
+
+    An unrecognized condition leaves the whole expression opaque. That is
+    deliberate: splitting on a condition nobody has taught the helpers to
+    evaluate would let `labels_for_event` answer confidently and wrongly.
+    """
+    return (
+        EVENT_CONDITION_RE.match(condition) is not None
+        or HEAD_REPO_CONDITION_RE.match(condition) is not None
+    )
+
+
+def _arm_selected_by(condition: str | None, event: str) -> bool:
+    """Report whether an arm's condition holds for an event.
+
+    A head-repository condition is answered ``False``. The contracts ask what
+    a lane costs, and a fork's pull request runs GitHub-hosted at no cost to
+    this repository; answering ``True`` would report every such lane as free
+    and hide the shape it actually buys for a branch pull request.
+    """
+    if condition is None:
+        return True
+    match = EVENT_CONDITION_RE.match(condition)
+    if match is not None:
+        return match["event"] == event
+    return False
 
 
 @dataclass(frozen=True)
@@ -170,12 +248,14 @@ class Job:
         if isinstance(declared, dict):
             declared = declared.get("labels")
         if isinstance(declared, str):
-            conditional = _conditional_runner(declared)
-            if conditional is not None:
-                # Both arms are reported, so a job that reaches Ubicloud on any
-                # event still answers `uses_ubicloud` and stays inside the
-                # timeout and sccache contracts.
-                return conditional[1], conditional[2]
+            chain = _runs_on_chain(declared)
+            if chain is not None:
+                # Every arm is reported, so a job that reaches Ubicloud in any
+                # context still answers `uses_ubicloud` and stays inside the
+                # timeout and sccache contracts. Repeats are dropped: two arms
+                # naming `ubuntu-latest` are one runner, and reporting it twice
+                # would read as a job asking for two labels.
+                return tuple(dict.fromkeys(label for _, label in chain))
             return (declared,)
         if isinstance(declared, list):
             return tuple(label for label in declared if isinstance(label, str))
@@ -258,10 +338,17 @@ class Job:
         if isinstance(declared, dict):
             declared = declared.get("labels")
         if isinstance(declared, str):
-            conditional = _conditional_runner(declared)
-            if conditional is not None:
-                chosen, alternative = conditional[1], conditional[2]
-                return (chosen if conditional[0] == event else alternative,)
+            chain = _runs_on_chain(declared)
+            if chain is not None:
+                selected = next(
+                    (
+                        label
+                        for condition, label in chain
+                        if _arm_selected_by(condition, event)
+                    ),
+                    chain[-1][1],
+                )
+                return (selected,)
         return self.runner_labels
 
     @property
