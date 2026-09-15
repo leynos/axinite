@@ -1,11 +1,11 @@
-"""Contracts for how CI installs tools and owns caches.
+"""Contracts for how CI installs the tools it runs.
 
-Two failure modes cost real money and real minutes here. A tool that
-compiles from source rebuilds a published binary on every run. A cache with
-two owners, or one that archives a `target` tree, writes gigabytes that the
-next run mostly discards; the Ubicloud listing on 2026-09-03 showed 4.1 to
-4.4 GB `v0-rust-*-tests` archives from exactly that shape. These tests pin
-the contracts that keep both out.
+A tool that compiles from source rebuilds a published binary on every run,
+and an installer without a pinned version reaches for whatever was released
+this morning. These tests pin both, and check that an installer precedes the
+first use of what it installs rather than merely appearing somewhere in the
+job. Cache ownership is a separate concern and lives in
+`cache_ownership_test.py`.
 
 Run via ``make test-workflow-contracts``.
 """
@@ -17,20 +17,12 @@ import typing as typ
 
 import pytest
 from _workflow_policy import (
-    CACHE_ACTION_SHA,
-    DIST_GENERATED,
     SHA_RE,
     SOURCE_BUILD_PATTERNS,
-    WORKFLOW_DIR,
     Job,
-    cache_paths,
     declared_jobs,
-    is_cache_step,
     jobs,
-    load,
-    runs_on_event,
     step_text,
-    triggers,
     workflow_paths,
 )
 
@@ -261,170 +253,6 @@ def test_each_shared_installer_is_pinned_and_probed(
             f"{job} {probe_step!r} must run {command!r}; a probe that only "
             "checks PATH passes for a restored but unusable binary"
         )
-
-
-@pytest.mark.parametrize("job", ALL_JOBS, ids=_ids(ALL_JOBS))
-def test_cache_action_is_pinned_to_the_reviewed_commit(job: Job) -> None:
-    """Pin the cache action: Ubicloud's proxy intercepts this version."""
-    if job.workflow == DIST_GENERATED:
-        pytest.skip("dist owns release.yml's generated cache wiring")
-    for step in job.steps:
-        if not is_cache_step(step):
-            continue
-        uses = str(step.get("uses"))
-        assert uses.endswith(f"@{CACHE_ACTION_SHA}"), (
-            f"{job} uses {uses!r}; every cache step must pin "
-            f"actions/cache at {CACHE_ACTION_SHA} (v6.1.0)"
-        )
-
-
-@pytest.mark.parametrize("job", ALL_JOBS, ids=_ids(ALL_JOBS))
-def test_no_cache_step_archives_a_target_tree(job: Job) -> None:
-    """Keep compiler output out of cache archives; sccache owns it."""
-    for step in job.steps:
-        if not is_cache_step(step):
-            continue
-        for path in cache_paths(step):
-            assert not path.split("/")[0] == "target", (
-                f"{job} archives {path!r}. A target tree duplicates sccache's "
-                "ownership of compiler output and inflates the cache quota."
-            )
-
-
-@pytest.mark.parametrize("job", ALL_JOBS, ids=_ids(ALL_JOBS))
-def test_each_cache_path_has_one_owner_within_a_job(job: Job) -> None:
-    """Forbid two cache keys in one job from claiming the same path.
-
-    A restore step and its matching save step share one key, so they are one
-    owner. Two different keys over the same path are two owners, and the
-    second write silently discards or duplicates the first.
-    """
-    owners: dict[str, set[str]] = {}
-    for step in job.steps:
-        if not is_cache_step(step):
-            continue
-        inputs = step.get("with")
-        key = str(inputs.get("key", "")) if isinstance(inputs, dict) else ""
-        for path in cache_paths(step):
-            owners.setdefault(path, set()).add(key)
-    for path, keys in sorted(owners.items()):
-        assert len(keys) == 1, (
-            f"{job} caches {path!r} under {len(keys)} different keys; each "
-            "mutable path needs exactly one owner"
-        )
-
-
-def _pushes_to_main(workflow: str) -> bool:
-    """Report whether a workflow is triggered by a push to `main`.
-
-    Parameters
-    ----------
-    workflow
-        A workflow file name, such as ``coverage.yml``.
-
-    Returns
-    -------
-    bool
-        True when the workflow declares a push trigger that includes `main`.
-    """
-    push = triggers(load(WORKFLOW_DIR / workflow)).get("push")
-    if push is None:
-        return False
-    # A bare `push:`, or a mapping without `branches`, accepts every branch.
-    # Only an explicit branch list can leave main out.
-    branches = push.get("branches") if isinstance(push, dict) else None
-    return branches is None or "main" in branches
-
-
-def _cache_platform(job: Job) -> str:
-    """Name the `runner.os` value a job's cache keys resolve to.
-
-    Parameters
-    ----------
-    job
-        The job whose runner labels are read.
-
-    Returns
-    -------
-    str
-        ``Windows`` when any label names Windows, otherwise ``Linux``.
-    """
-    labels = job.runner_labels
-    return "Windows" if any("windows" in label for label in labels) else "Linux"
-
-
-def test_the_cargo_registry_cache_has_exactly_one_writer_per_platform() -> None:
-    """Keep one save step per key family so no two jobs race to publish."""
-    writers: list[str] = []
-    for job in ALL_JOBS:
-        for step in job.steps:
-            uses = step.get("uses")
-            if isinstance(uses, str) and uses.startswith("actions/cache/save@"):
-                condition = " ".join(str(step.get("if", "")).split())
-                assert "refs/heads/main" in condition, (
-                    f"{job} saves a cache without restricting the write to "
-                    "main; pull requests must restore and never save"
-                )
-                # The ref alone is not enough. `github.ref` reads
-                # `refs/heads/main` for a manual dispatch against main just as
-                # it does for a push, so a guard on the ref would let a
-                # warm-cache measurement run overwrite what the merge wrote.
-                assert "github.event_name == 'push'" in condition, (
-                    f"{job} saves a cache without naming the push event; a "
-                    "workflow_dispatch on main would satisfy a ref-only guard "
-                    "and take the key from its real writer"
-                )
-                # A step condition naming the push event is worth nothing if
-                # the step can never see one. Standing `tests` down on a push
-                # left its save step guarded on the one event its own job had
-                # just refused, and every reader of that key went unwritten
-                # while this contract stayed green on the step alone.
-                assert _pushes_to_main(job.workflow), (
-                    f"{job} saves the registry cache, but {job.workflow} is "
-                    "not triggered by a push to main, so the write never runs"
-                )
-                assert runs_on_event(job, "push"), (
-                    f"{job} saves the registry cache on a push, but its own "
-                    "condition refuses that event: the step is unreachable "
-                    "and the key has no writer"
-                )
-                writers.append(str(job))
-    # One Linux writer and one Windows writer. The Linux write sits in
-    # `coverage.yml` because that is the job which still runs on a push.
-    assert sorted(writers) == ["coverage.yml:coverage", "test.yml:windows-build"], (
-        f"unexpected set of cache writers: {sorted(writers)}"
-    )
-
-
-def test_every_restored_cargo_registry_key_has_a_writer() -> None:
-    """Every platform that restores the registry key needs one to fill it.
-
-    A restore-only estate is silent. Each lane simply downloads the registry
-    and the git index again, and the only evidence is the duration.
-    """
-    restorers: set[str] = set()
-    written: set[str] = set()
-    for job in ALL_JOBS:
-        for step in job.steps:
-            uses = step.get("uses")
-            if not isinstance(uses, str):
-                continue
-            with_block = step.get("with")
-            key = with_block.get("key", "") if isinstance(with_block, dict) else ""
-            if "cargo-v1-" not in str(key):
-                continue
-            # The keys differ by `runner.os`, so the platform the job runs on
-            # is what decides which family it touches.
-            platform = _cache_platform(job)
-            if uses.startswith("actions/cache/restore@"):
-                restorers.add(platform)
-            elif uses.startswith("actions/cache/save@") and runs_on_event(job, "push"):
-                written.add(platform)
-    assert restorers, "no job restores the cargo registry cache at all"
-    assert restorers <= written, (
-        "these platforms restore the cargo registry cache with no reachable "
-        f"writer: {sorted(restorers - written)}"
-    )
 
 
 def test_shared_action_references_are_pinned_to_a_commit() -> None:
