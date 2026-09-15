@@ -119,9 +119,7 @@ def test_the_fork_arm_selects_a_hosted_runner(job: Job) -> None:
     """The fallback must be free, and it must be the fork arm's own label."""
     declared = _runs_on(job)
     _, found, arm = declared.partition(FORK_CONDITION)
-    assert found, (
-        f"{job} names no fork condition, so there is no fallback arm to read"
-    )
+    assert found, f"{job} names no fork condition, so there is no fallback arm to read"
     assert arm.lstrip().startswith(f"&& '{HOSTED_LABEL}'"), (
         f"{job} tests the fork field but does not hand a fork "
         f"{HOSTED_LABEL!r}; the arm reads {arm.strip()!r}"
