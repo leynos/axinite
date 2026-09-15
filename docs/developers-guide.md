@@ -121,14 +121,18 @@ Two workflows serve both a developer event and a cron, so their runner depends
 on the event. The table gives the developer runner, which is the one a
 contributor sees; on `schedule` those jobs run on `ubuntu-latest` instead, and
 `tests/workflow_contracts/scheduled_placement_test.py` fails if they stop doing
-so. The affected rows are marked.
+so. The affected rows are marked. Every row that a `pull_request` can
+dispatch also falls back to `ubuntu-latest` for a pull request from a fork,
+which cannot obtain an Ubicloud runner at all; see "The fork fallback" below.
 
 | Class | Jobs | Runner |
 | --- | --- | --- |
-| Build and test | `code_style.yml` `format`, `code_style.yml` `clippy`, `coverage.yml` `coverage`, `coverage.yml` `e2e-coverage`, `codescene-coverage.yml` `coverage-check` | `ubicloud-standard-4` |
-| Build and test, event-dependent | `test.yml` `tests`, `test.yml` `wasm-wit-compat` | `ubicloud-standard-4` on a developer event, `ubuntu-latest` on `schedule` |
-| Build and test, event-dependent, small | `test.yml` `telegram-tests` | `ubicloud-standard-2` on a developer event, `ubuntu-latest` on `schedule` |
-| Build and test, event-dependent, not yet resized | `e2e.yml` `build`, `e2e.yml` `test` | `ubicloud-standard-8` on a developer event, `ubuntu-latest` on `schedule` |
+| Build and test | `coverage.yml` `coverage`, `coverage.yml` `e2e-coverage` | `ubicloud-standard-4` |
+| Build and test, fork-dependent | `code_style.yml` `format`, `code_style.yml` `clippy`, `codescene-coverage.yml` `coverage-check` | `ubicloud-standard-4` on a branch pull request, `ubuntu-latest` on a fork's |
+| Build and test, event-dependent | `test.yml` `tests` (not on `push`), `test.yml` `wasm-wit-compat` | `ubicloud-standard-4` on a developer event, `ubuntu-latest` on `schedule` |
+| Build and test, event-dependent, small | `test.yml` `telegram-tests`, `test.yml` `github-tool-tests` | `ubicloud-standard-2` on a developer event, `ubuntu-latest` on `schedule` |
+| Build and test, event-dependent | `e2e.yml` `build` | `ubicloud-standard-4` on a developer event, `ubuntu-latest` on `schedule` |
+| Test only, event-dependent, small | `e2e.yml` `test` | `ubicloud-standard-2` on a developer event, `ubuntu-latest` on `schedule` |
 | Docker, event-dependent | `test.yml` `docker-build` | `ubicloud-standard-4` on a developer event, `ubuntu-latest` on `schedule` |
 | Windows | `code_style.yml` `clippy-windows`, `test.yml` `windows-build` | `windows-latest` |
 | Release | `release-plz.yml` `release-plz-release`, `release-plz.yml` `release-plz-pr` | `ubuntu-latest` |
@@ -178,7 +182,11 @@ Jobs are sized individually against measurement:
 | --- | --- |
 | `ubicloud-standard-2` | Jobs whose peak memory and wall time both fit it |
 | `ubicloud-standard-4` | Everything else that compiles |
-| `ubicloud-standard-8` | Nothing by choice; `e2e.yml` still holds it pending its own resize |
+
+`ubicloud-standard-8` is no longer bought. It was removed from
+`.github/actionlint.yaml` and from `APPROVED_SHAPES` when `e2e.yml` left it, so
+a job written against it now fails actionlint and the sizing contract rather
+than quietly costing four times the rate.
 
 The acceptance rule has two arms, because wall time and cost pull in opposite
 directions and only one of them is felt by a person waiting:
@@ -290,17 +298,61 @@ with a fixed label, so the label follows the event:
 ```yaml
     runs-on: >-
       ${{ github.event_name == 'schedule' && 'ubuntu-latest'
-      || 'ubicloud-standard-8' }}
+      || 'ubicloud-standard-4' }}
 ```
 
 `e2e.yml` uses this for its `build` and `test` jobs: Ubicloud on the
 path-filtered pull-request run, where the wall time is felt, and GitHub-hosted
-for the Monday cron, where it is not. `Job.runner_labels` parses that form and
-reports both arms, so the job still answers `uses_ubicloud` and stays inside the
-timeout and sccache contracts; `Job.labels_for_event` answers which arm a given
-event selects. Reading the expression as one opaque label would have dropped the
-job out of every one of those contracts at once, which is the failure mode the
-helper tests pin.
+for the Monday cron, where it is not.
+
+#### The fork fallback
+
+A pull request from a fork cannot obtain an Ubicloud runner. The pool belongs
+to this repository and the fork's run does not reach it, so a lane that asks
+for one does not fail: it queues, waits, and is eventually reported as a stuck
+or cancelled check on somebody else's contribution, which reads as this
+repository being broken. Every lane a `pull_request` can dispatch therefore
+names a GitHub-hosted runner for that case:
+
+```yaml
+    runs-on: >-
+      ${{ github.event.pull_request.head.repo.fork && 'ubuntu-latest'
+      || 'ubicloud-standard-4' }}
+```
+
+A lane that also serves a cron composes both conditions in one expression, in
+that order, because `runs-on` is the only place either distinction can live:
+
+```yaml
+    runs-on: >-
+      ${{ github.event_name == 'schedule' && 'ubuntu-latest'
+      || github.event.pull_request.head.repo.fork && 'ubuntu-latest'
+      || 'ubicloud-standard-2' }}
+```
+
+`Job.runner_labels` reads a chain of any length and reports every distinct
+label, so a lane still answers `uses_ubicloud` and stays inside the timeout,
+sizing and sccache contracts. `Job.labels_for_event` answers which arm an
+event selects, and it answers a fork condition false on purpose: these
+contracts ask what a lane costs this repository, a fork's run costs nothing
+here, and reading the fork arm as the pull-request answer would report every
+one of these lanes as free while hiding the shape they buy for a branch pull
+request. A chain the helpers cannot read, one with no fallback arm or naming a
+condition they cannot evaluate, stays one opaque label rather than being split
+into arms nobody checked.
+
+`tests/workflow_contracts/fork_fallback_test.py` asserts the field rather than
+the shape, because the failure worth stopping looks right. Swapping
+`head.repo.fork` for `head.repo.private` leaves an expression of the same
+shape with the same two labels; it sends every branch pull request to a free
+runner while a fork's still queues for a paid one, and nothing in the workflow
+shows it. The contract also asserts the other direction, that a branch pull
+request still selects the Ubicloud shape, so a lane rewritten to send every
+pull request to `ubuntu-latest` fails rather than passing as a fallback.
+
+Reading either expression as one opaque label would drop the job out of the
+placement, timeout, sizing and sccache contracts at once, which is the failure
+mode the helper tests pin.
 
 ### Tool installation
 
@@ -365,9 +417,18 @@ Rules that follow from the table:
   removes the wasted upload time. The guard names the `push` event as well as
   the ref, because `github.ref` reads `refs/heads/main` for a manual dispatch
   against `main` too.
-- **One writer per key.** Only the `all-features` matrix leg saves, because it
-  resolves the widest dependency graph; the other legs would race it for the
-  same key.
+- **One writer per key, and it has to be in a job that runs on a push.** The
+  write sits in `coverage.yml`'s `coverage` job. `test.yml`'s `tests` job
+  stands down on a push, so a save step there could never run however its own
+  condition read, and for a while none did: every lane restored the key and
+  nothing filled it. Only the `all-features` leg saves, because it resolves
+  the widest dependency graph under `--all-features`; the other legs would
+  race it for the same key.
+  `tests/workflow_contracts/workflow_tooling_test.py` asserts that the
+  writer's workflow is triggered by a push to `main`, that the job's own guard
+  admits that event, and that every platform restoring the key has a reachable
+  writer. The earlier contract read the save step's condition alone and stayed
+  green while the step could not run at all.
 - Every cache step pins `actions/cache` to `55cc8345863c7cc4c66a329aec7e433d2d1c52a9`
   (v6.1.0). Ubicloud's transparent cache proxy is confirmed to intercept that
   version's traffic, so the deprecated `ubicloud/cache` fork is unnecessary and
@@ -443,6 +504,89 @@ including that no build step precedes the reset, and that GitHub-hosted jobs
 carry none of this: the endpoint export points at a proxy that exists only on
 an Ubicloud VM.
 
+### One suite, one run per trigger
+
+Nothing fails when a suite runs twice. Both runs pass, both report, and the
+only evidence is the bill and the wait. This repository paid that twice over.
+On a pull request `test.yml`'s libsql-only leg ran
+`--no-default-features --features libsql --features test-helpers` over the
+workspace, which is exactly what `codescene-coverage.yml` was already running
+under instrumentation. On a push to `main` all three `test.yml` legs repeated
+what `coverage.yml` had just done. The GitHub tool crate was worse: it rode
+along inside `make test`, so it ran once per leg, three times a trigger.
+
+The rule is now one lane per suite per trigger, and which lane it is depends
+on the trigger:
+
+| Trigger | Workspace suite | GitHub tool crate | Telegram channel crate |
+| --- | --- | --- | --- |
+| `pull_request` | `test.yml` `tests`, default leg; `codescene-coverage.yml` `coverage-check` for libsql-only | `test.yml` `github-tool-tests` | `test.yml` `telegram-tests` |
+| `push` to `main` | `coverage.yml` `coverage`, all three legs | `test.yml` `github-tool-tests` | `test.yml` `telegram-tests` |
+| `schedule` (through `mutation-testing.yml`) | `test.yml` `tests`, default and libsql-only legs | `test.yml` `github-tool-tests` | `test.yml` `telegram-tests` |
+
+Three mechanisms carry that, and each is worth knowing before changing a lane:
+
+- **`tests` stands down on a push.** Its guard is
+  `github.event_name != 'push'`, an inequality on purpose: a trigger added
+  later runs the suite by default rather than silently losing it.
+- **Its leg list follows the event.** The legs are an expression, not a static
+  list with `exclude`, because `exclude` cannot remove an `include` entry:
+  GitHub processes `include` afterwards and documents it as the way to add an
+  excluded combination back, which is precisely what it would do here.
+- **The roll-up asserts the result it expects rather than tolerating a skip.**
+  `run-tests` computes `EXPECTED_TESTS_RESULT` from the event, `skipped` on a
+  push and `success` everywhere else, so a leg that vanishes for any other
+  reason is still a failure.
+- **A leg is what it runs, not what it is called.** `tests` had a leg named
+  `all-features` which passed `--features postgres,libsql,html-to-markdown`
+  and no `--no-default-features`. All three are members of `default`, so
+  Cargo built that leg exactly as it built the leg passing no flags at all,
+  `docker` included: two paid legs, one suite, for as long as anyone had
+  been reading the names. It is gone. Running the suite under the features
+  `default` leaves out is `coverage.yml`'s all-features leg, which passes
+  `--all-features` and means it.
+
+The profile is part of that, and it is the half most easily missed. Both
+coverage lanes ran nextest's default profile, which drops the trybuild
+compile-contract binary, about seven minutes of work that spawns a fresh
+`rustc` per case. The `test.yml` legs ran `NEXTEST_PROFILE=ci`, which runs
+everything. A lane running the default profile therefore could not stand in
+for one running `ci`, however identical its flags, so both coverage lanes now
+pass `--profile ci` and the replacement is the whole of what it replaced.
+Without that, standing `tests` down on a push would have left the compile
+contracts unexecuted on `main` altogether.
+
+`tools-src/github` and `channels-src/telegram` are excluded from the
+workspace, so `--workspace` cannot reach either however wide the feature set.
+Each therefore needs a lane of its own or it is not tested at all, which is
+why `make test` is now exactly `test-workspace` plus `test-github-tool`: a
+developer runs the whole, CI runs the halves on different lanes, and the whole
+is the sum of the parts by construction rather than by memory.
+
+`tests/workflow_contracts/suite_duplication_test.py` holds both halves of the
+rule, over a reading in `_suite_reader.py` and `_suite_targets.py` that
+`suite_reader_test.py` unit-tests on its own. It reads what each lane runs
+rather than what it is called, resolving a leg's `${{ matrix.flags }}` and a
+step's `TEST_FEATURES` and comparing feature selections as sets, so
+`--features a,b` and `--features a --features b` are one run while
+`--all-features` stays distinct from a list that happens to name every
+feature today. It resolves each command's defaults before comparing,
+reading the `default` list from the root `Cargo.toml`, because a command that
+does not pass `--no-default-features` gets them whether it names them or not;
+without that step the duplicate leg above keyed as distinct work and the
+contract passed over it. It then asserts three things: that no trigger runs one
+scope twice, that every scope still runs on every trigger, and that the
+workspace suite runs under the `ci` profile wherever it runs. The second and
+third are there because removing a duplicate lane, removing the only lane, and
+replacing a lane with a narrower one look identical in a diff and identical in
+a green run.
+
+The required contexts do not change. `main`'s ruleset requires the roll-ups,
+`Run Tests`, `Code Style (fmt + clippy)` and `Regression test enforcement`,
+not the individual legs, so a leg that stops running on a trigger is not a
+missing required check. `Run Tests` gains `GitHub Tool Tests` as a dependency,
+which keeps the new lane inside the gate.
+
 ### Writing a workflow contract
 
 Every contract in `tests/workflow_contracts/` reads one parsed view of
@@ -509,11 +653,44 @@ seconds on `ubicloud-standard-4` with a 5,527 MiB peak, so the resize is
 preflighted by measurement. Moving it off Ubicloud entirely would still need
 that preflight.
 
-One slice remains:
+The last slice, `e2e.yml`, moved on the same terms. Its `build` job compiles
+the workspace under `--no-default-features --features libsql` and the sampler
+measured 6,522 and 6,797 MiB on two cold runs, which is 86% of the 7,940 MiB a
+`standard-2` presents, so it took `standard-4` for the same reason `format`
+did: no room for a bad day. Its `test` legs compile nothing, download the
+binary `build` produced and drive it from Playwright, and peaked at 1,273 to
+1,432 MiB across nine legs, under a fifth of a `standard-2`, so they took the
+smaller shape. No job now asks for `standard-8`.
 
-- `e2e.yml` `build` and `test`, still on `ubicloud-standard-8` for developer
-  events. They need their own sampled run before moving, on the same terms as
-  everything else.
+The first run on the new shapes confirms the memory side and leaves the wall
+time unsettled, which is worth stating plainly. `build` peaked at 5,746 MiB of
+the 15,991 a `standard-4` presents, 36%, and its legs at 916 to 997 MiB of
+7,940, 12%. It took 582 seconds against a warm `standard-8` history of 330,
+but with a Rust cache hit rate of 12%: the run was the first on a new branch,
+so it compiled what a warm run would have fetched. The two numbers are not
+comparable, and the shape is confirmed on memory alone until a warm run on
+`standard-4` exists. Its legs took 198 to 264 seconds against 120 to 216.
+
+`release.yml` stays GitHub-hosted in full, and the reasoning is worth
+recording because the file looks like the largest unmigrated slice in the
+estate. It has never run: there has been no tag push, so there is no duration,
+no peak and no cache behaviour to size anything against, and the recipe's
+first rule is that a shape follows a measurement. Two of its seven jobs
+compile, `build-local-artifacts` and `build-wasm-extensions`; the other five,
+`plan`, `build-global-artifacts`, `host`, `update-registry-checksums` and
+`announce`, install dist, assemble installers, upload and announce, which is
+API-bound work that belongs on a free runner whatever happens to the rest. Of
+the two that compile, only the `x86_64-unknown-linux-gnu` leg of
+`build-local-artifacts` is a candidate: the macOS and Windows legs cannot
+move, and the `aarch64-unknown-linux-gnu` leg would need an Arm shape this
+estate has not reviewed. Its label is not editable here in any case. dist
+regenerates `release.yml` wholesale on a version bump, so the runner comes
+from `[workspace.metadata.dist.github-custom-runners]` in the root
+`Cargo.toml`, where `x86_64-unknown-linux-gnu = "ubuntu-22.04"` would become
+the Ubicloud label; `build-wasm-extensions` is a hand-added job kept alive by
+`allow-dirty = ["ci"]`, so its label is editable in the file but is equally
+unmeasured. Revisit all of this after the first release run, with the
+durations that run produces.
 
 Two exclusions still stand:
 
