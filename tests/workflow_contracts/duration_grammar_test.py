@@ -51,6 +51,7 @@ from nextest_units import (
             18446744073709551615 + 0.999999999,
             id="the-largest-duration-humantime-holds",
         ),
+        pytest.param("0.5s 0.5s", 1.0, id="two-half-seconds-that-carry-to-one"),
         pytest.param("0.000001ms", 1e-9, id="a-fraction-that-lands-on-a-nanosecond"),
         pytest.param("0.25h", 900.0, id="a-fraction-of-an-hour-in-whole-seconds"),
         pytest.param("0.5m", 30.0, id="a-fraction-of-a-minute"),
@@ -118,6 +119,10 @@ def test_the_duration_grammar_matches_the_one_nextest_reads(
         ),
         pytest.param("\u0663\u0660\u0660s", id="a-run-of-unicode-digits"),
         pytest.param("3\u0660\u0660s", id="a-unicode-digit-after-an-ascii-one"),
+        pytest.param(
+            "18446744073709551615ns 18446744073709551615ns",
+            id="a-nanosecond-sum-past-the-u64-before-it-carries",
+        ),
         pytest.param("", id="empty"),
     ],
 )
@@ -152,6 +157,17 @@ def test_a_duration_nextest_would_refuse_is_refused_here(duration: str) -> None:
     one and "invalid character at 1" for the run that does not. The
     mixed spelling is the sharper of the two, because a reader that
     checked only its first character would still accept it.
+
+    The nanosecond accumulator has a ceiling of its own, and it is not
+    the seconds' one. humantime's ``add_current`` opens with
+    ``(out.subsec_nanos() as u64).add(nsec)?``, before any carry, so the
+    remainder held so far plus this component's nanoseconds must fit a
+    ``u64`` by itself: two values of ``u64::MAX`` nanoseconds carry the
+    first to 18,446,744,073 seconds and then overflow on the second,
+    although the duration they name is about thirty-six seconds. A
+    reader summing into Python's unbounded integer and checking only
+    the seconds afterwards reports a duration nextest will not start
+    under.
     """
     with pytest.raises(NextestConfigurationError):
         seconds(duration)

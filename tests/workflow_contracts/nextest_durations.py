@@ -172,7 +172,21 @@ def seconds(duration: str) -> float:
         # with ``>`` alone reads ``"18446744073709551615s 1000ms"`` as a
         # duration one second past the ceiling, and nextest cannot load
         # that text by either route.
+        # The remainder plus this component's nanoseconds must itself fit
+        # the u64, before any carry: humantime's ``add_current`` opens
+        # with ``(out.subsec_nanos() as u64).add(nsec)?``, so
+        # ``"18446744073709551615ns 18446744073709551615ns"`` overflows
+        # on the second component although its value is thirty-six
+        # seconds. Accumulating into Python's unbounded integer and
+        # checking only the seconds afterwards reports a duration for it.
         total_nanoseconds += component_nanoseconds
+        if total_nanoseconds > U64_MAX:
+            message = (
+                f"nextest duration {duration!r} sums more nanoseconds than "
+                f"the u64 humantime holds them in before it carries them "
+                f"into seconds"
+            )
+            raise NextestConfigurationError(message)
         if total_nanoseconds >= NANOSECONDS_PER_SECOND:
             component_seconds += total_nanoseconds // NANOSECONDS_PER_SECOND
             total_nanoseconds %= NANOSECONDS_PER_SECOND
