@@ -14,6 +14,7 @@ import re
 from pathlib import Path
 
 import yaml
+from _workflow_policy import Job
 
 SHA_RE: re.Pattern[str] = re.compile(r"[0-9a-f]{40}")
 
@@ -91,7 +92,13 @@ def test_trigger_permissions_and_job_are_pr_only_and_isolated() -> None:
         "github.event_name == 'pull_request' || "
         "github.event_name == 'workflow_dispatch'"
     ), "coverage-check must run only for a pull request or a manual dispatch"
-    assert job.get("runs-on") == "ubicloud-standard-4", (
+    # Read the arm a branch pull request selects rather than the raw scalar:
+    # the value is a chain since the fork fallback, and a string comparison
+    # would report the shape as wrong while the lane still buys it.
+    selected = Job("codescene-coverage.yml", "coverage-check", job).labels_for_event(
+        "pull_request"
+    )
+    assert selected == ("ubicloud-standard-4",), (
         "coverage-check is off the critical path, so it takes the cheaper "
         "shape: 683 s at half the rate beats 455 s at full"
     )

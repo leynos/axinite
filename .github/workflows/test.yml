@@ -65,8 +65,13 @@ jobs:
     # calls this workflow for its full-suite coverage, and a scheduled call
     # must land GitHub-hosted; a developer's pull request still gets Ubicloud,
     # where the wall time is felt.
+    # The second arm is the fork fallback: a pull request from a
+    # fork cannot obtain an Ubicloud runner, so it runs
+    # GitHub-hosted. A branch pull request, which is the one a
+    # maintainer waits on, keeps the paid shape.
     runs-on: >-
       ${{ github.event_name == 'schedule' && 'ubuntu-latest'
+      || github.event.pull_request.head.repo.fork && 'ubuntu-latest'
       || 'ubicloud-standard-4' }}
     timeout-minutes: 90
     env:
@@ -273,8 +278,13 @@ jobs:
     # calls this workflow for its full-suite coverage, and a scheduled call
     # must land GitHub-hosted; a developer's pull request still gets Ubicloud,
     # where the wall time is felt.
+    # The second arm is the fork fallback: a pull request from a
+    # fork cannot obtain an Ubicloud runner, so it runs
+    # GitHub-hosted. A branch pull request, which is the one a
+    # maintainer waits on, keeps the paid shape.
     runs-on: >-
       ${{ github.event_name == 'schedule' && 'ubuntu-latest'
+      || github.event.pull_request.head.repo.fork && 'ubuntu-latest'
       || 'ubicloud-standard-2' }}
     timeout-minutes: 45
     env:
@@ -396,8 +406,13 @@ jobs:
     # calls this workflow for its full-suite coverage, and a scheduled call
     # must land GitHub-hosted; a developer's pull request still gets Ubicloud,
     # where the wall time is felt.
+    # The second arm is the fork fallback: a pull request from a
+    # fork cannot obtain an Ubicloud runner, so it runs
+    # GitHub-hosted. A branch pull request, which is the one a
+    # maintainer waits on, keeps the paid shape.
     runs-on: >-
       ${{ github.event_name == 'schedule' && 'ubuntu-latest'
+      || github.event.pull_request.head.repo.fork && 'ubuntu-latest'
       || 'ubicloud-standard-2' }}
     timeout-minutes: 20
     env:
@@ -562,8 +577,13 @@ jobs:
     # calls this workflow for its full-suite coverage, and a scheduled call
     # must land GitHub-hosted; a developer's pull request still gets Ubicloud,
     # where the wall time is felt.
+    # The second arm is the fork fallback: a pull request from a
+    # fork cannot obtain an Ubicloud runner, so it runs
+    # GitHub-hosted. A branch pull request, which is the one a
+    # maintainer waits on, keeps the paid shape.
     runs-on: >-
       ${{ github.event_name == 'schedule' && 'ubuntu-latest'
+      || github.event.pull_request.head.repo.fork && 'ubuntu-latest'
       || 'ubicloud-standard-4' }}
     timeout-minutes: 75
     env:
@@ -699,8 +719,13 @@ jobs:
     # calls this workflow for its full-suite coverage, and a scheduled call
     # must land GitHub-hosted; a developer's pull request still gets Ubicloud,
     # where the wall time is felt.
+    # The second arm is the fork fallback: a pull request from a
+    # fork cannot obtain an Ubicloud runner, so it runs
+    # GitHub-hosted. A branch pull request, which is the one a
+    # maintainer waits on, keeps the paid shape.
     runs-on: >-
       ${{ github.event_name == 'schedule' && 'ubuntu-latest'
+      || github.event.pull_request.head.repo.fork && 'ubuntu-latest'
       || 'ubicloud-standard-4' }}
     timeout-minutes: 45
     steps:

@@ -22,8 +22,13 @@ jobs:
     # The shape is `-4` because the sampler measured a cold compile peaking at
     # 6,797 MiB, which leaves no headroom in the 7,940 MiB a `-2` presents.
     # See `tests/workflow_contracts/runner_sizing_test.py`.
+    # The second arm is the fork fallback: a pull request from a
+    # fork cannot obtain an Ubicloud runner, so it runs
+    # GitHub-hosted. A branch pull request, which is the one a
+    # maintainer waits on, keeps the paid shape.
     runs-on: >-
       ${{ github.event_name == 'schedule' && 'ubuntu-latest'
+      || github.event.pull_request.head.repo.fork && 'ubuntu-latest'
       || 'ubicloud-standard-4' }}
     timeout-minutes: 30
     env:
@@ -150,8 +155,13 @@ jobs:
     # The shape is `-2` because this job compiles nothing: it downloads the
     # binary `build` produced and drives it from Playwright. The sampler
     # measured 1,273 to 1,432 MiB, under a fifth of what a `-2` presents.
+    # The second arm is the fork fallback: a pull request from a
+    # fork cannot obtain an Ubicloud runner, so it runs
+    # GitHub-hosted. A branch pull request, which is the one a
+    # maintainer waits on, keeps the paid shape.
     runs-on: >-
       ${{ github.event_name == 'schedule' && 'ubuntu-latest'
+      || github.event.pull_request.head.repo.fork && 'ubuntu-latest'
       || 'ubicloud-standard-2' }}
     timeout-minutes: 30
     strategy:
