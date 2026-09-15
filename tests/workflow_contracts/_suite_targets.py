@@ -35,6 +35,11 @@ MAKE_TARGETS: dict[str, tuple[tuple[str, bool], ...]] = {
 }
 #: The command each Make target must still run for the mapping above to hold.
 WORKSPACE_RECIPE = "$(NEXTEST) run --workspace $(TEST_FEATURES)"
+
+#: The build `test-workspace` has to perform before that command. The metadata
+#: and schema tests load the artefact it produces, so a recipe that runs the
+#: suite first tests yesterday's WASM or fails on a clean checkout.
+WASM_PREREQUISITE = "$(MAKE) build-github-tool-wasm"
 GITHUB_TOOL_RECIPE = "$(CARGO) test --manifest-path $(GITHUB_TOOL_MANIFEST)"
 #: The variable a workflow step uses to hand feature flags to a Make target.
 #: The flags arrive as one shell word, `TEST_FEATURES="--features x"`, so the
