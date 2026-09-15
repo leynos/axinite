@@ -190,7 +190,6 @@ jobs:
           sccache --version
           sccache --zero-stats
       - name: Restore Cargo registry and index
-        id: cargo-registry
         uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9  # v6.1.0
         with:
           path: |
@@ -236,8 +235,6 @@ jobs:
           make test-workspace
           NEXTEST_PROFILE=ci
           TEST_FEATURES="${{ matrix.flags }} --features test-helpers"
-      # One writer per key: the all-features leg resolves the widest
-      # dependency graph, so it publishes the registry archive from main.
       # Report the hit rate so a wrapper that is silently doing nothing shows
       # up in the job summary rather than only in the duration.
       - name: Report sccache statistics
@@ -255,19 +252,6 @@ jobs:
             printf '%s\n' "$stats"
             printf '```\n'
           } >> "${GITHUB_STEP_SUMMARY}"
-      - name: Save Cargo registry and index
-        if: >-
-          matrix.name == 'all-features' && github.event_name == 'push' &&
-          github.ref == 'refs/heads/main' &&
-          steps.cargo-registry.outputs.cache-hit != 'true'
-        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9  # v6.1.0
-        with:
-          path: |
-            ~/.cargo/registry
-            ~/.cargo/git
-          key: >-
-            cargo-v1-${{ runner.os }}-${{ runner.arch }}-${{ runner.environment
-            }}-${{ hashFiles('**/Cargo.lock') }}
       - name: Report resource peaks
         if: always()
         run: ./scripts/ci-resource-sampler.sh report
