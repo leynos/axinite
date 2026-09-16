@@ -155,8 +155,40 @@ def _registry_platforms(action: str, *, reachable: bool = False) -> set[str]:
     }
 
 
+def _push_reaches_main(declared: dict[str, object]) -> bool:
+    """Report whether a parsed `on:` mapping is triggered by a push to `main`.
+
+    Split from `_pushes_to_main` so the reading is a pure function of the
+    mapping. The three shapes it has to tell apart cannot be produced by the
+    estate on demand, and two of them look identical to `dict.get`.
+
+    Parameters
+    ----------
+    declared
+        A workflow's parsed `on:` mapping.
+
+    Returns
+    -------
+    bool
+        True when a push to `main` runs the workflow.
+    """
+    # Membership, not the value. PyYAML reads a valueless `push:` as `None`,
+    # which is exactly what a missing key returns, so asking for the value
+    # cannot tell a workflow triggered on every branch from one that is not
+    # triggered by a push at all. The first is the broadest possible trigger
+    # and the second is the narrowest, and reading them as the same thing
+    # would refuse a writer sitting in a workflow that runs on every push.
+    if "push" not in declared:
+        return False
+    push = declared["push"]
+    # A bare `push:`, or a mapping without `branches`, accepts every branch.
+    # Only an explicit branch list can leave main out.
+    branches = push.get("branches") if isinstance(push, dict) else None
+    return branches is None or "main" in branches
+
+
 def _pushes_to_main(workflow: str) -> bool:
-    """Report whether a workflow is triggered by a push to `main`.
+    """Report whether a workflow file is triggered by a push to `main`.
 
     Parameters
     ----------
@@ -168,13 +200,37 @@ def _pushes_to_main(workflow: str) -> bool:
     bool
         True when the workflow declares a push trigger that includes `main`.
     """
-    push = triggers(load(WORKFLOW_DIR / workflow)).get("push")
-    if push is None:
-        return False
-    # A bare `push:`, or a mapping without `branches`, accepts every branch.
-    # Only an explicit branch list can leave main out.
-    branches = push.get("branches") if isinstance(push, dict) else None
-    return branches is None or "main" in branches
+    return _push_reaches_main(triggers(load(WORKFLOW_DIR / workflow)))
+
+
+@pytest.mark.parametrize(
+    ("declared", "expected"),
+    [
+        pytest.param({}, False, id="no-triggers-at-all"),
+        pytest.param({"pull_request": None}, False, id="pull-request-only"),
+        pytest.param({"push": None}, True, id="a-bare-push-accepts-every-branch"),
+        pytest.param({"push": {}}, True, id="a-push-without-branches"),
+        pytest.param({"push": {"branches": ["main"]}}, True, id="main-named"),
+        pytest.param(
+            {"push": {"branches": ["main", "release"]}}, True, id="main-among-others"
+        ),
+        pytest.param({"push": {"branches": ["release"]}}, False, id="main-left-out"),
+    ],
+)
+def test_a_bare_push_is_not_a_missing_push(
+    declared: dict[str, object], *, expected: bool
+) -> None:
+    """Tell a trigger on every branch from no trigger at all.
+
+    PyYAML reads a valueless `push:` as `None`, which is what a missing key
+    also yields, so a reader that asks for the value collapses the broadest
+    possible trigger into the narrowest. The pair that matters is
+    `a-bare-push-accepts-every-branch` against `pull-request-only`: both
+    return `None` from `.get("push")` and they mean opposite things.
+    """
+    assert _push_reaches_main(declared) is expected, (
+        f"{declared!r} should read as reaches-main={expected}"
+    )
 
 
 def _cache_platform(job: Job) -> str:
