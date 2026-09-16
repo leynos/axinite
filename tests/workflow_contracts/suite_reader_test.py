@@ -67,6 +67,56 @@ class TestFeatureKey:
             "merges them reports a duplicate where there are two suites"
         )
 
+    @pytest.mark.parametrize(
+        ("left", "right"),
+        [
+            pytest.param(
+                "--no-default-features --features libsql,postgres",
+                "--no-default-features --features 'libsql postgres'",
+                id="commas-or-whitespace",
+            ),
+            pytest.param(
+                "--no-default-features --features libsql",
+                "--no-default-features -F libsql",
+                id="long-flag-or-short",
+            ),
+            pytest.param(
+                "--no-default-features -F libsql",
+                "--no-default-features -Flibsql",
+                id="short-flag-separated-or-joined",
+            ),
+            pytest.param(
+                "--no-default-features -F libsql",
+                "--no-default-features -F=libsql",
+                id="short-flag-separated-or-joined-with-equals",
+            ),
+        ],
+    )
+    def test_it_reads_every_spelling_cargo_accepts(self, left: str, right: str) -> None:
+        """One selection written six ways is one run.
+
+        Cargo takes `-F` as well as `--features`, takes the value joined or
+        separate, and accepts a whitespace-separated list in a single
+        argument. A reader that saw only the long flag and only commas would
+        return an empty selection for the rest, so two different narrow legs
+        would key the same and be reported as a duplicate that is not one.
+        """
+        assert feature_key(left) == feature_key(right), (
+            f"{left!r} and {right!r} are one selection written two ways; a "
+            "reader that misses a spelling keys it as naming nothing"
+        )
+
+    def test_a_spelling_the_reader_misses_is_not_silently_empty(self) -> None:
+        """The narrow direction: the spellings still have to differ by content.
+
+        Every equality above is satisfied by a reader that returns nothing for
+        all of them, which is precisely the defect. This says the short flag
+        carries its value rather than merely being tolerated.
+        """
+        assert feature_key("--no-default-features -F libsql") != feature_key(
+            "--no-default-features -F postgres"
+        ), "the short flag must carry its value, not just be skipped over"
+
     def test_the_default_set_comes_from_the_manifest(self) -> None:
         """Read the defaults rather than restating them.
 

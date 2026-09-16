@@ -17,6 +17,7 @@ members of `default` read as different work from the leg naming none, and
 
 from __future__ import annotations
 
+import re
 import shlex
 
 from _suite_targets import (
@@ -31,6 +32,59 @@ from _suite_targets import (
 #: --features libsql` cannot collide with each other or with a feature list.
 ALL_FEATURES = ":all-features"
 NO_DEFAULT_FEATURES = ":no-default-features"
+
+
+#: How Cargo spells a feature list. The long and short flags each take their
+#: value separately or joined with `=`, and the value separates on commas or
+#: whitespace: `--features "libsql postgres"` is one argument naming two
+#: features. Reading one spelling and calling the others empty would key two
+#: different selections the same, which is a duplicate reported where there
+#: are two suites.
+FEATURE_FLAGS: tuple[str, ...] = ("--features", "-F")
+
+#: What separates one feature name from the next inside a single value.
+FEATURE_SEPARATORS: re.Pattern[str] = re.compile(r"[,\s]+")
+
+
+def split_features(value: str) -> tuple[str, ...]:
+    """Return the feature names one feature-flag value carries.
+
+    Parameters
+    ----------
+    value
+        The text a `--features` or `-F` argument supplies.
+
+    Returns
+    -------
+    tuple of str
+        Each name, with empty pieces dropped so a trailing comma or a doubled
+        space does not invent one.
+    """
+    return tuple(name for name in FEATURE_SEPARATORS.split(value.strip()) if name)
+
+
+def is_short_flag_with_a_joined_value(token: str) -> bool:
+    """Report whether a token is `-F` carrying its value without a separator.
+
+    `-Flibsql` is the short flag with its value joined on, which clap accepts.
+    The long flag has no such form, so only the short one is read this way:
+    treating `--featuresx` as a feature list would invent one. `-F=libsql` is
+    the separated form and is read before this.
+
+    Parameters
+    ----------
+    token
+        One shell word of the command.
+
+    Returns
+    -------
+    bool
+        True when the token is the short flag with a joined, non-empty value.
+    """
+    if not token.startswith("-F"):
+        return False
+    value = token[2:]
+    return bool(value) and not value.startswith("=")
 
 
 def features_named_by(token: str, following: tuple[str, ...]) -> tuple[str, ...]:
@@ -56,10 +110,13 @@ def features_named_by(token: str, following: tuple[str, ...]) -> tuple[str, ...]
         return (ALL_FEATURES,)
     if token == "--no-default-features":
         return (NO_DEFAULT_FEATURES,)
-    if token == "--features" and following:
-        return tuple(following[0].split(","))
-    if token.startswith("--features="):
-        return tuple(token.partition("=")[2].split(","))
+    if token in FEATURE_FLAGS:
+        return split_features(following[0]) if following else ()
+    for flag in FEATURE_FLAGS:
+        if token.startswith(f"{flag}="):
+            return split_features(token[len(flag) + 1 :])
+    if is_short_flag_with_a_joined_value(token):
+        return split_features(token[2:])
     return ()
 
 
