@@ -13,7 +13,8 @@ ignore = [
   '\bCENTER_INSIDE\b',
   '\b[0-9A-F]{6}\b',
   '"caf%C3%A9"',
-  'task and sub-task items with a GitHub Flavored',
+  # Inline code spans are masked; the shared dictionary does not mask them yet.
+  '`[^`\n]+`',
   '(?:::|\.)analyze\b',
   '\bfn analyze\b',
   '\|analyze\|',
