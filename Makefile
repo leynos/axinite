@@ -107,7 +107,7 @@ fmt:
 	$(CARGO) fmt --all
 	$(CARGO) fmt --manifest-path $(GITHUB_TOOL_MANIFEST) --all
 	$(MDTABLEFIX) --in-place $(MDTABLEFIX_SELECT) $(MDTABLEFIX_RULES)
-	@unset FORCE_COLOR; $(MDLINT) --fix "**/*.md"
+	$(MDLINT) --fix "**/*.md"
 
 check-fmt:
 	$(CARGO) fmt --all -- --check
