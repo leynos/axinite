@@ -2642,12 +2642,12 @@ they must be ordered lives in the `generate-coverage` README in
 [`leynos/shared-actions`][shared-actions-coverage]. Three apply here, and two
 of those were unset until this was written.
 
-| Tier                     | What it bounds                     | Where it is set                       | Current value                                     |
-| ------------------------ | ---------------------------------- | ------------------------------------- | ------------------------------------------------- |
-| Per-test `slow-timeout`  | one test                           | `.config/nextest.toml`, both profiles | 300 s; 900 s for the trybuild binaries under `ci` |
-| nextest `global-timeout` | the whole test run                 | `.config/nextest.toml`, both profiles | 30 m                                              |
-| Cargo watchdog           | one `cargo` invocation, wall clock | not used here, see below              | absent                                            |
-| Job `timeout-minutes`    | the whole job                      | job level                             | 90 m for the coverage lanes                       |
+| Tier                     | What it bounds                     | Where it is set                       | Current value                                             |
+| ------------------------ | ---------------------------------- | ------------------------------------- | --------------------------------------------------------- |
+| Per-test `slow-timeout`  | one test                           | `.config/nextest.toml`, both profiles | 300 s, 900 s for the compile-contract binaries, 5 s grace |
+| nextest `global-timeout` | the whole test run                 | `.config/nextest.toml`, both profiles | 30 m                                                      |
+| Cargo watchdog           | one `cargo` invocation, wall clock | not used here, see below              | absent                                                    |
+| Job `timeout-minutes`    | the whole job                      | job level                             | 90 m for the coverage lanes                               |
 
 *Table: the timers that can end a run, innermost first.*
 
@@ -2715,6 +2715,43 @@ seven minutes, which is why the default profile excludes it. It excludes that
 one binary and not the other: `schema_helpers_ui` measured 244s, 249s and 257s
 and runs in both profiles, which is why it needs the 900s override rather than
 the exclusion.
+
+### The values are pinned, not merely ordered
+
+Everything above compares one figure with another, and every one of those
+comparisons still holds when a figure is deleted or changed.
+`tests/workflow_contracts/nextest_values_test.py` therefore pins the values
+themselves, field by field, against the table at the top of this section.
+
+`grace-period` is the clearest case, and it is the one that gave the contract
+its name. Both profiles and both overrides allow a terminated test five seconds
+between `SIGTERM` and `SIGKILL`. Nothing compared that figure: the ordering
+contract reads `period` and `terminate-after`, because those two make up the
+per-test budget it compares, and the ceiling requirement reads whatever grace
+period it finds and falls back to nextest's ten-second default when it finds
+none. Deleting every `grace-period` in the file therefore *raises* the computed
+requirement, leaves every assertion passing, and doubles the wait a terminated
+test actually gets.
+
+The 900 second override is the next. The compile-contract contract asks whether
+each binary is allowed *at least* that much, which is the right shape for its
+own question and says nothing about the value, so an override raised to an hour
+would satisfy it while sitting above the 30 minute whole-run budget that
+contains it: the run would end before the allowance could be used. The number of
+overrides is pinned with it, because a second one matching the same binaries
+would decide the allowance in force by file order. And the whole-run budget is
+only ever compared with the largest per-test allowance, so the documented thirty
+minutes could drift to forty with nothing failing and this table left describing
+a value the runner does not use.
+
+The set of profiles is pinned too. Every assertion in this suite is parametrized
+over `default` and `ci`, so a third profile carrying looser budgets would be
+selectable by `--profile` and read by none of them.
+
+Each pinned table is compared whole rather than key by key, so a field added to
+one fails as well as a field removed. An unrecognized field is not inert:
+nextest ignores an unknown configuration key with a warning and runs anyway, so
+a misspelled `grace_period` is a silently unset grace period.
 
 ### The tier that is absent, and why
 
