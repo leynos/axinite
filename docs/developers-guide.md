@@ -452,6 +452,19 @@ Every contract in `tests/workflow_contracts/` reads one parsed view of
 `_test` suffix, so pytest imports it as a helper rather than collecting it. Run
 the suite with `make test-workflow-contracts`.
 
+The suite needs Python 3.11 or newer. `nextest_config.py` parses
+`.config/nextest.toml` with the standard library's `tomllib`, which arrived in
+3.11, so an older interpreter fails at import rather than with a useful
+message. Nothing else here reaches outside the standard library except the
+three packages the target provisions: `uv run` supplies `pytest`, `PyYAML` and
+`Hypothesis` for the duration of the run, so no virtual environment is created
+and nothing is installed into the repository. The target names those versions,
+and it is the only place they are named.
+
+That is deliberate. These contracts read configuration and workflow text; they
+import nothing from the crate and build no Rust, so they must stay runnable
+without a toolchain, a coverage build or a populated target directory.
+
 `Job` is the unit of assertion. It carries the workflow file name, the job's
 key under `jobs:`, and the job's parsed body, and it prints as
 `workflow.yml:job-id` so an assertion message names the job without extra
