@@ -7,34 +7,18 @@ per leg per command, keyed by the work it does rather than the job it sits in,
 which is what lets `suite_duplication_test.py` ask whether two lanes run the
 same suite.
 
-Feature sets are compared as sets, so a leg rewritten from `--features a,b` to
-`--features a --features b` is still the same run, and `--all-features` stays
-distinct from a list that happens to name every feature today, because
-tomorrow it will not. A command that does not pass `--no-default-features` is
-keyed with the root manifest's `default` list folded in, because Cargo enables
-those whether the command names them or not: without that, a leg naming three
-members of `default` read as different work from the leg naming none, and
-`test.yml` ran both.
-
-See `_suite_targets.py` for what a Make target and the manifest contribute.
+See `_suite_keys.py` for what a single command selects, and
+`_suite_targets.py` for what a Make target and the manifest contribute.
 """
 
 from __future__ import annotations
 
 import re
-import shlex
 import typing as typ
 from dataclasses import dataclass
 
-from _suite_targets import (
-    DEFAULT_FEATURES,
-    DEFAULT_PROFILE,
-    FEATURE_VARIABLE,
-    MAKE_COMMAND,
-    MAKE_TARGETS,
-    PROFILE_VARIABLE,
-    WORKSPACE,
-)
+from _suite_keys import feature_key, profile_of
+from _suite_targets import DEFAULT_PROFILE, MAKE_COMMAND, MAKE_TARGETS, WORKSPACE
 from _workflow_policy import (
     DIST_GENERATED,
     Job,
@@ -50,15 +34,10 @@ from _workflow_policy import (
 if typ.TYPE_CHECKING:  # pragma: no cover - typing only
     from collections.abc import Iterator
 
-#: Sentinels for the flags that select features without naming any. They are
-#: part of the key so that `--all-features` and `--no-default-features
-#: --features libsql` cannot collide with each other or with a feature list.
-ALL_FEATURES = ":all-features"
-NO_DEFAULT_FEATURES = ":no-default-features"
-
 #: The triggers a developer waits on, and the only ones that reach a paid
 #: runner. A scheduled duplicate is free and blocks nobody.
 PAID_EVENTS: tuple[str, ...] = ("pull_request", "push")
+
 #: Cargo commands that run a suite. The instrumented form counts:
 #: `cargo llvm-cov nextest` compiles and runs the same tests as
 #: `cargo nextest run`, which is the whole reason a coverage lane can stand in
@@ -69,8 +48,10 @@ CARGO_COMMANDS: tuple[re.Pattern[str], ...] = (
     re.compile(r"\bcargo\s+(?:\+\S+\s+)?nextest\s+run\b(?P<args>[^\n]*)"),
     re.compile(r"\bcargo\s+(?:\+\S+\s+)?test\b(?P<args>[^\n]*)"),
 )
+
 #: Where a Cargo command names the crate it runs against.
 MANIFEST_RE: re.Pattern[str] = re.compile(r"--manifest-path[= ](?P<path>\S+)")
+
 #: `${{ matrix.<key> }}`, which is how a leg's flags reach the command.
 MATRIX_REFERENCE_RE: re.Pattern[str] = re.compile(
     r"\$\{\{\s*matrix\.(?P<key>[A-Za-z0-9_-]+)\s*\}\}"
@@ -112,119 +93,24 @@ class SuiteRun:
         return f"{self.job} ({self.leg})" if self.leg else str(self.job)
 
 
-def features_named_by(token: str, following: tuple[str, ...]) -> tuple[str, ...]:
-    """Return the features one argument selects.
-
-    Parameters
-    ----------
-    token
-        One shell word of the command.
-    following
-        The word after it, when there is one. `--features` takes its value
-        separately; the other spellings carry it.
-
-    Returns
-    -------
-    tuple of str
-        The feature names, or a sentinel for the flags that select features
-        without naming any. Empty for every other argument: a profile, an
-        output path or a test filter changes how a run is reported, not which
-        tests it compiles and executes.
-    """
-    if token == "--all-features":
-        return (ALL_FEATURES,)
-    if token == "--no-default-features":
-        return (NO_DEFAULT_FEATURES,)
-    if token == "--features" and following:
-        return tuple(following[0].split(","))
-    if token.startswith("--features="):
-        return tuple(token.partition("=")[2].split(","))
-    return ()
-
-
-def unpack_feature_variable(tokens: list[str]) -> list[str]:
-    """Return the tokens with `TEST_FEATURES="..."` expanded in place.
-
-    A `make` step passes the selection as one assignment word. Unpacking it
-    here, rather than at the call site, means the two command shapes are keyed
-    the same way and a coverage lane can be compared with a test lane.
-    """
-    return [
-        part
-        for token in tokens
-        for part in (
-            shlex.split(token.partition("=")[2])
-            if token.startswith(f"{FEATURE_VARIABLE}=")
-            else [token]
-        )
-    ]
-
-
-def feature_key(args: str) -> frozenset[str]:
-    """Return the feature selection a command's arguments make.
-
-    Parameters
-    ----------
-    args
-        The command's arguments, with every matrix reference already
-        substituted.
-
-    Returns
-    -------
-    frozenset of str
-        The features the command actually enables: each named feature, the
-        root manifest's defaults unless the command turns them off, and a
-        sentinel for `--all-features` and for `--no-default-features`.
-    """
-    tokens = unpack_feature_variable(shlex.split(args, comments=False, posix=True))
-    selected = {
-        name
-        for index, token in enumerate(tokens)
-        for name in features_named_by(token, tuple(tokens[index + 1 : index + 2]))
-    }
-    named = frozenset(name for name in selected if name)
-    # `--no-default-features` says the defaults are off, so the explicit list
-    # is the whole of the selection. Everything else gets them whether it
-    # names them or not, which is the point: a leg naming three members of
-    # `default` is the leg that names nothing. `--all-features` needs no
-    # exception, because its sentinel already keeps it apart from every list.
-    if NO_DEFAULT_FEATURES in named:
-        return named
-    return named | DEFAULT_FEATURES
-
-
-def profile_of(args: str) -> str:
-    """Return the nextest profile a command's arguments select.
-
-    Parameters
-    ----------
-    args
-        The command's arguments, with every matrix reference already
-        substituted. Both spellings are read: `--profile ci` on a Cargo
-        command, and `NEXTEST_PROFILE=ci` on a Make target.
-
-    Returns
-    -------
-    str
-        The profile name, or the nextest default when the command names none.
-    """
-    tokens = shlex.split(args, comments=False, posix=True)
-    for index, token in enumerate(tokens):
-        if token == "--profile" and index + 1 < len(tokens):
-            return tokens[index + 1]
-        if token.startswith("--profile="):
-            return token.partition("=")[2]
-        if token.startswith(f"{PROFILE_VARIABLE}="):
-            return token.partition("=")[2]
-    return DEFAULT_PROFILE
-
-
 def substitute(text: str, leg: dict[str, str]) -> str:
     """Return a step's script with this leg's matrix values in place.
 
     An unresolved reference is left as it stands rather than dropped, so a
     typo in a matrix key shows up in the key instead of quietly widening two
     different runs into one.
+
+    Parameters
+    ----------
+    text
+        The step's script, with `${{ matrix.<key> }}` references unresolved.
+    leg
+        One matrix leg's values, keyed by matrix key.
+
+    Returns
+    -------
+    str
+        The script with every reference this leg supplies substituted in.
     """
     return MATRIX_REFERENCE_RE.sub(lambda match: leg.get(match["key"], match[0]), text)
 
@@ -236,6 +122,17 @@ def cargo_runs(script: str) -> Iterator[tuple[str, str, frozenset[str]]]:
     is a filtered or single-crate run, such as the WIT instantiation test, and
     counting it as the workspace suite would report a clash with a lane that
     runs thousands of tests it does not.
+
+    Parameters
+    ----------
+    script
+        A step's script, with every matrix reference already substituted.
+
+    Yields
+    ------
+    tuple of str, str and frozenset of str
+        The scope a command covers, the nextest profile it selects, and the
+        features it enables, one tuple per suite command found.
     """
     for pattern in CARGO_COMMANDS:
         for match in pattern.finditer(script):
@@ -254,6 +151,17 @@ def make_runs(script: str) -> Iterator[tuple[str, str, frozenset[str]]]:
     runs plain `cargo test` over one crate: it takes no features and no
     nextest profile, so giving it the step's would invent a difference between
     two identical runs.
+
+    Parameters
+    ----------
+    script
+        A step's script, with every matrix reference already substituted.
+
+    Yields
+    ------
+    tuple of str, str and frozenset of str
+        The scope, profile and features of each suite a Make target runs. A
+        target that runs two suites yields two tuples.
     """
     for match in MAKE_COMMAND.finditer(script):
         for scope, takes_features in MAKE_TARGETS[match["target"]]:
@@ -264,7 +172,20 @@ def make_runs(script: str) -> Iterator[tuple[str, str, frozenset[str]]]:
 
 
 def suite_runs_in(job: Job, event: str) -> Iterator[SuiteRun]:
-    """Yield every suite run a job performs on an event."""
+    """Yield every suite run a job performs on an event.
+
+    Parameters
+    ----------
+    job
+        The job to read.
+    event
+        A `github.event_name` value, which selects the matrix legs.
+
+    Yields
+    ------
+    SuiteRun
+        One entry per leg per suite command, in workflow order.
+    """
     for leg in matrix_legs(job, event):
         for step in job.steps:
             script = substitute(step_text(step), leg)
@@ -288,6 +209,18 @@ def dispatched_jobs(
 
     A workflow that does not declare the trigger contributes nothing, and
     neither does a job whose own guard excludes it.
+
+    Parameters
+    ----------
+    documents
+        Parsed workflows, keyed by file name.
+    event
+        The trigger to resolve against.
+
+    Yields
+    ------
+    Job
+        Each job the event reaches, in workflow order.
     """
     for name, document in documents.items():
         if event not in triggers(document):
@@ -322,7 +255,20 @@ def suite_runs_for(
 def duplicates_in(
     runs: list[SuiteRun],
 ) -> dict[tuple[str, str, frozenset[str]], list[SuiteRun]]:
-    """Return the work more than one run covers."""
+    """Return the work more than one run covers.
+
+    Parameters
+    ----------
+    runs
+        Every suite run one trigger dispatches.
+
+    Returns
+    -------
+    dict
+        Each key covered by more than one run, mapped to the runs covering
+        it. A key covered once is absent, so an empty mapping is the passing
+        case.
+    """
     by_key: dict[tuple[str, str, frozenset[str]], list[SuiteRun]] = {}
     for run in runs:
         by_key.setdefault(run.key, []).append(run)
@@ -330,7 +276,15 @@ def duplicates_in(
 
 
 def load_estate() -> dict[str, dict[str, object]]:
-    """Return every workflow this contract judges, parsed and keyed by name."""
+    """Return every workflow this contract judges, parsed and keyed by name.
+
+    Returns
+    -------
+    dict
+        Each workflow document, keyed by file name. The dist-generated
+        release workflow is left out: its contents are regenerated wholesale
+        and nothing here may judge them.
+    """
     return {
         path.name: load(path)
         for path in workflow_paths()

@@ -14,12 +14,8 @@ import typing as typ
 
 import pytest
 import yaml
-from _suite_reader import (
-    duplicates_in,
-    feature_key,
-    profile_of,
-    suite_runs_for,
-)
+from _suite_keys import feature_key, profile_of
+from _suite_reader import duplicates_in, suite_runs_for
 from _suite_targets import DEFAULT_FEATURES, DEFAULT_PROFILE, ROOT_MANIFEST
 
 
@@ -45,7 +41,10 @@ class TestFeatureKey:
         self, left: str, right: str
     ) -> None:
         """Two spellings of one selection are one run, however written."""
-        assert feature_key(left) == feature_key(right)
+        assert feature_key(left) == feature_key(right), (
+            f"{left!r} and {right!r} select the same features, so they are "
+            "one run; a key that separates them passes over a duplicate"
+        )
 
     @pytest.mark.parametrize(
         ("left", "right"),
@@ -63,7 +62,10 @@ class TestFeatureKey:
         that returned a constant would satisfy every equality above and
         condemn the whole estate as duplicated.
         """
-        assert feature_key(left) != feature_key(right)
+        assert feature_key(left) != feature_key(right), (
+            f"{left!r} and {right!r} select different features; a key that "
+            "merges them reports a duplicate where there are two suites"
+        )
 
     def test_the_default_set_comes_from_the_manifest(self) -> None:
         """Read the defaults rather than restating them.
@@ -74,7 +76,10 @@ class TestFeatureKey:
         contract failed to report.
         """
         declared = tomllib.loads(ROOT_MANIFEST.read_text(encoding="utf-8"))
-        assert DEFAULT_FEATURES == frozenset(declared["features"]["default"])
+        assert DEFAULT_FEATURES == frozenset(declared["features"]["default"]), (
+            f"{DEFAULT_FEATURES!r} is not the manifest's default list; a "
+            "restated set drifts from the one Cargo actually enables"
+        )
         assert DEFAULT_FEATURES, "the root manifest declares no default features"
 
     def test_naming_a_default_feature_is_naming_nothing(self) -> None:
@@ -88,6 +93,9 @@ class TestFeatureKey:
         named = " ".join(f"--features {feature}" for feature in DEFAULT_FEATURES)
         assert feature_key(f"{named} --features test-helpers") == feature_key(
             "--features test-helpers"
+        ), (
+            f"naming {named!r} selects exactly what naming nothing selects, "
+            "because every one of them is already a member of `default`"
         )
 
     def test_turning_the_defaults_off_keeps_two_narrow_legs_apart(self) -> None:
@@ -103,6 +111,9 @@ class TestFeatureKey:
         """
         assert feature_key("--no-default-features --features libsql") != feature_key(
             "--no-default-features --features postgres"
+        ), (
+            "a libsql-only run and a postgres-only run are two suites; "
+            "folding the defaults into either would read them as one"
         )
 
 
@@ -126,7 +137,10 @@ class TestProfile:
         That is the direction that matters: two lanes would then look like one
         run when the tests they execute differ by the whole trybuild set.
         """
-        assert profile_of(args) == expected
+        assert profile_of(args) == expected, (
+            f"{args!r} selects the {expected!r} profile; a profile the reader "
+            "misses defaults, and two defaults compare equal"
+        )
 
 
 class TestDuplicateDetection:
@@ -161,11 +175,14 @@ class TestDuplicateDetection:
             "one.yml": self._workflow("pull_request", self._TESTS, self._COVERAGE)
         }
         duplicated = duplicates_in(suite_runs_for(estate, "pull_request"))
-        assert len(duplicated) == 1
-        assert sorted(str(run) for run in next(iter(duplicated.values()))) == [
-            "one.yml:coverage",
-            "one.yml:tests",
-        ]
+        assert len(duplicated) == 1, (
+            f"a coverage lane repeating a test lane is one duplicate; got "
+            f"{duplicated!r}"
+        )
+        found = sorted(str(run) for run in next(iter(duplicated.values())))
+        assert found == ["one.yml:coverage", "one.yml:tests"], (
+            f"the duplicate must name both lanes that cause it; got {found!r}"
+        )
 
     def test_it_reports_one_lane_running_the_same_suite_per_leg(self) -> None:
         """The GitHub tool crate's old shape: one command, three legs."""
@@ -201,13 +218,19 @@ class TestDuplicateDetection:
             "    runs-on:", "    if: github.event_name != 'pull_request'\n    runs-on:"
         )
         estate = {"one.yml": self._workflow("pull_request", guarded, self._COVERAGE)}
-        assert not duplicates_in(suite_runs_for(estate, "pull_request"))
+        assert not duplicates_in(suite_runs_for(estate, "pull_request")), (
+            "a job the trigger cannot dispatch costs nothing, so the pair is "
+            "not a clash; this is the guard `test.yml` now carries"
+        )
 
     def test_different_feature_sets_are_not_a_duplicate(self) -> None:
         """Two lanes running different suites are the normal case."""
         other = self._COVERAGE.replace("--features test-helpers", "--all-features")
         estate = {"one.yml": self._workflow("pull_request", self._TESTS, other)}
-        assert not duplicates_in(suite_runs_for(estate, "pull_request"))
+        assert not duplicates_in(suite_runs_for(estate, "pull_request")), (
+            "two lanes running different feature sets are two suites, which "
+            "is the normal case and must never be reported as duplication"
+        )
 
     def test_a_different_profile_is_not_a_duplicate(self) -> None:
         """The same flags under a narrower profile run a different suite.
@@ -221,7 +244,10 @@ class TestDuplicateDetection:
             "cargo nextest run --profile ci --workspace",
         )
         estate = {"one.yml": self._workflow("pull_request", narrower, self._COVERAGE)}
-        assert not duplicates_in(suite_runs_for(estate, "pull_request"))
+        assert not duplicates_in(suite_runs_for(estate, "pull_request")), (
+            "the same flags under a narrower profile run a different set of "
+            "tests, so the profile is part of what makes two runs the same"
+        )
 
     def test_a_workflow_the_trigger_does_not_declare_contributes_nothing(self) -> None:
         """`coverage.yml` runs on a push only; it cannot clash on a pull."""
@@ -229,5 +255,9 @@ class TestDuplicateDetection:
             "a.yml": self._workflow("pull_request", self._TESTS),
             "b.yml": self._workflow("push", self._COVERAGE),
         }
-        assert not duplicates_in(suite_runs_for(estate, "pull_request"))
-        assert not duplicates_in(suite_runs_for(estate, "push"))
+        assert not duplicates_in(suite_runs_for(estate, "pull_request")), (
+            "b.yml runs on a push only, so it cannot clash on a pull request"
+        )
+        assert not duplicates_in(suite_runs_for(estate, "push")), (
+            "a.yml runs on a pull request only, so it cannot clash on a push"
+        )
