@@ -112,7 +112,7 @@ as a test assertion on the SHA string.
 
 ### Job classification and runner placement
 
-Every CI job belongs to one of eight classes, and the class decides the runner.
+Every CI job belongs to one of ten classes, and the class decides the runner.
 Ubicloud bills by the minute for a runner shape chosen to compile Rust, so a
 job that only calls the GitHub API consumes an expensive shape for work a free
 runner does equally well.
