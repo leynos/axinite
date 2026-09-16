@@ -27,6 +27,8 @@ import tomllib
 import typing as typ
 from urllib.parse import urlsplit
 
+import pytest
+
 from _workflow_policy import REPOSITORY_ROOT, WORKFLOW_DIR, load, step_text
 
 WORKFLOW: typ.Final[str] = "coverage.yml"
@@ -216,6 +218,83 @@ def _default_features() -> frozenset[str]:
     return frozenset(str(name) for name in declared)
 
 
+#: `echo "NAME=value" >> "$GITHUB_ENV"`, anchored so the redirection names
+#: that file and not a variable whose name merely starts the same way.
+#: `$GITHUB_ENV_UNUSED`, `$GITHUB_ENVIRONMENT` and `$GITHUB_ENV.backup` are all
+#: plausible typos, none of them reaches a later step, and a pattern that
+#: stopped at `GITHUB_ENV` would accept every one while the tests silently
+#: skipped.
+REQUIRE_APPEND_RE: typ.Final[re.Pattern[str]] = re.compile(
+    rf'echo\s+"{REQUIRE_VARIABLE}=[^"\n]+"\s*>>\s*'
+    r'(?:"\$\{GITHUB_ENV\}"|"\$GITHUB_ENV"|\$\{GITHUB_ENV\}|\$GITHUB_ENV)'
+    r"\s*$",
+    re.MULTILINE,
+)
+
+#: How Cargo spells a feature list. The long and short flags each take their
+#: value separately or joined with `=`, and the value separates on commas or
+#: whitespace: `--features "libsql postgres"` is one argument naming two
+#: features. Reading one spelling and calling the others empty would report a
+#: Postgres-bearing leg as narrow.
+FEATURE_FLAGS: typ.Final[tuple[str, ...]] = ("--features", "-F")
+FEATURE_SEPARATORS: typ.Final[re.Pattern[str]] = re.compile(r"[,\s]+")
+
+
+def _split_features(value: str) -> set[str]:
+    """Return the feature names one `--features` value carries."""
+    return {name for name in FEATURE_SEPARATORS.split(value.strip()) if name}
+
+
+def _is_short_flag_with_a_joined_value(token: str) -> bool:
+    """Report whether a token is `-F` carrying its value without a separator.
+
+    `-Flibsql` is the short flag with its value joined on, which clap accepts.
+    The long flag has no such form, so only the short one is read this way:
+    treating `--featuresx` as a feature list would invent one. `-F=libsql` is
+    the separated form and is read before this.
+
+    Parameters
+    ----------
+    token
+        One shell word of the command.
+
+    Returns
+    -------
+    bool
+        True when the token is the short flag with a joined, non-empty value.
+    """
+    if not token.startswith("-F"):
+        return False
+    value = token[2:]
+    return bool(value) and not value.startswith("=")
+
+
+def _features_named_by(token: str, following: str | None) -> set[str]:
+    """Return the features one argument names.
+
+    Parameters
+    ----------
+    token
+        One shell word of the command.
+    following
+        The word after it, when there is one. The separated forms take their
+        value there.
+
+    Returns
+    -------
+    set of str
+        The feature names, empty for every argument that names none.
+    """
+    if token in FEATURE_FLAGS:
+        return _split_features(following) if following is not None else set()
+    for flag in FEATURE_FLAGS:
+        if token.startswith(f"{flag}="):
+            return _split_features(token[len(flag) + 1 :])
+    if _is_short_flag_with_a_joined_value(token):
+        return _split_features(token[2:])
+    return set()
+
+
 def _enables_postgres(flags: str) -> bool:
     """Report whether a leg's flags compile the `postgres` feature.
 
@@ -234,10 +313,8 @@ def _enables_postgres(flags: str) -> bool:
         return True
     named: set[str] = set()
     for index, token in enumerate(tokens):
-        if token == "--features" and index + 1 < len(tokens):
-            named.update(tokens[index + 1].split(","))
-        elif token.startswith("--features="):
-            named.update(token.partition("=")[2].split(","))
+        following = tokens[index + 1] if index + 1 < len(tokens) else None
+        named.update(_features_named_by(token, following))
     # Cargo enables the defaults unless the command turns them off, so a leg
     # that names nothing still gets every member of `default`.
     if "--no-default-features" not in tokens:
@@ -292,10 +369,7 @@ def test_the_leg_that_provides_postgres_tells_the_tests_it_is_not_optional() -> 
         f"{REQUIRE_VARIABLE}, so a leg cannot receive the database without "
         "also being told that the database is not optional"
     )
-    assert re.search(
-        rf'echo\s+"{REQUIRE_VARIABLE}=[^"\n]+"\s*>>\s*"?\$(?:\{{)?GITHUB_ENV',
-        script,
-    ), (
+    assert REQUIRE_APPEND_RE.search(script), (
         f"{REQUIRE_VARIABLE} must be appended to $GITHUB_ENV; setting it in "
         "the step's own shell reaches nothing that runs the tests"
     )
@@ -322,4 +396,58 @@ def test_the_promise_is_confined_to_the_postgres_bearing_legs() -> None:
         f"the step exporting {REQUIRE_VARIABLE} is guarded by {condition!r}, "
         f"not {POSTGRES_GUARD!r}; a leg without a database would be told that "
         "one is mandatory and fail"
+    )
+
+
+@pytest.mark.parametrize(
+    ("flags", "expected"),
+    [
+        pytest.param("--all-features", True, id="all-features"),
+        pytest.param("", True, id="nothing-named-gets-the-defaults"),
+        pytest.param("--features libsql", True, id="defaults-plus-a-name"),
+        pytest.param(
+            "--no-default-features --features libsql", False, id="narrow-and-named"
+        ),
+        pytest.param(
+            "--no-default-features --features postgres", True, id="narrow-but-postgres"
+        ),
+        pytest.param(
+            "--no-default-features --features libsql,postgres",
+            True,
+            id="comma-separated",
+        ),
+        pytest.param(
+            "--no-default-features --features 'libsql postgres'",
+            True,
+            id="whitespace-separated-in-one-argument",
+        ),
+        pytest.param(
+            "--no-default-features --features=libsql,postgres",
+            True,
+            id="joined-with-equals",
+        ),
+        pytest.param("--no-default-features -F postgres", True, id="short-flag"),
+        pytest.param(
+            "--no-default-features -F=postgres", True, id="short-flag-with-equals"
+        ),
+        pytest.param("--no-default-features -Fpostgres", True, id="short-flag-joined"),
+        pytest.param(
+            "--no-default-features -F libsql -F postgres", True, id="repeated-flags"
+        ),
+    ],
+)
+def test_every_spelling_of_a_feature_list_is_read(
+    flags: str, *, expected: bool
+) -> None:
+    """Read Cargo's feature syntax, not one spelling of it.
+
+    A leg whose features the reader cannot see resolves to the default set, so
+    a narrow leg naming `postgres` explicitly would read as not bearing it and
+    `test_every_postgres_bearing_leg_declares_it` would reject a correct
+    declaration. The `narrow-and-named` case is the one that keeps this honest:
+    it is the only narrow case expected to be false, so a reader that answered
+    true for everything would fail it.
+    """
+    assert _enables_postgres(flags) is expected, (
+        f"{flags!r} should read as postgres={expected}"
     )
