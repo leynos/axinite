@@ -2689,8 +2689,8 @@ budget, and both add a 900 second override for the compile-contract binaries.
 ### The compile-contract binaries are not ordinary tests
 
 A binary that drives `rustc` spawns a fresh compiler per case against the full
-crate, so the whole binary is minutes rather than seconds and the base allowance
-sized for the ordinary tests does not fit one. There are two of them:
+crate, so the whole binary is minutes rather than seconds and the base
+allowance sized for the ordinary tests does not fit one. There are two of them:
 `tests/trybuild.rs` and `tests/schema_helpers_ui/main.rs`, which Cargo names
 `trybuild` and `schema_helpers_ui`.
 
@@ -2707,8 +2707,8 @@ Both profiles now carry an override for both binaries, and
 compile-contract binary a profile runs is allowed 900 seconds. The binaries are
 discovered from the sources by their call to `trybuild::TestCases` rather than
 listed, because a new one appearing is the failure being guarded against. The
-discovered set is then pinned by name, so a reading that stopped recognizing one
-fails instead of sweeping over a smaller set, and both Cargo target forms,
+discovered set is then pinned by name, so a reading that stopped recognizing
+one fails instead of sweeping over a smaller set, and both Cargo target forms,
 `tests/<name>.rs` and `tests/<name>/main.rs`, are represented in it. Which
 profile excludes which binary is pinned too: `default` excludes `trybuild` by
 its `default-filter` and runs `schema_helpers_ui`, and `ci` runs both.
@@ -2747,16 +2747,16 @@ The 900 second override is the next. The compile-contract contract asks whether
 each binary is allowed *at least* that much, which is the right shape for its
 own question and says nothing about the value, so an override raised to an hour
 would satisfy it while sitting above the 30 minute whole-run budget that
-contains it: the run would end before the allowance could be used. The number of
-overrides is pinned with it, because a second one matching the same binaries
+contains it: the run would end before the allowance could be used. The number
+of overrides is pinned with it, because a second one matching the same binaries
 would decide the allowance in force by file order. And the whole-run budget is
-only ever compared with the largest per-test allowance, so the documented thirty
-minutes could drift to forty with nothing failing and this table left describing
-a value the runner does not use.
+only ever compared with the largest per-test allowance, so the documented
+thirty minutes could drift to forty with nothing failing and this table left
+describing a value the runner does not use.
 
-The set of profiles is pinned too. Every assertion in this suite is parametrized
-over `default` and `ci`, so a third profile carrying looser budgets would be
-selectable by `--profile` and read by none of them.
+The set of profiles is pinned too. Every assertion in this suite is
+parametrized over `default` and `ci`, so a third profile carrying looser
+budgets would be selectable by `--profile` and read by none of them.
 
 Each pinned table is compared whole rather than key by key, so a field added to
 one fails as well as a field removed. An unrecognized field is not inert:
@@ -2840,25 +2840,25 @@ as a suite lane and hold it to a ceiling it does not need;
 judged as an invocation, and both are reported.
 
 A suite command is matched as whole shell words, not as a text prefix.
-`cargo nextest runbook` begins with the same characters as
-`cargo nextest run` and runs no test, and `cargo nextest run --help` prints
-and exits, so a reading matching on the prefix alone would report a lane for
-either. That is the dangerous direction: a job whose only suite line is a
-probe would satisfy the assertion that the suite runs somewhere while running
-no test, and the ordering assertions below would all pass over a lane that
-does nothing. Both still name a suite command, so both are reported as lines
-the reading cannot judge rather than dropped silently.
+`cargo nextest runbook` begins with the same characters as `cargo nextest run`
+and runs no test, and `cargo nextest run --help` prints and exits, so a reading
+matching on the prefix alone would report a lane for either. That is the
+dangerous direction: a job whose only suite line is a probe would satisfy the
+assertion that the suite runs somewhere while running no test, and the ordering
+assertions below would all pass over a lane that does nothing. Both still name
+a suite command, so both are reported as lines the reading cannot judge rather
+than dropped silently.
 
 A lane's runs are counted rather than detected. Two suite commands in one job
 spend two whole-run budgets under one job timer, because nextest starts that
 clock when tests begin and starts it afresh for the next run, so the ceiling
-requirement is the per-run terms multiplied by the count with the per-job
-terms added once. Counting per command rather than per step is what makes two
-runs in one script read the same as two runs in two steps. Every lane here
-makes one run, so the multiplier is unobservable through the workflows and is
-driven with controlled values instead; the counts are also pinned by
-coordinate, because deleting a suite command would otherwise lower the
-requirement while every timing assertion still passed.
+requirement is the per-run terms multiplied by the count with the per-job terms
+added once. Counting per command rather than per step is what makes two runs in
+one script read the same as two runs in two steps. Every lane here makes one
+run, so the multiplier is unobservable through the workflows and is driven with
+controlled values instead; the counts are also pinned by coordinate, because
+deleting a suite command would otherwise lower the requirement while every
+timing assertion still passed.
 
 It also refuses a lane that runs the suite while tolerating its failure. Every
 budget here is about when the suite is stopped and none of them says anything
@@ -2888,10 +2888,10 @@ The 90 minute ceilings are unchanged, and the contract records why they hold:
 successful runs of `coverage.yml` covering three matrix legs each.*
 
 The requirement is the whole-run budget, plus a minute for nextest to
-terminate, both taken once per run the lane makes, plus the build and the
-steps either side of the suite, taken once for the job. Twenty minutes covers
-the worst of those with room for a cold compile, making the requirement 51
-minutes for a one-run lane against ceilings of 90.
+terminate, both taken once per run the lane makes, plus the build and the steps
+either side of the suite, taken once for the job. Twenty minutes covers the
+worst of those with room for a cold compile, making the requirement 51 minutes
+for a one-run lane against ceilings of 90.
 
 None of those runs was genuinely cold. One run is the coldest seen so far, not
 a measurement of the cold case.
@@ -2929,21 +2929,20 @@ may carry a fractional part, and whitespace is tolerated around the point, so
 `1.5m` and `1 . 5 m` are both ninety seconds. Whitespace inside the number is
 ignored too, so `1 0s` is ten seconds and `1 2 . 3 4 s` is 12.34. The short
 spellings `wk`, `wks`, `yr` and `yrs` are units alongside the longer ones. The
-bare `0` is the one duration humantime reads without a unit, and it is the exact
-text: its parser special-cases `0` before reading a character, so `" 0 "` is
-refused and a reader that stripped whitespace first would accept a duration
+bare `0` is the one duration humantime reads without a unit, and it is the
+exact text: its parser special-cases `0` before reading a character, so `" 0 "`
+is refused and a reader that stripped whitespace first would accept a duration
 nextest rejects. Case matters, so `m` is minutes and `M` is months.
 
 A digit is `0` to `9` and nothing else. Python's `\d` matches every Unicode
 decimal digit and `int` reads them, so a reader written with it returns three
 hundred seconds for `\u0663\u0660\u0660s` and for the mixed `3\u0660\u0660s`,
 both of which humantime refuses: its parser compares against `'0'..='9'`,
-reporting
-"expected number at 0" for the run that opens with such a digit and "invalid
-character at 1" for the run that does not. The mixed spelling is the sharper
-case, because a reader that checked only its first character would still accept
-it. That is the wrong direction for a contract, which would then certify a
-configuration nextest cannot load.
+reporting "expected number at 0" for the run that opens with such a digit and
+"invalid character at 1" for the run that does not. The mixed spelling is the
+sharper case, because a reader that checked only its first character would
+still accept it. That is the wrong direction for a contract, which would then
+certify a configuration nextest cannot load.
 
 The arithmetic is exact and in integers, because humantime's is: its parser
 works in checked `u64` throughout and reports every failure as an overflow.
@@ -2957,12 +2956,12 @@ outright, whatever it spells, so even `1.0ns` will not load. The unit tables in
 one table in nanoseconds cannot express the rule at the hour.
 
 Four ceilings come with it, and they are different. A numeric literal must fit
-the `u64` humantime reads it into, so `1000000000000000000000ns` is refused even
-though its value in seconds is small. A fraction's own arithmetic is checked, so
-`0.1000000000000000000s` overflows on the multiplication and
+the `u64` humantime reads it into, so `1000000000000000000000ns` is refused
+even though its value in seconds is small. A fraction's own arithmetic is
+checked, so `0.1000000000000000000s` overflows on the multiplication and
 `1.00000000000000000000s` on the denominator, although both would fit as
-durations. The accumulated seconds must fit the `u64` they are summed into,
-so `18446744073709551615s` loads and one second more does not.
+durations. The accumulated seconds must fit the `u64` they are summed into, so
+`18446744073709551615s` loads and one second more does not.
 
 And the nanosecond remainder has a ceiling of its own, which is the one that
 catches a reader summing into an unbounded integer. `add_current` opens with
@@ -2983,24 +2982,23 @@ humantime 2.3.0 compiled from the pinned release, and the two agreed on every
 one.
 
 The readings rest on `nextest_config.py`, `nextest_durations.py`,
-`nextest_units.py`, `nextest_errors.py`, `timeout_budgets.py`,
-`suite_lanes.py` and `suite_guards.py`, and are driven with controlled values in
-`timeout_reading_test.py`, `duration_grammar_test.py`, `suite_lanes_test.py`
-and `suite_guards_test.py`. Each reading takes
-what it reads rather than fetching it: `suite_lanes_in` queries supplied
-workflow documents and `suite_lanes_of` is the acquisition around it,
-which is how a lane that does not exist in this repository can be put to
-the reading at all.
+`nextest_units.py`, `nextest_errors.py`, `timeout_budgets.py`, `suite_lanes.py`
+and `suite_guards.py`, and are driven with controlled values in
+`timeout_reading_test.py`, `duration_grammar_test.py`, `suite_lanes_test.py` and
+`suite_guards_test.py`. Each reading takes what it reads rather than fetching
+it: `suite_lanes_in` queries supplied workflow documents and `suite_lanes_of`
+is the acquisition around it, which is how a lane that does not exist in this
+repository can be put to the reading at all.
 
 The nextest configuration is parsed with `tomllib` rather than matched as text.
 A text match finds a key inside a comment, inside a `filter` string, or in a
 table nextest never consults, and reports a budget the runner does not use. The
 commented-out `global-timeout` is the case that matters most, because this
 contract requires that tier to be present: a scraping reader would go on
-reporting a budget somebody had switched off. `terminate-after` is optional, and
-a `slow-timeout` without it marks a test slow and never stops it, so the reading
-refuses that form rather than reporting one period as the budget. Every table in
-`.config/nextest.toml` sets it explicitly, so no value here changes.
+reporting a budget somebody had switched off. `terminate-after` is optional,
+and a `slow-timeout` without it marks a test slow and never stops it, so the
+reading refuses that form rather than reporting one period as the budget. Every
+table in `.config/nextest.toml` sets it explicitly, so no value here changes.
 
 It also pins the condition each lane carries. A skipped step runs no suite, so
 none of the budgets above says anything about it: `if: false` on the step or on
