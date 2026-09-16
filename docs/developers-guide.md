@@ -1241,10 +1241,10 @@ tests at it. There, a skip reports success for tests that never connected, and
 the lane publishes coverage measured without them. A lane says so by exporting
 `AXINITE_REQUIRE_POSTGRES`, and the skip stops being available.
 
-| Variable | Value | Effect |
-| --- | --- | --- |
+| Variable                   | Value                      | Effect                                           |
+| -------------------------- | -------------------------- | ------------------------------------------------ |
 | `AXINITE_REQUIRE_POSTGRES` | unset, empty or whitespace | An unreachable database skips the Postgres tests |
-| `AXINITE_REQUIRE_POSTGRES` | any other value | An unreachable database fails the run |
+| `AXINITE_REQUIRE_POSTGRES` | any other value            | An unreachable database fails the run            |
 
 Two things about the shape are deliberate.
 
