@@ -144,6 +144,13 @@ fn is_database_unavailable(error: &DatabaseError) -> bool {
 
 #[cfg(test)]
 mod tests {
+    //! Unit tests for the decision a fixture makes when Postgres is absent.
+    //!
+    //! The table has four cells: the database is reachable or not, and the run
+    //! promised one or did not. Only one of them changed, and these tests say
+    //! which, so a later edit that quietly restores the skip has something to
+    //! fail against.
+
     use super::{PostgresRequirement, is_database_unavailable, skip_is_allowed};
     use crate::error::DatabaseError;
     use rstest::rstest;
