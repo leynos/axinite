@@ -175,8 +175,14 @@ class TestChainReading:
     def test_a_three_armed_chain_reports_every_label(self) -> None:
         """A label the parser cannot see is exempt from every contract."""
         job = self._job(self._COMPOSED)
-        assert job.runner_labels == ("ubuntu-latest", "ubicloud-standard-2")
-        assert job.uses_ubicloud
+        assert job.runner_labels == ("ubuntu-latest", "ubicloud-standard-2"), (
+            f"a three-armed chain reports {job.runner_labels!r}; a label the "
+            "reader drops is exempt from every placement contract"
+        )
+        assert job.uses_ubicloud, (
+            "the chain names an Ubicloud label, so the job must answer that "
+            "it uses one; otherwise the sizing contracts skip it"
+        )
 
     @pytest.mark.parametrize(
         ("event", "expected"),
@@ -197,7 +203,10 @@ class TestChainReading:
         would report every one of these lanes as free and hide the shape they
         actually buy.
         """
-        assert self._job(self._COMPOSED).labels_for_event(event) == expected
+        assert self._job(self._COMPOSED).labels_for_event(event) == expected, (
+            f"{event!r} should select {expected!r}; reading the fork arm as the "
+            "pull-request answer reports a paid lane as free"
+        )
 
     @pytest.mark.parametrize(
         "declared",
@@ -218,4 +227,7 @@ class TestChainReading:
         rather than silently misread.
         """
         job = self._job(declared)
-        assert job.runner_labels == (declared,)
+        assert job.runner_labels == (declared,), (
+            f"{declared!r} is not a shape the reader parses, so it must be "
+            "reported whole rather than split into arms nobody checked"
+        )
