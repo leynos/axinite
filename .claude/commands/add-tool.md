@@ -7,8 +7,8 @@ model: opus
 
 # Add Tool
 
-Scaffold a new tool called `$ARGUMENTS` for the Axinite agent. First,
-determine the tool type and then follow the appropriate path.
+Scaffold a new tool called `$ARGUMENTS` for the Axinite agent. First, determine
+the tool type and then follow the appropriate path.
 
 ## Step 0: Determine tool type
 
