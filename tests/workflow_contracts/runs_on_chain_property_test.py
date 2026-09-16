@@ -66,20 +66,22 @@ UNREADABLE_CONDITIONS: tuple[str, ...] = (
     "matrix.os == 'linux'",
 )
 
-events = st.sampled_from(EVENTS)
-labels = st.sampled_from(LABELS)
+events: st.SearchStrategy[str] = st.sampled_from(EVENTS)
+labels: st.SearchStrategy[str] = st.sampled_from(LABELS)
 
 #: One guarded arm: a condition the reader recognizes, and the label it picks.
 #: Both recognized forms appear, because the fork fallback composes them and
 #: the two answer differently to an event.
-readable_arms = st.one_of(
+readable_arms: st.SearchStrategy[tuple[str, str]] = st.one_of(
     st.tuples(events.map(lambda e: f"github.event_name == '{e}'"), labels),
     st.tuples(st.just(FORK_CONDITION), labels),
 )
 
 #: One arm the reader must refuse: a condition it cannot evaluate, and the
 #: label that condition would have selected.
-unreadable_arms = st.tuples(st.sampled_from(UNREADABLE_CONDITIONS), labels)
+unreadable_arms: st.SearchStrategy[tuple[str, str]] = st.tuples(
+    st.sampled_from(UNREADABLE_CONDITIONS), labels
+)
 
 
 def _chain(arms: list[tuple[str, str]], fallback: str, *, joiner: str = " ") -> str:
@@ -143,7 +145,10 @@ def test_every_label_in_the_chain_is_reported(
     """
     declared = _chain(arms, fallback, joiner=joiner)
     expected = tuple(dict.fromkeys([label for _, label in arms] + [fallback]))
-    assert _job(declared).runner_labels == expected
+    assert _job(declared).runner_labels == expected, (
+        f"{declared!r} should report {expected!r}; a label the reader drops "
+        "is an Ubicloud request hidden from every placement contract"
+    )
 
 
 @given(
@@ -162,8 +167,10 @@ def test_the_event_selects_the_first_arm_that_names_it(
     different runner from the one the lane gets.
     """
     declared = _chain(arms, fallback)
-    assert _job(declared).labels_for_event(event) == (
-        _selected_by(arms, fallback, event),
+    expected = _selected_by(arms, fallback, event)
+    assert _job(declared).labels_for_event(event) == (expected,), (
+        f"on {event!r}, {declared!r} should select {expected!r}: the first "
+        "arm naming the event wins, and otherwise the bare label does"
     )
 
 
@@ -177,10 +184,17 @@ def test_the_selected_label_is_always_one_the_chain_declares(
     arms: list[tuple[str, str]], fallback: str, event: str
 ) -> None:
     """An event selects exactly one label, and never invents one."""
-    job = _job(_chain(arms, fallback))
+    declared = _chain(arms, fallback)
+    job = _job(declared)
     selected = job.labels_for_event(event)
-    assert len(selected) == 1
-    assert selected[0] in job.runner_labels
+    assert len(selected) == 1, (
+        f"{declared!r} selected {selected!r} on {event!r}; an event picks "
+        "exactly one label"
+    )
+    assert selected[0] in job.runner_labels, (
+        f"{selected[0]!r} is not among {job.runner_labels!r}; the selection "
+        "must be a label the chain declares, never an invented one"
+    )
 
 
 @given(
@@ -202,7 +216,10 @@ def test_a_fork_arm_is_never_what_an_event_selects(
     hide the shape it buys for a branch pull request.
     """
     declared = _chain(fork_arms, fallback)
-    assert _job(declared).labels_for_event(event) == (fallback,)
+    assert _job(declared).labels_for_event(event) == (fallback,), (
+        f"{declared!r} should fall through to {fallback!r} on {event!r}; a "
+        "fork arm costs this repository nothing and must never be selected"
+    )
 
 
 @given(
@@ -228,8 +245,14 @@ def test_one_unreadable_condition_makes_the_whole_value_opaque(
     """
     declared = _chain([*readable, unreadable], fallback)
     job = _job(declared)
-    assert job.runner_labels == (declared,)
-    assert job.labels_for_event(event) == (declared,)
+    assert job.runner_labels == (declared,), (
+        f"{declared!r} should read as one opaque label; splitting a chain the "
+        "reader cannot evaluate lets it answer confidently and wrongly"
+    )
+    assert job.labels_for_event(event) == (declared,), (
+        f"{declared!r} should answer itself on {event!r}; an unreadable chain "
+        "has no arm anyone can select"
+    )
 
 
 @given(arms=st.lists(readable_arms, min_size=1, max_size=4), event=events)
@@ -246,8 +269,14 @@ def test_a_chain_with_no_fallback_is_opaque(
     parts = [f"{condition} && '{label}'" for condition, label in arms]
     declared = "${{ " + " || ".join(parts) + " }}"
     job = _job(declared)
-    assert job.runner_labels == (declared,)
-    assert job.labels_for_event(event) == (declared,)
+    assert job.runner_labels == (declared,), (
+        f"{declared!r} should read as one opaque label; splitting a chain the "
+        "reader cannot evaluate lets it answer confidently and wrongly"
+    )
+    assert job.labels_for_event(event) == (declared,), (
+        f"{declared!r} should answer itself on {event!r}; an unreadable chain "
+        "has no arm anyone can select"
+    )
 
 
 @given(label=labels, event=events)
@@ -255,8 +284,12 @@ def test_a_chain_with_no_fallback_is_opaque(
 def test_a_plain_label_is_left_exactly_as_written(label: str, event: str) -> None:
     """A `runs-on` that is not an expression is one label for every event."""
     job = _job(label)
-    assert job.runner_labels == (label,)
-    assert job.labels_for_event(event) == (label,)
+    assert job.runner_labels == (label,), (
+        f"{label!r} is not an expression, so it is the one label declared"
+    )
+    assert job.labels_for_event(event) == (label,), (
+        f"{label!r} does not depend on the event, so {event!r} selects it too"
+    )
 
 
 @pytest.mark.parametrize("arm_count", [1, 2, 3, 4, 5])
@@ -273,6 +306,9 @@ def test_the_generator_builds_the_chain_lengths_it_claims(arm_count: int) -> Non
         for i in range(arm_count)
     ]
     declared = _chain(arms, "ubuntu-latest")
-    assert len(_job(declared).runner_labels) == len(
-        dict.fromkeys([label for _, label in arms] + ["ubuntu-latest"])
+    expected = dict.fromkeys([label for _, label in arms] + ["ubuntu-latest"])
+    assert len(_job(declared).runner_labels) == len(expected), (
+        f"a {arm_count}-armed chain read back as "
+        f"{_job(declared).runner_labels!r}; if the builder does not produce "
+        "the arm counts it claims, every property above is vacuous"
     )
