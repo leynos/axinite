@@ -9,12 +9,14 @@ lockfile of the pinned cargo-nextest release resolves, by compiling that
 parser and running the cases through it.
 """
 
+import re
 import typing as typ
 
 import pytest
 from hypothesis import given
 from hypothesis import strategies as st
 from nextest_config import NextestConfigurationError, seconds
+from nextest_durations import _WHITESPACE_CHARS
 from nextest_units import (
     SUBSECOND_NANOSECONDS,
     UNIT_SECONDS,
@@ -123,6 +125,10 @@ def test_the_duration_grammar_matches_the_one_nextest_reads(
             "18446744073709551615ns 18446744073709551615ns",
             id="a-nanosecond-sum-past-the-u64-before-it-carries",
         ),
+        pytest.param("1\u001cs", id="a-file-separator-between-a-digit-and-its-unit"),
+        pytest.param("\u001c45m", id="a-file-separator-before-the-number"),
+        pytest.param("45m\u001f", id="a-unit-separator-after-the-unit"),
+        pytest.param("1\u001d0s", id="a-group-separator-inside-the-number"),
         pytest.param("", id="empty"),
     ],
 )
@@ -168,6 +174,16 @@ def test_a_duration_nextest_would_refuse_is_refused_here(duration: str) -> None:
     seconds ceiling, so a reader summing into Python's unbounded integer
     and checking only the seconds afterwards finds nothing wrong and
     reports a duration nextest will not start under.
+
+    The four C0 separators are the mirror image of those digits, and
+    they cost nothing to write and everything to miss. Python's ``\s``
+    matches U+001C to U+001F and Rust's ``char::is_whitespace`` does
+    not, so a reader spelling its whitespace ``\s`` skips one wherever
+    it skips a space. All four were read as durations here until this
+    was written: `1\x1cs` as one second, `\x1c45m` and `45m\x1f` as
+    forty-five minutes, `1\x1d0s` as ten. The separator between two
+    digits is the one nobody would notice in a file, which is why it is
+    a case of its own.
     """
     with pytest.raises(NextestConfigurationError):
         seconds(duration)
@@ -258,3 +274,55 @@ def test_minutes_and_months_are_told_apart() -> None:
     """
     assert seconds("30m") == pytest.approx(1800.0)
     assert seconds("30M") == pytest.approx(30 * 2630016.0)
+
+
+def test_the_whitespace_class_is_rusts_and_not_pythons() -> None:
+    r"""Pin the class in both directions, over the whole of Unicode.
+
+    Rust's ``char::is_whitespace`` is the Unicode White_Space property.
+    Python's ``\s`` is that property plus U+001C to U+001F, the file,
+    group, record and unit separators, and ``str.strip`` and
+    ``str.split`` carry the same excess. The refusal cases above catch
+    the excess for four inputs; this catches it for the class.
+
+    Both directions are asserted. A class that had lost a genuine space
+    would make this reader refuse configurations nextest loads, which is
+    the opposite failure and equally wrong, and no refusal case would
+    show it. Pinning both means a change to either language's notion of
+    whitespace fails here rather than in a runner months later.
+    """
+    ours = set(_WHITESPACE_CHARS)
+    pythons = {chr(cp) for cp in range(0x110000) if re.match(r"\s", chr(cp))}
+    separators = {"\u001c", "\u001d", "\u001e", "\u001f"}
+    assert pythons - ours == separators, (
+        f"Python's whitespace exceeds this reader's by something other than "
+        f"the four C0 separators: {sorted(pythons - ours - separators)!r}"
+    )
+    assert not ours - pythons, (
+        f"this reader treats as whitespace something Python does not: "
+        f"{sorted(ours - pythons)!r}"
+    )
+
+
+@pytest.mark.parametrize(
+    "spelling",
+    [
+        pytest.param("1 0s", id="a-space"),
+        pytest.param("1\u00a00s", id="a-no-break-space"),
+        pytest.param("1\u20080s", id="a-punctuation-space"),
+    ],
+)
+def test_the_digit_join_drops_every_whitespace_the_class_allows(
+    spelling: str,
+) -> None:
+    """Exercise the join through the widest whitespace the class allows.
+
+    The digits of a spaced number are joined after the pattern has
+    matched, so while the pattern refuses a separator the join can never
+    meet one, and no input through `seconds` can tell a correct join
+    from ``str.split``. The join is spelled out anyway, because a later
+    widening of the pattern would turn a refusal into a silently
+    different number, and a line nothing can reach is a line nothing
+    proves. These three spellings do reach it.
+    """
+    assert seconds(spelling) == pytest.approx(10.0)
