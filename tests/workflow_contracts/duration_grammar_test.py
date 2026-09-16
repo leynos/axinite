@@ -163,11 +163,11 @@ def test_a_duration_nextest_would_refuse_is_refused_here(duration: str) -> None:
     ``(out.subsec_nanos() as u64).add(nsec)?``, before any carry, so the
     remainder held so far plus this component's nanoseconds must fit a
     ``u64`` by itself: two values of ``u64::MAX`` nanoseconds carry the
-    first to 18,446,744,073 seconds and then overflow on the second,
-    although the duration they name is about thirty-six seconds. A
-    reader summing into Python's unbounded integer and checking only
-    the seconds afterwards reports a duration nextest will not start
-    under.
+    first to 18,446,744,073 seconds and then overflow on the second. The
+    duration they name, about 36.9 billion seconds, is far below the
+    seconds ceiling, so a reader summing into Python's unbounded integer
+    and checking only the seconds afterwards finds nothing wrong and
+    reports a duration nextest will not start under.
     """
     with pytest.raises(NextestConfigurationError):
         seconds(duration)
