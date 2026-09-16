@@ -2782,15 +2782,25 @@ which catches the misspelling. The second is proved rather than stated: the
 same reading is run against a copy of the real file with every `grace-period`
 misspelled, and it must report the warning while nextest still exits 0.
 
-The run happens in `tests/workflow_contracts/fixtures/nextest_boundary` rather
-than in this crate. `show-config` resolves a profile's overrides against the
-test binaries the package declares and refuses a filterset naming one that does
-not exist, so doing it here would mean building the whole test suite, which is
-minutes. The fixture declares three empty test binaries, two of them named
-`trybuild` and `schema_helpers_ui` so the real filtersets resolve, and it
-builds in about a second. Deleting either of those files reddens the contract,
-and `compile_contract_budget_test.py` is what keeps the pair honest against the
+The run happens in a copy of
+`tests/workflow_contracts/fixtures/nextest_boundary` rather than in this crate.
+`show-config` resolves a profile's overrides against the test binaries the
+package declares and refuses a filterset naming one that does not exist, so
+doing it here would mean building the whole test suite, which is minutes. The
+fixture declares three empty test binaries, two of them named `trybuild` and
+`schema_helpers_ui` so the real filtersets resolve, and it builds in about a
+second. Deleting either of those files reddens the contract, and
+`compile_contract_budget_test.py` is what keeps the pair honest against the
 real sources.
+
+The copy is not tidiness. Cargo finds `.cargo/config.toml` by walking up the
+directory tree and does not stop at a workspace root, so a fixture built in
+place inherits this repository's linker configuration, which names mold. Only
+the build lanes install mold, so the `Formatting` job that runs this suite
+failed to link the fixture and the failure read as nextest refusing the
+configuration. Built from a copy outside the tree there is no such file to
+find: measured at five `-fuse-ld=mold` invocations in place and none from the
+copy.
 
 The third binary sleeps for thirty seconds, and it is what makes one assertion
 behavioural rather than another reading. nextest runs it under a `slow-timeout`
