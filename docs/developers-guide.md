@@ -462,8 +462,18 @@ and nothing is installed into the repository. The target names those versions,
 and it is the only place they are named.
 
 That is deliberate. These contracts read configuration and workflow text; they
-import nothing from the crate and build no Rust, so they must stay runnable
-without a toolchain, a coverage build or a populated target directory.
+import nothing from the crate, so they stay runnable without a coverage build
+or a populated target directory.
+
+One module is the exception, and it is worth saying why.
+`nextest_boundary_test.py` hands `.config/nextest.toml` to `cargo nextest`
+itself, so it needs `cargo` and `cargo-nextest` on `PATH`, which `make test`
+requires anyway. It builds no part of this crate: the run happens in
+`tests/workflow_contracts/fixtures/nextest_boundary`, a dependency-free crate
+of three empty test binaries that compiles in about a second, and its output
+goes to a temporary directory rather than to any target tree. The requirement
+is asserted rather than skipped, because a contract that skips itself in CI is
+a contract that is not running.
 
 `Job` is the unit of assertion. It carries the workflow file name, the job's
 key under `jobs:`, and the job's parsed body, and it prints as
@@ -2752,6 +2762,48 @@ Each pinned table is compared whole rather than key by key, so a field added to
 one fails as well as a field removed. An unrecognized field is not inert:
 nextest ignores an unknown configuration key with a warning and runs anyway, so
 a misspelled `grace_period` is a silently unset grace period.
+
+### The runner's verdict, not only the file's text
+
+Everything above reads `.config/nextest.toml` with `tomllib` and a
+reimplementation of humantime's grammar. That is the right way to ask what the
+file says, and it cannot ask whether nextest agrees, which is a different
+question with a quiet failure behind it: an unknown configuration key is a
+*warning*, after which nextest runs with that setting at its default. A
+misspelled `grace_period` therefore parses, pins, orders and passes everywhere
+above while the grace period in force is ten seconds rather than five.
+
+`tests/workflow_contracts/nextest_boundary_test.py` closes that by handing the
+real file to `cargo nextest show-config` under each profile and taking its
+verdict. Two things are read, because the exit status alone answers only one of
+them: that nextest loads the file, which catches a duration or a filterset the
+reader accepts and the runner does not, and that it reports no ignored key,
+which catches the misspelling. The second is proved rather than stated: the
+same reading is run against a copy of the real file with every `grace-period`
+misspelled, and it must report the warning while nextest still exits 0.
+
+The run happens in `tests/workflow_contracts/fixtures/nextest_boundary` rather
+than in this crate. `show-config` resolves a profile's overrides against the
+test binaries the package declares and refuses a filterset naming one that does
+not exist, so doing it here would mean building the whole test suite, which is
+minutes. The fixture declares three empty test binaries, two of them named
+`trybuild` and `schema_helpers_ui` so the real filtersets resolve, and it
+builds in about a second. Deleting either of those files reddens the contract,
+and `compile_contract_budget_test.py` is what keeps the pair honest against the
+real sources.
+
+The third binary sleeps for thirty seconds, and it is what makes one assertion
+behavioural rather than another reading. nextest runs it under a `slow-timeout`
+built from the real configuration's own `terminate-after` and `grace-period`
+with the period cut to a second, and must terminate it. That is the assertion
+that fails if the real file loses `terminate-after`: without it nextest marks a
+test slow, warns once a period, and lets it run to completion, so the run
+passes and nothing is bounded.
+
+The `Formatting` job installs `cargo-nextest` for this, pinned to the version
+the coverage and test lanes install, and the contract asserts the versions
+agree. Two versions in the tree would leave the contract certifying the file
+for a runner nothing else runs, with both lanes green.
 
 ### The tier that is absent, and why
 
