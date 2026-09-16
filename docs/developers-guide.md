@@ -2944,6 +2944,23 @@ sharper case, because a reader that checked only its first character would
 still accept it. That is the wrong direction for a contract, which would then
 certify a configuration nextest cannot load.
 
+Whitespace is the same lesson at a second class, and it runs the other way.
+Rust's `char::is_whitespace` is the Unicode White_Space property; Python's `\s`
+is that property plus U+001C to U+001F, the file, group, record and unit
+separators, and `str.strip` and `str.split` carry the same excess. A reader
+spelling its whitespace `\s` therefore skips a separator wherever it skips a
+space. This reader did: `1\x1cs` read as one second, `\x1c45m` and `45m\x1f` as
+forty-five minutes, and `1\x1d0s` as ten, all from text nextest refuses at
+startup. The class is written out at three sites, the pattern, the trim and the
+digit join, and the four spellings are refusal cases. The class itself is
+pinned in both directions over the whole of Unicode, because a class that had
+lost a genuine space would make this reader refuse configurations nextest
+loads, and no refusal case would show it. The digit join is unreachable through
+the reader while the pattern refuses a separator, so it is exercised directly
+through the widest whitespace the class allows; it survives a mutation back to
+`str.split`, and is written out anyway so that a later widening of the pattern
+cannot turn a refusal into a silently different number.
+
 The arithmetic is exact and in integers, because humantime's is: its parser
 works in checked `u64` throughout and reports every failure as an overflow.
 Which integer depends on the unit. A fraction of an hour or anything longer is
