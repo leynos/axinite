@@ -7,8 +7,8 @@ model: sonnet
 
 # Trace
 
-Trace the flow of `$ARGUMENTS` through the Axinite codebase. Your job is to
-map every file and function involved, identify where data transforms or could
+Trace the flow of `$ARGUMENTS` through the Axinite codebase. Your job is to map
+every file and function involved, identify where data transforms or could
 break, and report the full chain.
 
 ## Architecture Reference
