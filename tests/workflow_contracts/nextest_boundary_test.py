@@ -16,13 +16,20 @@ so. The second is the one that catches the misspelling, and it is
 proved here rather than merely stated: the same reading is run against
 a deliberately misspelled copy, which must be rejected.
 
-The run happens in ``fixtures/nextest_boundary``, a crate whose only
-contents are three empty test binaries. ``show-config`` resolves a
-profile's overrides against the binaries the package declares and
-refuses a filterset naming one that does not exist, so the fixture
-declares ``trybuild`` and ``schema_helpers_ui`` under those names.
-Running it against the real crate instead would build the whole test
-suite, which is minutes; the fixture builds in under a second.
+The run happens in a copy of ``fixtures/nextest_boundary``, a crate
+whose only contents are three empty test binaries. ``show-config``
+resolves a profile's overrides against the binaries the package
+declares and refuses a filterset naming one that does not exist, so the
+fixture declares ``trybuild`` and ``schema_helpers_ui`` under those
+names. Running it against the real crate instead would build the whole
+test suite, which is minutes; the fixture builds in under a second.
+
+It is copied out of the tree rather than built in place because cargo
+finds ``.cargo/config.toml`` by walking up the directory tree and does
+not stop at a workspace root. This repository's names the mold linker,
+which only the build lanes install, so a fixture built in place fails
+to link in the lane that runs this suite, and the failure reads as
+nextest refusing the configuration.
 
 The third binary sleeps, and it is what makes the termination
 assertion behavioural rather than another reading. nextest runs it
@@ -137,8 +144,10 @@ def _tool_is_present(command: str) -> bool:
     return shutil.which(command) is not None
 
 
-def _run(arguments: "Sequence[str]", target: Path) -> subprocess.CompletedProcess[str]:
-    """Run a cargo command in the fixture crate, writing under `target`.
+def _run(
+    arguments: "Sequence[str]", crate: Path, target: Path
+) -> subprocess.CompletedProcess[str]:
+    """Run a cargo command in the copied crate, writing under `target`.
 
     Both build directories are set explicitly rather than inherited.
     A developer's shell may point them at a shared tree, and a fixture
@@ -148,6 +157,8 @@ def _run(arguments: "Sequence[str]", target: Path) -> subprocess.CompletedProces
     ----------
     arguments
         The command and its arguments.
+    crate
+        The copied fixture crate to run in.
     target
         Where the fixture's build output goes.
 
@@ -161,7 +172,7 @@ def _run(arguments: "Sequence[str]", target: Path) -> subprocess.CompletedProces
     environment["CARGO_BUILD_BUILD_DIR"] = str(target / "build")
     return subprocess.run(  # noqa: S603 - fixed argument vector, no shell
         list(arguments),
-        cwd=FIXTURE_CRATE,
+        cwd=crate,
         env=environment,
         capture_output=True,
         text=True,
@@ -170,17 +181,43 @@ def _run(arguments: "Sequence[str]", target: Path) -> subprocess.CompletedProces
     )
 
 
+class Fixture(typ.NamedTuple):
+    """Where the copied fixture crate lives and where it builds.
+
+    Attributes
+    ----------
+    crate
+        The copy of ``fixtures/nextest_boundary`` this module runs in.
+    target
+        The build directory its output goes to.
+    """
+
+    crate: Path
+    target: Path
+
+
 @pytest.fixture(scope="module")
-def build_directory(tmp_path_factory: pytest.TempPathFactory) -> Path:
-    """Return a build directory shared by this module's runs.
+def fixture_crate(tmp_path_factory: pytest.TempPathFactory) -> Fixture:
+    """Return the fixture crate copied outside the repository.
+
+    Copied rather than built in place, because cargo discovers
+    ``.cargo/config.toml`` by walking up the directory tree and does not
+    stop at a workspace root. This repository's names the mold linker,
+    which only the build lanes install, so a fixture built inside the
+    tree fails to link in the lane that runs this suite and the failure
+    reads as nextest refusing the configuration. Outside the tree there
+    is no such file to find, which is what makes the fixture's verdict
+    about the configuration and nothing else.
 
     Returns
     -------
-    Path
-        A temporary directory, so the fixture crate is built once here
-        and leaves nothing in the repository.
+    Fixture
+        The copied crate and its build directory, made once per module.
     """
-    return tmp_path_factory.mktemp("nextest-boundary")
+    root = tmp_path_factory.mktemp("nextest-boundary")
+    crate = root / "crate"
+    shutil.copytree(FIXTURE_CRATE, crate)
+    return Fixture(crate=crate, target=root / "target")
 
 
 @pytest.fixture(scope="module", autouse=True)
@@ -202,7 +239,7 @@ def _require_the_toolchain() -> None:
 
 @pytest.mark.parametrize("profile", ["default", "ci"], ids=str)
 def test_nextest_loads_the_real_configuration(
-    build_directory: Path, profile: str
+    fixture_crate: Fixture, profile: str
 ) -> None:
     """The runner accepts the file, for the profile a lane may select.
 
@@ -223,7 +260,8 @@ def test_nextest_loads_the_real_configuration(
             "--profile",
             profile,
         ),
-        build_directory,
+        fixture_crate.crate,
+        fixture_crate.target,
     )
     assert done.returncode == 0, (
         f"nextest refused {NEXTEST_CONFIG} under --profile {profile}; every "
@@ -234,7 +272,7 @@ def test_nextest_loads_the_real_configuration(
 
 @pytest.mark.parametrize("profile", ["default", "ci"], ids=str)
 def test_nextest_ignores_no_key_in_the_real_configuration(
-    build_directory: Path, profile: str
+    fixture_crate: Fixture, profile: str
 ) -> None:
     """A key nextest does not know is a setting that is not set.
 
@@ -255,7 +293,8 @@ def test_nextest_ignores_no_key_in_the_real_configuration(
             "--profile",
             profile,
         ),
-        build_directory,
+        fixture_crate.crate,
+        fixture_crate.target,
     )
     assert IGNORED_KEYS_WARNING not in done.stderr, (
         f"nextest is ignoring keys in {NEXTEST_CONFIG} under --profile "
@@ -265,7 +304,7 @@ def test_nextest_ignores_no_key_in_the_real_configuration(
 
 
 def test_the_ignored_key_reading_would_report_a_misspelling(
-    build_directory: Path, tmp_path: Path
+    fixture_crate: Fixture, tmp_path: Path
 ) -> None:
     """The assertion above passes on a file with nothing wrong with it.
 
@@ -294,7 +333,8 @@ def test_the_ignored_key_reading_would_report_a_misspelling(
             "--profile",
             "ci",
         ),
-        build_directory,
+        fixture_crate.crate,
+        fixture_crate.target,
     )
     assert done.returncode == 0, (
         f"nextest refused the misspelled copy outright, so the warning is no "
@@ -341,7 +381,7 @@ def _short_slow_timeout() -> str:
 
 
 def test_nextest_terminates_a_test_under_these_fields(
-    build_directory: Path, tmp_path: Path
+    fixture_crate: Fixture, tmp_path: Path
 ) -> None:
     """The fields do not merely load; they stop a test.
 
@@ -367,7 +407,8 @@ def test_nextest_terminates_a_test_under_these_fields(
             "-E",
             "binary(slow)",
         ),
-        build_directory,
+        fixture_crate.crate,
+        fixture_crate.target,
     )
     assert done.returncode != 0, (
         f"nextest completed a thirty-second test under a one-second "
