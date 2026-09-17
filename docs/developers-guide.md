@@ -397,12 +397,12 @@ including that each installer precedes the first step that uses its command.
 
 Each mutable cache path has exactly one owner and one explainable key.
 
-| Path                                                         | Owner                                                   | Key inputs                                                                                      | Writer                                                                                                                                      |
-| ------------------------------------------------------------ | ------------------------------------------------------- | ----------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------- |
-| `~/.cargo/registry`, `~/.cargo/git`                          | The `Restore`/`Save Cargo registry and index` step pair | `runner.os`, `runner.arch`, `runner.environment`, `hashFiles('**/Cargo.lock')`, generation `v1` | `test.yml` `tests` (`all-features` leg) on Linux; `test.yml` `windows-build` (`all-features` leg) on Windows; both only on a push to `main` |
-| `~/.cargo/bin/whitaker-installer`, `~/.local/share/whitaker` | The shared `install-whitaker` action                    | installer version, `hashFiles('dylint.toml')`, `runner.os`, `runner.arch`                       | The action, on any run                                                                                                                      |
-| `~/.cache/uv`                                                | `astral-sh/setup-uv` with `enable-cache: true`          | The action's own lockfile hashing                                                               | The action, on any run                                                                                                                      |
-| `~/.local/bin/cs-coverage`                                   | The shared `upload-codescene-coverage` action           | CodeScene CLI version                                                                           | The action, on any run                                                                                                                      |
+| Path                                                         | Owner                                                   | Key inputs                                                                                      | Writer                                                                                                                                             |
+| ------------------------------------------------------------ | ------------------------------------------------------- | ----------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `~/.cargo/registry`, `~/.cargo/git`                          | The `Restore`/`Save Cargo registry and index` step pair | `runner.os`, `runner.arch`, `runner.environment`, `hashFiles('**/Cargo.lock')`, generation `v1` | `coverage.yml` `coverage` (`all-features` leg) on Linux; `test.yml` `windows-build` (`all-features` leg) on Windows; both only on a push to `main` |
+| `~/.cargo/bin/whitaker-installer`, `~/.local/share/whitaker` | The shared `install-whitaker` action                    | installer version, `hashFiles('dylint.toml')`, `runner.os`, `runner.arch`                       | The action, on any run                                                                                                                             |
+| `~/.cache/uv`                                                | `astral-sh/setup-uv` with `enable-cache: true`          | The action's own lockfile hashing                                                               | The action, on any run                                                                                                                             |
+| `~/.local/bin/cs-coverage`                                   | The shared `upload-codescene-coverage` action           | CodeScene CLI version                                                                           | The action, on any run                                                                                                                             |
 
 Rules that follow from the table:
 
@@ -424,7 +424,7 @@ Rules that follow from the table:
   condition read, and for a while none did: every lane restored the key and
   nothing filled it. Only the `all-features` leg saves, because it resolves the
   widest dependency graph under `--all-features`; the other legs would race it
-  for the same key. `tests/workflow_contracts/workflow_tooling_test.py` asserts
+  for the same key. `tests/workflow_contracts/cache_ownership_test.py` asserts
   that the writer's workflow is triggered by a push to `main`, that the job's
   own guard admits that event, and that every platform restoring the key has a
   reachable writer. The earlier contract read the save step's condition alone
