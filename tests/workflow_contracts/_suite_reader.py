@@ -85,7 +85,15 @@ class SuiteRun:
 
     @property
     def key(self) -> tuple[str, str, frozenset[str]]:
-        """Return what makes two runs the same work."""
+        """Return what makes two runs the same work.
+
+        Returns
+        -------
+        tuple of (str, str, frozenset of str)
+            The run's scope, its nextest profile, and the features it
+            resolves to. The profile is part of the identity because it
+            selects which tests run at all.
+        """
         return self.scope, self.profile, self.features
 
     def __str__(self) -> str:

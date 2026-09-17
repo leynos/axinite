@@ -15,6 +15,7 @@ Run via ``make test-workflow-contracts``.
 from __future__ import annotations
 
 import typing as typ
+from pathlib import PurePosixPath
 
 import pytest
 from _workflow_policy import (
@@ -63,7 +64,10 @@ def test_no_cache_step_archives_a_target_tree(job: Job) -> None:
         if not is_cache_step(step):
             continue
         for path in cache_paths(step):
-            assert not path.split("/")[0] == "target", (
+            # Every component, not just the first: `tools-src/github/target`
+            # is as much a build tree as `target` is, and a check on the
+            # leading component alone would wave the nested one through.
+            assert "target" not in PurePosixPath(path).parts, (
                 f"{job} archives {path!r}. A target tree duplicates sccache's "
                 "ownership of compiler output and inflates the cache quota."
             )

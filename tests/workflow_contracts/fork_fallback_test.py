@@ -30,6 +30,7 @@ from _workflow_policy import (
     FORK_CONDITION,
     UBICLOUD_LABEL_PREFIX,
     Job,
+    conditional_runs_on_arms,
     jobs_of,
     load,
     runs_on_event,
@@ -44,6 +45,12 @@ FORKABLE_EVENT = "pull_request"
 
 #: What a fork's pull request must be given instead.
 HOSTED_LABEL = "ubuntu-latest"
+
+#: The one expression form allowed to stay opaque: a matrix reference, whose
+#: labels are in the matrix rather than in the expression. Naming it rather
+#: than exempting every unreadable form means a new one has to be added here
+#: on purpose.
+MATRIX_REFERENCE = "matrix."
 
 
 def _runs_on(job: Job) -> str:
@@ -93,6 +100,77 @@ def test_the_selector_finds_the_lanes() -> None:
     assert len(FORKABLE) >= 8, (
         "expected the pull-request lanes that ask for an Ubicloud runner; "
         f"found {sorted(str(job) for job in FORKABLE)}"
+    )
+
+
+def _opaque_expression_jobs() -> tuple[tuple[Job, str], ...]:
+    """Return every job whose `runs-on` expression the reader cannot split.
+
+    The generated release workflow is excluded, as it is everywhere: nobody
+    edits it, and its matrix reference is not a placement decision anyone
+    made here.
+    """
+    found: list[tuple[Job, str]] = []
+    for path in workflow_paths():
+        if path.name == DIST_GENERATED:
+            continue
+        for job in jobs_of(path.name, load(path)):
+            declared = _runs_on(job)
+            if not declared.startswith("${{"):
+                continue
+            if conditional_runs_on_arms(declared) is None:
+                found.append((job, declared))
+    return tuple(found)
+
+
+def test_no_lane_hides_behind_an_expression_the_reader_cannot_split() -> None:
+    """Close the selector's blind spot, rather than trusting the selector.
+
+    `runner_labels` reports an expression it cannot parse as one opaque
+    label. That label does not carry the Ubicloud prefix, so `uses_ubicloud`
+    answers False and the selector above drops the job before a single fork
+    assertion runs. The lane is then exempt from this file, and from the
+    placement, timeout and sccache contracts as well, while still asking for
+    a paid runner a fork cannot obtain.
+
+    Failing towards opaque is right for the reader: guessing at a condition
+    nobody taught it would answer confidently and wrongly. It is wrong for
+    the estate, so the unreadable shape is refused here instead. The reader
+    stays cautious; the workflows stay readable.
+    """
+    hidden = [
+        (job, declared)
+        for job, declared in _opaque_expression_jobs()
+        if MATRIX_REFERENCE not in declared
+    ]
+    assert not hidden, (
+        "these lanes compute `runs-on` in a form the placement reader cannot "
+        "split, so every contract that selects on the runner silently skips "
+        f"them: {[(str(job), declared) for job, declared in hidden]}"
+    )
+
+
+def test_the_blind_spot_is_real() -> None:
+    """Prove the assertion above guards something, not nothing.
+
+    An expression naming an Ubicloud label in a condition the reader does not
+    recognize is classified as GitHub-hosted, which is exactly why the
+    contract above cannot be left to `uses_ubicloud`. If this ever stops
+    holding, the contract above has become redundant rather than merely
+    quiet, and should be reconsidered rather than kept as decoration.
+    """
+    declared = (
+        "${{ github.actor == 'dependabot[bot]' && 'ubuntu-latest' "
+        f"|| '{UBICLOUD_LABEL_PREFIX}standard-2' }}}}"
+    )
+    job = Job("fixture.yml", "fixture", {"runs-on": declared})
+    assert conditional_runs_on_arms(declared) is None, (
+        "the reader now understands this condition, so the fixture no longer "
+        "demonstrates the blind spot"
+    )
+    assert not job.uses_ubicloud, (
+        "an unreadable expression naming an Ubicloud label is no longer "
+        "classified as GitHub-hosted; the selector's blind spot has closed"
     )
 
 
