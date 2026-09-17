@@ -277,16 +277,16 @@ def compile_contract_binaries(tests_directory: Path) -> frozenset[str]:
     Cargo names a test target after ``tests/<name>.rs`` or after the
     directory in ``tests/<name>/main.rs``, and both forms are read.
 
-    Parameters
-    ----------
-    tests_directory
-        The crate's ``tests`` directory.
-
     This is an acquisition function, not a query: it searches the
     directory and reads every source it finds. It is named here rather
     than left for a reader to discover from the body, because a
     query-shaped signature that touches the filesystem is the thing that
     misleads.
+
+    Parameters
+    ----------
+    tests_directory
+        The crate's ``tests`` directory.
 
     Returns
     -------
