@@ -121,8 +121,12 @@ pub async fn try_test_pg_db() -> Result<Option<PgBackend>, DatabaseError> {
         Err(error) => {
             if is_database_unavailable(&error) {
                 eprintln!(
-                    "Postgres is unreachable and {REQUIRE_POSTGRES_ENV} is set, so this \
-                     is a failure rather than a skip: {error}"
+                    concat!(
+                        "Postgres is unreachable and {env} is set, so this ",
+                        "is a failure rather than a skip: {error}"
+                    ),
+                    env = REQUIRE_POSTGRES_ENV,
+                    error = error
                 );
             }
             Err(error)
