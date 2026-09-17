@@ -20,6 +20,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 import yaml
+from contract_sources import directory_entries, read_source
 
 if typ.TYPE_CHECKING:  # pragma: no cover - typing only
     from collections.abc import Iterator
@@ -312,7 +313,7 @@ def workflow_paths(directory: Path = WORKFLOW_DIR) -> list[Path]:
     """
     return sorted(
         path
-        for path in directory.iterdir()
+        for path in directory_entries(directory)
         if path.is_file() and path.suffix in WORKFLOW_SUFFIXES
     )
 
@@ -400,7 +401,7 @@ def load(path: Path) -> dict[str, object]:
     dict
         The parsed workflow document.
     """
-    return parse_workflow(path.read_text(encoding="utf-8"), path.name)
+    return parse_workflow(read_source(path), path.name)
 
 
 def declared_jobs(path: Path) -> dict[str, object]:
