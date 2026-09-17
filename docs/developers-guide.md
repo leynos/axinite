@@ -2828,13 +2828,16 @@ the inversion the canonical section exists to prevent, and it would do so
 silently. The contract fails if either the action appears or the variable is
 set, so adopting it needs this section updated in the same change.
 
-The variable is looked for in all three scopes a step inherits its environment
-from. GitHub hands a step the union of the workflow's `env`, its job's and its
-own, so one written at workflow or job level reaches the suite step exactly as
-one written on the step does. A check reading the step alone would report the
-tier as absent while the watchdog was in force, which is the same inversion
-read from the other end. Each scope is reported at the level that declares it,
-because that is the line that has to change.
+The variable is looked for in all three scopes a step can inherit its
+environment from. GitHub resolves a name declared at more than one of workflow,
+job and step scope to the most specific declaration rather than merging them,
+so a variable set at workflow or job level and nowhere else reaches the suite
+step, and one set on the step overrides it. Either way the watchdog is in
+force, which is why the contract asserts the variable's absence at every scope
+rather than at the step alone: a check reading the step would report the tier
+as absent while an outer scope armed it, which is the same inversion read from
+the other end. Each scope is reported at the level that declares it, because
+that is the line that has to change.
 
 ### What the values are sized against
 
