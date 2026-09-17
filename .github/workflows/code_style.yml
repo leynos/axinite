@@ -8,6 +8,17 @@ name: Code Style
   # store is content-addressed and has no single writer.
   workflow_dispatch:
 
+# Every job here reads the checkout and writes nothing. Without this
+# block each job inherits the repository or organization default
+# `GITHUB_TOKEN` scopes, which can be write-capable, and these jobs run
+# third-party actions and repository commands. Nothing here uses the
+# token for anything but the checkout: no step references
+# `secrets.GITHUB_TOKEN`, `github.token` or an OIDC identity, and
+# sccache's cache and `actions/cache` authenticate with the runtime
+# token rather than this one.
+permissions:
+  contents: read
+
 env:
   # The version the coverage and test lanes install. The workflow-contract
   # suite hands `.config/nextest.toml` to this runner and takes its verdict,
