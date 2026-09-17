@@ -249,3 +249,45 @@ def test_each_lane_makes_the_number_of_runs_it_is_pinned_to() -> None:
         f"versus pinned: {found} against {REQUIRED_INVOCATIONS}; a count "
         f"nobody has judged is a job ceiling nobody has sized"
     )
+
+
+#: The ``run:`` scalar as a workflow would carry it. A tab cannot start
+#: a token in a plain YAML scalar, so the tabbed spellings are written
+#: double-quoted, which is how a person would have to write them too.
+UNUSUAL_SPACING: typ.Final[tuple[tuple[str, str], ...]] = (
+    ("cargo   nextest run --workspace", "runs-of-spaces"),
+    ('"cargo\\tnextest\\trun --workspace"', "tabs"),
+    ('"cargo \\t nextest  run --workspace"', "a-mixture"),
+)
+
+
+@pytest.mark.parametrize(
+    "command",
+    [pytest.param(scalar, id=name) for scalar, name in UNUSUAL_SPACING],
+)
+def test_a_suite_command_spaced_unusually_is_still_a_suite_command(
+    command: str,
+) -> None:
+    """The shell does not care how the words are separated, and nor may this.
+
+    The markers are written with single spaces and were compared against
+    the raw line, so `cargo   nextest run` matched none of them. That
+    failed in the dangerous direction and failed twice over: the job was
+    counted as running no suite, so it was held to no ceiling, and the
+    line was not reported as one the reading could not judge either. A
+    lane could therefore run the suite under GitHub's six-hour default
+    and satisfy every assertion in this suite.
+
+    Whitespace is collapsed before the marker comparison. The token
+    comparison that follows already tolerated this, because `shlex.split`
+    splits on any whitespace; it never ran, because the marker check
+    refused the line first.
+    """
+    lanes = _lanes_of(
+        "  bounded:\n"
+        "    runs-on: ubuntu-latest\n"
+        "    timeout-minutes: 30\n"
+        "    steps:\n"
+        f"      - run: {command}\n"
+    )
+    assert [(lane.job, lane.invocations) for lane in lanes] == [("bounded", 1)], lanes
