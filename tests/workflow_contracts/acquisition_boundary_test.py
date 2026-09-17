@@ -16,6 +16,8 @@ Run via ``make test-workflow-contracts``.
 
 from __future__ import annotations
 
+import os
+import sys
 import typing as typ
 from pathlib import Path
 
@@ -110,3 +112,95 @@ def test_a_readable_tree_still_returns_its_contents(tmp_path: Path) -> None:
     assert load(workflow)["name"] == "controlled", (
         "a readable workflow must still parse"
     )
+
+
+#: The sweeps that reach the filesystem through a directory listing, as
+#: callables taking the directory. `read_source` is absent because it
+#: takes a file, and a file inside an unreadable directory cannot be
+#: named to open in the first place.
+DIRECTORY_SWEEPS: typ.Final[dict[str, cabc.Callable[[Path], object]]] = {
+    "workflow_paths": workflow_paths,
+    "suite_lanes_of": suite_lanes_of,
+    "compile_contract_binaries": compile_contract_binaries,
+    "matching_entries": lambda path: matching_entries(path, "*.rs"),
+    "matching_entries_nested": lambda path: matching_entries(path, "*/main.rs"),
+}
+
+
+@pytest.mark.skipif(
+    sys.platform == "win32",
+    reason="POSIX permission bits; Windows chmod only toggles read-only",
+)
+@pytest.mark.parametrize("name", sorted(DIRECTORY_SWEEPS))
+def test_an_unreadable_directory_fails_closed(name: str, tmp_path: Path) -> None:
+    """Assert a directory that exists but cannot be read is reported.
+
+    This is the sharper half of the empty-result hazard and the reason
+    the sweeps enumerate rather than glob. From Python 3.13 ``Path.glob``
+    suppresses the errors raised while scanning, so an unreadable
+    directory passes ``is_dir`` and yields nothing, which is
+    indistinguishable from a directory with no matches. Neither a
+    pre-check nor a ``try`` around the call can see it: there is no
+    exception left to catch and nothing about the result to doubt.
+
+    A source file is planted first, so the directory is one that would
+    have matched. A sweep reporting an empty set here is reporting the
+    absence of a file that is there.
+    """
+    if os.geteuid() == 0:
+        pytest.skip("root reads a directory whatever its mode bits say")
+    unreadable = tmp_path / "unreadable"
+    nested = unreadable / "contract"
+    nested.mkdir(parents=True)
+    (unreadable / "ui.rs").write_text("trybuild::TestCases", encoding="utf-8")
+    (nested / "main.rs").write_text("trybuild::TestCases", encoding="utf-8")
+    unreadable.chmod(0o000)
+    try:
+        with pytest.raises(SourceReadError) as raised:
+            DIRECTORY_SWEEPS[name](unreadable)
+    finally:
+        unreadable.chmod(0o700)
+    assert unreadable in (raised.value.path, *raised.value.path.parents), (
+        f"{name} must report the directory it could not read; it reported "
+        f"{raised.value.path}"
+    )
+
+
+@pytest.mark.skipif(
+    sys.platform == "win32",
+    reason="POSIX permission bits; Windows chmod only toggles read-only",
+)
+def test_a_readable_nested_tree_is_still_matched(tmp_path: Path) -> None:
+    """Assert the nested walk still finds what it should.
+
+    The refusal above is satisfied by a walk that reports nothing ever,
+    so the shape the sweeps actually use is pinned: a source beside the
+    directory and a source one level down, both found.
+    """
+    nested = tmp_path / "contract"
+    nested.mkdir()
+    flat_source = tmp_path / "ui.rs"
+    flat_source.write_text("trybuild::TestCases", encoding="utf-8")
+    nested_source = nested / "main.rs"
+    nested_source.write_text("trybuild::TestCases", encoding="utf-8")
+    assert matching_entries(tmp_path, "*.rs") == [flat_source], (
+        "the flat pattern matches the source beside the directory"
+    )
+    assert matching_entries(tmp_path, "*/main.rs") == [nested_source], (
+        "the nested pattern matches one level down"
+    )
+    assert compile_contract_binaries(tmp_path) == frozenset({"ui", "contract"}), (
+        "cargo names a target after tests/<name>.rs or tests/<name>/main.rs, "
+        "and both forms must be discovered"
+    )
+
+
+def test_a_pattern_this_reader_cannot_walk_is_refused(tmp_path: Path) -> None:
+    """Assert a deeper pattern is refused rather than under-matched.
+
+    One separator is what this repository's sweeps use. A deeper pattern
+    would match nothing here while a glob would have matched, and a
+    reader that cannot walk a pattern must not report on it.
+    """
+    with pytest.raises(SourceReadError, match=r"nests deeper"):
+        matching_entries(tmp_path, "*/*/main.rs")

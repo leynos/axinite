@@ -17,6 +17,7 @@ should keep catching them.
 """
 
 import typing as typ
+from fnmatch import fnmatch
 
 if typ.TYPE_CHECKING:  # pragma: no cover - typing only
     from pathlib import Path
@@ -105,17 +106,88 @@ def directory_entries(directory: "Path") -> "list[Path]":
         raise SourceReadError(message, path=directory) from error
 
 
+def _named_like(directory: "Path", pattern: str) -> "list[Path]":
+    """Return one directory's entries whose names match a pattern.
+
+    The listing goes through :func:`directory_entries`, so a directory
+    that cannot be read raises here rather than yielding nothing.
+
+    Parameters
+    ----------
+    directory
+        The directory to list.
+    pattern
+        A glob pattern with no separator, matched against each name.
+
+    Returns
+    -------
+    list of Path
+        The matching entries, in the order the filesystem gave them.
+
+    Raises
+    ------
+    SourceReadError
+        If the directory cannot be listed.
+    """
+    return [
+        entry for entry in directory_entries(directory) if fnmatch(entry.name, pattern)
+    ]
+
+
+def _nested_like(directory: "Path", head: str, tail: str) -> "list[Path]":
+    """Return entries one level down whose parents match ``head``.
+
+    Parameters
+    ----------
+    directory
+        The directory to walk.
+    head
+        The pattern each subdirectory's name must match.
+    tail
+        The pattern each entry inside one must match.
+
+    Returns
+    -------
+    list of Path
+        The matching entries.
+
+    Raises
+    ------
+    SourceReadError
+        If any directory involved cannot be listed.
+    """
+    found: list[Path] = []
+    for entry in _named_like(directory, head):
+        if entry.is_dir():
+            found.extend(_named_like(entry, tail))
+    return found
+
+
 def matching_entries(directory: "Path", pattern: str) -> "list[Path]":
     """Return a directory's matching entries, sorted, or say which failed.
 
     The same hazard as :func:`directory_entries` and a sharper form of
-    it. ``Path.glob`` does not raise on a directory that is absent or is
-    not a directory at all: it yields nothing, exactly as a directory
-    with no matches does. So the two cases are indistinguishable at the
-    call site, the caller reads a tree with no sources, and every
-    assertion over the result passes over an empty set while reporting
-    success. The directory is therefore checked before the search rather
-    than the search being wrapped, because wrapping it catches nothing.
+    it, twice over.
+
+    ``Path.glob`` does not raise on a directory that is absent or is not
+    a directory at all: it yields nothing, exactly as a directory with
+    no matches does. Worse, from Python 3.13 it also suppresses the
+    errors raised while scanning, so an existing directory that cannot
+    be read passes ``is_dir`` and still yields nothing. A pre-check
+    therefore closes only half the hole, and wrapping the call closes
+    none of it: there is no exception left to catch.
+
+    So the directories are enumerated rather than globbed. Every listing
+    goes through :func:`directory_entries`, which propagates what
+    ``iterdir`` raises, and the names are matched afterwards. An
+    unreadable directory now fails loudly at the listing instead of
+    reporting a tree with no sources, which is the answer that would
+    have let compile-contract discovery certify an empty set.
+
+    The pattern is matched rather than interpreted. One separator is
+    supported, which is what this repository's sweeps use; anything
+    deeper is refused rather than silently under-matched, because a
+    reader that cannot walk a pattern must not report on it.
 
     Sorted here rather than at each call site, because two sweeps
     disagreeing about order is a defect nobody would look for.
@@ -125,7 +197,8 @@ def matching_entries(directory: "Path", pattern: str) -> "list[Path]":
     directory
         The directory to search.
     pattern
-        A glob pattern, relative to the directory.
+        A glob pattern relative to the directory, with at most one
+        ``/`` separator.
 
     Returns
     -------
@@ -135,16 +208,16 @@ def matching_entries(directory: "Path", pattern: str) -> "list[Path]":
     Raises
     ------
     SourceReadError
-        If the directory cannot be searched.
+        If any directory involved cannot be listed, or the pattern
+        nests deeper than this reader walks.
     """
-    if not directory.is_dir():
+    head, separator, tail = pattern.partition("/")
+    if not separator:
+        return sorted(_named_like(directory, head))
+    if "/" in tail:
         message = (
-            f"{directory} is not a directory, so the search for {pattern!r} "
-            f"would return nothing and read as a tree with no matches"
+            f"the pattern {pattern!r} nests deeper than this reader walks, so "
+            f"it cannot say what {directory} holds"
         )
         raise SourceReadError(message, path=directory)
-    try:
-        return sorted(directory.glob(pattern))
-    except OSError as error:
-        message = f"{directory} could not be searched for {pattern!r}: {error}"
-        raise SourceReadError(message, path=directory) from error
+    return sorted(_nested_like(directory, head, tail))
