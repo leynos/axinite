@@ -215,6 +215,39 @@ def _runs_on_chain(declared: str) -> tuple[tuple[str | None, str], ...] | None:
     return typ.cast("tuple[tuple[str | None, str], ...]", tuple(arms))
 
 
+def selected_value(declared: str, event: str) -> str | None:
+    """Resolve a guarded `${{ a && 'x' || 'y' }}` scalar for one event.
+
+    `runs-on` is not the only value a workflow keys on the event. An `env`
+    entry that says what a gate must see from an upstream job has the same
+    shape, and reading it as opaque text would let the gate's own expectation
+    drift from the job it describes without any contract noticing.
+
+    Parameters
+    ----------
+    declared
+        The raw scalar. A folded YAML scalar arrives with its line breaks
+        already joined into single spaces.
+    event
+        A `github.event_name` value, such as ``push``.
+
+    Returns
+    -------
+    str or None
+        The value this event selects, or ``None`` when the scalar is not a
+        guarded chain these helpers read. A plain literal is not a chain, so
+        it answers ``None`` too: a caller asking what an event selects wants
+        to know that nothing was selected by the event at all.
+    """
+    chain = _runs_on_chain(declared)
+    if chain is None:
+        return None
+    return next(
+        (value for condition, value in chain if _arm_selected_by(condition, event)),
+        None,
+    )
+
+
 def _recognized_condition(condition: str) -> bool:
     """Report whether an arm's condition is one these helpers can answer.
 
