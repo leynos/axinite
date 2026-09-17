@@ -21,7 +21,7 @@ import re
 import shlex
 
 from _suite_targets import (
-    DEFAULT_FEATURES,
+    default_features,
     DEFAULT_PROFILE,
     FEATURE_VARIABLE,
     PROFILE_VARIABLE,
@@ -179,7 +179,7 @@ def feature_key(args: str) -> frozenset[str]:
     # exception, because its sentinel already keeps it apart from every list.
     if NO_DEFAULT_FEATURES in named:
         return named
-    return named | DEFAULT_FEATURES
+    return named | default_features()
 
 
 def profile_of(args: str) -> str:

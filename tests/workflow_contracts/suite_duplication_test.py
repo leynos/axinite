@@ -31,7 +31,7 @@ Run via ``make test-workflow-contracts``.
 from __future__ import annotations
 
 import pytest
-from _suite_reader import ESTATE, PAID_EVENTS, duplicates_in, suite_runs_for
+from _suite_reader import PAID_EVENTS, duplicates_in, load_estate, suite_runs_for
 from _workflow_policy import REPOSITORY_ROOT, jobs_of, matrix_legs
 from _suite_targets import (
     DEFAULT_PROFILE,
@@ -54,7 +54,7 @@ def test_the_scan_finds_the_suite_at_all() -> None:
     under: a pull request runs the suite, and so does a push.
     """
     for event in PAID_EVENTS:
-        assert len(suite_runs_for(ESTATE, event)) >= 2, (
+        assert len(suite_runs_for(load_estate(), event)) >= 2, (
             f"no workspace suite runs were found for {event}; the contract "
             "below would pass with the suite deleted"
         )
@@ -174,7 +174,7 @@ def test_the_tests_matrix_resolves_to_the_reviewed_legs(event: str) -> None:
     for the guard needs to stay meaningful.
     """
     job = next(
-        job for job in jobs_of("test.yml", ESTATE["test.yml"]) if job.job_id == "tests"
+        job for job in jobs_of("test.yml", load_estate()["test.yml"]) if job.job_id == "tests"
     )
     resolved = tuple(
         (leg.get("name", ""), leg.get("flags", "")) for leg in matrix_legs(job, event)
@@ -202,7 +202,7 @@ def test_every_suite_still_runs_on_every_paid_trigger(event: str) -> None:
     deleted rather than de-duplicated fails here, and a suite added without a
     lane on one trigger fails here too.
     """
-    found = {run.scope for run in suite_runs_for(ESTATE, event)}
+    found = {run.scope for run in suite_runs_for(load_estate(), event)}
     assert found == EXPECTED_SCOPES, (
         f"on {event} the suites that run are {sorted(found)}, not "
         f"{sorted(EXPECTED_SCOPES)}. A suite with no lane on a trigger is not "
@@ -225,7 +225,7 @@ def test_every_trigger_runs_the_workspace_suite_in_full(event: str) -> None:
     the lane it replaced.
     """
     profiles = {
-        run.profile for run in suite_runs_for(ESTATE, event) if run.scope == WORKSPACE
+        run.profile for run in suite_runs_for(load_estate(), event) if run.scope == WORKSPACE
     }
     assert profiles == {FULL_PROFILE}, (
         f"on {event} the workspace suite runs under {sorted(profiles)}, not "
@@ -238,7 +238,7 @@ def test_every_trigger_runs_the_workspace_suite_in_full(event: str) -> None:
 @pytest.mark.parametrize("event", PAID_EVENTS)
 def test_no_trigger_runs_the_same_suite_twice(event: str) -> None:
     """The contract itself: one feature selection, one run, per trigger."""
-    duplicated = duplicates_in(suite_runs_for(ESTATE, event))
+    duplicated = duplicates_in(suite_runs_for(load_estate(), event))
     assert not duplicated, "\n".join(
         f"on {event}, {scope} under {sorted(features) or 'no features'} and "
         f"the {profile} profile is run by " + ", ".join(str(run) for run in runs)

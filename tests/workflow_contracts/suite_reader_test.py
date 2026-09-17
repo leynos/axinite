@@ -11,12 +11,19 @@ from __future__ import annotations
 
 import tomllib
 import typing as typ
+from pathlib import Path
 
+import _suite_targets
 import pytest
 import yaml
 from _suite_keys import feature_key, profile_of
 from _suite_reader import duplicates_in, suite_runs_for
-from _suite_targets import DEFAULT_FEATURES, DEFAULT_PROFILE, ROOT_MANIFEST
+from _suite_targets import (
+    DEFAULT_PROFILE,
+    ROOT_MANIFEST,
+    default_features,
+    default_features_in,
+)
 
 
 class TestFeatureKey:
@@ -126,11 +133,11 @@ class TestFeatureKey:
         contract failed to report.
         """
         declared = tomllib.loads(ROOT_MANIFEST.read_text(encoding="utf-8"))
-        assert DEFAULT_FEATURES == frozenset(declared["features"]["default"]), (
-            f"{DEFAULT_FEATURES!r} is not the manifest's default list; a "
+        assert default_features() == frozenset(declared["features"]["default"]), (
+            f"{default_features()!r} is not the manifest's default list; a "
             "restated set drifts from the one Cargo actually enables"
         )
-        assert DEFAULT_FEATURES, "the root manifest declares no default features"
+        assert default_features(), "the root manifest declares no default features"
 
     def test_naming_a_default_feature_is_naming_nothing(self) -> None:
         """A list of members of `default` selects what `default` selects.
@@ -140,7 +147,7 @@ class TestFeatureKey:
         `--no-default-features`, so Cargo built it exactly as it built the
         leg that passed no flags at all, and two paid legs ran one suite.
         """
-        named = " ".join(f"--features {feature}" for feature in DEFAULT_FEATURES)
+        named = " ".join(f"--features {feature}" for feature in default_features())
         assert feature_key(f"{named} --features test-helpers") == feature_key(
             "--features test-helpers"
         ), (
@@ -311,3 +318,64 @@ class TestDuplicateDetection:
         assert not duplicates_in(suite_runs_for(estate, "push")), (
             "a.yml runs on a pull request only, so it cannot clash on a push"
         )
+
+
+@pytest.mark.parametrize(
+    ("manifest", "expected"),
+    [
+        pytest.param({"features": {"default": ["a", "b"]}}, {"a", "b"}, id="declared"),
+        pytest.param({"features": {"default": []}}, set(), id="empty-list"),
+        pytest.param({"features": {}}, set(), id="no-default-key"),
+        pytest.param({}, set(), id="no-features-table"),
+        pytest.param({"features": "not-a-table"}, set(), id="features-not-a-table"),
+    ],
+)
+def test_default_features_reads_a_manifest_it_is_given(
+    manifest: dict[str, object], expected: set[str]
+) -> None:
+    """The reading is a pure function of a parsed manifest.
+
+    Splitting it from the file access is what lets these cases be stated at
+    all. Each of the last three is a manifest shape that would otherwise have
+    raised inside an import, taking the whole contract directory's collection
+    with it.
+    """
+    assert default_features_in(manifest) == frozenset(expected)
+
+
+def test_the_manifest_is_not_read_at_import() -> None:
+    """The file access is deferred to the first call, and is cached.
+
+    A module-level snapshot turns a missing or malformed manifest into a
+    collection error, and a contract directory that fails to collect reports
+    no failures at all, which reads exactly like a clean run. This asserts
+    the deferral by driving the cache: clearing it and calling again must
+    read the file and agree with the pure reading of the same file.
+    """
+    default_features.cache_clear()
+    parsed = tomllib.loads(ROOT_MANIFEST.read_text(encoding="utf-8"))
+    assert default_features() == default_features_in(parsed)
+    assert default_features.cache_info().currsize == 1, (
+        "the reading is not cached, so every contract that asks re-reads and "
+        "re-parses the manifest"
+    )
+
+
+def test_a_manifest_that_cannot_be_parsed_fails_a_test_not_the_collection(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A bad manifest must fail here, where the failure names itself.
+
+    This is the whole reason the read is deferred. Pointed at a file it
+    cannot parse, the reading raises when a contract asks for it. Under the
+    old import-time snapshot the same file raised while pytest was importing
+    the module, and a directory that fails to collect reports no failures at
+    all.
+    """
+    broken = tmp_path / "Cargo.toml"
+    broken.write_text("[features\ndefault = [", encoding="utf-8")
+    monkeypatch.setattr(_suite_targets, "ROOT_MANIFEST", broken)
+    default_features.cache_clear()
+    with pytest.raises(tomllib.TOMLDecodeError):
+        default_features()
+    default_features.cache_clear()

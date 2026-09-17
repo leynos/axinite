@@ -13,6 +13,8 @@ from __future__ import annotations
 
 import re
 import tomllib
+from collections.abc import Mapping
+from functools import cache
 
 from _workflow_policy import REPOSITORY_ROOT
 
@@ -68,26 +70,46 @@ NO_DEFAULT_FEATURES = ":no-default-features"
 ROOT_MANIFEST = REPOSITORY_ROOT / "Cargo.toml"
 
 
-def default_features() -> frozenset[str]:
-    """Return the root package's default feature set.
+def default_features_in(manifest: Mapping[str, object]) -> frozenset[str]:
+    """Return the default feature set a parsed manifest declares.
 
     Cargo enables these on every command that does not pass
     `--no-default-features`, so a leg that names three of them and a leg that
-    names none compile and run exactly the same thing. Reading them here is
-    what stops the contract comparing what a command says against what
-    another command says, rather than what each one runs.
+    names none compile and run exactly the same thing. Reading them is what
+    stops the contract comparing what a command says against what another
+    command says, rather than what each one runs.
+
+    Parameters
+    ----------
+    manifest
+        A parsed `Cargo.toml`.
+
+    Returns
+    -------
+    frozenset of str
+        Every feature in the manifest's `default` list.
+    """
+    features = manifest.get("features")
+    declared = features.get("default", []) if isinstance(features, Mapping) else []
+    return frozenset(str(name) for name in declared)
+
+
+@cache
+def default_features() -> frozenset[str]:
+    """Return the root package's default feature set.
+
+    The file reading is here rather than at import. A module-level snapshot
+    turns a missing or malformed manifest into a collection error, and a
+    contract directory that fails to collect reports no failures at all,
+    which reads exactly like a clean run. Deferred, the same fault fails the
+    contracts that depend on it, by name.
 
     Returns
     -------
     frozenset of str
         Every feature in the root manifest's `default` list.
     """
-    manifest = tomllib.loads(ROOT_MANIFEST.read_text(encoding="utf-8"))
-    declared = manifest.get("features", {}).get("default", [])
-    return frozenset(str(name) for name in declared)
-
-
-DEFAULT_FEATURES: frozenset[str] = default_features()
+    return default_features_in(tomllib.loads(ROOT_MANIFEST.read_text(encoding="utf-8")))
 
 
 def make_rule(name: str) -> tuple[tuple[str, ...], tuple[str, ...]]:

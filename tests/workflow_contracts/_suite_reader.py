@@ -16,6 +16,7 @@ from __future__ import annotations
 import re
 import typing as typ
 from dataclasses import dataclass
+from functools import cache
 
 from _suite_keys import feature_key, profile_of
 from _suite_targets import DEFAULT_PROFILE, MAKE_COMMAND, MAKE_TARGETS, WORKSPACE
@@ -283,8 +284,15 @@ def duplicates_in(
     return {key: found for key, found in by_key.items() if len(found) > 1}
 
 
+@cache
 def load_estate() -> dict[str, dict[str, object]]:
     """Return every workflow this contract judges, parsed and keyed by name.
+
+    Reading and parsing happens on the first call rather than at import, for
+    the reason `_suite_targets.default_features` gives: a workflow this
+    cannot parse should fail the contracts that read it, not the collection
+    of the whole directory, which reports no failures and reads like a clean
+    run.
 
     Returns
     -------
@@ -298,6 +306,3 @@ def load_estate() -> dict[str, dict[str, object]]:
         for path in workflow_paths()
         if path.name != DIST_GENERATED
     }
-
-
-ESTATE = load_estate()
