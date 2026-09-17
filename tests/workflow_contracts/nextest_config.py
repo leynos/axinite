@@ -17,10 +17,14 @@ runner does not use.
 import tomllib
 import typing as typ
 
+from contract_sources import read_source
 from nextest_durations import seconds
 from nextest_errors import NextestConfigurationError, UnboundedTestError
 from nextest_filtersets import binaries_named, binaries_selected
 from nextest_inheritance import with_inherited_overrides
+
+if typ.TYPE_CHECKING:  # pragma: no cover - typing only
+    from pathlib import Path
 
 
 class Profile(typ.NamedTuple):
@@ -131,6 +135,42 @@ def _entries(value: object) -> list[object]:
             return list(value)
         case _:
             return []
+
+
+def profiles_of(path: "Path") -> dict[str, Profile]:
+    """Return each profile a configuration file declares.
+
+    The acquisition half of :func:`profiles`, which is pure and takes
+    text. Three test modules each had a fixture calling ``read_text`` on
+    the configuration directly, so acquisition was written three times
+    and none of it went through the boundary the rest of this suite
+    reads through: a configuration that could not be read would have
+    surfaced as a bare ``OSError`` naming an errno, with nothing saying
+    which contract was reading what.
+
+    The path is required rather than defaulted to this repository's
+    configuration. `timeout_budgets` owns that constant and imports
+    this module, so a default here would close an import cycle; and a
+    caller that has to name the file cannot read one by accident.
+
+    Parameters
+    ----------
+    path
+        The configuration file to read.
+
+    Returns
+    -------
+    dict[str, Profile]
+        Profile name to its table and overrides.
+
+    Raises
+    ------
+    SourceReadError
+        If the file cannot be read or is not UTF-8.
+    NextestConfigurationError
+        If its contents are not a configuration this reader can use.
+    """
+    return profiles(read_source(path))
 
 
 def profiles(config_text: str) -> dict[str, Profile]:
