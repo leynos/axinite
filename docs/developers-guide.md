@@ -1241,18 +1241,24 @@ tests at it. There, a skip reports success for tests that never connected, and
 the lane publishes coverage measured without them. A lane says so by exporting
 `AXINITE_REQUIRE_POSTGRES`, and the skip stops being available.
 
-| Variable                   | Value                      | Effect                                           |
-| -------------------------- | -------------------------- | ------------------------------------------------ |
-| `AXINITE_REQUIRE_POSTGRES` | unset, empty or whitespace | An unreachable database skips the Postgres tests |
-| `AXINITE_REQUIRE_POSTGRES` | any other value            | An unreachable database fails the run            |
+| Variable                   | Value                            | Effect                                           |
+| -------------------------- | -------------------------------- | ------------------------------------------------ |
+| `AXINITE_REQUIRE_POSTGRES` | unset, empty or whitespace       | An unreachable database skips the Postgres tests |
+| `AXINITE_REQUIRE_POSTGRES` | any other value, readable or not | An unreachable database fails the run            |
 
-Two things about the shape are deliberate.
+Three things about the shape are deliberate.
 
 **Only one cell of the table changes.** An authentication or configuration
 mistake was never skippable: `is_database_unavailable` lists transport and
 name-resolution failures only, so a passwordless URL has always failed loudly.
 The requirement closes the remaining hole, which is a service that did not
 start.
+
+**A value that cannot be read is still a promise.** The requirement is read with
+`std::env::var_os`, so a value the platform cannot render as Unicode is
+`Required`, not unset. Reading it with `std::env::var(..).ok()` folds that read
+failure onto the same `None` as an absent variable, which hands the skip back
+to the lane that asked for it to be gone, and says nothing.
 
 **The requirement and the database URL ship in one step.** `coverage.yml`
 exports `TEST_DATABASE_URL`, `DATABASE_URL` and `AXINITE_REQUIRE_POSTGRES` from
