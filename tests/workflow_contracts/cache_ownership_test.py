@@ -14,6 +14,7 @@ Run via ``make test-workflow-contracts``.
 
 from __future__ import annotations
 
+import re
 import typing as typ
 from pathlib import PurePosixPath
 
@@ -279,6 +280,82 @@ def _assert_the_write_is_restricted_to_a_push_to_main(job: Job, condition: str) 
     )
 
 
+#: The matrix leg allowed to publish the registry archive. It resolves the
+#: widest dependency graph, so its archive is a superset of the others'; two
+#: legs saving would race for one key and the later upload would win by
+#: accident.
+WRITING_LEG = "matrix.name == 'all-features'"
+
+#: A save condition's reference to the restore step's own outcome, as
+#: `steps.<id>.outputs.cache-hit`.
+CACHE_HIT_RE: re.Pattern[str] = re.compile(
+    r"steps\.(?P<id>[A-Za-z0-9_-]+)\.outputs\.cache-hit"
+)
+
+
+def _assert_only_one_leg_writes(job: Job, condition: str) -> None:
+    """Assert a save step publishes from one matrix leg only.
+
+    Parameters
+    ----------
+    job
+        The job the save step belongs to, named in the failure message.
+    condition
+        The step's `if` expression, with its whitespace collapsed.
+    """
+    assert WRITING_LEG in condition, (
+        f"{job} saves the registry cache without naming the writing leg; "
+        f"every leg shares one key, so without `{WRITING_LEG}` they race and "
+        "whichever finishes last silently becomes the archive"
+    )
+
+
+def _assert_the_write_reads_its_own_restore(
+    job: Job, condition: str, restore_ids: set[str]
+) -> None:
+    """Assert a save step skips a key its own restore already found.
+
+    The reference is by step ID, and a step ID that no step declares is not
+    an error in Actions: the expression resolves to the empty string, the
+    inequality holds, and the archive is re-uploaded on every push. Nothing
+    fails, so the cost is the only evidence. Renaming the restore step's ID
+    and leaving the condition alone produces exactly that.
+
+    Parameters
+    ----------
+    job
+        The job the save step belongs to.
+    condition
+        The step's `if` expression, with its whitespace collapsed.
+    restore_ids
+        The IDs the job's own restore steps declare.
+    """
+    match = CACHE_HIT_RE.search(condition)
+    assert match is not None, (
+        f"{job} saves the registry cache without consulting its restore "
+        "step's `cache-hit` output, so it re-uploads an archive it already "
+        "has on every push"
+    )
+    named = match["id"]
+    assert named in restore_ids, (
+        f"{job}'s save step reads `steps.{named}.outputs.cache-hit`, but no "
+        f"restore step in that job declares that ID; it declares "
+        f"{sorted(restore_ids)}. The expression resolves to the empty string "
+        "and the guard is dead"
+    )
+
+
+def _restore_ids_in(job: Job) -> set[str]:
+    """Return the IDs the job's registry restore steps declare."""
+    return {
+        str(step["id"])
+        for step in job.steps
+        if isinstance(step.get("uses"), str)
+        and str(step["uses"]).startswith(RESTORE_ACTION)
+        and isinstance(step.get("id"), str)
+    }
+
+
 def _assert_the_write_can_actually_happen(job: Job) -> None:
     """Assert a save step's job is one a push to `main` can dispatch.
 
@@ -306,9 +383,10 @@ def test_the_cargo_registry_cache_has_exactly_one_writer_per_platform() -> None:
     """Keep one save step per key family so no two jobs race to publish."""
     writers: list[str] = []
     for job, step in _cache_steps(SAVE_ACTION):
-        _assert_the_write_is_restricted_to_a_push_to_main(
-            job, " ".join(str(step.get("if", "")).split())
-        )
+        condition = " ".join(str(step.get("if", "")).split())
+        _assert_the_write_is_restricted_to_a_push_to_main(job, condition)
+        _assert_only_one_leg_writes(job, condition)
+        _assert_the_write_reads_its_own_restore(job, condition, _restore_ids_in(job))
         _assert_the_write_can_actually_happen(job)
         writers.append(str(job))
     # One Linux writer and one Windows writer. The Linux write sits in

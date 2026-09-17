@@ -428,7 +428,15 @@ Rules that follow from the table:
   that the writer's workflow is triggered by a push to `main`, that the job's
   own guard admits that event, and that every platform restoring the key has a
   reachable writer. The earlier contract read the save step's condition alone
-  and stayed green while the step could not run at all.
+  and stayed green while the step could not run at all. It also asserts the two
+  halves of the save condition that fail silently: the `all-features` leg
+  restriction, without which every leg races for the one key and the last
+  upload wins by accident; and the `cache-hit` guard, whose step ID must be one
+  the job's own restore step declares. A step ID nothing declares is not an
+  error in Actions. The expression resolves to the empty string, the inequality
+  holds, and the archive is re-uploaded on every push, so renaming the restore
+  step's ID and leaving the condition alone costs upload time and reports
+  nothing.
 - Every cache step pins `actions/cache` to
   `55cc8345863c7cc4c66a329aec7e433d2d1c52a9` (v6.1.0). Ubicloud's transparent
   cache proxy is confirmed to intercept that version's traffic, so the
