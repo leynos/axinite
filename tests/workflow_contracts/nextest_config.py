@@ -180,6 +180,43 @@ def _slow_timeout(table: dict[str, object]) -> object:
     return table.get("slow-timeout")
 
 
+def _is_positive_integer(value: object) -> bool:
+    """Return whether a parsed value is a TOML positive integer.
+
+    Matched rather than tested with a chained condition, so each shape
+    is answered on its own line. ``bool`` is answered first because it
+    is a subclass of ``int`` in Python and is not one in TOML: without
+    its own arm, ``terminate-after = true`` reads as a multiplier of
+    one.
+
+    Parameters
+    ----------
+    value
+        The parsed value.
+
+    Returns
+    -------
+    bool
+        True when nextest would accept it as a ``NonZeroUsize``.
+
+    Examples
+    --------
+    >>> _is_positive_integer(2)
+    True
+    >>> _is_positive_integer(True)
+    False
+    >>> _is_positive_integer(1.5)
+    False
+    """
+    match value:
+        case bool():
+            return False
+        case int():
+            return value >= 1
+        case _:
+            return False
+
+
 def _terminate_after(path: str, value: object) -> int:
     """Return a ``terminate-after`` as nextest deserializes one.
 
@@ -213,7 +250,7 @@ def _terminate_after(path: str, value: object) -> int:
     NextestConfigurationError
         If the value is not a positive integer.
     """
-    if isinstance(value, bool) or not isinstance(value, int) or value < 1:
+    if not _is_positive_integer(value):
         message = (
             f"{path}.slow-timeout sets terminate-after = {value!r}; nextest "
             f"reads it as a positive integer and refuses the file otherwise, "
