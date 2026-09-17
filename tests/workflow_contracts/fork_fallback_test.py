@@ -24,6 +24,8 @@ Run via ``make test-workflow-contracts``.
 
 from __future__ import annotations
 
+import typing as typ
+
 import pytest
 from _workflow_policy import (
     DIST_GENERATED,
@@ -103,24 +105,31 @@ def test_the_selector_finds_the_lanes() -> None:
     )
 
 
-def _opaque_expression_jobs() -> tuple[tuple[Job, str], ...]:
-    """Return every job whose `runs-on` expression the reader cannot split.
+def _is_opaque(declared: str) -> bool:
+    """Report whether a scalar is an expression the reader cannot split."""
+    return declared.startswith("${{") and conditional_runs_on_arms(declared) is None
+
+
+def _authored_jobs() -> typ.Iterator[Job]:
+    """Yield every job anyone here wrote.
 
     The generated release workflow is excluded, as it is everywhere: nobody
     edits it, and its matrix reference is not a placement decision anyone
     made here.
     """
-    found: list[tuple[Job, str]] = []
     for path in workflow_paths():
         if path.name == DIST_GENERATED:
             continue
-        for job in jobs_of(path.name, load(path)):
-            declared = _runs_on(job)
-            if not declared.startswith("${{"):
-                continue
-            if conditional_runs_on_arms(declared) is None:
-                found.append((job, declared))
-    return tuple(found)
+        yield from jobs_of(path.name, load(path))
+
+
+def _opaque_expression_jobs() -> tuple[tuple[Job, str], ...]:
+    """Return every job whose `runs-on` expression the reader cannot split."""
+    return tuple(
+        (job, declared)
+        for job, declared in ((job, _runs_on(job)) for job in _authored_jobs())
+        if _is_opaque(declared)
+    )
 
 
 def test_no_lane_hides_behind_an_expression_the_reader_cannot_split() -> None:
