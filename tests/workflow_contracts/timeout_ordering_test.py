@@ -42,6 +42,7 @@ from _workflow_policy import jobs_of, load, workflow_paths
 from nextest_config import (
     Profile,
     profiles,
+    profiles_of,
 )
 from suite_guards import failure_tolerances, watchdog_offences_of
 from suite_lanes import (
@@ -67,12 +68,17 @@ from timeout_budgets import (
 def nextest_profiles() -> dict[str, Profile]:
     """Return each nextest profile the configuration declares.
 
+    Read through the acquisition helper rather than with `read_text`,
+    so a configuration that cannot be read is reported as this suite
+    reports every other unreadable source, and so the reading is
+    written once rather than in each module that needs it.
+
     Returns
     -------
     dict[str, Profile]
         Profile name to its table and overrides.
     """
-    return profiles(NEXTEST_CONFIG.read_text(encoding="utf-8"))
+    return profiles_of(NEXTEST_CONFIG)
 
 
 @pytest.fixture(scope="module")
