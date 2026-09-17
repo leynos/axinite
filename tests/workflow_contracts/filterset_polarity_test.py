@@ -82,6 +82,24 @@ def _example(config_text: str) -> Profile:
             {"a"},
             id="a-negated-non-binary-predicate",
         ),
+        pytest.param("!binary(a)", set(), id="a-bang-negation"),
+        pytest.param("! binary(a)", set(), id="a-bang-negation-spaced"),
+        pytest.param("binary(a) & !binary(b)", {"a"}, id="a-bang-in-a-conjunction"),
+        pytest.param(
+            "binary(a) - binary(b)",
+            {"a"},
+            id="a-difference-spaced",
+        ),
+        pytest.param(
+            "binary(a)-binary(b)",
+            {"a"},
+            id="a-difference-unspaced",
+        ),
+        pytest.param(
+            "nothing(a) | binary(b)",
+            {"b"},
+            id="a-predicate-merely-beginning-with-not",
+        ),
     ],
 )
 def test_the_selector_honours_negation(filterset: str, expected: set[str]) -> None:
@@ -101,6 +119,61 @@ def test_the_selector_honours_negation(filterset: str, expected: set[str]) -> No
     assert binaries_selected(filterset) == expected, (
         f"{filterset!r} selects {sorted(expected)}"
     )
+
+
+def test_the_negation_matcher_keys_on_the_word_not_the_letters() -> None:
+    """Pin the word boundary, which no realistic filterset exercises.
+
+    Written against the matcher rather than against a filterset nextest
+    would accept, and said plainly because the distinction matters: the
+    input below is not valid nextest syntax. The subject is the pattern,
+    and the property is that it keys on the operator `not` rather than
+    on three letters that happen to end another token.
+
+    Without the boundary and the required space, `not\\s*binary\\(` matches
+    inside `cannotbinary(a)` and reports `a` as excluded. That is a
+    negation the filterset never wrote. The case exists because dropping
+    the boundary otherwise passes every other test in this module, and a
+    guard nothing can fail is a guard nobody is holding.
+    """
+    assert binaries_selected("cannotbinary(a) | binary(b)") == frozenset({"a", "b"}), (
+        "the letters `not` ending another token are not a negation operator"
+    )
+
+
+def test_a_binary_both_selected_and_excluded_is_refused() -> None:
+    """Which occurrence wins depends on grouping, which is not matched.
+
+    ``binary(a) | binary(b) - binary(b)`` is ``binary(a)`` to nextest,
+    because the difference binds tighter than the union. A reader that
+    strips negated terms and then collects what is left reports ``b`` as
+    selected, and an override's allowance would be granted to a binary
+    the filterset excludes. Refusing is the honest answer for the same
+    reason a negated group is refused.
+    """
+    with pytest.raises(NextestConfigurationError, match=r"both selects and excludes"):
+        binaries_selected("binary(a) | binary(b) - binary(b)")
+
+
+@pytest.mark.parametrize(
+    "filterset",
+    [
+        pytest.param("not (binary(a) | binary(b))", id="the-word-not"),
+        pytest.param("!(binary(a) | binary(b))", id="a-bang"),
+        pytest.param("binary(c) - (binary(a) | binary(b))", id="a-difference"),
+    ],
+)
+def test_every_negation_spelling_refuses_a_group(filterset: str) -> None:
+    """A group is unattributable however the negation is written.
+
+    The refusal exists because attributing ``not (binary(a) |
+    binary(b))`` needs the filterset evaluated rather than its terms
+    matched. That is true of `!` and `-` too, and a refusal that knew
+    only the word `not` would silently report the group's binaries as
+    selected under the other two spellings.
+    """
+    with pytest.raises(NextestConfigurationError):
+        binaries_selected(filterset)
 
 
 def test_a_negated_group_is_refused_rather_than_guessed() -> None:
