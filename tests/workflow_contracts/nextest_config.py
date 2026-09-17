@@ -14,12 +14,13 @@ string, or in a table nextest never consults, and reports a budget the
 runner does not use.
 """
 
-import re
 import tomllib
 import typing as typ
 
 from nextest_durations import seconds
 from nextest_errors import NextestConfigurationError, UnboundedTestError
+from nextest_filtersets import binaries_named, binaries_selected
+from nextest_inheritance import with_inherited_overrides
 
 
 class Profile(typ.NamedTuple):
@@ -38,18 +39,27 @@ class Profile(typ.NamedTuple):
     overrides
         The profile's ``[[overrides]]`` entries, in file order.
     inherited
-        ``[[profile.default.overrides]]``, in file order, for a profile
-        other than ``default``. nextest consults the default profile's
-        overrides for whichever profile is selected, after that
-        profile's own, so a test can be governed by an override the
-        selected profile never declares. Empty for ``default`` itself,
-        whose own overrides are already in :attr:`overrides`.
+        Every override this profile inherits, in the order nextest
+        consults them: the nearest ancestor's first and ``default``'s
+        last, each paired with the dotted path that declares it.
+        nextest consults an ancestor's overrides for whichever profile
+        is selected, after that profile's own, so a test can be governed
+        by an override the selected profile never declares. Empty for
+        ``default`` itself, whose own overrides are already in
+        :attr:`overrides`.
+
+        The chain is not always ``default`` alone. A profile may name
+        another parent with ``inherits``, and that parent may name a
+        third, so ``ci-extended`` inheriting ``ci`` takes ``ci``'s
+        overrides and then ``default``'s. A reading that copied
+        ``default``'s alone would miss ``ci``'s and could approve a
+        whole-run budget below the per-test allowance actually in force.
     """
 
     name: str
     own: dict[str, object]
     overrides: tuple[dict[str, object], ...]
-    inherited: tuple[dict[str, object], ...] = ()
+    inherited: tuple[tuple[str, dict[str, object]], ...] = ()
 
     def tables(self) -> tuple[dict[str, object], ...]:
         """Return every table the profile reads a budget from.
@@ -58,17 +68,16 @@ class Profile(typ.NamedTuple):
         -------
         tuple of dict
             The profile's own table, then each override, then each
-            override inherited from ``default``.
+            override inherited from an ancestor.
         """
         return tuple(table for _, table in self.sources())
 
     def sources(self) -> tuple[tuple[str, dict[str, object]], ...]:
         """Return every table with the dotted path that declares it.
 
-        A budget inherited from ``[[profile.default.overrides]]`` is
-        reported against ``profile.default``, where it is written, so a
-        failure sends the reader to the line that has to change rather
-        than to the profile that inherits it.
+        An inherited budget is reported against the ancestor that
+        declares it, so a failure sends the reader to the line that has
+        to change rather than to the profile that inherits it.
 
         Returns
         -------
@@ -80,7 +89,7 @@ class Profile(typ.NamedTuple):
         return (
             (own, self.own),
             *((own, table) for table in self.overrides),
-            *(("profile.default", table) for table in self.inherited),
+            *self.inherited,
         )
 
 
@@ -152,7 +161,7 @@ def profiles(config_text: str) -> dict[str, Profile]:
         str(name): _declared_profile(str(name), raw)
         for name, raw in _table(parsed.get("profile")).items()
     }
-    return _with_default_overrides(declared)
+    return with_inherited_overrides(declared)
 
 
 def _slow_timeout(table: dict[str, object]) -> object:
@@ -169,6 +178,49 @@ def _slow_timeout(table: dict[str, object]) -> object:
         The value as parsed, or None.
     """
     return table.get("slow-timeout")
+
+
+def _terminate_after(path: str, value: object) -> int:
+    """Return a ``terminate-after`` as nextest deserializes one.
+
+    nextest reads this field into an ``Option<NonZeroUsize>``, so it is
+    a positive integer and nothing else. Reading it as a float accepted
+    three shapes the runner refuses and misread a fourth: a TOML
+    float such as ``1.5``, a quoted ``"2"``, and zero or a negative
+    integer all became budgets, and a boolean raised ``ValueError`` out
+    of this module rather than the configuration error the callers
+    handle. A contract that multiplies a period by a multiplier nextest
+    will not load reports a per-test tier for a file that cannot run.
+
+    ``bool`` is refused explicitly because it is a subclass of ``int``
+    in Python and is not one in TOML: ``terminate-after = true`` would
+    otherwise read as a multiplier of one.
+
+    Parameters
+    ----------
+    path
+        The dotted path of the declaring table, for the message.
+    value
+        The parsed value.
+
+    Returns
+    -------
+    int
+        The multiplier.
+
+    Raises
+    ------
+    NextestConfigurationError
+        If the value is not a positive integer.
+    """
+    if isinstance(value, bool) or not isinstance(value, int) or value < 1:
+        message = (
+            f"{path}.slow-timeout sets terminate-after = {value!r}; nextest "
+            f"reads it as a positive integer and refuses the file otherwise, "
+            f"so no budget can be derived from it"
+        )
+        raise NextestConfigurationError(message)
+    return value
 
 
 def _budget_of(path: str, value: object) -> float:
@@ -219,7 +271,7 @@ def _budget_of(path: str, value: object) -> float:
             f"compare against"
         )
         raise UnboundedTestError(message)
-    return seconds(period) * float(str(multiplier))
+    return seconds(period) * _terminate_after(path, multiplier)
 
 
 def _declared_profile(name: str, raw: object) -> Profile:
@@ -245,67 +297,15 @@ def _declared_profile(name: str, raw: object) -> Profile:
     )
 
 
-def _with_default_overrides(declared: dict[str, Profile]) -> dict[str, Profile]:
-    """Return each profile carrying the overrides it inherits.
-
-    nextest consults ``[[profile.default.overrides]]`` for whichever
-    profile is selected, so every profile but ``default`` itself takes
-    them. ``default`` does not, because its own overrides are already
-    recorded once.
-
-    Parameters
-    ----------
-    declared
-        Each profile as its own table declares it.
-
-    Returns
-    -------
-    dict of str to Profile
-        The same profiles, with ``inherited`` filled in.
-    """
-    inherited = declared["default"].overrides if "default" in declared else ()
-    if not inherited:
-        return declared
-    return {
-        name: profile if name == "default" else profile._replace(inherited=inherited)
-        for name, profile in declared.items()
-    }
-
-
-#: A ``binary(...)`` term inside a nextest filterset.
-_BINARY_TERM: typ.Final[re.Pattern[str]] = re.compile(r"binary\(\s*([^)\s]+)\s*\)")
-
-
-def binaries_named(filterset: object) -> frozenset[str]:
-    """Return the test binaries a filterset names.
-
-    Parsed as terms rather than searched as text, so a filterset naming
-    ``binary(a) | binary(b)`` reports both and one naming neither
-    reports nothing. Only the names matter here: whether a term is
-    negated is the caller's question, because ``not binary(x)`` in a
-    ``default-filter`` excludes the binary while the same term in an
-    override's filter selects it.
-
-    Parameters
-    ----------
-    filterset
-        A ``filter`` or ``default-filter`` value, which need not be a
-        string.
-
-    Returns
-    -------
-    frozenset of str
-        Every binary name the filterset mentions.
-
-    Examples
-    --------
-    >>> sorted(binaries_named("binary(trybuild) | binary(ui)"))
-    ['trybuild', 'ui']
-    >>> binaries_named(None)
-    frozenset()
-    """
-    match filterset:
-        case str():
-            return frozenset(_BINARY_TERM.findall(filterset))
-        case _:
-            return frozenset()
+#: Re-exported so a reader of a budget keeps one import. The filterset
+#: readings live in ``nextest_filtersets`` because this module would
+#: otherwise pass the 400-line limit ``AGENTS.md`` sets.
+__all__ = [
+    "NextestConfigurationError",
+    "Profile",
+    "UnboundedTestError",
+    "binaries_named",
+    "binaries_selected",
+    "profiles",
+    "seconds",
+]
