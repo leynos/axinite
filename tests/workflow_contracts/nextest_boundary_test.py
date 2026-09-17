@@ -404,6 +404,16 @@ def test_nextest_terminates_a_test_under_these_fields(
             "run",
             "--config-file",
             str(configuration),
+            # Named rather than left to the environment. `_run` passes the
+            # inherited environment through, and nextest reads
+            # `NEXTEST_PROFILE` when no profile is named: a developer or a
+            # lane with that set to `ci` would select a profile this
+            # temporary configuration does not declare, nextest would exit
+            # before running anything, and the assertions below would read
+            # a non-zero status and a missing timeout as the run having
+            # failed for the reason they are about.
+            "--profile",
+            "default",
             "-E",
             "binary(slow)",
         ),
