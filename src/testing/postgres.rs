@@ -39,10 +39,21 @@ const UNAVAILABLE_PATTERNS: &[&str] = &[
 /// }
 /// ```
 pub async fn test_pg_db() -> Result<PgBackend, DatabaseError> {
-    let url = std::env::var("TEST_DATABASE_URL")
-        .unwrap_or_else(|_| "postgresql://localhost/axinite_test".to_string());
+    PgBackend::new(&test_pg_config(test_database_url())).await
+}
 
-    let config = DatabaseConfig {
+/// Read the URL a test database is reached at.
+///
+/// A lane that provides Postgres names it in `TEST_DATABASE_URL`; a checkout
+/// that does not falls back to a local instance that may well be absent.
+fn test_database_url() -> String {
+    std::env::var("TEST_DATABASE_URL")
+        .unwrap_or_else(|_| "postgresql://localhost/axinite_test".to_string())
+}
+
+/// Build the test backend configuration for `url`.
+fn test_pg_config(url: String) -> DatabaseConfig {
+    DatabaseConfig {
         backend: DatabaseBackend::Postgres,
         url: SecretString::from(url),
         pool_size: 5,
@@ -50,9 +61,7 @@ pub async fn test_pg_db() -> Result<PgBackend, DatabaseError> {
         libsql_path: None,
         libsql_url: None,
         libsql_auth_token: None,
-    };
-
-    PgBackend::new(&config).await
+    }
 }
 
 /// Set by a CI lane that provides Postgres on purpose.
@@ -129,9 +138,23 @@ fn skip_is_allowed(error: &DatabaseError, requirement: PostgresRequirement) -> b
 /// skip at all: an unreachable database fails there rather than reporting
 /// success for tests that never ran.
 pub async fn try_test_pg_db() -> Result<Option<PgBackend>, DatabaseError> {
-    match test_pg_db().await {
+    try_pg_db_at(test_database_url(), PostgresRequirement::from_env()).await
+}
+
+/// Connect at `url`, skipping only where `requirement` leaves a skip available.
+///
+/// Split from `try_test_pg_db` so the decision can be exercised against a real
+/// unreachable endpoint without setting an environment variable, which would
+/// have to be serialized against every other test in the process. What is left
+/// in the caller is the composition of two readings that are each tested on
+/// their own: `test_database_url` and `PostgresRequirement::from_env`.
+async fn try_pg_db_at(
+    url: String,
+    requirement: PostgresRequirement,
+) -> Result<Option<PgBackend>, DatabaseError> {
+    match PgBackend::new(&test_pg_config(url)).await {
         Ok(db) => Ok(Some(db)),
-        Err(error) if skip_is_allowed(&error, PostgresRequirement::from_env()) => {
+        Err(error) if skip_is_allowed(&error, requirement) => {
             eprintln!("Skipping Postgres test (database unavailable): {error}");
             Ok(None)
         }
@@ -176,6 +199,14 @@ mod tests {
     use crate::error::DatabaseError;
     use rstest::rstest;
     use std::ffi::{OsStr, OsString};
+
+    /// A port nothing listens on, so a connection there is refused at once.
+    ///
+    /// Port 1 is privileged and unassigned, and the address is the loopback
+    /// interface, so the attempt neither leaves the machine nor waits on a
+    /// name server.
+    #[cfg(unix)]
+    const UNREACHABLE_URL: &str = "postgresql://127.0.0.1:1/axinite_test";
 
     /// Build an environment value the platform cannot render as Unicode.
     #[cfg(unix)]
@@ -297,5 +328,39 @@ mod tests {
             PostgresRequirement::from_os_value(Some(not_unicode().as_os_str())),
             PostgresRequirement::Required
         );
+    }
+
+    /// The production path skips or fails against a real refused connection.
+    ///
+    /// The decision-table tests above call `skip_is_allowed` directly, so they
+    /// would all pass with `try_test_pg_db` ignoring it. This drives the whole
+    /// path instead: a pool that cannot connect, the error classification, and
+    /// the branch that turns them into `Ok(None)` or `Err`.
+    ///
+    /// Unix only. A refused connection is reported by the platform, and
+    /// Windows words it differently from the transport failures
+    /// `UNAVAILABLE_PATTERNS` lists; the tests that read this decision run on
+    /// Linux, and asserting it on Windows would be asserting a different
+    /// thing.
+    #[cfg(unix)]
+    #[rstest]
+    #[case::nobody_promised_one(PostgresRequirement::Optional, true)]
+    #[case::the_lane_promised_one(PostgresRequirement::Required, false)]
+    #[tokio::test]
+    async fn an_unreachable_endpoint_skips_only_when_nobody_promised_one(
+        #[case] requirement: PostgresRequirement,
+        #[case] skips: bool,
+    ) {
+        match super::try_pg_db_at(UNREACHABLE_URL.to_string(), requirement).await {
+            Ok(None) => assert!(skips, "{requirement:?} skipped an unreachable database"),
+            Err(error) => {
+                assert!(!skips, "{requirement:?} failed on an unreachable database");
+                assert!(
+                    is_database_unavailable(&error),
+                    "the refusal was not read as an unavailable database: {error}"
+                );
+            }
+            Ok(Some(_)) => panic!("something answered on {UNREACHABLE_URL}"),
+        }
     }
 }
