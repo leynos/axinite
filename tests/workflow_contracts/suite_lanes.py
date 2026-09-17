@@ -63,6 +63,29 @@ def _tokens_of(line: str) -> list[str] | None:
         return None
 
 
+def _collapsed(line: str) -> str:
+    """Return one line with every run of whitespace reduced to a space.
+
+    The markers below are written with single spaces and the shell does
+    not care: ``cargo   nextest run`` and a tab-separated spelling both
+    run the suite. Comparing against the raw line missed them in the
+    dangerous direction, because a lane whose suite command was written
+    that way was counted as running no suite, held to no ceiling, and
+    not reported as a line the reading could not judge either.
+
+    Parameters
+    ----------
+    line
+        One line of a step's script.
+
+    Returns
+    -------
+    str
+        The same line with its whitespace runs collapsed.
+    """
+    return " ".join(line.split())
+
+
 def _names_a_suite_command(line: str) -> bool:
     """Return whether one line mentions a suite command at all.
 
@@ -80,7 +103,8 @@ def _names_a_suite_command(line: str) -> bool:
     bool
         True when a suite marker appears on the line.
     """
-    return any(marker in line for marker in SUITE_MARKERS)
+    collapsed = _collapsed(line)
+    return any(marker in collapsed for marker in SUITE_MARKERS)
 
 
 def _is_suite_line(line: str) -> bool:
