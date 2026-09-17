@@ -537,7 +537,15 @@ Three mechanisms carry that, and each is worth knowing before changing a lane:
 - **The roll-up asserts the result it expects rather than tolerating a skip.**
   `run-tests` computes `EXPECTED_TESTS_RESULT` from the event, `skipped` on a
   push and `success` everywhere else, so a leg that vanishes for any other
-  reason is still a failure.
+  reason is still a failure. `tests/workflow_contracts/run_tests_gate_test.py`
+  holds that expectation to both arms, and holds the roll-up's dependency list,
+  the jobs its loop walks and the names its `case` can answer for equal in both
+  directions. A job missing from `needs` reports `skipped` forever; one missing
+  from the loop is never looked at; and one missing from the `case` leaves
+  `result` holding the previous iteration's value, so the roll-up reports
+  another job's outcome under this one's name. The same file asserts
+  `if: always()`, without which the roll-up stands down exactly when an
+  upstream job does.
 - **A leg is what it runs, not what it is called.** `tests` had a leg named
   `all-features` which passed `--features postgres,libsql,html-to-markdown` and
   no `--no-default-features`. All three are members of `default`, so Cargo
