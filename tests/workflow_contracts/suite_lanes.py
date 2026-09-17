@@ -345,9 +345,12 @@ def suite_lanes_of(directory: pathlib.Path = WORKFLOW_DIR) -> tuple[SuiteLane, .
     """Return every job in the workflows that runs the suite.
 
     This is the acquisition half: it reads the workflow files and hands
-    the parsed documents to the query. The directory is a parameter for
-    the same reason it is one on ``workflow_paths``, so the same reading
-    can be pointed at a temporary tree.
+    the parsed documents to :func:`suite_lanes_in`, which is the pure
+    query and takes parsed documents. Callers that already have
+    documents should use that one; this exists for the callers that do
+    not. The directory is a parameter for the same reason it is one on
+    ``workflow_paths``, so the same reading can be pointed at a
+    temporary tree.
 
     Parameters
     ----------
@@ -358,5 +361,14 @@ def suite_lanes_of(directory: pathlib.Path = WORKFLOW_DIR) -> tuple[SuiteLane, .
     -------
     tuple of SuiteLane
         One entry per suite-running job.
+
+    Raises
+    ------
+    SourceReadError
+        If the directory cannot be listed, or a workflow in it cannot be
+        read. Reported rather than skipped: a workflow the reading never
+        saw could hold the very lane this contract exists to bound, and
+        an empty result would read as a tree with no suite lanes and
+        satisfy every assertion over it.
     """
     return suite_lanes_in((path.name, load(path)) for path in workflow_paths(directory))

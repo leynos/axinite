@@ -12,7 +12,7 @@ import typing as typ
 from pathlib import Path
 
 from _workflow_policy import REPOSITORY_ROOT
-from contract_sources import read_source
+from contract_sources import matching_entries, read_source
 from nextest_config import (
     NextestConfigurationError,
     Profile,
@@ -282,19 +282,31 @@ def compile_contract_binaries(tests_directory: Path) -> frozenset[str]:
     tests_directory
         The crate's ``tests`` directory.
 
+    This is an acquisition function, not a query: it searches the
+    directory and reads every source it finds. It is named here rather
+    than left for a reader to discover from the body, because a
+    query-shaped signature that touches the filesystem is the thing that
+    misleads.
+
     Returns
     -------
     frozenset of str
         One name per compile-contract test binary.
+
+    Raises
+    ------
+    SourceReadError
+        If the tests directory cannot be searched, or a source in it
+        cannot be read.
     """
     flat = {
         source.stem
-        for source in tests_directory.glob("*.rs")
+        for source in matching_entries(tests_directory, "*.rs")
         if _drives_the_compiler(source)
     }
     nested = {
         source.parent.name
-        for source in tests_directory.glob("*/main.rs")
+        for source in matching_entries(tests_directory, "*/main.rs")
         if _drives_the_compiler(source)
     }
     return frozenset(flat | nested)
@@ -312,6 +324,11 @@ def _drives_the_compiler(source: Path) -> bool:
     -------
     bool
         True when the source constructs ``trybuild::TestCases``.
+
+    Raises
+    ------
+    SourceReadError
+        If the source cannot be read.
     """
     return _COMPILE_CONTRACT_MARKER in read_source(source)
 
