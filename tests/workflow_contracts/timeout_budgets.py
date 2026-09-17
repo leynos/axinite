@@ -18,7 +18,7 @@ from nextest_config import (
     Profile,
     _budget_of,
     _slow_timeout,
-    binaries_named,
+    binaries_selected,
     seconds,
 )
 
@@ -337,7 +337,7 @@ def allowance_for_binary(profile: Profile, binary: str) -> float | None:
         _budget_of(path, value)
         for path, table in profile.sources()
         if table is not profile.own
-        and binary in binaries_named(table.get("filter"))
+        and binary in binaries_selected(table.get("filter"))
         and (value := _slow_timeout(table)) is not None
     ]
     return max(granted) if granted else None

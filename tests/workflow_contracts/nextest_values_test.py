@@ -29,7 +29,7 @@ Run via ``make test-workflow-contracts``.
 import typing as typ
 
 import pytest
-from nextest_config import Profile, binaries_named, profiles
+from nextest_config import Profile, binaries_selected, profiles
 from timeout_budgets import NEXTEST_CONFIG, base_slow_timeout, global_timeout
 
 #: The profiles the configuration is allowed to declare. Pinned as a set
@@ -198,12 +198,12 @@ def test_each_profile_pins_its_compile_contract_override(
         f"the allowance in force by file order"
     )
     override = own[0]
-    named = binaries_named(override.get("filter"))
-    assert named == REQUIRED_OVERRIDE_BINARIES, (
-        f"[profile.{profile}]'s override names binaries {sorted(named)}, not "
-        f"{sorted(REQUIRED_OVERRIDE_BINARIES)}; a binary dropped from the "
-        f"filterset falls back to the base allowance sized for the ordinary "
-        f"tests"
+    selected = binaries_selected(override.get("filter"))
+    assert selected == REQUIRED_OVERRIDE_BINARIES, (
+        f"[profile.{profile}]'s override selects binaries {sorted(selected)}, "
+        f"not {sorted(REQUIRED_OVERRIDE_BINARIES)}; a binary dropped from the "
+        f"filterset, or negated inside it, falls back to the base allowance "
+        f"sized for the ordinary tests"
     )
     fields = _fields(override.get("slow-timeout"))
     assert fields == REQUIRED_OVERRIDE_SLOW_TIMEOUT, (
