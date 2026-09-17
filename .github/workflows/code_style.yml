@@ -18,7 +18,7 @@ jobs:
     timeout-minutes: 30
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
       # Right-sizing needs the peak memory and the low-water disk mark, and
       # neither is visible in a job's own output. The sampler runs alongside
       # the build and reports both at the end, with `if: always()` so a job
@@ -35,7 +35,7 @@ jobs:
       - name: Install mdtablefix
         # `make check-fmt` runs `mdtablefix --check --git`; 0.6.0 is the
         # first release with `--check` and `--git`.
-        uses: leynos/shared-actions/.github/actions/install-mdtablefix@c5a54701c8603a0fa756a6b34c49bc2af75a6c11
+        uses: leynos/shared-actions/.github/actions/install-mdtablefix@ee58fd34a2d01b7a5059d710119b264cf2f048a4
         with:
           version: "0.6.0"
       - name: Check formatting
@@ -46,11 +46,11 @@ jobs:
         # resolved from the registry at run time, and Dependabot manages the
         # pin alongside the other actions. It reads .markdownlint-cli2.jsonc
         # from the workspace, so the rules and ignores match `make markdownlint`.
-        uses: DavidAnson/markdownlint-cli2-action@4580e1612f6407034edd6c0e4e316d725920867b  # v24.2.0
+        uses: DavidAnson/markdownlint-cli2-action@21c1be1b93ad9ed58fa840aacc3f279cde2a72ff  # v24.2.0
         with:
           globs: '**/*.md'
       - name: Setup uv
-        uses: astral-sh/setup-uv@11f9893b081a58869d3b5fccaea48c9e9e46f990
+        uses: astral-sh/setup-uv@bec219d24cd3e171d82865faccec33120bb574f4
         with:
           python-version: '3.14'
           enable-cache: true
@@ -58,7 +58,7 @@ jobs:
       # archive. This replaces the previous `cargo install merman-cli`
       # source build and its bespoke ~/.cargo/bin/merman-cli cache.
       - name: Install Nixie and Merman CLI
-        uses: leynos/shared-actions/.github/actions/install-nixie@6b5cdc2d4c0bb72cafd5a66d24d248ac25827db9
+        uses: leynos/shared-actions/.github/actions/install-nixie@ee58fd34a2d01b7a5059d710119b264cf2f048a4
         with:
           nixie-version: '1.1.0'
           merman-version: '0.7.0'
@@ -114,7 +114,7 @@ jobs:
             flags: "--no-default-features --features libsql"
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
       # Right-sizing needs the peak memory and the low-water disk mark, and
       # neither is visible in a job's own output. The sampler runs alongside
       # the build and reports both at the end, with `if: always()` so a job
@@ -137,7 +137,7 @@ jobs:
       # Clearing ACTIONS_CACHE_SERVICE_V2 keeps sccache on the v1 protocol the
       # proxy serves; exporting ACTIONS_RESULTS_URL instead does not work.
       - name: Export the Actions cache endpoint for sccache
-        uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd  # v8.0.0
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3  # v9.0.0
         with:
           script: |
             // Ubicloud's control plane writes the proxy address into the VM
@@ -168,7 +168,7 @@ jobs:
             core.exportVariable('ACTIONS_RUNTIME_TOKEN', runtimeToken);
             core.exportVariable('ACTIONS_CACHE_SERVICE_V2', '');
       - name: Install sccache
-        uses: taiki-e/install-action@c7eb1735f09259a5035e8e5d44b1406b1cddc0fb  # v2.83.0
+        uses: taiki-e/install-action@fa23953489c080190314742a9b907f8e97c6767c  # v2.87.10
         with:
           tool: sccache@0.16.0
           fallback: none
@@ -198,7 +198,7 @@ jobs:
       # attempt with a `cargo install` source-build fallback.
       - name: Install Whitaker
         if: matrix.whitaker
-        uses: leynos/shared-actions/.github/actions/install-whitaker@6b5cdc2d4c0bb72cafd5a66d24d248ac25827db9
+        uses: leynos/shared-actions/.github/actions/install-whitaker@ee58fd34a2d01b7a5059d710119b264cf2f048a4
         with:
           installer-version: '0.2.7'
           cache-provider: github
@@ -249,7 +249,7 @@ jobs:
             flags: "--no-default-features --features libsql"
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
         with:
