@@ -103,3 +103,48 @@ def directory_entries(directory: "Path") -> "list[Path]":
     except OSError as error:
         message = f"{directory} could not be listed: {error}"
         raise SourceReadError(message, path=directory) from error
+
+
+def matching_entries(directory: "Path", pattern: str) -> "list[Path]":
+    """Return a directory's matching entries, sorted, or say which failed.
+
+    The same hazard as :func:`directory_entries` and a sharper form of
+    it. ``Path.glob`` does not raise on a directory that is absent or is
+    not a directory at all: it yields nothing, exactly as a directory
+    with no matches does. So the two cases are indistinguishable at the
+    call site, the caller reads a tree with no sources, and every
+    assertion over the result passes over an empty set while reporting
+    success. The directory is therefore checked before the search rather
+    than the search being wrapped, because wrapping it catches nothing.
+
+    Sorted here rather than at each call site, because two sweeps
+    disagreeing about order is a defect nobody would look for.
+
+    Parameters
+    ----------
+    directory
+        The directory to search.
+    pattern
+        A glob pattern, relative to the directory.
+
+    Returns
+    -------
+    list of Path
+        The matching entries, in sorted order.
+
+    Raises
+    ------
+    SourceReadError
+        If the directory cannot be searched.
+    """
+    if not directory.is_dir():
+        message = (
+            f"{directory} is not a directory, so the search for {pattern!r} "
+            f"would return nothing and read as a tree with no matches"
+        )
+        raise SourceReadError(message, path=directory)
+    try:
+        return sorted(directory.glob(pattern))
+    except OSError as error:
+        message = f"{directory} could not be searched for {pattern!r}: {error}"
+        raise SourceReadError(message, path=directory) from error
