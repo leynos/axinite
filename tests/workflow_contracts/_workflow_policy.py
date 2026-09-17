@@ -215,6 +215,32 @@ def _runs_on_chain(declared: str) -> tuple[tuple[str | None, str], ...] | None:
     return typ.cast("tuple[tuple[str | None, str], ...]", tuple(arms))
 
 
+def conditional_runs_on_arms(
+    declared: str,
+) -> tuple[tuple[str | None, str], ...] | None:
+    """Split a context-dependent `runs-on` into its arms, or report it opaque.
+
+    The public face of the chain reader. A contract that has to refuse a
+    shape the reader cannot split needs to ask that question directly:
+    `runner_labels` answers it by returning the raw text as one label, which
+    is indistinguishable from a job that genuinely names a runner nobody
+    recognizes.
+
+    Parameters
+    ----------
+    declared
+        The raw `runs-on` scalar, with any folded line breaks already joined.
+
+    Returns
+    -------
+    tuple of tuple, or None
+        One `(condition, label)` pair per arm, with ``None`` as the condition
+        of the final fallback. ``None`` when the value is not a chain this
+        reader splits, a plain label included.
+    """
+    return _runs_on_chain(declared)
+
+
 def selected_value(declared: str, event: str) -> str | None:
     """Resolve a guarded `${{ a && 'x' || 'y' }}` scalar for one event.
 
