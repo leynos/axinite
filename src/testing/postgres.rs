@@ -4,6 +4,7 @@ use crate::config::{DatabaseBackend, DatabaseConfig, SslMode};
 use crate::db::postgres::PgBackend;
 use crate::error::DatabaseError;
 use secrecy::SecretString;
+use std::ffi::OsStr;
 
 // These substrings are limited to concrete local transport and name-resolution
 // failures observed when a test Postgres instance is absent. We intentionally
@@ -87,9 +88,25 @@ impl PostgresRequirement {
         }
     }
 
+    /// Read the requirement from the raw value the platform holds.
+    ///
+    /// A value that is not valid Unicode is still a value: the lane set the
+    /// variable, so the reading that keeps the promise is `Required`. Going
+    /// through `std::env::var(..).ok()` instead would map that read failure
+    /// onto the same `None` as an unset variable, restoring the skip on
+    /// exactly the lane that asked for it to be gone, and silently.
+    fn from_os_value(value: Option<&OsStr>) -> Self {
+        match value {
+            None => Self::Optional,
+            Some(raw) => raw
+                .to_str()
+                .map_or(Self::Required, |text| Self::from_value(Some(text))),
+        }
+    }
+
     /// Read the requirement this process was started with.
     fn from_env() -> Self {
-        Self::from_value(std::env::var(REQUIRE_POSTGRES_ENV).ok().as_deref())
+        Self::from_os_value(std::env::var_os(REQUIRE_POSTGRES_ENV).as_deref())
     }
 }
 
@@ -158,6 +175,25 @@ mod tests {
     use super::{PostgresRequirement, is_database_unavailable, skip_is_allowed};
     use crate::error::DatabaseError;
     use rstest::rstest;
+    use std::ffi::{OsStr, OsString};
+
+    /// Build an environment value the platform cannot render as Unicode.
+    #[cfg(unix)]
+    fn not_unicode() -> OsString {
+        use std::os::unix::ffi::OsStringExt as _;
+
+        // A lone continuation byte: valid in an environment value, not UTF-8.
+        OsString::from_vec(vec![b'1', 0x80])
+    }
+
+    /// Build an environment value the platform cannot render as Unicode.
+    #[cfg(windows)]
+    fn not_unicode() -> OsString {
+        use std::os::windows::ffi::OsStringExt as _;
+
+        // An unpaired high surrogate: storable as UTF-16, not valid Unicode.
+        OsString::from_wide(&[0x0031, 0xD800])
+    }
 
     /// An error that means nothing is listening on the other end.
     ///
@@ -228,5 +264,38 @@ mod tests {
     fn a_misconfigured_database_was_never_skippable(#[case] requirement: PostgresRequirement) {
         assert!(!is_database_unavailable(&misconfigured()));
         assert!(!skip_is_allowed(&misconfigured(), requirement));
+    }
+
+    /// The raw reading agrees with the string reading where a string exists.
+    ///
+    /// `from_os_value` is what the process actually calls, so the decision
+    /// table above would be describing an unused function if the two readings
+    /// could disagree on the ordinary cases.
+    #[rstest]
+    #[case::unset(None, PostgresRequirement::Optional)]
+    #[case::empty(Some(""), PostgresRequirement::Optional)]
+    #[case::whitespace(Some("  "), PostgresRequirement::Optional)]
+    #[case::one(Some("1"), PostgresRequirement::Required)]
+    fn the_raw_reading_agrees_with_the_string_reading(
+        #[case] value: Option<&str>,
+        #[case] expected: PostgresRequirement,
+    ) {
+        assert_eq!(
+            PostgresRequirement::from_os_value(value.map(OsStr::new)),
+            expected
+        );
+    }
+
+    /// A value the platform cannot read as Unicode still promises a database.
+    ///
+    /// This is the cell `std::env::var(..).ok()` got wrong: it folded the read
+    /// failure into the unset case, so a lane that set the variable to
+    /// something unreadable would have got its skip back without saying so.
+    #[test]
+    fn a_value_that_is_not_unicode_still_requires_a_database() {
+        assert_eq!(
+            PostgresRequirement::from_os_value(Some(not_unicode().as_os_str())),
+            PostgresRequirement::Required
+        );
     }
 }
