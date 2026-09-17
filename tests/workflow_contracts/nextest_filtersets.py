@@ -56,16 +56,28 @@ def binaries_named(filterset: object) -> frozenset[str]:
             return frozenset()
 
 
+#: Every spelling that puts the term after it outside the selection.
+#: cargo-nextest accepts three: the word ``not``, the prefix ``!``, and
+#: the infix ``-``, which is set difference and excludes its right-hand
+#: side. Reading only ``not`` left the other two selecting the binary
+#: they exclude, which grants an override's allowance to a binary
+#: nextest runs under the base timeout.
+#:
+#: ``not`` needs the word boundary and the following space, so a
+#: predicate named ``nothing(...)`` is not read as a negation. ``!`` and
+#: ``-`` are punctuation and take optional space instead.
+_NEGATION: typ.Final[str] = r"(?:\bnot\s+|!\s*|-\s*)"
+
 #: A ``binary(...)`` term under a negation, which excludes rather than
 #: selects.
 _NEGATED_BINARY_TERM: typ.Final[re.Pattern[str]] = re.compile(
-    r"\bnot\s+binary\(\s*([^)\s]+)\s*\)"
+    _NEGATION + r"binary\(\s*([^)\s]+)\s*\)"
 )
 
 #: A negation applied to a parenthesized group. The names inside it
 #: cannot be attributed by a reader that matches terms, so a filterset
 #: carrying one is refused rather than read.
-_NEGATED_GROUP: typ.Final[re.Pattern[str]] = re.compile(r"\bnot\s*\(")
+_NEGATED_GROUP: typ.Final[re.Pattern[str]] = re.compile(_NEGATION + r"\(")
 
 
 def binaries_selected(filterset: object) -> frozenset[str]:
@@ -79,10 +91,14 @@ def binaries_selected(filterset: object) -> frozenset[str]:
     binary would run under the base allowance while the contract
     certified it.
 
-    A negation over a parenthesized group is refused rather than read.
-    Attributing ``not (binary(a) | binary(b))`` needs the filterset
-    evaluated rather than its terms matched, and a contract that cannot
-    evaluate an expression must not certify the lane it guards.
+    Two shapes are refused rather than read, for the same reason. A
+    negation over a parenthesized group, because attributing
+    ``not (binary(a) | binary(b))`` needs the filterset evaluated rather
+    than its terms matched. And a binary that is both selected and
+    excluded, such as ``binary(a) | binary(b) - binary(b)``, because
+    which occurrence wins depends on how the expression groups. A
+    contract that cannot evaluate an expression must not certify the
+    lane it guards.
 
     Parameters
     ----------
@@ -98,7 +114,8 @@ def binaries_selected(filterset: object) -> frozenset[str]:
     Raises
     ------
     NextestConfigurationError
-        If a negation covers a group this reading cannot attribute.
+        If a negation covers a group, or a binary is both selected and
+        excluded, so that this reading cannot attribute it.
 
     Examples
     --------
@@ -114,6 +131,7 @@ def binaries_selected(filterset: object) -> frozenset[str]:
             collapsed = " ".join(filterset.split())
         case _:
             return frozenset()
+    excluded = frozenset(_NEGATED_BINARY_TERM.findall(collapsed))
     remaining = _NEGATED_BINARY_TERM.sub(" ", collapsed)
     if _NEGATED_GROUP.search(remaining):
         message = (
@@ -122,4 +140,15 @@ def binaries_selected(filterset: object) -> frozenset[str]:
             f"to report an allowance it cannot attribute"
         )
         raise NextestConfigurationError(message)
-    return frozenset(_BINARY_TERM.findall(remaining))
+    selected = frozenset(_BINARY_TERM.findall(remaining))
+    both = selected & excluded
+    if both:
+        message = (
+            f"the filterset {collapsed!r} both selects and excludes "
+            f"{sorted(both)}, and which wins depends on how the expression "
+            f"groups, which this contract matches terms rather than "
+            f"evaluates; it refuses to report an allowance it cannot "
+            f"attribute"
+        )
+        raise NextestConfigurationError(message)
+    return selected
