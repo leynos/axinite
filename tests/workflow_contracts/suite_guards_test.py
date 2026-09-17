@@ -48,9 +48,17 @@ def suite_job(text: str) -> dict[str, object]:
         The job's parsed mapping.
     """
     jobs = workflow(text)["jobs"]
-    assert isinstance(jobs, dict)
+    assert isinstance(jobs, dict), (
+        f"the controlled document's jobs must parse to a mapping, got "
+        f"{type(jobs).__name__}; the fixture is malformed rather than the "
+        f"reading being wrong"
+    )
     body = jobs["test"]
-    assert isinstance(body, dict)
+    assert isinstance(body, dict), (
+        f"the controlled document's `test` job must parse to a mapping, got "
+        f"{type(body).__name__}; the fixture is malformed rather than the "
+        f"reading being wrong"
+    )
     return body
 
 
