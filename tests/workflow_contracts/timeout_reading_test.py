@@ -229,6 +229,56 @@ def test_a_slow_timeout_that_never_terminates_is_refused(table: str) -> None:
         largest_test_allowance(example(f"[profile.example]\n{table}\n"))
 
 
+@pytest.mark.parametrize(
+    ("value", "reason"),
+    [
+        pytest.param("1.5", "a TOML float", id="a-float"),
+        pytest.param('"2"', "a quoted number", id="a-string"),
+        pytest.param("true", "a boolean", id="a-boolean"),
+        pytest.param("0", "zero", id="zero"),
+        pytest.param("-1", "a negative integer", id="a-negative-integer"),
+    ],
+)
+def test_a_terminate_after_nextest_refuses_yields_no_budget(
+    value: str, reason: str
+) -> None:
+    """nextest reads the field as a positive integer and nothing else.
+
+    It deserializes into an ``Option<NonZeroUsize>``, so each of these
+    makes the runner refuse the whole file. A reading that multiplied
+    the period by them anyway would report a per-test tier for a
+    configuration that cannot run, and the ordering assertions would
+    certify it. The boolean is the sharpest: ``bool`` is a subclass of
+    ``int`` in Python and is not one in TOML, so a naive integer check
+    reads ``true`` as a multiplier of one, and a float conversion raises
+    ``ValueError`` out of the parser rather than the configuration error
+    the callers handle.
+    """
+    with pytest.raises(NextestConfigurationError, match=r"terminate-after"):
+        largest_test_allowance(
+            example(
+                "[profile.example]\n"
+                f'slow-timeout = {{ period = "300s", terminate-after = {value} }}\n'
+            )
+        )
+
+
+def test_the_positive_integer_this_repository_writes_is_accepted() -> None:
+    """Assert the refusal above is narrow as well as sufficient.
+
+    A guard that rejected everything would pass every case in the table
+    and reject the file this repository actually ships, so the accepted
+    shape is pinned beside the rejected ones.
+    """
+    parsed = example(
+        "[profile.example]\n"
+        'slow-timeout = { period = "300s", terminate-after = 2 }\n'
+    )
+    assert largest_test_allowance(parsed) == pytest.approx(600.0), (
+        "a period of 300 s terminated after two of them is a 600 s budget"
+    )
+
+
 def test_a_custom_profile_reads_the_default_profile_s_overrides() -> None:
     """nextest consults ``[[profile.default.overrides]]`` for it too.
 
@@ -283,5 +333,12 @@ def test_the_default_profile_does_not_inherit_from_itself() -> None:
         "filter = 'binary(slow)'\n"
         'slow-timeout = { period = "600s", terminate-after = 1 }\n'
     )
-    assert parsed["default"].inherited == ()
-    assert len(parsed["default"].tables()) == 2
+    assert parsed["default"].inherited == (), (
+        f"the default profile's own overrides are already recorded once, so "
+        f"it inherits nothing; got {parsed['default'].inherited}"
+    )
+    assert len(parsed["default"].tables()) == 2, (
+        f"its tables are its own table and its one override, and no more; a "
+        f"third would be that override counted twice, which would double the "
+        f"largest allowance this reading reports"
+    )
