@@ -12,6 +12,7 @@ import typing as typ
 from pathlib import Path
 
 from _workflow_policy import REPOSITORY_ROOT
+from contract_sources import read_source
 from nextest_config import (
     NextestConfigurationError,
     Profile,
@@ -312,7 +313,7 @@ def _drives_the_compiler(source: Path) -> bool:
     bool
         True when the source constructs ``trybuild::TestCases``.
     """
-    return _COMPILE_CONTRACT_MARKER in source.read_text(encoding="utf-8")
+    return _COMPILE_CONTRACT_MARKER in read_source(source)
 
 
 def allowance_for_binary(profile: Profile, binary: str) -> float | None:
