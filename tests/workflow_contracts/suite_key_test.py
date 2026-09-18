@@ -228,7 +228,7 @@ class TestTheMakeVariableSpelling:
         """`TEST_FEATURES="X"` keys exactly as `X` does.
 
         This is the case that fails if the assignment stops being expanded:
-        the whole token would carry no recognisable flag, so the command
+        the whole token would carry no recognizable flag, so the command
         would key as the defaults whatever it named.
         """
         assert feature_key(f'TEST_FEATURES="{assignment}"', defaults) == feature_key(

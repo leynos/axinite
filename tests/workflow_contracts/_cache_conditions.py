@@ -18,7 +18,7 @@ cannot be judged conjunct by conjunct and is not part of the policy.
 
 `cache_condition_test.py` drives this module directly, with a mutation of each
 conjunct, because the estate's own two save steps are correct and a reader
-parametrised over correct input discriminates nothing.
+parametrized over correct input discriminates nothing.
 """
 
 from __future__ import annotations
@@ -45,7 +45,7 @@ MAIN_REF = "github.ref == 'refs/heads/main'"
 FIXED_CONJUNCTS: frozenset[str] = frozenset({WRITING_LEG, PUSH_EVENT, MAIN_REF})
 
 #: The save's reference to its own restore step's outcome, in any form. Used
-#: to recognise the conjunct; `CACHE_MISS_RE` decides whether it is right.
+#: to recognize the conjunct; `CACHE_MISS_RE` decides whether it is right.
 CACHE_HIT_RE: re.Pattern[str] = re.compile(
     r"steps\.(?P<id>[A-Za-z0-9_-]+)\.outputs\.cache-hit"
 )

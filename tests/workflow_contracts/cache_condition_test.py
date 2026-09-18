@@ -1,7 +1,7 @@
 """Unit tests for the cache save condition reader.
 
 `cache_ownership_test.py` runs the reader over the estate's two save steps,
-and both of them are correct. A reader parametrised over correct input
+and both of them are correct. A reader parametrized over correct input
 discriminates nothing: one that answered "no faults" unconditionally would
 pass there exactly as the real one does. So the reader is driven here instead,
 with the approved predicate once and a mutation of it per case, each mutation

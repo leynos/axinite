@@ -309,6 +309,10 @@ ______________________________________________________________________
 
 ## CI Integration
 
+> **Historical recipe.** The workflow below is the shape this design was
+> approved with. It is superseded; see "Addendum, 2026-09-17" at the end of
+> this section for what `.github/workflows/e2e.yml` runs now.
+
 ```yaml
 # .github/workflows/e2e.yml
 name: E2E Tests
@@ -348,6 +352,50 @@ jobs:
 
 **Trigger policy:** Weekly + manual + PRs touching web gateway or E2E tests.
 Not on every PR.
+
+### Addendum, 2026-09-17: the flow this workflow runs now
+
+The single `e2e` job above became three, and the runners it names became
+Ubicloud ones. The reasons are the same in each case: the build and the browser
+runs want different machines, and a machine this repository pays for is not
+available to every event.
+
+- **`build`** compiles `axinite` once, under
+  `--no-default-features --features libsql`, and uploads `target/debug/axinite`
+  as an artefact. It is the compile-bound half, so it takes
+  `ubicloud-standard-4`.
+- **`test`** downloads that binary and runs the Playwright scenarios in a
+  matrix of groups, in parallel. It compiles nothing, so it takes
+  `ubicloud-standard-2`. Splitting the two is what allows the second to be
+  small: under one job the whole run had to be sized for the build.
+- **`e2e`** is the roll-up the branch ruleset requires. It runs on
+  `ubuntu-latest`, reports the matrix's result, and does no work of its own.
+
+Both working jobs fall back to `ubuntu-latest` in two cases. On `schedule`,
+because nobody is waiting on cron work and this repository pays for Ubicloud
+minutes; and on a pull request from a fork, because a fork cannot obtain an
+Ubicloud runner at all and a job that asks for one never starts. The roll-up
+stays GitHub-hosted unconditionally, since a required context has to report on
+every event including a fork's.
+
+The `target` cache in the recipe above is gone. sccache owns compiler output
+now, and no cache step in the estate archives a build tree: a `target` archive
+is gigabytes that the next run mostly discards, and it duplicates what sccache
+already holds. What `build` restores instead is the Cargo registry and git
+index, under the estate's shared `cargo-v1-` key family, whose sole Linux
+writer is `coverage.yml`'s `coverage` job on a push to `main`.
+
+Two decisions are recorded here rather than left in the workflow. **One suite,
+one run, per trigger**: on a trigger a developer waits for, no two lanes may
+run the same suite over the same feature set under the same nextest profile,
+which is why `test.yml`'s `tests` job stands down on a push and `coverage.yml`
+is the execution of record there. **One key, one writer**: each cache key has
+exactly one save step, in a job the writing event can actually dispatch, and
+that step names the writing matrix leg, the push event, the `main` ref and its
+own restore's cache miss. `tests/workflow_contracts/suite_duplication_test.py`
+and `tests/workflow_contracts/cache_ownership_test.py` hold both, and the
+developers' guide states them in full under "One suite, one run, per trigger"
+and "Cache ownership".
 
 ______________________________________________________________________
 
