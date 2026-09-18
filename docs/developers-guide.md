@@ -428,15 +428,24 @@ Rules that follow from the table:
   that the writer's workflow is triggered by a push to `main`, that the job's
   own guard admits that event, and that every platform restoring the key has a
   reachable writer. The earlier contract read the save step's condition alone
-  and stayed green while the step could not run at all. It also asserts the two
-  halves of the save condition that fail silently: the `all-features` leg
-  restriction, without which every leg races for the one key and the last
-  upload wins by accident; and the `cache-hit` guard, whose step ID must be one
-  the job's own restore step declares. A step ID nothing declares is not an
-  error in Actions. The expression resolves to the empty string, the inequality
-  holds, and the archive is re-uploaded on every push, so renaming the restore
-  step's ID and leaving the condition alone costs upload time and reports
-  nothing.
+  and stayed green while the step could not run at all.
+- **The save condition is exactly four conjuncts.** The writing matrix leg
+  (`matrix.name == 'all-features'`, which resolves the widest dependency graph;
+  the other legs would race it for the one key and the last upload would win by
+  accident), the push event, the `main` ref, and the restore step's own cache
+  miss, whose step ID must be one the job's restore step declares. A step ID
+  nothing declares is not an error in Actions: the expression resolves to the
+  empty string, the inequality holds, and the archive is re-uploaded on every
+  push, so renaming the restore step's ID and leaving the condition alone costs
+  upload time and reports nothing. `_cache_conditions.py` takes the expression
+  apart rather than searching it, refusing a disjunction or a grouping outright
+  and comparing the set of conjuncts with the approved four, because a
+  substring reading accepts conditions that mean the opposite: an
+  `|| github.event_name == 'schedule'` arm still contains the push text, and
+  `cache-hit == 'true'` still contains the cache-hit reference while skipping
+  exactly the writes the key needs. `cache_condition_test.py` drives that
+  reader with the approved predicate and a mutation of each conjunct, since the
+  estate's own two save steps are correct and would discriminate nothing.
 - Every cache step pins `actions/cache` to
   `55cc8345863c7cc4c66a329aec7e433d2d1c52a9` (v6.1.0). Ubicloud's transparent
   cache proxy is confirmed to intercept that version's traffic, so the
@@ -581,21 +590,30 @@ developer runs the whole, CI runs the halves on different lanes, and the whole
 is the sum of the parts by construction rather than by memory.
 
 `tests/workflow_contracts/suite_duplication_test.py` holds both halves of the
-rule, over a reading in `_suite_reader.py` and `_suite_targets.py` that
-`suite_reader_test.py` unit-tests on its own. It reads what each lane runs
-rather than what it is called, resolving a leg's `${{ matrix.flags }}` and a
-step's `TEST_FEATURES` and comparing feature selections as sets, so
-`--features a,b` and `--features a --features b` are one run while
-`--all-features` stays distinct from a list that happens to name every feature
-today. It resolves each command's defaults before comparing, reading the
-`default` list from the root `Cargo.toml`, because a command that does not pass
-`--no-default-features` gets them whether it names them or not; without that
-step the duplicate leg above keyed as distinct work and the contract passed
-over it. It then asserts three things: that no trigger runs one scope twice,
-that every scope still runs on every trigger, and that the workspace suite runs
-under the `ci` profile wherever it runs. The second and third are there because
-removing a duplicate lane, removing the only lane, and replacing a lane with a
-narrower one look identical in a diff and identical in a green run.
+rule, over a reading in `_suite_reader.py`, `_suite_keys.py` and
+`_suite_targets.py` that `suite_reader_test.py` and `suite_key_test.py`
+unit-test on their own. It reads what each lane runs rather than what it is
+called, resolving a leg's `${{ matrix.flags }}` and a step's `TEST_FEATURES`
+and comparing feature selections as sets, so `--features a,b` and
+`--features a --features b` are one run while `--all-features` stays distinct
+from a list that happens to name every feature today. It resolves each
+command's defaults before comparing, reading the `default` list from the root
+`Cargo.toml`, because a command that does not pass `--no-default-features` gets
+them whether it names them or not; without that step the duplicate leg above
+keyed as distinct work and the contract passed over it. It then asserts three
+things: that no paid trigger runs one scope twice, that every scope still runs
+on every trigger that runs any, and that the workspace suite runs under the
+`ci` profile wherever it runs. The second and third are there because removing
+a duplicate lane, removing the only lane, and replacing a lane with a narrower
+one look identical in a diff and identical in a green run.
+
+The last two cover `workflow_dispatch` as well as the two paid triggers, since
+both changed workflows declare it and a dispatch is a full run: the leg list,
+the suites and the profile are all expected to be complete there, and the
+dispatch arm of the matrix would otherwise be free to drift. The de-duplication
+assertion deliberately stops at the paid triggers. A dispatch runs the test
+lanes and the coverage lanes together on purpose, because that is what someone
+reaching for the button is asking for, and nobody is waiting on the result.
 
 The required contexts do not change. `main`'s ruleset requires the roll-ups,
 `Run Tests`, `Code Style (fmt + clippy)` and `Regression test enforcement`, not
@@ -606,9 +624,37 @@ keeps the new lane inside the gate.
 ### Writing a workflow contract
 
 Every contract in `tests/workflow_contracts/` reads one parsed view of
-`.github/workflows`, provided by `_workflow_policy.py`. The module has no
-`_test` suffix, so pytest imports it as a helper rather than collecting it. Run
-the suite with `make test-workflow-contracts`.
+`.github/workflows`, provided by `_workflow_policy.py`. A module with no
+`_test` suffix is imported as a helper rather than collected. Run the suite with
+`make test-workflow-contracts`.
+
+The helpers divide by question, and a contract should reach for the narrowest
+one that answers its own:
+
+| Module                 | Answers                                                                             |
+| ---------------------- | ----------------------------------------------------------------------------------- |
+| `_sources.py`          | What a file on disk says. The only module that touches one                          |
+| `_workflow_policy.py`  | What a workflow declares: jobs, steps, runners, triggers, matrix legs, event guards |
+| `_runs_on.py`          | What one chained `runs-on` expression resolves to for an event                      |
+| `_suite_targets.py`    | What a Make target runs, and what features the root manifest enables by default     |
+| `_suite_keys.py`       | What one command selects: its feature set, as a set, and its nextest profile        |
+| `_suite_reader.py`     | What each lane actually executes, leg by leg, keyed by the work it does             |
+| `_cache_conditions.py` | Whether a cache save step's `if` expression is the approved predicate               |
+
+Each of these is pure in what it is handed. The public readers take parsed
+documents, command text or Makefile text and return values; none of them opens
+a file. The reading happens at one boundary instead: `read_default_features`,
+`read_makefile` and `read_estate`, called from the `defaults` and `estate`
+fixtures in `conftest.py`, with `_sources.py` converting a missing, undecodable
+or unparsable file into a `SourceError` that names the path.
+
+The reason is where the failure lands. A module-level snapshot taken during
+import turns a bad file into a collection error, and a contract directory that
+fails to collect reports no failures at all, which reads exactly like a clean
+run. Read from a fixture, the same fault fails the contracts that asked for the
+file, by name. `source_boundary_test.py` states each conversion, and the estate
+is returned as a mapping no contract can alter, so one test cannot change what
+a later one judges.
 
 `Job` is the unit of assertion. It carries the workflow file name, the job's
 key under `jobs:`, and the job's parsed body, and it prints as
