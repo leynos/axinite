@@ -624,6 +624,13 @@ jobs:
         "folded.yml",
     )
     job = next(jobs_of("folded.yml", document))
-    declared = job.body["env"]["EXPECTED"]
+    # `Job.body` is a `dict[str, object]`, so the nested reads have to narrow
+    # before `selected_value` sees a `str`. Asserting each step also means a
+    # fixture that stops declaring the expression names itself, rather than
+    # raising `TypeError` from a subscript several frames away.
+    env = job.body.get("env")
+    assert isinstance(env, dict), "the fixture job declares no env mapping"
+    declared = env.get("EXPECTED")
+    assert isinstance(declared, str), "the fixture job declares no EXPECTED value"
     assert selected_value(declared, "push") == "skipped"
     assert selected_value(declared, "pull_request") == "success"
