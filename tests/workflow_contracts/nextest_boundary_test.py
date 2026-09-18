@@ -53,6 +53,7 @@ from pathlib import Path
 
 import pytest
 from _workflow_policy import REPOSITORY_ROOT, load, workflow_paths
+from contract_sources import read_source
 from timeout_budgets import NEXTEST_CONFIG
 
 if typ.TYPE_CHECKING:  # pragma: no cover - typing only
@@ -315,7 +316,7 @@ def test_the_ignored_key_reading_would_report_a_misspelling(
     the whole reason the warning rather than the status is read.
     """
     misspelled = tmp_path / "misspelled-nextest.toml"
-    original = NEXTEST_CONFIG.read_text(encoding="utf-8")
+    original = read_source(NEXTEST_CONFIG)
     mutated = original.replace("grace-period", "grace_period")
     assert mutated != original, (
         "the real configuration names no grace-period, so this proof would "
@@ -361,12 +362,21 @@ def _short_slow_timeout() -> str:
     str
         A ``[profile.default]`` table as TOML text.
 
+    Read through :func:`read_source` rather than with ``read_text``,
+    so a configuration that cannot be read reports which file and why
+    instead of raising a bare ``OSError`` from inside a helper whose
+    name and return type promise a value. That is the same acquisition
+    boundary the sweeps in this suite go through, and this module was
+    reaching past it.
+
     Raises
     ------
     AssertionError
         If the real configuration declares no base ``slow-timeout``.
+    SourceReadError
+        If the configuration cannot be read or is not UTF-8.
     """
-    parsed = tomllib.loads(NEXTEST_CONFIG.read_text(encoding="utf-8"))
+    parsed = tomllib.loads(read_source(NEXTEST_CONFIG))
     base = parsed["profile"]["default"]["slow-timeout"]
     assert isinstance(base, dict), (
         f"[profile.default].slow-timeout is {base!r}, not a table; this proof "

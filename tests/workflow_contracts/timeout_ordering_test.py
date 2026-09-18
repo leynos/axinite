@@ -284,8 +284,10 @@ def test_the_required_ceiling_carries_all_four_terms() -> None:
 REQUIRED_CONDITIONS: typ.Final[dict[tuple[str, str], tuple[object, object]]] = {
     ("codescene-coverage.yml", "coverage-check"): (
         None,
-        "github.event_name == 'pull_request' || "
-        "github.event_name == 'workflow_dispatch'",
+        (
+            "github.event_name == 'pull_request' || "
+            "github.event_name == 'workflow_dispatch'"
+        ),
     ),
     ("coverage.yml", "coverage"): (None, None),
 }
