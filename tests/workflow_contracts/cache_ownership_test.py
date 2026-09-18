@@ -14,11 +14,11 @@ Run via ``make test-workflow-contracts``.
 
 from __future__ import annotations
 
-import re
 import typing as typ
-from pathlib import PurePosixPath
+from pathlib import PurePosixPath, PureWindowsPath
 
 import pytest
+from _cache_conditions import save_condition_faults
 from _workflow_policy import (
     CACHE_ACTION_SHA,
     DIST_GENERATED,
@@ -58,6 +58,28 @@ def test_cache_action_is_pinned_to_the_reviewed_commit(job: Job) -> None:
         )
 
 
+def _path_components(path: str) -> set[str]:
+    """Return every component a cache path names, under either separator.
+
+    The estate caches on Windows runners as well as Linux ones, and
+    `PurePosixPath` reads a backslash as an ordinary character: it sees
+    `tools-src\\github\\target` as a single component that merely ends in
+    `target`. Reading the same text under both flavours means one archive of
+    a build tree cannot hide behind the separator it was written with.
+
+    Parameters
+    ----------
+    path
+        One line of a cache step's `path` input.
+
+    Returns
+    -------
+    set of str
+        Every component, under POSIX and under Windows separator rules.
+    """
+    return set(PurePosixPath(path).parts) | set(PureWindowsPath(path).parts)
+
+
 @pytest.mark.parametrize("job", ALL_JOBS, ids=_ids(ALL_JOBS))
 def test_no_cache_step_archives_a_target_tree(job: Job) -> None:
     """Keep compiler output out of cache archives; sccache owns it."""
@@ -68,10 +90,49 @@ def test_no_cache_step_archives_a_target_tree(job: Job) -> None:
             # Every component, not just the first: `tools-src/github/target`
             # is as much a build tree as `target` is, and a check on the
             # leading component alone would wave the nested one through.
-            assert "target" not in PurePosixPath(path).parts, (
+            assert "target" not in _path_components(path), (
                 f"{job} archives {path!r}. A target tree duplicates sccache's "
                 "ownership of compiler output and inflates the cache quota."
             )
+
+
+@pytest.mark.parametrize(
+    "path",
+    [
+        pytest.param("target", id="bare"),
+        pytest.param("tools-src/github/target", id="nested-posix"),
+        pytest.param("tools-src\\github\\target", id="nested-windows"),
+        pytest.param("target/debug", id="inside-posix"),
+        pytest.param("target\\debug", id="inside-windows"),
+    ],
+)
+def test_a_build_tree_is_seen_under_either_separator(path: str) -> None:
+    """The reader must find `target` however the path was written.
+
+    A Windows-separated path is the case `PurePosixPath` alone gets wrong: it
+    reads the whole string as one component, so the assertion above passed on
+    exactly the archive it exists to refuse.
+    """
+    assert "target" in _path_components(path)
+
+
+@pytest.mark.parametrize(
+    "path",
+    [
+        pytest.param("~/.cargo/registry", id="registry"),
+        pytest.param("~/.cargo/git", id="git-index"),
+        pytest.param("targeted", id="a-longer-name"),
+        pytest.param("~\\.cargo\\registry", id="registry-windows"),
+    ],
+)
+def test_a_path_that_is_not_a_build_tree_is_left_alone(path: str) -> None:
+    """An ordinary cache path must not read as a build tree.
+
+    The narrow direction. A reader that answered `target` for everything
+    would satisfy the cases above and condemn every cache in the estate, and
+    the contract would still read as though it discriminated.
+    """
+    assert "target" not in _path_components(path)
 
 
 @pytest.mark.parametrize("job", ALL_JOBS, ids=_ids(ALL_JOBS))
@@ -255,105 +316,15 @@ def _cache_platform(job: Job) -> str:
     return "Windows" if any("windows" in label for label in labels) else "Linux"
 
 
-def _assert_the_write_is_restricted_to_a_push_to_main(job: Job, condition: str) -> None:
-    """Assert a save step's own condition admits a push to `main` and no more.
-
-    Parameters
-    ----------
-    job
-        The job the save step belongs to, named in the failure messages.
-    condition
-        The step's `if` expression, with its whitespace collapsed.
-    """
-    assert "refs/heads/main" in condition, (
-        f"{job} saves a cache without restricting the write to main; pull "
-        "requests must restore and never save"
-    )
-    # The ref alone is not enough. `github.ref` reads `refs/heads/main` for a
-    # manual dispatch against main just as it does for a push, so a guard on
-    # the ref would let a warm-cache measurement run overwrite what the merge
-    # wrote.
-    assert "github.event_name == 'push'" in condition, (
-        f"{job} saves a cache without naming the push event; a "
-        "workflow_dispatch on main would satisfy a ref-only guard and take "
-        "the key from its real writer"
-    )
-
-
-#: The matrix leg allowed to publish the registry archive. It resolves the
-#: widest dependency graph, so its archive is a superset of the others'; two
-#: legs saving would race for one key and the later upload would win by
-#: accident.
-WRITING_LEG = "matrix.name == 'all-features'"
-
-#: A save condition's reference to the restore step's own outcome, as
-#: `steps.<id>.outputs.cache-hit`.
-CACHE_HIT_RE: re.Pattern[str] = re.compile(
-    r"steps\.(?P<id>[A-Za-z0-9_-]+)\.outputs\.cache-hit"
-)
-
-
-def _assert_only_one_leg_writes(job: Job, condition: str) -> None:
-    """Assert a save step publishes from one matrix leg only.
-
-    Parameters
-    ----------
-    job
-        The job the save step belongs to, named in the failure message.
-    condition
-        The step's `if` expression, with its whitespace collapsed.
-    """
-    assert WRITING_LEG in condition, (
-        f"{job} saves the registry cache without naming the writing leg; "
-        f"every leg shares one key, so without `{WRITING_LEG}` they race and "
-        "whichever finishes last silently becomes the archive"
-    )
-
-
-def _assert_the_write_reads_its_own_restore(
-    job: Job, condition: str, restore_ids: set[str]
-) -> None:
-    """Assert a save step skips a key its own restore already found.
-
-    The reference is by step ID, and a step ID that no step declares is not
-    an error in Actions: the expression resolves to the empty string, the
-    inequality holds, and the archive is re-uploaded on every push. Nothing
-    fails, so the cost is the only evidence. Renaming the restore step's ID
-    and leaving the condition alone produces exactly that.
-
-    Parameters
-    ----------
-    job
-        The job the save step belongs to.
-    condition
-        The step's `if` expression, with its whitespace collapsed.
-    restore_ids
-        The IDs the job's own restore steps declare.
-    """
-    match = CACHE_HIT_RE.search(condition)
-    assert match is not None, (
-        f"{job} saves the registry cache without consulting its restore "
-        "step's `cache-hit` output, so it re-uploads an archive it already "
-        "has on every push"
-    )
-    named = match["id"]
-    assert named in restore_ids, (
-        f"{job}'s save step reads `steps.{named}.outputs.cache-hit`, but no "
-        f"restore step in that job declares that ID; it declares "
-        f"{sorted(restore_ids)}. The expression resolves to the empty string "
-        "and the guard is dead"
-    )
-
-
-def _restore_ids_in(job: Job) -> set[str]:
+def _restore_ids_in(job: Job) -> frozenset[str]:
     """Return the IDs the job's registry restore steps declare."""
-    return {
+    return frozenset({
         str(step["id"])
         for step in job.steps
         if isinstance(step.get("uses"), str)
         and str(step["uses"]).startswith(RESTORE_ACTION)
         and isinstance(step.get("id"), str)
-    }
+    })
 
 
 def _assert_the_write_can_actually_happen(job: Job) -> None:
@@ -383,10 +354,13 @@ def test_the_cargo_registry_cache_has_exactly_one_writer_per_platform() -> None:
     """Keep one save step per key family so no two jobs race to publish."""
     writers: list[str] = []
     for job, step in _cache_steps(SAVE_ACTION):
-        condition = " ".join(str(step.get("if", "")).split())
-        _assert_the_write_is_restricted_to_a_push_to_main(job, condition)
-        _assert_only_one_leg_writes(job, condition)
-        _assert_the_write_reads_its_own_restore(job, condition, _restore_ids_in(job))
+        # The reading is in `_cache_conditions.py`, which takes the
+        # expression apart rather than searching it, and
+        # `cache_condition_test.py` proves it by mutating each conjunct.
+        faults = save_condition_faults(str(step.get("if", "")), _restore_ids_in(job))
+        assert not faults, (
+            f"{job}'s cache save condition is wrong: " + "; ".join(faults)
+        )
         _assert_the_write_can_actually_happen(job)
         writers.append(str(job))
     # One Linux writer and one Windows writer. The Linux write sits in

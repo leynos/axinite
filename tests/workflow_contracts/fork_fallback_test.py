@@ -24,7 +24,7 @@ Run via ``make test-workflow-contracts``.
 
 from __future__ import annotations
 
-import typing as typ
+from collections.abc import Iterator
 
 import pytest
 from _workflow_policy import (
@@ -110,7 +110,7 @@ def _is_opaque(declared: str) -> bool:
     return declared.startswith("${{") and conditional_runs_on_arms(declared) is None
 
 
-def _authored_jobs() -> typ.Iterator[Job]:
+def _authored_jobs() -> Iterator[Job]:
     """Yield every job anyone here wrote.
 
     The generated release workflow is excluded, as it is everywhere: nobody
