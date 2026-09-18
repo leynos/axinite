@@ -14,12 +14,14 @@ delegate.
 
 from __future__ import annotations
 
+import json
 import re
 import typing as typ
 from dataclasses import dataclass
 from pathlib import Path
 
 import yaml
+from _runs_on import conditional_runs_on_arms, selected_value
 
 if typ.TYPE_CHECKING:  # pragma: no cover - typing only
     from collections.abc import Iterator
@@ -32,27 +34,19 @@ WORKFLOW_DIR = REPOSITORY_ROOT / ".github" / "workflows"
 #: "Workflow pins and Dependabot").
 SHA_RE: re.Pattern[str] = re.compile(r"^[0-9a-f]{40}$")
 
-#: A `runs-on` that picks its label from the event, as
-#: `${{ github.event_name == 'schedule' && 'ubuntu-latest'
-#: || 'ubicloud-standard-8' }}`. A workflow that is both a developer gate and a
-#: cron needs the Ubicloud runner on one path and not the other, and the label
-#: is the only place that distinction can live. Reading such a value as one
-#: opaque label would hide the Ubicloud request from every placement contract,
-#: so the forms are parsed rather than passed through.
-CONDITIONAL_RUNNER_RE: re.Pattern[str] = re.compile(
-    r"^\$\{\{\s*github\.event_name\s*==\s*'(?P<event>[a-z_]+)'\s*&&\s*"
-    r"'(?P<when>[^']+)'\s*\|\|\s*'(?P<otherwise>[^']+)'\s*\}\}$"
-)
+#: The field that decides whether a pull request came from a fork.
+FORK_CONDITION = "github.event.pull_request.head.repo.fork"
 
 #: Prefix shared by every Ubicloud runner label. Match on the prefix, not on
 #: one exact label: the migration wave introduces `ubicloud-standard-2`, and a
 #: contract keyed to the current label would wave the new one through.
 UBICLOUD_LABEL_PREFIX = "ubicloud-"
 
-#: The Ubicloud label this repository currently uses. The migration wave will
-#: right-size these jobs; update this constant and .github/actionlint.yaml
-#: together when it does.
-UBICLOUD_LABEL = "ubicloud-standard-8"
+#: One Ubicloud label the estate uses, for the helper tests to quote as a
+#: sample. It is deliberately not "the" label: the jobs are right-sized per
+#: job, so the set in use lives in `runner_sizing_test.APPROVED_SHAPES` and in
+#: .github/actionlint.yaml, and no single constant can stand for it.
+UBICLOUD_LABEL = "ubicloud-standard-4"
 
 #: Commands that compile or execute the product. A job is a build or test job
 #: when one of its steps runs one of these; nothing else about the job matters.
@@ -69,8 +63,8 @@ BUILD_OR_TEST_PATTERNS: tuple[re.Pattern[str], ...] = tuple(
         r"(?:build|check|clippy|fmt|test|nextest|llvm-cov|component|run)\b",
         r"\bdocker\s+build\b",
         r"\bpytest\b",
-        r"\bmake\s+(?:all|test|test-matrix|lint|typecheck|check-fmt"
-        r"|build-github-tool-wasm)\b",
+        r"\bmake\s+(?:all|test|test-workspace|test-github-tool|test-matrix"
+        r"|lint|typecheck|check-fmt|build-github-tool-wasm)\b",
         r"\./scripts/build-wasm-extensions\.sh",
     )
 )
@@ -104,28 +98,6 @@ CACHE_ACTION_PREFIXES = (
     "actions/cache/restore@",
     "actions/cache/save@",
 )
-
-
-def _conditional_runner(declared: str) -> tuple[str, str, str] | None:
-    """Split an event-conditional `runs-on` into its event and two labels.
-
-    Parameters
-    ----------
-    declared
-        The raw `runs-on` scalar. A folded YAML scalar arrives with its line
-        breaks already joined into single spaces.
-
-    Returns
-    -------
-    tuple of str, or None
-        The event name, the label chosen for that event, and the label used
-        otherwise. ``None`` when the value is not the conditional form, which
-        includes a matrix expression and every plain label.
-    """
-    match = CONDITIONAL_RUNNER_RE.match(" ".join(declared.split()))
-    if match is None:
-        return None
-    return match["event"], match["when"], match["otherwise"]
 
 
 @dataclass(frozen=True)
@@ -168,12 +140,14 @@ class Job:
         if isinstance(declared, dict):
             declared = declared.get("labels")
         if isinstance(declared, str):
-            conditional = _conditional_runner(declared)
-            if conditional is not None:
-                # Both arms are reported, so a job that reaches Ubicloud on any
-                # event still answers `uses_ubicloud` and stays inside the
-                # timeout and sccache contracts.
-                return conditional[1], conditional[2]
+            chain = conditional_runs_on_arms(declared)
+            if chain is not None:
+                # Every arm is reported, so a job that reaches Ubicloud in any
+                # context still answers `uses_ubicloud` and stays inside the
+                # timeout and sccache contracts. Repeats are dropped: two arms
+                # naming `ubuntu-latest` are one runner, and reporting it twice
+                # would read as a job asking for two labels.
+                return tuple(dict.fromkeys(label for _, label in chain))
             return (declared,)
         if isinstance(declared, list):
             return tuple(label for label in declared if isinstance(label, str))
@@ -256,10 +230,12 @@ class Job:
         if isinstance(declared, dict):
             declared = declared.get("labels")
         if isinstance(declared, str):
-            conditional = _conditional_runner(declared)
-            if conditional is not None:
-                chosen, alternative = conditional[1], conditional[2]
-                return (chosen if conditional[0] == event else alternative,)
+            chain = conditional_runs_on_arms(declared)
+            if chain is not None:
+                # The last arm is the fallback, so a chain whose guarded arms
+                # all miss still selects a label rather than nothing.
+                selected = selected_value(declared, event) or chain[-1][1]
+                return (selected,)
         return self.runner_labels
 
     @property
@@ -292,6 +268,169 @@ class Job:
 #: silently exempt a `.yaml` workflow from every contract in this directory,
 #: which is the same vacuous pass an unread `runs-on` produces.
 WORKFLOW_SUFFIXES: tuple[str, ...] = (".yml", ".yaml")
+
+
+#: `github.event_name == 'x'` inside a job's `if`. The events a condition
+#: names are what decides whether the job can run on a given trigger, and a
+#: reader that missed them would judge every guarded job runnable everywhere.
+EVENT_EQUALITY_RE: re.Pattern[str] = re.compile(
+    r"github\.event_name\s*==\s*'(?P<event>[a-z_]+)'"
+)
+
+#: `github.event_name != 'x'`, the other half of the same question. An
+#: inequality excludes exactly one event and admits every other, including the
+#: ones nobody has added yet.
+EVENT_INEQUALITY_RE: re.Pattern[str] = re.compile(
+    r"github\.event_name\s*!=\s*'(?P<event>[a-z_]+)'"
+)
+
+#: `release.yml` is generated by dist and regenerated wholesale on a version
+#: bump, so a hand-added key there does not survive. It runs only on a tag
+#: push, never on Ubicloud, and computes its matrix from a previous job's
+#: output, so it sits outside the runner-cost and suite contracts alike.
+DIST_GENERATED = "release.yml"
+
+#: A matrix leg list chosen by the event, as
+#: `${{ github.event_name == 'pull_request' && fromJSON('[...]')
+#: || fromJSON('[...]') }}`. It is the `runs-on` story one level down: one
+#: workflow serves several triggers, the leg list differs between them, and
+#: `exclude` cannot express it because GitHub processes `include` afterwards.
+#: Reading the scalar as opaque would leave the contracts unable to say what
+#: any leg runs, so the arms are parsed.
+CONDITIONAL_INCLUDE_RE: re.Pattern[str] = re.compile(
+    r"^\$\{\{\s*github\.event_name\s*==\s*'(?P<event>[a-z_]+)'\s*&&\s*"
+    r"fromJSON\('(?P<when>.*?)'\)\s*\|\|\s*"
+    r"fromJSON\('(?P<otherwise>.*)'\)\s*\}\}$"
+)
+
+
+def triggers(document: dict[str, object]) -> dict[str, object]:
+    """Return a parsed workflow's `on:` mapping.
+
+    PyYAML resolves an unquoted `on:` key to the boolean ``True``, so a
+    workflow that omits the quotes would otherwise read as having no triggers
+    and pass every trigger-keyed contract vacuously.
+
+    Parameters
+    ----------
+    document
+        A parsed workflow document.
+
+    Returns
+    -------
+    dict
+        The workflow's triggers, or an empty mapping when it declares none.
+    """
+    declared = document.get("on", document.get(True))
+    return declared if isinstance(declared, dict) else {}
+
+
+def runs_on_event(job: Job, event: str) -> bool:
+    """Report whether a job's own guard admits an event.
+
+    The reading is deliberately narrow and errs towards "it runs". A condition
+    that never mentions `github.event_name` cannot exclude an event. An
+    inequality naming the event excludes it and admits every other, including
+    the triggers nobody has added yet. A set of equalities admits exactly the
+    events it names. Anything else is treated as runnable, so an expression
+    this cannot follow reports work rather than hiding it.
+
+    Parameters
+    ----------
+    job
+        The job whose `if` condition is read.
+    event
+        A `github.event_name` value, such as ``push``.
+
+    Returns
+    -------
+    bool
+        True when the job can run on that event.
+    """
+    condition = " ".join(str(job.body.get("if", "")).split())
+    if "github.event_name" not in condition:
+        return True
+    excluded = {match["event"] for match in EVENT_INEQUALITY_RE.finditer(condition)}
+    if event in excluded:
+        return False
+    admitted = {match["event"] for match in EVENT_EQUALITY_RE.finditer(condition)}
+    if admitted:
+        return event in admitted
+    return True
+
+
+def _declared_matrix(job: Job) -> dict[str, object] | None:
+    """Return a job's `strategy.matrix` mapping, or None when it has none.
+
+    Raises
+    ------
+    AssertionError
+        If the matrix is a form these helpers cannot read. Returning "no legs"
+        for an unreadable matrix would exempt the job from every contract
+        keyed on what its legs run, which is the silent pass they exist to
+        prevent.
+    """
+    strategy = job.body.get("strategy")
+    if not isinstance(strategy, dict) or "matrix" not in strategy:
+        return None
+    matrix = strategy["matrix"]
+    if not isinstance(matrix, dict) or set(matrix) != {"include"}:
+        message = (
+            f"{job} declares a matrix this helper cannot read: {matrix!r}. "
+            "Every matrix in this estate is an `include` list, literal or "
+            "chosen by the event; teach the helper before writing another."
+        )
+        raise AssertionError(message)
+    return matrix
+
+
+def _resolve_include(job: Job, declared: object, event: str) -> list[object]:
+    """Return a matrix `include` as a list, resolving an event-chosen one.
+
+    Raises
+    ------
+    AssertionError
+        If the value is neither a list nor a conditional expression these
+        helpers can read.
+    """
+    if isinstance(declared, str):
+        match = CONDITIONAL_INCLUDE_RE.match(" ".join(declared.split()))
+        if match is None:
+            message = f"{job} computes its legs in a form this cannot read"
+            raise AssertionError(message)
+        arm = match["when"] if match["event"] == event else match["otherwise"]
+        declared = json.loads(arm)
+    if not isinstance(declared, list):
+        message = f"{job} declares a matrix include that is not a list"
+        raise AssertionError(message)
+    return declared
+
+
+def matrix_legs(job: Job, event: str) -> tuple[dict[str, str], ...]:
+    """Return the matrix legs a job expands to on an event.
+
+    Parameters
+    ----------
+    job
+        The job whose `strategy.matrix` is read.
+    event
+        The `github.event_name` an event-conditional leg list is resolved
+        against.
+
+    Returns
+    -------
+    tuple of dict
+        One mapping per leg. A job with no matrix expands to a single empty
+        leg, so a caller can treat every job the same way.
+    """
+    matrix = _declared_matrix(job)
+    if matrix is None:
+        return ({},)
+    return tuple(
+        {str(key): str(value) for key, value in leg.items()}
+        for leg in _resolve_include(job, matrix["include"], event)
+        if isinstance(leg, dict)
+    )
 
 
 def workflow_paths(directory: Path = WORKFLOW_DIR) -> list[Path]:

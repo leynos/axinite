@@ -27,6 +27,7 @@ from _workflow_policy import (
     Job,
     jobs_of,
     load,
+    runs_on_event,
     workflow_paths,
 )
 
@@ -133,17 +134,15 @@ def _runs_on_schedule(job: Job) -> bool:
     A guard such as ``github.event_name == 'push' || (github.event_name ==
     'pull_request' && ...)`` names the events the job accepts, and a scheduled
     call is not among them, so the job costs nothing in that context and
-    reporting it would be a false violation.
+    reporting it would be a false violation. An inequality such as
+    ``github.event_name != 'push'`` is the opposite case: it admits a schedule
+    along with everything else.
 
-    The reading is deliberately narrow: a condition that mentions
-    `github.event_name` at all, and never mentions `schedule`, cannot run on a
-    schedule. Any other condition is treated as runnable, so an expression this
-    cannot follow errs towards reporting a cost rather than hiding one.
+    The reading lives in `_workflow_policy.runs_on_event`, which the suite
+    de-duplication contract asks the same question of for `pull_request` and
+    `push`. One reader means a guard cannot be understood two ways.
     """
-    condition = " ".join(str(job.body.get("if", "")).split())
-    if "github.event_name" not in condition:
-        return True
-    return "schedule" in condition
+    return runs_on_event(job, "schedule")
 
 
 def _ubicloud_labels_on_schedule(job: Job) -> tuple[str, ...]:
@@ -309,6 +308,14 @@ class TestRunsOnSchedule:
                 "'pull_request' && github.base_ref != 'staging')",
                 False,
             ),
+            # An inequality excludes one event and admits every other,
+            # including the ones nobody has added yet. Reading it as though it
+            # named the events it accepts would exempt `test.yml` `tests` from
+            # this contract entirely, on the strength of a guard that says
+            # nothing about a schedule.
+            ("github.event_name != 'push'", True),
+            ("github.event_name != 'schedule'", False),
+            ("github.event_name != 'push' && github.actor != 'nobody'", True),
         ],
         ids=[
             "no-condition",
@@ -317,6 +324,9 @@ class TestRunsOnSchedule:
             "schedule-among-others",
             "push-only",
             "push-or-pull-request",
+            "not-push",
+            "not-schedule",
+            "not-push-and-another-field",
         ],
     )
     def test_it_reads_the_event_guard(

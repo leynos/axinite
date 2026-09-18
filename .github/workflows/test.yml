@@ -54,12 +54,24 @@ jobs:
 
   tests:
     name: Tests (${{ matrix.name }})
+    # A push to `main` runs coverage.yml, which executes this same suite under
+    # all three feature shapes with instrumentation. Running it here as well
+    # compiles and runs the workspace six times for one commit, so this job
+    # stands down on a push and the coverage run is the execution of record.
+    # The guard is an inequality on purpose: a trigger added later runs the
+    # suite by default rather than silently losing it.
+    if: github.event_name != 'push'
     # Scheduled work does not run on paid runners. The daily mutation run
     # calls this workflow for its full-suite coverage, and a scheduled call
     # must land GitHub-hosted; a developer's pull request still gets Ubicloud,
     # where the wall time is felt.
+    # The second arm is the fork fallback: a pull request from a
+    # fork cannot obtain an Ubicloud runner, so it runs
+    # GitHub-hosted. A branch pull request, which is the one a
+    # maintainer waits on, keeps the paid shape.
     runs-on: >-
       ${{ github.event_name == 'schedule' && 'ubuntu-latest'
+      || github.event.pull_request.head.repo.fork && 'ubuntu-latest'
       || 'ubicloud-standard-4' }}
     timeout-minutes: 90
     env:
@@ -75,14 +87,35 @@ jobs:
         -C link-arg=-fuse-ld=mold
     strategy:
       fail-fast: false
+      # The leg list follows the event. On a pull request
+      # codescene-coverage.yml already runs the libsql-only suite under these
+      # exact flags, so that leg would compile and run the workspace a second
+      # time for the same commit; everywhere else it is the only run there is.
+      #
+      # There is no all-features leg. There was one in name: it passed
+      # `--features postgres,libsql,html-to-markdown`, every one of which is
+      # already a member of `default`, and it did not pass
+      # `--no-default-features`. It therefore resolved to the default leg's
+      # feature set exactly, `docker` included, and the two legs compiled and
+      # ran the same thing. Running the suite under the features `default`
+      # leaves out is `coverage.yml`'s all-features leg, which passes
+      # `--all-features` and means it.
+      #
+      # It is an expression rather than a static list with `exclude`, because
+      # `exclude` cannot remove an `include` entry: GitHub processes `include`
+      # afterwards and documents it as the way to add an excluded combination
+      # back, which is exactly what it would do here.
+      # `tests/workflow_contracts/_suite_reader.py` reads both arms, and
+      # resolves each leg's defaults before comparing them.
       matrix:
-        include:
-          - name: all-features
-            flags: "--features postgres,libsql,html-to-markdown"
-          - name: default
-            flags: ""
-          - name: libsql-only
-            flags: "--no-default-features --features libsql"
+        include: >-
+          ${{ github.event_name == 'pull_request' && fromJSON('[
+          {"name": "default", "flags": ""}
+          ]') || fromJSON('[
+          {"name": "default", "flags": ""},
+          {"name": "libsql-only",
+          "flags": "--no-default-features --features libsql"}
+          ]') }}
     steps:
       - name: Free disk space
         uses: jlumbroso/free-disk-space@54081f138730dfa15788a46383842cd2f914a1be
@@ -163,7 +196,6 @@ jobs:
           sccache --version
           sccache --zero-stats
       - name: Restore Cargo registry and index
-        id: cargo-registry
         uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9  # v6.1.0
         with:
           path: |
@@ -201,13 +233,14 @@ jobs:
         run: make build-github-tool-wasm
       - name: Build WASM channels (for integration tests)
         run: ./scripts/build-wasm-extensions.sh --channels
+      # `make test-workspace`, not `make test`: the latter also runs the
+      # GitHub tool crate's own suite, which is out of the workspace and
+      # would run once per leg. It has its own lane below.
       - name: Run Tests
         run: >-
-          make test
+          make test-workspace
           NEXTEST_PROFILE=ci
           TEST_FEATURES="${{ matrix.flags }} --features test-helpers"
-      # One writer per key: the all-features leg resolves the widest
-      # dependency graph, so it publishes the registry archive from main.
       # Report the hit rate so a wrapper that is silently doing nothing shows
       # up in the job summary rather than only in the duration.
       - name: Report sccache statistics
@@ -225,19 +258,6 @@ jobs:
             printf '%s\n' "$stats"
             printf '```\n'
           } >> "${GITHUB_STEP_SUMMARY}"
-      - name: Save Cargo registry and index
-        if: >-
-          matrix.name == 'all-features' && github.event_name == 'push' &&
-          github.ref == 'refs/heads/main' &&
-          steps.cargo-registry.outputs.cache-hit != 'true'
-        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9  # v6.1.0
-        with:
-          path: |
-            ~/.cargo/registry
-            ~/.cargo/git
-          key: >-
-            cargo-v1-${{ runner.os }}-${{ runner.arch }}-${{ runner.environment
-            }}-${{ hashFiles('**/Cargo.lock') }}
       - name: Report resource peaks
         if: always()
         run: ./scripts/ci-resource-sampler.sh report
@@ -248,8 +268,13 @@ jobs:
     # calls this workflow for its full-suite coverage, and a scheduled call
     # must land GitHub-hosted; a developer's pull request still gets Ubicloud,
     # where the wall time is felt.
+    # The second arm is the fork fallback: a pull request from a
+    # fork cannot obtain an Ubicloud runner, so it runs
+    # GitHub-hosted. A branch pull request, which is the one a
+    # maintainer waits on, keeps the paid shape.
     runs-on: >-
       ${{ github.event_name == 'schedule' && 'ubuntu-latest'
+      || github.event.pull_request.head.repo.fork && 'ubuntu-latest'
       || 'ubicloud-standard-2' }}
     timeout-minutes: 45
     env:
@@ -359,6 +384,132 @@ jobs:
       - name: Report resource peaks
         if: always()
         run: ./scripts/ci-resource-sampler.sh report
+  github-tool-tests:
+    name: GitHub Tool Tests
+    # `tools-src/github` is excluded from the workspace, so neither the
+    # coverage runs nor the `tests` legs reach it: `--workspace` cannot. It
+    # used to ride along inside `make test` and therefore ran once per leg.
+    # Here it runs once, on every trigger, including the pushes where `tests`
+    # stands down.
+    #
+    # Scheduled work does not run on paid runners. The daily mutation run
+    # calls this workflow for its full-suite coverage, and a scheduled call
+    # must land GitHub-hosted; a developer's pull request still gets Ubicloud,
+    # where the wall time is felt.
+    # The second arm is the fork fallback: a pull request from a
+    # fork cannot obtain an Ubicloud runner, so it runs
+    # GitHub-hosted. A branch pull request, which is the one a
+    # maintainer waits on, keeps the paid shape.
+    runs-on: >-
+      ${{ github.event_name == 'schedule' && 'ubuntu-latest'
+      || github.event.pull_request.head.repo.fork && 'ubuntu-latest'
+      || 'ubicloud-standard-2' }}
+    timeout-minutes: 20
+    env:
+      # sccache is the sole owner of compiler output: no cache step archives a
+      # target tree. RUSTC_WRAPPER is what actually engages it; installing
+      # sccache without exporting this compiles everything as before.
+      RUSTC_WRAPPER: sccache
+      SCCACHE_GHA_ENABLED: "true"
+      # sccache cannot cache incremental compilation.
+      CARGO_INCREMENTAL: "0"
+      CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_LINKER: clang
+      CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_RUSTFLAGS: >-
+        -C link-arg=-fuse-ld=mold
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+      # Right-sizing needs the peak memory and the low-water disk mark, and
+      # neither is visible in a job's own output. The sampler runs alongside
+      # the build and reports both at the end, with `if: always()` so a job
+      # that fails on resources still says so.
+      - name: Start resource sampler
+        run: ./scripts/ci-resource-sampler.sh start
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+      - name: Install mold
+        uses: rui314/setup-mold@v1
+      # Ubicloud's transparent cache proxy serves the Actions cache from a
+      # local address. sccache's GitHub Actions backend reads
+      # ACTIONS_CACHE_URL and ACTIONS_RUNTIME_TOKEN from the runner's own
+      # environment, which is not visible to `run:` steps, so re-export them.
+      # Clearing ACTIONS_CACHE_SERVICE_V2 keeps sccache on the v1 protocol the
+      # proxy serves; exporting ACTIONS_RESULTS_URL instead does not work.
+      - name: Export the Actions cache endpoint for sccache
+        uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd  # v8.0.0
+        with:
+          script: |
+            // Ubicloud's control plane writes the proxy address into the VM
+            // environment. Report which variable supplied it, and whether the
+            // token was present at all, so a misconfigured backend is
+            // diagnosable from the log rather than from a slower build. Never
+            // print the token itself.
+            const cacheUrl =
+              process.env.ACTIONS_CACHE_URL ||
+              process.env.CUSTOM_ACTIONS_CACHE_URL ||
+              '';
+            const runtimeToken = process.env.ACTIONS_RUNTIME_TOKEN || '';
+            const source = process.env.ACTIONS_CACHE_URL
+              ? 'ACTIONS_CACHE_URL'
+              : process.env.CUSTOM_ACTIONS_CACHE_URL
+                ? 'CUSTOM_ACTIONS_CACHE_URL'
+                : 'none';
+            core.info(`sccache cache endpoint source: ${source}`);
+            core.info(`sccache cache endpoint present: ${Boolean(cacheUrl)}`);
+            core.info(`sccache runtime token present: ${Boolean(runtimeToken)}`);
+            if (!cacheUrl || !runtimeToken) {
+              core.warning(
+                'sccache has no Actions cache endpoint; every compilation ' +
+                  'will miss and the wrapper will only add overhead',
+              );
+            }
+            core.exportVariable('ACTIONS_CACHE_URL', cacheUrl);
+            core.exportVariable('ACTIONS_RUNTIME_TOKEN', runtimeToken);
+            core.exportVariable('ACTIONS_CACHE_SERVICE_V2', '');
+      - name: Install sccache
+        uses: taiki-e/install-action@c7eb1735f09259a5035e8e5d44b1406b1cddc0fb  # v2.83.0
+        with:
+          tool: sccache@0.16.0
+          fallback: none
+      - name: Start sccache statistics
+        run: |
+          set -euo pipefail
+          sccache --version
+          sccache --zero-stats
+      - name: Restore Cargo registry and index
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9  # v6.1.0
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+          key: >-
+            cargo-v1-${{ runner.os }}-${{ runner.arch }}-${{ runner.environment
+            }}-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            cargo-v1-${{ runner.os }}-${{ runner.arch }}-${{ runner.environment }}-
+      - name: Run GitHub Tool Tests
+        run: make test-github-tool
+      # Report the hit rate so a wrapper that is silently doing nothing shows
+      # up in the job summary rather than only in the duration.
+      - name: Report sccache statistics
+        if: always()
+        run: |
+          set -euo pipefail
+          # Print to the log as well as the job summary. The summary is not
+          # readable through the REST API, so the log copy is what lets anyone
+          # confirm the hit rate, or a read or write error, after the fact.
+          stats="$(sccache --show-stats)"
+          printf '%s\n' "$stats"
+          {
+            printf '### sccache statistics (%s)\n\n' "${GITHUB_JOB}"
+            printf '```text\n'
+            printf '%s\n' "$stats"
+            printf '```\n'
+          } >> "${GITHUB_STEP_SUMMARY}"
+      - name: Report resource peaks
+        if: always()
+        run: ./scripts/ci-resource-sampler.sh report
   windows-build:
     name: Windows Build (${{ matrix.name }})
     # Windows lanes stay on GitHub-hosted runners: Ubicloud offers Linux only.
@@ -416,8 +567,13 @@ jobs:
     # calls this workflow for its full-suite coverage, and a scheduled call
     # must land GitHub-hosted; a developer's pull request still gets Ubicloud,
     # where the wall time is felt.
+    # The second arm is the fork fallback: a pull request from a
+    # fork cannot obtain an Ubicloud runner, so it runs
+    # GitHub-hosted. A branch pull request, which is the one a
+    # maintainer waits on, keeps the paid shape.
     runs-on: >-
       ${{ github.event_name == 'schedule' && 'ubuntu-latest'
+      || github.event.pull_request.head.repo.fork && 'ubuntu-latest'
       || 'ubicloud-standard-4' }}
     timeout-minutes: 75
     env:
@@ -553,8 +709,13 @@ jobs:
     # calls this workflow for its full-suite coverage, and a scheduled call
     # must land GitHub-hosted; a developer's pull request still gets Ubicloud,
     # where the wall time is felt.
+    # The second arm is the fork fallback: a pull request from a
+    # fork cannot obtain an Ubicloud runner, so it runs
+    # GitHub-hosted. A branch pull request, which is the one a
+    # maintainer waits on, keeps the paid shape.
     runs-on: >-
       ${{ github.event_name == 'schedule' && 'ubuntu-latest'
+      || github.event.pull_request.head.repo.fork && 'ubuntu-latest'
       || 'ubicloud-standard-4' }}
     timeout-minutes: 45
     steps:
@@ -596,9 +757,17 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     if: always()
+    env:
+      # What `tests` must report for this trigger. On a push to `main` the job
+      # stands down, because coverage.yml executes the same three legs on the
+      # same commit, so `skipped` is the pass there and `success` is the pass
+      # everywhere else.
+      EXPECTED_TESTS_RESULT: >-
+        ${{ github.event_name == 'push' && 'skipped' || 'success' }}
     needs:
       - audit
       - tests
+      - github-tool-tests
       - telegram-tests
       - wasm-wit-compat
       - docker-build
@@ -606,18 +775,20 @@ jobs:
       - version-check
     steps:
       - run: |
-          # Unit tests must always pass
-          if [[ "${{ needs.tests.result }}" != "success" ]]; then
-            echo "Unit tests failed"
+          # Assert the expected result rather than tolerating `skipped`, so a
+          # leg that vanishes for any other reason is still a failure.
+          if [[ "${{ needs.tests.result }}" != "$EXPECTED_TESTS_RESULT" ]]; then
+            echo "Unit tests must be $EXPECTED_TESTS_RESULT here"
             exit 1
           fi
           # Gated jobs must pass on promotion PRs and push events.
           # On developer PRs they may be skipped.
           for job in \
-            audit telegram-tests wasm-wit-compat docker-build \
-            windows-build version-check; do
+            audit github-tool-tests telegram-tests wasm-wit-compat \
+            docker-build windows-build version-check; do
             case "$job" in
               audit) result="${{ needs.audit.result }}" ;;
+              github-tool-tests) result="${{ needs.github-tool-tests.result }}" ;;
               telegram-tests) result="${{ needs.telegram-tests.result }}" ;;
               wasm-wit-compat) result="${{ needs.wasm-wit-compat.result }}" ;;
               docker-build) result="${{ needs.docker-build.result }}" ;;

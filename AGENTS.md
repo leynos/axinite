@@ -127,10 +127,17 @@ management.
       - `RUSTFLAGS="-D warnings" whitaker --all -- --all-targets --all-features`
       - `RUSTFLAGS="-D warnings" whitaker --all \
         --manifest-path tools-src/github/Cargo.toml -- --tests`
-  - `make test`
-    - `make build-github-tool-wasm`
-    - `cargo nextest run --workspace --profile $NEXTEST_PROFILE`
-    - `cargo test --manifest-path tools-src/github/Cargo.toml`
+  - `make test` (runs `make test-workspace` then `make test-github-tool`)
+    - `make test-workspace`
+      - `make build-github-tool-wasm`
+      - `cargo nextest run --workspace $TEST_FEATURES \
+        --profile $NEXTEST_PROFILE`
+    - `make test-github-tool`
+      - `cargo test --manifest-path tools-src/github/Cargo.toml`
+- The halves are separate targets because CI runs them on separate lanes and
+  separate triggers: `tools-src/github` is outside the workspace, so
+  `--workspace` never reaches it, and it would otherwise run once per matrix
+  leg. See "One suite, one run per trigger" in the developers' guide.
 - Nextest profiles are configured in `.config/nextest.toml`. The `default`
   profile excludes expensive compile-contract tests (trybuild); the `ci`
   profile runs everything. Pass `NEXTEST_PROFILE=ci` to `make test` or

@@ -42,7 +42,11 @@ COMPILING_COMMANDS: tuple[re.Pattern[str], ...] = tuple(
         # invokes rustc just as surely, and a selector that missed it would
         # exempt that job from every assertion below.
         r"\bcargo\s+(?:\+\S+\s+)?(?:build|check|clippy|test|nextest|llvm-cov)\b",
-        r"\bmake\s+(?:test|lint-whitaker)\b(?!-)",
+        # Each target is named. A bare `test` with a boundary would match the
+        # first half of `test-workflow-contracts`, which is a PyYAML parse and
+        # not a build; a `(?!-)` guard on it would instead exempt
+        # `test-workspace`, which compiles the whole workspace.
+        r"\bmake\s+(?:test-workspace|test-github-tool|test|lint-whitaker)\b(?!-)",
         r"\./scripts/build-wasm-extensions\.sh",
     )
 )

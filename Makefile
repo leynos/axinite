@@ -66,7 +66,7 @@ RUST_DECIMAL_AUDIT_FLAGS := \
 LIBSQL_AUDIT_FLAGS := \
 	--ignore RUSTSEC-2026-0258
 
-.PHONY: all install install-with-overrides sync-local-wasm-overrides build-github-tool-wasm fmt check-fmt typecheck lint lint-clippy lint-whitaker markdownlint spelling nixie audit rust-audit test test-cargo test-matrix test-matrix-cargo test-workflow-contracts clean
+.PHONY: all install install-with-overrides sync-local-wasm-overrides build-github-tool-wasm fmt check-fmt typecheck lint lint-clippy lint-whitaker markdownlint spelling nixie audit rust-audit test test-workspace test-github-tool test-cargo test-matrix test-matrix-cargo test-workflow-contracts clean
 
 # `make fmt` and `make check-fmt` call mdtablefix directly. `--git` selects the
 # Markdown files Git tracks and `--include-untracked` adds the untracked files
@@ -150,9 +150,22 @@ rust-audit:
 			fi; \
 		done' sh {} +
 
-test:
+# The whole suite, for a developer. CI splits it: the workspace suite and the
+# GitHub tool's own suite run on different lanes and different triggers, so
+# each half has to be runnable on its own.
+test: test-workspace test-github-tool
+
+# The workspace suite alone. `tools-src/github` is excluded from the workspace,
+# so `--workspace` does not reach it; the WASM build is still needed here
+# because the metadata and schema tests load the artefact it produces.
+test-workspace:
 	$(MAKE) build-github-tool-wasm
 	$(NEXTEST) run --workspace $(TEST_FEATURES) --profile $(NEXTEST_PROFILE)
+
+# The GitHub tool crate's own suite. It is the only test work `--workspace`
+# never covers, which is why it is the one lane that survives the CI
+# de-duplication.
+test-github-tool:
 	$(CARGO) test --manifest-path $(GITHUB_TOOL_MANIFEST)
 
 test-cargo:
