@@ -1276,6 +1276,23 @@ unless it passes `--no-default-features`; that the step exporting the URL also
 appends the requirement to `$GITHUB_ENV`; and that exactly one step exports it,
 guarded by `matrix.has_postgres`.
 
+The Rust side is tested in three layers, because the first two are each
+satisfied by a defect the third catches. `src/testing/postgres/tests.rs` holds
+a decision table over `skip_is_allowed` and `PostgresRequirement`, which is
+pure and says what each of the four cells means. Above that,
+`try_pg_db_at(url, requirement)` is driven against a refused connection on
+`127.0.0.1:1`, so the real error classification and the real branch run rather
+than a hand-built error. Both of those would still pass if `try_test_pg_db`
+handed the decision `Optional` instead of `from_env()`, which is the whole
+change, so the third layer asserts the wiring: an `#[ignore]`d test calls
+`try_test_pg_db` itself, and five cases run it in a child process with
+`AXINITE_REQUIRE_POSTGRES` unset, empty, whitespace, `1` and `false`, reading
+the child's exit status as the decision. A child process rather than a
+`set_var` because the environment is process-wide and is not a structural
+reason to serialize a test binary; the parent also asserts that the child ran a
+test at all, since a renamed child would otherwise make every case pass on a
+process that ran nothing.
+
 ### libSQL test databases
 
 Unit tests that exercise the libSQL backend call `LibSqlBackend::new_memory()`
