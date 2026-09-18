@@ -173,11 +173,11 @@ management.
 - Use `rstest` fixtures for shared setup.
 - Replace duplicated tests with `#[rstest(...)]` parameterized cases.
 - Prefer `mockall` for ad hoc mocks and stubs.
-- For functionality depending on environment variables, prefer dependency
-  injection and the `mockable` crate.
-- If mockable cannot be used, environment mutation in tests must be wrapped in
-  shared guards and mutexes in a shared `test_utils` or `test_helpers` crate.
-  Direct environment mutation in tests is forbidden.
+- `EnvContext` is the sanctioned environment seam. Production captures ambient
+  input at an owning composition boundary; tests construct isolated snapshots
+  with `EnvContext::for_testing` or `with_env`.
+- Direct process-environment mutation in tests is forbidden. Mutexes and RAII
+  restoration guards do not make it safe.
 
 ### Dependency Management
 

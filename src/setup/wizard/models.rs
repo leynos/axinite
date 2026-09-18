@@ -284,7 +284,12 @@ impl SetupWizard {
     /// Report whether an OpenAI API key is available for embeddings, either
     /// from the environment or cached from the OpenAI provider setup.
     fn has_openai_embeddings_key(&self, backend: &str) -> bool {
-        if std::env::var("OPENAI_API_KEY").is_ok() {
+        if {
+            #[expect(clippy::disallowed_methods, reason = "transitional #333: EnvContext")]
+            std::env::var("OPENAI_API_KEY")
+        }
+        .is_ok()
+        {
             return true;
         }
         backend == "openai" && self.llm_api_key.is_some()

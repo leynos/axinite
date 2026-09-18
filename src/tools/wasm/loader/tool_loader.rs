@@ -327,10 +327,13 @@ pub(super) fn resolve_oauth_refresh_config(
         .client_id
         .clone()
         .or_else(|| {
-            oauth
-                .client_id_env
-                .as_ref()
-                .and_then(|env| std::env::var(env).ok())
+            oauth.client_id_env.as_ref().and_then(|env| {
+                {
+                    #[expect(clippy::disallowed_methods, reason = "transitional #333: EnvContext")]
+                    std::env::var(env)
+                }
+                .ok()
+            })
         })
         .or_else(|| builtin.as_ref().map(|c| c.client_id.to_string()))?;
 
@@ -338,10 +341,13 @@ pub(super) fn resolve_oauth_refresh_config(
         .client_secret
         .clone()
         .or_else(|| {
-            oauth
-                .client_secret_env
-                .as_ref()
-                .and_then(|env| std::env::var(env).ok())
+            oauth.client_secret_env.as_ref().and_then(|env| {
+                {
+                    #[expect(clippy::disallowed_methods, reason = "transitional #333: EnvContext")]
+                    std::env::var(env)
+                }
+                .ok()
+            })
         })
         .or_else(|| builtin.as_ref().map(|c| c.client_secret.to_string()));
 

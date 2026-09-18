@@ -213,7 +213,12 @@ fn convert_test_pages_to_markdown() {
             }
         }
 
-        if std::env::var("HTML_TO_MD_VERBOSE").is_ok() {
+        if {
+            #[expect(clippy::disallowed_methods, reason = "transitional #333: EnvContext")]
+            std::env::var("HTML_TO_MD_VERBOSE")
+        }
+        .is_ok()
+        {
             println!("--- {} ---\n{}\n", dir_name, markdown);
         }
         converted += 1;

@@ -150,9 +150,18 @@ impl WorkerRuntime {
     /// This is a convenience constructor for production use; tests should
     /// prefer [`Self::new`] with an explicit client.
     pub fn from_env(config: WorkerConfig) -> Result<Self, WorkerError> {
-        let client = Arc::new(WorkerHttpClient::from_env(
+        Self::from_context(config, &crate::config::EnvContext::capture_ambient())
+    }
+
+    /// Create a worker runtime from an explicit environment snapshot.
+    pub fn from_context(
+        config: WorkerConfig,
+        ctx: &crate::config::EnvContext,
+    ) -> Result<Self, WorkerError> {
+        let client = Arc::new(WorkerHttpClient::from_context(
             config.orchestrator_url.clone(),
             config.job_id,
+            ctx,
         )?);
 
         Self::new(config, client)

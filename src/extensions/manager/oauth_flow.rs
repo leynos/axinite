@@ -296,5 +296,11 @@ fn credential_auto_resolved(
     if inline.is_some() || has_builtin {
         return true;
     }
-    env_var.as_ref().is_some_and(|e| std::env::var(e).is_ok())
+    env_var.as_ref().is_some_and(|e| {
+        {
+            #[expect(clippy::disallowed_methods, reason = "transitional #333: EnvContext")]
+            std::env::var(e)
+        }
+        .is_ok()
+    })
 }
