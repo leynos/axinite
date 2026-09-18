@@ -172,12 +172,73 @@ def test_an_unreadable_directory_fails_closed(name: str, tmp_path: Path) -> None
     sys.platform == "win32",
     reason="POSIX permission bits; Windows chmod only toggles read-only",
 )
+def test_a_child_that_cannot_be_classified_is_reported(tmp_path: Path) -> None:
+    """Assert the directory test is acquisition too, not a query.
+
+    One level below the case above, and it survived that one. A
+    directory with read but not execute permission lists its children
+    perfectly well, and then every `stat` of a child fails with
+    `EACCES`. `Path.is_dir` swallows that and answers False, so the
+    nested walk decides the subdirectory is an ordinary file, descends
+    into nothing, and reports a tree with no compile-contract binaries.
+    The sweep succeeds and the allowance assertions pass over an empty
+    set.
+
+    Mode `0o500` would not do: the sweep would then read the tree
+    correctly and the case would pass whatever the reader did. `0o400`
+    is the mode that separates listing from stat-ing, which is the
+    distinction the defect lives in.
+    """
+    if os.geteuid() == 0:
+        pytest.skip("root stats a child whatever the parent's mode bits say")
+    parent = tmp_path / "unstattable"
+    nested = parent / "contract"
+    nested.mkdir(parents=True)
+    (nested / "main.rs").write_text("trybuild::TestCases", encoding="utf-8")
+    parent.chmod(0o400)
+    try:
+        with pytest.raises(SourceReadError) as raised:
+            matching_entries(parent, "*/main.rs")
+    finally:
+        parent.chmod(0o700)
+    assert raised.value.path == nested, (
+        f"the failure must name the child it could not classify; it named "
+        f"{raised.value.path}"
+    )
+
+
+def test_a_dangling_symlink_is_not_a_directory_rather_than_a_failure(
+    tmp_path: Path,
+) -> None:
+    """Assert the refusal above is narrow as well as sufficient.
+
+    A reader that reported every `OSError` from the directory test would
+    satisfy the case above and turn a broken symlink into a failed
+    sweep. `ENOENT` is an answer rather than a failure: the entry is not
+    a directory, and skipping it is what the walk did before.
+    """
+    (tmp_path / "gone").symlink_to(tmp_path / "no-such-target")
+    real = tmp_path / "contract"
+    real.mkdir()
+    source = real / "main.rs"
+    source.write_text("trybuild::TestCases", encoding="utf-8")
+    assert matching_entries(tmp_path, "*/main.rs") == [source], (
+        "a dangling symlink is skipped, and the real directory is still walked"
+    )
+
+
 def test_a_readable_nested_tree_is_still_matched(tmp_path: Path) -> None:
     """Assert the nested walk still finds what it should.
 
     The refusal above is satisfied by a walk that reports nothing ever,
     so the shape the sweeps actually use is pinned: a source beside the
     directory and a source one level down, both found.
+
+    Runs everywhere. It carried the POSIX-permissions skip its
+    neighbours need, and it sets no mode bits and calls no `chmod`:
+    it makes a readable tree and asks what was matched. The skip was
+    copied rather than reasoned about, and it removed the matching
+    coverage from every Windows run.
     """
     nested = tmp_path / "contract"
     nested.mkdir()

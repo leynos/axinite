@@ -29,8 +29,8 @@ Run via ``make test-workflow-contracts``.
 import typing as typ
 
 import pytest
-from nextest_config import Profile, binaries_selected, profiles_of
-from timeout_budgets import NEXTEST_CONFIG, base_slow_timeout, global_timeout
+from nextest_config import Profile, binaries_selected
+from timeout_budgets import base_slow_timeout, global_timeout
 
 #: The profiles the configuration is allowed to declare. Pinned as a set
 #: rather than iterated, because every assertion below is parametrized
@@ -92,23 +92,6 @@ def _fields(table: object) -> dict[str, str]:
             return {str(key): str(value) for key, value in table.items()}
         case _:
             return {}
-
-
-@pytest.fixture(scope="module")
-def nextest_profiles() -> dict[str, Profile]:
-    """Return each nextest profile the configuration declares.
-
-    Read through the acquisition helper rather than with `read_text`,
-    so a configuration that cannot be read is reported as this suite
-    reports every other unreadable source, and so the reading is
-    written once rather than in each module that needs it.
-
-    Returns
-    -------
-    dict[str, Profile]
-        Profile name to its table and overrides.
-    """
-    return profiles_of(NEXTEST_CONFIG)
 
 
 def test_the_configuration_declares_the_profiles_this_contract_pins(

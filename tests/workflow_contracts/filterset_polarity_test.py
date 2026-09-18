@@ -158,6 +158,67 @@ def test_a_binary_both_selected_and_excluded_is_refused() -> None:
 @pytest.mark.parametrize(
     "filterset",
     [
+        pytest.param("binary(a) - not binary(b)", id="a-difference-of-a-negation"),
+        pytest.param("binary(a) - !binary(b)", id="a-difference-of-a-bang"),
+        pytest.param("binary(a) - ! binary(b)", id="a-difference-of-a-spaced-bang"),
+        pytest.param("not not binary(a)", id="the-word-not-twice"),
+        pytest.param("!!binary(a)", id="a-bang-twice"),
+    ],
+)
+def test_a_negation_of_a_negation_is_refused(filterset: str) -> None:
+    """The pair cancels, and this reader has no operator context to cancel it with.
+
+    nextest binds `not` tighter than `-`, so `binary(a) - not binary(b)`
+    is `binary(a) and not (not binary(b))`, which is
+    `binary(a) and binary(b)`. When the two names differ that selects
+    nothing at all.
+
+    A reader that matches terms sees only the inner negation: it
+    excludes `b`, strips the term, and reports `a` as selected. That is
+    the dangerous direction rather than the safe one. Reporting `a`
+    grants it an override's allowance nextest never applies, so the
+    binary runs under the base allowance while this contract certifies
+    it has the longer one, which is exactly the failure
+    `binaries_selected` exists to prevent.
+
+    Every spelling of the pair is covered, because a refusal that knew
+    only `- not` would let `- !` through, and the two mean the same
+    thing to nextest.
+    """
+    with pytest.raises(NextestConfigurationError, match=r"one negation to another"):
+        binaries_selected(filterset)
+
+
+@pytest.mark.parametrize(
+    ("filterset", "expected"),
+    [
+        pytest.param("binary(a) - binary(b)", {"a"}, id="a-single-difference"),
+        pytest.param("binary(a) & not binary(b)", {"a"}, id="a-single-word-negation"),
+        pytest.param("nothing(a) | binary(b)", {"b"}, id="a-predicate-starting-notlike"),
+        pytest.param("binary(a-b) | binary(c)", {"a-b", "c"}, id="a-hyphenated-name"),
+    ],
+)
+def test_the_double_negation_refusal_is_narrow(
+    filterset: str, expected: set[str]
+) -> None:
+    """Assert the refusal above is narrow as well as sufficient.
+
+    The pattern is two negations adjacent, and `-` is one of the three
+    spellings, so a careless version of it would fire on a single
+    difference, on a hyphen inside a binary name, or on a predicate that
+    merely begins with the letters `not`. A refusal that refused
+    everything would satisfy the test above and break every filterset
+    this repository actually writes.
+    """
+    assert binaries_selected(filterset) == expected, (
+        f"{filterset!r} carries no double negation and selects "
+        f"{sorted(expected)}"
+    )
+
+
+@pytest.mark.parametrize(
+    "filterset",
+    [
         pytest.param("not (binary(a) | binary(b))", id="the-word-not"),
         pytest.param("!(binary(a) | binary(b))", id="a-bang"),
         pytest.param("binary(c) - (binary(a) | binary(b))", id="a-difference"),

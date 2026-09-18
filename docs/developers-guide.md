@@ -520,6 +520,59 @@ if the script never calls `core.exportVariable`; checking that an installer
 exists proves nothing if nothing runs the binary afterwards. A useful test for
 a new contract is to delete the thing it guards and confirm the suite goes red.
 
+#### Reading the filesystem: the acquisition boundary
+
+Every other reader in `tests/workflow_contracts/` is a query. It takes a
+directory or a path, returns lanes, profiles or binary names, and its return
+type says nothing about the filesystem underneath. That shape is the hazard
+these contracts are most exposed to, because the failure mode is silence rather
+than an error: a directory that cannot be read comes back as an empty result,
+the caller reads it as a tree with no workflows and no compile contracts, and
+every assertion over it passes over nothing while the suite reports success.
+
+`contract_sources.py` is where that silence is converted into a failure. It
+holds the filesystem calls the suite makes and nothing else, so the pure
+readers above it can be read as the queries they look like.
+
+**Three calls, three failures.** Reading a file's text, listing a directory,
+and asking whether an entry is a directory. Each reports `SourceReadError`,
+which carries the path it is about and chains the cause. The third was added
+last and is the least obvious: `Path.is_dir` looks like a question rather than
+a filesystem call, and it answers `False` for an entry it could not `stat`,
+which makes an unreadable subdirectory indistinguishable from an ordinary file.
+The nested sweep then descends into nothing.
+
+`SourceReadError` keeps `OSError` as its base, so a caller already catching
+`OSError` keeps catching these. Its `path` attribute names the file or
+directory the fault is about, which is what a failure message otherwise lacks:
+a bare `OSError` names an errno, and a `UnicodeDecodeError` names a byte
+offset, and neither says which contract was reading what. A file that is not
+UTF-8 is reported the same way, because a contract cannot read what a file says
+if it cannot decode it.
+
+**Enumerate, do not glob.** From Python 3.13 `Path.glob` suppresses the errors
+raised while scanning, so an unreadable directory passes `is_dir` and yields
+nothing, exactly as an empty one does. Neither a pre-check nor a `try` around
+the call can see it: there is no exception left to catch and nothing about the
+result to doubt. `matching_entries` therefore lists with `iterdir` and matches
+names afterwards.
+
+**An answer is not a failure.** The directory test reports every `OSError`
+except `ENOENT` and `ENOTDIR`. A dangling symlink is not a directory and a path
+under a file is not a directory; both are definite answers, and turning them
+into failures would break sweeps over ordinary trees. Every other errno means
+the question went unanswered, and an unanswered question is reported rather
+than guessed.
+
+When adding an acquisition function, add it to the tables in
+`acquisition_boundary_test.py`. `ENTRY_POINTS` drives each at a path that does
+not exist; `DIRECTORY_SWEEPS` drives each at a directory that exists and cannot
+be read. Both are enumerated by hand rather than discovered, because the point
+of the tables is that somebody decided each of these reaches the filesystem.
+The permission cases skip on Windows, whose `chmod` only toggles a read-only
+bit, and under `root`, which reads a directory whatever its mode bits say;
+without the second skip the case passes vacuously in a container.
+
 ### What remains of the runner migration wave
 
 The wave is nearly done. `code_style.yml` `format` and `clippy`, `test.yml`

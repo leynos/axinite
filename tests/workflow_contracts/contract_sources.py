@@ -9,13 +9,21 @@ UTF-8 would otherwise surface as a bare ``OSError`` or a
 saying which contract was reading what, or that the failure was in
 acquisition at all.
 
-So the two filesystem calls these contracts make are wrapped here and
-report a domain error carrying the path, with the cause chained.
+So the filesystem calls these contracts make are wrapped here and
+report a domain error carrying the path, with the cause chained. There
+are three: reading a file, listing a directory, and asking whether an
+entry is a directory. The third was added late, because `Path.is_dir`
+looks like a question rather than a filesystem call and answers False
+for an entry it could not stat, which is the same silent under-reading
+`matching_entries` documents about `Path.glob`.
+
 ``SourceReadError`` keeps ``OSError`` as its base, because these are
 operating-system failures and a caller already catching ``OSError``
 should keep catching them.
 """
 
+import errno
+import stat
 import typing as typ
 from fnmatch import fnmatch
 
@@ -107,58 +115,55 @@ def directory_entries(directory: "Path") -> "list[Path]":
 
 
 def _named_like(directory: "Path", pattern: str) -> "list[Path]":
-    """Return one directory's entries whose names match a pattern.
-
-    The listing goes through :func:`directory_entries`, so a directory
-    that cannot be read raises here rather than yielding nothing.
-
-    Parameters
-    ----------
-    directory
-        The directory to list.
-    pattern
-        A glob pattern with no separator, matched against each name.
-
-    Returns
-    -------
-    list of Path
-        The matching entries, in the order the filesystem gave them.
-
-    Raises
-    ------
-    SourceReadError
-        If the directory cannot be listed.
-    """
+    """Return one directory's entries whose names match a separator-free pattern."""
+    # Listed through `directory_entries`, so a directory that cannot be
+    # read raises `SourceReadError` here rather than yielding nothing.
     return [
         entry for entry in directory_entries(directory) if fnmatch(entry.name, pattern)
     ]
 
 
+def _is_directory(entry: "Path") -> bool:
+    """Return whether an entry is a directory, refusing an answer it cannot give."""
+    # `Path.is_dir` swallows every `OSError` and answers False, so an
+    # entry this process cannot stat is indistinguishable from a plain
+    # file. That is the same fault `matching_entries` documents about
+    # `Path.glob`, one level down: a `tests` directory readable but not
+    # executable lists its children and then fails to stat any of them,
+    # so the nested sweep reports no compile-contract binaries and every
+    # assertion over that empty set passes.
+    #
+    # `ENOENT` and `ENOTDIR` are answers rather than failures. A
+    # dangling symlink is not a directory, and neither is a path whose
+    # parent component turns out to be a file; both are skipped as
+    # before. Anything else means the question was not answered, and an
+    # unanswered question is reported rather than guessed.
+    #
+    # `Path.stat` rather than `Path.is_dir`, and not the keyword
+    # `is_dir(follow_symlinks=...)`, which arrived in Python 3.13. The
+    # stat call raises on every supported version, which is the whole
+    # point of asking this way.
+    try:
+        return stat.S_ISDIR(entry.stat().st_mode)
+    except OSError as error:
+        if error.errno in (errno.ENOENT, errno.ENOTDIR):
+            return False
+        message = (
+            f"{entry} could not be classified as a directory or not: {error}; "
+            f"the nested sweep would otherwise skip it silently and report a "
+            f"tree with nothing in it"
+        )
+        raise SourceReadError(message, path=entry) from error
+
+
 def _nested_like(directory: "Path", head: str, tail: str) -> "list[Path]":
-    """Return entries one level down whose parents match ``head``.
-
-    Parameters
-    ----------
-    directory
-        The directory to walk.
-    head
-        The pattern each subdirectory's name must match.
-    tail
-        The pattern each entry inside one must match.
-
-    Returns
-    -------
-    list of Path
-        The matching entries.
-
-    Raises
-    ------
-    SourceReadError
-        If any directory involved cannot be listed.
-    """
+    """Return entries one level down whose parent directories match ``head``."""
+    # Every filesystem call on this path is fallible and visible: the
+    # two listings through `directory_entries`, and the directory test
+    # through `_is_directory`.
     found: list[Path] = []
     for entry in _named_like(directory, head):
-        if entry.is_dir():
+        if _is_directory(entry):
             found.extend(_named_like(entry, tail))
     return found
 
