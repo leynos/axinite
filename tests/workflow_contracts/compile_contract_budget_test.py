@@ -11,10 +11,9 @@ Run via ``make test-workflow-contracts``.
 
 import pytest
 from _workflow_policy import REPOSITORY_ROOT
-from nextest_config import Profile, profiles_of
+from nextest_config import Profile
 from timeout_budgets import (
     COMPILE_CONTRACT_ALLOWANCE_SECONDS,
-    NEXTEST_CONFIG,
     binaries_short_of_allowance,
     compile_contract_binaries,
     excluded_from,
@@ -40,23 +39,6 @@ REQUIRED_EXCLUSIONS: dict[tuple[str, str], bool] = {
     ("ci", "trybuild"): False,
     ("ci", "schema_helpers_ui"): False,
 }
-
-
-@pytest.fixture(scope="module")
-def nextest_profiles() -> dict[str, Profile]:
-    """Return each nextest profile the configuration declares.
-
-    Read through the acquisition helper rather than with `read_text`,
-    so a configuration that cannot be read is reported as this suite
-    reports every other unreadable source, and so the reading is
-    written once rather than in each module that needs it.
-
-    Returns
-    -------
-    dict[str, Profile]
-        Profile name to its table and overrides.
-    """
-    return profiles_of(NEXTEST_CONFIG)
 
 
 @pytest.mark.parametrize("profile", ["default", "ci"], ids=str)

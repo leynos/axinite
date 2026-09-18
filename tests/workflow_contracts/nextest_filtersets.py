@@ -79,6 +79,23 @@ _NEGATED_BINARY_TERM: typ.Final[re.Pattern[str]] = re.compile(
 #: carrying one is refused rather than read.
 _NEGATED_GROUP: typ.Final[re.Pattern[str]] = re.compile(_NEGATION + r"\(")
 
+#: One negation applied to another. `binary(a) - not binary(b)` is the
+#: case: nextest binds `not` tighter than `-`, so the expression is
+#: `binary(a) and not (not binary(b))`, which is `binary(a) and
+#: binary(b)` and selects nothing at all when the two names differ.
+#:
+#: This reader matches terms rather than parsing them, so it has no
+#: operator context to cancel the pair with: it would see the inner
+#: negation, exclude `b`, and report `a` as selected. That is the
+#: dangerous direction, because reporting `a` grants it an override's
+#: allowance that nextest never applies, and the binary then runs under
+#: the base allowance with the contract certifying otherwise.
+#:
+#: Refused rather than read, on the same principle as the two below: a
+#: contract that cannot evaluate an expression must not certify the
+#: lane it guards.
+_DOUBLE_NEGATION: typ.Final[re.Pattern[str]] = re.compile(_NEGATION + _NEGATION)
+
 
 def binaries_selected(filterset: object) -> frozenset[str]:
     """Return the test binaries a filterset selects, negation honoured.
@@ -91,14 +108,18 @@ def binaries_selected(filterset: object) -> frozenset[str]:
     binary would run under the base allowance while the contract
     certified it.
 
-    Two shapes are refused rather than read, for the same reason. A
+    Three shapes are refused rather than read, for the same reason. A
     negation over a parenthesized group, because attributing
     ``not (binary(a) | binary(b))`` needs the filterset evaluated rather
-    than its terms matched. And a binary that is both selected and
-    excluded, such as ``binary(a) | binary(b) - binary(b)``, because
-    which occurrence wins depends on how the expression groups. A
-    contract that cannot evaluate an expression must not certify the
-    lane it guards.
+    than its terms matched. A negation applied to another, such as
+    ``binary(a) - not binary(b)``, because nextest binds ``not`` tighter
+    than ``-`` and the pair therefore cancels: that expression is
+    ``binary(a) and binary(b)``, which selects nothing when the names
+    differ, while a term-matching reader would report ``a``. And a
+    binary that is both selected and excluded, such as
+    ``binary(a) | binary(b) - binary(b)``, because which occurrence wins
+    depends on how the expression groups. A contract that cannot
+    evaluate an expression must not certify the lane it guards.
 
     Parameters
     ----------
@@ -114,8 +135,9 @@ def binaries_selected(filterset: object) -> frozenset[str]:
     Raises
     ------
     NextestConfigurationError
-        If a negation covers a group, or a binary is both selected and
-        excluded, so that this reading cannot attribute it.
+        If a negation covers a group, a negation covers another
+        negation, or a binary is both selected and excluded, so that
+        this reading cannot attribute it.
 
     Examples
     --------
@@ -131,6 +153,16 @@ def binaries_selected(filterset: object) -> frozenset[str]:
             collapsed = " ".join(filterset.split())
         case _:
             return frozenset()
+    if _DOUBLE_NEGATION.search(collapsed):
+        message = (
+            f"the filterset {collapsed!r} applies one negation to another, "
+            f"and nextest binds `not` tighter than `-`, so the pair cancels "
+            f"and selects the intersection rather than the difference; this "
+            f"contract matches terms and has no operator context to cancel "
+            f"them with, so it refuses to report an allowance it cannot "
+            f"attribute"
+        )
+        raise NextestConfigurationError(message)
     excluded = frozenset(_NEGATED_BINARY_TERM.findall(collapsed))
     remaining = _NEGATED_BINARY_TERM.sub(" ", collapsed)
     if _NEGATED_GROUP.search(remaining):
