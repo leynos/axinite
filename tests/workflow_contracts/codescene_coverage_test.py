@@ -247,5 +247,130 @@ def test_codescene_check_uses_canonical_guard_and_inputs() -> None:
         "mode": "check",
         "project-url": "https://api.codescene.io/v2/projects/77987",
         "access-token": "${{ env.CS_ACCESS_TOKEN }}",
-        "installer-checksum": "${{ vars.CODESCENE_CLI_SHA256 }}",
     }, "the CodeScene step must use the canonical project and check-mode inputs"
+
+
+#: The input the uploader no longer accepts, and the estate no longer passes.
+WITHDRAWN_INPUT = "installer-checksum"
+
+#: The prefix every uploader step's `uses` shares.
+UPLOADER = "leynos/shared-actions/.github/actions/upload-codescene-coverage@"
+
+
+#: The extensions GitHub accepts for a workflow file.
+WORKFLOW_SUFFIXES = frozenset({".yml", ".yaml"})
+
+#: One uploader step, located: its workflow file, its job's key, and itself.
+UploaderStep = tuple[str, str, dict[str, object]]
+
+
+def _step_mappings(job: object) -> list[dict[str, object]]:
+    """Return a job's steps, dropping anything that is not a mapping.
+
+    Parameters
+    ----------
+    job
+        A parsed job body, which a malformed workflow may make anything at all.
+
+    Returns
+    -------
+    list of dict
+        The step mappings, in order. Empty when the job declares no usable
+        steps, so a malformed job is skipped rather than half-read.
+    """
+    steps = job.get("steps") if isinstance(job, dict) else None
+    if not isinstance(steps, list):
+        return []
+    return [step for step in steps if isinstance(step, dict)]
+
+
+def _jobs_in(document: object) -> dict[str, object]:
+    """Return a parsed workflow's jobs mapping, empty when it declares none.
+
+    Parameters
+    ----------
+    document
+        A parsed workflow file.
+
+    Returns
+    -------
+    dict
+        The jobs, keyed by job ID.
+    """
+    jobs = document.get("jobs") if isinstance(document, dict) else None
+    return jobs if isinstance(jobs, dict) else {}
+
+
+def _uploader_steps_in(workflow: str, document: object) -> list[UploaderStep]:
+    """Return every uploader step one parsed workflow declares.
+
+    Parameters
+    ----------
+    workflow
+        The file name, carried through so a failure names the file.
+    document
+        The parsed workflow.
+
+    Returns
+    -------
+    list of UploaderStep
+        One entry per step whose `uses` names the CodeScene uploader.
+    """
+    return [
+        (workflow, str(job_id), step)
+        for job_id, job in _jobs_in(document).items()
+        for step in _step_mappings(job)
+        if str(step.get("uses", "")).startswith(UPLOADER)
+    ]
+
+
+def _uploader_steps() -> list[UploaderStep]:
+    """Return every step in the estate that runs the CodeScene uploader.
+
+    Returns
+    -------
+    list of UploaderStep
+        The workflow file name, the job's key, and the step mapping, for each
+        uploader step found anywhere in `.github/workflows`.
+    """
+    return [
+        found
+        for path in sorted(WORKFLOW_PATH.parent.iterdir())
+        if path.suffix in WORKFLOW_SUFFIXES
+        for found in _uploader_steps_in(
+            path.name, yaml.safe_load(path.read_text(encoding="utf-8"))
+        )
+    ]
+
+
+def test_no_uploader_step_passes_the_withdrawn_installer_checksum() -> None:
+    """Every uploader step must stop naming an input the action will reject.
+
+    The next version of the uploader refuses `installer-checksum` outright, so
+    a step still passing it fails the whole job rather than the input. The
+    variable it read is not the replacement either: `CODESCENE_CLI_SHA256`
+    holds the installer script's digest, and the input that replaces this one
+    wants the archive's, so renaming it would pass a digest of the wrong
+    artefact and fail verification instead of argument parsing.
+
+    The estate is scanned rather than one file, because the input appeared in
+    two workflows and a contract on either alone would have passed while the
+    other broke. The count is asserted first: every assertion below is
+    satisfied by finding no uploader steps at all.
+    """
+    steps = _uploader_steps()
+    assert len(steps) >= 2, (
+        f"the scan found {len(steps)} uploader steps; it is meant to find the "
+        "check step and the upload step, and a scan that finds none passes "
+        "this contract with the input restored"
+    )
+    for workflow, job_id, step in steps:
+        inputs = step.get("with")
+        declared = set(inputs) if isinstance(inputs, dict) else set()
+        assert WITHDRAWN_INPUT not in declared, (
+            f"{workflow}:{job_id} passes {WITHDRAWN_INPUT!r} to the CodeScene "
+            "uploader. The action no longer accepts it, so the step fails on "
+            "the argument; and it must be removed rather than renamed, "
+            "because the value it reads is the installer script's digest, not "
+            "the archive's"
+        )
