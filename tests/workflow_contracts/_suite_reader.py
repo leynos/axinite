@@ -16,16 +16,20 @@ from __future__ import annotations
 import re
 import typing as typ
 from dataclasses import dataclass
-from functools import cache
+from types import MappingProxyType
 
+import yaml
+
+from _sources import SourceError, read_text
 from _suite_keys import feature_key, profile_of
 from _suite_targets import DEFAULT_PROFILE, MAKE_COMMAND, MAKE_TARGETS, WORKSPACE
 from _workflow_policy import (
     DIST_GENERATED,
+    WORKFLOW_DIR,
     Job,
     jobs_of,
-    load,
     matrix_legs,
+    parse_workflow,
     runs_on_event,
     step_text,
     triggers,
@@ -33,7 +37,14 @@ from _workflow_policy import (
 )
 
 if typ.TYPE_CHECKING:  # pragma: no cover - typing only
-    from collections.abc import Iterator
+    from collections.abc import Iterator, Mapping
+    from pathlib import Path
+
+#: Every workflow this contract judges, parsed and keyed by name. The reading
+#: is a mapping the caller cannot alter: one contract mutating the estate
+#: would change what a later one judges, and the failure would name the later
+#: contract.
+Estate: typ.TypeAlias = "Mapping[str, Mapping[str, object]]"
 
 #: The triggers a developer waits on, and the only ones that reach a paid
 #: runner. A scheduled duplicate is free and blocks nobody.
@@ -124,7 +135,9 @@ def substitute(text: str, leg: dict[str, str]) -> str:
     return MATRIX_REFERENCE_RE.sub(lambda match: leg.get(match["key"], match[0]), text)
 
 
-def cargo_runs(script: str) -> Iterator[tuple[str, str, frozenset[str]]]:
+def cargo_runs(
+    script: str, defaults: frozenset[str]
+) -> Iterator[tuple[str, str, frozenset[str]]]:
     """Yield the scope and features of each Cargo suite command in a script.
 
     A command that names neither a manifest nor `--workspace` is skipped. It
@@ -136,6 +149,9 @@ def cargo_runs(script: str) -> Iterator[tuple[str, str, frozenset[str]]]:
     ----------
     script
         A step's script, with every matrix reference already substituted.
+    defaults
+        The root manifest's `default` feature list, passed through to
+        `feature_key` rather than read here.
 
     Yields
     ------
@@ -148,12 +164,18 @@ def cargo_runs(script: str) -> Iterator[tuple[str, str, frozenset[str]]]:
             args = match["args"]
             manifest = MANIFEST_RE.search(args)
             if manifest is not None:
-                yield f"crate:{manifest['path']}", profile_of(args), feature_key(args)
+                yield (
+                    f"crate:{manifest['path']}",
+                    profile_of(args),
+                    feature_key(args, defaults),
+                )
             elif "--workspace" in args:
-                yield WORKSPACE, profile_of(args), feature_key(args)
+                yield WORKSPACE, profile_of(args), feature_key(args, defaults)
 
 
-def make_runs(script: str) -> Iterator[tuple[str, str, frozenset[str]]]:
+def make_runs(
+    script: str, defaults: frozenset[str]
+) -> Iterator[tuple[str, str, frozenset[str]]]:
     """Yield the scope, profile and features of each Make target in a script.
 
     Only the workspace half reads the step's variables. `make test-github-tool`
@@ -165,6 +187,9 @@ def make_runs(script: str) -> Iterator[tuple[str, str, frozenset[str]]]:
     ----------
     script
         A step's script, with every matrix reference already substituted.
+    defaults
+        The root manifest's `default` feature list, passed through to
+        `feature_key` rather than read here.
 
     Yields
     ------
@@ -175,12 +200,16 @@ def make_runs(script: str) -> Iterator[tuple[str, str, frozenset[str]]]:
     for match in MAKE_COMMAND.finditer(script):
         for scope, takes_features in MAKE_TARGETS[match["target"]]:
             if takes_features:
-                yield scope, profile_of(match["args"]), feature_key(match["args"])
+                yield (
+                    scope,
+                    profile_of(match["args"]),
+                    feature_key(match["args"], defaults),
+                )
             else:
                 yield scope, DEFAULT_PROFILE, frozenset()
 
 
-def suite_runs_in(job: Job, event: str) -> Iterator[SuiteRun]:
+def suite_runs_in(job: Job, event: str, defaults: frozenset[str]) -> Iterator[SuiteRun]:
     """Yield every suite run a job performs on an event.
 
     Parameters
@@ -189,6 +218,8 @@ def suite_runs_in(job: Job, event: str) -> Iterator[SuiteRun]:
         The job to read.
     event
         A `github.event_name` value, which selects the matrix legs.
+    defaults
+        The root manifest's `default` feature list.
 
     Yields
     ------
@@ -199,8 +230,8 @@ def suite_runs_in(job: Job, event: str) -> Iterator[SuiteRun]:
         for step in job.steps:
             script = substitute(step_text(step), leg)
             for scope, profile, features in (
-                *cargo_runs(script),
-                *make_runs(script),
+                *cargo_runs(script, defaults),
+                *make_runs(script, defaults),
             ):
                 yield SuiteRun(
                     job=job,
@@ -211,9 +242,7 @@ def suite_runs_in(job: Job, event: str) -> Iterator[SuiteRun]:
                 )
 
 
-def dispatched_jobs(
-    documents: dict[str, dict[str, object]], event: str
-) -> Iterator[Job]:
+def dispatched_jobs(documents: Estate, event: str) -> Iterator[Job]:
     """Yield every job an event can dispatch.
 
     A workflow that does not declare the trigger contributes nothing, and
@@ -238,7 +267,7 @@ def dispatched_jobs(
 
 
 def suite_runs_for(
-    documents: dict[str, dict[str, object]], event: str
+    documents: Estate, event: str, defaults: frozenset[str]
 ) -> list[SuiteRun]:
     """Return every suite run an event dispatches.
 
@@ -248,6 +277,11 @@ def suite_runs_for(
         Parsed workflows, keyed by file name.
     event
         The trigger to resolve against.
+    defaults
+        The root manifest's `default` feature list, from
+        `_suite_targets.read_default_features`. It is an argument because a
+        run's identity depends on it and because reading it is a filesystem
+        access, which belongs at the test entry point and not in here.
 
     Returns
     -------
@@ -257,7 +291,7 @@ def suite_runs_for(
     return [
         run
         for job in dispatched_jobs(documents, event)
-        for run in suite_runs_in(job, event)
+        for run in suite_runs_in(job, event, defaults)
     ]
 
 
@@ -284,25 +318,47 @@ def duplicates_in(
     return {key: found for key, found in by_key.items() if len(found) > 1}
 
 
-@cache
-def load_estate() -> dict[str, dict[str, object]]:
-    """Return every workflow this contract judges, parsed and keyed by name.
+def read_estate(directory: Path = WORKFLOW_DIR) -> Estate:
+    """Read and parse every workflow this contract judges.
 
-    Reading and parsing happens on the first call rather than at import, for
-    the reason `_suite_targets.default_features` gives: a workflow this
-    cannot parse should fail the contracts that read it, not the collection
-    of the whole directory, which reports no failures and reads like a clean
-    run.
+    The boundary for the workflow side, matching
+    `_suite_targets.read_default_features` on the manifest side. Reading here
+    rather than at import is what keeps a workflow this cannot parse from
+    becoming a collection error: a contract directory that fails to collect
+    reports no failures at all, which reads exactly like a clean run.
+
+    Parameters
+    ----------
+    directory
+        The directory to scan. It defaults to the estate's own; the parameter
+        exists so the failure cases can be stated against a temporary tree.
 
     Returns
     -------
-    dict
-        Each workflow document, keyed by file name. The dist-generated
-        release workflow is left out: its contents are regenerated wholesale
-        and nothing here may judge them.
+    Mapping
+        Each workflow document, keyed by file name, in a mapping the caller
+        cannot alter. The dist-generated release workflow is left out: its
+        contents are regenerated wholesale and nothing here may judge them.
+
+    Raises
+    ------
+    SourceError
+        If the directory cannot be scanned, or a workflow in it cannot be
+        read or parsed as YAML.
     """
-    return {
-        path.name: load(path)
-        for path in workflow_paths()
-        if path.name != DIST_GENERATED
-    }
+    try:
+        paths = workflow_paths(directory)
+    except OSError as error:
+        raise SourceError(
+            directory, f"cannot be scanned ({error.strerror or error})"
+        ) from error
+    documents: dict[str, Mapping[str, object]] = {}
+    for path in paths:
+        if path.name == DIST_GENERATED:
+            continue
+        text = read_text(path)
+        try:
+            documents[path.name] = parse_workflow(text, path.name)
+        except yaml.YAMLError as error:
+            raise SourceError(path, f"is not valid YAML ({error})") from error
+    return MappingProxyType(documents)

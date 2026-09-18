@@ -318,13 +318,15 @@ def _cache_platform(job: Job) -> str:
 
 def _restore_ids_in(job: Job) -> frozenset[str]:
     """Return the IDs the job's registry restore steps declare."""
-    return frozenset({
-        str(step["id"])
-        for step in job.steps
-        if isinstance(step.get("uses"), str)
-        and str(step["uses"]).startswith(RESTORE_ACTION)
-        and isinstance(step.get("id"), str)
-    })
+    return frozenset(
+        {
+            str(step["id"])
+            for step in job.steps
+            if isinstance(step.get("uses"), str)
+            and str(step["uses"]).startswith(RESTORE_ACTION)
+            and isinstance(step.get("id"), str)
+        }
+    )
 
 
 def _assert_the_write_can_actually_happen(job: Job) -> None:
@@ -358,8 +360,8 @@ def test_the_cargo_registry_cache_has_exactly_one_writer_per_platform() -> None:
         # expression apart rather than searching it, and
         # `cache_condition_test.py` proves it by mutating each conjunct.
         faults = save_condition_faults(str(step.get("if", "")), _restore_ids_in(job))
-        assert not faults, (
-            f"{job}'s cache save condition is wrong: " + "; ".join(faults)
+        assert not faults, f"{job}'s cache save condition is wrong: " + "; ".join(
+            faults
         )
         _assert_the_write_can_actually_happen(job)
         writers.append(str(job))

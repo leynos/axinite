@@ -30,23 +30,30 @@ Run via ``make test-workflow-contracts``.
 
 from __future__ import annotations
 
+import typing as typ
+
 import pytest
-from _suite_reader import PAID_EVENTS, duplicates_in, load_estate, suite_runs_for
-from _workflow_policy import REPOSITORY_ROOT, jobs_of, matrix_legs
+from _suite_reader import PAID_EVENTS, duplicates_in, suite_runs_for
 from _suite_targets import (
     DEFAULT_PROFILE,
     GITHUB_TOOL_MANIFEST,
     GITHUB_TOOL_RECIPE,
     GITHUB_TOOL_SCOPE,
     MAKEFILE_PROFILE_DEFAULT,
-    WASM_PREREQUISITE,
     WORKSPACE,
-    WORKSPACE_RECIPE,
-    make_rule,
+    WORKSPACE_RECIPE_LINES,
+    make_rule_in,
+    read_makefile,
 )
+from _workflow_policy import jobs_of, matrix_legs
+
+if typ.TYPE_CHECKING:  # pragma: no cover - typing only
+    from _suite_reader import Estate
 
 
-def test_the_scan_finds_the_suite_at_all() -> None:
+def test_the_scan_finds_the_suite_at_all(
+    estate: Estate, defaults: frozenset[str]
+) -> None:
     """Guard against a selector that silently matches nothing.
 
     Every assertion below is satisfied by finding no runs, so the scan's own
@@ -54,7 +61,7 @@ def test_the_scan_finds_the_suite_at_all() -> None:
     under: a pull request runs the suite, and so does a push.
     """
     for event in PAID_EVENTS:
-        assert len(suite_runs_for(load_estate(), event)) >= 2, (
+        assert len(suite_runs_for(estate, event, defaults)) >= 2, (
             f"no workspace suite runs were found for {event}; the contract "
             "below would pass with the suite deleted"
         )
@@ -68,7 +75,8 @@ def test_make_test_is_both_halves_and_nothing_else() -> None:
     local command and the gate would test different things, and this module
     would still read `make test` as covering both.
     """
-    prerequisites, recipe = make_rule("test")
+    makefile = read_makefile()
+    prerequisites, recipe = make_rule_in(makefile, "test")
     assert set(prerequisites) == {"test-workspace", "test-github-tool"}, (
         f"`make test` builds {prerequisites}, which is no longer the two "
         "lanes CI runs; a developer and the gate would test different things"
@@ -80,56 +88,38 @@ def test_make_test_is_both_halves_and_nothing_else() -> None:
 
 
 def test_the_make_targets_still_run_what_this_module_reads_them_as() -> None:
-    """Tie each target name in a workflow to what the Makefile makes it do.
+    """Tie each target name in a workflow to exactly what the Makefile runs.
 
-    A workflow step says `make test-workspace`. If that target stopped running
-    the workspace suite, or started running the GitHub tool crate again, every
-    judgement here about what a lane executes would be wrong while still
-    reading correctly.
+    A workflow step says `make test-workspace`, and `MAKE_TARGETS` says that
+    is one run of the workspace suite under the step's features. Everything
+    this module concludes about what a lane executes rests on that mapping,
+    so the recipe is asserted whole rather than searched.
+
+    Searching is what this replaced, and it was too weak in the direction
+    that costs money: adding `$(MAKE) test-github-tool` to `test-workspace`
+    would run the tool suite once per leg again, exactly the duplication the
+    split removed, and it satisfied a check that merely refused a direct
+    `--manifest-path` line. Whole-recipe equality refuses any added command,
+    and it pins the order the WASM build has to come in, because the metadata
+    and schema tests load the artefact it produces: a recipe that ran the
+    suite first would test the previous build on a warm tree and fail
+    outright on a clean checkout.
     """
-    _, workspace = make_rule("test-workspace")
-    suite_line = next(
-        (
-            index
-            for index, line in enumerate(workspace)
-            if line.startswith(WORKSPACE_RECIPE)
-        ),
-        None,
+    makefile = read_makefile()
+    _, workspace = make_rule_in(makefile, "test-workspace")
+    assert workspace == WORKSPACE_RECIPE_LINES, (
+        f"`make test-workspace` runs {workspace}, not {WORKSPACE_RECIPE_LINES}. "
+        "This module reads every step that calls it as one run of the "
+        "workspace suite, in that order; any other line is work no contract "
+        "here accounts for, and a nested Make target is the duplication this "
+        "split removed"
     )
-    assert suite_line is not None, (
-        f"`make test-workspace` no longer runs {WORKSPACE_RECIPE!r}, so the "
-        "workflow steps that call it do not run what this contract reads "
-        f"them as running. Its recipe is {workspace}."
-    )
-    # The order is part of the target, not a detail of it. The metadata and
-    # schema tests load the artefact the WASM build produces, so a recipe
-    # that ran the suite first would test the previous build on a warm tree
-    # and fail outright on a clean checkout.
-    wasm_line = next(
-        (
-            index
-            for index, line in enumerate(workspace)
-            if line.startswith(WASM_PREREQUISITE)
-        ),
-        None,
-    )
-    assert wasm_line is not None and wasm_line < suite_line, (
-        f"`make test-workspace` does not run {WASM_PREREQUISITE!r} before its "
-        "suite, so the tests that load the WASM artefact read whatever the "
-        f"last build left behind. Its recipe is {workspace}."
-    )
-    assert not any("--manifest-path" in line for line in workspace), (
-        "`make test-workspace` builds or tests an out-of-workspace crate, "
-        "which is the duplication this split removed: the GitHub tool crate "
-        "has its own lane, and running it here runs it once per leg again"
-    )
-    _, tool = make_rule("test-github-tool")
+    _, tool = make_rule_in(makefile, "test-github-tool")
     assert tool == (GITHUB_TOOL_RECIPE,), (
         f"`make test-github-tool` runs {tool}, not {(GITHUB_TOOL_RECIPE,)}; "
         "the scope and the empty feature set this module gives it both come "
         "from that one command"
     )
-    makefile = (REPOSITORY_ROOT / "Makefile").read_text(encoding="utf-8")
     assert MAKEFILE_PROFILE_DEFAULT in makefile, (
         f"the Makefile no longer falls back to the {DEFAULT_PROFILE!r} nextest "
         "profile, so a step that names no profile does not run the tests this "
@@ -160,11 +150,19 @@ REVIEWED_TEST_LEGS: dict[str, tuple[tuple[str, str], ...]] = {
         ("default", ""),
         ("libsql-only", "--no-default-features --features libsql"),
     ),
+    # A manual dispatch is a full run: it takes the same arm a push does, and
+    # the job's own guard is an inequality on `push`, so it dispatches.
+    "workflow_dispatch": (
+        ("default", ""),
+        ("libsql-only", "--no-default-features --features libsql"),
+    ),
 }
 
 
 @pytest.mark.parametrize("event", sorted(REVIEWED_TEST_LEGS))
-def test_the_tests_matrix_resolves_to_the_reviewed_legs(event: str) -> None:
+def test_the_tests_matrix_resolves_to_the_reviewed_legs(
+    event: str, estate: Estate
+) -> None:
     """Assert the leg names and flags each event produces, both arms.
 
     `matrix_legs` resolves the expression the way GitHub does, so this reads
@@ -174,7 +172,7 @@ def test_the_tests_matrix_resolves_to_the_reviewed_legs(event: str) -> None:
     for the guard needs to stay meaningful.
     """
     job = next(
-        job for job in jobs_of("test.yml", load_estate()["test.yml"]) if job.job_id == "tests"
+        job for job in jobs_of("test.yml", estate["test.yml"]) if job.job_id == "tests"
     )
     resolved = tuple(
         (leg.get("name", ""), leg.get("flags", "")) for leg in matrix_legs(job, event)
@@ -185,6 +183,16 @@ def test_the_tests_matrix_resolves_to_the_reviewed_legs(event: str) -> None:
     )
 
 
+#: The triggers on which every suite must run. The two paid ones, plus a
+#: manual dispatch, which the developers' guide describes as a full run: both
+#: `test.yml` and `coverage.yml` declare it, so the estate is expected to be
+#: complete there and a leg that drifted out of the dispatch arm would
+#: otherwise go unnoticed. It is deliberately absent from the de-duplication
+#: contract below, because a dispatch runs both the test lanes and the
+#: coverage lanes on purpose: it is the one trigger on which repeating the
+#: suite is the point, and nobody is waiting on it.
+FULL_RUN_EVENTS: tuple[str, ...] = (*PAID_EVENTS, "workflow_dispatch")
+
 #: Every suite this repository has, and the scope each covers. The workspace
 #: leaves two crates out, and `--workspace` cannot reach either, so each needs
 #: a lane of its own or it is not tested at all.
@@ -193,8 +201,10 @@ EXPECTED_SCOPES: frozenset[str] = frozenset(
 )
 
 
-@pytest.mark.parametrize("event", PAID_EVENTS)
-def test_every_suite_still_runs_on_every_paid_trigger(event: str) -> None:
+@pytest.mark.parametrize("event", FULL_RUN_EVENTS)
+def test_every_suite_still_runs_on_every_trigger_that_runs_one(
+    event: str, estate: Estate, defaults: frozenset[str]
+) -> None:
     """The other half of de-duplication: nothing may go missing instead.
 
     Removing a duplicate lane and removing the only lane look identical in a
@@ -202,7 +212,7 @@ def test_every_suite_still_runs_on_every_paid_trigger(event: str) -> None:
     deleted rather than de-duplicated fails here, and a suite added without a
     lane on one trigger fails here too.
     """
-    found = {run.scope for run in suite_runs_for(load_estate(), event)}
+    found = {run.scope for run in suite_runs_for(estate, event, defaults)}
     assert found == EXPECTED_SCOPES, (
         f"on {event} the suites that run are {sorted(found)}, not "
         f"{sorted(EXPECTED_SCOPES)}. A suite with no lane on a trigger is not "
@@ -215,8 +225,10 @@ def test_every_suite_still_runs_on_every_paid_trigger(event: str) -> None:
 FULL_PROFILE = "ci"
 
 
-@pytest.mark.parametrize("event", PAID_EVENTS)
-def test_every_trigger_runs_the_workspace_suite_in_full(event: str) -> None:
+@pytest.mark.parametrize("event", FULL_RUN_EVENTS)
+def test_every_trigger_runs_the_workspace_suite_in_full(
+    event: str, estate: Estate, defaults: frozenset[str]
+) -> None:
     """A lane that replaces another must not be narrower than it was.
 
     De-duplication removes the second run of a suite, so whichever run is left
@@ -225,7 +237,9 @@ def test_every_trigger_runs_the_workspace_suite_in_full(event: str) -> None:
     the lane it replaced.
     """
     profiles = {
-        run.profile for run in suite_runs_for(load_estate(), event) if run.scope == WORKSPACE
+        run.profile
+        for run in suite_runs_for(estate, event, defaults)
+        if run.scope == WORKSPACE
     }
     assert profiles == {FULL_PROFILE}, (
         f"on {event} the workspace suite runs under {sorted(profiles)}, not "
@@ -236,9 +250,17 @@ def test_every_trigger_runs_the_workspace_suite_in_full(event: str) -> None:
 
 
 @pytest.mark.parametrize("event", PAID_EVENTS)
-def test_no_trigger_runs_the_same_suite_twice(event: str) -> None:
-    """The contract itself: one feature selection, one run, per trigger."""
-    duplicated = duplicates_in(suite_runs_for(load_estate(), event))
+def test_no_paid_trigger_runs_the_same_suite_twice(
+    event: str, estate: Estate, defaults: frozenset[str]
+) -> None:
+    """The contract itself: one feature selection, one run, per trigger.
+
+    Only the triggers a developer waits on. A manual dispatch deliberately
+    runs the test lanes and the coverage lanes together, because that is what
+    someone reaching for the button is asking for; a schedule runs
+    GitHub-hosted, where this repository pays nothing.
+    """
+    duplicated = duplicates_in(suite_runs_for(estate, event, defaults))
     assert not duplicated, "\n".join(
         f"on {event}, {scope} under {sorted(features) or 'no features'} and "
         f"the {profile} profile is run by " + ", ".join(str(run) for run in runs)
