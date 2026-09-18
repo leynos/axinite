@@ -20,12 +20,7 @@ from __future__ import annotations
 import re
 import shlex
 
-from _suite_targets import (
-    default_features,
-    DEFAULT_PROFILE,
-    FEATURE_VARIABLE,
-    PROFILE_VARIABLE,
-)
+from _suite_targets import DEFAULT_PROFILE, FEATURE_VARIABLE, PROFILE_VARIABLE
 
 #: Sentinels for the flags that select features without naming any. They are
 #: part of the key so that `--all-features` and `--no-default-features
@@ -149,21 +144,29 @@ def unpack_feature_variable(tokens: list[str]) -> list[str]:
     ]
 
 
-def feature_key(args: str) -> frozenset[str]:
+def feature_key(args: str, defaults: frozenset[str]) -> frozenset[str]:
     """Return the feature selection a command's arguments make.
+
+    Pure in both arguments. The default set arrives from the caller rather
+    than from a manifest read hidden behind this signature, so nothing here
+    can raise an `OSError` or a TOML parse error from a function that claims
+    to answer a question about command text.
 
     Parameters
     ----------
     args
         The command's arguments, with every matrix reference already
         substituted.
+    defaults
+        The root manifest's `default` feature list, from
+        `_suite_targets.read_default_features`.
 
     Returns
     -------
     frozenset of str
         The features the command actually enables: each named feature, the
-        root manifest's defaults unless the command turns them off, and a
-        sentinel for `--all-features` and for `--no-default-features`.
+        defaults unless the command turns them off, and a sentinel for
+        `--all-features` and for `--no-default-features`.
     """
     tokens = unpack_feature_variable(shlex.split(args, comments=False, posix=True))
     selected = {
@@ -179,7 +182,7 @@ def feature_key(args: str) -> frozenset[str]:
     # exception, because its sentinel already keeps it apart from every list.
     if NO_DEFAULT_FEATURES in named:
         return named
-    return named | default_features()
+    return named | defaults
 
 
 def profile_of(args: str) -> str:

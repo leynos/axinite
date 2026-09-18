@@ -12,11 +12,14 @@ See `_suite_reader.py` for the workflow side of the same question.
 from __future__ import annotations
 
 import re
-import tomllib
+import typing as typ
 from collections.abc import Mapping
-from functools import cache
 
+from _sources import read_text, read_toml
 from _workflow_policy import REPOSITORY_ROOT
+
+if typ.TYPE_CHECKING:  # pragma: no cover - typing only
+    from pathlib import Path
 
 #: The scope a run covers. Two runs only collide when they cover the same
 #: scope: the workspace suite and an out-of-workspace crate's suite share a
@@ -35,13 +38,19 @@ MAKE_TARGETS: dict[str, tuple[tuple[str, bool], ...]] = {
     "test-workspace": ((WORKSPACE, True),),
     "test-github-tool": ((GITHUB_TOOL_SCOPE, False),),
 }
-#: The command each Make target must still run for the mapping above to hold.
-WORKSPACE_RECIPE = "$(NEXTEST) run --workspace $(TEST_FEATURES)"
-
-#: The build `test-workspace` has to perform before that command. The metadata
+#: The build `test-workspace` has to perform before its suite. The metadata
 #: and schema tests load the artefact it produces, so a recipe that runs the
 #: suite first tests yesterday's WASM or fails on a clean checkout.
 WASM_PREREQUISITE = "$(MAKE) build-github-tool-wasm"
+#: The command that runs the workspace suite under the step's variables.
+WORKSPACE_RECIPE = (
+    "$(NEXTEST) run --workspace $(TEST_FEATURES) --profile $(NEXTEST_PROFILE)"
+)
+#: `test-workspace`'s whole recipe, in order. Asserted entire rather than
+#: searched: a nested `$(MAKE) test-github-tool` would run the tool suite once
+#: per leg again, which is the duplication this split removed, and it would
+#: satisfy any check that merely refused a `--manifest-path` line.
+WORKSPACE_RECIPE_LINES: tuple[str, ...] = (WASM_PREREQUISITE, WORKSPACE_RECIPE)
 GITHUB_TOOL_RECIPE = "$(CARGO) test --manifest-path $(GITHUB_TOOL_MANIFEST)"
 #: The variable a workflow step uses to hand feature flags to a Make target.
 #: The flags arrive as one shell word, `TEST_FEATURES="--features x"`, so the
@@ -68,6 +77,8 @@ NO_DEFAULT_FEATURES = ":no-default-features"
 #: The manifest whose `default` feature list every command inherits unless it
 #: passes `--no-default-features`.
 ROOT_MANIFEST = REPOSITORY_ROOT / "Cargo.toml"
+#: The Makefile that says what each target above actually runs.
+MAKEFILE = REPOSITORY_ROOT / "Makefile"
 
 
 def default_features_in(manifest: Mapping[str, object]) -> frozenset[str]:
@@ -94,29 +105,45 @@ def default_features_in(manifest: Mapping[str, object]) -> frozenset[str]:
     return frozenset(str(name) for name in declared)
 
 
-@cache
-def default_features() -> frozenset[str]:
-    """Return the root package's default feature set.
+def read_default_features(manifest: Path = ROOT_MANIFEST) -> frozenset[str]:
+    """Read a manifest and return the default feature set it declares.
 
-    The file reading is here rather than at import. A module-level snapshot
-    turns a missing or malformed manifest into a collection error, and a
-    contract directory that fails to collect reports no failures at all,
-    which reads exactly like a clean run. Deferred, the same fault fails the
-    contracts that depend on it, by name.
+    This is the boundary: it names the file, it is the only thing here that
+    touches one, and it reports a read or parse failure as a `SourceError`
+    naming the path. Everything downstream takes the resulting set as an
+    argument, so no query function hides a filesystem access behind a
+    signature that says it answers a question about a command's flags.
+
+    Parameters
+    ----------
+    manifest
+        The manifest to read. It defaults to the root one; the parameter
+        exists so the failure cases can be stated against a temporary file.
 
     Returns
     -------
     frozenset of str
-        Every feature in the root manifest's `default` list.
+        Every feature in the manifest's `default` list.
+
+    Raises
+    ------
+    SourceError
+        If the manifest is missing, unreadable or not valid TOML.
     """
-    return default_features_in(tomllib.loads(ROOT_MANIFEST.read_text(encoding="utf-8")))
+    return default_features_in(read_toml(manifest))
 
 
-def make_rule(name: str) -> tuple[tuple[str, ...], tuple[str, ...]]:
-    """Return one Makefile rule's prerequisites and recipe lines.
+def make_rule_in(makefile: str, name: str) -> tuple[tuple[str, ...], tuple[str, ...]]:
+    """Return one rule's prerequisites and recipe lines from Makefile text.
+
+    Pure in the text it is given, so a rule shape can be stated in a test
+    without writing a file, and so the reading of the repository's own
+    Makefile is one call rather than a hidden read inside every query.
 
     Parameters
     ----------
+    makefile
+        The Makefile's text.
     name
         The target to read.
 
@@ -133,7 +160,6 @@ def make_rule(name: str) -> tuple[tuple[str, ...], tuple[str, ...]]:
         module rests on it, so its absence has to stop the run rather than
         quietly answer "no commands".
     """
-    makefile = (REPOSITORY_ROOT / "Makefile").read_text(encoding="utf-8")
     rule = re.search(
         rf"^{re.escape(name)}:(?P<prerequisites>[^\n]*)\n(?P<recipe>(?:\t[^\n]*\n)*)",
         makefile,
@@ -144,3 +170,25 @@ def make_rule(name: str) -> tuple[tuple[str, ...], tuple[str, ...]]:
         tuple(rule["prerequisites"].split()),
         tuple(line.lstrip("\t") for line in rule["recipe"].splitlines()),
     )
+
+
+def read_makefile(path: Path = MAKEFILE) -> str:
+    """Read the Makefile these contracts judge.
+
+    Parameters
+    ----------
+    path
+        The file to read. It defaults to the repository's own; the parameter
+        exists so the failure cases can be stated against a temporary file.
+
+    Returns
+    -------
+    str
+        The Makefile's text.
+
+    Raises
+    ------
+    SourceError
+        If the file is missing, unreadable or not valid UTF-8.
+    """
+    return read_text(path)
