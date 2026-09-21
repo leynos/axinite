@@ -49,6 +49,31 @@ POSITIVE_OVERRIDE = NEGATED_OVERRIDE.replace(
 )
 
 
+#: A profile whose two overrides both select the compile-contract
+#: binary and grant different allowances. nextest applies the first and
+#: stops, so the second's 900 s is never in force. Written with the
+#: shorter budget first, because that is the ordering a reading taking
+#: the maximum gets wrong; with the longer one first the two readings
+#: agree and the case would discriminate nothing.
+OVERLAPPING_OVERRIDES = (
+    "[profile.example]\n"
+    'slow-timeout = { period = "300s", terminate-after = 1, '
+    'grace-period = "5s" }\n'
+    'global-timeout = "30m"\n'
+    "\n[[profile.example.overrides]]\n"
+    "filter = 'binary(trybuild)'\n"
+    'slow-timeout = { period = "450s", terminate-after = 1, '
+    'grace-period = "5s" }\n'
+    "\n[[profile.example.overrides]]\n"
+    "filter = 'binary(trybuild)'\n"
+    'slow-timeout = { period = "900s", terminate-after = 1, '
+    'grace-period = "5s" }\n'
+)
+
+#: What the first of those two overrides grants, in seconds.
+FIRST_OVERLAPPING_ALLOWANCE = 450.0
+
+
 def _example(config_text: str) -> Profile:
     """Return the ``example`` profile parsed out of a document.
 
@@ -270,6 +295,33 @@ def test_a_negated_override_grants_the_binary_nothing() -> None:
     assert negated is None, (
         f"the negated override grants trybuild nothing, so its base allowance "
         f"governs; got {negated}"
+    )
+
+
+def test_the_first_matching_override_governs_not_the_largest() -> None:
+    """Two overrides select the binary; only the first is ever applied.
+
+    nextest reads a profile's overrides in order and applies the first
+    whose filterset selects a test, so a later override granting more is
+    never in force. A reading that took the maximum would report the
+    900 s here and certify a compile-contract binary under a budget
+    nextest does not apply, which is the same class of silent pass as
+    the negated override above: every number in the right order while
+    the binary runs under something else.
+
+    The repository's own overrides all grant 900 s, so nothing in the
+    estate distinguishes the two readings. This is the case that does.
+    """
+    allowed = allowance_for_binary(_example(OVERLAPPING_OVERRIDES), "trybuild")
+    assert allowed == FIRST_OVERLAPPING_ALLOWANCE, (
+        f"the first override selecting the binary grants "
+        f"{FIRST_OVERLAPPING_ALLOWANCE} s and nextest stops there; got "
+        f"{allowed}"
+    )
+    assert allowed != COMPILE_CONTRACT_ALLOWANCE_SECONDS, (
+        f"the second override's {COMPILE_CONTRACT_ALLOWANCE_SECONDS} s is "
+        f"never applied, so a reading returning it is reporting a budget "
+        f"nextest does not use"
     )
 
 

@@ -100,13 +100,14 @@ def _env_of(scope: object) -> dict[str, object]:
 def watchdog_offences_of(workflow: str, document: dict[str, object]) -> list[str]:
     """Return what one workflow does that the absent tier forbids.
 
-    All three scopes are read. GitHub gives a step the union of the
-    workflow's ``env``, its job's and its own, so a
-    ``RUN_RUST_CARGO_WAIT_TIMEOUT`` written at workflow or job level
-    reaches the suite step exactly as one written on the step does. A
-    check reading the step alone therefore certifies the tier as absent
-    while the watchdog is in force, which is the inversion this contract
-    exists to catch.
+    All three scopes are read. GitHub resolves a name declared at more
+    than one of workflow, job and step scope to the most specific
+    declaration rather than merging them, so a
+    ``RUN_RUST_CARGO_WAIT_TIMEOUT`` written at workflow or job level and
+    nowhere else reaches the suite step, and one written on the step
+    overrides it. Either way the watchdog is in force, so a check
+    reading the step alone certifies the tier as absent while it runs,
+    which is the inversion this contract exists to catch.
 
     Each scope is reported once, at the scope that declares it, because
     that is the line that has to change.

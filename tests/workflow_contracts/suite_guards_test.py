@@ -136,11 +136,14 @@ on: push
 def test_the_watchdog_is_found_in_every_scope_a_step_inherits(
     scope: str, fields: dict[str, str]
 ) -> None:
-    """GitHub hands a step the union of three ``env`` mappings.
+    """GitHub resolves ``env`` to the most specific scope that declares it.
 
-    A variable written at workflow or job level reaches the suite step
-    exactly as one written on the step does, so a reading confined to
-    the step reports the tier as absent while the watchdog is in force.
+    It does not merge same-name declarations, so each of the three
+    scopes has to be scanned: a variable written at workflow or job
+    level and nowhere else reaches the suite step, and one written on
+    the step overrides it. Either way the watchdog is in force, so a
+    reading confined to the step reports the tier as absent while it
+    runs.
     That is the inversion the tier's asserted absence exists to catch,
     and it is the one shape this repository's own workflows cannot show,
     because none of them sets the variable anywhere.
@@ -164,12 +167,13 @@ def test_a_workflow_setting_the_watchdog_nowhere_is_clean() -> None:
     that reported every workflow, which would make the assertion over
     the tree fail permanently rather than pass.
     """
-    assert (
-        watchdog_offences_of(
-            "controlled.yml",
-            workflow(_WATCHDOG_AT.format(workflow_env="", job_env="", step_env="")),
-        )
-        == []
+    offences = watchdog_offences_of(
+        "controlled.yml",
+        workflow(_WATCHDOG_AT.format(workflow_env="", job_env="", step_env="")),
+    )
+    assert offences == [], (
+        f"a workflow that sets the watchdog at no scope commits no offence, "
+        f"so the reading must report none; it reported {offences}"
     )
 
 
@@ -268,7 +272,11 @@ def test_tolerance_on_a_step_that_runs_no_suite_is_not_reported() -> None:
         "        continue-on-error: true\n"
         "      - run: cargo nextest run --workspace\n"
     )
-    assert failure_tolerances("controlled.yml", "test", body) == []
+    offences = failure_tolerances("controlled.yml", "test", body)
+    assert offences == [], (
+        f"a preparatory step allowed to fail discards no suite verdict, so "
+        f"the reading must report none; it reported {offences}"
+    )
 
 
 def test_a_job_that_runs_no_suite_is_not_judged_on_its_own_tolerance() -> None:
@@ -289,7 +297,12 @@ def test_a_job_that_runs_no_suite_is_not_judged_on_its_own_tolerance() -> None:
         "    steps:\n"
         "      - run: markdownlint docs\n"
     )
-    assert failure_tolerances("controlled.yml", "test", body) == []
+    offences = failure_tolerances("controlled.yml", "test", body)
+    assert offences == [], (
+        f"a job that runs no suite discards no suite verdict however "
+        f"tolerant it is, so the reading must report none; it reported "
+        f"{offences}"
+    )
 
 
 def test_a_job_that_runs_the_suite_is_judged_on_its_own_tolerance() -> None:
@@ -310,5 +323,11 @@ def test_a_job_that_runs_the_suite_is_judged_on_its_own_tolerance() -> None:
         "      - run: cargo nextest run --workspace\n"
     )
     offences = failure_tolerances("controlled.yml", "test", body)
-    assert len(offences) == 1, offences
-    assert "on the job" in offences[0]
+    assert len(offences) == 1, (
+        f"a suite job tolerating its own failure is one offence, not several "
+        f"and not none; the reading returned {offences}"
+    )
+    assert "on the job" in offences[0], (
+        f"the offence must name the scope a reader has to edit, which is the "
+        f"job rather than a step; it said {offences[0]!r}"
+    )

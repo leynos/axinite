@@ -23,6 +23,7 @@ import yaml
 from contract_sources import (
     SourceReadError,
     directory_entries,
+    is_regular_file,
     read_source,
 )
 
@@ -330,12 +331,19 @@ def workflow_paths(directory: Path = WORKFLOW_DIR) -> list[Path]:
     Raises
     ------
     SourceReadError
-        If the directory cannot be listed.
+        If the directory cannot be listed, or an entry in it cannot be
+        classified as a regular file or not.
     """
+    # Classified through `is_regular_file` rather than `Path.is_file`.
+    # `Path.is_file` answers False for an entry it could not stat, so a
+    # workflow directory that lists but does not stat would drop an
+    # existing workflow here and `suite_lanes_of` above would certify a
+    # set with that lane missing from it. The extension test comes
+    # second, so an entry of the wrong suffix costs no stat at all.
     return sorted(
         path
         for path in directory_entries(directory)
-        if path.is_file() and path.suffix in WORKFLOW_SUFFIXES
+        if path.suffix in WORKFLOW_SUFFIXES and is_regular_file(path)
     )
 
 

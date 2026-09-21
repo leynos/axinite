@@ -11,11 +11,11 @@ acquisition at all.
 
 So the filesystem calls these contracts make are wrapped here and
 report a domain error carrying the path, with the cause chained. There
-are three: reading a file, listing a directory, and asking whether an
-entry is a directory. The third was added late, because `Path.is_dir`
-looks like a question rather than a filesystem call and answers False
-for an entry it could not stat, which is the same silent under-reading
-`matching_entries` documents about `Path.glob`.
+are three: reading a file, listing a directory, and classifying an
+entry. The third was added late, because `Path.is_dir` and
+`Path.is_file` look like questions rather than filesystem calls and
+answer False for an entry they could not stat, which is the same silent
+under-reading `matching_entries` documents about `Path.glob`.
 
 ``SourceReadError`` keeps ``OSError`` as its base, because these are
 operating-system failures and a caller already catching ``OSError``
@@ -28,6 +28,7 @@ import typing as typ
 from fnmatch import fnmatch
 
 if typ.TYPE_CHECKING:  # pragma: no cover - typing only
+    import collections.abc as cabc
     from pathlib import Path
 
 
@@ -123,37 +124,98 @@ def _named_like(directory: "Path", pattern: str) -> "list[Path]":
     ]
 
 
-def _is_directory(entry: "Path") -> bool:
-    """Return whether an entry is a directory, refusing an answer it cannot give."""
-    # `Path.is_dir` swallows every `OSError` and answers False, so an
-    # entry this process cannot stat is indistinguishable from a plain
-    # file. That is the same fault `matching_entries` documents about
-    # `Path.glob`, one level down: a `tests` directory readable but not
-    # executable lists its children and then fails to stat any of them,
-    # so the nested sweep reports no compile-contract binaries and every
-    # assertion over that empty set passes.
-    #
-    # `ENOENT` and `ENOTDIR` are answers rather than failures. A
-    # dangling symlink is not a directory, and neither is a path whose
-    # parent component turns out to be a file; both are skipped as
-    # before. Anything else means the question was not answered, and an
-    # unanswered question is reported rather than guessed.
-    #
-    # `Path.stat` rather than `Path.is_dir`, and not the keyword
-    # `is_dir(follow_symlinks=...)`, which arrived in Python 3.13. The
-    # stat call raises on every supported version, which is the whole
-    # point of asking this way.
+def _classified_as(
+    entry: "Path",
+    predicate: "cabc.Callable[[int], bool]",
+    description: str,
+) -> bool:
+    """Return whether an entry is of a kind, refusing an answer it cannot give.
+
+    `Path.is_dir` and `Path.is_file` swallow every `OSError` and answer
+    False, so an entry this process cannot stat is indistinguishable
+    from one of the wrong kind. That is the same fault
+    :func:`matching_entries` documents about `Path.glob`, one level
+    down: a directory readable but not executable lists its children
+    and then fails to stat any of them, so the sweep above reports a
+    tree with nothing in it and every assertion over that empty set
+    passes.
+
+    `ENOENT` and `ENOTDIR` are answers rather than failures. A dangling
+    symlink is of no kind at all, and neither is a path whose parent
+    component turns out to be a file; both are skipped as before.
+    Anything else means the question was not answered, and an
+    unanswered question is reported rather than guessed.
+
+    `Path.stat` rather than `Path.is_dir` or `Path.is_file`, and not
+    the keyword `follow_symlinks=`, which arrived for these predicates
+    in Python 3.13. The stat call raises on every supported version,
+    which is the whole point of asking this way.
+
+    Parameters
+    ----------
+    entry
+        The directory entry to classify.
+    predicate
+        A `stat` mode test, such as `stat.S_ISDIR`.
+    description
+        What the predicate tests for, named in the failure so a reader
+        learns which question went unanswered.
+
+    Returns
+    -------
+    bool
+        Whether the entry is of that kind. False for an entry that is
+        absent or whose parent is not a directory.
+
+    Raises
+    ------
+    SourceReadError
+        If the entry exists but cannot be classified.
+    """
     try:
-        return stat.S_ISDIR(entry.stat().st_mode)
+        return predicate(entry.stat().st_mode)
     except OSError as error:
         if error.errno in (errno.ENOENT, errno.ENOTDIR):
             return False
         message = (
-            f"{entry} could not be classified as a directory or not: {error}; "
-            f"the nested sweep would otherwise skip it silently and report a "
+            f"{entry} could not be classified as {description} or not: {error}; "
+            f"the sweep would otherwise skip it silently and report a "
             f"tree with nothing in it"
         )
         raise SourceReadError(message, path=entry) from error
+
+
+def _is_directory(entry: "Path") -> bool:
+    """Return whether an entry is a directory, refusing an answer it cannot give."""
+    return _classified_as(entry, stat.S_ISDIR, "a directory")
+
+
+def is_regular_file(entry: "Path") -> bool:
+    """Return whether an entry is a regular file, or say it could not be told.
+
+    Acquisition rather than a query, for the reason
+    :func:`_classified_as` gives. `workflow_paths` used `Path.is_file`
+    and so could omit an existing workflow it failed to stat, leaving
+    the suite-lane contract to certify a set with a lane missing from
+    it.
+
+    Parameters
+    ----------
+    entry
+        The directory entry to classify.
+
+    Returns
+    -------
+    bool
+        Whether the entry is a regular file. False for an entry that is
+        absent or whose parent is not a directory.
+
+    Raises
+    ------
+    SourceReadError
+        If the entry exists but cannot be classified.
+    """
+    return _classified_as(entry, stat.S_ISREG, "a regular file")
 
 
 def _nested_like(directory: "Path", head: str, tail: str) -> "list[Path]":

@@ -357,17 +357,17 @@ def _short_slow_timeout() -> str:
     reports a test slow and lets it finish, and the assertion that
     consumes this is what fails then.
 
-    Returns
-    -------
-    str
-        A ``[profile.default]`` table as TOML text.
-
     Read through :func:`read_source` rather than with ``read_text``,
     so a configuration that cannot be read reports which file and why
     instead of raising a bare ``OSError`` from inside a helper whose
     name and return type promise a value. That is the same acquisition
     boundary the sweeps in this suite go through, and this module was
     reaching past it.
+
+    Returns
+    -------
+    str
+        A ``[profile.default]`` table as TOML text.
 
     Raises
     ------

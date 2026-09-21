@@ -207,6 +207,92 @@ def test_a_child_that_cannot_be_classified_is_reported(tmp_path: Path) -> None:
     )
 
 
+#: The sweeps that classify a workflow entry, as callables taking the
+#: directory holding it. Both reach `workflow_paths`, and the second is
+#: what makes the omission matter: a workflow the reading never saw
+#: could hold the very lane the suite-lane contract exists to bound.
+WORKFLOW_ENTRY_SWEEPS: typ.Final[dict[str, cabc.Callable[[Path], object]]] = {
+    "workflow_paths": workflow_paths,
+    "suite_lanes_of": suite_lanes_of,
+}
+
+
+@pytest.mark.skipif(
+    sys.platform == "win32",
+    reason="POSIX permission bits; Windows chmod only toggles read-only",
+)
+@pytest.mark.parametrize("name", sorted(WORKFLOW_ENTRY_SWEEPS))
+def test_a_workflow_entry_that_cannot_be_classified_is_reported(
+    name: str, tmp_path: Path
+) -> None:
+    """Assert the file test is acquisition too, not a query.
+
+    The sibling case one level up covers a child that cannot be
+    classified as a directory. This is the same fault on the file side,
+    and it survived that fix: `workflow_paths` asked `Path.is_file`,
+    which swallows the `EACCES` and answers False, so an existing
+    workflow is dropped from the listing. The sweep succeeds, the
+    suite-lane contract certifies a set with that lane missing, and
+    every assertion over it passes.
+
+    Mode `0o400` is the one that separates listing from stat-ing, which
+    is the distinction the defect lives in. At `0o000` the listing
+    itself fails and the older case catches it; at `0o500` the tree
+    reads correctly and the case would pass whatever the reader did.
+    """
+    if os.geteuid() == 0:
+        pytest.skip("root stats a child whatever the parent's mode bits say")
+    parent = tmp_path / "unstattable"
+    parent.mkdir()
+    workflow = parent / "ci.yml"
+    workflow.write_text("name: controlled\non: push\njobs: {}\n", encoding="utf-8")
+    parent.chmod(0o400)
+    try:
+        with pytest.raises(SourceReadError) as raised:
+            WORKFLOW_ENTRY_SWEEPS[name](parent)
+    finally:
+        parent.chmod(0o700)
+    assert raised.value.path == workflow, (
+        f"{name} must name the workflow it could not classify; it named "
+        f"{raised.value.path}"
+    )
+
+
+def test_an_entry_that_is_absent_is_not_a_file_rather_than_a_failure(
+    tmp_path: Path,
+) -> None:
+    """Assert the refusal above is narrow as well as sufficient.
+
+    A reader that reported every `OSError` from the file test would
+    satisfy the case above and turn a broken symlink in the workflow
+    directory into a failed sweep. `ENOENT` is an answer rather than a
+    failure: the entry is not a regular file, and skipping it is what
+    the listing did before.
+    """
+    (tmp_path / "gone.yml").symlink_to(tmp_path / "no-such-target.yml")
+    real = tmp_path / "ci.yml"
+    real.write_text("name: controlled\non: push\njobs: {}\n", encoding="utf-8")
+    assert workflow_paths(tmp_path) == [real], (
+        "a dangling symlink is skipped, and the real workflow is still listed"
+    )
+
+
+def test_a_directory_named_like_a_workflow_is_not_a_workflow(tmp_path: Path) -> None:
+    """Assert the classification still excludes what it always excluded.
+
+    `Path.is_file` answered False for a directory, and the replacement
+    must too. Without this, a reader that returned True for anything it
+    could stat would pass every case above and feed a directory to the
+    YAML parser.
+    """
+    (tmp_path / "not-a-workflow.yml").mkdir()
+    real = tmp_path / "ci.yml"
+    real.write_text("name: controlled\non: push\njobs: {}\n", encoding="utf-8")
+    assert workflow_paths(tmp_path) == [real], (
+        "a directory whose name ends in .yml is not a workflow file"
+    )
+
+
 def test_a_dangling_symlink_is_not_a_directory_rather_than_a_failure(
     tmp_path: Path,
 ) -> None:

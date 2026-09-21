@@ -2875,11 +2875,12 @@ the shared `generate-coverage` action, so there is no wall-clock watchdog on the
 `cargo` invocation and no third tier.
 
 That absence is asserted rather than assumed. A lane that adopted the action
-without setting `RUN_RUST_CARGO_WAIT_TIMEOUT` would inherit its undocumented
-1,800 second default underneath a 30 minute nextest budget, which is exactly
-the inversion the canonical section exists to prevent, and it would do so
-silently. The contract fails if either the action appears or the variable is
-set, so adopting it needs this section updated in the same change.
+without setting `RUN_RUST_CARGO_WAIT_TIMEOUT` or the `cargo-wait-timeout` input
+would inherit the action's 1,800 second default underneath a 30 minute nextest
+budget, which is exactly the inversion the canonical section exists to prevent,
+and it would do so silently. The contract fails if either the action appears or
+the variable is set, so adopting it needs this section updated in the same
+change.
 
 The variable is looked for in all three scopes a step can inherit its
 environment from. GitHub resolves a name declared at more than one of workflow,

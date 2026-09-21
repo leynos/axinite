@@ -10,9 +10,9 @@ The third tier, the shared coverage action's wall-clock watchdog on the
 ``cargo`` invocation, does not exist here: coverage runs
 ``cargo llvm-cov nextest`` from a ``run:`` step rather than through that
 action. Its absence is asserted rather than assumed, because a lane that
-adopted the action without setting ``RUN_RUST_CARGO_WAIT_TIMEOUT`` would
-inherit an undocumented 1,800 s default underneath a 30 m nextest
-budget, which is the inversion the canonical section exists to prevent.
+adopted the action without setting ``RUN_RUST_CARGO_WAIT_TIMEOUT`` or the
+``cargo-wait-timeout`` input would inherit the action's 1,800 s
+default underneath a 30 m nextest budget, which is the inversion the canonical section exists to prevent.
 
 Two of the four were unset until this contract was written. Nothing
 bounded a single test and nothing bounded the run, so the only timer that
@@ -185,9 +185,9 @@ def test_the_cargo_watchdog_tier_is_absent_rather_than_defaulted() -> None:
     `cargo llvm-cov nextest` from a `run:` step and does not use that
     action, so the tier is absent by construction.
 
-    A lane that adopted the action without setting the variable would
-    inherit its undocumented 1,800 s default underneath a 30 m nextest
-    budget, which is the inversion the canonical section exists to
+    A lane that adopted the action without setting the variable or the
+    `cargo-wait-timeout` input would inherit the action's 1,800 s default
+    underneath a 30 m nextest budget, which is the inversion the canonical section exists to
     prevent, so both halves are asserted: the action is not used, and the
     variable is not set.
 

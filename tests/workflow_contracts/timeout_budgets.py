@@ -336,12 +336,13 @@ def _drives_the_compiler(source: Path) -> bool:
 def allowance_for_binary(profile: Profile, binary: str) -> float | None:
     """Return what one profile allows a named binary, in seconds.
 
-    Returns
-    -------
-    float or None
-        The largest allowance an override naming the binary grants, or
-        None when no override names it and the profile's own base
-        allowance therefore governs it.
+    The *first* matching override, not the largest. nextest applies the
+    first override whose filterset selects a test and stops, so a
+    reading that took the maximum would certify a binary under a budget
+    nextest never applies the moment two overlapping overrides granted
+    different allowances. `Profile.sources` yields local overrides
+    before inherited ones, which is nextest's own order, so the first
+    match here is the one that governs.
 
     Parameters
     ----------
@@ -349,15 +350,24 @@ def allowance_for_binary(profile: Profile, binary: str) -> float | None:
         The profile to read.
     binary
         The test binary's name.
+
+    Returns
+    -------
+    float or None
+        The allowance the first override naming the binary grants, or
+        None when no override names it and the profile's own base
+        allowance therefore governs it.
     """
-    granted = [
-        _budget_of(path, value)
-        for path, table in profile.sources()
-        if table is not profile.own
-        and binary in binaries_selected(table.get("filter"))
-        and (value := _slow_timeout(table)) is not None
-    ]
-    return max(granted) if granted else None
+    return next(
+        (
+            _budget_of(path, value)
+            for path, table in profile.sources()
+            if table is not profile.own
+            and binary in binaries_selected(table.get("filter"))
+            and (value := _slow_timeout(table)) is not None
+        ),
+        None,
+    )
 
 
 def excluded_from(profile: Profile, binary: str) -> bool:
