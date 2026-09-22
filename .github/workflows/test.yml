@@ -13,6 +13,17 @@ name: Run Tests
     branches:
       - main
 
+# A push to a pull request supersedes the run already in flight, and there is
+# nothing left to learn from the superseded one. Cancellation is conditioned
+# on the event so a push to `main`, a schedule, or a dispatch, none of which
+# has a successor waiting, always runs to completion.
+# The group names this file rather than `github.workflow`: in a reusable
+# workflow that expression resolves to the *caller's* name, which would
+# put every workflow a single caller invokes into one group.
+concurrency:
+  group: run-tests-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 # Tool pins shared by every job. Each tool is installed from a pinned,
 # checksum-verified release archive by taiki-e/install-action with
 # `fallback: none`, so a missing prebuilt binary fails the job instead of

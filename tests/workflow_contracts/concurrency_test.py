@@ -1,0 +1,216 @@
+"""Contracts cancelling superseded pull-request runs.
+
+Every push to a pull request starts a fresh run of each gate, and the run
+already in flight is answering a question about a commit nobody will merge.
+Left alone it holds a runner until it finishes, so the branch pays twice for
+one answer. A concurrency group keyed on the pull request makes the newer run
+cancel the older one.
+
+Cancellation has to stay conditioned on the event. A literal
+``cancel-in-progress: true`` would also cancel a push to `main`, a schedule,
+and a dispatch, none of which has a successor waiting: the run that writes the
+warm cache on `main` would be killed by the next merge, and the coverage
+history would gain holes. The condition is therefore part of the contract, not
+an implementation detail, and `test_cancellation_is_conditioned_on_the_event`
+fails on the literal.
+
+The group also has to distinguish one pull request from another. A group
+derived from ``github.run_id`` is unique per run and so cancels nothing, while
+a constant group would let one branch cancel another's gates.
+
+Only `pull_request` is in scope. A `pull_request_target` workflow runs against
+the base repository to carry a token, and the workflows that use it here label
+and auto-merge rather than build; cancelling an auto-merge mid-flight is a
+hazard with no minutes to win.
+
+Run via ``make test-workflow-contracts``.
+"""
+
+from __future__ import annotations
+
+import typing as typ
+
+import pytest
+from _workflow_policy import load, workflow_paths
+
+if typ.TYPE_CHECKING:  # pragma: no cover - typing only
+    from pathlib import Path
+
+#: The exact `cancel-in-progress` expression every pull-request workflow
+#: carries. Comparing against one string rather than searching for a substring
+#: is what makes the literal `true` mutation fail: `true` is a YAML boolean and
+#: never equals this.
+CANCEL_EXPRESSION = "${{ github.event_name == 'pull_request' }}"
+
+#: Expressions that are unique to a single run. A group built from one of these
+#: can never match another run, so it queues nothing and cancels nothing while
+#: looking exactly like a concurrency control.
+RUN_UNIQUE_EXPRESSIONS: tuple[str, ...] = (
+    "github.run_id",
+    "github.run_number",
+    "github.run_attempt",
+    "github.sha",
+)
+
+#: Expressions that differ between two pull requests. A group naming none of
+#: them is shared by every branch, so one pull request's push would cancel
+#: another's gates.
+PER_PULL_REQUEST_EXPRESSIONS: tuple[str, ...] = (
+    "github.event.pull_request.number",
+    "github.head_ref",
+    "github.ref",
+)
+
+#: Workflows known to start on `pull_request`. Discovery below is dynamic so a
+#: new workflow is covered the day it lands, but a dynamic list that silently
+#: empties turns every parametrized test into a vacuous pass. This names the
+#: floor discovery must still reach.
+KNOWN_PULL_REQUEST_WORKFLOWS: frozenset[str] = frozenset(
+    {
+        "code_style.yml",
+        "codescene-coverage.yml",
+        "e2e.yml",
+        "regression-test-check.yml",
+        "test.yml",
+    }
+)
+
+
+def _triggers(document: dict[str, object]) -> dict[str, object]:
+    """Return a workflow's `on:` mapping.
+
+    PyYAML resolves an unquoted `on:` key to the boolean ``True``, so a
+    workflow that omits the quotes would otherwise read as having no triggers
+    and pass every assertion below vacuously.
+
+    Parameters
+    ----------
+    document
+        A parsed workflow document.
+
+    Returns
+    -------
+    dict
+        The declared triggers, empty when the workflow uses the list or
+        scalar shorthand, neither of which this repository writes.
+    """
+    declared = document.get("on", document.get(True))
+    return declared if isinstance(declared, dict) else {}
+
+
+def _pull_request_workflows() -> list[Path]:
+    """Return every workflow a pull request can start.
+
+    Returns
+    -------
+    list of Path
+        Workflow paths declaring a `pull_request` trigger, in name order.
+    """
+    return [path for path in workflow_paths() if "pull_request" in _triggers(load(path))]
+
+
+def _concurrency(path: Path) -> dict[str, object]:
+    """Return a workflow's top-level concurrency mapping.
+
+    Parameters
+    ----------
+    path
+        Workflow file to read.
+
+    Returns
+    -------
+    dict
+        The concurrency mapping, empty when the workflow declares none or
+        declares the shorthand string form, which cannot carry
+        `cancel-in-progress` at all.
+    """
+    declared = load(path).get("concurrency")
+    return declared if isinstance(declared, dict) else {}
+
+
+PULL_REQUEST_WORKFLOWS = _pull_request_workflows()
+WORKFLOW_IDS = [path.name for path in PULL_REQUEST_WORKFLOWS]
+
+
+def test_discovery_still_finds_the_known_pull_request_workflows() -> None:
+    """Discovery reaches its floor, so the parametrized contracts are not empty.
+
+    Every test below is parametrized over a list built by reading the workflow
+    estate. If that read were to break, or the `on:` key were to change shape,
+    the list would empty and each contract would report as passed having
+    asserted nothing.
+    """
+    discovered = set(WORKFLOW_IDS)
+    missing = sorted(KNOWN_PULL_REQUEST_WORKFLOWS - discovered)
+    assert not missing, (
+        f"these workflows start on pull_request but discovery missed them: "
+        f"{', '.join(missing)}; the contracts below would pass without "
+        "asserting anything about them"
+    )
+
+
+@pytest.mark.parametrize("workflow", PULL_REQUEST_WORKFLOWS, ids=WORKFLOW_IDS)
+def test_every_pull_request_workflow_declares_a_concurrency_group(
+    workflow: Path,
+) -> None:
+    """A workflow a pull request starts declares a concurrency group.
+
+    Without one, every push to the branch leaves its predecessor running to
+    completion on a paid runner.
+    """
+    group = _concurrency(workflow).get("group")
+    assert isinstance(group, str) and group.strip(), (
+        f"{workflow.name} starts on pull_request and must declare "
+        "concurrency.group; without it a superseded run holds a runner until "
+        "it finishes"
+    )
+
+
+@pytest.mark.parametrize("workflow", PULL_REQUEST_WORKFLOWS, ids=WORKFLOW_IDS)
+def test_the_group_is_not_unique_to_one_run(workflow: Path) -> None:
+    """The group is shared by successive runs of the same pull request.
+
+    A group built from the run identifier or the commit SHA matches no other
+    run, so it cancels nothing while reading as a concurrency control.
+    """
+    group = str(_concurrency(workflow).get("group", ""))
+    offenders = [name for name in RUN_UNIQUE_EXPRESSIONS if name in group]
+    assert not offenders, (
+        f"{workflow.name} builds its concurrency group from "
+        f"{', '.join(offenders)}, which is unique to one run; the group would "
+        "never match a superseded run and would cancel nothing"
+    )
+
+
+@pytest.mark.parametrize("workflow", PULL_REQUEST_WORKFLOWS, ids=WORKFLOW_IDS)
+def test_the_group_distinguishes_one_pull_request_from_another(
+    workflow: Path,
+) -> None:
+    """The group varies with the pull request, so branches do not cancel each other.
+
+    A constant group would put every open pull request in one queue, and the
+    first push anywhere would cancel the gates running everywhere else.
+    """
+    group = str(_concurrency(workflow).get("group", ""))
+    assert any(name in group for name in PER_PULL_REQUEST_EXPRESSIONS), (
+        f"{workflow.name} must key its concurrency group on the pull request, "
+        f"by naming one of {', '.join(PER_PULL_REQUEST_EXPRESSIONS)}; a group "
+        "shared by every branch would cancel unrelated pull requests"
+    )
+
+
+@pytest.mark.parametrize("workflow", PULL_REQUEST_WORKFLOWS, ids=WORKFLOW_IDS)
+def test_cancellation_is_conditioned_on_the_event(workflow: Path) -> None:
+    """Cancellation applies to pull requests only, not to pushes or schedules.
+
+    A literal `true` here reads as a stricter setting and is a regression: it
+    would cancel the run on `main` that writes the warm cache and records
+    coverage, which no later run repeats.
+    """
+    declared = _concurrency(workflow).get("cancel-in-progress")
+    assert declared == CANCEL_EXPRESSION, (
+        f"{workflow.name} must set cancel-in-progress to "
+        f"{CANCEL_EXPRESSION!r}, not {declared!r}; a missing value leaves "
+        "superseded runs in flight and a literal true also cancels pushes to "
+        "main, schedules, and dispatches"
+    )

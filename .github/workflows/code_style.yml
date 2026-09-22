@@ -8,6 +8,14 @@ name: Code Style
   # store is content-addressed and has no single writer.
   workflow_dispatch:
 
+# A push to a pull request supersedes the run already in flight, and there is
+# nothing left to learn from the superseded one. Cancellation is conditioned
+# on the event so a push to `main`, a schedule, or a dispatch, none of which
+# has a successor waiting, always runs to completion.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 # Every job here reads the checkout and writes nothing. Without this
 # block each job inherits the repository or organization default
 # `GITHUB_TOKEN` scopes, which can be write-capable, and these jobs run
