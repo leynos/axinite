@@ -219,6 +219,35 @@ def test_a_workflow_that_is_not_yaml_names_the_file(tmp_path: Path) -> None:
         read_estate(directory)
 
 
+@pytest.mark.parametrize(
+    ("body", "because"),
+    [
+        pytest.param("[]", "a sequence is not a workflow", id="a-sequence"),
+        pytest.param("just a string", "nor is a scalar", id="a-scalar"),
+        pytest.param("", "nor is an empty file", id="empty"),
+    ],
+)
+def test_a_file_that_parses_but_is_not_a_workflow_names_it(
+    tmp_path: Path, body: str, because: str
+) -> None:
+    """Valid YAML that is not a mapping is a source fault too.
+
+    `parse_workflow` asserts the root is a mapping, and an `AssertionError`
+    escaping the boundary is exactly what the boundary exists to prevent: it
+    names no file, and it arrives from inside a comprehension several frames
+    from the thing that was wrong.
+    """
+    directory = tmp_path / "workflows"
+    directory.mkdir()
+    (directory / "odd.yml").write_text(body, encoding="utf-8")
+    with pytest.raises(SourceError, match="odd.yml") as raised:
+        read_estate(directory)
+    assert "odd.yml" in str(raised.value), (
+        f"{because}, and the failure must name the file; it said "
+        f"{raised.value}"
+    )
+
+
 def test_reading_a_directory_as_a_file_names_it(tmp_path: Path) -> None:
     """The remaining `OSError` shape: a path that is not a regular file."""
     with pytest.raises(SourceError, match="cannot be read"):

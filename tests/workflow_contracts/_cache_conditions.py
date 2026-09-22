@@ -138,6 +138,49 @@ def _cache_hit_faults(terms: tuple[str, ...], restore_ids: frozenset[str]) -> li
     return []
 
 
+def _shape_faults(collapsed: str, terms: tuple[str, ...]) -> list[str]:
+    """Return what is wrong with an expression before its terms are compared.
+
+    These are the readings that make the conjunct comparison meaningless
+    rather than merely failing it: there is nothing to compare, or the
+    expression is not a plain conjunction at all.
+
+    Parameters
+    ----------
+    collapsed
+        The `if` expression with its whitespace collapsed.
+    terms
+        Its `&&`-separated terms, empty pieces included.
+
+    Returns
+    -------
+    list of str
+        One sentence, or none when the expression is a well-formed
+        conjunction whose terms can be compared with the approved set.
+    """
+    if not collapsed:
+        return ["it carries no condition at all, so every leg writes the key"]
+    if DISJUNCTION in collapsed:
+        return [
+            f"it contains {DISJUNCTION!r}. An alternative arm can admit another "
+            "event or another leg while every approved term is still present, "
+            "so a disjunction is refused rather than judged term by term"
+        ]
+    if "(" in collapsed or ")" in collapsed:
+        return [
+            "it is grouped with parentheses, which this reader does not take "
+            "apart; the approved predicate is four plain conjuncts"
+        ]
+    if not all(terms):
+        return [
+            f"it has a stray {CONJUNCTION!r}: {collapsed!r} splits into "
+            f"{list(terms)}, one of which is empty. GitHub does not evaluate "
+            "that expression, and a reader that dropped the empty piece would "
+            "compare the same conjunct set as the well-formed condition"
+        ]
+    return []
+
+
 def save_condition_faults(condition: str, restore_ids: frozenset[str]) -> list[str]:
     """Return every way a save condition departs from the approved predicate.
 
@@ -155,35 +198,19 @@ def save_condition_faults(condition: str, restore_ids: frozenset[str]) -> list[s
         approved push-to-main, all-features, cache-miss predicate.
     """
     collapsed = " ".join(condition.split())
-    if not collapsed:
-        return ["it carries no condition at all, so every leg writes the key"]
-    if DISJUNCTION in collapsed:
-        return [
-            f"it contains {DISJUNCTION!r}. An alternative arm can admit another "
-            "event or another leg while every approved term is still present, "
-            "so a disjunction is refused rather than judged term by term"
-        ]
-    if "(" in collapsed or ")" in collapsed:
-        return [
-            "it is grouped with parentheses, which this reader does not take "
-            "apart; the approved predicate is four plain conjuncts"
-        ]
     terms = conjuncts(collapsed)
-    if not all(terms):
-        return [
-            f"it has a stray {CONJUNCTION!r}: {condition!r} splits into "
-            f"{list(terms)}, one of which is empty. GitHub does not evaluate "
-            "that expression, and a reader that dropped the empty piece would "
-            "compare the same conjunct set as the well-formed condition"
-        ]
+    shape = _shape_faults(collapsed, terms)
+    if shape:
+        return shape
     faults = _cache_hit_faults(terms, restore_ids)
     fixed = frozenset(term for term in terms if not CACHE_HIT_RE.search(term))
-    for missing in sorted(FIXED_CONJUNCTS - fixed):
-        faults.append(f"it does not require {missing}")
-    for extra in sorted(fixed - FIXED_CONJUNCTS):
-        faults.append(
-            f"it carries the extra term {extra!r}; the approved predicate is "
-            "exactly the writing leg, the push event, the main ref and the "
-            "restore step's cache miss"
-        )
+    faults.extend(
+        f"it does not require {missing}" for missing in sorted(FIXED_CONJUNCTS - fixed)
+    )
+    faults.extend(
+        f"it carries the extra term {extra!r}; the approved predicate is "
+        "exactly the writing leg, the push event, the main ref and the "
+        "restore step's cache miss"
+        for extra in sorted(fixed - FIXED_CONJUNCTS)
+    )
     return faults

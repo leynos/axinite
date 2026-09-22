@@ -23,6 +23,7 @@ naming the file.
 from __future__ import annotations
 
 import typing as typ
+from collections.abc import Mapping
 from functools import cache
 from types import MappingProxyType
 
@@ -39,11 +40,10 @@ from _workflow_policy import (
 )
 
 if typ.TYPE_CHECKING:  # pragma: no cover - typing only
-    from collections.abc import Mapping
     from pathlib import Path
 
 #: Every workflow this contract judges, parsed and keyed by name.
-Estate: typ.TypeAlias = "Mapping[str, Mapping[str, object]]"
+Estate = Mapping[str, Mapping[str, object]]
 
 
 def read_estate(directory: Path = WORKFLOW_DIR) -> Estate:
@@ -121,6 +121,13 @@ def read_workflows(directory: Path = WORKFLOW_DIR) -> Estate:
             documents[path.name] = parse_workflow(text, path.name)
         except yaml.YAMLError as error:
             raise SourceError(path, f"is not valid YAML ({error})") from error
+        except AssertionError as error:
+            # `parse_workflow` asserts the root is a mapping, which a file
+            # holding `[]` or a bare scalar is not. That is valid YAML and an
+            # invalid workflow, so it belongs here with the other readings
+            # this boundary names rather than escaping as an `AssertionError`
+            # from inside a comprehension.
+            raise SourceError(path, f"is not a workflow ({error})") from error
     return MappingProxyType(documents)
 
 

@@ -61,7 +61,9 @@ def test_a_script_splits_where_a_command_ends(script: str, expected: list[str]) 
     argument of the second, which is the whole defect: the key it produces
     describes a run nothing performs.
     """
-    assert split_commands(script) == expected
+    assert split_commands(script) == expected, (
+        f"{script!r} split to {split_commands(script)!r}, not {expected!r}"
+    )
 
 
 @pytest.mark.parametrize(
@@ -98,7 +100,10 @@ def test_a_separator_inside_quotes_is_an_ordinary_character(
     the command would key as selecting nothing. That is the opposite error
     from the one above and just as wrong, so both are stated.
     """
-    assert split_commands(script) == expected
+    assert split_commands(script) == expected, (
+        f"{script!r} split to {split_commands(script)!r}, not {expected!r}; a "
+        "separator inside quotes must not end the command"
+    )
 
 
 def test_a_second_command_does_not_lend_the_first_its_flags(
@@ -144,7 +149,9 @@ def test_a_make_target_after_an_operator_is_still_found(
     found = sorted(make_runs(script, defaults))
     assert len(found) == 1, f"one Make target runs one suite; got {found}"
     scope, _, features = found[0]
-    assert scope == WORKSPACE
+    assert scope == WORKSPACE, (
+        f"the Make target runs the workspace suite; the reader read {scope!r}"
+    )
     assert ":all-features" in features, (
         "the target's own variable assignment must reach the key; got "
         f"{sorted(features)}"
