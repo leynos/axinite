@@ -12,16 +12,23 @@ cache contracts read the unfiltered one, in order to exempt that workflow by
 name, which is a statement they make rather than one this module makes for
 them.
 
+`read_workflow` is the same boundary for a contract that judges one named
+file, so it need not reach past it with a bare `read_text` and a parse.
+
 `conftest.py` builds the `estate` fixture on `read_estate`, handing each test
-an isolated copy. `estate_source` and `estate_jobs` are the shared, uncopied
-readings, for the contracts that assert one job per test: a parameter list and
-its identifiers are fixed while pytest is collecting, so those cannot take a
-fixture, and reading through here is what keeps their failure a `SourceError`
-naming the file.
+an isolated copy. `estate_source` and `estate_jobs` are the readings for the
+contracts that assert one job per test: a parameter list and its identifiers
+are fixed while pytest is collecting, so those cannot take a fixture, and
+reading through here is what keeps their failure a `SourceError` naming the
+file. The parse behind them is cached once per process, but what they return
+is a copy too, made by `isolated`: a proxy is shallow, and a contract that
+appended to a cached job's `steps` would otherwise change what every later
+reader judged.
 """
 
 from __future__ import annotations
 
+import copy
 import typing as typ
 from collections.abc import Mapping
 from functools import cache
@@ -114,35 +121,86 @@ def read_workflows(directory: Path = WORKFLOW_DIR) -> Estate:
         raise SourceError(
             directory, f"cannot be scanned ({error.strerror or error})"
         ) from error
-    documents: dict[str, Mapping[str, object]] = {}
-    for path in paths:
-        text = read_text(path)
-        try:
-            documents[path.name] = parse_workflow(text, path.name)
-        except yaml.YAMLError as error:
-            raise SourceError(path, f"is not valid YAML ({error})") from error
-        except AssertionError as error:
-            # `parse_workflow` asserts the root is a mapping, which a file
-            # holding `[]` or a bare scalar is not. That is valid YAML and an
-            # invalid workflow, so it belongs here with the other readings
-            # this boundary names rather than escaping as an `AssertionError`
-            # from inside a comprehension.
-            raise SourceError(path, f"is not a workflow ({error})") from error
-    return MappingProxyType(documents)
+    return MappingProxyType({path.name: read_workflow(path) for path in paths})
 
 
-@cache
-def estate_source() -> Estate:
-    """Read the estate once per process, through the source boundary.
+def read_workflow(path: Path) -> dict[str, object]:
+    """Read and parse one workflow file, or raise `SourceError` naming it.
 
-    The same reading the `estate` fixture is built on, without the per-test
-    copy: for the contracts that must have their values while pytest is
-    collecting. Anything that can wait should take the fixture instead.
+    For a contract that judges one named workflow. It is the same conversion
+    `read_workflows` applies to every file in the directory, so a contract
+    that wants `test.yml` alone does not reach past the boundary with a bare
+    read and a parse whose failures name nothing.
+
+    Parameters
+    ----------
+    path
+        The workflow file to read.
+
+    Returns
+    -------
+    dict
+        The parsed workflow document.
+
+    Raises
+    ------
+    SourceError
+        If the file is missing, unreadable, not valid UTF-8, not valid YAML,
+        or valid YAML whose root is not a mapping.
+    """
+    text = read_text(path)
+    try:
+        return parse_workflow(text, path.name)
+    except yaml.YAMLError as error:
+        raise SourceError(path, f"is not valid YAML ({error})") from error
+    except AssertionError as error:
+        # `parse_workflow` asserts the root is a mapping, which a file holding
+        # `[]` or a bare scalar is not. That is valid YAML and an invalid
+        # workflow, so it belongs here with the other readings this boundary
+        # names rather than escaping as an `AssertionError` that names no file.
+        raise SourceError(path, f"is not a workflow ({error})") from error
+
+
+def isolated(estate: Estate) -> Estate:
+    """Return a deep copy of an estate that shares nothing with the original.
+
+    The outer mapping is a proxy, so a contract cannot add or replace a
+    workflow; but a proxy is shallow, and the documents beneath it are
+    ordinary dictionaries and lists. Every reading that hands out a parse
+    cached for the whole run goes through this, so one contract appending to
+    a job's `steps` cannot change what a later contract judges.
+
+    Parameters
+    ----------
+    estate
+        The parsed documents to copy.
 
     Returns
     -------
     Mapping
-        The parsed documents, keyed by file name.
+        The same documents, copied all the way down, behind a fresh proxy.
+    """
+    return MappingProxyType(copy.deepcopy(dict(estate)))
+
+
+def estate_source(directory: Path = WORKFLOW_DIR) -> Estate:
+    """Return the estate, parsed once per process and copied per call.
+
+    The same reading the `estate` fixture is built on, for the contracts that
+    must have their values while pytest is collecting. Anything that can wait
+    should take the fixture instead.
+
+    Parameters
+    ----------
+    directory
+        The directory to scan. It defaults to the estate's own; the parameter
+        exists so the failure cases can be stated against a temporary tree.
+
+    Returns
+    -------
+    Mapping
+        The parsed documents, keyed by file name, isolated from the cached
+        parse and from every other caller's copy.
 
     Raises
     ------
@@ -150,10 +208,10 @@ def estate_source() -> Estate:
         If the directory cannot be scanned, or a workflow in it cannot be
         read or parsed.
     """
-    return read_estate()
+    return isolated(_estate_once(directory))
 
 
-def estate_jobs() -> tuple[Job, ...]:
+def estate_jobs(directory: Path = WORKFLOW_DIR) -> tuple[Job, ...]:
     """Return every job the estate declares, in workflow order.
 
     For the contracts that assert one job per test. Those need their values
@@ -165,32 +223,73 @@ def estate_jobs() -> tuple[Job, ...]:
     module-level expression.
 
     A contract that merely iterates the estate should take the `estate`
-    fixture instead: it is isolated per test, and this is not.
+    fixture instead. The job bodies here are copied from the cached parse on
+    every call, so a contract that alters one alters only its own.
+
+    Parameters
+    ----------
+    directory
+        The directory to scan. It defaults to the estate's own; the parameter
+        exists so the failure cases can be stated against a temporary tree.
 
     Returns
     -------
     tuple of Job
-        Every job in every workflow, excluding the dist-generated release
-        workflow, which `read_estate` leaves out.
+        Every job in every workflow, the dist-generated release workflow
+        included. This is the unfiltered `read_workflows` reading, not
+        `read_estate`, because the contracts that use it exempt that workflow
+        by name and so have to be able to see it.
+
+    Raises
+    ------
+    SourceError
+        If the directory cannot be scanned, or a workflow in it cannot be
+        read or parsed.
     """
     return tuple(
         job
-        for name, document in _all_workflows_once().items()
+        for name, document in isolated(_all_workflows_once(directory)).items()
         for job in jobs_of(name, document)
     )
 
 
 @cache
-def _all_workflows_once() -> Estate:
-    """Read every workflow once per process, generated included.
+def _estate_once(directory: Path) -> Estate:
+    """Read the filtered estate once per process and directory.
 
-    Separate from `estate_source` because the two answer different questions:
+    Private, because what it returns is the cached parse itself; the public
+    readings copy it through `isolated` before anyone can touch it.
+
+    Parameters
+    ----------
+    directory
+        The directory to scan.
+
+    Returns
+    -------
+    Mapping
+        The parsed documents, the dist-generated workflow left out.
+    """
+    return read_estate(directory)
+
+
+@cache
+def _all_workflows_once(directory: Path) -> Estate:
+    """Read every workflow once per process and directory, generated included.
+
+    Separate from `_estate_once` because the two answer different questions:
     the contracts that exempt the dist-generated workflow by name have to be
-    able to see it, and the suite contracts must not.
+    able to see it, and the suite contracts must not. Private for the same
+    reason as `_estate_once`.
+
+    Parameters
+    ----------
+    directory
+        The directory to scan.
 
     Returns
     -------
     Mapping
         Every parsed workflow, keyed by file name.
     """
-    return read_workflows()
+    return read_workflows(directory)

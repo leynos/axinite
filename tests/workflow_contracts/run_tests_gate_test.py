@@ -29,11 +29,11 @@ from __future__ import annotations
 import re
 
 import pytest
+from _estate import read_workflow
 from _workflow_policy import (
-    REPOSITORY_ROOT,
+    WORKFLOW_DIR,
     Job,
     jobs_of,
-    load,
     selected_value,
     step_text,
     triggers,
@@ -81,8 +81,12 @@ CASE_ARM_RE: re.Pattern[str] = re.compile(
 
 
 def _gate() -> Job:
-    """Return the gate job, failing the run if the workflow has lost it."""
-    document = load(REPOSITORY_ROOT / ".github" / "workflows" / WORKFLOW)
+    """Return the gate job, failing the run if the workflow has lost it.
+
+    Read through the source boundary, so a `test.yml` that cannot be read or
+    parsed fails with a `SourceError` naming it.
+    """
+    document = read_workflow(WORKFLOW_DIR / WORKFLOW)
     for job in jobs_of(WORKFLOW, document):
         if job.job_id == GATE_JOB:
             return job
@@ -136,7 +140,7 @@ def _supported_events() -> tuple[str, ...]:
     the caller's event, so asking what the expectation resolves to for it
     would be asking a question GitHub never poses.
     """
-    document = load(REPOSITORY_ROOT / ".github" / "workflows" / WORKFLOW)
+    document = read_workflow(WORKFLOW_DIR / WORKFLOW)
     return tuple(
         event for event in triggers(document) if event != "workflow_call"
     )

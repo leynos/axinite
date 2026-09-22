@@ -17,12 +17,10 @@ failure it converts.
 
 from __future__ import annotations
 
-import copy
 import typing as typ
-from types import MappingProxyType
 
 import pytest
-from _estate import read_estate
+from _estate import isolated, read_estate
 from _suite_targets import read_default_features
 
 if typ.TYPE_CHECKING:  # pragma: no cover - typing only
@@ -80,4 +78,4 @@ def estate(_estate_source: Estate) -> Estate:
     Mapping
         The parsed documents, isolated from every other test's copy.
     """
-    return MappingProxyType(copy.deepcopy(dict(_estate_source)))
+    return isolated(_estate_source)

@@ -648,7 +648,10 @@ documents, command text or Makefile text and return values; none of them opens
 a file. The reading happens at one boundary instead: `read_default_features`,
 `read_makefile` and `read_estate`, called from the `defaults` and `estate`
 fixtures in `conftest.py`, with `_sources.py` converting a missing, undecodable
-or unparsable file into a `SourceError` that names the path.
+or unparsable file into a `SourceError` that names the path. A contract that
+judges one named workflow, such as `run_tests_gate_test.py` reading `test.yml`,
+goes through `read_workflow` in `_estate.py`, which applies the same conversion
+to a single file; it does not reach past the boundary with `load`.
 
 The reason is where the failure lands. A module-level snapshot taken during
 import turns a bad file into a collection error naming neither the file nor a
@@ -667,12 +670,16 @@ do instead is read through the same boundary, via `estate_source` and
 module-level expression. Anything that merely iterates the estate takes the
 fixture.
 
-**The estate handed to a test is a copy.** The outer mapping is a proxy, so no
-contract can add or replace a workflow, but a proxy is shallow and the
+**Every estate handed to a contract is a copy.** The outer mapping is a proxy,
+so no contract can add or replace a workflow, but a proxy is shallow and the
 documents beneath it are ordinary dictionaries and lists. A contract appending
 to one job's `steps` would otherwise change what a later contract judges, and
 the failure would name the later contract, about a reading that was gone by the
-time anyone looked. Parsing stays at session scope; only the copy is per test.
+time anyone looked. Parsing is cached, at session scope for the fixture and
+once per process for `estate_source` and `estate_jobs`; all three hand out a
+deep copy made by `isolated`, so the cached parse itself never leaves
+`_estate.py`. `estate_boundary_test.py` states each conversion on every public
+reading and alters a copy to show the next reading is unchanged.
 
 `read_workflows` is the unfiltered reading and `read_estate` drops the
 dist-generated release workflow on top of it. The suite contracts may not judge

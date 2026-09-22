@@ -19,7 +19,7 @@ from pathlib import PurePosixPath, PureWindowsPath
 
 import pytest
 from _cache_conditions import save_condition_faults
-from _estate import estate_jobs
+from _estate import estate_jobs, read_workflow
 from _workflow_policy import (
     CACHE_ACTION_SHA,
     DIST_GENERATED,
@@ -27,7 +27,6 @@ from _workflow_policy import (
     Job,
     cache_paths,
     is_cache_step,
-    load,
     runs_on_event,
     triggers,
 )
@@ -271,7 +270,7 @@ def _pushes_to_main(workflow: str) -> bool:
     bool
         True when the workflow declares a push trigger that includes `main`.
     """
-    return _push_reaches_main(triggers(load(WORKFLOW_DIR / workflow)))
+    return _push_reaches_main(triggers(read_workflow(WORKFLOW_DIR / workflow)))
 
 
 @pytest.mark.parametrize(
