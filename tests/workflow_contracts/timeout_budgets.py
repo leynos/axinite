@@ -18,6 +18,7 @@ from nextest_config import (
     Profile,
     _budget_of,
     _slow_timeout,
+    binaries_named,
     binaries_selected,
     seconds,
 )
@@ -373,6 +374,20 @@ def allowance_for_binary(profile: Profile, binary: str) -> float | None:
 def excluded_from(profile: Profile, binary: str) -> bool:
     """Return whether a profile's default filter excludes a binary.
 
+    Derived from the shared readers rather than matched as text.
+    Exclusion is exactly "named but not selected", which is what makes
+    this agree with the allowance reading beside it instead of
+    disagreeing with it in the spellings only one of them knows.
+
+    The text match this replaces recognized the word ``not`` alone.
+    cargo-nextest accepts three negations, so ``!binary(trybuild)`` and
+    ``all() - binary(trybuild)`` both read as not excluded, and
+    :func:`binaries_short_of_allowance` then demanded an allowance for a
+    binary the profile never runs and failed a valid configuration.
+    :func:`binaries_selected` has known all three since the filterset
+    readers were split out; this reading was the one site still matching
+    a string.
+
     Parameters
     ----------
     profile
@@ -383,13 +398,21 @@ def excluded_from(profile: Profile, binary: str) -> bool:
     Returns
     -------
     bool
-        True when the profile's ``default-filter`` names the binary
-        under a negation, so the profile never runs it.
+        True when the profile's ``default-filter`` names the binary and
+        does not select it, so the profile never runs it.
+
+    Raises
+    ------
+    NextestConfigurationError
+        If the filterset is one :func:`binaries_selected` refuses to
+        attribute. Refused rather than guessed, for the reason that
+        function gives: a contract that cannot evaluate an expression
+        must not certify the lane it guards.
     """
     declared = profile.own.get("default-filter")
-    if not isinstance(declared, str):
-        return False
-    return f"not binary({binary})" in " ".join(declared.split())
+    return binary in binaries_named(declared) and binary not in binaries_selected(
+        declared
+    )
 
 
 def binaries_short_of_allowance(

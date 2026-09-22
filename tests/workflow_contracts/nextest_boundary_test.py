@@ -45,6 +45,7 @@ requires. Run via ``make test-workflow-contracts``.
 """
 
 import os
+import re
 import shutil
 import subprocess
 import tomllib
@@ -81,26 +82,102 @@ SUBPROCESS_TIMEOUT_SECONDS: typ.Final[float] = 600.0
 #: install the runner these assertions hand the file to.
 CONTRACT_SUITE_WORKFLOW: typ.Final[str] = "code_style.yml"
 
+#: Stands for a lane that defers to ``CARGO_NEXTEST_VERSION`` and
+#: declares it at neither scope. Reported rather than skipped: the
+#: expression resolves to the empty string and the lane installs
+#: whatever the tool action then picks.
+_UNDECLARED: typ.Final[str] = "<undeclared>"
 
-def _declared_nextest_versions() -> dict[str, str]:
-    """Return each workflow's declared cargo-nextest version.
 
-    Read from the workflow-level ``env`` block, which is where every
-    lane here declares it.
+#: A ``cargo-nextest@<version>`` reference that pins a literal version.
+#: Matched against the workflow's raw text rather than its parsed
+#: document, because one lane pins the version inside a
+#: ``setup-commands:`` block handed to a reusable workflow, where no
+#: key names it and no ``env`` declares it. The character class stops
+#: before ``$`` so an expression is not mistaken for a version.
+_NEXTEST_LITERAL: typ.Final[re.Pattern[str]] = re.compile(
+    r"cargo-nextest@([^\s$'\"]+)"
+)
+
+#: A ``cargo-nextest@`` reference that defers to ``CARGO_NEXTEST_VERSION``.
+#: The variable may be declared at workflow or job scope, so the
+#: reference is recognized here and resolved against both below.
+_NEXTEST_DEFERRED: typ.Final[re.Pattern[str]] = re.compile(
+    r"cargo-nextest@\$\{\{\s*env\.CARGO_NEXTEST_VERSION\s*\}\}"
+)
+
+#: Any ``cargo-nextest@`` reference at all, literal or deferred. What
+#: makes a workflow one that installs the runner.
+_NEXTEST_INSTALL: typ.Final[str] = "cargo-nextest@"
+
+
+def _declared_env_versions(document: object) -> set[str]:
+    """Return the ``CARGO_NEXTEST_VERSION`` values a workflow declares.
+
+    Both scopes are read. Four lanes here declare it at workflow level
+    and one inside its job, and a reading confined to the workflow block
+    saw the job-scoped one as declaring nothing while its steps still
+    installed the runner.
+
+    Parameters
+    ----------
+    document
+        A parsed workflow document.
 
     Returns
     -------
-    dict of str to str
-        Workflow file name to the version it declares, for those that
-        declare one.
+    set of str
+        Every value declared, at either scope. Empty when none is.
     """
-    declared: dict[str, str] = {}
+    if not isinstance(document, dict):
+        return set()
+    blocks = [document.get("env")]
+    jobs = document.get("jobs")
+    if isinstance(jobs, dict):
+        blocks.extend(
+            job.get("env") for job in jobs.values() if isinstance(job, dict)
+        )
+    return {
+        str(block["CARGO_NEXTEST_VERSION"])
+        for block in blocks
+        if isinstance(block, dict) and "CARGO_NEXTEST_VERSION" in block
+    }
+
+
+def _installed_nextest_versions() -> dict[str, set[str]]:
+    """Return the cargo-nextest versions each workflow installs.
+
+    Every workflow that installs the runner is reported, not only those
+    declaring ``CARGO_NEXTEST_VERSION``. Four lanes install it through
+    the shared tool action and defer to that variable;
+    ``mutation-testing.yml`` pins the version literally inside the
+    ``setup-commands:`` it hands to the reusable mutation workflow. A
+    reading confined to the ``env`` block saw four of the five, so the
+    literal could drift to another release and the agreement assertion
+    would still pass over the four that agreed with each other.
+
+    A reference to the workflow's own ``env`` resolves to that block's
+    value, so a lane deferring to a variable it never sets is reported
+    as installing an unresolved version rather than as installing
+    nothing.
+
+    Returns
+    -------
+    dict of str to set of str
+        Workflow file name to the versions it installs, for those that
+        install the runner at all.
+    """
+    installed: dict[str, set[str]] = {}
     for path in workflow_paths():
-        document = load(path)
-        environment = document.get("env") if isinstance(document, dict) else None
-        if isinstance(environment, dict) and "CARGO_NEXTEST_VERSION" in environment:
-            declared[path.name] = str(environment["CARGO_NEXTEST_VERSION"])
-    return declared
+        text = read_source(path)
+        if _NEXTEST_INSTALL not in text:
+            continue
+        versions = set(_NEXTEST_LITERAL.findall(text))
+        if _NEXTEST_DEFERRED.search(text):
+            declared = _declared_env_versions(load(path))
+            versions |= declared or {_UNDECLARED}
+        installed[path.name] = versions
+    return installed
 
 
 def test_every_lane_installs_the_same_nextest() -> None:
@@ -116,16 +193,27 @@ def test_every_lane_installs_the_same_nextest() -> None:
     tree where every version agreed by having none at all would satisfy
     a bare agreement check.
     """
-    declared = _declared_nextest_versions()
-    assert CONTRACT_SUITE_WORKFLOW in declared, (
-        f"{CONTRACT_SUITE_WORKFLOW} runs the contract suite and declares no "
-        f"CARGO_NEXTEST_VERSION, so the runner these assertions use is "
-        f"whatever happens to be installed"
+    installed = _installed_nextest_versions()
+    assert CONTRACT_SUITE_WORKFLOW in installed, (
+        f"{CONTRACT_SUITE_WORKFLOW} runs the contract suite and installs no "
+        f"cargo-nextest, so the runner these assertions use is whatever "
+        f"happens to be on the image"
     )
-    assert len(set(declared.values())) == 1, (
-        f"the workflows declare more than one cargo-nextest version "
-        f"({declared}); the contract suite would then take its verdict from a "
-        f"release the coverage and test lanes do not run"
+    unresolved = {
+        name: versions
+        for name, versions in installed.items()
+        if _UNDECLARED in versions
+    }
+    assert not unresolved, (
+        f"a lane defers to a cargo-nextest version it never declares "
+        f"({unresolved}); the reference resolves to the empty string and the "
+        f"lane installs whatever the tool action then picks"
+    )
+    versions = {version for versions in installed.values() for version in versions}
+    assert len(versions) == 1, (
+        f"the workflows install more than one cargo-nextest version "
+        f"({installed}); the contract suite would then take its verdict from "
+        f"a release the coverage, test or mutation lanes do not run"
     )
 
 

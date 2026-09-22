@@ -14,6 +14,8 @@ a correct reading from the old one. These cases are controlled.
 Run via ``make test-workflow-contracts``.
 """
 
+import typing as typ
+
 import pytest
 from nextest_config import (
     NextestConfigurationError,
@@ -26,6 +28,7 @@ from timeout_budgets import (
     COMPILE_CONTRACT_ALLOWANCE_SECONDS,
     allowance_for_binary,
     binaries_short_of_allowance,
+    excluded_from,
 )
 
 #: A profile whose single override grants the longer budget to
@@ -295,6 +298,94 @@ def test_a_negated_override_grants_the_binary_nothing() -> None:
     assert negated is None, (
         f"the negated override grants trybuild nothing, so its base allowance "
         f"governs; got {negated}"
+    )
+
+
+#: A profile whose ``default-filter`` removes the compile-contract
+#: binary, once per negation cargo-nextest accepts. The word ``not`` is
+#: the spelling the old text match knew; ``!`` and ``-`` are the two it
+#: did not, and under those the binary read as *run* rather than
+#: excluded.
+EXCLUDING_FILTERS: typ.Final[dict[str, str]] = {
+    "the-word-not": "not binary(trybuild)",
+    "the-bang-prefix": "!binary(trybuild)",
+    "set-difference": "all() - binary(trybuild)",
+}
+
+
+def _excluding(default_filter: str) -> Profile:
+    """Return an ``example`` profile whose default filter is given.
+
+    Parameters
+    ----------
+    default_filter
+        The ``default-filter`` value to declare.
+
+    Returns
+    -------
+    Profile
+        The profile named ``example``.
+    """
+    return _example(
+        "[profile.example]\n"
+        f"default-filter = '{default_filter}'\n"
+        'slow-timeout = { period = "300s", terminate-after = 1, '
+        'grace-period = "5s" }\n'
+        'global-timeout = "30m"\n'
+    )
+
+
+@pytest.mark.parametrize(
+    "spelling", sorted(EXCLUDING_FILTERS), ids=sorted(EXCLUDING_FILTERS)
+)
+def test_every_negation_spelling_excludes_the_binary(spelling: str) -> None:
+    """Exclusion must know every negation the allowance reading knows.
+
+    `excluded_from` matched the literal text ``not binary(x)``, so a
+    `default-filter` written with ``!`` or ``-`` reported the binary as
+    run. `binaries_short_of_allowance` then demanded an allowance for a
+    binary the profile never runs and failed a configuration that is
+    valid, which is the loud half of the fault. The quiet half is that
+    the two readings in this module disagreed about the same filterset.
+    """
+    profile = _excluding(EXCLUDING_FILTERS[spelling])
+    assert excluded_from(profile, "trybuild"), (
+        f"a default-filter of {EXCLUDING_FILTERS[spelling]!r} removes "
+        f"binary(trybuild), so the profile never runs it"
+    )
+    assert binaries_short_of_allowance(profile, frozenset({"trybuild"})) == {}, (
+        "a binary the profile never runs needs no allowance, so the sweep "
+        "must not report it as short of one"
+    )
+
+
+def test_a_filter_that_selects_the_binary_does_not_exclude_it() -> None:
+    """Assert the exclusion reading is narrow as well as sufficient.
+
+    A reading that answered True for every filterset naming the binary
+    would satisfy all three cases above and silence the allowance sweep
+    everywhere, which is the failure that reads as success. Exclusion is
+    "named but not selected", and this is the half that pins the second
+    clause.
+    """
+    profile = _excluding("binary(trybuild)")
+    assert not excluded_from(profile, "trybuild"), (
+        "a default-filter that selects binary(trybuild) runs it, so the "
+        "profile does not exclude it"
+    )
+
+
+def test_a_filter_naming_nothing_excludes_nothing() -> None:
+    """And a filterset that never mentions the binary excludes nothing.
+
+    The first clause of "named but not selected" is what this pins: a
+    reading that dropped it would call every unmentioned binary excluded
+    and skip the allowance assertion for the whole tree.
+    """
+    profile = _excluding("all()")
+    assert not excluded_from(profile, "trybuild"), (
+        "a default-filter that does not name binary(trybuild) says nothing "
+        "about it, so it does not exclude it"
     )
 
 
