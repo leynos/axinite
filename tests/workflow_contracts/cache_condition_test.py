@@ -120,7 +120,7 @@ def test_the_predicate_is_read_however_it_is_laid_out(condition: str) -> None:
             f"{WRITING_LEG} && {PUSH_EVENT} && {MAIN_REF} && "
             "steps.registry.outputs.cache-hit != 'true'",
             "an undeclared step ID resolves to the empty string, so the "
-            "guard is dead and nothing reports it",
+            "inequality holds and every matching push re-uploads the archive",
             id="a-restore-id-no-step-declares",
         ),
         pytest.param(
@@ -128,6 +128,27 @@ def test_the_predicate_is_read_however_it_is_laid_out(condition: str) -> None:
             "github.actor != 'dependabot[bot]'",
             "a term the policy does not name changes who writes the key",
             id="an-extra-conjunct",
+        ),
+        pytest.param(
+            f"{WRITING_LEG} && {PUSH_EVENT} && {PUSH_EVENT} && {MAIN_REF} && "
+            f"{CACHE_MISS}",
+            "a set comparison forgets the repeat, which usually stands where "
+            "another term was meant",
+            id="the-push-event-repeated",
+        ),
+        pytest.param(
+            f"{WRITING_LEG} && {PUSH_EVENT} && {MAIN_REF} && {MAIN_REF} && "
+            f"{CACHE_MISS}",
+            "a set comparison forgets the repeat, which usually stands where "
+            "another term was meant",
+            id="the-main-ref-repeated",
+        ),
+        pytest.param(
+            f"{WRITING_LEG} && {WRITING_LEG} && {PUSH_EVENT} && {MAIN_REF} && "
+            f"{CACHE_MISS}",
+            "a set comparison forgets the repeat, which usually stands where "
+            "another term was meant",
+            id="the-writing-leg-repeated",
         ),
         pytest.param(
             "",

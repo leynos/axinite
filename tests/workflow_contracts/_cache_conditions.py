@@ -11,10 +11,11 @@ reference while meaning its exact opposite, which would skip every write the
 archive actually needed. Each of those passes a substring reading and none of
 them is the approved policy.
 
-So the condition is taken apart instead. It is split on `&&`, and the set of
-conjuncts is compared with the approved set: anything missing fails, anything
-extra fails, and any `||` or grouping fails outright, because a disjunction
-cannot be judged conjunct by conjunct and is not part of the policy.
+So the condition is taken apart instead. It is split on `&&`, any term stated
+twice is refused, and the set of conjuncts is compared with the approved set:
+anything missing fails, anything extra fails, and any `||` or grouping fails
+outright, because a disjunction cannot be judged conjunct by conjunct and is
+not part of the policy.
 
 `cache_condition_test.py` drives this module directly, with a mutation of each
 conjunct, because the estate's own two save steps are correct and a reader
@@ -24,6 +25,7 @@ parametrized over correct input discriminates nothing.
 from __future__ import annotations
 
 import re
+from collections import Counter
 
 #: The matrix leg allowed to publish the registry archive. It resolves the
 #: widest dependency graph, so its archive is a superset of the others'; two
@@ -107,22 +109,28 @@ def _cache_hit_faults(terms: tuple[str, ...], restore_ids: frozenset[str]) -> li
     referring = [term for term in terms if CACHE_HIT_RE.search(term)]
     if not referring:
         return [
-            "it does not consult its restore step's `cache-hit` output, so it "
-            "re-uploads an archive it already has on every push"
+            (
+                "it does not consult its restore step's `cache-hit` output, so it "
+                "re-uploads an archive it already has on every push"
+            )
         ]
     if len(referring) > 1:
         return [
-            f"it consults `cache-hit` {len(referring)} times ({referring}); the "
-            "approved predicate names the restore step once"
+            (
+                f"it consults `cache-hit` {len(referring)} times ({referring}); the "
+                "approved predicate names the restore step once"
+            )
         ]
     term = referring[0]
     exact = CACHE_MISS_RE.match(term)
     if exact is None:
         return [
-            f"its cache-hit term is {term!r}, not "
-            "`steps.<restore-id>.outputs.cache-hit != 'true'`; the inverted "
-            "comparison skips the write the key needs, and a term with "
-            "anything else joined to it is not this predicate"
+            (
+                f"its cache-hit term is {term!r}, not "
+                "`steps.<restore-id>.outputs.cache-hit != 'true'`; the inverted "
+                "comparison skips the write the key needs, and a term with "
+                "anything else joined to it is not this predicate"
+            )
         ]
     named = exact["id"]
     if named not in restore_ids:
@@ -131,9 +139,12 @@ def _cache_hit_faults(terms: tuple[str, ...], restore_ids: frozenset[str]) -> li
         # the archive is re-uploaded on every push. Nothing fails, so the cost
         # is the only evidence.
         return [
-            f"it reads `steps.{named}.outputs.cache-hit`, but no restore step "
-            f"in that job declares that ID; it declares {sorted(restore_ids)}. "
-            "The expression resolves to the empty string and the guard is dead"
+            (
+                f"it reads `steps.{named}.outputs.cache-hit`, but no restore step "
+                f"in that job declares that ID; it declares {sorted(restore_ids)}. "
+                "The expression resolves to the empty string, so the inequality "
+                "holds and the archive is re-uploaded on every matching push"
+            )
         ]
     return []
 
@@ -162,23 +173,62 @@ def _shape_faults(collapsed: str, terms: tuple[str, ...]) -> list[str]:
         return ["it carries no condition at all, so every leg writes the key"]
     if DISJUNCTION in collapsed:
         return [
-            f"it contains {DISJUNCTION!r}. An alternative arm can admit another "
-            "event or another leg while every approved term is still present, "
-            "so a disjunction is refused rather than judged term by term"
+            (
+                f"it contains {DISJUNCTION!r}. An alternative arm can admit another "
+                "event or another leg while every approved term is still present, "
+                "so a disjunction is refused rather than judged term by term"
+            )
         ]
     if "(" in collapsed or ")" in collapsed:
         return [
-            "it is grouped with parentheses, which this reader does not take "
-            "apart; the approved predicate is four plain conjuncts"
+            (
+                "it is grouped with parentheses, which this reader does not take "
+                "apart; the approved predicate is four plain conjuncts"
+            )
         ]
     if not all(terms):
         return [
-            f"it has a stray {CONJUNCTION!r}: {collapsed!r} splits into "
-            f"{list(terms)}, one of which is empty. GitHub does not evaluate "
-            "that expression, and a reader that dropped the empty piece would "
-            "compare the same conjunct set as the well-formed condition"
+            (
+                f"it has a stray {CONJUNCTION!r}: {collapsed!r} splits into "
+                f"{list(terms)}, one of which is empty. GitHub does not evaluate "
+                "that expression, and a reader that dropped the empty piece would "
+                "compare the same conjunct set as the well-formed condition"
+            )
         ]
     return []
+
+
+def _repeated_term_faults(terms: tuple[str, ...]) -> list[str]:
+    """Return one fault per term the condition states more than once.
+
+    The comparison with the approved set is a set comparison, and a set
+    forgets how many times a term appeared: `push && push && main && leg &&
+    miss` reduces to the approved set exactly. A repeated conjunct changes
+    nothing GitHub evaluates, but it is not the approved predicate either, and
+    it is usually the residue of an edit that meant to write a different term
+    in that position. So cardinality is checked before the set is taken.
+
+    The cache-hit term is left to `_cache_hit_faults`, which already counts
+    its references and would otherwise report the same repeat twice.
+
+    Parameters
+    ----------
+    terms
+        The condition's conjuncts, in order.
+
+    Returns
+    -------
+    list of str
+        One sentence per repeated term, empty when every term is distinct.
+    """
+    counts = Counter(term for term in terms if not CACHE_HIT_RE.search(term))
+    return [
+        f"it states {term!r} {count} times; the approved predicate names each "
+        "conjunct once, and a repeat usually stands where another term was "
+        "meant"
+        for term, count in sorted(counts.items())
+        if count > 1
+    ]
 
 
 def save_condition_faults(condition: str, restore_ids: frozenset[str]) -> list[str]:
@@ -202,7 +252,8 @@ def save_condition_faults(condition: str, restore_ids: frozenset[str]) -> list[s
     shape = _shape_faults(collapsed, terms)
     if shape:
         return shape
-    faults = _cache_hit_faults(terms, restore_ids)
+    faults = _repeated_term_faults(terms)
+    faults.extend(_cache_hit_faults(terms, restore_ids))
     fixed = frozenset(term for term in terms if not CACHE_HIT_RE.search(term))
     faults.extend(
         f"it does not require {missing}" for missing in sorted(FIXED_CONJUNCTS - fixed)
