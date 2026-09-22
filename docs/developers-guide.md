@@ -634,6 +634,8 @@ one that answers its own:
 | Module                 | Answers                                                                             |
 | ---------------------- | ----------------------------------------------------------------------------------- |
 | `_sources.py`          | What a file on disk says. The only module that touches one                          |
+| `_shell.py`            | Where one shell command in a step's `run:` block ends and the next begins           |
+| `_estate.py`           | What workflows this repository declares, read and parsed once                       |
 | `_workflow_policy.py`  | What a workflow declares: jobs, steps, runners, triggers, matrix legs, event guards |
 | `_runs_on.py`          | What one chained `runs-on` expression resolves to for an event                      |
 | `_suite_targets.py`    | What a Make target runs, and what features the root manifest enables by default     |
@@ -649,12 +651,34 @@ fixtures in `conftest.py`, with `_sources.py` converting a missing, undecodable
 or unparsable file into a `SourceError` that names the path.
 
 The reason is where the failure lands. A module-level snapshot taken during
-import turns a bad file into a collection error, and a contract directory that
-fails to collect reports no failures at all, which reads exactly like a clean
-run. Read from a fixture, the same fault fails the contracts that asked for the
-file, by name. `source_boundary_test.py` states each conversion, and the estate
-is returned as a mapping no contract can alter, so one test cannot change what
-a later one judges.
+import turns a bad file into a collection error naming neither the file nor a
+test. Read from a fixture, the same fault fails the contracts that asked for
+the file, by name and with the path in the message. `source_boundary_test.py`
+states each conversion.
+
+Two consequences of that are easy to get wrong.
+
+**A contract that asserts one job per test cannot take the fixture.** A
+parameter list and its identifiers are fixed while pytest collects, so
+`cache_ownership_test.py` and `fork_fallback_test.py` read at import. What they
+do instead is read through the same boundary, via `estate_source` and
+`estate_jobs` in `_estate.py`, so an unparsable workflow still raises a
+`SourceError` naming the file rather than a bare `YAMLError` from inside a
+module-level expression. Anything that merely iterates the estate takes the
+fixture.
+
+**The estate handed to a test is a copy.** The outer mapping is a proxy, so no
+contract can add or replace a workflow, but a proxy is shallow and the
+documents beneath it are ordinary dictionaries and lists. A contract appending
+to one job's `steps` would otherwise change what a later contract judges, and
+the failure would name the later contract, about a reading that was gone by the
+time anyone looked. Parsing stays at session scope; only the copy is per test.
+
+`read_workflows` is the unfiltered reading and `read_estate` drops the
+dist-generated release workflow on top of it. The suite contracts may not judge
+a file that is regenerated wholesale; the placement and cache contracts do read
+it, in order to exempt it by name, which is a statement they make rather than
+one the reader makes for them.
 
 `Job` is the unit of assertion. It carries the workflow file name, the job's
 key under `jobs:`, and the job's parsed body, and it prints as

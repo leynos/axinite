@@ -268,5 +268,95 @@ class TestTheMakeVariableSpelling:
         would key half the estate's steps as naming nothing.
         """
         assert feature_key(
-            'NEXTEST_PROFILE=ci TEST_FEATURES="--all-features"', defaults
-        ) == feature_key("--all-features", defaults)
+            'NEXTEST_PROFILE=ci TEST_FEATURES="--all-features" '
+            "make test-workspace --locked",
+            defaults,
+        ) == feature_key("--all-features", defaults), (
+            "the assignment sits before the target and other arguments follow "
+            "it, which is the shape the estate writes; a reader that expanded "
+            "`TEST_FEATURES=` only as the last token would key this as naming "
+            "nothing"
+        )
+
+
+class TestTheOptionTerminator:
+    """Cargo stops reading its own options at a bare `--`.
+
+    Everything after it reaches the test binary. A custom harness is free to
+    take a `--features` or a `--profile` of its own, and reading those as
+    Cargo's would change a run's duplicate key without changing one feature
+    Cargo compiles or one test nextest selects. The contract would then
+    report a duplicate between two lanes that run different suites, or pass
+    over two that run the same one.
+    """
+
+    @pytest.mark.parametrize(
+        ("args", "because"),
+        [
+            pytest.param(
+                "--workspace -- --features harness-only",
+                "a harness flag is not a Cargo feature",
+                id="features-after-the-terminator",
+            ),
+            pytest.param(
+                "--workspace -- --all-features",
+                "nor is a harness flag that happens to spell all-features",
+                id="all-features-after-the-terminator",
+            ),
+            pytest.param(
+                "--workspace -- --no-default-features",
+                "nor one that spells no-default-features",
+                id="no-default-features-after-the-terminator",
+            ),
+        ],
+    )
+    def test_a_flag_past_the_terminator_selects_no_feature(
+        self, args: str, because: str, defaults: frozenset[str]
+    ) -> None:
+        """What Cargo does not read, the key must not read either."""
+        assert feature_key(args, defaults) == feature_key("--workspace", defaults), (
+            f"{args!r} selects what `--workspace` selects: {because}"
+        )
+
+    def test_a_flag_before_the_terminator_is_still_read(
+        self, defaults: frozenset[str]
+    ) -> None:
+        """The narrow direction, without which the cases above prove nothing.
+
+        A reader that discarded every token from the first `--` onwards, or
+        one that simply returned the defaults whenever a terminator appeared,
+        would satisfy all three equalities above and see no feature anywhere.
+        """
+        assert feature_key(
+            "--no-default-features --features libsql -- --nocapture", defaults
+        ) != feature_key(
+            "--no-default-features --features postgres -- --nocapture", defaults
+        ), (
+            "the features named before the terminator are Cargo's own, and "
+            "two different ones are two different suites"
+        )
+
+    @pytest.mark.parametrize(
+        ("args", "expected"),
+        [
+            pytest.param(
+                "--workspace -- --profile harness", DEFAULT_PROFILE, id="after"
+            ),
+            pytest.param("--workspace --profile ci -- --nocapture", "ci", id="before"),
+            pytest.param(
+                "--workspace --profile ci -- --profile harness", "ci", id="both"
+            ),
+        ],
+    )
+    def test_the_profile_stops_at_the_terminator_too(
+        self, args: str, expected: str
+    ) -> None:
+        """`--profile` past the terminator is the harness's, not nextest's.
+
+        The `both` case is the one that discriminates: a reader taking the
+        last match rather than stopping would answer `harness`, and a lane
+        running the full `ci` profile would key as running something else.
+        """
+        assert profile_of(args) == expected, (
+            f"{args!r} selects the {expected!r} nextest profile"
+        )

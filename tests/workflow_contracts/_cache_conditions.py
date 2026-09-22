@@ -66,6 +66,12 @@ DISJUNCTION = "||"
 def conjuncts(condition: str) -> tuple[str, ...]:
     """Return the `&&`-separated terms of an expression, whitespace collapsed.
 
+    Empty terms are kept rather than dropped. `a && && b` and `a &&` are not
+    expressions GitHub evaluates, and a reader that silently discarded the
+    empty piece would hand `save_condition_faults` a conjunct set identical to
+    the well-formed condition's, so a malformed guard would pass the
+    exact-predicate comparison.
+
     Parameters
     ----------
     condition
@@ -75,10 +81,12 @@ def conjuncts(condition: str) -> tuple[str, ...]:
     Returns
     -------
     tuple of str
-        Each term, in order, with empty pieces dropped.
+        Each term, in order, including any empty one a stray operator
+        produces. An expression with no operator at all yields one term, so
+        the empty condition yields one empty term.
     """
     joined = " ".join(condition.split())
-    return tuple(term.strip() for term in joined.split(CONJUNCTION) if term.strip())
+    return tuple(term.strip() for term in joined.split(CONJUNCTION))
 
 
 def _cache_hit_faults(terms: tuple[str, ...], restore_ids: frozenset[str]) -> list[str]:
@@ -161,6 +169,13 @@ def save_condition_faults(condition: str, restore_ids: frozenset[str]) -> list[s
             "apart; the approved predicate is four plain conjuncts"
         ]
     terms = conjuncts(collapsed)
+    if not all(terms):
+        return [
+            f"it has a stray {CONJUNCTION!r}: {condition!r} splits into "
+            f"{list(terms)}, one of which is empty. GitHub does not evaluate "
+            "that expression, and a reader that dropped the empty piece would "
+            "compare the same conjunct set as the well-formed condition"
+        ]
     faults = _cache_hit_faults(terms, restore_ids)
     fixed = frozenset(term for term in terms if not CACHE_HIT_RE.search(term))
     for missing in sorted(FIXED_CONJUNCTS - fixed):

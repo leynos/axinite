@@ -577,14 +577,19 @@ def test_selected_value_resolves_a_guarded_scalar_per_event(
     truth on three of these four rows, so the push row is what discriminates.
     """
     declared = "${{ github.event_name == 'push' && 'skipped' || 'success' }}"
-    assert selected_value(declared, event) == expected
+    assert selected_value(declared, event) == expected, (
+        f"on {event!r}, {declared!r} selects {expected!r}; the reader answered "
+        f"{selected_value(declared, event)!r}"
+    )
 
 
 @pytest.mark.parametrize(
     "declared",
     [
         pytest.param("success", id="plain-literal"),
-        pytest.param("${{ github.event_name == 'push' && 'skipped' }}", id="no-fallback"),
+        pytest.param(
+            "${{ github.event_name == 'push' && 'skipped' }}", id="no-fallback"
+        ),
         pytest.param(
             "${{ needs.tests.result == 'success' && 'yes' || 'no' }}",
             id="unrecognized-condition",
@@ -598,7 +603,11 @@ def test_selected_value_answers_none_for_a_shape_it_cannot_read(declared: str) -
     report an expectation confidently and wrongly, which is worse than
     reporting that it could not read the value at all.
     """
-    assert selected_value(declared, "push") is None
+    assert selected_value(declared, "push") is None, (
+        f"{declared!r} is a shape the reader cannot read, so it must answer "
+        f"None rather than guess; it answered "
+        f"{selected_value(declared, 'push')!r}"
+    )
 
 
 def test_selected_value_reads_a_folded_scalar() -> None:
@@ -632,5 +641,12 @@ jobs:
     assert isinstance(env, dict), "the fixture job declares no env mapping"
     declared = env.get("EXPECTED")
     assert isinstance(declared, str), "the fixture job declares no EXPECTED value"
-    assert selected_value(declared, "push") == "skipped"
-    assert selected_value(declared, "pull_request") == "success"
+    assert selected_value(declared, "push") == "skipped", (
+        f"the folded expression {declared!r} selects 'skipped' on a push; the "
+        f"reader answered {selected_value(declared, 'push')!r}"
+    )
+    assert selected_value(declared, "pull_request") == "success", (
+        f"the folded expression {declared!r} takes its fallback on a pull "
+        f"request; the reader answered "
+        f"{selected_value(declared, 'pull_request')!r}"
+    )

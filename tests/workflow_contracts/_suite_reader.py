@@ -16,35 +16,22 @@ from __future__ import annotations
 import re
 import typing as typ
 from dataclasses import dataclass
-from types import MappingProxyType
 
-import yaml
-
-from _sources import SourceError, read_text
+from _estate import Estate
+from _shell import split_commands
 from _suite_keys import feature_key, profile_of
 from _suite_targets import DEFAULT_PROFILE, MAKE_COMMAND, MAKE_TARGETS, WORKSPACE
 from _workflow_policy import (
-    DIST_GENERATED,
-    WORKFLOW_DIR,
     Job,
     jobs_of,
     matrix_legs,
-    parse_workflow,
     runs_on_event,
     step_text,
     triggers,
-    workflow_paths,
 )
 
 if typ.TYPE_CHECKING:  # pragma: no cover - typing only
-    from collections.abc import Iterator, Mapping
-    from pathlib import Path
-
-#: Every workflow this contract judges, parsed and keyed by name. The reading
-#: is a mapping the caller cannot alter: one contract mutating the estate
-#: would change what a later one judges, and the failure would name the later
-#: contract.
-Estate: typ.TypeAlias = "Mapping[str, Mapping[str, object]]"
+    from collections.abc import Iterator
 
 #: The triggers a developer waits on, and the only ones that reach a paid
 #: runner. A scheduled duplicate is free and blocks nobody.
@@ -145,6 +132,11 @@ def cargo_runs(
     counting it as the workspace suite would report a clash with a lane that
     runs thousands of tests it does not.
 
+    The script is split into commands first. Matching over the whole block
+    and taking arguments to the end of the line gives one command the next
+    one's flags: `cargo nextest run --workspace && cargo test -F harness` is
+    two runs, and read as one it keys as neither.
+
     Parameters
     ----------
     script
@@ -159,8 +151,11 @@ def cargo_runs(
         The scope a command covers, the nextest profile it selects, and the
         features it enables, one tuple per suite command found.
     """
-    for pattern in CARGO_COMMANDS:
-        for match in pattern.finditer(script):
+    for command in split_commands(script):
+        for pattern in CARGO_COMMANDS:
+            match = pattern.search(command)
+            if match is None:
+                continue
             args = match["args"]
             manifest = MANIFEST_RE.search(args)
             if manifest is not None:
@@ -197,7 +192,10 @@ def make_runs(
         The scope, profile and features of each suite a Make target runs. A
         target that runs two suites yields two tuples.
     """
-    for match in MAKE_COMMAND.finditer(script):
+    for command in split_commands(script):
+        match = MAKE_COMMAND.search(command)
+        if match is None:
+            continue
         for scope, takes_features in MAKE_TARGETS[match["target"]]:
             if takes_features:
                 yield (
@@ -316,49 +314,3 @@ def duplicates_in(
     for run in runs:
         by_key.setdefault(run.key, []).append(run)
     return {key: found for key, found in by_key.items() if len(found) > 1}
-
-
-def read_estate(directory: Path = WORKFLOW_DIR) -> Estate:
-    """Read and parse every workflow this contract judges.
-
-    The boundary for the workflow side, matching
-    `_suite_targets.read_default_features` on the manifest side. Reading here
-    rather than at import is what keeps a workflow this cannot parse from
-    becoming a collection error: a contract directory that fails to collect
-    reports no failures at all, which reads exactly like a clean run.
-
-    Parameters
-    ----------
-    directory
-        The directory to scan. It defaults to the estate's own; the parameter
-        exists so the failure cases can be stated against a temporary tree.
-
-    Returns
-    -------
-    Mapping
-        Each workflow document, keyed by file name, in a mapping the caller
-        cannot alter. The dist-generated release workflow is left out: its
-        contents are regenerated wholesale and nothing here may judge them.
-
-    Raises
-    ------
-    SourceError
-        If the directory cannot be scanned, or a workflow in it cannot be
-        read or parsed as YAML.
-    """
-    try:
-        paths = workflow_paths(directory)
-    except OSError as error:
-        raise SourceError(
-            directory, f"cannot be scanned ({error.strerror or error})"
-        ) from error
-    documents: dict[str, Mapping[str, object]] = {}
-    for path in paths:
-        if path.name == DIST_GENERATED:
-            continue
-        text = read_text(path)
-        try:
-            documents[path.name] = parse_workflow(text, path.name)
-        except yaml.YAMLError as error:
-            raise SourceError(path, f"is not valid YAML ({error})") from error
-    return MappingProxyType(documents)

@@ -24,20 +24,19 @@ Run via ``make test-workflow-contracts``.
 
 from __future__ import annotations
 
+import re
 from collections.abc import Iterator
 
 import pytest
+from _estate import Estate, estate_source
 from _workflow_policy import (
-    DIST_GENERATED,
     FORK_CONDITION,
     UBICLOUD_LABEL_PREFIX,
     Job,
     conditional_runs_on_arms,
     jobs_of,
-    load,
     runs_on_event,
     triggers,
-    workflow_paths,
 )
 
 #: The trigger this rule is about. A `push`, a `schedule` and a
@@ -52,7 +51,24 @@ HOSTED_LABEL = "ubuntu-latest"
 #: labels are in the matrix rather than in the expression. Naming it rather
 #: than exempting every unreadable form means a new one has to be added here
 #: on purpose.
-MATRIX_REFERENCE = "matrix."
+#: A `runs-on` that is nothing but one matrix key: `${{ matrix.runner }}`.
+#: Exempt from the assertion below because the label it resolves to is in the
+#: matrix rather than the expression, and the sizing contract reads it there.
+#:
+#: The match is anchored on purpose. Testing whether the text merely contains
+#: `matrix.` exempted every expression that mentioned a leg anywhere, which
+#: includes a real selection the reader cannot split:
+#: `${{ matrix.name == 'x' && 'ubuntu-latest' || 'ubicloud-standard-2' }}`
+#: asks for a paid runner on every leg but one, and a fork's pull request
+#: reaching such a leg is stranded exactly as this file exists to prevent.
+BARE_MATRIX_REFERENCE_RE: re.Pattern[str] = re.compile(
+    r"^\$\{\{\s*matrix\.[A-Za-z0-9_-]+\s*\}\}$"
+)
+
+
+def _is_a_bare_matrix_reference(declared: str) -> bool:
+    """Report whether a `runs-on` is one matrix key and nothing else."""
+    return BARE_MATRIX_REFERENCE_RE.fullmatch(declared) is not None
 
 
 def _runs_on(job: Job) -> str:
@@ -63,26 +79,15 @@ def _runs_on(job: Job) -> str:
     return " ".join(str(declared).split()) if isinstance(declared, str) else ""
 
 
-def _forkable_ubicloud_jobs() -> tuple[Job, ...]:
-    """Return every Ubicloud job a pull request can dispatch.
-
-    A workflow that does not declare the trigger contributes nothing, and
-    neither does a job whose own guard excludes it: neither can be reached by
-    a fork's pull request, so neither can strand one.
-    """
-    found: list[Job] = []
-    for path in workflow_paths():
-        if path.name == DIST_GENERATED:
-            continue
-        document = load(path)
-        if FORKABLE_EVENT not in triggers(document):
-            continue
-        found.extend(
-            job
-            for job in jobs_of(path.name, document)
-            if job.uses_ubicloud and runs_on_event(job, FORKABLE_EVENT)
-        )
-    return tuple(found)
+def _forkable_ubicloud_jobs(estate: Estate) -> tuple[Job, ...]:
+    """Return every Ubicloud job a pull request can dispatch."""
+    return tuple(
+        job
+        for name, document in estate.items()
+        if FORKABLE_EVENT in triggers(document)
+        for job in jobs_of(name, document)
+        if job.uses_ubicloud and runs_on_event(job, FORKABLE_EVENT)
+    )
 
 
 def _ids(candidates: tuple[Job, ...]) -> list[str]:
@@ -90,18 +95,29 @@ def _ids(candidates: tuple[Job, ...]) -> list[str]:
     return [str(job) for job in candidates]
 
 
-FORKABLE = _forkable_ubicloud_jobs()
+#: The lanes each fork assertion runs against, one test per lane. Read
+#: through `_sources`, so a workflow that cannot be parsed raises a
+#: `SourceError` naming the file; read at collection because a parameter list
+#: and its identifiers are fixed then, and a lane that failed anonymously
+#: would be worse than one that failed during collection.
+FORKABLE = _forkable_ubicloud_jobs(estate_source())
 
 
-def test_the_selector_finds_the_lanes() -> None:
+def test_the_selector_finds_the_lanes(estate: Estate) -> None:
     """Guard against a selector that silently matches nothing.
 
     Every assertion below is satisfied by finding no lanes, so the reach of
     the scan is asserted first.
     """
-    assert len(FORKABLE) >= 8, (
+    found = _forkable_ubicloud_jobs(estate)
+    assert len(found) >= 8, (
         "expected the pull-request lanes that ask for an Ubicloud runner; "
-        f"found {sorted(str(job) for job in FORKABLE)}"
+        f"found {sorted(str(job) for job in found)}"
+    )
+    assert {str(job) for job in found} == {str(job) for job in FORKABLE}, (
+        "the lanes this file parametrizes over are read at collection, and "
+        "the lanes the estate declares are read here; they must agree, or "
+        "the per-lane assertions are running against a stale reading"
     )
 
 
@@ -110,29 +126,24 @@ def _is_opaque(declared: str) -> bool:
     return declared.startswith("${{") and conditional_runs_on_arms(declared) is None
 
 
-def _authored_jobs() -> Iterator[Job]:
-    """Yield every job anyone here wrote.
-
-    The generated release workflow is excluded, as it is everywhere: nobody
-    edits it, and its matrix reference is not a placement decision anyone
-    made here.
-    """
-    for path in workflow_paths():
-        if path.name == DIST_GENERATED:
-            continue
-        yield from jobs_of(path.name, load(path))
+def _authored_jobs(estate: Estate) -> Iterator[Job]:
+    """Yield every job anyone here wrote."""
+    for name, document in estate.items():
+        yield from jobs_of(name, document)
 
 
-def _opaque_expression_jobs() -> tuple[tuple[Job, str], ...]:
+def _opaque_expression_jobs(estate: Estate) -> tuple[tuple[Job, str], ...]:
     """Return every job whose `runs-on` expression the reader cannot split."""
     return tuple(
         (job, declared)
-        for job, declared in ((job, _runs_on(job)) for job in _authored_jobs())
+        for job, declared in ((job, _runs_on(job)) for job in _authored_jobs(estate))
         if _is_opaque(declared)
     )
 
 
-def test_no_lane_hides_behind_an_expression_the_reader_cannot_split() -> None:
+def test_no_lane_hides_behind_an_expression_the_reader_cannot_split(
+    estate: Estate,
+) -> None:
     """Close the selector's blind spot, rather than trusting the selector.
 
     `runner_labels` reports an expression it cannot parse as one opaque
@@ -149,13 +160,55 @@ def test_no_lane_hides_behind_an_expression_the_reader_cannot_split() -> None:
     """
     hidden = [
         (job, declared)
-        for job, declared in _opaque_expression_jobs()
-        if MATRIX_REFERENCE not in declared
+        for job, declared in _opaque_expression_jobs(estate)
+        if not _is_a_bare_matrix_reference(declared)
     ]
     assert not hidden, (
         "these lanes compute `runs-on` in a form the placement reader cannot "
         "split, so every contract that selects on the runner silently skips "
         f"them: {[(str(job), declared) for job, declared in hidden]}"
+    )
+
+
+@pytest.mark.parametrize(
+    ("declared", "exempt"),
+    [
+        pytest.param("${{ matrix.runner }}", True, id="a-bare-reference"),
+        pytest.param("${{ matrix.os }}", True, id="another-bare-reference"),
+        pytest.param("${{  matrix.runner  }}", True, id="padded"),
+        pytest.param(
+            "${{ matrix.name == 'x' && 'ubuntu-latest' "
+            f"|| '{UBICLOUD_LABEL_PREFIX}standard-2' }}}}",
+            False,
+            id="a-selection-wearing-a-matrix-key",
+        ),
+        pytest.param(
+            f"${{{{ matrix.runner || '{UBICLOUD_LABEL_PREFIX}standard-2' }}}}",
+            False,
+            id="a-reference-with-a-fallback",
+        ),
+        pytest.param(
+            "${{ github.actor == 'x' && 'ubuntu-latest' || 'matrix.runner' }}",
+            False,
+            id="the-key-named-inside-a-literal",
+        ),
+    ],
+)
+def test_only_a_bare_matrix_reference_is_exempt(declared: str, exempt: bool) -> None:
+    """The exemption must not cover a selection that merely mentions a leg.
+
+    A `runs-on` that is one matrix key resolves to whatever the leg names,
+    and the sizing contract reads the label there, so the expression itself
+    carries no placement decision and is rightly exempt.
+
+    Testing for the substring `matrix.` exempted far more than that. The
+    `a-selection-wearing-a-matrix-key` case is the one that cost something:
+    it asks for a paid runner on every leg but one, the reader cannot split
+    it, and a fork's pull request reaching such a leg is stranded exactly as
+    this file exists to prevent.
+    """
+    assert _is_a_bare_matrix_reference(declared) is exempt, (
+        f"{declared!r} should read as exempt={exempt}"
     )
 
 

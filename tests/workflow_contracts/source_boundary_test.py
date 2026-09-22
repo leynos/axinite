@@ -22,7 +22,7 @@ import typing as typ
 
 import pytest
 from _sources import SourceError, read_text, read_toml
-from _suite_reader import read_estate
+from _estate import read_estate
 from _suite_targets import (
     GITHUB_TOOL_RECIPE,
     ROOT_MANIFEST,

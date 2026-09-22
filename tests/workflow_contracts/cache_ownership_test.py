@@ -19,6 +19,7 @@ from pathlib import PurePosixPath, PureWindowsPath
 
 import pytest
 from _cache_conditions import save_condition_faults
+from _estate import estate_jobs
 from _workflow_policy import (
     CACHE_ACTION_SHA,
     DIST_GENERATED,
@@ -26,7 +27,6 @@ from _workflow_policy import (
     Job,
     cache_paths,
     is_cache_step,
-    jobs,
     load,
     runs_on_event,
     triggers,
@@ -35,7 +35,12 @@ from _workflow_policy import (
 if typ.TYPE_CHECKING:  # pragma: no cover - typing only
     from collections.abc import Iterator
 
-ALL_JOBS: tuple[Job, ...] = tuple(jobs())
+#: Every job in the estate, read through `_sources`, so a workflow that
+#: cannot be read or parsed raises a `SourceError` naming the file. The read
+#: is at collection because each job is a test of its own: a parameter list
+#: and its identifiers are fixed while pytest collects, so these cannot take
+#: the `estate` fixture without losing the job name from the report.
+ALL_JOBS: tuple[Job, ...] = estate_jobs()
 
 
 def _ids(candidates: tuple[Job, ...]) -> list[str]:

@@ -48,7 +48,7 @@ from _suite_targets import (
 from _workflow_policy import jobs_of, matrix_legs
 
 if typ.TYPE_CHECKING:  # pragma: no cover - typing only
-    from _suite_reader import Estate
+    from _estate import Estate
 
 
 def test_the_scan_finds_the_suite_at_all(

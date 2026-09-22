@@ -144,6 +144,36 @@ def unpack_feature_variable(tokens: list[str]) -> list[str]:
     ]
 
 
+#: What Cargo takes as the end of its own options. Everything after it is
+#: passed through to the test binary, so a custom harness with a `--features`
+#: or `--profile` flag of its own must not be read as changing the run's
+#: feature selection or nextest profile.
+OPTION_TERMINATOR = "--"
+
+
+def cargo_options(args: str) -> list[str]:
+    """Return the tokens Cargo itself interprets, stopping at `--`.
+
+    Parameters
+    ----------
+    args
+        The command's arguments, with every matrix reference already
+        substituted.
+
+    Returns
+    -------
+    list of str
+        The shell words before the first bare `--`, with any
+        `TEST_FEATURES=` assignment expanded in place. The terminator and
+        everything after it are dropped: they reach the test binary, not
+        Cargo.
+    """
+    tokens = unpack_feature_variable(shlex.split(args, comments=False, posix=True))
+    if OPTION_TERMINATOR in tokens:
+        tokens = tokens[: tokens.index(OPTION_TERMINATOR)]
+    return tokens
+
+
 def feature_key(args: str, defaults: frozenset[str]) -> frozenset[str]:
     """Return the feature selection a command's arguments make.
 
@@ -168,7 +198,7 @@ def feature_key(args: str, defaults: frozenset[str]) -> frozenset[str]:
         defaults unless the command turns them off, and a sentinel for
         `--all-features` and for `--no-default-features`.
     """
-    tokens = unpack_feature_variable(shlex.split(args, comments=False, posix=True))
+    tokens = cargo_options(args)
     selected = {
         name
         for index, token in enumerate(tokens)
@@ -199,8 +229,10 @@ def profile_of(args: str) -> str:
     -------
     str
         The profile name, or the nextest default when the command names none.
+        Only the tokens before a bare `--` are read: a `--profile` after it is
+        the test binary's flag, not nextest's.
     """
-    tokens = shlex.split(args, comments=False, posix=True)
+    tokens = cargo_options(args)
     for index, token in enumerate(tokens):
         if token == "--profile" and index + 1 < len(tokens):
             return tokens[index + 1]

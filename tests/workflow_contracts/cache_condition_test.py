@@ -158,8 +158,10 @@ def test_a_condition_that_is_not_the_policy_is_refused(
         pytest.param("a && b", ("a", "b"), id="two-terms"),
         pytest.param("  a  &&\n  b  ", ("a", "b"), id="folded-and-padded"),
         pytest.param("a", ("a",), id="one-term"),
-        pytest.param("", (), id="nothing"),
-        pytest.param("a &&", ("a",), id="a-trailing-operator"),
+        pytest.param("", ("",), id="nothing"),
+        pytest.param("a &&", ("a", ""), id="a-trailing-operator"),
+        pytest.param("&& a", ("", "a"), id="a-leading-operator"),
+        pytest.param("a && && b", ("a", "", "b"), id="a-doubled-operator"),
     ],
 )
 def test_the_split_keeps_the_terms_it_is_given(
@@ -168,7 +170,42 @@ def test_the_split_keeps_the_terms_it_is_given(
     """The split has to survive the layouts YAML folding produces.
 
     A split that dropped a term would let the reader report that term as
-    missing, and a split that invented an empty one would report it as an
-    extra; both read as a policy failure where the condition is fine.
+    missing, and a split that invented one would report it as an extra; both
+    read as a policy failure where the condition is fine.
+
+    The empty terms are kept on purpose. Dropping them is what let a stray
+    operator through: `a && && b` would have yielded the same two terms as
+    `a && b`, so the malformed expression compared equal to the well-formed
+    one and the exact-predicate contract accepted it.
     """
     assert conjuncts(condition) == expected
+
+
+@pytest.mark.parametrize(
+    "stray",
+    [
+        pytest.param(
+            f"{WRITING_LEG} && {PUSH_EVENT} && && {MAIN_REF} && {CACHE_MISS}",
+            id="doubled-between-two-terms",
+        ),
+        pytest.param(
+            f"{WRITING_LEG} && {PUSH_EVENT} && {MAIN_REF} && {CACHE_MISS} &&",
+            id="trailing",
+        ),
+        pytest.param(
+            f"&& {WRITING_LEG} && {PUSH_EVENT} && {MAIN_REF} && {CACHE_MISS}",
+            id="leading",
+        ),
+    ],
+)
+def test_a_stray_operator_is_refused(stray: str) -> None:
+    """A malformed conjunction is not the approved predicate either.
+
+    Each of these carries all four approved conjuncts and nothing else, so a
+    reader that discarded the empty piece would find the exact conjunct set
+    it wanted and accept an expression GitHub does not evaluate.
+    """
+    assert save_condition_faults(stray, RESTORE_IDS), (
+        f"{stray!r} was accepted; it has a stray operator, so it is not an "
+        "expression the approved predicate can be read out of"
+    )

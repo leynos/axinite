@@ -17,14 +17,16 @@ failure it converts.
 
 from __future__ import annotations
 
+import copy
 import typing as typ
+from types import MappingProxyType
 
 import pytest
-from _suite_reader import read_estate
+from _estate import read_estate
 from _suite_targets import read_default_features
 
 if typ.TYPE_CHECKING:  # pragma: no cover - typing only
-    from _suite_reader import Estate
+    from _estate import Estate
 
 
 @pytest.fixture(scope="session")
@@ -44,14 +46,38 @@ def defaults() -> frozenset[str]:
 
 
 @pytest.fixture(scope="session")
-def estate() -> Estate:
-    """Return every workflow this repository declares, parsed by file name.
+def _estate_source() -> Estate:
+    """Read and parse the estate once per run.
+
+    Private, because a contract that took this would share one structure with
+    every other contract. `estate` hands out an isolated copy of it.
 
     Returns
     -------
     Mapping
-        The parsed documents, in a mapping no contract can alter: one test
-        mutating the estate would change what a later one judges, and the
-        failure would name the later test.
+        The parsed documents, keyed by file name.
     """
     return read_estate()
+
+
+@pytest.fixture
+def estate(_estate_source: Estate) -> Estate:
+    """Return every workflow this repository declares, parsed by file name.
+
+    Each test gets its own deep copy. The outer mapping is a proxy, so a
+    contract cannot add or replace a workflow; but a proxy is shallow, and
+    the documents beneath it are ordinary dictionaries and lists. A contract
+    appending to one job's `steps` would otherwise change what a later
+    contract judges, and the failure would name the later contract, which had
+    done nothing wrong, about a reading that was gone by the time anyone
+    looked.
+
+    Parsing stays at session scope, since that is the part that costs
+    anything; only the copy is per test.
+
+    Returns
+    -------
+    Mapping
+        The parsed documents, isolated from every other test's copy.
+    """
+    return MappingProxyType(copy.deepcopy(dict(_estate_source)))
