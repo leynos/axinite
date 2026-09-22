@@ -212,6 +212,46 @@ async fn the_entry_point_reads_its_own_environment() {
     assert!(skipped, "something answered on the unreachable test URL");
 }
 
+/// Run the wiring child once, with `declared` as the lane's promise.
+///
+/// Takes an `OsStr` rather than a `str` so that the case which matters most
+/// can be stated: a value the platform cannot render as Unicode. That is the
+/// cell `std::env::var(..).ok()` gets wrong, and it cannot be written with a
+/// `&str` at all.
+///
+/// # Returns
+///
+/// Whether the fixture skipped, which is what the child's exit status means:
+/// the child passes when `try_test_pg_db` returned `Ok(None)` and fails when
+/// it returned the error the requirement asks for.
+///
+/// # Panics
+///
+/// If the child cannot be started, or if it ran no test. An unreachable child
+/// makes a harness exit non-zero on an argument error rather than on the
+/// decision, which reads as "failed" for every case and would pass the cases
+/// expecting one.
+#[cfg(unix)]
+fn the_fixture_skips_with(declared: Option<&OsStr>) -> bool {
+    let binary = std::env::current_exe().expect("the test binary must know its own path");
+    let mut child = std::process::Command::new(binary);
+    child
+        .args(["--exact", "--ignored", "--nocapture", WIRING_CHILD])
+        .env("TEST_DATABASE_URL", UNREACHABLE_URL)
+        .env_remove(super::REQUIRE_POSTGRES_ENV);
+    if let Some(value) = declared {
+        child.env(super::REQUIRE_POSTGRES_ENV, value);
+    }
+    let output = child.output().expect("the child test process must start");
+    let ran = String::from_utf8_lossy(&output.stdout);
+    assert!(
+        ran.contains("1 passed") || ran.contains("1 failed"),
+        "the child ran no test, so the caller asserts nothing. \
+         Check that {WIRING_CHILD} still exists. Its output was:\n{ran}"
+    );
+    output.status.success()
+}
+
 /// The environment a lane sets must reach the decision the fixture makes.
 ///
 /// This is the wiring, and it is the part no other test in this module
@@ -238,35 +278,38 @@ fn the_environment_reaches_the_production_decision(
     #[case] declared: Option<&str>,
     #[case] skips: bool,
 ) {
-    let binary = std::env::current_exe().expect("the test binary must know its own path");
-    let mut child = std::process::Command::new(binary);
-    child
-        .args(["--exact", "--ignored", "--nocapture", WIRING_CHILD])
-        .env("TEST_DATABASE_URL", UNREACHABLE_URL)
-        .env_remove(super::REQUIRE_POSTGRES_ENV);
-    if let Some(value) = declared {
-        child.env(super::REQUIRE_POSTGRES_ENV, value);
-    }
-    let output = child.output().expect("the child test process must start");
-    let ran = String::from_utf8_lossy(&output.stdout);
-    assert!(
-        ran.contains("1 passed") || ran.contains("1 failed"),
-        "the child ran no test, so this case asserts nothing. \
-         Check that {WIRING_CHILD} still exists. Its output was:\n{ran}"
-    );
     assert_eq!(
-        output.status.success(),
+        the_fixture_skips_with(declared.map(OsStr::new)),
         skips,
-        "with {} the fixture should {}, but the child {}. Its output was:\n{ran}",
+        "with {} the fixture should {}",
         declared.map_or_else(
             || format!("{} unset", super::REQUIRE_POSTGRES_ENV),
             |value| format!("{}={value:?}", super::REQUIRE_POSTGRES_ENV)
         ),
-        if skips { "skip" } else { "fail" },
-        if output.status.success() {
-            "skipped"
-        } else {
-            "failed"
-        }
+        if skips { "skip" } else { "fail" }
+    );
+}
+
+/// A value the platform cannot read must reach the decision as a promise too.
+///
+/// The cases above all carry valid Unicode, so every one of them survives
+/// `from_env` going back to `std::env::var(..).ok()`: that reading maps a
+/// valid value correctly and only gets the unreadable one wrong. And
+/// `a_value_that_is_not_unicode_still_requires_a_database` calls
+/// `from_os_value` directly, which the production path does not.
+///
+/// So this is the case that closes the loop. It is the same end-to-end run as
+/// the cases above, with the one value that tells the two readings apart: a
+/// lane that set the variable to something unreadable must still be refused
+/// its skip.
+#[cfg(unix)]
+#[test]
+fn a_value_that_cannot_be_read_reaches_the_decision_as_a_promise() {
+    assert!(
+        !the_fixture_skips_with(Some(not_unicode().as_os_str())),
+        "the lane set {} to a value that is not Unicode, which is still a \
+         promise; the fixture skipped instead of failing, so the read failure \
+         was folded onto the same `None` as an unset variable",
+        super::REQUIRE_POSTGRES_ENV
     );
 }
