@@ -69,7 +69,11 @@ def test_default_features_reads_a_manifest_it_is_given(
     raised inside an import, taking the whole contract directory's collection
     with it.
     """
-    assert default_features_in(manifest) == frozenset(expected)
+    found = default_features_in(manifest)
+    assert found == frozenset(expected), (
+        f"the manifest {manifest!r} should declare the default features "
+        f"{sorted(expected)}, but the reading returned {sorted(found)}"
+    )
 
 
 @pytest.mark.parametrize(
@@ -92,7 +96,11 @@ def test_a_rule_is_read_out_of_the_text_it_is_given(
     and `make test-github-tool`, so both are stated here against text rather
     than against whatever the repository's Makefile happens to say today.
     """
-    assert make_rule_in(SAMPLE_MAKEFILE, name) == (prerequisites, recipe)
+    found = make_rule_in(SAMPLE_MAKEFILE, name)
+    assert found == (prerequisites, recipe), (
+        f"rule {name!r} should read as prerequisites {prerequisites} and "
+        f"recipe {recipe}, but the reading returned {found}"
+    )
 
 
 def test_a_target_the_makefile_does_not_declare_stops_the_run() -> None:
@@ -130,9 +138,11 @@ def test_the_repository_makefile_is_read_through_the_boundary() -> None:
     Without this the pure reader could be correct about text nothing ever
     hands it, while the contracts read a different file or none at all.
     """
-    assert make_rule_in(read_makefile(), "test-github-tool") == (
-        (),
-        (GITHUB_TOOL_RECIPE,),
+    found = make_rule_in(read_makefile(), "test-github-tool")
+    assert found == ((), (GITHUB_TOOL_RECIPE,)), (
+        "the repository Makefile's `test-github-tool` rule should have no "
+        f"prerequisites and the one recipe line {GITHUB_TOOL_RECIPE!r}, but "
+        f"the reading returned {found}"
     )
 
 
