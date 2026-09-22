@@ -429,7 +429,7 @@ jobs:
         -C link-arg=-fuse-ld=mold
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v6
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803  # v6.1.0
       # Right-sizing needs the peak memory and the low-water disk mark, and
       # neither is visible in a job's own output. The sampler runs alongside
       # the build and reports both at the end, with `if: always()` so a job
@@ -438,9 +438,13 @@ jobs:
         run: ./scripts/ci-resource-sampler.sh start
 
       - name: Install Rust
-        uses: dtolnay/rust-toolchain@stable
+        uses: dtolnay/rust-toolchain@6bed0761d98439e5a578e2877258200ad565ba87  # stable
+        # Pinned to a commit, the action can no longer read the toolchain
+        # from its ref, so the channel the `@stable` ref implied is named.
+        with:
+          toolchain: stable
       - name: Install mold
-        uses: rui314/setup-mold@v1
+        uses: rui314/setup-mold@10ca16bf91dc22e05ebdc935cad9c75ea248f621  # v1
       # Ubicloud's transparent cache proxy serves the Actions cache from a
       # local address. sccache's GitHub Actions backend reads
       # ACTIONS_CACHE_URL and ACTIONS_RUNTIME_TOKEN from the runner's own
