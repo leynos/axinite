@@ -2621,3 +2621,46 @@ of the default feature set. When the feature is disabled,
 Golden tests live in `tests/html_to_markdown.rs`, which loads fixtures from
 `tests/test-pages/`: each fixture directory provides a `source.html` file and
 the harness asserts the converter's output against the fixture's expectations.
+
+## 37. Cancelling superseded pull-request runs
+
+Every push to a pull request starts a fresh run of each gate. The run already
+in flight is answering a question about a commit nobody will merge, and left
+alone it holds a runner until it finishes, so the branch pays twice for one
+answer. Every workflow a pull request can start therefore carries a concurrency
+block:
+
+```yaml
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+```
+
+Two halves matter, and each fails in a way nothing else would notice.
+
+- **The group keys on the pull request.** A group built from
+  `github.run_id` is unique to one run, so it matches no predecessor and
+  cancels nothing while reading exactly like a concurrency control. A constant
+  group is the opposite failure: every open pull request shares one queue, and
+  the first push anywhere cancels the gates running everywhere else.
+- **Cancellation is conditioned on the event.** A literal
+  `cancel-in-progress: true` reads as the stricter setting and is a regression.
+  A push to `main`, a schedule, and a dispatch have no successor waiting, and
+  the run on `main` writes the warm cache and records the coverage that no
+  later run repeats.
+
+`pull_request_target` workflows are out of scope. They run against the base
+repository to carry a token, and the ones here automate pull-request
+housekeeping rather than building, so cancelling one mid-flight is a hazard
+with no minutes to win.
+
+### 37.1. The cancellation contract
+
+`tests/workflow_contracts/concurrency_test.py` reads `.github/workflows` and
+asserts, for every workflow declaring a `pull_request` trigger, that it
+declares a concurrency group, that the group names no per-run expression, that
+the group names something that varies per pull request, and that
+`cancel-in-progress` is exactly the expression above. A further test asserts
+that discovery still finds the workflows it is expected to, so a broken read
+cannot empty the list and turn the rest into a vacuous pass. Run it with
+`make test-workflow-contracts`.
