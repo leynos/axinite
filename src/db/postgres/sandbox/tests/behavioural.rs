@@ -4,12 +4,12 @@
 //! correctly against a live Postgres backend.
 
 use super::*;
-use crate::testing::postgres::try_test_pg_db;
+use crate::testing::postgres::{TestDatabase, try_test_pg_db};
 use rstest::{fixture, rstest};
 use uuid::Uuid;
 
 #[fixture]
-async fn db() -> Result<Option<PgBackend>, DatabaseError> {
+async fn db() -> Result<Option<TestDatabase>, DatabaseError> {
     try_test_pg_db().await
 }
 
@@ -48,7 +48,7 @@ fn pending_job() -> SandboxJobRecord {
 #[rstest]
 #[tokio::test]
 async fn test_update_sandbox_job_status_field_passthrough(
-    #[future] db: Result<Option<PgBackend>, DatabaseError>,
+    #[future] db: Result<Option<TestDatabase>, DatabaseError>,
     pending_job: SandboxJobRecord,
 ) {
     let Some(db) = db.await.expect("unexpected Postgres test setup error") else {
@@ -103,7 +103,7 @@ async fn test_update_sandbox_job_status_field_passthrough(
 #[rstest]
 #[tokio::test]
 async fn test_list_sandbox_jobs_for_user(
-    #[future] db: Result<Option<PgBackend>, DatabaseError>,
+    #[future] db: Result<Option<TestDatabase>, DatabaseError>,
     pending_job: SandboxJobRecord,
 ) {
     let Some(db) = db.await.expect("unexpected Postgres test setup error") else {
@@ -166,7 +166,7 @@ async fn test_list_sandbox_jobs_for_user(
 #[rstest]
 #[tokio::test]
 async fn test_sandbox_job_summary_for_user(
-    #[future] db: Result<Option<PgBackend>, DatabaseError>,
+    #[future] db: Result<Option<TestDatabase>, DatabaseError>,
     pending_job: SandboxJobRecord,
 ) {
     let Some(db) = db.await.expect("unexpected Postgres test setup error") else {
@@ -225,7 +225,7 @@ async fn test_sandbox_job_summary_for_user(
 #[case(SandboxMode::ClaudeCode)]
 #[tokio::test]
 async fn test_sandbox_job_mode_roundtrip(
-    #[future] db: Result<Option<PgBackend>, DatabaseError>,
+    #[future] db: Result<Option<TestDatabase>, DatabaseError>,
     pending_job: SandboxJobRecord,
     #[case] mode: SandboxMode,
 ) {
@@ -256,7 +256,7 @@ async fn test_sandbox_job_mode_roundtrip(
 #[rstest]
 #[tokio::test]
 async fn test_save_job_event_roundtrip(
-    #[future] db: Result<Option<PgBackend>, DatabaseError>,
+    #[future] db: Result<Option<TestDatabase>, DatabaseError>,
     pending_job: SandboxJobRecord,
 ) {
     let Some(db) = db.await.expect("unexpected Postgres test setup error") else {
@@ -295,7 +295,7 @@ async fn test_save_job_event_roundtrip(
 #[rstest]
 #[tokio::test]
 async fn test_sandbox_job_belongs_to_user(
-    #[future] db: Result<Option<PgBackend>, DatabaseError>,
+    #[future] db: Result<Option<TestDatabase>, DatabaseError>,
     pending_job: SandboxJobRecord,
 ) {
     let Some(db) = db.await.expect("unexpected Postgres test setup error") else {
