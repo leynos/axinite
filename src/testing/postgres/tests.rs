@@ -225,15 +225,21 @@ async fn the_entry_point_reads_its_own_environment() {
 /// the child passes when `try_test_pg_db` returned `Ok(None)` and fails when
 /// it returned the error the requirement asks for.
 ///
+/// # Errors
+///
+/// If this process cannot name its own binary, or the child cannot be
+/// started. Arranging a test can fail, and arranging is what this does, so the
+/// failure is returned rather than raised: only the test body may treat one as
+/// a verdict.
+///
 /// # Panics
 ///
-/// If the child cannot be started, or if it ran no test. An unreachable child
-/// makes a harness exit non-zero on an argument error rather than on the
-/// decision, which reads as "failed" for every case and would pass the cases
-/// expecting one.
+/// If the child ran no test. An unreachable child makes a harness exit
+/// non-zero on an argument error rather than on the decision, which reads as
+/// "failed" for every case and would pass the cases expecting one.
 #[cfg(unix)]
-fn the_fixture_skips_with(declared: Option<&OsStr>) -> bool {
-    let binary = std::env::current_exe().expect("the test binary must know its own path");
+fn the_fixture_skips_with(declared: Option<&OsStr>) -> std::io::Result<bool> {
+    let binary = std::env::current_exe()?;
     let mut child = std::process::Command::new(binary);
     child
         .args(["--exact", "--ignored", "--nocapture", WIRING_CHILD])
@@ -242,14 +248,14 @@ fn the_fixture_skips_with(declared: Option<&OsStr>) -> bool {
     if let Some(value) = declared {
         child.env(super::REQUIRE_POSTGRES_ENV, value);
     }
-    let output = child.output().expect("the child test process must start");
+    let output = child.output()?;
     let ran = String::from_utf8_lossy(&output.stdout);
     assert!(
         ran.contains("1 passed") || ran.contains("1 failed"),
         "the child ran no test, so the caller asserts nothing. \
          Check that {WIRING_CHILD} still exists. Its output was:\n{ran}"
     );
-    output.status.success()
+    Ok(output.status.success())
 }
 
 /// The environment a lane sets must reach the decision the fixture makes.
@@ -279,7 +285,8 @@ fn the_environment_reaches_the_production_decision(
     #[case] skips: bool,
 ) {
     assert_eq!(
-        the_fixture_skips_with(declared.map(OsStr::new)),
+        the_fixture_skips_with(declared.map(OsStr::new))
+            .expect("the child test process must start"),
         skips,
         "with {} the fixture should {}",
         declared.map_or_else(
@@ -305,8 +312,10 @@ fn the_environment_reaches_the_production_decision(
 #[cfg(unix)]
 #[test]
 fn a_value_that_cannot_be_read_reaches_the_decision_as_a_promise() {
+    let skipped = the_fixture_skips_with(Some(not_unicode().as_os_str()))
+        .expect("the child test process must start");
     assert!(
-        !the_fixture_skips_with(Some(not_unicode().as_os_str())),
+        !skipped,
         "the lane set {} to a value that is not Unicode, which is still a \
          promise; the fixture skipped instead of failing, so the read failure \
          was folded onto the same `None` as an unset variable",
