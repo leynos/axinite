@@ -104,10 +104,14 @@ def _document(path: Path) -> WorkflowDocument:
 # reader does not model. An explicit `on: null` is present and unmodelled, not
 # absent, and so is a collection holding anything but event names: dropping the
 # `42` from `on: [42]` would leave an empty set that reads as "nothing starts
-# this". Discovery cannot tell ``None`` apart from "not startable by a pull
-# request", so `_unmodelled_workflows` reports it by name.
+# this". A document spelling the key both ways is unmodelled too: GitHub merges
+# them, and a reader that picked one would be blind to the other's events.
+# Discovery cannot tell ``None`` apart from "not startable by a pull request",
+# so `_unmodelled_workflows` reports it by name.
 def _trigger_names(document: WorkflowDocument) -> frozenset[str] | None:
     """Return the event names under `on:`, or `None` for an unmodelled shape."""
+    if "on" in document and True in document:
+        return None
     key = _trigger_key(document)
     if key is None:
         return frozenset()
@@ -316,6 +320,20 @@ def test_every_shape_of_on_is_read_to_its_event_names(
     found = _trigger_names(document)
     assert found == frozenset(expected), (
         f"{document!r} declares {sorted(expected)}, but the reader returned {found!r}"
+    )
+
+
+def test_both_spellings_of_the_key_are_refused_together() -> None:
+    """A document with `on` and `True` both is unmodelled, not half read.
+
+    GitHub merges the two, so reading either alone would miss the other's
+    events; `pull_request` under the second key would drop the workflow
+    from discovery with no report.
+    """
+    document: WorkflowDocument = {"on": ["push"], True: ["pull_request"]}
+    assert _trigger_names(document) is None, (
+        "a document declaring both spellings of the `on` key must be reported "
+        f"as unmodelled; the reader returned {_trigger_names(document)!r}"
     )
 
 
