@@ -61,6 +61,12 @@ DEFERRED_STEP = (
             id="deferred-to-an-expression-the-reading-cannot-resolve",
         ),
         pytest.param(
+            "jobs:\n  test:\n    steps:\n"
+            "      - run: cargo binstall cargo-nextest@0.9.${{ matrix.patch }}\n",
+            {UNDECLARED},
+            id="a-literal-prefix-an-expression-completes",
+        ),
+        pytest.param(
             "env:\n  CARGO_NEXTEST_VERSION: 0.9.100\n"
             "jobs:\n  test:\n    steps:\n"
             "      - run: cargo binstall cargo-nextest@${{ matrix.nextest }}\n"

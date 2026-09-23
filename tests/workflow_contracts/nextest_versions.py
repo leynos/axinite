@@ -40,9 +40,12 @@ UNDECLARED: typ.Final[str] = "<undeclared>"
 #: document, because one lane pins the version inside a
 #: ``setup-commands:`` block handed to a reusable workflow, where no
 #: key names it and no ``env`` declares it. The character class stops
-#: before ``$`` so an expression is not mistaken for a version.
+#: before ``$`` so an expression is not mistaken for a version, and the
+#: lookahead refuses a literal prefix that an expression completes:
+#: ``cargo-nextest@0.9.${{ matrix.patch }}`` would otherwise read as the
+#: version ``0.9.`` and count as resolved.
 _NEXTEST_LITERAL: typ.Final[re.Pattern[str]] = re.compile(
-    r"cargo-nextest@([^\s$'\"]+)"
+    r"cargo-nextest@(?![^\s$'\"]*\$)([^\s$'\"]+)"
 )
 
 #: A ``cargo-nextest@`` reference that defers to ``CARGO_NEXTEST_VERSION``.
