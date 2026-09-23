@@ -269,7 +269,7 @@ def test_targets_escape_resolved_cargo_paths(
     make_executable = make_context.make_executable
     utility_bin = make_context.utility_bin
     marker = tmp_path / "injected"
-    marker_relative = os.path.relpath(marker, REPOSITORY_ROOT)
+    marker_relative = marker.relative_to(REPOSITORY_ROOT, walk_up=True)
     unsafe_root = tmp_path / f"cargo$literal; printf injected > {marker_relative}; #"
     fake_bin = unsafe_root if resolution_source == "path" else tmp_path / "bin"
     fake_home = unsafe_root if resolution_source == "home" else tmp_path / "home"
