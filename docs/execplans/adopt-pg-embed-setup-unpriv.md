@@ -38,12 +38,20 @@ so the work proceeds deliberately rather than being rediscovered.
 
 ## Approval gates
 
+- Dependency available
+  Acceptance criteria: `pg-embed-setup-unpriv` 0.6.0 is published with its
+  prebuilt-extension hook, and the pgvector archives it installs are released.
+  The migrations run `CREATE EXTENSION vector` (`migrations/V1__initial.sql`),
+  and 0.5.2 cannot supply the extension. Sign-off: the maintainer of that crate
+  reports the release. The alternative, guarding the extension out of the test
+  migrations on 0.5.2, changes what the tests prove and is the user's decision,
+  not the implementer's.
 - Plan approved
-  Acceptance criteria: the four build items below are agreed as necessary, the
-  cost section is accepted as the basis for the decision, and the interim
-  service container on `test.yml` is understood to be superseded rather than
-  extended. Sign-off: human reviewer approves the ExecPlan before any
-  dependency is added.
+  Acceptance criteria: the build items below are agreed as necessary (the first
+  now supplied by the library), the cost section is accepted as the basis for
+  the decision, and the interim service container on `test.yml` is understood
+  to be superseded rather than extended. Sign-off: human reviewer approves the
+  ExecPlan before any dependency is added.
 - Implementation complete
   Acceptance criteria: the harness bootstraps its own cluster, the ten call
   sites are unchanged or changed together, and both the service block and the
@@ -147,11 +155,14 @@ introduces `AXINITE_REQUIRE_POSTGRES`; the items marked below arrive with it.
   container was measured at in issue `#374`, stop and report. The adoption is
   then buying isolation and developer experience rather than time, which is
   still defensible but is no longer the same proposition.
+- pgvector: if the 0.6.0 extension hook cannot provide the `vector` extension
+  the migrations create, stop. Guarding the extension out is not a fallback the
+  implementer may take; see the approval gates.
 - Cold-start: if a cold binary download cannot be kept out of the test process,
   stop. A download inside the bootstrap is the failure mode that poisons a
   whole test binary; see the risks below.
 
-## The four build items
+## The build items
 
 ### 1. Cluster teardown at process exit
 
@@ -160,15 +171,19 @@ outlives the caller, which is correct for a single test binary and wrong under
 nextest, where each binary is a separate process. A server still running holds
 the data directory, and the next binary cannot bootstrap on it.
 
-The reference implementation bridges this with a Unix `atexit` handler that
-reads `postmaster.pid`, sends `SIGTERM`, waits five seconds in
-hundred-millisecond ticks, then sends `SIGKILL`. Axinite runs the library test
-binary plus several integration binaries, so it needs the same, with one
-tightening: the server can exit during the wait and its PID be reused, so the
-handler re-reads `postmaster.pid` and checks the process identity immediately
-before each signal, and skips that signal when either check fails. Windows gets
-nothing, which matches the reference implementation and the Unix scope stated
-in the purpose.
+The library now does this itself. `ClusterHandle::register_shutdown_on_exit()`
+(in 0.5.2 and later) registers a process-exit reaper that terminates the
+postmaster tree, and `test_support::shared_cluster_handle()` calls it before
+leaking the guard, so each nextest process reaps its own cluster at exit.
+Axinite uses the shared handle and writes no `atexit` handler of its own. The
+earlier draft of this item planned one, modelled on the reference
+implementation, with the process identity re-checked before each signal because
+a PID can be reused during the wait. If the library's reaper turns out to lack
+that check where it matters, the fix belongs upstream rather than in a second
+reaper here. Axinite runs the library test binary plus several integration
+binaries, and a second binary bootstrapping after the first has exited is the
+acceptance check (see the verification plan). Windows is outside the scope
+stated in the purpose.
 
 ### 2. Bootstrap retry outside the cached failure
 
@@ -178,10 +193,13 @@ immediately, and a retry loop around the call does not re-attempt anything. One
 cold download failure therefore fails every PostgreSQL test in the binary, not
 the one that raced.
 
-This is why a cache-warming step is load-bearing rather than an optimization:
-the binaries must already be present before any test process starts. The step
-needs a lock, because several test binaries may start together, and it must
-resolve the release from a pinned URL rather than a floating one.
+This is still true on the library's main branch, and no retry-capable or
+cache-warming API exists or is planned upstream. This is why a cache-warming
+step is load-bearing rather than an optimization: the binaries must already be
+present before any test process starts. The step runs the library's setup-only
+mode once, before nextest, so the download happens outside the test clock. The
+step needs a lock, because several test binaries may start together, and it
+must resolve the release from a pinned URL rather than a floating one.
 
 ### 3. A scoped nextest test group
 
@@ -273,6 +291,12 @@ reasons are recorded rather than rediscovered.
 - The library and the worker binary are pinned to different versions there, on
   purpose: checksum-verified release archives only exist from the later one, so
   the worker is downloaded while the library stays where it is.
+- 2026-09-23, from the crate's maintainer: 0.5.2 is the newest release and
+  cannot supply pgvector, which the migrations require, so the adoption waits
+  on 0.6.0. The worker binary matters only for root runs; on an unprivileged
+  runner none is needed. Its release carries a `.sha256` sidecar that
+  `cargo binstall` does not read, so a checksum-verified install is a separate
+  step. The exit reaper that build item 1 planned is already in the library.
 
 ## Decision log
 
