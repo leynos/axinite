@@ -664,13 +664,16 @@ states each conversion.
 Two consequences of that are easy to get wrong.
 
 **A contract that asserts one job per test cannot take the fixture.** A
-parameter list and its identifiers are fixed while pytest collects, so
-`cache_ownership_test.py` and `fork_fallback_test.py` read at import. What they
-do instead is read through the same boundary, via `estate_source` and
-`estate_jobs` in `_estate.py`, so an unparsable workflow still raises a
-`SourceError` naming the file rather than a bare `YAMLError` from inside a
-module-level expression. Anything that merely iterates the estate takes the
-fixture.
+parameter list and its identifiers are fixed while pytest collects. Such a
+module, `cache_ownership_test.py` or `fork_fallback_test.py`, names a
+`JOB_SELECTOR` without calling it, and `pytest_generate_tests` in `conftest.py`
+calls it during collection and parametrizes each test's `job` argument. The
+selector reads through `estate_source` or `estate_jobs` in `_estate.py`. A
+`SourceError` it raises becomes the one parameter, identified by the file, and
+the `job` fixture fails that test with the message, so an unreadable workflow
+is a named test failure rather than a collection error.
+`job_collection_test.py` drives that path. Anything that merely iterates the
+estate takes the fixture.
 
 **Every estate handed to a contract is a copy.** The outer mapping is a proxy,
 so no contract can add or replace a workflow, but a proxy is shallow and the

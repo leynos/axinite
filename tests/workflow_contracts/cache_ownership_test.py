@@ -34,20 +34,13 @@ from _workflow_policy import (
 if typ.TYPE_CHECKING:  # pragma: no cover - typing only
     from collections.abc import Iterator
 
-#: Every job in the estate, read through `_sources`, so a workflow that
-#: cannot be read or parsed raises a `SourceError` naming the file. The read
-#: is at collection because each job is a test of its own: a parameter list
-#: and its identifiers are fixed while pytest collects, so these cannot take
-#: the `estate` fixture without losing the job name from the report.
-ALL_JOBS: tuple[Job, ...] = estate_jobs()
+#: Every job in the estate, read through `_sources`. Named rather than
+#: called: `pytest_generate_tests` in `conftest.py` calls it during
+#: collection and parametrizes each test's `job` argument with the result,
+#: turning a `SourceError` into a failure of that test naming the file.
+JOB_SELECTOR = estate_jobs
 
 
-def _ids(candidates: tuple[Job, ...]) -> list[str]:
-    """Return readable parameter identifiers for a job sequence."""
-    return [str(job) for job in candidates]
-
-
-@pytest.mark.parametrize("job", ALL_JOBS, ids=_ids(ALL_JOBS))
 def test_cache_action_is_pinned_to_the_reviewed_commit(job: Job) -> None:
     """Pin the cache action: Ubicloud's proxy intercepts this version."""
     if job.workflow == DIST_GENERATED:
@@ -84,7 +77,6 @@ def _path_components(path: str) -> set[str]:
     return set(PurePosixPath(path).parts) | set(PureWindowsPath(path).parts)
 
 
-@pytest.mark.parametrize("job", ALL_JOBS, ids=_ids(ALL_JOBS))
 def test_no_cache_step_archives_a_target_tree(job: Job) -> None:
     """Keep compiler output out of cache archives; sccache owns it."""
     for step in job.steps:
@@ -139,7 +131,6 @@ def test_a_path_that_is_not_a_build_tree_is_left_alone(path: str) -> None:
     assert "target" not in _path_components(path)
 
 
-@pytest.mark.parametrize("job", ALL_JOBS, ids=_ids(ALL_JOBS))
 def test_each_cache_path_has_one_owner_within_a_job(job: Job) -> None:
     """Forbid two cache keys in one job from claiming the same path.
 
@@ -188,7 +179,7 @@ def _cache_steps(action: str) -> Iterator[tuple[Job, dict[str, object]]]:
     tuple of Job and dict
         The job the step belongs to, and the step itself.
     """
-    for job in ALL_JOBS:
+    for job in estate_jobs():
         for step in job.steps:
             uses = step.get("uses")
             if isinstance(uses, str) and uses.startswith(action):

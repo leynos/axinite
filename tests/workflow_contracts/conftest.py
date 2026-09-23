@@ -13,6 +13,14 @@ reads exactly like a clean run.
 
 `_sources.py` holds the reading, and `source_boundary_test.py` states each
 failure it converts.
+
+A contract that asserts one job per test needs its jobs while pytest is
+collecting, because that is when a parameter list and its identifiers are
+fixed, so it cannot take a fixture. Such a module names a `JOB_SELECTOR`, a
+function returning its jobs, and `pytest_generate_tests` below calls it and
+parametrizes the `job` argument. A `SourceError` raised by the selector does
+not escape as a collection error: it becomes the one parameter, and the `job`
+fixture fails that test with the error, naming the file.
 """
 
 from __future__ import annotations
@@ -21,6 +29,7 @@ import typing as typ
 
 import pytest
 from _estate import isolated, read_estate
+from _sources import SourceError
 from _suite_targets import read_default_features
 
 if typ.TYPE_CHECKING:  # pragma: no cover - typing only
@@ -28,6 +37,84 @@ if typ.TYPE_CHECKING:  # pragma: no cover - typing only
     from pathlib import Path
 
     from _estate import Estate
+    from _workflow_policy import Job
+
+#: The module attribute naming a contract's job selector, and the argument
+#: it parametrizes.
+JOB_SELECTOR = "JOB_SELECTOR"
+JOB_ARGUMENT = "job"
+
+
+def pytest_generate_tests(metafunc: pytest.Metafunc) -> None:
+    """Parametrize `job` over the jobs a module's `JOB_SELECTOR` returns.
+
+    The selector runs here, during collection, and nowhere earlier: the
+    module only names it. A selector that raises `SourceError` yields one
+    parameter holding the error, identified by the file it names, so the
+    failure is a test failure with the path in it rather than a collection
+    error.
+
+    Parameters
+    ----------
+    metafunc
+        pytest's view of the test being collected.
+    """
+    select = getattr(metafunc.module, JOB_SELECTOR, None)
+    if select is None or JOB_ARGUMENT not in metafunc.fixturenames:
+        return
+    try:
+        jobs: tuple[object, ...] = tuple(select())
+    except SourceError as error:
+        metafunc.parametrize(
+            JOB_ARGUMENT, [error], ids=[f"unreadable-{error.path.name}"], indirect=True
+        )
+        return
+    metafunc.parametrize(
+        JOB_ARGUMENT, jobs, ids=[str(job) for job in jobs], indirect=True
+    )
+
+
+@pytest.fixture
+def job(request: pytest.FixtureRequest) -> Job:
+    """Return the job this test was parametrized with.
+
+    Parameters
+    ----------
+    request
+        pytest's request, carrying the parameter `pytest_generate_tests`
+        chose.
+
+    Returns
+    -------
+    Job
+        The job under test.
+    """
+    return job_or_failure(request.param)
+
+
+def job_or_failure(parameter: object) -> Job:
+    """Return a parametrized job, or fail the test with the source error.
+
+    Parameters
+    ----------
+    parameter
+        What `pytest_generate_tests` parametrized the test with: a job, or
+        the `SourceError` the selector raised.
+
+    Returns
+    -------
+    Job
+        The parameter, when it is not an error.
+
+    Raises
+    ------
+    pytest.fail.Exception
+        When the parameter is a `SourceError`, with its message, which names
+        the file.
+    """
+    if isinstance(parameter, SourceError):
+        pytest.fail(f"the workflow estate could not be read: {parameter}")
+    return typ.cast("Job", parameter)
 
 
 @pytest.fixture(scope="session")

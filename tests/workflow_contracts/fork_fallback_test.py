@@ -90,17 +90,16 @@ def _forkable_ubicloud_jobs(estate: Estate) -> tuple[Job, ...]:
     )
 
 
-def _ids(candidates: tuple[Job, ...]) -> list[str]:
-    """Return readable parameter identifiers for a job sequence."""
-    return [str(job) for job in candidates]
+def _forkable_lanes() -> tuple[Job, ...]:
+    """Return the forkable Ubicloud lanes, read through the source boundary."""
+    return _forkable_ubicloud_jobs(estate_source())
 
 
-#: The lanes each fork assertion runs against, one test per lane. Read
-#: through `_sources`, so a workflow that cannot be parsed raises a
-#: `SourceError` naming the file; read at collection because a parameter list
-#: and its identifiers are fixed then, and a lane that failed anonymously
-#: would be worse than one that failed during collection.
-FORKABLE = _forkable_ubicloud_jobs(estate_source())
+#: The lanes each fork assertion runs against, one test per lane. Named rather
+#: than called: `pytest_generate_tests` in `conftest.py` calls it during
+#: collection and parametrizes each test's `job` argument, turning a
+#: `SourceError` into a failure of that test naming the file.
+JOB_SELECTOR = _forkable_lanes
 
 
 def test_the_selector_finds_the_lanes(estate: Estate) -> None:
@@ -114,7 +113,7 @@ def test_the_selector_finds_the_lanes(estate: Estate) -> None:
         "expected the pull-request lanes that ask for an Ubicloud runner; "
         f"found {sorted(str(job) for job in found)}"
     )
-    assert {str(job) for job in found} == {str(job) for job in FORKABLE}, (
+    assert {str(job) for job in found} == {str(job) for job in _forkable_lanes()}, (
         "the lanes this file parametrizes over are read at collection, and "
         "the lanes the estate declares are read here; they must agree, or "
         "the per-lane assertions are running against a stale reading"
@@ -236,7 +235,6 @@ def test_the_blind_spot_is_real() -> None:
     )
 
 
-@pytest.mark.parametrize("job", FORKABLE, ids=_ids(FORKABLE))
 def test_every_pull_request_lane_falls_back_for_a_fork(job: Job) -> None:
     """Name the fork field itself, not an expression that looks like it.
 
@@ -254,7 +252,6 @@ def test_every_pull_request_lane_falls_back_for_a_fork(job: Job) -> None:
     )
 
 
-@pytest.mark.parametrize("job", FORKABLE, ids=_ids(FORKABLE))
 def test_the_fork_arm_selects_a_hosted_runner(job: Job) -> None:
     """The fallback must be free, and it must be the fork arm's own label."""
     declared = _runs_on(job)
@@ -266,7 +263,6 @@ def test_the_fork_arm_selects_a_hosted_runner(job: Job) -> None:
     )
 
 
-@pytest.mark.parametrize("job", FORKABLE, ids=_ids(FORKABLE))
 def test_a_branch_pull_request_keeps_the_paid_shape(job: Job) -> None:
     """The fallback must not quietly move every pull request off Ubicloud.
 
@@ -282,7 +278,6 @@ def test_a_branch_pull_request_keeps_the_paid_shape(job: Job) -> None:
     )
 
 
-@pytest.mark.parametrize("job", FORKABLE, ids=_ids(FORKABLE))
 def test_a_scheduled_lane_still_lands_hosted(job: Job) -> None:
     """Composing the two conditions must not lose the cron arm.
 
