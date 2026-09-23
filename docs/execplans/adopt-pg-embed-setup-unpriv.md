@@ -17,13 +17,15 @@ fifty-one PostgreSQL-backed tests stop returning early and start asserting.
 The scope is Unix, deliberately. No Windows lane runs the workspace suite today:
 `test.yml`'s `windows-build` job only runs `cargo check`. The teardown and the
 cross-process lock below are Unix-only, so no embedded cluster is bootstrapped
-on Windows, and a Windows developer keeps the `TEST_DATABASE_URL` path and
-today's skip. Extending the suite to Windows is a separate plan with its own
-lifecycle, cleanup and acceptance criteria.
+on Windows, and a Windows developer keeps today's skip. Extending the suite to
+Windows is a separate plan with its own lifecycle, cleanup and acceptance
+criteria.
 
 Success is observable in four ways. First, `try_test_pg_db` in
 `src/testing/postgres.rs` returns a live backend on a checkout with no database
-configured and no service running. Second, `test.yml`'s `tests` job exports
+configured and no service running, and the forty PostgreSQL-backed tests that
+fail on a host whose PostgreSQL rejects the local user pass there with no host
+database involved. Second, `test.yml`'s `tests` job exports
 `AXINITE_REQUIRE_POSTGRES`, so an unreachable database there fails the lane
 rather than skipping it, which closes issue `#374`. Third, `coverage.yml`
 declares no `services:` block and applies no migrations with `psql`. Fourth,
@@ -79,9 +81,9 @@ with a service container.
   implementation had to build a migration-hash template mechanism because it
   had no such path; this repository does not.
 
-What is in place on the CI side. This plan depends on pull request `#375` (fail
-rather than skip when a lane promised a database), which introduces
-`AXINITE_REQUIRE_POSTGRES`; the items marked below arrive with it.
+The CI side already has the pieces below in place. This plan depends on pull
+request `#375` (fail rather than skip when a lane promised a database), which
+introduces `AXINITE_REQUIRE_POSTGRES`; the items marked below arrive with it.
 
 - `coverage.yml`'s `coverage` job declares the `pgvector/pgvector:pg16`
   service, applies migrations with `psql`, and exports `TEST_DATABASE_URL` and
@@ -117,15 +119,18 @@ rather than skip when a lane promised a database), which introduces
 - The embedded cluster is a test-time concern. Nothing in the shipped binary
   may depend on it; the dependency is optional and enabled with the existing
   `test-helpers` feature alongside `postgres`.
-- Do not remove the `TEST_DATABASE_URL` path. A developer or a lane with a real
-  database must still be able to point the suite at it, and the coverage lane
-  may want to keep doing so while the adoption beds in.
-- `TEST_DATABASE_URL` takes precedence. When it is set, the suite uses that
-  database and never bootstraps the embedded cluster, and an unreachable
-  configured database is never replaced by the embedded one: a silent fallback
-  would test a different database from the one the developer or lane asked for,
-  and hide the misconfiguration that made it unreachable.
-- An unreachable configured database keeps today's behaviour. With
+- No test reaches a PostgreSQL the harness did not provision (user ruling,
+  2026-09-23; see the decision log). The fallback to
+  `postgresql://localhost/axinite_test` in `test_pg_db` is removed, not kept as
+  a second path: it is how the suite reaches a host database today, and on a
+  host whose PostgreSQL rejects the local user every PostgreSQL-backed test
+  fails instead of running.
+- `TEST_DATABASE_URL` survives only as long as the interim service container,
+  and the two are retired together in the last milestone. While both exist, a
+  set `TEST_DATABASE_URL` takes precedence and the embedded cluster is not
+  bootstrapped, and an unreachable configured database is never silently
+  replaced by the embedded one: that would test a different database from the
+  one the lane asked for and hide the misconfiguration. With
   `AXINITE_REQUIRE_POSTGRES` set it is a failure; unset, it is a skip.
 - Keep `AXINITE_REQUIRE_POSTGRES` meaning what `#375` defines: any value, even
   one the platform cannot render as Unicode, makes an unreachable database a
@@ -270,6 +275,12 @@ reasons are recorded rather than rediscovered.
   the worker is downloaded while the library stays where it is.
 
 ## Decision log
+
+- 2026-09-23, user ruling: database tests do not use the host PostgreSQL at
+  all; `pg-embed-setup-unpriv` exists for that. The forty tests that fail
+  locally on a missing role are therefore a defect in how the tests reach a
+  database, not a host problem, and the localhost fallback goes rather than
+  surviving beside the embedded cluster.
 
 - The interim service container on `test.yml` is the stopgap, not the design.
   It closes what issue `#374` reports, which is that no pull-request lane
