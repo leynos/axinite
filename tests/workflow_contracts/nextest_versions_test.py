@@ -55,6 +55,22 @@ DEFERRED_STEP = (
             id="deferred-to-a-variable-nobody-declares",
         ),
         pytest.param(
+            "jobs:\n  test:\n    steps:\n      - uses: taiki-e/install-action@v2\n"
+            "        with:\n          tool: cargo-nextest@${{ inputs.nextest }}\n",
+            {UNDECLARED},
+            id="deferred-to-an-expression-the-reading-cannot-resolve",
+        ),
+        pytest.param(
+            "env:\n  CARGO_NEXTEST_VERSION: 0.9.100\n"
+            "jobs:\n  test:\n    steps:\n"
+            "      - run: cargo binstall cargo-nextest@${{ matrix.nextest }}\n"
+            "      - uses: taiki-e/install-action@v2\n"
+            "        with:\n"
+            "          tool: cargo-nextest@${{ env.CARGO_NEXTEST_VERSION }}\n",
+            {"0.9.100", UNDECLARED},
+            id="one-resolved-reference-and-one-unresolved",
+        ),
+        pytest.param(
             "env:\n  CARGO_NEXTEST_VERSION: 0.9.100\n"
             "jobs:\n  test:\n    env:\n      CARGO_NEXTEST_VERSION: 0.9.101\n"
             + DEFERRED_STEP,

@@ -95,7 +95,10 @@ def _versions_in(name: str, text: str) -> set[str]:
 
     A reference to the workflow's own ``env`` resolves to the declared
     values, so a lane deferring to a variable it never sets reads as
-    installing `UNDECLARED` rather than as installing nothing.
+    installing `UNDECLARED` rather than as installing nothing. So does a
+    reference neither pattern accounts for, such as
+    ``cargo-nextest@${{ inputs.nextest }}``: every install reference is
+    counted, and one left over is unresolved rather than silently empty.
 
     Parameters
     ----------
@@ -109,10 +112,14 @@ def _versions_in(name: str, text: str) -> set[str]:
     set of str
         The literal pins, plus the declared values if it defers.
     """
-    versions = set(_NEXTEST_LITERAL.findall(text))
-    if _NEXTEST_DEFERRED.search(text):
+    literals = _NEXTEST_LITERAL.findall(text)
+    deferred = len(_NEXTEST_DEFERRED.findall(text))
+    versions = set(literals)
+    if deferred:
         declared = declared_env_versions(parse_workflow(text, name))
         versions |= declared or {UNDECLARED}
+    if text.count(_NEXTEST_INSTALL) > len(literals) + deferred:
+        versions.add(UNDECLARED)
     return versions
 
 
