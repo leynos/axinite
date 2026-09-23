@@ -99,18 +99,20 @@ def _document(path: Path) -> WorkflowDocument:
 # about a workflow it never sees. PyYAML also resolves an unquoted `on:` key to
 # the boolean ``True``, so both spellings of the key are read.
 #
-# The result is empty when the workflow declares no `on:` at all, in which case
-# nothing can start it, and ``None`` when `on:` is present in a shape this
-# reader does not model. Discovery cannot tell ``None`` apart from "not
-# startable by a pull request", so `_unmodelled_workflows` reports it by name.
+# The result is empty when the workflow declares no `on:` key at all, in which
+# case nothing can start it, and ``None`` when `on:` is present in a shape this
+# reader does not model. An explicit `on: null` is present and unmodelled, not
+# absent, and so is a collection holding anything but event names: dropping the
+# `42` from `on: [42]` would leave an empty set that reads as "nothing starts
+# this". Discovery cannot tell ``None`` apart from "not startable by a pull
+# request", so `_unmodelled_workflows` reports it by name.
 def _trigger_names(document: WorkflowDocument) -> frozenset[str] | None:
     """Return the event names under `on:`, or `None` for an unmodelled shape."""
-    match document.get("on", document.get(True)):
-        case None:
-            return frozenset()
-        case dict() as events:
-            return _string_members(events)
-        case list() as events:
+    key = _trigger_key(document)
+    if key is None:
+        return frozenset()
+    match document[key]:
+        case dict() | list() as events:
             return _string_members(events)
         case str() as event:
             return frozenset({event})
@@ -118,25 +120,25 @@ def _trigger_names(document: WorkflowDocument) -> frozenset[str] | None:
             return None
 
 
-def _string_members(declared: dict[object, object] | list[object]) -> frozenset[str]:
-    """Return the event names among a mapping's keys or a list's items."""
-    return frozenset(event for event in declared if isinstance(event, str))
+def _trigger_key(document: WorkflowDocument) -> str | bool | None:
+    """Return whichever spelling of the `on` key is present, or `None`."""
+    for key in ("on", True):
+        if key in document:
+            return key
+    return None
+
+
+def _string_members(
+    declared: dict[object, object] | list[object],
+) -> frozenset[str] | None:
+    """Return a collection's event names, or `None` if any member is not one."""
+    if not all(isinstance(event, str) for event in declared):
+        return None
+    return frozenset(typ.cast("str", event) for event in declared)
 
 
 def _pull_request_workflows(directory: Path = WORKFLOW_DIR) -> list[Path]:
-    """Return every workflow in a directory that a pull request can start.
-
-    Parameters
-    ----------
-    directory
-        The directory to scan. It defaults to the estate's own; the parameter
-        exists so the discovery cases can be stated against a temporary tree.
-
-    Returns
-    -------
-    list of Path
-        Workflow paths declaring a `pull_request` trigger, in name order.
-    """
+    """Return the workflows in a directory that a pull request can start."""
     return [
         path
         for path in workflow_paths(directory)
@@ -145,18 +147,7 @@ def _pull_request_workflows(directory: Path = WORKFLOW_DIR) -> list[Path]:
 
 
 def _unmodelled_workflows(directory: Path = WORKFLOW_DIR) -> list[str]:
-    """Return the workflows whose `on:` this reader cannot model.
-
-    Parameters
-    ----------
-    directory
-        The directory to scan.
-
-    Returns
-    -------
-    list of str
-        The file names, in name order; each is dropped from discovery.
-    """
+    """Return the names of the workflows whose `on:` this reader cannot model."""
     return [
         path.name
         for path in workflow_paths(directory)
@@ -333,6 +324,10 @@ def test_every_shape_of_on_is_read_to_its_event_names(
     [
         pytest.param(42, id="a-number"),
         pytest.param(True, id="a-boolean"),
+        pytest.param(None, id="an-explicit-null"),
+        pytest.param([42], id="a-list-holding-a-number"),
+        pytest.param(["pull_request", 42], id="a-list-with-one-bad-member"),
+        pytest.param({42: None}, id="a-mapping-with-a-number-key"),
     ],
 )
 def test_an_unmodelled_shape_is_none_rather_than_empty(declared: object) -> None:
@@ -369,9 +364,16 @@ def test_discovery_keeps_every_shape_in_scope(tmp_path: Path) -> None:
 
 def test_an_unmodelled_trigger_is_reported_by_name(tmp_path: Path) -> None:
     """A workflow whose `on:` cannot be read is named, not silently dropped."""
-    (tmp_path / "odd.yml").write_text("on: 42\njobs: {}\n", encoding="utf-8")
+    for name, trigger in (
+        ("odd.yml", "on: 42"),
+        ("null.yml", "on: null"),
+        ("listed-number.yml", "on: [42]"),
+        ("number-key.yml", "on:\n  42: {}"),
+    ):
+        (tmp_path / name).write_text(f"{trigger}\njobs: {{}}\n", encoding="utf-8")
     (tmp_path / "fine.yml").write_text("on: pull_request\njobs: {}\n", encoding="utf-8")
-    assert _unmodelled_workflows(tmp_path) == ["odd.yml"], (
-        "the workflow with an unmodelled `on:` must be reported by name, and "
-        f"only it; got {_unmodelled_workflows(tmp_path)}"
+    unmodelled = ["listed-number.yml", "null.yml", "number-key.yml", "odd.yml"]
+    assert _unmodelled_workflows(tmp_path) == unmodelled, (
+        "each workflow with an unmodelled `on:` must be reported by name, and "
+        f"only those; got {_unmodelled_workflows(tmp_path)}"
     )
