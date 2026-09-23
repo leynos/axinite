@@ -647,11 +647,13 @@ Each of these is pure in what it is handed. The public readers take parsed
 documents, command text or Makefile text and return values; none of them opens
 a file. The reading happens at one boundary instead: `read_default_features`,
 `read_makefile` and `read_estate`, called from the `defaults` and `estate`
-fixtures in `conftest.py`, with `_sources.py` converting a missing, undecodable
-or unparsable file into a `SourceError` that names the path. A contract that
-judges one named workflow, such as `run_tests_gate_test.py` reading `test.yml`,
-goes through `read_workflow` in `_estate.py`, which applies the same conversion
-to a single file; it does not reach past the boundary with `load`.
+fixtures in `conftest.py`. `_sources.py` converts a missing or undecodable
+file, and a manifest that is not TOML, into a `SourceError` that names the path;
+`_estate.py` converts a workflow that is not YAML, or whose root is not a
+mapping, the same way. A contract that judges one named workflow, such as
+`run_tests_gate_test.py` reading `test.yml`, goes through `read_workflow` in
+`_estate.py`, which makes both conversions for a single file; it does not reach
+past the boundary with `load`.
 
 The reason is where the failure lands. A module-level snapshot taken during
 import turns a bad file into a collection error naming neither the file nor a

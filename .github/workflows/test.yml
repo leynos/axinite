@@ -430,6 +430,11 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803  # v6.1.0
+        # Nothing in this job performs an authenticated Git operation, so the
+        # token is not left in the checkout's Git configuration for the
+        # repository code that runs after it.
+        with:
+          persist-credentials: false
       # Right-sizing needs the peak memory and the low-water disk mark, and
       # neither is visible in a job's own output. The sampler runs alongside
       # the build and reports both at the end, with `if: always()` so a job
