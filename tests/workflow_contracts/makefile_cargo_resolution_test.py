@@ -14,7 +14,7 @@ import pytest
 from hypothesis import HealthCheck, example, given, settings
 from hypothesis import strategies as st
 
-from _makefile_test_support import shell_quote
+from _makefile_test_support import _MakeTestContext, shell_quote
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[2]
 
@@ -183,35 +183,32 @@ def test_check_fmt_resolves_cargo_override(
     path_suffix=st.text(alphabet="abcXYZ0123 $;()'", min_size=1, max_size=12),
 )
 def test_check_fmt_shell_quotes_generated_cargo_paths(
-    tmp_path: Path,
     uses_resolved_path: bool,
     whitespace_override: str,
     path_suffix: str,
-    make_executable: str,
-    utility_bin: Path,
+    make_context: _MakeTestContext,
 ) -> None:
     """Check shell quoting for generated paths and whitespace-only overrides.
 
     Parameters
     ----------
-    tmp_path : Path
-        Temporary directory for generated Cargo executables.
     uses_resolved_path : bool
         Whether to test a path resolved from ``PATH`` instead of an override.
     whitespace_override : str
         Empty or whitespace-only ``CARGO`` value used for path resolution.
     path_suffix : str
         Generated suffix, including shell metacharacters, for an override path.
-    make_executable : str
-        Absolute path to the Make executable provided by the shared fixture.
-    utility_bin : Path
-        Directory containing required utilities and no Cargo executable.
+    make_context : _MakeTestContext
+        Temporary directory and executables required for the Make invocation.
 
     Returns
     -------
     None
         Asserts that ``make -n check-fmt`` emits the expected quoted commands.
     """
+    tmp_path = make_context.tmp_path
+    make_executable = make_context.make_executable
+    utility_bin = make_context.utility_bin
     fake_bin = tmp_path / "generated-bin"
     fake_bin.mkdir(exist_ok=True)
     path_cargo = fake_bin / "cargo"

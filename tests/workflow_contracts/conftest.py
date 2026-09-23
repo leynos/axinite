@@ -259,6 +259,8 @@ def nextest_profiles() -> dict[str, Profile]:
     """
     return profiles_of(NEXTEST_CONFIG)
 
+from _makefile_test_support import _MakeTestContext
+
 
 @pytest.fixture(scope="session")
 def make_executable() -> str:
@@ -284,3 +286,17 @@ def utility_bin(tmp_path: Path) -> Path:
         pytest.fail(f"stable Python executable not found at {python_executable}")
     (utility_bin / "python3").symlink_to(python_executable)
     return utility_bin
+
+
+@pytest.fixture
+def make_context(
+    tmp_path: Path,
+    make_executable: str,
+    utility_bin: Path,
+) -> _MakeTestContext:
+    """Group the per-test directory and Make support executables."""
+    return _MakeTestContext(
+        tmp_path=tmp_path,
+        make_executable=make_executable,
+        utility_bin=utility_bin,
+    )

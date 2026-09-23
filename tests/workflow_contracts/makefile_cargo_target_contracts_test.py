@@ -8,7 +8,7 @@ from pathlib import Path
 
 import pytest
 
-from _makefile_test_support import shell_quote
+from _makefile_test_support import _MakeTestContext, shell_quote
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[2]
 
@@ -22,32 +22,29 @@ REPOSITORY_ROOT = Path(__file__).resolve().parents[2]
     ids=("resolved-cargo", "caller-override"),
 )
 def test_test_target_uses_expected_nextest_command(
-    tmp_path: Path,
     nextest_override: str | None,
     expected_nextest: str,
-    make_executable: str,
-    utility_bin: Path,
+    make_context: _MakeTestContext,
 ) -> None:
     """Check default and caller-overridden nextest commands on the test target.
 
     Parameters
     ----------
-    tmp_path : Path
-        Temporary directory for the fake Cargo executable and home directory.
     nextest_override : str or None
         Optional caller-provided ``NEXTEST`` command.
     expected_nextest : str
         Expected command template, with ``{cargo}`` for the resolved path.
-    make_executable : str
-        Absolute path to the Make executable provided by the shared fixture.
-    utility_bin : Path
-        Directory containing required utilities and no Cargo executable.
+    make_context : _MakeTestContext
+        Temporary directory and executables required for the Make invocation.
 
     Returns
     -------
     None
         Asserts that the expected nextest command is emitted by ``make -n``.
     """
+    tmp_path = make_context.tmp_path
+    make_executable = make_context.make_executable
+    utility_bin = make_context.utility_bin
     fake_bin = tmp_path / "bin"
     fake_bin.mkdir()
     path_cargo = fake_bin / "cargo"
@@ -184,32 +181,29 @@ def test_test_target_uses_expected_nextest_command(
     ),
 )
 def test_targets_use_resolved_quoted_cargo_command(
-    tmp_path: Path,
     make_target: str,
     cargo_arguments: tuple[str, ...],
-    make_executable: str,
-    utility_bin: Path,
+    make_context: _MakeTestContext,
 ) -> None:
     """Check every direct Cargo recipe uses the resolved executable as one word.
 
     Parameters
     ----------
-    tmp_path : Path
-        Temporary directory containing a Cargo path with spaces.
     make_target : str
         Make target whose Cargo recipe is being checked.
     cargo_arguments : tuple[str, ...]
         Expected Cargo argument strings, in emitted recipe order.
-    make_executable : str
-        Absolute path to the Make executable provided by the shared fixture.
-    utility_bin : Path
-        Directory containing required utilities and no Cargo executable.
+    make_context : _MakeTestContext
+        Temporary directory and executables required for the Make invocation.
 
     Returns
     -------
     None
         Asserts that each direct Cargo invocation uses the quoted path.
     """
+    tmp_path = make_context.tmp_path
+    make_executable = make_context.make_executable
+    utility_bin = make_context.utility_bin
     cargo_path = tmp_path / "cargo with spaces" / "cargo"
     cargo_path.parent.mkdir()
     cargo_path.touch(mode=0o755)
@@ -251,32 +245,29 @@ def test_targets_use_resolved_quoted_cargo_command(
 @pytest.mark.parametrize("make_target", ("check-fmt", "test-matrix", "audit"))
 @pytest.mark.parametrize("resolution_source", ("home", "path"))
 def test_targets_escape_resolved_cargo_paths(
-    tmp_path: Path,
     resolution_source: str,
     make_target: str,
-    make_executable: str,
-    utility_bin: Path,
+    make_context: _MakeTestContext,
 ) -> None:
     """Check that Cargo paths with shell metacharacters execute literally.
 
     Parameters
     ----------
-    tmp_path : Path
-        Temporary directory for the fake Cargo executable and injection marker.
     resolution_source : str
         Resolution location under test: ``home`` or ``path``.
     make_target : str
         Make target to execute with the metacharacter-containing Cargo path.
-    make_executable : str
-        Absolute path to the Make executable provided by the shared fixture.
-    utility_bin : Path
-        Utility-only PATH directory, ensuring the home fallback is exercised.
+    make_context : _MakeTestContext
+        Temporary directory and executables required for the Make invocation.
 
     Returns
     -------
     None
         Asserts that the target succeeds without creating the injection marker.
     """
+    tmp_path = make_context.tmp_path
+    make_executable = make_context.make_executable
+    utility_bin = make_context.utility_bin
     marker = tmp_path / "injected"
     marker_relative = os.path.relpath(marker, REPOSITORY_ROOT)
     unsafe_root = tmp_path / f"cargo$literal; printf injected > {marker_relative}; #"
