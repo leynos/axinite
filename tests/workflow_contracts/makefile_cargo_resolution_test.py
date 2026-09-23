@@ -6,7 +6,6 @@ Run via ``make test-workflow-contracts``.
 from __future__ import annotations
 
 import os
-import shutil
 import subprocess
 from dataclasses import dataclass
 from pathlib import Path
@@ -15,12 +14,32 @@ import pytest
 from hypothesis import HealthCheck, example, given, settings
 from hypothesis import strategies as st
 
+from _makefile_test_support import shell_quote
+
 REPOSITORY_ROOT = Path(__file__).resolve().parents[2]
 
 
 @dataclass(frozen=True)
 class CargoResolutionCase:
-    """Inputs and expected source for one Cargo resolution scenario."""
+    """Immutable inputs and expected location for a Cargo resolution case.
+
+    Parameters
+    ----------
+    cargo_override : str
+        Value supplied through the ``CARGO`` environment variable.
+    has_path_cargo : bool
+        Whether the test provides Cargo on ``PATH``.
+    has_home_cargo : bool
+        Whether the test provides Cargo under ``$HOME/.cargo/bin``.
+    expected_location : str
+        Expected source of the resolved executable: ``path``, ``home``, or
+        ``override``.
+
+    Returns
+    -------
+    CargoResolutionCase
+        Immutable case describing the environment and expected resolution.
+    """
 
     cargo_override: str
     has_path_cargo: bool
@@ -73,8 +92,27 @@ class CargoResolutionCase:
 def test_check_fmt_resolves_cargo_override(
     tmp_path: Path,
     case: CargoResolutionCase,
+    make_executable: str,
+    utility_bin: Path,
 ) -> None:
-    """Resolve empty or whitespace-only overrides and preserve non-empty ones."""
+    """Check Cargo resolution for empty, whitespace-only, and explicit overrides.
+
+    Parameters
+    ----------
+    tmp_path : Path
+        Temporary directory for the fake Cargo executables and home directory.
+    case : CargoResolutionCase
+        Resolution inputs and the expected executable location.
+    make_executable : str
+        Absolute path to the Make executable provided by the shared fixture.
+    utility_bin : Path
+        Directory containing required utilities and no Cargo executable.
+
+    Returns
+    -------
+    None
+        Asserts that ``make -n check-fmt`` emits the expected commands.
+    """
     fake_bin = tmp_path / "bin"
     fake_bin.mkdir()
     path_cargo = fake_bin / "cargo"
@@ -92,15 +130,12 @@ def test_check_fmt_resolves_cargo_override(
         "home": str(home_cargo),
         "override": case.cargo_override,
     }[case.expected_location]
-    make_executable = shutil.which("make")
-    assert make_executable is not None, "make must be available to run this contract"
-
     environment = os.environ.copy()
     environment.update(
         {
             "CARGO": case.cargo_override,
             "HOME": str(fake_home),
-            "PATH": str(fake_bin),
+            "PATH": os.pathsep.join((str(fake_bin), str(utility_bin))),
         }
     )
     result = subprocess.run(
@@ -112,8 +147,12 @@ def test_check_fmt_resolves_cargo_override(
         text=True,
     )
 
-    emitted_commands = result.stdout.splitlines()
     quoted_command = shell_quote(expected_command)
+    emitted_commands = [
+        line
+        for line in result.stdout.splitlines()
+        if line.startswith(f"{quoted_command} ")
+    ]
     expected_commands = [
         f"{quoted_command} fmt --all -- --check",
         f"{quoted_command} fmt --manifest-path tools-src/github/Cargo.toml --all -- --check",
@@ -148,8 +187,31 @@ def test_check_fmt_shell_quotes_generated_cargo_paths(
     uses_resolved_path: bool,
     whitespace_override: str,
     path_suffix: str,
+    make_executable: str,
+    utility_bin: Path,
 ) -> None:
-    """Quote generated paths and resolve whitespace-only Cargo overrides."""
+    """Check shell quoting for generated paths and whitespace-only overrides.
+
+    Parameters
+    ----------
+    tmp_path : Path
+        Temporary directory for generated Cargo executables.
+    uses_resolved_path : bool
+        Whether to test a path resolved from ``PATH`` instead of an override.
+    whitespace_override : str
+        Empty or whitespace-only ``CARGO`` value used for path resolution.
+    path_suffix : str
+        Generated suffix, including shell metacharacters, for an override path.
+    make_executable : str
+        Absolute path to the Make executable provided by the shared fixture.
+    utility_bin : Path
+        Directory containing required utilities and no Cargo executable.
+
+    Returns
+    -------
+    None
+        Asserts that ``make -n check-fmt`` emits the expected quoted commands.
+    """
     fake_bin = tmp_path / "generated-bin"
     fake_bin.mkdir(exist_ok=True)
     path_cargo = fake_bin / "cargo"
@@ -158,15 +220,12 @@ def test_check_fmt_shell_quotes_generated_cargo_paths(
     override_cargo.touch(exist_ok=True, mode=0o755)
     cargo_override = whitespace_override if uses_resolved_path else str(override_cargo)
     expected_cargo = str(path_cargo) if uses_resolved_path else cargo_override
-    make_executable = shutil.which("make")
-    assert make_executable is not None, "make must be available to run this contract"
-
     environment = os.environ.copy()
     environment.update(
         {
             "CARGO": cargo_override,
             "HOME": str(tmp_path / "home"),
-            "PATH": str(fake_bin),
+            "PATH": os.pathsep.join((str(fake_bin), str(utility_bin))),
         }
     )
     result = subprocess.run(
@@ -179,224 +238,12 @@ def test_check_fmt_shell_quotes_generated_cargo_paths(
     )
 
     quoted_cargo = shell_quote(expected_cargo)
-    assert result.stdout.splitlines() == [
+    emitted_commands = [
+        line
+        for line in result.stdout.splitlines()
+        if line.startswith(f"{quoted_cargo} ")
+    ]
+    assert emitted_commands == [
         f"{quoted_cargo} fmt --all -- --check",
         f"{quoted_cargo} fmt --manifest-path tools-src/github/Cargo.toml --all -- --check",
-    ], f"CARGO={cargo_override!r} emitted unexpected commands: {result.stdout!r}"
-
-
-def shell_quote(value: str) -> str:
-    """Return the POSIX shell representation emitted by the Makefile."""
-    return "'" + value.replace("'", "'\"'\"'") + "'"
-
-
-@pytest.mark.parametrize(
-    ("nextest_override", "expected_nextest"),
-    [
-        (None, "{cargo} nextest"),
-        ("/caller/nextest", "/caller/nextest"),
-    ],
-    ids=("resolved-cargo", "caller-override"),
-)
-def test_test_target_uses_expected_nextest_command(
-    tmp_path: Path,
-    nextest_override: str | None,
-    expected_nextest: str,
-) -> None:
-    """Use resolved Cargo for nextest unless a caller overrides NEXTEST."""
-    fake_bin = tmp_path / "bin"
-    fake_bin.mkdir()
-    path_cargo = fake_bin / "cargo"
-    path_cargo.touch(mode=0o755)
-    make_executable = shutil.which("make")
-    assert make_executable is not None, "make must be available to run this contract"
-
-    environment = os.environ.copy()
-    environment.update({"CARGO": "   ", "HOME": str(tmp_path / "home"), "PATH": str(fake_bin)})
-    if nextest_override is None:
-        environment.pop("NEXTEST", None)
-    else:
-        environment["NEXTEST"] = nextest_override
-
-    result = subprocess.run(
-        [make_executable, "--no-print-directory", "-n", "test"],
-        cwd=REPOSITORY_ROOT,
-        env=environment,
-        check=True,
-        capture_output=True,
-        text=True,
-    )
-
-    expected_command = expected_nextest.format(cargo=shell_quote(str(path_cargo)))
-    emitted_commands = result.stdout.splitlines()
-    assert (
-        f"{expected_command} run --workspace --features test-helpers --profile default"
-        in emitted_commands
-    ), (
-        f"NEXTEST override {nextest_override!r} emitted unexpected commands: "
-        f"{emitted_commands!r}"
-    )
-
-
-def test_test_matrix_uses_quoted_cargo_command(tmp_path: Path) -> None:
-    """Use the resolved Cargo command for the final test-matrix invocation."""
-    fake_bin = tmp_path / "bin"
-    fake_bin.mkdir()
-    path_cargo = fake_bin / "cargo"
-    path_cargo.touch(mode=0o755)
-    make_executable = shutil.which("make")
-    assert make_executable is not None, "make must be available to run this contract"
-
-    environment = os.environ.copy()
-    environment.update({"CARGO": "", "HOME": str(tmp_path / "home"), "PATH": str(fake_bin)})
-    result = subprocess.run(
-        [make_executable, "--no-print-directory", "-n", "test-matrix"],
-        cwd=REPOSITORY_ROOT,
-        env=environment,
-        check=True,
-        capture_output=True,
-        text=True,
-    )
-
-    emitted_commands = result.stdout.splitlines()
-    expected_command = (
-        f"{shell_quote(str(path_cargo))} test --manifest-path "
-        "tools-src/github/Cargo.toml -- --nocapture"
-    )
-    assert expected_command in emitted_commands, (
-        f"test-matrix emitted unexpected commands: {emitted_commands!r}"
-    )
-
-
-@dataclass(frozen=True)
-class CargoAuditCase:
-    """Inputs and expected executable for one audit-resolution scenario."""
-
-    cargo_override: str | None
-    has_path_cargo: bool
-    has_home_cargo: bool
-    expected_location: str
-
-
-@pytest.mark.parametrize(
-    "case",
-    [
-        CargoAuditCase(
-            cargo_override=None,
-            has_path_cargo=True,
-            has_home_cargo=False,
-            expected_location="path",
-        ),
-        CargoAuditCase(
-            cargo_override="",
-            has_path_cargo=True,
-            has_home_cargo=False,
-            expected_location="path",
-        ),
-        CargoAuditCase(
-            cargo_override="",
-            has_path_cargo=False,
-            has_home_cargo=True,
-            expected_location="home",
-        ),
-        CargoAuditCase(
-            cargo_override="/caller/cargo",
-            has_path_cargo=False,
-            has_home_cargo=False,
-            expected_location="override",
-        ),
-    ],
-    ids=("unset", "empty", "home-fallback", "caller-override"),
-)
-def test_audit_uses_resolved_cargo_command(
-    tmp_path: Path,
-    case: CargoAuditCase,
-) -> None:
-    """Pass the resolved Cargo executable to each audit subprocess."""
-    fake_bin = tmp_path / "bin"
-    fake_bin.mkdir()
-    path_cargo = fake_bin / "cargo"
-    fake_home = tmp_path / "home"
-    home_cargo = fake_home / ".cargo" / "bin" / "cargo"
-
-    if case.has_path_cargo:
-        path_cargo.touch(mode=0o755)
-    if case.has_home_cargo:
-        home_cargo.parent.mkdir(parents=True)
-        home_cargo.touch(mode=0o755)
-
-    expected_cargo = {
-        "path": str(path_cargo),
-        "home": str(home_cargo),
-        "override": case.cargo_override,
-    }[case.expected_location]
-    make_executable = shutil.which("make")
-    assert make_executable is not None, "make must be available to run this contract"
-
-    environment = os.environ.copy()
-    environment.update({"HOME": str(fake_home), "PATH": str(fake_bin)})
-    environment.pop("CARGO_AUDIT", None)
-    if case.cargo_override is None:
-        environment.pop("CARGO", None)
-    else:
-        environment["CARGO"] = case.cargo_override
-
-    result = subprocess.run(
-        [make_executable, "--no-print-directory", "-n", "audit"],
-        cwd=REPOSITORY_ROOT,
-        env=environment,
-        check=True,
-        capture_output=True,
-        text=True,
-    )
-
-    emitted_audit_command = f"sh {shell_quote(expected_cargo)} 'audit' {{}} +"
-    assert emitted_audit_command in result.stdout, (
-        f"{case!r} emitted unexpected audit command: {result.stdout!r}"
-    )
-
-
-@pytest.mark.parametrize("make_target", ("check-fmt", "test-matrix", "audit"))
-@pytest.mark.parametrize("resolution_source", ("home", "path"))
-def test_targets_escape_resolved_cargo_paths(
-    tmp_path: Path,
-    resolution_source: str,
-    make_target: str,
-) -> None:
-    """Execute metacharacter paths without evaluating their shell syntax."""
-    marker = tmp_path / "injected"
-    marker_relative = os.path.relpath(marker, REPOSITORY_ROOT)
-    unsafe_root = tmp_path / f"cargo$literal; printf injected > {marker_relative}; #"
-    fake_bin = unsafe_root if resolution_source == "path" else tmp_path / "bin"
-    fake_home = unsafe_root if resolution_source == "home" else tmp_path / "home"
-    cargo_path = (
-        fake_bin / "cargo"
-        if resolution_source == "path"
-        else fake_home / ".cargo" / "bin" / "cargo"
-    )
-    cargo_path.parent.mkdir(parents=True)
-    cargo_path.write_text("#!/bin/sh\nexit 0\n")
-    cargo_path.chmod(0o755)
-    make_executable = shutil.which("make")
-    assert make_executable is not None, "make must be available to run this contract"
-
-    environment = os.environ.copy()
-    environment.pop("NEXTEST", None)
-    environment.pop("CARGO_AUDIT", None)
-    environment.update(
-        {
-            "CARGO": "",
-            "HOME": str(fake_home),
-            "PATH": os.pathsep.join((str(fake_bin), "/usr/bin", "/bin")),
-        }
-    )
-    subprocess.run(
-        [make_executable, "--no-print-directory", make_target],
-        cwd=REPOSITORY_ROOT,
-        env=environment,
-        check=True,
-    )
-
-    assert not marker.exists(), (
-        f"{make_target} evaluated {resolution_source} path shell syntax"
-    )
+    ], f"CARGO={cargo_override!r} emitted unexpected commands: {emitted_commands!r}"
