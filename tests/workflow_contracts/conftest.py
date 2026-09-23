@@ -13,7 +13,17 @@ from _makefile_test_support import _MakeTestContext
 
 @pytest.fixture(scope="session")
 def make_executable() -> str:
-    """Return the Make executable or fail with a useful setup diagnostic."""
+    """Return the Make executable or fail with a useful setup diagnostic.
+
+    Parameters
+    ----------
+    None
+
+    Returns
+    -------
+    str
+        Absolute path to the Make executable found on ``PATH``.
+    """
     executable = shutil.which("make")
     if executable is None:
         pytest.fail("make must be available to run these workflow contracts")
@@ -22,7 +32,18 @@ def make_executable() -> str:
 
 @pytest.fixture
 def utility_bin(tmp_path: Path) -> Path:
-    """Provide a PATH directory with required utilities but no Cargo binary."""
+    """Provide a PATH directory with required utilities but no Cargo binary.
+
+    Parameters
+    ----------
+    tmp_path : Path
+        Pytest temporary directory in which to create the utility directory.
+
+    Returns
+    -------
+    Path
+        Directory containing symlinks to required utilities, excluding Cargo.
+    """
     utility_bin = tmp_path / "utilities"
     utility_bin.mkdir()
     for name in ("dirname", "find", "git", "make", "mdtablefix", "sh"):
@@ -43,7 +64,22 @@ def make_context(
     make_executable: str,
     utility_bin: Path,
 ) -> _MakeTestContext:
-    """Group the per-test directory and Make support executables."""
+    """Group the per-test directory and Make support executables.
+
+    Parameters
+    ----------
+    tmp_path : Path
+        Pytest temporary directory for this test.
+    make_executable : str
+        Absolute path to the Make executable provided by its fixture.
+    utility_bin : Path
+        Directory containing required utilities and no Cargo executable.
+
+    Returns
+    -------
+    _MakeTestContext
+        Context grouping the temporary directory and Make support executables.
+    """
     return _MakeTestContext(
         tmp_path=tmp_path,
         make_executable=make_executable,

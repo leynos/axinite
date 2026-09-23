@@ -12,6 +12,49 @@ import pytest
 from _makefile_test_support import shell_quote
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[2]
+AUDIT_FLAGS = (
+    "--ignore RUSTSEC-2026-0049",
+    "--ignore RUSTSEC-2026-0098",
+    "--ignore RUSTSEC-2026-0099",
+    "--ignore RUSTSEC-2026-0104",
+    "--ignore RUSTSEC-2026-0185",
+    "--ignore RUSTSEC-2025-0141",
+    "--ignore RUSTSEC-2024-0370",
+    "--ignore RUSTSEC-2025-0134",
+)
+
+
+def _selected_cargo_manifests(utility_bin: Path) -> list[str]:
+    """Return Cargo.toml paths selected by the Makefile audit find expression."""
+    result = subprocess.run(
+        [
+            str(utility_bin / "find"),
+            ".",
+            "(",
+            "-path",
+            "*/target/*",
+            "-o",
+            "-path",
+            "*/node_modules/*",
+            "-o",
+            "-path",
+            "*/.venv/*",
+            "-o",
+            "-path",
+            "./crates/*",
+            ")",
+            "-prune",
+            "-o",
+            "-name",
+            "Cargo.toml",
+            "-print",
+        ],
+        cwd=REPOSITORY_ROOT,
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    return result.stdout.splitlines()
 
 
 @dataclass(frozen=True)
@@ -196,7 +239,10 @@ def test_audit_preserves_full_command_override(
         f"CARGO_AUDIT={audit_override!r} was not emitted as one full command: "
         f"{result.stdout!r}"
     )
-    assert shell_quote("/resolved/cargo-must-not-be-used") not in result.stdout
+    assert shell_quote("/resolved/cargo-must-not-be-used") not in result.stdout, (
+        f"CARGO_AUDIT={audit_override!r} leaked the resolved Cargo path: "
+        f"{result.stdout!r}"
+    )
 
 
 def test_audit_executes_multiword_command_override(
@@ -251,4 +297,82 @@ def test_audit_executes_multiword_command_override(
     assert commands, "audit should invoke the fake Cargo executable"
     assert all(command.startswith("+stable audit --ignore ") for command in commands), (
         f"multiword CARGO_AUDIT override emitted unexpected arguments: {commands!r}"
+    )
+    selected_manifests = _selected_cargo_manifests(utility_bin)
+    assert len(commands) == len(selected_manifests), (
+        f"CARGO_AUDIT='cargo +stable audit' logged {len(commands)} calls for "
+        f"{len(selected_manifests)} selected Cargo.toml manifests: {commands!r}"
+    )
+
+
+@pytest.mark.parametrize(
+    "audit_override",
+    (None, "", "  "),
+    ids=("unset", "empty", "whitespace-only"),
+)
+def test_audit_uses_custom_subcommand_without_full_command_override(
+    tmp_path: Path,
+    audit_override: str | None,
+    make_executable: str,
+    utility_bin: Path,
+) -> None:
+    """Check that the default Cargo command honours a custom audit subcommand.
+
+    Parameters
+    ----------
+    tmp_path : Path
+        Temporary directory for a fake Cargo executable and its argument log.
+    audit_override : str or None
+        Optional empty ``CARGO_AUDIT`` value; ``None`` leaves it unset.
+    make_executable : str
+        Absolute path to the Make executable provided by the shared fixture.
+    utility_bin : Path
+        Directory containing required utilities and no Cargo executable.
+
+    Returns
+    -------
+    None
+        Asserts that Cargo receives the custom subcommand and all default audit flags.
+    """
+    fake_bin = tmp_path / "bin"
+    fake_bin.mkdir()
+    cargo_path = fake_bin / "cargo"
+    cargo_path.write_text('#!/bin/sh\nprintf \'%s\\n\' "$*" >> "$AUDIT_ARGUMENT_LOG"\n')
+    cargo_path.chmod(0o755)
+    argument_log = tmp_path / "audit-arguments"
+
+    environment = os.environ.copy()
+    environment.pop("CARGO_AUDIT", None)
+    environment.update(
+        {
+            "AUDIT_ARGUMENT_LOG": str(argument_log),
+            "CARGO": "",
+            "CARGO_AUDIT_SUBCOMMAND": "audit-contract",
+            "HOME": str(tmp_path / "home"),
+            "PATH": os.pathsep.join((str(fake_bin), str(utility_bin))),
+        }
+    )
+    if audit_override is not None:
+        environment["CARGO_AUDIT"] = audit_override
+
+    subprocess.run(
+        [make_executable, "--no-print-directory", "audit"],
+        cwd=REPOSITORY_ROOT,
+        env=environment,
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+
+    commands = argument_log.read_text().splitlines()
+    assert commands, "audit should invoke the fake Cargo executable"
+    assert all(
+        command.startswith("audit-contract --ignore ")
+        and all(flag in command for flag in AUDIT_FLAGS)
+        for command in commands
+    ), f"custom CARGO_AUDIT_SUBCOMMAND emitted unexpected arguments: {commands!r}"
+    selected_manifests = _selected_cargo_manifests(utility_bin)
+    assert len(commands) == len(selected_manifests), (
+        f"custom CARGO_AUDIT_SUBCOMMAND logged {len(commands)} calls for "
+        f"{len(selected_manifests)} selected Cargo.toml manifests: {commands!r}"
     )
