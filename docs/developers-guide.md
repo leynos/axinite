@@ -2999,9 +2999,10 @@ successful runs of `coverage.yml` covering three matrix legs each.*
 
 The requirement is the whole-run budget, plus a minute for nextest to
 terminate, both taken once per run the lane makes, plus the build and the steps
-either side of the suite, taken once for the job. Twenty minutes covers the
-worst of those with room for a cold compile, making the requirement 51 minutes
-for a one-run lane against ceilings of 90.
+either side of the suite, taken once for the job, plus the fifteen-minute
+margin described above. Twenty minutes covers the build and the surrounding
+steps with room for a cold compile, making the requirement about 66 minutes for
+a one-run lane against ceilings of 90.
 
 None of those runs was genuinely cold. One run is the coldest seen so far, not
 a measurement of the cold case.
