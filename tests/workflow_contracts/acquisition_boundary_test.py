@@ -101,6 +101,41 @@ def test_the_error_is_an_os_error() -> None:
     )
 
 
+#: The readings that decode a file, each taking the directory holding an
+#: undecodable ``ci.yml``.
+DECODING_READS: typ.Final[dict[str, cabc.Callable[[Path], object]]] = {
+    "read_source": lambda path: read_source(path / "ci.yml"),
+    "load": lambda path: load(path / "ci.yml"),
+    "read_workflow_texts": read_workflow_texts,
+}
+
+
+@pytest.mark.parametrize("name", sorted(DECODING_READS))
+def test_a_file_that_is_not_utf8_is_reported_with_its_cause(
+    name: str, tmp_path: Path
+) -> None:
+    """Assert undecodable text is a `SourceReadError`, not a `UnicodeDecodeError`.
+
+    The missing-path cases above exercise only the `OSError` branch. A
+    decode failure is the other way a read goes wrong, and it is not an
+    `OSError`, so without the conversion it would escape every caller
+    that catches the domain error. The original is kept as the cause, so
+    the byte offset is not lost.
+    """
+    undecodable = tmp_path / "ci.yml"
+    undecodable.write_bytes(b"name: \xff\xfe\non: push\n")
+    with pytest.raises(SourceReadError) as raised:
+        DECODING_READS[name](tmp_path)
+    assert raised.value.path == undecodable, (
+        f"{name} must name the file it could not decode; it named "
+        f"{raised.value.path}"
+    )
+    assert isinstance(raised.value.__cause__, UnicodeDecodeError), (
+        f"{name} must chain the decode failure as the cause; the cause was "
+        f"{raised.value.__cause__!r}"
+    )
+
+
 def test_a_readable_tree_still_returns_its_contents(tmp_path: Path) -> None:
     """Assert the refusal above is narrow as well as sufficient.
 
