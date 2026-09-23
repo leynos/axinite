@@ -22,7 +22,11 @@ pub(super) struct OAuthCredentialSources<'a> {
 /// Value of the tool's configured env var, when one is declared and set.
 fn env_var_token(auth: &crate::tools::wasm::AuthCapabilitySchema) -> Option<String> {
     let env_var = auth.env_var.as_ref()?;
-    std::env::var(env_var).ok()
+    {
+        #[expect(clippy::disallowed_methods, reason = "transitional #333: EnvContext")]
+        std::env::var(env_var)
+    }
+    .ok()
 }
 
 /// Instructions for manual token entry when a tool has no OAuth config.
@@ -378,7 +382,10 @@ impl ExtensionManager {
 
         // 3. Runtime environment variable
         if let Some(env) = sources.env_var_name
-            && let Ok(val) = std::env::var(env)
+            && let Ok(val) = {
+                #[expect(clippy::disallowed_methods, reason = "transitional #333: EnvContext")]
+                std::env::var(env)
+            }
         {
             return Some(val);
         }

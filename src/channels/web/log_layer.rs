@@ -175,8 +175,11 @@ impl LogLevelHandle {
 /// Returns the `LogLevelHandle` so callers can swap the filter at runtime.
 /// The fmt layer and `WebLogLayer` are attached alongside the reloadable filter.
 pub fn init_tracing(log_broadcaster: Arc<LogBroadcaster>) -> Arc<LogLevelHandle> {
-    let raw_filter =
-        std::env::var("RUST_LOG").unwrap_or_else(|_| "axinite=info,tower_http=warn".to_string());
+    let raw_filter = {
+        #[expect(clippy::disallowed_methods, reason = "transitional #333: EnvContext")]
+        std::env::var("RUST_LOG")
+    }
+    .unwrap_or_else(|_| "axinite=info,tower_http=warn".to_string());
 
     // Split into the axinite directive and "everything else" (base_filter).
     let mut axinite_level = String::from("info");

@@ -138,7 +138,13 @@ fn slack_relay_entry(relay_url: String) -> RegistryEntry {
 /// If `relay_url` is provided, a channel-relay Slack entry is included in the list.
 /// Pass `None` when the relay is not configured.
 pub fn builtin_entries() -> Vec<RegistryEntry> {
-    builtin_entries_with_relay(std::env::var("CHANNEL_RELAY_URL").ok())
+    builtin_entries_with_relay(
+        {
+            #[expect(clippy::disallowed_methods, reason = "transitional #333: EnvContext")]
+            std::env::var("CHANNEL_RELAY_URL")
+        }
+        .ok(),
+    )
 }
 
 /// Well-known extensions, with an optional relay URL for the channel-relay entry.

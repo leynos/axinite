@@ -16,6 +16,7 @@ pub use pid_lock::{PidLock, PidLockError, pid_lock_path};
 use std::path::PathBuf;
 use std::sync::LazyLock;
 
+use crate::config::EnvContext;
 use migration::migrate_bootstrap_json_to_env;
 
 const AXINITE_BASE_DIR_ENV: &str = "AXINITE_BASE_DIR";
@@ -29,7 +30,12 @@ static AXINITE_BASE_DIR: LazyLock<PathBuf> = LazyLock::new(compute_axinite_base_
 /// `axinite_base_dir()` function (which caches the result) and tests
 /// (which need to verify different configurations).
 pub fn compute_axinite_base_dir() -> PathBuf {
-    std::env::var(AXINITE_BASE_DIR_ENV)
+    compute_axinite_base_dir_from(&EnvContext::capture_ambient())
+}
+
+/// Compute the Axinite base directory from an explicit environment snapshot.
+pub fn compute_axinite_base_dir_from(ctx: &EnvContext) -> PathBuf {
+    ctx.get(AXINITE_BASE_DIR_ENV)
         .map(PathBuf::from)
         .map(|path| {
             if path.as_os_str().is_empty() {
@@ -44,7 +50,7 @@ pub fn compute_axinite_base_dir() -> PathBuf {
                 path
             }
         })
-        .unwrap_or_else(|_| default_base_dir())
+        .unwrap_or_else(default_base_dir)
 }
 
 /// Get the default Axinite base directory (~/.axinite).
@@ -119,14 +125,24 @@ pub fn load_axinite_env() {
     // all env files, and the local SQLite DB exists, default to libsql.
     // This avoids the chicken-and-egg problem on cloud instances where no
     // DATABASE_URL is configured but axinite.db is already present.
-    if std::env::var("DATABASE_BACKEND").is_err() {
+    if {
+        #[expect(clippy::disallowed_methods, reason = "transitional #333: EnvContext")]
+        std::env::var("DATABASE_BACKEND")
+    }
+    .is_err()
+    {
         // The default path falls back to the pre-rename `ironclaw.db` when
         // only the legacy file exists, keeping migrated installs working.
         let default_db = crate::config::default_libsql_path();
         if default_db.exists() {
             // SAFETY: `load_axinite_env` is called from a synchronous `fn main()`
             // before the Tokio runtime is started, so no other threads exist yet.
-            unsafe { std::env::set_var("DATABASE_BACKEND", "libsql") };
+            unsafe {
+                {
+                    #[expect(clippy::disallowed_methods, reason = "transitional #333: EnvContext")]
+                    std::env::set_var("DATABASE_BACKEND", "libsql")
+                }
+            };
         }
     }
 }

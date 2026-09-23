@@ -113,7 +113,11 @@ pub async fn setup_orchestrator(
             memory_limit_mb: config.sandbox.memory_limit_mb,
             cpu_shares: config.sandbox.cpu_shares,
             orchestrator_port: 50051,
-            claude_code_api_key: std::env::var("ANTHROPIC_API_KEY").ok(),
+            claude_code_api_key: {
+                #[expect(clippy::disallowed_methods, reason = "transitional #333: EnvContext")]
+                std::env::var("ANTHROPIC_API_KEY")
+            }
+            .ok(),
             claude_code_oauth_token: crate::config::ClaudeCodeConfig::extract_oauth_token(),
             claude_code_model: config.claude_code.model.clone(),
             claude_code_max_turns: config.claude_code.max_turns,

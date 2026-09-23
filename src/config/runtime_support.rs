@@ -150,7 +150,14 @@ pub async fn inject_llm_keys_from_secrets(
     let injected = collect_llm_key_injections(
         secrets,
         user_id,
-        |env_var| matches!(std::env::var(env_var), Ok(val) if !val.is_empty()),
+        |env_var| {
+            #[expect(
+                clippy::disallowed_methods,
+                reason = "owning ambient secret-injection boundary; callers without a context retain compatibility"
+            )]
+            let value = std::env::var(env_var);
+            matches!(value, Ok(val) if !val.is_empty())
+        },
     )
     .await?;
     merge_injected_vars(injected);

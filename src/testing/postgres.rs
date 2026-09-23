@@ -38,8 +38,11 @@ const UNAVAILABLE_PATTERNS: &[&str] = &[
 /// }
 /// ```
 pub async fn test_pg_db() -> Result<PgBackend, DatabaseError> {
-    let url = std::env::var("TEST_DATABASE_URL")
-        .unwrap_or_else(|_| "postgresql://localhost/axinite_test".to_string());
+    let url = {
+        #[expect(clippy::disallowed_methods, reason = "transitional #333: EnvContext")]
+        std::env::var("TEST_DATABASE_URL")
+    }
+    .unwrap_or_else(|_| "postgresql://localhost/axinite_test".to_string());
 
     let config = DatabaseConfig {
         backend: DatabaseBackend::Postgres,

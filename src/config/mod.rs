@@ -152,7 +152,32 @@ impl Config {
     ) -> Result<Self, ConfigError> {
         let _ = dotenvy::dotenv();
         crate::bootstrap::load_axinite_env();
+        Self::from_db_from_context_with_toml(
+            store,
+            user_id,
+            &EnvContext::capture_ambient(),
+            toml_path,
+        )
+        .await
+    }
 
+    /// Load database settings using an explicit environment snapshot.
+    pub async fn from_db_from_context(
+        store: &(dyn crate::db::SettingsStore + Sync),
+        user_id: &str,
+        ctx: &EnvContext,
+    ) -> Result<Self, ConfigError> {
+        Self::from_db_from_context_with_toml(store, user_id, ctx, None).await
+    }
+
+    /// Load database settings and an optional TOML overlay using an explicit
+    /// environment snapshot.
+    pub async fn from_db_from_context_with_toml(
+        store: &(dyn crate::db::SettingsStore + Sync),
+        user_id: &str,
+        ctx: &EnvContext,
+        toml_path: Option<&std::path::Path>,
+    ) -> Result<Self, ConfigError> {
         // Load all settings from DB into a Settings struct
         let db_settings = match store
             .get_all_settings(crate::db::UserId::from(user_id))
@@ -165,9 +190,8 @@ impl Config {
             }
         };
 
-        let ctx = EnvContext::capture_ambient();
         let merged = runtime_support::merged_settings_with_toml(&db_settings, toml_path)?;
-        Self::from_context(&ctx, &merged).await
+        Self::from_context(ctx, &merged).await
     }
 
     /// Load configuration from environment variables only (no database).

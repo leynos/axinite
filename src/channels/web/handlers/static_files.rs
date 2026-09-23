@@ -208,7 +208,6 @@ pub async fn logs_level_set_handler(
     tracing::info!("Log level changed to '{}'", handle.current_level());
     Ok(Json(serde_json::json!({ "level": handle.current_level() })))
 }
-
 pub async fn gateway_status_handler(
     State(state): State<Arc<GatewayState>>,
 ) -> Json<GatewayStatusResponse> {
@@ -239,9 +238,12 @@ pub async fn gateway_status_handler(
         (None, None, None)
     };
 
-    let restart_enabled = std::env::var("AXINITE_IN_DOCKER")
-        .map(|v| v.to_lowercase() == "true")
-        .unwrap_or(false);
+    let restart_enabled = {
+        #[expect(clippy::disallowed_methods, reason = "transitional #333: EnvContext")]
+        std::env::var("AXINITE_IN_DOCKER")
+    }
+    .map(|v| v.to_lowercase() == "true")
+    .unwrap_or(false);
 
     Json(GatewayStatusResponse {
         version: env!("CARGO_PKG_VERSION").to_string(),
