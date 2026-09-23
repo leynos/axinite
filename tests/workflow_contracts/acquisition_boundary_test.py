@@ -25,6 +25,7 @@ import pytest
 from _workflow_policy import declared_jobs, jobs_in, load, workflow_paths
 from contract_sources import SourceReadError, matching_entries, read_source
 from nextest_config import profiles_of
+from nextest_versions import read_workflow_texts
 from suite_lanes import suite_lanes_of
 from timeout_budgets import compile_contract_binaries
 
@@ -63,6 +64,7 @@ ENTRY_POINTS: typ.Final[dict[str, cabc.Callable[[Path], object]]] = {
     "jobs_in": lambda path: list(jobs_in(path / "ci.yml")),
     "read_source": lambda path: read_source(path / "ci.yml"),
     "profiles_of": lambda path: profiles_of(path / "nextest.toml"),
+    "read_workflow_texts": read_workflow_texts,
 }
 
 
