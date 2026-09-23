@@ -1229,6 +1229,70 @@ export DATABASE_URL=postgres://localhost/axinite
 Adjust the connection string if the local PostgreSQL instance requires a
 different host, user, or password.
 
+### When a skipped Postgres test is legitimate
+
+`try_test_pg_db` in `src/testing/postgres.rs` returns `None` when the database
+is unreachable, and the fixtures that call it return early. That is what lets a
+developer with no local Postgres run the rest of the suite, and it is the right
+default on a checkout.
+
+It is the wrong default on a lane that starts a Postgres service and points the
+tests at it. There, a skip reports success for tests that never connected, and
+the lane publishes coverage measured without them. A lane says so by exporting
+`AXINITE_REQUIRE_POSTGRES`, and the skip stops being available.
+
+| Variable                   | Value                            | Effect                                           |
+| -------------------------- | -------------------------------- | ------------------------------------------------ |
+| `AXINITE_REQUIRE_POSTGRES` | unset, empty or whitespace       | An unreachable database skips the Postgres tests |
+| `AXINITE_REQUIRE_POSTGRES` | any other value, readable or not | An unreachable database fails the run            |
+
+Three things about the shape are deliberate.
+
+**Only one cell of the table changes.** An authentication or configuration
+mistake was never skippable: `is_database_unavailable` lists transport and
+name-resolution failures only, so a passwordless URL has always failed loudly.
+The requirement closes the remaining hole, which is a service that did not
+start.
+
+**A value that cannot be read is still a promise.** The requirement is read with
+`std::env::var_os`, so a value the platform cannot render as Unicode is
+`Required`, not unset. Reading it with `std::env::var(..).ok()` folds that read
+failure onto the same `None` as an absent variable, which hands the skip back
+to the lane that asked for it to be gone, and says nothing.
+
+**The requirement and the database URL ship in one step.** `coverage.yml`
+exports `TEST_DATABASE_URL`, `DATABASE_URL` and `AXINITE_REQUIRE_POSTGRES` from
+the same step, guarded by `matrix.has_postgres`. Splitting them is the failure
+this guards against in both directions: a leg with the URL and no requirement
+keeps the skip, and a leg with the requirement and no URL fails on the
+passwordless fallback, which is issue #350 again. The `libsql-only` leg runs
+neither and keeps its skip.
+
+`tests/workflow_contracts/coverage_database_test.py` holds the contract. It
+asserts that each matrix leg's `has_postgres` matches whether its flags
+actually compile the `postgres` feature, resolved against the root manifest's
+`default` list, because `postgres` is a default feature and a leg gets it
+unless it passes `--no-default-features`; that the step exporting the URL also
+appends the requirement to `$GITHUB_ENV`; and that exactly one step exports it,
+guarded by `matrix.has_postgres`.
+
+The Rust side is tested in three layers, because the first two are each
+satisfied by a defect the third catches. `src/testing/postgres/tests.rs` holds
+a decision table over `skip_is_allowed` and `PostgresRequirement`, which is
+pure and says what each of the four cells means. Above that,
+`try_pg_db_at(url, requirement)` is driven against a refused connection on
+`127.0.0.1:1`, so the real error classification and the real branch run rather
+than a hand-built error. Both of those would still pass if `try_test_pg_db`
+handed the decision `Optional` instead of `from_env()`, which is the whole
+change, so the third layer asserts the wiring: an `#[ignore]`d test calls
+`try_test_pg_db` itself, and five cases run it in a child process with
+`AXINITE_REQUIRE_POSTGRES` unset, empty, whitespace, `1` and `false`, reading
+the child's exit status as the decision. A child process rather than a
+`set_var` because the environment is process-wide and is not a structural
+reason to serialize a test binary; the parent also asserts that the child ran a
+test at all, since a renamed child would otherwise make every case pass on a
+process that ran nothing.
+
 ### libSQL test databases
 
 Unit tests that exercise the libSQL backend call `LibSqlBackend::new_memory()`
