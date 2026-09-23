@@ -166,7 +166,7 @@ def test_the_estate_cannot_be_altered_by_a_contract_that_reads_it() -> None:
     """
     estate = read_estate()
     with pytest.raises(TypeError):
-        estate["invented.yml"] = {}  # type: ignore[index]
+        typ.cast("dict[str, object]", estate)["invented.yml"] = {}
 
 
 def test_a_missing_manifest_names_the_file(tmp_path: Path) -> None:

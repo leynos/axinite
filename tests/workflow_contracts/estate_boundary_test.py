@@ -34,12 +34,19 @@ if typ.TYPE_CHECKING:  # pragma: no cover - typing only
     from collections.abc import Callable
     from pathlib import Path
 
-#: Every public reading that scans a directory, by the name a failure reports.
-DIRECTORY_READERS: tuple[tuple[str, Callable[[Path], object]], ...] = (
-    ("read_workflows", read_workflows),
-    ("read_estate", read_estate),
-    ("estate_source", estate_source),
-    ("estate_jobs", estate_jobs),
+#: Every public reading that scans a directory. A failure names the reader by
+#: its `__name__`.
+DIRECTORY_READERS: tuple[Callable[[Path], object], ...] = (
+    read_workflows,
+    read_estate,
+    estate_source,
+    estate_jobs,
+)
+
+#: A directory-reader parameter, identified by the reader's name.
+EVERY_DIRECTORY_READER = pytest.mark.parametrize(
+    "reader",
+    [pytest.param(reader, id=reader.__name__) for reader in DIRECTORY_READERS],
 )
 
 #: A workflow with one job and one step, the smallest shape the isolation
@@ -64,40 +71,13 @@ FAULTY_WORKFLOWS: tuple[tuple[str, bytes, str], ...] = (
 )
 
 
-def _directory_with(tmp_path: Path, name: str, body: bytes) -> Path:
-    """Return a fresh workflow directory holding one file.
-
-    Parameters
-    ----------
-    tmp_path
-        The test's temporary directory.
-    name
-        The workflow's file name.
-    body
-        Its raw contents, so an undecodable file can be written as such.
-
-    Returns
-    -------
-    Path
-        The directory, to hand to a reader.
-    """
-    directory = tmp_path / "workflows"
-    directory.mkdir()
-    (directory / name).write_bytes(body)
-    return directory
-
-
-@pytest.mark.parametrize(
-    ("reader_name", "reader"),
-    [pytest.param(name, reader, id=name) for name, reader in DIRECTORY_READERS],
-)
+@EVERY_DIRECTORY_READER
 @pytest.mark.parametrize(
     ("body", "reason"),
     [pytest.param(body, reason, id=case) for case, body, reason in FAULTY_WORKFLOWS],
 )
 def test_a_faulty_workflow_is_named_on_every_directory_reading(
-    tmp_path: Path,
-    reader_name: str,
+    workflow_directory: Callable[[str, bytes], Path],
     reader: Callable[[Path], object],
     body: bytes,
     reason: str,
@@ -108,21 +88,18 @@ def test_a_faulty_workflow_is_named_on_every_directory_reading(
     is collecting, and an `OSError`, a `UnicodeDecodeError` or a `YAMLError`
     escaping there is a collection error, which reports no failures at all.
     """
-    directory = _directory_with(tmp_path, "odd.yml", body)
+    directory = workflow_directory("odd.yml", body)
     with pytest.raises(SourceError, match=reason) as raised:
         reader(directory)
     assert "odd.yml" in str(raised.value), (
-        f"{reader_name} must name the file it could not read; it said "
+        f"{reader.__name__} must name the file it could not read; it said "
         f"{raised.value}"
     )
 
 
-@pytest.mark.parametrize(
-    ("reader_name", "reader"),
-    [pytest.param(name, reader, id=name) for name, reader in DIRECTORY_READERS],
-)
+@EVERY_DIRECTORY_READER
 def test_a_missing_directory_is_named_on_every_directory_reading(
-    tmp_path: Path, reader_name: str, reader: Callable[[Path], object]
+    tmp_path: Path, reader: Callable[[Path], object]
 ) -> None:
     """A scan of nothing is a failure, not an estate of no workflows.
 
@@ -133,7 +110,7 @@ def test_a_missing_directory_is_named_on_every_directory_reading(
     with pytest.raises(SourceError, match="cannot be scanned") as raised:
         reader(absent)
     assert str(absent) in str(raised.value), (
-        f"{reader_name} must name the directory it could not scan; it said "
+        f"{reader.__name__} must name the directory it could not scan; it said "
         f"{raised.value}"
     )
 
@@ -143,10 +120,10 @@ def test_a_missing_directory_is_named_on_every_directory_reading(
     [pytest.param(body, reason, id=case) for case, body, reason in FAULTY_WORKFLOWS],
 )
 def test_a_faulty_workflow_is_named_when_read_alone(
-    tmp_path: Path, body: bytes, reason: str
+    workflow_directory: Callable[[str, bytes], Path], body: bytes, reason: str
 ) -> None:
     """The single-file reading converts the same faults as the scans."""
-    path = _directory_with(tmp_path, "odd.yml", body) / "odd.yml"
+    path = workflow_directory("odd.yml", body) / "odd.yml"
     with pytest.raises(SourceError, match=reason) as raised:
         read_workflow(path)
     assert "odd.yml" in str(raised.value), (
@@ -165,26 +142,30 @@ def test_a_missing_workflow_is_named_when_read_alone(tmp_path: Path) -> None:
     )
 
 
-def test_a_workflow_read_alone_is_its_parsed_document(tmp_path: Path) -> None:
+def test_a_workflow_read_alone_is_its_parsed_document(
+    workflow_directory: Callable[[str, bytes], Path],
+) -> None:
     """The positive half, without which the refusals prove nothing.
 
     A reader that raised for everything would pass every case above.
     """
-    path = _directory_with(tmp_path, "ci.yml", MINIMAL_WORKFLOW.encode()) / "ci.yml"
+    path = workflow_directory("ci.yml", MINIMAL_WORKFLOW.encode()) / "ci.yml"
     document = read_workflow(path)
     assert list(document.get("jobs", {})) == ["build"], (
         f"read_workflow should return the parsed document; it returned {document}"
     )
 
 
-def test_estate_source_hands_each_caller_its_own_copy(tmp_path: Path) -> None:
+def test_estate_source_hands_each_caller_its_own_copy(
+    workflow_directory: Callable[[str, bytes], Path],
+) -> None:
     """A nested change to one reading is invisible to the next.
 
     The outer mapping is a proxy, but a proxy is shallow: without the copy,
     appending to a job's `steps` would alter the cached parse and every
     contract that read it afterwards.
     """
-    directory = _directory_with(tmp_path, "ci.yml", MINIMAL_WORKFLOW.encode())
+    directory = workflow_directory("ci.yml", MINIMAL_WORKFLOW.encode())
     first = estate_source(directory)
     first["ci.yml"]["jobs"]["build"]["steps"].append({"run": "invented"})
     second = estate_source(directory)
@@ -195,9 +176,11 @@ def test_estate_source_hands_each_caller_its_own_copy(tmp_path: Path) -> None:
     )
 
 
-def test_estate_jobs_hands_each_caller_its_own_copy(tmp_path: Path) -> None:
+def test_estate_jobs_hands_each_caller_its_own_copy(
+    workflow_directory: Callable[[str, bytes], Path],
+) -> None:
     """A change to one job body is invisible to the next reading of it."""
-    directory = _directory_with(tmp_path, "ci.yml", MINIMAL_WORKFLOW.encode())
+    directory = workflow_directory("ci.yml", MINIMAL_WORKFLOW.encode())
     (first,) = estate_jobs(directory)
     first.body["runs-on"] = "ubicloud-standard-8"
     (second,) = estate_jobs(directory)
@@ -216,4 +199,4 @@ def test_an_isolated_copy_shares_nothing_with_its_original() -> None:
         f"isolated shared a nested list with its original: {original}"
     )
     with pytest.raises(TypeError):
-        copied["invented.yml"] = {}  # type: ignore[index]
+        typ.cast("dict[str, object]", copied)["invented.yml"] = {}

@@ -24,6 +24,9 @@ from _estate import isolated, read_estate
 from _suite_targets import read_default_features
 
 if typ.TYPE_CHECKING:  # pragma: no cover - typing only
+    from collections.abc import Callable
+    from pathlib import Path
+
     from _estate import Estate
 
 
@@ -79,3 +82,29 @@ def estate(_estate_source: Estate) -> Estate:
         The parsed documents, isolated from every other test's copy.
     """
     return isolated(_estate_source)
+
+
+@pytest.fixture
+def workflow_directory(tmp_path: Path) -> Callable[[str, bytes], Path]:
+    """Return a factory that writes one workflow into a fresh directory.
+
+    For the boundary cases, which state a fault against a temporary tree
+    rather than against the estate. The contents are bytes so that an
+    undecodable file can be written as such.
+
+    Returns
+    -------
+    Callable
+        Given a file name and its raw contents, writes that one file into a
+        new `workflows` directory under the test's temporary path and returns
+        the directory.
+    """
+
+    def write(name: str, body: bytes) -> Path:
+        """Write one workflow file into a fresh directory and return it."""
+        directory = tmp_path / "workflows"
+        directory.mkdir()
+        (directory / name).write_bytes(body)
+        return directory
+
+    return write
