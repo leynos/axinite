@@ -622,11 +622,13 @@ The current `Makefile` also includes:
 
 The Makefile resolves an unset, empty, or whitespace-only `CARGO` with
 `command -v cargo`, falling back to `~/.cargo/bin/cargo` when Cargo is not on
-`$PATH`. A non-empty
-caller override is preserved. `NEXTEST` defaults to the same resolved Cargo
-executable, quoted as one shell argument, so both variables consistently use
-the same Cargo binary. Override them by setting `CARGO` or `NEXTEST` in the
-environment before invoking `make`.
+`$PATH`. A non-empty caller override is preserved. `NEXTEST` defaults to the
+same resolved Cargo executable, quoted as one shell argument, so both variables
+consistently use the same Cargo binary. Override them by setting `CARGO` or
+`NEXTEST` in the environment before invoking `make`. `CARGO_AUDIT` remains a
+caller-supplied full-command override. When it is unset, the Makefile invokes
+the resolved Cargo executable with `CARGO_AUDIT_SUBCOMMAND`, which defaults to
+`audit`; set that variable to change only the audit subcommand.
 
 ### Whitaker linting
 

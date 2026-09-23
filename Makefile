@@ -13,8 +13,12 @@ BUNX ?= $(shell command -v bunx 2>/dev/null || printf '%s' "$$HOME/.bun/bin/bunx
 TEST_FEATURES ?= --features test-helpers
 NEXTEST_PROFILE ?= default
 MARKDOWNLINT_BASE ?= origin/main
-CARGO_AUDIT ?= audit
-CARGO_AUDIT_COMMAND = $(CARGO_COMMAND) $(call shell_quote,$(CARGO_AUDIT))
+CARGO_AUDIT_SUBCOMMAND ?= audit
+ifeq ($(origin CARGO_AUDIT),undefined)
+CARGO_AUDIT_COMMAND := $(CARGO_COMMAND) $(call shell_quote,$(value CARGO_AUDIT_SUBCOMMAND))
+else
+CARGO_AUDIT_COMMAND := $(value CARGO_AUDIT)
+endif
 WHITAKER ?= whitaker
 NIXIE ?= nixie
 UV ?= uv
@@ -149,16 +153,16 @@ audit: rust-audit
 rust-audit:
 	find . \
 		\( -path '*/target/*' -o -path '*/node_modules/*' -o -path '*/.venv/*' -o -path './crates/*' \) -prune -o \
-		-name Cargo.toml -exec sh -c 'set -e; cargo_command=$$1; audit_command=$$2; shift 2; for manifest do \
+		-name Cargo.toml -exec sh -c 'set -e; audit_command=$$1; shift 2; for manifest do \
 			manifest_dir=$$(dirname "$$manifest"); \
 			printf "Auditing Rust manifest %s\n" "$$manifest"; \
 			if [ -f "$$manifest_dir/Cargo.lock" ]; then \
 				python3 scripts/verify_audit_ignore_paths.py "$$manifest_dir/Cargo.lock"; \
-				(cd "$$manifest_dir" && "$$cargo_command" "$$audit_command" $(AUDIT_FLAGS) $(RUST_DECIMAL_AUDIT_FLAGS) $(LIBSQL_AUDIT_FLAGS)); \
+				(cd "$$manifest_dir" && eval "$$audit_command" $(AUDIT_FLAGS) $(RUST_DECIMAL_AUDIT_FLAGS) $(LIBSQL_AUDIT_FLAGS)); \
 			else \
-				(cd "$$manifest_dir" && "$$cargo_command" "$$audit_command" $(AUDIT_FLAGS)); \
+				(cd "$$manifest_dir" && eval "$$audit_command" $(AUDIT_FLAGS)); \
 			fi; \
-		done' sh $(CARGO_AUDIT_COMMAND) {} +
+		done' sh $(call shell_quote,$(value CARGO_AUDIT_COMMAND)) {} +
 
 test:
 	$(MAKE) build-github-tool-wasm
