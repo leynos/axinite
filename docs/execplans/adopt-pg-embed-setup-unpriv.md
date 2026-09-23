@@ -8,11 +8,18 @@ Status: NOT STARTED
 
 ## Purpose / big picture
 
-After this work, every lane that runs the workspace suite has a PostgreSQL to
-run it against, and no workflow declares a service container to provide one. A
-developer with no local PostgreSQL gets one too, from the same code path, so
-the outcome a contributor sees is that the fifty-one PostgreSQL-backed tests
-stop returning early and start asserting.
+After this work, every Linux lane that runs the workspace suite has a
+PostgreSQL to run it against, and no workflow declares a service container to
+provide one. A developer on Linux or macOS with no local PostgreSQL gets one
+too, from the same code path, so the outcome a contributor sees is that the
+fifty-one PostgreSQL-backed tests stop returning early and start asserting.
+
+The scope is Unix, deliberately. No Windows lane runs the workspace suite today:
+`test.yml`'s `windows-build` job only runs `cargo check`. The teardown and the
+cross-process lock below are Unix-only, so no embedded cluster is bootstrapped
+on Windows, and a Windows developer keeps the `TEST_DATABASE_URL` path and
+today's skip. Extending the suite to Windows is a separate plan with its own
+lifecycle, cleanup and acceptance criteria.
 
 Success is observable in four ways. First, `try_test_pg_db` in
 `src/testing/postgres.rs` returns a live backend on a checkout with no database
@@ -72,17 +79,24 @@ with a service container.
   implementation had to build a migration-hash template mechanism because it
   had no such path; this repository does not.
 
-What is already in place on the CI side:
+What is in place on the CI side. This plan depends on pull request `#375` (fail
+rather than skip when a lane promised a database), which introduces
+`AXINITE_REQUIRE_POSTGRES`; the items marked below arrive with it.
 
 - `coverage.yml`'s `coverage` job declares the `pgvector/pgvector:pg16`
-  service, applies migrations with `psql`, and exports `TEST_DATABASE_URL`,
-  `DATABASE_URL` and `AXINITE_REQUIRE_POSTGRES` from one step guarded by
-  `matrix.has_postgres`.
-- `tests/workflow_contracts/coverage_database_test.py` asserts that shape in
-  both directions: that a leg's `has_postgres` matches whether its flags
-  compile the `postgres` feature, that the URL step also exports the
-  requirement, and that exactly one step does so. Those assertions describe the
-  service arrangement and will be rewritten by this work, not merely extended.
+  service, applies migrations with `psql`, and exports `TEST_DATABASE_URL` and
+  `DATABASE_URL` from one step guarded by `matrix.has_postgres`. With `#375`,
+  the same step also exports `AXINITE_REQUIRE_POSTGRES`. `coverage.yml` runs on
+  pushes to `main` and on dispatch, not on pull requests.
+- The pull-request lane, `test.yml`'s `tests` job, exports none of the three.
+  Exporting `AXINITE_REQUIRE_POSTGRES` there is the second success criterion
+  above, and the risks below say why it waits for a proven bootstrap.
+- `tests/workflow_contracts/coverage_database_test.py` asserts the coverage
+  shape in both directions: that a leg's `has_postgres` matches whether its
+  flags compile the `postgres` feature and, with `#375`, that the URL step also
+  exports the requirement and that exactly one step does so. Those assertions
+  describe the service arrangement and will be rewritten by this work, not
+  merely extended.
 - `.config/nextest.toml` declares the `default` and `ci` profiles and no test
   groups.
 
@@ -106,7 +120,14 @@ What is already in place on the CI side:
 - Do not remove the `TEST_DATABASE_URL` path. A developer or a lane with a real
   database must still be able to point the suite at it, and the coverage lane
   may want to keep doing so while the adoption beds in.
-- Keep `AXINITE_REQUIRE_POSTGRES` meaning what it means today: any value, even
+- `TEST_DATABASE_URL` takes precedence. When it is set, the suite uses that
+  database and never bootstraps the embedded cluster, and an unreachable
+  configured database is never replaced by the embedded one: a silent fallback
+  would test a different database from the one the developer or lane asked for,
+  and hide the misconfiguration that made it unreachable.
+- An unreachable configured database keeps today's behaviour. With
+  `AXINITE_REQUIRE_POSTGRES` set it is a failure; unset, it is a skip.
+- Keep `AXINITE_REQUIRE_POSTGRES` meaning what `#375` defines: any value, even
   one the platform cannot render as Unicode, makes an unreachable database a
   failure rather than a skip.
 
@@ -135,12 +156,14 @@ nextest, where each binary is a separate process. A server still running holds
 the data directory, and the next binary cannot bootstrap on it.
 
 The reference implementation bridges this with a Unix `atexit` handler that
-reads `postmaster.pid`, re-validates the recorded PID against the running one
-so a reused PID is not signalled, sends `SIGTERM`, waits five seconds in
+reads `postmaster.pid`, sends `SIGTERM`, waits five seconds in
 hundred-millisecond ticks, then sends `SIGKILL`. Axinite runs the library test
-binary plus several integration binaries, so it needs the same. Windows gets
-nothing, which matches the reference implementation and is acceptable because
-the PostgreSQL-backed decisions are asserted on Linux.
+binary plus several integration binaries, so it needs the same, with one
+tightening: the server can exit during the wait and its PID be reused, so the
+handler re-reads `postmaster.pid` and checks the process identity immediately
+before each signal, and skips that signal when either check fails. Windows gets
+nothing, which matches the reference implementation and the Unix scope stated
+in the purpose.
 
 ### 2. Bootstrap retry outside the cached failure
 
@@ -226,8 +249,9 @@ says what to do if they come in above the service container's.
   `coverage_database_test.py` describe the service arrangement faithfully.
   Extending them to describe an absent service is not an edit; the assertions
   change direction.
-- **Platform coverage is partial.** Teardown and the cross-process lock are
-  Unix-only. A Windows lane runs the tests in-process with no cleanup, which is
+- **Platform coverage is Unix only.** Teardown and the cross-process lock are
+  Unix-only, so the embedded cluster is too; see the purpose. A Windows lane
+  that later ran the suite would need its own lifecycle and cleanup, which is
   untested territory in the reference implementation too.
 
 ## Progress
