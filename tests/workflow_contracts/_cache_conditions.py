@@ -149,12 +149,120 @@ def _cache_hit_faults(terms: tuple[str, ...], restore_ids: frozenset[str]) -> li
     return []
 
 
+def _empty_fault(collapsed: str, terms: tuple[str, ...]) -> str | None:
+    """Return the fault for an expression that says nothing at all.
+
+    Parameters
+    ----------
+    collapsed
+        The `if` expression with its whitespace collapsed.
+    terms
+        Its `&&`-separated terms, unused here but part of the shared shape
+        check signature.
+
+    Returns
+    -------
+    str or None
+        The fault, or `None` when there is a condition to read.
+    """
+    del terms
+    if collapsed:
+        return None
+    return "it carries no condition at all, so every leg writes the key"
+
+
+def _disjunction_fault(collapsed: str, terms: tuple[str, ...]) -> str | None:
+    """Return the fault for an expression with an alternative arm.
+
+    Parameters
+    ----------
+    collapsed
+        The `if` expression with its whitespace collapsed.
+    terms
+        Its `&&`-separated terms, unused here.
+
+    Returns
+    -------
+    str or None
+        The fault, or `None` when the expression has no `||`.
+    """
+    del terms
+    if DISJUNCTION not in collapsed:
+        return None
+    return (
+        f"it contains {DISJUNCTION!r}. An alternative arm can admit another "
+        "event or another leg while every approved term is still present, "
+        "so a disjunction is refused rather than judged term by term"
+    )
+
+
+def _grouping_fault(collapsed: str, terms: tuple[str, ...]) -> str | None:
+    """Return the fault for an expression grouped with parentheses.
+
+    Parameters
+    ----------
+    collapsed
+        The `if` expression with its whitespace collapsed.
+    terms
+        Its `&&`-separated terms, unused here.
+
+    Returns
+    -------
+    str or None
+        The fault, or `None` when the expression has no parentheses.
+    """
+    del terms
+    if "(" not in collapsed and ")" not in collapsed:
+        return None
+    return (
+        "it is grouped with parentheses, which this reader does not take "
+        "apart; the approved predicate is four plain conjuncts"
+    )
+
+
+def _stray_operator_fault(collapsed: str, terms: tuple[str, ...]) -> str | None:
+    """Return the fault for an expression with an empty conjunct.
+
+    Parameters
+    ----------
+    collapsed
+        The `if` expression with its whitespace collapsed.
+    terms
+        Its `&&`-separated terms, empty pieces included.
+
+    Returns
+    -------
+    str or None
+        The fault, or `None` when every term has content.
+    """
+    if all(terms):
+        return None
+    return (
+        f"it has a stray {CONJUNCTION!r}: {collapsed!r} splits into "
+        f"{list(terms)}, one of which is empty. GitHub does not evaluate "
+        "that expression, and a reader that dropped the empty piece would "
+        "compare the same conjunct set as the well-formed condition"
+    )
+
+
+#: The shape checks, in the order they are asked. The order is part of the
+#: meaning: an empty expression also splits into one empty term, and it is
+#: reported as carrying no condition rather than as a stray operator.
+SHAPE_CHECKS = (
+    _empty_fault,
+    _disjunction_fault,
+    _grouping_fault,
+    _stray_operator_fault,
+)
+
+
 def _shape_faults(collapsed: str, terms: tuple[str, ...]) -> list[str]:
     """Return what is wrong with an expression before its terms are compared.
 
     These are the readings that make the conjunct comparison meaningless
     rather than merely failing it: there is nothing to compare, or the
-    expression is not a plain conjunction at all.
+    expression is not a plain conjunction at all. Each is its own predicate
+    in `SHAPE_CHECKS`; this reports the first that finds a fault.
 
     Parameters
     ----------
@@ -169,32 +277,10 @@ def _shape_faults(collapsed: str, terms: tuple[str, ...]) -> list[str]:
         One sentence, or none when the expression is a well-formed
         conjunction whose terms can be compared with the approved set.
     """
-    if not collapsed:
-        return ["it carries no condition at all, so every leg writes the key"]
-    if DISJUNCTION in collapsed:
-        return [
-            (
-                f"it contains {DISJUNCTION!r}. An alternative arm can admit another "
-                "event or another leg while every approved term is still present, "
-                "so a disjunction is refused rather than judged term by term"
-            )
-        ]
-    if "(" in collapsed or ")" in collapsed:
-        return [
-            (
-                "it is grouped with parentheses, which this reader does not take "
-                "apart; the approved predicate is four plain conjuncts"
-            )
-        ]
-    if not all(terms):
-        return [
-            (
-                f"it has a stray {CONJUNCTION!r}: {collapsed!r} splits into "
-                f"{list(terms)}, one of which is empty. GitHub does not evaluate "
-                "that expression, and a reader that dropped the empty piece would "
-                "compare the same conjunct set as the well-formed condition"
-            )
-        ]
+    for check in SHAPE_CHECKS:
+        fault = check(collapsed, terms)
+        if fault is not None:
+            return [fault]
     return []
 
 

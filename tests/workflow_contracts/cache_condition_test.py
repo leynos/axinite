@@ -225,8 +225,14 @@ def test_a_stray_operator_is_refused(stray: str) -> None:
     Each of these carries all four approved conjuncts and nothing else, so a
     reader that discarded the empty piece would find the exact conjunct set
     it wanted and accept an expression GitHub does not evaluate.
+
+    The fault must name the stray operator, not merely exist. The empty piece
+    also reads as an extra term, so a bare "some fault" assertion passed with
+    the stray-operator check deleted, while the report blamed a term nobody
+    wrote.
     """
-    assert save_condition_faults(stray, RESTORE_IDS), (
-        f"{stray!r} was accepted; it has a stray operator, so it is not an "
-        "expression the approved predicate can be read out of"
+    faults = save_condition_faults(stray, RESTORE_IDS)
+    assert any("stray" in fault for fault in faults), (
+        f"{stray!r} should be refused for its stray operator, so it is not an "
+        f"expression the approved predicate can be read out of; got {faults}"
     )
