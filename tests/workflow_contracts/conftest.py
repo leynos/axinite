@@ -92,6 +92,12 @@ def workflow_directory(tmp_path: Path) -> Callable[[str, bytes], Path]:
     rather than against the estate. The contents are bytes so that an
     undecodable file can be written as such.
 
+    Parameters
+    ----------
+    tmp_path
+        pytest's per-test temporary directory, under which each call
+        creates the `workflows` directory.
+
     Returns
     -------
     Callable

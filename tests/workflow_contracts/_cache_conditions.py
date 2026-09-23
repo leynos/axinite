@@ -150,21 +150,7 @@ def _cache_hit_faults(terms: tuple[str, ...], restore_ids: frozenset[str]) -> li
 
 
 def _empty_fault(collapsed: str, terms: tuple[str, ...]) -> str | None:
-    """Return the fault for an expression that says nothing at all.
-
-    Parameters
-    ----------
-    collapsed
-        The `if` expression with its whitespace collapsed.
-    terms
-        Its `&&`-separated terms, unused here but part of the shared shape
-        check signature.
-
-    Returns
-    -------
-    str or None
-        The fault, or `None` when there is a condition to read.
-    """
+    """Return the fault for an expression that says nothing at all, if it does."""
     del terms
     if collapsed:
         return None
@@ -172,20 +158,7 @@ def _empty_fault(collapsed: str, terms: tuple[str, ...]) -> str | None:
 
 
 def _disjunction_fault(collapsed: str, terms: tuple[str, ...]) -> str | None:
-    """Return the fault for an expression with an alternative arm.
-
-    Parameters
-    ----------
-    collapsed
-        The `if` expression with its whitespace collapsed.
-    terms
-        Its `&&`-separated terms, unused here.
-
-    Returns
-    -------
-    str or None
-        The fault, or `None` when the expression has no `||`.
-    """
+    """Return the fault for an expression with an `||` arm, if it has one."""
     del terms
     if DISJUNCTION not in collapsed:
         return None
@@ -197,20 +170,7 @@ def _disjunction_fault(collapsed: str, terms: tuple[str, ...]) -> str | None:
 
 
 def _grouping_fault(collapsed: str, terms: tuple[str, ...]) -> str | None:
-    """Return the fault for an expression grouped with parentheses.
-
-    Parameters
-    ----------
-    collapsed
-        The `if` expression with its whitespace collapsed.
-    terms
-        Its `&&`-separated terms, unused here.
-
-    Returns
-    -------
-    str or None
-        The fault, or `None` when the expression has no parentheses.
-    """
+    """Return the fault for an expression grouped with parentheses, if it is."""
     del terms
     if "(" not in collapsed and ")" not in collapsed:
         return None
@@ -221,20 +181,7 @@ def _grouping_fault(collapsed: str, terms: tuple[str, ...]) -> str | None:
 
 
 def _stray_operator_fault(collapsed: str, terms: tuple[str, ...]) -> str | None:
-    """Return the fault for an expression with an empty conjunct.
-
-    Parameters
-    ----------
-    collapsed
-        The `if` expression with its whitespace collapsed.
-    terms
-        Its `&&`-separated terms, empty pieces included.
-
-    Returns
-    -------
-    str or None
-        The fault, or `None` when every term has content.
-    """
+    """Return the fault for an expression with an empty conjunct, if it has one."""
     if all(terms):
         return None
     return (
@@ -247,7 +194,9 @@ def _stray_operator_fault(collapsed: str, terms: tuple[str, ...]) -> str | None:
 
 #: The shape checks, in the order they are asked. The order is part of the
 #: meaning: an empty expression also splits into one empty term, and it is
-#: reported as carrying no condition rather than as a stray operator.
+#: reported as carrying no condition rather than as a stray operator. Every
+#: check takes the same two arguments so they can be asked in turn; a check
+#: that needs only the collapsed text discards the terms.
 SHAPE_CHECKS = (
     _empty_fault,
     _disjunction_fault,
