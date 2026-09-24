@@ -25,7 +25,9 @@ fixture fails that test with the error, naming the file.
 
 from __future__ import annotations
 
+import tempfile
 import typing as typ
+from pathlib import Path
 
 import pytest
 from _estate import isolated, read_estate
@@ -33,8 +35,7 @@ from _sources import SourceError
 from _suite_targets import read_default_features
 
 if typ.TYPE_CHECKING:  # pragma: no cover - typing only
-    from collections.abc import Callable
-    from pathlib import Path
+    from collections.abc import Callable, Iterable
 
     from _estate import Estate
     from _workflow_policy import Job
@@ -62,16 +63,44 @@ def pytest_generate_tests(metafunc: pytest.Metafunc) -> None:
     select = getattr(metafunc.module, JOB_SELECTOR, None)
     if select is None or JOB_ARGUMENT not in metafunc.fixturenames:
         return
+    values, ids = _job_parameters(select, metafunc.module.__name__)
+    metafunc.parametrize(JOB_ARGUMENT, values, ids=ids, indirect=True)
+
+
+class EmptySelection:
+    """The parameter a selector that returned no jobs is replaced with.
+
+    pytest skips a test parametrized over nothing, so a selector that
+    silently lost every job would turn its module's per-job contracts into
+    skips, which a run reports as a pass. This stands in their place and
+    `job_or_failure` fails on it.
+
+    Attributes
+    ----------
+    module
+        The contract module whose selector came back empty.
+    """
+
+    def __init__(self, module: str) -> None:
+        self.module = module
+
+
+def _job_parameters(
+    select: Callable[[], Iterable[object]], module: str
+) -> tuple[list[object], list[str]]:
+    """Return the `job` parameters, and their ids, one selector yields.
+
+    A `SourceError` and an empty selection each become a single parameter
+    that `job_or_failure` fails on, so neither escapes as a collection error
+    or collapses into a skip.
+    """
     try:
-        jobs: tuple[object, ...] = tuple(select())
+        jobs = list(select())
     except SourceError as error:
-        metafunc.parametrize(
-            JOB_ARGUMENT, [error], ids=[f"unreadable-{error.path.name}"], indirect=True
-        )
-        return
-    metafunc.parametrize(
-        JOB_ARGUMENT, jobs, ids=[str(job) for job in jobs], indirect=True
-    )
+        return [error], [f"unreadable-{error.path.name}"]
+    if not jobs:
+        return [EmptySelection(module)], ["no-jobs-selected"]
+    return jobs, [str(job) for job in jobs]
 
 
 @pytest.fixture
@@ -110,10 +139,15 @@ def job_or_failure(parameter: object) -> Job:
     ------
     pytest.fail.Exception
         When the parameter is a `SourceError`, with its message, which names
-        the file.
+        the file, or an `EmptySelection`, naming the module.
     """
     if isinstance(parameter, SourceError):
         pytest.fail(f"the workflow estate could not be read: {parameter}")
+    if isinstance(parameter, EmptySelection):
+        pytest.fail(
+            f"{parameter.module}'s {JOB_SELECTOR} selected no jobs, so every "
+            "per-job contract there would be skipped"
+        )
     return typ.cast("Job", parameter)
 
 
@@ -183,19 +217,20 @@ def workflow_directory(tmp_path: Path) -> Callable[[str, bytes], Path]:
     ----------
     tmp_path
         pytest's per-test temporary directory, under which each call
-        creates the `workflows` directory.
+        creates a `workflows` directory of its own.
 
     Returns
     -------
     Callable
         Given a file name and its raw contents, writes that one file into a
         new `workflows` directory under the test's temporary path and returns
-        the directory.
+        the directory. A second call gets a second directory.
     """
 
     def write(name: str, body: bytes) -> Path:
         """Write one workflow file into a fresh directory and return it."""
-        directory = tmp_path / "workflows"
+        # A fresh parent per call, so a test that writes two trees gets two.
+        directory = Path(tempfile.mkdtemp(dir=tmp_path)) / "workflows"
         directory.mkdir()
         (directory / name).write_bytes(body)
         return directory

@@ -156,6 +156,22 @@ def test_a_workflow_read_alone_is_its_parsed_document(
     )
 
 
+def test_each_call_of_the_factory_gets_its_own_directory(
+    workflow_directory: Callable[[str, bytes], Path],
+) -> None:
+    """Two trees in one test stay two trees.
+
+    A factory that reused one path would raise `FileExistsError` on the
+    second call, or, if it tolerated the directory, mix the two trees.
+    """
+    first = workflow_directory("ci.yml", MINIMAL_WORKFLOW.encode())
+    second = workflow_directory("lint.yml", MINIMAL_WORKFLOW.encode())
+    assert first != second, f"both calls wrote into {first}"
+    assert sorted(path.name for path in second.iterdir()) == ["lint.yml"], (
+        f"the second tree should hold only its own file: {list(second.iterdir())}"
+    )
+
+
 def test_estate_source_hands_each_caller_its_own_copy(
     workflow_directory: Callable[[str, bytes], Path],
 ) -> None:

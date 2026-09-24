@@ -11,6 +11,7 @@ Run via ``make test-workflow-contracts``.
 
 from __future__ import annotations
 
+import re
 import types
 import typing as typ
 from pathlib import Path
@@ -18,7 +19,7 @@ from pathlib import Path
 import pytest
 from _sources import SourceError
 from _workflow_policy import Job
-from conftest import job_or_failure, pytest_generate_tests
+from conftest import EmptySelection, job_or_failure, pytest_generate_tests
 
 
 class _Collector:
@@ -26,7 +27,9 @@ class _Collector:
 
     def __init__(self, selector: object, fixturenames: tuple[str, ...]) -> None:
         """Record the module's selector and the test's arguments."""
-        self.module = types.SimpleNamespace(JOB_SELECTOR=selector)
+        self.module = types.SimpleNamespace(
+            JOB_SELECTOR=selector, __name__="stub_contract_test"
+        )
         self.fixturenames = fixturenames
         self.calls: list[dict[str, object]] = []
 
@@ -63,8 +66,28 @@ def test_a_selector_that_cannot_read_becomes_one_named_parameter() -> None:
 def test_the_error_fails_the_test_with_the_path() -> None:
     """The fixture turns the carried error into a failure naming the file."""
     error = SourceError(Path("/tree/broken.yml"), "is not valid YAML (stray colon)")
-    with pytest.raises(pytest.fail.Exception, match="broken.yml"):
+    with pytest.raises(pytest.fail.Exception, match=re.escape(str(error.path))):
         job_or_failure(error)
+
+
+def test_a_selector_that_finds_nothing_becomes_one_failing_parameter() -> None:
+    """An empty selection fails by name rather than collapsing into skips.
+
+    pytest skips a test parametrized over an empty list, so without the
+    stand-in every per-job contract in the module would read as passing.
+    """
+    collector = _Collector(tuple, ("job",))
+    pytest_generate_tests(typ.cast("pytest.Metafunc", collector))
+    (call,) = collector.calls
+    (value,) = typ.cast("list[object]", call["values"])
+    assert isinstance(value, EmptySelection), (
+        f"the parameter should stand for the empty selection; got {value!r}"
+    )
+    assert call["ids"] == ["no-jobs-selected"], (
+        f"the parameter should say nothing was selected; got {call['ids']}"
+    )
+    with pytest.raises(pytest.fail.Exception, match="stub_contract_test's"):
+        job_or_failure(value)
 
 
 def test_a_readable_selector_parametrizes_each_job_by_name() -> None:
