@@ -100,6 +100,10 @@ def test_a_local_call_is_matched_by_shape(uses: str, expected: str | None) -> No
         pytest.param(
             "leynos/axinite/.github/workflows/x.yml@main", id="qualified-self"
         ),
+        pytest.param(
+            "Leynos/Axinite/.github/workflows/x.yml@main",
+            id="qualified-self-in-another-case",
+        ),
     ],
 )
 def test_a_call_the_closure_cannot_read_is_refused(uses: str) -> None:
@@ -140,17 +144,22 @@ def test_the_closure_follows_both_spellings_to_an_inherited_token() -> None:
                       TOKEN: ${{ secrets.CS_ACCESS_TOKEN }}
         """,
     )
-    assert pull_request_surface(estate) == {"gate.yml", "middle.yml", "leak.yml"}
+    surface = pull_request_surface(estate)
+    assert surface == {"gate.yml", "middle.yml", "leak.yml"}, (
+        f"the chain should reach the callee's callee; the surface is {surface}"
+    )
     faults = "\n".join(pull_request_faults(estate))
     assert (
         "leak.yml is reachable from a pull request and mentions 'codescene.io'"
         in faults
-    )
+    ), f"the host in the callee must be reported; the faults are {faults}"
     assert (
         "leak.yml is reachable from a pull request and mentions 'cs_access_token'"
         in faults
+    ), f"the token in the callee must be reported; the faults are {faults}"
+    assert "middle.yml:call forwards every secret" in faults, (
+        f"`secrets: inherit` on the chain must be reported; the faults are {faults}"
     )
-    assert "middle.yml:call forwards every secret" in faults
 
 
 @pytest.mark.parametrize(
@@ -188,7 +197,10 @@ def test_a_workflow_run_chain_onto_a_pull_request_workflow_is_on_the_surface() -
         gate="name: Gate\non: pull_request\n",
         after="on:\n  workflow_run:\n    workflows: [Gate]\n",
     )
-    assert pull_request_surface(estate) == {"gate.yml", "after.yml"}
+    surface = pull_request_surface(estate)
+    assert surface == {"gate.yml", "after.yml"}, (
+        f"the chained workflow should be on the surface; it is {surface}"
+    )
 
 
 def test_a_clean_surface_has_no_faults() -> None:
@@ -200,7 +212,8 @@ def test_a_clean_surface_has_no_faults() -> None:
             + UPLOADER_STEP
         ),
     )
-    assert pull_request_faults(estate) == []
+    faults = pull_request_faults(estate)
+    assert faults == [], f"a clean surface should have no faults; it has {faults}"
 
 
 @pytest.mark.parametrize(
@@ -255,4 +268,7 @@ def test_the_push_surface_follows_calls() -> None:
         "    uses: ./.github/workflows/called.yml\n",
         called="on: workflow_call\n",
     )
-    assert push_surface(estate) == {"trunk.yml", "called.yml"}
+    surface = push_surface(estate)
+    assert surface == {"trunk.yml", "called.yml"}, (
+        f"the callee of a push workflow should be on the surface; it is {surface}"
+    )

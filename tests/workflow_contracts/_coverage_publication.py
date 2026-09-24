@@ -92,7 +92,9 @@ def local_callee(uses: str) -> str | None:
 
 def _repository_path(reference: str) -> str | None:
     """Return a same-repository reference's path, or `None` for another repo."""
-    if reference.startswith(f"{REPOSITORY}/"):
+    # GitHub reads the owner and repository names case-insensitively, so
+    # `Leynos/Axinite/...` is this repository too.
+    if reference.casefold().startswith(f"{REPOSITORY}/".casefold()):
         raise WorkflowReadError(f"qualified self-call {reference!r}; use `./` or `$/`")
     if reference.startswith("$/"):
         if "@" in reference:
