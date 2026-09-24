@@ -19,7 +19,7 @@ import typing as typ
 import yaml
 
 if typ.TYPE_CHECKING:  # pragma: no cover - typing only
-    from collections.abc import Mapping
+    from collections.abc import Iterable, Mapping
     from pathlib import Path
 
 #: Every parsed workflow, keyed by file name.
@@ -150,12 +150,17 @@ def _events(declared: object) -> dict[str, object]:
     match declared:
         case str():
             return {declared: None}
-        case list() if all(isinstance(event, str) for event in declared):
+        case list() if _all_names(declared):
             return dict.fromkeys(typ.cast("list[str]", declared))
-        case dict() if all(isinstance(event, str) for event in declared):
+        case dict() if _all_names(declared):
             return {str(event): value for event, value in declared.items()}
         case _:
             raise WorkflowReadError(f"an `on:` of unmodelled shape {declared!r}")
+
+
+def _all_names(declared: Iterable[object]) -> bool:
+    """Return whether every event an `on:` list or mapping names is a string."""
+    return all(isinstance(event, str) for event in declared)
 
 
 def jobs(document: Mapping[object, object]) -> dict[str, dict[object, object]]:
