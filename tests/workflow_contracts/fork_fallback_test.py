@@ -24,10 +24,16 @@ Run via ``make test-workflow-contracts``.
 
 from __future__ import annotations
 
-import re
-
 import pytest
 from _estate import Estate, estate_source, jobs_across
+from _fork_lanes import (
+    FORKABLE_EVENT,
+    HOSTED_LABEL,
+    is_a_bare_matrix_reference,
+    opaque_runs_on_values,
+    paid_arms_before_the_fork,
+    runs_on_scalar,
+)
 from _workflow_policy import (
     FORK_CONDITION,
     UBICLOUD_LABEL_PREFIX,
@@ -37,46 +43,6 @@ from _workflow_policy import (
     runs_on_event,
     triggers,
 )
-
-#: The trigger this rule is about. A `push`, a `schedule` and a
-#: `workflow_dispatch` all run in this repository's own context, where an
-#: Ubicloud runner is available.
-FORKABLE_EVENT = "pull_request"
-
-#: What a fork's pull request must be given instead.
-HOSTED_LABEL = "ubuntu-latest"
-
-#: The one expression form allowed to stay opaque: a matrix reference, whose
-#: labels are in the matrix rather than in the expression. Naming it rather
-#: than exempting every unreadable form means a new one has to be added here
-#: on purpose.
-#: A `runs-on` that is nothing but one matrix key: `${{ matrix.runner }}`.
-#: Exempt from the assertion below because the label it resolves to is in the
-#: matrix rather than the expression, and the sizing contract reads it there.
-#:
-#: The match is anchored on purpose. Testing whether the text merely contains
-#: `matrix.` exempted every expression that mentioned a leg anywhere, which
-#: includes a real selection the reader cannot split:
-#: `${{ matrix.name == 'x' && 'ubuntu-latest' || 'ubicloud-standard-2' }}`
-#: asks for a paid runner on every leg but one, and a fork's pull request
-#: reaching such a leg is stranded exactly as this file exists to prevent.
-BARE_MATRIX_REFERENCE_RE: re.Pattern[str] = re.compile(
-    r"^\$\{\{\s*matrix\.[A-Za-z0-9_-]+\s*\}\}$"
-)
-
-
-def _is_a_bare_matrix_reference(declared: str) -> bool:
-    """Report whether a `runs-on` is one matrix key and nothing else."""
-    return BARE_MATRIX_REFERENCE_RE.fullmatch(declared) is not None
-
-
-def _runs_on(job: Job) -> str:
-    """Return a job's `runs-on` scalar with its folded line breaks joined."""
-    declared = job.body.get("runs-on")
-    if isinstance(declared, dict):
-        declared = declared.get("labels")
-    return " ".join(str(declared).split()) if isinstance(declared, str) else ""
-
 
 def _forkable_ubicloud_jobs(estate: Estate) -> tuple[Job, ...]:
     """Return every Ubicloud job a pull request can dispatch."""
@@ -119,17 +85,12 @@ def test_the_selector_finds_the_lanes(estate: Estate) -> None:
     )
 
 
-def _is_opaque(declared: str) -> bool:
-    """Report whether a scalar is an expression the reader cannot split."""
-    return declared.startswith("${{") and conditional_runs_on_arms(declared) is None
-
-
 def _opaque_expression_jobs(estate: Estate) -> tuple[tuple[Job, str], ...]:
-    """Return every job whose `runs-on` expression the reader cannot split."""
+    """Return every job with a `runs-on` expression the reader cannot resolve."""
     return tuple(
         (job, declared)
-        for job, declared in ((job, _runs_on(job)) for job in jobs_across(estate))
-        if _is_opaque(declared)
+        for job in jobs_across(estate)
+        for declared in opaque_runs_on_values(job)
     )
 
 
@@ -153,54 +114,12 @@ def test_no_lane_hides_behind_an_expression_the_reader_cannot_split(
     hidden = [
         (job, declared)
         for job, declared in _opaque_expression_jobs(estate)
-        if not _is_a_bare_matrix_reference(declared)
+        if not is_a_bare_matrix_reference(declared)
     ]
     assert not hidden, (
         "these lanes compute `runs-on` in a form the placement reader cannot "
         "split, so every contract that selects on the runner silently skips "
         f"them: {[(str(job), declared) for job, declared in hidden]}"
-    )
-
-
-@pytest.mark.parametrize(
-    ("declared", "exempt"),
-    [
-        pytest.param("${{ matrix.runner }}", True, id="a-bare-reference"),
-        pytest.param("${{ matrix.os }}", True, id="another-bare-reference"),
-        pytest.param("${{  matrix.runner  }}", True, id="padded"),
-        pytest.param(
-            "${{ matrix.name == 'x' && 'ubuntu-latest' "
-            f"|| '{UBICLOUD_LABEL_PREFIX}standard-2' }}}}",
-            False,
-            id="a-selection-wearing-a-matrix-key",
-        ),
-        pytest.param(
-            f"${{{{ matrix.runner || '{UBICLOUD_LABEL_PREFIX}standard-2' }}}}",
-            False,
-            id="a-reference-with-a-fallback",
-        ),
-        pytest.param(
-            "${{ github.actor == 'x' && 'ubuntu-latest' || 'matrix.runner' }}",
-            False,
-            id="the-key-named-inside-a-literal",
-        ),
-    ],
-)
-def test_only_a_bare_matrix_reference_is_exempt(declared: str, exempt: bool) -> None:
-    """The exemption must not cover a selection that merely mentions a leg.
-
-    A `runs-on` that is one matrix key resolves to whatever the leg names,
-    and the sizing contract reads the label there, so the expression itself
-    carries no placement decision and is rightly exempt.
-
-    Testing for the substring `matrix.` exempted far more than that. The
-    `a-selection-wearing-a-matrix-key` case is the one that cost something:
-    it asks for a paid runner on every leg but one, the reader cannot split
-    it, and a fork's pull request reaching such a leg is stranded exactly as
-    this file exists to prevent.
-    """
-    assert _is_a_bare_matrix_reference(declared) is exempt, (
-        f"{declared!r} should read as exempt={exempt}"
     )
 
 
@@ -236,7 +155,7 @@ def test_every_pull_request_lane_falls_back_for_a_fork(job: Job) -> None:
     free runner, and leaves a fork's queuing for a runner it cannot have.
     Nothing about the workflow's appearance would show it.
     """
-    declared = _runs_on(job)
+    declared = runs_on_scalar(job)
     assert FORK_CONDITION in declared, (
         f"{job} can run on a fork's pull request and asks for "
         f"{job.runner_summary} without a fork fallback. Add "
@@ -247,12 +166,28 @@ def test_every_pull_request_lane_falls_back_for_a_fork(job: Job) -> None:
 
 def test_the_fork_arm_selects_a_hosted_runner(job: Job) -> None:
     """The fallback must be free, and it must be the fork arm's own label."""
-    declared = _runs_on(job)
+    declared = runs_on_scalar(job)
     _, found, arm = declared.partition(FORK_CONDITION)
     assert found, f"{job} names no fork condition, so there is no fallback arm to read"
     assert arm.lstrip().startswith(f"&& '{HOSTED_LABEL}'"), (
         f"{job} tests the fork field but does not hand a fork "
         f"{HOSTED_LABEL!r}; the arm reads {arm.strip()!r}"
+    )
+
+
+def test_no_earlier_arm_hands_a_fork_a_paid_runner(job: Job) -> None:
+    """The fork arm must be reached before any paid pull-request arm.
+
+    The chain is read in order and the first arm whose condition holds wins.
+    An arm ahead of the fork arm selecting Ubicloud on a pull request takes a
+    fork's run as surely as a branch's, while both assertions above still
+    find the fork field and its hosted label further along.
+    """
+    shadowing = paid_arms_before_the_fork(runs_on_scalar(job))
+    assert not shadowing, (
+        f"{job} selects a paid runner for a pull request before its fork arm "
+        f"is reached: {list(shadowing)}. Put `{FORK_CONDITION} && "
+        f"'{HOSTED_LABEL}'` ahead of every arm a pull request can take."
     )
 
 
@@ -278,84 +213,9 @@ def test_a_scheduled_lane_still_lands_hosted(job: Job) -> None:
     paid runners, and an arm added in the wrong place shadows the one before
     it.
     """
-    if "schedule" not in _runs_on(job):
+    if "schedule" not in runs_on_scalar(job):
         pytest.skip(f"{job} does not serve a schedule")
     assert job.labels_for_event("schedule") == (HOSTED_LABEL,), (
         f"{job} selects {job.labels_for_event('schedule')} on a schedule; "
         "cron work has nobody waiting on it and belongs on a free runner"
     )
-
-
-class TestChainReading:
-    """The reader has to see every arm, or the contracts above are vacuous."""
-
-    @staticmethod
-    def _job(declared: str) -> Job:
-        """Return a job declaring one `runs-on` value."""
-        return Job("fixture.yml", "fixture", {"runs-on": declared})
-
-    _COMPOSED = (
-        "${{ github.event_name == 'schedule' && 'ubuntu-latest' "
-        "|| github.event.pull_request.head.repo.fork && 'ubuntu-latest' "
-        "|| 'ubicloud-standard-2' }}"
-    )
-
-    def test_a_three_armed_chain_reports_every_label(self) -> None:
-        """A label the parser cannot see is exempt from every contract."""
-        job = self._job(self._COMPOSED)
-        assert job.runner_labels == ("ubuntu-latest", "ubicloud-standard-2"), (
-            f"a three-armed chain reports {job.runner_labels!r}; a label the "
-            "reader drops is exempt from every placement contract"
-        )
-        assert job.uses_ubicloud, (
-            "the chain names an Ubicloud label, so the job must answer that "
-            "it uses one; otherwise the sizing contracts skip it"
-        )
-
-    @pytest.mark.parametrize(
-        ("event", "expected"),
-        [
-            ("schedule", ("ubuntu-latest",)),
-            ("pull_request", ("ubicloud-standard-2",)),
-            ("push", ("ubicloud-standard-2",)),
-        ],
-        ids=["cron", "branch-pull-request", "push"],
-    )
-    def test_each_event_selects_its_own_arm(
-        self, event: str, expected: tuple[str, ...]
-    ) -> None:
-        """A fork condition answers false, so a branch pull request pays.
-
-        The contracts ask what a lane costs this repository. A fork's run
-        costs nothing here, so reading the fork arm as the pull-request answer
-        would report every one of these lanes as free and hide the shape they
-        actually buy.
-        """
-        assert self._job(self._COMPOSED).labels_for_event(event) == expected, (
-            f"{event!r} should select {expected!r}; reading the fork arm as the "
-            "pull-request answer reports a paid lane as free"
-        )
-
-    @pytest.mark.parametrize(
-        "declared",
-        [
-            "${{ github.event.pull_request.head.repo.fork && 'ubuntu-latest' }}",
-            "${{ 'ubuntu-latest' || 'ubicloud-standard-2' }}",
-            "${{ github.repository_owner == 'leynos' && 'a' || 'b' }}",
-        ],
-        ids=["no-fallback", "unguarded-first-arm", "unrecognized-condition"],
-    )
-    def test_an_unreadable_chain_stays_one_opaque_label(self, declared: str) -> None:
-        """Fail towards opaque rather than towards a confident wrong answer.
-
-        A chain with no fallback has no label to fall through to, an unguarded
-        first arm makes every later arm unreachable, and a condition the
-        helpers cannot evaluate would make `labels_for_event` invent an
-        answer. Each stays one label, and the job is then visibly unplaced
-        rather than silently misread.
-        """
-        job = self._job(declared)
-        assert job.runner_labels == (declared,), (
-            f"{declared!r} is not a shape the reader parses, so it must be "
-            "reported whole rather than split into arms nobody checked"
-        )

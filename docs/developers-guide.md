@@ -349,11 +349,18 @@ with the same two labels; it sends every branch pull request to a free runner
 while a fork's still queues for a paid one, and nothing in the workflow shows
 it. The contract also asserts the other direction, that a branch pull request
 still selects the Ubicloud shape, so a lane rewritten to send every pull
-request to `ubuntu-latest` fails rather than passing as a fallback.
+request to `ubuntu-latest` fails rather than passing as a fallback. It reads
+the arms in order, too: an arm ahead of the fork arm that selects Ubicloud on a
+pull request takes a fork's run first, so it fails even though the fork field
+and its hosted label are both present further along. An earlier cron arm is
+fine, since a pull request cannot take it.
 
 Reading either expression as one opaque label would drop the job out of the
 placement, timeout, sizing and sccache contracts at once, which is the failure
-mode the helper tests pin.
+mode the helper tests pin. The same holds for an expression written as an item
+of a `runs-on` list: GitHub evaluates it, but the reader never splits a list
+item, so any expression there is refused as unreadable. The readings live in
+`_fork_lanes.py`, and `fork_lanes_test.py` states each shape they refuse.
 
 ### Tool installation
 
@@ -654,6 +661,7 @@ one that answers its own:
 | `_cache_conditions.py` | Whether a cache save step's `if` expression is the approved predicate               |
 | `_cache_policy.py`     | What a cache step archives under which key, and whether its job can write on `main` |
 | `_push_filters.py`     | Whether a workflow's push trigger admits a branch, glob by glob                     |
+| `_fork_lanes.py`       | What a pull-request lane's `runs-on` gives a fork, arm by arm                       |
 
 Each of these is pure in what it is handed. The public readers take parsed
 documents, command text or Makefile text and return values; none of them opens
