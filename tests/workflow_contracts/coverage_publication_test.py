@@ -22,7 +22,7 @@ from _coverage_publication import (
     upload_guard_faults,
 )
 from _strict_workflows import Workflows, jobs, read_workflows, steps, triggers
-from _workflow_policy import WORKFLOW_DIR
+from _workflow_policy import SHA_RE, WORKFLOW_DIR
 
 #: The publisher, its job, and the pull-request coverage lane.
 PUBLISHER = "coverage.yml"
@@ -30,17 +30,13 @@ PUBLISHER_JOB = "coverage"
 PULL_REQUEST_LANE = "codescene-coverage.yml"
 PULL_REQUEST_JOB = "coverage-check"
 
-#: The shared actions, and the pins each may carry. a5765019 is the floor;
-#: a pin is acceptable only if it is that commit or one descended from it, and
-#: this list is how the contract knows which are.
+#: The shared actions. Each is pinned to a full commit SHA; which commit is
+#: Dependabot's to move, so the contract asserts the shape and not the value
+#: (the developers' guide, "Workflow pins and Dependabot"). What the floor at
+#: a5765019 changed, the withdrawn checksum inputs, is asserted directly
+#: below instead.
 UPLOADER = "leynos/shared-actions/.github/actions/upload-codescene-coverage@"
 GENERATOR = "leynos/shared-actions/.github/actions/generate-coverage@"
-ALLOWED_PINS: frozenset[str] = frozenset(
-    {
-        "a5765019912a8ab6882b12db049c7cde635f3a85",
-        "dbe2e22ceaf498d85512679ccded38be9dbe7777",
-    }
-)
 
 #: The check step's id and its one exact command. The expression is evaluated
 #: before the shell runs, so the step binds nothing and there is no shell
@@ -123,7 +119,7 @@ def test_the_pull_request_surface_cannot_reach_codescene(workflows: Workflows) -
 
 
 def test_the_publisher_is_the_one_uploader(workflows: Workflows) -> None:
-    """One upload step, in the publisher job, in upload mode, pinned at the floor."""
+    """One upload step, in the publisher job, in upload mode, pinned to a commit."""
     found = _uses_steps(workflows, UPLOADER)
     assert [(name, job) for name, job, _ in found] == [(PUBLISHER, PUBLISHER_JOB)], (
         f"exactly one uploader, in {PUBLISHER}:{PUBLISHER_JOB}, is expected; "
@@ -131,8 +127,8 @@ def test_the_publisher_is_the_one_uploader(workflows: Workflows) -> None:
     )
     step = found[0][2]
     pin = str(step["uses"]).removeprefix(UPLOADER)
-    assert pin in ALLOWED_PINS, (
-        f"the uploader is pinned at {pin}, not at or above the floor"
+    assert SHA_RE.fullmatch(pin), (
+        f"the uploader is pinned at {pin!r}, not a full commit SHA"
     )
     assert step.get("with") == {
         "format": "lcov",
@@ -291,14 +287,14 @@ def test_the_lane_and_its_baseline_measure_the_same_selection(
     assert not differing, f"the lane and the baseline differ on {differing}"
 
 
-def test_every_shared_coverage_action_is_pinned_at_the_floor(
+def test_every_shared_coverage_action_is_pinned_to_a_commit(
     workflows: Workflows,
 ) -> None:
-    """Both shared actions carry a pin at or descended from a5765019."""
+    """Both shared actions carry a full commit SHA, whichever one it is."""
     found = _uses_steps(workflows, UPLOADER) + _uses_steps(workflows, GENERATOR)
     assert len(found) >= 3, f"expected the uploader and two generators; found {found}"
     for name, job_id, step in found:
         pin = str(step["uses"]).rsplit("@", 1)[1]
-        assert pin in ALLOWED_PINS, (
-            f"{name}:{job_id} pins {pin}, below or outside the floor"
+        assert SHA_RE.fullmatch(pin), (
+            f"{name}:{job_id} pins {pin!r}, not a full commit SHA"
         )

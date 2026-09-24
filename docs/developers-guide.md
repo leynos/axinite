@@ -487,9 +487,13 @@ ratchet.
 - Merges made by the automerge workflow with `GITHUB_TOKEN` fire no push
   event, so they reach neither the upload nor the baseline. That is a known
   exception; a manual dispatch covers it, and no schedule is added.
-- Both shared actions are pinned at `a5765019` or a commit descended from it,
-  and nothing passes the withdrawn `installer-checksum` input or the
-  `CODESCENE_CLI_SHA256` variable.
+- Both shared actions are pinned to a full commit SHA, and nothing passes the
+  withdrawn `installer-checksum` input or the `CODESCENE_CLI_SHA256` variable.
+  The pins must stay at `a5765019` or a commit descended from it, since that is
+  where the checksum inputs were withdrawn. The contract does not check that
+  ancestry: it would have to list the current SHAs, and "Workflow pins and
+  Dependabot" above forbids that. Dependabot only moves a pin forward, so the
+  floor holds unless someone downgrades a pin by hand, and review catches that.
 
 `tests/workflow_contracts/coverage_publication_test.py` holds the estate to all
 of this. The pull-request surface it checks is every workflow a pull-request,
