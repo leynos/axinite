@@ -2728,3 +2728,16 @@ the group names something that varies per pull request, and that
 that discovery still finds the workflows it is expected to, so a broken read
 cannot empty the list and turn the rest into a vacuous pass. Run it with
 `make test-workflow-contracts`.
+
+Discovery reads a workflow's triggers in every shape GitHub accepts: a mapping
+of event to configuration, a list of event names, or one bare event name. It
+reads them under the string key `on` and under the boolean `True`, which is
+what PyYAML makes of an unquoted `on:`. A workflow that declares neither key
+has no triggers and is out of scope. A workflow whose `on:` the reader cannot
+model is reported by file name in
+`test_every_workflow_declares_a_trigger_set_this_reader_models`, not dropped.
+That covers an explicit `on: null`, a scalar that is not an event name, a list
+or mapping holding anything but event names, and a document declaring both
+keys, since GitHub merges the two and a reader that picked one would be blind
+to the other. Dropped silently, such a workflow would leave every contract
+above passing while saying nothing about it.
