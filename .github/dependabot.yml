@@ -19,6 +19,13 @@ updates:
       - "/tools-src/slack"
       - "/tools-src/telegram"
       - "/tools-src/web-search"
+    groups:
+      minor-and-patch:
+        patterns:
+          - "*"
+        update-types:
+          - "minor"
+          - "patch"
     open-pull-requests-limit: 5
     labels:
       - "dependencies"
@@ -31,6 +38,13 @@ updates:
 
   - package-ecosystem: "pip"
     directory: "/tests/e2e"
+    groups:
+      minor-and-patch:
+        patterns:
+          - "*"
+        update-types:
+          - "minor"
+          - "patch"
     open-pull-requests-limit: 5
     labels:
       - "dependencies"
@@ -46,12 +60,15 @@ updates:
       github-actions:
         patterns:
           - '*'
+        update-types:
+          - 'minor'
+          - 'patch'
     directory: "/"
     open-pull-requests-limit: 5
     labels:
       - "dependencies"
       - "github-actions"
     schedule:
-      interval: "weekly"
+      interval: "daily"
     cooldown:
       default-days: 7
