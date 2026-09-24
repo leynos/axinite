@@ -426,9 +426,15 @@ Rules that follow from the table:
   widest dependency graph under `--all-features`; the other legs would race it
   for the same key. `tests/workflow_contracts/cache_ownership_test.py` asserts
   that the writer's workflow is triggered by a push to `main`, that the job's
-  own guard admits that event, and that every platform restoring the key has a
-  reachable writer. The earlier contract read the save step's condition alone
-  and stayed green while the step could not run at all.
+  own guard admits that event and does not constrain the ref, and that every
+  registry cache restored has a reachable writer saving the same key and paths.
+  The trigger is read as GitHub reads it, `branches-ignore`, `!` patterns in
+  order, and a tags-only push included (`_push_filters.py`). Key and paths are
+  matched together because GitHub derives the cache version from the paths, so
+  a writer sharing only the key prefix fills a cache nobody restores. The
+  combined `actions/cache@` action is refused for the registry key, since it
+  saves after every miss from any event. The earlier contract read the save
+  step's condition alone and stayed green while the step could not run at all.
 - **The save condition is exactly four conjuncts.** The writing matrix leg
   (`matrix.name == 'all-features'`, which resolves the widest dependency graph;
   the other legs would race it for the one key and the last upload would win by
@@ -646,6 +652,8 @@ one that answers its own:
 | `_suite_keys.py`       | What one command selects: its feature set, as a set, and its nextest profile        |
 | `_suite_reader.py`     | What each lane actually executes, leg by leg, keyed by the work it does             |
 | `_cache_conditions.py` | Whether a cache save step's `if` expression is the approved predicate               |
+| `_cache_policy.py`     | What a cache step archives under which key, and whether its job can write on `main` |
+| `_push_filters.py`     | Whether a workflow's push trigger admits a branch, glob by glob                     |
 
 Each of these is pure in what it is handed. The public readers take parsed
 documents, command text or Makefile text and return values; none of them opens
@@ -675,7 +683,9 @@ calls it during collection and parametrizes each test's `job` argument. The
 selector reads through `estate_source` or `estate_jobs` in `_estate.py`. A
 `SourceError` it raises becomes the one parameter, identified by the file, and
 the `job` fixture fails that test with the message, so an unreadable workflow
-is a named test failure rather than a collection error.
+is a named test failure rather than a collection error. A selector that returns
+no jobs is replaced the same way, by one parameter the fixture fails naming the
+module, since pytest reports a test parametrized over nothing as a skip.
 `job_collection_test.py` drives that path. Anything that merely iterates the
 estate takes the fixture.
 
@@ -715,8 +725,8 @@ already-parsed mapping, so a test can exercise them without writing a file.
 `load`, `declared_jobs`, `jobs_in`, and `jobs` are the file-reading edge and do
 nothing but read and delegate. `workflow_paths` takes the directory to scan and
 defaults to the estate's, which is what lets a test point the same scan at a
-temporary tree. Classification helpers, `step_text`, `cache_paths`,
-`is_cache_step`, and `builds_or_tests`, are pure as well.
+temporary tree. Classification helpers, `step_text` and `builds_or_tests`, are
+pure as well, as are the cache readers in `_cache_policy.py`.
 
 Two behaviours are load-bearing and easy to get wrong.
 

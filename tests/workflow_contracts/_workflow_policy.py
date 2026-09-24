@@ -90,16 +90,6 @@ SOURCE_BUILD_PATTERNS: tuple[tuple[re.Pattern[str], str], ...] = (
     ),
 )
 
-#: The reviewed pin for the Actions cache, v6.1.0. Ubicloud's transparent
-#: cache proxy is confirmed to intercept this version's traffic.
-CACHE_ACTION_SHA = "55cc8345863c7cc4c66a329aec7e433d2d1c52a9"
-CACHE_ACTION_PREFIXES = (
-    "actions/cache@",
-    "actions/cache/restore@",
-    "actions/cache/save@",
-)
-
-
 @dataclass(frozen=True)
 class Job:
     """One job, carrying the file it came from alongside its parsed body.
@@ -602,47 +592,6 @@ def step_text(step: dict[str, object]) -> str:
     """
     run = step.get("run")
     return run if isinstance(run, str) else ""
-
-
-def cache_paths(step: dict[str, object]) -> list[str]:
-    """Return the paths a cache step declares.
-
-    Parameters
-    ----------
-    step
-        One step mapping, normally an `actions/cache` invocation.
-
-    Returns
-    -------
-    list of str
-        One entry per non-empty line of the step's `path` input, stripped of
-        surrounding whitespace. Empty when the step declares no paths.
-    """
-    inputs = step.get("with")
-    if not isinstance(inputs, dict):
-        return []
-    declared = inputs.get("path")
-    if not isinstance(declared, str):
-        return []
-    return [line.strip() for line in declared.splitlines() if line.strip()]
-
-
-def is_cache_step(step: dict[str, object]) -> bool:
-    """Report whether a step invokes the Actions cache.
-
-    Parameters
-    ----------
-    step
-        One step mapping.
-
-    Returns
-    -------
-    bool
-        True for the combined action and for its `restore` and `save`
-        sub-actions alike.
-    """
-    uses = step.get("uses")
-    return isinstance(uses, str) and uses.startswith(CACHE_ACTION_PREFIXES)
 
 
 def builds_or_tests(job: Job) -> bool:

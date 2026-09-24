@@ -47,6 +47,7 @@ from _workflow_policy import (
 )
 
 if typ.TYPE_CHECKING:  # pragma: no cover - typing only
+    from collections.abc import Iterator
     from pathlib import Path
 
 #: Every workflow this contract judges, parsed and keyed by name.
@@ -251,6 +252,26 @@ def estate_jobs(directory: Path = WORKFLOW_DIR) -> tuple[Job, ...]:
         for name, document in isolated(_all_workflows_once(directory)).items()
         for job in jobs_of(name, document)
     )
+
+
+def jobs_across(estate: Estate) -> Iterator[Job]:
+    """Yield every job an estate already read declares, in workflow order.
+
+    For a contract that takes the `estate` fixture and judges its jobs
+    together, rather than one per test.
+
+    Parameters
+    ----------
+    estate
+        Parsed workflows keyed by file name, normally the `estate` fixture.
+
+    Yields
+    ------
+    Job
+        Each job whose body is a mapping.
+    """
+    for name, document in estate.items():
+        yield from jobs_of(name, document)
 
 
 @cache

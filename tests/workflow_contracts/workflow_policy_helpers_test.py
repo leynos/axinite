@@ -21,9 +21,7 @@ from _workflow_policy import (
     UBICLOUD_LABEL,
     Job,
     builds_or_tests,
-    cache_paths,
     declared_jobs_in,
-    is_cache_step,
     jobs_of,
     parse_workflow,
     selected_value,
@@ -330,48 +328,6 @@ class TestSteps:
         assert step_text({"uses": "actions/checkout@v6"}) == ""
         assert step_text({"run": "make test"}) == "make test"
 
-    @pytest.mark.parametrize(
-        ("step", "expected"),
-        [
-            (
-                {"with": {"path": "~/.cargo/registry\n~/.cargo/git\n"}},
-                ["~/.cargo/registry", "~/.cargo/git"],
-            ),
-            ({"with": {"path": "  ~/.cargo/registry  "}}, ["~/.cargo/registry"]),
-            ({"with": {"path": "a\n\n\nb"}}, ["a", "b"]),
-            ({"with": {"path": ["a", "b"]}}, []),
-            ({"with": {}}, []),
-            ({}, []),
-        ],
-        ids=["multiline", "padded", "blank-lines", "sequence", "no-path", "no-with"],
-    )
-    def test_cache_paths_reads_one_path_per_line(
-        self, step: dict[str, object], expected: list[str]
-    ) -> None:
-        """Blank lines and padding are formatting, not cache entries."""
-        assert cache_paths(step) == expected
-
-    @pytest.mark.parametrize(
-        ("uses", "expected"),
-        [
-            ("actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9", True),
-            ("actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9", True),
-            ("actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9", True),
-            ("actions/checkout@v6", False),
-            ("Swatinem/rust-cache@v2", False),
-        ],
-        ids=["combined", "restore", "save", "checkout", "rust-cache"],
-    )
-    def test_cache_steps_cover_the_sub_actions(
-        self, uses: str, *, expected: bool
-    ) -> None:
-        """Missing a sub-action would hide half of a cache's ownership."""
-        assert is_cache_step({"uses": uses}) is expected
-
-    def test_a_run_step_is_not_a_cache_step(self) -> None:
-        """`is_cache_step` reads `uses`, which a run step does not have."""
-        assert is_cache_step({"run": "actions/cache@v6"}) is False
-
 
 class TestClassification:
     """A job's claim on a paid runner comes from what it runs."""
@@ -543,20 +499,6 @@ def test_only_mapping_job_bodies_become_jobs(
         job_id for job_id, body in bodies.items() if isinstance(body, dict)
     ]
     assert all(job.workflow == "test.yml" for job in found)
-
-
-@given(
-    lines=st.lists(
-        st.one_of(st.just(""), st.just("   "), st.text(alphabet="ab/~.", max_size=8)),
-        max_size=6,
-    )
-)
-@PROPERTY
-def test_cache_paths_never_yields_an_empty_entry(lines: list[str]) -> None:
-    """An empty path would read as a cache owner claiming nothing."""
-    found = cache_paths({"with": {"path": "\n".join(lines)}})
-    assert all(path == path.strip() and path for path in found)
-    assert found == [line.strip() for line in lines if line.strip()]
 
 
 @pytest.mark.parametrize(

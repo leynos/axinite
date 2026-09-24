@@ -25,10 +25,9 @@ Run via ``make test-workflow-contracts``.
 from __future__ import annotations
 
 import re
-from collections.abc import Iterator
 
 import pytest
-from _estate import Estate, estate_source
+from _estate import Estate, estate_source, jobs_across
 from _workflow_policy import (
     FORK_CONDITION,
     UBICLOUD_LABEL_PREFIX,
@@ -125,17 +124,11 @@ def _is_opaque(declared: str) -> bool:
     return declared.startswith("${{") and conditional_runs_on_arms(declared) is None
 
 
-def _authored_jobs(estate: Estate) -> Iterator[Job]:
-    """Yield every job anyone here wrote."""
-    for name, document in estate.items():
-        yield from jobs_of(name, document)
-
-
 def _opaque_expression_jobs(estate: Estate) -> tuple[tuple[Job, str], ...]:
     """Return every job whose `runs-on` expression the reader cannot split."""
     return tuple(
         (job, declared)
-        for job, declared in ((job, _runs_on(job)) for job in _authored_jobs(estate))
+        for job, declared in ((job, _runs_on(job)) for job in jobs_across(estate))
         if _is_opaque(declared)
     )
 
