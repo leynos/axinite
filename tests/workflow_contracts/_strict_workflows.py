@@ -105,13 +105,38 @@ def read_workflows(directory: Path) -> Workflows:
     Raises
     ------
     WorkflowReadError
-        If any workflow cannot be parsed strictly.
+        If the directory cannot be listed, a workflow cannot be read or is
+        not UTF-8, or any workflow cannot be parsed strictly. The message
+        names the path and what failed.
     """
     return {
-        path.name: parse_strict(path.read_text(encoding="utf-8"), path.name)
-        for path in sorted(directory.iterdir())
-        if path.suffix.lower() in {".yml", ".yaml"} and path.is_file()
+        path.name: parse_strict(_read_text(path), path.name)
+        for path in _workflow_files(directory)
     }
+
+
+def _workflow_files(directory: Path) -> list[Path]:
+    """List a directory's workflow files, sorted, naming it if that fails."""
+    try:
+        return sorted(
+            path
+            for path in directory.iterdir()
+            if path.suffix.lower() in {".yml", ".yaml"} and path.is_file()
+        )
+    except OSError as error:
+        message = f"{directory}: cannot be listed ({error.strerror or error})"
+        raise WorkflowReadError(message) from error
+
+
+def _read_text(path: Path) -> str:
+    """Read one workflow as UTF-8, naming it if that fails."""
+    try:
+        return path.read_text(encoding="utf-8")
+    except UnicodeDecodeError as error:
+        raise WorkflowReadError(f"{path}: is not UTF-8 ({error})") from error
+    except OSError as error:
+        message = f"{path}: cannot be read ({error.strerror or error})"
+        raise WorkflowReadError(message) from error
 
 
 def triggers(document: Mapping[object, object]) -> dict[str, object]:
