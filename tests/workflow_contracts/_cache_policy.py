@@ -21,7 +21,7 @@ import re
 import typing as typ
 
 from _push_filters import push_reaches_branch
-from _workflow_policy import runs_on_event
+from _trigger_reading import runs_on_event
 
 if typ.TYPE_CHECKING:  # pragma: no cover - typing only
     from collections.abc import Iterable, Iterator, Mapping

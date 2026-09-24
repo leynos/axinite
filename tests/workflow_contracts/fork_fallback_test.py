@@ -34,15 +34,15 @@ from _fork_lanes import (
     paid_arms_before_the_fork,
     runs_on_scalar,
 )
+from _trigger_reading import runs_on_event, triggers
 from _workflow_policy import (
     FORK_CONDITION,
     UBICLOUD_LABEL_PREFIX,
     Job,
     conditional_runs_on_arms,
     jobs_of,
-    runs_on_event,
-    triggers,
 )
+
 
 def _forkable_ubicloud_jobs(estate: Estate) -> tuple[Job, ...]:
     """Return every Ubicloud job a pull request can dispatch."""

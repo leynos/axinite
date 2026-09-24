@@ -21,13 +21,13 @@ import typing as typ
 from pathlib import PurePosixPath
 
 import pytest
+from _trigger_reading import runs_on_event
 from _workflow_policy import (
     UBICLOUD_LABEL_PREFIX,
     WORKFLOW_DIR,
     Job,
     jobs_of,
     load,
-    runs_on_event,
     workflow_paths,
 )
 
@@ -138,7 +138,7 @@ def _runs_on_schedule(job: Job) -> bool:
     ``github.event_name != 'push'`` is the opposite case: it admits a schedule
     along with everything else.
 
-    The reading lives in `_workflow_policy.runs_on_event`, which the suite
+    The reading lives in `_trigger_reading.runs_on_event`, which the suite
     de-duplication contract asks the same question of for `pull_request` and
     `push`. One reader means a guard cannot be understood two ways.
     """

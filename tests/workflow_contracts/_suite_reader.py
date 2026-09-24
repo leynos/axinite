@@ -21,14 +21,8 @@ from _estate import Estate
 from _shell import split_commands
 from _suite_keys import feature_key, profile_of
 from _suite_targets import DEFAULT_PROFILE, MAKE_COMMAND, MAKE_TARGETS, WORKSPACE
-from _workflow_policy import (
-    Job,
-    jobs_of,
-    matrix_legs,
-    runs_on_event,
-    step_text,
-    triggers,
-)
+from _trigger_reading import matrix_legs, runs_on_event, triggers
+from _workflow_policy import Job, jobs_of, step_text
 
 if typ.TYPE_CHECKING:  # pragma: no cover - typing only
     from collections.abc import Iterator

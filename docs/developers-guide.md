@@ -653,7 +653,8 @@ one that answers its own:
 | `_sources.py`          | What a file on disk says. The only module that touches one                          |
 | `_shell.py`            | Where one shell command in a step's `run:` block ends and the next begins           |
 | `_estate.py`           | What workflows this repository declares, read and parsed once                       |
-| `_workflow_policy.py`  | What a workflow declares: jobs, steps, runners, triggers, matrix legs, event guards |
+| `_workflow_policy.py`  | What a workflow declares: jobs, steps and runners, and what a job builds            |
+| `_trigger_reading.py`  | Which events a workflow and a job admit, and which matrix legs an event expands to  |
 | `_runs_on.py`          | What one chained `runs-on` expression resolves to for an event                      |
 | `_suite_targets.py`    | What a Make target runs, and what features the root manifest enables by default     |
 | `_suite_keys.py`       | What one command selects: its feature set, as a set, and its nextest profile        |

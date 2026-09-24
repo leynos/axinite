@@ -30,14 +30,8 @@ import re
 
 import pytest
 from _estate import read_workflow
-from _workflow_policy import (
-    WORKFLOW_DIR,
-    Job,
-    jobs_of,
-    selected_value,
-    step_text,
-    triggers,
-)
+from _trigger_reading import triggers
+from _workflow_policy import WORKFLOW_DIR, Job, jobs_of, selected_value, step_text
 
 #: The workflow whose gate this file reads.
 WORKFLOW = "test.yml"

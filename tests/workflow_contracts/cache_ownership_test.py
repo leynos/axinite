@@ -33,7 +33,8 @@ from _cache_policy import (
     writer_job_faults,
 )
 from _estate import estate_jobs, jobs_across
-from _workflow_policy import DIST_GENERATED, Job, triggers
+from _trigger_reading import triggers
+from _workflow_policy import DIST_GENERATED, Job
 
 if typ.TYPE_CHECKING:  # pragma: no cover - typing only
     from _estate import Estate
