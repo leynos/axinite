@@ -50,9 +50,13 @@ _NEXTEST_LITERAL: typ.Final[re.Pattern[str]] = re.compile(
 
 #: A ``cargo-nextest@`` reference that defers to ``CARGO_NEXTEST_VERSION``.
 #: The variable may be declared at workflow or job scope, so the
-#: reference is recognized here and resolved against both below.
+#: reference is recognized here and resolved against both below. The
+#: lookahead requires the reference to end with the expression: a suffix
+#: such as ``-rc1`` or a second ``${{ ... }}`` asks for a version other
+#: than the declared one, so it is left for the leftover count to mark
+#: `UNDECLARED`.
 _NEXTEST_DEFERRED: typ.Final[re.Pattern[str]] = re.compile(
-    r"cargo-nextest@\$\{\{\s*env\.CARGO_NEXTEST_VERSION\s*\}\}"
+    r"cargo-nextest@\$\{\{\s*env\.CARGO_NEXTEST_VERSION\s*\}\}(?![^\s'\"])"
 )
 
 #: Any ``cargo-nextest@`` reference at all, literal or deferred. What

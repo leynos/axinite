@@ -61,6 +61,22 @@ DEFERRED_STEP = (
             id="deferred-to-an-expression-the-reading-cannot-resolve",
         ),
         pytest.param(
+            "env:\n  CARGO_NEXTEST_VERSION: 0.9.100\n"
+            "jobs:\n  test:\n    steps:\n"
+            "      - run: cargo binstall\n"
+            "          cargo-nextest@${{ env.CARGO_NEXTEST_VERSION }}-rc1\n",
+            {UNDECLARED},
+            id="a-deferred-reference-a-literal-suffix-extends",
+        ),
+        pytest.param(
+            "env:\n  CARGO_NEXTEST_VERSION: 0.9.100\n"
+            "jobs:\n  test:\n    steps:\n"
+            "      - run: cargo binstall\n"
+            "          cargo-nextest@${{ env.CARGO_NEXTEST_VERSION }}${{ matrix.suffix }}\n",
+            {UNDECLARED},
+            id="a-deferred-reference-an-expression-extends",
+        ),
+        pytest.param(
             "jobs:\n  test:\n    steps:\n"
             "      - run: cargo binstall cargo-nextest@0.9.${{ matrix.patch }}\n",
             {UNDECLARED},
