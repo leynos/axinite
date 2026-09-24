@@ -586,8 +586,12 @@ unexecuted on `main` altogether.
 so `--workspace` cannot reach either however wide the feature set. Each
 therefore needs a lane of its own or it is not tested at all, which is why
 `make test` is now exactly `test-workspace` plus `test-github-tool`: a
-developer runs the whole, CI runs the halves on different lanes, and the whole
-is the sum of the parts by construction rather than by memory.
+developer runs both, CI runs them on different lanes, and the local run is the
+sum of those two lanes by construction rather than by memory.
+
+`make test` does not run the Telegram channel's tests. They run on CI's
+`telegram-tests` lane alone, so after changing `channels-src/telegram`, run
+them locally with `cargo test --manifest-path channels-src/telegram/Cargo.toml`.
 
 `tests/workflow_contracts/suite_duplication_test.py` holds both halves of the
 rule, over a reading in `_suite_reader.py`, `_suite_keys.py` and
