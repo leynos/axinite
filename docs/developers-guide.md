@@ -641,9 +641,9 @@ keeps the new lane inside the gate.
 ### Writing a workflow contract
 
 Every contract in `tests/workflow_contracts/` reads one parsed view of
-`.github/workflows`, provided by `_workflow_policy.py`. A module with no
-`_test` suffix is imported as a helper rather than collected. Run the suite with
-`make test-workflow-contracts`.
+`.github/workflows`, provided by `_workflow_files.py` and `_estate.py`. A
+module with no `_test` suffix is imported as a helper rather than collected.
+Run the suite with `make test-workflow-contracts`.
 
 The helpers divide by question, and a contract should reach for the narrowest
 one that answers its own:
@@ -653,7 +653,8 @@ one that answers its own:
 | `_sources.py`          | What a file on disk says. The only module that touches one                          |
 | `_shell.py`            | Where one shell command in a step's `run:` block ends and the next begins           |
 | `_estate.py`           | What workflows this repository declares, read and parsed once                       |
-| `_workflow_policy.py`  | What a workflow declares: jobs, steps and runners, and what a job builds            |
+| `_workflow_files.py`   | How workflow text becomes documents and jobs, and the thin file-reading edge        |
+| `_workflow_policy.py`  | What a job declares: its runners and steps, and whether it builds or tests          |
 | `_trigger_reading.py`  | Which events a workflow and a job admit, and which matrix legs an event expands to  |
 | `_runs_on.py`          | What one chained `runs-on` expression resolves to for an event                      |
 | `_suite_targets.py`    | What a Make target runs, and what features the root manifest enables by default     |
@@ -728,14 +729,15 @@ formatting. Its properties answer the questions the contracts actually ask:
 | `uses_ubicloud`, `ubicloud_labels` | Whether and which labels carry the Ubicloud prefix         |
 | `steps`                            | The job's step mappings, skipping anything that is not one |
 
-The free functions split in two, and the split is deliberate. `parse_workflow`,
-`declared_jobs_in`, and `jobs_of` are pure: they take workflow text or an
-already-parsed mapping, so a test can exercise them without writing a file.
-`load`, `declared_jobs`, `jobs_in`, and `jobs` are the file-reading edge and do
-nothing but read and delegate. `workflow_paths` takes the directory to scan and
-defaults to the estate's, which is what lets a test point the same scan at a
-temporary tree. Classification helpers, `step_text` and `builds_or_tests`, are
-pure as well, as are the cache readers in `_cache_policy.py`.
+The free functions in `_workflow_files.py` split in two, and the split is
+deliberate. `parse_workflow`, `declared_jobs_in`, and `jobs_of` are pure: they
+take workflow text or an already-parsed mapping, so a test can exercise them
+without writing a file. `load`, `declared_jobs`, `jobs_in`, and `jobs` are the
+file-reading edge and do nothing but read and delegate. `workflow_paths` takes
+the directory to scan and defaults to the estate's, which is what lets a test
+point the same scan at a temporary tree. The classification helpers in
+`_workflow_policy.py`, `step_text` and `builds_or_tests`, are pure as well, as
+are the cache readers in `_cache_policy.py`.
 
 Two behaviours are load-bearing and easy to get wrong.
 

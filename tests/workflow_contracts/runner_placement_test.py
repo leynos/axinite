@@ -15,13 +15,8 @@ from __future__ import annotations
 
 import pytest
 import yaml
-from _workflow_policy import (
-    DIST_GENERATED,
-    REPOSITORY_ROOT,
-    Job,
-    builds_or_tests,
-    jobs,
-)
+from _workflow_files import jobs
+from _workflow_policy import DIST_GENERATED, REPOSITORY_ROOT, Job, builds_or_tests
 
 ACTIONLINT_CONFIG = REPOSITORY_ROOT / ".github" / "actionlint.yaml"
 

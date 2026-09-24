@@ -46,7 +46,7 @@ from _suite_targets import (
     read_makefile,
 )
 from _trigger_reading import matrix_legs
-from _workflow_policy import jobs_of
+from _workflow_files import jobs_of
 
 if typ.TYPE_CHECKING:  # pragma: no cover - typing only
     from _estate import Estate

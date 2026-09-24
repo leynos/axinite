@@ -31,7 +31,8 @@ import re
 import pytest
 from _estate import read_workflow
 from _trigger_reading import triggers
-from _workflow_policy import WORKFLOW_DIR, Job, jobs_of, selected_value, step_text
+from _workflow_files import jobs_of
+from _workflow_policy import WORKFLOW_DIR, Job, selected_value, step_text
 
 #: The workflow whose gate this file reads.
 WORKFLOW = "test.yml"

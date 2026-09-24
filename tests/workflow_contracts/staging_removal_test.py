@@ -24,7 +24,7 @@ import re
 import typing as typ
 
 import pytest
-from _workflow_policy import load, workflow_paths
+from _workflow_files import load, workflow_paths
 
 if typ.TYPE_CHECKING:  # pragma: no cover - typing only
     from pathlib import Path

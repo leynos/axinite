@@ -22,14 +22,8 @@ from pathlib import PurePosixPath
 
 import pytest
 from _trigger_reading import runs_on_event
-from _workflow_policy import (
-    UBICLOUD_LABEL_PREFIX,
-    WORKFLOW_DIR,
-    Job,
-    jobs_of,
-    load,
-    workflow_paths,
-)
+from _workflow_files import jobs_of, load, workflow_paths
+from _workflow_policy import UBICLOUD_LABEL_PREFIX, WORKFLOW_DIR, Job
 
 if typ.TYPE_CHECKING:  # pragma: no cover - typing only
     from collections.abc import Callable, Iterator

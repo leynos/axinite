@@ -13,7 +13,8 @@ Run via ``make test-workflow-contracts``.
 from __future__ import annotations
 
 from _estate import read_workflow
-from _workflow_policy import WORKFLOW_DIR, jobs_of
+from _workflow_files import jobs_of
+from _workflow_policy import WORKFLOW_DIR
 
 #: The workflow and job this contract reads.
 WORKFLOW = "test.yml"

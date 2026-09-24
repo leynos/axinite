@@ -37,14 +37,8 @@ from types import MappingProxyType
 import yaml
 
 from _sources import SourceError, read_text
-from _workflow_policy import (
-    DIST_GENERATED,
-    WORKFLOW_DIR,
-    Job,
-    jobs_of,
-    parse_workflow,
-    workflow_paths,
-)
+from _workflow_files import jobs_of, parse_workflow, workflow_paths
+from _workflow_policy import DIST_GENERATED, WORKFLOW_DIR, Job
 
 if typ.TYPE_CHECKING:  # pragma: no cover - typing only
     from collections.abc import Iterator

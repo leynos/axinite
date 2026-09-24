@@ -23,7 +23,8 @@ Run via ``make test-workflow-contracts``.
 from __future__ import annotations
 
 import pytest
-from _workflow_policy import Job, jobs, step_text
+from _workflow_files import jobs
+from _workflow_policy import Job, step_text
 
 ALL_JOBS: tuple[Job, ...] = tuple(jobs())
 

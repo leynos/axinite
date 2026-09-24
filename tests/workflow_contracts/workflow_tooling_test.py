@@ -16,15 +16,8 @@ import re
 import typing as typ
 
 import pytest
-from _workflow_policy import (
-    SHA_RE,
-    SOURCE_BUILD_PATTERNS,
-    Job,
-    declared_jobs,
-    jobs,
-    step_text,
-    workflow_paths,
-)
+from _workflow_files import declared_jobs, jobs, workflow_paths
+from _workflow_policy import SHA_RE, SOURCE_BUILD_PATTERNS, Job, step_text
 
 if typ.TYPE_CHECKING:  # pragma: no cover - typing only
     from collections.abc import Iterator

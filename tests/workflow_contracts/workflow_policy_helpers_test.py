@@ -16,17 +16,14 @@ from __future__ import annotations
 import typing as typ
 
 import pytest
+from _workflow_files import declared_jobs_in, jobs_of, parse_workflow, workflow_paths
 from _workflow_policy import (
     SOURCE_BUILD_PATTERNS,
     UBICLOUD_LABEL,
     Job,
     builds_or_tests,
-    declared_jobs_in,
-    jobs_of,
-    parse_workflow,
     selected_value,
     step_text,
-    workflow_paths,
 )
 from hypothesis import HealthCheck, given, settings
 from hypothesis import strategies as st

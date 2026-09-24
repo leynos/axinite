@@ -16,7 +16,8 @@ from __future__ import annotations
 import re
 
 import pytest
-from _workflow_policy import Job, jobs
+from _workflow_files import jobs
+from _workflow_policy import Job
 
 ALL_JOBS: tuple[Job, ...] = tuple(jobs())
 

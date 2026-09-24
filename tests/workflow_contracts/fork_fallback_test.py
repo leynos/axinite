@@ -35,12 +35,12 @@ from _fork_lanes import (
     runs_on_scalar,
 )
 from _trigger_reading import runs_on_event, triggers
+from _workflow_files import jobs_of
 from _workflow_policy import (
     FORK_CONDITION,
     UBICLOUD_LABEL_PREFIX,
     Job,
     conditional_runs_on_arms,
-    jobs_of,
 )
 
 
