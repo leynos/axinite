@@ -209,6 +209,7 @@ def test_setup_and_generator_match_proven_libsql_coverage() -> None:
         "features": "libsql,test-helpers",
         "with-default-features": "false",
         "use-cargo-nextest": "true",
+        "cargo-wait-timeout": "4200",
         "format": "lcov",
         "output-path": "lcov.info",
         "with-ratchet": "true",
@@ -216,6 +217,7 @@ def test_setup_and_generator_match_proven_libsql_coverage() -> None:
         "cache-provider": "external",
     }, (
         "coverage-check must measure the libsql-only selection through "
-        "generate-coverage, ratchet it, publish nothing, and leave the "
-        "registry and compiler caches to their existing owners"
+        "generate-coverage, ratchet it, publish nothing, leave the registry "
+        "and compiler caches to their existing owners, and set the cargo "
+        "watchdog that timeout_ordering_test.py orders"
     )

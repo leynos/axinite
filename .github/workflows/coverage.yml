@@ -324,6 +324,14 @@ jobs:
           features: libsql,test-helpers
           with-default-features: 'false'
           use-cargo-nextest: 'true'
+          # The third timeout tier. The action's 1,800 s default equals the
+          # 30 m nextest whole-run budget and also has to cover the
+          # instrumented build, so it would kill a legal run first. 4,200 s
+          # is the slowest measured invocation (1,549 s) plus the full 1,800 s
+          # budget plus headroom, under the 5,400 s job ceiling; the guide's
+          # timeout section has the numbers, and `timeout_ordering_test.py`
+          # asserts nextest < watchdog < job.
+          cargo-wait-timeout: '4200'
           format: lcov
           output-path: lcov.info
           with-ratchet: 'true'
