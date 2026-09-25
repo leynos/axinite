@@ -494,6 +494,16 @@ ratchet.
   ancestry: it would have to list the current SHAs, and "Workflow pins and
   Dependabot" above forbids that. Dependabot only moves a pin forward, so the
   floor holds unless someone downgrades a pin by hand, and review catches that.
+- The publisher job declares `environment: codescene`. That environment's
+  branch policy admits `main` alone, and the CodeScene token is to live there,
+  so only a job deploying from `main` can read it. Every job that calls the
+  uploader declares the environment, as a name or as `{name: codescene}`; no
+  other job declares it; and no job in a workflow a pull request can start
+  declares it. The declaration is on the whole matrix job, so a
+  `workflow_dispatch` from any branch other than `main` is refused at the
+  environment on all three legs, not only the uploading one.
+  `codescene_environment_test.py` holds the placement and breaks each clause in
+  a constructed workflow.
 
 `tests/workflow_contracts/coverage_publication_test.py` holds the estate to all
 of this. The pull-request surface it checks is every workflow a pull-request,
