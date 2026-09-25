@@ -2885,14 +2885,15 @@ above passing while saying nothing about it.
 
 Four independent timers can end a test run, and the canonical statement of how
 they must be ordered lives in the `generate-coverage` README in
-[`leynos/shared-actions`][shared-actions-coverage]. Three apply here, and two
-of those were unset until this was written.
+[`leynos/shared-actions`][shared-actions-coverage]. All four apply here, the
+cargo watchdog only on the two lanes that use that action, and two of the four
+were unset until this was written.
 
 | Tier                     | What it bounds                     | Where it is set                       | Current value                                             |
 | ------------------------ | ---------------------------------- | ------------------------------------- | --------------------------------------------------------- |
 | Per-test `slow-timeout`  | one test                           | `.config/nextest.toml`, both profiles | 300 s, 900 s for the compile-contract binaries, 5 s grace |
 | nextest `global-timeout` | the whole test run                 | `.config/nextest.toml`, both profiles | 30 m                                                      |
-| Cargo watchdog           | one `cargo` invocation, wall clock | not used here, see below              | absent                                                    |
+| Cargo watchdog           | one `cargo` invocation, wall clock | `cargo-wait-timeout` on action steps  | 3,600 s on the two action lanes, absent elsewhere         |
 | Job `timeout-minutes`    | the whole job                      | job level                             | 90 m for the coverage lanes                               |
 
 *Table: the timers that can end a run, innermost first.*
@@ -3051,30 +3052,33 @@ the coverage and test lanes install, and the contract asserts the versions
 agree. Two versions in the tree would leave the contract certifying the file
 for a runner nothing else runs, with both lanes green.
 
-### The tier that is absent, and why
+### The watchdog tier, and where it exists
 
-Coverage runs `cargo llvm-cov nextest` from a `run:` step rather than through
-the shared `generate-coverage` action, so there is no wall-clock watchdog on the
-`cargo` invocation and no third tier.
+Two lanes run the suite through the shared `generate-coverage` action:
+`coverage.yml`'s `libsql-only` leg, which writes the ratchet baseline, and
+`codescene-coverage.yml`'s pull-request lane. The action runs `cargo` under a
+wall-clock watchdog, so those two lanes have the third tier. Every other lane
+runs `cargo llvm-cov nextest` from a `run:` step and has no watchdog.
 
-That absence is asserted rather than assumed. A lane that adopted the action
-without setting `RUN_RUST_CARGO_WAIT_TIMEOUT` or the `cargo-wait-timeout` input
-would inherit the action's 1,800 second default underneath a 30 minute nextest
-budget, which is exactly the inversion the canonical section exists to prevent,
-and it would do so silently. The contract fails if either the action appears or
-the variable is set, so adopting it needs this section updated in the same
-change.
+Both action steps set `cargo-wait-timeout: '3600'`. The action's default of
+1,800 seconds equals the 30 minute nextest whole-run budget, and it also has to
+cover the instrumented build that precedes the run, so at the default the
+watchdog would kill a slow but legal run before nextest could report it. The
+contract requires the watchdog to be at least the whole-run budget, its
+termination allowance and the 20 minutes allowed for the work outside the run
+(3,065 seconds today), and to sit at least the 15 minute ceiling margin below
+the job's 90 minute ceiling, so the watchdog's message reaches the log before
+the job is cancelled.
 
-The variable is looked for in all three scopes a step can inherit its
-environment from. GitHub resolves a name declared at more than one of workflow,
-job and step scope to the most specific declaration rather than merging them,
-so a variable set at workflow or job level and nowhere else reaches the suite
-step, and one set on the step overrides it. Either way the watchdog is in
-force, which is why the contract asserts the variable's absence at every scope
-rather than at the step alone: a check reading the step would report the tier
-as absent while an outer scope armed it, which is the same inversion read from
-the other end. Each scope is reported at the level that declares it, because
-that is the line that has to change.
+The contract also refuses the watchdog where it would do nothing or apply by
+accident: an action step left at the default, and a
+`RUN_RUST_CARGO_WAIT_TIMEOUT` written where no step beneath it calls the
+action. The budget is read as GitHub resolves it: the input first, then the
+variable at step, job and workflow scope, the most specific declaration
+winning. The suite-lane reading counts an action step with `use-cargo-nextest`
+as a run, and counts runs per matrix leg, so `coverage.yml`, which runs the
+suite from a `run:` step on two legs and through the action on the third, is
+one run per leg.
 
 ### What the values are sized against
 

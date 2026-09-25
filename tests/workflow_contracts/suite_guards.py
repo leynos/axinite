@@ -4,25 +4,25 @@ Separated from ``suite_lanes`` so that identifying a lane and judging
 one stay legible apart, and so neither module outgrows the 400-line
 limit ``AGENTS.md`` sets.
 
-Two things are judged here, and neither is a budget. The cargo watchdog
-tier does not exist in this repository and must not appear unnoticed, in
-any of the three scopes a step inherits its environment from. And a lane
-that runs the suite while tolerating its failure satisfies every budget
-this contract asserts while discarding the verdict those budgets exist
-to protect.
+Two things are judged here, and neither is a nextest budget. The cargo
+watchdog tier exists only where a step calls the shared coverage action,
+and there it must be set explicitly rather than left at the action's
+1,800 s default; a watchdog variable written where no step reads it is
+reported too, in any of the three scopes a step inherits its environment
+from. And a lane that runs the suite while tolerating its failure
+satisfies every budget this contract asserts while discarding the
+verdict those budgets exist to protect.
 """
 
 import typing as typ
 
-from _workflow_policy import jobs_of
+from _workflow_policy import Job, jobs_of
+from suite_actions import (
+    WATCHDOG_VARIABLE,
+    uses_coverage_action,
+    watchdog_budget,
+)
 from suite_lanes import _suite_steps
-
-#: The environment variable the shared coverage action reads for its
-#: wall-clock cap on one `cargo` invocation. Asserted absent: this
-#: repository does not use that action.
-WATCHDOG_VARIABLE: typ.Final[str] = "RUN_RUST_CARGO_WAIT_TIMEOUT"
-COVERAGE_ACTION: typ.Final[str] = "shared-actions/.github/actions/generate-coverage"
-
 
 def _steps_of(job_body: object) -> list[dict[str, object]]:
     """Return one job's steps, or an empty list.
@@ -46,13 +46,14 @@ def _steps_of(job_body: object) -> list[dict[str, object]]:
 
 
 def _watchdog_offences(
-    workflow: str, job_id: str, step: dict[str, object]
+    workflow: str, job_id: str, step: dict[str, object], budget: float | None
 ) -> list[str]:
-    """Return what one step does that the absent tier forbids.
+    """Return what one step does with the watchdog that the tiers forbid.
 
     Two separate things are wrong, so they are reported separately: a
-    step may adopt the action without naming the variable, or name the
-    variable without adopting the action, and the fix differs.
+    step may call the action with nothing setting its watchdog, so the
+    1,800 s default applies, or name the variable on a step that does not
+    call the action, where nothing reads it.
 
     Parameters
     ----------
@@ -62,6 +63,9 @@ def _watchdog_offences(
         The job's identifier.
     step
         One parsed step.
+    budget
+        The watchdog budget the step runs under, None when nothing sets
+        it.
 
     Returns
     -------
@@ -69,10 +73,17 @@ def _watchdog_offences(
         One entry per offence, empty when the step commits none.
     """
     offences: list[str] = []
-    if COVERAGE_ACTION in str(step.get("uses", "")):
-        offences.append(f"{workflow}:{job_id} uses the action")
-    if WATCHDOG_VARIABLE in _env_of(step):
-        offences.append(f"{workflow}:{job_id} sets {WATCHDOG_VARIABLE} at step level")
+    uses_action = uses_coverage_action(step)
+    if uses_action and budget is None:
+        offences.append(
+            f"{workflow}:{job_id} uses the action with its watchdog at the "
+            f"1,800 s default"
+        )
+    if WATCHDOG_VARIABLE in _env_of(step) and not uses_action:
+        offences.append(
+            f"{workflow}:{job_id} sets {WATCHDOG_VARIABLE} at step level on a "
+            f"step that does not use the action"
+        )
     return offences
 
 
@@ -97,20 +108,21 @@ def _env_of(scope: object) -> dict[str, object]:
             return {}
 
 
+def _uses_action(job_body: object) -> bool:
+    """Report whether any step of a job calls the coverage action."""
+    return any(uses_coverage_action(step) for step in _steps_of(job_body))
+
+
 def watchdog_offences_of(workflow: str, document: dict[str, object]) -> list[str]:
-    """Return what one workflow does that the absent tier forbids.
+    """Return what one workflow does with the watchdog that the tiers forbid.
 
     All three scopes are read. GitHub resolves a name declared at more
     than one of workflow, job and step scope to the most specific
     declaration rather than merging them, so a
-    ``RUN_RUST_CARGO_WAIT_TIMEOUT`` written at workflow or job level and
-    nowhere else reaches the suite step, and one written on the step
-    overrides it. Either way the watchdog is in force, so a check
-    reading the step alone certifies the tier as absent while it runs,
-    which is the inversion this contract exists to catch.
-
-    Each scope is reported once, at the scope that declares it, because
-    that is the line that has to change.
+    ``RUN_RUST_CARGO_WAIT_TIMEOUT`` written at workflow or job level sets
+    the watchdog of every action step beneath it. Written where no step
+    beneath it calls the action, it sets nothing, and is reported at the
+    scope that declares it, because that is the line that has to change.
 
     Parameters
     ----------
@@ -124,17 +136,65 @@ def watchdog_offences_of(workflow: str, document: dict[str, object]) -> list[str
     list of str
         One entry per offence, empty when the workflow commits none.
     """
-    offences: list[str] = []
-    if WATCHDOG_VARIABLE in _env_of(document):
-        offences.append(f"{workflow} sets {WATCHDOG_VARIABLE} at workflow level")
-    for job in jobs_of(workflow, document):
-        if WATCHDOG_VARIABLE in _env_of(job.body):
-            offences.append(
-                f"{workflow}:{job.job_id} sets {WATCHDOG_VARIABLE} at job level"
-            )
+    jobs = list(jobs_of(workflow, document))
+    offences = _unread_variable_offences(workflow, document, jobs)
+    for job in jobs:
         for step in _steps_of(job.body):
-            offences.extend(_watchdog_offences(workflow, job.job_id, step))
+            budget = watchdog_budget(document, job.body, step)
+            offences.extend(_watchdog_offences(workflow, job.job_id, step, budget))
     return offences
+
+
+def _unread_variable_offences(
+    workflow: str, document: dict[str, object], jobs: list[Job]
+) -> list[str]:
+    """Report the watchdog variable at workflow or job scope with no reader."""
+    offences: list[str] = []
+    if WATCHDOG_VARIABLE in _env_of(document) and not any(
+        _uses_action(job.body) for job in jobs
+    ):
+        offences.append(f"{workflow} sets {WATCHDOG_VARIABLE} at workflow level")
+    offences.extend(
+        f"{workflow}:{job.job_id} sets {WATCHDOG_VARIABLE} at job level"
+        for job in jobs
+        if WATCHDOG_VARIABLE in _env_of(job.body) and not _uses_action(job.body)
+    )
+    return offences
+
+
+def _ceiling_of(job_body: dict[str, object]) -> float | None:
+    """Return a job's `timeout-minutes` in seconds, None when it has none."""
+    raw = job_body.get("timeout-minutes")
+    return None if raw is None else float(str(raw)) * 60.0
+
+
+def watchdog_windows_of(
+    workflow: str, document: dict[str, object]
+) -> list[tuple[str, float, float | None]]:
+    """Return each explicitly set watchdog with the job ceiling above it.
+
+    Parameters
+    ----------
+    workflow
+        The workflow file's name.
+    document
+        The parsed workflow document.
+
+    Returns
+    -------
+    list of tuple
+        `(location, budget, ceiling)` per action step whose watchdog is
+        set, in seconds; the ceiling is None when the job declares no
+        `timeout-minutes`. A step left at the default is an offence
+        above, not a window.
+    """
+    return [
+        (f"{workflow}:{job.job_id}", budget, _ceiling_of(job.body))
+        for job in jobs_of(workflow, document)
+        for step in _steps_of(job.body)
+        if uses_coverage_action(step)
+        and (budget := watchdog_budget(document, job.body, step)) is not None
+    ]
 
 
 def _tolerates_failure(declared: object) -> bool:

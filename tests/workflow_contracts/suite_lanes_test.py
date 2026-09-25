@@ -189,6 +189,73 @@ def test_two_runs_in_separate_steps_are_two_runs() -> None:
     assert [lane.invocations for lane in lanes] == [2], lanes
 
 
+#: A step running the suite through the shared coverage action.
+ACTION_STEP: typ.Final[str] = (
+    "      - uses: leynos/shared-actions/.github/actions/generate-coverage@abc\n"
+    "        with:\n"
+    "          use-cargo-nextest: '{nextest}'\n"
+)
+
+
+@pytest.mark.parametrize(
+    ("nextest", "expected"),
+    [
+        pytest.param("true", [1], id="under-nextest"),
+        pytest.param("false", [], id="under-cargo-test"),
+    ],
+)
+def test_the_coverage_action_is_a_suite_run_under_nextest(
+    nextest: str, expected: list[int]
+) -> None:
+    """The action runs the suite with no `run:` line to read.
+
+    A reading of `run:` lines alone missed the two lanes that moved onto
+    the action, and every budget stopped applying to them. Without
+    `use-cargo-nextest` the action runs `cargo llvm-cov test`, which no
+    nextest budget bounds, so that is no lane.
+    """
+    lanes = _lanes_of(
+        "  suite:\n"
+        "    runs-on: ubuntu-latest\n"
+        "    timeout-minutes: 90\n"
+        "    steps:\n" + ACTION_STEP.format(nextest=nextest)
+    )
+    assert [lane.invocations for lane in lanes] == expected, lanes
+
+
+@pytest.mark.parametrize(
+    ("action_condition", "expected"),
+    [
+        pytest.param("matrix.name == 'libsql-only'", 1, id="legs-split-between-steps"),
+        pytest.param("matrix.name == 'default'", 2, id="a-leg-running-both"),
+    ],
+)
+def test_runs_are_counted_per_matrix_leg(action_condition: str, expected: int) -> None:
+    """Each leg is its own job, so the busiest leg's count is the lane's.
+
+    `coverage.yml` runs the suite from a `run:` step on two legs and
+    through the action on the third: one run per leg. Summing the steps
+    would demand two runs' budget of every leg; ignoring the conditions
+    would do the same.
+    """
+    lanes = _lanes_of(
+        "  suite:\n"
+        "    runs-on: ubuntu-latest\n"
+        "    timeout-minutes: 300\n"
+        "    strategy:\n"
+        "      matrix:\n"
+        "        include:\n"
+        "          - name: default\n"
+        "          - name: libsql-only\n"
+        "    steps:\n"
+        "      - if: matrix.name != 'libsql-only'\n"
+        "        run: cargo llvm-cov nextest --workspace\n"
+        f"      - if: {action_condition}\n"
+        + ACTION_STEP.format(nextest="true").replace("      - uses", "        uses", 1)
+    )
+    assert [lane.invocations for lane in lanes] == [expected], lanes
+
+
 def test_the_requirement_grows_with_every_run_the_lane_makes() -> None:
     """A second run needs a second whole-run budget, not a second job.
 

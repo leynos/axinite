@@ -319,6 +319,12 @@ jobs:
           features: libsql,test-helpers
           with-default-features: 'false'
           use-cargo-nextest: 'true'
+          # The third timeout tier. The action's 1,800 s default equals the
+          # 30 m nextest whole-run budget and also has to cover the
+          # instrumented build, so it would kill a legal run first. One hour
+          # covers the build and a full run, and sits 30 m under the job's
+          # ceiling. `timeout_ordering_test.py` asserts both orderings.
+          cargo-wait-timeout: '3600'
           format: lcov
           output-path: lcov.info
           with-ratchet: 'true'

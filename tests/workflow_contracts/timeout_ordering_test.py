@@ -1,18 +1,20 @@
 """Contract for the timers that can end a test run.
 
 Four independent budgets can end a coverage lane, each set somewhere
-different, and they only work if each sits above the one inside it.
-Three of the four apply here: a per-test ``slow-timeout`` and a whole-run
-``global-timeout`` in ``.config/nextest.toml``, and the job's own
-``timeout-minutes``.
+different, and they only work if each sits above the one inside it: a
+per-test ``slow-timeout`` and a whole-run ``global-timeout`` in
+``.config/nextest.toml``, the shared coverage action's wall-clock watchdog
+on the ``cargo`` invocation, and the job's own ``timeout-minutes``.
 
-The third tier, the shared coverage action's wall-clock watchdog on the
-``cargo`` invocation, does not exist here: coverage runs
-``cargo llvm-cov nextest`` from a ``run:`` step rather than through that
-action. Its absence is asserted rather than assumed, because a lane that
-adopted the action without setting ``RUN_RUST_CARGO_WAIT_TIMEOUT`` or the
-``cargo-wait-timeout`` input would inherit the action's 1,800 s
-default underneath a 30 m nextest budget, which is the inversion the canonical section exists to prevent.
+The third tier exists only on the two lanes that run the suite through the
+shared ``generate-coverage`` action: ``coverage.yml``'s ``libsql-only`` leg
+and ``codescene-coverage.yml``'s pull-request lane. Every other lane runs
+``cargo llvm-cov nextest`` from a ``run:`` step and has no watchdog. Where
+the tier exists it is set explicitly, because the action's 1,800 s default
+equals the 30 m nextest budget and also has to cover the instrumented
+build, so it would kill a slow but legal run before nextest could report
+it. The contract holds it above the run and the work around it, and below
+the job's ceiling by the same margin the ceiling keeps above the run.
 
 Two of the four were unset until this contract was written. Nothing
 bounded a single test and nothing bounded the run, so the only timer that
@@ -43,7 +45,8 @@ from nextest_config import (
     Profile,
     profiles,
 )
-from suite_guards import failure_tolerances, watchdog_offences_of
+from suite_actions import required_watchdog
+from suite_guards import failure_tolerances, watchdog_offences_of, watchdog_windows_of
 from suite_lanes import (
     SUITE_MARKERS,
     SuiteLane,
@@ -177,35 +180,50 @@ def test_the_job_ceiling_covers_the_run_and_the_work_around_it(
         )
 
 
-def test_the_cargo_watchdog_tier_is_absent_rather_than_defaulted() -> None:
-    """The third tier does not exist here, and must not appear unnoticed.
+def test_every_cargo_watchdog_is_set_between_the_run_and_the_job(
+    nextest_profiles: dict[str, Profile],
+) -> None:
+    """Tier three, where it exists, sits between tiers two and four.
 
-    The canonical section has four tiers because the shared coverage
-    action wraps `cargo` in a wall-clock watchdog. This repository runs
-    `cargo llvm-cov nextest` from a `run:` step and does not use that
-    action, so the tier is absent by construction.
+    The action's watchdog times the whole `cargo` invocation, build
+    included, so it must exceed the whole-run budget, its termination and
+    the work outside the run, or it kills a legal run before nextest can
+    report it. It must also sit below the job's ceiling by the ceiling
+    margin, or the job is cancelled before the watchdog's own message
+    reaches the log.
 
-    A lane that adopted the action without setting the variable or the
-    `cargo-wait-timeout` input would inherit the action's 1,800 s default
-    underneath a 30 m nextest budget, which is the inversion the canonical section exists to
-    prevent, so both halves are asserted: the action is not used, and the
-    variable is not set.
-
-    The variable is looked for in all three scopes a step inherits its
-    environment from. One written at workflow or job level reaches the
-    suite step exactly as one written on the step does, so a check
-    reading the step alone would report the tier as absent while the
-    watchdog was in force.
+    Offences come first: an action step left at the 1,800 s default, or a
+    watchdog variable written where no step reads it. The windows are then
+    asserted present, since every ordering check passes over none.
     """
-    offenders = [
+    offences = [
         offence
         for path in workflow_paths()
         for offence in watchdog_offences_of(path.name, load(path))
     ]
-    assert not offenders, (
-        f"the cargo watchdog tier is documented as absent here, so adopting it "
-        f"needs the developers' guide updated in the same change: {offenders}"
+    assert not offences, (
+        f"the cargo watchdog must be set explicitly on every action step and "
+        f"nowhere else: {offences}"
     )
+    windows = [
+        window
+        for path in workflow_paths()
+        for window in watchdog_windows_of(path.name, load(path))
+    ]
+    assert len(windows) >= 2, (
+        f"expected the watchdog on both action lanes; found {windows}"
+    )
+    floor = required_watchdog(nextest_profiles)
+    for where, budget, ceiling in windows:
+        assert budget >= floor, (
+            f"{where}'s {budget:.0f}s watchdog is below the {floor:.0f}s the "
+            f"build and a full nextest run need; it would kill a legal run"
+        )
+        assert ceiling is not None and budget + CEILING_MARGIN_SECONDS <= ceiling, (
+            f"{where}'s {budget:.0f}s watchdog is not {CEILING_MARGIN_SECONDS:.0f}s "
+            f"below its job's {ceiling}s ceiling; the job would be cancelled "
+            f"before the watchdog reported"
+        )
 
 
 def test_no_step_disguises_a_suite_command(suite_lanes: tuple[SuiteLane, ...]) -> None:
@@ -281,15 +299,29 @@ def test_the_required_ceiling_carries_all_four_terms() -> None:
 #:
 #: `codescene-coverage.yml`'s lane legitimately runs on pull requests
 #: and on manual dispatch, because `coverage.yml` covers the trunk.
-REQUIRED_CONDITIONS: typ.Final[dict[tuple[str, str], tuple[object, object]]] = {
-    ("codescene-coverage.yml", "coverage-check"): (
-        None,
-        (
-            "github.event_name == 'pull_request' || "
-            "github.event_name == 'workflow_dispatch'"
-        ),
+#: `coverage.yml` runs the suite from a `run:` step on two legs and
+#: through the action on the `libsql-only` leg, so it carries one
+#: condition pair per step.
+REQUIRED_CONDITIONS: typ.Final[
+    dict[tuple[str, str], frozenset[tuple[object, object]]]
+] = {
+    ("codescene-coverage.yml", "coverage-check"): frozenset(
+        {
+            (
+                None,
+                (
+                    "github.event_name == 'pull_request' || "
+                    "github.event_name == 'workflow_dispatch'"
+                ),
+            )
+        }
     ),
-    ("coverage.yml", "coverage"): (None, None),
+    ("coverage.yml", "coverage"): frozenset(
+        {
+            ("matrix.name != 'libsql-only'", None),
+            ("matrix.name == 'libsql-only'", None),
+        }
+    ),
 }
 
 
@@ -330,7 +362,7 @@ def test_each_suite_lane_carries_the_condition_it_is_meant_to(
     wrong = {
         coordinate: (expected, found[coordinate])
         for coordinate, expected in REQUIRED_CONDITIONS.items()
-        if found[coordinate] != {expected}
+        if found[coordinate] != expected
     }
     assert not wrong, (
         f"these suite lanes do not carry the conditions the developers' "

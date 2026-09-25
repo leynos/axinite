@@ -13,6 +13,7 @@ import shlex
 import typing as typ
 
 from _workflow_policy import WORKFLOW_DIR, jobs_of, load, workflow_paths
+from suite_actions import admits_leg, matrix_leg_names, runs_suite_through_action
 
 #: The commands that run the workspace suite under nextest. A step
 #: running one of these is bound by both nextest tiers. Matched as whole
@@ -216,14 +217,32 @@ class SuiteLane(typ.NamedTuple):
         return f"{self.workflow}:{self.job}"
 
 
+def _step_runs(step: dict[str, object]) -> int:
+    """Return how many suite runs one step makes.
+
+    A step calling the shared coverage action with nextest makes one; a
+    `run:` step makes one per plain suite line.
+    """
+    if runs_suite_through_action(step):
+        return 1
+    return sum(_is_suite_line(line) for line in str(step.get("run", "")).splitlines())
+
+
 def _suite_invocations(job_body: dict[str, object]) -> int:
-    """Return how many times a job runs the suite.
+    """Return how many times one leg of a job runs the suite, at most.
 
     Every plain suite line counts, wherever it sits: two commands in one
     step's script are two runs exactly as two steps are. Each carries
     its own whole-run budget, because nextest starts that clock when
     tests begin and starts it again for the next invocation, while the
     job timer above them runs once.
+
+    The count is per matrix leg, and the largest leg's count is the
+    lane's, because each leg is its own job with its own timer. A step
+    whose `if` names one leg (`matrix.name == 'x'` or `!= 'x'`) counts
+    only on the legs it admits; `coverage.yml` runs the suite from a
+    `run:` step on two legs and through the action on the third, and
+    that is one run per leg, not two.
 
     Parameters
     ----------
@@ -233,34 +252,21 @@ def _suite_invocations(job_body: dict[str, object]) -> int:
     Returns
     -------
     int
-        The number of plain suite invocations in the job.
+        The number of suite invocations on the busiest leg.
     """
-    return sum(
-        _is_suite_line(line)
-        for step in job_body.get("steps") or []
-        if isinstance(step, dict)
-        for line in str(step.get("run", "")).splitlines()
+    steps = [step for step in job_body.get("steps") or [] if isinstance(step, dict)]
+    return max(
+        sum(_step_runs(step) for step in steps if admits_leg(step.get("if"), leg))
+        for leg in matrix_leg_names(job_body)
     )
 
 
 def _suite_steps(job_body: dict[str, object]) -> list[dict[str, object]]:
-    """Return the steps in one job that run the suite.
-
-    Parameters
-    ----------
-    job_body
-        The job's parsed mapping.
-
-    Returns
-    -------
-    list of dict
-        The suite-running steps, in the order the job runs them.
-    """
+    """Return the steps in one job that run the suite, in job order."""
     return [
         step
         for step in job_body.get("steps") or []
-        if isinstance(step, dict)
-        and any(_is_suite_line(line) for line in str(step.get("run", "")).splitlines())
+        if isinstance(step, dict) and _step_runs(step)
     ]
 
 

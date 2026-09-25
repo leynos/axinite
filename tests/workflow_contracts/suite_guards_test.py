@@ -1,20 +1,21 @@
 """How the timeout contract reads what a suite lane must not do.
 
-The two guards in ``suite_guards`` are both assertions of absence: the
-cargo watchdog tier does not exist in this repository, and no lane
-tolerates the suite failing. Every workflow here satisfies both, so a
-reading that detected neither would pass over the tree exactly as a
-correct one does. They are therefore driven with controlled workflows.
+The two guards in ``suite_guards`` both refuse a shape the tree does not
+contain: a cargo watchdog left at the action's default or written where
+nothing reads it, and a lane tolerating the suite failing. Every workflow
+here satisfies both, so a reading that detected neither would pass over
+the tree exactly as a correct one does. They are therefore driven with
+controlled workflows.
 """
 
 import pytest
 from _workflow_policy import parse_workflow
+from suite_actions import COVERAGE_ACTION, WATCHDOG_VARIABLE
 from suite_guards import (
-    COVERAGE_ACTION,
-    WATCHDOG_VARIABLE,
     _watchdog_offences,
     failure_tolerances,
     watchdog_offences_of,
+    watchdog_windows_of,
 )
 
 
@@ -63,33 +64,34 @@ def suite_job(text: str) -> dict[str, object]:
 
 
 @pytest.mark.parametrize(
-    ("step", "expected"),
+    ("step", "budget", "expected"),
     [
-        pytest.param({"run": "cargo llvm-cov nextest run"}, 0, id="an-ordinary-step"),
-        pytest.param({"uses": f"{COVERAGE_ACTION}@abc123"}, 1, id="adopts-the-action"),
+        pytest.param({"run": "cargo llvm-cov nextest run"}, None, 0, id="an-ordinary-step"),
         pytest.param(
-            {"run": "make test", "env": {WATCHDOG_VARIABLE: "1800"}},
-            1,
-            id="names-the-variable",
+            {"uses": f"{COVERAGE_ACTION}@abc123"}, None, 1, id="the-action-at-its-default"
         ),
         pytest.param(
-            {"uses": f"{COVERAGE_ACTION}@abc123", "env": {WATCHDOG_VARIABLE: "1800"}},
-            2,
-            id="both-at-once",
+            {"uses": f"{COVERAGE_ACTION}@abc123"}, 3600.0, 0, id="the-action-set"
+        ),
+        pytest.param(
+            {"run": "make test", "env": {WATCHDOG_VARIABLE: "1800"}},
+            None,
+            1,
+            id="the-variable-where-nothing-reads-it",
         ),
     ],
 )
-def test_both_halves_of_the_absent_tier_are_detected(
-    step: dict[str, object], expected: int
+def test_each_watchdog_offence_is_detected(
+    step: dict[str, object], budget: float | None, expected: int
 ) -> None:
-    """Adopting the action and naming the variable are separate offences.
+    """An action at its default and a variable nothing reads are offences.
 
-    The tier is absent by construction here, so no workflow in the tree
-    commits either offence and the assertion over the tree is satisfied
-    by a reading that detects neither. Driving the reading directly is
-    the only way to show it would notice.
+    The tree sets the watchdog on both action steps and nowhere else, so
+    the assertion over the tree is satisfied by a reading that detects
+    neither offence. Driving the reading directly is the only way to show
+    it would notice.
     """
-    offences = _watchdog_offences("ci.yml", "test", step)
+    offences = _watchdog_offences("ci.yml", "test", step, budget)
     assert len(offences) == expected, (
         f"{step} must yield {expected} offence(s), got {offences}"
     )
@@ -144,9 +146,8 @@ def test_the_watchdog_is_found_in_every_scope_a_step_inherits(
     the step overrides it. Either way the watchdog is in force, so a
     reading confined to the step reports the tier as absent while it
     runs.
-    That is the inversion the tier's asserted absence exists to catch,
-    and it is the one shape this repository's own workflows cannot show,
-    because none of them sets the variable anywhere.
+    Written where no step calls the action, it sets nothing, and this
+    repository's own workflows cannot show that shape.
     """
     blanks = {"workflow_env": "", "job_env": "", "step_env": ""}
     offences = watchdog_offences_of(
@@ -330,4 +331,69 @@ def test_a_job_that_runs_the_suite_is_judged_on_its_own_tolerance() -> None:
     assert "on the job" in offences[0], (
         f"the offence must name the scope a reader has to edit, which is the "
         f"job rather than a step; it said {offences[0]!r}"
+    )
+
+
+#: A controlled workflow whose one action step reads its watchdog from the
+#: scope named by the format field.
+_ACTION_WATCHDOG_AT = """\
+name: controlled
+on: push
+{workflow_env}jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+{job_env}    steps:
+      - uses: leynos/shared-actions/.github/actions/generate-coverage@abc
+{step_setting}
+"""
+
+
+@pytest.mark.parametrize(
+    "fields",
+    [
+        pytest.param(
+            {"step_setting": "        with:\n          cargo-wait-timeout: '3600'"},
+            id="the-input",
+        ),
+        pytest.param(
+            {"step_setting": f"        env:\n          {WATCHDOG_VARIABLE}: '3600'"},
+            id="step-level",
+        ),
+        pytest.param(
+            {"job_env": f"    env:\n      {WATCHDOG_VARIABLE}: '3600'\n"},
+            id="job-level",
+        ),
+        pytest.param(
+            {"workflow_env": f"env:\n  {WATCHDOG_VARIABLE}: '3600'\n"},
+            id="workflow-level",
+        ),
+    ],
+)
+def test_an_action_step_reads_its_watchdog_from_any_scope(fields: dict[str, str]) -> None:
+    """Every place GitHub would resolve the budget from is read, and none offends.
+
+    A reading confined to the input would report a job-level budget as
+    the default, and one confined to the step would miss both outer
+    scopes.
+    """
+    blanks = {"workflow_env": "", "job_env": "", "step_setting": ""}
+    document = workflow(_ACTION_WATCHDOG_AT.format(**(blanks | fields)))
+    offences = watchdog_offences_of("controlled.yml", document)
+    assert offences == [], f"a set watchdog is no offence; got {offences}"
+    windows = watchdog_windows_of("controlled.yml", document)
+    assert windows == [("controlled.yml:test", 3600.0, 5400.0)], (
+        f"the window should read the budget and the ceiling; got {windows}"
+    )
+
+
+def test_an_action_step_left_at_the_default_is_no_window() -> None:
+    """The default is an offence, not a window the ordering check could pass."""
+    document = workflow(
+        _ACTION_WATCHDOG_AT.format(workflow_env="", job_env="", step_setting="")
+    )
+    assert watchdog_windows_of("controlled.yml", document) == []
+    offences = watchdog_offences_of("controlled.yml", document)
+    assert len(offences) == 1 and "default" in offences[0], (
+        f"the action at its default must be reported once; got {offences}"
     )
