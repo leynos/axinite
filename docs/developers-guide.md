@@ -350,7 +350,8 @@ Each mutable cache path has exactly one owner and one explainable key.
 | `~/.cargo/registry`, `~/.cargo/git`                          | The `Restore`/`Save Cargo registry and index` step pair | `runner.os`, `runner.arch`, `runner.environment`, `hashFiles('**/Cargo.lock')`, generation `v1` | `test.yml` `tests` (`all-features` leg) on Linux; `test.yml` `windows-build` (`all-features` leg) on Windows; both only on a push to `main` |
 | `~/.cargo/bin/whitaker-installer`, `~/.local/share/whitaker` | The shared `install-whitaker` action                    | installer version, `hashFiles('dylint.toml')`, `runner.os`, `runner.arch`                       | The action, on any run                                                                                                                      |
 | `~/.cache/uv`                                                | `astral-sh/setup-uv` with `enable-cache: true`          | The action's own lockfile hashing                                                               | The action, on any run                                                                                                                      |
-| `~/.local/bin/cs-coverage`                                   | The shared `upload-codescene-coverage` action           | CodeScene CLI version                                                                           | The action, on any run                                                                                                                      |
+| `~/.local/bin/cs-coverage`                                   | The shared `upload-codescene-coverage` action           | CodeScene CLI version                                                                           | The action, in `coverage.yml` `coverage` (`libsql-only` leg) on `main` only                                                                 |
+| `.coverage-baseline.rust` (the ratchet baseline)             | The shared `generate-coverage` action                   | `runner.os`, `github.run_id` (newest entry wins)                                                | `coverage.yml` `coverage` (`libsql-only` leg), only on a push to `main`                                                                     |
 
 Rules that follow from the table:
 
@@ -387,14 +388,14 @@ push write the caches, then dispatch the same workflow against `main` twice in
 sequence and compare queue time, wall time, and the sccache hit rate.
 
 A dispatch is a reader. No save step can run, because every save names the
-`push` event; the CodeScene upload stays gated on `pull_request` so a manual
-run reports coverage to the log only. Otherwise a dispatch behaves like a push:
-every job runs, including the GitHub-hosted Windows lanes, so a manual run is a
-full run. Its Ubicloud jobs are billed by the minute like any other; the
-GitHub-hosted lanes are not, because this repository is public. The trigger
-takes no inputs, because `gh workflow run --ref` and the Actions UI already
-choose the ref. `tests/workflow_contracts/warm_dispatch_test.py` asserts both
-halves.
+`push` event, and `generate-coverage` saves the ratchet baseline only on a push
+to `main`, so a manual run of `codescene-coverage.yml` measures and compares
+without advancing anything. Otherwise a dispatch behaves like a push: every job
+runs, including the GitHub-hosted Windows lanes, so a manual run is a full run.
+Its Ubicloud jobs are billed by the minute like any other; the GitHub-hosted
+lanes are not, because this repository is public. The trigger takes no inputs,
+because `gh workflow run --ref` and the Actions UI already choose the ref.
+`tests/workflow_contracts/warm_dispatch_test.py` asserts both halves.
 
 ### sccache
 
@@ -444,6 +445,68 @@ still succeeds; it just recompiles everything.
 including that no build step precedes the reset, and that GitHub-hosted jobs
 carry none of this: the endpoint export points at a proxy that exists only on
 an Ubicloud VM.
+
+### CodeScene coverage publication
+
+Only `main` publishes coverage to CodeScene, and no lane a pull request can
+start contacts it at all. CodeScene accepts coverage only for a branch it
+analyses, and a pull-request lane holding the token puts the credential on the
+fork-facing side of the repository. What the pull request gets instead is a
+ratchet.
+
+- `codescene-coverage.yml` `coverage-check` (check name "Coverage Ratchet")
+  runs the libsql-only suite through the shared `generate-coverage` action with
+  `with-ratchet: 'true'` and `publish-artefact: 'false'`. It fails when
+  coverage falls below the stored baseline, and it holds no token. The file
+  keeps its old name so the contracts and this guide stay stable.
+- `coverage.yml` `coverage` is the one publisher and the one baseline writer.
+  Its `libsql-only` leg runs `generate-coverage` with exactly the lane's
+  selection, so the baseline it saves on a push to `main` measures what the
+  pull requests are compared on, and only that leg uploads.
+- The upload step passes the token as the action's `access-token` input and
+  never through an `env`: the action is composite, and a step's environment
+  reaches every step nested inside it. Whether the token exists is decided by a
+  step with the id `codescene-token` whose one command is
+  `echo "available=${{ secrets.CS_ACCESS_TOKEN != '' }}" >> "$GITHUB_OUTPUT"`.
+  The expression is evaluated before the shell runs, so nothing is bound and no
+  shell conditional can neutralize the write.
+- The upload is guarded on the leg, on that output, and on
+  `github.ref == 'refs/heads/main'`, joined by `&&` alone. The ref guard is
+  needed because `workflow_dispatch` can name any branch.
+- The workflow's concurrency group is `coverage-${{ github.ref }}`, keyed on
+  the ref alone, and never cancels. A cancelled run abandons its upload and its
+  baseline; with no cancellation GitHub keeps one pending run per group, so
+  among triggered runs (pushes and dispatches) a newer one replaces an older
+  pending one and the latest push's baseline stands. A manual "Re-run jobs" on
+  an older `main` run is an operator action outside that ordering: it keeps its
+  old SHA, so it republishes that commit's coverage and baseline until the next
+  push supersedes them. An event in the key would let a dispatch and a push to
+  `main` race. Because a dispatch saves no baseline, a dispatch that replaces a
+  pending push leaves the baseline one commit behind until the next push to
+  `main`.
+- Merges made by the automerge workflow with `GITHUB_TOKEN` fire no push
+  event, so they reach neither the upload nor the baseline. That is a known
+  exception; a manual dispatch covers it, and no schedule is added.
+- Both shared actions are pinned to a full commit SHA, and nothing passes the
+  withdrawn `installer-checksum` input or the `CODESCENE_CLI_SHA256` variable.
+  The pins must stay at `a5765019` or a commit descended from it, since that is
+  where the checksum inputs were withdrawn. The contract does not check that
+  ancestry: it would have to list the current SHAs, and "Workflow pins and
+  Dependabot" above forbids that. Dependabot only moves a pin forward, so the
+  floor holds unless someone downgrades a pin by hand, and review catches that.
+
+`tests/workflow_contracts/coverage_publication_test.py` holds the estate to all
+of this. The pull-request surface it checks is every workflow a pull-request,
+review or merge-queue event starts, every `workflow_run` chained onto one, and
+everything those call through `./` or `$/`, followed transitively. Across that
+surface, no key or scalar may name the token, the uploader, the CLI or
+`codescene.io`, and no job may forward `secrets: inherit`.
+`_strict_workflows.py` reads every workflow through a loader that refuses a
+duplicated key and reads `on:` in each of its three shapes under both key
+spellings. `coverage_publication_reader_test.py` drives each clause with
+constructed workflows, including a `workflow_call`-only callee that curls
+CodeScene with an inherited token. Every clause was proved by a mutation that
+deletes or weakens it.
 
 ### Writing a workflow contract
 
