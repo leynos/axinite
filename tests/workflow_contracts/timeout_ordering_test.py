@@ -183,17 +183,13 @@ def test_the_job_ceiling_covers_the_run_and_the_work_around_it(
 def test_every_cargo_watchdog_is_set_between_the_run_and_the_job(
     nextest_profiles: dict[str, Profile],
 ) -> None:
-    """Tier three, where it exists, sits between tiers two and four.
+    """Tier three, where it exists, sits strictly between tiers two and four.
 
-    The action's watchdog times the whole `cargo` invocation, build
-    included, so it must exceed the whole-run budget, its termination and
-    the work outside the run, or it kills a legal run before nextest can
-    report it. It must also sit below the job's ceiling by the ceiling
-    margin, or the job is cancelled before the watchdog's own message
-    reaches the log.
-
-    Offences come first: an action step left at the 1,800 s default, or a
-    watchdog variable written where no step reads it. The windows are then
+    The watchdog times the whole `cargo` invocation, build included, so it
+    must exceed the run budget, its termination and the work outside the
+    run, and sit the ceiling margin below the job, or an outer timer ends
+    the run before the inner one reports. Offences (an action step at the
+    default, a variable nothing reads) come first; the windows are then
     asserted present, since every ordering check passes over none.
     """
     offences = [
@@ -213,13 +209,19 @@ def test_every_cargo_watchdog_is_set_between_the_run_and_the_job(
     assert len(windows) >= 2, (
         f"expected the watchdog on both action lanes; found {windows}"
     )
+    whole_run = max(global_timeout(profile) for profile in nextest_profiles.values())
     floor = required_watchdog(nextest_profiles)
     for where, budget, ceiling in windows:
+        assert ceiling is not None and whole_run < budget < ceiling, (
+            f"{where} breaks the strict order nextest ({whole_run:.0f}s) < "
+            f"watchdog ({budget:.0f}s) < job ({ceiling}s); a tie lets the "
+            f"outer timer end the run before the inner one can report"
+        )
         assert budget >= floor, (
             f"{where}'s {budget:.0f}s watchdog is below the {floor:.0f}s the "
             f"build and a full nextest run need; it would kill a legal run"
         )
-        assert ceiling is not None and budget + CEILING_MARGIN_SECONDS <= ceiling, (
+        assert budget + CEILING_MARGIN_SECONDS <= ceiling, (
             f"{where}'s {budget:.0f}s watchdog is not {CEILING_MARGIN_SECONDS:.0f}s "
             f"below its job's {ceiling}s ceiling; the job would be cancelled "
             f"before the watchdog reported"

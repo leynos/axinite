@@ -209,7 +209,7 @@ def test_setup_and_generator_match_proven_libsql_coverage() -> None:
         "features": "libsql,test-helpers",
         "with-default-features": "false",
         "use-cargo-nextest": "true",
-        "cargo-wait-timeout": "3600",
+        "cargo-wait-timeout": "4200",
         "format": "lcov",
         "output-path": "lcov.info",
         "with-ratchet": "true",

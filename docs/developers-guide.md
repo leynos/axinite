@@ -2893,7 +2893,7 @@ were unset until this was written.
 | ------------------------ | ---------------------------------- | ------------------------------------- | --------------------------------------------------------- |
 | Per-test `slow-timeout`  | one test                           | `.config/nextest.toml`, both profiles | 300 s, 900 s for the compile-contract binaries, 5 s grace |
 | nextest `global-timeout` | the whole test run                 | `.config/nextest.toml`, both profiles | 30 m                                                      |
-| Cargo watchdog           | one `cargo` invocation, wall clock | `cargo-wait-timeout` on action steps  | 3,600 s on the two action lanes, absent elsewhere         |
+| Cargo watchdog           | one `cargo` invocation, wall clock | `cargo-wait-timeout` on action steps  | 4,200 s on the two action lanes, absent elsewhere         |
 | Job `timeout-minutes`    | the whole job                      | job level                             | 90 m for the coverage lanes                               |
 
 *Table: the timers that can end a run, innermost first.*
@@ -3060,15 +3060,27 @@ Two lanes run the suite through the shared `generate-coverage` action:
 wall-clock watchdog, so those two lanes have the third tier. Every other lane
 runs `cargo llvm-cov nextest` from a `run:` step and has no watchdog.
 
-Both action steps set `cargo-wait-timeout: '3600'`. The action's default of
+Both action steps set `cargo-wait-timeout: '4200'`. The action's default of
 1,800 seconds equals the 30 minute nextest whole-run budget, and it also has to
 cover the instrumented build that precedes the run, so at the default the
-watchdog would kill a slow but legal run before nextest could report it. The
-contract requires the watchdog to be at least the whole-run budget, its
+watchdog would kill a slow but legal run before nextest could report it.
+
+The value comes from measurement. Read through the jobs API, the action's
+"Generate coverage" step, which is the whole `cargo` invocation, took 528 to
+670 seconds on warm pull-request runs of the coverage lane (runs 35988233996,
+35910339332, 35990961297 and 36052946774), and 1,549 seconds on the branch's
+first, cold run (35903120596). The slowest `run:`-step invocation on `main`
+over the preceding six pushes was 1,194 seconds. So 4,200 seconds is the
+slowest measured invocation, 1,549 seconds, plus a full 1,800 second nextest
+budget on top of it, plus 851 seconds of headroom. It sits 1,200 seconds under
+the 5,400 second job ceiling.
+
+The contract asserts the strict order nextest < watchdog < job on every action
+step, since a tie lets the outer timer end the run before the inner one can
+report. It also asserts that the watchdog covers the whole-run budget, its
 termination allowance and the 20 minutes allowed for the work outside the run
-(3,065 seconds today), and to sit at least the 15 minute ceiling margin below
-the job's 90 minute ceiling, so the watchdog's message reaches the log before
-the job is cancelled.
+(3,065 seconds today), and that it sits at least the 15 minute ceiling margin
+below the job, so its message reaches the log before the job is cancelled.
 
 The contract also refuses the watchdog where it would do nothing or apply by
 accident: an action step left at the default, and a
