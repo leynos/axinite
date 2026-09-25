@@ -18,6 +18,13 @@
 #   3. libsql-only: Minimal libSQL-only configuration
 # - E2E coverage tracks end-to-end test coverage separately
 #
+# This is also the repository's one CodeScene publisher and the one writer
+# of the coverage ratchet baseline. The libsql-only leg generates its report
+# through generate-coverage with the same selection as the pull-request lane
+# in `codescene-coverage.yml`, so the baseline it saves on a push to `main`
+# is the one that lane compares against, and it is the only leg that uploads
+# to CodeScene. No lane a pull request can start holds the token.
+#
 # Coverage files:
 # - Unit/integration: lcov.info (uploaded to Codecov with "unit" flag)
 # - E2E: e2e-coverage.info (uploaded to Codecov with "e2e" flag)
@@ -34,8 +41,26 @@ name: Code Coverage
   # Allow the CodeScene upload to be re-run on demand. Merges performed
   # by the automerge workflow's GITHUB_TOKEN do not fire push-event
   # workflows, so automerged changes to main only receive a CodeScene
-  # upload via this manual dispatch.
+  # upload via this manual dispatch. That is a known exception, not a gap
+  # a schedule should paper over. A dispatch can name any branch, which is
+  # why the upload step guards on the ref as well.
   workflow_dispatch:
+
+# Never cancel a publisher run. A cancelled run abandons both its upload and
+# the ratchet baseline it writes. With no cancellation GitHub keeps one
+# pending run per group, so among triggered runs (pushes and dispatches) a
+# newer one replaces an older pending one and the latest push's baseline
+# stands. A manual "Re-run jobs" on an older main run is an operator action
+# outside that ordering: it keeps its old SHA, so it republishes that
+# commit's coverage and baseline until the next push supersedes them. The
+# group is keyed on the ref alone: a dispatch
+# from another branch cannot take main's pending slot, and a dispatch and a
+# push to main share one group rather than race. A dispatch saves no
+# baseline, so one that replaces a pending push leaves the baseline one
+# commit behind until the next push.
+concurrency:
+  group: coverage-${{ github.ref }}
+  cancel-in-progress: false
 
 permissions:
   id-token: write
@@ -276,38 +301,62 @@ jobs:
       # (issue #237). nextest also skips doctests; the default profile
       # additionally drops the slow trybuild binaries.
       - name: Generate coverage
+        if: matrix.name != 'libsql-only'
         run: >-
           cargo llvm-cov nextest ${{ matrix.flags }} --features test-helpers
           --workspace --lcov
           --output-path lcov.info
 
-      # Feed CodeScene's stored coverage from the analysed branch (main).
-      # Upload from ONE leg only so CodeScene receives a single report
-      # per commit. The libsql-only leg is chosen because one leg has to be,
-      # and it is the cheapest: it compiles the narrowest feature set and
-      # needs no Postgres service.
-      #
-      # It is no longer chosen because the others fail. They did, for the
-      # reason recorded against the database URL above, and this comment said
-      # so long after it stopped being true. Dispatch 34991999565 on
-      # 3301e095e is green on all three legs under `--profile ci`: 4,372 tests
-      # run and 4,372 passed on `all-features`, including the five
-      # `db::postgres::sandbox::tests::behavioural` tests from issue #350.
-      # The guard skips the step when the project
-      # access token is absent (forks). The PR "Code Coverage" gate
-      # (mode: check) is deferred until the CodeScene project's gates
-      # configuration is enabled operator-side (project 77987 posts only
-      # Code Health Review today).
+      # The libsql-only leg goes through generate-coverage, with exactly the
+      # selection the pull-request lane in `codescene-coverage.yml` uses, so
+      # the ratchet baseline this saves on a push to `main` measures the same
+      # thing the pull requests are compared on. The action saves the
+      # baseline only for a push to `main`, never for a dispatch.
+      - name: Generate coverage and the ratchet baseline
+        if: matrix.name == 'libsql-only'
+        uses: leynos/shared-actions/.github/actions/generate-coverage@dbe2e22ceaf498d85512679ccded38be9dbe7777
+        with:
+          features: libsql,test-helpers
+          with-default-features: 'false'
+          use-cargo-nextest: 'true'
+          format: lcov
+          output-path: lcov.info
+          with-ratchet: 'true'
+          publish-artefact: 'false'
+          cache-provider: external
+
+      # Whether the token exists, decided without putting it in any step's
+      # environment. The expression is evaluated to `true` or `false` before
+      # the shell runs, so there is no shell conditional to neutralize and
+      # the token itself never reaches this step.
+      - name: Check for the CodeScene token
+        id: codescene-token
+        run: echo "available=${{ secrets.CS_ACCESS_TOKEN != '' }}" >> "$GITHUB_OUTPUT"
+
+      # Feed CodeScene's stored coverage from the analysed branch (main),
+      # from ONE leg so CodeScene receives a single report per commit: the
+      # libsql-only leg, whose report is the one the ratchet also reads. It
+      # is chosen because one leg has to be and it is the cheapest, compiling
+      # the narrowest feature set with no Postgres service, not because the
+      # other legs fail: dispatch 34991999565 on 3301e095e is green on all
+      # three.
+      # Three guards, and none may be widened with `||`: the leg, the token's
+      # presence, and the ref, which the trigger's branch filter does not
+      # cover because a dispatch can name any branch and CodeScene refuses
+      # coverage for a branch it does not analyse. The token is passed as the
+      # action's input, not through this step's `env`: the action is
+      # composite and hands its step environment on to the nested steps it
+      # runs, while it binds the token itself from the input.
       - name: Upload coverage to CodeScene
-        env:
-          CS_ACCESS_TOKEN: ${{ secrets.CS_ACCESS_TOKEN }}
-        if: matrix.name == 'libsql-only' && env.CS_ACCESS_TOKEN != ''
-        uses: leynos/shared-actions/.github/actions/upload-codescene-coverage@6b5cdc2d4c0bb72cafd5a66d24d248ac25827db9
+        if: >-
+          matrix.name == 'libsql-only' &&
+          steps.codescene-token.outputs.available == 'true' &&
+          github.ref == 'refs/heads/main'
+        uses: leynos/shared-actions/.github/actions/upload-codescene-coverage@dbe2e22ceaf498d85512679ccded38be9dbe7777
         with:
           format: lcov
           mode: upload
-          project-url: https://api.codescene.io/v2/projects/77987
-          access-token: ${{ env.CS_ACCESS_TOKEN }}
+          access-token: ${{ secrets.CS_ACCESS_TOKEN }}
 
       - name: Upload to Codecov
         uses: codecov/codecov-action@v5
