@@ -78,6 +78,11 @@ jobs:
     name: Coverage (${{ matrix.name }})
     runs-on: ubicloud-standard-4
     timeout-minutes: 90
+    # The CodeScene token is to live in this environment, whose branch policy
+    # admits `main` alone, so only this job, deploying from `main`, can read
+    # it. `tests/workflow_contracts/codescene_environment_test.py` holds the
+    # placement: every uploading job declares it, and no other job does.
+    environment: codescene
     env:
       # sccache is the sole owner of compiler output: no cache step archives a
       # target tree. RUSTC_WRAPPER is what actually engages it; installing
