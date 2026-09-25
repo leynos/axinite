@@ -20,10 +20,17 @@ from dataclasses import dataclass
 from _estate import Estate
 from _shell import split_commands
 from _suite_keys import feature_key, profile_of
-from _suite_targets import DEFAULT_PROFILE, MAKE_COMMAND, MAKE_TARGETS, WORKSPACE
+from _suite_targets import (
+    DEFAULT_PROFILE,
+    MAKE_COMMAND,
+    MAKE_TARGETS,
+    PROFILE_VARIABLE,
+    WORKSPACE,
+)
 from _trigger_reading import matrix_legs, runs_on_event, triggers
 from _workflow_files import jobs_of
 from _workflow_policy import Job, step_text
+from suite_actions import admits_leg, runs_suite_through_action
 
 if typ.TYPE_CHECKING:  # pragma: no cover - typing only
     from collections.abc import Iterator
@@ -202,6 +209,55 @@ def make_runs(
                 yield scope, DEFAULT_PROFILE, frozenset()
 
 
+def _action_arguments(inputs: dict[object, object]) -> str:
+    """Spell the coverage action's feature inputs as Cargo arguments."""
+    arguments: list[str] = []
+    if str(inputs.get("all-features", "false")).strip().lower() == "true":
+        arguments.append("--all-features")
+    if str(inputs.get("with-default-features", "true")).strip().lower() == "false":
+        arguments.append("--no-default-features")
+    features = str(inputs.get("features", "")).strip()
+    if features:
+        arguments += ["--features", features]
+    return " ".join(arguments)
+
+
+def action_runs(
+    step: dict[str, object], defaults: frozenset[str]
+) -> Iterator[tuple[str, str, frozenset[str]]]:
+    """Yield the workspace run a step makes through the shared coverage action.
+
+    The action runs `cargo llvm-cov nextest --workspace` with the features
+    its inputs name, and has no profile input: nextest reads
+    `NEXTEST_PROFILE` from the step's `env`, which the composite action's
+    steps inherit. A step that does not run the suite through the action
+    yields nothing.
+
+    Parameters
+    ----------
+    step
+        One step mapping.
+    defaults
+        The root manifest's `default` feature list.
+
+    Yields
+    ------
+    tuple of str, str and frozenset of str
+        The workspace scope, the profile and the features, at most once.
+    """
+    if not runs_suite_through_action(step):
+        return
+    inputs = step.get("with")
+    environment = step.get("env")
+    arguments = _action_arguments(inputs if isinstance(inputs, dict) else {})
+    profile = (
+        environment.get(PROFILE_VARIABLE, DEFAULT_PROFILE)
+        if isinstance(environment, dict)
+        else DEFAULT_PROFILE
+    )
+    yield WORKSPACE, str(profile), feature_key(arguments, defaults)
+
+
 def suite_runs_in(job: Job, event: str, defaults: frozenset[str]) -> Iterator[SuiteRun]:
     """Yield every suite run a job performs on an event.
 
@@ -221,10 +277,15 @@ def suite_runs_in(job: Job, event: str, defaults: frozenset[str]) -> Iterator[Su
     """
     for leg in matrix_legs(job, event):
         for step in job.steps:
+            # A step whose `if` names one leg runs on that leg alone; any
+            # other condition is read as admitting every leg.
+            if not admits_leg(step.get("if"), leg.get("name")):
+                continue
             script = substitute(step_text(step), leg)
             for scope, profile, features in (
                 *cargo_runs(script, defaults),
                 *make_runs(script, defaults),
+                *action_runs(step, defaults),
             ):
                 yield SuiteRun(
                     job=job,

@@ -152,3 +152,92 @@ class TestDuplicateDetection:
         assert not duplicates_in(suite_runs_for(documents, "push", defaults)), (
             "a.yml runs on a pull request only, so it cannot clash on a push"
         )
+
+    _ACTION = (
+        "  ratchet:\n"
+        "    runs-on: ubicloud-standard-4\n"
+        "    steps:\n"
+        "      - uses: leynos/shared-actions/.github/actions/generate-coverage@abc\n"
+        "        env:\n"
+        "          NEXTEST_PROFILE: {profile}\n"
+        "        with:\n"
+        "          features: test-helpers\n"
+        "          use-cargo-nextest: 'true'\n"
+    )
+
+    def test_a_run_through_the_coverage_action_is_a_suite_run(
+        self, defaults: frozenset[str]
+    ) -> None:
+        """The action runs the workspace suite with no `run:` line to read.
+
+        A reading of scripts alone missed both lanes that moved onto the
+        action, so a duplicate of either would pass unseen. The same suite
+        under the same profile from a script is the duplicate that proves it.
+        """
+        ci_tests = self._TESTS.replace(
+            "cargo nextest run --workspace", "cargo nextest run --profile ci --workspace"
+        )
+        documents = {
+            "one.yml": self._workflow(
+                "pull_request", ci_tests, self._ACTION.format(profile="ci")
+            )
+        }
+        duplicated = duplicates_in(suite_runs_for(documents, "pull_request", defaults))
+        found = sorted(str(run) for runs in duplicated.values() for run in runs)
+        assert found == ["one.yml:ratchet", "one.yml:tests"], (
+            f"the action's run must be seen and keyed like a script's; got {found!r}"
+        )
+
+    def test_the_action_reads_its_profile_from_the_step_env(
+        self, defaults: frozenset[str]
+    ) -> None:
+        """Without `NEXTEST_PROFILE: ci` the action runs the default profile."""
+        ci_tests = self._TESTS.replace(
+            "cargo nextest run --workspace", "cargo nextest run --profile ci --workspace"
+        )
+        documents = {
+            "one.yml": self._workflow(
+                "pull_request", ci_tests, self._ACTION.format(profile="default")
+            )
+        }
+        assert not duplicates_in(suite_runs_for(documents, "pull_request", defaults)), (
+            "a default-profile action run is a different suite from a ci one"
+        )
+
+    def test_a_step_for_one_leg_runs_on_that_leg_alone(
+        self, defaults: frozenset[str]
+    ) -> None:
+        """`coverage.yml` splits one suite between a script and the action.
+
+        Read without the step conditions, the libsql leg would count the
+        script's run and the action's, and report the leg against itself.
+        """
+        documents = {
+            "one.yml": self._workflow(
+                "pull_request",
+                "  coverage:\n"
+                "    runs-on: ubicloud-standard-4\n"
+                "    strategy:\n"
+                "      matrix:\n"
+                "        include:\n"
+                "          - name: default\n"
+                "            flags: ''\n"
+                "          - name: libsql-only\n"
+                "            flags: --no-default-features\n"
+                "    steps:\n"
+                "      - if: matrix.name != 'libsql-only'\n"
+                "        run: cargo nextest run --workspace --features test-helpers"
+                " ${{ matrix.flags }}\n"
+                "      - if: matrix.name == 'libsql-only'\n"
+                "        uses: leynos/shared-actions/.github/actions/generate-coverage@a\n"
+                "        with:\n"
+                "          features: test-helpers\n"
+                "          with-default-features: 'false'\n"
+                "          use-cargo-nextest: 'true'\n",
+            )
+        }
+        runs = suite_runs_for(documents, "pull_request", defaults)
+        assert sorted(run.leg for run in runs) == ["default", "libsql-only"], (
+            f"each leg runs the suite once; got {[str(run) for run in runs]}"
+        )
+        assert not duplicates_in(runs), "the two legs select different features"

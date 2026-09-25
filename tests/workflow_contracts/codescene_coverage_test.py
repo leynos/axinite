@@ -1,9 +1,11 @@
-"""Contract tests for the isolated CodeScene pull-request coverage workflow.
+"""Contract tests for the isolated pull-request coverage ratchet workflow.
 
 Axinite's main coverage workflow retains its PostgreSQL matrix, E2E coverage,
-Codecov uploads, and aggregate gate. The pull-request workflow deliberately
-isolates the proven libsql-only report path so those unrelated main-only legs
-cannot block CodeScene's changed-line coverage check.
+Codecov uploads, and aggregate gate, and it is the one CodeScene publisher.
+The pull-request workflow deliberately isolates the libsql-only report path,
+and ratchets it against the baseline that workflow writes, so the unrelated
+main-only legs cannot block it. It never contacts CodeScene; that half of the
+rule is `coverage_publication_test.py`'s.
 
 Run via ``make test-workflow-contracts``.
 """
@@ -92,6 +94,10 @@ def test_trigger_permissions_and_job_are_pr_only_and_isolated() -> None:
         "github.event_name == 'pull_request' || "
         "github.event_name == 'workflow_dispatch'"
     ), "coverage-check must run only for a pull request or a manual dispatch"
+    assert job.get("name") == "Coverage Ratchet", (
+        "the job's check name must say what it does now: it ratchets, and it "
+        "no longer checks anything with CodeScene"
+    )
     # Read the arm a branch pull request selects rather than the raw scalar:
     # the value is a chain since the fork fallback, and a string comparison
     # would report the shape as wrong while the lane still buys it.
@@ -126,23 +132,15 @@ def test_setup_and_generator_match_proven_libsql_coverage() -> None:
         "Install sccache",
         "Start sccache statistics",
         "Restore Cargo registry and index",
-        "Install cargo-llvm-cov",
-        "Install cargo-nextest",
         "Install cargo-binstall",
         "Install cargo-component",
         "Probe Cargo tooling",
         "Build GitHub WASM tool (for metadata/schema tests)",
         "Build WASM channels (for integration tests)",
         "Generate coverage",
-        "Check coverage against CodeScene gates",
         "Report sccache statistics",
         "Report resource peaks",
-    ], "coverage-check setup, report, and check steps must stay ordered"
-
-    checkout = next(step for step in steps if step.get("uses") == "actions/checkout@v6")
-    assert checkout.get("with") == {"fetch-depth": 0}, (
-        "CodeScene requires a full-history checkout"
-    )
+    ], "coverage-check setup and report steps must stay ordered"
 
     rust = next(
         step for step in steps if step.get("uses") == "dtolnay/rust-toolchain@stable"
@@ -162,7 +160,9 @@ def test_setup_and_generator_match_proven_libsql_coverage() -> None:
     assert "target" not in str(cache_with.get("path", "")), (
         "coverage-check must not archive a target tree"
     )
-    for tool in ("cargo-llvm-cov", "cargo-nextest", "cargo-binstall"):
+    # cargo-llvm-cov and cargo-nextest come from generate-coverage, which
+    # installs its own pinned, checksum-verified releases.
+    for tool in ("cargo-binstall",):
         step = _find_step(job, f"Install {tool}")
         step_with = step.get("with")
         assert isinstance(step_with, dict), f"Install {tool} must declare inputs"
@@ -211,178 +211,28 @@ def test_setup_and_generator_match_proven_libsql_coverage() -> None:
         == "./scripts/build-wasm-extensions.sh --channels"
     ), "coverage-check must build the WASM channel fixtures"
 
-    generator = _find_step(job, "Generate coverage").get("run")
-    assert isinstance(generator, str), "Generate coverage must declare a command"
-    # `--profile ci` joined the proven command when this lane became the only
-    # libsql-only run on a pull request: `test.yml`'s leg ran that profile, and
-    # the default profile drops the trybuild compile contracts, so without it
-    # the replacement would be narrower than the leg it replaced.
-    assert " ".join(generator.split()) == (
-        "cargo llvm-cov nextest --no-default-features --features libsql "
-        "--features test-helpers --workspace --profile ci --lcov "
-        "--output-path lcov.info"
-    ), "coverage-check must preserve the proven libsql-only LCOV generator"
-
-
-def test_codescene_check_uses_canonical_guard_and_inputs() -> None:
-    """The report is submitted once through the canonical guarded check step."""
-    job = _job(_load())
-    steps = _steps(job)
-    codescene_steps = [
-        step
-        for step in steps
-        if str(step.get("uses", "")).startswith(
-            "leynos/shared-actions/.github/actions/upload-codescene-coverage@"
-        )
-    ]
-    assert len(codescene_steps) == 1, (
-        "coverage-check must contain exactly one CodeScene submission step"
+    generator = _find_step(job, "Generate coverage")
+    # `ci` joined the lane when it became the only libsql-only run on a pull
+    # request: `test.yml`'s leg ran that profile, and the default profile
+    # drops the trybuild compile contracts, so without it the replacement
+    # would be narrower than the leg it replaced.
+    assert generator.get("env") == {"NEXTEST_PROFILE": "ci"}, (
+        "coverage-check must run the ci nextest profile, as the leg it "
+        f"replaced did; the step's env is {generator.get('env')}"
     )
-    check = codescene_steps[0]
-    generator_index = steps.index(_find_step(job, "Generate coverage"))
-    assert steps.index(check) == generator_index + 1, (
-        "the CodeScene check must immediately follow report generation"
-    )
-    codescene_ref = str(check.get("uses", "")).split("@")[-1]
-    assert SHA_RE.fullmatch(codescene_ref), (
-        "coverage-check must pin the CodeScene action to a full commit SHA, "
-        f"got {codescene_ref!r}"
-    )
-    assert check.get("env") == {"CS_ACCESS_TOKEN": "${{ secrets.CS_ACCESS_TOKEN }}"}, (
-        "the CodeScene token must remain scoped to the check step"
-    )
-    assert check.get("if") == (
-        "github.event_name == 'pull_request' && env.CS_ACCESS_TOKEN != ''"
-    ), "the CodeScene step must guard its pull-request secret"
-    assert check.get("with") == {
+    assert generator.get("with") == {
+        "features": "libsql,test-helpers",
+        "with-default-features": "false",
+        "use-cargo-nextest": "true",
+        "cargo-wait-timeout": "4200",
         "format": "lcov",
-        "mode": "check",
-        "project-url": "https://api.codescene.io/v2/projects/77987",
-        "access-token": "${{ env.CS_ACCESS_TOKEN }}",
-    }, "the CodeScene step must use the canonical project and check-mode inputs"
-
-
-#: The input the uploader no longer accepts, and the estate no longer passes.
-WITHDRAWN_INPUT = "installer-checksum"
-
-#: The prefix every uploader step's `uses` shares.
-UPLOADER = "leynos/shared-actions/.github/actions/upload-codescene-coverage@"
-
-
-#: The extensions GitHub accepts for a workflow file.
-WORKFLOW_SUFFIXES = frozenset({".yml", ".yaml"})
-
-#: One uploader step, located: its workflow file, its job's key, and itself.
-UploaderStep = tuple[str, str, dict[str, object]]
-
-
-def _step_mappings(job: object) -> list[dict[str, object]]:
-    """Return a job's steps, dropping anything that is not a mapping.
-
-    Parameters
-    ----------
-    job
-        A parsed job body, which a malformed workflow may make anything at all.
-
-    Returns
-    -------
-    list of dict
-        The step mappings, in order. Empty when the job declares no usable
-        steps, so a malformed job is skipped rather than half-read.
-    """
-    steps = job.get("steps") if isinstance(job, dict) else None
-    if not isinstance(steps, list):
-        return []
-    return [step for step in steps if isinstance(step, dict)]
-
-
-def _jobs_in(document: object) -> dict[str, object]:
-    """Return a parsed workflow's jobs mapping, empty when it declares none.
-
-    Parameters
-    ----------
-    document
-        A parsed workflow file.
-
-    Returns
-    -------
-    dict
-        The jobs, keyed by job ID.
-    """
-    jobs = document.get("jobs") if isinstance(document, dict) else None
-    return jobs if isinstance(jobs, dict) else {}
-
-
-def _uploader_steps_in(workflow: str, document: object) -> list[UploaderStep]:
-    """Return every uploader step one parsed workflow declares.
-
-    Parameters
-    ----------
-    workflow
-        The file name, carried through so a failure names the file.
-    document
-        The parsed workflow.
-
-    Returns
-    -------
-    list of UploaderStep
-        One entry per step whose `uses` names the CodeScene uploader.
-    """
-    return [
-        (workflow, str(job_id), step)
-        for job_id, job in _jobs_in(document).items()
-        for step in _step_mappings(job)
-        if str(step.get("uses", "")).startswith(UPLOADER)
-    ]
-
-
-def _uploader_steps() -> list[UploaderStep]:
-    """Return every step in the estate that runs the CodeScene uploader.
-
-    Returns
-    -------
-    list of UploaderStep
-        The workflow file name, the job's key, and the step mapping, for each
-        uploader step found anywhere in `.github/workflows`.
-    """
-    return [
-        found
-        for path in sorted(WORKFLOW_PATH.parent.iterdir())
-        if path.suffix in WORKFLOW_SUFFIXES
-        for found in _uploader_steps_in(
-            path.name, yaml.safe_load(path.read_text(encoding="utf-8"))
-        )
-    ]
-
-
-def test_no_uploader_step_passes_the_withdrawn_installer_checksum() -> None:
-    """Every uploader step must stop naming an input the action will reject.
-
-    The next version of the uploader refuses `installer-checksum` outright, so
-    a step still passing it fails the whole job rather than the input. The
-    variable it read is not the replacement either: `CODESCENE_CLI_SHA256`
-    holds the installer script's digest, and the input that replaces this one
-    wants the archive's, so renaming it would pass a digest of the wrong
-    artefact and fail verification instead of argument parsing.
-
-    The estate is scanned rather than one file, because the input appeared in
-    two workflows and a contract on either alone would have passed while the
-    other broke. The count is asserted first: every assertion below is
-    satisfied by finding no uploader steps at all.
-    """
-    steps = _uploader_steps()
-    assert len(steps) >= 2, (
-        f"the scan found {len(steps)} uploader steps; it is meant to find the "
-        "check step and the upload step, and a scan that finds none passes "
-        "this contract with the input restored"
+        "output-path": "lcov.info",
+        "with-ratchet": "true",
+        "publish-artefact": "false",
+        "cache-provider": "external",
+    }, (
+        "coverage-check must measure the libsql-only selection through "
+        "generate-coverage, ratchet it, publish nothing, leave the registry "
+        "and compiler caches to their existing owners, and set the cargo "
+        "watchdog that timeout_ordering_test.py orders"
     )
-    for workflow, job_id, step in steps:
-        inputs = step.get("with")
-        declared = set(inputs) if isinstance(inputs, dict) else set()
-        assert WITHDRAWN_INPUT not in declared, (
-            f"{workflow}:{job_id} passes {WITHDRAWN_INPUT!r} to the CodeScene "
-            "uploader. The action no longer accepts it, so the step fails on "
-            "the argument; and it must be removed rather than renamed, "
-            "because the value it reads is the installer script's digest, not "
-            "the archive's"
-        )

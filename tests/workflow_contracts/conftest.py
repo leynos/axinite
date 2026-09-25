@@ -12,7 +12,8 @@ contract directory that fails to collect reports no failures at all, which
 reads exactly like a clean run.
 
 `_sources.py` holds the reading, and `source_boundary_test.py` states each
-failure it converts.
+failure it converts. The nextest profiles are read here once as well, for the
+timeout contracts, through `nextest_config.profiles_of`.
 
 A contract that asserts one job per test needs its jobs while pytest is
 collecting, because that is when a parameter list and its identifiers are
@@ -33,12 +34,15 @@ import pytest
 from _estate import isolated, read_estate
 from _sources import SourceError
 from _suite_targets import read_default_features
+from nextest_config import profiles_of
+from timeout_budgets import NEXTEST_CONFIG
 
 if typ.TYPE_CHECKING:  # pragma: no cover - typing only
     from collections.abc import Callable, Iterable
 
     from _estate import Estate
     from _workflow_policy import Job
+    from nextest_config import Profile
 
 #: The module attribute naming a contract's job selector, and the argument
 #: it parametrizes.
@@ -236,3 +240,19 @@ def workflow_directory(tmp_path: Path) -> Callable[[str, bytes], Path]:
         return directory
 
     return write
+
+
+@pytest.fixture(scope="module")
+def nextest_profiles() -> dict[str, Profile]:
+    """Return each nextest profile the configuration declares.
+
+    One definition for every module that needs the profiles, read through
+    the acquisition helper so a configuration that cannot be read is
+    reported as every other unreadable source is.
+
+    Returns
+    -------
+    dict[str, Profile]
+        Profile name to its table and overrides.
+    """
+    return profiles_of(NEXTEST_CONFIG)

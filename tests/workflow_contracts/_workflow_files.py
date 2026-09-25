@@ -20,6 +20,12 @@ from pathlib import Path
 
 import yaml
 from _workflow_policy import WORKFLOW_DIR, Job
+from contract_sources import (
+    SourceReadError,
+    directory_entries,
+    is_regular_file,
+    read_source,
+)
 
 if typ.TYPE_CHECKING:  # pragma: no cover - typing only
     from collections.abc import Iterator
@@ -29,10 +35,21 @@ if typ.TYPE_CHECKING:  # pragma: no cover - typing only
 #: which is the same vacuous pass an unread `runs-on` produces.
 WORKFLOW_SUFFIXES: tuple[str, ...] = (".yml", ".yaml")
 
+#: Re-exported so a caller of the acquisition functions below can catch
+#: what they raise without importing a second module. The boundary is
+#: only useful if the error it reports is reachable from the same place
+#: as the functions that raise it.
+__all__ = ["SourceReadError"]
+
 
 
 def workflow_paths(directory: Path = WORKFLOW_DIR) -> list[Path]:
     """Return every workflow file in a directory.
+
+    Acquisition, not a query: this lists a directory. The distinction is
+    stated on every function below that touches the filesystem, because
+    a name and a return type that read like a query are exactly what
+    hides the fact.
 
     Parameters
     ----------
@@ -46,11 +63,23 @@ def workflow_paths(directory: Path = WORKFLOW_DIR) -> list[Path]:
     list of Path
         Workflow paths sorted by name, so parameterized tests report in a
         stable order. Both extensions GitHub accepts are included.
+
+    Raises
+    ------
+    SourceReadError
+        If the directory cannot be listed, or an entry in it cannot be
+        classified as a regular file or not.
     """
+    # Classified through `is_regular_file` rather than `Path.is_file`.
+    # `Path.is_file` answers False for an entry it could not stat, so a
+    # workflow directory that lists but does not stat would drop an
+    # existing workflow here and a lane reading would certify a set with
+    # that lane missing from it. The extension test comes second, so an
+    # entry of the wrong suffix costs no stat at all.
     return sorted(
         path
-        for path in directory.iterdir()
-        if path.is_file() and path.suffix in WORKFLOW_SUFFIXES
+        for path in directory_entries(directory)
+        if path.suffix in WORKFLOW_SUFFIXES and is_regular_file(path)
     )
 
 
@@ -136,8 +165,13 @@ def load(path: Path) -> dict[str, object]:
     -------
     dict
         The parsed workflow document.
+
+    Raises
+    ------
+    SourceReadError
+        If the file cannot be read or is not UTF-8.
     """
-    return parse_workflow(path.read_text(encoding="utf-8"), path.name)
+    return parse_workflow(read_source(path), path.name)
 
 
 def declared_jobs(path: Path) -> dict[str, object]:
@@ -152,6 +186,11 @@ def declared_jobs(path: Path) -> dict[str, object]:
     -------
     dict
         The workflow's jobs, or an empty mapping when it declares none.
+
+    Raises
+    ------
+    SourceReadError
+        If the file cannot be read or is not UTF-8.
     """
     return declared_jobs_in(load(path))
 
@@ -168,6 +207,11 @@ def jobs_in(path: Path) -> Iterator[Job]:
     ------
     Job
         Each job whose body is a mapping.
+
+    Raises
+    ------
+    SourceReadError
+        If the file cannot be read or is not UTF-8.
     """
     yield from jobs_of(path.name, load(path))
 
@@ -179,6 +223,12 @@ def jobs() -> Iterator[Job]:
     ------
     Job
         Every job in every workflow, in workflow-name order.
+
+    Raises
+    ------
+    SourceReadError
+        If the workflow directory cannot be listed, or a workflow in it
+        cannot be read.
     """
     for path in workflow_paths():
         yield from jobs_in(path)

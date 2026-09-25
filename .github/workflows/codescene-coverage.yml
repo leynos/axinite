@@ -1,11 +1,21 @@
 ---
-name: CodeScene Coverage Check
+# The pull-request coverage lane. It measures the libsql-only suite and
+# ratchets it against the baseline `coverage.yml` writes on every push to
+# `main`, and it never contacts CodeScene: no token, no uploader, no
+# `codescene.io`. CodeScene accepts coverage only for a branch it analyses,
+# and a lane a pull request can start is the wrong side of the repository to
+# hold the token that authenticates to it. `coverage.yml` is the one
+# publisher. The file keeps its old name so the contracts and the
+# developers' guide that name it stay stable; the workflow and job names say
+# what it does now.
+name: Coverage Ratchet
 "on":
   pull_request:
     branches: [main]
   # Manual runs exist to re-measure a warm cache on `main`. The registry
-  # cache is restore-only here and the CodeScene upload stays gated on
-  # `pull_request`, so a dispatch reports coverage to the log only.
+  # cache is restore-only here, and generate-coverage saves the ratchet
+  # baseline only on a push to `main`, so a dispatch measures and compares
+  # without advancing anything.
   workflow_dispatch:
 
 # A push to a pull request supersedes the run already in flight, and there is
@@ -21,7 +31,7 @@ permissions:
 
 jobs:
   coverage-check:
-    name: CodeScene Coverage
+    name: Coverage Ratchet
     if: >
       github.event_name == 'pull_request' ||
       github.event_name == 'workflow_dispatch'
@@ -42,8 +52,6 @@ jobs:
       # sccache cannot cache incremental compilation.
       CARGO_INCREMENTAL: "0"
       CARGO_COMPONENT_VERSION: '0.21.1'
-      CARGO_LLVM_COV_VERSION: '0.8.7'
-      CARGO_NEXTEST_VERSION: '0.9.140'
       CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_LINKER: clang
       CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_RUSTFLAGS: >-
         -C link-arg=-fuse-ld=mold
@@ -60,8 +68,6 @@ jobs:
           swap-storage: false
 
       - uses: actions/checkout@v6
-        with:
-          fetch-depth: 0
 
       # Right-sizing needs the peak memory and the low-water disk mark, and
       # neither is visible in a job's own output. The sampler runs alongside
@@ -140,18 +146,6 @@ jobs:
           restore-keys: |
             cargo-v1-${{ runner.os }}-${{ runner.arch }}-${{ runner.environment }}-
 
-      - name: Install cargo-llvm-cov
-        uses: taiki-e/install-action@c7eb1735f09259a5035e8e5d44b1406b1cddc0fb  # v2.83.0
-        with:
-          tool: cargo-llvm-cov@${{ env.CARGO_LLVM_COV_VERSION }}
-          fallback: none
-
-      - name: Install cargo-nextest
-        uses: taiki-e/install-action@c7eb1735f09259a5035e8e5d44b1406b1cddc0fb  # v2.83.0
-        with:
-          tool: cargo-nextest@${{ env.CARGO_NEXTEST_VERSION }}
-          fallback: none
-
       - name: Install cargo-binstall
         uses: taiki-e/install-action@c7eb1735f09259a5035e8e5d44b1406b1cddc0fb  # v2.83.0
         with:
@@ -169,8 +163,6 @@ jobs:
       - name: Probe Cargo tooling
         run: |
           set -euo pipefail
-          cargo llvm-cov --version
-          cargo nextest --version
           cargo component --version
 
       - name: Build GitHub WASM tool (for metadata/schema tests)
@@ -179,26 +171,40 @@ jobs:
       - name: Build WASM channels (for integration tests)
         run: ./scripts/build-wasm-extensions.sh --channels
 
-      # `--profile ci` matches what `test.yml`'s libsql-only leg ran before
-      # this lane replaced it. Without it the default profile would drop the
-      # trybuild compile contracts, and the replacement would be narrower than
-      # the leg it stands in for.
+      # The same selection as the libsql-only leg of `coverage.yml`, which
+      # writes the baseline this compares against: a ratchet measuring a
+      # different feature set would report the difference in features as a
+      # difference in coverage. The action installs its own pinned
+      # cargo-llvm-cov and cargo-nextest, and `cache-provider: external`
+      # leaves the registry to the restore step above and compiler output to
+      # sccache. The report stays on the runner: nothing downstream reads an
+      # artefact from a pull request.
       - name: Generate coverage
-        run: >-
-          cargo llvm-cov nextest --no-default-features --features libsql
-          --features test-helpers --workspace --profile ci --lcov
-          --output-path lcov.info
-
-      - name: Check coverage against CodeScene gates
+        # `ci` matches what `test.yml`'s libsql-only leg ran before this lane
+        # replaced it. The default profile would drop the trybuild compile
+        # contracts, and the replacement would be narrower than the leg it
+        # stands in for. The action has no profile input; nextest reads the
+        # variable, and a composite action's steps inherit the step's env.
         env:
-          CS_ACCESS_TOKEN: ${{ secrets.CS_ACCESS_TOKEN }}
-        if: github.event_name == 'pull_request' && env.CS_ACCESS_TOKEN != ''
-        uses: leynos/shared-actions/.github/actions/upload-codescene-coverage@6b5cdc2d4c0bb72cafd5a66d24d248ac25827db9
+          NEXTEST_PROFILE: ci
+        uses: leynos/shared-actions/.github/actions/generate-coverage@dbe2e22ceaf498d85512679ccded38be9dbe7777
         with:
+          features: libsql,test-helpers
+          with-default-features: 'false'
+          use-cargo-nextest: 'true'
+          # The third timeout tier. The action's 1,800 s default equals the
+          # 30 m nextest whole-run budget and also has to cover the
+          # instrumented build, so it would kill a legal run first. 4,200 s
+          # is the slowest measured invocation (1,549 s) plus the full 1,800 s
+          # budget plus headroom, under the 5,400 s job ceiling; the guide's
+          # timeout section has the numbers, and `timeout_ordering_test.py`
+          # asserts nextest < watchdog < job.
+          cargo-wait-timeout: '4200'
           format: lcov
-          mode: check
-          project-url: https://api.codescene.io/v2/projects/77987
-          access-token: ${{ env.CS_ACCESS_TOKEN }}
+          output-path: lcov.info
+          with-ratchet: 'true'
+          publish-artefact: 'false'
+          cache-provider: external
       # Report the hit rate so a wrapper that is silently doing nothing shows
       # up in the job summary rather than only in the duration.
       - name: Report sccache statistics

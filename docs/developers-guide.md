@@ -409,7 +409,8 @@ Each mutable cache path has exactly one owner and one explainable key.
 | `~/.cargo/registry`, `~/.cargo/git`                          | The `Restore`/`Save Cargo registry and index` step pair | `runner.os`, `runner.arch`, `runner.environment`, `hashFiles('**/Cargo.lock')`, generation `v1` | `coverage.yml` `coverage` (`all-features` leg) on Linux; `test.yml` `windows-build` (`all-features` leg) on Windows; both only on a push to `main` |
 | `~/.cargo/bin/whitaker-installer`, `~/.local/share/whitaker` | The shared `install-whitaker` action                    | installer version, `hashFiles('dylint.toml')`, `runner.os`, `runner.arch`                       | The action, on any run                                                                                                                             |
 | `~/.cache/uv`                                                | `astral-sh/setup-uv` with `enable-cache: true`          | The action's own lockfile hashing                                                               | The action, on any run                                                                                                                             |
-| `~/.local/bin/cs-coverage`                                   | The shared `upload-codescene-coverage` action           | CodeScene CLI version                                                                           | The action, on any run                                                                                                                             |
+| `~/.local/bin/cs-coverage`                                   | The shared `upload-codescene-coverage` action           | CodeScene CLI version                                                                           | The action, in `coverage.yml` `coverage` (`libsql-only` leg) on `main` only                                                                        |
+| `.coverage-baseline.rust` (the ratchet baseline)             | The shared `generate-coverage` action                   | `runner.os`, `github.run_id` (newest entry wins)                                                | `coverage.yml` `coverage` (`libsql-only` leg), only on a push to `main`                                                                            |
 
 Rules that follow from the table:
 
@@ -477,14 +478,14 @@ push write the caches, then dispatch the same workflow against `main` twice in
 sequence and compare queue time, wall time, and the sccache hit rate.
 
 A dispatch is a reader. No save step can run, because every save names the
-`push` event; the CodeScene upload stays gated on `pull_request` so a manual
-run reports coverage to the log only. Otherwise a dispatch behaves like a push:
-every job runs, including the GitHub-hosted Windows lanes, so a manual run is a
-full run. Its Ubicloud jobs are billed by the minute like any other; the
-GitHub-hosted lanes are not, because this repository is public. The trigger
-takes no inputs, because `gh workflow run --ref` and the Actions UI already
-choose the ref. `tests/workflow_contracts/warm_dispatch_test.py` asserts both
-halves.
+`push` event, and `generate-coverage` saves the ratchet baseline only on a push
+to `main`, so a manual run of `codescene-coverage.yml` measures and compares
+without advancing anything. Otherwise a dispatch behaves like a push: every job
+runs, including the GitHub-hosted Windows lanes, so a manual run is a full run.
+Its Ubicloud jobs are billed by the minute like any other; the GitHub-hosted
+lanes are not, because this repository is public. The trigger takes no inputs,
+because `gh workflow run --ref` and the Actions UI already choose the ref.
+`tests/workflow_contracts/warm_dispatch_test.py` asserts both halves.
 
 ### sccache
 
@@ -590,9 +591,12 @@ coverage lanes ran nextest's default profile, which drops the trybuild
 compile-contract binary, about seven minutes of work that spawns a fresh
 `rustc` per case. The `test.yml` legs ran `NEXTEST_PROFILE=ci`, which runs
 everything. A lane running the default profile therefore could not stand in for
-one running `ci`, however identical its flags, so both coverage lanes now pass
-`--profile ci` and the replacement is the whole of what it replaced. Without
-that, standing `tests` down on a push would have left the compile contracts
+one running `ci`, however identical its flags, so every coverage run now uses
+`ci`: the `run:` legs pass `--profile ci`, and the two steps that go through
+the shared `generate-coverage` action, which has no profile input, set
+`NEXTEST_PROFILE: ci` in the step's `env`, which the composite action's steps
+inherit. The replacement is the whole of what it replaced. Without that,
+standing `tests` down on a push would have left the compile contracts
 unexecuted on `main` altogether.
 
 `tools-src/github` and `channels-src/telegram` are excluded from the workspace,
@@ -637,6 +641,78 @@ The required contexts do not change. `main`'s ruleset requires the roll-ups,
 the individual legs, so a leg that stops running on a trigger is not a missing
 required check. `Run Tests` gains `GitHub Tool Tests` as a dependency, which
 keeps the new lane inside the gate.
+
+### CodeScene coverage publication
+
+Only `main` publishes coverage to CodeScene, and no lane a pull request can
+start contacts it at all. CodeScene accepts coverage only for a branch it
+analyses, and a pull-request lane holding the token puts the credential on the
+fork-facing side of the repository. What the pull request gets instead is a
+ratchet.
+
+- `codescene-coverage.yml` `coverage-check` (check name "Coverage Ratchet")
+  runs the libsql-only suite through the shared `generate-coverage` action with
+  `with-ratchet: 'true'` and `publish-artefact: 'false'`. It fails when
+  coverage falls below the stored baseline, and it holds no token. The file
+  keeps its old name so the contracts and this guide stay stable.
+- `coverage.yml` `coverage` is the one publisher and the one baseline writer.
+  Its `libsql-only` leg runs `generate-coverage` with exactly the lane's
+  selection, so the baseline it saves on a push to `main` measures what the
+  pull requests are compared on, and only that leg uploads.
+- The upload step passes the token as the action's `access-token` input and
+  never through an `env`: the action is composite, and a step's environment
+  reaches every step nested inside it. Whether the token exists is decided by a
+  step with the id `codescene-token` whose one command is
+  `echo "available=${{ secrets.CS_ACCESS_TOKEN != '' }}" >> "$GITHUB_OUTPUT"`.
+  The expression is evaluated before the shell runs, so nothing is bound and no
+  shell conditional can neutralize the write.
+- The upload is guarded on the leg, on that output, and on
+  `github.ref == 'refs/heads/main'`, joined by `&&` alone. The ref guard is
+  needed because `workflow_dispatch` can name any branch.
+- The workflow's concurrency group is `coverage-${{ github.ref }}`, keyed on
+  the ref alone, and never cancels. A cancelled run abandons its upload and its
+  baseline; with no cancellation GitHub keeps one pending run per group, so
+  among triggered runs (pushes and dispatches) a newer one replaces an older
+  pending one and the latest push's baseline stands. A manual "Re-run jobs" on
+  an older `main` run is an operator action outside that ordering: it keeps its
+  old SHA, so it republishes that commit's coverage and baseline until the next
+  push supersedes them. An event in the key would let a dispatch and a push to
+  `main` race. Because a dispatch saves no baseline, a dispatch that replaces a
+  pending push leaves the baseline one commit behind until the next push to
+  `main`.
+- Merges made by the automerge workflow with `GITHUB_TOKEN` fire no push
+  event, so they reach neither the upload nor the baseline. That is a known
+  exception; a manual dispatch covers it, and no schedule is added.
+- Both shared actions are pinned to a full commit SHA, and nothing passes the
+  withdrawn `installer-checksum` input or the `CODESCENE_CLI_SHA256` variable.
+  The pins must stay at `a5765019` or a commit descended from it, since that is
+  where the checksum inputs were withdrawn. The contract does not check that
+  ancestry: it would have to list the current SHAs, and "Workflow pins and
+  Dependabot" above forbids that. Dependabot only moves a pin forward, so the
+  floor holds unless someone downgrades a pin by hand, and review catches that.
+- The publisher job declares `environment: codescene`. That environment's
+  branch policy admits `main` alone, and the CodeScene token is to live there,
+  so only a job deploying from `main` can read it. Every job that calls the
+  uploader declares the environment, as a name or as `{name: codescene}`; no
+  other job declares it; and no job in a workflow a pull request can start
+  declares it. The declaration is on the whole matrix job, so a
+  `workflow_dispatch` from any branch other than `main` is refused at the
+  environment on all three legs, not only the uploading one.
+  `codescene_environment_test.py` holds the placement and breaks each clause in
+  a constructed workflow.
+
+`tests/workflow_contracts/coverage_publication_test.py` holds the estate to all
+of this. The pull-request surface it checks is every workflow a pull-request,
+review or merge-queue event starts, every `workflow_run` chained onto one, and
+everything those call through `./` or `$/`, followed transitively. Across that
+surface, no key or scalar may name the token, the uploader, the CLI or
+`codescene.io`, and no job may forward `secrets: inherit`.
+`_strict_workflows.py` reads every workflow through a loader that refuses a
+duplicated key and reads `on:` in each of its three shapes under both key
+spellings. `coverage_publication_reader_test.py` drives each clause with
+constructed workflows, including a `workflow_call`-only callee that curls
+CodeScene with an inherited token. Every clause was proved by a mutation that
+deletes or weakens it.
 
 ### Writing a workflow contract
 
@@ -716,6 +792,29 @@ a file that is regenerated wholesale; the placement and cache contracts do read
 it, in order to exempt it by name, which is a statement they make rather than
 one the reader makes for them.
 
+The suite needs Python 3.11 or newer. `nextest_config.py` parses
+`.config/nextest.toml` with the standard library's `tomllib`, which arrived in
+3.11, so an older interpreter fails at import rather than with a useful
+message. Nothing else here reaches outside the standard library except the
+three packages the target provisions: `uv run` supplies `pytest`, `PyYAML` and
+`Hypothesis` for the duration of the run, so no virtual environment is created
+and nothing is installed into the repository. The target names those versions,
+and it is the only place they are named.
+
+That is deliberate. These contracts read configuration and workflow text; they
+import nothing from the crate, so they stay runnable without a coverage build
+or a populated target directory.
+
+One module is the exception, and it is worth saying why.
+`nextest_boundary_test.py` hands `.config/nextest.toml` to `cargo nextest`
+itself, so it needs `cargo` and `cargo-nextest` on `PATH`, which `make test`
+requires anyway. It builds no part of this crate: the run happens in
+`tests/workflow_contracts/fixtures/nextest_boundary`, a dependency-free crate
+of three empty test binaries that compiles in about a second, and its output
+goes to a temporary directory rather than to any target tree. The requirement
+is asserted rather than skipped, because a contract that skips itself in CI is
+a contract that is not running.
+
 `Job` is the unit of assertion. It carries the workflow file name, the job's
 key under `jobs:`, and the job's parsed body, and it prints as
 `workflow.yml:job-id` so an assertion message names the job without extra
@@ -761,6 +860,59 @@ it. Checking that an sccache export step logs the right messages proves nothing
 if the script never calls `core.exportVariable`; checking that an installer
 exists proves nothing if nothing runs the binary afterwards. A useful test for
 a new contract is to delete the thing it guards and confirm the suite goes red.
+
+#### Reading the filesystem: the acquisition boundary
+
+Every other reader in `tests/workflow_contracts/` is a query. It takes a
+directory or a path, returns lanes, profiles or binary names, and its return
+type says nothing about the filesystem underneath. That shape is the hazard
+these contracts are most exposed to, because the failure mode is silence rather
+than an error: a directory that cannot be read comes back as an empty result,
+the caller reads it as a tree with no workflows and no compile contracts, and
+every assertion over it passes over nothing while the suite reports success.
+
+`contract_sources.py` is where that silence is converted into a failure. It
+holds the filesystem calls the suite makes and nothing else, so the pure
+readers above it can be read as the queries they look like.
+
+**Three calls, three failures.** Reading a file's text, listing a directory,
+and asking whether an entry is a directory. Each reports `SourceReadError`,
+which carries the path it is about and chains the cause. The third was added
+last and is the least obvious: `Path.is_dir` looks like a question rather than
+a filesystem call, and it answers `False` for an entry it could not `stat`,
+which makes an unreadable subdirectory indistinguishable from an ordinary file.
+The nested sweep then descends into nothing.
+
+`SourceReadError` keeps `OSError` as its base, so a caller already catching
+`OSError` keeps catching these. Its `path` attribute names the file or
+directory the fault is about, which is what a failure message otherwise lacks:
+a bare `OSError` names an errno, and a `UnicodeDecodeError` names a byte
+offset, and neither says which contract was reading what. A file that is not
+UTF-8 is reported the same way, because a contract cannot read what a file says
+if it cannot decode it.
+
+**Enumerate, do not glob.** From Python 3.13 `Path.glob` suppresses the errors
+raised while scanning, so an unreadable directory passes `is_dir` and yields
+nothing, exactly as an empty one does. Neither a pre-check nor a `try` around
+the call can see it: there is no exception left to catch and nothing about the
+result to doubt. `matching_entries` therefore lists with `iterdir` and matches
+names afterwards.
+
+**An answer is not a failure.** The directory test reports every `OSError`
+except `ENOENT` and `ENOTDIR`. A dangling symlink is not a directory and a path
+under a file is not a directory; both are definite answers, and turning them
+into failures would break sweeps over ordinary trees. Every other errno means
+the question went unanswered, and an unanswered question is reported rather
+than guessed.
+
+When adding an acquisition function, add it to the tables in
+`acquisition_boundary_test.py`. `ENTRY_POINTS` drives each at a path that does
+not exist; `DIRECTORY_SWEEPS` drives each at a directory that exists and cannot
+be read. Both are enumerated by hand rather than discovered, because the point
+of the tables is that somebody decided each of these reaches the filesystem.
+The permission cases skip on Windows, whose `chmod` only toggles a read-only
+bit, and under `root`, which reads a directory whatever its mode bits say;
+without the second skip the case passes vacuously in a container.
 
 ### What remains of the runner migration wave
 
@@ -3039,3 +3191,420 @@ or mapping holding anything but event names, and a document declaring both
 keys, since GitHub merges the two and a reader that picked one would be blind
 to the other. Dropped silently, such a workflow would leave every contract
 above passing while saying nothing about it.
+
+## 38. Test timeouts: the tiers this repository sets
+
+Four independent timers can end a test run, and the canonical statement of how
+they must be ordered lives in the `generate-coverage` README in
+[`leynos/shared-actions`][shared-actions-coverage]. All four apply here, the
+cargo watchdog only on the two lanes that use that action, and two of the four
+were unset until this was written.
+
+| Tier                     | What it bounds                     | Where it is set                       | Current value                                             |
+| ------------------------ | ---------------------------------- | ------------------------------------- | --------------------------------------------------------- |
+| Per-test `slow-timeout`  | one test                           | `.config/nextest.toml`, both profiles | 300 s, 900 s for the compile-contract binaries, 5 s grace |
+| nextest `global-timeout` | the whole test run                 | `.config/nextest.toml`, both profiles | 30 m                                                      |
+| Cargo watchdog           | one `cargo` invocation, wall clock | `cargo-wait-timeout` on action steps  | 4,200 s on the two action lanes, absent elsewhere         |
+| Job `timeout-minutes`    | the whole job                      | job level                             | 90 m for the coverage lanes                               |
+
+*Table: the timers that can end a run, innermost first.*
+
+### What was missing
+
+Neither profile set a per-test allowance or a whole-run budget. Nothing bounded
+a single test and nothing bounded the run, so the only timer that ended a hang
+was the job's own at 90 minutes, which cancels the run and discards the log
+that would have named the test. The failure then reads as an infrastructure
+fault rather than as a hung test.
+
+### Both profiles carry their own budgets
+
+This is repository policy, not a nextest requirement, and it is worth being
+exact about the difference. A custom profile inherits `[profile.default]`, and
+when a custom profile is selected nextest still consults
+`[[profile.default.overrides]]`, applying a matching default override ahead of
+the selected profile's own scalar setting. So a `ci` profile that declared no
+budgets at all would not be unbounded; it would run under the default profile's.
+
+The reason to repeat them is that `ci` is the profile that *includes* the
+trybuild compile-contract binaries the default profile excludes. It is the
+profile with the longest tests, and the budgets that govern CI belong where a
+reader of that profile will find them rather than one section away.
+
+Both therefore set a 300 second base allowance and a 30 minute whole-run
+budget, and both add a 900 second override for the compile-contract binaries.
+
+### The compile-contract binaries are not ordinary tests
+
+A binary that drives `rustc` spawns a fresh compiler per case against the full
+crate, so the whole binary is minutes rather than seconds and the base
+allowance sized for the ordinary tests does not fit one. There are two of them:
+`tests/trybuild.rs` and `tests/schema_helpers_ui/main.rs`, which Cargo names
+`trybuild` and `schema_helpers_ui`.
+
+Only the first was named when the base allowance was first written. The second
+was not excluded from the default profile and had no override, so it ran under
+the 300 second bound: it measured 244, 249 and 257 seconds on run 34159479674
+and then exceeded 300 on run 34271865377, ending the suite on all three legs.
+Nothing in the ordering was wrong, and that is the point. Every value sat above
+the one inside it; nothing recorded which tests the base allowance was sized
+for.
+
+Both profiles now carry an override for both binaries, and
+`tests/workflow_contracts/compile_contract_budget_test.py` asserts that every
+compile-contract binary a profile runs is allowed 900 seconds. The binaries are
+discovered from the sources by their call to `trybuild::TestCases` rather than
+listed, because a new one appearing is the failure being guarded against. The
+discovered set is then pinned by name, so a reading that stopped recognizing
+one fails instead of sweeping over a smaller set, and both Cargo target forms,
+`tests/<name>.rs` and `tests/<name>/main.rs`, are represented in it. Which
+profile excludes which binary is pinned too: `default` excludes `trybuild` by
+its `default-filter` and runs `schema_helpers_ui`, and `ci` runs both.
+
+The contract reads each profile's own base `slow-timeout` specifically, not its
+text as a whole. An override carrying `terminate-after` would satisfy a
+substring check while the base allowance had none, and every test the override
+does not name would then be reported slow for ever rather than killed.
+
+Both figures are bounds rather than measurements, and the configuration says
+so. No single test in the default profile approaches five minutes, and nobody
+has timed a single trybuild case; what is known is that `trybuild` takes about
+seven minutes, which is why the default profile excludes it. It excludes that
+one binary and not the other: `schema_helpers_ui` measured 244s, 249s and 257s
+and runs in both profiles, which is why it needs the 900s override rather than
+the exclusion.
+
+### The values are pinned, not merely ordered
+
+Everything above compares one figure with another, and every one of those
+comparisons still holds when a figure is deleted or changed.
+`tests/workflow_contracts/nextest_values_test.py` therefore pins the values
+themselves, field by field, against the table at the top of this section.
+
+`grace-period` is the clearest case, and it is the one that gave the contract
+its name. Both profiles and both overrides allow a terminated test five seconds
+between `SIGTERM` and `SIGKILL`. Nothing compared that figure: the ordering
+contract reads `period` and `terminate-after`, because those two make up the
+per-test budget it compares, and the ceiling requirement reads whatever grace
+period it finds and falls back to nextest's ten-second default when it finds
+none. Deleting every `grace-period` in the file therefore *raises* the computed
+requirement, leaves every assertion passing, and doubles the wait a terminated
+test actually gets.
+
+The 900 second override is the next. The compile-contract contract asks whether
+each binary is allowed *at least* that much, which is the right shape for its
+own question and says nothing about the value, so an override raised to an hour
+would satisfy it while sitting above the 30 minute whole-run budget that
+contains it: the run would end before the allowance could be used. The number
+of overrides is pinned with it, because a second one matching the same binaries
+would decide the allowance in force by file order. And the whole-run budget is
+only ever compared with the largest per-test allowance, so the documented
+thirty minutes could drift to forty with nothing failing and this table left
+describing a value the runner does not use.
+
+The set of profiles is pinned too. Every assertion in this suite is
+parametrized over `default` and `ci`, so a third profile carrying looser
+budgets would be selectable by `--profile` and read by none of them.
+
+Each pinned table is compared whole rather than key by key, so a field added to
+one fails as well as a field removed. An unrecognized field is not inert:
+nextest ignores an unknown configuration key with a warning and runs anyway, so
+a misspelled `grace_period` is a silently unset grace period.
+
+### The runner's verdict, not only the file's text
+
+Everything above reads `.config/nextest.toml` with `tomllib` and a
+reimplementation of humantime's grammar. That is the right way to ask what the
+file says, and it cannot ask whether nextest agrees, which is a different
+question with a quiet failure behind it: an unknown configuration key is a
+*warning*, after which nextest runs with that setting at its default. A
+misspelled `grace_period` therefore parses, pins, orders and passes everywhere
+above while the grace period in force is ten seconds rather than five.
+
+`tests/workflow_contracts/nextest_boundary_test.py` closes that by handing the
+real file to `cargo nextest show-config` under each profile and taking its
+verdict. Two things are read, because the exit status alone answers only one of
+them: that nextest loads the file, which catches a duration or a filterset the
+reader accepts and the runner does not, and that it reports no ignored key,
+which catches the misspelling. The second is proved rather than stated: the
+same reading is run against a copy of the real file with every `grace-period`
+misspelled, and it must report the warning while nextest still exits 0.
+
+The run happens in a copy of
+`tests/workflow_contracts/fixtures/nextest_boundary` rather than in this crate.
+`show-config` resolves a profile's overrides against the test binaries the
+package declares and refuses a filterset naming one that does not exist, so
+doing it here would mean building the whole test suite, which is minutes. The
+fixture declares three empty test binaries, two of them named `trybuild` and
+`schema_helpers_ui` so the real filtersets resolve, and it builds in about a
+second. Deleting either of those files reddens the contract, and
+`compile_contract_budget_test.py` is what keeps the pair honest against the
+real sources.
+
+The copy is not tidiness. Cargo finds `.cargo/config.toml` by walking up the
+directory tree and does not stop at a workspace root, so a fixture built in
+place inherits this repository's linker configuration, which names mold. Only
+the build lanes install mold, so the `Formatting` job that runs this suite
+failed to link the fixture and the failure read as nextest refusing the
+configuration. Built from a copy outside the tree there is no such file to
+find: measured at five `-fuse-ld=mold` invocations in place and none from the
+copy.
+
+The third binary sleeps for thirty seconds, and it is what makes one assertion
+behavioural rather than another reading. nextest runs it under a `slow-timeout`
+built from the real configuration's own `terminate-after` and `grace-period`
+with the period cut to a second, and must terminate it. That is the assertion
+that fails if the real file loses `terminate-after`: without it nextest marks a
+test slow, warns once a period, and lets it run to completion, so the run
+passes and nothing is bounded.
+
+The `Formatting` job installs `cargo-nextest` for this, pinned to the version
+the coverage and test lanes install, and the contract asserts the versions
+agree. Two versions in the tree would leave the contract certifying the file
+for a runner nothing else runs, with both lanes green.
+
+### The watchdog tier, and where it exists
+
+Two lanes run the suite through the shared `generate-coverage` action:
+`coverage.yml`'s `libsql-only` leg, which writes the ratchet baseline, and
+`codescene-coverage.yml`'s pull-request lane. The action runs `cargo` under a
+wall-clock watchdog, so those two lanes have the third tier. Every other lane
+runs `cargo llvm-cov nextest` from a `run:` step and has no watchdog.
+
+Both action steps set `cargo-wait-timeout: '4200'`. The action's default of
+1,800 seconds equals the 30 minute nextest whole-run budget, and it also has to
+cover the instrumented build that precedes the run, so at the default the
+watchdog would kill a slow but legal run before nextest could report it.
+
+The value comes from measurement. Read through the jobs API, the action's
+"Generate coverage" step, which is the whole `cargo` invocation, took 528 to
+670 seconds on warm pull-request runs of the coverage lane (runs 35988233996,
+35910339332, 35990961297 and 36052946774), and 1,549 seconds on the branch's
+first, cold run (35903120596). The slowest `run:`-step invocation on `main`
+over the preceding six pushes was 1,194 seconds. So 4,200 seconds is the
+slowest measured invocation, 1,549 seconds, plus a full 1,800 second nextest
+budget on top of it, plus 851 seconds of headroom. It sits 1,200 seconds under
+the 5,400 second job ceiling.
+
+The contract asserts the strict order nextest < watchdog < job on every action
+step, since a tie lets the outer timer end the run before the inner one can
+report. It also asserts that the watchdog covers the whole-run budget, its
+termination allowance and the 20 minutes allowed for the work outside the run
+(3,065 seconds today), and that it sits at least the 15 minute ceiling margin
+below the job, so its message reaches the log before the job is cancelled.
+
+The contract also refuses the watchdog where it would do nothing or apply by
+accident: an action step left at the default, and a
+`RUN_RUST_CARGO_WAIT_TIMEOUT` written where no step beneath it calls the
+action. The budget is read as GitHub resolves it: the input first, then the
+variable at step, job and workflow scope, the most specific declaration
+winning. The suite-lane reading counts an action step with `use-cargo-nextest`
+as a run, and counts runs per matrix leg, so `coverage.yml`, which runs the
+suite from a `run:` step on two legs and through the action on the third, is
+one run per leg.
+
+### What the values are sized against
+
+The 30 minute whole-run budget is a bound rather than a measurement. It has to
+exceed the 900 second trybuild allowance, and it does so with fifteen minutes
+to spare, which is comfortably more than any observed run has needed.
+
+The contract also refuses a step that names a suite command without plainly
+running one. `if false; then cargo nextest run; fi` keeps the text and runs
+nothing, so a reading that searched the whole `run` value would count the job
+as a suite lane and hold it to a ceiling it does not need;
+`cargo nextest run || true` runs the suite but discards its verdict. Neither is
+judged as an invocation, and both are reported.
+
+A suite command is matched as whole shell words, not as a text prefix.
+`cargo nextest runbook` begins with the same characters as `cargo nextest run`
+and runs no test, and `cargo nextest run --help` prints and exits, so a reading
+matching on the prefix alone would report a lane for either. That is the
+dangerous direction: a job whose only suite line is a probe would satisfy the
+assertion that the suite runs somewhere while running no test, and the ordering
+assertions below would all pass over a lane that does nothing. Both still name
+a suite command, so both are reported as lines the reading cannot judge rather
+than dropped silently.
+
+A lane's runs are counted rather than detected. Two suite commands in one job
+spend two whole-run budgets under one job timer, because nextest starts that
+clock when tests begin and starts it afresh for the next run, so the ceiling
+requirement is the per-run terms multiplied by the count with the per-job terms
+added once. Counting per command rather than per step is what makes two runs in
+one script read the same as two runs in two steps. Every lane here makes one
+run, so the multiplier is unobservable through the workflows and is driven with
+controlled values instead; the counts are also pinned by coordinate, because
+deleting a suite command would otherwise lower the requirement while every
+timing assertion still passed.
+
+It also refuses a lane that runs the suite while tolerating its failure. Every
+budget here is about when the suite is stopped and none of them says anything
+about the verdict, so `continue-on-error` on the suite step or on its job
+satisfies each of them while a failing suite leaves the job, or the workflow,
+green. Both scopes are read because they differ in effect and in fix. Anything
+but an explicit `false` is reported, an expression included: a contract that
+cannot evaluate `${{ ... }}` must not certify the lane it guards. A job that
+runs no suite step is not judged at all: the reading walks every job in every
+workflow, and a documentation or lint lane allowed to fail discards no suite
+verdict, so reporting it would name a line whose change would fix nothing.
+
+Every ceiling carries at least fifteen minutes above its requirement rather
+than merely reaching it, because a ceiling equal to the sum it contains cancels
+the job at the moment nextest would have reported the overrun, and the report
+is the only thing that makes an overrun actionable. That margin is a term of
+the requirement rather than a rounding, so it cannot go missing unnoticed.
+
+The 90 minute ceilings are unchanged, and the contract records why they hold:
+
+| Lane                                     | Worst coverage step | Worst whole job | Outside the step | Run         |
+| ---------------------------------------- | ------------------- | --------------- | ---------------- | ----------- |
+| `coverage.yml` `Coverage (all-features)` | 900 s               | 1,085 s         | 185 s            | 33966708901 |
+| `coverage.yml` `Coverage (default)`      | 856 s               | 1,031 s         | 175 s            | 34051006881 |
+
+*Table: measured coverage-step and whole-job durations, read across six
+successful runs of `coverage.yml` covering three matrix legs each.*
+
+The requirement is the whole-run budget, plus a minute for nextest to
+terminate, both taken once per run the lane makes, plus the build and the steps
+either side of the suite, taken once for the job, plus the fifteen-minute
+margin described above. Twenty minutes covers the build and the surrounding
+steps with room for a cold compile, making the requirement about 66 minutes for
+a one-run lane against ceilings of 90.
+
+None of those runs was genuinely cold. One run is the coldest seen so far, not
+a measurement of the cold case.
+
+### The contract
+
+`tests/workflow_contracts/timeout_ordering_test.py` asserts the ordering by
+value over every job that runs the suite, in both the `.yml` and `.yaml`
+extensions. It enumerates jobs that declare no ceiling, so a missing
+`timeout-minutes` reads as a lane with no budget rather than as no lane at all,
+and it holds every lane to the larger of the two profiles' budgets, because
+nothing in the workflows names which profile a lane runs under.
+
+The per-test allowance it compares against is `period` multiplied by
+`terminate-after`, not `period` alone, so an override that raised the
+multiplier rather than the period is read at its real size. It is read over the
+overrides nextest consults for the profile, which includes
+`[[profile.default.overrides]]` and not only the profile's own: an inherited
+override governs any test the selected profile's overrides do not name, so a
+reading confined to the selected profile would understate the allowance in
+force and certify an inherited allowance sitting above the whole-run budget.
+The result is an upper bound rather than the allowance any one test receives,
+because which override governs a test depends on a filterset this contract
+cannot evaluate statically.
+
+Durations are read with the grammar `humantime` accepts, which is what nextest
+deserializes them with: a sequence of components each carrying a unit, written
+`300s`, `2h 37m` or `2h37m`. A reader taking a single component would reject
+configuration nextest accepts and blame the file for it. The grammar was
+measured against humantime 2.3.0, which is what the lockfile of the pinned
+cargo-nextest release resolves, by compiling that parser and running the cases
+through it. Naming the version matters: an earlier note here cited 2.4.0, which
+is the newest release rather than the one `cargo-nextest@0.9.140` pins. A value
+may carry a fractional part, and whitespace is tolerated around the point, so
+`1.5m` and `1 . 5 m` are both ninety seconds. Whitespace inside the number is
+ignored too, so `1 0s` is ten seconds and `1 2 . 3 4 s` is 12.34. The short
+spellings `wk`, `wks`, `yr` and `yrs` are units alongside the longer ones. The
+bare `0` is the one duration humantime reads without a unit, and it is the
+exact text: its parser special-cases `0` before reading a character, so `" 0 "`
+is refused and a reader that stripped whitespace first would accept a duration
+nextest rejects. Case matters, so `m` is minutes and `M` is months.
+
+A digit is `0` to `9` and nothing else. Python's `\d` matches every Unicode
+decimal digit and `int` reads them, so a reader written with it returns three
+hundred seconds for `\u0663\u0660\u0660s` and for the mixed `3\u0660\u0660s`,
+both of which humantime refuses: its parser compares against `'0'..='9'`,
+reporting "expected number at 0" for the run that opens with such a digit and
+"invalid character at 1" for the run that does not. The mixed spelling is the
+sharper case, because a reader that checked only its first character would
+still accept it. That is the wrong direction for a contract, which would then
+certify a configuration nextest cannot load.
+
+Whitespace is the same lesson at a second class, and it runs the other way.
+Rust's `char::is_whitespace` is the Unicode White_Space property; Python's `\s`
+is that property plus U+001C to U+001F, the file, group, record and unit
+separators, and `str.strip` and `str.split` carry the same excess. A reader
+spelling its whitespace `\s` therefore skips a separator wherever it skips a
+space. This reader did: `1\x1cs` read as one second, `\x1c45m` and `45m\x1f` as
+forty-five minutes, and `1\x1d0s` as ten, all from text nextest refuses at
+startup. The class is written out at three sites, the pattern, the trim and the
+digit join, and the four spellings are refusal cases. The class itself is
+pinned in both directions over the whole of Unicode, because a class that had
+lost a genuine space would make this reader refuse configurations nextest
+loads, and no refusal case would show it. The digit join is unreachable through
+the reader while the pattern refuses a separator, so it is exercised directly
+through the widest whitespace the class allows; it survives a mutation back to
+`str.split`, and is written out anyway so that a later widening of the pattern
+cannot turn a refusal into a silently different number.
+
+The arithmetic is exact and in integers, because humantime's is: its parser
+works in checked `u64` throughout and reports every failure as an overflow.
+Which integer depends on the unit. A fraction of an hour or anything longer is
+converted into whole *seconds*, so `0.000001h` is refused although its value is
+a whole 3,600,000 ns, while `0.25h` is fifteen minutes. A fraction of a minute
+or anything shorter is converted into whole nanoseconds, so `1.999999999s` is
+accepted and `0.0000000015s` is not. A fraction of a nanosecond is refused
+outright, whatever it spells, so even `1.0ns` will not load. The unit tables in
+`nextest_units.py` are split by which of the two a unit is measured in, because
+one table in nanoseconds cannot express the rule at the hour.
+
+Four ceilings come with it, and they are different. A numeric literal must fit
+the `u64` humantime reads it into, so `1000000000000000000000ns` is refused
+even though its value in seconds is small. A fraction's own arithmetic is
+checked, so `0.1000000000000000000s` overflows on the multiplication and
+`1.00000000000000000000s` on the denominator, although both would fit as
+durations. The accumulated seconds must fit the `u64` they are summed into, so
+`18446744073709551615s` loads and one second more does not.
+
+And the nanosecond remainder has a ceiling of its own, which is the one that
+catches a reader summing into an unbounded integer. `add_current` opens with
+`(out.subsec_nanos() as u64).add(nsec)?`, before any carry, so the remainder
+held so far plus the component's nanoseconds must fit a `u64` by themselves.
+Two values of `u64::MAX` nanoseconds carry the first to 18,446,744,073 seconds
+and then overflow on the second. The duration they name, about 36.9 billion
+seconds or some 1,169 years, is nowhere near the seconds ceiling; it is the
+remainder that overflows, and it overflows first. That is exactly why checking
+only the accumulated seconds afterwards reports a duration for text nextest
+will not start under.
+
+The reading was checked against the parser rather than against its
+documentation: 4,016 generated durations, spanning every unit spelling,
+fractions of up to twenty-one digits, values around the `u64` boundary and
+humantime's tolerated whitespace, were run through both this reader and
+humantime 2.3.0 compiled from the pinned release, and the two agreed on every
+one.
+
+The readings rest on `nextest_config.py`, `nextest_durations.py`,
+`nextest_units.py`, `nextest_errors.py`, `timeout_budgets.py`, `suite_lanes.py`
+and `suite_guards.py`, and are driven with controlled values in
+`timeout_reading_test.py`, `duration_grammar_test.py`, `suite_lanes_test.py` and
+`suite_guards_test.py`. Each reading takes what it reads rather than fetching
+it: `suite_lanes_in` queries supplied workflow documents and `suite_lanes_of`
+is the acquisition around it, which is how a lane that does not exist in this
+repository can be put to the reading at all.
+
+The nextest configuration is parsed with `tomllib` rather than matched as text.
+A text match finds a key inside a comment, inside a `filter` string, or in a
+table nextest never consults, and reports a budget the runner does not use. The
+commented-out `global-timeout` is the case that matters most, because this
+contract requires that tier to be present: a scraping reader would go on
+reporting a budget somebody had switched off. `terminate-after` is optional,
+and a `slow-timeout` without it marks a test slow and never stops it, so the
+reading refuses that form rather than reporting one period as the budget. Every
+table in `.config/nextest.toml` sets it explicitly, so no value here changes.
+
+It also pins the condition each lane carries. A skipped step runs no suite, so
+none of the budgets above says anything about it: `if: false` on the step or on
+its job would leave a lane that looks bounded and is not, and so would a
+plausible condition that quietly excluded the event the lane exists for. The
+conditions are pinned by value rather than tested for falsity, because YAML
+parses `false` to a boolean and enumerating falsy spellings would miss the
+plausible ones anyway. `codescene-coverage.yml`'s lane legitimately runs on
+pull requests and on manual dispatch, because `coverage.yml` covers the trunk.
+Whitespace is collapsed before comparison, so refolding a long condition is not
+a change; dropping a clause is. The lane coordinates are compared both ways, so
+a lane appearing without an entry fails too.
+
+[shared-actions-coverage]: https://github.com/leynos/shared-actions/blob/main/.github/actions/generate-coverage/README.md

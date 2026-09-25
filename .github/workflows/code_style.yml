@@ -16,6 +16,24 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
+# Every job here reads the checkout and writes nothing. Without this
+# block each job inherits the repository or organization default
+# `GITHUB_TOKEN` scopes, which can be write-capable, and these jobs run
+# third-party actions and repository commands. Nothing here uses the
+# token for anything but the checkout: no step references
+# `secrets.GITHUB_TOKEN`, `github.token` or an OIDC identity, and
+# sccache's cache and `actions/cache` authenticate with the runtime
+# token rather than this one.
+permissions:
+  contents: read
+
+env:
+  # The version the coverage and test lanes install. The workflow-contract
+  # suite hands `.config/nextest.toml` to this runner and takes its verdict,
+  # so a contract run against a different release would answer for a
+  # configuration nothing else loads.
+  CARGO_NEXTEST_VERSION: '0.9.140'
+
 jobs:
   format:
     name: Formatting
@@ -90,6 +108,16 @@ jobs:
         run: make spelling
       - name: Validate Mermaid diagrams
         run: make nixie
+      # The workflow-contract suite loads `.config/nextest.toml` with nextest
+      # itself, in a three-binary fixture crate, because every other contract
+      # over that file reads it with `tomllib` and cannot see a key the
+      # runner ignores. Deleting this step reddens that contract rather than
+      # skipping it.
+      - name: Install cargo-nextest
+        uses: taiki-e/install-action@c7eb1735f09259a5035e8e5d44b1406b1cddc0fb  # v2.83.0
+        with:
+          tool: cargo-nextest@${{ env.CARGO_NEXTEST_VERSION }}
+          fallback: none
       - name: Workflow contract tests
         run: make test-workflow-contracts
       - name: Report resource peaks
