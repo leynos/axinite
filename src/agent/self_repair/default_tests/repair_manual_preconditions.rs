@@ -12,7 +12,6 @@ use crate::testing::null_db::CapturingStore;
 
 use super::helpers::{StubBuilderOutcome, StubSoftwareBuilder};
 
-#[cfg(any(test, feature = "self_repair_extras"))]
 #[tokio::test]
 async fn repair_broken_tool_returns_manual_without_store() {
     let cm = Arc::new(ContextManager::new(10));
@@ -48,7 +47,6 @@ async fn repair_broken_tool_returns_manual_without_store() {
     assert_eq!(message, "Store not available for tracking repair");
 }
 
-#[cfg(any(test, feature = "self_repair_extras"))]
 #[tokio::test]
 async fn repair_broken_tool_returns_manual_when_attempt_limit_exceeded() {
     let cm = Arc::new(ContextManager::new(10));
