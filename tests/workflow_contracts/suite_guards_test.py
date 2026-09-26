@@ -9,7 +9,7 @@ controlled workflows.
 """
 
 import pytest
-from _workflow_policy import parse_workflow
+from _workflow_files import parse_workflow
 from suite_actions import COVERAGE_ACTION, WATCHDOG_VARIABLE
 from suite_guards import (
     _watchdog_offences,

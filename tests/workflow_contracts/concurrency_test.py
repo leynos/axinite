@@ -31,7 +31,8 @@ from __future__ import annotations
 import typing as typ
 
 import pytest
-from _workflow_policy import WORKFLOW_DIR, load, workflow_paths
+from _workflow_files import load, workflow_paths
+from _workflow_policy import WORKFLOW_DIR
 
 if typ.TYPE_CHECKING:  # pragma: no cover - typing only
     from collections.abc import Mapping

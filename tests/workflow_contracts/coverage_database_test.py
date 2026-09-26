@@ -29,7 +29,8 @@ from urllib.parse import urlsplit
 
 import pytest
 
-from _workflow_policy import REPOSITORY_ROOT, WORKFLOW_DIR, load, step_text
+from _workflow_files import load
+from _workflow_policy import REPOSITORY_ROOT, WORKFLOW_DIR, step_text
 
 WORKFLOW: typ.Final[str] = "coverage.yml"
 

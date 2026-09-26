@@ -203,6 +203,7 @@ jobs:
           sccache --version
           sccache --zero-stats
       - name: Restore Cargo registry and index
+        id: cargo-registry
         uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9  # v6.1.0
         with:
           path: |
@@ -305,11 +306,15 @@ jobs:
       # the `cargo test` baseline llvm-cov drives otherwise fails
       # (issue #237). nextest also skips doctests; the default profile
       # additionally drops the slow trybuild binaries.
+      # `--profile ci` is what makes this the execution of record for a push.
+      # The default profile drops the trybuild compile contracts, and since
+      # `test.yml` stands down on a push, a default-profile run here would
+      # leave them unexecuted on `main` altogether.
       - name: Generate coverage
         if: matrix.name != 'libsql-only'
         run: >-
           cargo llvm-cov nextest ${{ matrix.flags }} --features test-helpers
-          --workspace --lcov
+          --workspace --profile ci --lcov
           --output-path lcov.info
 
       # The libsql-only leg goes through generate-coverage, with exactly the
@@ -319,6 +324,12 @@ jobs:
       # baseline only for a push to `main`, never for a dispatch.
       - name: Generate coverage and the ratchet baseline
         if: matrix.name == 'libsql-only'
+        # `ci`, like the other legs and the pull-request lane: the default
+        # profile drops the trybuild compile contracts. The action has no
+        # profile input; nextest reads the variable, and a composite action's
+        # steps inherit the step's env.
+        env:
+          NEXTEST_PROFILE: ci
         uses: leynos/shared-actions/.github/actions/generate-coverage@dbe2e22ceaf498d85512679ccded38be9dbe7777
         with:
           features: libsql,test-helpers
@@ -399,6 +410,23 @@ jobs:
       - name: Report resource peaks
         if: always()
         run: ./scripts/ci-resource-sampler.sh report
+      # One writer per key, and it has to sit in a job that runs on a push
+      # to `main`. `test.yml`'s `tests` job no longer does, so the write
+      # moved here: this job restores the same key, runs on that trigger,
+      # and its all-features leg resolves the widest dependency graph.
+      - name: Save Cargo registry and index
+        if: >-
+          matrix.name == 'all-features' && github.event_name == 'push' &&
+          github.ref == 'refs/heads/main' &&
+          steps.cargo-registry.outputs.cache-hit != 'true'
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9  # v6.1.0
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+          key: >-
+            cargo-v1-${{ runner.os }}-${{ runner.arch }}-${{ runner.environment
+            }}-${{ hashFiles('**/Cargo.lock') }}
   e2e-coverage:
     name: E2E Coverage
     runs-on: ubicloud-standard-4

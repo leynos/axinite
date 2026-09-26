@@ -22,7 +22,7 @@ import typing as typ
 from pathlib import Path
 
 import pytest
-from _workflow_policy import declared_jobs, jobs_in, load, workflow_paths
+from _workflow_files import declared_jobs, jobs_in, load, workflow_paths
 from contract_sources import SourceReadError, matching_entries, read_source
 from nextest_config import profiles_of
 from nextest_versions import read_workflow_texts

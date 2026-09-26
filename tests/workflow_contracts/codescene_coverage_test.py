@@ -16,6 +16,7 @@ import re
 from pathlib import Path
 
 import yaml
+from _workflow_policy import Job
 
 SHA_RE: re.Pattern[str] = re.compile(r"[0-9a-f]{40}")
 
@@ -97,7 +98,13 @@ def test_trigger_permissions_and_job_are_pr_only_and_isolated() -> None:
         "the job's check name must say what it does now: it ratchets, and it "
         "no longer checks anything with CodeScene"
     )
-    assert job.get("runs-on") == "ubicloud-standard-4", (
+    # Read the arm a branch pull request selects rather than the raw scalar:
+    # the value is a chain since the fork fallback, and a string comparison
+    # would report the shape as wrong while the lane still buys it.
+    selected = Job("codescene-coverage.yml", "coverage-check", job).labels_for_event(
+        "pull_request"
+    )
+    assert selected == ("ubicloud-standard-4",), (
         "coverage-check is off the critical path, so it takes the cheaper "
         "shape: 683 s at half the rate beats 455 s at full"
     )
@@ -205,6 +212,14 @@ def test_setup_and_generator_match_proven_libsql_coverage() -> None:
     ), "coverage-check must build the WASM channel fixtures"
 
     generator = _find_step(job, "Generate coverage")
+    # `ci` joined the lane when it became the only libsql-only run on a pull
+    # request: `test.yml`'s leg ran that profile, and the default profile
+    # drops the trybuild compile contracts, so without it the replacement
+    # would be narrower than the leg it replaced.
+    assert generator.get("env") == {"NEXTEST_PROFILE": "ci"}, (
+        "coverage-check must run the ci nextest profile, as the leg it "
+        f"replaced did; the step's env is {generator.get('env')}"
+    )
     assert generator.get("with") == {
         "features": "libsql,test-helpers",
         "with-default-features": "false",

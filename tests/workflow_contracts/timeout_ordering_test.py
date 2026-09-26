@@ -40,7 +40,7 @@ Run via ``make test-workflow-contracts``.
 import typing as typ
 
 import pytest
-from _workflow_policy import jobs_of, load, workflow_paths
+from _workflow_files import jobs_of, load, workflow_paths
 from nextest_config import (
     Profile,
     profiles,

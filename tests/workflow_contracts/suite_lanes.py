@@ -12,7 +12,8 @@ import pathlib
 import shlex
 import typing as typ
 
-from _workflow_policy import WORKFLOW_DIR, jobs_of, load, workflow_paths
+from _workflow_files import jobs_of, load, workflow_paths
+from _workflow_policy import WORKFLOW_DIR
 from suite_actions import admits_leg, matrix_leg_names, runs_suite_through_action
 
 #: The commands that run the workspace suite under nextest. A step

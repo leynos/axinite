@@ -23,7 +23,8 @@ Run via ``make test-workflow-contracts``.
 from __future__ import annotations
 
 import pytest
-from _workflow_policy import Job, jobs, step_text
+from _workflow_files import jobs
+from _workflow_policy import Job, step_text
 
 ALL_JOBS: tuple[Job, ...] = tuple(jobs())
 
@@ -33,8 +34,6 @@ ALL_JOBS: tuple[Job, ...] = tuple(jobs())
 APPROVED_SHAPES: dict[str, str] = {
     "ubicloud-standard-2": "jobs that compile little or nothing",
     "ubicloud-standard-4": "jobs that compile the workspace",
-    "ubicloud-standard-8": "no job chooses it; e2e.yml still holds it "
-    "because that workflow is right-sized separately",
 }
 
 SAMPLER = "./scripts/ci-resource-sampler.sh"
@@ -175,6 +174,12 @@ REVIEWED_SHAPES: dict[tuple[str, str], tuple[str, str]] = {
         "ubicloud-standard-4",
         "the workspace test matrix, 484 to 551 s",
     ),
+    ("test.yml", "github-tool-tests"): (
+        "ubicloud-standard-2",
+        "one small out-of-workspace crate, on the same terms as "
+        "telegram-tests; the shape is provisional until the first run on it "
+        "reports a peak",
+    ),
     ("test.yml", "telegram-tests"): (
         "ubicloud-standard-2",
         "one small out-of-workspace crate, 33 s",
@@ -190,13 +195,21 @@ REVIEWED_SHAPES: dict[tuple[str, str], tuple[str, str]] = {
         "or 35 %",
     ),
     ("e2e.yml", "build"): (
-        "ubicloud-standard-8",
-        "not yet resized; its label is being changed by the scheduled-work "
-        "pull request and moves in the follow-up",
+        "ubicloud-standard-4",
+        "compiles the workspace under --no-default-features --features libsql "
+        "and peaked at 6,522 and 6,797 MiB on two cold runs, which leaves no "
+        "headroom in the 7,940 MiB a -2 presents; the first run on the new "
+        "shape peaked at 5,746 MiB of 15,991, or 36 %, in 582 s against a "
+        "12 % Rust cache hit rate, where the -8 history is 330 s warm "
+        "(dispatch 34991982816 on 3301e095e)",
     ),
     ("e2e.yml", "test"): (
-        "ubicloud-standard-8",
-        "not yet resized, as above",
+        "ubicloud-standard-2",
+        "compiles nothing: it downloads the binary `build` produced and "
+        "drives it from Playwright, peaking at 1,273 to 1,432 MiB across "
+        "nine legs; the first run on the new shape peaked at 916 to 997 MiB "
+        "of 7,940, or 12 %, in 198 to 264 s against 120 to 216 s on the -8 "
+        "(dispatch 34991982816 on 3301e095e)",
     ),
 }
 

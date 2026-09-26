@@ -15,7 +15,7 @@ Run via ``make test-workflow-contracts``.
 import typing as typ
 
 import pytest
-from _workflow_policy import parse_workflow
+from _workflow_files import parse_workflow
 from nextest_config import Profile, profiles
 from suite_lanes import SuiteLane, suite_lanes_in, suite_lanes_of
 from timeout_budgets import (

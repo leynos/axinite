@@ -4,9 +4,10 @@ The contracts in this directory are only as trustworthy as the parsing they
 sit on. A helper that quietly returns nothing turns a policy assertion into a
 vacuous pass: a job whose `runs-on` is written in a form the helper does not
 read reports no labels, and every placement contract then waves it through.
-These tests exercise the pure half of `_workflow_policy` directly, so each
-supported shape is proven rather than assumed from whichever shapes the estate
-happens to use today.
+These tests exercise `_workflow_policy` directly, so each supported shape is
+proven rather than assumed from the shapes the estate uses today;
+`workflow_files_test.py` and `runs_on_selection_test.py` cover the readers
+split out of it.
 
 Run via ``make test-workflow-contracts``.
 """
@@ -21,19 +22,10 @@ from _workflow_policy import (
     UBICLOUD_LABEL,
     Job,
     builds_or_tests,
-    cache_paths,
-    declared_jobs_in,
-    is_cache_step,
-    jobs_of,
-    parse_workflow,
     step_text,
-    workflow_paths,
 )
 from hypothesis import HealthCheck, given, settings
 from hypothesis import strategies as st
-
-if typ.TYPE_CHECKING:  # pragma: no cover - typing only
-    from pathlib import Path
 
 #: Hypothesis runs these against pure functions, but the suite shares a
 #: machine with compiling CI jobs. A per-example deadline would turn host load
@@ -56,53 +48,6 @@ LABELS = st.text(
 def _job(body: dict[str, object]) -> Job:
     """Wrap a job body for a helper under test."""
     return Job("test.yml", "example", body)
-
-
-class TestParseWorkflow:
-    """`parse_workflow` accepts a workflow and rejects anything else."""
-
-    def test_it_returns_the_parsed_mapping(self) -> None:
-        """A workflow document parses to its mapping."""
-        assert parse_workflow("name: Example\njobs: {}\n", "x.yml") == {
-            "name": "Example",
-            "jobs": {},
-        }
-
-    @pytest.mark.parametrize(
-        "text",
-        ["", "- one\n- two\n", "just a string\n", "null\n"],
-        ids=["empty", "sequence", "scalar", "null"],
-    )
-    def test_it_rejects_a_document_that_is_not_a_mapping(self, text: str) -> None:
-        """A non-mapping document is not a workflow and must fail loudly."""
-        with pytest.raises(AssertionError, match=r"x\.yml must parse as a mapping"):
-            parse_workflow(text, "x.yml")
-
-
-class TestDeclaredJobs:
-    """`declared_jobs_in` and `jobs_of` read only well-formed jobs."""
-
-    @pytest.mark.parametrize(
-        "document",
-        [{}, {"jobs": None}, {"jobs": []}, {"jobs": "build"}],
-        ids=["absent", "null", "sequence", "scalar"],
-    )
-    def test_a_missing_or_malformed_jobs_mapping_reads_as_empty(
-        self, document: dict[str, object]
-    ) -> None:
-        """Only a mapping counts as a jobs declaration."""
-        assert declared_jobs_in(document) == {}
-
-    def test_it_skips_a_job_whose_body_is_not_a_mapping(self) -> None:
-        """A malformed job body yields no Job rather than raising."""
-        document = {"jobs": {"good": {"runs-on": "ubuntu-latest"}, "bad": None}}
-        found = list(jobs_of("test.yml", document))
-        assert [job.job_id for job in found] == ["good"]
-        assert found[0].workflow == "test.yml"
-
-    def test_it_reports_the_job_as_workflow_and_id(self) -> None:
-        """The string form identifies a job in assertion output."""
-        assert str(_job({})) == "test.yml:example"
 
 
 class TestRunnerLabels:
@@ -329,48 +274,6 @@ class TestSteps:
         assert step_text({"uses": "actions/checkout@v6"}) == ""
         assert step_text({"run": "make test"}) == "make test"
 
-    @pytest.mark.parametrize(
-        ("step", "expected"),
-        [
-            (
-                {"with": {"path": "~/.cargo/registry\n~/.cargo/git\n"}},
-                ["~/.cargo/registry", "~/.cargo/git"],
-            ),
-            ({"with": {"path": "  ~/.cargo/registry  "}}, ["~/.cargo/registry"]),
-            ({"with": {"path": "a\n\n\nb"}}, ["a", "b"]),
-            ({"with": {"path": ["a", "b"]}}, []),
-            ({"with": {}}, []),
-            ({}, []),
-        ],
-        ids=["multiline", "padded", "blank-lines", "sequence", "no-path", "no-with"],
-    )
-    def test_cache_paths_reads_one_path_per_line(
-        self, step: dict[str, object], expected: list[str]
-    ) -> None:
-        """Blank lines and padding are formatting, not cache entries."""
-        assert cache_paths(step) == expected
-
-    @pytest.mark.parametrize(
-        ("uses", "expected"),
-        [
-            ("actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9", True),
-            ("actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9", True),
-            ("actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9", True),
-            ("actions/checkout@v6", False),
-            ("Swatinem/rust-cache@v2", False),
-        ],
-        ids=["combined", "restore", "save", "checkout", "rust-cache"],
-    )
-    def test_cache_steps_cover_the_sub_actions(
-        self, uses: str, *, expected: bool
-    ) -> None:
-        """Missing a sub-action would hide half of a cache's ownership."""
-        assert is_cache_step({"uses": uses}) is expected
-
-    def test_a_run_step_is_not_a_cache_step(self) -> None:
-        """`is_cache_step` reads `uses`, which a run step does not have."""
-        assert is_cache_step({"run": "actions/cache@v6"}) is False
-
 
 class TestClassification:
     """A job's claim on a paid runner comes from what it runs."""
@@ -466,32 +369,6 @@ class TestSourceBuildPatterns:
         assert not self._reasons(command)
 
 
-class TestWorkflowPaths:
-    """The scan is the file-reading edge, and it reads only workflows."""
-
-    def test_it_returns_both_workflow_extensions_in_name_order(
-        self, tmp_path: Path
-    ) -> None:
-        """GitHub accepts `.yaml` too, and a stable order keeps test ids stable.
-
-        Scanning one extension would exempt a `.yaml` workflow from the
-        runner, timeout, cache, and tool-install contracts at once, with every
-        test still passing.
-        """
-        for name in ("test.yml", "audit.yml", "notes.md", "release.yaml", "a.txt"):
-            (tmp_path / name).write_text("{}\n", encoding="utf-8")
-        (tmp_path / "nested.yml").mkdir()
-        assert [path.name for path in workflow_paths(tmp_path)] == [
-            "audit.yml",
-            "release.yaml",
-            "test.yml",
-        ]
-
-    def test_an_empty_directory_yields_nothing(self, tmp_path: Path) -> None:
-        """An empty scan must not raise."""
-        assert workflow_paths(tmp_path) == []
-
-
 @given(labels=st.lists(LABELS, min_size=0, max_size=4))
 @PROPERTY
 def test_equivalent_runs_on_forms_read_the_same_labels(labels: list[str]) -> None:
@@ -518,41 +395,3 @@ def test_runs_on_answers_exactly_when_one_label_is_declared(
     assert (job.runs_on is not None) is (len(labels) == 1)
     if job.runs_on is not None:
         assert job.runs_on == labels[0]
-
-
-@given(
-    bodies=st.dictionaries(
-        st.text(alphabet="abcdefgh", min_size=1, max_size=4),
-        st.one_of(
-            st.dictionaries(st.just("runs-on"), LABELS, max_size=1),
-            st.none(),
-            st.text(max_size=4),
-            st.lists(st.integers(), max_size=2),
-        ),
-        max_size=6,
-    )
-)
-@PROPERTY
-def test_only_mapping_job_bodies_become_jobs(
-    bodies: dict[str, object],
-) -> None:
-    """A malformed job body is skipped, never half-read."""
-    found = list(jobs_of("test.yml", {"jobs": bodies}))
-    assert [job.job_id for job in found] == [
-        job_id for job_id, body in bodies.items() if isinstance(body, dict)
-    ]
-    assert all(job.workflow == "test.yml" for job in found)
-
-
-@given(
-    lines=st.lists(
-        st.one_of(st.just(""), st.just("   "), st.text(alphabet="ab/~.", max_size=8)),
-        max_size=6,
-    )
-)
-@PROPERTY
-def test_cache_paths_never_yields_an_empty_entry(lines: list[str]) -> None:
-    """An empty path would read as a cache owner claiming nothing."""
-    found = cache_paths({"with": {"path": "\n".join(lines)}})
-    assert all(path == path.strip() and path for path in found)
-    assert found == [line.strip() for line in lines if line.strip()]

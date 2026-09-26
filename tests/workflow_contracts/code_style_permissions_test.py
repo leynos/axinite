@@ -20,7 +20,8 @@ from __future__ import annotations
 import typing as typ
 from pathlib import Path
 
-from _workflow_policy import WORKFLOW_DIR, declared_jobs, load
+from _workflow_files import declared_jobs, load
+from _workflow_policy import WORKFLOW_DIR
 
 WORKFLOW_PATH: typ.Final[Path] = WORKFLOW_DIR / "code_style.yml"
 

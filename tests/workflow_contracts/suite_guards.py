@@ -16,7 +16,8 @@ verdict those budgets exist to protect.
 
 import typing as typ
 
-from _workflow_policy import Job, jobs_of
+from _workflow_files import jobs_of
+from _workflow_policy import Job
 from suite_actions import (
     WATCHDOG_VARIABLE,
     uses_coverage_action,

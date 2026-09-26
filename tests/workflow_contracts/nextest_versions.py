@@ -22,7 +22,8 @@ agreement assertion would still pass over the four that agreed.
 import re
 import typing as typ
 
-from _workflow_policy import WORKFLOW_DIR, parse_workflow, workflow_paths
+from _workflow_files import parse_workflow, workflow_paths
+from _workflow_policy import WORKFLOW_DIR
 from contract_sources import read_source
 
 if typ.TYPE_CHECKING:  # pragma: no cover - typing only
