@@ -51,7 +51,7 @@ WORKSPACE_RECIPE = (
 #: per leg again, which is the duplication this split removed, and it would
 #: satisfy any check that merely refused a `--manifest-path` line.
 WORKSPACE_RECIPE_LINES: tuple[str, ...] = (WASM_PREREQUISITE, WORKSPACE_RECIPE)
-GITHUB_TOOL_RECIPE = "$(CARGO) test --manifest-path $(GITHUB_TOOL_MANIFEST)"
+GITHUB_TOOL_RECIPE = "$(CARGO_COMMAND) test --manifest-path $(GITHUB_TOOL_MANIFEST)"
 #: The variable a workflow step uses to hand feature flags to a Make target.
 #: The flags arrive as one shell word, `TEST_FEATURES="--features x"`, so the
 #: selection is inside a token rather than beside it.

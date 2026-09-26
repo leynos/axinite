@@ -34,6 +34,7 @@ from pathlib import Path
 
 import pytest
 from _estate import isolated, read_estate
+from _makefile_test_support import _MakeTestContext
 from _sources import SourceError
 from _suite_targets import read_default_features
 from nextest_config import profiles_of
@@ -258,8 +259,6 @@ def nextest_profiles() -> dict[str, Profile]:
         Profile name to its table and overrides.
     """
     return profiles_of(NEXTEST_CONFIG)
-
-from _makefile_test_support import _MakeTestContext
 
 
 @pytest.fixture(scope="session")
