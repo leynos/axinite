@@ -14,9 +14,14 @@ concurrency:
 jobs:
   regression-test:
     name: Regression test enforcement
-    # Metadata check: inspects the pull request diff and commit messages
-    # with git, grep, and awk. No build. GitHub-hosted.
-    runs-on: ubuntu-latest
+    # Metadata check: inspects the pull request diff and commit messages with
+    # git, grep, and awk. No build, nothing tied to the CPU architecture, so
+    # the smallest ARM shape: on the hosted pool this 6-8 s job waited up to
+    # 734 s to start (ADR 013). A fork's pull request cannot obtain an
+    # Ubicloud runner, so it falls back to a hosted one.
+    runs-on: >-
+      ${{ github.event.pull_request.head.repo.fork && 'ubuntu-latest'
+      || 'ubicloud-standard-2-arm' }}
     timeout-minutes: 10
     steps:
       - name: Checkout repository

@@ -258,3 +258,6 @@
 - [ADR 012: Monotonic clock seam for build duration measurement](adr-012-monotonic-clock-seam-for-build-duration.md)
   records why `BuildSoftwareTool` uses an `Instant`-backed duration seam
   instead of `mockable::Clock` for elapsed-time assertions.
+- [ADR 013: Place CI jobs by rule](adr-013-place-ci-jobs-by-rule.md) records
+  the rule-based runner placement, including the utility-job rule that moves
+  short jobs off the hosted pool only when it makes them wait.

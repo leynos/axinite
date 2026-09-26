@@ -11,9 +11,12 @@ permissions:
 
 jobs:
   classify:
-    # Labelling: shells out to the GitHub API to size and
-    # classify the pull request. No build. GitHub-hosted.
-    runs-on: ubuntu-latest
+    # Labelling: shells out to the GitHub API to size and classify the pull
+    # request. No build, and nothing tied to the CPU architecture, so it
+    # takes the smallest ARM shape: on the hosted pool this 13-20 s job
+    # waited up to 2,098 s to start (ADR 013). `pull_request_target` runs in
+    # this repository's context for a fork too, so it needs no fork fallback.
+    runs-on: ubicloud-standard-2-arm
     timeout-minutes: 10
     steps:
       - name: Checkout base branch

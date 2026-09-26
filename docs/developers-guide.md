@@ -125,25 +125,43 @@ so. The affected rows are marked. Every row that a `pull_request` can dispatch
 also falls back to `ubuntu-latest` for a pull request from a fork, which cannot
 obtain an Ubicloud runner at all; see "The fork fallback" below.
 
-| Class                                  | Jobs                                                                                                                                                                                                                | Runner                                                                      |
-| -------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------- |
-| Build and test                         | `coverage.yml` `coverage`, `coverage.yml` `e2e-coverage`                                                                                                                                                            | `ubicloud-standard-4`                                                       |
-| Build and test, fork-dependent         | `code_style.yml` `format`, `code_style.yml` `clippy`, `codescene-coverage.yml` `coverage-check`                                                                                                                     | `ubicloud-standard-4` on a branch pull request, `ubuntu-latest` on a fork's |
-| Build and test, event-dependent        | `test.yml` `tests` (not on `push`), `test.yml` `wasm-wit-compat`                                                                                                                                                    | `ubicloud-standard-4` on a developer event, `ubuntu-latest` on `schedule`   |
-| Build and test, event-dependent, small | `test.yml` `telegram-tests`, `test.yml` `github-tool-tests`                                                                                                                                                         | `ubicloud-standard-2` on a developer event, `ubuntu-latest` on `schedule`   |
-| Build and test, event-dependent        | `e2e.yml` `build`                                                                                                                                                                                                   | `ubicloud-standard-4` on a developer event, `ubuntu-latest` on `schedule`   |
-| Test only, event-dependent, small      | `e2e.yml` `test`                                                                                                                                                                                                    | `ubicloud-standard-2` on a developer event, `ubuntu-latest` on `schedule`   |
-| Docker, event-dependent                | `test.yml` `docker-build`                                                                                                                                                                                           | `ubicloud-standard-4` on a developer event, `ubuntu-latest` on `schedule`   |
-| Windows                                | `code_style.yml` `clippy-windows`, `test.yml` `windows-build`                                                                                                                                                       | `windows-latest`                                                            |
-| Release                                | `release-plz.yml` `release-plz-release`, `release-plz.yml` `release-plz-pr`                                                                                                                                         | `ubuntu-latest`                                                             |
-| Label and classify                     | `pr-label-scope.yml` `scope`, `pr-label-classify.yml` `classify`                                                                                                                                                    | `ubuntu-latest`                                                             |
-| Roll-up and report                     | `code_style.yml` `code-style`, `test.yml` `run-tests`, `coverage.yml` `coverage-gate`, `e2e.yml` `e2e`                                                                                                              | `ubuntu-latest`                                                             |
-| Scheduled and metadata                 | `audit.yml` `audit`, `test.yml` `audit`, `test.yml` `version-check`, `regression-test-check.yml` `regression-test`, `mutation-testing.yml` `mutation`, `mutation-testing.yml` `tests`, `mutation-testing.yml` `e2e` | `ubuntu-latest`                                                             |
+| Class                                  | Jobs                                                                                                                                                                 | Runner                                                                          |
+| -------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------- |
+| Build and test                         | `coverage.yml` `coverage`, `coverage.yml` `e2e-coverage`                                                                                                             | `ubicloud-standard-4`                                                           |
+| Build and test, fork-dependent         | `code_style.yml` `format`, `code_style.yml` `clippy`, `codescene-coverage.yml` `coverage-check`                                                                      | `ubicloud-standard-4` on a branch pull request, `ubuntu-latest` on a fork's     |
+| Build and test, event-dependent        | `test.yml` `tests` (not on `push`), `test.yml` `wasm-wit-compat`                                                                                                     | `ubicloud-standard-4` on a developer event, `ubuntu-latest` on `schedule`       |
+| Build and test, event-dependent, small | `test.yml` `telegram-tests`, `test.yml` `github-tool-tests`                                                                                                          | `ubicloud-standard-2` on a developer event, `ubuntu-latest` on `schedule`       |
+| Build and test, event-dependent        | `e2e.yml` `build`                                                                                                                                                    | `ubicloud-standard-4` on a developer event, `ubuntu-latest` on `schedule`       |
+| Test only, event-dependent, small      | `e2e.yml` `test`                                                                                                                                                     | `ubicloud-standard-2` on a developer event, `ubuntu-latest` on `schedule`       |
+| Docker, event-dependent                | `test.yml` `docker-build`                                                                                                                                            | `ubicloud-standard-4` on a developer event, `ubuntu-latest` on `schedule`       |
+| Windows                                | `code_style.yml` `clippy-windows`, `test.yml` `windows-build`                                                                                                        | `windows-latest`                                                                |
+| Release                                | `release-plz.yml` `release-plz-release`, `release-plz.yml` `release-plz-pr`                                                                                          | `ubuntu-latest`                                                                 |
+| Label and classify, utility            | `pr-label-scope.yml` `scope`, `pr-label-classify.yml` `classify`                                                                                                     | `ubicloud-standard-2-arm`                                                       |
+| Roll-up and report                     | `code_style.yml` `code-style`, `test.yml` `run-tests`, `coverage.yml` `coverage-gate`, `e2e.yml` `e2e`                                                               | `ubuntu-latest`                                                                 |
+| Metadata, utility, fork-dependent      | `regression-test-check.yml` `regression-test`                                                                                                                        | `ubicloud-standard-2-arm` on a branch pull request, `ubuntu-latest` on a fork's |
+| Scheduled and metadata                 | `audit.yml` `audit`, `test.yml` `audit`, `test.yml` `version-check`, `mutation-testing.yml` `mutation`, `mutation-testing.yml` `tests`, `mutation-testing.yml` `e2e` | `ubuntu-latest`                                                                 |
 
 The placement rule is therefore: a job may run on an Ubicloud runner only when
-it compiles or executes the product. Everything else is GitHub-hosted. Windows
-lanes stay on GitHub-hosted runners because Ubicloud publishes Linux images
-only.
+it compiles or executes the product, or when it is a short utility job that the
+hosted pool makes wait. Everything else is GitHub-hosted. Windows lanes stay on
+GitHub-hosted runners because Ubicloud publishes Linux images only.
+
+The utility exception is the user's ruling of 25 September 2026, recorded in
+[ADR 013](adr-013-place-ci-jobs-by-rule.md). Contention is the only reason to
+move such a job, so each moved job carries its measured wait, and it takes the
+smallest shape: `ubicloud-standard-2-arm` when it does not depend on the CPU
+architecture, `ubicloud-standard-2` when it does. The two labelling jobs and
+`regression-test` moved: on the hosted pool they took 4 to 20 seconds to run
+and waited up to 1,495, 2,098 and 734 seconds to start. The scheduled
+`audit.yml` `audit` waited one or two seconds, so it stays hosted.
+`tests/workflow_contracts/_utility_jobs.py` names the moved jobs with their
+measurements, and `runner_placement_test.py` requires each to hold its smallest
+shape and to build nothing. They are exempt from the resource sampler below,
+which exists to decide a resize, because a job already on the smallest shape
+has none to make. `regression-test` runs on `pull_request`, so it takes the
+fork fallback; the labelling jobs run on `pull_request_target`, which runs in
+this repository's context for a fork too, and they check out the base branch,
+never the fork's code.
 
 `code_style.yml` `format` is the one deliberate exception, and the contract
 encodes it by counting `cargo fmt` as qualifying. The job compiles nothing:
