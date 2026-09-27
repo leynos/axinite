@@ -200,19 +200,16 @@ libc = "0.2"
 secret-service = { version = "4", features = ["rt-tokio-crypto-rust"] }
 zbus = "5"
 # The embedded PostgreSQL fixture is Linux-only by decision: Axinite supports
-# Linux, and the prebuilt pgvector archive it installs publishes no asset for
-# the other platforms. The Windows lanes build with --all-features, so these
-# are target-scoped as well as feature-scoped; scoping by feature alone leaves
-# that lane trying to resolve them, which is how the first CI run failed.
-pg_embedded_setup_unpriv = { package = "pg-embed-setup-unpriv", version = "0.5.2", optional = true }
-postgresql_extensions = { version = "0.21.0", features = ["portal-corp"], optional = true }
-postgresql_commands = { version = "0.21.0", optional = true }
+# Linux, and the pgvector archives the library's extension hook installs are
+# published for Linux targets only. The Windows lanes build with
+# --all-features, so this is target-scoped as well as feature-scoped; scoping
+# by feature alone leaves that lane trying to resolve it.
+pg_embedded_setup_unpriv = { package = "pg-embed-setup-unpriv", version = "0.6", optional = true }
 
 [dev-dependencies]
 tokio-test = "0.4"
 tracing-test = "0.2"
 tokio-tungstenite = "0.26"
-testcontainers-modules = { version = "0.15", features = ["postgres"] }
 pretty_assertions = "1"
 insta = { version = "1.46.3", features = ["json"] }
 rstest = "0.26.1"
@@ -250,8 +247,6 @@ import = ["dep:rusqlite", "dep:json5"]
 test-helpers = [
     "dep:tempfile",
     "dep:pg_embedded_setup_unpriv",
-    "dep:postgresql_extensions",
-    "dep:postgresql_commands",
 ]
 docker = ["dep:bollard"]
 

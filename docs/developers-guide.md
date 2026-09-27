@@ -365,68 +365,55 @@ item, so any expression there is refused as unreadable. The readings live in
 ### Postgres tests and the embedded cluster
 
 The Postgres-backed tests run against a cluster the test process owns, not a
-service container. `src/testing/postgres/embedded.rs` bootstraps PostgreSQL 16,
-installs pgvector from a prebuilt archive, migrates one template database named
-after a hash of `migrations/`, and clones a fresh database per test that is
-dropped when the test ends.
+service container and never a host PostgreSQL. `src/testing/postgres.rs` is the
+one door: `try_test_pg_db` returns a `TestDatabase` that derefs to `PgBackend`.
+With `TEST_DATABASE_URL` set it uses that database, skipping only when nothing
+answers and the lane did not promise one (`AXINITE_REQUIRE_POSTGRES`).
+Otherwise, on Linux with `test-helpers`, `src/testing/postgres/embedded.rs`
+bootstraps PostgreSQL 17.11 through `pg-embed-setup-unpriv` 0.6, migrates one
+template database named after a hash of `migrations/`, and clones a fresh
+database per test that is dropped when the test ends. A bootstrap failure is a
+test failure, never a skip: it means the harness is broken, not that nobody
+provided a database. There is no fallback to `localhost` (user ruling,
+2026-09-23).
 
 Isolation is the point. The tests used to share one database and keep out of
 each other's way by convention, with fresh UUIDs and targeted `DELETE`
 statements; one clean-up deletes by user id, which is safe only while no two
 tests choose the same user. A database per test removes the question.
 
-`TEST_DATABASE_URL` bypasses all of it and uses the database it names. That is
-the developer path today, and the fallback if the embedded path ever fails in
-CI.
+#### Configuration lives in `.cargo/config.toml`
 
-#### Three things that are not obvious
+The library reads its configuration from the environment during bootstrap, and
+a test process must not set its own environment once threads exist. nextest's
+configuration has no `env` key, so the values are in `.cargo/config.toml`'s
+`[env]`, which Cargo applies to every process it runs, and which a value
+already in the environment overrides:
 
-**The connection budget is derived, not set.** The library offers no way to
-raise `max_connections` at bootstrap: no setting, no environment variable, and
-`ALTER SYSTEM` needs a restart the shared handle does not expose. So the
-cluster's 20 is taken as given and the tests are bounded to fit. Each test's
-pool takes 2 and the `pg-embed` nextest group caps concurrency at 8, using 16
-and leaving headroom for the template connection, the administrative connection
-that creates and drops each clone, and pools that have not yet released.
-Measured before that bound existed: two failures in eight runs, a different test
-each time, all `sorry, too many clients already`.
+| Variable                                                  | Value                                    | Why                                                                                           |
+| --------------------------------------------------------- | ---------------------------------------- | --------------------------------------------------------------------------------------------- |
+| `PG_VERSION_REQ`                                          | `=17.11.0`                               | The extension hook matches archives on major and minor together; CI's former service ran pg16 |
+| `PG_EXTENSIONS`                                           | `vector`                                 | `migrations/V1__initial.sql` runs `CREATE EXTENSION vector`                                   |
+| `PG_EXTENSIONS_MANIFEST`, `PG_EXTENSIONS_MANIFEST_SHA256` | df12-pg-extensions v1.0.0 and its digest | The pinned manifest pins every archive it lists                                               |
+| `PG_MAX_CONNECTIONS`                                      | `64`                                     | Sixteen concurrent tests at two connections each, with headroom                               |
+| `PG_EMBED_ROOT`                                           | `target/pg-embed`                        | A per-checkout install root, so no other project's cluster can break this one                 |
 
-**The version pin lives in `.cargo/config.toml`.** The library reads it from the
-environment during bootstrap, and a test process cannot safely set its own
-environment once threads exist. nextest's configuration has no `env` key: it
-warns `ignoring unknown configuration keys: env` and carries on. Cargo's `[env]`
-applies to every process it runs, so `cargo test`, `cargo nextest` and
-`cargo llvm-cov` all agree. The range is capped at 16 because the prebuilt
-pgvector archive publishes PostgreSQL 16 assets only; the minor is open because
-PostgreSQL's module magic block encodes the major and not the minor, so a module
-built for one 16.x loads into another.
+_Table: the embedded cluster's configuration._
+
+The `pg-embed` nextest group caps the PostgreSQL modules at sixteen threads to
+fit that connection budget; every other test runs at full parallelism. A
+process that is not started by Cargo does not get these values, and the fixture
+then fails with a message saying so rather than letting the first migration
+fail on a missing `vector` control file.
 
 **Every synchronous cluster call runs on a blocking worker.** The handle's
 methods each build and tear down a Tokio runtime internally, and dropping a
 runtime inside a `#[tokio::test]` panics with "Cannot drop a runtime in a
-context where blocking is not allowed". The same applies to the guard that drops
-the cloned database, which is moved onto a plain thread and joined.
+context where blocking is not allowed". The same applies to the guard that
+drops the cloned database, which is moved onto a plain thread and joined.
 
-#### When the bootstrap fails
-
-The library hard-codes its install root as `/var/tmp/pg-embed-<uid>`
-(`privileges.rs:235`), with no override, so every project on a machine shares
-one root per user. It also mints a fresh superuser password on each bootstrap
-while reusing the existing data directory, so the credentials it returns need
-not match what that directory was initialized with.
-
-The bootstrap is therefore reliable on a clean machine and not on one carrying
-state. CI starts clean, so the path is sound there. A developer running a second
-project that uses the library, or returning to a machine where an earlier run
-left a directory, may see `postgresql_embedded::setup() failed` or
-`password authentication failed for user "postgres"`.
-
-Set `TEST_DATABASE_URL` and carry on, or remove `/var/tmp/pg-embed-<uid>` and
-let the next run rebuild it, having checked that no other project is mid-run
-against it. The real fix is upstream, in the packet for
-`pg-embed-setup-unpriv` v0.6.0: an install-root override so each test binary can
-have its own, and a password that survives a bootstrap. When that ships, the
-override is set per test binary and this section loses its last two paragraphs.
+The first run downloads PostgreSQL and the pgvector archive; later runs reuse
+them from the install root and the extension cache.
 
 ### Tool installation
 

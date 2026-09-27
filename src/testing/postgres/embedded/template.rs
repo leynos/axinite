@@ -7,7 +7,6 @@
 
 use pg_embedded_setup_unpriv::ClusterHandle;
 
-use super::extension::install_extension;
 use super::{
     CLONE_ATTEMPTS, CLONE_RETRY_DELAY, TEMPLATE, TEMPLATE_PREFIX, TEST_POOL_SIZE, blocking,
     test_database_config,
@@ -61,13 +60,11 @@ pub(super) async fn ensure_template(
 
 /// Creates and migrates the template database.
 async fn build_template(cluster: &'static ClusterHandle, name: &str) -> Result<(), DatabaseError> {
-    install_extension(cluster).await?;
-
     let owned = name.to_string();
     let existed = blocking(move || {
         cluster
             .database_exists(owned.as_str())
-            .map_err(|error| DatabaseError::Pool(format!("template lookup: {error}")))
+            .map_err(|error| DatabaseError::Pool(format!("template lookup: {error:?}")))
     })
     .await?;
     if !existed {
