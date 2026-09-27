@@ -286,17 +286,26 @@ def test_statistics_are_reported_even_when_the_build_fails(job: Job) -> None:
     )
 
 
+def _demands_the_proxy(step: dict[str, object]) -> bool:
+    """Report whether a step is a `Setup Rust` call demanding Ubicloud's proxy."""
+    inputs = step.get("with")
+    return (
+        step.get("name") == SETUP_STEP
+        and isinstance(inputs, dict)
+        and inputs.get("expect-cache") == "ubicloud"
+    )
+
+
 def test_github_hosted_jobs_demand_no_proxy() -> None:
     """A job that never reaches Ubicloud must not demand its cache proxy."""
-    for job in ALL_JOBS:
-        if job.uses_ubicloud:
-            continue
-        for step in job.steps:
-            inputs = step.get("with")
-            if step.get("name") == SETUP_STEP and isinstance(inputs, dict):
-                assert inputs.get("expect-cache") != "ubicloud", (
-                    f"{job} is not on Ubicloud but demands its cache proxy"
-                )
+    offenders = [
+        str(job)
+        for job in ALL_JOBS
+        if not job.uses_ubicloud and any(_demands_the_proxy(s) for s in job.steps)
+    ]
+    assert not offenders, (
+        f"{offenders} are not on Ubicloud but demand its cache proxy"
+    )
 
 
 @pytest.mark.parametrize(
