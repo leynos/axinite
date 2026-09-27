@@ -6,10 +6,14 @@
 #
 # The Linux jobs are right-sized per job rather than uniformly.
 # ubicloud-standard-4 carries the jobs that compile the workspace;
-# ubicloud-standard-2 carries the jobs that compile little or nothing.
+# ubicloud-standard-2 carries the jobs that compile little or nothing;
+# ubicloud-standard-2-arm carries the short utility jobs moved off the
+# hosted pool because it made them wait (the user's ruling of 25 September
+# 2026, recorded in docs/adr-013-place-ci-jobs-by-rule.md).
 # `tests/workflow_contracts/runner_placement_test.py` keeps this list exactly
 # in step with the labels the workflows reference, in both directions.
 self-hosted-runner:
   labels:
     - ubicloud-standard-2
+    - ubicloud-standard-2-arm
     - ubicloud-standard-4

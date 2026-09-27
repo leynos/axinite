@@ -10,8 +10,11 @@ permissions:
 
 jobs:
   scope:
-    # Labelling: a single GitHub API call, no build. GitHub-hosted.
-    runs-on: ubuntu-latest
+    # Labelling: a single GitHub API call, no build, nothing tied to the CPU
+    # architecture, so the smallest ARM shape: on the hosted pool this
+    # 4-7 s job waited up to 1,495 s to start (ADR 013). Like the classifier
+    # it runs on `pull_request_target`, so a fork needs no fallback.
+    runs-on: ubicloud-standard-2-arm
     timeout-minutes: 10
     steps:
       - uses: actions/labeler@v7

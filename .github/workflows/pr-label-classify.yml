@@ -11,15 +11,21 @@ permissions:
 
 jobs:
   classify:
-    # Labelling: shells out to the GitHub API to size and
-    # classify the pull request. No build. GitHub-hosted.
-    runs-on: ubuntu-latest
+    # Labelling: shells out to the GitHub API to size and classify the pull
+    # request. No build, and nothing tied to the CPU architecture, so it
+    # takes the smallest ARM shape: on the hosted pool this 13-20 s job
+    # waited up to 2,098 s to start (ADR 013). `pull_request_target` runs in
+    # this repository's context for a fork too, so it needs no fork fallback.
+    runs-on: ubicloud-standard-2-arm
     timeout-minutes: 10
     steps:
       - name: Checkout base branch
         uses: actions/checkout@v4
         with:
           ref: ${{ github.event.pull_request.base.ref }}
+          # The script talks to the API through `gh` with GH_TOKEN, never
+          # through git, so the checkout keeps no credentials.
+          persist-credentials: false
 
       - name: Classify PR
         env:

@@ -23,6 +23,7 @@ Run via ``make test-workflow-contracts``.
 from __future__ import annotations
 
 import pytest
+from _utility_jobs import SMALLEST_ARM, is_utility_job
 from _workflow_files import jobs
 from _workflow_policy import Job, step_text
 
@@ -34,6 +35,8 @@ ALL_JOBS: tuple[Job, ...] = tuple(jobs())
 APPROVED_SHAPES: dict[str, str] = {
     "ubicloud-standard-2": "jobs that compile little or nothing",
     "ubicloud-standard-4": "jobs that compile the workspace",
+    SMALLEST_ARM: "short utility jobs moved off the hosted pool because it made "
+    "them wait; architecture-independent (user ruling, 25 September 2026)",
 }
 
 SAMPLER = "./scripts/ci-resource-sampler.sh"
@@ -44,6 +47,18 @@ REPORT_STEP = "Report resource peaks"
 def _ubicloud_jobs() -> tuple[Job, ...]:
     """Return every job that requests an Ubicloud runner on any event."""
     return tuple(job for job in ALL_JOBS if job.uses_ubicloud)
+
+
+def _sized_jobs() -> tuple[Job, ...]:
+    """Return the Ubicloud jobs whose shape is a sizing decision.
+
+    The named utility jobs are left out: each is pinned to the smallest shape
+    by `runner_placement_test.py`, so there is no resize for the sampler to
+    inform and no reviewed shape to choose.
+    """
+    return tuple(
+        job for job in _ubicloud_jobs() if not is_utility_job(job.workflow, job.job_id)
+    )
 
 
 def _ids(candidates: tuple[Job, ...]) -> list[str]:
@@ -67,7 +82,7 @@ def test_every_ubicloud_job_uses_an_approved_shape(job: Job) -> None:
         )
 
 
-@pytest.mark.parametrize("job", _ubicloud_jobs(), ids=_ids(_ubicloud_jobs()))
+@pytest.mark.parametrize("job", _sized_jobs(), ids=_ids(_sized_jobs()))
 def test_every_ubicloud_job_samples_its_own_resources(job: Job) -> None:
     """Require the evidence that makes the next resize decidable.
 
@@ -100,7 +115,7 @@ def test_every_ubicloud_job_samples_its_own_resources(job: Job) -> None:
     )
 
 
-@pytest.mark.parametrize("job", _ubicloud_jobs(), ids=_ids(_ubicloud_jobs()))
+@pytest.mark.parametrize("job", _sized_jobs(), ids=_ids(_sized_jobs()))
 def test_the_sampler_reports_even_when_the_job_fails(job: Job) -> None:
     """A job killed by its shape is exactly the job whose peak matters."""
     report = next(step for step in job.steps if step.get("name") == REPORT_STEP)
@@ -113,7 +128,7 @@ def test_the_sampler_reports_even_when_the_job_fails(job: Job) -> None:
     )
 
 
-@pytest.mark.parametrize("job", _ubicloud_jobs(), ids=_ids(_ubicloud_jobs()))
+@pytest.mark.parametrize("job", _sized_jobs(), ids=_ids(_sized_jobs()))
 def test_the_sampler_starts_after_the_checkout(job: Job) -> None:
     """The script lives in the repository, so it cannot run before checkout."""
     steps = job.steps
@@ -220,7 +235,7 @@ def test_every_ubicloud_job_has_a_reviewed_shape() -> None:
     A job that appears on a paid runner without an entry here has had its cost
     decided by whoever wrote the label. An entry with no job left it behind.
     """
-    declared = {(job.workflow, job.job_id) for job in _ubicloud_jobs()}
+    declared = {(job.workflow, job.job_id) for job in _sized_jobs()}
     assert declared == set(REVIEWED_SHAPES), (
         "Ubicloud jobs and reviewed shapes disagree; "
         f"only in workflows: {sorted(declared - set(REVIEWED_SHAPES))}; "
@@ -228,7 +243,7 @@ def test_every_ubicloud_job_has_a_reviewed_shape() -> None:
     )
 
 
-@pytest.mark.parametrize("job", _ubicloud_jobs(), ids=_ids(_ubicloud_jobs()))
+@pytest.mark.parametrize("job", _sized_jobs(), ids=_ids(_sized_jobs()))
 def test_each_ubicloud_job_holds_the_shape_it_was_given(job: Job) -> None:
     """Resizing a job is a cost decision, so it must be a reviewed line."""
     expected, reason = REVIEWED_SHAPES[job.workflow, job.job_id]
