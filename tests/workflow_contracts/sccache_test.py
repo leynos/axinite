@@ -2,11 +2,17 @@
 
 Installing sccache does nothing on its own. Cargo only routes compilation
 through it when `RUSTC_WRAPPER` names it, and its GitHub Actions backend only
-reaches Ubicloud's store when the runner's cache endpoint is re-exported into
-the step environment. Either omission is silent: the build succeeds, the job
-just recompiles everything. Since no cache step archives a `target` tree any
-more, a silent sccache is a straight regression, so these contracts pin all
-three halves of the wiring together.
+reaches Ubicloud's store when the runner's cache endpoint is republished and
+the v2 cache-service flag the proxy does not serve is cleared. Either omission
+is silent: the build succeeds, the job just recompiles everything.
+
+The shared `setup-rust` action now does all of that, selecting the backend from
+the runner (ADR 0005 in leynos/shared-actions). These contracts hold every
+compiling Ubicloud job to it: one pinned call with sccache on, the
+`expect-cache` its placement allows, an empty `rustflags` so the mold flags in
+`CARGO_TARGET_*_RUSTFLAGS` survive, and none of the hand-rolled pieces it
+replaced, because a caller's wrapper or backend switch overrides the action's
+choice without a word.
 
 Run via ``make test-workflow-contracts``.
 """
@@ -14,6 +20,7 @@ Run via ``make test-workflow-contracts``.
 from __future__ import annotations
 
 import re
+import typing as typ
 
 import pytest
 from _workflow_files import jobs
@@ -21,13 +28,38 @@ from _workflow_policy import Job
 
 ALL_JOBS: tuple[Job, ...] = tuple(jobs())
 
-#: Step that re-exports the runner's Actions cache endpoint. sccache's GHA
-#: backend reads these from the runner environment, which `run:` steps do not
-#: inherit.
-EXPORT_STEP = "Export the Actions cache endpoint for sccache"
-INSTALL_STEP = "Install sccache"
-ZERO_STEP = "Start sccache statistics"
+SETUP_STEP = "Setup Rust"
+SETUP_ID = "setup-rust"
 REPORT_STEP = "Report sccache statistics"
+
+#: The shared action that owns sccache, pinned to a full commit.
+SETUP_RUST = re.compile(r"^leynos/shared-actions/\.github/actions/setup-rust@[0-9a-f]{40}$")
+
+#: Labels served by GitHub's own pool. A job that can land on one, through a
+#: schedule arm or a fork fallback, must accept whatever backend the runner
+#: offers there.
+GITHUB_HOSTED_LABELS: frozenset[str] = frozenset(
+    {"ubuntu-latest", "ubuntu-24.04", "ubuntu-22.04", "windows-latest", "macos-latest"}
+)
+
+#: Variables that configured the retired hand-rolled wiring. `setup-rust`
+#: sets or selects each of them, and a caller's value wins over its choice.
+RETIRED_VARIABLES: tuple[str, ...] = (
+    "RUSTC_WRAPPER",
+    "SCCACHE_GHA_ENABLED",
+    "SCCACHE_DIR",
+    "SCCACHE_CACHE_SIZE",
+)
+
+#: Steps the retired wiring ran, by name.
+RETIRED_STEPS: tuple[str, ...] = (
+    "Export the Actions cache endpoint for sccache",
+    "Install sccache",
+    "Start sccache statistics",
+)
+
+#: A script that starts or resets the server, which `setup-rust` does now.
+SERVER_COMMAND = re.compile(r"\bsccache\s+--(?:zero-stats|start-server)\b")
 
 
 #: Commands that actually invoke rustc, and therefore benefit from a compiler
@@ -72,65 +104,158 @@ def _ids(candidates: tuple[Job, ...]) -> list[str]:
     return [str(job) for job in candidates]
 
 
+def expected_expect_cache(labels: typ.Iterable[str]) -> str:
+    """Return the `expect-cache` value a job's placement calls for.
+
+    Parameters
+    ----------
+    labels
+        Every runner label the job can resolve to.
+
+    Returns
+    -------
+    str
+        ``"any"`` when a GitHub-hosted label is among them, else ``"ubicloud"``.
+
+    Examples
+    --------
+    >>> expected_expect_cache(["ubuntu-latest", "ubicloud-standard-4"])
+    'any'
+    >>> expected_expect_cache(["ubicloud-standard-4"])
+    'ubicloud'
+    """
+    return "any" if set(labels) & GITHUB_HOSTED_LABELS else "ubicloud"
+
+
+def retired_findings(
+    env: object, steps: typ.Sequence[dict[str, object]]
+) -> list[str]:
+    """Return every retired piece of sccache wiring in a job.
+
+    Pure over the parsed data, so the rule runs on fixtures as well as on the
+    checked-in workflows.
+
+    Parameters
+    ----------
+    env
+        The job's `env` mapping, or anything else when it declares none.
+    steps
+        The job's parsed steps.
+
+    Returns
+    -------
+    list of str
+        One description per finding; empty for a job that leaves sccache to
+        `setup-rust`.
+
+    Examples
+    --------
+    >>> retired_findings({}, [{"name": "Setup Rust"}])
+    []
+    >>> retired_findings({"RUSTC_WRAPPER": "sccache"}, [{"run": "sccache --zero-stats"}])
+    ['job sets RUSTC_WRAPPER', 'step 0 starts or zeroes the sccache server']
+    """
+    findings = [
+        f"job sets {name}"
+        for name in RETIRED_VARIABLES
+        if isinstance(env, dict) and name in env
+    ]
+    for index, step in enumerate(steps):
+        if step.get("name") in RETIRED_STEPS:
+            findings.append(f"step {index} is the retired {step['name']!r}")
+        if SERVER_COMMAND.search(str(step.get("run", ""))):
+            findings.append(f"step {index} starts or zeroes the sccache server")
+        if "ACTIONS_CACHE_SERVICE_V2" in str(step.get("with", "")):
+            findings.append(f"step {index} rewrites the cache-service flag itself")
+    return findings
+
+
 WRAPPED = _compiling_ubicloud_jobs()
+
+
+def _setup(job: Job) -> dict[str, object]:
+    """Return a job's one `Setup Rust` step."""
+    calls = [step for step in job.steps if step.get("name") == SETUP_STEP]
+    assert len(calls) == 1, f"{job} must run exactly one {SETUP_STEP!r} step"
+    return calls[0]
 
 
 def test_the_wrapped_set_is_not_empty() -> None:
     """Guard against a selector that quietly matches nothing."""
     assert len(WRAPPED) >= 8, (
-        "every Ubicloud job that invokes the Rust compiler should be wrapped"
+        "every Ubicloud job that invokes the Rust compiler should be held here"
     )
 
 
 @pytest.mark.parametrize("job", WRAPPED, ids=_ids(WRAPPED))
-def test_the_compiler_is_actually_wrapped(job: Job) -> None:
-    """Export `RUSTC_WRAPPER`; installing sccache alone changes nothing."""
-    env = job.body.get("env")
-    assert isinstance(env, dict), f"{job} must declare a job-level env block"
-    assert env.get("RUSTC_WRAPPER") == "sccache", (
-        f"{job} installs sccache but does not set RUSTC_WRAPPER, so every "
-        "build compiles as though sccache were absent"
+def test_setup_rust_owns_the_compiler_cache(job: Job) -> None:
+    """One pinned call, sccache on, an id, and inputs that keep the job's own."""
+    step = _setup(job)
+    assert SETUP_RUST.match(str(step.get("uses", ""))), (
+        f"{job} must pin leynos/shared-actions setup-rust to a full commit SHA"
     )
-    assert env.get("SCCACHE_GHA_ENABLED") == "true", (
-        f"{job} must enable sccache's GitHub Actions backend"
+    assert step.get("id") == SETUP_ID, (
+        f"{job} must give setup-rust the id {SETUP_ID!r}, or its report "
+        "cannot name the backend"
+    )
+    inputs = step.get("with")
+    assert isinstance(inputs, dict), f"{job} must pass setup-rust its inputs"
+    assert str(inputs.get("use-sccache", "true")) == "true", (
+        f"{job} switches setup-rust's sccache off"
+    )
+    # setup-rust exports RUSTFLAGS unless told not to, and RUSTFLAGS displaces
+    # the CARGO_TARGET_*_RUSTFLAGS that carry this job's mold linker flags.
+    assert inputs.get("rustflags") == "", (
+        f"{job} must pass an empty rustflags, or the mold flags are displaced"
+    )
+    assert inputs.get("cache-provider") == "external", (
+        f"{job} owns its Cargo registry cache; setup-rust must not own a second"
     )
     # sccache cannot cache incremental compilation, and Cargo enables it by
     # default for dev profiles.
+    env = job.body.get("env")
+    assert isinstance(env, dict), f"{job} must declare a job-level env block"
     assert env.get("CARGO_INCREMENTAL") == "0", (
         f"{job} must disable incremental compilation for sccache"
     )
 
 
 @pytest.mark.parametrize("job", WRAPPED, ids=_ids(WRAPPED))
-def test_the_cache_endpoint_is_exported_before_any_build(job: Job) -> None:
-    """Order the endpoint export, the install, and the reset before the build."""
+def test_each_job_demands_the_backend_its_placement_allows(job: Job) -> None:
+    """`ubicloud` fails a proxy-less job loudly; `any` spares a hosted arm."""
+    expected = expected_expect_cache(job.runner_labels)
+    inputs = _setup(job).get("with") or {}
+    assert isinstance(inputs, dict)
+    assert inputs.get("expect-cache") == expected, (
+        f"{job} runs on {job.runner_summary}, so it must pass "
+        f"expect-cache: {expected}, not {inputs.get('expect-cache')!r}"
+    )
+
+
+@pytest.mark.parametrize("job", WRAPPED, ids=_ids(WRAPPED))
+def test_no_retired_piece_survives(job: Job) -> None:
+    """A caller's wrapper or switch overrides `setup-rust` without a word."""
+    findings = retired_findings(job.body.get("env"), job.steps)
+    assert not findings, f"{job} still hand-rolls sccache: {findings}"
+
+
+@pytest.mark.parametrize("job", WRAPPED, ids=_ids(WRAPPED))
+def test_setup_rust_precedes_every_build(job: Job) -> None:
+    """A build before `setup-rust` starts the server bypasses the cache."""
     names = [str(step.get("name", step.get("uses", ""))) for step in job.steps]
-    for required in (EXPORT_STEP, INSTALL_STEP, ZERO_STEP, REPORT_STEP):
-        assert required in names, f"{job} is missing the {required!r} step"
-    assert names.index(EXPORT_STEP) < names.index(INSTALL_STEP), (
-        f"{job} installs sccache before exporting the cache endpoint"
-    )
-    assert names.index(INSTALL_STEP) < names.index(ZERO_STEP), (
-        f"{job} resets sccache statistics before sccache is installed; the "
-        "step names alone would still look correct"
-    )
-    assert names.index(ZERO_STEP) < names.index(REPORT_STEP), (
-        f"{job} reports statistics before resetting them"
-    )
+    setup_at = names.index(SETUP_STEP)
     first_build = next(
         (
             index
             for index, step in enumerate(job.steps)
-            if "cargo " in str(step.get("run", ""))
-            or "make " in str(step.get("run", ""))
+            if any(p.search(str(step.get("run", ""))) for p in COMPILING_COMMANDS)
         ),
         None,
     )
-    if first_build is None:
-        return
-    assert names.index(ZERO_STEP) < first_build, (
-        f"{job} runs a build before sccache is installed and reset, so that "
-        "build bypasses the compiler cache"
+    assert first_build is not None, f"{job} compiles nothing"
+    assert setup_at < first_build, (
+        f"{job} runs a build before setup-rust starts sccache, so that build "
+        "bypasses the compiler cache"
     )
 
 
@@ -153,108 +278,56 @@ def test_statistics_are_reported_even_when_the_build_fails(job: Job) -> None:
     assert "printf '%s\\n' \"$stats\"" in body, (
         f"{job} must print the statistics to the log as well as the summary"
     )
-
-
-@pytest.mark.parametrize("job", WRAPPED, ids=_ids(WRAPPED))
-def test_a_missing_cache_endpoint_is_reported(job: Job) -> None:
-    """Warn when the proxy address is absent instead of failing silently.
-
-    With `SCCACHE_GHA_ENABLED` set and no endpoint, sccache misses every
-    compilation and the wrapper becomes pure overhead. That looks exactly like
-    a cold cache, so it has to announce itself.
-    """
-    export = next(step for step in job.steps if step.get("name") == EXPORT_STEP)
-    script = str((export.get("with") or {}).get("script", ""))
-    assert "CUSTOM_ACTIONS_CACHE_URL" in script, (
-        f"{job} must fall back to Ubicloud's CUSTOM_ACTIONS_CACHE_URL"
-    )
-    assert "core.warning" in script, (
-        f"{job} must warn when no cache endpoint is available"
-    )
-    assert "process.env.ACTIONS_RUNTIME_TOKEN" in script
-    # The token must never be printed, only whether one was found. A prefix
-    # check is not enough: `token present: ${process.env.ACTIONS_RUNTIME_TOKEN}`
-    # would satisfy it while printing the secret into the log.
-    assert "sccache runtime token present: ${Boolean(runtimeToken)}" in script, (
-        f"{job} must report the token as a boolean, never as its value"
-    )
-    for call in re.findall(r"core\.(?:info|warning|error|notice)\([^;]*", script):
-        assert "ACTIONS_RUNTIME_TOKEN" not in call, (
-            f"{job} interpolates the raw runtime token into a log call: {call[:80]!r}"
-        )
-        # Remove the one permitted expression, then reject every remaining
-        # mention. Matching `runtimeToken}` alone would pass
-        # `core.info(runtimeToken)` and `core.warning(String(runtimeToken))`,
-        # both of which print the secret.
-        residue = call.replace("Boolean(runtimeToken)", "")
-        assert "runtimeToken" not in residue, (
-            f"{job} passes the runtime token to a log call other than as "
-            f"Boolean(runtimeToken): {call[:80]!r}"
-        )
-
-
-#: The variables the export step must write, and what each must carry. The
-#: endpoint and token come from the resolved locals; the protocol flag must be
-#: cleared to an empty string, because sccache reads any non-empty value as a
-#: request for GitHub's v2 service, which Ubicloud's proxy does not serve.
-REQUIRED_EXPORTS: tuple[tuple[str, str], ...] = (
-    ("ACTIONS_CACHE_URL", "cacheUrl"),
-    ("ACTIONS_RUNTIME_TOKEN", "runtimeToken"),
-    ("ACTIONS_CACHE_SERVICE_V2", "''"),
-)
-
-
-@pytest.mark.parametrize("job", WRAPPED, ids=_ids(WRAPPED))
-def test_the_export_step_actually_exports(job: Job) -> None:
-    """Assert the writes, not just the diagnostics around them.
-
-    A script that logged every message this suite looks for and exported
-    nothing would leave sccache on GitHub's service, miss every compilation,
-    and pass a contract that only checked the log lines. The exports are the
-    behaviour; the log lines only make a failure legible.
-    """
-    export = next(step for step in job.steps if step.get("name") == EXPORT_STEP)
-    script = str((export.get("with") or {}).get("script", ""))
-    for name, value in REQUIRED_EXPORTS:
-        call = f"core.exportVariable('{name}', {value})"
-        assert call in script, (
-            f"{job} must write {name} with `{call}`; without it the "
-            "endpoint export is decoration and sccache keeps the runner's "
-            "own settings"
-        )
-    # The endpoint is read from the runner's variable first and Ubicloud's
-    # second. Losing the fallback would strand the images that publish only
-    # CUSTOM_ACTIONS_CACHE_URL, and losing the empty default would export the
-    # string "undefined" as an endpoint.
-    collapsed = " ".join(script.split())
-    assert (
-        "process.env.ACTIONS_CACHE_URL || "
-        "process.env.CUSTOM_ACTIONS_CACHE_URL || ''" in collapsed
-    ), (
-        f"{job} must resolve the endpoint from ACTIONS_CACHE_URL, then "
-        "CUSTOM_ACTIONS_CACHE_URL, then an empty string"
-    )
-    assert "process.env.ACTIONS_RUNTIME_TOKEN || ''" in collapsed, (
-        f"{job} must default the runtime token to an empty string, so a "
-        "missing token exports nothing rather than the text 'undefined'"
-    )
-    assert "process.env.ACTIONS_RESULTS_URL" not in script, (
-        f"{job} must not export ACTIONS_RESULTS_URL; sccache's v1 backend "
-        "does not read it and Ubicloud's proxy does not serve v2"
+    # `Cache location` reads `ghac` for the proxy and GitHub's own service
+    # alike, so the report must name the backend setup-rust chose.
+    backend = f"steps.{SETUP_ID}.outputs.cache-backend"
+    assert backend in str(report.get("env", {})), (
+        f"{job} must report {backend}"
     )
 
 
-def test_github_hosted_jobs_are_left_alone() -> None:
-    """Keep the wiring off GitHub-hosted runners.
-
-    The export step re-points sccache at Ubicloud's local proxy, which does
-    not exist on a GitHub-hosted runner. The Windows lanes keep whatever they
-    already had.
-    """
+def test_github_hosted_jobs_demand_no_proxy() -> None:
+    """A job that never reaches Ubicloud must not demand its cache proxy."""
     for job in ALL_JOBS:
         if job.uses_ubicloud:
             continue
-        names = [str(step.get("name", "")) for step in job.steps]
-        assert EXPORT_STEP not in names, (
-            f"{job} is not on Ubicloud but exports Ubicloud's cache endpoint"
-        )
+        for step in job.steps:
+            inputs = step.get("with")
+            if step.get("name") == SETUP_STEP and isinstance(inputs, dict):
+                assert inputs.get("expect-cache") != "ubicloud", (
+                    f"{job} is not on Ubicloud but demands its cache proxy"
+                )
+
+
+@pytest.mark.parametrize(
+    ("env", "steps", "expected"),
+    [
+        pytest.param({"SCCACHE_GHA_ENABLED": "true"}, [], 1, id="backend-switch"),
+        pytest.param(
+            {}, [{"name": "Export the Actions cache endpoint for sccache"}], 1, id="export"
+        ),
+        pytest.param({}, [{"name": "Install sccache"}], 1, id="install"),
+        pytest.param({}, [{"run": "sccache --start-server"}], 1, id="server-start"),
+        pytest.param(
+            {},
+            [{"uses": "actions/github-script@x", "with": {"script": "ACTIONS_CACHE_SERVICE_V2"}}],
+            1,
+            id="flag-rewrite",
+        ),
+        pytest.param({}, [{"name": REPORT_STEP, "run": "sccache --show-stats"}], 0, id="report"),
+        pytest.param({"CARGO_INCREMENTAL": "0"}, [], 0, id="incremental-off"),
+    ],
+)
+def test_the_retired_piece_reader_is_narrow_as_well_as_sufficient(
+    env: dict[str, str], steps: list[dict[str, object]], expected: int
+) -> None:
+    """Each retired form is caught, and the report and other settings are not.
+
+    The checked-in jobs can only show that the rule passes on them. These
+    fixtures show that it would catch each retired form, and that it leaves
+    the statistics report and `CARGO_INCREMENTAL` alone.
+    """
+    findings = retired_findings(env, steps)
+    assert len(findings) == expected, (
+        f"expected {expected} finding(s) for {env!r} and {steps!r}, got {findings!r}"
+    )
