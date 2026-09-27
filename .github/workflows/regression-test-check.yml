@@ -11,6 +11,12 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
+# Read-only, and stated rather than inherited: the job runs the pull
+# request's merge ref on a paid Ubicloud runner, so its token must not carry
+# whatever write scope the repository default happens to grant.
+permissions:
+  contents: read
+
 jobs:
   regression-test:
     name: Regression test enforcement
@@ -28,6 +34,9 @@ jobs:
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
+          # The history is fetched here; nothing afterwards talks to the
+          # remote, so the token is not left in the git configuration.
+          persist-credentials: false
 
       - name: Check for regression tests
         env:

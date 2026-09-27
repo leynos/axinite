@@ -160,8 +160,12 @@ shape and to build nothing. They are exempt from the resource sampler below,
 which exists to decide a resize, because a job already on the smallest shape
 has none to make. `regression-test` runs on `pull_request`, so it takes the
 fork fallback; the labelling jobs run on `pull_request_target`, which runs in
-this repository's context for a fork too, and they check out the base branch,
-never the fork's code.
+this repository's context for a fork too. `classify` checks out the base
+branch, never the fork's code, and `scope` checks out nothing, since
+`actions/labeler` reads the changed paths through the API. Each utility job
+states its token's `permissions` rather than inheriting the repository default,
+and no checkout in one keeps its credentials; `runner_placement_test.py`
+asserts both.
 
 `code_style.yml` `format` is the one deliberate exception, and the contract
 encodes it by counting `cargo fmt` as qualifying. The job compiles nothing:

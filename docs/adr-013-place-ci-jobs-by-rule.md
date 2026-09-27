@@ -2,9 +2,10 @@
 
 ## Status
 
-Accepted. Jobs are placed on runners by what they do, not by a list: build and
-test jobs on right-sized Ubicloud runners, short utility jobs that wait on
-GitHub's hosted pool on the smallest Ubicloud runner, and everything else on
+Accepted. Jobs are placed on runners by what they do, not by a list: Linux
+build and test jobs on right-sized Ubicloud runners, except a fork's pull
+request and scheduled work; short utility jobs that wait on GitHub's hosted
+pool on the smallest Ubicloud runner; and everything else, Windows included, on
 GitHub-hosted runners, with the contracts in `tests/workflow_contracts/`
 enforcing each rule.
 
@@ -53,9 +54,10 @@ jobs that move for contention, each with its measured wait.
 
 Option B.
 
-- A job that builds or tests the product runs on a right-sized Ubicloud label
-  (`ubicloud-standard-4` for workspace compilation, `ubicloud-standard-2` for
-  little or none), recorded with its measurement in `runner_sizing_test.py`.
+- A Linux job that builds or tests the product runs on a right-sized Ubicloud
+  label (`ubicloud-standard-4` for workspace compilation, `ubicloud-standard-2`
+  for little or none), recorded with its measurement in
+  `runner_sizing_test.py`, subject to the three exceptions that follow.
 - A pull-request lane on Ubicloud falls back to `ubuntu-latest` for a fork.
 - Scheduled workflows and Windows jobs stay GitHub-hosted.
 - A short utility job moves to the smallest Ubicloud shape only when the
@@ -87,5 +89,6 @@ unchanged.
   base branch's workflow. Their ARM placement is first exercised by the first
   pull request after it merges.
 - `pull_request_target` runs in this repository's context for a fork too, so
-  those two jobs take no fork fallback. They check out the base branch, never
-  the fork's code.
+  those two jobs take no fork fallback. `classify` checks out the base branch,
+  never the fork's code, and `scope` checks out nothing: `actions/labeler`
+  reads the changed paths through the API.
