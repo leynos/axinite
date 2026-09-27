@@ -10,11 +10,12 @@ name: Mutation testing
 # This workflow is NOT a required status check. Surviving mutants are
 # informational, not a merge gate.
 #
-# It also carries the daily full-suite run that the staging promotion pipeline
-# used to provide. That pipeline was removed: it had failed every one of its
-# 488 scheduled runs on a secret this repository does not hold, and it spent
-# about £22 a month on paid runners to do it. The checks it was meant to give
-# now run here, once a day rather than hourly, and entirely on GitHub-hosted
+# It also carries the daily full-suite run against the trunk. That run used to
+# come from a promotion pipeline, which was removed after failing every one of
+# its 488 scheduled runs on a secret this repository does not hold while
+# spending about £22 a month on paid runners to do it; its workflow, its branch
+# and its review job are all gone now. The checks it was meant to give run here
+# instead, once a day rather than hourly, and entirely on GitHub-hosted
 # runners: `test.yml` and `e2e.yml` take their runner label from the event, so
 # a scheduled call lands on `ubuntu-latest`.
 
@@ -38,7 +39,7 @@ jobs:
     permissions:
       contents: read
       id-token: write # OIDC workflow-source resolution
-    uses: leynos/shared-actions/.github/workflows/mutation-cargo.yml@c6125f19593668cbfefd65a59c08cb7aefe90d93
+    uses: leynos/shared-actions/.github/workflows/mutation-cargo.yml@6b5cdc2d4c0bb72cafd5a66d24d248ac25827db9
     with:
       # Mutate only the root axinite crate. tools-src/, channels-src/
       # and fuzz/ sit outside the workspace (root Cargo.toml excludes
@@ -65,8 +66,14 @@ jobs:
       # contracts that mutants do not usefully exercise (the larger
       # trybuild binary is already excluded by the default nextest
       # profile).
+      # --workspace: the root manifest is itself a package, so without
+      # it cargo-mutants mutates the root package only and every
+      # workspace member (crates/ambient-fs) is invisible to full
+      # dispatch runs; `cargo mutants --list --file
+      # crates/ambient-fs/src/fns.rs` prints nothing without the flag
+      # and 20 mutants with it.
       extra-args: >-
-        --features test-helpers --test-workspace=true
+        --workspace --features test-helpers --test-workspace=true
         --test-tool=nextest --
         -E "not binary(schema_helpers_ui)"
       # Heavy crate (~760 source files atop wasmtime/libsql); eight
@@ -90,9 +97,9 @@ jobs:
         ./scripts/build-wasm-extensions.sh --channels
 
   # ── Daily full suite, GitHub-hosted ──────────────────────────────
-  # These replace the hourly staging suite. They are informational in the
-  # same sense as the mutation job: nothing gates on them, and a failure
-  # here means `main` needs attention rather than that a merge is blocked.
+  # These are informational in the same sense as the mutation job: nothing
+  # gates on them, and a failure here means `main` needs attention rather than
+  # that a merge is blocked.
   tests:
     name: Test Suite
     uses: ./.github/workflows/test.yml

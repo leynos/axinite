@@ -1,28 +1,25 @@
-"""Shared parsing helpers for the workflow-policy contract tests.
+"""What a workflow job declares: its runners, its steps, and what it builds.
 
 The name has no ``_test`` suffix, so pytest imports it as a helper rather
-than collecting it. It exists so the placement, cache-ownership, and
-tool-install contracts read one parsed view of ``.github/workflows``.
+than collecting it. It holds `Job`, the unit every placement, sizing and
+cache contract asserts on, and the command classification that decides
+whether a job builds or tests the product. Everything here is pure in the
+job or step it is handed, so `workflow_policy_helpers_test.py` can exercise
+every runner shape and command form without writing a file.
 
-The module is split in two. Everything from `parse_workflow` downwards is
-pure: it takes workflow text or an already-parsed mapping and answers
-questions about it, so `_workflow_policy_test.py` can exercise every runner
-shape and command form without writing a file. The handful of functions that
-name a `Path` are the file-reading edge, and they do nothing but read and
-delegate.
+The neighbouring readers each own one question: `_workflow_files.py` turns
+workflow text into documents and jobs, `_trigger_reading.py` says what an
+event admits and expands to, and `_cache_policy.py` says what a cache step
+touches.
 """
 
 from __future__ import annotations
 
 import re
-import typing as typ
 from dataclasses import dataclass
 from pathlib import Path
 
-import yaml
-
-if typ.TYPE_CHECKING:  # pragma: no cover - typing only
-    from collections.abc import Iterator
+from _runs_on import conditional_runs_on_arms, selected_value
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[2]
 WORKFLOW_DIR = REPOSITORY_ROOT / ".github" / "workflows"
@@ -32,27 +29,19 @@ WORKFLOW_DIR = REPOSITORY_ROOT / ".github" / "workflows"
 #: "Workflow pins and Dependabot").
 SHA_RE: re.Pattern[str] = re.compile(r"^[0-9a-f]{40}$")
 
-#: A `runs-on` that picks its label from the event, as
-#: `${{ github.event_name == 'schedule' && 'ubuntu-latest'
-#: || 'ubicloud-standard-8' }}`. A workflow that is both a developer gate and a
-#: cron needs the Ubicloud runner on one path and not the other, and the label
-#: is the only place that distinction can live. Reading such a value as one
-#: opaque label would hide the Ubicloud request from every placement contract,
-#: so the forms are parsed rather than passed through.
-CONDITIONAL_RUNNER_RE: re.Pattern[str] = re.compile(
-    r"^\$\{\{\s*github\.event_name\s*==\s*'(?P<event>[a-z_]+)'\s*&&\s*"
-    r"'(?P<when>[^']+)'\s*\|\|\s*'(?P<otherwise>[^']+)'\s*\}\}$"
-)
+#: The field that decides whether a pull request came from a fork.
+FORK_CONDITION = "github.event.pull_request.head.repo.fork"
 
 #: Prefix shared by every Ubicloud runner label. Match on the prefix, not on
 #: one exact label: the migration wave introduces `ubicloud-standard-2`, and a
 #: contract keyed to the current label would wave the new one through.
 UBICLOUD_LABEL_PREFIX = "ubicloud-"
 
-#: The Ubicloud label this repository currently uses. The migration wave will
-#: right-size these jobs; update this constant and .github/actionlint.yaml
-#: together when it does.
-UBICLOUD_LABEL = "ubicloud-standard-8"
+#: One Ubicloud label the estate uses, for the helper tests to quote as a
+#: sample. It is deliberately not "the" label: the jobs are right-sized per
+#: job, so the set in use lives in `runner_sizing_test.APPROVED_SHAPES` and in
+#: .github/actionlint.yaml, and no single constant can stand for it.
+UBICLOUD_LABEL = "ubicloud-standard-4"
 
 #: Commands that compile or execute the product. A job is a build or test job
 #: when one of its steps runs one of these; nothing else about the job matters.
@@ -69,8 +58,8 @@ BUILD_OR_TEST_PATTERNS: tuple[re.Pattern[str], ...] = tuple(
         r"(?:build|check|clippy|fmt|test|nextest|llvm-cov|component|run)\b",
         r"\bdocker\s+build\b",
         r"\bpytest\b",
-        r"\bmake\s+(?:all|test|test-matrix|lint|typecheck|check-fmt"
-        r"|build-github-tool-wasm)\b",
+        r"\bmake\s+(?:all|test|test-workspace|test-github-tool|test-matrix"
+        r"|lint|typecheck|check-fmt|build-github-tool-wasm)\b",
         r"\./scripts/build-wasm-extensions\.sh",
     )
 )
@@ -95,38 +84,6 @@ SOURCE_BUILD_PATTERNS: tuple[tuple[re.Pattern[str], str], ...] = (
         "the `compile` binstall strategy builds the tool from source",
     ),
 )
-
-#: The reviewed pin for the Actions cache, v6.1.0. Ubicloud's transparent
-#: cache proxy is confirmed to intercept this version's traffic.
-CACHE_ACTION_SHA = "55cc8345863c7cc4c66a329aec7e433d2d1c52a9"
-CACHE_ACTION_PREFIXES = (
-    "actions/cache@",
-    "actions/cache/restore@",
-    "actions/cache/save@",
-)
-
-
-def _conditional_runner(declared: str) -> tuple[str, str, str] | None:
-    """Split an event-conditional `runs-on` into its event and two labels.
-
-    Parameters
-    ----------
-    declared
-        The raw `runs-on` scalar. A folded YAML scalar arrives with its line
-        breaks already joined into single spaces.
-
-    Returns
-    -------
-    tuple of str, or None
-        The event name, the label chosen for that event, and the label used
-        otherwise. ``None`` when the value is not the conditional form, which
-        includes a matrix expression and every plain label.
-    """
-    match = CONDITIONAL_RUNNER_RE.match(" ".join(declared.split()))
-    if match is None:
-        return None
-    return match["event"], match["when"], match["otherwise"]
-
 
 @dataclass(frozen=True)
 class Job:
@@ -168,12 +125,14 @@ class Job:
         if isinstance(declared, dict):
             declared = declared.get("labels")
         if isinstance(declared, str):
-            conditional = _conditional_runner(declared)
-            if conditional is not None:
-                # Both arms are reported, so a job that reaches Ubicloud on any
-                # event still answers `uses_ubicloud` and stays inside the
-                # timeout and sccache contracts.
-                return conditional[1], conditional[2]
+            chain = conditional_runs_on_arms(declared)
+            if chain is not None:
+                # Every arm is reported, so a job that reaches Ubicloud in any
+                # context still answers `uses_ubicloud` and stays inside the
+                # timeout and sccache contracts. Repeats are dropped: two arms
+                # naming `ubuntu-latest` are one runner, and reporting it twice
+                # would read as a job asking for two labels.
+                return tuple(dict.fromkeys(label for _, label in chain))
             return (declared,)
         if isinstance(declared, list):
             return tuple(label for label in declared if isinstance(label, str))
@@ -256,10 +215,12 @@ class Job:
         if isinstance(declared, dict):
             declared = declared.get("labels")
         if isinstance(declared, str):
-            conditional = _conditional_runner(declared)
-            if conditional is not None:
-                chosen, alternative = conditional[1], conditional[2]
-                return (chosen if conditional[0] == event else alternative,)
+            chain = conditional_runs_on_arms(declared)
+            if chain is not None:
+                # The last arm is the fallback, so a chain whose guarded arms
+                # all miss still selects a label rather than nothing.
+                selected = selected_value(declared, event) or chain[-1][1]
+                return (selected,)
         return self.runner_labels
 
     @property
@@ -288,164 +249,11 @@ class Job:
         return f"{self.workflow}:{self.job_id}"
 
 
-#: Extensions GitHub accepts for a workflow file. Scanning only `.yml` would
-#: silently exempt a `.yaml` workflow from every contract in this directory,
-#: which is the same vacuous pass an unread `runs-on` produces.
-WORKFLOW_SUFFIXES: tuple[str, ...] = (".yml", ".yaml")
-
-
-def workflow_paths(directory: Path = WORKFLOW_DIR) -> list[Path]:
-    """Return every workflow file in a directory.
-
-    Parameters
-    ----------
-    directory
-        Directory to scan. It defaults to the repository's workflow
-        directory; the parameter exists so a test can point the same scan at
-        a temporary tree instead of the estate.
-
-    Returns
-    -------
-    list of Path
-        Workflow paths sorted by name, so parameterized tests report in a
-        stable order. Both extensions GitHub accepts are included.
-    """
-    return sorted(
-        path
-        for path in directory.iterdir()
-        if path.is_file() and path.suffix in WORKFLOW_SUFFIXES
-    )
-
-
-def parse_workflow(text: str, name: str) -> dict[str, object]:
-    """Parse workflow text into a mapping.
-
-    Parameters
-    ----------
-    text
-        The workflow document's YAML source.
-    name
-        File name to quote in the failure message. It identifies the
-        document and is not used to read anything.
-
-    Returns
-    -------
-    dict
-        The parsed workflow document.
-
-    Raises
-    ------
-    AssertionError
-        If the text does not parse as a mapping, which means it is not a
-        workflow at all.
-    """
-    document = yaml.safe_load(text)
-    if not isinstance(document, dict):
-        message = f"{name} must parse as a mapping"
-        raise AssertionError(message)
-    return document
-
-
-def declared_jobs_in(document: dict[str, object]) -> dict[str, object]:
-    """Return a parsed workflow's jobs mapping.
-
-    Parameters
-    ----------
-    document
-        A parsed workflow document.
-
-    Returns
-    -------
-    dict
-        The workflow's jobs, or an empty mapping when it declares none, or
-        declares one that is not a mapping.
-    """
-    declared = document.get("jobs")
-    return declared if isinstance(declared, dict) else {}
-
-
-def jobs_of(name: str, document: dict[str, object]) -> Iterator[Job]:
-    """Yield the jobs a parsed workflow declares.
-
-    Parameters
-    ----------
-    name
-        The workflow's file name, carried on each `Job` for assertion
-        messages.
-    document
-        A parsed workflow document.
-
-    Yields
-    ------
-    Job
-        Each job whose body is a mapping. A job whose body is anything else
-        is skipped rather than raising, because the contracts that care about
-        malformed jobs report them by name.
-    """
-    for job_id, body in declared_jobs_in(document).items():
-        if isinstance(body, dict):
-            yield Job(name, job_id, body)
-
-
-def load(path: Path) -> dict[str, object]:
-    """Read and parse one workflow file.
-
-    Parameters
-    ----------
-    path
-        Workflow file to read.
-
-    Returns
-    -------
-    dict
-        The parsed workflow document.
-    """
-    return parse_workflow(path.read_text(encoding="utf-8"), path.name)
-
-
-def declared_jobs(path: Path) -> dict[str, object]:
-    """Return one workflow file's jobs mapping.
-
-    Parameters
-    ----------
-    path
-        Workflow file to read.
-
-    Returns
-    -------
-    dict
-        The workflow's jobs, or an empty mapping when it declares none.
-    """
-    return declared_jobs_in(load(path))
-
-
-def jobs_in(path: Path) -> Iterator[Job]:
-    """Yield the jobs one workflow file declares.
-
-    Parameters
-    ----------
-    path
-        Workflow file to read.
-
-    Yields
-    ------
-    Job
-        Each job whose body is a mapping.
-    """
-    yield from jobs_of(path.name, load(path))
-
-
-def jobs() -> Iterator[Job]:
-    """Yield every job declared across the workflow estate.
-
-    Yields
-    ------
-    Job
-        Every job in every workflow, in workflow-name order.
-    """
-    for path in workflow_paths():
-        yield from jobs_in(path)
-
+#: `release.yml` is generated by dist and regenerated wholesale on a version
+#: bump, so a hand-added key there does not survive. It runs only on a tag
+#: push, never on Ubicloud, and computes its matrix from a previous job's
+#: output, so it sits outside the runner-cost and suite contracts alike.
+DIST_GENERATED = "release.yml"
 
 def step_text(step: dict[str, object]) -> str:
     """Return a step's shell body.
@@ -463,47 +271,6 @@ def step_text(step: dict[str, object]) -> str:
     """
     run = step.get("run")
     return run if isinstance(run, str) else ""
-
-
-def cache_paths(step: dict[str, object]) -> list[str]:
-    """Return the paths a cache step declares.
-
-    Parameters
-    ----------
-    step
-        One step mapping, normally an `actions/cache` invocation.
-
-    Returns
-    -------
-    list of str
-        One entry per non-empty line of the step's `path` input, stripped of
-        surrounding whitespace. Empty when the step declares no paths.
-    """
-    inputs = step.get("with")
-    if not isinstance(inputs, dict):
-        return []
-    declared = inputs.get("path")
-    if not isinstance(declared, str):
-        return []
-    return [line.strip() for line in declared.splitlines() if line.strip()]
-
-
-def is_cache_step(step: dict[str, object]) -> bool:
-    """Report whether a step invokes the Actions cache.
-
-    Parameters
-    ----------
-    step
-        One step mapping.
-
-    Returns
-    -------
-    bool
-        True for the combined action and for its `restore` and `save`
-        sub-actions alike.
-    """
-    uses = step.get("uses")
-    return isinstance(uses, str) and uses.startswith(CACHE_ACTION_PREFIXES)
 
 
 def builds_or_tests(job: Job) -> bool:

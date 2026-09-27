@@ -127,10 +127,17 @@ management.
       - `RUSTFLAGS="-D warnings" whitaker --all -- --all-targets --all-features`
       - `RUSTFLAGS="-D warnings" whitaker --all \
         --manifest-path tools-src/github/Cargo.toml -- --tests`
-  - `make test`
-    - `make build-github-tool-wasm`
-    - `cargo nextest run --workspace --profile $NEXTEST_PROFILE`
-    - `cargo test --manifest-path tools-src/github/Cargo.toml`
+  - `make test` (runs `make test-workspace` then `make test-github-tool`)
+    - `make test-workspace`
+      - `make build-github-tool-wasm`
+      - `cargo nextest run --workspace $TEST_FEATURES \
+        --profile $NEXTEST_PROFILE`
+    - `make test-github-tool`
+      - `cargo test --manifest-path tools-src/github/Cargo.toml`
+- The halves are separate targets because CI runs them on separate lanes and
+  separate triggers: `tools-src/github` is outside the workspace, so
+  `--workspace` never reaches it, and it would otherwise run once per matrix
+  leg. See "One suite, one run per trigger" in the developers' guide.
 - Nextest profiles are configured in `.config/nextest.toml`. The `default`
   profile excludes expensive compile-contract tests (trybuild); the `ci`
   profile runs everything. Pass `NEXTEST_PROFILE=ci` to `make test` or
@@ -335,10 +342,11 @@ management.
 ## Markdown Guidance
 
 - Validate Markdown files with `make markdownlint`. This target also enforces
-  en-GB-oxendict spelling with the pinned `typos` release.
-- The spelling configuration `typos.toml` is generated. Edit
-  `typos.local.toml` for narrow repository terminology, then regenerate it with
-  `make spelling-config-write`; never edit generated entries by hand.
+  en-GB-oxendict spelling.
+- Enforce spelling with `make spelling`. It regenerates `typos.toml` from the
+  live shared dictionary and the `typos.local.toml` overlay, then checks the
+  whole tracked tree. Never edit generated entries by hand; add narrow
+  repository-specific entries to `typos.local.toml` instead.
 - Quoted APIs and identifiers retain upstream spelling. Put them in backticks
   or fenced code blocks where possible, or add a narrowly scoped local pattern
   when executable syntax cannot be quoted.

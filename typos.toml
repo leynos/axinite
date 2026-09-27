@@ -94,6 +94,8 @@ extend-ignore-re = [
     "(?:^|[;{]\\s*)color\\s*:",
     "(?s)```.*?```",
     "--color\\b",
+    "Azure\\s+Architecture\\s+Center\\s*\\|\\s*Microsoft\\s+Learn\\b",
+    "GitHub\\s+Flavored\\s+Markdown\\b(?:\\s\\(GFM\\))?",
     "\\ \\ \\ \\ \\ \\ \\ \\ \"Analyze\\ an\\ image\\ using\\ a\\ vision\\-capable\\ AI\\ model\\.\\ Provide\\ a\\ workspace\\ path\\ to\\ the\\ image\\ and\\ an\\ optional\\ analysis\\ question\\.\"",
     "\\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \"artifact_path\":\\ result\\.artifact_path\\.display\\(\\)\\.to_string\\(\\),",
     "\\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \\ \"description\":\\ \"Cell\\ background\\ color\\ as\\ hex\\ \\(e\\.g\\.,\\ '\\#FFFF00'\\)\\.\\ Used\\ by:\\ format_cells\"",
@@ -179,7 +181,6 @@ extend-ignore-re = [
     "organise\\ tests\\ in\\ Rust,\\ accessed\\ on\\ July\\ 15,\\ 2025,",
     "pub\\ mod\\ artifacts;",
     "style=\"color:",
-    "task and sub-task items with a GitHub Flavored",
     "types: \\[[^]]*\\blabeled\\b",
 ]
 
@@ -907,6 +908,10 @@ extend-ignore-re = [
 "equalizers" = "equalizers"
 "equalizes" = "equalizes"
 "equalizing" = "equalizing"
+"exercize" = "exercise"
+"exercized" = "exercised"
+"exercizes" = "exercises"
+"exercizing" = "exercising"
 "externalisable" = "externalizable"
 "externalisably" = "externalizably"
 "externalisation" = "externalization"
@@ -1850,6 +1855,7 @@ extend-ignore-re = [
 "organizers" = "organizers"
 "organizes" = "organizes"
 "organizing" = "organizing"
+"otherwize" = "otherwise"
 "oxendict" = "oxendict"
 "oxidisable" = "oxidizable"
 "oxidisably" = "oxidizably"
@@ -2031,6 +2037,26 @@ extend-ignore-re = [
 "pluralizers" = "pluralizers"
 "pluralizes" = "pluralizes"
 "pluralizing" = "pluralizing"
+"polymerisable" = "polymerizable"
+"polymerisably" = "polymerizably"
+"polymerisation" = "polymerization"
+"polymerisations" = "polymerizations"
+"polymerise" = "polymerize"
+"polymerised" = "polymerized"
+"polymeriser" = "polymerizer"
+"polymerisers" = "polymerizers"
+"polymerises" = "polymerizes"
+"polymerising" = "polymerizing"
+"polymerizable" = "polymerizable"
+"polymerizably" = "polymerizably"
+"polymerization" = "polymerization"
+"polymerizations" = "polymerizations"
+"polymerize" = "polymerize"
+"polymerized" = "polymerized"
+"polymerizer" = "polymerizer"
+"polymerizers" = "polymerizers"
+"polymerizes" = "polymerizes"
+"polymerizing" = "polymerizing"
 "popularisable" = "popularizable"
 "popularisably" = "popularizably"
 "popularisation" = "popularization"
@@ -2151,6 +2177,10 @@ extend-ignore-re = [
 "quantizers" = "quantizers"
 "quantizes" = "quantizes"
 "quantizing" = "quantizing"
+"raize" = "raise"
+"raized" = "raised"
+"raizes" = "raises"
+"raizing" = "raising"
 "randomisable" = "randomizable"
 "randomisably" = "randomizably"
 "randomisation" = "randomization"

@@ -8,13 +8,45 @@ name: Code Style
   # store is content-addressed and has no single writer.
   workflow_dispatch:
 
+# A push to a pull request supersedes the run already in flight, and there is
+# nothing left to learn from the superseded one. Cancellation is conditioned
+# on the event so a push to `main`, a schedule, or a dispatch, none of which
+# has a successor waiting, always runs to completion.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+# Every job here reads the checkout and writes nothing. Without this
+# block each job inherits the repository or organization default
+# `GITHUB_TOKEN` scopes, which can be write-capable, and these jobs run
+# third-party actions and repository commands. Nothing here uses the
+# token for anything but the checkout: no step references
+# `secrets.GITHUB_TOKEN`, `github.token` or an OIDC identity, and
+# sccache's cache and `actions/cache` authenticate with the runtime
+# token rather than this one.
+permissions:
+  contents: read
+
+env:
+  # The version the coverage and test lanes install. The workflow-contract
+  # suite hands `.config/nextest.toml` to this runner and takes its verdict,
+  # so a contract run against a different release would answer for a
+  # configuration nothing else loads.
+  CARGO_NEXTEST_VERSION: '0.9.140'
+
 jobs:
   format:
     name: Formatting
     # Build/test class: compiles nothing heavy but runs the repository's
     # formatter, spelling, Mermaid, and workflow-contract gates on the
     # developer feedback path.
-    runs-on: ubicloud-standard-4
+    # A pull request from a fork cannot obtain an Ubicloud
+    # runner, so it falls back to a GitHub-hosted one. Branch
+    # pull requests, which are the ones a maintainer waits on,
+    # keep the paid shape.
+    runs-on: >-
+      ${{ github.event.pull_request.head.repo.fork && 'ubuntu-latest'
+      || 'ubicloud-standard-4' }}
     timeout-minutes: 30
     steps:
       - name: Checkout repository
@@ -32,6 +64,23 @@ jobs:
           components: rustfmt
       - name: Check formatting
         run: cargo fmt --all -- --check
+      - name: Install mdtablefix
+        # `make check-fmt` runs `mdtablefix --check --git`; 0.6.0 is the
+        # first release with `--check` and `--git`.
+        uses: leynos/shared-actions/.github/actions/install-mdtablefix@c5a54701c8603a0fa756a6b34c49bc2af75a6c11
+        with:
+          version: "0.6.0"
+      - name: Check formatting
+        run: make check-fmt
+      - name: Lint Markdown
+        # The upstream action rather than an installation of our own: its
+        # release carries the linter's whole dependency graph, so nothing is
+        # resolved from the registry at run time, and Dependabot manages the
+        # pin alongside the other actions. It reads .markdownlint-cli2.jsonc
+        # from the workspace, so the rules and ignores match `make markdownlint`.
+        uses: DavidAnson/markdownlint-cli2-action@21c1be1b93ad9ed58fa840aacc3f279cde2a72ff  # v24.2.0
+        with:
+          globs: '**/*.md'
       - name: Setup uv
         uses: astral-sh/setup-uv@11f9893b081a58869d3b5fccaea48c9e9e46f990
         with:
@@ -41,7 +90,7 @@ jobs:
       # archive. This replaces the previous `cargo install merman-cli`
       # source build and its bespoke ~/.cargo/bin/merman-cli cache.
       - name: Install Nixie and Merman CLI
-        uses: leynos/shared-actions/.github/actions/install-nixie@c6125f19593668cbfefd65a59c08cb7aefe90d93
+        uses: leynos/shared-actions/.github/actions/install-nixie@6b5cdc2d4c0bb72cafd5a66d24d248ac25827db9
         with:
           nixie-version: '1.1.0'
           merman-version: '0.7.0'
@@ -59,6 +108,16 @@ jobs:
         run: make spelling
       - name: Validate Mermaid diagrams
         run: make nixie
+      # The workflow-contract suite loads `.config/nextest.toml` with nextest
+      # itself, in a three-binary fixture crate, because every other contract
+      # over that file reads it with `tomllib` and cannot see a key the
+      # runner ignores. Deleting this step reddens that contract rather than
+      # skipping it.
+      - name: Install cargo-nextest
+        uses: taiki-e/install-action@c7eb1735f09259a5035e8e5d44b1406b1cddc0fb  # v2.83.0
+        with:
+          tool: cargo-nextest@${{ env.CARGO_NEXTEST_VERSION }}
+          fallback: none
       - name: Workflow contract tests
         run: make test-workflow-contracts
       - name: Report resource peaks
@@ -68,7 +127,13 @@ jobs:
   clippy:
     name: Clippy (${{ matrix.name }})
     # Build/test class: compiles the workspace under three feature shapes.
-    runs-on: ubicloud-standard-4
+    # A pull request from a fork cannot obtain an Ubicloud
+    # runner, so it falls back to a GitHub-hosted one. Branch
+    # pull requests, which are the ones a maintainer waits on,
+    # keep the paid shape.
+    runs-on: >-
+      ${{ github.event.pull_request.head.repo.fork && 'ubuntu-latest'
+      || 'ubicloud-standard-4' }}
     timeout-minutes: 75
     env:
       # sccache is the sole owner of compiler output: no cache step archives a
@@ -181,7 +246,7 @@ jobs:
       # attempt with a `cargo install` source-build fallback.
       - name: Install Whitaker
         if: matrix.whitaker
-        uses: leynos/shared-actions/.github/actions/install-whitaker@c6125f19593668cbfefd65a59c08cb7aefe90d93
+        uses: leynos/shared-actions/.github/actions/install-whitaker@6b5cdc2d4c0bb72cafd5a66d24d248ac25827db9
         with:
           installer-version: '0.2.7'
           cache-provider: github

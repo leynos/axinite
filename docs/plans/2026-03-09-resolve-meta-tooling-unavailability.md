@@ -342,14 +342,14 @@ Work from the repository root.
 
 1. Inspect the current hosted-worker bootstrap and registry helpers.
 
-```plaintext
-sed -n '1,220p' src/worker/runtime.rs
-sed -n '240,430p' src/tools/registry.rs
-sed -n '620,730p' src/tools/builtin/extension_tools.rs
-sed -n '3540,3815p' src/extensions/manager.rs
-```
+   ```plaintext
+   sed -n '1,220p' src/worker/runtime.rs
+   sed -n '240,430p' src/tools/registry.rs
+   sed -n '620,730p' src/tools/builtin/extension_tools.rs
+   sed -n '3540,3815p' src/extensions/manager.rs
+   ```
 
-1. Add the first failing tests without changing behaviour yet.
+2. Add the first failing tests without changing behaviour yet.
 
 ```plaintext
 set -o pipefail
@@ -369,27 +369,27 @@ assertion failed: hosted worker tools contain "tool_list"
 1. Add the surrounding coverage for registry sets, extension-tool schemas, and
    extension-tool behaviour.
 
-```plaintext
-set -o pipefail
-BRANCH=$(git branch --show-current | tr '/' '-')
-cargo test --lib test_register_extension_tools_registers_expected_names -- --nocapture \
-  | tee /tmp/test-axinite-${BRANCH}.out
-cargo test --test tool_schema_validation -- --nocapture \
-  | tee /tmp/test-axinite-${BRANCH}.out
-cargo test extension_tools --lib -- --nocapture \
-  | tee /tmp/test-axinite-${BRANCH}.out
-```
+   ```plaintext
+   set -o pipefail
+   BRANCH=$(git branch --show-current | tr '/' '-')
+   cargo test --lib test_register_extension_tools_registers_expected_names -- --nocapture \
+     | tee /tmp/test-axinite-${BRANCH}.out
+   cargo test --test tool_schema_validation -- --nocapture \
+     | tee /tmp/test-axinite-${BRANCH}.out
+   cargo test extension_tools --lib -- --nocapture \
+     | tee /tmp/test-axinite-${BRANCH}.out
+   ```
 
-1. Implement the hosted-worker registration helper and the narrow orchestrator
+2. Implement the hosted-worker registration helper and the narrow orchestrator
    proxy path.
 
-```plaintext
-sed -n '160,220p' src/orchestrator/api.rs
-sed -n '220,340p' src/worker/api.rs
-sed -n '1,220p' src/worker/runtime.rs
-```
+   ```plaintext
+   sed -n '160,220p' src/orchestrator/api.rs
+   sed -n '220,340p' src/worker/api.rs
+   sed -n '1,220p' src/worker/runtime.rs
+   ```
 
-1. Add the hosted feature-behaviour integration test.
+3. Add the hosted feature-behaviour integration test.
 
 ```plaintext
 set -o pipefail

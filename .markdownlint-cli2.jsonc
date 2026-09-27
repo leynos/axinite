@@ -25,6 +25,11 @@
 
     // Generated build output and local image artefacts
     "**/target/**",
-    "**/image_out/**"
+    "**/image_out/**",
+    ".vtcode/**",
+    ".terraform/**",
+    ".uv-cache/**",
+    "memories/**",
+    "CRUSH.md"
   ]
 }

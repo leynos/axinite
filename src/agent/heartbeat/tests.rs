@@ -2,6 +2,8 @@
 
 use std::time::Duration;
 
+use rstest::rstest;
+
 use super::checklist::{is_effectively_empty, strip_html_comments};
 use super::*;
 
@@ -29,72 +31,22 @@ fn test_heartbeat_config_builders() {
 
 // ==================== strip_html_comments ====================
 
-#[test]
-fn test_strip_html_comments_no_comments() {
-    assert_eq!(strip_html_comments("hello world"), "hello world");
-}
-
-#[test]
-fn test_strip_html_comments_single() {
-    assert_eq!(
-        strip_html_comments("before<!-- gone -->after"),
-        "beforeafter"
-    );
-}
-
-#[test]
-fn test_strip_html_comments_multiple() {
-    let input = "a<!-- 1 -->b<!-- 2 -->c";
-    assert_eq!(strip_html_comments(input), "abc");
-}
-
-#[test]
-fn test_strip_html_comments_multiline() {
-    let input = "# Title\n<!-- multi\nline\ncomment -->\nreal content";
-    assert_eq!(strip_html_comments(input), "# Title\n\nreal content");
-}
-
-#[test]
-fn test_strip_html_comments_unclosed() {
-    let input = "before<!-- never closed";
-    assert_eq!(strip_html_comments(input), "before");
+#[rstest]
+#[case::no_comments("hello world", "hello world")]
+#[case::single("before<!-- gone -->after", "beforeafter")]
+#[case::multiple("a<!-- 1 -->b<!-- 2 -->c", "abc")]
+#[case::multiline(
+    "# Title\n<!-- multi\nline\ncomment -->\nreal content",
+    "# Title\n\nreal content"
+)]
+#[case::unclosed("before<!-- never closed", "before")]
+fn test_strip_html_comments(#[case] input: &str, #[case] expected: &str) {
+    assert_eq!(strip_html_comments(input), expected);
 }
 
 // ==================== is_effectively_empty ====================
 
-#[test]
-fn test_effectively_empty_empty_string() {
-    assert!(is_effectively_empty(""));
-}
-
-#[test]
-fn test_effectively_empty_whitespace() {
-    assert!(is_effectively_empty("   \n\n  \n  "));
-}
-
-#[test]
-fn test_effectively_empty_headers_only() {
-    assert!(is_effectively_empty("# Title\n## Subtitle\n### Section"));
-}
-
-#[test]
-fn test_effectively_empty_html_comments_only() {
-    assert!(is_effectively_empty("<!-- this is a comment -->"));
-}
-
-#[test]
-fn test_effectively_empty_empty_checkboxes() {
-    assert!(is_effectively_empty("# Checklist\n- [ ]\n- [x]"));
-}
-
-#[test]
-fn test_effectively_empty_bare_list_markers() {
-    assert!(is_effectively_empty("-\n*\n-"));
-}
-
-#[test]
-fn test_effectively_empty_seeded_template() {
-    let template = "\
+const SEEDED_HEARTBEAT_TEMPLATE: &str = "\
 # Heartbeat Checklist
 
 <!-- Keep this file empty to skip heartbeat API calls.
@@ -105,29 +57,27 @@ fn test_effectively_empty_seeded_template() {
  - [ ] Review today's calendar for upcoming meetings
  - [ ] Check CI build status for main branch
 -->";
-    assert!(is_effectively_empty(template));
-}
 
-#[test]
-fn test_effectively_empty_real_checklist() {
-    let content = "\
+#[rstest]
+#[case::empty_string("", true)]
+#[case::whitespace("   \n\n  \n  ", true)]
+#[case::headers_only("# Title\n## Subtitle\n### Section", true)]
+#[case::html_comments_only("<!-- this is a comment -->", true)]
+#[case::empty_checkboxes("# Checklist\n- [ ]\n- [x]", true)]
+#[case::bare_list_markers("-\n*\n-", true)]
+#[case::seeded_template(SEEDED_HEARTBEAT_TEMPLATE, true)]
+#[case::real_checklist(
+    "\
 # Heartbeat Checklist
 
 - [ ] Check for unread emails needing a reply
-- [ ] Review today's calendar for upcoming meetings";
-    assert!(!is_effectively_empty(content));
-}
-
-#[test]
-fn test_effectively_empty_mixed_real_and_headers() {
-    let content = "# Title\n\nDo something important";
-    assert!(!is_effectively_empty(content));
-}
-
-#[test]
-fn test_effectively_empty_comment_plus_real_content() {
-    let content = "<!-- comment -->\nActual task here";
-    assert!(!is_effectively_empty(content));
+ - [ ] Review today's calendar for upcoming meetings",
+    false
+)]
+#[case::mixed_real_and_headers("# Title\n\nDo something important", false)]
+#[case::comment_plus_real_content("<!-- comment -->\nActual task here", false)]
+fn test_is_effectively_empty(#[case] content: &str, #[case] expected: bool) {
+    assert_eq!(is_effectively_empty(content), expected);
 }
 
 // ==================== quiet hours ====================

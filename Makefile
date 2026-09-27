@@ -1,28 +1,32 @@
-CARGO ?= $(shell command -v cargo 2>/dev/null || printf '%s' "$$HOME/.cargo/bin/cargo")
-NEXTEST ?= $(CARGO) nextest
+CARGO_RESOLVED := $(shell command -v cargo 2>/dev/null || printf '%s' "$$HOME/.cargo/bin/cargo")
+# Some CI environments export CARGO as an empty string; treat that as unset.
+ifeq ($(strip $(value CARGO)),)
+override CARGO := $(CARGO_RESOLVED)
+endif
+# Keep resolved executable paths as one shell argument, including paths with
+# spaces, literal dollar signs, or shell metacharacters. The replacement is
+# the POSIX single-quote escape sequence for an embedded single quote.
+shell_quote = '$(subst ','"'"',$(1))'
+CARGO_COMMAND := $(call shell_quote,$(value CARGO))
+NEXTEST ?= $(CARGO_COMMAND) nextest
 BUNX ?= $(shell command -v bunx 2>/dev/null || printf '%s' "$$HOME/.bun/bin/bunx")
 TEST_FEATURES ?= --features test-helpers
 NEXTEST_PROFILE ?= default
 MARKDOWNLINT_BASE ?= origin/main
-CARGO_AUDIT ?= $(CARGO) audit
+CARGO_AUDIT_SUBCOMMAND ?= audit
+ifeq ($(strip $(value CARGO_AUDIT)),)
+CARGO_AUDIT_COMMAND := $(CARGO_COMMAND) $(call shell_quote,$(value CARGO_AUDIT_SUBCOMMAND))
+else
+CARGO_AUDIT_COMMAND := $(value CARGO_AUDIT)
+endif
 WHITAKER ?= whitaker
 NIXIE ?= nixie
 UV ?= uv
 UV_ENV = UV_CACHE_DIR=.uv-cache UV_TOOL_DIR=.uv-tools
-RUFF_VERSION ?= 0.15.12
-PATHSPEC_VERSION ?= 1.1.1
-TYPOS_VERSION ?= 1.48.0
-TYPOS_CONFIG_BUILDER_COMMIT := d6da92f02240a79a945c835f69bdd08a888da1d0
-TYPOS_CONFIG_BUILDER_SOURCE := git+https://github.com/leynos/typos-config-builder.git@$(TYPOS_CONFIG_BUILDER_COMMIT)
-TYPOS_CONFIG_BUILDER := $(UV_ENV) $(UV) tool run --python 3.14 \
-	--from "$(TYPOS_CONFIG_BUILDER_SOURCE)" typos-config-builder
-SPELLING_PY_SRCS := \
-	scripts/typos_rollout_check.py scripts/tests/test_typos_rollout_check.py
-SPELLING_PY_TESTS := scripts/tests/test_typos_rollout_check.py
-SPELLING_COVERAGE_ARGS := --cov=typos_rollout_check --cov-fail-under=90
-SPELLING_HELPER_PYTEST = PYTHONPATH=scripts $(UV_ENV) $(UV) run --no-project \
-	--python 3.14 --with pathspec==$(PATHSPEC_VERSION) --with pytest==9.0.2 \
-	--with pytest-cov==7.0.0 python -m pytest
+TYPOS_CONFIG_BUILDER_VERSION ?= v0.1.1
+TYPOS_CONFIG_BUILDER = $(UV_ENV) $(UV) tool run --python 3.14 --from \
+	"git+https://github.com/leynos/typos-config-builder.git@$(TYPOS_CONFIG_BUILDER_VERSION)" \
+	typos-config-builder
 WASM_SHARED_TARGET_DIR ?= $(if $(CARGO_TARGET_DIR),$(CARGO_TARGET_DIR),target/wasm-extensions)
 GITHUB_TOOL_MANIFEST := tools-src/github/Cargo.toml
 GITHUB_TOOL_WASM_TARGET := wasm32-wasip2
@@ -76,13 +80,23 @@ RUST_DECIMAL_AUDIT_FLAGS := \
 LIBSQL_AUDIT_FLAGS := \
 	--ignore RUSTSEC-2026-0258
 
-.PHONY: all install install-with-overrides sync-local-wasm-overrides build-github-tool-wasm fmt check-fmt typecheck lint lint-clippy lint-whitaker markdownlint spelling spelling-phrase-check spelling-config spelling-config-write spelling-helper-test nixie audit rust-audit test test-cargo test-matrix test-matrix-cargo test-workflow-contracts clean
+.PHONY: all install install-with-overrides sync-local-wasm-overrides build-github-tool-wasm fmt check-fmt typecheck lint lint-clippy lint-whitaker markdownlint spelling nixie audit rust-audit test test-workspace test-github-tool test-cargo test-matrix test-matrix-cargo test-workflow-contracts clean
+
+# `make fmt` and `make check-fmt` call mdtablefix directly. `--git` selects the
+# Markdown files Git tracks and `--include-untracked` adds the untracked files
+# Git does not ignore, so a new document is formatted before it is staged.
+# Both modes need mdtablefix 0.6.0 or later; CI pins the version at the
+# install-mdtablefix step.
+MDLINT ?= $(shell command -v markdownlint-cli2 2>/dev/null || printf '%s' "$$HOME/.bun/bin/markdownlint-cli2")
+MDTABLEFIX ?= mdtablefix
+MDTABLEFIX_SELECT = --git --include-untracked
+MDTABLEFIX_RULES = --wrap --renumber --breaks --ellipsis --fences
 
 all: check-fmt lint test spelling
 
 install:
 	./scripts/build-wasm-extensions.sh
-	$(CARGO) install --path .
+	$(CARGO_COMMAND) install --path .
 
 install-with-overrides: install sync-local-wasm-overrides
 
@@ -90,31 +104,33 @@ sync-local-wasm-overrides:
 	./scripts/sync-local-wasm-overrides.sh
 
 build-github-tool-wasm:
-	$(CARGO) build --manifest-path $(GITHUB_TOOL_MANIFEST) --release --target $(GITHUB_TOOL_WASM_TARGET)
+	$(CARGO_COMMAND) build --manifest-path $(GITHUB_TOOL_MANIFEST) --release --target $(GITHUB_TOOL_WASM_TARGET)
 
 # Format Rust and Markdown sources with the estate-wide formatter.
 fmt:
-	$(CARGO) fmt --all
-	$(CARGO) fmt --manifest-path $(GITHUB_TOOL_MANIFEST) --all
-	mdformat-all
+	$(CARGO_COMMAND) fmt --all
+	$(CARGO_COMMAND) fmt --manifest-path $(GITHUB_TOOL_MANIFEST) --all
+	$(MDTABLEFIX) --in-place $(MDTABLEFIX_SELECT) $(MDTABLEFIX_RULES)
+	$(MDLINT) --fix "**/*.md"
 
 check-fmt:
-	$(CARGO) fmt --all -- --check
-	$(CARGO) fmt --manifest-path $(GITHUB_TOOL_MANIFEST) --all -- --check
+	$(CARGO_COMMAND) fmt --all -- --check
+	$(CARGO_COMMAND) fmt --manifest-path $(GITHUB_TOOL_MANIFEST) --all -- --check
+	$(MDTABLEFIX) --check $(MDTABLEFIX_SELECT) $(MDTABLEFIX_RULES)
 
 typecheck:
-	$(CARGO) check --all --benches --tests --examples $(TEST_FEATURES)
-	$(CARGO) check --all --benches --tests --examples --no-default-features --features libsql-test-helpers
-	$(CARGO) check --all --benches --tests --examples --all-features $(TEST_FEATURES)
-	$(CARGO) check --manifest-path $(GITHUB_TOOL_MANIFEST) --tests
+	$(CARGO_COMMAND) check --all --benches --tests --examples $(TEST_FEATURES)
+	$(CARGO_COMMAND) check --all --benches --tests --examples --no-default-features --features libsql-test-helpers
+	$(CARGO_COMMAND) check --all --benches --tests --examples --all-features $(TEST_FEATURES)
+	$(CARGO_COMMAND) check --manifest-path $(GITHUB_TOOL_MANIFEST) --tests
 
 lint: lint-clippy lint-whitaker
 
 lint-clippy:
-	$(CARGO) clippy --all --benches --tests --examples $(TEST_FEATURES) -- -D warnings
-	$(CARGO) clippy --all --benches --tests --examples --no-default-features --features libsql-test-helpers -- -D warnings
-	$(CARGO) clippy --all --benches --tests --examples --all-features $(TEST_FEATURES) -- -D warnings
-	$(CARGO) clippy --manifest-path $(GITHUB_TOOL_MANIFEST) --tests -- -D warnings
+	$(CARGO_COMMAND) clippy --all --benches --tests --examples $(TEST_FEATURES) -- -D warnings
+	$(CARGO_COMMAND) clippy --all --benches --tests --examples --no-default-features --features libsql-test-helpers -- -D warnings
+	$(CARGO_COMMAND) clippy --all --benches --tests --examples --all-features $(TEST_FEATURES) -- -D warnings
+	$(CARGO_COMMAND) clippy --manifest-path $(GITHUB_TOOL_MANIFEST) --tests -- -D warnings
 
 lint-whitaker:
 	RUSTFLAGS="-D warnings" $(WHITAKER) --all -- --all-targets --all-features
@@ -123,25 +139,8 @@ lint-whitaker:
 markdownlint: spelling
 	MARKDOWNLINT_BASE="$(MARKDOWNLINT_BASE)" ./scripts/lint-changed-markdown.sh "$(BUNX)"
 
-spelling: spelling-phrase-check
-	@git ls-files -z | xargs -0 -r env $(UV_ENV) \
-		$(UV) tool run typos@$(TYPOS_VERSION) --config typos.toml --force-exclude --hidden
-
-spelling-phrase-check: spelling-config
-	@PYTHONPATH=scripts $(UV_ENV) $(UV) run --no-project --python 3.14 \
-		scripts/typos_rollout_check.py --repository .
-
-spelling-config: spelling-helper-test
-	@git ls-files --error-unmatch typos.toml >/dev/null
-	@$(TYPOS_CONFIG_BUILDER) --repository . --check
-
-spelling-config-write: spelling-helper-test
-	@$(TYPOS_CONFIG_BUILDER) --repository .
-
-spelling-helper-test:
-	@$(UV_ENV) $(UV) tool run ruff@$(RUFF_VERSION) format --isolated --target-version py313 --check $(SPELLING_PY_SRCS)
-	@$(UV_ENV) $(UV) tool run ruff@$(RUFF_VERSION) check --isolated --target-version py313 $(SPELLING_PY_SRCS)
-	@$(SPELLING_HELPER_PYTEST) $(SPELLING_PY_TESTS) -c /dev/null --rootdir=. -p no:cacheprovider $(SPELLING_COVERAGE_ARGS)
+spelling:
+	$(TYPOS_CONFIG_BUILDER) gate --repository . --scope all
 
 nixie:
 	$(NIXIE) --no-sandbox
@@ -154,46 +153,59 @@ audit: rust-audit
 rust-audit:
 	find . \
 		\( -path '*/target/*' -o -path '*/node_modules/*' -o -path '*/.venv/*' -o -path './crates/*' \) -prune -o \
-		-name Cargo.toml -exec sh -c 'set -e; for manifest do \
+		-name Cargo.toml -exec sh -c 'set -e; audit_command=$$1; shift; for manifest do \
 			manifest_dir=$$(dirname "$$manifest"); \
 			printf "Auditing Rust manifest %s\n" "$$manifest"; \
 			if [ -f "$$manifest_dir/Cargo.lock" ]; then \
 				python3 scripts/verify_audit_ignore_paths.py "$$manifest_dir/Cargo.lock"; \
-				(cd "$$manifest_dir" && $(CARGO_AUDIT) $(AUDIT_FLAGS) $(RUST_DECIMAL_AUDIT_FLAGS) $(LIBSQL_AUDIT_FLAGS)); \
+				(cd "$$manifest_dir" && eval "$$audit_command" $(AUDIT_FLAGS) $(RUST_DECIMAL_AUDIT_FLAGS) $(LIBSQL_AUDIT_FLAGS)); \
 			else \
-				(cd "$$manifest_dir" && $(CARGO_AUDIT) $(AUDIT_FLAGS)); \
+				(cd "$$manifest_dir" && eval "$$audit_command" $(AUDIT_FLAGS)); \
 			fi; \
-		done' sh {} +
+		done' sh $(call shell_quote,$(value CARGO_AUDIT_COMMAND)) {} +
 
-test:
+# The whole suite, for a developer. CI splits it: the workspace suite and the
+# GitHub tool's own suite run on different lanes and different triggers, so
+# each half has to be runnable on its own.
+test: test-workspace test-github-tool
+
+# The workspace suite alone. `tools-src/github` is excluded from the workspace,
+# so `--workspace` does not reach it; the WASM build is still needed here
+# because the metadata and schema tests load the artefact it produces.
+test-workspace:
 	$(MAKE) build-github-tool-wasm
 	$(NEXTEST) run --workspace $(TEST_FEATURES) --profile $(NEXTEST_PROFILE)
-	$(CARGO) test --manifest-path $(GITHUB_TOOL_MANIFEST)
+
+# The GitHub tool crate's own suite. It is the only test work `--workspace`
+# never covers, which is why it is the one lane that survives the CI
+# de-duplication.
+test-github-tool:
+	$(CARGO_COMMAND) test --manifest-path $(GITHUB_TOOL_MANIFEST)
 
 test-cargo:
 	$(MAKE) build-github-tool-wasm
-	$(CARGO) test $(TEST_FEATURES)
-	$(CARGO) test --manifest-path $(GITHUB_TOOL_MANIFEST)
+	$(CARGO_COMMAND) test $(TEST_FEATURES)
+	$(CARGO_COMMAND) test --manifest-path $(GITHUB_TOOL_MANIFEST)
 
 test-matrix:
 	$(MAKE) build-github-tool-wasm
 	$(NEXTEST) run --workspace $(TEST_FEATURES) --profile $(NEXTEST_PROFILE)
 	$(NEXTEST) run --workspace --no-default-features --features libsql-test-helpers --profile $(NEXTEST_PROFILE)
 	$(NEXTEST) run --workspace --features postgres,libsql-test-helpers,html-to-markdown --profile $(NEXTEST_PROFILE)
-	$(CARGO) test --manifest-path $(GITHUB_TOOL_MANIFEST) -- --nocapture
+	$(CARGO_COMMAND) test --manifest-path $(GITHUB_TOOL_MANIFEST) -- --nocapture
 
 test-matrix-cargo:
 	$(MAKE) build-github-tool-wasm
-	$(CARGO) test $(TEST_FEATURES) -- --nocapture
-	$(CARGO) test --no-default-features --features libsql-test-helpers -- --nocapture
-	$(CARGO) test --features postgres,libsql-test-helpers,html-to-markdown -- --nocapture
-	$(CARGO) test --manifest-path $(GITHUB_TOOL_MANIFEST) -- --nocapture
+	$(CARGO_COMMAND) test $(TEST_FEATURES) -- --nocapture
+	$(CARGO_COMMAND) test --no-default-features --features libsql-test-helpers -- --nocapture
+	$(CARGO_COMMAND) test --features postgres,libsql-test-helpers,html-to-markdown -- --nocapture
+	$(CARGO_COMMAND) test --manifest-path $(GITHUB_TOOL_MANIFEST) -- --nocapture
 
 # Validate the mutation-testing caller workflow contract.
 test-workflow-contracts:
-	uv run --with 'pytest>=8' --with 'pyyaml>=6' --with 'hypothesis>=6' pytest tests/workflow_contracts -q
+	uv run --python '>=3.12' --with 'pytest>=8' --with 'pyyaml>=6' --with 'hypothesis>=6' pytest tests/workflow_contracts -q
 
 clean:
-	$(CARGO) clean
-	$(CARGO) clean --manifest-path $(GITHUB_TOOL_MANIFEST)
+	$(CARGO_COMMAND) clean
+	$(CARGO_COMMAND) clean --manifest-path $(GITHUB_TOOL_MANIFEST)
 	rm -rf $(WASM_SHARED_TARGET_DIR)

@@ -783,6 +783,16 @@ ______________________________________________________________________
 
 - Create: `.github/workflows/e2e.yml`
 
+> **Historical recipe.** This task was completed as written, and the workflow
+> has since been restructured. `.github/workflows/e2e.yml` now has a `build`
+> job on `ubicloud-standard-4`, a matrixed `test` job on `ubicloud-standard-2`
+> that consumes the binary the first uploads, and a GitHub-hosted `e2e`
+> roll-up, with `ubuntu-latest` fallbacks on `schedule` and for a fork's pull
+> request. The `target` cache below is gone: sccache owns compiler output. See
+> the addendum at the end of the "CI Integration" section of
+> `2026-02-24-e2e-infrastructure-design.md` for the current shape and the
+> reasons. The recipe here is kept as the record of what was built.
+
 ### Step 1: Write the workflow
 
 ```yaml

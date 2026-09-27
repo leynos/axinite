@@ -1,0 +1,22 @@
+# A crate that exists only to put `.config/nextest.toml` to nextest itself.
+#
+# `cargo nextest show-config` resolves a profile's overrides against the
+# test binaries the package declares, and refuses a filterset naming a
+# binary that does not exist. Running it in the real crate would mean
+# building the whole test suite, which is minutes; running it here means
+# building three empty test binaries, which is under a second.
+#
+# The two names are not arbitrary: they are the compile-contract
+# binaries the real overrides name, so the real filtersets resolve here
+# exactly as they do there. `compile_contract_budget_test` is what keeps
+# that set honest against the real sources.
+#
+# `[workspace]` makes this its own workspace root, so the repository's
+# workspace neither builds it nor lints it.
+[package]
+name = "nextest-boundary-fixture"
+version = "0.0.0"
+edition = "2021"
+publish = false
+
+[workspace]

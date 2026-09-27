@@ -1,9 +1,11 @@
-"""Contract tests for the isolated CodeScene pull-request coverage workflow.
+"""Contract tests for the isolated pull-request coverage ratchet workflow.
 
 Axinite's main coverage workflow retains its PostgreSQL matrix, E2E coverage,
-Codecov uploads, and aggregate gate. The pull-request workflow deliberately
-isolates the proven libsql-only report path so those unrelated main-only legs
-cannot block CodeScene's changed-line coverage check.
+Codecov uploads, and aggregate gate, and it is the one CodeScene publisher.
+The pull-request workflow deliberately isolates the libsql-only report path,
+and ratchets it against the baseline that workflow writes, so the unrelated
+main-only legs cannot block it. It never contacts CodeScene; that half of the
+rule is `coverage_publication_test.py`'s.
 
 Run via ``make test-workflow-contracts``.
 """
@@ -14,6 +16,7 @@ import re
 from pathlib import Path
 
 import yaml
+from _workflow_policy import Job
 
 SHA_RE: re.Pattern[str] = re.compile(r"[0-9a-f]{40}")
 
@@ -91,7 +94,17 @@ def test_trigger_permissions_and_job_are_pr_only_and_isolated() -> None:
         "github.event_name == 'pull_request' || "
         "github.event_name == 'workflow_dispatch'"
     ), "coverage-check must run only for a pull request or a manual dispatch"
-    assert job.get("runs-on") == "ubicloud-standard-4", (
+    assert job.get("name") == "Coverage Ratchet", (
+        "the job's check name must say what it does now: it ratchets, and it "
+        "no longer checks anything with CodeScene"
+    )
+    # Read the arm a branch pull request selects rather than the raw scalar:
+    # the value is a chain since the fork fallback, and a string comparison
+    # would report the shape as wrong while the lane still buys it.
+    selected = Job("codescene-coverage.yml", "coverage-check", job).labels_for_event(
+        "pull_request"
+    )
+    assert selected == ("ubicloud-standard-4",), (
         "coverage-check is off the critical path, so it takes the cheaper "
         "shape: 683 s at half the rate beats 455 s at full"
     )
@@ -119,23 +132,15 @@ def test_setup_and_generator_match_proven_libsql_coverage() -> None:
         "Install sccache",
         "Start sccache statistics",
         "Restore Cargo registry and index",
-        "Install cargo-llvm-cov",
-        "Install cargo-nextest",
         "Install cargo-binstall",
         "Install cargo-component",
         "Probe Cargo tooling",
         "Build GitHub WASM tool (for metadata/schema tests)",
         "Build WASM channels (for integration tests)",
         "Generate coverage",
-        "Check coverage against CodeScene gates",
         "Report sccache statistics",
         "Report resource peaks",
-    ], "coverage-check setup, report, and check steps must stay ordered"
-
-    checkout = next(step for step in steps if step.get("uses") == "actions/checkout@v6")
-    assert checkout.get("with") == {"fetch-depth": 0}, (
-        "CodeScene requires a full-history checkout"
-    )
+    ], "coverage-check setup and report steps must stay ordered"
 
     rust = next(
         step for step in steps if step.get("uses") == "dtolnay/rust-toolchain@stable"
@@ -155,7 +160,9 @@ def test_setup_and_generator_match_proven_libsql_coverage() -> None:
     assert "target" not in str(cache_with.get("path", "")), (
         "coverage-check must not archive a target tree"
     )
-    for tool in ("cargo-llvm-cov", "cargo-nextest", "cargo-binstall"):
+    # cargo-llvm-cov and cargo-nextest come from generate-coverage, which
+    # installs its own pinned, checksum-verified releases.
+    for tool in ("cargo-binstall",):
         step = _find_step(job, f"Install {tool}")
         step_with = step.get("with")
         assert isinstance(step_with, dict), f"Install {tool} must declare inputs"
@@ -204,48 +211,28 @@ def test_setup_and_generator_match_proven_libsql_coverage() -> None:
         == "./scripts/build-wasm-extensions.sh --channels"
     ), "coverage-check must build the WASM channel fixtures"
 
-    generator = _find_step(job, "Generate coverage").get("run")
-    assert isinstance(generator, str), "Generate coverage must declare a command"
-    assert " ".join(generator.split()) == (
-        "cargo llvm-cov nextest --no-default-features --features libsql "
-        "--features test-helpers --workspace --lcov --output-path lcov.info"
-    ), "coverage-check must preserve the proven libsql-only LCOV generator"
-
-
-def test_codescene_check_uses_canonical_guard_and_inputs() -> None:
-    """The report is submitted once through the canonical guarded check step."""
-    job = _job(_load())
-    steps = _steps(job)
-    codescene_steps = [
-        step
-        for step in steps
-        if str(step.get("uses", "")).startswith(
-            "leynos/shared-actions/.github/actions/upload-codescene-coverage@"
-        )
-    ]
-    assert len(codescene_steps) == 1, (
-        "coverage-check must contain exactly one CodeScene submission step"
+    generator = _find_step(job, "Generate coverage")
+    # `ci` joined the lane when it became the only libsql-only run on a pull
+    # request: `test.yml`'s leg ran that profile, and the default profile
+    # drops the trybuild compile contracts, so without it the replacement
+    # would be narrower than the leg it replaced.
+    assert generator.get("env") == {"NEXTEST_PROFILE": "ci"}, (
+        "coverage-check must run the ci nextest profile, as the leg it "
+        f"replaced did; the step's env is {generator.get('env')}"
     )
-    check = codescene_steps[0]
-    generator_index = steps.index(_find_step(job, "Generate coverage"))
-    assert steps.index(check) == generator_index + 1, (
-        "the CodeScene check must immediately follow report generation"
-    )
-    codescene_ref = str(check.get("uses", "")).split("@")[-1]
-    assert SHA_RE.fullmatch(codescene_ref), (
-        "coverage-check must pin the CodeScene action to a full commit SHA, "
-        f"got {codescene_ref!r}"
-    )
-    assert check.get("env") == {"CS_ACCESS_TOKEN": "${{ secrets.CS_ACCESS_TOKEN }}"}, (
-        "the CodeScene token must remain scoped to the check step"
-    )
-    assert check.get("if") == (
-        "github.event_name == 'pull_request' && env.CS_ACCESS_TOKEN != ''"
-    ), "the CodeScene step must guard its pull-request secret"
-    assert check.get("with") == {
+    assert generator.get("with") == {
+        "features": "libsql,test-helpers",
+        "with-default-features": "false",
+        "use-cargo-nextest": "true",
+        "cargo-wait-timeout": "4200",
         "format": "lcov",
-        "mode": "check",
-        "project-url": "https://api.codescene.io/v2/projects/77987",
-        "access-token": "${{ env.CS_ACCESS_TOKEN }}",
-        "installer-checksum": "${{ vars.CODESCENE_CLI_SHA256 }}",
-    }, "the CodeScene step must use the canonical project and check-mode inputs"
+        "output-path": "lcov.info",
+        "with-ratchet": "true",
+        "publish-artefact": "false",
+        "cache-provider": "external",
+    }, (
+        "coverage-check must measure the libsql-only selection through "
+        "generate-coverage, ratchet it, publish nothing, leave the registry "
+        "and compiler caches to their existing owners, and set the cargo "
+        "watchdog that timeout_ordering_test.py orders"
+    )

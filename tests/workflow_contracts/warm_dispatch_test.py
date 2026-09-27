@@ -18,7 +18,8 @@ Run via ``make test-workflow-contracts``.
 from __future__ import annotations
 
 import pytest
-from _workflow_policy import WORKFLOW_DIR, load
+from _workflow_files import load
+from _workflow_policy import WORKFLOW_DIR
 
 #: Workflows whose Rust jobs sit on the developer-blocking path, and whose
 #: warm-cache behaviour on `main` is therefore part of the exit evidence.
