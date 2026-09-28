@@ -398,7 +398,7 @@ already in the environment overrides:
 | `PG_MAX_CONNECTIONS`                                      | `64`                                     | Sixteen concurrent tests at two connections each, with headroom                               |
 | `PG_EMBED_ROOT`                                           | `target/pg-embed`                        | A per-checkout install root, so no other project's cluster can break this one                 |
 
-_Table: the embedded cluster's configuration._
+*Table: the embedded cluster's configuration.*
 
 The `pg-embed` nextest group caps the PostgreSQL modules at sixteen threads to
 fit that connection budget; every other test runs at full parallelism. A

@@ -280,8 +280,8 @@ says what to do if they come in above the service container's.
 ## Progress
 
 - [x] 2026-09-27: `pg-embed-setup-unpriv` 0.6.0 published, and
-  df12-pg-extensions v1.0.0 published (manifest digest
-  `054bbefd…81e69`). The dependency gate is met.
+  df12-pg-extensions v1.0.0 published (manifest digest `054bbefd…81e69`). The
+  dependency gate is met.
 - [ ] Milestone 1, the harness (pull request #357, taken over and ported to
   0.6): `TestDatabase`, template and per-test clone, `.cargo/config.toml`
   configuration, `pg-embed` nextest group, localhost fallback removed.
@@ -322,8 +322,8 @@ says what to do if they come in above the service container's.
 - 2026-09-27: 0.6.0 retires the draft's two caveats: `PG_EMBED_ROOT` removes
   the shared per-user install root, and `PG_MAX_CONNECTIONS` lifts the cap of
   twenty that had held the nextest group at eight threads (now sixteen). The
-  draft's third-party `pgvector_compiled` archive gives way to the hook and
-  the digest-pinned df12 manifest.
+  draft's third-party `pgvector_compiled` archive gives way to the hook and the
+  digest-pinned df12 manifest.
 
 - 2026-09-23, user ruling: database tests do not use the host PostgreSQL at
   all; `pg-embed-setup-unpriv` exists for that. The forty tests that fail
