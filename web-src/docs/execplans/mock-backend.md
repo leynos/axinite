@@ -1,9 +1,8 @@
 # Build a Bun mock backend for the SolidJS preview
 
-This ExecPlan (execution plan) is a living document. The sections
-`Constraints`, `Tolerances`, `Risks`, `Progress`, `Surprises & Discoveries`,
-`Decision Log`, and `Outcomes & Retrospective` must be kept up to date as work
-proceeds.
+This ExecPlan (execution plan) is a living document. The sections `Constraints`,
+`Tolerances`, `Risks`, `Progress`, `Surprises & Discoveries`, `Decision Log`,
+and `Outcomes & Retrospective` must be kept up to date as work proceeds.
 
 Status: IMPLEMENTED
 
@@ -98,58 +97,47 @@ revise this document, not to start coding.
 ## Risks
 
 - Risk: `http-server` may not proxy SSE cleanly enough for `/api/chat/events`
-  or `/api/logs/events`.
-  Severity: high
-  Likelihood: medium
-  Mitigation: validate the transport path early with a dedicated prototype, and
-  if proxying is unreliable, switch to an alternative preview backend that can
-  serve built `dist/` output and the mock API behind one browser origin.
+  or `/api/logs/events`. Severity: high Likelihood: medium Mitigation: validate
+  the transport path early with a dedicated prototype, and if proxying is
+  unreliable, switch to an alternative preview backend that can serve built
+  `dist/` output and the mock API behind one browser origin.
 
 - Risk: the current Solid preview components are still organised as static
   design previews, so API integration may require more state management work
-  than the route count suggests.
-  Severity: medium
-  Likelihood: high
-  Mitigation: move route data access into dedicated API modules and query hooks
-  first, then rebind components incrementally route by route.
+  than the route count suggests. Severity: medium Likelihood: high Mitigation:
+  move route data access into dedicated API modules and query hooks first, then
+  rebind components incrementally route by route.
 
 - Risk: some backend behaviours needed for a convincing demo, especially log
   streams, extension auth events, and job event history, are only partially
-  represented in the current preview shell.
-  Severity: medium
-  Likelihood: medium
+  represented in the current preview shell. Severity: medium Likelihood: medium
   Mitigation: include stubbed but API-correct behaviour for those flows, while
   keeping the implementation in-memory and explicitly bounded.
 
 - Risk: the current built bundle assumes relative `/api/...` requests, which
   creates tension between static hosting on one port and a Bun API on another.
-  Severity: high
-  Likelihood: medium
-  Mitigation: treat request routing as the first prototyping milestone and
-  validate both root and prefixed paths before changing the rest of the app.
+  Severity: high Likelihood: medium Mitigation: treat request routing as the
+  first prototyping milestone and validate both root and prefixed paths before
+  changing the rest of the app.
 
 - Risk: feature flags can become confusing if some are controlled by server
-  fixtures and others still by client defaults.
-  Severity: medium
-  Likelihood: medium
-  Mitigation: define a single merge rule: server defaults from `/api/features`,
-  then local debug overrides from browser storage, then route rendering.
+  fixtures and others still by client defaults. Severity: medium Likelihood:
+  medium Mitigation: define a single merge rule: server defaults from
+  `/api/features`, then local debug overrides from browser storage, then route
+  rendering.
 
 - Risk: route behaviour may become awkward if complex forms, optimistic
   mutations, transient drafts, and event-stream coordination are all forced
-  into route-local signals.
-  Severity: medium
-  Likelihood: medium
-  Mitigation: start with the baseline router-plus-query model, but explicitly
-  consider `@tanstack/solid-form`, `solid-state`, Zustand, and XState if a
-  route grows beyond what is reasonable for a router-only solution.
+  into route-local signals. Severity: medium Likelihood: medium Mitigation:
+  start with the baseline router-plus-query model, but explicitly consider
+  `@tanstack/solid-form`, `solid-state`, Zustand, and XState if a route grows
+  beyond what is reasonable for a router-only solution.
 
 - Risk: hand-rolled SSE lifecycle code for chat and logs may become brittle if
   reconnect logic, cleanup, and event fan-out are spread across components.
-  Severity: medium
-  Likelihood: medium
-  Mitigation: if the event-stream wiring stops being trivial, consider
-  `useEventSource` rather than building a bespoke subscription layer.
+  Severity: medium Likelihood: medium Mitigation: if the event-stream wiring
+  stops being trivial, consider `useEventSource` rather than building a bespoke
+  subscription layer.
 
 ## Progress
 
@@ -161,8 +149,8 @@ revise this document, not to start coding.
   `docs/execplans/mock-backend.md`.
 - [x] (2026-03-26 12:36Z) User approved implementation of this ExecPlan.
 - [x] (2026-03-26 13:05Z) Prototyped the static-server plus mock-API transport
-  path and confirmed that `http-server` proxying was not preserving the
-  required `/api/*` request path for this setup.
+  path and confirmed that `http-server` proxying was not preserving the required
+  `/api/*` request path for this setup.
 - [x] (2026-03-26 13:21Z) Implemented the Bun mock backend, front-end API
   refactor, and same-origin preview gateway.
 - [x] (2026-03-26 13:26Z) Validated the built preview, API flows, SSE streams,
@@ -179,118 +167,105 @@ revise this document, not to start coding.
 
 - Observation: the current Solid preview only fetches `/api/gateway/status` and
   `/api/features`; route data for chat, memory, jobs, routines, extensions, and
-  skills still lives in front-end component constants.
-  Evidence: `axinite/src/lib/api/gateway.ts` only exports
-  `fetchGatewayStatus()` and `fetchRuntimeFeatureFlags()`, while
-  `axinite/src/components/*.tsx` still define arrays such as `JOBS`,
-  `ROUTINES`, `EXTENSIONS`, `INSTALLED_SKILLS`, and `MEMORY_TREE`.
-  Impact: most of the implementation effort is a data-source migration, not a
-  mock-server-only addition.
+  skills still lives in front-end component constants. Evidence:
+  `axinite/src/lib/api/gateway.ts` only exports `fetchGatewayStatus()` and
+  `fetchRuntimeFeatureFlags()`, while `axinite/src/components/*.tsx` still
+  define arrays such as `JOBS`, `ROUTINES`, `EXTENSIONS`, `INSTALLED_SKILLS`,
+  and `MEMORY_TREE`. Impact: most of the implementation effort is a data-source
+  migration, not a mock-server-only addition.
 
 - Observation: the current development command is still `vite`, while built
   previews and Playwright expectations already distinguish between development
-  and static preview ports.
-  Evidence: `package.json` maps `"dev"` to `vite`, `vite.config.ts` sets
-  `server.port` to `5173`, and `preview.port` to `4173`.
+  and static preview ports. Evidence: `package.json` maps `"dev"` to `vite`,
+  `vite.config.ts` sets `server.port` to `5173`, and `preview.port` to `4173`.
   Impact: `bun run dev` can be repurposed into the requested supervisor without
   conflicting with an established Bun backend loop.
 
 - Observation: the Rust repository already documents the browser-facing API
-  surface in both prose and code.
-  Evidence: `../axinite/docs/front-end-architecture.md` enumerates the route
-  surfaces and endpoints, while `../axinite/src/channels/web/types.rs`
-  defines the DTOs.
+  surface in both prose and code. Evidence:
+  `../axinite/docs/front-end-architecture.md` enumerates the route surfaces and
+  endpoints, while `../axinite/src/channels/web/types.rs` defines the DTOs.
   Impact: the mock service can be driven from documented contracts instead of
   inventing an ad hoc TypeScript API.
 
 - Observation: `http-server` proxying did not preserve the required API path in
-  this repository's preview flow.
-  Evidence: a direct probe of `/api/gateway/status` through the static preview
-  reached the mock backend as `GET /` instead of `GET /api/gateway/status`.
-  Impact: the original transport assumption was wrong; the correct fix was a
-  Bun preview gateway that serves `dist/` and proxies `/api/*` directly.
+  this repository's preview flow. Evidence: a direct probe of
+  `/api/gateway/status` through the static preview reached the mock backend as
+  `GET /` instead of `GET /api/gateway/status`. Impact: the original transport
+  assumption was wrong; the correct fix was a Bun preview gateway that serves
+  `dist/` and proxies `/api/*` directly.
 
 - Observation: local validation could not use preview port `2020` because that
   port was already occupied by an existing `caddy file-server` process in the
-  environment.
-  Evidence: `ss -ltnp '( sport = :2020 )'` showed `caddy` listening on port
-  `2020`, so validation ran on `PREVIEW_PORT=43111` instead.
+  environment. Evidence: `ss -ltnp '( sport = :2020 )'` showed `caddy`
+  listening on port `2020`, so validation ran on `PREVIEW_PORT=43111` instead.
   Impact: the implementation works, but default-port validation remains
   environment-dependent whenever another process owns `2020`.
 
 - Observation: the default developer workflow still felt brittle after the
   initial implementation because `bun run dev` aborted instead of selecting a
-  free port when `2020` was occupied.
-  Evidence: a direct `bun run dev` run failed with `EADDRINUSE` from
-  `mock-backend/src/preview-server.ts` when `2020` was already bound.
-  Impact: the supervisor now probes for a nearby free port by default, which
-  keeps the local demo stack usable without changing the browser API contract.
+  free port when `2020` was occupied. Evidence: a direct `bun run dev` run
+  failed with `EADDRINUSE` from `mock-backend/src/preview-server.ts` when
+  `2020` was already bound. Impact: the supervisor now probes for a nearby free
+  port by default, which keeps the local demo stack usable without changing the
+  browser API contract.
 
 - Observation: the chat preview still felt inert immediately after pressing
   Send because the just-submitted turn and the pending assistant state were not
-  rendered until later history or SSE updates arrived.
-  Evidence: `sendMutation` previously cleared the composer and updated status
-  text, but the conversation view did not append a local user turn or any
-  visible assistant waiting state until follow-up events arrived.
-  Impact: the chat preview now performs an optimistic UI update with a pending
-  user bubble and assistant spinner, which makes the route feel responsive
-  while still deferring final content to the mock API and SSE stream.
+  rendered until later history or SSE updates arrived. Evidence: `sendMutation`
+  previously cleared the composer and updated status text, but the conversation
+  view did not append a local user turn or any visible assistant waiting state
+  until follow-up events arrived. Impact: the chat preview now performs an
+  optimistic UI update with a pending user bubble and assistant spinner, which
+  makes the route feel responsive while still deferring final content to the
+  mock API and SSE stream.
 
 ## Decision log
 
 - Decision: the mock service will mirror the Rust web gateway's browser
-  contracts rather than inventing preview-specific JSON shapes.
-  Rationale: the user explicitly wants Axinite API-correct integration proof,
-  and the Rust repository already exposes the required DTOs and routes.
-  Date/Author: 2026-03-26 / Codex
+  contracts rather than inventing preview-specific JSON shapes. Rationale: the
+  user explicitly wants Axinite API-correct integration proof, and the Rust
+  repository already exposes the required DTOs and routes. Date/Author:
+  2026-03-26 / Codex
 
 - Decision: `bun run dev` will become a process supervisor for the Bun API, the
   build watcher, and the static server instead of staying as a Vite dev-server
-  alias.
-  Rationale: this matches the requested workflow and forces the front end to
-  exercise the same built static artefacts used in preview and deployment.
-  Date/Author: 2026-03-26 / Codex
+  alias. Rationale: this matches the requested workflow and forces the front
+  end to exercise the same built static artefacts used in preview and
+  deployment. Date/Author: 2026-03-26 / Codex
 
 - Decision: the mock backend will remain in-memory and fixture-driven, but the
-  fixtures will be mutable through API-correct requests.
-  Rationale: this satisfies the acceptance criteria without turning the branch
-  into a parallel backend product.
-  Date/Author: 2026-03-26 / Codex
+  fixtures will be mutable through API-correct requests. Rationale: this
+  satisfies the acceptance criteria without turning the branch into a parallel
+  backend product. Date/Author: 2026-03-26 / Codex
 
 - Decision: the first implementation milestone will explicitly validate
   `http-server` request routing for both static routes and proxied API traffic,
-  especially SSE.
-  Rationale: if that transport assumption is wrong, the fallback must be a
-  different preview backend topology rather than a different browser API
-  contract.
-  Date/Author: 2026-03-26 / Codex
+  especially SSE. Rationale: if that transport assumption is wrong, the
+  fallback must be a different preview backend topology rather than a different
+  browser API contract. Date/Author: 2026-03-26 / Codex
 
 - Decision: replace the originally proposed `http-server` preview hop with a
   Bun preview gateway that serves `dist/` and proxies `/api/*` to the mock API
-  on the same origin.
-  Rationale: the direct transport probe showed that the original `http-server`
-  setup was not forwarding the request path correctly for this repository, and
-  the plan already allowed a same-origin fallback if `http-server` proved
-  unsuitable.
-  Date/Author: 2026-03-26 / Codex
+  on the same origin. Rationale: the direct transport probe showed that the
+  original `http-server` setup was not forwarding the request path correctly
+  for this repository, and the plan already allowed a same-origin fallback if
+  `http-server` proved unsuitable. Date/Author: 2026-03-26 / Codex
 
 - Decision: when no explicit `PREVIEW_PORT` is provided, `bun run dev` should
   fall back to a nearby free port instead of aborting on an occupied `2020`
-  port.
-  Rationale: the repository guidance already expects port `2020` to be used for
-  live previewing, so the development supervisor needs a safe default that does
-  not fail merely because another local preview process already owns that port.
-  Date/Author: 2026-03-26 / Codex
+  port. Rationale: the repository guidance already expects port `2020` to be
+  used for live previewing, so the development supervisor needs a safe default
+  that does not fail merely because another local preview process already owns
+  that port. Date/Author: 2026-03-26 / Codex
 
 - Decision: state-management escalation should remain conditional, not
-  automatic.
-  Rationale: `docs/v2a-front-end-stack.md` places Zustand and XState in the
-  fuller v2a stack rather than the baseline mockup layer. This rollout should
-  first prefer router-local state, Solid signals, and TanStack Query, then
-  reach for `@tanstack/solid-form`, `solid-state`, Zustand, or XState only
+  automatic. Rationale: `docs/v2a-front-end-stack.md` places Zustand and XState
+  in the fuller v2a stack rather than the baseline mockup layer. This rollout
+  should first prefer router-local state, Solid signals, and TanStack Query,
+  then reach for `@tanstack/solid-form`, `solid-state`, Zustand, or XState only
   when the resulting behaviour would otherwise become unreasonably implicit or
-  fragile.
-  Date/Author: 2026-03-26 / Codex
+  fragile. Date/Author: 2026-03-26 / Codex
 
 ## Outcomes & retrospective
 
@@ -325,8 +300,8 @@ data flow is still mostly static. The files below matter most:
   arrays and signals.
 - `docs/v2a-front-end-stack.md` describes the intended state-management ladder:
   baseline Solid signals and route state first, then richer tools such as
-  Zustand and XState in the fuller v2a application stack when behaviour
-  becomes more complex.
+  Zustand and XState in the fuller v2a application stack when behaviour becomes
+  more complex.
 
 The upstream Rust repository in `../axinite` is the contract source for the
 mock backend. The most important files are:
@@ -403,8 +378,8 @@ for each browser surface:
 
 Stage C is the Bun mock backend itself. Implement endpoint handlers grouped by
 domain, mirroring the Rust handler layout as closely as is practical. The mock
-service should support at least the following routes, using the Rust request and
-response shapes:
+service should support at least the following routes, using the Rust request
+and response shapes:
 
 1. `GET /api/gateway/status`
 2. `GET /api/features`
@@ -664,8 +639,8 @@ The front end should gain corresponding client modules under
 - `logs.ts`
 
 Each module should export typed request helpers that mirror the Rust gateway's
-DTOs. Those helpers should then be consumed by TanStack Query or direct mutation
-handlers in the route components.
+DTOs. Those helpers should then be consumed by TanStack Query or direct
+mutation handlers in the route components.
 
 ## Revision note
 

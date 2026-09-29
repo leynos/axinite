@@ -39,8 +39,8 @@ npm install tailwindcss @tailwindcss/vite
 
 ## Configuration (CSS-First)
 
-**IMPORTANT**: v4 uses CSS-first configuration, NOT JavaScript config files. Use
-the `@theme` directive in your CSS file:
+**IMPORTANT**: v4 uses CSS-first configuration, NOT JavaScript config files.
+Use the `@theme` directive in your CSS file:
 
 ```css
 @import "tailwindcss";
@@ -1890,6 +1890,6 @@ npx @tailwindcss/upgrade
 </button>
 ```
 
-Remember: Tailwind CSS v4 is designed for modern browsers and modern development
-workflows. Embrace the new CSS-first approach and leverage the powerful new
-features for better performance and developer experience.
+Remember: Tailwind CSS v4 is designed for modern browsers and modern
+development workflows. Embrace the new CSS-first approach and leverage the
+powerful new features for better performance and developer experience.

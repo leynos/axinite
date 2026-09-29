@@ -8,10 +8,10 @@ Wildside and Corbusier mockups in two layers:
 - the fuller v2a application stack described elsewhere in this repository’s
   design and architecture documents.
 
-That distinction matters because the prototype already exercises much of the UI,
-styling, routing, localization, and map stack, while the broader product
-architecture adds local-first data and orchestration tooling that can sit on top
-of the UI layer without changing the rendering model.
+That distinction matters because the prototype already exercises much of the
+UI, styling, routing, localization, and map stack, while the broader product
+architecture adds local-first data and orchestration tooling that can sit on
+top of the UI layer without changing the rendering model.
 
 The current repository still ships a static prototype under `axinite/`. Treat
 the file paths and module names below as the intended SPA layout for the
@@ -163,8 +163,8 @@ Design tokens are a first-class part of the stack.
   reload when they change.
 
 This means the front-end theme layer is not hand-maintained in one place.
-Instead, the design source of truth lives in the token package, and both CSS and
-Tailwind consume generated outputs.
+Instead, the design source of truth lives in the token package, and both CSS
+and Tailwind consume generated outputs.
 
 ### Theme handling
 
@@ -225,9 +225,9 @@ The current detection order is intentionally narrow:
 - `localStorage`.
 
 Navigator-based detection is deliberately excluded to keep first loads more
-deterministic. The runtime also updates `lang`, `dir`, and related attributes on
-the document so right-to-left languages such as Arabic and Hebrew are handled
-correctly.
+deterministic. The runtime also updates `lang`, `dir`, and related attributes
+on the document so right-to-left languages such as Arabic and Hebrew are
+handled correctly.
 
 ## Map stack
 
