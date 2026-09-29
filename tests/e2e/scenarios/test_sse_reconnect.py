@@ -8,7 +8,7 @@ Adaptation from the legacy shell:
     attribute (idle|connecting|connected|disconnected) rather than textContent.
 """
 
-from helpers import SEL
+from helpers import SEL, send_chat_message
 
 
 async def _wait_state(page, state: str, *, timeout: int = 10000):
@@ -35,9 +35,7 @@ async def test_reconnect_cycle(page):
 
 async def test_reconnect_preserves_history(page):
     """A message sent before a reconnect remains visible afterwards."""
-    composer = page.get_by_label("Message composer")
-    await composer.fill("Hello")
-    await page.locator(SEL["chat_send"]).click()
+    await send_chat_message(page, "Hello")
 
     # Wait for the assistant answer so the turn is persisted in the DB.
     await page.wait_for_function(

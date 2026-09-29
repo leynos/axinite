@@ -13,7 +13,7 @@ Adaptation from the legacy shell:
 
 import pytest
 
-from helpers import SEL, goto_route
+from helpers import SEL, goto_route, wait_until
 
 
 async def _open_skills(page):
@@ -69,8 +69,13 @@ async def test_skills_install_and_remove(page):
     assert installed_count >= 1, "Skill should appear in the installed list"
 
     remove_btn = installed.first.get_by_role("button", name="Remove")
-    if await remove_btn.count() > 0:
-        await remove_btn.click()
-        await page.wait_for_timeout(3000)
-        new_count = await page.locator(SEL["skill_installed_card"]).count()
-        assert new_count < installed_count, "Skill should be removed after Remove"
+    if await remove_btn.count() == 0:
+        pytest.skip("Installed skill card offers no Remove button to exercise")
+    await remove_btn.click()
+
+    async def removed() -> bool:
+        return await installed.count() < installed_count
+
+    await wait_until(removed, timeout_ms=15000, interval_ms=250)
+    new_count = await installed.count()
+    assert new_count < installed_count, "Skill should be removed after Remove"

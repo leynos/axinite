@@ -54,15 +54,20 @@ the `[data-testid="sse-status"]` connection indicator (`data-state` attribute),
 `data-role` message turns, and the `window.__axinite` hooks (`closeChatStream`,
 `reconnectChatStream`, `emitChatEvent`).
 
-| File                     | What it tests                                                                                                                                 |
-| ------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------- |
-| `test_connection.py`     | Shell loads with token, nav-link route navigation, SSE indicator reaches `connected`, missing token shows `#auth-screen`                      |
-| `test_chat.py`           | Chat round-trip against the mock LLM, empty-message guard, and the inline extension auth cards (token submit, cancel, `auth_completed`)       |
-| `test_html_injection.py` | XSS payloads through the real pipeline: a canned mock-LLM response renders sanitized; user input renders as escaped text                      |
-| `test_skills.py`         | Skills route, ClawHub search (skipped if registry unreachable), install + remove lifecycle                                                    |
-| `test_sse_reconnect.py`  | `window.__axinite.closeChatStream()`/`reconnectChatStream()` flip the SSE indicator; chat history survives reconnection                       |
-| `test_tool_approval.py`  | Approval card (Approve/Always/Deny) injected via history-route interception plus an `emitChatEvent` refetch trigger; approve POST intercepted |
-| `test_extensions.py`     | Extension cards, install/activate/remove (Kobalte dialog), inline configure panel, WASM stepper states, pairing list + approve                |
+| File                           | What it tests                                                                                                                                 |
+| ------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------- |
+| `test_connection.py`           | Shell loads with token, nav-link route navigation, SSE indicator reaches `connected`, missing token shows `#auth-screen`                      |
+| `test_chat.py`                 | Chat round-trip against the mock LLM, empty-message guard, and the inline extension auth cards (token submit, cancel, `auth_completed`)       |
+| `test_html_injection.py`       | XSS payloads through the real pipeline: a canned mock-LLM response renders sanitized; user input renders as escaped text                      |
+| `test_skills.py`               | Skills route, ClawHub search (skipped if registry unreachable), install + remove lifecycle                                                    |
+| `test_sse_reconnect.py`        | `window.__axinite.closeChatStream()`/`reconnectChatStream()` flip the SSE indicator; chat history survives reconnection                       |
+| `test_tool_approval.py`        | Approval card (Approve/Always/Deny) injected via history-route interception plus an `emitChatEvent` refetch trigger; approve POST intercepted |
+| `test_extensions_catalogue.py` | Extension cards, tools table, registry install, MCP activation                                                                                |
+| `test_extensions_configure.py` | Inline configure panel and remove (Kobalte dialog)                                                                                            |
+| `test_extensions_channels.py`  | WASM channel stepper states, pairing list + approve                                                                                           |
+
+The extensions modules share fixture payloads and API interception through
+`extensions_support.py`, which is deliberately not named `test_*`.
 
 ## `helpers.py`
 

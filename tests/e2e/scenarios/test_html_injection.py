@@ -9,19 +9,12 @@ Adaptation from the legacy shell:
   - User input is verified as escaped plain text in the user turn bubble.
 """
 
-from helpers import SEL
-
-
-async def _send(page, text: str):
-    composer = page.get_by_label("Message composer")
-    await composer.wait_for(state="visible", timeout=5000)
-    await composer.fill(text)
-    await page.locator(SEL["chat_send"]).click()
+from helpers import SEL, send_chat_message
 
 
 async def test_assistant_xss_sanitized(page):
     """The mock LLM's XSS payload is rendered without executable markup."""
-    await _send(page, "Please run the html injection test")
+    await send_chat_message(page, "Please run the html injection test")
 
     # Wait for the assistant answer to render (any non-empty markdown block).
     await page.wait_for_function(
@@ -49,7 +42,7 @@ async def test_assistant_xss_sanitized(page):
 async def test_user_message_rendered_as_plain_text(page):
     """A user message with an <img onerror> payload is shown as escaped text."""
     dangerous = '<img src=x onerror="alert(1)">'
-    await _send(page, dangerous)
+    await send_chat_message(page, dangerous)
 
     user_turn = page.locator(SEL["chat_turn_user"]).last
     await user_turn.wait_for(state="visible", timeout=5000)
