@@ -178,7 +178,7 @@ lru = "0.18.0"
 # HTML to Markdown conversion (feature gated)
 html-to-markdown-rs = { version = "2.3", optional = true }
 readability-js = { version = "0.1.5", optional = true }
-kuchiki = { version = "0.8", optional = true }
+kuchikikiki = { version = "0.12", optional = true }
 ed25519-dalek = { version = "2.2.0", features = ["std"] }
 hex = "0.4.3"
 
@@ -236,7 +236,7 @@ libsql = ["dep:libsql"]
 libsql-test-helpers = ["libsql", "test-helpers"]
 metrics = ["dep:metrics"]
 integration = []
-html-to-markdown = ["dep:html-to-markdown-rs", "dep:kuchiki", "dep:readability-js"]
+html-to-markdown = ["dep:html-to-markdown-rs", "dep:kuchikikiki", "dep:readability-js"]
 bedrock = ["dep:aws-config", "dep:aws-sdk-bedrockruntime", "dep:aws-smithy-types"]
 import = ["dep:rusqlite", "dep:json5"]
 test-helpers = ["dep:tempfile"]

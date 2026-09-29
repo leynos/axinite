@@ -8,7 +8,7 @@ use crate::tools::tool::ToolError;
 #[cfg(feature = "html-to-markdown")]
 use html_to_markdown_rs::convert;
 #[cfg(feature = "html-to-markdown")]
-use kuchiki::traits::*;
+use kuchikikiki::traits::*;
 #[cfg(feature = "html-to-markdown")]
 use readability_js::Readability;
 
@@ -33,7 +33,7 @@ pub fn convert_html_to_markdown(html: &str, url: &str) -> Result<String, ToolErr
 
     // Parse the original document once and share it between the two restore
     // passes below, rather than re-parsing the same raw html twice.
-    let document = kuchiki::parse_html().one(html);
+    let document = kuchikikiki::parse_html().one(html);
     let markdown = restore_intro_heading(&document, &article.title, &markdown);
     let markdown = restore_missing_figure_captions(&document, &markdown);
 
@@ -42,7 +42,7 @@ pub fn convert_html_to_markdown(html: &str, url: &str) -> Result<String, ToolErr
 
 #[cfg(feature = "html-to-markdown")]
 fn remove_embedded_media(html: &str) -> String {
-    let document = kuchiki::parse_html().one(html);
+    let document = kuchikikiki::parse_html().one(html);
     for selector in [
         "figure.canvas-image",
         "figure[data-type=\"image\"]",
@@ -65,7 +65,7 @@ fn remove_embedded_media(html: &str) -> String {
 }
 
 #[cfg(feature = "html-to-markdown")]
-fn remove_exact_text_elements(document: &kuchiki::NodeRef, text_values: &[&str]) {
+fn remove_exact_text_elements(document: &kuchikikiki::NodeRef, text_values: &[&str]) {
     let nodes: Vec<_> = document
         .descendants()
         .filter(|node| {
@@ -89,7 +89,7 @@ fn remove_exact_text_elements(document: &kuchiki::NodeRef, text_values: &[&str])
 
 #[cfg(feature = "html-to-markdown")]
 fn restore_intro_heading(
-    document: &kuchiki::NodeRef,
+    document: &kuchikikiki::NodeRef,
     article_title: &str,
     markdown: &str,
 ) -> String {
@@ -105,7 +105,7 @@ fn restore_intro_heading(
 
 #[cfg(feature = "html-to-markdown")]
 fn intro_heading_removed_as_title(
-    document: &kuchiki::NodeRef,
+    document: &kuchikikiki::NodeRef,
     article_title: &str,
     markdown: &str,
 ) -> Option<(usize, String)> {
@@ -158,7 +158,7 @@ fn normalize_heading_text(text: &str) -> String {
 }
 
 #[cfg(feature = "html-to-markdown")]
-fn restore_missing_figure_captions(document: &kuchiki::NodeRef, markdown: &str) -> String {
+fn restore_missing_figure_captions(document: &kuchikikiki::NodeRef, markdown: &str) -> String {
     let blocks = document_blocks(document);
     let mut restored = markdown.to_string();
 
@@ -227,7 +227,7 @@ enum DocumentBlock {
 }
 
 #[cfg(feature = "html-to-markdown")]
-fn document_blocks(document: &kuchiki::NodeRef) -> Vec<DocumentBlock> {
+fn document_blocks(document: &kuchikikiki::NodeRef) -> Vec<DocumentBlock> {
     document
         .descendants()
         .filter_map(|node| {
@@ -246,7 +246,7 @@ fn document_blocks(document: &kuchiki::NodeRef) -> Vec<DocumentBlock> {
 }
 
 #[cfg(feature = "html-to-markdown")]
-fn is_removed_media_caption(node: &kuchiki::NodeRef) -> bool {
+fn is_removed_media_caption(node: &kuchikikiki::NodeRef) -> bool {
     node.ancestors().any(|ancestor| {
         let Some(element) = ancestor.as_element() else {
             return false;

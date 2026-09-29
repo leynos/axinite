@@ -3150,12 +3150,12 @@ Markdown in three stages:
 
 1. **readability-js** extracts the main article, discarding navigation and
    other boilerplate.
-2. **kuchiki** strips embedded-media placeholders from the extracted article
-   content, then, once that content is converted to Markdown, parses the
-   *original* raw HTML once more and shares that single `NodeRef` between two
-   restoration passes: restoring an intro heading that extraction demoted out
-   of the article body, and restoring figure captions that would otherwise be
-   dropped.
+2. **kuchikikiki** strips embedded-media placeholders from the extracted
+   article content, then, once that content is converted to Markdown, parses
+   the *original* raw HTML once more and shares that single `NodeRef` between
+   two restoration passes: restoring an intro heading that extraction demoted
+   out of the article body, and restoring figure captions that would otherwise
+   be dropped.
 3. **html-to-markdown-rs** renders the cleaned HTML as Markdown, between the
    media-removal and restoration passes above.
 
@@ -3164,8 +3164,8 @@ instead of each re-parsing the same HTML; see the comment above the `document`
 binding in `convert_html_to_markdown` for the rationale.
 
 The pipeline sits behind the `html-to-markdown` cargo feature, which gates
-`dep:html-to-markdown-rs`, `dep:kuchiki`, and `dep:readability-js`. It is part
-of the default feature set. When the feature is disabled,
+`dep:html-to-markdown-rs`, `dep:kuchikikiki`, and `dep:readability-js`. It is
+part of the default feature set. When the feature is disabled,
 `convert_html_to_markdown` is a passthrough that returns the input unchanged.
 
 Golden tests live in `tests/html_to_markdown.rs`, which loads fixtures from
