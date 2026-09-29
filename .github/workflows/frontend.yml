@@ -18,10 +18,26 @@ name: Frontend
       - "Makefile"
       - ".github/workflows/frontend.yml"
 
+# A push to a pull request supersedes the run already in flight, and there is
+# nothing left to learn from the superseded one. Cancellation is conditioned
+# on the event so a push to `main`, which has no successor waiting, always
+# runs to completion.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+# The job reads the checkout and writes nothing.
+permissions:
+  contents: read
+
 jobs:
   frontend:
     name: Frontend verification
-    runs-on: ubicloud-standard-8
+    # The chain runs Bun, vitest, and Playwright and compiles no Rust, so it
+    # takes the free hosted pool rather than a paid Ubicloud shape; forks can
+    # run it too.
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
     env:
       # playwright.config.ts pins the hermetic browsers path at test time;
       # the install step must target the same location.
