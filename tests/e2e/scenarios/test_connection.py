@@ -8,7 +8,7 @@ Adaptation from the legacy shell:
     `connected` once the chat stream opens (visiting /chat).
 """
 
-from helpers import AUTH_TOKEN, ROUTES, SEL, goto_route
+from helpers import ROUTES, SEL, goto_route
 
 
 async def test_page_loads_and_connects(page):

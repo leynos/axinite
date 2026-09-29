@@ -52,15 +52,17 @@ DOM assertions.
 
 ## Scenarios
 
-| File                     | What it tests                                                          |
-| ------------------------ | ---------------------------------------------------------------------- |
-| `test_connection.py`     | Auth, tab navigation, connection status                                |
-| `test_chat.py`           | Send message, SSE streaming, response rendering                        |
-| `test_skills.py`         | ClawHub search, skill install/remove                                   |
-| `test_tool_approval.py`  | Tool approval overlay (approve, deny, always, params toggle)           |
-| `test_sse_reconnect.py`  | SSE reconnection handling                                              |
-| `test_html_injection.py` | HTML injection security                                                |
-| `test_extensions.py`     | Extensions tab: install, remove, configure, OAuth, auth card, activate |
+| File                           | What it tests                                                |
+| ------------------------------ | ------------------------------------------------------------ |
+| `test_connection.py`           | Auth, tab navigation, connection status                      |
+| `test_chat.py`                 | Send message, SSE streaming, response rendering              |
+| `test_skills.py`               | ClawHub search, skill install/remove                         |
+| `test_tool_approval.py`        | Tool approval overlay (approve, deny, always, params toggle) |
+| `test_sse_reconnect.py`        | SSE reconnection handling                                    |
+| `test_html_injection.py`       | HTML injection security                                      |
+| `test_extensions_catalogue.py` | Extensions route: cards, tools, registry install, activate   |
+| `test_extensions_configure.py` | Extensions route: configure panel, remove                    |
+| `test_extensions_channels.py`  | Extensions route: WASM channel stepper, pairing              |
 
 ## Adding new scenarios
 
@@ -171,5 +173,5 @@ await page.evaluate("""
 """)
 ```
 
-This is the pattern used in `test_tool_approval.py` and parts of
-`test_extensions.py` (auth card, configure modal).
+This is the pattern used in `test_tool_approval.py` and the
+`test_extensions_*.py` modules (configure panel, pairing).
