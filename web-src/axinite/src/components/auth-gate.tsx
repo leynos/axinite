@@ -1,5 +1,12 @@
+/**
+ * Boot-time bearer-token gate wrapped around the router. It probes the
+ * gateway once and either renders its children or prompts for a token, which
+ * is kept in session storage via `lib/auth/token`.
+ */
+
 import { createSignal, type JSX, Match, onMount, Show, Switch } from "solid-js";
 
+import { withRequestTimeout } from "@/lib/api/client";
 import {
   clearGatewayToken,
   getGatewayToken,
@@ -14,14 +21,18 @@ type ProbeResult = "ok" | "unauthorized" | "unreachable";
 // The gateway protects /api/* with a bearer token (src/channels/web/auth.rs)
 // but the mock backend accepts anonymous requests. Probe once at boot: if the
 // gateway answers anonymously the gate stays open, otherwise ask for a token.
+// A probe that exceeds the shared request timeout counts as unreachable.
 async function probeGateway(token: string | null): Promise<ProbeResult> {
   try {
-    const response = await fetch("/api/gateway/status", {
-      headers: {
-        Accept: "application/json",
-        ...(token ? { Authorization: `Bearer ${token}` } : {}),
-      },
-    });
+    const response = await withRequestTimeout((signal) =>
+      fetch("/api/gateway/status", {
+        signal,
+        headers: {
+          Accept: "application/json",
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+      })
+    );
     if (response.ok) {
       return "ok";
     }
@@ -75,17 +86,10 @@ export const AuthGate = (props: AuthGateProps) => {
       window.history.replaceState(window.history.state, "", stripped);
     }
 
-    const stored = getGatewayToken();
-    const result = await probeGateway(stored);
-    // A stored token that no longer works should surface the form afresh
-    // rather than a rejection notice from a previous session.
-    if (result === "unauthorized" && stored) {
-      clearGatewayToken();
-      setError(null);
-      setState("locked");
-      return;
-    }
-    applyProbe(result, false);
+    // The boot probe always passes `hadToken = false`, whether or not a token
+    // was stored: a stored token that no longer works is cleared and the form
+    // shown afresh, without a rejection notice from a previous session.
+    applyProbe(await probeGateway(getGatewayToken()), false);
   });
 
   const submit = async (event: Event) => {

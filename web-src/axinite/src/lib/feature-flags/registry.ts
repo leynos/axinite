@@ -1,3 +1,10 @@
+/**
+ * Static registry of the SPA's feature flags: route visibility, action
+ * gates, and optional surfaces. Each entry records its default, owning UI
+ * area, and backend contract. `feature-flags/runtime` resolves these against
+ * gateway values and local overrides.
+ */
+
 export type FeatureFlagName =
   | "route_chat"
   | "route_memory"

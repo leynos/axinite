@@ -1,3 +1,9 @@
+/**
+ * Small string-case helpers. They turn gateway snake_case identifiers, such
+ * as job kinds and extension statuses, into labels and translation-key
+ * segments.
+ */
+
 export function capitalize(value: string): string {
   if (value.length === 0) {
     return value;

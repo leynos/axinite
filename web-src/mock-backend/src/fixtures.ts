@@ -1,3 +1,9 @@
+/**
+ * Seed data for the mock backend: threads, jobs, routines, extensions,
+ * skills, memory documents, logs, and pairing requests. `MockBackendState`
+ * loads these at start-up so the SPA has deterministic content to render.
+ */
+
 import type {
   CatalogueSkillEntry,
   ExtensionInfo,

@@ -1,3 +1,8 @@
+/**
+ * The `/memory` surface: workspace file tree, search, and a document viewer
+ * with an editor, backed by `lib/api/memory` (`/api/memory/*`).
+ */
+
 import {
   createMutation,
   createQuery,
@@ -244,15 +249,15 @@ export const MemoryPreview = () => {
     }
   });
 
-  const document = createQuery(() => ({
+  const memoryDocument = createQuery(() => ({
     queryKey: ["memory", "read", activePath()],
     queryFn: () => readMemory(activePath() ?? ""),
     enabled: typeof activePath() === "string",
   }));
 
   createEffect(() => {
-    if (!editing() && document.data?.content) {
-      setDraft(document.data.content);
+    if (!editing() && memoryDocument.data?.content) {
+      setDraft(memoryDocument.data.content);
     }
   });
 
@@ -315,7 +320,7 @@ export const MemoryPreview = () => {
         <MemoryDocument
           activePath={activePath}
           breadcrumbs={breadcrumbs}
-          content={() => document.data?.content}
+          content={() => memoryDocument.data?.content}
           draft={draft}
           editing={editing}
           onSave={() => saveMutation.mutate()}

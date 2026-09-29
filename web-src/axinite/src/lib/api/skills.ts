@@ -1,3 +1,8 @@
+/**
+ * Skills API wrapper for `/api/skills/*`: list, catalogue search, install,
+ * and remove. Used by the `/skills` surface.
+ */
+
 import { deleteJson, postJson, requestJson } from "@/lib/api/client";
 import type {
   ActionResponse,
@@ -24,5 +29,5 @@ export function installSkill(
 }
 
 export function removeSkill(name: string): Promise<ActionResponse> {
-  return deleteJson<ActionResponse>(`/api/skills/${name}`);
+  return deleteJson<ActionResponse>(`/api/skills/${encodeURIComponent(name)}`);
 }

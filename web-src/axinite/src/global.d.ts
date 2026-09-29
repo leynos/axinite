@@ -7,7 +7,12 @@ interface Window {
 }
 
 declare module "i18next-fluent-backend" {
-  import type { BackendModule, Services } from "i18next";
+  import type {
+    BackendModule,
+    InitOptions,
+    ReadCallback,
+    Services,
+  } from "i18next";
 
   interface FluentBackendOptions {
     loadPath?: string;
@@ -24,10 +29,12 @@ declare module "i18next-fluent-backend" {
   class FluentBackend implements BackendModule<FluentBackendOptions> {
     static type: "backend";
     constructor(services?: Services, options?: FluentBackendOptions);
-    init?(
-      options?: FluentBackendOptions,
-      callback?: (error?: unknown) => void
+    init(
+      services: Services,
+      backendOptions: FluentBackendOptions,
+      i18nextOptions: InitOptions
     ): void;
+    read(language: string, namespace: string, callback: ReadCallback): void;
   }
 
   export default FluentBackend;

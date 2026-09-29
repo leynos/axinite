@@ -1,3 +1,9 @@
+/**
+ * Three-step activation stepper for WASM channel extensions on the
+ * `/extensions` surface. `computeStepperModel` maps an extension's
+ * activation status to per-step states, following the legacy UI's heuristic.
+ */
+
 import type { Component } from "solid-js";
 import { For, Show } from "solid-js";
 

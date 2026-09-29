@@ -1,3 +1,8 @@
+/**
+ * Memory API wrapper for `/api/memory/*`: workspace tree, file read, search,
+ * and write. Used by the `/memory` surface.
+ */
+
 import { postJson, requestJson } from "@/lib/api/client";
 import type {
   MemoryReadResponse,

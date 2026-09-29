@@ -1,4 +1,10 @@
 #!/usr/bin/env bun
+/**
+ * Lint script: compares the Fluent placeables (`{ $var }`) of each message
+ * in every locale with the base locale (`FTL_BASE_LOCALE`, default `en-GB`)
+ * and reports mismatches. A `vars: ignore-mismatch` marker exempts a message.
+ */
+
 import fs from "node:fs";
 import path from "node:path";
 import process from "node:process";

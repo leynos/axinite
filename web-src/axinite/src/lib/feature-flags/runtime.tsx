@@ -1,3 +1,10 @@
+/**
+ * Feature-flag context provider and hook. It resolves each flag from the
+ * registry defaults, the gateway's `/api/features` response, and local
+ * overrides kept in `localStorage`, and exposes route-visibility and debug
+ * helpers to components.
+ */
+
 import { createQuery } from "@tanstack/solid-query";
 import type { Accessor, ParentComponent } from "solid-js";
 import {

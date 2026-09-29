@@ -1,3 +1,10 @@
+/**
+ * Locale catalogue for the SPA: supported locales with display labels and
+ * text direction, and the subset whose Fluent files are complete. The locale
+ * picker, the i18n runtime, and `scripts/check-fluent-coverage.ts` all read
+ * from here.
+ */
+
 export type TextDirection = "ltr" | "rtl";
 
 export type SupportedLocale = {

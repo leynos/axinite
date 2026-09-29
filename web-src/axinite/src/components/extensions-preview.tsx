@@ -1,3 +1,9 @@
+/**
+ * The `/extensions` surface: installed extensions, registry search, install,
+ * activate, remove, and secret setup, backed by `lib/api/extensions`. WASM
+ * channels also get the activation stepper and pairing queue.
+ */
+
 import { AlertDialog } from "@kobalte/core/alert-dialog";
 import {
   createMutation,
