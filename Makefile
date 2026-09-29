@@ -129,7 +129,7 @@ frontend-full: frontend-install
 
 # Daemon-free stub runtime: Bun mock API (HTTP + SSE + /api/features) plus a
 # preview server for the built SPA on http://127.0.0.1:2020.
-frontend-stub:
+frontend-stub: frontend-install
 	cd $(FRONTEND_DIR) && $(BUN) run dev
 
 install:
