@@ -33,7 +33,9 @@ SETUP_ID = "setup-rust"
 REPORT_STEP = "Report sccache statistics"
 
 #: The shared action that owns sccache, pinned to a full commit.
-SETUP_RUST = re.compile(r"^leynos/shared-actions/\.github/actions/setup-rust@[0-9a-f]{40}$")
+SETUP_RUST = re.compile(
+    r"^leynos/shared-actions/\.github/actions/setup-rust@[0-9a-f]{40}$"
+)
 
 #: Labels served by GitHub's own pool. A job that can land on one, through a
 #: schedule arm or a fork fallback, must accept whatever backend the runner
@@ -127,9 +129,7 @@ def expected_expect_cache(labels: typ.Iterable[str]) -> str:
     return "any" if set(labels) & GITHUB_HOSTED_LABELS else "ubicloud"
 
 
-def retired_findings(
-    env: object, steps: typ.Sequence[dict[str, object]]
-) -> list[str]:
+def retired_findings(env: object, steps: typ.Sequence[dict[str, object]]) -> list[str]:
     """Return every retired piece of sccache wiring in a job.
 
     Pure over the parsed data, so the rule runs on fixtures as well as on the
@@ -161,6 +161,12 @@ def retired_findings(
         if isinstance(env, dict) and name in env
     ]
     for index, step in enumerate(steps):
+        step_env = step.get("env")
+        findings.extend(
+            f"step {index} sets {name}"
+            for name in RETIRED_VARIABLES
+            if isinstance(step_env, dict) and name in step_env
+        )
         if step.get("name") in RETIRED_STEPS:
             findings.append(f"step {index} is the retired {step['name']!r}")
         if SERVER_COMMAND.search(str(step.get("run", ""))):
@@ -210,6 +216,12 @@ def test_setup_rust_owns_the_compiler_cache(job: Job) -> None:
     )
     assert inputs.get("cache-provider") == "external", (
         f"{job} owns its Cargo registry cache; setup-rust must not own a second"
+    )
+    # The job installs its own pinned cargo-binstall; setup-rust's default
+    # would duplicate or precede it.
+    assert inputs.get("install-binstall") == "false", (
+        f"{job} must pass install-binstall: 'false', or setup-rust installs a "
+        "second cargo-binstall"
     )
     # sccache cannot cache incremental compilation, and Cargo enables it by
     # default for dev profiles.
@@ -281,8 +293,9 @@ def test_statistics_are_reported_even_when_the_build_fails(job: Job) -> None:
     # `Cache location` reads `ghac` for the proxy and GitHub's own service
     # alike, so the report must name the backend setup-rust chose.
     backend = f"steps.{SETUP_ID}.outputs.cache-backend"
-    assert backend in str(report.get("env", {})), (
-        f"{job} must report {backend}"
+    assert backend in str(report.get("env", {})), f"{job} must report {backend}"
+    assert "printf -- '- backend: %s\\n\\n' \"${SCCACHE_BACKEND:-none}\"" in body, (
+        f"{job} must print the selected backend to the job summary"
     )
 
 
@@ -290,7 +303,7 @@ def _demands_the_proxy(step: dict[str, object]) -> bool:
     """Report whether a step is a `Setup Rust` call demanding Ubicloud's proxy."""
     inputs = step.get("with")
     return (
-        step.get("name") == SETUP_STEP
+        SETUP_RUST.match(str(step.get("uses", ""))) is not None
         and isinstance(inputs, dict)
         and inputs.get("expect-cache") == "ubicloud"
     )
@@ -303,9 +316,7 @@ def test_github_hosted_jobs_demand_no_proxy() -> None:
         for job in ALL_JOBS
         if not job.uses_ubicloud and any(_demands_the_proxy(s) for s in job.steps)
     ]
-    assert not offenders, (
-        f"{offenders} are not on Ubicloud but demand its cache proxy"
-    )
+    assert not offenders, f"{offenders} are not on Ubicloud but demand its cache proxy"
 
 
 @pytest.mark.parametrize(
@@ -313,17 +324,31 @@ def test_github_hosted_jobs_demand_no_proxy() -> None:
     [
         pytest.param({"SCCACHE_GHA_ENABLED": "true"}, [], 1, id="backend-switch"),
         pytest.param(
-            {}, [{"name": "Export the Actions cache endpoint for sccache"}], 1, id="export"
+            {},
+            [{"name": "Export the Actions cache endpoint for sccache"}],
+            1,
+            id="export",
+        ),
+        pytest.param({}, [{"env": {"RUSTC_WRAPPER": "sccache"}}], 1, id="step-wrapper"),
+        pytest.param(
+            {}, [{"env": {"CARGO_INCREMENTAL": "0"}}], 0, id="step-incremental"
         ),
         pytest.param({}, [{"name": "Install sccache"}], 1, id="install"),
         pytest.param({}, [{"run": "sccache --start-server"}], 1, id="server-start"),
         pytest.param(
             {},
-            [{"uses": "actions/github-script@x", "with": {"script": "ACTIONS_CACHE_SERVICE_V2"}}],
+            [
+                {
+                    "uses": "actions/github-script@x",
+                    "with": {"script": "ACTIONS_CACHE_SERVICE_V2"},
+                }
+            ],
             1,
             id="flag-rewrite",
         ),
-        pytest.param({}, [{"name": REPORT_STEP, "run": "sccache --show-stats"}], 0, id="report"),
+        pytest.param(
+            {}, [{"name": REPORT_STEP, "run": "sccache --show-stats"}], 0, id="report"
+        ),
         pytest.param({"CARGO_INCREMENTAL": "0"}, [], 0, id="incremental-off"),
     ],
 )
@@ -340,3 +365,42 @@ def test_the_retired_piece_reader_is_narrow_as_well_as_sufficient(
     assert len(findings) == expected, (
         f"expected {expected} finding(s) for {env!r} and {steps!r}, got {findings!r}"
     )
+
+
+@pytest.mark.parametrize(
+    ("step", "expected"),
+    [
+        pytest.param(
+            {
+                "name": "Renamed",
+                "uses": f"leynos/shared-actions/.github/actions/setup-rust@{'a' * 40}",
+                "with": {"expect-cache": "ubicloud"},
+            },
+            True,
+            id="renamed-call-still-demands-the-proxy",
+        ),
+        pytest.param(
+            {
+                "name": SETUP_STEP,
+                "uses": "actions/checkout@v4",
+                "with": {"expect-cache": "ubicloud"},
+            },
+            False,
+            id="other-action-is-not-setup-rust",
+        ),
+        pytest.param(
+            {
+                "name": SETUP_STEP,
+                "uses": f"leynos/shared-actions/.github/actions/setup-rust@{'a' * 40}",
+                "with": {"expect-cache": "any"},
+            },
+            False,
+            id="any-demands-nothing",
+        ),
+    ],
+)
+def test_the_proxy_demand_is_read_from_the_action_not_the_step_name(
+    step: dict[str, object], expected: bool
+) -> None:
+    """Identify a `setup-rust` call by `uses`, so renaming its step hides nothing."""
+    assert _demands_the_proxy(step) is expected

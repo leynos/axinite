@@ -101,8 +101,8 @@ jobs:
           rustflags: ''
           cache-provider: external
           install-binstall: 'false'
-          # `any`: the schedule or fork arm lands on a GitHub-hosted
-          # runner, where setup-rust keeps sccache on local disk.
+          # `any`: the fork arm lands on a GitHub-hosted runner, where
+          # setup-rust keeps sccache on local disk.
           expect-cache: any
       - name: Restore Cargo registry and index
         uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9  # v6.1.0
