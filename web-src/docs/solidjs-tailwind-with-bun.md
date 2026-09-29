@@ -1,8 +1,10 @@
 # SolidJS + Tailwind with Bun 1.3.0
 
-> **Note:** This repository currently publishes a static prototype. This guide
-> exists for Bun-centric SolidJS experiments and for the eventual SPA
-> implementation path.
+> **Note:** The SolidJS SPA described here is implemented in `web-src/axinite/`
+> and is built with Vite by `make frontend-build` (see `web-src/package.json`).
+> This guide is a general Bun-centric SolidJS + Tailwind walkthrough; the
+> workspace's own scripts and configuration are authoritative where they
+> differ.
 
 This is a pragmatic walkthrough for building and serving a small SolidJS +
 Tailwind app using Bun. The recommended path is to let Bun manage packages and
@@ -177,15 +179,16 @@ If the template does not ship a preview script yet, add one:
 }
 ```
 
-## 7) Recommended next steps for this repo family
+## 7) What the Axinite workspace adds
 
-For the Axinite/Wildside/Corbusier direction, the next additions should be:
+The Axinite workspace (`web-src/`) builds on this baseline with:
 
 - Tailwind CSS v4 plus DaisyUI v5 for the design layer,
 - Kobalte for accessible, unstyled interactive primitives,
 - TanStack Router for Solid for SPA routing,
-- `@solidjs/testing-library` plus jsdom for component tests, and
-- TanStack Query Solid where server-state caching is needed.
+- `@solidjs/testing-library` with Vitest under Happy DOM for component tests,
+  and
+- TanStack Query Solid for server-state caching.
 
 ## Sources
 

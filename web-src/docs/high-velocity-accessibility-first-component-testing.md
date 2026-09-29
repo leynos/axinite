@@ -8,12 +8,23 @@ be embedded into everyday development without creating a slow feedback loop.
 The proposed framework adopts a multi-layered approach: a rapid inner loop for
 component tests and a comprehensive outer loop for end-to-end (E2E) validation.
 
-This architecture reflects recent tooling decisions. The framework leverages
-the speed of the **Bun** runtime for most unit and integration tests, while a
-parallel **Node.js** harness compensates for Bun's accessibility-scan
-limitations. **Playwright** serves as the outer test loop that covers the full
-user experience. Each layer has a distinct role, ensuring that accessibility is
-verified at every stage without compromising developer productivity.
+In the Axinite workspace (`web-src/`) this architecture is implemented with
+three lanes. A **Vitest unit lane** (`web-src/vitest.config.ts`, run by
+`bun run test`) covers `axinite/tests/**/*.test.ts(x)` under Happy DOM. A
+separate **Vitest accessibility lane** (`web-src/vitest.a11y.config.ts`, run by
+`bun run test:a11y`) covers `*.a11y.test.tsx` files, also under Happy DOM, with
+`axinite/tests/setup-vitest-a11y.ts` as its setup file. **Playwright**
+(`web-src/playwright.config.ts`, run by `bun run test:e2e`) serves as the outer
+test loop that covers the full user experience. `make frontend-test` and
+`make frontend-full` from the repository root run these lanes. Each layer has a
+distinct role, ensuring that accessibility is verified at every stage without
+compromising developer productivity.
+
+The sections below retain the original analysis of why accessibility scans were
+separated from the fast unit lane. Where they describe a Bun test runner or a
+separate Node.js/JSDOM/`tsgo` harness, treat that as the design rationale from
+the originating mockup; the configured Axinite lanes are the Vitest and
+Playwright lanes described above.
 
 ### 1.1 Deconstructing the Happy-DOM Deadlock: Bun vs. `axe-core`
 
@@ -61,6 +72,12 @@ speed, but outsource accessibility-specific tests to a Node.js environment that
 supports JSDOM.
 
 ### 1.2 A Hybrid Solution: Node.js + JSDOM for A11y Scans
+
+> Implementation note: the Axinite workspace does not use a separate
+> Node.js/JSDOM/`tsgo` harness. Its accessibility scans (`jest-axe`) run in the
+> dedicated Vitest accessibility lane under Happy DOM, kept apart from the unit
+> lane by the `*.a11y.test.tsx` naming convention and its own config. The
+> paragraphs below describe the originally proposed design.
 
 To resolve the deadlock, the framework introduces a **parallel Node.js test
 harness** dedicated to accessibility checks. Rather than abandoning Bun

@@ -157,8 +157,8 @@ registry default (`web-src/axinite/src/lib/feature-flags/`).
 
 ## 4. Serving from the gateway
 
-`src/channels/web/handlers/static_files.rs` embeds the built artefacts and
-serves, by default (`UiVariant::Solid`):
+`src/channels/web/handlers/ui_assets.rs` embeds the built artefacts and serves,
+by default (`UiVariant::Solid`):
 
 - the app shell at `/` and every client route (`/chat`, `/memory`, `/jobs`,
   `/routines`, `/extensions`, `/skills`, `/logs`),
@@ -177,6 +177,11 @@ resolve off), then the compiled default
 (`src/channels/web/handlers/features.rs`). The response carries an
 `X-Axinite-Version` header; see RFC 0009's implementation notes for the full
 contract and deviations.
+
+The `X-Deployment-Id` value is trimmed and must be 1 to 64 characters of
+`[a-z0-9_]`. On `GET /api/features` an absent or blank header selects
+`"default"` and an invalid one returns 400; on the `PUT` the header is required
+and must be valid (400 otherwise).
 
 ### 4.1 Authentication
 
@@ -203,8 +208,8 @@ headers).
   framing/ordering, and `api-contract-alignment.test.ts`, which pins the
   browser contract to the daemon payload shapes.
 - `web-src` Playwright (`bun run test:e2e` in `web-src/`): boots the full
-  stub stack and exercises navigation, locales, the logs dialog, and the debug
-  flag panel.
+  stub stack and exercises navigation, locales, the logs route (`/logs`), and
+  the debug flag panel.
 - Rust unit tests (`make test`): SPA shell serving on every route, stable
   asset names, locale bundles, legacy-variant fallback, and feature-flag
   resolution.

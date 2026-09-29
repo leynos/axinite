@@ -127,18 +127,18 @@ require `X-Confirm-Action: true`.
 | GET     | `/api/pairing/{channel}`         | List pending pairing requests.                      |
 | POST    | `/api/pairing/{channel}/approve` | Approve a pairing request.                          |
 | GET     | `/api/gateway/status`            | Server uptime, clients, and config.                 |
-| GET     | `/api/features`                  | Deployment feature flags (RFC 0009 subset).         |
+| GET     | `/api/features`                  | Feature flags; optional `X-Deployment-Id` header.   |
 | POST    | `/v1/chat/completions`           | OpenAI-compatible Large Language Model (LLM) proxy. |
 | GET     | `/v1/models`                     | OpenAI-compatible model list.                       |
 
 ### Static And Project Files
 
 The public asset routes depend on the UI variant (`AXINITE_WEB_UI`, default
-`solid`; see `routes_for()` in `handlers/static_files.rs`).
+`solid`; see `routes_for()` in `handlers/ui_assets.rs`).
 
 Solid variant (default). The app shell is served at `/` and at each client-side
-route (`/chat`, `/memory`, `/jobs`, `/routines`, `/extensions`, `/skills`) so
-deep links and reloads work.
+route (`/chat`, `/memory`, `/jobs`, `/routines`, `/extensions`, `/skills`,
+`/logs`) so deep links and reloads work.
 
 | Method | Path                           | Description                        |
 | ------ | ------------------------------ | ---------------------------------- |

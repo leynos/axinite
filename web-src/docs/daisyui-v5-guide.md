@@ -1,6 +1,6 @@
 # daisyUI 5
 
-<!-- markdownlint-disable MD013 MD024 -->
+<!-- markdownlint-disable MD024 -->
 
 daisyUI 5 is a CSS library for Tailwind CSS 4 daisyUI 5 provides class names
 for common UI components
@@ -260,8 +260,12 @@ this:
   --radius-box: 0.5rem; /* border radius of boxes (card, modal, alert) */
   /* preferred values for --radius-* : 0rem, 0.25rem, 0.5rem, 1rem, 2rem */
 
-  --size-selector: 0.25rem; /* base size of selectors (checkbox, toggle, badge). Allowed larger values are 0.28125rem or 0.3125rem. Allowed smaller values are 0.21875rem or 0.1875rem. */
-  --size-field: 0.25rem; /* base size of fields (button, input, select, tab). Allowed larger values are 0.28125rem or 0.3125rem. Allowed smaller values are 0.21875rem or 0.1875rem. */
+  --size-selector: 0.25rem; /* base size of selectors (checkbox, toggle, badge).
+    Allowed larger values are 0.28125rem or 0.3125rem.
+    Allowed smaller values are 0.21875rem or 0.1875rem. */
+  --size-field: 0.25rem; /* base size of fields (button, input, select, tab).
+    Allowed larger values are 0.28125rem or 0.3125rem.
+    Allowed smaller values are 0.21875rem or 0.1875rem. */
 
   --border: 1px; /* border size. Allowed thicker values are 1.5px or 2px. Allowed thinner values are 0.5px. */
 

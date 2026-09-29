@@ -166,17 +166,13 @@ exclude = [
   "src/channels/web/static/solid/assets/index.css",
   "src/channels/web/static/solid/assets/axinite32.ico",
   "web-src/axinite/assets/icons/axinite32.ico",
-  # CSS sources use US-English property and keyword syntax throughout, as the
-  # excluded legacy style.css did.
-  # Vendored mockup reference docs are implementation history (RFC 0018);
-  # their prose retains upstream spelling.
-  "web-src/docs/axinite-v2a-frontend-architecture.md",
+  # Vendored mockup reference docs retain their upstream spelling. The
+  # Axinite-owned architecture document and execution plans under web-src/docs
+  # are maintained here and stay checked.
   "web-src/docs/building-accessible-and-responsive-progressive-web-applications.md",
   "web-src/docs/daisyui-v5-guide.md",
   "web-src/docs/data-model-driven-card-architecture.md",
   "web-src/docs/enforcing-semantic-tailwind-best-practice.md",
-  "web-src/docs/execplans/mock-backend.md",
-  "web-src/docs/execplans/solidjs-translation.md",
   "web-src/docs/high-velocity-accessibility-first-component-testing.md",
   "web-src/docs/pure-accessible-and-localizable-solidjs-components.md",
   "web-src/docs/semantic-tailwind-with-daisyui-best-practice.md",
@@ -184,6 +180,8 @@ exclude = [
   "web-src/docs/tailwind-v3-v4-migration-guide.md",
   "web-src/docs/tailwind-v4-guide.md",
   "web-src/docs/v2a-front-end-stack.md",
+  # CSS sources use US-English property and keyword syntax throughout, as the
+  # excluded legacy style.css did.
   "web-src/axinite/src/styles/index.css",
   "web-src/axinite/src/styles/semantic.css",
   # Translated Fluent bundles are not English prose; en-GB stays checked.

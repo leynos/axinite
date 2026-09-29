@@ -32,9 +32,9 @@ Approval means agreement on all of the following:
 1. `bun run dev` will become a supervisor for three cooperating tasks: the Bun
    mock API, the static-build watcher, and the `http-server` static preview.
 2. The mock backend will mirror the Rust gateway contracts in
-   `../axinite/src/channels/web/types.rs` and the route layout in
-   `../axinite/src/channels/web/handlers/`, but it will remain an in-memory
-   demonstration service rather than a persistent clone of the Rust runtime.
+   `src/channels/web/types.rs` and the route layout in
+   `src/channels/web/handlers/`, but it will remain an in-memory demonstration
+   service rather than a persistent clone of the Rust runtime.
 3. Front-end preview components may be refactored substantially so that their
    data and mutating actions come from the mock API rather than front-end
    fixture constants.
@@ -57,8 +57,8 @@ revise this document, not to start coding.
 - Presented values in the browser must not come from hard-coded front-end
   fixture arrays or route-local constants once the plan is implemented.
 - The mock API must follow the Rust gateway's public browser contracts. The
-  source material is `../axinite/src/channels/web/types.rs` and the handlers in
-  `../axinite/src/channels/web/handlers/`.
+  source material is `src/channels/web/types.rs` and the handlers in
+  `src/channels/web/handlers/`.
 - Feature-flag overrides from the front-end debug panel must remain available.
   Backend-provided defaults may change, but the local override mechanism in the
   browser must still layer on top.
@@ -102,7 +102,7 @@ revise this document, not to start coding.
   unreliable, switch to an alternative preview backend that can serve built
   `dist/` output and the mock API behind one browser origin.
 
-- Risk: the current Solid preview components are still organised as static
+- Risk: the current Solid preview components are still organized as static
   design previews, so API integration may require more state management work
   than the route count suggests. Severity: medium Likelihood: high Mitigation:
   move route data access into dedicated API modules and query hooks first, then
@@ -144,7 +144,7 @@ revise this document, not to start coding.
 - [x] (2026-03-26 12:21Z) Inspected the current `axinite-mockup` frontend data
   flow, scripts, and route components.
 - [x] (2026-03-26 12:21Z) Inspected the upstream Rust gateway routes, handler
-  modules, and DTO definitions in `../axinite`.
+  modules, and DTO definitions in `src/channels/web/`.
 - [x] (2026-03-26 12:21Z) Drafted this ExecPlan in
   `docs/execplans/mock-backend.md`.
 - [x] (2026-03-26 12:36Z) User approved implementation of this ExecPlan.
@@ -182,11 +182,11 @@ revise this document, not to start coding.
   conflicting with an established Bun backend loop.
 
 - Observation: the Rust repository already documents the browser-facing API
-  surface in both prose and code. Evidence:
-  `../axinite/docs/front-end-architecture.md` enumerates the route surfaces and
-  endpoints, while `../axinite/src/channels/web/types.rs` defines the DTOs.
-  Impact: the mock service can be driven from documented contracts instead of
-  inventing an ad hoc TypeScript API.
+  surface in both prose and code. Evidence: `docs/front-end-architecture.md`
+  enumerates the route surfaces and endpoints, while
+  `src/channels/web/types.rs` defines the DTOs. Impact: the mock service can be
+  driven from documented contracts instead of inventing an ad hoc TypeScript
+  API.
 
 - Observation: `http-server` proxying did not preserve the required API path in
   this repository's preview flow. Evidence: a direct probe of
@@ -303,25 +303,25 @@ data flow is still mostly static. The files below matter most:
   Zustand and XState in the fuller v2a application stack when behaviour becomes
   more complex.
 
-The upstream Rust repository in `../axinite` is the contract source for the
-mock backend. The most important files are:
+The Rust gateway in `src/channels/web/` (this repository) is the contract
+source for the mock backend. The most important files are:
 
-- `../axinite/src/channels/web/types.rs` for request and response shapes.
-- `../axinite/src/channels/web/handlers/chat.rs`,
+- `src/channels/web/types.rs` for request and response shapes.
+- `src/channels/web/handlers/chat.rs`,
   `chat_history.rs`, and `chat_threads.rs` for chat endpoints and SSE.
-- `../axinite/src/channels/web/handlers/memory.rs` for memory list, read,
+- `src/channels/web/handlers/memory.rs` for memory list, read,
   write, search, and tree endpoints.
-- `../axinite/src/channels/web/handlers/jobs.rs` and `job_control.rs` for jobs,
+- `src/channels/web/handlers/jobs.rs` and `job_control.rs` for jobs,
   job summaries, detail views, follow-up prompts, restart, cancel, file reads,
   and event history.
-- `../axinite/src/channels/web/handlers/routines.rs` for routine listing,
+- `src/channels/web/handlers/routines.rs` for routine listing,
   summary, detail, trigger, toggle, delete, and run-history contracts.
-- `../axinite/src/channels/web/handlers/extensions/` for installed-extension
+- `src/channels/web/handlers/extensions/` for installed-extension
   listings, tool listings, registry search, install, activate, remove, and
   setup flows.
-- `../axinite/src/channels/web/handlers/skills.rs` for installed-skill
+- `src/channels/web/handlers/skills.rs` for installed-skill
   listings, search, install, and remove flows.
-- `../axinite/docs/front-end-architecture.md` for the intended browser/back-end
+- `docs/front-end-architecture.md` for the intended browser/back-end
   interaction model, including SSE and logs.
 
 The route inventory that must move off front-end fixtures is:
@@ -359,11 +359,11 @@ those strategies is working for normal JSON requests and at least one SSE
 endpoint.
 
 Stage B is the contract and fixture scaffold. Create TypeScript interfaces that
-mirror the Rust DTOs from `../axinite/src/channels/web/types.rs`. Keep them in
-one obvious place, such as `mock-backend/src/contracts.ts` plus matching
-front-end types under `axinite/src/lib/api/contracts.ts`, so the mock gateway
-and the browser share the same schema vocabulary. Build in-memory fixture state
-for each browser surface:
+mirror the Rust DTOs from `src/channels/web/types.rs`. Keep them in one obvious
+place, such as `mock-backend/src/contracts.ts` plus matching front-end types
+under `axinite/src/lib/api/contracts.ts`, so the mock gateway and the browser
+share the same schema vocabulary. Build in-memory fixture state for each
+browser surface:
 
 - several chat threads, turns, tool calls, and queued SSE events;
 - a nested memory tree with readable and writable documents;
@@ -468,8 +468,8 @@ static preview stack driven by `bun run dev`. Validate a representative route in
 
 ## Concrete steps
 
-Run every command from the repository root:
-`/data/leynos/Projects/axinite-mockup`.
+Run every command from the `web-src/` directory of this repository, unless a
+step says otherwise.
 
 1. Prototype the dev supervisor.
 
@@ -580,7 +580,7 @@ traffic, the recovery path is to replace the preview-serving edge with a
 different single-origin backend. The front-end request contract should stay on
 relative `/api/*` paths.
 
-## Artifacts and notes
+## Artefacts and notes
 
 Useful implementation artefacts to preserve during execution:
 
@@ -646,7 +646,8 @@ mutation handlers in the route components.
 
 Created the initial draft of the mock-backend ExecPlan on 2026-03-26 after
 inspecting the current `axinite-mockup` frontend data flow and the upstream
-Rust gateway contracts in `../axinite`. This draft establishes the intended
+Rust gateway contracts (originally the sibling `../axinite` repository, now
+`src/channels/web/` in this repository). This draft establishes the intended
 development loop, the endpoint inventory, the bounded scope, and the required
 approval gate before implementation begins.
 
