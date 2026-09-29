@@ -5,13 +5,14 @@ Last updated: 12 March 2026
 ## Purpose
 
 Every card in the mockup must render from a concrete entity data model that
-already contains its localized strings and SI-based measurements. Locale bundles
-should keep only UI chrome and formatting scaffolding. This document defines the
-schemas, localization rules, and migration steps for the Corbusier front end.
+already contains its localized strings and SI-based measurements. Locale
+bundles should keep only UI chrome and formatting scaffolding. This document
+defines the schemas, localization rules, and migration steps for the Corbusier
+front end.
 
 This architecture applies to all v2a stack front ends. For a backend-compatible
-perspective on hexagonal domain boundaries and ports, see `docs/concept.md`. For
-the cross-application summary of the shared card primitives, see
+perspective on hexagonal domain boundaries and ports, see `docs/concept.md`.
+For the cross-application summary of the shared card primitives, see
 `docs/v2a-front-end-stack.md`.
 
 ## Principles to enforce
@@ -76,9 +77,9 @@ export type ImageAsset = {
 ```
 
 Fallback rule: prefer the current user locale, fall back to `en-GB` then any
-available locale. Components must not construct names from translation keys. The
-same fallback chain resolves localized image alt text when the current locale is
-absent.
+available locale. Components must not construct names from translation keys.
+The same fallback chain resolves localized image alt text when the current
+locale is absent.
 
 ## Entity schemas by card type
 
@@ -307,8 +308,8 @@ erDiagram
   SUGGESTION }o--|| PROJECT : targets
 ```
 
-Figure 2 sketches the class-level model with localization-aware fields and asset
-references that underpin the card architecture.
+Figure 2 sketches the class-level model with localization-aware fields and
+asset references that underpin the card architecture.
 
 ```mermaid
 classDiagram

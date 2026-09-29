@@ -215,8 +215,8 @@ the translation helpers the application should use.
 
 ## 7) Accessibility expectations
 
-Every component intended for reuse should be testable through accessible queries
-and should preserve these guarantees:
+Every component intended for reuse should be testable through accessible
+queries and should preserve these guarantees:
 
 - correct native element choice before ARIA,
 - visible and logical keyboard interaction,

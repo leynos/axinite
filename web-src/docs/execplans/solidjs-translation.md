@@ -1,9 +1,8 @@
 # Migrate `axinite/` to a SolidJS single-page PWA
 
-This ExecPlan (execution plan) is a living document. The sections
-`Constraints`, `Tolerances`, `Risks`, `Progress`, `Surprises & Discoveries`,
-`Decision Log`, and `Outcomes & Retrospective` must be kept up to date as work
-proceeds.
+This ExecPlan (execution plan) is a living document. The sections `Constraints`,
+`Tolerances`, `Risks`, `Progress`, `Surprises & Discoveries`, `Decision Log`,
+and `Outcomes & Retrospective` must be kept up to date as work proceeds.
 
 Status: IN PROGRESS
 
@@ -82,11 +81,11 @@ missing in the backend must stay behind explicit flags. The plan below adds a
 debug-only flag override mode so maintainers can exercise hidden paths without
 lying about production availability.
 
-Validation examples already exist in sibling repositories. `../corbusier-mockup`
-shows the top-level `Makefile` target style for `check-fmt`, `typecheck`,
-`lint`, and `test`. `../wildside-mockup-v2a` shows the broader browser
-application validation surface, including `test:a11y`, `test:e2e`,
-`lint:ftl-vars`, and semantic CSS enforcement.
+Validation examples already exist in sibling repositories.
+`../corbusier-mockup` shows the top-level `Makefile` target style for
+`check-fmt`, `typecheck`, `lint`, and `test`. `../wildside-mockup-v2a` shows
+the broader browser application validation surface, including `test:a11y`,
+`test:e2e`, `lint:ftl-vars`, and semantic CSS enforcement.
 
 ## Constraints
 
@@ -115,8 +114,8 @@ application validation surface, including `test:a11y`, `test:e2e`,
 - Arabic must be a first-class right-to-left locale. Direction must drive the
   document root, layout primitives, icons that imply direction, and tests.
 - The migration must not pretend that unimplemented backend features exist. If
-  the backend does not expose a stable contract yet, that surface stays behind a
-  feature flag and degrades to a clear "not available" state.
+  the backend does not expose a stable contract yet, that surface stays behind
+  a feature flag and degrades to a clear "not available" state.
 - The app must satisfy WCAG 2.2, not merely "look accessible". Keyboard access,
   focus order, focus visibility, target size, status announcements, colour
   contrast, reduced-motion handling, and language/direction metadata all count.
@@ -150,48 +149,36 @@ application validation surface, including `test:a11y`, `test:e2e`,
 ## Risks
 
 - Risk: the backend currently serves embedded static assets rather than a
-  history-API SPA shell.
-  Severity: high
-  Likelihood: high
-  Mitigation: treat backend hosting changes as an explicit integration stream.
-  Keep the mock-up build deployable as a static app first, then add a backend
-  embedding checklist for `../axinite`.
+  history-API SPA shell. Severity: high Likelihood: high Mitigation: treat
+  backend hosting changes as an explicit integration stream. Keep the mock-up
+  build deployable as a static app first, then add a backend embedding
+  checklist for `../axinite`.
 
 - Risk: not every mock-up surface has a corresponding implemented backend
-  endpoint today.
-  Severity: high
-  Likelihood: high
-  Mitigation: design a typed feature-flag registry early and require a flag for
-  every route section or action whose backend contract is absent, unstable, or
-  read-only.
+  endpoint today. Severity: high Likelihood: high Mitigation: design a typed
+  feature-flag registry early and require a flag for every route section or
+  action whose backend contract is absent, unstable, or read-only.
 
 - Risk: daisyUI examples can encourage presentation-first markup that weakens
-  semantics.
-  Severity: medium
-  Likelihood: high
-  Mitigation: put Kobalte in charge of interaction semantics, lint for semantic
-  classes, and add accessibility tests for every primitive-heavy flow.
+  semantics. Severity: medium Likelihood: high Mitigation: put Kobalte in
+  charge of interaction semantics, lint for semantic classes, and add
+  accessibility tests for every primitive-heavy flow.
 
 - Risk: locale expansion to ten languages, including Arabic RTL, can expose
-  layout assumptions deep in the design.
-  Severity: high
-  Likelihood: high
+  layout assumptions deep in the design. Severity: high Likelihood: high
   Mitigation: adopt logical CSS properties and direction-aware semantic classes
   from the first shell milestone, and run RTL snapshots and behavioural tests
   before route migration is considered complete.
 
 - Risk: a PWA service worker can cache authenticated assets too aggressively and
-  create stale or unsafe behaviour around live agent state.
-  Severity: high
-  Likelihood: medium
-  Mitigation: cache only the shell, static assets, locale bundles, and clearly
-  read-only data. Treat API, auth, and SSE as network-first or uncached.
+  create stale or unsafe behaviour around live agent state. Severity: high
+  Likelihood: medium Mitigation: cache only the shell, static assets, locale
+  bundles, and clearly read-only data. Treat API, auth, and SSE as
+  network-first or uncached.
 
 - Risk: SolidJS reactivity and TanStack Query solve different state problems,
-  and a confused boundary will create duplication.
-  Severity: medium
-  Likelihood: medium
-  Mitigation: write the state model down before route work begins. Use
+  and a confused boundary will create duplication. Severity: medium Likelihood:
+  medium Mitigation: write the state model down before route work begins. Use
   TanStack Query for request/response server state, and use Solid signals,
   stores, or resources for local UI state and streaming state.
 
@@ -300,8 +287,8 @@ strings. The `projectfluent.org` guide explicitly frames Fluent as a format for
 complex natural-language concepts, which makes it the right default rather than
 an optional embellishment.
 
-Locale detection should follow a deterministic order. Start with explicit
-user selection in the URL or local storage, then fall back to browser language
+Locale detection should follow a deterministic order. Start with explicit user
+selection in the URL or local storage, then fall back to browser language
 matching, and finally to `en-GB`. The selector must persist the choice and must
 be test-covered for locale switching, fallback, and direction changes.
 
@@ -340,8 +327,8 @@ TEE attestation surfaces, and any catalogue or installation workflow that the
 backend has not stabilized yet. Final flag names must respect the RFC naming
 constraints: lowercase ASCII, digits, and underscores.
 
-Production behaviour must never depend on local debug overrides. Debug mode is a
-maintainer tool, not a release contract.
+Production behaviour must never depend on local debug overrides. Debug mode is
+a maintainer tool, not a release contract.
 
 ## Accessibility and semantic styling
 
@@ -479,9 +466,9 @@ introduced.
 
 ## Validation and enforcement
 
-Validation must mirror the neighbouring repositories rather than invent a looser
- standard. At minimum, the migration should add or extend top-level commands so
-the following can be run from this repository:
+Validation must mirror the neighbouring repositories rather than invent a
+looser standard. At minimum, the migration should add or extend top-level
+commands so the following can be run from this repository:
 
 ```plaintext
 make check-fmt
@@ -565,8 +552,8 @@ following are true:
 - [x] 2026-03-25 19:43 GMT: Authored the first draft of this execution plan in
   `docs/execplans/solidjs-translation.md`.
 - [x] 2026-03-25 20:05 GMT: User approved execution by asking to proceed with
-  implementation of this plan, to use `css-view` and Playwright for
-  validation, and to import the `ff` test and lint pipeline pattern from
+  implementation of this plan, to use `css-view` and Playwright for validation,
+  and to import the `ff` test and lint pipeline pattern from
   `../wildside-mockup-v2a/package.json`.
 - [x] 2026-03-25 20:11 GMT: Re-verified that the repository still contains only
   the original static prototype and no pre-existing Solid or Bun workspace to
@@ -589,8 +576,7 @@ following are true:
 - [x] 2026-03-25 20:47 GMT: Committed the migration as `0cd73d5`
   (`Translate the Axinite mockup into a Solid SPA`).
 - [x] 2026-03-25 20:48 GMT: Pushed `solidjs-translation` to
-  `GitHub: leynos/axinite-mockup`. The push output did not include a web
-  URL.
+  `GitHub: leynos/axinite-mockup`. The push output did not include a web URL.
 - [x] 2026-03-25 21:04 GMT: Verified the user design-regression report against
   the current code. The original static route pages still exist in
   `axinite/*/index.html`, while the SPA currently renders a generic route hero
@@ -608,8 +594,7 @@ following are true:
 - [x] 2026-03-25 21:13 GMT: Committed the first restoration slice as `7bd0954`
   (`Restore the original shell, chat, and memory design`).
 - [x] 2026-03-25 21:13 GMT: Pushed `solidjs-translation` to
-  `GitHub: leynos/axinite-mockup`. The push output did not include a web
-  URL.
+  `GitHub: leynos/axinite-mockup`. The push output did not include a web URL.
 - [x] 2026-03-25 21:28 GMT: Audited the original `jobs/` and `routines/`
   static pages against the current SPA and confirmed both routes were still
   falling back to the generic hero/card preview.
@@ -624,24 +609,22 @@ following are true:
 - [x] 2026-03-25 21:47 GMT: Committed the second restoration slice as
   `38edcc5` (`Restore the original jobs and routines design`).
 - [x] 2026-03-25 21:48 GMT: Pushed `solidjs-translation` to
-  `GitHub: leynos/axinite-mockup`. The push output did not include a web
-  URL.
+  `GitHub: leynos/axinite-mockup`. The push output did not include a web URL.
 - [x] 2026-03-25 21:55 GMT: Audited the original `extensions/` and `skills/`
-  static pages against the current SPA and confirmed both routes still
-  rendered through the generic hero/card fallback.
+  static pages against the current SPA and confirmed both routes still rendered
+  through the generic hero/card fallback.
 - [x] 2026-03-25 22:02 GMT: Ported Extensions and Skills into dedicated Solid
-  catalogue previews with installed-card grids, intake panels, inventory
-  lists, and a bundled-skill detail view that preserve the original route
-  family shape more closely than the generic route template.
+  catalogue previews with installed-card grids, intake panels, inventory lists,
+  and a bundled-skill detail view that preserve the original route family shape
+  more closely than the generic route template.
 - [x] 2026-03-25 22:11 GMT: Revalidated the final restoration slice with
   `make ff`, `make markdownlint`, `make nixie`, Playwright screenshots of
-  Extensions and Skills, and `css-view` captures confirming `direction: rtl`
-  on the Arabic routes plus the restored catalogue grids and intake panels.
+  Extensions and Skills, and `css-view` captures confirming `direction: rtl` on
+  the Arabic routes plus the restored catalogue grids and intake panels.
 - [x] 2026-03-25 22:14 GMT: Committed the final restoration slice as `0e6bebc`
   (`Restore the original extensions and skills design`).
 - [x] 2026-03-25 22:14 GMT: Pushed `solidjs-translation` to
-  `GitHub: leynos/axinite-mockup`. The push output did not include a web
-  URL.
+  `GitHub: leynos/axinite-mockup`. The push output did not include a web URL.
 - [x] 2026-03-25 23:44 GMT: Verified that the deployed SPA still assumed a
   root base path. `vite.config.ts` used Vite's default `/`, the router still
   relied on root-absolute redirects, and prefixed GitHub Pages deploys would
@@ -656,13 +639,12 @@ following are true:
 - [x] 2026-03-25 23:54 GMT: Committed the base-path fix as `058478e`
   (`Configure the GitHub Pages base path explicitly`).
 - [x] 2026-03-25 23:54 GMT: Pushed `solidjs-translation` to
-  `GitHub: leynos/axinite-mockup`. The push output did not include a web
-  URL.
+  `GitHub: leynos/axinite-mockup`. The push output did not include a web URL.
 - [x] 2026-03-26 09:17 GMT: Verified the user's local-build 404 report against
-  the current output. The prefixed Vite `base` was correct for GitHub Pages,
-  but `scripts/postbuild-routes.mjs` still emitted only root-level route
-  folders, so a static `dist/` preview could not satisfy
-  `/axinite-mockup/...` asset and route requests.
+  the current output. The prefixed Vite `base` was correct for GitHub Pages, but
+  `scripts/postbuild-routes.mjs` still emitted only root-level route folders,
+  so a static `dist/` preview could not satisfy `/axinite-mockup/...` asset and
+  route requests.
 - [x] 2026-03-26 09:24 GMT: Updated the postbuild output to mirror the built
   SPA under `dist/axinite-mockup/` and turned the old root route folders into
   compatibility redirects so existing `/chat`-style preview URLs now forward
@@ -736,8 +718,8 @@ following are true:
   plugin import from the stylesheet, which fits a Vite-based Solid workspace
   cleanly.
 - Kobalte's own introduction frames it as an accessible SolidJS UI toolkit with
-  unstyled primitives, which confirms the intended split: Kobalte for behaviour,
-  daisyUI for visual system.
+  unstyled primitives, which confirms the intended split: Kobalte for
+  behaviour, daisyUI for visual system.
 - The current repository scripts are still static-site copies and smoke tests.
   Importing the `ff` pipeline therefore means replacing the build, lint, and
   test wiring rather than layering new targets on top of an existing SPA stack.
@@ -799,19 +781,18 @@ following are true:
 ## Decision Log
 
 - Decision: keep the migration inside `axinite/` rather than creating a sibling
-  frontend root.
-  Rationale: repository guidance says `axinite/` is the source of truth for the
-  site. Keeping the new SPA there preserves that contract.
+  frontend root. Rationale: repository guidance says `axinite/` is the source
+  of truth for the site. Keeping the new SPA there preserves that contract.
 
 - Decision: prefer plain Solid plus Vite over SolidStart.
   Rationale: the backend already owns hosting, auth, and API orchestration. A
   client-rendered SPA is sufficient and keeps the integration surface smaller.
 
 - Decision: use TanStack Router in addition to TanStack Query.
-  Rationale: the user requested TanStack Query, and a single-page migration also
-  needs typed route structure. The Solid adapter for TanStack Router gives the
-  route typing and nested shell model needed for parity with the current page
-  families.
+  Rationale: the user requested TanStack Query, and a single-page migration
+  also needs typed route structure. The Solid adapter for TanStack Router gives
+  the route typing and nested shell model needed for parity with the current
+  page families.
 
 - Decision: keep the explicit `/axinite-mockup/` Vite base for GitHub Pages and
   fix the static preview output rather than reverting to a root base path.
@@ -821,26 +802,25 @@ following are true:
   preview.
 
 - Decision: give Extensions route-specific catalogue modifiers instead of
-  forcing it to share the same layout density as Skills.
-  Rationale: the original static page uses flatter section framing, denser
-  installed cards, and a compact operator-centric hierarchy. Preserving that
-  appearance is easier and safer with route-specific CSS hooks layered on top
-  of the shared catalogue primitives.
+  forcing it to share the same layout density as Skills. Rationale: the
+  original static page uses flatter section framing, denser installed cards,
+  and a compact operator-centric hierarchy. Preserving that appearance is
+  easier and safer with route-specific CSS hooks layered on top of the shared
+  catalogue primitives.
 
 - Decision: keep Skills search results and the selected-skill viewer
   interaction-driven instead of always rendering them in the default route
-  state.
-  Rationale: the original static page hides search results until the operator
-  searches and uses a separate viewer surface for skill details. Matching that
-  behaviour reduces clutter and restores the intended visual hierarchy without
-  dropping the current Solid data fixtures.
+  state. Rationale: the original static page hides search results until the
+  operator searches and uses a separate viewer surface for skill details.
+  Matching that behaviour reduces clutter and restores the intended visual
+  hierarchy without dropping the current Solid data fixtures.
 
 - Decision: expose only locales with full site coverage in the runtime and
-  picker until the missing route strings are translated.
-  Rationale: the defect was mixed-language UI caused by incomplete bundles, not
-  missing fallback machinery. Hiding incomplete locales is the only honest
-  user-facing fix short of translating hundreds of missing strings in one pass,
-  and the new Fluent coverage check now enforces that contract.
+  picker until the missing route strings are translated. Rationale: the defect
+  was mixed-language UI caused by incomplete bundles, not missing fallback
+  machinery. Hiding incomplete locales is the only honest user-facing fix short
+  of translating hundreds of missing strings in one pass, and the new Fluent
+  coverage check now enforces that contract.
 
 - Decision: model feature flags as a first-class provider and test target.
   Rationale: the backend does not yet expose every mock-up feature. Treating
@@ -856,17 +836,16 @@ following are true:
 
 - Decision: implement the first executable delivery as a route-preserving SPA
   foundation rather than attempting live backend parity for every control in
-  one patch.
-  Rationale: the repository starts from static HTML only. The first honest
-  milestone is a typed, localized, validated Solid runtime that preserves the
-  product areas, shell behaviour, direction handling, and feature-flag seams so
-  backend integration can follow without another front-end rewrite.
+  one patch. Rationale: the repository starts from static HTML only. The first
+  honest milestone is a typed, localized, validated Solid runtime that
+  preserves the product areas, shell behaviour, direction handling, and
+  feature-flag seams so backend integration can follow without another
+  front-end rewrite.
 
 - Decision: keep the existing static HTML documents as short-term migration
-  references during this first implementation pass.
-  Rationale: they still contain the product copy, layout cues, and control
-  inventory needed to preserve route intent while the Solid code path becomes
-  the runtime.
+  references during this first implementation pass. Rationale: they still
+  contain the product copy, layout cues, and control inventory needed to
+  preserve route intent while the Solid code path becomes the runtime.
 
 - Decision: block the first client render on `i18nReady`.
   Rationale: several shell primitives mounted before the locale bundles were
@@ -887,36 +866,34 @@ following are true:
   the clearest test of whether the SPA can preserve the source design language.
 
 - Decision: keep the remaining four route families on the generic fallback for
-  this first restoration slice.
-  Rationale: the shared chrome plus Chat/Memory restoration is already enough
-  to prove the translation approach, and it keeps the first recovery commit
-  small enough to validate and review cleanly.
+  this first restoration slice. Rationale: the shared chrome plus Chat/Memory
+  restoration is already enough to prove the translation approach, and it keeps
+  the first recovery commit small enough to validate and review cleanly.
 
 - Decision: use one shared dashboard/table semantic CSS layer for Jobs and
-  Routines, but keep route-specific Solid components.
-  Rationale: the two routes share summary-card and dense-table framing, but
-  their column meaning, status labelling, and detail emphasis are different
-  enough that another generic abstraction would repeat the first regression.
+  Routines, but keep route-specific Solid components. Rationale: the two routes
+  share summary-card and dense-table framing, but their column meaning, status
+  labelling, and detail emphasis are different enough that another generic
+  abstraction would repeat the first regression.
 
 - Decision: use one shared catalogue/intake semantic CSS layer for Extensions
-  and Skills, but keep route-specific Solid components.
-  Rationale: both routes combine installed inventory with install/search
-  surfaces, yet Extensions centers on external capability registration while
-  Skills centers on catalogue discovery and bundle inspection.
+  and Skills, but keep route-specific Solid components. Rationale: both routes
+  combine installed inventory with install/search surfaces, yet Extensions
+  centers on external capability registration while Skills centers on catalogue
+  discovery and bundle inspection.
 
 - Decision: hardcode `/axinite-mockup/` as the Vite and runtime base path for
   this repository's deploy target, and derive router/shell/PWA URLs from that
-  same source.
-  Rationale: the repo is intended for GitHub Pages sharing as a project page,
-  so treating the non-root prefix as optional leaves navigation and assets one
-  config drift away from breaking.
+  same source. Rationale: the repo is intended for GitHub Pages sharing as a
+  project page, so treating the non-root prefix as optional leaves navigation
+  and assets one config drift away from breaking.
 
 - Decision: keep real SPA entry points at both `dist/<route>/index.html` and
   `dist/axinite-mockup/<route>/index.html` rather than generating redirect
-  stubs at the root route paths.
-  Rationale: GitHub Pages project URLs can serve `/axinite-mockup/chat` from
-  the top-level `chat/index.html`, so redirect stubs self-loop on reload while
-  duplicated SPA entry points preserve direct navigation under both layouts.
+  stubs at the root route paths. Rationale: GitHub Pages project URLs can serve
+  `/axinite-mockup/chat` from the top-level `chat/index.html`, so redirect
+  stubs self-loop on reload while duplicated SPA entry points preserve direct
+  navigation under both layouts.
 
 ## Outcomes & Retrospective
 

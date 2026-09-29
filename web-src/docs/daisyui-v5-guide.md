@@ -2,8 +2,8 @@
 
 <!-- markdownlint-disable MD013 MD024 -->
 
-daisyUI 5 is a CSS library for Tailwind CSS 4 daisyUI 5 provides class names for
-common UI components
+daisyUI 5 is a CSS library for Tailwind CSS 4 daisyUI 5 provides class names
+for common UI components
 
 - [daisyUI 5 docs](https://daisyui.com)
 - [Guide: How to use this file in LLMs and code editors](https://daisyui.com/docs/editor/)
@@ -26,30 +26,28 @@ common UI components
 4. daisyUI is suggested to be installed as a dependency, but to use it from CDN,
    include Tailwind CSS and daisyUI CDN files:
 
-```html
-<link
-  href="https://cdn.jsdelivr.net/npm/daisyui@5"
-  rel="stylesheet"
-  type="text/css"
-/>
-<script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4"></script>
-```
+   ```html
+   <link
+     href="https://cdn.jsdelivr.net/npm/daisyui@5"
+     rel="stylesheet"
+     type="text/css"
+   />
+   <script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4"></script>
+   ```
 
-<!-- markdownlint-disable-next-line MD029 -->
-
-1. A CSS file with Tailwind CSS and daisyUI looks like this (if it's a node
+5. A CSS file with Tailwind CSS and daisyUI looks like this (if it's a node
    dependency)
 
-```css
-@import "tailwindcss";
-@plugin "daisyui";
-```
+   ```css
+   @import "tailwindcss";
+   @plugin "daisyui";
+   ```
 
 ## daisyUI 5 usage rules
 
 1. Styles are applied to an HTML element by adding daisyUI class names to it.
-   This includes a component class name, part class names (if available for that
-   component), and modifier class names (if available for that component).
+   This includes a component class name, part class names (if available for
+   that component), and modifier class names (if available for that component).
 2. Tailwind CSS utility classes may be used to customize components when the
    existing daisyUI classes do not cover the required styling. For example,
    `btn px-10` sets custom horizontal padding on a `btn`.
@@ -179,7 +177,8 @@ disabled
 
 - `primary`: Primary brand colour, The main colour of the brand
 - `primary-content`: Foreground content colour to use on primary colour
-- `secondary`: Secondary brand colour, The optional, secondary colour of the brand
+- `secondary`: Secondary brand colour, The optional, secondary colour of the
+  brand
 - `secondary-content`: Foreground content colour to use on secondary colour
 - `accent`: Accent brand colour, The optional, accent colour of the brand
 - `accent-content`: Foreground content colour to use on accent colour
@@ -207,15 +206,15 @@ disabled
 3. daisyUI colour names include variables as values so they can change based on
    the theme
 4. There's no need to use `dark:` for daisyUI colour names
-5. Ideally only daisyUI colour names should be used for colours so the colours can
-   change automatically based on the theme
+5. Ideally only daisyUI colour names should be used for colours so the colours
+   can change automatically based on the theme
 6. If a Tailwind CSS colour name (like `red-500`) is used, it will be same red
    colour on all themes
-7. If a daisyUI colour name (like `primary`) is used, it will change colour based
-   on the theme
+7. If a daisyUI colour name (like `primary`) is used, it will change colour
+   based on the theme
 8. Using Tailwind CSS colour names for text colours should be avoided because
-   Tailwind CSS colour `text-gray-800` on `bg-base-100` would be unreadable on a
-   dark theme - because on dark theme, `bg-base-100` is a dark colour
+   Tailwind CSS colour `text-gray-800` on `bg-base-100` would be unreadable on
+   a dark theme - because on dark theme, `bg-base-100` is a dark colour
 9. `*-content` colours should have a good contrast compared to their associated
    colours
 10. suggestion - when designing a page, use `base-*` colours for the majority
@@ -285,8 +284,8 @@ creation.
 
 ### accordion
 
-Accordion is used for showing and hiding content but only one item can stay open
-at a time
+Accordion is used for showing and hiding content but only one item can stay
+open at a time
 
 [accordion docs](https://daisyui.com/components/accordion/)
 
@@ -804,8 +803,8 @@ To open/close the drawer, use a label that points to the `drawer-toggle` input:
 <label for="my-drawer" class="btn drawer-button">Open/close drawer</label>
 ```
 
-Example: This sidebar is always visible on large screen, can be toggled on small
-screen:
+Example: This sidebar is always visible on large screen, can be toggled on
+small screen:
 
 ```html
 <div class="drawer lg:drawer-open">
@@ -966,10 +965,10 @@ Using CSS focus
 
 ### fab
 
-FAB (Floating Action Button) stays in the bottom corner of screen. It includes a
-focusable and accessible native `<button>` element. Clicking or focusing it
-shows additional buttons (known as Speed Dial buttons) in a vertical arrangement
-or a flower shape (quarter circle)
+FAB (Floating Action Button) stays in the bottom corner of screen. It includes
+a focusable and accessible native `<button>` element. Clicking or focusing it
+shows additional buttons (known as Speed Dial buttons) in a vertical
+arrangement or a flower shape (quarter circle)
 
 [fab docs](https://daisyui.com/components/fab/)
 
@@ -1002,8 +1001,8 @@ A FAB that opens 3 other buttons in the corner of page vertically
 </div>
 ```
 
-A FAB that opens 3 other buttons in the corner of page vertically and they
-have label text
+A FAB that opens 3 other buttons in the corner of page vertically and they have
+label text
 
 ```html
 <div class="fab">
@@ -1022,8 +1021,8 @@ have label text
 </div>
 ```
 
-FAB with rectangle buttons. These are not circular buttons so they can have more
-content.
+FAB with rectangle buttons. These are not circular buttons so they can have
+more content.
 
 ```html
 <div class="fab">
@@ -1105,8 +1104,8 @@ instead of vertical
 </div>
 ```
 
-FAB Flower with tooltips. There's no space for a text label in a quarter circle,
-so tooltips are used to indicate the button's function
+FAB Flower with tooltips. There's no space for a text label in a quarter
+circle, so tooltips are used to indicate the button's function
 
 ```html
 <div class="fab fab-flower">
@@ -1434,8 +1433,8 @@ Kbd is used to display keyboard shortcuts
 
 ### label
 
-Label is used to provide a name or title for an input field. Label can be placed
-before or after the field
+Label is used to provide a name or title for an input field. Label can be
+placed before or after the field
 
 [label docs](https://daisyui.com/components/label/)
 
@@ -2045,8 +2044,8 @@ Stat is used to show numbers and data in a block
 
 ### status
 
-Status is a really small icon to visually show the current status of an element,
-like online, offline, error, etc
+Status is a really small icon to visually show the current status of an
+element, like online, offline, error, etc
 
 [status docs](https://daisyui.com/components/status/)
 
@@ -2248,8 +2247,9 @@ Textarea allows users to enter text in multiple lines
 
 ### theme-controller
 
-If a checked checkbox input or a checked radio input with theme-controller class
-exists in the page, The page will have the same theme as that input's value
+If a checked checkbox input or a checked radio input with theme-controller
+class exists in the page, The page will have the same theme as that input's
+value
 
 [theme-controller docs](https://daisyui.com/components/theme-controller/)
 
@@ -2348,8 +2348,8 @@ Toggle is a checkbox that is styled to look like a switch button
 
 ### validator
 
-Validator class changes the colour of form elements to error or success based on
-input's validation rules
+Validator class changes the colour of form elements to error or success based
+on input's validation rules
 
 [validator docs](https://daisyui.com/components/validator/)
 

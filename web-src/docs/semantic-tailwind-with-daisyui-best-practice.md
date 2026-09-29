@@ -4,7 +4,7 @@ This is a pragmatic layering recipe for building accessible, themeable UIs with
 **semantic HTML**, **semantic class names**, **Tailwind v4 utilities**,
 **daisyUI v5 components**, and **Kobalte** primitives.
 
----
+______________________________________________________________________
 
 ## 0) Setup (Tailwind v4 + daisyUI v5)
 
@@ -42,7 +42,7 @@ When components are stored in unusual places, explicit sources should be added:
 > These are theme-aware, so they should be preferred to raw colours for
 > brand‑consistent styling.
 
----
+______________________________________________________________________
 
 ## 1) Mental model: five layers
 
@@ -52,8 +52,8 @@ When components are stored in unusual places, explicit sources should be added:
 2. **Headless behaviour**: Kobalte primitives provide accessibility and state
    via attributes like `data-state`, `data-disabled`, and `aria-expanded`.
 3. **Component classes**: daisyUI gives structural styles (`btn`, `card`,
-   `input`, `menu`, `alert`, …) and colour roles (`btn-primary`, `bg-base-100`,
-   …).
+   `input`, `menu`, `alert`, …) and colour roles (`btn-primary`,
+   `bg-base-100`, …).
 4. **Utilities**: Tailwind v4 utilities for spacing, layout, visibility, state
    variants, container queries, etc.
 5. **Semantic wrappers**: project-specific _meaningful_ classes (e.g., `.cta`,
@@ -64,7 +64,7 @@ When components are stored in unusual places, explicit sources should be added:
 The cascade should flow so that **inline utilities win** over broad component
 styles. That keeps local adjustments easy.
 
----
+______________________________________________________________________
 
 ## 2) Semantic HTML (with minimal classes)
 
@@ -88,10 +88,9 @@ styles. That keeps local adjustments easy.
 
 Native elements should be used first. Where a button is needed, `<button>`
 should be used; for navigation, `<nav>` should be used. This improves keyboard
-behaviour, form semantics, and SR (screen reader) output without extra
-ceremony.
+behaviour, form semantics, and SR (screen reader) output without extra ceremony.
 
----
+______________________________________________________________________
 
 ## 3) Semantic class names: where they help
 
@@ -127,7 +126,7 @@ These belong in markup where repetition would otherwise become excessive:
 > business or user, keep it. If it describes _how it looks_ (e.g., `.blue-btn`,
 > `.mt-4`), prefer utilities.
 
----
+______________________________________________________________________
 
 ## 4) Using daisyUI component classes with utilities
 
@@ -162,7 +161,7 @@ variants in selectors. For example, with `data-*` states emitted by Kobalte:
 </button>
 ```
 
----
+______________________________________________________________________
 
 ## 5) Kobalte + Tailwind: style via `data-*` & ARIA
 
@@ -225,7 +224,7 @@ Example for a menu item:
 > flip by state, compute the class in the component
 > (`classList={{ "btn-primary": isOn() }}`).
 
----
+______________________________________________________________________
 
 ## 6) `@apply` vs `@utility` (v4 reality)
 
@@ -254,8 +253,8 @@ Examples:
 ```
 
 **Avoid** `@apply` with plugin component classes like `btn`/`card` — they are
-not Tailwind utilities. Compose them in markup, or rebuild a semantic equivalent
-using tokens as shown in `.cta` above.
+not Tailwind utilities. Compose them in markup, or rebuild a semantic
+equivalent using tokens as shown in `.cta` above.
 
 ### 6.1 Encode state with selectors, not variant `@apply`
 
@@ -312,7 +311,7 @@ Markup stays semantic:
 > utilities. Otherwise those utilities will win the cascade and the state styles
 > will never show up.
 
----
+______________________________________________________________________
 
 ## 7) Cascading styles without fights
 
@@ -329,7 +328,7 @@ Markup stays semantic:
 /* Usage: class="scheme-midnight:bg-black scheme-midnight:text-white" */
 ```
 
----
+______________________________________________________________________
 
 ## 8) Putting it together: a small card with Kobalte toggle
 
@@ -360,7 +359,7 @@ export function PlanCard() {
 }
 ```
 
----
+______________________________________________________________________
 
 ## 9) Checklist (fast sanity)
 
@@ -375,7 +374,7 @@ export function PlanCard() {
       `data-[pressed]`.
 - [ ] Keep specificity low; let utilities win locally.
 
----
+______________________________________________________________________
 
 ## 10) Troubleshooting notes
 
@@ -387,7 +386,7 @@ export function PlanCard() {
 - If a class isn’t generated, ensure the literal string exists in project source
   files or is safelisted via `@source inline("class-name")`.
 
----
+______________________________________________________________________
 
 ### TL;DR defaults
 
@@ -397,7 +396,7 @@ export function PlanCard() {
   language.
 - Let Kobalte drive state through `data-*` and style it with utilities.
 
----
+______________________________________________________________________
 
 ## 11) Style tokens: define once, reuse everywhere
 
@@ -562,8 +561,8 @@ consistent theming and good contrast.
 ```
 
 - **Section theming:** scope a subtree with
-  `<section data-theme="retro">…</section>`; token mapping above will cascade to
-  just that block.
+  `<section data-theme="retro">…</section>`; token mapping above will cascade
+  to just that block.
 
 ### 11.8 Radius/size tokens that match daisyUI
 
