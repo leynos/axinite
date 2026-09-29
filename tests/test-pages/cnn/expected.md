@@ -51,4 +51,4 @@ The report concluded that the American safety net was ineffective because it
 provides only half the financial help people need. Additionally, the levels of
 assistance in the U.S. are generally lower than in other countries.
 
- CNNMoney (New York)  First published February 1, 2016: 1:28 AM ET
+ CNNMoney (New York) First published February 1, 2016: 1:28 AM ET

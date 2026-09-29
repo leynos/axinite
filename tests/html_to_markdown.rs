@@ -48,6 +48,19 @@ fn normalize_ignores_soft_wrapping_without_merging_markdown_blocks() {
     assert_eq!(normalize(wrapped), normalize(unwrapped));
 }
 
+#[test]
+fn normalize_joins_wrapped_bold_italic_text_that_opens_with_asterisks() {
+    let wrapped = "***A wrapped\ncaption***";
+    let unwrapped = "***A wrapped caption***";
+
+    assert_eq!(normalize(wrapped), normalize(unwrapped));
+}
+
+#[test]
+fn normalize_keeps_an_asterisk_rule_as_its_own_block() {
+    assert_eq!(normalize("above\n***\nbelow"), "above\n***\nbelow");
+}
+
 #[rstest]
 #[case(
     "before\n\n```rust\nlet one = 1;\nlet two = 2;\n```\n\nafter",

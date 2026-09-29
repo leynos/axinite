@@ -170,7 +170,18 @@ fn push_paragraph(lines: &mut Vec<String>, paragraph: &mut String) {
 fn is_markdown_block_line(line: &str) -> bool {
     matches!(line.chars().next(), Some('#' | '>' | '|'))
         || is_markdown_list_item(line)
-        || ["---", "***"].iter().any(|prefix| line.starts_with(prefix))
+        || line.starts_with("---")
+        || is_asterisk_rule(line)
+}
+
+/// Report whether a line is a thematic break drawn with asterisks.
+///
+/// A line that merely opens with `***` is bold-italic text (html-to-markdown-rs
+/// 3.x emits figure captions that way), so only a line made of asterisks
+/// and spaces is a rule.
+fn is_asterisk_rule(line: &str) -> bool {
+    let asterisks = line.chars().filter(|character| *character == '*').count();
+    asterisks >= 3 && line.chars().all(|character| matches!(character, '*' | ' '))
 }
 
 fn is_markdown_list_item(line: &str) -> bool {

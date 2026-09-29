@@ -29,7 +29,7 @@ generation seemed to avoid, as well as many the public spends too much time
 discussing. One of my habits as a photographer was scouring sites like Flickr
 to see how others could frame the world in ways I hadn’t previously considered.
 
-topleftpixel.com
+*topleftpixel.com*
 
 I started discovering beautiful things the
 [web could do with images](http://wvs.topleftpixel.com/13/02/06/timelapse-strips-homewood.htm):
@@ -99,7 +99,7 @@ a few repeating issues.
  computers, for print.
 - Not enough discussion between the business side and web efforts
 
-From our 2011 research
+*From our 2011 research*
 
 ### Common problems in student newsrooms (2013)
 
@@ -155,8 +155,8 @@ In our 2013 research we found that almost 50% of student newsrooms had created
 roles specifically for the web. **This sounds great, but is still problematic
 in its current state.**
 
-**We designed many of these slides to help explain to ourselves what we were
-doing**
+***We designed many of these slides to help explain to ourselves what we were
+doing***
 
 When a newsroom decides to create a position for the web, it’s often with the
 intent of having content flow steadily from writers onto the web. This is a big
@@ -197,8 +197,8 @@ of the web if it’s treated as a place for print words to hang out on a web pag
 We’re OK with this problem, if we see newsrooms continue to take small steps
 towards having all their editors involved in the stories for the web.
 
-The current Open Journalism site was a few years in the making. This was an
-original launch page we use in 2012
+*The current Open Journalism site was a few years in the making. This was an
+original launch page we use in 2012*
 
 ### What we know
 
@@ -279,7 +279,7 @@ developing stories for the web. You play a big part in this. This means writing
 about it, and sharing code. We need to start building a bridge between student
 journalism and professional newsrooms.
 
-2012
+*2012*
 
 ### This is a start
 
@@ -307,6 +307,6 @@ you want to help or have thoughts, let’s talk.**
 
 [**pippin@pippinlee.com**](mailto:pippinblee@gmail.com)
 
-*This isn't supposed to be a* ***manifesto™©*** *we just think it's pretty cool
-to share what we've learned so far, and hope you'll do the same. We're all in
-this together.*
+*This isn't supposed to be a* ***manifesto™©***  *we just think it's pretty
+cool to share what we've learned so far, and hope you'll do the same. We're all
+in this together.*

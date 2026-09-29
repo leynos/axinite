@@ -28,8 +28,12 @@ pub fn convert_html_to_markdown(html: &str, url: &str) -> Result<String, ToolErr
 
     let clean_html = remove_embedded_media(&article.content);
 
+    // A conversion that yields no text content is an empty document, the same
+    // result the 2.x string-returning API gave.
     let markdown = convert(&clean_html, None)
-        .map_err(|e| ToolError::ExecutionFailed(format!("HTML to markdown: {}", e)))?;
+        .map_err(|e| ToolError::ExecutionFailed(format!("HTML to markdown: {}", e)))?
+        .content
+        .unwrap_or_default();
 
     // Parse the original document once and share it between the two restore
     // passes below, rather than re-parsing the same raw html twice.
