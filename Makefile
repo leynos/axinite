@@ -20,6 +20,12 @@ else
 CARGO_AUDIT_COMMAND := $(value CARGO_AUDIT)
 endif
 WHITAKER ?= whitaker
+# The development build standard (concordat rule `rust-build-defaults`): on
+# Linux, the mold linker. An assigned RUSTFLAGS replaces the `rustflags` tables
+# in .cargo/config.toml, so each recipe that sets it composes the standard's
+# flags onto any inherited value (CI's setup-rust exports one). The parallel
+# frontend joins them when the repository pins a nightly toolchain (#396).
+STANDARD_RUSTFLAGS := $(if $(filter Linux,$(shell uname -s)),-Clink-arg=-fuse-ld=mold)
 NIXIE ?= nixie
 UV ?= uv
 UV_ENV = UV_CACHE_DIR=.uv-cache UV_TOOL_DIR=.uv-tools
@@ -133,8 +139,8 @@ lint-clippy:
 	$(CARGO_COMMAND) clippy --manifest-path $(GITHUB_TOOL_MANIFEST) --tests -- -D warnings
 
 lint-whitaker:
-	RUSTFLAGS="-D warnings" $(WHITAKER) --all -- --all-targets --all-features
-	RUSTFLAGS="-D warnings" $(WHITAKER) --all --manifest-path $(GITHUB_TOOL_MANIFEST) -- --tests
+	RUSTFLAGS="$${RUSTFLAGS:+$$RUSTFLAGS }-D warnings $(STANDARD_RUSTFLAGS)" $(WHITAKER) --all -- --all-targets --all-features
+	RUSTFLAGS="$${RUSTFLAGS:+$$RUSTFLAGS }-D warnings $(STANDARD_RUSTFLAGS)" $(WHITAKER) --all --manifest-path $(GITHUB_TOOL_MANIFEST) -- --tests
 
 markdownlint: spelling
 	MARKDOWNLINT_BASE="$(MARKDOWNLINT_BASE)" ./scripts/lint-changed-markdown.sh "$(BUNX)"
