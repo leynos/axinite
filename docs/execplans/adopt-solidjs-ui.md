@@ -219,16 +219,15 @@ What browser validation earned beyond the test suites: three real defects (nav
 ignoring route flags, silent list-failure state, SSE error-event JSON crash)
 that no existing suite covered — each now has a regression test.
 
-Remaining follow-up work:
+Follow-up work: the Python e2e migration (RFC 0018 Stage 4), the RFC 0009
+deployment-scoped flag layer, and the UI parity gaps (logs route,
+restart/TEE/pairing surfaces, chat media, jobs detail) were delivered by
+`docs/execplans/adopt-solidjs-ui-followups.md`. Still outstanding:
 
-- Rewrite the Python e2e scenarios (`tests/e2e/`) against the SolidJS DOM
-  route-by-route (RFC 0018 Stage 4) and then retire the legacy shell and its
-  assets (Stage 5), including `tests/web_static_app.test.mjs`.
-- Implement the RFC 0009 settings-table/deployment-scoped flag layer beneath
-  the env-var resolution in `handlers/features.rs`.
-- Close the remaining UI parity gaps catalogued in
-  `docs/solidjs-pwa-gap-analysis.md` (logs as a route, restart/TEE/pairing
-  surfaces, chat media, jobs detail fidelity).
+- RFC 0018 Stage 5: retire the legacy shell, its assets, and
+  `tests/web_static_app.test.mjs` once the rollback window closes.
+- Roadmap task 4.5.7: the `feature_flags_changed` SSE event (RFC 0009 open
+  question).
 
 Lessons: the mockup's own e2e spec was stale against its components (chat and
 memory headings), so imported suites need verification before trust; the
@@ -245,8 +244,8 @@ Key current-state facts (verified by code inspection):
 - Legacy assets:
   `src/channels/web/static/{index.html,style.css,app.js,favicon.ico}` embedded
   via `include_str!`/`include_bytes!` in
-  `src/channels/web/handlers/static_files.rs` (`public_routes()` maps `/`,
-  `/style.css`, `/app.js`, `/favicon.ico`).
+  `src/channels/web/handlers/ui_assets.rs` (`routes_for()` maps `/`,
+  `/style.css`, `/app.js`, `/favicon.ico` for the legacy variant).
 - Auth: bearer token, constant-time compare (`src/channels/web/auth.rs`);
   `?token=` query fallback only for GET `/api/chat/events`, `/api/logs/events`,
   `/api/chat/ws`.

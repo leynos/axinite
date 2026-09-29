@@ -1,73 +1,75 @@
 # v2a front-end stack
 
-This document describes the df12 Productions v2a front-end stack for the
-Wildside and Corbusier mockups in two layers:
+This document describes the v2a front-end stack as implemented by the Axinite
+SolidJS single-page application (SPA) in `web-src/axinite/`, in two layers:
 
-- the target stack for the mockup as it moves from static prototype markup to an
-  application runtime, and
+- the stack the Axinite SPA declares and ships today (see
+  `web-src/package.json`), and
 - the fuller v2a application stack described elsewhere in this repository’s
   design and architecture documents.
 
-That distinction matters because the prototype already exercises much of the
-UI, styling, routing, localization, and map stack, while the broader product
+That distinction matters because the Axinite SPA already exercises the UI,
+styling, routing, localization, and testing stack, while the broader v2a
 architecture adds local-first data and orchestration tooling that can sit on
 top of the UI layer without changing the rendering model.
 
-The current repository still ships a static prototype under `axinite/`. Treat
-the file paths and module names below as the intended SPA layout for the
-SolidJS + Kobalte implementation, not as a claim that the static prototype has
-already been migrated.
+The SPA is built by `make frontend-build` into `src/channels/web/static/solid/`
+and is embedded in and served by the Axinite binary; see
+`docs/axinite-v2a-frontend-architecture.md`. Some sections below were written
+for the shared v2a stack and mention capabilities (such as maps) that Axinite
+does not use; those are flagged where they appear.
 
 ## Overview
 
-Both Wildside and Corbusier are client-side single-page applications built on
-the same v2a front-end stack: Bun, Vite, SolidJS, TanStack Router for Solid,
-Tailwind CSS v4, and DaisyUI v5. They share Kobalte primitives for interactive
-components, i18next with Fluent translation bundles for localization, and a
-common data-model-driven card architecture for presenting domain entities.
+The Axinite SPA is a client-side single-page application built on the v2a
+front-end stack: Bun, Vite, SolidJS, TanStack Router for Solid, Tailwind CSS
+v4, and DaisyUI v5. It uses Kobalte primitives for interactive components,
+i18next with Fluent translation bundles for localization, TanStack Query for
+server state, and a data-model-driven card architecture for presenting domain
+entities.
 
-The map canvas, tile rendering, and location-aware UI are specific to the
-Wildside product domain. They are part of the Wildside mockup because it models
-a map-based exploration application, not because every front-end in this repo
-family would need them.
+The map canvas, tile rendering, and location-aware UI belong to the shared v2a
+stack's map-based applications. Axinite does not declare MapLibre GL JS in
+`web-src/package.json` and has no map screens.
 
 ## Stack layers at a glance
 
-### Target mockup stack
+### Axinite SPA stack
 
-The current documented mockup direction uses:
+The Axinite SPA declares:
 
 - Bun,
-- Vite 5,
+- Vite,
 - SolidJS,
 - TanStack Router,
+- TanStack Query,
 - Tailwind CSS v4,
 - DaisyUI v5,
 - Kobalte,
-- i18next plus Fluent,
-- MapLibre GL JS, and
-- the current test, lint, and type-check toolchain described below.
+- i18next plus Fluent, and
+- the test, lint, and type-check toolchain described below.
 
 ### Full v2a application stack
 
 The fuller v2a stack described across the repo’s architecture documents adds:
 
 - **Zustand** for interactive client and UI state,
-- **TanStack Query** for server-state fetching, caching, and synchronization,
+- **TanStack Query** (already used by the Axinite SPA) for server-state
+  fetching, caching, and synchronization,
 - **Dexie** for durable browser-side storage of offline bundles, map tiles, and
   related heavier local data, and
 - **XState** for modelling more complex interaction and workflow orchestration
   where a reducer or plain context store becomes too implicit.
 
-In other words, the mockup shows the presentation and navigation layer already
-working, while the full product stack includes a richer local-first state and
-data architecture.
+In other words, the Axinite SPA has the presentation and navigation layer
+working, while the full v2a stack includes a richer local-first state and data
+architecture.
 
 ## Runtime and build toolchain
 
 - **Package manager and runner:** Bun drives local scripts, tests, and token
   generation via `package.json` and `bunfig.toml`.
-- **Bundler and dev server:** Vite 5 is the application bundler and development
+- **Bundler and dev server:** Vite 7 is the application bundler and development
   server.
 - **Solid integration:** `vite-plugin-solid` handles JSX compilation and Solid
   development ergonomics under Vite.
@@ -372,7 +374,7 @@ For the shortest accurate summary of the checked-in mockup, the current
 front-end stack is:
 
 - Bun for package management, scripts, and the primary test runner,
-- Vite 5 for bundling and development,
+- Vite 7 for bundling and development,
 - SolidJS for the SPA runtime,
 - TanStack Router for Solid for routing,
 - Tailwind CSS v4 plus DaisyUI v5 for styling,

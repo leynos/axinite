@@ -1,12 +1,17 @@
-# Corbusier Front‑End Semantic Linting — Implementation Guide (BiomeJS + GritQL first)
+# Axinite Front‑End Semantic Linting — Implementation Guide
 
-**Audience:** Implementers working on `corbusier-mockup` (and later
-`corbusier`).  
+**Audience:** Implementers working on the `web-src/axinite` SolidJS workspace.  
 **Goal:** Enforce semantic, accessible HTML with clean, token‑driven
-Tailwind/DaisyUI usage. Prefer **BiomeJS + GritQL** rules; fall back to
-**Semgrep**/**Stylelint** when they express rules better.  
+Tailwind/DaisyUI usage. The implemented gate combines **Biome**, **Stylelint**
+(`web-src/tools/stylelint.config.cjs`), **Semgrep**
+(`web-src/tools/semgrep-semantic.yml`), and two TypeScript checkers
+(`web-src/scripts/check-classlist-length.ts` and
+`web-src/scripts/find-near-duplicate-classes.ts`). GritQL rules are a design
+target described below; no `tools/grit/` rules are checked in yet.  
 **Outcome:** Readable, queryable markup; reusable semantic classes via
-`@apply`; consistent DaisyUI/Kobalte-aligned naming; single CLI for local + CI.
+`@apply`; consistent DaisyUI/Kobalte-aligned naming; one CLI for local and CI.  
+**Verify:** run `bun run semantic` from `web-src/`, or `make frontend-full`
+from the repository root.
 
 ______________________________________________________________________
 
@@ -31,9 +36,13 @@ ______________________________________________________________________
 
 ## 1) Repository Layout (suggested)
 
+Paths are relative to `web-src/`; the application sources live under
+`axinite/src/` (for example `axinite/src/styles/semantic.css`). The tree below
+is the suggested target layout, not a description of what is checked in.
+
 ```text
-corbusier-mockup/
-├─ src/
+web-src/
+├─ axinite/src/
 │  ├─ app/...                 # TSX
 │  └─ styles/
 │     ├─ app.css             # @import "tailwindcss" + @plugin "daisyui"
@@ -512,7 +521,7 @@ ______________________________________________________________________
 ```json
 {
   "scripts": {
-    "semantic:lint": "bunx biome ci src tests tools docs && bun run lint:classlist && bun run lint:class-duplicates && uvx semgrep --config tools/semgrep-semantic.yml --include src/**/*.tsx --include tests/**/*.tsx --include '**/*.html' && bunx stylelint 'src/**/*.css' --config tools/stylelint.config.cjs",
+    "semantic:lint": "bunx biome lint axinite/src axinite/tests scripts docs && bun run lint:classlist && bun run lint:class-duplicates && uvx semgrep --config tools/semgrep-semantic.yml --include axinite/src/**/*.tsx --include axinite/tests/**/*.tsx && bunx stylelint 'axinite/src/**/*.css' --config tools/stylelint.config.cjs",
     "semantic": "bun run semantic:lint",
     "lint:classlist": "bun run scripts/check-classlist-length.ts",
     "lint:class-duplicates": "bun run scripts/find-near-duplicate-classes.ts"
@@ -524,8 +533,8 @@ ______________________________________________________________________
 - **Local dev:** `bun semantic` runs Biome + Grit, class length,
   near-duplicate + loop/sibling/concept checks, Semgrep, and Stylelint.
 - **Pre-commit (optional):** wire a Husky hook to `bun semantic`.
-- **CI:** `bun semantic` is the single gate invoked by `semantic-lint.yml` (see
-  `.github/workflows/semantic-lint.yml` in the repo).
+- **CI:** `bun run semantic` is part of the frontend gate; see
+  `.github/workflows/frontend.yml` and `make frontend-full`.
 
 > `uvx semgrep` expects `uv` to be installed
 > (<https://github.com/astral-sh/uv>). The repo keeps the command consistent
