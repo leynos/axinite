@@ -4,16 +4,18 @@ Last updated: 12 March 2026
 
 ## Purpose
 
-Every card in the mockup must render from a concrete entity data model that
-already contains its localized strings and SI-based measurements. Locale
-bundles should keep only UI chrome and formatting scaffolding. This document
-defines the schemas, localization rules, and migration steps for the Corbusier
-front end.
+Every card in the Axinite SolidJS front end (`web-src/axinite/`) should render
+from a concrete entity data model that already contains its localized strings
+and SI-based measurements. Locale bundles should keep only UI chrome and
+formatting scaffolding. This document defines the schemas, localization rules,
+and migration steps for that model. The Axinite surfaces are chat, memory,
+jobs, routines, extensions, skills, and logs.
 
-This architecture applies to all v2a stack front ends. For a backend-compatible
-perspective on hexagonal domain boundaries and ports, see `docs/concept.md`.
-For the cross-application summary of the shared card primitives, see
-`docs/v2a-front-end-stack.md`.
+The card model originated in the shared v2a mockup work, so the card inventory
+and entity schemas below are illustrative examples from that origin rather than
+a description of Axinite's screens. For the Axinite front-end architecture, see
+`docs/axinite-v2a-frontend-architecture.md`. For the cross-application summary
+of the shared card primitives, see `docs/v2a-front-end-stack.md`.
 
 ## Principles to enforce
 
@@ -26,6 +28,9 @@ For the cross-application summary of the shared card primitives, see
 - Components receive fully formed entities and only format/present them.
 
 ## Card inventory and current data sources
+
+> Illustrative only: this inventory comes from the originating mockup and does
+> not list Axinite's own screens or data modules.
 
 - **Dashboard (`dashboard-screen.tsx`)**: system health status panel, KPI cards,
   recent activity feed, agent utilization summary. Data comes from
@@ -56,7 +61,17 @@ For the cross-application summary of the shared card primitives, see
 Use these primitives across entities:
 
 ```ts
-export type LocaleCode = "en-GB" | "ar" | "de" | "es" | "hi" | "ja" | "zh-CN";
+export type LocaleCode =
+  | "ar"
+  | "de"
+  | "en-GB"
+  | "fr"
+  | "hi"
+  | "it"
+  | "ja"
+  | "nl"
+  | "pl"
+  | "zh-CN";
 
 export type LocalizedStringSet = {
   readonly name: string;

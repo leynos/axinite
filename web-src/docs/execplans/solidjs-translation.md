@@ -1,4 +1,4 @@
-# Migrate `axinite/` to a SolidJS single-page PWA
+# Migrate `web-src/axinite/` to a SolidJS single-page PWA
 
 This ExecPlan (execution plan) is a living document. The sections `Constraints`,
 `Tolerances`, `Risks`, `Progress`, `Surprises & Discoveries`, `Decision Log`,
@@ -6,10 +6,19 @@ and `Outcomes & Retrospective` must be kept up to date as work proceeds.
 
 Status: IN PROGRESS
 
+Path note: this plan was written in the originating `axinite-mockup`
+repository, where the workspace root was `axinite/`. In this repository the
+workspace root is `web-src/axinite/`, and paths below that begin `axinite/` are
+relative to `web-src/`. Backend references that were written as
+`../axinite/...` now resolve to this repository's own `docs/` and
+`src/channels/web/` paths. Progress-log entries and decisions that mention
+`axinite-mockup`, the `/axinite-mockup/` base path, or GitHub Pages record the
+history of that repository.
+
 ## Purpose / big picture
 
-The current `axinite/` prototype is a multi-page static site made from separate
-HTML documents such as `axinite/chat/index.html` and
+The original `axinite/` prototype was a multi-page static site made from
+separate HTML documents such as `axinite/chat/index.html` and
 `axinite/memory/index.html`, with browser-loaded Tailwind, inline scripts, and
 page-local state. The target state is one typed SolidJS application that keeps
 the current information architecture but runs as a single-page Progressive Web
@@ -49,8 +58,8 @@ The restoration order is:
 
 ## Repository and system orientation
 
-The current mock-up lives in `axinite/` inside this repository. Today it is a
-set of page-specific HTML files:
+The original mock-up lived in `axinite/` (now `web-src/axinite/`). At the start
+of this plan it was a set of page-specific HTML files:
 
 - `axinite/chat/index.html`
 - `axinite/memory/index.html`
@@ -66,16 +75,16 @@ current visual language, so they are the migration reference until route parity
 is reached.
 
 The backend integration target is documented in
-`../axinite/docs/front-end-architecture.md`. The important consequence is that
-the real Axinite frontend is currently embedded in the Rust host as static
-assets and talks to authenticated JSON, Server-Sent Events (SSE), and status
-endpoints. That means this migration must not assume a separate server-rendered
-frontend, and it must keep a clean seam between the SPA build and the Rust host
-that will eventually serve it.
+`docs/front-end-architecture.md`. The important consequence is that the real
+Axinite frontend is embedded in the Rust host as static assets and talks to
+authenticated JSON, Server-Sent Events (SSE), and status endpoints. That means
+this migration must not assume a separate server-rendered frontend, and it must
+keep a clean seam between the SPA build and the Rust host that will eventually
+serve it.
 
 The feature-flag design target is documented in
-`../axinite/docs/rfcs/0009-feature-flags-frontend.md`. The SPA must therefore
-be built around a typed flag registry fetched from `GET /api/features`, with
+`docs/rfcs/0009-feature-flags-frontend.md`. The SPA must therefore be built
+around a typed flag registry fetched from `GET /api/features`, with
 deployment-scoped values, and any surface that is present in the mock-up but
 missing in the backend must stay behind explicit flags. The plan below adds a
 debug-only flag override mode so maintainers can exercise hidden paths without
@@ -89,10 +98,10 @@ the broader browser application validation surface, including `test:a11y`,
 
 ## Constraints
 
-- `axinite/` remains the source of truth for website content, structure,
-  imagery, CSS intent, and route inventory. The migration may reshape the files
-  inside `axinite/`, but it must not move the product source of truth into an
-  unrelated top-level directory.
+- `web-src/axinite/` remains the source of truth for website content,
+  structure, imagery, CSS intent, and route inventory. The migration may
+  reshape the files inside it, but it must not move the product source of truth
+  into an unrelated top-level directory.
 - Default locale is `en-GB`, and all authored prose in the application and plan
   stays in British English unless it is translation content for another locale.
 - The application must remain a client-rendered SPA. Do not introduce a server
@@ -126,14 +135,13 @@ the broader browser application validation surface, including `test:a11y`,
 ## Tolerances (exception triggers)
 
 - Scope: if the implementation requires moving the source of truth out of
-  `axinite/`, stop and escalate.
+  `web-src/axinite/`, stop and escalate.
 - Dependencies: if the migration needs more than four new runtime dependencies
   beyond the required stack and the minimum PWA/testing glue, stop and justify
   each one before continuing.
 - Backend contract drift: if the backend integration requires API semantics not
-  present in `../axinite/docs/front-end-architecture.md` or
-  `../axinite/docs/rfcs/0009-feature-flags-frontend.md`, stop and align the
-  contract first.
+  present in `docs/front-end-architecture.md` or
+  `docs/rfcs/0009-feature-flags-frontend.md`, stop and align the contract first.
 - Accessibility waivers: if any flow appears to require an accessibility
   exception or a disabled rule to ship, stop and escalate instead of carrying a
   waiver by default.
@@ -152,7 +160,7 @@ the broader browser application validation surface, including `test:a11y`,
   history-API SPA shell. Severity: high Likelihood: high Mitigation: treat
   backend hosting changes as an explicit integration stream. Keep the mock-up
   build deployable as a static app first, then add a backend embedding
-  checklist for `../axinite`.
+  checklist for the Rust gateway (`src/channels/web/`).
 
 - Risk: not every mock-up surface has a corresponding implemented backend
   endpoint today. Severity: high Likelihood: high Mitigation: design a typed
@@ -184,9 +192,10 @@ the broader browser application validation surface, including `test:a11y`,
 
 ## Target architecture
 
-The SPA should live inside `axinite/` as a Vite-based Solid workspace. The
-current page-specific HTML files become migration references rather than the
-runtime architecture. The target directory shape should be close to this:
+The SPA should live inside `web-src/axinite/` as a Vite-based Solid workspace.
+The original page-specific HTML files become migration references rather than
+the runtime architecture. The target directory shape (relative to `web-src/`)
+should be close to this:
 
 ```plaintext
 axinite/
@@ -242,7 +251,7 @@ areas instead of inventing a new information architecture:
 4. `/routines`
 5. `/extensions`
 6. `/skills`
-7. `/logs` or a shell-level logs panel if route-backed logs is cleaner
+7. `/logs` (decision: logs is a route-backed surface, not a shell-level panel)
 
 TanStack Query should own request-driven data such as threads, memory listings,
 jobs, routines, extension inventories, settings, and feature flags. SSE-driven
@@ -384,7 +393,7 @@ than undefined.
 
 The migration should proceed in bounded streams rather than as one rewrite.
 
-### Stream 1: Establish the Solid workspace inside `axinite/`
+### Stream 1: Establish the Solid workspace inside `web-src/axinite/`
 
 Replace the browser-loaded Tailwind and page-local HTML runtime with a typed
 SolidJS and Vite application. Add TypeScript strictness, Tailwind CSS v4,
@@ -435,7 +444,7 @@ feature gating, and test coverage, not just visual resemblance.
 ### Stream 4: Connect to backend contracts cleanly
 
 Introduce a typed API layer that matches the documented backend surfaces in
-`../axinite/docs/front-end-architecture.md`. This layer should isolate:
+`docs/front-end-architecture.md`. This layer should isolate:
 
 - authenticated fetch helpers
 - typed request and response models
@@ -447,10 +456,10 @@ Introduce a typed API layer that matches the documented backend surfaces in
 Where the backend contract is missing or incomplete, add flags and explicit
 placeholder states instead of mock data hidden inside production paths.
 
-This stream also owns the eventual backend-hosting checklist for `../axinite`:
-history fallback to `index.html`, static asset embedding or packaging,
-manifest/service-worker delivery, and the `GET /api/features` endpoint from the
-RFC.
+This stream also owns the eventual backend-hosting checklist for the Rust
+gateway (`src/channels/web/`): history fallback to `index.html`, static asset
+embedding or packaging, manifest/service-worker delivery, and the
+`GET /api/features` endpoint from the RFC.
 
 ### Stream 5: Enforce quality gates and remove static-page leftovers
 
@@ -516,8 +525,8 @@ behaviour.
 The approved implementation should be considered complete only when all of the
 following are true:
 
-1. `axinite/` is a SolidJS SPA rather than a collection of standalone HTML
-   pages.
+1. `web-src/axinite/` is a SolidJS SPA rather than a collection of standalone
+   HTML pages.
 2. Route navigation between the current product areas occurs without full page
    reloads.
 3. All required locales are present, selectable, and test-covered.
@@ -539,9 +548,9 @@ following are true:
 - [x] 2026-03-25 19:13 GMT: Confirmed this work is on branch
   `solidjs-translation`, not `main`.
 - [x] 2026-03-25 19:18 GMT: Reviewed the backend design reference in
-  `../axinite/docs/front-end-architecture.md`.
+  `docs/front-end-architecture.md`.
 - [x] 2026-03-25 19:19 GMT: Reviewed the frontend feature-flag RFC in
-  `../axinite/docs/rfcs/0009-feature-flags-frontend.md`.
+  `docs/rfcs/0009-feature-flags-frontend.md`.
 - [x] 2026-03-25 19:24 GMT: Reviewed validation patterns in
   `../corbusier-mockup` and `../wildside-mockup-v2a`.
 - [x] 2026-03-25 19:31 GMT: Verified the current `axinite/` route inventory and
@@ -704,9 +713,9 @@ following are true:
 ## Surprises & Discoveries
 
 - The corrected feature-flag RFC path is
-  `../axinite/docs/rfcs/0009-feature-flags-frontend.md`, not
-  `../docs/rfcs/...`. The plan should keep that exact path to avoid future
-  confusion.
+  `docs/rfcs/0009-feature-flags-frontend.md` (in the originating repository it
+  was `../axinite/docs/rfcs/...`, not `../docs/rfcs/...`). The plan should keep
+  that exact path to avoid future confusion.
 - The current mock-up is not one page with internal tabs. It is six separate
   route directories under `axinite/`, each with its own HTML document. The SPA
   migration therefore replaces the runtime architecture rather than simply
@@ -879,7 +888,7 @@ following are true:
 - Decision: use one shared catalogue/intake semantic CSS layer for Extensions
   and Skills, but keep route-specific Solid components. Rationale: both routes
   combine installed inventory with install/search surfaces, yet Extensions
-  centers on external capability registration while Skills centers on catalogue
+  centres on external capability registration while Skills centres on catalogue
   discovery and bundle inspection.
 
 - Decision: hardcode `/axinite-mockup/` as the Vite and runtime base path for
