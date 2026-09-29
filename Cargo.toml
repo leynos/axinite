@@ -204,7 +204,7 @@ zbus = "5"
 # published for Linux targets only. The Windows lanes build with
 # --all-features, so this is target-scoped as well as feature-scoped; scoping
 # by feature alone leaves that lane trying to resolve it.
-pg_embedded_setup_unpriv = { package = "pg-embed-setup-unpriv", version = "0.6", optional = true }
+pg_embedded_setup_unpriv = { package = "pg-embed-setup-unpriv", version = "0.6.2", optional = true }
 
 [dev-dependencies]
 tokio-test = "0.4"
