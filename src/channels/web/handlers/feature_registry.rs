@@ -34,17 +34,52 @@ pub const DEPLOYMENT_ID_HEADER: &str = "x-deployment-id";
 /// Deployment used when the `X-Deployment-Id` header is absent on reads.
 pub const DEFAULT_DEPLOYMENT_ID: &str = "default";
 
-/// Extract a trimmed, non-empty deployment identifier from request headers.
+/// Longest deployment identifier accepted from the `X-Deployment-Id` header.
 ///
-/// Returns `None` when the header is absent, empty, whitespace-only, or not
-/// valid UTF-8.
-pub fn deployment_id_from_headers(headers: &HeaderMap) -> Option<String> {
-    headers
-        .get(DEPLOYMENT_ID_HEADER)
-        .and_then(|value| value.to_str().ok())
-        .map(str::trim)
-        .filter(|value| !value.is_empty())
-        .map(str::to_string)
+/// Identifiers key both the in-memory registry and the persisted override
+/// rows, so the bound keeps a caller from growing either without limit.
+pub const MAX_DEPLOYMENT_ID_LEN: usize = 64;
+
+/// The `X-Deployment-Id` header is present but not a valid identifier.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct InvalidDeploymentId;
+
+impl std::fmt::Display for InvalidDeploymentId {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "X-Deployment-Id must be 1-{MAX_DEPLOYMENT_ID_LEN} characters of [a-z0-9_]"
+        )
+    }
+}
+
+impl std::error::Error for InvalidDeploymentId {}
+
+/// Extract and validate the deployment identifier from request headers.
+///
+/// Returns `Ok(None)` when the header is absent, empty, or whitespace-only, and
+/// `Ok(Some(id))` for a trimmed identifier of at most
+/// [`MAX_DEPLOYMENT_ID_LEN`] lowercase ASCII letters, digits, and underscores
+/// (the same alphabet as flag names). Any other value, including one that is
+/// not valid UTF-8, is rejected with [`InvalidDeploymentId`].
+pub fn deployment_id_from_headers(
+    headers: &HeaderMap,
+) -> Result<Option<DeploymentId>, InvalidDeploymentId> {
+    let Some(raw) = headers.get(DEPLOYMENT_ID_HEADER) else {
+        return Ok(None);
+    };
+    let value = raw.to_str().map_err(|_| InvalidDeploymentId)?.trim();
+    if value.is_empty() {
+        return Ok(None);
+    }
+    if value.len() > MAX_DEPLOYMENT_ID_LEN
+        || !value
+            .bytes()
+            .all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'_')
+    {
+        return Err(InvalidDeploymentId);
+    }
+    Ok(Some(value.to_string()))
 }
 
 /// A mutable registry of deployment-scoped feature-flag overrides.
@@ -89,10 +124,13 @@ impl FeatureFlagRegistry {
     /// Cache a deployment's overrides loaded from the store.
     ///
     /// Marks the deployment as hydrated even when `overrides` is empty.
+    /// Hydration is additive: a flag already cached (for example by a
+    /// [`set`](Self::set) that landed while the store query was in flight) is
+    /// newer than the snapshot and is kept.
     pub fn hydrate(&mut self, deployment_id: DeploymentId, overrides: Vec<(String, bool)>) {
         let entry = self.flags.entry(deployment_id).or_default();
         for (name, enabled) in overrides {
-            entry.insert(name, enabled);
+            entry.entry(name).or_insert(enabled);
         }
     }
 
@@ -107,6 +145,7 @@ mod tests {
     //! Unit tests for the deployment-scoped feature-flag registry.
 
     use super::*;
+    use crate::test_support::ExpectValid;
 
     #[test]
     fn get_returns_none_for_unknown_deployment_or_flag() {
@@ -140,5 +179,60 @@ mod tests {
 
         let overrides = registry.overrides_for("production");
         assert_eq!(overrides.get("panel_logs"), Some(&true));
+    }
+
+    #[test]
+    fn hydrate_keeps_overrides_set_while_the_store_query_was_in_flight() {
+        let mut registry = FeatureFlagRegistry::new();
+        registry.set("production".to_string(), "panel_logs".to_string(), true);
+        registry.hydrate(
+            "production".to_string(),
+            vec![
+                ("panel_logs".to_string(), false),
+                ("route_chat".to_string(), false),
+            ],
+        );
+        assert_eq!(registry.get("production", "panel_logs"), Some(true));
+        assert_eq!(registry.get("production", "route_chat"), Some(false));
+    }
+
+    fn headers_with(value: &[u8]) -> HeaderMap {
+        let mut headers = HeaderMap::new();
+        headers.insert(
+            DEPLOYMENT_ID_HEADER,
+            axum::http::HeaderValue::from_bytes(value).expect_valid("header value bytes"),
+        );
+        headers
+    }
+
+    #[rstest::rstest]
+    #[case::trimmed(b"  production  ", Ok(Some("production")))]
+    #[case::digits_and_underscore(b"eu_west_2", Ok(Some("eu_west_2")))]
+    #[case::whitespace_only(b"   ", Ok(None))]
+    #[case::uppercase(b"Production", Err(InvalidDeploymentId))]
+    #[case::hyphen(b"eu-west", Err(InvalidDeploymentId))]
+    #[case::path_separator(b"a/b", Err(InvalidDeploymentId))]
+    #[case::non_utf8(b"\xff", Err(InvalidDeploymentId))]
+    fn deployment_id_header_is_trimmed_and_validated(
+        #[case] raw: &[u8],
+        #[case] expected: Result<Option<&str>, InvalidDeploymentId>,
+    ) {
+        let parsed = deployment_id_from_headers(&headers_with(raw));
+        assert_eq!(parsed, expected.map(|id| id.map(str::to_string)));
+    }
+
+    #[test]
+    fn deployment_id_header_is_optional_and_bounded() {
+        assert_eq!(deployment_id_from_headers(&HeaderMap::new()), Ok(None));
+        let longest = "a".repeat(MAX_DEPLOYMENT_ID_LEN);
+        assert_eq!(
+            deployment_id_from_headers(&headers_with(longest.as_bytes())),
+            Ok(Some(longest))
+        );
+        let overlong = "a".repeat(MAX_DEPLOYMENT_ID_LEN + 1);
+        assert_eq!(
+            deployment_id_from_headers(&headers_with(overlong.as_bytes())),
+            Err(InvalidDeploymentId)
+        );
     }
 }

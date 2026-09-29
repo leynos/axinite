@@ -313,34 +313,42 @@ mod tests {
 
     #[tokio::test]
     async fn deployment_flag_round_trip_upserts_and_isolates_deployments() {
-        let backend = LibSqlBackend::new_memory().await.unwrap();
-        backend.run_migrations().await.unwrap();
+        let backend = LibSqlBackend::new_memory()
+            .await
+            .expect("open in-memory libSQL backend");
+        backend
+            .run_migrations()
+            .await
+            .expect("run libSQL migrations");
 
         // No overrides initially.
         assert!(
             backend
                 .list_deployment_flags("production")
                 .await
-                .unwrap()
+                .expect("list initial production flags")
                 .is_empty()
         );
 
         backend
             .set_deployment_flag("production", "panel_logs", false)
             .await
-            .unwrap();
+            .expect("set production panel_logs=false");
         backend
             .set_deployment_flag("production", "route_chat", true)
             .await
-            .unwrap();
+            .expect("set production route_chat=true");
         // Upsert: writing the same key again replaces the stored value.
         backend
             .set_deployment_flag("production", "panel_logs", true)
             .await
-            .unwrap();
+            .expect("upsert production panel_logs=true");
 
         // ORDER BY flag_name -> panel_logs before route_chat.
-        let flags = backend.list_deployment_flags("production").await.unwrap();
+        let flags = backend
+            .list_deployment_flags("production")
+            .await
+            .expect("list production flags after writes");
         assert_eq!(
             flags,
             vec![
@@ -354,7 +362,7 @@ mod tests {
             backend
                 .list_deployment_flags("staging")
                 .await
-                .unwrap()
+                .expect("list staging flags")
                 .is_empty()
         );
     }
