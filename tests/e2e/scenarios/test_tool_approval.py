@@ -15,7 +15,7 @@ Adaptation from the legacy shell:
 
 import json
 
-from helpers import AUTH_TOKEN, SEL
+from helpers import SEL
 
 _THREAD_ID = "e2e-approval-thread"
 
@@ -133,9 +133,6 @@ async def test_approve_posts_and_clears_card(page, axinite_server):
     await card.get_by_role("button", name="Approve").click()
 
     # The POST was made with action=approve for our request id.
-    await page.wait_for_function(
-        "() => true", timeout=100
-    )  # yield to the event loop
     await card.wait_for(state="hidden", timeout=8000)
 
     assert len(posts) >= 1, "Approval POST was not made"

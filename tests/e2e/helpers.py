@@ -16,6 +16,7 @@ is the more robust anchor (each such use is commented at the call site).
 """
 
 import asyncio
+import inspect
 import re
 import time
 
@@ -136,14 +137,90 @@ ROUTE_LANDMARK = {
 AUTH_TOKEN = "e2e-test-token"
 
 
-async def goto_route(page, name: str, path: str, *, timeout: int = 5000):
-    """Click a shell nav link and wait for its route landmark to appear."""
+async def goto_route(page, name: str, path: str, *, timeout: int = 5000) -> None:
+    """Navigate to a route through the shell navigation.
+
+    Clicks the primary-navigation link, waits for the browser URL to end with
+    ``/<path>`` (``wait_for_url`` receives the glob ``**/<path>``, so the
+    match is a suffix match), then waits for that route's landmark from
+    ``ROUTE_LANDMARK`` to become visible.
+
+    Parameters
+    ----------
+    page
+        The Playwright page showing the unlocked SolidJS shell.
+    name
+        Accessible name of the navigation link, matched exactly (the en-GB
+        route label, for example ``"Extensions"``).
+    path
+        Route path without its leading slash (for example ``"extensions"``);
+        also the key into ``ROUTE_LANDMARK``.
+    timeout
+        Milliseconds allowed for each of the two waits.
+
+    Raises
+    ------
+    KeyError
+        If ``path`` has no entry in ``ROUTE_LANDMARK``.
+    playwright.async_api.TimeoutError
+        If the URL or the landmark does not appear within ``timeout``.
+    """
     # role=link named after the localized route label (en-GB default).
     await page.get_by_role("link", name=name, exact=True).click()
     await page.wait_for_url(f"**/{path}", timeout=timeout)
     await page.locator(ROUTE_LANDMARK[path]).first.wait_for(
         state="visible", timeout=timeout
     )
+
+
+async def send_chat_message(page, text: str, *, timeout: int = 5000) -> None:
+    """Type ``text`` into the chat composer and press Send.
+
+    Parameters
+    ----------
+    page
+        The Playwright page showing the chat route.
+    text
+        Message to send.
+    timeout
+        Milliseconds to wait for the composer to become visible.
+    """
+    # Textarea aria-label "Message composer" (en-GB default).
+    composer = page.get_by_label("Message composer")
+    await composer.wait_for(state="visible", timeout=timeout)
+    await composer.fill(text)
+    await page.locator(SEL["chat_send"]).click()
+
+
+async def wait_until(predicate, *, timeout_ms: int = 2000, interval_ms: int = 100) -> bool:
+    """Poll ``predicate`` until it is truthy or the timeout elapses.
+
+    Parameters
+    ----------
+    predicate
+        Zero-argument callable returning a truthy value once the condition
+        holds; it may return an awaitable, which is awaited.
+    timeout_ms
+        Milliseconds to keep polling.
+    interval_ms
+        Milliseconds between attempts.
+
+    Returns
+    -------
+    bool
+        ``True`` once ``predicate`` holds, ``False`` if it never did. Callers
+        assert on the outcome so each failure keeps its own message.
+    """
+    deadline = time.monotonic() + timeout_ms / 1000
+    while True:
+        result = predicate()
+        if inspect.isawaitable(result):
+            result = await result
+        if result:
+            return True
+        if time.monotonic() >= deadline:
+            return False
+        await asyncio.sleep(interval_ms / 1000)
 
 
 async def wait_for_ready(url: str, *, timeout: float = 60, interval: float = 0.5):

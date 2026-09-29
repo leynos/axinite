@@ -15,15 +15,9 @@ through the sanctioned `window.__axinite.emitChatEvent` hook.
 
 import json
 
-from helpers import SEL
+from playwright.async_api import TimeoutError as PlaywrightTimeoutError
 
-
-async def _send(page, text: str):
-    composer = page.get_by_label("Message composer")  # aria-label, en-GB default
-    await composer.wait_for(state="visible", timeout=5000)
-    await composer.fill(text)
-    send = page.locator(SEL["chat_send"])
-    await send.click()
+from helpers import SEL, send_chat_message
 
 
 async def _assistant_markdown_contains(page, needle: str, *, timeout: int = 60000):
@@ -39,19 +33,19 @@ async def _assistant_markdown_contains(page, needle: str, *, timeout: int = 6000
             )].some((el) => (el.textContent || '').includes({needle_js}))""",
             timeout=timeout,
         )
-    except Exception:
+    except PlaywrightTimeoutError as err:
         texts = await page.eval_on_selector_all(
             "[data-role='assistant'] .chat-preview__markdown",
             "els => els.map(e => e.textContent)",
         )
         raise AssertionError(
             f"No assistant markdown contained {needle!r}. Seen: {texts!r}"
-        )
+        ) from err
 
 
 async def test_send_message_and_receive_response(page):
     """Type a message, receive the mock LLM's canned '4' answer."""
-    await _send(page, "What is 2+2?")
+    await send_chat_message(page, "What is 2+2?")
 
     # Assistant markdown eventually contains "4" (mock: "The answer is 4.").
     await _assistant_markdown_contains(page, "4")
@@ -65,10 +59,10 @@ async def test_send_message_and_receive_response(page):
 
 async def test_multiple_messages(page):
     """Two messages produce two persisted assistant answers."""
-    await _send(page, "Hello")
+    await send_chat_message(page, "Hello")
     await _assistant_markdown_contains(page, "Hello")  # mock greets back
 
-    await _send(page, "What is 2+2?")
+    await send_chat_message(page, "What is 2+2?")
     await _assistant_markdown_contains(page, "4")
 
     # At least two of each persisted turn once streaming settles.
