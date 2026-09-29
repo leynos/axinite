@@ -5,10 +5,10 @@
 **Goal:** Enforce semantic, accessible HTML with clean, token‑driven
 Tailwind/DaisyUI usage. Prefer **BiomeJS + GritQL** rules; fall back to
 **Semgrep**/**Stylelint** when they express rules better.  
-**Outcome:** Readable, queryable markup; reusable semantic classes via `@apply`;
-consistent DaisyUI/Kobalte-aligned naming; single CLI for local + CI.
+**Outcome:** Readable, queryable markup; reusable semantic classes via
+`@apply`; consistent DaisyUI/Kobalte-aligned naming; single CLI for local + CI.
 
----
+______________________________________________________________________
 
 ## 0) Scope & Philosophy
 
@@ -27,7 +27,7 @@ consistent DaisyUI/Kobalte-aligned naming; single CLI for local + CI.
      classes** via `@apply` and sensible cascades.
   5. **Configurable thresholds** — warn on repetition beyond agreed limits.
 
----
+______________________________________________________________________
 
 ## 1) Repository Layout (suggested)
 
@@ -60,7 +60,7 @@ corbusier-mockup/
 `semantic.css` stores reusable classes via `@apply`. Use Tailwind v4 CSS‑first
 configuration in `app.css`.
 
----
+______________________________________________________________________
 
 ## 2) Tailwind v4 + DaisyUI v5 baseline (CSS‑first)
 
@@ -80,8 +80,8 @@ configuration in `app.css`.
 @source "../**/*.{ts,tsx,js,jsx,html}";
 ```
 
-**Where to put semantic classes** — `src/styles/semantic.css` (imported from the
-entry). Apply DaisyUI component classes directly in markup, and only use
+**Where to put semantic classes** — `src/styles/semantic.css` (imported from
+the entry). Apply DaisyUI component classes directly in markup, and only use
 `@apply` with Tailwind utility classes when defining semantic wrappers:
 
 ```css
@@ -103,7 +103,7 @@ entry). Apply DaisyUI component classes directly in markup, and only use
 > Use semantic classes for **repeated patterns**; keep one‑offs directly in
 > markup.
 
----
+______________________________________________________________________
 
 ## 3) Configure BiomeJS + GritQL
 
@@ -195,7 +195,7 @@ pnpm add -D @biomejs/biome
 }
 ```
 
----
+______________________________________________________________________
 
 ## 4) GritQL rules (practical starters)
 
@@ -302,10 +302,10 @@ summarizing the overlap and paths. Suggested defaults are bundled in
 ```
 
 Adjust these knobs to tune the signal. When the checker fires, extract a
-semantic `@apply` class (for example inside `semantic.css`) and reuse it instead
-of cloning similar utility lists.
+semantic `@apply` class (for example inside `semantic.css`) and reuse it
+instead of cloning similar utility lists.
 
----
+______________________________________________________________________
 
 ## Proposed meaning-first semantic checks (roadmap)
 
@@ -409,10 +409,10 @@ Each proposal will ship with a concrete class name suggestion and will reference
 The current Biome plugin does not yet expose helpers such as `split_classes`.
 Until that changes, the repository enforces the allowlist via **Semgrep**
 (`tools/semgrep-semantic.yml`, rule `class-token-uppercase`), which catches
-camelCase tokens and other non‑Tailwind/DaisyUI class names. Migration back into
-Grit can be performed when the integration grows richer predicates.
+camelCase tokens and other non‑Tailwind/DaisyUI class names. Migration back
+into Grit can be performed when the integration grows richer predicates.
 
----
+______________________________________________________________________
 
 ## 5) Stylelint (focused rules only)
 
@@ -461,7 +461,7 @@ module.exports = {
 > Stylelint is **not** used for general formatting; it only enforces tokens and
 > a few hygiene rules.
 
----
+______________________________________________________________________
 
 ## 6) Semgrep (targeted HTML/JSX checks)
 
@@ -502,7 +502,7 @@ rules:
     severity: WARNING
 ```
 
----
+______________________________________________________________________
 
 ## 7) Unified CLI & Dev Workflow
 
@@ -531,7 +531,7 @@ rules:
 > (<https://github.com/astral-sh/uv>). The repo keeps the command consistent
 > across local + CI environments.
 
----
+______________________________________________________________________
 
 ## 8) Companion semantic checker signals
 
@@ -547,14 +547,14 @@ actionable diagnostics beyond near-duplicate detection:
   (button-like, chip, card surface, toolbar, tabs trigger, nav link) and
   proposes semantic class names with `@apply`.
 - **Utility-vs-semantics score:** highlights heavy utility stacks on elements
-  lacking semantic signals (role, aria, state attributes, semantic tags). Use it
-  to name the element, add landmarks, or move styling into `semantic.css`.
+  lacking semantic signals (role, aria, state attributes, semantic tags). Use
+  it to name the element, add landmarks, or move styling into `semantic.css`.
 
 Each diagnostic surfaces the paths, representative utilities, and a concrete
 next action. All heuristics are configurable via
 `tools/semantic-lint.config.json`.
 
----
+______________________________________________________________________
 
 ## 9) Tuning thresholds and suppressing diagnostics
 
@@ -576,7 +576,7 @@ Prefer addressing the underlying markup first, then reach for configuration.
 Inline suppression comments are intentionally not supported yet to encourage
 semantic fixes over ad hoc opt-outs.
 
----
+______________________________________________________________________
 
 ## 10) How to refactor into `@apply` (+ cascades)
 
@@ -618,7 +618,7 @@ semantic fixes over ad hoc opt-outs.
 - Prefer **role tokens** (`primary`, `secondary`, `accent`, `success`, `error`)
   to colour words.
 
----
+______________________________________________________________________
 
 ## 11) Quick rule checklists (what the lints enforce)
 
@@ -643,7 +643,7 @@ semantic fixes over ad hoc opt-outs.
   - Unknown class tokens flagged (must be Tailwind, DaisyUI, or project semantic
     class prefix).
 
----
+______________________________________________________________________
 
 ## 12) IDE tips
 
@@ -652,7 +652,7 @@ semantic fixes over ad hoc opt-outs.
 - Configure an editor task to open `semantic.css` quickly when a repetition
   warning appears.
 
----
+______________________________________________________________________
 
 ## 13) Future extensions
 
@@ -662,7 +662,7 @@ semantic fixes over ad hoc opt-outs.
 - **Autofix codemods** (Grit rewrite scripts that scaffold a new class and
   replace duplicates in a file).
 
----
+______________________________________________________________________
 
 ## 14) FAQ
 
@@ -670,16 +670,15 @@ semantic fixes over ad hoc opt-outs.
 A: Only repeated patterns are extracted. Tailwind still tree‑shakes class‑based
 styles; the few semantic classes added remain minimal and intentionally reused.
 
-**Q: When is it appropriate to keep utilities inline?**
-A: One‑offs, quick prototypes, and tiny adjustments local to a component. Once
-the same chunk appears twice, prefer extracting it.
+**Q: When is it appropriate to keep utilities inline?** A: One‑offs, quick
+prototypes, and tiny adjustments local to a component. Once the same chunk
+appears twice, prefer extracting it.
 
 **Q: How strict are thresholds?**  
-A: A sensible starting point is `repeatMinClasses=4`,
-`repeatMinOccurrences=2`. The thresholds can be tightened as the design system
-matures.
+A: A sensible starting point is `repeatMinClasses=4`, `repeatMinOccurrences=2`.
+The thresholds can be tightened as the design system matures.
 
----
+______________________________________________________________________
 
 ## 15) Ready-to-run checklist
 

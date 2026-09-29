@@ -48,12 +48,11 @@ HEADED=1 pytest scenarios/
 
 ## Test Scenarios
 
-The suite drives the SolidJS UI (the gateway default) through its
-documented testability contract: the `?token=` boot parameter, the
-`#auth-screen` marker, the `[data-testid="sse-status"]` connection
-indicator (`data-state` attribute), `data-role` message turns, and the
-`window.__axinite` hooks (`closeChatStream`, `reconnectChatStream`,
-`emitChatEvent`).
+The suite drives the SolidJS UI (the gateway default) through its documented
+testability contract: the `?token=` boot parameter, the `#auth-screen` marker,
+the `[data-testid="sse-status"]` connection indicator (`data-state` attribute),
+`data-role` message turns, and the `window.__axinite` hooks (`closeChatStream`,
+`reconnectChatStream`, `emitChatEvent`).
 
 | File                     | What it tests                                                                                                                                 |
 | ------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -70,8 +69,8 @@ indicator (`data-state` attribute), `data-role` message turns, and the
 Shared constants and utilities imported by every test file and `conftest.py`.
 
 - **`SEL`** — dict of selectors for the SolidJS DOM (role/label/testid
-  first). Update this dict when frontend HTML changes; tests import
-  selectors from here rather than hardcoding them.
+  first). Update this dict when frontend HTML changes; tests import selectors
+  from here rather than hardcoding them.
 - **`ROUTES`** / **`ROUTE_LANDMARK`** — nav-link names to paths and the
   per-route landmark selectors; `goto_route()` navigates via the shell nav.
 - **`AUTH_TOKEN`** — hardcoded to `"e2e-test-token"`. Used by `conftest.py`
@@ -214,8 +213,8 @@ async def test_my_ui_feature(page):
 - **`test_skills.py` makes real network calls to ClawHub.** Tests skip (not
   fail) if the registry is unreachable via `pytest.skip()`.
 - **`test_tool_approval.py` injects state via `page.route` interception of
-  the history endpoints plus `window.__axinite.emitChatEvent(...)`.** It
-  tests the browser-side approval surface without a real tool call.
+  the history endpoints plus `window.__axinite.emitChatEvent(...)`.** It tests
+  the browser-side approval surface without a real tool call.
   `test_html_injection.py` uses the real mock-LLM pipeline (the legacy
   `addMessage` global no longer exists).
 - **Browser is Chromium only.** `conftest.py` uses `p.chromium.launch()`; there

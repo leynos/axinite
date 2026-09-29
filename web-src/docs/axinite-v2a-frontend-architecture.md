@@ -13,10 +13,10 @@
   split across client and preview layers, and which constraints should guide
   future changes.
 - **Relationship to other documents:** `docs/v2a-front-end-stack.md` explains
-  the broader v2a stack choices used across df12 mockups. This document explains
-  how Axinite applies those ideas specifically, why some parts are already
-  implemented here, and where this repo intentionally diverges from the older
-  Axinite front end.
+  the broader v2a stack choices used across df12 mockups. This document
+  explains how Axinite applies those ideas specifically, why some parts are
+  already implemented here, and where this repo intentionally diverges from the
+  older Axinite front end.
 
 ## 1. Purpose and architectural stance
 
@@ -236,8 +236,8 @@ Each major route is implemented as a dedicated preview component, for example
 `ExtensionsPreview`, and `SkillsPreview`.
 
 This is a more component-oriented approach than the old front end’s large
-handwritten `app.js`, where one runtime script owns rendering and behaviour
-for the whole browser experience. The new structure improves locality:
+handwritten `app.js`, where one runtime script owns rendering and behaviour for
+the whole browser experience. The new structure improves locality:
 
 - route-specific behaviour stays with the route component,
 - shared shell concerns stay in the shell,
@@ -359,8 +359,8 @@ The main architectural decisions in this repo were:
   product contract, so the preview stack was made to preserve that instead of
   teaching the browser a preview-only base URL.
 - **Use the lightest state model that remains legible.** Query plus signals and
-  context won over a larger state stack because the current surface does not yet
-  justify the added indirection.
+  context won over a larger state stack because the current surface does not
+  yet justify the added indirection.
 - **Protect semantic and localization integrity.** Semantic CSS classes,
   semantic HTML, and complete-locale gating are treated as architectural
   concerns, not only implementation details.

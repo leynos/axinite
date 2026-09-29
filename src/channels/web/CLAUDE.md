@@ -133,12 +133,12 @@ require `X-Confirm-Action: true`.
 
 ### Static And Project Files
 
-The public asset routes depend on the UI variant (`AXINITE_WEB_UI`,
-default `solid`; see `routes_for()` in `handlers/static_files.rs`).
+The public asset routes depend on the UI variant (`AXINITE_WEB_UI`, default
+`solid`; see `routes_for()` in `handlers/static_files.rs`).
 
-Solid variant (default). The app shell is served at `/` and at each
-client-side route (`/chat`, `/memory`, `/jobs`, `/routines`, `/extensions`,
-`/skills`) so deep links and reloads work.
+Solid variant (default). The app shell is served at `/` and at each client-side
+route (`/chat`, `/memory`, `/jobs`, `/routines`, `/extensions`, `/skills`) so
+deep links and reloads work.
 
 | Method | Path                           | Description                        |
 | ------ | ------------------------------ | ---------------------------------- |
@@ -150,12 +150,12 @@ client-side route (`/chat`, `/memory`, `/jobs`, `/routines`, `/extensions`,
 
 Legacy variant (`AXINITE_WEB_UI=legacy`):
 
-| Method | Path                             | Description                      |
-| ------ | -------------------------------- | -------------------------------- |
-| GET    | `/`                              | Legacy single-page app HTML.     |
-| GET    | `/style.css`                     | App stylesheet.                  |
-| GET    | `/app.js`                        | App JavaScript.                  |
-| GET    | `/favicon.ico`                   | Favicon, cached for one day.     |
+| Method | Path           | Description                  |
+| ------ | -------------- | ---------------------------- |
+| GET    | `/`            | Legacy single-page app HTML. |
+| GET    | `/style.css`   | App stylesheet.              |
+| GET    | `/app.js`      | App JavaScript.              |
+| GET    | `/favicon.ico` | Favicon, cached for one day. |
 
 Both variants:
 

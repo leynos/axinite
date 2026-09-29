@@ -3,8 +3,8 @@
 ## Scope
 
 This repository contains the new SolidJS-based front end for Axinite, a
-Rust-based autonomous AI agent. It is a standalone browser application backed by
-a Bun mock backend for local preview.
+Rust-based autonomous AI agent. It is a standalone browser application backed
+by a Bun mock backend for local preview.
 
 For the full architectural rationale, see
 [`docs/axinite-v2a-frontend-architecture.md`](docs/axinite-v2a-frontend-architecture.md).
