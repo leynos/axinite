@@ -1,3 +1,10 @@
+/**
+ * In-memory state for the mock backend. `MockBackendState` holds the seeded
+ * threads, jobs, routines, extensions, skills, memory, and logs, applies the
+ * mutations the SPA makes, and fans out chat and log events to SSE
+ * subscribers. Its feature flags mirror the gateway defaults.
+ */
+
 import type {
   ActionResponse,
   ApprovalRequest,
@@ -134,7 +141,8 @@ export class MockBackendState {
 
   private readonly logSubscribers = new Set<EventSubscriber<LogEntry>>();
 
-  private readonly logs: LogEntry[] = createSeedLogs();
+  // Newest first: pushLog() unshifts, so the chronological seed is reversed.
+  private readonly logs: LogEntry[] = createSeedLogs().reverse();
 
   private activeThreadId = "thread-review";
 
@@ -217,7 +225,9 @@ export class MockBackendState {
 
   subscribeToLogs(subscriber: EventSubscriber<LogEntry>): () => void {
     this.logSubscribers.add(subscriber);
-    for (const entry of this.logs.slice(-25)) {
+    // Replay the newest 25 entries oldest-to-newest, as a live tail would
+    // have delivered them.
+    for (const entry of this.logs.slice(0, 25).reverse()) {
       subscriber.send(entry);
     }
     return () => {

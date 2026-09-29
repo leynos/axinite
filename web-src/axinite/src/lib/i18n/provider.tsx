@@ -1,3 +1,9 @@
+/**
+ * Solid context bridging the i18next runtime to components. It exposes a
+ * reactive `t`, the current language, the available locales, and
+ * `changeLanguage`, so translated text updates when the language changes.
+ */
+
 import type { Accessor, ParentComponent } from "solid-js";
 import { createContext, createSignal, onCleanup, useContext } from "solid-js";
 

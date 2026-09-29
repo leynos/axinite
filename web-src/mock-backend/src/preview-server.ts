@@ -1,10 +1,17 @@
+/**
+ * Static preview server for the built SPA. It serves `dist/` with SPA
+ * fallback to `index.html` and proxies `/api/*` to the mock API server,
+ * disabling the idle timeout on SSE paths. `scripts/dev.ts` starts it.
+ */
+
 import { existsSync, statSync } from "node:fs";
 import path from "node:path";
 
+import { parsePort } from "./ports";
 import { isStreamingApiPath } from "./streaming-routes";
 
-const previewPort = Number(process.env.PREVIEW_PORT ?? "2020");
-const apiPort = Number(process.env.MOCK_API_PORT ?? "8787");
+const previewPort = parsePort("PREVIEW_PORT", process.env.PREVIEW_PORT, 2020);
+const apiPort = parsePort("MOCK_API_PORT", process.env.MOCK_API_PORT, 8787);
 const distDir = path.join(process.cwd(), "dist");
 
 function fileExists(filePath: string): boolean {
@@ -32,7 +39,6 @@ function candidatePaths(pathname: string): string[] {
       ? []
       : [
           path.join(distDir, `${relative}.html`),
-          path.join(distDir, relative, "index.html"),
           path.join(distDir, "index.html"),
         ]),
   ];

@@ -1,3 +1,10 @@
+/**
+ * The `/chat` surface: thread list, history, message composer with image
+ * staging, tool-approval prompts, and the `/api/chat/events` SSE stream. It
+ * reports stream state to `connection-status` and registers the e2e test
+ * hooks from `lib/test-hooks` while mounted.
+ */
+
 import {
   createMutation,
   createQuery,

@@ -1,3 +1,9 @@
+/**
+ * TEE attestation indicator for the app shell. It shows the status from
+ * `lib/tee` and, in a popover, fetches the full report on demand and copies
+ * it to the clipboard. Visibility follows the `surface_tee_attestation` flag.
+ */
+
 import { Popover } from "@kobalte/core/popover";
 import { createQuery } from "@tanstack/solid-query";
 import type { Accessor, Component } from "solid-js";

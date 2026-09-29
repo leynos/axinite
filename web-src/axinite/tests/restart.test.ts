@@ -153,4 +153,14 @@ describe("createRestartController", () => {
     expect(h.phases).toEqual(["restarting", "idle"]);
     expect(h.closed).toBe(true);
   });
+
+  it("can be started again after a failed restart command", async () => {
+    const h = makeHarness({ failSend: true });
+    h.controller.start();
+    await flush();
+    h.controller.start();
+    await flush();
+
+    expect(h.phases).toEqual(["restarting", "idle", "restarting", "idle"]);
+  });
 });

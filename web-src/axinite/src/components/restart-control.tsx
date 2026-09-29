@@ -1,3 +1,9 @@
+/**
+ * Restart button and confirmation dialog for the app shell. The gateway has
+ * no restart endpoint, so this wires `lib/restart` to the chat API (sending
+ * `/restart`), the chat event stream, and gateway status polling.
+ */
+
 import { AlertDialog } from "@kobalte/core/alert-dialog";
 import type { Component } from "solid-js";
 import { createSignal, onCleanup, Show } from "solid-js";

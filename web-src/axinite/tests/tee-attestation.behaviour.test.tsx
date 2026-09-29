@@ -67,7 +67,20 @@ beforeEach(async () => {
   }) as typeof globalThis.fetch;
 });
 
+// Captured once so the clipboard override below can be undone after each test;
+// under happy-dom the property may live on the prototype, in which case there
+// is no own descriptor and removing the override restores the original.
+const originalClipboard = Object.getOwnPropertyDescriptor(
+  navigator,
+  "clipboard"
+);
+
 afterEach(() => {
+  if (originalClipboard) {
+    Object.defineProperty(navigator, "clipboard", originalClipboard);
+  } else {
+    Reflect.deleteProperty(navigator, "clipboard");
+  }
   globalThis.fetch = harnessFetch;
   Object.defineProperty(window, "location", {
     configurable: true,

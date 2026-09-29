@@ -1,3 +1,9 @@
+/**
+ * Chat API wrapper for the gateway's `/api/chat/*` endpoints: threads,
+ * history, sending messages, approvals, and auth tokens, plus the
+ * `/api/chat/events` SSE subscription. Used by the `/chat` surface.
+ */
+
 import { createEventStream, postJson, requestJson } from "@/lib/api/client";
 import type {
   ActionResponse,
@@ -90,7 +96,16 @@ export function connectChatEvents(
       if (typeof messageEvent.data !== "string") {
         return;
       }
-      listener(JSON.parse(messageEvent.data) as ChatSseEvent);
+      // A malformed frame is reported through `onError` rather than thrown
+      // from inside the EventSource callback, where nothing could catch it.
+      let event: ChatSseEvent;
+      try {
+        event = JSON.parse(messageEvent.data) as ChatSseEvent;
+      } catch {
+        onError?.();
+        return;
+      }
+      listener(event);
     });
   }
 

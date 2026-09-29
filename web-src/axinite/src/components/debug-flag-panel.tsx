@@ -1,3 +1,9 @@
+/**
+ * Collapsible debug panel in the app shell. It lists every flag from the
+ * registry with its resolved state and lets an operator set or clear a local
+ * override (see `lib/feature-flags/runtime`).
+ */
+
 import { Collapsible } from "@kobalte/core/collapsible";
 import { For } from "solid-js";
 

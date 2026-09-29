@@ -1,3 +1,9 @@
+/**
+ * File browser for a job's project files on the `/jobs` surface. It turns the
+ * flat `files/list` payload into a nested tree and renders it with
+ * expandable directories.
+ */
+
 import { createSignal, For, Show } from "solid-js";
 
 import type { ProjectFileEntry } from "@/lib/api/contracts";

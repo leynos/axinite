@@ -1,3 +1,9 @@
+/**
+ * Shared HTTP layer for the `lib/api/*` modules. It adds JSON helpers, the
+ * bearer token, a request timeout, and EventSource creation with the token
+ * passed as a query parameter. Non-2xx responses throw with the body text.
+ */
+
 import { appendTokenToUrl, getGatewayToken } from "@/lib/auth/token";
 
 type RequestOptions = {
@@ -6,19 +12,38 @@ type RequestOptions = {
   body?: BodyInit | null;
 };
 
-async function request<T>(
-  url: string,
-  options: RequestOptions = {}
+/** How long any browser request may take before it is aborted. */
+export const REQUEST_TIMEOUT_MS = 5_000;
+
+/**
+ * Run `run` with an abort signal that fires after `timeoutMs`, so a hung
+ * gateway cannot leave a caller waiting indefinitely. Rejects with a timeout
+ * error when the deadline passes; other failures propagate unchanged.
+ */
+export async function withRequestTimeout<T>(
+  run: (signal: AbortSignal) => Promise<T>,
+  timeoutMs: number = REQUEST_TIMEOUT_MS
 ): Promise<T> {
-  const timeoutMs = 5_000;
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
-
   try {
+    return await run(controller.signal);
+  } catch (error) {
+    if (controller.signal.aborted) {
+      throw new Error(`Request timed out after ${timeoutMs}ms`);
+    }
+    throw error;
+  } finally {
+    clearTimeout(timeoutId);
+  }
+}
+
+function request<T>(url: string, options: RequestOptions = {}): Promise<T> {
+  return withRequestTimeout(async (signal) => {
     const token = getGatewayToken();
     const response = await fetch(url, {
       ...options,
-      signal: controller.signal,
+      signal,
       headers: {
         Accept: "application/json",
         ...(token ? { Authorization: `Bearer ${token}` } : {}),
@@ -40,14 +65,7 @@ async function request<T>(
     }
 
     return (await response.json()) as T;
-  } catch (error) {
-    if (controller.signal.aborted) {
-      throw new Error(`Request timed out after ${timeoutMs}ms`);
-    }
-    throw error;
-  } finally {
-    clearTimeout(timeoutId);
-  }
+  });
 }
 
 export function requestJson<T>(url: string): Promise<T> {

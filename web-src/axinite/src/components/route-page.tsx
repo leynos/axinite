@@ -1,3 +1,10 @@
+/**
+ * Per-route page component used by the router. It shows an unavailable
+ * notice when the route's feature flag is off, otherwise the surface for the
+ * `RouteId` (chat, memory, jobs, and so on), with a generic preview hero as
+ * the fallback.
+ */
+
 import { For, Show } from "solid-js";
 
 import { ChatPreview } from "@/components/chat-preview";
