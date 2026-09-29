@@ -4,9 +4,12 @@ use axum::body::Body;
 use axum::http::Request;
 use tower::ServiceExt;
 
+use rstest::rstest;
+
 use super::*;
 use crate::channels::web::handlers::features;
 use crate::channels::web::test_helpers::TestGatewayBuilder;
+use crate::test_support::ExpectValid;
 
 #[test]
 fn valid_flag_name_accepts_lowercase_digits_underscore() {
@@ -37,80 +40,98 @@ fn app(state: Arc<GatewayState>) -> Router {
 async fn body_string(response: axum::response::Response) -> String {
     let bytes = axum::body::to_bytes(response.into_body(), usize::MAX)
         .await
-        .unwrap();
+        .expect_valid("read response body");
     String::from_utf8_lossy(&bytes).into_owned()
 }
 
+/// Every malformed `feature_flag:` request and malformed deployment header is
+/// rejected with 400 before it reaches the store or the registry.
+#[rstest]
+#[case::put_without_deployment_header(
+    "PUT",
+    "/api/settings/feature_flag:route_memory",
+    None,
+    r#"{"value":"false"}"#,
+    false
+)]
+#[case::put_with_invalid_deployment_header(
+    "PUT",
+    "/api/settings/feature_flag:route_memory",
+    Some("Production!"),
+    r#"{"value":"false"}"#,
+    false
+)]
+#[case::put_with_overlong_deployment_header(
+    "PUT",
+    "/api/settings/feature_flag:route_memory",
+    Some(OVERLONG_DEPLOYMENT_ID),
+    r#"{"value":"false"}"#,
+    false
+)]
+#[case::put_with_invalid_flag_name(
+    "PUT",
+    "/api/settings/feature_flag:Bad-Name",
+    Some("production"),
+    r#"{"value":true}"#,
+    false
+)]
+// Store present so the failure is attributable to value coercion, not a
+// missing store.
+#[case::put_with_uncoercible_value(
+    "PUT",
+    "/api/settings/feature_flag:route_memory",
+    Some("production"),
+    r#"{"value":"maybe"}"#,
+    true
+)]
+#[case::get_flag_key_via_settings(
+    "GET",
+    "/api/settings/feature_flag:route_memory",
+    None,
+    "",
+    false
+)]
+#[case::features_with_invalid_deployment_header("GET", "/api/features", Some("a/b"), "", false)]
 #[tokio::test]
-async fn put_feature_flag_without_deployment_header_returns_400() {
-    let state = TestGatewayBuilder::new().build();
-    let response = app(state)
+async fn malformed_feature_flag_requests_return_400(
+    #[case] method: &str,
+    #[case] uri: &str,
+    #[case] deployment_id: Option<&str>,
+    #[case] body: &'static str,
+    #[case] with_store: bool,
+) {
+    let mut builder = TestGatewayBuilder::new();
+    if with_store {
+        builder = builder.store(new_test_store().await);
+    }
+    let mut request = Request::builder().method(method).uri(uri);
+    if !body.is_empty() {
+        request = request.header("content-type", "application/json");
+    }
+    if let Some(deployment_id) = deployment_id {
+        request = request.header("x-deployment-id", deployment_id);
+    }
+    let response = app(builder.build())
         .oneshot(
-            Request::builder()
-                .method("PUT")
-                .uri("/api/settings/feature_flag:route_memory")
-                .header("content-type", "application/json")
-                .body(Body::from(r#"{"value":"false"}"#))
-                .unwrap(),
+            request
+                .body(Body::from(body))
+                .expect("build feature-flag request"),
         )
         .await
-        .unwrap();
+        .expect("route feature-flag request");
     assert_eq!(response.status(), StatusCode::BAD_REQUEST);
 }
 
-#[tokio::test]
-async fn put_feature_flag_with_invalid_name_returns_400() {
-    let state = TestGatewayBuilder::new().build();
-    let response = app(state)
-        .oneshot(
-            Request::builder()
-                .method("PUT")
-                .uri("/api/settings/feature_flag:Bad-Name")
-                .header("content-type", "application/json")
-                .header("x-deployment-id", "production")
-                .body(Body::from(r#"{"value":true}"#))
-                .unwrap(),
-        )
-        .await
-        .unwrap();
-    assert_eq!(response.status(), StatusCode::BAD_REQUEST);
-}
+/// Sixty-five characters: one over `MAX_DEPLOYMENT_ID_LEN`.
+const OVERLONG_DEPLOYMENT_ID: &str =
+    "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
 
-#[tokio::test]
-async fn put_feature_flag_with_uncoercible_value_returns_400() {
-    // Store present so the failure is attributable to value coercion, not a
-    // missing store.
-    let backend = new_test_store().await;
-    let state = TestGatewayBuilder::new().store(backend).build();
-    let response = app(state)
-        .oneshot(
-            Request::builder()
-                .method("PUT")
-                .uri("/api/settings/feature_flag:route_memory")
-                .header("content-type", "application/json")
-                .header("x-deployment-id", "production")
-                .body(Body::from(r#"{"value":"maybe"}"#))
-                .unwrap(),
-        )
-        .await
-        .unwrap();
-    assert_eq!(response.status(), StatusCode::BAD_REQUEST);
-}
-
-#[tokio::test]
-async fn get_feature_flag_key_via_settings_is_rejected() {
-    let state = TestGatewayBuilder::new().build();
-    let response = app(state)
-        .oneshot(
-            Request::builder()
-                .method("GET")
-                .uri("/api/settings/feature_flag:route_memory")
-                .body(Body::empty())
-                .unwrap(),
-        )
-        .await
-        .unwrap();
-    assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+#[test]
+fn overlong_deployment_fixture_exceeds_the_bound() {
+    assert_eq!(
+        OVERLONG_DEPLOYMENT_ID.len(),
+        crate::channels::web::handlers::feature_registry::MAX_DEPLOYMENT_ID_LEN + 1
+    );
 }
 
 #[tokio::test]
@@ -122,10 +143,10 @@ async fn features_get_without_header_uses_default_deployment() {
             Request::builder()
                 .uri("/api/features")
                 .body(Body::empty())
-                .unwrap(),
+                .expect("build features request"),
         )
         .await
-        .unwrap();
+        .expect("route features request");
     assert_eq!(response.status(), StatusCode::OK);
     assert!(
         response
@@ -151,8 +172,11 @@ async fn new_test_store() -> Arc<dyn crate::db::Database> {
     use crate::db::Database as _;
     let backend = crate::db::libsql::LibSqlBackend::new_memory()
         .await
-        .unwrap();
-    backend.run_migrations().await.unwrap();
+        .expect_valid("open in-memory libSQL backend");
+    backend
+        .run_migrations()
+        .await
+        .expect_valid("run libSQL migrations");
     Arc::new(backend)
 }
 
@@ -166,11 +190,13 @@ async fn new_test_store() -> Arc<dyn crate::db::Database> {
 #[cfg(feature = "libsql")]
 #[tokio::test]
 async fn put_feature_flag_then_get_reflects_override_without_restart() {
-    // Guard against a leaked environment override from another test.
-    // SAFETY: single-threaded test; no other thread reads the environment.
-    unsafe {
-        std::env::remove_var("FEATURE_FLAG_ROUTE_MEMORY");
-    }
+    // The environment layer outranks deployment overrides, so this test is
+    // only meaningful when the process was started without it. Nothing in the
+    // suite sets it; check rather than mutate the shared process environment.
+    assert!(
+        !features::env_flag_overlay().contains_key("FEATURE_FLAG_ROUTE_MEMORY"),
+        "FEATURE_FLAG_ROUTE_MEMORY must be unset for this test"
+    );
 
     let backend = new_test_store().await;
     let state = TestGatewayBuilder::new().store(backend).build();
@@ -186,10 +212,10 @@ async fn put_feature_flag_then_get_reflects_override_without_restart() {
                 .header("content-type", "application/json")
                 .header("x-deployment-id", "production")
                 .body(Body::from(r#"{"value":"false"}"#))
-                .unwrap(),
+                .expect("build override PUT"),
         )
         .await
-        .unwrap();
+        .expect("route override PUT");
     assert_eq!(put.status(), StatusCode::OK);
 
     // The same deployment now reflects the override immediately.
@@ -199,13 +225,13 @@ async fn put_feature_flag_then_get_reflects_override_without_restart() {
                 .uri("/api/features")
                 .header("x-deployment-id", "production")
                 .body(Body::empty())
-                .unwrap(),
+                .expect("build production features GET"),
         )
         .await
-        .unwrap();
+        .expect("route production features GET");
     assert_eq!(get.status(), StatusCode::OK);
     let flags: std::collections::BTreeMap<String, bool> =
-        serde_json::from_str(&body_string(get).await).unwrap();
+        serde_json::from_str(&body_string(get).await).expect("production flags JSON");
     assert_eq!(flags.get("route_memory"), Some(&false));
 
     // A different deployment is unaffected and keeps the compiled default.
@@ -215,11 +241,11 @@ async fn put_feature_flag_then_get_reflects_override_without_restart() {
                 .uri("/api/features")
                 .header("x-deployment-id", "staging")
                 .body(Body::empty())
-                .unwrap(),
+                .expect("build staging features GET"),
         )
         .await
-        .unwrap();
+        .expect("route staging features GET");
     let other_flags: std::collections::BTreeMap<String, bool> =
-        serde_json::from_str(&body_string(other).await).unwrap();
+        serde_json::from_str(&body_string(other).await).expect("staging flags JSON");
     assert_eq!(other_flags.get("route_memory"), Some(&true));
 }

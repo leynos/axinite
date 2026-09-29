@@ -21,9 +21,15 @@
 //! is hydrated lazily from the store on the first read for a deployment.
 
 use std::collections::{BTreeMap, HashMap};
-use std::sync::Arc;
+use std::sync::{Arc, OnceLock};
 
-use axum::{Json, Router, extract::State, http::HeaderMap, routing::get};
+use axum::{
+    Json, Router,
+    extract::State,
+    http::{HeaderMap, StatusCode},
+    response::IntoResponse,
+    routing::get,
+};
 
 use crate::channels::web::handlers::feature_registry::{
     DEFAULT_DEPLOYMENT_ID, deployment_id_from_headers,
@@ -59,12 +65,18 @@ pub fn routes() -> Router<Arc<GatewayState>> {
 /// RFC 0009 body shape.
 pub const VERSION_HEADER: &str = "x-axinite-version";
 
+/// Serve the resolved flag map for the requesting deployment.
+///
+/// An absent `X-Deployment-Id` header selects [`DEFAULT_DEPLOYMENT_ID`]; a
+/// present but malformed one is rejected with `400 Bad Request` rather than
+/// silently resolving another deployment's flags.
 pub async fn features_handler(
     State(state): State<Arc<GatewayState>>,
     headers: HeaderMap,
-) -> impl axum::response::IntoResponse {
-    let deployment_id =
-        deployment_id_from_headers(&headers).unwrap_or_else(|| DEFAULT_DEPLOYMENT_ID.to_string());
+) -> Result<impl IntoResponse, (StatusCode, String)> {
+    let deployment_id = deployment_id_from_headers(&headers)
+        .map_err(|error| (StatusCode::BAD_REQUEST, error.to_string()))?
+        .unwrap_or_else(|| DEFAULT_DEPLOYMENT_ID.to_string());
 
     ensure_deployment_hydrated(&state, &deployment_id).await;
 
@@ -75,14 +87,38 @@ pub async fn features_handler(
         .overrides_for(&deployment_id);
     let unavailable = unavailable_subsystem_flags(&state).await;
 
-    (
+    Ok((
         [(VERSION_HEADER, env!("CARGO_PKG_VERSION"))],
         Json(resolve_flags(
-            |name| std::env::var(name).ok(),
+            |variable| env_flag_overlay().get(variable).cloned(),
             &overrides,
             &unavailable,
         )),
-    )
+    ))
+}
+
+/// Environment variable consulted for one flag: `FEATURE_FLAG_<UPPER_NAME>`.
+fn flag_env_var(name: &str) -> String {
+    format!("FEATURE_FLAG_{}", name.to_ascii_uppercase())
+}
+
+/// The `FEATURE_FLAG_*` environment layer, read once per process.
+///
+/// A running process's environment cannot be changed from outside, so
+/// re-reading it on every `GET /api/features` only repeats work; the overlay
+/// is captured on first use and reused for the process lifetime. Only the
+/// variables for known flags are captured.
+pub(super) fn env_flag_overlay() -> &'static HashMap<String, String> {
+    static OVERLAY: OnceLock<HashMap<String, String>> = OnceLock::new();
+    OVERLAY.get_or_init(|| {
+        FLAG_DEFAULTS
+            .iter()
+            .filter_map(|(name, _)| {
+                let variable = flag_env_var(name);
+                std::env::var(&variable).ok().map(|value| (variable, value))
+            })
+            .collect()
+    })
 }
 
 /// Flags whose backing subsystem is absent from `GatewayState`, per the
@@ -167,7 +203,7 @@ fn resolve_flags(
     FLAG_DEFAULTS
         .iter()
         .map(|(name, default)| {
-            let variable = format!("FEATURE_FLAG_{}", name.to_ascii_uppercase());
+            let variable = flag_env_var(name);
             let value = match env(&variable) {
                 Some(raw) => raw.eq_ignore_ascii_case("true"),
                 None => overrides.get(*name).copied().unwrap_or_else(|| {

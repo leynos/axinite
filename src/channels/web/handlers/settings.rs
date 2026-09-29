@@ -134,7 +134,8 @@ pub async fn settings_set_handler(
 
 /// Validate, persist, and cache a deployment-scoped feature-flag override.
 ///
-/// Requires a non-empty `X-Deployment-Id` header, a `[a-z0-9_]+` flag name, and
+/// Requires a valid `X-Deployment-Id` header (see
+/// [`deployment_id_from_headers`]), a `[a-z0-9_]+` flag name, and
 /// a value that is a JSON boolean or the string `"true"`/`"false"`
 /// (case-insensitively). Returns a `SettingResponse`-shaped success body on the
 /// happy path.
@@ -144,10 +145,12 @@ async fn set_feature_flag(
     headers: &HeaderMap,
     value: &serde_json::Value,
 ) -> Result<Response, (StatusCode, String)> {
-    let deployment_id = deployment_id_from_headers(headers).ok_or((
-        StatusCode::BAD_REQUEST,
-        "feature_flag writes require a non-empty X-Deployment-Id header".to_string(),
-    ))?;
+    let deployment_id = deployment_id_from_headers(headers)
+        .map_err(|error| (StatusCode::BAD_REQUEST, error.to_string()))?
+        .ok_or((
+            StatusCode::BAD_REQUEST,
+            "feature_flag writes require a non-empty X-Deployment-Id header".to_string(),
+        ))?;
 
     if !is_valid_flag_name(flag_name) {
         return Err((
