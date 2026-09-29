@@ -15,6 +15,7 @@ use axum::{
 
 use crate::channels::web::handlers::static_files::health_handler;
 use crate::channels::web::server::GatewayState;
+use crate::config::EnvContext;
 
 /// Which browser implementation the gateway serves at `/`.
 ///
@@ -29,10 +30,22 @@ pub enum UiVariant {
     Legacy,
 }
 
-/// Resolve the UI variant from the `AXINITE_WEB_UI` environment variable.
+/// Environment variable that selects the served browser UI.
+const UI_VARIANT_ENV: &str = "AXINITE_WEB_UI";
+
+/// Resolve the UI variant from the ambient `AXINITE_WEB_UI` environment
+/// variable.
 pub fn ui_variant() -> UiVariant {
-    match std::env::var("AXINITE_WEB_UI") {
-        Ok(value) if value.eq_ignore_ascii_case("legacy") => UiVariant::Legacy,
+    ui_variant_from(&EnvContext::capture_ambient())
+}
+
+/// Resolve the UI variant from an explicit environment snapshot.
+///
+/// `legacy` (case-insensitively) selects the handwritten shell; anything else,
+/// including an unset variable, selects the SolidJS app.
+pub fn ui_variant_from(env: &EnvContext) -> UiVariant {
+    match env.get(UI_VARIANT_ENV) {
+        Some(value) if value.eq_ignore_ascii_case("legacy") => UiVariant::Legacy,
         _ => UiVariant::Solid,
     }
 }
@@ -70,6 +83,8 @@ const SOLID_LOCALES: &[(&str, &str)] = &[
     ),
 ];
 
+/// Build the public asset routes for the UI variant selected by
+/// `AXINITE_WEB_UI` at startup.
 pub fn public_routes() -> Router<Arc<GatewayState>> {
     routes_for(ui_variant())
 }
@@ -204,18 +219,27 @@ mod tests {
     use axum::http::Request;
     use tower::ServiceExt;
 
+    use std::collections::HashMap;
+
+    use rstest::rstest;
+
     use super::*;
     use crate::channels::web::test_helpers::TestGatewayBuilder;
+    use crate::test_support::ExpectValid;
 
     fn app(variant: UiVariant) -> Router {
         routes_for(variant).with_state(TestGatewayBuilder::new().build())
     }
 
     async fn get_path(variant: UiVariant, path: &str) -> (StatusCode, String, String) {
+        let request = Request::builder()
+            .uri(path)
+            .body(Body::empty())
+            .expect_valid("build asset request");
         let response = app(variant)
-            .oneshot(Request::builder().uri(path).body(Body::empty()).unwrap())
+            .oneshot(request)
             .await
-            .unwrap();
+            .expect_valid("route asset request");
         let status = response.status();
         let content_type = response
             .headers()
@@ -224,7 +248,7 @@ mod tests {
             .unwrap_or_default();
         let bytes = axum::body::to_bytes(response.into_body(), usize::MAX)
             .await
-            .unwrap();
+            .expect_valid("read asset response body");
         (
             status,
             content_type,
@@ -242,6 +266,7 @@ mod tests {
             "/routines",
             "/extensions",
             "/skills",
+            "/logs",
         ] {
             let (status, content_type, body) = get_path(UiVariant::Solid, path).await;
             assert_eq!(status, StatusCode::OK, "path {path}");
@@ -289,10 +314,68 @@ mod tests {
         assert_eq!(status, StatusCode::NOT_FOUND);
     }
 
-    #[test]
-    fn ui_variant_defaults_to_solid() {
-        // Note: reads the real process environment; AXINITE_WEB_UI is not
-        // set in the test environment.
-        assert_eq!(ui_variant(), UiVariant::Solid);
+    #[rstest]
+    #[case::stylesheet("/style.css", "text/css", "")]
+    #[case::script("/app.js", "application/javascript", "")]
+    #[case::favicon("/favicon.ico", "image/x-icon", "public, max-age=86400")]
+    #[tokio::test]
+    async fn legacy_variant_serves_its_assets(
+        #[case] path: &str,
+        #[case] expected_type: &str,
+        #[case] expected_cache: &str,
+    ) {
+        let request = Request::builder()
+            .uri(path)
+            .body(Body::empty())
+            .expect("build legacy asset request");
+        let response = app(UiVariant::Legacy)
+            .oneshot(request)
+            .await
+            .expect("route legacy asset request");
+        assert_eq!(response.status(), StatusCode::OK, "path {path}");
+        let header_text = |name| {
+            response
+                .headers()
+                .get(name)
+                .and_then(|value| value.to_str().ok())
+                .unwrap_or_default()
+                .to_string()
+        };
+        assert_eq!(
+            header_text(header::CONTENT_TYPE),
+            expected_type,
+            "path {path}"
+        );
+        let cache = header_text(header::CACHE_CONTROL);
+        if expected_cache.is_empty() {
+            assert_eq!(cache, "no-cache", "path {path}");
+        } else {
+            assert_eq!(cache, expected_cache, "path {path}");
+        }
+        let body = axum::body::to_bytes(response.into_body(), usize::MAX)
+            .await
+            .expect("read legacy asset body");
+        assert!(!body.is_empty(), "empty body for {path}");
+    }
+
+    fn env_with(value: Option<&str>) -> EnvContext {
+        let vars = value
+            .map(|value| HashMap::from([(UI_VARIANT_ENV.to_string(), value.to_string())]))
+            .unwrap_or_default();
+        EnvContext::for_testing(vars, HashMap::new())
+    }
+
+    #[rstest]
+    #[case::unset(None, UiVariant::Solid)]
+    #[case::empty(Some(""), UiVariant::Solid)]
+    #[case::legacy(Some("legacy"), UiVariant::Legacy)]
+    #[case::legacy_any_case(Some("LEGACY"), UiVariant::Legacy)]
+    #[case::solid(Some("solid"), UiVariant::Solid)]
+    #[case::unrecognized(Some("classic"), UiVariant::Solid)]
+    fn ui_variant_is_resolved_from_the_supplied_environment(
+        #[case] value: Option<&str>,
+        #[case] expected: UiVariant,
+    ) {
+        assert_eq!(ui_variant_from(&env_with(value)), expected);
     }
 }
