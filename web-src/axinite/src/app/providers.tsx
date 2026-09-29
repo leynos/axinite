@@ -1,3 +1,9 @@
+/**
+ * Root provider stack for the SPA: TanStack Query cache, i18n, and feature
+ * flags. `main.tsx` wraps the auth gate and router in `AppProviders`, so every
+ * route can rely on those contexts being present.
+ */
+
 import { QueryClient, QueryClientProvider } from "@tanstack/solid-query";
 import type { ParentComponent } from "solid-js";
 

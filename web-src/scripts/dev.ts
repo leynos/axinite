@@ -1,7 +1,19 @@
+/**
+ * Local development runner. It starts the mock API server, a watching Vite
+ * build, and the static preview server together, prefixes their output,
+ * picks a free preview port, and stops all three on a signal or if one exits.
+ */
+
 import net from "node:net";
 
-const apiPort = Number(process.env.MOCK_API_PORT ?? "8787");
-const defaultPreviewPort = Number(process.env.PREVIEW_PORT ?? "2020");
+import { parsePort } from "../mock-backend/src/ports";
+
+const apiPort = parsePort("MOCK_API_PORT", process.env.MOCK_API_PORT, 8787);
+const defaultPreviewPort = parsePort(
+  "PREVIEW_PORT",
+  process.env.PREVIEW_PORT,
+  2020
+);
 const previewPortWasExplicit = process.env.PREVIEW_PORT !== undefined;
 
 type ManagedProcess = {
@@ -128,24 +140,26 @@ async function main(): Promise<void> {
 
   let shuttingDown = false;
 
-  const stopAll = async (signal: string) => {
+  // Operator signals are a clean stop (exit 0); a child dying on its own is a
+  // failure the caller (make frontend-stub, CI) must see as non-zero.
+  const stopAll = async (reason: string, exitCode: number) => {
     if (shuttingDown) {
       return;
     }
     shuttingDown = true;
-    console.log(`[dev] received ${signal}, shutting down child processes`);
+    console.log(`[dev] ${reason}, shutting down child processes`);
     for (const child of managed) {
       child.process.kill();
     }
     await Promise.allSettled(managed.map((child) => child.process.exited));
-    process.exit(0);
+    process.exit(exitCode);
   };
 
   process.on("SIGINT", () => {
-    void stopAll("SIGINT");
+    void stopAll("received SIGINT", 0);
   });
   process.on("SIGTERM", () => {
-    void stopAll("SIGTERM");
+    void stopAll("received SIGTERM", 0);
   });
 
   const results = await Promise.race(
@@ -159,7 +173,7 @@ async function main(): Promise<void> {
     console.error(
       `[dev] ${results.label} exited unexpectedly with code ${results.exitCode}`
     );
-    await stopAll("child-exit");
+    await stopAll(`${results.label} exited`, results.exitCode || 1);
   }
 }
 

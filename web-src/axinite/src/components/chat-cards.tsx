@@ -1,3 +1,10 @@
+/**
+ * Inline cards rendered in the chat transcript for gateway events that need
+ * more than text: generated images, job-start notices, and auth-token
+ * prompts. Also holds the http(s) URL guard applied before any external link
+ * is opened.
+ */
+
 import { createSignal, Show } from "solid-js";
 
 import { buildAppPath } from "@/lib/base-path";

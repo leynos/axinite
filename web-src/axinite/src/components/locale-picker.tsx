@@ -1,3 +1,9 @@
+/**
+ * Language selector shown in the app shell. It lists the locales that
+ * `supported-locales` marks as complete and switches language through the
+ * i18n provider.
+ */
+
 import { For } from "solid-js";
 
 import { useI18n } from "@/lib/i18n/provider";

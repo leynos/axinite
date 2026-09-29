@@ -1,3 +1,8 @@
+/**
+ * The `/skills` surface: installed skills, catalogue search, and install and
+ * remove actions, backed by `lib/api/skills` (`/api/skills/*`).
+ */
+
 import {
   createMutation,
   createQuery,

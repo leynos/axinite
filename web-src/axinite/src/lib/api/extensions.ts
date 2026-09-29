@@ -1,3 +1,9 @@
+/**
+ * Extensions API wrapper for `/api/extensions/*`: list, tools, registry
+ * search, install, activate, remove, and secret setup. Used by the
+ * `/extensions` surface.
+ */
+
 import { postJson, requestJson } from "@/lib/api/client";
 import type {
   ActionResponse,
@@ -34,22 +40,31 @@ export function installExtension(
 }
 
 export function activateExtension(name: string): Promise<ActionResponse> {
-  return postJson<ActionResponse>(`/api/extensions/${name}/activate`);
+  return postJson<ActionResponse>(
+    `/api/extensions/${encodeURIComponent(name)}/activate`
+  );
 }
 
 export function removeExtension(name: string): Promise<ActionResponse> {
-  return postJson<ActionResponse>(`/api/extensions/${name}/remove`);
+  return postJson<ActionResponse>(
+    `/api/extensions/${encodeURIComponent(name)}/remove`
+  );
 }
 
 export function fetchExtensionSetup(
   name: string
 ): Promise<ExtensionSetupResponse> {
-  return requestJson<ExtensionSetupResponse>(`/api/extensions/${name}/setup`);
+  return requestJson<ExtensionSetupResponse>(
+    `/api/extensions/${encodeURIComponent(name)}/setup`
+  );
 }
 
 export function submitExtensionSetup(
   name: string,
   request: ExtensionSetupRequest
 ): Promise<ActionResponse> {
-  return postJson<ActionResponse>(`/api/extensions/${name}/setup`, request);
+  return postJson<ActionResponse>(
+    `/api/extensions/${encodeURIComponent(name)}/setup`,
+    request
+  );
 }

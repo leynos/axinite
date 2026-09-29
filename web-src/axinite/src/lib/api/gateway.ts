@@ -1,3 +1,9 @@
+/**
+ * Gateway-level API wrapper: `/api/gateway/status` for the shell's status
+ * pill and restart polling, and `/api/features` for runtime feature flags.
+ * Both degrade to a fallback value instead of throwing when unreachable.
+ */
+
 import { requestJson } from "@/lib/api/client";
 import type {
   FeatureFlagsResponse,

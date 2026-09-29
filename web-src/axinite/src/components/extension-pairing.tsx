@@ -1,3 +1,9 @@
+/**
+ * Pending pairing requests for one extension channel, with an approve action.
+ * It polls `/api/pairing/{channel}` and renders nothing when the queue is
+ * empty; used within the `/extensions` surface.
+ */
+
 import { createMutation, createQuery } from "@tanstack/solid-query";
 import type { Component } from "solid-js";
 import { createSignal, For, Show } from "solid-js";

@@ -1,3 +1,10 @@
+/**
+ * Mock gateway HTTP server. It answers the `/api/*` routes the SPA calls,
+ * including the chat and log SSE streams, from in-memory `MockBackendState`
+ * so the frontend can be developed and tested without the Rust daemon.
+ * `MOCK_FAILURES` forces HTTP 500 on chosen paths.
+ */
+
 import type {
   ApprovalRequest,
   AuthCancelRequest,
@@ -14,10 +21,15 @@ import type {
   SkillSearchRequest,
   ToggleRequest,
 } from "../../axinite/src/lib/api/contracts";
+import { parsePort } from "./ports";
 import { isStreamingApiPath } from "./streaming-routes";
 import { MockBackendState, PairingRateLimitedError } from "./state";
 
-export const DEFAULT_API_PORT = Number(process.env.MOCK_API_PORT ?? "8787");
+export const DEFAULT_API_PORT = parsePort(
+  "MOCK_API_PORT",
+  process.env.MOCK_API_PORT,
+  8787
+);
 
 // Deterministic failure fixtures: MOCK_FAILURES is a comma-separated list of
 // request paths that should return HTTP 500 so error-handling UI states can
@@ -529,6 +541,9 @@ export async function handleMockRequest(
       }
     }
   } catch (error) {
+    // Handlers throw to reject bad input (surfaced as 400), but a genuine
+    // handler bug takes the same path, so record it server-side too.
+    console.error(`[mock-api] ${method} ${pathname} failed:`, error);
     return errorResponse(
       400,
       error instanceof Error ? error.message : "Unknown mock backend error."

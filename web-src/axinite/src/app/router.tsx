@@ -1,3 +1,10 @@
+/**
+ * TanStack Router tree for the SPA. Each of the seven surfaces (chat, memory,
+ * jobs, routines, extensions, skills, logs) maps to a `RoutePage` inside the
+ * `AppShell`; `/` and unmatched paths redirect to `/chat`. The base path comes
+ * from the Vite `BASE_URL` so the SPA can be served under a prefix.
+ */
+
 import {
   createRootRoute,
   createRoute,
@@ -21,7 +28,7 @@ const NotFoundRedirect = () => {
   console.warn(
     `[router] Redirecting unmatched route "${invalidPath}" to /chat`
   );
-  return <Navigate to="/chat" />;
+  return <Navigate to="/chat" replace />;
 };
 
 const rootRoute = createRootRoute({
@@ -35,7 +42,7 @@ const rootRoute = createRootRoute({
 const indexRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/",
-  component: () => <Navigate to="/chat" />,
+  component: () => <Navigate to="/chat" replace />,
 });
 
 const chatRoute = createRoute({

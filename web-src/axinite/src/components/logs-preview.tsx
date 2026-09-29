@@ -1,4 +1,14 @@
-import { createMutation, createQuery } from "@tanstack/solid-query";
+/**
+ * The `/logs` surface: a live tail of `/api/logs/events` with client-side
+ * level and target filters, pause, clear, and auto-scroll, plus control of
+ * the gateway's runtime log level. Retained entries are capped in memory.
+ */
+
+import {
+  createMutation,
+  createQuery,
+  useQueryClient,
+} from "@tanstack/solid-query";
 import type { Accessor } from "solid-js";
 import {
   createEffect,
@@ -193,8 +203,13 @@ const LogsStream = () => {
     queryFn: fetchLogLevel,
   }));
 
+  const queryClient = useQueryClient();
+  // Refetch after a change so the select shows the level the server
+  // confirmed, not the one the operator picked.
   const levelMutation = createMutation(() => ({
     mutationFn: (nextLevel: string) => setLogLevel(nextLevel),
+    onSettled: () =>
+      queryClient.invalidateQueries({ queryKey: ["logs", "level"] }),
   }));
 
   createEffect(() => {

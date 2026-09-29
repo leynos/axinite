@@ -1,3 +1,9 @@
+/**
+ * TypeScript shapes for the gateway's JSON and SSE payloads. The `lib/api/*`
+ * wrappers, the components, and the mock backend all import these, so they
+ * are the SPA's statement of the wire contract with the Rust gateway.
+ */
+
 export type Identifier = string;
 
 export type GatewayStatusResponse = {

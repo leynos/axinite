@@ -166,16 +166,16 @@ jobs-item-audit-body = راجع خط أنابيب CI/CD، وحدد المراح�
 jobs-item-audit-elapsed = 7m 45s
 jobs-item-comparison-title = صياغة نص جدول المقارنة
 jobs-item-comparison-body = اكتب محتوى جدول المقارنة لموقع التوثيق مع تحديد واضح للموقع مقابل سكربتات الشل وMake وأدوات البناء الأخرى.
-jobs-item-comparison-elapsed = Running now
+jobs-item-comparison-elapsed = قيد التشغيل الآن
 jobs-item-oauth-title = ترحيل وحدة المصادقة إلى OAuth2
 jobs-item-oauth-body = أعد هيكلة طبقة المصادقة إلى OAuth2 مع PKCE، ثم حدّث حدود العميل دون إخفاء مخاطر الترحيل.
 jobs-item-oauth-elapsed = 45m 9s
 jobs-item-docs-title = إنشاء توثيق API
 jobs-item-docs-body = أنشئ مرجع API من تعليقات Rust doc وتعليقات OpenAPI التوضيحية، ثم بيّن أين توقف خط الأنابيب.
-jobs-item-docs-elapsed = Waiting for recovery
+jobs-item-docs-elapsed = بانتظار الاسترداد
 jobs-item-security-title = مراجعة تغييرات الأمان في PR #47
 jobs-item-security-body = راجع تغييرات تحديد المعدّل والتحقق من المدخلات، واترك ملاحظات قابلة للتنفيذ قبل إغلاق نافذة الدمج.
-jobs-item-security-elapsed = Not started
+jobs-item-security-elapsed = لم يبدأ بعد
 routines-watermark = LOOP
 routines-summary-total = الإجمالي
 routines-summary-enabled = مفعّل
@@ -304,7 +304,7 @@ skills-url-title = التثبيت عبر رابط
 skills-url-name-label = اسم المهارة أو المعرّف
 skills-url-name-placeholder = my-skill
 skills-url-field-label = رابط HTTPS
-skills-url-placeholder = https://example.com/SKILL.md or .skill
+skills-url-placeholder = https://example.com/SKILL.md أو ‎.skill
 skills-url-action = تثبيت
 skills-url-hint = يمكن أن يشير الرابط إلى ملف `SKILL.md` أو أرشيف `.skill`.
 skills-upload-mark = BUNDLE
@@ -374,6 +374,7 @@ connection-status-disconnected = غير متصل
 chat-upload-unavailable = لا تحتفظ معاينة الخلفية التجريبية بالملفات المرفوعة.
 chat-sidebar-conversations = المحادثات
 chat-tools-used = { $count ->
+    [zero] لم تُستخدم أي أداة
     [one] { $count } أداة مستخدمة
     [two] { $count } أداتان مستخدمتان
     [few] { $count } أدوات مستخدمة
@@ -386,7 +387,7 @@ routines-action-enable = تفعيل
 routines-action-delete = حذف
 routines-runs-title = التشغيلات الأخيرة
 routines-run-no-summary = لا يوجد ملخص مسجّل.
-extensions-version-preview = preview
+extensions-version-preview = معاينة
 extensions-url-local = معاينة محلية
 extensions-action-activate = تفعيل
 extensions-action-reactivate = إعادة تفعيل

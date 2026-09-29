@@ -1,3 +1,10 @@
+/**
+ * i18next setup for the SPA. It loads Fluent (`.ftl`) catalogues from
+ * `locales/{lng}/common.ftl` under the deployment base path, detects the
+ * language, and keeps the document `lang` and `dir` in step with it. Exports
+ * `i18nReady` for the bootstrap in `main.tsx`.
+ */
+
 import i18n from "i18next";
 import LanguageDetector from "i18next-browser-languagedetector";
 import Fluent from "i18next-fluent";

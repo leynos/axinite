@@ -1,3 +1,9 @@
+/**
+ * Pairing API wrapper for `/api/pairing/{channel}`: list pending requests
+ * and approve one by code. Used by the extension pairing queue on the
+ * `/extensions` surface.
+ */
+
 import { postJson, requestJson } from "@/lib/api/client";
 import type {
   ActionResponse,

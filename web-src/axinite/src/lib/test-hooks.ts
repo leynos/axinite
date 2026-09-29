@@ -1,3 +1,9 @@
+/**
+ * E2e test-hook module. It mounts `window.__axinite` at boot (see
+ * `main.tsx`) so the Python Playwright suite can drive the chat stream; the
+ * chat surface supplies the concrete controls while it is mounted.
+ */
+
 import type { ChatSseEvent } from "@/lib/api/contracts";
 
 /**

@@ -77,7 +77,8 @@ describe("checkTeeStatus", () => {
       image_digest: "sha256:abc",
     });
     expect(fetchSpy).toHaveBeenCalledWith(
-      "https://api.example.com/instances/sub/attestation"
+      "https://api.example.com/instances/sub/attestation",
+      expect.objectContaining({ signal: expect.any(AbortSignal) })
     );
   });
 
@@ -108,7 +109,8 @@ describe("fetchTeeReport", () => {
     await expect(fetchTeeReport()).resolves.toEqual(payload);
     expect(fetchSpy).toHaveBeenCalledTimes(1);
     expect(fetchSpy).toHaveBeenCalledWith(
-      "https://api.example.com/attestation/report"
+      "https://api.example.com/attestation/report",
+      expect.objectContaining({ signal: expect.any(AbortSignal) })
     );
   });
 });

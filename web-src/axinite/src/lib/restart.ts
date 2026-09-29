@@ -1,3 +1,9 @@
+/**
+ * Gateway restart state machine, kept free of Solid and browser globals so
+ * it can be tested with injected dependencies. `restart-control.tsx` supplies
+ * the live wiring to the chat API, chat event stream, and status polling.
+ */
+
 import type { ChatSseEvent } from "@/lib/api/contracts";
 
 export type RestartPhase = "idle" | "restarting" | "restarted";
@@ -134,12 +140,18 @@ export function createRestartController(deps: RestartDeps): RestartController {
     deps.onPhase("restarting");
     handle = deps.openStream({ onEvent, onOpen, onError });
     void deps.sendRestart().catch(() => {
-      // A failed send aborts the restart; surface idle so the button re-enables.
+      if (finished) {
+        // Disposed while the command was in flight; nothing to report.
+        return;
+      }
+      // A failed send aborts this attempt only: reset to idle so the button
+      // re-enables and a later start() can retry.
       cancelPolls?.();
       cancelPolls = undefined;
       handle?.close();
       handle = undefined;
-      finished = true;
+      initiated = false;
+      wentDown = false;
       deps.onPhase("idle");
     });
   };

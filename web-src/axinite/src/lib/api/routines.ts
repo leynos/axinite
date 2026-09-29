@@ -1,3 +1,9 @@
+/**
+ * Routines API wrapper for `/api/routines/*`: list, summary, detail, runs,
+ * and the trigger, toggle, and delete actions. Used by the `/routines`
+ * surface.
+ */
+
 import { deleteJson, postJson, requestJson } from "@/lib/api/client";
 import type {
   ActionResponse,
@@ -17,24 +23,33 @@ export function fetchRoutineSummary(): Promise<RoutineSummaryResponse> {
 }
 
 export function fetchRoutineDetail(id: string): Promise<RoutineDetailResponse> {
-  return requestJson<RoutineDetailResponse>(`/api/routines/${id}`);
+  return requestJson<RoutineDetailResponse>(
+    `/api/routines/${encodeURIComponent(id)}`
+  );
 }
 
 export function fetchRoutineRuns(id: string): Promise<RoutineRunsResponse> {
-  return requestJson<RoutineRunsResponse>(`/api/routines/${id}/runs`);
+  return requestJson<RoutineRunsResponse>(
+    `/api/routines/${encodeURIComponent(id)}/runs`
+  );
 }
 
 export function triggerRoutine(id: string): Promise<ActionResponse> {
-  return postJson<ActionResponse>(`/api/routines/${id}/trigger`);
+  return postJson<ActionResponse>(
+    `/api/routines/${encodeURIComponent(id)}/trigger`
+  );
 }
 
 export function toggleRoutine(
   id: string,
   request?: ToggleRequest
 ): Promise<ActionResponse> {
-  return postJson<ActionResponse>(`/api/routines/${id}/toggle`, request ?? {});
+  return postJson<ActionResponse>(
+    `/api/routines/${encodeURIComponent(id)}/toggle`,
+    request ?? {}
+  );
 }
 
 export function deleteRoutine(id: string): Promise<ActionResponse> {
-  return deleteJson<ActionResponse>(`/api/routines/${id}`);
+  return deleteJson<ActionResponse>(`/api/routines/${encodeURIComponent(id)}`);
 }

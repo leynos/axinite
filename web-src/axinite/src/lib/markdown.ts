@@ -7,7 +7,10 @@
  * for the mockup.
  *
  * All input is HTML-escaped before markdown transforms are applied, so
- * untrusted content (user messages, tool output) cannot inject raw HTML.
+ * untrusted content (user messages, tool output) cannot inject raw HTML. The
+ * transforms then emit only a fixed set of attribute-free elements, which is
+ * what makes assigning the output to `innerHTML` safe; keep both properties
+ * (and `tests/markdown.test.ts`) intact if the subset grows.
  */
 
 function escapeHtml(text: string): string {

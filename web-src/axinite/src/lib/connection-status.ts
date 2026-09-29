@@ -1,3 +1,9 @@
+/**
+ * Module-level signal for the chat stream's connection state. The chat
+ * surface writes it and the app shell reads it; the e2e suite depends on the
+ * resulting `data-state` values.
+ */
+
 import { createSignal } from "solid-js";
 
 /**

@@ -20,6 +20,10 @@ export default defineConfig({
   build: {
     outDir: resolve(__dirname, "dist"),
     emptyOutDir: true,
+    // Inline the self-hosted fonts as data URIs so they travel inside the
+    // embedded stylesheet rather than needing their own gateway routes.
+    assetsInlineLimit: (filePath) =>
+      filePath.endsWith(".woff2") ? true : undefined,
     rollupOptions: {
       output: {
         entryFileNames: "assets/app.js",

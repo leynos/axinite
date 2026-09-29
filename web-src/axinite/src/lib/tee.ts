@@ -5,6 +5,8 @@
 // inert on localhost, loopback, bare IP, and single-label hosts, where no such
 // sibling host exists.
 
+import { withRequestTimeout } from "@/lib/api/client";
+
 export type TeeStatus = {
   image_digest: string;
   [key: string]: unknown;
@@ -71,12 +73,14 @@ export function teeInstanceName(hostname: string = currentHostname()): string {
   return hostname.split(".")[0];
 }
 
-async function fetchJson<T>(url: string): Promise<T> {
-  const response = await fetch(url);
-  if (!response.ok) {
-    throw new Error(`TEE request failed for ${url} with ${response.status}`);
-  }
-  return (await response.json()) as T;
+function fetchJson<T>(url: string): Promise<T> {
+  return withRequestTimeout(async (signal) => {
+    const response = await fetch(url, { signal });
+    if (!response.ok) {
+      throw new Error(`TEE request failed for ${url} with ${response.status}`);
+    }
+    return (await response.json()) as T;
+  });
 }
 
 /**

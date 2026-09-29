@@ -1,3 +1,9 @@
+/**
+ * Formatting helpers and class maps shared by the jobs list and job detail
+ * views: status and source pill classes, timestamp formatting, and the
+ * sandbox job-kind constant that gates Claude Code prompting.
+ */
+
 import type { JobDetailResponse, JobInfo } from "@/lib/api/contracts";
 import { pascalCase } from "@/lib/string-case";
 

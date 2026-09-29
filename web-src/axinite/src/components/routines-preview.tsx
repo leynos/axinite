@@ -1,3 +1,9 @@
+/**
+ * The `/routines` surface: routine summary, list, and detail with run
+ * history, plus trigger, toggle, and delete actions. Data comes from
+ * `lib/api/routines` (`/api/routines/*`).
+ */
+
 import {
   createMutation,
   createQuery,

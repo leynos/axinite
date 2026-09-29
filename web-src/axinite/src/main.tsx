@@ -1,3 +1,9 @@
+/**
+ * SPA entry point. It installs the e2e test hooks, waits for the i18n
+ * runtime, then mounts `AppProviders`, `AuthGate`, and `AppRouter` into the
+ * `#app` element.
+ */
+
 import { render } from "solid-js/web";
 
 import { AppProviders } from "./app/providers";

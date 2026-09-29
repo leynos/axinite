@@ -1,3 +1,9 @@
+/**
+ * Session-scoped storage for the gateway bearer token. The token is entered
+ * through the auth gate and read by `lib/api/client` for request headers and
+ * for the query parameter on SSE URLs.
+ */
+
 const STORAGE_KEY = "axinite.gateway-token";
 
 function storage(): Storage | null {

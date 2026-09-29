@@ -1,4 +1,10 @@
 #!/usr/bin/env bun
+/**
+ * Lint script: checks that every locale listed as complete in
+ * `supported-locales` has a `common.ftl` defining every message key of the
+ * default locale, and exits non-zero on any gap.
+ */
+
 import fs from "node:fs";
 import path from "node:path";
 import process from "node:process";
