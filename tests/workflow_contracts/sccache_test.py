@@ -20,7 +20,7 @@ Run via ``make test-workflow-contracts``.
 from __future__ import annotations
 
 import re
-import typing as typ
+from collections import abc
 
 import pytest
 from _workflow_files import jobs
@@ -106,7 +106,7 @@ def _ids(candidates: tuple[Job, ...]) -> list[str]:
     return [str(job) for job in candidates]
 
 
-def expected_expect_cache(labels: typ.Iterable[str]) -> str:
+def expected_expect_cache(labels: abc.Iterable[str]) -> str:
     """Return the `expect-cache` value a job's placement calls for.
 
     Parameters
@@ -129,7 +129,26 @@ def expected_expect_cache(labels: typ.Iterable[str]) -> str:
     return "any" if set(labels) & GITHUB_HOSTED_LABELS else "ubicloud"
 
 
-def retired_findings(env: object, steps: typ.Sequence[dict[str, object]]) -> list[str]:
+def _retired_variables(owner: str, env: object) -> list[str]:
+    """Return a finding for each retired variable a job or step `env` sets."""
+    if not isinstance(env, dict):
+        return []
+    return [f"{owner} sets {name}" for name in RETIRED_VARIABLES if name in env]
+
+
+def _retired_in_step(index: int, step: dict[str, object]) -> list[str]:
+    """Return every retired piece of sccache wiring in one step."""
+    findings = _retired_variables(f"step {index}", step.get("env"))
+    if step.get("name") in RETIRED_STEPS:
+        findings.append(f"step {index} is the retired {step['name']!r}")
+    if SERVER_COMMAND.search(str(step.get("run", ""))):
+        findings.append(f"step {index} starts or zeroes the sccache server")
+    if "ACTIONS_CACHE_SERVICE_V2" in str(step.get("with", "")):
+        findings.append(f"step {index} rewrites the cache-service flag itself")
+    return findings
+
+
+def retired_findings(env: object, steps: abc.Sequence[dict[str, object]]) -> list[str]:
     """Return every retired piece of sccache wiring in a job.
 
     Pure over the parsed data, so the rule runs on fixtures as well as on the
@@ -155,24 +174,9 @@ def retired_findings(env: object, steps: typ.Sequence[dict[str, object]]) -> lis
     >>> retired_findings({"RUSTC_WRAPPER": "sccache"}, [{"run": "sccache --zero-stats"}])
     ['job sets RUSTC_WRAPPER', 'step 0 starts or zeroes the sccache server']
     """
-    findings = [
-        f"job sets {name}"
-        for name in RETIRED_VARIABLES
-        if isinstance(env, dict) and name in env
-    ]
+    findings = _retired_variables("job", env)
     for index, step in enumerate(steps):
-        step_env = step.get("env")
-        findings.extend(
-            f"step {index} sets {name}"
-            for name in RETIRED_VARIABLES
-            if isinstance(step_env, dict) and name in step_env
-        )
-        if step.get("name") in RETIRED_STEPS:
-            findings.append(f"step {index} is the retired {step['name']!r}")
-        if SERVER_COMMAND.search(str(step.get("run", ""))):
-            findings.append(f"step {index} starts or zeroes the sccache server")
-        if "ACTIONS_CACHE_SERVICE_V2" in str(step.get("with", "")):
-            findings.append(f"step {index} rewrites the cache-service flag itself")
+        findings.extend(_retired_in_step(index, step))
     return findings
 
 
