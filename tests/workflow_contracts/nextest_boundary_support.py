@@ -41,7 +41,7 @@ def _run(
     """Run a Cargo command in the copied crate and capture its output.
 
     The fixture source is copied outside the repository because Cargo finds
-    `.cargo/config.toml` in parent directories. Its build artifacts stay in
+    `.cargo/config.toml` in parent directories. Its build artefacts stay in
     the repository's ignored `target` directory and use the shared Cargo
     package cache.
     """
