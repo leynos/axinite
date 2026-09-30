@@ -32,6 +32,9 @@ type FileGroup = {
 
 type MemorySearchProps = {
   t: (key: string) => string;
+  // While a draft is open, switching documents would save it to the wrong
+  // path, so result selection is disabled.
+  editing: () => boolean;
   query: () => string;
   setQuery: Setter<string>;
   setActivePath: Setter<string | undefined>;
@@ -59,6 +62,7 @@ const MemorySearch = (props: MemorySearchProps) => (
           {(result) => (
             <button
               class="route-sidebar__list-item"
+              disabled={props.editing()}
               onClick={() => {
                 props.setActivePath(result.path);
                 props.setQuery("");
@@ -78,6 +82,8 @@ const MemorySearch = (props: MemorySearchProps) => (
 );
 
 type MemoryTreeProps = {
+  // Disables file selection while a draft is open (see MemorySearchProps).
+  editing: () => boolean;
   groups: () => FileGroup[];
   activePath: () => string | undefined;
   setActivePath: Setter<string | undefined>;
@@ -100,6 +106,7 @@ const MemoryTree = (props: MemoryTreeProps) => (
                       ? "route-tree__file route-tree__file--active"
                       : "route-tree__file"
                   }
+                  disabled={props.editing()}
                   onClick={() => props.setActivePath(path)}
                   type="button"
                 >
@@ -303,6 +310,7 @@ export const MemoryPreview = () => {
       <div class="route-preview__layout route-preview__layout--memory">
         <aside class="route-sidebar route-sidebar--memory">
           <MemorySearch
+            editing={editing}
             query={query}
             results={() => searchResults.data?.results ?? []}
             setActivePath={setActivePath}
@@ -312,6 +320,7 @@ export const MemoryPreview = () => {
 
           <MemoryTree
             activePath={activePath}
+            editing={editing}
             groups={groups}
             setActivePath={setActivePath}
           />

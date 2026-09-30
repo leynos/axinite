@@ -63,6 +63,14 @@ type StagedImage = {
   dataUrl: string;
 };
 
+// What one send carries: the text plus the staged images captured at the
+// moment Send was pressed, so images staged while the request is in flight
+// are neither sent nor discarded.
+type SendInput = {
+  content: string;
+  images: StagedImage[];
+};
+
 type GeneratedImage = {
   id: string;
   dataUrl: string;
@@ -362,8 +370,8 @@ export const ChatPreview = () => {
   }));
 
   const sendMutation = createMutation(() => ({
-    mutationFn: (content: string) => {
-      const images: ImageData[] = stagedImages().map((image) => ({
+    mutationFn: ({ content, images }: SendInput) => {
+      const payload: ImageData[] = images.map((image) => ({
         media_type: image.mediaType,
         data: image.data,
       }));
@@ -372,24 +380,27 @@ export const ChatPreview = () => {
         thread_id: activeThreadId() ?? null,
         timezone:
           Intl.DateTimeFormat().resolvedOptions().timeZone ?? "Europe/London",
-        images,
+        images: payload,
       });
     },
-    onMutate: (content) => {
+    onMutate: ({ content }) => {
       setPendingUserMessage(content);
       setComposerText("");
       setStreamingResponse("");
       setIsAwaitingResponse(true);
       setLiveStatus(t("chat-status-waiting"));
     },
-    onSuccess: () => {
-      setStagedImages([]);
+    onSuccess: (_response, { images }) => {
+      const sentIds = new Set(images.map((image) => image.id));
+      setStagedImages((current) =>
+        current.filter((image) => !sentIds.has(image.id))
+      );
       setAttachmentNotice("");
       setLiveStatus(t("chat-status-streaming"));
       void queryClient.invalidateQueries({ queryKey: ["chat", "history"] });
       void queryClient.invalidateQueries({ queryKey: ["chat", "threads"] });
     },
-    onError: (_error, content) => {
+    onError: (_error, { content }) => {
       setComposerText(content);
       setPendingUserMessage("");
       setStreamingResponse("");
@@ -879,7 +890,12 @@ export const ChatPreview = () => {
                       stagedImages().length === 0
                     }
                     type="button"
-                    onClick={() => sendMutation.mutate(composerText().trim())}
+                    onClick={() =>
+                      sendMutation.mutate({
+                        content: composerText().trim(),
+                        images: stagedImages(),
+                      })
+                    }
                   >
                     {t("chat-send-button")}
                   </button>

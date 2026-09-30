@@ -335,6 +335,41 @@ describe("chat preview behaviour", () => {
     expect(payload.images[0].data.length).toBeGreaterThan(0);
   });
 
+  it("keeps images staged while a send is in flight", async () => {
+    let resolveSend: (value: unknown) => void = () => undefined;
+    chatApiMocks.sendMessage.mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          resolveSend = resolve;
+        })
+    );
+    const { container } = renderPreview();
+    await screen.findByLabelText("Message composer");
+    const fileInput = container.querySelector(
+      'input[type="file"]'
+    ) as HTMLInputElement;
+    const image = (name: string) =>
+      new File([new Uint8Array([1, 2, 3, 4])], name, { type: "image/png" });
+
+    await userEvent.upload(fileInput, image("first.png"));
+    await screen.findByAltText("first.png");
+    await userEvent.click(screen.getByRole("button", { name: "Send" }));
+    await waitFor(() => {
+      expect(chatApiMocks.sendMessage).toHaveBeenCalledTimes(1);
+    });
+
+    // Staged after Send, before the gateway answers.
+    await userEvent.upload(fileInput, image("second.png"));
+    await screen.findByAltText("second.png");
+    resolveSend({ message_id: "message-1", status: "queued" });
+
+    await waitFor(() => {
+      expect(screen.queryByAltText("first.png")).toBeNull();
+    });
+    expect(screen.getByAltText("second.png")).toBeVisible();
+    expect(chatApiMocks.sendMessage.mock.calls[0]?.[0].images).toHaveLength(1);
+  });
+
   it("tags user and assistant turns with data-role markers", async () => {
     chatApiMocks.fetchHistory.mockResolvedValue({
       thread_id: "thread-1",
