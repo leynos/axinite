@@ -76,33 +76,3 @@ pub(super) fn render_auth_completed(info: &AuthCompletedInfo<'_>) -> String {
 pub(super) fn print_auth_completed(info: &AuthCompletedInfo<'_>) {
     eprintln!("{}", render_auth_completed(info));
 }
-
-/// Build an [`AuthRequiredInfo`] from destructured [`StatusUpdate::AuthRequired`]
-/// fields and delegate to [`print_auth_required`].
-///
-/// [`StatusUpdate::AuthRequired`]: crate::channels::StatusUpdate::AuthRequired
-pub(super) fn handle_auth_required(
-    extension_name: &str,
-    instructions: Option<&str>,
-    setup_url: Option<&str>,
-    auth_url: Option<&str>,
-) {
-    print_auth_required(&AuthRequiredInfo {
-        extension_name,
-        instructions,
-        setup_url,
-        auth_url,
-    });
-}
-
-/// Build an [`AuthCompletedInfo`] from destructured [`StatusUpdate::AuthCompleted`]
-/// fields and delegate to [`print_auth_completed`].
-///
-/// [`StatusUpdate::AuthCompleted`]: crate::channels::StatusUpdate::AuthCompleted
-pub(super) fn handle_auth_completed(extension_name: &str, success: bool, message: &str) {
-    print_auth_completed(&AuthCompletedInfo {
-        extension_name,
-        success,
-        message,
-    });
-}
