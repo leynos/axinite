@@ -178,10 +178,8 @@ export function ExampleDialog() {
       <Dialog.Trigger class="btn">Open dialog</Dialog.Trigger>
       <Dialog.Portal>
         <Dialog.Overlay class="fixed inset-0 bg-black/50 data-[expanded]:animate-in data-[closed]:animate-out" />
-        <Dialog.Content
-          class="modal modal-open grid place-items-center p-6"
-          /* The inner panel: use card tokens */
-        >
+        <Dialog.Content class="modal modal-open grid place-items-center p-6">
+          {/* The inner panel: use card tokens */}
           <div class="rounded-box bg-base-100 shadow-xl p-6 w-full max-w-md">
             <Dialog.Title class="text-xl font-semibold">Title</Dialog.Title>
             <Dialog.Description class="opacity-80">
@@ -210,13 +208,18 @@ Other handy Kobalte states:
 Example for a menu item:
 
 ```tsx
-<div
+import { DropdownMenu } from "@kobalte/core/dropdown-menu";
+
+<DropdownMenu.Item
   class="px-3 py-2 rounded-field data-[highlighted]:bg-base-200 data-[disabled]:opacity-50"
-  role="menuitem"
 >
   Preferences
-</div>
+</DropdownMenu.Item>
 ```
+
+`DropdownMenu.Item` must render inside `DropdownMenu.Root` and
+`DropdownMenu.Content`, which supply focus management, keyboard navigation, and
+the `data-highlighted` and `data-disabled` attributes.
 
 > **Note:** Variants like `data-[expanded]:…` or `data-[pressed]:…` work with
 > **Tailwind utilities** (e.g., `bg-primary`, `ring-2`). They won’t magically
