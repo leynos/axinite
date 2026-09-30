@@ -4,7 +4,11 @@
  * sandbox job-kind constant that gates Claude Code prompting.
  */
 
-import type { JobDetailResponse, JobInfo } from "@/lib/api/contracts";
+import type {
+  JobDetailResponse,
+  JobInfo,
+  ProjectFileEntry,
+} from "@/lib/api/contracts";
 import { pascalCase } from "@/lib/string-case";
 
 export const STATUS_CLASS: Record<string, string> = {
@@ -70,4 +74,19 @@ export function truncatePreview(value: string, limit = 140): string {
     return collapsed;
   }
   return `${collapsed.slice(0, limit)}…`;
+}
+
+/**
+ * Choose which job file the detail pane shows: keep the operator's current
+ * selection while it is still listed, otherwise fall back to the first
+ * non-directory entry (or none).
+ */
+export function resolveActiveFilePath(
+  entries: readonly ProjectFileEntry[],
+  selected: string | undefined
+): string | undefined {
+  if (selected && entries.some((entry) => entry.path === selected)) {
+    return selected;
+  }
+  return entries.find((entry) => !entry.is_dir)?.path;
 }

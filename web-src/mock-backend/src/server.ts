@@ -64,85 +64,95 @@ async function parseJson<T>(request: Request): Promise<T> {
   return (await request.json()) as T;
 }
 
-function buildChatSseResponse(state: MockBackendState): Response {
+const SSE_HEADERS = {
+  "content-type": "text/event-stream",
+  "cache-control": "no-cache",
+  connection: "keep-alive",
+  "x-accel-buffering": "no",
+};
+
+type SseStreamSetup = {
+  /** Register the subscriber; returns its unsubscribe function. */
+  subscribe: (subscriber: {
+    send: (frame: string) => void;
+    close: () => void;
+  }) => () => void;
+  /** Frame written every 15 s to keep proxies from idling the stream out. */
+  heartbeatFrame: string;
+};
+
+// Build an SSE response whose teardown runs exactly once, whichever side ends
+// the stream first: the state closing its subscriber, or the client cancelling.
+// Frames sent after teardown are dropped rather than enqueued on a closed
+// controller, which would throw.
+export function buildSseResponse({
+  subscribe,
+  heartbeatFrame,
+}: SseStreamSetup): Response {
   const encoder = new TextEncoder();
-  let cleanup: (() => void) | undefined;
+  let finished = false;
+  let unsubscribe: (() => void) | undefined;
   let heartbeat: ReturnType<typeof setInterval> | undefined;
+  let streamController: ReadableStreamDefaultController<Uint8Array>;
+
+  const cleanup = () => {
+    if (finished) {
+      return;
+    }
+    finished = true;
+    unsubscribe?.();
+    if (heartbeat) {
+      clearInterval(heartbeat);
+    }
+    try {
+      streamController.close();
+    } catch {
+      // Already closed or cancelled by the client.
+    }
+  };
+
+  const write = (frame: string) => {
+    if (!finished) {
+      streamController.enqueue(encoder.encode(frame));
+    }
+  };
 
   const stream = new ReadableStream<Uint8Array>({
     start(controller) {
-      const send = (event: ChatSseEvent) => {
-        controller.enqueue(
-          encoder.encode(
-            `event: ${event.type}\ndata: ${JSON.stringify(event)}\n\n`
-          )
-        );
-      };
-
-      cleanup = state.subscribeToChat({
-        send,
-        close: () => controller.close(),
-      });
-
-      heartbeat = setInterval(() => {
-        send({ type: "heartbeat" });
-      }, 15_000);
+      streamController = controller;
+      unsubscribe = subscribe({ send: write, close: cleanup });
+      heartbeat = setInterval(() => write(heartbeatFrame), 15_000);
     },
     cancel() {
-      cleanup?.();
-      if (heartbeat) {
-        clearInterval(heartbeat);
-      }
+      cleanup();
     },
   });
 
-  return new Response(stream, {
-    headers: {
-      "content-type": "text/event-stream",
-      "cache-control": "no-cache",
-      connection: "keep-alive",
-      "x-accel-buffering": "no",
-    },
+  return new Response(stream, { headers: SSE_HEADERS });
+}
+
+function buildChatSseResponse(state: MockBackendState): Response {
+  const frame = (event: ChatSseEvent) =>
+    `event: ${event.type}\ndata: ${JSON.stringify(event)}\n\n`;
+  return buildSseResponse({
+    subscribe: ({ send, close }) =>
+      state.subscribeToChat({
+        send: (event) => send(frame(event)),
+        close,
+      }),
+    heartbeatFrame: frame({ type: "heartbeat" }),
   });
 }
 
 function buildLogSseResponse(state: MockBackendState): Response {
-  const encoder = new TextEncoder();
-  let cleanup: (() => void) | undefined;
-  let heartbeat: ReturnType<typeof setInterval> | undefined;
-
-  const stream = new ReadableStream<Uint8Array>({
-    start(controller) {
-      const send = (entry: LogEntry) => {
-        controller.enqueue(
-          encoder.encode(`event: log\ndata: ${JSON.stringify(entry)}\n\n`)
-        );
-      };
-
-      cleanup = state.subscribeToLogs({
-        send,
-        close: () => controller.close(),
-      });
-
-      heartbeat = setInterval(() => {
-        controller.enqueue(encoder.encode(": keep-alive\n\n"));
-      }, 15_000);
-    },
-    cancel() {
-      cleanup?.();
-      if (heartbeat) {
-        clearInterval(heartbeat);
-      }
-    },
-  });
-
-  return new Response(stream, {
-    headers: {
-      "content-type": "text/event-stream",
-      "cache-control": "no-cache",
-      connection: "keep-alive",
-      "x-accel-buffering": "no",
-    },
+  return buildSseResponse({
+    subscribe: ({ send, close }) =>
+      state.subscribeToLogs({
+        send: (entry: LogEntry) =>
+          send(`event: log\ndata: ${JSON.stringify(entry)}\n\n`),
+        close,
+      }),
+    heartbeatFrame: ": keep-alive\n\n",
   });
 }
 
