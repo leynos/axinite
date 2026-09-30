@@ -330,6 +330,7 @@ REQUIRED_INVOCATIONS: typ.Final[dict[tuple[str, str], int]] = {
     ("codescene-coverage.yml", "coverage-check"): 1,
     ("coverage.yml", "compile-contracts"): 1,
     ("coverage.yml", "coverage"): 1,
+    ("coverage.yml", "coverage-libsql"): 1,
 }
 
 

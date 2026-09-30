@@ -179,7 +179,13 @@ REVIEWED_SHAPES: dict[tuple[str, str], tuple[str, str]] = {
     ),
     ("coverage.yml", "coverage"): (
         "ubicloud-standard-4",
-        "instrumented workspace build across three feature shapes",
+        "instrumented workspace build across two feature shapes, each with a "
+        "Postgres service",
+    ),
+    ("coverage.yml", "coverage-libsql"): (
+        "ubicloud-standard-4",
+        "instrumented libsql-only build, the leg that was a matrix cell "
+        "before it became its own job and kept the shape it had",
     ),
     ("coverage.yml", "e2e-coverage"): (
         "ubicloud-standard-4",
