@@ -608,18 +608,17 @@ Three mechanisms carry that, and each is worth knowing before changing a lane:
   out is `coverage.yml`'s all-features leg, which passes `--all-features` and
   means it.
 
-The profile is part of that, and it is the half most easily missed. Both
-coverage lanes ran nextest's default profile, which drops the trybuild
-compile-contract binary, about seven minutes of work that spawns a fresh
-`rustc` per case. The `test.yml` legs ran `NEXTEST_PROFILE=ci`, which runs
-everything. A lane running the default profile therefore could not stand in for
-one running `ci`, however identical its flags, so every coverage run now uses
-`ci`: the `run:` legs pass `--profile ci`, and the two steps that go through
-the shared `generate-coverage` action, which has no profile input, set
-`NEXTEST_PROFILE: ci` in the step's `env`, which the composite action's steps
-inherit. The replacement is the whole of what it replaced. Without that,
-standing `tests` down on a push would have left the compile contracts
-unexecuted on `main` altogether.
+The profile is part of that, and it is the half most easily missed. The default
+profile excludes the `trybuild` compile-contract binary, while the `ci` profile
+runs every compile contract. Each `trybuild::TestCases` session shares a
+generated Cargo project and lock while it prepares dependencies, compiles
+fixtures, and runs them; it does not necessarily rebuild the full dependency
+graph for every fixture. The `test.yml` legs use `NEXTEST_PROFILE=ci`, and
+every coverage run now does too: the `run:` legs pass `--profile ci`, and the
+two steps that go through the shared `generate-coverage` action set
+`NEXTEST_PROFILE: ci` in their step environment, which the composite action
+inherits. Without that, standing `tests` down on a push would have left the
+compile contracts unexecuted on `main` altogether.
 
 `tools-src/github` and `channels-src/telegram` are excluded from the workspace,
 so `--workspace` cannot reach either however wide the feature set. Each
@@ -828,14 +827,17 @@ import nothing from the crate, so they stay runnable without a coverage build
 or a populated target directory.
 
 One module is the exception, and it is worth saying why.
-`nextest_boundary_test.py` hands `.config/nextest.toml` to `cargo nextest`
-itself, so it needs `cargo` and `cargo-nextest` on `PATH`, which `make test`
-requires anyway. It builds no part of this crate: the run happens in
+`nextest_boundary_test.py` and `compile_contract_group_test.py` hand
+`.config/nextest.toml` to `cargo nextest` itself, so they need `cargo` and
+`cargo-nextest` on `PATH`, which `make test` requires anyway. They build no
+part of this crate: the run happens in
 `tests/workflow_contracts/fixtures/nextest_boundary`, a dependency-free crate
-of three empty test binaries that compiles in about a second, and its output
-goes to a temporary directory rather than to any target tree. The requirement
-is asserted rather than skipped, because a contract that skips itself in CI is
-a contract that is not running.
+with the two named compile-contract binaries, multiple tests in each, and an
+ordinary `slow` binary. Its source is copied outside the tree to avoid
+inheriting the repository linker config; build artefacts go to the ignored
+repository `target` directory and use the shared Cargo package cache. The
+toolchain requirement is asserted rather than skipped, because a contract that
+skips itself in CI is a contract that is not running.
 
 `Job` is the unit of assertion. It carries the workflow file name, the job's
 key under `jobs:`, and the job's parsed body, and it prints as
@@ -3231,12 +3233,12 @@ they must be ordered lives in the `generate-coverage` README in
 cargo watchdog only on the two lanes that use that action, and two of the four
 were unset until this was written.
 
-| Tier                     | What it bounds                     | Where it is set                       | Current value                                             |
-| ------------------------ | ---------------------------------- | ------------------------------------- | --------------------------------------------------------- |
-| Per-test `slow-timeout`  | one test                           | `.config/nextest.toml`, both profiles | 300 s, 900 s for the compile-contract binaries, 5 s grace |
-| nextest `global-timeout` | the whole test run                 | `.config/nextest.toml`, both profiles | 30 m                                                      |
-| Cargo watchdog           | one `cargo` invocation, wall clock | `cargo-wait-timeout` on action steps  | 4,200 s on the two action lanes, absent elsewhere         |
-| Job `timeout-minutes`    | the whole job                      | job level                             | 90 m for the coverage lanes                               |
+| Tier                     | What it bounds                     | Where it is set                       | Current value                                        |
+| ------------------------ | ---------------------------------- | ------------------------------------- | ---------------------------------------------------- |
+| Per-test `slow-timeout`  | one test process                   | `.config/nextest.toml`, both profiles | 300 s, 900 s per compile-contract session, 5 s grace |
+| nextest `global-timeout` | the whole test run                 | `.config/nextest.toml`, both profiles | 30 m                                                 |
+| Cargo watchdog           | one `cargo` invocation, wall clock | `cargo-wait-timeout` on action steps  | 4,200 s on the two action lanes, absent elsewhere    |
+| Job `timeout-minutes`    | the whole job                      | job level                             | 90 m for the coverage lanes                          |
 
 *Table: the timers that can end a run, innermost first.*
 
@@ -3267,43 +3269,45 @@ budget, and both add a 900 second override for the compile-contract binaries.
 
 ### The compile-contract binaries are not ordinary tests
 
-A binary that drives `rustc` spawns a fresh compiler per case against the full
-crate, so the whole binary is minutes rather than seconds and the base
-allowance sized for the ordinary tests does not fit one. There are two of them:
-`tests/trybuild.rs` and `tests/schema_helpers_ui/main.rs`, which Cargo names
-`trybuild` and `schema_helpers_ui`.
+A trybuild session uses a shared generated project and `.lock` while it
+prepares dependencies, compiles the selected fixtures, and runs them. Separate
+nextest processes that enter preparation together wait on this shared resource,
+and concurrent waiters can spend most of their timeout queued behind one
+another. The two binaries are `tests/trybuild.rs` and
+`tests/schema_helpers_ui/main.rs`, named `trybuild` and `schema_helpers_ui`.
 
-Only the first was named when the base allowance was first written. The second
-was not excluded from the default profile and had no override, so it ran under
-the 300 second bound: it measured 244, 249 and 257 seconds on run 34159479674
-and then exceeded 300 on run 34271865377, ending the suite on all three legs.
-Nothing in the ordering was wrong, and that is the point. Every value sat above
-the one inside it; nothing recorded which tests the base allowance was sized
-for.
+The `compile-contracts` test group sets `max-threads = 1`. Both the `default`
+and `ci` compile-contract overrides assign the two binaries to this group, so
+nextest queues their tests before they contend for trybuild's lock. Ordinary
+tests stay in nextest's global group and retain the configured parallelism. The
+workflow contract checks effective membership with the pinned nextest runner
+and uses a shared marker across the two fixture binaries: the real
+configuration passes with four nextest slots, while removing serialization
+produces an overlap failure.
 
-Both profiles now carry an override for both binaries, and
-`tests/workflow_contracts/compile_contract_budget_test.py` asserts that every
-compile-contract binary a profile runs is allowed 900 seconds. The binaries are
-discovered from the sources by their call to `trybuild::TestCases` rather than
-listed, because a new one appearing is the failure being guarded against. The
-discovered set is then pinned by name, so a reading that stopped recognizing
-one fails instead of sweeping over a smaller set, and both Cargo target forms,
-`tests/<name>.rs` and `tests/<name>/main.rs`, are represented in it. Which
-profile excludes which binary is pinned too: `default` excludes `trybuild` by
-its `default-filter` and runs `schema_helpers_ui`, and `ci` runs both.
+Fixtures are explicitly batched by purpose. Database surface fixtures share one
+`TestCases` session; support and infrastructure fixtures share another. This
+reduces repeated preparation while preserving per-fixture diagnostics. The
+database and support sessions retain separate timeout budgets. PostgreSQL and
+libSQL fixtures retain their feature gates, and the startup fixture remains
+limited to non-Unix targets. The Windows `default` build lane executes
+`startup_compile_contracts` so that platform-specific fixture is compiled there.
+`schema_helpers_ui` continues to run its pass fixtures in one session.
 
-The contract reads each profile's own base `slow-timeout` specifically, not its
-text as a whole. An override carrying `terminate-after` would satisfy a
-substring check while the base allowance had none, and every test the override
-does not name would then be reported slow for ever rather than killed.
+The 900 second `slow-timeout` bounds one nextest test process, including all
+fixtures queued in that process's `TestCases` session. It is not a budget per
+fixture or for the entire binary. The two `trybuild` sessions therefore have
+separate allowances; `schema_helpers_ui` has one for its own session. The 30
+minute `global-timeout` covers the nextest run, not the instrumented build that
+precedes nextest in a coverage command.
 
-Both figures are bounds rather than measurements, and the configuration says
-so. No single test in the default profile approaches five minutes, and nobody
-has timed a single trybuild case; what is known is that `trybuild` takes about
-seven minutes, which is why the default profile excludes it. It excludes that
-one binary and not the other: `schema_helpers_ui` measured 244s, 249s and 257s
-and runs in both profiles, which is why it needs the 900s override rather than
-the exclusion.
+The binaries are discovered from calls to `trybuild::TestCases` rather than
+listed, so a new compile-contract target must inherit both group and timeout.
+The discovered set is pinned by name, and both Cargo target forms,
+`tests/<name>.rs` and `tests/<name>/main.rs`, are represented. The default
+profile excludes `trybuild` but runs `schema_helpers_ui`; `ci` runs both.
+Contracts also check default-profile inheritance, CI override precedence, and
+that ordinary tests stay outside the compile-contract group.
 
 ### The values are pinned, not merely ordered
 
@@ -3363,14 +3367,15 @@ misspelled, and it must report the warning while nextest still exits 0.
 
 The run happens in a copy of
 `tests/workflow_contracts/fixtures/nextest_boundary` rather than in this crate.
-`show-config` resolves a profile's overrides against the test binaries the
-package declares and refuses a filterset naming one that does not exist, so
-doing it here would mean building the whole test suite, which is minutes. The
-fixture declares three empty test binaries, two of them named `trybuild` and
-`schema_helpers_ui` so the real filtersets resolve, and it builds in about a
-second. Deleting either of those files reddens the contract, and
-`compile_contract_budget_test.py` is what keeps the pair honest against the
-real sources.
+`show-config` resolves profile overrides against the test binaries the package
+declares and refuses a filterset naming one that does not exist. The fixture
+declares both compile-contract binaries, with multiple tests in each, plus an
+ordinary `slow` binary. Its tests use an atomic marker file to make overlap a
+behavioural failure. The workflow contract runs them with four nextest slots
+under the real configuration, then removes both profile assignments and
+requires the run to fail with the overlap diagnostic. It also checks group
+membership under both profiles and with mutated inherited and overriding
+configurations.
 
 The copy is not tidiness. Cargo finds `.cargo/config.toml` by walking up the
 directory tree and does not stop at a workspace root, so a fixture built in
@@ -3381,13 +3386,13 @@ configuration. Built from a copy outside the tree there is no such file to
 find: measured at five `-fuse-ld=mold` invocations in place and none from the
 copy.
 
-The third binary sleeps for thirty seconds, and it is what makes one assertion
-behavioural rather than another reading. nextest runs it under a `slow-timeout`
-built from the real configuration's own `terminate-after` and `grace-period`
-with the period cut to a second, and must terminate it. That is the assertion
-that fails if the real file loses `terminate-after`: without it nextest marks a
-test slow, warns once a period, and lets it run to completion, so the run
-passes and nothing is bounded.
+The ordinary `slow` binary sleeps for thirty seconds, and it is what makes one
+assertion behavioural rather than another reading. nextest runs it under a
+`slow-timeout` built from the real configuration's own `terminate-after` and
+`grace-period`, with the period cut to a second, and must terminate it. That
+assertion fails if the real file loses `terminate-after`: without it nextest
+marks a test slow, warns once a period, and lets it run to completion, so the
+run passes and nothing is bounded.
 
 The `Formatting` job installs `cargo-nextest` for this, pinned to the version
 the coverage and test lanes install, and the contract asserts the versions
@@ -3437,8 +3442,8 @@ one run per leg.
 ### What the values are sized against
 
 The 30 minute whole-run budget is a bound rather than a measurement. It has to
-exceed the 900 second trybuild allowance, and it does so with fifteen minutes
-to spare, which is comfortably more than any observed run has needed.
+exceed each 900 second compile-contract session allowance, and it does so with
+fifteen minutes to spare.
 
 The contract also refuses a step that names a suite command without plainly
 running one. `if false; then cargo nextest run; fi` keeps the text and runs

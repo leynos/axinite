@@ -256,10 +256,9 @@ def required_ceiling(parsed: dict[str, Profile], invocations: int = 1) -> float:
     )
 
 
-#: What a compile-contract binary must be allowed, in seconds. These
-#: spawn a fresh `rustc` per case against the full crate, so a whole
-#: binary is minutes rather than seconds and the base allowance sized to
-#: the ordinary tests does not fit one.
+#: What one compile-contract test process must be allowed, in seconds.
+#: Each `TestCases` session batches related fixtures over trybuild's shared
+#: generated project; its timeout covers the entire session.
 COMPILE_CONTRACT_ALLOWANCE_SECONDS: typ.Final[float] = 900.0
 
 #: The call that makes a test target a compile-contract binary.
