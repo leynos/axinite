@@ -145,7 +145,7 @@ def _is_suite_line(line: str) -> bool:
     tokens = _tokens_of(stripped)
     if tokens is None:
         return False
-    if any(token in {"|", "||"} for token in tokens):
+    if {"|", "||"}.intersection(tokens):
         return False
     if PROBE_ARGUMENTS.intersection(tokens):
         return False
