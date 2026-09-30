@@ -40,6 +40,17 @@ def _step(job: Mapping[object, object], name: str) -> dict[object, object]:
     return matches[0]
 
 
+def _assert_fast_linker_installed(
+    job: Mapping[object, object], workflow: str
+) -> None:
+    """The Linux linker configuration requires its configured linker."""
+    step = _step(job, "Install mold")
+    assert str(step.get("uses", "")).startswith("rui314/setup-mold@"), (
+        f"{workflow} must install the configured linker required by "
+        ".cargo/config.toml"
+    )
+
+
 def _needs(job: Mapping[object, object]) -> set[str]:
     """Normalize the GitHub Actions scalar or sequence form of `needs`."""
     declared = job.get("needs", [])
@@ -70,6 +81,7 @@ def test_baseline_runs_compile_contracts_for_every_coverage_configuration(
 ) -> None:
     """The main baseline cannot publish after dropping any feature run."""
     job = _job(workflows, "coverage.yml", "compile-contracts")
+    _assert_fast_linker_installed(job, "coverage.yml")
     strategy = job.get("strategy")
     matrix = strategy.get("matrix") if isinstance(strategy, dict) else None
     include = matrix.get("include") if isinstance(matrix, dict) else None
@@ -100,6 +112,7 @@ def test_pull_request_ratchet_runs_compile_contracts_before_coverage(
 ) -> None:
     """The PR ratchet and baseline retain the same libSQL contract selection."""
     job = _job(workflows, "codescene-coverage.yml", "compile-contracts")
+    _assert_fast_linker_installed(job, "codescene-coverage.yml")
     command = str(_step(job, "Run compile-contract tests").get("run", ""))
     _assert_binary_selection(command)
     for required in ("--no-default-features", "--features libsql,test-helpers"):

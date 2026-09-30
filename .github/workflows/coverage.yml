@@ -93,6 +93,9 @@ jobs:
 
       - uses: dtolnay/rust-toolchain@stable
 
+      - name: Install mold
+        uses: rui314/setup-mold@v1
+
       - name: Install cargo-nextest
         uses: taiki-e/install-action@c7eb1735f09259a5035e8e5d44b1406b1cddc0fb # v2.83.0
         with:

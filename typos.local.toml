@@ -38,6 +38,7 @@ ignore = [
   '\|summarize\|summarise\|',
   '\s{4}Analyzing,',
   '\b(?:mold|grammers|Ratatui)\b',
+  '-PassThru\b',
   '\btokio::test\(flavor\s*=',
   '\bpr-labeler\b',
   '"labeler test: success"',
