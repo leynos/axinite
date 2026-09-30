@@ -75,7 +75,7 @@ pub fn deployment_id_from_headers(
     if value.len() > MAX_DEPLOYMENT_ID_LEN
         || !value
             .bytes()
-            .all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'_')
+            .all(|b| matches!(b, b'a'..=b'z' | b'0'..=b'9' | b'_'))
     {
         return Err(InvalidDeploymentId);
     }
@@ -213,6 +213,13 @@ mod tests {
     #[case::hyphen(b"eu-west", Err(InvalidDeploymentId))]
     #[case::path_separator(b"a/b", Err(InvalidDeploymentId))]
     #[case::non_utf8(b"\xff", Err(InvalidDeploymentId))]
+    #[case::alphabet_boundaries(b"az09_", Ok(Some("az09_")))]
+    #[case::at_sign_before_uppercase(b"@", Err(InvalidDeploymentId))]
+    #[case::bracket_after_uppercase(b"[", Err(InvalidDeploymentId))]
+    #[case::backtick_before_lowercase(b"`", Err(InvalidDeploymentId))]
+    #[case::brace_after_lowercase(b"{", Err(InvalidDeploymentId))]
+    #[case::colon_after_digits(b":", Err(InvalidDeploymentId))]
+    #[case::embedded_whitespace(b"eu west", Err(InvalidDeploymentId))]
     fn deployment_id_header_is_trimmed_and_validated(
         #[case] raw: &[u8],
         #[case] expected: Result<Option<&str>, InvalidDeploymentId>,
