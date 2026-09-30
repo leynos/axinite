@@ -104,7 +104,7 @@ version = "1.0.0"
     assert verify(lockfile).returncode == 0
 
 
-@pytest.mark.parametrize("unrelated_dependency", ("rkyv", "h2", "ttf-parser"))
+@pytest.mark.parametrize("unrelated_dependency", ["rkyv", "h2", "ttf-parser"])
 def test_audit_ignores_reject_unrelated_dependency_paths(
     tmp_path: Path,
     unrelated_dependency: str,
