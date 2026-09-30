@@ -16,8 +16,11 @@ from __future__ import annotations
 
 import typing as typ
 
+import pytest
 import yaml
+from _suite_keys import NO_DEFAULT_FEATURES
 from _suite_reader import cargo_runs, duplicates_in, suite_runs_for
+from _suite_targets import DEFAULT_PROFILE, WORKSPACE
 
 
 class TestDuplicateDetection:
@@ -117,17 +120,112 @@ class TestDuplicateDetection:
             "is the normal case and must never be reported as duplication"
         )
 
-    def test_a_filtered_workspace_command_is_not_the_full_suite(
-        self, defaults: frozenset[str]
+    @pytest.mark.parametrize(
+        "scope_args",
+        [
+            pytest.param("--workspace", id="workspace"),
+            pytest.param("--manifest-path tools-src/github/Cargo.toml", id="manifest"),
+        ],
+    )
+    @pytest.mark.parametrize(
+        "filter_args",
+        [
+            pytest.param("-E 'binary(trybuild)'", id="short-filter"),
+            pytest.param("--filterset 'binary(trybuild)'", id="long-filter"),
+            pytest.param("--filterset='binary(trybuild)'", id="equals-filter"),
+        ],
+    )
+    def test_a_filtered_cargo_command_is_not_the_full_suite(
+        self, defaults: frozenset[str], scope_args: str, filter_args: str
     ) -> None:
-        """Compile-contract filters run only the selected workspace tests."""
+        """Compile-contract filters run only the selected nextest tests."""
         command = (
-            "cargo nextest run --workspace --profile ci -E "
-            "'binary(trybuild) | binary(schema_helpers_ui)'"
+            f"cargo nextest run {scope_args} --profile ci "
+            f"--features test-helpers {filter_args}"
         )
         assert list(cargo_runs(command, defaults)) == [], (
-            "a nextest filter must not be read as running every workspace test"
+            f"a filtered command must be excluded; got {command!r}"
         )
+
+    @pytest.mark.parametrize(
+        "near_miss",
+        [
+            pytest.param("--filterset-extra", id="filterset-extra"),
+            pytest.param("-Extra", id="extra-short-flag"),
+        ],
+    )
+    def test_near_miss_filter_tokens_keep_the_workspace_run(
+        self, defaults: frozenset[str], near_miss: str
+    ) -> None:
+        """Only the existing exact and equals filter spellings exclude a run."""
+        command = (
+            f"cargo nextest run --workspace --profile ci {near_miss} 'binary(trybuild)'"
+        )
+        assert list(cargo_runs(command, defaults)) == [(WORKSPACE, "ci", defaults)], (
+            f"near-miss token {near_miss!r} must not exclude a run"
+        )
+
+    @pytest.mark.parametrize(
+        "filter_args",
+        [
+            pytest.param("-E 'binary(trybuild)'", id="short-filter"),
+            pytest.param("--filterset 'binary(trybuild)'", id="long-filter"),
+            pytest.param("--filterset='binary(trybuild)'", id="equals-filter"),
+        ],
+    )
+    def test_filter_like_tokens_after_terminator_do_not_exclude_a_run(
+        self, defaults: frozenset[str], filter_args: str
+    ) -> None:
+        """Arguments after `--` belong to the test binary, not Cargo."""
+        command = (
+            "cargo nextest run --workspace --profile ci "
+            f"--features test-helpers -- {filter_args}"
+        )
+        assert list(cargo_runs(command, defaults)) == [
+            (WORKSPACE, "ci", defaults | frozenset({"test-helpers"}))
+        ], f"filter-like test-binary arguments must be ignored: {command!r}"
+
+    def test_filtered_command_leaves_adjacent_runs_in_order(
+        self, defaults: frozenset[str]
+    ) -> None:
+        """Filtering one command preserves its neighbours' selections."""
+        script = (
+            "cargo nextest run --workspace --profile ci "
+            "--features test-helpers && "
+            "cargo nextest run --workspace --profile coverage "
+            "--no-default-features --features libsql "
+            "-E 'binary(trybuild)' && "
+            "cargo nextest run --manifest-path tools-src/github/Cargo.toml "
+            "--workspace --profile smoke --no-default-features "
+            "--features test-helpers"
+        )
+        assert list(cargo_runs(script, defaults)) == [
+            (WORKSPACE, "ci", defaults | frozenset({"test-helpers"})),
+            (
+                "crate:tools-src/github/Cargo.toml",
+                "smoke",
+                frozenset({NO_DEFAULT_FEATURES, "test-helpers"}),
+            ),
+        ], "filtered commands must not change the order or selection of neighbours"
+
+    def test_unfiltered_workspace_and_manifest_runs_keep_scope_and_selection(
+        self, defaults: frozenset[str]
+    ) -> None:
+        """Unfiltered positive controls retain profiles, features, and order."""
+        script = (
+            "cargo nextest run --workspace --profile ci "
+            "--features test-helpers && "
+            "cargo nextest run --manifest-path tools-src/github/Cargo.toml "
+            "--workspace --no-default-features --features libsql"
+        )
+        assert list(cargo_runs(script, defaults)) == [
+            (WORKSPACE, "ci", defaults | frozenset({"test-helpers"})),
+            (
+                "crate:tools-src/github/Cargo.toml",
+                DEFAULT_PROFILE,
+                frozenset({NO_DEFAULT_FEATURES, "libsql"}),
+            ),
+        ], "manifest scope takes precedence without changing command order"
 
     def test_a_different_profile_is_not_a_duplicate(
         self, defaults: frozenset[str]
@@ -187,7 +285,8 @@ class TestDuplicateDetection:
         under the same profile from a script is the duplicate that proves it.
         """
         ci_tests = self._TESTS.replace(
-            "cargo nextest run --workspace", "cargo nextest run --profile ci --workspace"
+            "cargo nextest run --workspace",
+            "cargo nextest run --profile ci --workspace",
         )
         documents = {
             "one.yml": self._workflow(
@@ -205,7 +304,8 @@ class TestDuplicateDetection:
     ) -> None:
         """Without `NEXTEST_PROFILE: ci` the action runs the default profile."""
         ci_tests = self._TESTS.replace(
-            "cargo nextest run --workspace", "cargo nextest run --profile ci --workspace"
+            "cargo nextest run --workspace",
+            "cargo nextest run --profile ci --workspace",
         )
         documents = {
             "one.yml": self._workflow(

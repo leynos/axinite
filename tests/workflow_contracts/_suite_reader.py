@@ -124,6 +124,13 @@ def substitute(text: str, leg: dict[str, str]) -> str:
     return MATRIX_REFERENCE_RE.sub(lambda match: leg.get(match["key"], match[0]), text)
 
 
+def _has_test_filter(tokens: list[str]) -> bool:
+    """Identify an explicit test filter in Cargo's option tokens."""
+    if {"-E", "--filterset"}.intersection(tokens):
+        return True
+    return any(token.startswith("--filterset=") for token in tokens)
+
+
 def cargo_runs(
     script: str, defaults: frozenset[str]
 ) -> Iterator[tuple[str, str, frozenset[str]]]:
@@ -160,9 +167,7 @@ def cargo_runs(
                 continue
             args = match["args"]
             tokens = cargo_options(args)
-            if "-E" in tokens or "--filterset" in tokens or any(
-                token.startswith("--filterset=") for token in tokens
-            ):
+            if _has_test_filter(tokens):
                 continue
             manifest = MANIFEST_RE.search(args)
             if manifest is not None:
