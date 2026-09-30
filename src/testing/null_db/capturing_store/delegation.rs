@@ -316,18 +316,36 @@ impl crate::db::NativeToolFailureStore for CapturingStore {
 }
 
 impl crate::db::NativeSettingsStore for CapturingStore {
+    async fn list_deployment_flags(
+        &self,
+        deployment_id: &str,
+    ) -> Result<Vec<(String, bool)>, DatabaseError> {
+        if let Some(error) = self.take_list_deployment_flags_error() {
+            return Err(error);
+        }
+        crate::db::NativeSettingsStore::list_deployment_flags(&self.inner, deployment_id).await
+    }
+
+    async fn set_deployment_flag(
+        &self,
+        deployment_id: &str,
+        flag_name: &str,
+        enabled: bool,
+    ) -> Result<(), DatabaseError> {
+        self.calls
+            .record_deployment_flag_write(deployment_id, flag_name, enabled)
+            .await;
+        crate::db::NativeSettingsStore::set_deployment_flag(
+            &self.inner,
+            deployment_id,
+            flag_name,
+            enabled,
+        )
+        .await
+    }
+
     delegate! {
         to self.inner {
-            async fn list_deployment_flags(
-                &self,
-                deployment_id: &str
-            ) -> Result<Vec<(String, bool)>, DatabaseError>;
-            async fn set_deployment_flag(
-                &self,
-                deployment_id: &str,
-                flag_name: &str,
-                enabled: bool
-            ) -> Result<(), DatabaseError>;
             async fn get_setting(
                 &self,
                 user_id: UserId,

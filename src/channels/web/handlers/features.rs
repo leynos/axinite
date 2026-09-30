@@ -78,7 +78,15 @@ pub async fn features_handler(
         .map_err(|error| (StatusCode::BAD_REQUEST, error.to_string()))?
         .unwrap_or_else(|| DEFAULT_DEPLOYMENT_ID.to_string());
 
-    ensure_deployment_hydrated(&state, &deployment_id).await;
+    // A read still answers when the store is unavailable: the unhydrated
+    // deployment resolves from the environment and compiled defaults.
+    if let Err(error) = ensure_deployment_hydrated(&state, &deployment_id).await {
+        tracing::error!(
+            deployment_id,
+            %error,
+            "Failed to load deployment feature-flag overrides"
+        );
+    }
 
     let overrides = state
         .feature_flags
@@ -161,31 +169,29 @@ async fn unavailable_subsystem_flags(state: &GatewayState) -> Vec<&'static str> 
 /// store is wired, resolution falls back to environment variables and compiled
 /// defaults, so the deployment is left un-hydrated and simply resolves from
 /// defaults.
-async fn ensure_deployment_hydrated(state: &GatewayState, deployment_id: &str) {
+///
+/// A store failure is returned and leaves the deployment un-hydrated, so the
+/// next call retries; each caller decides whether it can proceed without the
+/// persisted overrides.
+async fn ensure_deployment_hydrated(
+    state: &GatewayState,
+    deployment_id: &str,
+) -> Result<(), crate::error::DatabaseError> {
     if state.feature_flags.read().await.is_hydrated(deployment_id) {
-        return;
+        return Ok(());
     }
 
     let Some(store) = state.store.as_ref() else {
-        return;
+        return Ok(());
     };
 
-    match store.list_deployment_flags(deployment_id).await {
-        Ok(overrides) => {
-            state
-                .feature_flags
-                .write()
-                .await
-                .hydrate(deployment_id.to_string(), overrides);
-        }
-        Err(error) => {
-            tracing::error!(
-                deployment_id,
-                %error,
-                "Failed to load deployment feature-flag overrides"
-            );
-        }
-    }
+    let overrides = store.list_deployment_flags(deployment_id).await?;
+    state
+        .feature_flags
+        .write()
+        .await
+        .hydrate(deployment_id.to_string(), overrides);
+    Ok(())
 }
 
 /// Resolve every known flag through the precedence chain: environment variable
@@ -237,7 +243,9 @@ pub(crate) async fn apply_flag_override(
 
     // Ensure the deployment is hydrated first so the write does not create an
     // isolated, partially populated cache entry that hides other overrides.
-    ensure_deployment_hydrated(state, deployment_id).await;
+    // If the persisted overrides cannot be loaded, neither persist nor cache
+    // this one: caching it would mark the deployment hydrated without them.
+    ensure_deployment_hydrated(state, deployment_id).await?;
 
     store
         .set_deployment_flag(deployment_id, flag_name, enabled)
@@ -253,130 +261,4 @@ pub(crate) async fn apply_flag_override(
 }
 
 #[cfg(test)]
-mod tests {
-    //! Unit tests for feature-flag resolution.
-
-    use super::*;
-
-    fn no_overrides() -> HashMap<String, bool> {
-        HashMap::new()
-    }
-
-    #[test]
-    fn defaults_apply_when_no_environment_or_override_exists() {
-        let flags = resolve_flags(|_| None, &no_overrides(), &[]);
-        assert_eq!(flags.get("route_chat"), Some(&true));
-        assert_eq!(flags.get("panel_logs"), Some(&true));
-        assert_eq!(flags.get("action_memory_edit"), Some(&false));
-        assert_eq!(flags.len(), FLAG_DEFAULTS.len());
-    }
-
-    #[test]
-    fn environment_variables_override_defaults() {
-        let flags = resolve_flags(
-            |name| match name {
-                "FEATURE_FLAG_ACTION_MEMORY_EDIT" => Some("TRUE".to_string()),
-                "FEATURE_FLAG_ROUTE_SKILLS" => Some("false".to_string()),
-                _ => None,
-            },
-            &no_overrides(),
-            &[],
-        );
-        assert_eq!(flags.get("action_memory_edit"), Some(&true));
-        assert_eq!(flags.get("route_skills"), Some(&false));
-        // Untouched flags keep their compiled defaults.
-        assert_eq!(flags.get("route_chat"), Some(&true));
-    }
-
-    #[test]
-    fn non_true_values_disable_the_flag() {
-        let flags = resolve_flags(
-            |name| (name == "FEATURE_FLAG_ROUTE_CHAT").then(|| "1".to_string()),
-            &no_overrides(),
-            &[],
-        );
-        assert_eq!(flags.get("route_chat"), Some(&false));
-    }
-
-    #[test]
-    fn deployment_override_beats_compiled_default() {
-        let mut overrides = HashMap::new();
-        overrides.insert("panel_logs".to_string(), false);
-        overrides.insert("action_job_restart".to_string(), true);
-        let flags = resolve_flags(|_| None, &overrides, &[]);
-        assert_eq!(flags.get("panel_logs"), Some(&false));
-        assert_eq!(flags.get("action_job_restart"), Some(&true));
-        // A flag with no override keeps its default.
-        assert_eq!(flags.get("route_chat"), Some(&true));
-    }
-
-    #[test]
-    fn environment_variable_beats_deployment_override() {
-        let mut overrides = HashMap::new();
-        overrides.insert("route_chat".to_string(), false);
-        let flags = resolve_flags(
-            |name| (name == "FEATURE_FLAG_ROUTE_CHAT").then(|| "true".to_string()),
-            &overrides,
-            &[],
-        );
-        // Env var wins over the override.
-        assert_eq!(flags.get("route_chat"), Some(&true));
-    }
-
-    #[test]
-    fn unknown_override_names_are_ignored() {
-        let mut overrides = HashMap::new();
-        overrides.insert("not_a_real_flag".to_string(), true);
-        let flags = resolve_flags(|_| None, &overrides, &[]);
-        assert!(!flags.contains_key("not_a_real_flag"));
-        assert_eq!(flags.len(), FLAG_DEFAULTS.len());
-    }
-
-    #[test]
-    fn unavailable_subsystem_forces_a_flag_off() {
-        let flags = resolve_flags(|_| None, &no_overrides(), &["route_routines"]);
-        assert_eq!(flags.get("route_routines"), Some(&false));
-        // Other flags keep their compiled defaults.
-        assert_eq!(flags.get("route_jobs"), Some(&true));
-    }
-
-    #[test]
-    fn override_beats_subsystem_unavailability() {
-        let overrides = HashMap::from([("route_routines".to_string(), true)]);
-        let flags = resolve_flags(|_| None, &overrides, &["route_routines"]);
-        assert_eq!(flags.get("route_routines"), Some(&true));
-    }
-
-    #[test]
-    fn environment_variable_beats_subsystem_unavailability() {
-        let flags = resolve_flags(
-            |name| (name == "FEATURE_FLAG_ROUTE_JOBS").then(|| "true".to_string()),
-            &no_overrides(),
-            &["route_jobs"],
-        );
-        assert_eq!(flags.get("route_jobs"), Some(&true));
-    }
-
-    #[test]
-    fn subsystem_layer_never_enables_a_flag() {
-        // action flags default off; an available subsystem must not flip them.
-        let flags = resolve_flags(|_| None, &no_overrides(), &[]);
-        assert_eq!(flags.get("action_job_restart"), Some(&false));
-    }
-
-    #[tokio::test]
-    async fn bare_test_state_reports_all_gated_subsystems_unavailable() {
-        let state = crate::channels::web::test_helpers::TestGatewayBuilder::new().build();
-        let unavailable = unavailable_subsystem_flags(&state).await;
-        for flag in [
-            "route_jobs",
-            "route_routines",
-            "route_extensions",
-            "route_skills",
-            "route_logs",
-            "panel_logs",
-        ] {
-            assert!(unavailable.contains(&flag), "missing {flag}");
-        }
-    }
-}
+mod tests;
