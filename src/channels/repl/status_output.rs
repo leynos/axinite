@@ -21,6 +21,25 @@ pub(super) const CLI_TOOL_RESULT_MAX: usize = 200;
 /// Max characters for thinking/status messages in the terminal.
 pub(super) const CLI_STATUS_MAX: usize = 200;
 
+/// ANSI sequence for dim gray status text.
+const ANSI_GRAY: &str = "\x1b[90m";
+/// ANSI sequence that resets terminal styling.
+const ANSI_RESET: &str = "\x1b[0m";
+/// ANSI sequence for yellow status text.
+const ANSI_YELLOW: &str = "\x1b[33m";
+/// ANSI sequence for green success text.
+const ANSI_GREEN: &str = "\x1b[32m";
+/// ANSI sequence for red failure text.
+const ANSI_RED: &str = "\x1b[31m";
+/// ANSI sequence for cyan status text.
+const ANSI_CYAN: &str = "\x1b[36m";
+/// ANSI sequence that underlines text.
+const ANSI_UNDERLINE: &str = "\x1b[4m";
+/// Two-space prefix used to indent top-level status lines.
+const STATUS_INDENT: &str = "  ";
+/// Four-space prefix used to indent status details.
+const DETAIL_INDENT: &str = "    ";
+
 /// Describes a completed tool invocation for terminal rendering.
 pub(super) struct ToolCompletedInfo<'a> {
     /// Tool name
@@ -45,7 +64,7 @@ pub(super) struct JobStartedInfo<'a> {
 
 fn render_thinking(msg: &str) -> String {
     let display = truncate_for_preview(msg, CLI_STATUS_MAX);
-    format!("  \x1b[90m\u{25CB} {display}\x1b[0m")
+    format!("{STATUS_INDENT}{ANSI_GRAY}\u{25CB} {display}{ANSI_RESET}")
 }
 
 /// Prints a thinking status line to stderr.
@@ -57,7 +76,7 @@ pub(super) fn print_thinking(msg: &str) {
 }
 
 fn render_tool_started(name: &str) -> String {
-    format!("  \x1b[33m\u{25CB} {name}\x1b[0m")
+    format!("{STATUS_INDENT}{ANSI_YELLOW}\u{25CB} {name}{ANSI_RESET}")
 }
 
 /// Prints a tool-started status line to stderr.
@@ -72,20 +91,26 @@ fn render_tool_completed_lines(info: &ToolCompletedInfo<'_>) -> Vec<String> {
     let mut lines = Vec::new();
     let sanitized_name = sanitize_for_terminal(info.name);
     if info.success {
-        lines.push(format!("  \x1b[32m\u{25CF} {sanitized_name}\x1b[0m"));
+        lines.push(format!(
+            "{STATUS_INDENT}{ANSI_GREEN}\u{25CF} {sanitized_name}{ANSI_RESET}"
+        ));
     } else {
         lines.push(format!(
-            "  \x1b[31m\u{2717} {sanitized_name} (failed)\x1b[0m"
+            "{STATUS_INDENT}{ANSI_RED}\u{2717} {sanitized_name} (failed){ANSI_RESET}"
         ));
         if let Some(error) = info.error {
             let sanitized_error = sanitize_for_terminal(error);
             let display = truncate_for_preview(&sanitized_error, CLI_TOOL_RESULT_MAX);
-            lines.push(format!("    \x1b[90merror: {display}\x1b[0m"));
+            lines.push(format!(
+                "{DETAIL_INDENT}{ANSI_GRAY}error: {display}{ANSI_RESET}"
+            ));
         }
         if let Some(parameters) = info.parameters {
             let sanitized_params = sanitize_for_terminal(parameters);
             let display = truncate_for_preview(&sanitized_params, CLI_TOOL_RESULT_MAX);
-            lines.push(format!("    \x1b[90mparams: {display}\x1b[0m"));
+            lines.push(format!(
+                "{DETAIL_INDENT}{ANSI_GRAY}params: {display}{ANSI_RESET}"
+            ));
         }
     }
     lines
@@ -103,7 +128,7 @@ pub(super) fn print_tool_completed(info: &ToolCompletedInfo<'_>) {
 
 fn render_tool_result(preview: &str) -> String {
     let display = truncate_for_preview(preview, CLI_TOOL_RESULT_MAX);
-    format!("    \x1b[90m{display}\x1b[0m")
+    format!("{DETAIL_INDENT}{ANSI_GRAY}{display}{ANSI_RESET}")
 }
 
 /// Prints a tool result preview to stderr.
@@ -115,7 +140,10 @@ pub(super) fn print_tool_result(preview: &str) {
 }
 
 fn render_stream_chunk_separator(width: usize) -> String {
-    format!("\x1b[90m{}\x1b[0m", "\u{2500}".repeat(width.min(80)))
+    format!(
+        "{ANSI_GRAY}{}{ANSI_RESET}",
+        "\u{2500}".repeat(width.min(80))
+    )
 }
 
 /// Prints a streaming text chunk to stdout.
@@ -139,7 +167,7 @@ fn render_job_started(info: &JobStartedInfo<'_>) -> String {
     let sanitized_job_id = sanitize_for_terminal(info.job_id);
     let sanitized_url = sanitize_for_terminal(info.browse_url);
     format!(
-        "  \x1b[36m[job]\x1b[0m {sanitized_title} \x1b[90m({sanitized_job_id})\x1b[0m \x1b[4m{sanitized_url}\x1b[0m"
+        "{STATUS_INDENT}{ANSI_CYAN}[job]{ANSI_RESET} {sanitized_title} {ANSI_GRAY}({sanitized_job_id}){ANSI_RESET} {ANSI_UNDERLINE}{sanitized_url}{ANSI_RESET}"
     )
 }
 
@@ -156,7 +184,7 @@ fn render_status(is_debug: bool, msg: &str) -> Option<String> {
     if is_debug || approval_related {
         let sanitized_msg = sanitize_for_terminal(msg);
         let display = truncate_for_preview(&sanitized_msg, CLI_STATUS_MAX);
-        Some(format!("  \x1b[90m{display}\x1b[0m"))
+        Some(format!("{STATUS_INDENT}{ANSI_GRAY}{display}{ANSI_RESET}"))
     } else {
         None
     }
@@ -195,9 +223,9 @@ pub(super) fn print_approval_needed(
 fn render_image_generated(path: Option<&str>) -> String {
     if let Some(p) = path {
         let sanitized_path = sanitize_for_terminal(p);
-        format!("\x1b[36m  [image] {sanitized_path}\x1b[0m")
+        format!("{ANSI_CYAN}{STATUS_INDENT}[image] {sanitized_path}{ANSI_RESET}")
     } else {
-        "\x1b[36m  [image generated]\x1b[0m".to_string()
+        format!("{ANSI_CYAN}{STATUS_INDENT}[image generated]{ANSI_RESET}")
     }
 }
 
