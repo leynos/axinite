@@ -64,6 +64,14 @@ UV ?= uv
 UV_ENV = UV_CACHE_DIR=.uv-cache UV_TOOL_DIR=.uv-tools
 # Pin the resolved commit so uv does not need to refresh a movable tag.
 TYPOS_CONFIG_BUILDER_REVISION ?= c8a4f95d7cf7f6a1b7517f2775d122d47d5721eb
+
+# The CV-005 CodeScene contracts live in shared-actions and run from a full
+# commit, so a fix is a pin bump. `.github/cv005.toml` holds this repository's
+# only parameters.
+CV005_CONTRACTS_REF ?= a38feb9be25755c30eca5bda96bd3786a5b89c6b
+CV005_CONTRACTS = $(UV_ENV) $(UV) tool run --python 3.13 \
+	--from 'git+https://github.com/leynos/shared-actions@$(CV005_CONTRACTS_REF)\#subdirectory=packages/cv005-contracts' \
+	cv005-contracts
 TYPOS_CONFIG_BUILDER = $(UV_ENV) $(UV) tool run --python 3.14 --from \
 	"git+https://github.com/leynos/typos-config-builder.git@$(TYPOS_CONFIG_BUILDER_REVISION)" \
 	typos-config-builder
@@ -285,6 +293,7 @@ test-matrix-cargo: check-build-tools
 
 # Validate the mutation-testing caller workflow contract.
 test-workflow-contracts:
+	$(CV005_CONTRACTS) check --repository .
 	uv run --python '>=3.12' --with 'pytest>=8' --with 'pyyaml>=6' --with 'hypothesis>=6' pytest tests/workflow_contracts -q
 
 clean:
