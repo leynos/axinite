@@ -54,8 +54,8 @@ semantics rather than inventing a separate product model.
 
 Today’s implementation is composed of five layers:
 
-1. **Build and packaging layer:** Bun runs scripts, Vite builds the SPA, and
-   `vite-plugin-pwa` generates the service-worker-backed static artefact.
+1. **Build and packaging layer:** Bun runs scripts, Vite builds the SPA
+   into a hash-free static bundle that is embedded in the gateway.
 2. **Application shell layer:** SolidJS, TanStack Router, and a small provider
    tree define the shell, route tree, feature-flag context, and localization
    context.
@@ -84,18 +84,22 @@ are:
 - `axinite/src/main.tsx` is the browser entry point and mounts the app after
   localization initialization succeeds.
 - `vite.config.ts` treats `axinite/` as the project root, emits the build into
-  repository-level `dist/`, and configures the GitHub Pages base path.
-- `scripts/postbuild-routes.mjs` mirrors route entry points into both root and
-  deploy-prefixed paths so deep links work on Pages without server rewrites.
-- `vite-plugin-pwa` generates the installable shell and service worker for the
-  built preview artefact.
+  `web-src/dist/`, and uses the base path `/` (from `DEPLOY_BASE_PATH` in
+  `axinite/src/lib/base-path.ts`); there is no GitHub Pages base path.
+- The bundle uses stable, hash-free file names and inlines woff2 fonts so it
+  can be embedded. The gateway serves the app shell at each SPA route, so no
+  route-mirroring post-build step is needed.
+- `make frontend-build` runs `bun run build` and copies `web-src/dist/` to
+  `src/channels/web/static/solid/`, which is committed and embedded via
+  `include_str!`/`include_bytes!`.
 
 Because the built assets are compiled into the host binary, a change to the SPA
 still requires `make frontend-build` and a Rust rebuild before the gateway
-serves it. The Vite build and local preview stack accept a more explicit
-front-end build step in exchange for a more normal SPA toolchain, faster
-iteration on UI code (through the preview server), clearer asset boundaries,
-and better leverage of the TypeScript and browser testing ecosystem.
+serves it (`make frontend-verify` fails when the committed embed is stale). The
+Vite build and local preview stack accept a more explicit front-end build step
+in exchange for a more normal SPA toolchain, faster iteration on UI code
+(through the preview server), clearer asset boundaries, and better leverage of
+the TypeScript and browser testing ecosystem.
 
 ## 4. Runtime composition inside the browser
 
@@ -170,15 +174,28 @@ shell's:
 - JSON over `fetch` is used for request-response interactions.
 - SSE via `EventSource` is used for live chat and log updates.
 - There is no browser-side WebSocket transport in this repo’s preview stack.
-- There is no authentication token flow in the local preview architecture.
+
+Access is token-gated through `axinite/src/components/auth-gate.tsx` and
+`axinite/src/lib/auth/token.ts`:
+
+- `AuthGate` consumes a one-shot `?token=` query parameter, stores the token,
+  and strips the parameter with `history.replaceState`.
+- The token lives in `sessionStorage` under `axinite.gateway-token`.
+- The gate probes `GET /api/gateway/status` with an `Authorization: Bearer`
+  header (5 second timeout). A 200 unlocks the app; 401 or 403 clears the token
+  and shows the token form (`#auth-screen`); anything else shows an
+  "unreachable" state.
+- REST calls send the bearer header. SSE URLs get `?token=` appended because
+  `EventSource` cannot set headers; the gateway allows query tokens only on its
+  SSE and WebSocket paths.
+- The mock backend accepts anonymous requests, so the gate opens immediately
+  in the preview stack.
 
 The old browser gateway needs a broader transport surface because it is a real
-hosted control plane inside the runtime. It must deal with authentication,
-optional query-string token fallbacks for streaming, and a larger set of
-runtime-backed channel behaviours. The new front end narrows that surface on
-purpose. It focuses on the browser interaction model that the UI actually
-needs, while leaving production auth and host integration concerns to the real
-runtime (`src/channels/web/`).
+hosted control plane inside the runtime. The new front end narrows that surface
+on purpose. It focuses on the browser interaction model that the UI actually
+needs, while leaving host integration concerns to the real runtime
+(`src/channels/web/`).
 
 ### 5.3 Same-origin preview transport
 
@@ -332,8 +349,9 @@ The differences can be summarized as follows.
 
 - **Old front end:** directly coupled to real runtime subsystems, auth, and
   gateway middleware.
-- **New front end:** coupled to typed browser contracts and a preview gateway,
-  not to the host process itself.
+- **New front end:** coupled to typed browser contracts and the gateway's
+  bearer-token auth (through `AuthGate`), but not to host subsystems beyond
+  those contracts.
 
 ### 9.4 Transport model
 
@@ -381,9 +399,9 @@ The main architectural decisions in this repo were:
 
 The main constraints that continue to matter are:
 
-- this repo is still a prototype-first frontend rather than the final deployed
-  Axinite site,
-- build and delivery must keep working under the GitHub Pages base path,
+- the SPA is the gateway's default UI,
+- build output must stay embeddable (stable, hash-free file names) and the
+  committed embed must stay in sync with the source (`make frontend-verify`),
 - feature flags and locale behaviour must stay truthful to runtime expectations,
   and
 - new complexity should be added only when the browser experience clearly needs
