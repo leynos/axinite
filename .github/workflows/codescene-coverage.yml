@@ -12,11 +12,6 @@ name: Coverage Ratchet
 "on":
   pull_request:
     branches: [main]
-  # Manual runs exist to re-measure a warm cache on `main`. The registry
-  # cache is restore-only here, and generate-coverage saves the ratchet
-  # baseline only on a push to `main`, so a dispatch measures and compares
-  # without advancing anything.
-  workflow_dispatch:
 
 # A push to a pull request supersedes the run already in flight, and there is
 # nothing left to learn from the superseded one. Cancellation is conditioned
@@ -32,9 +27,7 @@ permissions:
 jobs:
   coverage-check:
     name: Coverage Ratchet
-    if: >
-      github.event_name == 'pull_request' ||
-      github.event_name == 'workflow_dispatch'
+    if: github.event_name == 'pull_request'
     # A pull request from a fork cannot obtain an Ubicloud
     # runner, so it falls back to a GitHub-hosted one. Branch
     # pull requests, which are the ones a maintainer waits on,

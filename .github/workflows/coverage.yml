@@ -59,11 +59,10 @@ name: Code Coverage
 # baseline, so one that replaces a pending push leaves the baseline one
 # commit behind until the next push.
 concurrency:
-  group: coverage-${{ github.ref }}
+  group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: false
 
 permissions:
-  id-token: write
   contents: read
 
 # Tool pins shared by every job; installed from pinned, checksum-verified
@@ -78,11 +77,9 @@ jobs:
     name: Coverage (${{ matrix.name }})
     runs-on: ubicloud-standard-4
     timeout-minutes: 90
-    # The CodeScene token is to live in this environment, whose branch policy
-    # admits `main` alone, so only this job, deploying from `main`, can read
-    # it. `tests/workflow_contracts/codescene_environment_test.py` holds the
-    # placement: every uploading job declares it, and no other job does.
-    environment: codescene
+    permissions:
+      contents: read
+      id-token: write
     env:
       # sccache is the sole owner of compiler output: no cache step archives a
       # target tree. `setup-rust` names the wrapper, starts the server and
@@ -98,13 +95,8 @@ jobs:
         include:
           - name: all-features
             flags: "--all-features"
-            has_postgres: true
           - name: default
             flags: ""
-            has_postgres: true
-          - name: libsql-only
-            flags: "--no-default-features --features libsql"
-            has_postgres: false
     services:
       postgres:
         image: pgvector/pgvector:pg16
@@ -131,6 +123,8 @@ jobs:
           docker-images: false
           swap-storage: false
       - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
 
       # Right-sizing needs the peak memory and the low-water disk mark, and
       # neither is visible in a job's own output. The sampler runs alongside
@@ -225,7 +219,6 @@ jobs:
         run: ./scripts/build-wasm-extensions.sh --channels
 
       - name: Run database migrations
-        if: matrix.has_postgres
         run: |
           set -euo pipefail
           readarray -t migration_files < <(
@@ -263,7 +256,6 @@ jobs:
       # and the promise arrive together or not at all, so the step's own
       # absence cannot leave a leg that believes Postgres is optional.
       - name: Set the test database URL for postgres configs
-        if: matrix.has_postgres
         run: |
           database_url="postgres://postgres:postgres@localhost/axinite_test"
           echo "TEST_DATABASE_URL=${database_url}" >> "$GITHUB_ENV"
@@ -281,76 +273,10 @@ jobs:
       # `test.yml` stands down on a push, a default-profile run here would
       # leave them unexecuted on `main` altogether.
       - name: Generate coverage
-        if: matrix.name != 'libsql-only'
         run: >-
           cargo llvm-cov nextest ${{ matrix.flags }} --features test-helpers
           --workspace --profile ci --lcov
           --output-path lcov.info
-
-      # The libsql-only leg goes through generate-coverage, with exactly the
-      # selection the pull-request lane in `codescene-coverage.yml` uses, so
-      # the ratchet baseline this saves on a push to `main` measures the same
-      # thing the pull requests are compared on. The action saves the
-      # baseline only for a push to `main`, never for a dispatch.
-      - name: Generate coverage and the ratchet baseline
-        if: matrix.name == 'libsql-only'
-        # `ci`, like the other legs and the pull-request lane: the default
-        # profile drops the trybuild compile contracts. The action has no
-        # profile input; nextest reads the variable, and a composite action's
-        # steps inherit the step's env.
-        env:
-          NEXTEST_PROFILE: ci
-        uses: leynos/shared-actions/.github/actions/generate-coverage@dbe2e22ceaf498d85512679ccded38be9dbe7777
-        with:
-          features: libsql,test-helpers
-          with-default-features: 'false'
-          use-cargo-nextest: 'true'
-          # The third timeout tier. The action's 1,800 s default equals the
-          # 30 m nextest whole-run budget and also has to cover the
-          # instrumented build, so it would kill a legal run first. 4,200 s
-          # is the slowest measured invocation (1,549 s) plus the full 1,800 s
-          # budget plus headroom, under the 5,400 s job ceiling; the guide's
-          # timeout section has the numbers, and `timeout_ordering_test.py`
-          # asserts nextest < watchdog < job.
-          cargo-wait-timeout: '4200'
-          format: lcov
-          output-path: lcov.info
-          with-ratchet: 'true'
-          publish-artefact: 'false'
-          cache-provider: external
-
-      # Whether the token exists, decided without putting it in any step's
-      # environment. The expression is evaluated to `true` or `false` before
-      # the shell runs, so there is no shell conditional to neutralize and
-      # the token itself never reaches this step.
-      - name: Check for the CodeScene token
-        id: codescene-token
-        run: echo "available=${{ secrets.CS_ACCESS_TOKEN != '' }}" >> "$GITHUB_OUTPUT"
-
-      # Feed CodeScene's stored coverage from the analysed branch (main),
-      # from ONE leg so CodeScene receives a single report per commit: the
-      # libsql-only leg, whose report is the one the ratchet also reads. It
-      # is chosen because one leg has to be and it is the cheapest, compiling
-      # the narrowest feature set with no Postgres service, not because the
-      # other legs fail: dispatch 34991999565 on 3301e095e is green on all
-      # three.
-      # Three guards, and none may be widened with `||`: the leg, the token's
-      # presence, and the ref, which the trigger's branch filter does not
-      # cover because a dispatch can name any branch and CodeScene refuses
-      # coverage for a branch it does not analyse. The token is passed as the
-      # action's input, not through this step's `env`: the action is
-      # composite and hands its step environment on to the nested steps it
-      # runs, while it binds the token itself from the input.
-      - name: Upload coverage to CodeScene
-        if: >-
-          matrix.name == 'libsql-only' &&
-          steps.codescene-token.outputs.available == 'true' &&
-          github.ref == 'refs/heads/main'
-        uses: leynos/shared-actions/.github/actions/upload-codescene-coverage@dbe2e22ceaf498d85512679ccded38be9dbe7777
-        with:
-          format: lcov
-          mode: upload
-          access-token: ${{ secrets.CS_ACCESS_TOKEN }}
 
       - name: Upload to Codecov
         uses: codecov/codecov-action@v5
@@ -402,10 +328,259 @@ jobs:
           key: >-
             cargo-v1-${{ runner.os }}-${{ runner.arch }}-${{ runner.environment
             }}-${{ hashFiles('**/Cargo.lock') }}
+  coverage-libsql:
+    name: Coverage (libsql-only)
+    runs-on: ubicloud-standard-4
+    timeout-minutes: 90
+    # The one job that reaches CodeScene, so the one that declares the
+    # environment holding the token: its branch policy admits `main` alone.
+    # It carries no `id-token` grant, which only the Codecov upload needs; that
+    # upload runs in `codecov-libsql` from the report this job saves.
+    environment: codescene
+    permissions:
+      contents: read
+    env:
+      # sccache is the sole owner of compiler output: no cache step archives a
+      # target tree. `setup-rust` names the wrapper, starts the server and
+      # selects the backend from the runner (shared-actions ADR 0005).
+      # sccache cannot cache incremental compilation.
+      CARGO_INCREMENTAL: "0"
+      CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_LINKER: clang
+      CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_RUSTFLAGS: >-
+        -C link-arg=-fuse-ld=mold
+    steps:
+      - name: Free disk space
+        uses: jlumbroso/free-disk-space@54081f138730dfa15788a46383842cd2f914a1be
+        with:
+          tool-cache: false
+          android: true
+          dotnet: true
+          haskell: true
+          large-packages: true
+          docker-images: false
+          swap-storage: false
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+
+      # Right-sizing needs the peak memory and the low-water disk mark, and
+      # neither is visible in a job's own output. The sampler runs alongside
+      # the build and reports both at the end, with `if: always()` so a job
+      # that fails on resources still says so.
+      - name: Start resource sampler
+        run: ./scripts/ci-resource-sampler.sh start
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: llvm-tools-preview
+          targets: wasm32-wasip2
+
+      # The free-disk-space step above removes large apt packages,
+      # including the clang the CARGO_..._LINKER env demands. Reinstall
+      # it (as test.yml does) so the host build scripts link.
+      - name: Install clang
+        run: sudo apt-get update && sudo apt-get install -y clang
+
+      - name: Install mold
+        uses: rui314/setup-mold@v1
+
+      # sccache belongs to setup-rust: it exports Ubicloud's cache-proxy
+      # credentials, clears the v2 cache-service flag the proxy does not
+      # serve, installs and starts sccache and names it as the wrapper.
+      # The toolchain, its targets and components stay with the step
+      # above, so this passes an empty `rustflags` (the mold flags live
+      # in CARGO_TARGET_*_RUSTFLAGS, which RUSTFLAGS would displace),
+      # leaves the Cargo registry to this job's own cache step, and
+      # installs no second cargo-binstall.
+      - name: Setup Rust
+        id: setup-rust
+        uses: leynos/shared-actions/.github/actions/setup-rust@4fb8eb7ad52454678a0662865d81d3cd17aa6e0e
+        with:
+          toolchain: stable
+          rustflags: ''
+          cache-provider: external
+          install-binstall: 'false'
+          # Ubicloud only, so a missing cache proxy fails the job rather
+          # than letting it compile against local disk unnoticed.
+          expect-cache: ubicloud
+      - name: Restore Cargo registry and index
+        id: cargo-registry
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9  # v6.1.0
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+          key: >-
+            cargo-v1-${{ runner.os }}-${{ runner.arch }}-${{ runner.environment
+            }}-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            cargo-v1-${{ runner.os }}-${{ runner.arch }}-${{ runner.environment }}-
+
+      - name: Install cargo-llvm-cov
+        uses: taiki-e/install-action@c7eb1735f09259a5035e8e5d44b1406b1cddc0fb  # v2.83.0
+        with:
+          tool: cargo-llvm-cov@${{ env.CARGO_LLVM_COV_VERSION }}
+          fallback: none
+
+      - name: Install cargo-nextest
+        uses: taiki-e/install-action@c7eb1735f09259a5035e8e5d44b1406b1cddc0fb  # v2.83.0
+        with:
+          tool: cargo-nextest@${{ env.CARGO_NEXTEST_VERSION }}
+          fallback: none
+
+      - name: Install cargo-binstall
+        uses: taiki-e/install-action@c7eb1735f09259a5035e8e5d44b1406b1cddc0fb  # v2.83.0
+        with:
+          tool: cargo-binstall@1.20.1
+          fallback: none
+
+      - name: Install cargo-component
+        env:
+          CARGO_COMPONENT_PIN: ${{ env.CARGO_COMPONENT_VERSION }}
+        run: >-
+          cargo binstall --no-confirm
+          --strategies crate-meta-data,quick-install
+          "cargo-component@$CARGO_COMPONENT_PIN"
+
+      - name: Probe Cargo tooling
+        run: |
+          set -euo pipefail
+          cargo llvm-cov --version
+          cargo nextest --version
+          cargo component --version
+
+      - name: Build GitHub WASM tool (for metadata/schema tests)
+        run: make build-github-tool-wasm
+
+      - name: Build WASM channels (for integration tests)
+        run: ./scripts/build-wasm-extensions.sh --channels
+
+      # The libsql-only leg goes through generate-coverage, with exactly the
+      # selection the pull-request lane in `codescene-coverage.yml` uses, so
+      # the ratchet baseline this saves on a push to `main` measures the same
+      # thing the pull requests are compared on. The action saves the
+      # baseline only for a push to `main`, never for a dispatch.
+      - name: Generate coverage and the ratchet baseline
+        # `ci`, like the other legs and the pull-request lane: the default
+        # profile drops the trybuild compile contracts. The action has no
+        # profile input; nextest reads the variable, and a composite action's
+        # steps inherit the step's env.
+        env:
+          NEXTEST_PROFILE: ci
+        uses: leynos/shared-actions/.github/actions/generate-coverage@dbe2e22ceaf498d85512679ccded38be9dbe7777
+        with:
+          features: libsql,test-helpers
+          with-default-features: 'false'
+          use-cargo-nextest: 'true'
+          # The third timeout tier. The action's 1,800 s default equals the
+          # 30 m nextest whole-run budget and also has to cover the
+          # instrumented build, so it would kill a legal run first. 4,200 s
+          # is the slowest measured invocation (1,549 s) plus the full 1,800 s
+          # budget plus headroom, under the 5,400 s job ceiling; the guide's
+          # timeout section has the numbers, and `timeout_ordering_test.py`
+          # asserts nextest < watchdog < job.
+          cargo-wait-timeout: '4200'
+          format: lcov
+          output-path: lcov.info
+          with-ratchet: 'true'
+          publish-artefact: 'false'
+          cache-provider: external
+
+      # Whether the token exists, decided without putting it in any step's
+      # environment. The expression is evaluated to `true` or `false` before
+      # the shell runs, so there is no shell conditional to neutralize and
+      # the token itself never reaches this step.
+      - name: Check for the CodeScene token
+        id: codescene-token
+        run: echo "available=${{ secrets.CS_ACCESS_TOKEN != '' }}" >> "$GITHUB_OUTPUT"
+
+      # Feed CodeScene's stored coverage from the analysed branch (main),
+      # from ONE leg so CodeScene receives a single report per commit: the
+      # libsql-only leg, whose report is the one the ratchet also reads. It
+      # is chosen because one leg has to be and it is the cheapest, compiling
+      # the narrowest feature set with no Postgres service, not because the
+      # other legs fail: dispatch 34991999565 on 3301e095e is green on all
+      # three.
+      # Three guards, and none may be widened with `||`: the leg, the token's
+      # presence, and the ref, which the trigger's branch filter does not
+      # cover because a dispatch can name any branch and CodeScene refuses
+      # coverage for a branch it does not analyse. The token is passed as the
+      # action's input, not through this step's `env`: the action is
+      # composite and hands its step environment on to the nested steps it
+      # runs, while it binds the token itself from the input.
+      - name: Upload coverage to CodeScene
+        if: >-
+          steps.codescene-token.outputs.available == 'true' &&
+          github.ref == 'refs/heads/main'
+        uses: leynos/shared-actions/.github/actions/upload-codescene-coverage@dbe2e22ceaf498d85512679ccded38be9dbe7777
+        with:
+          format: lcov
+          mode: upload
+          access-token: ${{ secrets.CS_ACCESS_TOKEN }}
+
+      - name: Save the libsql-only report for the Codecov upload
+        uses: actions/upload-artifact@v7
+        with:
+          name: libsql-only-lcov
+          path: lcov.info
+          if-no-files-found: error
+          retention-days: 1
+      # Report the hit rate so a wrapper that is silently doing nothing shows
+      # up in the job summary rather than only in the duration.
+      - name: Report sccache statistics
+        if: always()
+        env:
+          SCCACHE_BACKEND: ${{ steps.setup-rust.outputs.cache-backend }}
+        run: |
+          set -euo pipefail
+          # Print to the log as well as the job summary. The summary is not
+          # readable through the REST API, so the log copy is what lets anyone
+          # confirm the hit rate, or a read or write error, after the fact.
+          stats="$(sccache --show-stats)"
+          printf '%s\n' "$stats"
+          {
+            printf '### sccache statistics (%s)\n\n' "${GITHUB_JOB}"
+            # `Cache location` reads `ghac` for the proxy and GitHub alike, so
+            # name the backend setup-rust chose.
+            printf -- '- backend: %s\n\n' "${SCCACHE_BACKEND:-none}"
+            printf '```text\n'
+            printf '%s\n' "$stats"
+            printf '```\n'
+          } >> "${GITHUB_STEP_SUMMARY}"
+      - name: Report resource peaks
+        if: always()
+        run: ./scripts/ci-resource-sampler.sh report
+  codecov-libsql:
+    name: Codecov (libsql-only)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    needs: [coverage-libsql]
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - name: Fetch the libsql-only report
+        uses: actions/download-artifact@v8
+        with:
+          name: libsql-only-lcov
+      - name: Upload to Codecov
+        uses: codecov/codecov-action@v5
+        with:
+          files: lcov.info
+          flags: libsql-only
+          disable_search: true
+          use_oidc: true
+          fail_ci_if_error: true
   e2e-coverage:
     name: E2E Coverage
     runs-on: ubicloud-standard-4
     timeout-minutes: 60
+    permissions:
+      contents: read
+      id-token: write
     env:
       # sccache is the sole owner of compiler output: no cache step archives a
       # target tree. `setup-rust` names the wrapper, starts the server and
@@ -417,6 +592,8 @@ jobs:
         -C link-arg=-fuse-ld=mold
     steps:
       - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
 
       # Right-sizing needs the peak memory and the low-water disk mark, and
       # neither is visible in a job's own output. The sampler runs alongside
@@ -589,11 +766,14 @@ jobs:
     name: Coverage
     runs-on: ubuntu-latest
     timeout-minutes: 10
-    if: always()
-    needs: [coverage, e2e-coverage]
+    permissions:
+      contents: read
+    needs: [coverage, coverage-libsql, codecov-libsql, e2e-coverage]
     steps:
       - run: |
           if [[ "${{ needs.coverage.result }}" != "success" || \
+            "${{ needs.coverage-libsql.result }}" != "success" || \
+            "${{ needs.codecov-libsql.result }}" != "success" || \
             "${{ needs.e2e-coverage.result }}" != "success" ]]; then
             echo "One or more coverage jobs failed"
             exit 1

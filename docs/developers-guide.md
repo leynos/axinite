@@ -431,8 +431,8 @@ Each mutable cache path has exactly one owner and one explainable key.
 | `~/.cargo/registry`, `~/.cargo/git`                          | The `Restore`/`Save Cargo registry and index` step pair | `runner.os`, `runner.arch`, `runner.environment`, `hashFiles('**/Cargo.lock')`, generation `v1` | `coverage.yml` `coverage` (`all-features` leg) on Linux; `test.yml` `windows-build` (`all-features` leg) on Windows; both only on a push to `main` |
 | `~/.cargo/bin/whitaker-installer`, `~/.local/share/whitaker` | The shared `install-whitaker` action                    | installer version, `hashFiles('dylint.toml')`, `runner.os`, `runner.arch`                       | The action, on any run                                                                                                                             |
 | `~/.cache/uv`                                                | `astral-sh/setup-uv` with `enable-cache: true`          | The action's own lockfile hashing                                                               | The action, on any run                                                                                                                             |
-| `~/.local/bin/cs-coverage`                                   | The shared `upload-codescene-coverage` action           | CodeScene CLI version                                                                           | The action, in `coverage.yml` `coverage` (`libsql-only` leg) on `main` only                                                                        |
-| `.coverage-baseline.rust` (the ratchet baseline)             | The shared `generate-coverage` action                   | `runner.os`, `github.run_id` (newest entry wins)                                                | `coverage.yml` `coverage` (`libsql-only` leg), only on a push to `main`                                                                            |
+| `~/.local/bin/cs-coverage`                                   | The shared `upload-codescene-coverage` action           | CodeScene CLI version                                                                           | The action, in `coverage.yml` `coverage-libsql` on `main` only                                                                                     |
+| `.coverage-baseline.rust` (the ratchet baseline)             | The shared `generate-coverage` action                   | `runner.os`, `github.run_id` (newest entry wins)                                                | `coverage.yml` `coverage-libsql`, only on a push to `main`                                                                                         |
 
 Rules that follow from the table:
 
@@ -494,19 +494,22 @@ instead; see below.
 #### Manual warm-cache runs
 
 Cache behaviour on `main` cannot be read from a pull request, so `test.yml`,
-`code_style.yml`, and `codescene-coverage.yml` each accept `workflow_dispatch`.
-The intended use is the runner-migration exit evidence: merge, let the merge
-push write the caches, then dispatch the same workflow against `main` twice in
-sequence and compare queue time, wall time, and the sccache hit rate.
+`code_style.yml`, and `coverage.yml` each accept `workflow_dispatch`.
+`codescene-coverage.yml` does not: the CV-005 library allows its lane the
+pull-request guard alone (see "The CV-005 contracts" below), so a warm run of
+the same libsql-only selection is a dispatch of `coverage.yml`. The intended
+use is the runner-migration exit evidence: merge, let the merge push write the
+caches, then dispatch the same workflow against `main` twice in sequence and
+compare queue time, wall time, and the sccache hit rate.
 
 A dispatch is a reader. No save step can run, because every save names the
 `push` event, and `generate-coverage` saves the ratchet baseline only on a push
-to `main`, so a manual run of `codescene-coverage.yml` measures and compares
-without advancing anything. Otherwise a dispatch behaves like a push: every job
-runs, including the GitHub-hosted Windows lanes, so a manual run is a full run.
-Its Ubicloud jobs are billed by the minute like any other; the GitHub-hosted
-lanes are not, because this repository is public. The trigger takes no inputs,
-because `gh workflow run --ref` and the Actions UI already choose the ref.
+to `main`, so a manual run of `coverage.yml` measures without advancing the
+baseline. Otherwise a dispatch behaves like a push: every job runs, including
+the GitHub-hosted Windows lanes, so a manual run is a full run. Its Ubicloud
+jobs are billed by the minute like any other; the GitHub-hosted lanes are not,
+because this repository is public. The trigger takes no inputs, because
+`gh workflow run --ref` and the Actions UI already choose the ref.
 `tests/workflow_contracts/warm_dispatch_test.py` asserts both halves.
 
 ### sccache
@@ -699,10 +702,14 @@ ratchet.
   `with-ratchet: 'true'` and `publish-artefact: 'false'`. It fails when
   coverage falls below the stored baseline, and it holds no token. The file
   keeps its old name so the contracts and this guide stay stable.
-- `coverage.yml` `coverage` is the one publisher and the one baseline writer.
-  Its `libsql-only` leg runs `generate-coverage` with exactly the lane's
+- `coverage.yml` is the one publisher and `coverage-libsql` is its one
+  baseline writer. It runs `generate-coverage` with exactly the lane's
   selection, so the baseline it saves on a push to `main` measures what the
-  pull requests are compared on, and only that leg uploads.
+  pull requests are compared on, and only that job uploads to CodeScene. It is
+  a job of its own, not a matrix leg of `coverage`, because the CV-005 library
+  refuses an `if` on the generate step. Its permissions are `contents: read`
+  alone; the Codecov OIDC upload of its report runs in `codecov-libsql`, which
+  reads `lcov.info` from an artefact.
 - The upload step passes the token as the action's `access-token` input and
   never through an `env`: the action is composite, and a step's environment
   reaches every step nested inside it. Whether the token exists is decided by a
@@ -727,13 +734,16 @@ ratchet.
 - Merges made by the automerge workflow with `GITHUB_TOKEN` fire no push
   event, so they reach neither the upload nor the baseline. That is a known
   exception; a manual dispatch covers it, and no schedule is added.
-- Both shared actions are pinned to a full commit SHA, and nothing passes the
-  withdrawn `installer-checksum` input or the `CODESCENE_CLI_SHA256` variable.
-  The pins must stay at `a5765019` or a commit descended from it, since that is
-  where the checksum inputs were withdrawn. The contract does not check that
-  ancestry: it would have to list the current SHAs, and "Workflow pins and
-  Dependabot" above forbids that. Dependabot only moves a pin forward, so the
-  floor holds unless someone downgrades a pin by hand, and review catches that.
+- Both shared actions are pinned to a full commit SHA (the CV-005 library for
+  the uploader, `workflow_tooling_test.py` for every shared-actions reference),
+  and nothing passes the withdrawn `installer-checksum` input or the
+  `CODESCENE_CLI_SHA256` variable (the library counts either as contacting
+  CodeScene). The pins must stay at `a5765019` or a commit descended from it,
+  since that is where the checksum inputs were withdrawn. The contract does not
+  check that ancestry: it would have to list the current SHAs, and "Workflow
+  pins and Dependabot" above forbids that. Dependabot only moves a pin forward,
+  so the floor holds unless someone downgrades a pin by hand, and review
+  catches that.
 - The publisher job declares `environment: codescene`. That environment's
   branch policy admits `main` alone, and the CodeScene token is to live there,
   so only a job deploying from `main` can read it. Every job that calls the
@@ -741,22 +751,17 @@ ratchet.
   other job declares it; and no job in a workflow a pull request can start
   declares it. The declaration is on the whole matrix job, so a
   `workflow_dispatch` from any branch other than `main` is refused at the
-  environment on all three legs, not only the uploading one.
-  `codescene_environment_test.py` holds the placement and breaks each clause in
-  a constructed workflow.
+  environment on all three legs, not only the uploading one. The shared CV-005
+  library holds the placement.
 
-`tests/workflow_contracts/coverage_publication_test.py` holds the estate to all
-of this. The pull-request surface it checks is every workflow a pull-request,
-review or merge-queue event starts, every `workflow_run` chained onto one, and
-everything those call through `./` or `$/`, followed transitively. Across that
-surface, no key or scalar may name the token, the uploader, the CLI or
-`codescene.io`, and no job may forward `secrets: inherit`.
-`_strict_workflows.py` reads every workflow through a loader that refuses a
-duplicated key and reads `on:` in each of its three shapes under both key
-spellings. `coverage_publication_reader_test.py` drives each clause with
-constructed workflows, including a `workflow_call`-only callee that curls
-CodeScene with an inherited token. Every clause was proved by a mutation that
-deletes or weakens it.
+The shared CV-005 library holds the estate to all of this. The pull-request
+surface it checks is every workflow a pull-request, review or merge-queue event
+starts, every `workflow_run` chained onto one, and everything those call through
+`./` or `$/`, followed transitively. Across that surface, no key or scalar may
+name the token, the uploader, the CLI or `codescene.io`, and no job may forward
+`secrets: inherit`. Its own suite drives each clause, and its mutation ledger
+proves each one. The tree is read through a loader that refuses a duplicated
+key and reads `on:` in each of its three shapes.
 
 ### Writing a workflow contract
 
@@ -1761,19 +1766,21 @@ to the lane that asked for it to be gone, and says nothing.
 
 **The requirement and the database URL ship in one step.** `coverage.yml`
 exports `TEST_DATABASE_URL`, `DATABASE_URL` and `AXINITE_REQUIRE_POSTGRES` from
-the same step, guarded by `matrix.has_postgres`. Splitting them is the failure
-this guards against in both directions: a leg with the URL and no requirement
-keeps the skip, and a leg with the requirement and no URL fails on the
-passwordless fallback, which is issue #350 again. The `libsql-only` leg runs
-neither and keeps its skip.
+the same step, unconditionally, in the `coverage` matrix, every leg of which
+bears Postgres. Splitting them is the failure this guards against in both
+directions: a leg with the URL and no requirement keeps the skip, and a leg
+with the requirement and no URL fails on the passwordless fallback, which is
+issue #350 again. The `coverage-libsql` job starts no service, exports neither
+and keeps its skip.
 
 `tests/workflow_contracts/coverage_database_test.py` holds the contract. It
-asserts that each matrix leg's `has_postgres` matches whether its flags
-actually compile the `postgres` feature, resolved against the root manifest's
-`default` list, because `postgres` is a default feature and a leg gets it
-unless it passes `--no-default-features`; that the step exporting the URL also
-appends the requirement to `$GITHUB_ENV`; and that exactly one step exports it,
-guarded by `matrix.has_postgres`.
+asserts that each leg of the `coverage` matrix actually compiles the `postgres`
+feature, resolved against the root manifest's `default` list (in
+`_cargo_features.py`), because `postgres` is a default feature and a leg gets
+it unless it passes `--no-default-features`; that the step exporting the URL
+also appends the requirement to `$GITHUB_ENV`; that exactly one step exports
+each, unconditionally; and that `coverage-libsql` starts no service, exports
+neither and compiles without `postgres`.
 
 The Rust side is tested in three layers, because the first two are each
 satisfied by a defect the third catches. `src/testing/postgres/tests.rs` holds
@@ -3412,10 +3419,38 @@ the coverage and test lanes install, and the contract asserts the versions
 agree. Two versions in the tree would leave the contract certifying the file
 for a runner nothing else runs, with both lanes green.
 
+### The CV-005 contracts
+
+The CodeScene coverage shape (one publisher, one pull-request lane, no token on
+any surface a pull request reaches) is held by the shared `cv005-contracts`
+library in `leynos/shared-actions`, not by a copy here.
+`make test-workflow-contracts` runs it first, from the full commit in
+`CV005_CONTRACTS_REF`, with this repository's parameters in
+`.github/cv005.toml`. A fix to the library is a pin bump.
+
+Four consequences shape `coverage.yml` and `codescene-coverage.yml`:
+
+- The publisher grants `contents: read` at workflow level. A job that needs
+  more, such as the Codecov OIDC upload, declares it itself, and the job that
+  uploads to CodeScene carries `contents: read` alone.
+- No publisher job and no `generate-coverage` step may carry `if:` or
+  `continue-on-error`. That is why the libsql-only leg is its own job, and why
+  `coverage-gate` has no `always()`. The gate is not a required check, the
+  workflow never runs on a pull request, and a failed needed job still fails
+  the run, so a skipped gate loses only a redundant red entry.
+- Every publisher checkout sets `persist-credentials: false`.
+- The pull-request lane may carry the pull-request guard and any declared
+  `[[pairing]]` guards, which are AND terms. An OR with `workflow_dispatch`
+  cannot be declared, so the lane has no dispatch.
+
+The repository keeps the assertions that are policy rather than contract:
+timeout ordering, `NEXTEST_PROFILE: ci`, the database export, and the runner
+shapes.
+
 ### The watchdog tier, and where it exists
 
 Two lanes run the suite through the shared `generate-coverage` action:
-`coverage.yml`'s `libsql-only` leg, which writes the ratchet baseline, and
+`coverage.yml`'s `coverage-libsql` job, which writes the ratchet baseline, and
 `codescene-coverage.yml`'s pull-request lane. The action runs `cargo` under a
 wall-clock watchdog, so those two lanes have the third tier. Every other lane
 runs `cargo llvm-cov nextest` from a `run:` step and has no watchdog.

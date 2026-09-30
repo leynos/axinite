@@ -22,15 +22,13 @@ Run via ``make test-workflow-contracts``.
 from __future__ import annotations
 
 import re
-import shlex
-import tomllib
 import typing as typ
 from urllib.parse import urlsplit
 
 import pytest
-
+from _cargo_features import POSTGRES_FEATURE, _enables_postgres
 from _workflow_files import load
-from _workflow_policy import REPOSITORY_ROOT, WORKFLOW_DIR, step_text
+from _workflow_policy import WORKFLOW_DIR, step_text
 
 WORKFLOW: typ.Final[str] = "coverage.yml"
 
@@ -177,18 +175,63 @@ def test_the_exported_test_url_matches_the_service_container() -> None:
     )
 
 
-def test_the_export_is_guarded_to_the_postgres_legs() -> None:
-    """Only the legs with a database configured may advertise one.
+#: The job that runs the one leg with no database.
+LIBSQL_JOB: typ.Final[str] = "coverage-libsql"
 
-    `services` is declared at job level, so the container starts for every
-    matrix leg including `libsql-only`. That leg is built with
-    `--no-default-features --features libsql` and must not be pointed at a
-    database it does not use, which is what `has_postgres` expresses.
+
+def _libsql_job() -> dict[str, object]:
+    """Return the libsql-only coverage job, failing loudly if it is renamed."""
+    jobs = load(WORKFLOW_DIR / WORKFLOW).get("jobs")
+    assert isinstance(jobs, dict), f"{WORKFLOW} must declare a jobs mapping"
+    job = jobs.get(LIBSQL_JOB)
+    assert isinstance(job, dict), f"{WORKFLOW} must declare a {LIBSQL_JOB!r} job"
+    return job
+
+
+def test_the_libsql_job_is_handed_no_database() -> None:
+    """The leg with no database is its own job, so it can never be given one.
+
+    The libsql-only leg used to be a cell of the `coverage` matrix, kept away
+    from the database by a `matrix.has_postgres` guard on every step that
+    advertised one. It is a job of its own now, so the guarantee is
+    structural: no service container, and no step that exports the URL or the
+    promise of a database. Either would point a leg built with
+    `--no-default-features --features libsql` at a database it does not use.
     """
-    assert _exporting_step().get("if") == "matrix.has_postgres", (
-        f"the {TEST_URL_VARIABLE} export must be guarded on "
-        "matrix.has_postgres, so the libsql-only leg is not handed a database "
-        "URL its feature set does not use"
+    job = _libsql_job()
+    assert "services" not in job, f"{LIBSQL_JOB} must not start a Postgres service"
+    leaking = [
+        step.get("name")
+        for step in _steps(job)
+        if TEST_URL_VARIABLE in step_text(step) or REQUIRE_VARIABLE in step_text(step)
+    ]
+    assert not leaking, (
+        f"{LIBSQL_JOB} must not export {TEST_URL_VARIABLE} or {REQUIRE_VARIABLE}, "
+        f"found them in {leaking}"
+    )
+
+
+def test_the_libsql_job_compiles_without_postgres() -> None:
+    """Keep the libsql-only job libsql-only, or its promise of no database lies.
+
+    `postgres` is a default feature, so the job stays database-free only while
+    the action turns the defaults off and names no `postgres` feature.
+    """
+    generating = [
+        step
+        for step in _steps(_libsql_job())
+        if "generate-coverage" in str(step.get("uses", ""))
+    ]
+    assert len(generating) == 1, f"{LIBSQL_JOB} must run generate-coverage once"
+    inputs = generating[0].get("with")
+    assert isinstance(inputs, dict), "generate-coverage must declare its inputs"
+    assert str(inputs.get("with-default-features")).lower() == "false", (
+        "the libsql-only job must turn the default features off, or it gets "
+        "`postgres` and needs the database it is not given"
+    )
+    features = set(re.split(r"[,\s]+", str(inputs.get("features", ""))))
+    assert POSTGRES_FEATURE not in features, (
+        "the libsql-only job must not name the `postgres` feature"
     )
 
 
@@ -198,26 +241,6 @@ def test_the_export_is_guarded_to_the_postgres_legs() -> None:
 #: starts a Postgres service and points the tests at it, the same skip reports
 #: success for tests that never connected.
 REQUIRE_VARIABLE: typ.Final[str] = "AXINITE_REQUIRE_POSTGRES"
-
-#: The feature whose presence makes a leg Postgres-bearing.
-POSTGRES_FEATURE: typ.Final[str] = "postgres"
-
-#: The guard a step carries to run only on the Postgres-bearing legs.
-POSTGRES_GUARD: typ.Final[str] = "matrix.has_postgres"
-
-
-def _default_features() -> frozenset[str]:
-    """Return the root package's default feature set.
-
-    Read rather than restated, because `postgres` being a default feature is
-    the whole reason a leg can bear Postgres without naming it.
-    """
-    manifest = tomllib.loads(
-        (REPOSITORY_ROOT / "Cargo.toml").read_text(encoding="utf-8")
-    )
-    declared = manifest.get("features", {}).get("default", [])
-    return frozenset(str(name) for name in declared)
-
 
 #: `echo "NAME=value" >> "$GITHUB_ENV"`, anchored so the redirection names
 #: that file and not a variable whose name merely starts the same way.
@@ -232,96 +255,6 @@ REQUIRE_APPEND_RE: typ.Final[re.Pattern[str]] = re.compile(
     re.MULTILINE,
 )
 
-#: How Cargo spells a feature list. The long and short flags each take their
-#: value separately or joined with `=`, and the value separates on commas or
-#: whitespace: `--features "libsql postgres"` is one argument naming two
-#: features. Reading one spelling and calling the others empty would report a
-#: Postgres-bearing leg as narrow.
-FEATURE_FLAGS: typ.Final[tuple[str, ...]] = ("--features", "-F")
-FEATURE_SEPARATORS: typ.Final[re.Pattern[str]] = re.compile(r"[,\s]+")
-
-
-def _split_features(value: str) -> set[str]:
-    """Return the feature names one `--features` value carries."""
-    return {name for name in FEATURE_SEPARATORS.split(value.strip()) if name}
-
-
-def _is_short_flag_with_a_joined_value(token: str) -> bool:
-    """Report whether a token is `-F` carrying its value without a separator.
-
-    `-Flibsql` is the short flag with its value joined on, which clap accepts.
-    The long flag has no such form, so only the short one is read this way:
-    treating `--featuresx` as a feature list would invent one. `-F=libsql` is
-    the separated form and is read before this.
-
-    Parameters
-    ----------
-    token
-        One shell word of the command.
-
-    Returns
-    -------
-    bool
-        True when the token is the short flag with a joined, non-empty value.
-    """
-    if not token.startswith("-F"):
-        return False
-    value = token[2:]
-    return bool(value) and not value.startswith("=")
-
-
-def _features_named_by(token: str, following: str | None) -> set[str]:
-    """Return the features one argument names.
-
-    Parameters
-    ----------
-    token
-        One shell word of the command.
-    following
-        The word after it, when there is one. The separated forms take their
-        value there.
-
-    Returns
-    -------
-    set of str
-        The feature names, empty for every argument that names none.
-    """
-    if token in FEATURE_FLAGS:
-        return _split_features(following) if following is not None else set()
-    for flag in FEATURE_FLAGS:
-        if token.startswith(f"{flag}="):
-            return _split_features(token[len(flag) + 1 :])
-    if _is_short_flag_with_a_joined_value(token):
-        return _split_features(token[2:])
-    return set()
-
-
-def _enables_postgres(flags: str) -> bool:
-    """Report whether a leg's flags compile the `postgres` feature.
-
-    Parameters
-    ----------
-    flags
-        The leg's `flags` value, as handed to `cargo llvm-cov nextest`.
-
-    Returns
-    -------
-    bool
-        True when the resolved feature set contains `postgres`.
-    """
-    tokens = shlex.split(flags, comments=False, posix=True)
-    if "--all-features" in tokens:
-        return True
-    named: set[str] = set()
-    for index, token in enumerate(tokens):
-        following = tokens[index + 1] if index + 1 < len(tokens) else None
-        named.update(_features_named_by(token, following))
-    # Cargo enables the defaults unless the command turns them off, so a leg
-    # that names nothing still gets every member of `default`.
-    if "--no-default-features" not in tokens:
-        named |= _default_features()
-    return POSTGRES_FEATURE in named
-
 
 def _legs() -> list[dict[str, object]]:
     """Return the coverage job's matrix legs."""
@@ -334,24 +267,27 @@ def _legs() -> list[dict[str, object]]:
     return [leg for leg in include if isinstance(leg, dict)]
 
 
-def test_every_postgres_bearing_leg_declares_it() -> None:
-    """A leg's `has_postgres` must match the features it actually compiles.
+def test_every_leg_of_the_postgres_job_compiles_postgres() -> None:
+    """Every leg of the `coverage` matrix must bear Postgres, and say so.
 
-    The flag decides whether the service is used, the migrations run and the
-    database URL is exported. A leg that compiles `postgres` without the flag
-    runs every Postgres test against nothing and skips them all, and one that
-    carries the flag without the feature pays for a service it cannot use.
+    The job starts a Postgres service, runs the migrations and exports the
+    database URL for every leg, unconditionally. A leg that did not compile
+    `postgres` would pay for a service it cannot use, and belongs in
+    `coverage-libsql`. `postgres` is a default feature, so a leg gets it unless
+    it passes `--no-default-features`. The export is unconditional for the same
+    reason: a guard on it could turn it off for a leg that needs it.
     """
     for leg in _legs():
         name = leg.get("name")
-        declared = bool(leg.get("has_postgres"))
-        actual = _enables_postgres(str(leg.get("flags", "")))
-        assert declared == actual, (
-            f"the {name!r} leg declares has_postgres={declared} but its flags "
-            f"{leg.get('flags')!r} resolve to postgres={actual}; `postgres` is "
-            "a default feature, so a leg gets it unless it passes "
-            "--no-default-features"
+        assert _enables_postgres(str(leg.get("flags", ""))), (
+            f"the {name!r} leg's flags {leg.get('flags')!r} do not compile "
+            "postgres, so it belongs in coverage-libsql, not in the job that "
+            "starts the database"
         )
+    assert "if" not in _exporting_step(), (
+        f"the {TEST_URL_VARIABLE} export must be unconditional: every leg of "
+        f"{JOB} needs it"
+    )
 
 
 def test_the_leg_that_provides_postgres_tells_the_tests_it_is_not_optional() -> None:
@@ -376,12 +312,11 @@ def test_the_leg_that_provides_postgres_tells_the_tests_it_is_not_optional() -> 
     )
 
 
-def test_the_promise_is_confined_to_the_postgres_bearing_legs() -> None:
-    """A leg with no database must keep its skip.
+def test_the_promise_is_unconditional_in_the_postgres_job() -> None:
+    """Every leg with a database must be told it is mandatory.
 
-    The narrow direction. Exporting the requirement unconditionally would fail
-    the libsql-only leg, which is meant to run without a database, and a
-    developer's checkout inherits nothing from here either way.
+    A guard on the step would leave the skip available on a leg it fell off,
+    which reports success for tests that never connected.
     """
     exporting = [
         step
@@ -392,11 +327,9 @@ def test_the_promise_is_confined_to_the_postgres_bearing_legs() -> None:
         f"expected exactly one step exporting {REQUIRE_VARIABLE}, found "
         f"{len(exporting)}"
     )
-    condition = " ".join(str(exporting[0].get("if", "")).split())
-    assert condition == POSTGRES_GUARD, (
-        f"the step exporting {REQUIRE_VARIABLE} is guarded by {condition!r}, "
-        f"not {POSTGRES_GUARD!r}; a leg without a database would be told that "
-        "one is mandatory and fail"
+    assert "if" not in exporting[0], (
+        f"the step exporting {REQUIRE_VARIABLE} must be unconditional, found "
+        f"{exporting[0].get('if')!r}"
     )
 
 
