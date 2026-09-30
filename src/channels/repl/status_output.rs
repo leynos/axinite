@@ -13,7 +13,7 @@ use super::formatting::{ToolApprovalRequest, render_approval_card};
 
 mod auth;
 
-use auth::{handle_auth_completed, handle_auth_required};
+use auth::{AuthCompletedInfo, AuthRequiredInfo, print_auth_completed, print_auth_required};
 
 /// Max characters for tool result previews in the terminal.
 pub(super) const CLI_TOOL_RESULT_MAX: usize = 200;
@@ -209,43 +209,6 @@ pub(super) fn print_image_generated(path: Option<&str>) {
     eprintln!("{}", render_image_generated(path));
 }
 
-/// Build a [`ToolApprovalRequest`] from destructured [`StatusUpdate::ApprovalNeeded`]
-/// fields and delegate to [`print_approval_needed`].
-fn handle_approval_needed(
-    request_id: &str,
-    tool_name: &str,
-    description: &str,
-    parameters: &serde_json::Value,
-) {
-    let request = ToolApprovalRequest {
-        request_id,
-        tool_name,
-        description,
-    };
-    print_approval_needed(&request, parameters);
-}
-
-/// Build a [`ToolCompletedInfo`] from destructured [`StatusUpdate::ToolCompleted`]
-/// fields and delegate to [`print_tool_completed`].
-fn handle_tool_completed(name: &str, success: bool, error: Option<&str>, parameters: Option<&str>) {
-    print_tool_completed(&ToolCompletedInfo {
-        name,
-        success,
-        error,
-        parameters,
-    });
-}
-
-/// Build a [`JobStartedInfo`] from destructured [`StatusUpdate::JobStarted`]
-/// fields and delegate to [`print_job_started`].
-fn handle_job_started(job_id: &str, title: &str, browse_url: &str) {
-    print_job_started(&JobStartedInfo {
-        job_id,
-        title,
-        browse_url,
-    });
-}
-
 /// Route a [`StatusUpdate`] to the appropriate `print_*` helper.
 pub(super) fn dispatch_status_update(
     status: StatusUpdate,
@@ -261,7 +224,13 @@ pub(super) fn dispatch_status_update(
             error,
             parameters,
         } => {
-            handle_tool_completed(&name, success, error.as_deref(), parameters.as_deref());
+            let info = ToolCompletedInfo {
+                name: &name,
+                success,
+                error: error.as_deref(),
+                parameters: parameters.as_deref(),
+            };
+            print_tool_completed(&info);
         }
         StatusUpdate::ToolResult { name: _, preview } => print_tool_result(&preview),
         StatusUpdate::StreamChunk(chunk) => print_stream_chunk(is_streaming, &chunk),
@@ -270,7 +239,12 @@ pub(super) fn dispatch_status_update(
             title,
             browse_url,
         } => {
-            handle_job_started(&job_id, &title, &browse_url);
+            let info = JobStartedInfo {
+                job_id: &job_id,
+                title: &title,
+                browse_url: &browse_url,
+            };
+            print_job_started(&info);
         }
         StatusUpdate::Status(msg) => print_status(is_debug, &msg),
         StatusUpdate::ApprovalNeeded {
@@ -279,7 +253,12 @@ pub(super) fn dispatch_status_update(
             description,
             parameters,
         } => {
-            handle_approval_needed(&request_id, &tool_name, &description, &parameters);
+            let request = ToolApprovalRequest {
+                request_id: &request_id,
+                tool_name: &tool_name,
+                description: &description,
+            };
+            print_approval_needed(&request, &parameters);
         }
         StatusUpdate::AuthRequired {
             extension_name,
@@ -287,19 +266,25 @@ pub(super) fn dispatch_status_update(
             auth_url,
             setup_url,
         } => {
-            handle_auth_required(
-                &extension_name,
-                instructions.as_deref(),
-                setup_url.as_deref(),
-                auth_url.as_deref(),
-            );
+            let info = AuthRequiredInfo {
+                extension_name: &extension_name,
+                instructions: instructions.as_deref(),
+                setup_url: setup_url.as_deref(),
+                auth_url: auth_url.as_deref(),
+            };
+            print_auth_required(&info);
         }
         StatusUpdate::AuthCompleted {
             extension_name,
             success,
             message,
         } => {
-            handle_auth_completed(&extension_name, success, &message);
+            let info = AuthCompletedInfo {
+                extension_name: &extension_name,
+                success,
+                message: &message,
+            };
+            print_auth_completed(&info);
         }
         StatusUpdate::ImageGenerated { path, .. } => print_image_generated(path.as_deref()),
     }
