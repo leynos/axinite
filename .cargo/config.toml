@@ -1,3 +1,32 @@
+# The embedded PostgreSQL cluster the tests use (`src/testing/postgres/
+# embedded.rs`) is configured here rather than in the fixture: the library
+# reads its configuration from the environment during bootstrap, and a test
+# process must not set its own environment once threads exist. Cargo applies
+# `[env]` to every process it runs, so `cargo test`, `cargo nextest` and
+# `cargo llvm-cov` all agree, and a value already in the environment (set by a
+# workflow, say) wins over these. nextest's own configuration has no `env` key.
+[env]
+# PostgreSQL 17.11, exactly. The extension hook matches the archive on the
+# major and minor together, and df12-pg-extensions v1.0.0 publishes pgvector
+# for 16.15, 17.11 and 18.6; a range would resolve to whatever Theseus
+# released last and fail closed with no archive for it. CI's former service
+# container ran pg16; 17.11 matches pg-embed-setup-unpriv's extension docs.
+PG_VERSION_REQ = "=17.11.0"
+# The schema's first migration runs `CREATE EXTENSION vector`. The manifest
+# is digest-pinned, which pins every archive it lists.
+PG_EXTENSIONS = "vector"
+PG_EXTENSIONS_MANIFEST = "https://github.com/leynos/df12-pg-extensions/releases/download/v1.0.0/manifest.json"
+PG_EXTENSIONS_MANIFEST_SHA256 = "054bbefd9051b6485ddb1239232fd50ac7ff8b34a04fa930f4f32275df581e69"
+# Sixty-four connections: the `pg-embed` nextest group runs sixteen tests at
+# two connections each, leaving room for the template and administrative
+# connections. The library's default of twenty forced the group down to eight.
+PG_MAX_CONNECTIONS = "64"
+# A per-checkout install root instead of the per-user one every project on the
+# host shares, so another project's cluster or a stale directory cannot break
+# this one's bootstrap. Under `target/`, which is ignored and which `cargo
+# clean` removes.
+PG_EMBED_ROOT = { value = "target/pg-embed", relative = true }
+
 [target.x86_64-unknown-linux-gnu]
 linker = "clang"
 rustflags = ["-C", "link-arg=-fuse-ld=mold"]

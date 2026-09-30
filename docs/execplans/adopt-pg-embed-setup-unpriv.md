@@ -4,7 +4,7 @@ This ExecPlan (execution plan) is a living document. The sections `Constraints`,
 `Tolerances`, `Risks`, `Progress`, `Surprises & Discoveries`, `Decision Log`,
 and `Outcomes & Retrospective` must be kept up to date as work proceeds.
 
-Status: NOT STARTED
+Status: IN PROGRESS
 
 ## Purpose / big picture
 
@@ -279,8 +279,16 @@ says what to do if they come in above the service container's.
 
 ## Progress
 
-Not started. This plan was written while deferring the adoption, so that the
-reasons are recorded rather than rediscovered.
+- [x] 2026-09-27: `pg-embed-setup-unpriv` 0.6.0 published, and
+  df12-pg-extensions v1.0.0 published (manifest digest `054bbefd…81e69`). The
+  dependency gate is met.
+- [ ] Milestone 1, the harness (pull request #357, taken over and ported to
+  0.6): `TestDatabase`, template and per-test clone, `.cargo/config.toml`
+  configuration, `pg-embed` nextest group, localhost fallback removed.
+- [ ] Milestone 2, CI: remove `coverage.yml`'s service and `psql` step, add
+  cache roots, export `AXINITE_REQUIRE_POSTGRES` on `test.yml`, rewrite
+  `coverage_database_test.py`.
+- [ ] Milestone 3: record cold and warm per-lane costs here.
 
 ## Surprises & discoveries
 
@@ -299,6 +307,23 @@ reasons are recorded rather than rediscovered.
   step. The exit reaper that build item 1 planned is already in the library.
 
 ## Decision log
+
+- 2026-09-27, user ruling via the lead: pin PostgreSQL `=17.11.0`, to match
+  `pg-embed-setup-unpriv`'s extension documentation, moving from the pg16 CI
+  service. The hook matches archives on major and minor, so a range is not an
+  option.
+- 2026-09-27: configuration lives in `.cargo/config.toml`'s `[env]` (version,
+  extension manifest and digest, `PG_MAX_CONNECTIONS=64`, and a per-checkout
+  `PG_EMBED_ROOT`), because the library reads only the environment and tests
+  must not set it. A value a workflow exports overrides it.
+- 2026-09-27: the per-test guard outlives the call through `TestDatabase`,
+  which derefs to `PgBackend`, so `try_test_pg_db` returns
+  `Option<TestDatabase>` and most call sites are unchanged.
+- 2026-09-27: 0.6.0 retires the draft's two caveats: `PG_EMBED_ROOT` removes
+  the shared per-user install root, and `PG_MAX_CONNECTIONS` lifts the cap of
+  twenty that had held the nextest group at eight threads (now sixteen). The
+  draft's third-party `pgvector_compiled` archive gives way to the hook and the
+  digest-pinned df12 manifest.
 
 - 2026-09-23, user ruling: database tests do not use the host PostgreSQL at
   all; `pg-embed-setup-unpriv` exists for that. The forty tests that fail

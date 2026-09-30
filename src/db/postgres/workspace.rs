@@ -46,13 +46,13 @@ mod tests {
 
     use super::*;
     use crate::error::DatabaseError;
-    use crate::testing::postgres::try_test_pg_db;
+    use crate::testing::postgres::{TestDatabase, try_test_pg_db};
     use crate::workspace::SearchConfig;
     use anyhow::Context as _;
     use rstest::{fixture, rstest};
 
     #[fixture]
-    async fn db() -> Result<Option<PgBackend>, DatabaseError> {
+    async fn db() -> Result<Option<TestDatabase>, DatabaseError> {
         try_test_pg_db().await
     }
 
@@ -78,7 +78,7 @@ mod tests {
     #[rstest]
     #[tokio::test]
     async fn test_insert_chunk_persists_with_embedding(
-        #[future] db: Result<Option<PgBackend>, DatabaseError>,
+        #[future] db: Result<Option<TestDatabase>, DatabaseError>,
     ) {
         let Some(db) = db.await.expect("unexpected Postgres test setup error") else {
             return;
@@ -119,7 +119,7 @@ mod tests {
     #[rstest]
     #[tokio::test]
     async fn test_insert_chunk_persists_without_embedding(
-        #[future] db: Result<Option<PgBackend>, DatabaseError>,
+        #[future] db: Result<Option<TestDatabase>, DatabaseError>,
     ) {
         let Some(db) = db.await.expect("unexpected Postgres test setup error") else {
             return;
@@ -158,7 +158,7 @@ mod tests {
     #[rstest]
     #[tokio::test]
     async fn test_insert_chunk_fields_round_trip(
-        #[future] db: Result<Option<PgBackend>, DatabaseError>,
+        #[future] db: Result<Option<TestDatabase>, DatabaseError>,
     ) {
         let Some(db) = db.await.expect("unexpected Postgres test setup error") else {
             return;
@@ -200,7 +200,7 @@ mod tests {
     #[rstest]
     #[tokio::test]
     async fn test_hybrid_search_returns_inserted_chunk(
-        #[future] db: Result<Option<PgBackend>, DatabaseError>,
+        #[future] db: Result<Option<TestDatabase>, DatabaseError>,
     ) {
         let Some(db) = db.await.expect("unexpected Postgres test setup error") else {
             return;
@@ -247,7 +247,7 @@ mod tests {
     #[rstest]
     #[tokio::test]
     async fn test_hybrid_search_respects_user_isolation(
-        #[future] db: Result<Option<PgBackend>, DatabaseError>,
+        #[future] db: Result<Option<TestDatabase>, DatabaseError>,
     ) {
         let Some(db) = db.await.expect("unexpected Postgres test setup error") else {
             return;
@@ -295,7 +295,7 @@ mod tests {
     #[rstest]
     #[tokio::test]
     async fn test_hybrid_search_respects_agent_scope(
-        #[future] db: Result<Option<PgBackend>, DatabaseError>,
+        #[future] db: Result<Option<TestDatabase>, DatabaseError>,
     ) {
         let Some(db) = db.await.expect("unexpected Postgres test setup error") else {
             return;

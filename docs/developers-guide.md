@@ -384,6 +384,59 @@ of a `runs-on` list: GitHub evaluates it, but the reader never splits a list
 item, so any expression there is refused as unreadable. The readings live in
 `_fork_lanes.py`, and `fork_lanes_test.py` states each shape they refuse.
 
+### Postgres tests and the embedded cluster
+
+The Postgres-backed tests run against a cluster the test process owns, not a
+service container and never a host PostgreSQL. `src/testing/postgres.rs` is the
+one door: `try_test_pg_db` returns a `TestDatabase` that derefs to `PgBackend`.
+With `TEST_DATABASE_URL` set it uses that database, skipping only when nothing
+answers and the lane did not promise one (`AXINITE_REQUIRE_POSTGRES`).
+Otherwise, on Linux with `test-helpers`, `src/testing/postgres/embedded.rs`
+bootstraps PostgreSQL 17.11 through `pg-embed-setup-unpriv` 0.6, migrates one
+template database named after a hash of `migrations/`, and clones a fresh
+database per test that is dropped when the test ends. A bootstrap failure is a
+test failure, never a skip: it means the harness is broken, not that nobody
+provided a database. There is no fallback to `localhost` (user ruling,
+2026-09-23).
+
+Isolation is the point. The tests used to share one database and keep out of
+each other's way by convention, with fresh UUIDs and targeted `DELETE`
+statements; one clean-up deletes by user id, which is safe only while no two
+tests choose the same user. A database per test removes the question.
+
+#### Configuration lives in `.cargo/config.toml`
+
+The library reads its configuration from the environment during bootstrap, and
+a test process must not set its own environment once threads exist. nextest's
+configuration has no `env` key, so the values are in `.cargo/config.toml`'s
+`[env]`, which Cargo applies to every process it runs, and which a value
+already in the environment overrides:
+
+| Variable                                                  | Value                                    | Why                                                                                           |
+| --------------------------------------------------------- | ---------------------------------------- | --------------------------------------------------------------------------------------------- |
+| `PG_VERSION_REQ`                                          | `=17.11.0`                               | The extension hook matches archives on major and minor together; CI's former service ran pg16 |
+| `PG_EXTENSIONS`                                           | `vector`                                 | `migrations/V1__initial.sql` runs `CREATE EXTENSION vector`                                   |
+| `PG_EXTENSIONS_MANIFEST`, `PG_EXTENSIONS_MANIFEST_SHA256` | df12-pg-extensions v1.0.0 and its digest | The pinned manifest pins every archive it lists                                               |
+| `PG_MAX_CONNECTIONS`                                      | `64`                                     | Sixteen concurrent tests at two connections each, with headroom                               |
+| `PG_EMBED_ROOT`                                           | `target/pg-embed`                        | A per-checkout install root, so no other project's cluster can break this one                 |
+
+*Table: the embedded cluster's configuration.*
+
+The `pg-embed` nextest group caps the PostgreSQL modules at sixteen threads to
+fit that connection budget; every other test runs at full parallelism. A
+process that is not started by Cargo does not get these values, and the fixture
+then fails with a message saying so rather than letting the first migration
+fail on a missing `vector` control file.
+
+**Every synchronous cluster call runs on a blocking worker.** The handle's
+methods each build and tear down a Tokio runtime internally, and dropping a
+runtime inside a `#[tokio::test]` panics with "Cannot drop a runtime in a
+context where blocking is not allowed". The same applies to the guard that
+drops the cloned database, which is moved onto a plain thread and joined.
+
+The first run downloads PostgreSQL and the pgvector archive; later runs reuse
+them from the install root and the extension cache.
+
 ### Tool installation
 
 CI must not compile a tool it could download. Compiling `whitaker-installer` or
