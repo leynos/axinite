@@ -246,9 +246,8 @@ jobs:
       # attempt with a `cargo install` source-build fallback.
       - name: Install Whitaker
         if: matrix.whitaker
-        uses: leynos/shared-actions/.github/actions/install-whitaker@6b5cdc2d4c0bb72cafd5a66d24d248ac25827db9
+        uses: leynos/shared-actions/.github/actions/install-whitaker@6dea5677a84fec60ca51b07202570e3af12ffdb4
         with:
-          installer-version: '0.2.7'
           cache-provider: github
       - name: Probe Whitaker
         if: matrix.whitaker
