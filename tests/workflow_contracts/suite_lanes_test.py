@@ -301,6 +301,7 @@ def test_a_lane_that_makes_no_run_is_refused_rather_than_budgeted() -> None:
 REQUIRED_INVOCATIONS: typ.Final[dict[tuple[str, str], int]] = {
     ("codescene-coverage.yml", "coverage-check"): 1,
     ("coverage.yml", "coverage"): 1,
+    ("coverage.yml", "coverage-libsql"): 1,
 }
 
 

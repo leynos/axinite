@@ -7,8 +7,8 @@ per-test ``slow-timeout`` and a whole-run ``global-timeout`` in
 on the ``cargo`` invocation, and the job's own ``timeout-minutes``.
 
 The third tier exists only on the two lanes that run the suite through the
-shared ``generate-coverage`` action: ``coverage.yml``'s ``libsql-only`` leg
-and ``codescene-coverage.yml``'s pull-request lane. Every other lane runs
+shared ``generate-coverage`` action: ``coverage.yml``'s ``coverage-libsql``
+job and ``codescene-coverage.yml``'s pull-request lane. Every other lane runs
 ``cargo llvm-cov nextest`` from a ``run:`` step and has no watchdog. Where
 the tier exists it is set explicitly, because the action's 1,800 s default
 equals the 30 m nextest budget and also has to cover the instrumented
@@ -300,30 +300,20 @@ def test_the_required_ceiling_carries_all_four_terms() -> None:
 #: quietly excluded the event the lane exists for.
 #:
 #: `codescene-coverage.yml`'s lane legitimately runs on pull requests
-#: and on manual dispatch, because `coverage.yml` covers the trunk.
-#: `coverage.yml` runs the suite from a `run:` step on two legs and
-#: through the action on the `libsql-only` leg, so it carries one
-#: condition pair per step.
+#: alone, because `coverage.yml` covers the trunk and the CV-005 library
+#: allows the lane no other guard. `coverage.yml` runs the suite from a
+#: `run:` step on the two matrix legs of `coverage` and through the action in
+#: `coverage-libsql`; none of the three steps carries a condition.
 REQUIRED_CONDITIONS: typ.Final[
     dict[tuple[str, str], frozenset[tuple[object, object]]]
 ] = {
     ("codescene-coverage.yml", "coverage-check"): frozenset(
         {
-            (
-                None,
-                (
-                    "github.event_name == 'pull_request' || "
-                    "github.event_name == 'workflow_dispatch'"
-                ),
-            )
+            (None, "github.event_name == 'pull_request'"),
         }
     ),
-    ("coverage.yml", "coverage"): frozenset(
-        {
-            ("matrix.name != 'libsql-only'", None),
-            ("matrix.name == 'libsql-only'", None),
-        }
-    ),
+    ("coverage.yml", "coverage"): frozenset({(None, None)}),
+    ("coverage.yml", "coverage-libsql"): frozenset({(None, None)}),
 }
 
 
