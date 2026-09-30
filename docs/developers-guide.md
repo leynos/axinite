@@ -3116,9 +3116,10 @@ Run the spelling gate with:
 make spelling
 ```
 
-`TYPOS_CONFIG_BUILDER_VERSION` in the `Makefile` pins the
-`typos-config-builder` release the gate runs (currently `v0.1.3`). Raise it
-together with the regenerated `typos.toml`, never on its own.
+`TYPOS_CONFIG_BUILDER_REVISION` in the `Makefile` pins the immutable upstream
+commit for the `typos-config-builder` release (currently `v0.1.3`, commit
+`c8a4f95d7cf7f6a1b7517f2775d122d47d5721eb`). Update it together with the
+regenerated `typos.toml`, never on its own.
 
 The single pinned `typos-config-builder gate` command enforces en-GB-oxendict
 spelling across tracked text. It regenerates `typos.toml`, runs the pinned
