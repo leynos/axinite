@@ -20,6 +20,14 @@ BASELINE_FLAGS = {
 }
 
 
+class CoverageStep(typ.NamedTuple):
+    """Identify a workflow step that generates coverage."""
+
+    workflow: str
+    job_id: str
+    step_name: str
+
+
 @pytest.fixture(scope="module")
 def workflows() -> Workflows:
     """Read each workflow through the strict YAML boundary."""
@@ -40,14 +48,11 @@ def _step(job: Mapping[object, object], name: str) -> dict[object, object]:
     return matches[0]
 
 
-def _assert_fast_linker_installed(
-    job: Mapping[object, object], workflow: str
-) -> None:
+def _assert_fast_linker_installed(job: Mapping[object, object], workflow: str) -> None:
     """The Linux linker configuration requires its configured linker."""
     step = _step(job, "Install mold")
     assert str(step.get("uses", "")).startswith("rui314/setup-mold@"), (
-        f"{workflow} must install the configured linker required by "
-        ".cargo/config.toml"
+        f"{workflow} must install the configured linker required by .cargo/config.toml"
     )
 
 
@@ -152,35 +157,52 @@ def test_windows_still_runs_the_non_unix_startup_fixture(workflows: Workflows) -
 
 
 @pytest.mark.parametrize(
-    ("workflow", "job_id", "step_name", "action"),
+    ("coverage_step", "action"),
     [
-        ("coverage.yml", "coverage", "Generate coverage", False),
-        (
-            "coverage.yml",
-            "coverage",
-            "Generate coverage and the ratchet baseline",
-            True,
+        pytest.param(
+            CoverageStep("coverage.yml", "coverage", "Generate coverage"),
+            False,
+            id="baseline-inline-coverage",
         ),
-        ("codescene-coverage.yml", "coverage-check", "Generate coverage", True),
+        pytest.param(
+            CoverageStep(
+                "coverage.yml",
+                "coverage",
+                "Generate coverage and the ratchet baseline",
+            ),
+            True,
+            id="baseline-action-coverage",
+        ),
+        pytest.param(
+            CoverageStep(
+                "codescene-coverage.yml", "coverage-check", "Generate coverage"
+            ),
+            True,
+            id="codescene-action-coverage",
+        ),
     ],
 )
 def test_instrumented_coverage_uses_the_filtered_profile(
     workflows: Workflows,
-    workflow: str,
-    job_id: str,
-    step_name: str,
+    coverage_step: CoverageStep,
     action: bool,
 ) -> None:
     """Both sides of the ratchet leave fixture compilation to the ci job."""
-    step = _step(_job(workflows, workflow, job_id), step_name)
+    step = _step(
+        _job(workflows, coverage_step.workflow, coverage_step.job_id),
+        coverage_step.step_name,
+    )
+    location = f"{coverage_step.workflow}:{coverage_step.step_name}"
     if action:
         environment = step.get("env")
-        assert isinstance(environment, dict)
+        assert isinstance(environment, dict), (
+            f"{location} must define an environment mapping"
+        )
         assert environment.get("NEXTEST_PROFILE") == "coverage", (
-            f"{workflow}:{step_name} must use the filtered coverage profile"
+            f"{location} must use the filtered coverage profile"
         )
     else:
         command = str(step.get("run", ""))
         assert "--profile coverage" in command, (
-            f"{workflow}:{step_name} must use the filtered coverage profile"
+            f"{location} must use the filtered coverage profile"
         )
