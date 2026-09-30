@@ -3244,6 +3244,11 @@ were unset until this was written.
 
 *Table: the timers that can end a run, innermost first.*
 
+The Windows default lane is a separate path: it invokes the non-Unix startup
+fixture with direct `cargo test`, not nextest. The nextest per-test and global
+timers do not apply to that process; the Windows build job's 45 minute
+`timeout-minutes` is its outer limit.
+
 ### What was missing
 
 When this policy was first added, neither profile set a per-test allowance or a

@@ -4,8 +4,10 @@
 //! generated Cargo project once for the database surface. Keep this batch
 //! separate from the support fixtures so each session retains its own timeout
 //! and test name. Nextest queues both sessions with `schema_helpers_ui`;
-//! the non-Unix startup fixture keeps its own session and timeout as well.
-//! See `.config/nextest.toml` for the shared lock and timeout policy.
+//! the non-Unix startup fixture keeps its own session as well. The Windows
+//! lane runs that fixture through direct `cargo test`, so the job timeout
+//! applies instead of nextest's per-test allowance. See `.config/nextest.toml`
+//! for the shared lock and Linux nextest timeout policy.
 
 #[test]
 fn db_surface_compile_contracts() {
