@@ -4,9 +4,12 @@
 
 1. **New Engine - Performance First:**
     - V4 ships with a completely rewritten engine. Expect drastically reduced
-      build times – typically sub-10ms for most projects, even large ones often
-      under 100ms. This is achieved by more efficiently parsing sources and
-      generating CSS on-demand.
+      build times. The v4 announcement's Catalyst measurements show full builds
+      about 3.5x faster (about 378 ms to 100 ms), incremental builds that add
+      new CSS about 8x faster (about 44 ms to 5 ms), and incremental builds with
+      no new CSS over 100x faster (microseconds). Sub-10 ms timings apply only
+      to incremental builds. This is achieved by more efficiently parsing
+      sources and generating CSS on-demand.
 2. **CSS-First Configuration via `@theme`:**
     - The primary configuration mechanism shifts from `tailwind.config.js` (for
       theme values) to the main CSS file using the `@theme` directive.

@@ -30,7 +30,7 @@ implementation started.
 Approval means agreement on all of the following:
 
 1. `bun run dev` will become a supervisor for three cooperating tasks: the Bun
-   mock API, the static-build watcher, and the `http-server` static preview.
+   mock API, the static-build watcher, and the Bun preview gateway.
 2. The mock backend will mirror the Rust gateway contracts in
    `src/channels/web/types.rs` and the route layout in
    `src/channels/web/handlers/`, but it will remain an in-memory demonstration
@@ -48,12 +48,12 @@ revise this document, not to start coding.
   imagery, and overall visual design. This work may rewire data flow, but it
   must not casually redesign the prototype.
 - The delivered development loop must use Bun and TypeScript for the mock
-  gateway and must serve the built static site with
-  `bunx http-server -p <port> dist`, not Vite's development server.
-- If `http-server` proves unable to support the required browser contract, the
-  fallback must remain single-origin from the browser's point of view. Do not
-  switch the front end to a separate runtime API base without explicit user
-  approval.
+  gateway and must serve the built static site through the Bun preview gateway
+  (`mock-backend/src/preview-server.ts`) on the same origin as the API, not
+  Vite's development server.
+- The single-origin fallback for an unsuitable static server is resolved by
+  that gateway. Do not switch the front end to a separate runtime API base
+  without explicit user approval.
 - Presented values in the browser must not come from hard-coded front-end
   fixture arrays or route-local constants once the plan is implemented.
 - The mock API must follow the Rust gateway's public browser contracts. The
@@ -66,8 +66,8 @@ revise this document, not to start coding.
   enough to prove browser integrations, but it must not grow persistent
   storage, real authentication, or deep subsystem emulation without explicit
   approval.
-- The existing GitHub Pages base-path handling must continue to work for built
-  static assets and route entry points.
+- The base path is `/`, because the built site is embedded in the gateway
+  rather than published under a GitHub Pages prefix.
 - Router-local state, Solid signals, and TanStack Query remain the default
   front-end state model. Introduce a heavier abstraction only when a concrete
   behaviour becomes too complex for that baseline to remain legible.
@@ -349,14 +349,16 @@ with a supervisor script that can:
 
 1. watch source files and rebuild `dist/`,
 2. start the Bun mock API on a dedicated local port, and
-3. start `bunx http-server -p 2020 dist`.
+3. start `bunx http-server -p 2020 dist` (original prototype plan; superseded
+   by the Bun preview gateway, `mock-backend/src/preview-server.ts`).
 
-The purpose of Stage A is to prove one of two viable routing strategies:
-`http-server` proxying unresolved `/api/*` requests to the Bun service, or a
-single-origin alternative preview backend that serves the built `dist/`
-artefacts itself while fronting the Bun mock API. Do not proceed until one of
-those strategies is working for normal JSON requests and at least one SSE
-endpoint.
+(The routing options below are the original prototype plan; the delivered
+outcome is the single-origin Bun preview gateway.) The purpose of Stage A is to
+prove one of two viable routing strategies: `http-server` proxying unresolved
+`/api/*` requests to the Bun service, or a single-origin alternative preview
+backend that serves the built `dist/` artefacts itself while fronting the Bun
+mock API. Do not proceed until one of those strategies is working for normal
+JSON requests and at least one SSE endpoint.
 
 Stage B is the contract and fixture scaffold. Create TypeScript interfaces that
 mirror the Rust DTOs from `src/channels/web/types.rs`. Keep them in one obvious
@@ -481,7 +483,8 @@ step says otherwise.
 
    - one process reports the Bun mock API port,
    - one process reports static rebuilds into `dist/`, and
-   - one process reports `http-server` serving `dist` on port `2020`.
+   - one process reports the Bun preview gateway serving `dist` on port `2020`
+     (or the next free port).
 
 2. Validate the basic API wiring.
 
@@ -512,7 +515,7 @@ step says otherwise.
 4. Validate the static-rendered CSS on a live route.
 
    ```plaintext
-   css-view http://127.0.0.1:2020/axinite-mockup/jobs | jq '.matched[] | select(.selector == ".pill")'
+   css-view http://127.0.0.1:2020/jobs | jq '.matched[] | select(.selector == ".pill")'
    ```
 
    Expected behaviour after implementation:
@@ -541,9 +544,9 @@ step says otherwise.
 
 Acceptance will be demonstrated by the following observable behaviour:
 
-- `bun run dev` starts the mock API, the build watcher, and the static
-  `http-server` preview without needing Vite's dev server.
-- Opening `http://127.0.0.1:2020/axinite-mockup/chat` shows route data loaded
+- `bun run dev` starts the mock API, the build watcher, and the Bun preview
+  gateway without needing Vite's dev server.
+- Opening `http://127.0.0.1:2020/chat` shows route data loaded
   from the mock backend rather than local component arrays.
 - Chat send, memory write, routine trigger or toggle, extension setup or
   install, and skill search or install all emit API-correct requests and update
@@ -599,9 +602,7 @@ with backend-driven state without degrading the restored design.
 
 Use Bun and TypeScript for the mock backend. A minimal dependency set is
 preferred. `chokidar` is an acceptable choice for the build watcher if Bun's
-native watch facilities are not sufficient. `http-server` may stay as a `bunx`
-tool invocation unless making it a dev dependency materially improves
-reliability.
+native watch facilities are not sufficient.
 
 For front-end state and behaviour abstraction, the allowed escalation options
 are:

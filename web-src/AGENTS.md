@@ -2,9 +2,9 @@
 
 ## Scope
 
-This repository contains the new SolidJS-based front end for Axinite, a
-Rust-based autonomous AI agent. It is a standalone browser application backed
-by a Bun mock backend for local preview.
+This `web-src/` workspace in the Axinite repository contains the SolidJS-based
+front end for Axinite, a Rust-based autonomous AI agent. The SPA is embedded in
+the gateway; the Bun mock backend serves as the daemon-free stub runtime.
 
 For the full architectural rationale, see
 [`docs/axinite-v2a-frontend-architecture.md`](docs/axinite-v2a-frontend-architecture.md).
@@ -16,10 +16,9 @@ For the full architectural rationale, see
 - `mock-backend/` — Bun in-memory mock backend serving realistic browser
   contracts via JSON and SSE.
 - `scripts/` — dev orchestrator (`dev.ts`) and post-build helpers.
-- `example-screens/` — reference HTML screens captured from the real Axinite
-  browser gateway in `../axinite`.
 - `docs/` — architecture documents and execution plans.
-- `dist/` — Vite build output (not checked in).
+- `dist/` — Vite build output (not checked in). `make frontend-build` (root
+  Makefile) copies it into `src/channels/web/static/solid`.
 
 ## Architecture at a Glance
 
@@ -43,9 +42,9 @@ The front end is a SolidJS SPA built by Vite:
 
 - `axinite/` is the source of truth for UI content, structure, classes,
   imagery, and CSS.
-- `../axinite` (the Rust application) is the source of truth for runtime
-  semantics, API contracts, and data models. The mock backend and typed
-  contracts should stay aligned with it.
+- The Rust application in this repository (`src/channels/web/`) is the source
+  of truth for runtime semantics, API contracts, and data models. The mock
+  backend and typed contracts should stay aligned with it.
 
 ## Current Priorities
 
@@ -56,14 +55,18 @@ The front end is a SolidJS SPA built by Vite:
 
 ## What Not to Optimize Yet
 
-Do not invest effort in large-scale build pipeline work. The deployment model
-(GitHub Pages) is temporary and exists only so the prototype can be shared
-before it is incorporated into the larger Axinite product.
+Do not invest effort in large-scale build pipeline work. The SPA is embedded in
+and served by the Axinite gateway (`src/channels/web/handlers/ui_assets.rs`).
+Contributors build it and refresh the committed embedded copy with
+`make frontend-build` (root Makefile; copies `web-src/dist` to
+`src/channels/web/static/solid`), and verify it is current with
+`make frontend-verify`.
 
 ## Preview Workflow
 
-- Run `bun run dev` (or `make dev` if available) to start the full dev stack:
-  mock API, Vite build watcher, and preview server.
+- Run `bun run dev` here (or `make frontend-stub` from the
+  repository root) to start the full dev stack: mock API, Vite build watcher,
+  and preview server.
 - The preview server listens on port `2020` by default (configurable via
   `PREVIEW_PORT`). The mock API listens on port `8787` by default (configurable
   via `MOCK_API_PORT`).
