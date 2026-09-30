@@ -76,6 +76,8 @@ pub struct Calls {
     pub event_history: Mutex<Vec<EventCallWithId>>,
     /// Tool names passed to `mark_tool_repaired`.
     pub repaired_tools: Mutex<Vec<String>>,
+    /// `(deployment_id, flag_name, enabled)` passed to `set_deployment_flag`.
+    pub deployment_flag_writes: Mutex<Vec<(String, String, bool)>>,
 }
 
 impl Calls {
@@ -127,6 +129,20 @@ impl Calls {
         self.event_history.lock().await.push(history_call);
     }
 
+    /// Record a deployment-scoped feature-flag write.
+    pub async fn record_deployment_flag_write(
+        &self,
+        deployment_id: &str,
+        flag_name: &str,
+        enabled: bool,
+    ) {
+        self.deployment_flag_writes.lock().await.push((
+            deployment_id.to_string(),
+            flag_name.to_string(),
+            enabled,
+        ));
+    }
+
     /// Record a repaired-tool marker call.
     pub async fn record_repaired_tool(&self, tool_name: &str) {
         self.repaired_tools.lock().await.push(tool_name.to_string());
@@ -139,6 +155,7 @@ impl Calls {
         self.status_history.lock().await.clear();
         self.event_history.lock().await.clear();
         self.repaired_tools.lock().await.clear();
+        self.deployment_flag_writes.lock().await.clear();
     }
 }
 
@@ -161,6 +178,9 @@ pub struct CapturingStore {
     /// Optional error to return from the next `mark_tool_repaired` call.
     /// Consumed on first use; subsequent calls delegate to `self.inner`.
     mark_repaired_error: SyncMutex<Option<DatabaseError>>,
+    /// Optional error to return from the next `list_deployment_flags` call.
+    /// Consumed on first use; subsequent calls delegate to `self.inner`.
+    list_deployment_flags_error: SyncMutex<Option<DatabaseError>>,
 }
 
 impl CapturingStore {
@@ -171,6 +191,7 @@ impl CapturingStore {
             calls: Arc::new(Calls::new()),
             increment_repair_attempts_error: SyncMutex::new(None),
             mark_repaired_error: SyncMutex::new(None),
+            list_deployment_flags_error: SyncMutex::new(None),
         }
     }
 
@@ -182,6 +203,7 @@ impl CapturingStore {
             calls: Arc::new(Calls::new()),
             increment_repair_attempts_error: SyncMutex::new(Some(error)),
             mark_repaired_error: SyncMutex::new(None),
+            list_deployment_flags_error: SyncMutex::new(None),
         }
     }
 
@@ -192,6 +214,16 @@ impl CapturingStore {
             calls: Arc::new(Calls::new()),
             increment_repair_attempts_error: SyncMutex::new(None),
             mark_repaired_error: SyncMutex::new(Some(error)),
+            list_deployment_flags_error: SyncMutex::new(None),
+        }
+    }
+
+    /// Create a capturing store that fails the next `list_deployment_flags`
+    /// call with the given error.
+    pub fn failing_list_deployment_flags_once(error: DatabaseError) -> Self {
+        Self {
+            list_deployment_flags_error: SyncMutex::new(Some(error)),
+            ..Self::new()
         }
     }
 
@@ -207,6 +239,17 @@ impl CapturingStore {
     /// Recovers a poisoned mutex via [`std::sync::PoisonError::into_inner`].
     pub(crate) fn take_increment_repair_attempts_error(&self) -> Option<DatabaseError> {
         self.increment_repair_attempts_error
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .take()
+    }
+
+    /// Takes and returns the stored `list_deployment_flags` error, if any.
+    ///
+    /// Returns `None` after the first call. Recovers a poisoned mutex via
+    /// [`std::sync::PoisonError::into_inner`].
+    pub(crate) fn take_list_deployment_flags_error(&self) -> Option<DatabaseError> {
+        self.list_deployment_flags_error
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner)
             .take()
