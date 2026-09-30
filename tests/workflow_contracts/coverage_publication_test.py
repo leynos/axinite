@@ -1,7 +1,7 @@
 """Contracts holding CodeScene coverage publication to `main`.
 
 Pull requests generate coverage and ratchet it against a baseline, and never
-contact CodeScene. `coverage.yml` is the one publisher: its libsql-only leg
+contact CodeScene. `coverage.yml` is the one publisher: its libsql-only job
 writes the ratchet baseline on a push to `main` and uploads that report to
 CodeScene, guarded on the token's presence and on the ref. The readers are in
 `_coverage_publication.py`; `coverage_publication_reader_test.py` drives each
@@ -26,7 +26,7 @@ from _workflow_policy import SHA_RE, WORKFLOW_DIR
 
 #: The publisher, its job, and the pull-request coverage lane.
 PUBLISHER = "coverage.yml"
-PUBLISHER_JOB = "coverage"
+PUBLISHER_JOB = "coverage-libsql"
 PULL_REQUEST_LANE = "codescene-coverage.yml"
 PULL_REQUEST_JOB = "coverage-check"
 
@@ -46,15 +46,15 @@ TOKEN_CHECK_COMMAND = (
     'echo "available=${{ secrets.CS_ACCESS_TOKEN != \'\' }}" >> "$GITHUB_OUTPUT"'
 )
 
-#: The publisher's concurrency group, exactly. Keyed on the ref alone: an
-#: event in the key would put a dispatch and a push to `main` in different
-#: groups, and the two would then race to upload and to write the baseline.
-PUBLISHER_GROUP = "coverage-${{ github.ref }}"
+#: The publisher's concurrency group, exactly. Keyed on the workflow and the
+#: ref, one of the two shapes the CV-005 library accepts: an event in the key
+#: would put a dispatch and a push to `main` in different groups, and the two
+#: would then race to upload and to write the baseline.
+PUBLISHER_GROUP = "${{ github.workflow }}-${{ github.ref }}"
 
 #: The conjuncts the upload guard must contain, whole.
 REF_GUARD = "github.ref == 'refs/heads/main'"
 AVAILABLE_GUARD = f"steps.{TOKEN_CHECK_ID}.outputs.available == 'true'"
-LEG_GUARD = "matrix.name == 'libsql-only'"
 
 #: The token, passed to the uploader as its input and nowhere else.
 TOKEN_INPUT = "${{ secrets.CS_ACCESS_TOKEN }}"
@@ -182,17 +182,21 @@ def test_the_token_check_is_one_exact_unconditional_command(
     )
 
 
-def test_the_upload_is_guarded_on_the_leg_the_token_and_the_ref(
+def test_the_upload_is_guarded_on_the_token_and_the_ref(
     workflows: Workflows,
 ) -> None:
-    """Every required conjunct whole, and no `||` anywhere in the guard."""
+    """Every required conjunct whole, and no `||` anywhere in the guard.
+
+    The upload sits in a job of its own for the libsql-only leg, so there is
+    no leg to guard on: the job is the leg.
+    """
     (upload,) = [
         step
         for step in _publisher_steps(workflows)
         if str(step.get("uses", "")).startswith(UPLOADER)
     ]
     faults = upload_guard_faults(
-        str(upload.get("if", "")), (LEG_GUARD, AVAILABLE_GUARD, REF_GUARD)
+        str(upload.get("if", "")), (AVAILABLE_GUARD, REF_GUARD)
     )
     assert not faults, "\n".join(faults)
 
@@ -237,15 +241,16 @@ def test_nothing_passes_the_withdrawn_installer_verification(
 
 
 def test_one_writer_of_the_ratchet_baseline(workflows: Workflows) -> None:
-    """Among push-to-main workflows, one generator ratchets: the publisher's leg."""
+    """Among push-to-main workflows, one generator ratchets: the publisher's job."""
     surface = push_surface(workflows)
     writers = [
         (name, job_id, step.get("if"))
         for name, job_id, step in _uses_steps(workflows, GENERATOR)
         if name in surface and (step.get("with") or {}).get("with-ratchet") == "true"
     ]
-    assert writers == [(PUBLISHER, PUBLISHER_JOB, LEG_GUARD)], (
-        f"exactly the libsql-only leg of {PUBLISHER} may write the baseline; "
+    assert writers == [(PUBLISHER, PUBLISHER_JOB, None)], (
+        f"exactly the libsql-only job of {PUBLISHER} may write the baseline, "
+        "unconditionally: the CV-005 library refuses an `if` on that step; "
         f"found {writers}"
     )
 
