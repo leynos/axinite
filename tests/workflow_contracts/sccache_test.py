@@ -63,6 +63,19 @@ RETIRED_STEPS: tuple[str, ...] = (
 #: A script that starts or resets the server, which `setup-rust` does now.
 SERVER_COMMAND = re.compile(r"\bsccache\s+--(?:zero-stats|start-server)\b")
 
+#: Actions that installed sccache by hand. Matched on `uses` and `with.tool`,
+#: so renaming the step hides nothing.
+SCCACHE_INSTALLER = re.compile(
+    r"^mozilla-actions/sccache-action@|^taiki-e/install-action@"
+)
+
+#: Variables the retired export step republished from the runner. A script or
+#: action input that names either is rebuilding the endpoint by hand.
+CACHE_ENDPOINT_VARIABLES: tuple[str, ...] = (
+    "ACTIONS_CACHE_URL",
+    "ACTIONS_RUNTIME_TOKEN",
+)
+
 
 #: Commands that actually invoke rustc, and therefore benefit from a compiler
 #: cache. `cargo fmt` is absent on purpose: the formatter gate needs the
@@ -136,11 +149,31 @@ def _retired_variables(owner: str, env: object) -> list[str]:
     return [f"{owner} sets {name}" for name in RETIRED_VARIABLES if name in env]
 
 
+def _installs_sccache(step: dict[str, object]) -> bool:
+    """Report whether a step installs sccache itself, whatever it is named."""
+    uses = str(step.get("uses", ""))
+    if uses.startswith("mozilla-actions/sccache-action@"):
+        return True
+    inputs = step.get("with")
+    tool = str(inputs.get("tool", "")) if isinstance(inputs, dict) else ""
+    return uses.startswith("taiki-e/install-action@") and "sccache" in tool
+
+
+def _exports_cache_endpoint(step: dict[str, object]) -> bool:
+    """Report whether a step republishes the runner's cache endpoint itself."""
+    text = f"{step.get('run', '')} {step.get('with', '')}"
+    return any(name in text for name in CACHE_ENDPOINT_VARIABLES)
+
+
 def _retired_in_step(index: int, step: dict[str, object]) -> list[str]:
     """Return every retired piece of sccache wiring in one step."""
     findings = _retired_variables(f"step {index}", step.get("env"))
     if step.get("name") in RETIRED_STEPS:
         findings.append(f"step {index} is the retired {step['name']!r}")
+    if _installs_sccache(step):
+        findings.append(f"step {index} installs sccache itself")
+    if _exports_cache_endpoint(step):
+        findings.append(f"step {index} republishes the cache endpoint itself")
     if SERVER_COMMAND.search(str(step.get("run", ""))):
         findings.append(f"step {index} starts or zeroes the sccache server")
     if "ACTIONS_CACHE_SERVICE_V2" in str(step.get("with", "")):
@@ -338,6 +371,61 @@ def test_github_hosted_jobs_demand_no_proxy() -> None:
             {}, [{"env": {"CARGO_INCREMENTAL": "0"}}], 0, id="step-incremental"
         ),
         pytest.param({}, [{"name": "Install sccache"}], 1, id="install"),
+        pytest.param(
+            {},
+            [
+                {
+                    "name": "Tools",
+                    "uses": "taiki-e/install-action@x",
+                    "with": {"tool": "sccache@0.16.0"},
+                }
+            ],
+            1,
+            id="renamed-installer",
+        ),
+        pytest.param(
+            {},
+            [{"name": "Tools", "uses": "mozilla-actions/sccache-action@x"}],
+            1,
+            id="renamed-mozilla-installer",
+        ),
+        pytest.param(
+            {},
+            [
+                {
+                    "name": "Tools",
+                    "uses": "taiki-e/install-action@x",
+                    "with": {"tool": "cargo-binstall"},
+                }
+            ],
+            0,
+            id="other-tool-is-not-sccache",
+        ),
+        pytest.param(
+            {},
+            [
+                {
+                    "name": "Setup",
+                    "run": 'echo "ACTIONS_CACHE_URL=$ACTIONS_CACHE_URL" >> "$GITHUB_ENV"',
+                }
+            ],
+            1,
+            id="renamed-endpoint-export",
+        ),
+        pytest.param(
+            {},
+            [
+                {
+                    "name": "Setup",
+                    "uses": "actions/github-script@x",
+                    "with": {
+                        "script": "core.exportVariable('ACTIONS_RUNTIME_TOKEN', t)"
+                    },
+                }
+            ],
+            1,
+            id="renamed-script-export",
+        ),
         pytest.param({}, [{"run": "sccache --start-server"}], 1, id="server-start"),
         pytest.param(
             {},
