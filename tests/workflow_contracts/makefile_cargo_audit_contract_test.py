@@ -250,7 +250,7 @@ def test_audit_executes_multiword_command_override(
     make_executable: str,
     utility_bin: Path,
 ) -> None:
-    """Check that a multiword caller command reaches the audit executable.
+    """Check the command and lockfile-scoped flags reach each audit process.
 
     Parameters
     ----------
@@ -264,12 +264,15 @@ def test_audit_executes_multiword_command_override(
     Returns
     -------
     None
-        Asserts that the fake Cargo tool receives the toolchain and audit words.
+        Asserts that the fake Cargo tool receives the toolchain and audit words,
+        and that the ttf-parser ignore follows the manifest lockfile.
     """
     fake_bin = tmp_path / "bin"
     fake_bin.mkdir()
     cargo_path = fake_bin / "cargo"
-    cargo_path.write_text('#!/bin/sh\nprintf \'%s\\n\' "$*" >> "$AUDIT_ARGUMENT_LOG"\n')
+    cargo_path.write_text(
+        '#!/bin/sh\nprintf \'%s|%s\\n\' "$PWD" "$*" >> "$AUDIT_ARGUMENT_LOG"\n'
+    )
     cargo_path.chmod(0o755)
     argument_log = tmp_path / "audit-arguments"
 
@@ -293,9 +296,15 @@ def test_audit_executes_multiword_command_override(
         text=True,
     )
 
-    commands = argument_log.read_text().splitlines()
+    commands: list[tuple[str, str]] = []
+    for line in argument_log.read_text().splitlines():
+        manifest_dir, command = line.split("|", maxsplit=1)
+        commands.append((manifest_dir, command))
     assert commands, "audit should invoke the fake Cargo executable"
-    assert all(command.startswith("+stable audit --ignore ") for command in commands), (
+    assert all(
+        command.startswith("+stable audit --ignore ")
+        for _, command in commands
+    ), (
         f"multiword CARGO_AUDIT override emitted unexpected arguments: {commands!r}"
     )
     selected_manifests = _selected_cargo_manifests(utility_bin)
@@ -303,6 +312,33 @@ def test_audit_executes_multiword_command_override(
         f"CARGO_AUDIT='cargo +stable audit' logged {len(commands)} calls for "
         f"{len(selected_manifests)} selected Cargo.toml manifests: {commands!r}"
     )
+
+    expected_manifest_dirs = {
+        (REPOSITORY_ROOT / manifest).parent.resolve()
+        for manifest in selected_manifests
+    }
+    observed_manifest_dirs = {
+        Path(manifest_dir).resolve() for manifest_dir, _ in commands
+    }
+    assert observed_manifest_dirs == expected_manifest_dirs, (
+        "audit subprocesses ran from unexpected manifest directories: "
+        f"{observed_manifest_dirs!r} != {expected_manifest_dirs!r}"
+    )
+    assert any(
+        (manifest_dir / "Cargo.lock").is_file()
+        for manifest_dir in expected_manifest_dirs
+    ), "audit contract must cover manifests with lockfiles"
+    assert any(
+        not (manifest_dir / "Cargo.lock").is_file()
+        for manifest_dir in expected_manifest_dirs
+    ), "audit contract must cover manifests without lockfiles"
+    pdf_extract_ignore = "--ignore RUSTSEC-2026-0192"
+    for manifest_dir, command in commands:
+        has_lockfile = (Path(manifest_dir) / "Cargo.lock").is_file()
+        assert (pdf_extract_ignore in command) == has_lockfile, (
+            f"{manifest_dir} passed {pdf_extract_ignore!r} with "
+            f"has_lockfile={has_lockfile}: {command!r}"
+        )
 
 
 @pytest.mark.parametrize(

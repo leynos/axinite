@@ -57,8 +57,12 @@ fn normalize_joins_wrapped_bold_italic_text_that_opens_with_asterisks() {
 }
 
 #[test]
-fn normalize_keeps_an_asterisk_rule_as_its_own_block() {
+fn normalize_keeps_asterisk_rules_and_joins_caption_lines() {
     assert_eq!(normalize("above\n***\nbelow"), "above\n***\nbelow");
+    assert_eq!(
+        normalize("above\n***A caption***\ncontinued\nbelow"),
+        "above ***A caption*** continued below",
+    );
 }
 
 #[rstest]
@@ -112,6 +116,25 @@ fn normalize_matches_expected_markdown(#[case] input: &str, #[case] expected: &s
 
 proptest! {
     #![proptest_config(ProptestConfig::with_cases(32))]
+
+    #[test]
+    fn normalize_classifies_generated_asterisk_lines(
+        suffix in prop::collection::vec(
+            prop_oneof![Just('*'), Just(' '), Just('A')],
+            1..16,
+        ),
+    ) {
+        let suffix = suffix.iter().copied().collect::<String>();
+        let line = format!("***{suffix}***");
+        let input = format!("above\n{line}\nbelow");
+        let expected = if suffix.contains('A') {
+            format!("above {line} below")
+        } else {
+            input.clone()
+        };
+
+        prop_assert_eq!(normalize(&input), expected);
+    }
 
     #[test]
     fn normalize_matches_generated_soft_wraps(words in prop::collection::vec("[a-z]{1,12}", 1..8)) {

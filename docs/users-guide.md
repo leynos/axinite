@@ -165,6 +165,10 @@ demotes out of the body are restored as headings, and figure captions are
 preserved, including a caption in the document's final section that has no
 following heading to anchor it.
 
+With `html-to-markdown-rs` 3.x, converted captions and similar text may appear
+with emphasis in the Markdown, and the converter may collapse repeated
+whitespace, including double spaces.
+
 Responses whose body exceeds the 5 MB size limit are rejected regardless of
 whether HTML conversion applies. When the `html-to-markdown` feature is
 disabled, the raw HTML body passes through untouched.
