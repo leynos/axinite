@@ -5,7 +5,7 @@ Codecov uploads, and aggregate gate, and it is the one CodeScene publisher.
 The pull-request workflow deliberately isolates the libsql-only report path,
 and ratchets it against the baseline that workflow writes, so the unrelated
 main-only legs cannot block it. It never contacts CodeScene; that half of the
-rule is `coverage_publication_test.py`'s.
+rule is the shared CV-005 library's.
 
 Run via ``make test-workflow-contracts``.
 """
@@ -214,19 +214,17 @@ def test_setup_and_generator_match_proven_libsql_coverage() -> None:
         "coverage-check must run the ci nextest profile, as the leg it "
         f"replaced did; the step's env is {generator.get('env')}"
     )
-    assert generator.get("with") == {
-        "features": "libsql,test-helpers",
-        "with-default-features": "false",
-        "use-cargo-nextest": "true",
-        "cargo-wait-timeout": "4200",
-        "format": "lcov",
-        "output-path": "lcov.info",
-        "with-ratchet": "true",
-        "publish-artefact": "false",
-        "cache-provider": "external",
-    }, (
-        "coverage-check must measure the libsql-only selection through "
-        "generate-coverage, ratchet it, publish nothing, leave the registry "
-        "and compiler caches to their existing owners, and set the cargo "
-        "watchdog that timeout_ordering_test.py orders"
+    # The selection (features, defaults, nextest, format, output path,
+    # ratchet, no artefact) is the CV-005 library's: `.github/cv005.toml` names
+    # it and the library compares it with the publisher. What stays here is
+    # repository policy the library does not know.
+    inputs = generator.get("with")
+    assert isinstance(inputs, dict), "the generator must declare its inputs"
+    assert inputs.get("cargo-wait-timeout") == "4200", (
+        "the cargo watchdog is the third timeout tier that "
+        "timeout_ordering_test.py orders; the action's default would kill a "
+        "legal run"
+    )
+    assert inputs.get("cache-provider") == "external", (
+        "the registry and compiler caches belong to their existing owners"
     )

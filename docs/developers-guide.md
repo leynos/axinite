@@ -734,13 +734,16 @@ ratchet.
 - Merges made by the automerge workflow with `GITHUB_TOKEN` fire no push
   event, so they reach neither the upload nor the baseline. That is a known
   exception; a manual dispatch covers it, and no schedule is added.
-- Both shared actions are pinned to a full commit SHA, and nothing passes the
-  withdrawn `installer-checksum` input or the `CODESCENE_CLI_SHA256` variable.
-  The pins must stay at `a5765019` or a commit descended from it, since that is
-  where the checksum inputs were withdrawn. The contract does not check that
-  ancestry: it would have to list the current SHAs, and "Workflow pins and
-  Dependabot" above forbids that. Dependabot only moves a pin forward, so the
-  floor holds unless someone downgrades a pin by hand, and review catches that.
+- Both shared actions are pinned to a full commit SHA (the CV-005 library for
+  the uploader, `workflow_tooling_test.py` for every shared-actions reference),
+  and nothing passes the withdrawn `installer-checksum` input or the
+  `CODESCENE_CLI_SHA256` variable (the library counts either as contacting
+  CodeScene). The pins must stay at `a5765019` or a commit descended from it,
+  since that is where the checksum inputs were withdrawn. The contract does not
+  check that ancestry: it would have to list the current SHAs, and "Workflow
+  pins and Dependabot" above forbids that. Dependabot only moves a pin forward,
+  so the floor holds unless someone downgrades a pin by hand, and review
+  catches that.
 - The publisher job declares `environment: codescene`. That environment's
   branch policy admits `main` alone, and the CodeScene token is to live there,
   so only a job deploying from `main` can read it. Every job that calls the
@@ -748,22 +751,17 @@ ratchet.
   other job declares it; and no job in a workflow a pull request can start
   declares it. The declaration is on the whole matrix job, so a
   `workflow_dispatch` from any branch other than `main` is refused at the
-  environment on all three legs, not only the uploading one.
-  `codescene_environment_test.py` holds the placement and breaks each clause in
-  a constructed workflow.
+  environment on all three legs, not only the uploading one. The shared CV-005
+  library holds the placement.
 
-`tests/workflow_contracts/coverage_publication_test.py` holds the estate to all
-of this. The pull-request surface it checks is every workflow a pull-request,
-review or merge-queue event starts, every `workflow_run` chained onto one, and
-everything those call through `./` or `$/`, followed transitively. Across that
-surface, no key or scalar may name the token, the uploader, the CLI or
-`codescene.io`, and no job may forward `secrets: inherit`.
-`_strict_workflows.py` reads every workflow through a loader that refuses a
-duplicated key and reads `on:` in each of its three shapes under both key
-spellings. `coverage_publication_reader_test.py` drives each clause with
-constructed workflows, including a `workflow_call`-only callee that curls
-CodeScene with an inherited token. Every clause was proved by a mutation that
-deletes or weakens it.
+The shared CV-005 library holds the estate to all of this. The pull-request
+surface it checks is every workflow a pull-request, review or merge-queue event
+starts, every `workflow_run` chained onto one, and everything those call through
+`./` or `$/`, followed transitively. Across that surface, no key or scalar may
+name the token, the uploader, the CLI or `codescene.io`, and no job may forward
+`secrets: inherit`. Its own suite drives each clause, and its mutation ledger
+proves each one. The tree is read through a loader that refuses a duplicated
+key and reads `on:` in each of its three shapes.
 
 ### Writing a workflow contract
 
