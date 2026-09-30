@@ -99,10 +99,10 @@ def _with_ci_group_override(config_text: str, group: str) -> str:
 
 
 def _without_any_compile_contract_group(config_text: str) -> str:
-    """Remove both profile assignments for the negative scheduling control."""
+    """Remove each profile assignment for the negative scheduling control."""
     assignment = f"test-group = '{COMPILE_CONTRACT_GROUP}'\n"
     assert config_text.count(assignment) == 2, (
-        "the mutated configuration must remove one assignment per profile"
+        "the mutated configuration must remove the default and ci assignments"
     )
     return config_text.replace(assignment, "")
 
@@ -131,7 +131,7 @@ def _run_overlap_fixture(
     )
 
 
-@pytest.mark.parametrize("profile", ["default", "ci"], ids=str)
+@pytest.mark.parametrize("profile", ["default", "ci", "coverage"], ids=str)
 def test_nextest_assigns_compile_contracts_to_the_serial_group(
     fixture_crate: Fixture, profile: str
 ) -> None:
@@ -146,7 +146,12 @@ def test_nextest_assigns_compile_contracts_to_the_serial_group(
         f"{profile}:\n{done.stdout}"
     )
     discovered = compile_contract_binaries(REPOSITORY_ROOT / "tests")
-    expected = discovered - {"trybuild"} if profile == "default" else discovered
+    if profile == "default":
+        expected = discovered - {"trybuild"}
+    elif profile == "coverage":
+        expected = frozenset()
+    else:
+        expected = discovered
     missing = {binary for binary in expected if f"::{binary}:" not in group}
     assert not missing, (
         f"nextest leaves compile-contract binaries outside the serial group "
@@ -156,6 +161,41 @@ def test_nextest_assigns_compile_contracts_to_the_serial_group(
     assert "::slow:" in ordinary and "::slow:" not in group, (
         "ordinary tests must remain in nextest's parallel global group, "
         f"outside compile-contract serialization:\n{done.stdout}"
+    )
+
+
+def test_coverage_profile_excludes_compile_contracts_but_keeps_ordinary_tests(
+    fixture_crate: Fixture,
+) -> None:
+    """Coverage lists runtime tests while the required ci job runs fixtures."""
+    done = _run(
+        (
+            "cargo",
+            "nextest",
+            "list",
+            "--config-file",
+            str(NEXTEST_CONFIG),
+            "--profile",
+            "coverage",
+            "--color",
+            "never",
+        ),
+        fixture_crate.crate,
+        fixture_crate.target,
+    )
+    assert done.returncode == 0, (
+        f"nextest could not list the coverage profile:\n{done.stderr}"
+    )
+    discovered = compile_contract_binaries(REPOSITORY_ROOT / "tests")
+    listed = done.stdout
+    leaked = {binary for binary in discovered if f"{binary}::" in listed}
+    assert not leaked, (
+        "coverage profile selects compile-contract fixtures for instrumented "
+        f"compilation: {sorted(leaked)}\n{listed}"
+    )
+    assert "::slow " in listed, (
+        "coverage profile must retain ordinary tests while excluding only "
+        f"compile contracts:\n{listed}"
     )
 
 

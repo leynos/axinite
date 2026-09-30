@@ -35,7 +35,7 @@ SUITE_MARKERS: typ.Final[tuple[str, ...]] = (
 #: asserted while its result is not. Neither is judged here; both are
 #: reported, because a contract that cannot tell what a line does
 #: should say so rather than guess.
-DISGUISES: typ.Final[tuple[str, ...]] = ("|| true", "|| :", "if ", "&&", ";", "|")
+DISGUISES: typ.Final[tuple[str, ...]] = ("|| true", "|| :", "if ", "&&", ";")
 
 #: Arguments that turn a suite command into a probe. `cargo nextest run
 #: --help` and `--version` print and exit without running a test, so a
@@ -144,6 +144,8 @@ def _is_suite_line(line: str) -> bool:
         return False
     tokens = _tokens_of(stripped)
     if tokens is None:
+        return False
+    if any(token in {"|", "||"} for token in tokens):
         return False
     if PROBE_ARGUMENTS.intersection(tokens):
         return False

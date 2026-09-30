@@ -299,7 +299,9 @@ def test_a_lane_that_makes_no_run_is_refused_rather_than_budgeted() -> None:
 #: requirement. A count that changes is a change to what the lane
 #: spends, and belongs in the developers' guide in the same commit.
 REQUIRED_INVOCATIONS: typ.Final[dict[tuple[str, str], int]] = {
+    ("codescene-coverage.yml", "compile-contracts"): 1,
     ("codescene-coverage.yml", "coverage-check"): 1,
+    ("coverage.yml", "compile-contracts"): 1,
     ("coverage.yml", "coverage"): 1,
 }
 

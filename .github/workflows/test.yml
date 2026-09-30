@@ -568,9 +568,8 @@ jobs:
           ${{ matrix.flags }} --features test-helpers
       - name: Run non-Unix startup compile contract
         if: matrix.name == 'default'
-        run: >-
-          cargo test --features test-helpers --test trybuild
-          startup_compile_contracts
+        shell: pwsh
+        run: ./scripts/ci-startup-compile-contract.ps1
       # Sole writer of the Windows cargo-registry key family.
       - name: Save Cargo registry and index
         if: >-

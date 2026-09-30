@@ -17,7 +17,7 @@ from __future__ import annotations
 import typing as typ
 
 import yaml
-from _suite_reader import duplicates_in, suite_runs_for
+from _suite_reader import cargo_runs, duplicates_in, suite_runs_for
 
 
 class TestDuplicateDetection:
@@ -115,6 +115,18 @@ class TestDuplicateDetection:
         assert not duplicates_in(suite_runs_for(documents, "pull_request", defaults)), (
             "two lanes running different feature sets are two suites, which "
             "is the normal case and must never be reported as duplication"
+        )
+
+    def test_a_filtered_workspace_command_is_not_the_full_suite(
+        self, defaults: frozenset[str]
+    ) -> None:
+        """Compile-contract filters run only the selected workspace tests."""
+        command = (
+            "cargo nextest run --workspace --profile ci -E "
+            "'binary(trybuild) | binary(schema_helpers_ui)'"
+        )
+        assert list(cargo_runs(command, defaults)) == [], (
+            "a nextest filter must not be read as running every workspace test"
         )
 
     def test_a_different_profile_is_not_a_duplicate(

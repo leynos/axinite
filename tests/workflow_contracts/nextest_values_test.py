@@ -6,9 +6,9 @@ is which tests a per-test allowance was sized for. Neither can see a
 value being deleted or changed, because both compare one figure against
 another and every comparison still holds afterwards.
 
-``grace-period`` is the clearest case. Both profiles and both overrides
-set five seconds, and ``termination_allowance`` reads whatever it finds,
-falling back to nextest's ten-second default when it finds nothing. So
+``grace-period`` is the clearest case. All three profiles and both
+compile-contract overrides set five seconds, and ``termination_allowance``
+reads whatever it finds, falling back to nextest's ten-second default. So
 deleting every ``grace-period`` in the file *raises* the computed
 requirement and leaves the ordering assertions passing, while the wait
 between `SIGTERM` and `SIGKILL` silently doubles. The override's 900 s
@@ -34,9 +34,11 @@ from timeout_budgets import base_slow_timeout, global_timeout
 
 #: The profiles the configuration is allowed to declare. Pinned as a set
 #: rather than iterated, because every assertion below is parametrized
-#: over these two names: a third profile carrying looser budgets would
-#: be selectable by `--profile` and examined by nothing here.
-REQUIRED_PROFILES: typ.Final[frozenset[str]] = frozenset({"default", "ci"})
+#: over every required profile: an unpinned profile carrying looser
+#: budgets would be selectable by `--profile` and examined by nothing.
+REQUIRED_PROFILES: typ.Final[frozenset[str]] = frozenset(
+    {"default", "ci", "coverage"}
+)
 
 #: Each profile's own ``slow-timeout``, field by field, as the
 #: developers' guide records it. Compared as a whole table so a field
@@ -49,7 +51,7 @@ REQUIRED_BASE_SLOW_TIMEOUT: typ.Final[dict[str, str]] = {
     "grace-period": "5s",
 }
 
-#: The whole-run budget both profiles declare, in seconds. Read through
+#: The whole-run budget every profile declares, in seconds. Read through
 #: the duration grammar rather than matched as text, so the assertion is
 #: about the thirty minutes the guide documents and not about which of
 #: the spellings of thirty minutes the file happens to use.
@@ -65,10 +67,9 @@ REQUIRED_OVERRIDE_SLOW_TIMEOUT: typ.Final[dict[str, str]] = {
     "grace-period": "5s",
 }
 
-#: The binaries that override must name. Both profiles run
-#: ``schema_helpers_ui`` and ``ci`` also runs ``trybuild``, and the
-#: override carries both in each profile so that neither depends on
-#: which profile a lane selects.
+#: The binaries the overrides must name. The default profile runs
+#: ``schema_helpers_ui`` and ``ci`` also runs ``trybuild``. Coverage
+#: inherits the ci override but filters both binaries out.
 REQUIRED_OVERRIDE_BINARIES: typ.Final[frozenset[str]] = frozenset(
     {"trybuild", "schema_helpers_ui"}
 )
@@ -99,11 +100,10 @@ def test_the_configuration_declares_the_profiles_this_contract_pins(
 ) -> None:
     """A profile nobody pinned is a profile nobody bounded.
 
-    Every assertion below is parametrized over ``default`` and ``ci``,
-    so a third profile would be selectable by ``--profile`` and read by
-    none of them. Compared both ways, so a renamed profile fails here
-    rather than turning the parametrized assertions into lookups of a
-    name that no longer exists.
+    Every assertion below is parametrized over every required profile,
+    so a profile with unpinned budgets cannot be selected unnoticed.
+    Compared both ways, so a renamed profile fails here rather than
+    turning the parametrized assertions into lookups of a missing name.
     """
     assert set(nextest_profiles) == set(REQUIRED_PROFILES), (
         f"the configuration declares {sorted(nextest_profiles)}, not "
@@ -165,7 +165,7 @@ def test_each_profile_pins_the_documented_whole_run_budget(
 def test_each_profile_pins_its_compile_contract_override(
     nextest_profiles: dict[str, Profile], profile: str
 ) -> None:
-    """One override, naming both binaries, allowing exactly 900 s.
+    """Pin override counts and values, including coverage inheritance.
 
     ``compile_contract_budget_test`` asks whether every compile-contract
     binary a profile runs is allowed *at least* the longer budget, which
@@ -174,17 +174,20 @@ def test_each_profile_pins_its_compile_contract_override(
     above the 30 m whole-run budget for every test it matched, so the
     run would end before the allowance could be used.
 
-    The count is pinned too. A second override matching the same
-    binaries would be consulted ahead of or behind this one depending on
-    file order, and the allowance in force would then depend on a line
-    nobody had compared.
+    Default and ci each declare one override, naming both binaries and
+    allowing exactly 900 s. Coverage declares none; it inherits the ci
+    override and filters the binaries out. The counts are pinned because a
+    second matching override would change the value in force by file order.
     """
     own = nextest_profiles[profile].overrides
-    assert len(own) == 1, (
+    expected_count = 0 if profile == "coverage" else 1
+    assert len(own) == expected_count, (
         f"[profile.{profile}] declares {len(own)} overrides; this contract "
-        f"pins one, because a second matching the same binaries would decide "
-        f"the allowance in force by file order"
+        f"pins {expected_count}, because a second matching the same binaries "
+        f"would decide the allowance in force by file order"
     )
+    if not own:
+        return
     override = own[0]
     selected = binaries_selected(override.get("filter"))
     assert selected == REQUIRED_OVERRIDE_BINARIES, (

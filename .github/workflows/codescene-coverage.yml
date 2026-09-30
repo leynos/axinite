@@ -30,6 +30,29 @@ permissions:
   contents: read
 
 jobs:
+  compile-contracts:
+    name: Compile contracts (libSQL-only)
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    env:
+      CARGO_NEXTEST_VERSION: '0.9.140'
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - name: Install cargo-nextest
+        uses: taiki-e/install-action@c7eb1735f09259a5035e8e5d44b1406b1cddc0fb # v2.83.0
+        with:
+          tool: cargo-nextest@${{ env.CARGO_NEXTEST_VERSION }}
+          fallback: none
+
+      - name: Run compile-contract tests
+        run: >-
+          cargo nextest run --workspace --no-default-features
+          --features libsql,test-helpers --profile ci
+          -E 'binary(trybuild) | binary(schema_helpers_ui)'
+
   coverage-check:
     name: Coverage Ratchet
     if: >
@@ -43,6 +66,7 @@ jobs:
       ${{ github.event.pull_request.head.repo.fork && 'ubuntu-latest'
       || 'ubicloud-standard-4' }}
     timeout-minutes: 90
+    needs: [compile-contracts]
     env:
       # sccache is the sole owner of compiler output: no cache step archives a
       # target tree. RUSTC_WRAPPER is what actually engages it; installing
@@ -174,19 +198,18 @@ jobs:
       # The same selection as the libsql-only leg of `coverage.yml`, which
       # writes the baseline this compares against: a ratchet measuring a
       # different feature set would report the difference in features as a
-      # difference in coverage. The action installs its own pinned
-      # cargo-llvm-cov and cargo-nextest, and `cache-provider: external`
+      # difference in coverage. Compile contracts run separately with the
+      # same selection, without coverage instrumentation. The action installs
+      # its own pinned cargo-llvm-cov and cargo-nextest, and `cache-provider: external`
       # leaves the registry to the restore step above and compiler output to
       # sccache. The report stays on the runner: nothing downstream reads an
       # artefact from a pull request.
       - name: Generate coverage
-        # `ci` matches what `test.yml`'s libsql-only leg ran before this lane
-        # replaced it. The default profile would drop the trybuild compile
-        # contracts, and the replacement would be narrower than the leg it
-        # stands in for. The action has no profile input; nextest reads the
-        # variable, and a composite action's steps inherit the step's env.
+        # The coverage profile leaves compile-contract compilation to the
+        # separate job above. The action has no profile input; nextest reads
+        # the variable, and a composite action's steps inherit its env.
         env:
-          NEXTEST_PROFILE: ci
+          NEXTEST_PROFILE: coverage
         uses: leynos/shared-actions/.github/actions/generate-coverage@dbe2e22ceaf498d85512679ccded38be9dbe7777
         with:
           features: libsql,test-helpers

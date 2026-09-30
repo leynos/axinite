@@ -609,16 +609,18 @@ Three mechanisms carry that, and each is worth knowing before changing a lane:
   means it.
 
 The profile is part of that, and it is the half most easily missed. The default
-profile excludes the `trybuild` compile-contract binary, while the `ci` profile
-runs every compile contract. Each `trybuild::TestCases` session shares a
+profile excludes the `trybuild` compile-contract binary, while `ci` runs both
+compile-contract binaries. Each `trybuild::TestCases` session shares a
 generated Cargo project and lock while it prepares dependencies, compiles
 fixtures, and runs them; it does not necessarily rebuild the full dependency
-graph for every fixture. The `test.yml` legs use `NEXTEST_PROFILE=ci`, and
-every coverage run now does too: the `run:` legs pass `--profile ci`, and the
-two steps that go through the shared `generate-coverage` action set
-`NEXTEST_PROFILE: ci` in their step environment, which the composite action
-inherits. Without that, standing `tests` down on a push would have left the
-compile contracts unexecuted on `main` altogether.
+graph for every fixture. The `test.yml` legs use `NEXTEST_PROFILE=ci`. Coverage
+uses a separate `coverage` profile: the main workflow runs the contracts in an
+uninstrumented matrix job for default, libSQL-only and all-features, and the PR
+ratchet runs them in an uninstrumented libSQL-only job. Both coverage actions
+use `NEXTEST_PROFILE=coverage`, which excludes the two compile-contract
+binaries from instrumented fixture compilation. This keeps those required
+checks while avoiding the hosted 900 second timeout observed when
+`schema_helpers_ui` compiled its fixtures under llvm-cov instrumentation.
 
 `tools-src/github` and `channels-src/telegram` are excluded from the workspace,
 so `--workspace` cannot reach either however wide the feature set. Each
@@ -3233,24 +3235,24 @@ they must be ordered lives in the `generate-coverage` README in
 cargo watchdog only on the two lanes that use that action, and two of the four
 were unset until this was written.
 
-| Tier                     | What it bounds                     | Where it is set                       | Current value                                        |
-| ------------------------ | ---------------------------------- | ------------------------------------- | ---------------------------------------------------- |
-| Per-test `slow-timeout`  | one test process                   | `.config/nextest.toml`, both profiles | 300 s, 900 s per compile-contract session, 5 s grace |
-| nextest `global-timeout` | the whole test run                 | `.config/nextest.toml`, both profiles | 30 m                                                 |
-| Cargo watchdog           | one `cargo` invocation, wall clock | `cargo-wait-timeout` on action steps  | 4,200 s on the two action lanes, absent elsewhere    |
-| Job `timeout-minutes`    | the whole job                      | job level                             | 90 m for the coverage lanes                          |
+| Tier                     | What it bounds                     | Where it is set                      | Current value                                        |
+| ------------------------ | ---------------------------------- | ------------------------------------ | ---------------------------------------------------- |
+| Per-test `slow-timeout`  | one test process                   | `.config/nextest.toml`, all profiles | 300 s, 900 s per compile-contract session, 5 s grace |
+| nextest `global-timeout` | the whole test run                 | `.config/nextest.toml`, all profiles | 30 m                                                 |
+| Cargo watchdog           | one `cargo` invocation, wall clock | `cargo-wait-timeout` on action steps | 4,200 s on the two action lanes, absent elsewhere    |
+| Job `timeout-minutes`    | the whole job                      | job level                            | 90 m for the coverage lanes                          |
 
 *Table: the timers that can end a run, innermost first.*
 
 ### What was missing
 
-Neither profile set a per-test allowance or a whole-run budget. Nothing bounded
-a single test and nothing bounded the run, so the only timer that ended a hang
-was the job's own at 90 minutes, which cancels the run and discards the log
-that would have named the test. The failure then reads as an infrastructure
-fault rather than as a hung test.
+When this policy was first added, neither profile set a per-test allowance or a
+whole-run budget. Nothing bounded a single test and nothing bounded the run, so
+the only timer that ended a hang was the job's own at 90 minutes, which cancels
+the run and discards the log that would have named the test. The failure then
+reads as an infrastructure fault rather than as a hung test.
 
-### Both profiles carry their own budgets
+### Each profile carries its own budgets
 
 This is repository policy, not a nextest requirement, and it is worth being
 exact about the difference. A custom profile inherits `[profile.default]`, and
@@ -3260,12 +3262,15 @@ the selected profile's own scalar setting. So a `ci` profile that declared no
 budgets at all would not be unbounded; it would run under the default profile's.
 
 The reason to repeat them is that `ci` is the profile that *includes* the
-trybuild compile-contract binaries the default profile excludes. It is the
-profile with the longest tests, and the budgets that govern CI belong where a
-reader of that profile will find them rather than one section away.
+trybuild compile-contract binaries the default profile excludes. The `coverage`
+profile inherits from `ci` but excludes both compile-contract binaries from
+instrumented runs; separate required jobs run them with the same feature
+selections and the `ci` profile. The budgets that govern each workflow belong
+beside the profile a reader selects rather than one section away.
 
-Both therefore set a 300 second base allowance and a 30 minute whole-run
-budget, and both add a 900 second override for the compile-contract binaries.
+All three therefore set a 300 second base allowance and a 30 minute whole-run
+budget. The default and ci profiles each declare a 900 second override for the
+compile-contract binaries; coverage inherits the ci override.
 
 ### The compile-contract binaries are not ordinary tests
 
@@ -3276,14 +3281,15 @@ and concurrent waiters can spend most of their timeout queued behind one
 another. The two binaries are `tests/trybuild.rs` and
 `tests/schema_helpers_ui/main.rs`, named `trybuild` and `schema_helpers_ui`.
 
-The `compile-contracts` test group sets `max-threads = 1`. Both the `default`
-and `ci` compile-contract overrides assign the two binaries to this group, so
-nextest queues their tests before they contend for trybuild's lock. Ordinary
-tests stay in nextest's global group and retain the configured parallelism. The
-workflow contract checks effective membership with the pinned nextest runner
-and uses a shared marker across the two fixture binaries: the real
-configuration passes with four nextest slots, while removing serialization
-produces an overlap failure.
+The `compile-contracts` test group sets `max-threads = 1`. The `default` and
+`ci` compile-contract overrides assign the two binaries to this group, and
+`coverage` inherits the `ci` override. Nextest queues their tests before they
+contend for trybuild's lock. Ordinary tests stay in nextest's global group and
+retain the configured parallelism. The workflow contract checks effective
+membership with the pinned nextest runner and uses a shared marker across the
+two fixture binaries: the real configuration passes with four nextest slots,
+while removing serialization produces an overlap failure. It also checks that
+the coverage profile omits these binaries while keeping ordinary tests selected.
 
 Fixtures are explicitly batched by purpose. Database surface fixtures share one
 `TestCases` session; support and infrastructure fixtures share another. This
@@ -3303,11 +3309,15 @@ precedes nextest in a coverage command.
 
 The binaries are discovered from calls to `trybuild::TestCases` rather than
 listed, so a new compile-contract target must inherit both group and timeout.
-The discovered set is pinned by name, and both Cargo target forms,
-`tests/<name>.rs` and `tests/<name>/main.rs`, are represented. The default
-profile excludes `trybuild` but runs `schema_helpers_ui`; `ci` runs both.
-Contracts also check default-profile inheritance, CI override precedence, and
-that ordinary tests stay outside the compile-contract group.
+Workflow contracts require every discovered binary in the PR and baseline
+compile-contract commands, and require the baseline matrix to cover default,
+libSQL-only and all-features selections. The discovered set is pinned by name,
+and both Cargo target forms, `tests/<name>.rs` and `tests/<name>/main.rs`, are
+represented. The default profile excludes `trybuild` but runs
+`schema_helpers_ui`; `ci` runs both, and `coverage` excludes both while
+inheriting their group and timeout policy. Contracts also check default-profile
+inheritance, CI override precedence, and that ordinary tests stay outside the
+compile-contract group.
 
 ### The values are pinned, not merely ordered
 
@@ -3317,14 +3327,14 @@ comparisons still holds when a figure is deleted or changed.
 themselves, field by field, against the table at the top of this section.
 
 `grace-period` is the clearest case, and it is the one that gave the contract
-its name. Both profiles and both overrides allow a terminated test five seconds
-between `SIGTERM` and `SIGKILL`. Nothing compared that figure: the ordering
-contract reads `period` and `terminate-after`, because those two make up the
-per-test budget it compares, and the ceiling requirement reads whatever grace
-period it finds and falls back to nextest's ten-second default when it finds
-none. Deleting every `grace-period` in the file therefore *raises* the computed
-requirement, leaves every assertion passing, and doubles the wait a terminated
-test actually gets.
+its name. All three profiles and both compile-contract overrides allow a
+terminated test five seconds between `SIGTERM` and `SIGKILL`. Nothing compared
+that figure: the ordering contract reads `period` and `terminate-after`,
+because those two make up the per-test budget it compares, and the ceiling
+requirement reads whatever grace period it finds and falls back to nextest's
+ten-second default when it finds none. Deleting every `grace-period` in the
+file therefore *raises* the computed requirement, leaves every assertion
+passing, and doubles the wait a terminated test actually gets.
 
 The 900 second override is the next. The compile-contract contract asks whether
 each binary is allowed *at least* that much, which is the right shape for its
@@ -3338,7 +3348,7 @@ thirty minutes could drift to forty with nothing failing and this table left
 describing a value the runner does not use.
 
 The set of profiles is pinned too. Every assertion in this suite is
-parametrized over `default` and `ci`, so a third profile carrying looser
+parametrized over `default`, `ci` and `coverage`, so a profile carrying looser
 budgets would be selectable by `--profile` and read by none of them.
 
 Each pinned table is compared whole rather than key by key, so a field added to
@@ -3372,10 +3382,10 @@ declares and refuses a filterset naming one that does not exist. The fixture
 declares both compile-contract binaries, with multiple tests in each, plus an
 ordinary `slow` binary. Its tests use an atomic marker file to make overlap a
 behavioural failure. The workflow contract runs them with four nextest slots
-under the real configuration, then removes both profile assignments and
+under the real configuration, then removes the default and ci assignments and
 requires the run to fail with the overlap diagnostic. It also checks group
-membership under both profiles and with mutated inherited and overriding
-configurations.
+membership under the default and ci profiles and with mutated inherited and
+overriding configurations.
 
 The copy is not tidiness. Cargo finds `.cargo/config.toml` by walking up the
 directory tree and does not stop at a workspace root, so a fixture built in
@@ -3516,8 +3526,8 @@ a measurement of the cold case.
 value over every job that runs the suite, in both the `.yml` and `.yaml`
 extensions. It enumerates jobs that declare no ceiling, so a missing
 `timeout-minutes` reads as a lane with no budget rather than as no lane at all,
-and it holds every lane to the larger of the two profiles' budgets, because
-nothing in the workflows names which profile a lane runs under.
+and it holds every lane to the largest declared profile budget. The coverage
+profile inherits the ci budgets and excludes the slow compile-contract binaries.
 
 The per-test allowance it compares against is `period` multiplied by
 `terminate-after`, not `period` alone, so an override that raised the

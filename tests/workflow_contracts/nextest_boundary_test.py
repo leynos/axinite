@@ -10,8 +10,8 @@ misspelled ``grace_period`` therefore parses, pins, orders and passes
 everywhere while the grace period in force is nextest's default.
 
 So the file is handed to `cargo nextest` and the verdict is taken from
-it. Two things are asserted: that nextest loads the real file for both
-profiles without error, and that it reports no ignored key while doing
+it. Two things are asserted: that nextest loads the real file for each
+profile without error, and that it reports no ignored key while doing
 so. The second is the one that catches the misspelling, and it is
 proved here rather than merely stated: the same reading is run against
 a deliberately misspelled copy, which must warn while still loading.
@@ -104,7 +104,7 @@ def test_every_lane_installs_the_same_nextest() -> None:
     )
 
 
-@pytest.mark.parametrize("profile", ["default", "ci"], ids=str)
+@pytest.mark.parametrize("profile", ["default", "ci", "coverage"], ids=str)
 def test_nextest_loads_the_real_configuration(
     fixture_crate: Fixture, profile: str
 ) -> None:
@@ -137,7 +137,7 @@ def test_nextest_loads_the_real_configuration(
     )
 
 
-@pytest.mark.parametrize("profile", ["default", "ci"], ids=str)
+@pytest.mark.parametrize("profile", ["default", "ci", "coverage"], ids=str)
 def test_nextest_ignores_no_key_in_the_real_configuration(
     fixture_crate: Fixture, profile: str
 ) -> None:

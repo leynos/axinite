@@ -7,12 +7,14 @@
 # fixture compilation take substantially longer than ordinary tests.
 #
 # It is the only compile-contract binary this filter excludes. The other,
-# `schema_helpers_ui`, runs in both profiles and checks accepted schema
-# helper call-site types. The matching overrides below assign both binaries
-# to the shared serial group and give each test a 900s timeout;
+# `schema_helpers_ui`, runs in the default and ci profiles and checks accepted
+# schema helper call-site types. The matching overrides below assign both
+# binaries to the shared serial group and give each test a 900s timeout;
 # `compile_contract_budget_test.py` pins discovery and profile selection.
 #
-# The ci profile below runs both.
+# The ci profile below runs both. The coverage profile excludes both because
+# fixture compilation under instrumentation exceeded the hosted test budget;
+# separate CI jobs run the contracts without instrumentation.
 default-filter = 'not binary(trybuild)'
 # Kill a test that has run for five minutes rather than reporting it slow
 # for ever. Nothing else here bounds a single test, so without this the
@@ -40,16 +42,27 @@ default-filter = 'all()'
 slow-timeout = { period = "300s", terminate-after = 1, grace-period = "5s" }
 global-timeout = "30m"
 
+# Coverage instrumentation recompiles dependencies and fixtures with extra
+# rustc flags. Keep the compile-contract binaries in the separate, ordinary
+# nextest job so this profile measures runtime coverage without compiling UI
+# fixtures under instrumentation.
+[profile.coverage]
+inherits = "ci"
+default-filter = 'not binary(trybuild) and not binary(schema_helpers_ui)'
+slow-timeout = { period = "300s", terminate-after = 1, grace-period = "5s" }
+global-timeout = "30m"
+
 # `trybuild` and `schema_helpers_ui` share trybuild's generated project and
 # lock while preparing dependencies, compiling fixtures, and running them.
 # Keep those tests in one nextest group so separate test processes queue
 # instead of contending for preparation. Ordinary tests stay in nextest's
 # default group and retain the configured parallelism.
 #
-# Both profiles carry this override because the default profile runs
-# `schema_helpers_ui`, while `ci` runs both compile-contract binaries. The
-# timeout is per nextest test (one trybuild session after fixture batching),
-# not per fixture or per binary.
+# The default and ci profiles carry this override because default runs
+# `schema_helpers_ui`, while ci runs both compile-contract binaries. Coverage
+# inherits the ci override and filters both binaries out. The timeout is per
+# nextest test (one trybuild session after fixture batching), not per fixture
+# or per binary.
 [test-groups.compile-contracts]
 max-threads = 1
 

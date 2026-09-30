@@ -39,10 +39,12 @@ REQUIRED_EXCLUSIONS: dict[tuple[str, str], bool] = {
     ("default", "schema_helpers_ui"): False,
     ("ci", "trybuild"): False,
     ("ci", "schema_helpers_ui"): False,
+    ("coverage", "trybuild"): True,
+    ("coverage", "schema_helpers_ui"): True,
 }
 
 
-@pytest.mark.parametrize("profile", ["default", "ci"], ids=str)
+@pytest.mark.parametrize("profile", ["default", "ci", "coverage"], ids=str)
 def test_every_compile_contract_binary_is_allowed_the_longer_budget(
     nextest_profiles: dict[str, Profile], profile: str
 ) -> None:
@@ -80,7 +82,7 @@ def test_every_compile_contract_binary_is_allowed_the_longer_budget(
     )
 
 
-@pytest.mark.parametrize("profile", ["default", "ci"], ids=str)
+@pytest.mark.parametrize("profile", ["default", "ci", "coverage"], ids=str)
 def test_every_compile_contract_binary_uses_the_serial_group(
     nextest_profiles: dict[str, Profile], profile: str
 ) -> None:
@@ -90,20 +92,28 @@ def test_every_compile_contract_binary_uses_the_serial_group(
     inherit the timeout while escaping the shared preparation group.
     """
     binaries = compile_contract_binaries(REPOSITORY_ROOT / "tests")
-    overrides = nextest_profiles[profile].overrides
+    selected_profile = nextest_profiles[profile]
+    overrides = (
+        *selected_profile.overrides,
+        *(table for _, table in selected_profile.inherited),
+    )
     matching = [
         override
         for override in overrides
         if binaries_selected(override.get("filter")) == binaries
     ]
-    assert len(matching) == 1, (
-        f"[profile.{profile}] must have one override selecting every "
-        f"discovered compile-contract binary {sorted(binaries)}; found "
-        f"{len(matching)}"
+    assert matching, (
+        f"[profile.{profile}] must inherit an override selecting every "
+        f"discovered compile-contract binary {sorted(binaries)}"
     )
-    assert matching[0].get("test-group") == REQUIRED_COMPILE_CONTRACT_GROUP, (
-        f"[profile.{profile}] assigns {sorted(binaries)} to "
-        f"{matching[0].get('test-group')!r}, not the serial group "
+    misplaced = [
+        override.get("test-group")
+        for override in matching
+        if override.get("test-group") != REQUIRED_COMPILE_CONTRACT_GROUP
+    ]
+    assert not misplaced, (
+        f"[profile.{profile}] assigns discovered compile-contract binaries to "
+        f"groups {misplaced}, not the serial group "
         f"{REQUIRED_COMPILE_CONTRACT_GROUP!r}"
     )
 
