@@ -10,9 +10,17 @@ import {
   keepPreviousData,
   useQueryClient,
 } from "@tanstack/solid-query";
-import { createEffect, createMemo, createSignal, For, Show } from "solid-js";
+import {
+  createEffect,
+  createMemo,
+  createSignal,
+  For,
+  Show,
+  untrack,
+} from "solid-js";
 import {
   formatTimestamp,
+  resolveActiveFilePath,
   SOURCE_CLASS,
   STATUS_CLASS,
   sourceName,
@@ -77,10 +85,18 @@ export const JobsPreview = () => {
     placeholderData: keepPreviousData,
   }));
 
+  // Default the file pane to the first file, but keep the operator's choice
+  // while it still exists. The selection is read untracked so choosing a file
+  // does not re-run this effect.
   createEffect(() => {
-    const firstFile = files.data?.entries.find((entry) => !entry.is_dir)?.path;
-    if (firstFile && firstFile !== activeFilePath()) {
-      setActiveFilePath(firstFile);
+    const entries = files.data?.entries;
+    if (!entries) {
+      return;
+    }
+    const selected = untrack(activeFilePath);
+    const next = resolveActiveFilePath(entries, selected);
+    if (next !== selected) {
+      setActiveFilePath(next);
     }
   });
 
