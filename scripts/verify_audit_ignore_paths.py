@@ -11,6 +11,7 @@ from pathlib import Path
 EXPECTED_PATHS = {
     ("rkyv", "0.7.46"): "rust_decimal",
     ("h2", "0.3.27"): "libsql",
+    ("ttf-parser", "0.25.1"): "pdf-extract",
 }
 
 PackageKey = tuple[str, str]
