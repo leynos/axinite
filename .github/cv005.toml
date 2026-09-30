@@ -1,0 +1,10 @@
+repository = "leynos/axinite"
+publisher = "coverage.yml"
+
+[selection]
+features = "libsql,test-helpers"
+with-default-features = "false"
+use-cargo-nextest = "true"
+format = "lcov"
+output-path = "lcov.info"
+with-ratchet = "true"
