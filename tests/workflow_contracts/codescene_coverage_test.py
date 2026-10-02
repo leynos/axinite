@@ -85,8 +85,9 @@ def test_trigger_permissions_and_job_are_pr_only_and_isolated() -> None:
 
     jobs = workflow.get("jobs")
     assert isinstance(jobs, dict), "the workflow must declare a jobs mapping"
-    assert list(jobs) == ["coverage-check"], (
-        "the workflow must contain only the isolated coverage-check job"
+    assert set(jobs) == {"compile-contracts", "coverage-check"}, (
+        "the workflow must contain the isolated coverage check and its "
+        "required compile-contract job"
     )
 
     job = _job(workflow)
@@ -108,8 +109,11 @@ def test_trigger_permissions_and_job_are_pr_only_and_isolated() -> None:
         "coverage-check is off the critical path, so it takes the cheaper "
         "shape: 683 s at half the rate beats 455 s at full"
     )
-    assert {"strategy", "services", "needs"}.isdisjoint(job), (
-        "coverage-check must not inherit the main matrix, PostgreSQL, or gate"
+    assert {"strategy", "services"}.isdisjoint(job), (
+        "coverage-check must not inherit the main matrix or PostgreSQL service"
+    )
+    assert job.get("needs") == ["compile-contracts"], (
+        "coverage-check must wait for the uninstrumented compile-contract job"
     )
     assert all(
         not str(step.get("uses", "")).startswith("codecov/") for step in _steps(job)
@@ -160,8 +164,9 @@ def test_setup_and_generator_match_proven_libsql_coverage() -> None:
     assert "target" not in str(cache_with.get("path", "")), (
         "coverage-check must not archive a target tree"
     )
-    # cargo-llvm-cov and cargo-nextest come from generate-coverage, which
-    # installs its own pinned, checksum-verified releases.
+    # cargo-llvm-cov comes from generate-coverage, which installs its own
+    # pinned, checksum-verified release. The dedicated compile-contract job
+    # installs the same pinned nextest version through the workflow contract.
     for tool in ("cargo-binstall",):
         step = _find_step(job, f"Install {tool}")
         step_with = step.get("with")
@@ -212,13 +217,11 @@ def test_setup_and_generator_match_proven_libsql_coverage() -> None:
     ), "coverage-check must build the WASM channel fixtures"
 
     generator = _find_step(job, "Generate coverage")
-    # `ci` joined the lane when it became the only libsql-only run on a pull
-    # request: `test.yml`'s leg ran that profile, and the default profile
-    # drops the trybuild compile contracts, so without it the replacement
-    # would be narrower than the leg it replaced.
-    assert generator.get("env") == {"NEXTEST_PROFILE": "ci"}, (
-        "coverage-check must run the ci nextest profile, as the leg it "
-        f"replaced did; the step's env is {generator.get('env')}"
+    # The compile-contract job runs the same selection under `ci`; coverage
+    # uses a profile that excludes those fixture compilations.
+    assert generator.get("env") == {"NEXTEST_PROFILE": "coverage"}, (
+        "coverage-check must use the filtered coverage profile after the "
+        f"separate compile-contract run; its env is {generator.get('env')}"
     )
     assert generator.get("with") == {
         "features": "libsql,test-helpers",

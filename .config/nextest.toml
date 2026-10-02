@@ -2,20 +2,19 @@
 # https://nexte.st/docs/configuration/
 
 [profile.default]
-# Exclude `trybuild` from the local default run. It spawns a fresh rustc
-# per case against the full crate and takes ~7 minutes, which is most of
-# what a local run costs.
+# Exclude `trybuild` from the local default run. It compiles the explicit
+# fixtures through trybuild's shared generated project, so preparation and
+# fixture compilation take substantially longer than ordinary tests.
 #
-# It is the only compile-contract binary this filter excludes, and there
-# are two. `schema_helpers_ui` is not excluded and runs in both
-# profiles: it is two pass-only cases proving `require_str` and
-# `require_param` accept both a `&str` and a `ParamName` at their call
-# sites, and it measured 244s, 249s and 257s rather than seven minutes.
-# The 900s override below is what keeps it from being terminated by the
-# 300s base allowance; `compile_contract_budget_test.py` pins both the
-# discovered set and which profile excludes which.
+# It is the only compile-contract binary this filter excludes. The other,
+# `schema_helpers_ui`, runs in the default and ci profiles and checks accepted
+# schema helper call-site types. The matching overrides below assign both
+# binaries to the shared serial group and give each test a 900s timeout;
+# `compile_contract_budget_test.py` pins discovery and profile selection.
 #
-# The ci profile below runs both.
+# The ci profile below runs both. The coverage profile excludes both because
+# fixture compilation under instrumentation exceeded the hosted test budget;
+# separate CI jobs run the contracts without instrumentation.
 default-filter = 'not binary(trybuild)'
 # Kill a test that has run for five minutes rather than reporting it slow
 # for ever. Nothing else here bounds a single test, so without this the
@@ -43,20 +42,36 @@ default-filter = 'all()'
 slow-timeout = { period = "300s", terminate-after = 1, grace-period = "5s" }
 global-timeout = "30m"
 
-# The compile-contract binaries spawn a fresh rustc per case against the
-# full crate, so a whole binary is minutes rather than seconds and the
-# 300 s base allowance does not fit one. `trybuild` takes about seven
-# minutes together, which is why the default profile excludes it;
-# `schema_helpers_ui` is not excluded and measured 244 s, 249 s and 257 s
-# on run 34159479674 and then exceeded 300 s on 34271865377, which is what
-# a bound sized to the ordinary tests does to a binary of this kind.
+# Coverage instrumentation recompiles dependencies and fixtures with extra
+# rustc flags. Keep the compile-contract binaries in the separate, ordinary
+# nextest job so this profile measures runtime coverage without compiling UI
+# fixtures under instrumentation.
+[profile.coverage]
+inherits = "ci"
+default-filter = 'not binary(trybuild) and not binary(schema_helpers_ui)'
+slow-timeout = { period = "300s", terminate-after = 1, grace-period = "5s" }
+global-timeout = "30m"
+
+# `trybuild` and `schema_helpers_ui` share trybuild's generated project and
+# lock while preparing dependencies, compiling fixtures, and running them.
+# Keep those tests in one nextest group so separate test processes queue
+# instead of contending for preparation. Ordinary tests stay in nextest's
+# default group and retain the configured parallelism.
 #
-# Both profiles carry the override because both run `schema_helpers_ui`.
-# Fifteen minutes is a bound rather than a measurement.
+# The default and ci profiles carry this override because default runs
+# `schema_helpers_ui`, while ci runs both compile-contract binaries. Coverage
+# inherits the ci override and filters both binaries out. The timeout is per
+# nextest test (one trybuild session after fixture batching), not per fixture
+# or per binary.
+[test-groups.compile-contracts]
+max-threads = 1
+
 [[profile.default.overrides]]
 filter = 'binary(trybuild) | binary(schema_helpers_ui)'
+test-group = 'compile-contracts'
 slow-timeout = { period = "900s", terminate-after = 1, grace-period = "5s" }
 
 [[profile.ci.overrides]]
 filter = 'binary(trybuild) | binary(schema_helpers_ui)'
+test-group = 'compile-contracts'
 slow-timeout = { period = "900s", terminate-after = 1, grace-period = "5s" }

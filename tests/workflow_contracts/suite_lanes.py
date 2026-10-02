@@ -35,7 +35,7 @@ SUITE_MARKERS: typ.Final[tuple[str, ...]] = (
 #: asserted while its result is not. Neither is judged here; both are
 #: reported, because a contract that cannot tell what a line does
 #: should say so rather than guess.
-DISGUISES: typ.Final[tuple[str, ...]] = ("|| true", "|| :", "if ", "&&", ";", "|")
+DISGUISES: typ.Final[tuple[str, ...]] = ("|| true", "|| :", "if ", "&&", ";")
 
 #: Arguments that turn a suite command into a probe. `cargo nextest run
 #: --help` and `--version` print and exit without running a test, so a
@@ -109,6 +109,14 @@ def _names_a_suite_command(line: str) -> bool:
     return any(marker in collapsed for marker in SUITE_MARKERS)
 
 
+def _starts_with_suite_command(tokens: list[str]) -> bool:
+    """Return whether shell words start with a recognised suite command."""
+    return any(
+        tokens[: len(marker_tokens)] == marker_tokens
+        for marker_tokens in (marker.split() for marker in SUITE_MARKERS)
+    )
+
+
 def _is_suite_line(line: str) -> bool:
     """Return whether one line runs the suite plainly.
 
@@ -145,12 +153,11 @@ def _is_suite_line(line: str) -> bool:
     tokens = _tokens_of(stripped)
     if tokens is None:
         return False
+    if {"|", "||"}.intersection(tokens):
+        return False
     if PROBE_ARGUMENTS.intersection(tokens):
         return False
-    return any(
-        tokens[: len(marker_tokens)] == marker_tokens
-        for marker_tokens in (marker.split() for marker in SUITE_MARKERS)
-    )
+    return _starts_with_suite_command(tokens)
 
 
 def _disguised_suite_lines(job_body: dict[str, typ.Any]) -> list[str]:

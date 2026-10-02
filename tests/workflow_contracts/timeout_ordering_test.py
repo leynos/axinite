@@ -22,7 +22,7 @@ ended a hang was the job's own, which cancels the run and discards the
 log that would have named the test.
 
 The per-test allowance is ``period`` multiplied by ``terminate-after``,
-not ``period`` alone. Both profiles declare their own budgets, which is
+not ``period`` alone. All three profiles declare their own budgets, which is
 repository policy rather than a nextest requirement: a custom profile
 inherits ``[profile.default]``, and nextest consults
 ``[[profile.default.overrides]]`` for it too, so a profile declaring
@@ -90,7 +90,7 @@ def test_the_suite_runs_somewhere(suite_lanes: tuple[SuiteLane, ...]) -> None:
     )
 
 
-@pytest.mark.parametrize("profile", ["default", "ci"], ids=str)
+@pytest.mark.parametrize("profile", ["default", "ci", "coverage"], ids=str)
 def test_every_profile_bounds_a_single_test(
     nextest_profiles: dict[str, Profile], profile: str
 ) -> None:
@@ -126,7 +126,7 @@ def test_every_profile_bounds_a_single_test(
     )
 
 
-@pytest.mark.parametrize("profile", ["default", "ci"], ids=str)
+@pytest.mark.parametrize("profile", ["default", "ci", "coverage"], ids=str)
 def test_the_global_timeout_sits_above_the_largest_single_test(
     nextest_profiles: dict[str, Profile], profile: str
 ) -> None:
@@ -158,9 +158,9 @@ def test_the_job_ceiling_covers_the_run_and_the_work_around_it(
     still cancels the job before nextest can report an overrun, and a
     cancellation discards the log that would have explained it.
 
-    Every lane is held to the larger of the two profiles' budgets,
-    because a lane that passed `--profile ci` would run under that one
-    and nothing in the workflow names which it uses. The requirement is
+    Every lane is held to the largest declared profile budget. Coverage
+    inherits the ci budgets and excludes compile-contract binaries. The
+    requirement is
     computed per lane rather than once, because a lane running the
     suite twice spends two whole-run budgets under one job timer.
     """
@@ -301,12 +301,17 @@ def test_the_required_ceiling_carries_all_four_terms() -> None:
 #:
 #: `codescene-coverage.yml`'s lane legitimately runs on pull requests
 #: and on manual dispatch, because `coverage.yml` covers the trunk.
+#: Both workflows run compile contracts in a separate filtered job with
+#: no job or step condition.
 #: `coverage.yml` runs the suite from a `run:` step on two legs and
 #: through the action on the `libsql-only` leg, so it carries one
 #: condition pair per step.
 REQUIRED_CONDITIONS: typ.Final[
     dict[tuple[str, str], frozenset[tuple[object, object]]]
 ] = {
+    ("codescene-coverage.yml", "compile-contracts"): frozenset(
+        {(None, None)}
+    ),
     ("codescene-coverage.yml", "coverage-check"): frozenset(
         {
             (
@@ -318,6 +323,7 @@ REQUIRED_CONDITIONS: typ.Final[
             )
         }
     ),
+    ("coverage.yml", "compile-contracts"): frozenset({(None, None)}),
     ("coverage.yml", "coverage"): frozenset(
         {
             ("matrix.name != 'libsql-only'", None),

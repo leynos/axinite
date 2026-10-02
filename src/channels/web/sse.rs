@@ -17,6 +17,25 @@ use crate::channels::web::types::SseEvent;
 /// Prevents resource exhaustion from connection flooding.
 const MAX_CONNECTIONS: u64 = 100;
 
+fn try_increment_below(counter: &AtomicU64, limit: u64) -> bool {
+    let mut current = counter.load(Ordering::Relaxed);
+    loop {
+        if current >= limit {
+            return false;
+        }
+
+        match counter.compare_exchange_weak(
+            current,
+            current + 1,
+            Ordering::Relaxed,
+            Ordering::Relaxed,
+        ) {
+            Ok(_) => return true,
+            Err(observed) => current = observed,
+        }
+    }
+}
+
 /// Manages SSE broadcast to all connected browser tabs.
 pub struct SseManager {
     tx: broadcast::Sender<SseEvent>,
@@ -80,15 +99,9 @@ impl SseManager {
         // concurrent callers from overshooting max_connections.
         let counter = Arc::clone(&self.connection_count);
         let max = self.max_connections;
-        counter
-            .fetch_update(Ordering::Relaxed, Ordering::Relaxed, |current| {
-                if current < max {
-                    Some(current + 1)
-                } else {
-                    None
-                }
-            })
-            .ok()?;
+        if !try_increment_below(&counter, max) {
+            return None;
+        }
         let rx = self.tx.subscribe();
 
         let stream = BroadcastStream::new(rx).filter_map(|result| result.ok());
@@ -108,15 +121,9 @@ impl SseManager {
         // Atomically increment only if below the limit.
         let counter = Arc::clone(&self.connection_count);
         let max = self.max_connections;
-        counter
-            .fetch_update(Ordering::Relaxed, Ordering::Relaxed, |current| {
-                if current < max {
-                    Some(current + 1)
-                } else {
-                    None
-                }
-            })
-            .ok()?;
+        if !try_increment_below(&counter, max) {
+            return None;
+        }
         let rx = self.tx.subscribe();
 
         let stream = BroadcastStream::new(rx)

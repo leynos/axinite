@@ -11,7 +11,7 @@ Run via ``make test-workflow-contracts``.
 
 import pytest
 from _workflow_policy import REPOSITORY_ROOT
-from nextest_config import Profile
+from nextest_config import Profile, binaries_selected
 from timeout_budgets import (
     COMPILE_CONTRACT_ALLOWANCE_SECONDS,
     binaries_short_of_allowance,
@@ -27,6 +27,7 @@ from timeout_budgets import (
 #: `tests/schema_helpers_ui/main.rs`, so the two Cargo target forms are
 #: both represented and neither can be dropped unnoticed.
 REQUIRED_COMPILE_CONTRACT_BINARIES = frozenset({"trybuild", "schema_helpers_ui"})
+REQUIRED_COMPILE_CONTRACT_GROUP = "compile-contracts"
 
 #: Which profile excludes which of them outright, as
 #: ``default-filter`` says. A reading that reported everything as
@@ -38,29 +39,28 @@ REQUIRED_EXCLUSIONS: dict[tuple[str, str], bool] = {
     ("default", "schema_helpers_ui"): False,
     ("ci", "trybuild"): False,
     ("ci", "schema_helpers_ui"): False,
+    ("coverage", "trybuild"): True,
+    ("coverage", "schema_helpers_ui"): True,
 }
 
 
-@pytest.mark.parametrize("profile", ["default", "ci"], ids=str)
+@pytest.mark.parametrize("profile", ["default", "ci", "coverage"], ids=str)
 def test_every_compile_contract_binary_is_allowed_the_longer_budget(
     nextest_profiles: dict[str, Profile], profile: str
 ) -> None:
-    """A binary that drives `rustc` does not fit the base allowance.
+    """A compile-contract session does not fit the base allowance.
 
-    These spawn a fresh compiler per case against the full crate, so a
-    whole binary is minutes rather than seconds. The base allowance is
-    sized for the ordinary tests, and a compile-contract binary running
-    under it is bounded by a number chosen for something else.
+    Each `TestCases` session prepares trybuild's generated project and
+    compiles its selected fixtures. The base allowance is sized for
+    ordinary tests, so the session needs its own longer budget.
 
     The binaries are discovered from the sources rather than listed
     here, because a new one appearing is exactly the failure this
     guards against. `trybuild` was named in the configuration and
-    `schema_helpers_ui` was not, and the second ran under the 300 s base
-    allowance, measuring 244 s, 249 s and 257 s on run 34159479674
-    before a slower runner ended it at 300 s on run 34271865377. The
-    contract then read as satisfied, because every value it compared
-    was in the right order; nothing said which tests the base allowance
-    was sized for.
+    `schema_helpers_ui` was not, and the second therefore ran under the
+    300 s base allowance. The contract then read as satisfied because
+    every value it compared was in the right order; nothing said which
+    tests the base allowance was sized for.
 
     A profile that excludes the binary outright satisfies this too,
     since a binary that never runs needs no allowance. `default`
@@ -79,6 +79,42 @@ def test_every_compile_contract_binary_is_allowed_the_longer_budget(
         f"an override allowing them {COMPILE_CONTRACT_ALLOWANCE_SECONDS:.0f}s, "
         f"so each is bounded by the base allowance sized for the ordinary "
         f"tests: {unbounded}"
+    )
+
+
+@pytest.mark.parametrize("profile", ["default", "ci", "coverage"], ids=str)
+def test_every_compile_contract_binary_uses_the_serial_group(
+    nextest_profiles: dict[str, Profile], profile: str
+) -> None:
+    """The timeout override also queues every discovered compile contract.
+
+    The source-derived set is reused here so a new trybuild target cannot
+    inherit the timeout while escaping the shared preparation group.
+    """
+    binaries = compile_contract_binaries(REPOSITORY_ROOT / "tests")
+    selected_profile = nextest_profiles[profile]
+    overrides = (
+        *selected_profile.overrides,
+        *(table for _, table in selected_profile.inherited),
+    )
+    matching = [
+        override
+        for override in overrides
+        if binaries_selected(override.get("filter")) == binaries
+    ]
+    assert matching, (
+        f"[profile.{profile}] must inherit an override selecting every "
+        f"discovered compile-contract binary {sorted(binaries)}"
+    )
+    misplaced = [
+        override.get("test-group")
+        for override in matching
+        if override.get("test-group") != REQUIRED_COMPILE_CONTRACT_GROUP
+    ]
+    assert not misplaced, (
+        f"[profile.{profile}] assigns discovered compile-contract binaries to "
+        f"groups {misplaced}, not the serial group "
+        f"{REQUIRED_COMPILE_CONTRACT_GROUP!r}"
     )
 
 

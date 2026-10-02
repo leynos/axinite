@@ -23,9 +23,10 @@ WHITAKER ?= whitaker
 NIXIE ?= nixie
 UV ?= uv
 UV_ENV = UV_CACHE_DIR=.uv-cache UV_TOOL_DIR=.uv-tools
-TYPOS_CONFIG_BUILDER_VERSION ?= v0.1.3
+# Pin the resolved commit so uv does not need to refresh a movable tag.
+TYPOS_CONFIG_BUILDER_REVISION ?= c8a4f95d7cf7f6a1b7517f2775d122d47d5721eb
 TYPOS_CONFIG_BUILDER = $(UV_ENV) $(UV) tool run --python 3.14 --from \
-	"git+https://github.com/leynos/typos-config-builder.git@$(TYPOS_CONFIG_BUILDER_VERSION)" \
+	"git+https://github.com/leynos/typos-config-builder.git@$(TYPOS_CONFIG_BUILDER_REVISION)" \
 	typos-config-builder
 WASM_SHARED_TARGET_DIR ?= $(if $(CARGO_TARGET_DIR),$(CARGO_TARGET_DIR),target/wasm-extensions)
 GITHUB_TOOL_MANIFEST := tools-src/github/Cargo.toml
