@@ -30,7 +30,7 @@ ratio of employed men and women between the ages of 25 and 54 compared to the
 total population of each country.
 
 The overall rankings of the countries were as follows:  
-1. Finland  
+1\. Finland\
 2. Norway  
 3. Australia  
 4. Canada  

@@ -111,11 +111,17 @@ impl NormalizationState {
     }
 
     fn push_paragraph_text(&mut self, line: &str) {
+        let has_hard_break = is_markdown_hard_break(line);
         if needs_soft_wrap_separator(&self.paragraph, line) {
             self.paragraph.push(' ');
         }
+        let line = if has_hard_break {
+            trim_hard_break_marker(line)
+        } else {
+            line
+        };
         self.paragraph.push_str(line);
-        if is_markdown_hard_break(line) {
+        if has_hard_break {
             push_paragraph(&mut self.lines, &mut self.paragraph);
         }
     }
@@ -159,6 +165,11 @@ fn is_markdown_hard_break(line: &str) -> bool {
             .count()
             % 2
             == 1
+}
+
+fn trim_hard_break_marker(line: &str) -> &str {
+    // Keep the forced line boundary while normalizing its equivalent markers.
+    line.strip_suffix('\\').unwrap_or(line).trim_end()
 }
 
 fn push_paragraph(lines: &mut Vec<String>, paragraph: &mut String) {

@@ -24,7 +24,10 @@ AUDIT_FLAGS = (
 )
 
 
-def _selected_cargo_manifests(utility_bin: Path) -> list[str]:
+def _selected_cargo_manifests(
+    utility_bin: Path,
+    repository_root: Path = REPOSITORY_ROOT,
+) -> list[str]:
     """Return Cargo.toml paths selected by the Makefile audit find expression."""
     result = subprocess.run(
         [
@@ -49,7 +52,7 @@ def _selected_cargo_manifests(utility_bin: Path) -> list[str]:
             "Cargo.toml",
             "-print",
         ],
-        cwd=REPOSITORY_ROOT,
+        cwd=repository_root,
         check=True,
         capture_output=True,
         text=True,
@@ -267,6 +270,27 @@ def test_audit_executes_multiword_command_override(
         Asserts that the fake Cargo tool receives the toolchain and audit words,
         and that the ttf-parser ignore follows the manifest lockfile.
     """
+    audit_root = tmp_path / "audit-root"
+    locked_manifest_dir = audit_root / "locked"
+    unlocked_manifest_dir = audit_root / "unlocked"
+    scripts_dir = audit_root / "scripts"
+    locked_manifest_dir.mkdir(parents=True)
+    unlocked_manifest_dir.mkdir()
+    scripts_dir.mkdir()
+
+    manifest = (
+        '[package]\nname = "audit-contract"\nversion = "0.0.0"\n'
+        'edition = "2024"\n'
+    )
+    (locked_manifest_dir / "Cargo.toml").write_text(manifest)
+    (unlocked_manifest_dir / "Cargo.toml").write_text(manifest)
+    (locked_manifest_dir / "Cargo.lock").write_bytes(
+        (REPOSITORY_ROOT / "Cargo.lock").read_bytes()
+    )
+    (scripts_dir / "verify_audit_ignore_paths.py").write_text(
+        (REPOSITORY_ROOT / "scripts/verify_audit_ignore_paths.py").read_text()
+    )
+
     fake_bin = tmp_path / "bin"
     fake_bin.mkdir()
     cargo_path = fake_bin / "cargo"
@@ -288,8 +312,14 @@ def test_audit_executes_multiword_command_override(
     )
     environment.pop("CARGO_AUDIT_SUBCOMMAND", None)
     subprocess.run(
-        [make_executable, "--no-print-directory", "audit"],
-        cwd=REPOSITORY_ROOT,
+        [
+            make_executable,
+            "--no-print-directory",
+            "-f",
+            str(REPOSITORY_ROOT / "Makefile"),
+            "audit",
+        ],
+        cwd=audit_root,
         env=environment,
         check=True,
         capture_output=True,
@@ -307,14 +337,14 @@ def test_audit_executes_multiword_command_override(
     ), (
         f"multiword CARGO_AUDIT override emitted unexpected arguments: {commands!r}"
     )
-    selected_manifests = _selected_cargo_manifests(utility_bin)
+    selected_manifests = _selected_cargo_manifests(utility_bin, audit_root)
     assert len(commands) == len(selected_manifests), (
         f"CARGO_AUDIT='cargo +stable audit' logged {len(commands)} calls for "
         f"{len(selected_manifests)} selected Cargo.toml manifests: {commands!r}"
     )
 
     expected_manifest_dirs = {
-        (REPOSITORY_ROOT / manifest).parent.resolve()
+        (audit_root / manifest).parent.resolve()
         for manifest in selected_manifests
     }
     observed_manifest_dirs = {

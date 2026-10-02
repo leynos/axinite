@@ -100,9 +100,11 @@ fn normalize_keeps_asterisk_rules_and_joins_caption_lines() {
     "- outer\n  - nested\ncontinuation",
     "- outer\n  - nested continuation"
 )]
-#[case("first line  \nsecond line", "first line  \nsecond line")]
-#[case("final line  ", "final line  ")]
-#[case("first\\\nsecond", "first\\\nsecond")]
+#[case("first line  \nsecond line", "first line\nsecond line")]
+#[case("first line\\\nsecond line", "first line\nsecond line")]
+#[case("final line  ", "final line")]
+#[case("final line\\", "final line")]
+#[case("first\\\nsecond", "first\nsecond")]
 #[case("```\n~~~\n```", "```\n~~~\n```")]
 #[case("````\n```\n````", "````\n```\n````")]
 #[case(
