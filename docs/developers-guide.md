@@ -1067,6 +1067,28 @@ A quick verification command is:
 sed -n '1,40p' .cargo/config.toml
 ```
 
+### The build standard
+
+The `mold` linker is the Linux default for development builds, as the estate's
+build standard (concordat rule `rust-build-defaults`) asks. An assigned
+`RUSTFLAGS` replaces every `rustflags` table in `.cargo/config.toml`, so the
+Makefile's `lint-whitaker` recipes, which assign it to deny warnings, compose
+`STANDARD_RUSTFLAGS` (mold on Linux) onto any inherited value.
+
+The repository does not pin a toolchain, so the standard's nightly-only
+parallel frontend flag (`-Zthreads=8`) is not applied. Issue #396 decides
+whether to pin one; a nightly pin is preferred, and would add the flag to the
+configuration and to `STANDARD_RUSTFLAGS`.
+
+### Cranelift
+
+Exception: Cranelift is not the development-profile backend. The repository
+pins no toolchain channel, and Cranelift needs a nightly one, so no measurement
+of the suite under it has been taken (recorded 2026-09-29). Issue #396 owns the
+toolchain decision; once it lands, measure the full suite under Cranelift on
+the pinned nightly and either adopt the backend or record the failing tests
+here.
+
 ## 9. Repository bootstrap
 
 From the repository root:
