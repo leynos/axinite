@@ -137,10 +137,8 @@ jobs:
     timeout-minutes: 75
     env:
       # sccache is the sole owner of compiler output: no cache step archives a
-      # target tree. RUSTC_WRAPPER is what actually engages it; installing
-      # sccache without exporting this compiles everything as before.
-      RUSTC_WRAPPER: sccache
-      SCCACHE_GHA_ENABLED: "true"
+      # target tree. `setup-rust` names the wrapper, starts the server and
+      # selects the backend from the runner (shared-actions ADR 0005).
       # sccache cannot cache incremental compilation.
       CARGO_INCREMENTAL: "0"
       CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_LINKER: clang
@@ -178,53 +176,25 @@ jobs:
         uses: rui314/setup-mold@v1
       # Registry and Git index only. The `tests` job in test.yml is the sole
       # writer of this key family; pull-request jobs restore and never save.
-      # Ubicloud's transparent cache proxy serves the Actions cache from a
-      # local address. sccache's GitHub Actions backend reads
-      # ACTIONS_CACHE_URL and ACTIONS_RUNTIME_TOKEN from the runner's own
-      # environment, which is not visible to `run:` steps, so re-export them.
-      # Clearing ACTIONS_CACHE_SERVICE_V2 keeps sccache on the v1 protocol the
-      # proxy serves; exporting ACTIONS_RESULTS_URL instead does not work.
-      - name: Export the Actions cache endpoint for sccache
-        uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd  # v8.0.0
+      # sccache belongs to setup-rust: it exports Ubicloud's cache-proxy
+      # credentials, clears the v2 cache-service flag the proxy does not
+      # serve, installs and starts sccache and names it as the wrapper.
+      # The toolchain, its targets and components stay with the step
+      # above, so this passes an empty `rustflags` (the mold flags live
+      # in CARGO_TARGET_*_RUSTFLAGS, which RUSTFLAGS would displace),
+      # leaves the Cargo registry to this job's own cache step, and
+      # installs no second cargo-binstall.
+      - name: Setup Rust
+        id: setup-rust
+        uses: leynos/shared-actions/.github/actions/setup-rust@4fb8eb7ad52454678a0662865d81d3cd17aa6e0e
         with:
-          script: |
-            // Ubicloud's control plane writes the proxy address into the VM
-            // environment. Report which variable supplied it, and whether the
-            // token was present at all, so a misconfigured backend is
-            // diagnosable from the log rather than from a slower build. Never
-            // print the token itself.
-            const cacheUrl =
-              process.env.ACTIONS_CACHE_URL ||
-              process.env.CUSTOM_ACTIONS_CACHE_URL ||
-              '';
-            const runtimeToken = process.env.ACTIONS_RUNTIME_TOKEN || '';
-            const source = process.env.ACTIONS_CACHE_URL
-              ? 'ACTIONS_CACHE_URL'
-              : process.env.CUSTOM_ACTIONS_CACHE_URL
-                ? 'CUSTOM_ACTIONS_CACHE_URL'
-                : 'none';
-            core.info(`sccache cache endpoint source: ${source}`);
-            core.info(`sccache cache endpoint present: ${Boolean(cacheUrl)}`);
-            core.info(`sccache runtime token present: ${Boolean(runtimeToken)}`);
-            if (!cacheUrl || !runtimeToken) {
-              core.warning(
-                'sccache has no Actions cache endpoint; every compilation ' +
-                  'will miss and the wrapper will only add overhead',
-              );
-            }
-            core.exportVariable('ACTIONS_CACHE_URL', cacheUrl);
-            core.exportVariable('ACTIONS_RUNTIME_TOKEN', runtimeToken);
-            core.exportVariable('ACTIONS_CACHE_SERVICE_V2', '');
-      - name: Install sccache
-        uses: taiki-e/install-action@c7eb1735f09259a5035e8e5d44b1406b1cddc0fb  # v2.83.0
-        with:
-          tool: sccache@0.16.0
-          fallback: none
-      - name: Start sccache statistics
-        run: |
-          set -euo pipefail
-          sccache --version
-          sccache --zero-stats
+          toolchain: stable
+          rustflags: ''
+          cache-provider: external
+          install-binstall: 'false'
+          # `any`: the fork arm lands on a GitHub-hosted runner, where
+          # setup-rust keeps sccache on local disk.
+          expect-cache: any
       - name: Restore Cargo registry and index
         uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9  # v6.1.0
         with:
@@ -263,6 +233,8 @@ jobs:
       # up in the job summary rather than only in the duration.
       - name: Report sccache statistics
         if: always()
+        env:
+          SCCACHE_BACKEND: ${{ steps.setup-rust.outputs.cache-backend }}
         run: |
           set -euo pipefail
           # Print to the log as well as the job summary. The summary is not
@@ -272,6 +244,9 @@ jobs:
           printf '%s\n' "$stats"
           {
             printf '### sccache statistics (%s)\n\n' "${GITHUB_JOB}"
+            # `Cache location` reads `ghac` for the proxy and GitHub alike, so
+            # name the backend setup-rust chose.
+            printf -- '- backend: %s\n\n' "${SCCACHE_BACKEND:-none}"
             printf '```text\n'
             printf '%s\n' "$stats"
             printf '```\n'
