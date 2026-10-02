@@ -38,6 +38,8 @@ Install these tools before running the standard repository commands:
 8. `jq`.
 9. `make`.
 10. Git.
+11. Node.js for `make test-workflow-contracts`; `mdtablefix` requires Node.js
+    when the suite runs with its restricted `PATH`.
 
 The root crate declares `rust-version = "1.95"` in `Cargo.toml`. The repository
 also includes standalone WebAssembly (WASM) tool and channel crates, so WASM
