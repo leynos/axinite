@@ -1,8 +1,17 @@
 //! Stands in for the real `schema_helpers_ui` compile-contract binary.
 //!
-//! Declared as `tests/<name>/main.rs` rather than `tests/<name>.rs`
-//! because that is the form the real one takes, and it is the form
-//! Cargo names after the directory.
+//! Declared as `tests/<name>/main.rs` because that is the form the real one
+//! takes. Its tests share a marker with `trybuild` to check that nextest keeps
+//! the two processes from overlapping.
 
 #[test]
-fn the_binary_exists() {}
+fn shared_preparation_contract_a() {
+    nextest_boundary_fixture::detect_test_process_overlap()
+        .expect("schema helper fixture overlapped another compile-contract process");
+}
+
+#[test]
+fn shared_preparation_contract_b() {
+    nextest_boundary_fixture::detect_test_process_overlap()
+        .expect("schema helper fixture overlapped another compile-contract process");
+}

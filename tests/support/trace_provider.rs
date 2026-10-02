@@ -59,7 +59,7 @@ pub struct TraceLlm {
     ///
     /// This counter is separate from `inner` because hint validation only needs
     /// lock-free increments. Writers should use checked increments via
-    /// `fetch_update`; readers should use the
+    /// a saturating compare-and-exchange loop; readers should use the
     /// diagnostics helper in `trace_provider_diagnostics.rs`. The count is
     /// expected to stay small in tests, so overflow indicates runaway replay or
     /// invalid trace data rather than a recoverable condition.
@@ -206,13 +206,19 @@ impl TraceLlm {
     /// panicking keeps the counter meaningful even under runaway
     /// hint-mismatch accumulation.
     pub(super) fn increment_hint_mismatches(&self) {
-        // The closure always returns `Some`, so `fetch_update` cannot fail
-        // and the returned previous value is not needed.
-        let _ =
-            self.hint_mismatches
-                .fetch_update(Ordering::Relaxed, Ordering::Relaxed, |current| {
-                    Some(current.saturating_add(1))
-                });
+        let mut current = self.hint_mismatches.load(Ordering::Relaxed);
+        loop {
+            let next = current.saturating_add(1);
+            match self.hint_mismatches.compare_exchange_weak(
+                current,
+                next,
+                Ordering::Relaxed,
+                Ordering::Relaxed,
+            ) {
+                Ok(_) => return,
+                Err(observed) => current = observed,
+            }
+        }
     }
 }
 

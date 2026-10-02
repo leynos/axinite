@@ -17,7 +17,12 @@ import typing as typ
 import pytest
 from _workflow_files import parse_workflow
 from nextest_config import Profile, profiles
-from suite_lanes import SuiteLane, suite_lanes_in, suite_lanes_of
+from suite_lanes import (
+    SuiteLane,
+    _disguised_suite_lines,
+    suite_lanes_in,
+    suite_lanes_of,
+)
 from timeout_budgets import (
     CEILING_MARGIN_SECONDS,
     OUTSIDE_RUN_ALLOWANCE_SECONDS,
@@ -109,10 +114,20 @@ def test_a_supplied_workflow_is_read_without_touching_the_tree() -> None:
         pytest.param("cargo nextest run -V", id="the-short-version-probe"),
         pytest.param("cargo nextest runbook --workspace", id="a-longer-token"),
         pytest.param("cargo nextest runner --workspace", id="another-longer-token"),
+        pytest.param(
+            "cargo llvm-cov nextest-extra --workspace",
+            id="cov-nextest-near-miss",
+        ),
+        pytest.param(
+            "cargo nextest run --workspace 'unterminated",
+            id="unterminated-shell-quote",
+        ),
+        pytest.param("cargo nextest run | cat", id="a-pipeline"),
+        pytest.param("cargo nextest run || false", id="a-conditional-pipeline"),
     ],
 )
 def test_a_line_that_does_not_run_the_suite_makes_no_lane(command: str) -> None:
-    """A probe and a near-miss are not invocations.
+    """A probe, near-miss, or pipeline is not a plain invocation.
 
     Matching the marker as a text prefix accepted `cargo nextest
     runbook`, which begins with the same characters and runs no test,
@@ -120,8 +135,9 @@ def test_a_line_that_does_not_run_the_suite_makes_no_lane(command: str) -> None:
     job whose only suite line was one of these was reported as a lane,
     so the assertion that the suite runs somewhere could pass with no
     suite running anywhere, and a ceiling was demanded of a job that
-    needs none. The marker is matched as whole shell words now, and a
-    probe argument refuses the line whatever else is on it.
+    needs none. Pipeline operators likewise make the line more than one
+    plain invocation. Every rejected line remains visible to the contract
+    that reports suite commands it cannot judge.
     """
     assert not _lanes_of(
         "  probing:\n"
@@ -130,12 +146,23 @@ def test_a_line_that_does_not_run_the_suite_makes_no_lane(command: str) -> None:
         "    steps:\n"
         f"      - run: {command}\n"
     ), f"{command!r} runs no test, so it is not a lane"
+    assert _disguised_suite_lines({"steps": [{"run": command}]}) == [command]
 
 
 @pytest.mark.parametrize(
     ("script", "expected"),
     [
         pytest.param(["cargo nextest run --workspace"], 1, id="one-run"),
+        pytest.param(
+            ["cargo llvm-cov nextest --workspace"],
+            1,
+            id="one-coverage-run-under-nextest",
+        ),
+        pytest.param(
+            ["cargo nextest run -E 'test(foo|bar)'"],
+            1,
+            id="quoted-filter-pipe-is-an-argument",
+        ),
         pytest.param(
             ["cargo nextest run --workspace", "cargo nextest run --profile ci"],
             2,
@@ -299,7 +326,9 @@ def test_a_lane_that_makes_no_run_is_refused_rather_than_budgeted() -> None:
 #: requirement. A count that changes is a change to what the lane
 #: spends, and belongs in the developers' guide in the same commit.
 REQUIRED_INVOCATIONS: typ.Final[dict[tuple[str, str], int]] = {
+    ("codescene-coverage.yml", "compile-contracts"): 1,
     ("codescene-coverage.yml", "coverage-check"): 1,
+    ("coverage.yml", "compile-contracts"): 1,
     ("coverage.yml", "coverage"): 1,
 }
 

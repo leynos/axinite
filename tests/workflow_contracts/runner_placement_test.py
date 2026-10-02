@@ -4,9 +4,10 @@ Ubicloud bills by the minute for a runner shape this repository chose for
 compiling Rust. A labelling job, a gate, a report, or a roll-up that only
 compares upstream results consumes that shape for API calls, so placement is
 a cost contract, not a preference. These tests pin the rule: a job may use an
-Ubicloud runner only when it appears in the allow-list, Windows lanes stay on
-GitHub-hosted runners because Ubicloud offers Linux only, and every Ubicloud
-job bounds its own runtime.
+Ubicloud runner only when it builds or tests the product, or when it is one of
+the named utility jobs the hosted pool made wait, which then hold the smallest
+shape (ADR 013); Windows lanes stay on GitHub-hosted runners because Ubicloud
+offers Linux only, and every Ubicloud job bounds its own runtime.
 
 Run via ``make test-workflow-contracts``.
 """
@@ -15,8 +16,15 @@ from __future__ import annotations
 
 import pytest
 import yaml
-from _workflow_files import jobs
-from _workflow_policy import DIST_GENERATED, REPOSITORY_ROOT, Job, builds_or_tests
+from _workflow_files import jobs, load
+from _utility_jobs import UTILITY_JOBS, is_utility_job
+from _workflow_policy import (
+    DIST_GENERATED,
+    REPOSITORY_ROOT,
+    WORKFLOW_DIR,
+    Job,
+    builds_or_tests,
+)
 
 ACTIONLINT_CONFIG = REPOSITORY_ROOT / ".github" / "actionlint.yaml"
 
@@ -61,7 +69,11 @@ def test_only_build_and_test_jobs_use_ubicloud(job: Job) -> None:
 
     The classification comes from the job's own steps, not from a list of job
     names, so a job that stops building stops qualifying at the same moment.
+    The named utility jobs are the one exception, and the next test holds
+    them to the smallest shape.
     """
+    if is_utility_job(job.workflow, job.job_id):
+        return
     assert builds_or_tests(job), (
         f"{job} runs on {job.runner_summary} but no step compiles or executes "
         "the product. Move it to ubuntu-latest. If it genuinely does build or "
@@ -159,6 +171,61 @@ def test_the_build_classification_discriminates() -> None:
     assert len(builders) > 5, "the estate should still contain build jobs"
 
 
+@pytest.mark.parametrize(
+    ("identity", "placement"), sorted(UTILITY_JOBS.items()), ids=lambda v: str(v)
+)
+def test_each_utility_job_holds_the_smallest_shape(
+    identity: tuple[str, str], placement: tuple[str, str]
+) -> None:
+    """A utility job on Ubicloud takes the smallest shape and builds nothing.
+
+    The move buys back a wait, not compute, so any larger shape is a cost
+    with no return; and a utility job that starts compiling has become a
+    build job, whose shape is a sizing decision made elsewhere.
+    """
+    label, reason = placement
+    by_identity = {(job.workflow, job.job_id): job for job in ALL_JOBS}
+    job = by_identity.get(identity)
+    assert job is not None, f"{identity} no longer exists"
+    assert job.ubicloud_labels == (label,), (
+        f"{job} is a utility job moved for contention ({reason}) and must "
+        f"request {label} alone on Ubicloud, but requests {job.runner_summary}"
+    )
+    assert not builds_or_tests(job), (
+        f"{job} now builds or tests the product, so it is no longer a utility "
+        "job: remove it from UTILITY_JOBS and give it a reviewed shape"
+    )
+
+
+@pytest.mark.parametrize("identity", sorted(UTILITY_JOBS), ids=str)
+def test_each_utility_job_states_its_token_and_keeps_no_credentials(
+    identity: tuple[str, str],
+) -> None:
+    """A utility job on a paid runner holds a stated token and leaves none behind.
+
+    It runs pull-request content, or a write-scoped `pull_request_target`
+    token, on an Ubicloud VM, so its token scope is declared, not inherited
+    from whatever the repository default grants, and no checkout leaves the
+    token in the git configuration for a later step to use.
+    """
+    workflow, job_id = identity
+    document = load(WORKFLOW_DIR / workflow)
+    job = {(job.workflow, job.job_id): job for job in ALL_JOBS}[identity]
+    declared = job.body.get("permissions", document.get("permissions"))
+    assert isinstance(declared, dict) and declared, (
+        f"{job} runs on Ubicloud with no stated `permissions:`, so its token "
+        "takes the repository default"
+    )
+    for step in job.steps:
+        if str(step.get("uses", "")).startswith("actions/checkout@"):
+            inputs = step.get("with")
+            persist = inputs.get("persist-credentials") if isinstance(inputs, dict) else None
+            assert persist is False, (
+                f"{job} checks out with persisted credentials; set "
+                "`persist-credentials: false`"
+            )
+
+
 def test_windows_jobs_stay_github_hosted() -> None:
     """Keep Windows lanes on GitHub: Ubicloud provides Linux images only."""
     windows_jobs = [job for job in ALL_JOBS if "windows" in job.job_id]
@@ -177,14 +244,13 @@ def test_roll_up_and_administrative_jobs_are_github_hosted() -> None:
     """Name the classes that must never return to the paid runner."""
     # These are the jobs the Tier 2 preparation moved off Ubicloud. Listing
     # them explicitly means a revert fails here rather than on the invoice.
+    # The scheduled audit stays: it waits one or two seconds for a hosted
+    # runner, so moving it would buy nothing (ADR 013).
     github_hosted = {
         ("audit.yml", "audit"),
         ("code_style.yml", "code-style"),
         ("coverage.yml", "coverage-gate"),
         ("e2e.yml", "e2e"),
-        ("pr-label-classify.yml", "classify"),
-        ("pr-label-scope.yml", "scope"),
-        ("regression-test-check.yml", "regression-test"),
         ("release-plz.yml", "release-plz-pr"),
         ("release-plz.yml", "release-plz-release"),
         ("test.yml", "audit"),

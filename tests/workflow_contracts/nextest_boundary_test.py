@@ -10,19 +10,17 @@ misspelled ``grace_period`` therefore parses, pins, orders and passes
 everywhere while the grace period in force is nextest's default.
 
 So the file is handed to `cargo nextest` and the verdict is taken from
-it. Two things are asserted: that nextest loads the real file for both
-profiles without error, and that it reports no ignored key while doing
+it. Two things are asserted: that nextest loads the real file for each
+profile without error, and that it reports no ignored key while doing
 so. The second is the one that catches the misspelling, and it is
 proved here rather than merely stated: the same reading is run against
-a deliberately misspelled copy, which must be rejected.
+a deliberately misspelled copy, which must warn while still loading.
 
-The run happens in a copy of ``fixtures/nextest_boundary``, a crate
-whose only contents are three empty test binaries. ``show-config``
-resolves a profile's overrides against the binaries the package
-declares and refuses a filterset naming one that does not exist, so the
-fixture declares ``trybuild`` and ``schema_helpers_ui`` under those
-names. Running it against the real crate instead would build the whole
-test suite, which is minutes; the fixture builds in under a second.
+The run happens in a copy of ``fixtures/nextest_boundary``. It declares
+the two compile-contract binaries under the same names as the real crate,
+and their tests share a marker file to detect cross-process overlap.
+``show-config`` resolves a profile's overrides against the binaries the
+package declares and refuses a filterset naming one that does not exist.
 
 It is copied out of the tree rather than built in place because cargo
 finds ``.cargo/config.toml`` by walking up the directory tree and does
@@ -44,43 +42,30 @@ Requires `cargo` and `cargo-nextest`, which ``make test`` already
 requires. Run via ``make test-workflow-contracts``.
 """
 
-import os
-import shutil
-import subprocess
 import tomllib
 import typing as typ
 from pathlib import Path
 
 import pytest
-from _workflow_policy import REPOSITORY_ROOT
 from contract_sources import read_source
 from nextest_versions import UNDECLARED, installed_versions_in, read_workflow_texts
+from nextest_boundary_support import (
+    Fixture,
+    _require_the_toolchain,
+    _run,
+    fixture_crate,
+)
 from timeout_budgets import NEXTEST_CONFIG
-
-if typ.TYPE_CHECKING:  # pragma: no cover - typing only
-    from collections.abc import Sequence
-
-#: The crate the configuration is loaded in. Three empty test binaries,
-#: two of them named after the compile-contract binaries the real
-#: overrides select, so the real filtersets resolve.
-FIXTURE = REPOSITORY_ROOT / "tests" / "workflow_contracts" / "fixtures"
-FIXTURE_CRATE = FIXTURE / "nextest_boundary"
 
 #: What nextest prints, and does not fail on, when a key is not one it
 #: knows. The run proceeds with that setting at its default, which is
 #: why this contract treats the warning as a failure.
 IGNORED_KEYS_WARNING: typ.Final[str] = "ignoring unknown configuration keys"
 
-#: How long the whole subprocess may take, as a guard against a hung
-#: `cargo` rather than as a budget. The fixture builds in about a second
-#: and the terminated run ends in about one more; a loaded host makes
-#: both slower, and nothing here is timed.
-SUBPROCESS_TIMEOUT_SECONDS: typ.Final[float] = 600.0
-
-
 #: The workflow that runs the contract suite, and so the one that must
 #: install the runner these assertions hand the file to.
 CONTRACT_SUITE_WORKFLOW: typ.Final[str] = "code_style.yml"
+
 
 def test_every_lane_installs_the_same_nextest() -> None:
     """A contract must answer for the runner the suite actually uses.
@@ -119,116 +104,7 @@ def test_every_lane_installs_the_same_nextest() -> None:
     )
 
 
-def _tool_is_present(command: str) -> bool:
-    """Return whether a command resolves on `PATH`.
-
-    Parameters
-    ----------
-    command
-        The executable's name.
-
-    Returns
-    -------
-    bool
-        True when it resolves.
-    """
-    return shutil.which(command) is not None
-
-
-def _run(
-    arguments: "Sequence[str]", crate: Path, target: Path
-) -> subprocess.CompletedProcess[str]:
-    """Run a cargo command in the copied crate, writing under `target`.
-
-    Both build directories are set explicitly rather than inherited.
-    A developer's shell may point them at a shared tree, and a fixture
-    that is meant to be built and discarded should not write there.
-
-    Parameters
-    ----------
-    arguments
-        The command and its arguments.
-    crate
-        The copied fixture crate to run in.
-    target
-        Where the fixture's build output goes.
-
-    Returns
-    -------
-    subprocess.CompletedProcess
-        The finished process, with its output captured as text.
-    """
-    environment = dict(os.environ)
-    environment["CARGO_TARGET_DIR"] = str(target)
-    environment["CARGO_BUILD_BUILD_DIR"] = str(target / "build")
-    return subprocess.run(  # noqa: S603 - fixed argument vector, no shell
-        list(arguments),
-        cwd=crate,
-        env=environment,
-        capture_output=True,
-        text=True,
-        timeout=SUBPROCESS_TIMEOUT_SECONDS,
-        check=False,
-    )
-
-
-class Fixture(typ.NamedTuple):
-    """Where the copied fixture crate lives and where it builds.
-
-    Attributes
-    ----------
-    crate
-        The copy of ``fixtures/nextest_boundary`` this module runs in.
-    target
-        The build directory its output goes to.
-    """
-
-    crate: Path
-    target: Path
-
-
-@pytest.fixture(scope="module")
-def fixture_crate(tmp_path_factory: pytest.TempPathFactory) -> Fixture:
-    """Return the fixture crate copied outside the repository.
-
-    Copied rather than built in place, because cargo discovers
-    ``.cargo/config.toml`` by walking up the directory tree and does not
-    stop at a workspace root. This repository's names the mold linker,
-    which only the build lanes install, so a fixture built inside the
-    tree fails to link in the lane that runs this suite and the failure
-    reads as nextest refusing the configuration. Outside the tree there
-    is no such file to find, which is what makes the fixture's verdict
-    about the configuration and nothing else.
-
-    Returns
-    -------
-    Fixture
-        The copied crate and its build directory, made once per module.
-    """
-    root = tmp_path_factory.mktemp("nextest-boundary")
-    crate = root / "crate"
-    shutil.copytree(FIXTURE_CRATE, crate)
-    return Fixture(crate=crate, target=root / "target")
-
-
-@pytest.fixture(scope="module", autouse=True)
-def _require_the_toolchain() -> None:
-    """Fail rather than skip when cargo or nextest is missing.
-
-    A skipped contract in CI is a contract that is not running, and this
-    one exists because the reimplementation cannot answer the question
-    by itself. ``make test`` already requires both commands.
-    """
-    missing = [
-        tool for tool in ("cargo", "cargo-nextest") if not _tool_is_present(tool)
-    ]
-    assert not missing, (
-        f"this contract loads the configuration with nextest itself and needs "
-        f"{missing} on PATH; `make test` requires them too"
-    )
-
-
-@pytest.mark.parametrize("profile", ["default", "ci"], ids=str)
+@pytest.mark.parametrize("profile", ["default", "ci", "coverage"], ids=str)
 def test_nextest_loads_the_real_configuration(
     fixture_crate: Fixture, profile: str
 ) -> None:
@@ -261,7 +137,7 @@ def test_nextest_loads_the_real_configuration(
     )
 
 
-@pytest.mark.parametrize("profile", ["default", "ci"], ids=str)
+@pytest.mark.parametrize("profile", ["default", "ci", "coverage"], ids=str)
 def test_nextest_ignores_no_key_in_the_real_configuration(
     fixture_crate: Fixture, profile: str
 ) -> None:

@@ -234,15 +234,22 @@ impl RoutineEngine {
     /// Returns `true` if the current count was below `max_concurrent_routines`
     /// and has been incremented; returns `false` without mutating if at capacity.
     pub(super) fn try_reserve_running_slot(&self) -> bool {
-        self.running_count
-            .fetch_update(Ordering::Relaxed, Ordering::Relaxed, |current| {
-                if current < self.config.max_concurrent_routines {
-                    Some(current + 1)
-                } else {
-                    None
-                }
-            })
-            .is_ok()
+        let mut current = self.running_count.load(Ordering::Relaxed);
+        loop {
+            if current >= self.config.max_concurrent_routines {
+                return false;
+            }
+
+            match self.running_count.compare_exchange_weak(
+                current,
+                current + 1,
+                Ordering::Relaxed,
+                Ordering::Relaxed,
+            ) {
+                Ok(_) => return true,
+                Err(observed) => current = observed,
+            }
+        }
     }
 }
 

@@ -296,7 +296,7 @@ def utility_bin(tmp_path: Path) -> Path:
     """
     utility_bin = tmp_path / "utilities"
     utility_bin.mkdir()
-    for name in ("dirname", "find", "git", "make", "mdtablefix", "sh"):
+    for name in ("dirname", "find", "git", "make", "mdtablefix", "node", "sh"):
         executable = shutil.which(name)
         if executable is None:
             pytest.fail(f"{name} must be available to run workflow contracts")

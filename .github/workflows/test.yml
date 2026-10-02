@@ -566,6 +566,14 @@ jobs:
         run: >-
           cargo check --all --benches --tests --examples
           ${{ matrix.flags }} --features test-helpers
+      - name: Test startup compile-contract diagnostics
+        if: matrix.name == 'default'
+        shell: pwsh
+        run: ./tests/workflow_contracts/ci-startup-compile-contract-tests.ps1
+      - name: Run non-Unix startup compile contract
+        if: matrix.name == 'default'
+        shell: pwsh
+        run: ./scripts/ci-startup-compile-contract.ps1
       # Sole writer of the Windows cargo-registry key family.
       - name: Save Cargo registry and index
         if: >-

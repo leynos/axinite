@@ -43,7 +43,7 @@ OUTSIDE_RUN_ALLOWANCE_SECONDS: typ.Final[float] = 20 * 60.0
 CEILING_MARGIN_SECONDS: typ.Final[float] = 15 * 60.0
 
 #: What nextest allows a test between `SIGTERM` and `SIGKILL` when a
-#: profile names no `grace-period`. Both profiles here name five seconds,
+#: profile names no `grace-period`. All three profiles name five seconds,
 #: so this is a fallback rather than the value in force.
 NEXTEST_DEFAULT_GRACE_PERIOD_SECONDS: typ.Final[float] = 10.0
 
@@ -211,9 +211,9 @@ def required_ceiling(parsed: dict[str, Profile], invocations: int = 1) -> float:
     the margin is added because a ceiling equal to that sum cancels the
     job at the moment nextest would have reported the overrun.
 
-    The larger of the two profiles is taken for each of the first two,
-    because a lane passing ``--profile ci`` runs under that one and
-    nothing in the workflow names which it uses.
+    The largest declared profile budget is taken for each of the first
+    two. Coverage inherits the ci budgets, then excludes the slower
+    compile-contract binaries.
 
     The first two terms are per invocation and the last two are per job.
     nextest starts its whole-run clock when tests begin and starts it
@@ -256,10 +256,9 @@ def required_ceiling(parsed: dict[str, Profile], invocations: int = 1) -> float:
     )
 
 
-#: What a compile-contract binary must be allowed, in seconds. These
-#: spawn a fresh `rustc` per case against the full crate, so a whole
-#: binary is minutes rather than seconds and the base allowance sized to
-#: the ordinary tests does not fit one.
+#: What one compile-contract test process must be allowed, in seconds.
+#: Each `TestCases` session batches related fixtures over trybuild's shared
+#: generated project; its timeout covers the entire session.
 COMPILE_CONTRACT_ALLOWANCE_SECONDS: typ.Final[float] = 900.0
 
 #: The call that makes a test target a compile-contract binary.

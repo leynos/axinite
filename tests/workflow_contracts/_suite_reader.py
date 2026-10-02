@@ -19,7 +19,7 @@ from dataclasses import dataclass
 
 from _estate import Estate
 from _shell import split_commands
-from _suite_keys import feature_key, profile_of
+from _suite_keys import cargo_options, feature_key, profile_of
 from _suite_targets import (
     DEFAULT_PROFILE,
     MAKE_COMMAND,
@@ -124,15 +124,22 @@ def substitute(text: str, leg: dict[str, str]) -> str:
     return MATRIX_REFERENCE_RE.sub(lambda match: leg.get(match["key"], match[0]), text)
 
 
+def _has_test_filter(tokens: list[str]) -> bool:
+    """Identify an explicit test filter in Cargo's option tokens."""
+    if {"-E", "--filterset"}.intersection(tokens):
+        return True
+    return any(token.startswith("--filterset=") for token in tokens)
+
+
 def cargo_runs(
     script: str, defaults: frozenset[str]
 ) -> Iterator[tuple[str, str, frozenset[str]]]:
     """Yield the scope and features of each Cargo suite command in a script.
 
-    A command that names neither a manifest nor `--workspace` is skipped. It
-    is a filtered or single-crate run, such as the WIT instantiation test, and
-    counting it as the workspace suite would report a clash with a lane that
-    runs thousands of tests it does not.
+    A command that names neither a manifest nor `--workspace` is skipped. A
+    filtered workspace run is skipped too: it is a subset, such as the
+    compile-contract jobs, and counting it as the whole suite would report a
+    clash with a lane that runs thousands of additional tests.
 
     The script is split into commands first. Matching over the whole block
     and taking arguments to the end of the line gives one command the next
@@ -159,6 +166,9 @@ def cargo_runs(
             if match is None:
                 continue
             args = match["args"]
+            tokens = cargo_options(args)
+            if _has_test_filter(tokens):
+                continue
             manifest = MANIFEST_RE.search(args)
             if manifest is not None:
                 yield (

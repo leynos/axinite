@@ -1,20 +1,23 @@
 //! Compile-time regression coverage for the public DB trait surface.
 //!
-//! Each trybuild case spawns a fresh `rustc` against the full crate, so the
-//! wall-clock cost is high (~7 min locally). The default nextest profile
-//! excludes this binary; the `ci` profile includes it. See
-//! `.config/nextest.toml`.
+//! Related fixtures share one `TestCases` session so trybuild prepares its
+//! generated Cargo project once for the database surface. Keep this batch
+//! separate from the support fixtures so each session retains its own timeout
+//! and test name. Nextest queues both sessions with `schema_helpers_ui`;
+//! the non-Unix startup fixture keeps its own session as well. The Windows
+//! lane runs that fixture through direct `cargo test`, so the job timeout
+//! applies instead of nextest's per-test allowance. See `.config/nextest.toml`
+//! for the shared lock and Linux nextest timeout policy.
 
-use rstest::rstest;
-
-#[rstest]
-#[case("tests/trybuild/db_forwarders.rs")]
-#[cfg_attr(feature = "postgres", case("tests/trybuild/db_forwarders_postgres.rs"))]
-#[cfg_attr(feature = "libsql", case("tests/trybuild/db_forwarders_libsql.rs"))]
-#[case("tests/trybuild/settings_compat.rs")]
-fn db_surface_compile_contracts(#[case] fixture: &str) {
+#[test]
+fn db_surface_compile_contracts() {
     let cases = trybuild::TestCases::new();
-    cases.pass(fixture);
+    cases.pass("tests/trybuild/db_forwarders.rs");
+    #[cfg(feature = "postgres")]
+    cases.pass("tests/trybuild/db_forwarders_postgres.rs");
+    #[cfg(feature = "libsql")]
+    cases.pass("tests/trybuild/db_forwarders_libsql.rs");
+    cases.pass("tests/trybuild/settings_compat.rs");
 }
 
 #[cfg(not(unix))]
@@ -24,11 +27,11 @@ fn startup_compile_contracts() {
     cases.pass("tests/trybuild/startup_run_non_unix.rs");
 }
 
-#[rstest]
-#[cfg_attr(feature = "libsql", case("tests/trybuild/e2e_traces.rs"))]
-#[case("tests/trybuild/infrastructure.rs")]
-#[case("tests/trybuild/support_unit.rs")]
-fn harness_compile_contracts(#[case] fixture: &str) {
+#[test]
+fn harness_compile_contracts() {
     let cases = trybuild::TestCases::new();
-    cases.pass(fixture);
+    #[cfg(feature = "libsql")]
+    cases.pass("tests/trybuild/e2e_traces.rs");
+    cases.pass("tests/trybuild/infrastructure.rs");
+    cases.pass("tests/trybuild/support_unit.rs");
 }
