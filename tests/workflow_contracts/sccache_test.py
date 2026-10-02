@@ -165,9 +165,21 @@ def _exports_cache_endpoint(step: dict[str, object]) -> bool:
     return any(name in text for name in CACHE_ENDPOINT_VARIABLES)
 
 
+def _step_env_without_clearing(step: dict[str, object]) -> object:
+    """Return a step's `env`, minus a `RUSTC_WRAPPER` set to the empty string.
+
+    An empty `RUSTC_WRAPPER` counts as unset to Cargo, so a step that sets it
+    is opting that step out of the wrapper, not installing a wrapper of its own.
+    """
+    env = step.get("env")
+    if not isinstance(env, dict) or env.get("RUSTC_WRAPPER") != "":
+        return env
+    return {name: value for name, value in env.items() if name != "RUSTC_WRAPPER"}
+
+
 def _retired_in_step(index: int, step: dict[str, object]) -> list[str]:
     """Return every retired piece of sccache wiring in one step."""
-    findings = _retired_variables(f"step {index}", step.get("env"))
+    findings = _retired_variables(f"step {index}", _step_env_without_clearing(step))
     if step.get("name") in RETIRED_STEPS:
         findings.append(f"step {index} is the retired {step['name']!r}")
     if _installs_sccache(step):
@@ -370,6 +382,13 @@ def test_github_hosted_jobs_demand_no_proxy() -> None:
         pytest.param(
             {}, [{"env": {"CARGO_INCREMENTAL": "0"}}], 0, id="step-incremental"
         ),
+        pytest.param({}, [{"env": {"RUSTC_WRAPPER": ""}}], 0, id="step-clears-wrapper"),
+        pytest.param(
+            {},
+            [{"env": {"RUSTC_WRAPPER": "", "SCCACHE_DIR": "/x"}}],
+            1,
+            id="clear-hides-nothing-else",
+        ),
         pytest.param({}, [{"name": "Install sccache"}], 1, id="install"),
         pytest.param(
             {},
@@ -496,3 +515,48 @@ def test_the_proxy_demand_is_read_from_the_action_not_the_step_name(
 ) -> None:
     """Identify a `setup-rust` call by `uses`, so renaming its step hides nothing."""
     assert _demands_the_proxy(step) is expected
+
+
+NESTED_BUILD_JOBS = tuple(
+    job
+    for job in WRAPPED
+    if any("make test-workspace" in str(step.get("run", "")) for step in job.steps)
+)
+
+
+def test_the_nested_build_jobs_are_not_empty() -> None:
+    """Guard against a selector that quietly matches nothing."""
+    assert NESTED_BUILD_JOBS, "no job runs the trybuild-bearing workspace suite"
+
+
+@pytest.mark.parametrize("job", NESTED_BUILD_JOBS, ids=_ids(NESTED_BUILD_JOBS))
+def test_the_test_run_clears_the_wrapper_after_a_wrapped_build(job: Job) -> None:
+    """trybuild's nested builds must not route through sccache.
+
+    Each fixture build asks the sccache server for a compile it will not reuse,
+    and routed that way the compile-contract sessions timed out. The workspace
+    is built first, through the wrapper, so the cache still serves it.
+    """
+    run_at = next(
+        i
+        for i, step in enumerate(job.steps)
+        if "make test-workspace" in str(step.get("run", ""))
+    )
+    env = job.steps[run_at].get("env")
+    assert isinstance(env, dict) and env.get("RUSTC_WRAPPER") == "", (
+        f"{job} must set RUSTC_WRAPPER to the empty string on the suite step"
+    )
+    build_at = next(
+        (
+            i
+            for i, step in enumerate(job.steps)
+            if re.search(r"\bcargo\s+build\b.*--tests\b", str(step.get("run", "")))
+        ),
+        None,
+    )
+    assert build_at is not None and build_at < run_at, (
+        f"{job} must build the tests through the wrapper before the unwrapped run"
+    )
+    assert "RUSTC_WRAPPER" not in (job.steps[build_at].get("env") or {}), (
+        f"{job} must leave the wrapper on for the build step"
+    )
