@@ -744,6 +744,10 @@ Every contract in `tests/workflow_contracts/` reads one parsed view of
 module with no `_test` suffix is imported as a helper rather than collected.
 Run the suite with `make test-workflow-contracts`.
 
+The suite requires Node.js: some Make command-contract tests run
+`make check-fmt` with a restricted `PATH`, and `mdtablefix` invokes `node` via
+`/usr/bin/env`.
+
 The helpers divide by question, and a contract should reach for the narrowest
 one that answers its own:
 
