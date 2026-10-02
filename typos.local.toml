@@ -108,6 +108,7 @@ ignore = [
   '\bcolor_text\b',
   "fulfill\\ the\\ required\\ lifetime\"\\)\\ because\\ the\\ returned\\ future\\ also\\ captures\\ the",
   "pub\\ mod\\ artifacts;",
+  '(?m)^\s*"""Return whether shell words start with a recognised suite command\."""$',
 ]
 [files]
 exclude = [

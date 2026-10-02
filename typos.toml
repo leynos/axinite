@@ -92,6 +92,7 @@ extend-ignore-re = [
     "#\\[command\\(color = ColorChoice::Auto\\)\\]",
     "(?:::|\\.)analyze\\b",
     "(?:^|[;{]\\s*)color\\s*:",
+    "(?m)^\\s*\"\"\"Return whether shell words start with a recognised suite command\\.\"\"\"$",
     "(?s)```.*?```",
     "--[a-zA-Z0-9-]*color[a-zA-Z0-9*-]*",
     "--color\\b",

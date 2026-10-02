@@ -114,6 +114,14 @@ def test_a_supplied_workflow_is_read_without_touching_the_tree() -> None:
         pytest.param("cargo nextest run -V", id="the-short-version-probe"),
         pytest.param("cargo nextest runbook --workspace", id="a-longer-token"),
         pytest.param("cargo nextest runner --workspace", id="another-longer-token"),
+        pytest.param(
+            "cargo llvm-cov nextest-extra --workspace",
+            id="cov-nextest-near-miss",
+        ),
+        pytest.param(
+            "cargo nextest run --workspace 'unterminated",
+            id="unterminated-shell-quote",
+        ),
         pytest.param("cargo nextest run | cat", id="a-pipeline"),
         pytest.param("cargo nextest run || false", id="a-conditional-pipeline"),
     ],
@@ -145,6 +153,11 @@ def test_a_line_that_does_not_run_the_suite_makes_no_lane(command: str) -> None:
     ("script", "expected"),
     [
         pytest.param(["cargo nextest run --workspace"], 1, id="one-run"),
+        pytest.param(
+            ["cargo llvm-cov nextest --workspace"],
+            1,
+            id="one-coverage-run-under-nextest",
+        ),
         pytest.param(
             ["cargo nextest run -E 'test(foo|bar)'"],
             1,

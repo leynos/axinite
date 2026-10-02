@@ -109,6 +109,14 @@ def _names_a_suite_command(line: str) -> bool:
     return any(marker in collapsed for marker in SUITE_MARKERS)
 
 
+def _starts_with_suite_command(tokens: list[str]) -> bool:
+    """Return whether shell words start with a recognised suite command."""
+    return any(
+        tokens[: len(marker_tokens)] == marker_tokens
+        for marker_tokens in (marker.split() for marker in SUITE_MARKERS)
+    )
+
+
 def _is_suite_line(line: str) -> bool:
     """Return whether one line runs the suite plainly.
 
@@ -149,10 +157,7 @@ def _is_suite_line(line: str) -> bool:
         return False
     if PROBE_ARGUMENTS.intersection(tokens):
         return False
-    return any(
-        tokens[: len(marker_tokens)] == marker_tokens
-        for marker_tokens in (marker.split() for marker in SUITE_MARKERS)
-    )
+    return _starts_with_suite_command(tokens)
 
 
 def _disguised_suite_lines(job_body: dict[str, typ.Any]) -> list[str]:
