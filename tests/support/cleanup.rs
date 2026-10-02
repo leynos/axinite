@@ -27,22 +27,35 @@ pub fn setup_test_dir_with_suffix(base: &Path, suffix: &str) -> std::io::Result<
     let base = base
         .to_str()
         .ok_or_else(|| std::io::Error::new(std::io::ErrorKind::InvalidData, "non-UTF-8 path"))?;
-    let unique = NEXT_UNIQUE_DIR
-        .fetch_update(Ordering::Relaxed, Ordering::Relaxed, |current| {
-            current.checked_add(1)
-        })
-        .map_err(|_| {
-            std::io::Error::new(
-                std::io::ErrorKind::InvalidData,
-                "test directory uniqueness counter overflowed",
-            )
-        })?;
+    let unique = next_unique_dir_sequence().ok_or_else(|| {
+        std::io::Error::new(
+            std::io::ErrorKind::InvalidData,
+            "test directory uniqueness counter overflowed",
+        )
+    })?;
     let dir = format!("{base}_{suffix}_{}_{}", std::process::id(), unique);
     setup_test_dir(&dir)?;
     Ok(dir)
 }
 
 static NEXT_UNIQUE_DIR: AtomicU64 = AtomicU64::new(0);
+
+fn next_unique_dir_sequence() -> Option<u64> {
+    let mut current = NEXT_UNIQUE_DIR.load(Ordering::Relaxed);
+    loop {
+        let next = current.checked_add(1)?;
+        match NEXT_UNIQUE_DIR.compare_exchange_weak(
+            current,
+            next,
+            Ordering::Relaxed,
+            Ordering::Relaxed,
+        ) {
+            Ok(_) => return Some(current),
+            Err(observed) => current = observed,
+        }
+    }
+}
+
 // `NEXT_UNIQUE_DIR` overflow in `setup_test_dir_with_suffix` would require
 // exhausting `u64::MAX` successful calls in one process. The path is guarded
 // for correctness, but it cannot be practically triggered in tests without

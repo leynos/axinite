@@ -134,6 +134,13 @@ def test_pull_request_ratchet_runs_compile_contracts_before_coverage(
 def test_windows_still_runs_the_non_unix_startup_fixture(workflows: Workflows) -> None:
     """The platform-gated fixture stays covered with useful diagnostics."""
     job = _job(workflows, "test.yml", "windows-build")
+    diagnostics_test = _step(job, "Test startup compile-contract diagnostics")
+    assert diagnostics_test.get("if") == "matrix.name == 'default'", (
+        "startup diagnostic behaviour tests must run on the default Windows leg"
+    )
+    assert diagnostics_test.get("shell") == "pwsh" and diagnostics_test.get("run") == (
+        "./tests/workflow_contracts/ci-startup-compile-contract-tests.ps1"
+    ), "startup diagnostic behaviour tests must use the PowerShell test runner"
     step = _step(job, "Run non-Unix startup compile contract")
     assert step.get("if") == "matrix.name == 'default'", (
         "the startup fixture must run on the default Windows feature leg"
