@@ -282,7 +282,7 @@ def make_executable() -> str:
 
 @pytest.fixture
 def utility_bin(tmp_path: Path) -> Path:
-    """Provide a PATH directory with required utilities but no Cargo binary.
+    """Provide required utilities but no Cargo binary on PATH.
 
     Parameters
     ----------

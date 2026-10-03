@@ -83,8 +83,12 @@ fn trailing_figure_caption_with_no_following_heading_is_appended() {
 </main>
 </body></html>"#;
     let out = convert_html_to_markdown(html, "https://example.com/article").unwrap();
+    // html-to-markdown-rs 3.x renders a surviving <figcaption> as emphasis
+    // (`*caption*`), where 2.x emitted it plain. Either way the caption must
+    // be the last thing in the output, so the emphasis markers are ignored.
     assert!(
         out.trim_end()
+            .trim_end_matches('*')
             .ends_with("Trailing caption describing the final figure in the article."),
         "expected trailing caption at end of output: {}",
         out

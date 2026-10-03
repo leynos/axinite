@@ -30,7 +30,7 @@ ratio of employed men and women between the ages of 25 and 54 compared to the
 total population of each country.
 
 The overall rankings of the countries were as follows:  
-1. Finland  
+1\. Finland\
 2. Norway  
 3. Australia  
 4. Canada  
@@ -51,4 +51,4 @@ The report concluded that the American safety net was ineffective because it
 provides only half the financial help people need. Additionally, the levels of
 assistance in the U.S. are generally lower than in other countries.
 
- CNNMoney (New York)  First published February 1, 2016: 1:28 AM ET
+ CNNMoney (New York) First published February 1, 2016: 1:28 AM ET

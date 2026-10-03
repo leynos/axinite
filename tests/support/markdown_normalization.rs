@@ -111,11 +111,17 @@ impl NormalizationState {
     }
 
     fn push_paragraph_text(&mut self, line: &str) {
+        let has_hard_break = is_markdown_hard_break(line);
         if needs_soft_wrap_separator(&self.paragraph, line) {
             self.paragraph.push(' ');
         }
+        let line = if has_hard_break {
+            trim_hard_break_marker(line)
+        } else {
+            line
+        };
         self.paragraph.push_str(line);
-        if is_markdown_hard_break(line) {
+        if has_hard_break {
             push_paragraph(&mut self.lines, &mut self.paragraph);
         }
     }
@@ -161,6 +167,11 @@ fn is_markdown_hard_break(line: &str) -> bool {
             == 1
 }
 
+fn trim_hard_break_marker(line: &str) -> &str {
+    // Keep the forced line boundary while normalizing its equivalent markers.
+    line.strip_suffix('\\').unwrap_or(line).trim_end()
+}
+
 fn push_paragraph(lines: &mut Vec<String>, paragraph: &mut String) {
     if !paragraph.is_empty() {
         lines.push(std::mem::take(paragraph));
@@ -170,7 +181,18 @@ fn push_paragraph(lines: &mut Vec<String>, paragraph: &mut String) {
 fn is_markdown_block_line(line: &str) -> bool {
     matches!(line.chars().next(), Some('#' | '>' | '|'))
         || is_markdown_list_item(line)
-        || ["---", "***"].iter().any(|prefix| line.starts_with(prefix))
+        || line.starts_with("---")
+        || is_asterisk_rule(line)
+}
+
+/// Report whether a line is a thematic break drawn with asterisks.
+///
+/// A line that merely opens with `***` is bold-italic text (html-to-markdown-rs
+/// 3.x emits figure captions that way), so only a line made of asterisks
+/// and spaces is a rule.
+fn is_asterisk_rule(line: &str) -> bool {
+    let asterisks = line.chars().filter(|character| *character == '*').count();
+    asterisks >= 3 && line.chars().all(|character| matches!(character, '*' | ' '))
 }
 
 fn is_markdown_list_item(line: &str) -> bool {
