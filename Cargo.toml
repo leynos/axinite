@@ -220,7 +220,6 @@ scopeguard = "1.2.0"
 
 [features]
 default = ["postgres", "libsql", "html-to-markdown", "docker"]
-self_repair_extras = []
 postgres = [
     "dep:deadpool-postgres",
     "dep:tokio-postgres",
