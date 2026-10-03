@@ -3,8 +3,9 @@
 ## Preamble
 
 - **RFC number:** 0009
-- **Status:** Proposed
+- **Status:** Implemented (with noted deviations)
 - **Created:** 2026-03-14
+- **Implemented:** 2026-07-19 (see §Implementation notes)
 
 ## Summary
 
@@ -153,10 +154,11 @@ X-Deployment-Id: production
 
 The settings handler must validate that any `feature_flag:` write is associated
 with a deployment identifier and must persist that row in the `settings` table
-as a deployment-scoped entry rather than a user-scoped preference. When a
-`feature_flag:` key is written, the handler re-resolves only the
-deployment-scoped value for the supplied deployment and ignores any user-scoped
-entry with the same key.
+as a deployment-scoped entry rather than a user-scoped preference. (Superseded:
+the row is persisted in the `feature_flag_overrides` table; see "Implementation
+notes and deviations".) When a `feature_flag:` key is written, the handler
+re-resolves only the deployment-scoped value for the supplied deployment and
+ignores any user-scoped entry with the same key.
 
 Example failure case:
 
@@ -166,7 +168,8 @@ PUT /api/settings/feature_flag:experimental_chat_ui
 ```
 
 This request must be rejected because it omits the deployment identifier
-required for deployment-scoped feature flags.
+required for deployment-scoped feature flags. (Implemented: 400; the identifier
+must also be valid. See "Implementation notes and deviations".)
 
 #### Subsystem availability defaults
 
@@ -192,6 +195,10 @@ Per-flag resolution follows this order:
 3. **Subsystem availability**: Derived from `GatewayState` field
    presence
 4. **Compiled default** (lowest precedence): Hardcoded fallback value
+
+> Superseded: overrides are stored in `feature_flag_overrides`, and subsystem
+> availability is a disable-only layer (see "Implementation notes and
+> deviations").
 
 When an operator writes a deployment-scoped settings override, the feature-flag
 registry re-resolves that flag for that deployment only, and subsequent
@@ -293,6 +300,9 @@ Construction sequence:
    `FeatureFlagRegistry::apply_override()` to update the affected
    deployment-local flag state.
 
+> Superseded: the row is persisted in `feature_flag_overrides`, not `settings`
+> (see "Implementation notes and deviations").
+
 ### 4. API endpoint
 
 Expose a new authenticated endpoint:
@@ -320,6 +330,10 @@ The handler requires a deployment identifier and reads from the
 is involved on the hot path; the registry holds pre-resolved values that are
 updated only when deployment-scoped operator overrides change. User-scoped
 `feature_flag:` entries are not consulted.
+
+> Superseded: the header is optional on reads and defaults to `"default"`; a
+> present but invalid header returns 400. See "Implementation notes and
+> deviations".
 
 #### Why a boolean map
 
@@ -373,6 +387,11 @@ behaves identically to the current UI.
 
 ## Requirements
 
+> Several requirements below are superseded by "Implementation notes and
+> deviations": storage in a dedicated `feature_flag_overrides` table, optional
+> `X-Deployment-Id` on reads, validated deployment identifiers, and
+> disable-only subsystem defaults.
+
 ### Functional requirements
 
 - The backend must expose a `GET /api/features` endpoint returning
@@ -389,6 +408,10 @@ behaves identically to the current UI.
 - Feature-flag writes and reads must include a deployment identifier;
   feature flags are deployment-scoped, not user-scoped.
 
+  > Superseded for reads: `X-Deployment-Id` is optional on
+  > `GET /api/features` and defaults to `"default"`; it is required on writes.
+  > See "Implementation notes and deviations".
+
 ### Technical requirements
 
 - `FeatureFlagRegistry` must be held in `GatewayState` so handlers
@@ -400,6 +423,10 @@ behaves identically to the current UI.
 - The settings handler must reject `feature_flag:` writes that do not
   include a deployment identifier and must persist accepted writes as
   deployment-scoped `settings` rows.
+
+  > Superseded: writes require a valid `X-Deployment-Id` and are persisted in
+  > the `feature_flag_overrides` table (see "Implementation notes and
+  > deviations").
 - The registry must resolve flags per deployment and ignore any
   user-scoped `feature_flag:` entries.
 - Flag names must consist of lowercase ASCII letters, digits, and
@@ -419,6 +446,9 @@ scoped persistence change for feature flags.
   convention, but deployment-scoped persistence requires extending the
   `settings` table with deployment-aware storage so feature-flag rows are not
   keyed only by `user_id`.
+
+  > Superseded: see "Implementation notes and deviations". A dedicated
+  > `feature_flag_overrides` table was added instead; `settings` is unchanged.
 - The `GatewayConfig` struct gains initialization logic for
   per-flag environment variable parsing, with a default of no flags enabled.
 - The `GatewayStatusResponse` struct is not modified; operational
@@ -486,6 +516,49 @@ _Table 2: Comparison of alternatives._
 - Should the front end re-fetch flags periodically or on SSE
   reconnect, or is a single fetch at boot sufficient given that operator
   overrides update the registry immediately?
+
+## Implementation notes and deviations
+
+The mechanism shipped with the SolidJS front-end adoption
+(`docs/execplans/adopt-solidjs-ui-followups.md`). The delivered behaviour
+follows this RFC with the following deliberate deviations:
+
+- **Storage**: deployment-scoped overrides live in a dedicated
+  `feature_flag_overrides` table (primary key `(deployment_id, flag_name)`;
+  Postgres migration `V18`, libsql incremental 18) rather than a
+  deployment-aware extension of the `settings` table. This keeps the
+  `(user_id, key)` settings contract untouched and avoids a libsql table
+  rebuild; the API surface (`feature_flag:` key prefix, `X-Deployment-Id`
+  header) is unchanged.
+- **Reads default the deployment**: `GET /api/features` treats
+  `X-Deployment-Id` as optional and resolves to the `"default"` deployment when
+  absent or blank, because the browser boot fetch has no deployment identity
+  source. Writes require the header, as specified.
+- **Deployment identifier validation**: the header value is trimmed and must be
+  1 to 64 characters of `[a-z0-9_]`. On `GET /api/features` a present but
+  invalid header returns 400; on `PUT /api/settings/feature_flag:<name>` a
+  missing or invalid header returns 400.
+- **Registry hydration and environment layer**: the registry is hydrated from
+  the store additively (an override cached by a concurrent write is kept), and
+  the `FEATURE_FLAG_<NAME>` environment layer is read once per process.
+- **Settings API access to flag keys**: `GET` and `DELETE` of
+  `feature_flag:` keys through `/api/settings` return 400, directing callers to
+  `GET /api/features`; flag rows never enter the user-scoped settings table.
+- **Subsystem-availability defaults** are implemented as a
+  disable-only layer: when a flag's backing subsystem is absent from
+  `GatewayState` (jobs and routines runtimes, extension manager, skill
+  registry, log broadcaster), the flag defaults to `false`; presence of a
+  subsystem falls through to the compiled default rather than enabling a flag
+  early. Environment variables and operator overrides still take precedence.
+- **Gateway version correlation** (open question 1) is provided as an
+  `X-Axinite-Version` response header on `GET /api/features`, preserving the
+  flat boolean-map body.
+- **Flag-change SSE event** (open question 2) remains deferred; it is
+  tracked as roadmap task 4.5.7.
+- **Front-end consumption** (§5) is realized in the SolidJS workspace
+  (`web-src/axinite/src/lib/feature-flags/`) rather than the retired legacy
+  `app.js`; the browser additionally supports localStorage overrides for
+  preview and testing.
 
 ## Recommendation
 

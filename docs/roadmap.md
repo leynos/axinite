@@ -1103,15 +1103,17 @@ Dependencies: independent of other Phase 4 tasks, but provides a foundation for
 Phase 6 front-end features (canvas hosting, advanced media handling) to roll
 out behind flags.
 
-- [ ] 4.5.1. Add per-flag environment variable parsing and registry
+- [x] 4.5.1. Add per-flag environment variable parsing and registry
       initialization in `GatewayChannel` or a dedicated config module.
   - See
     [RFC 0009 §Configuration inputs](./rfcs/0009-feature-flags-frontend.md#1-configuration-inputs).
-  - Success: `FEATURE_FLAG_<NAME>` environment variables are parsed into a
-    `FeatureFlagRegistry` with plain `HashMap<String, bool>`, invalid flag names
-    are silently discarded with a warning, and compiled defaults are applied for
-    flags without environment overrides.
-- [ ] 4.5.2. Add the `FeatureFlagRegistry` struct and `GatewayState`
+  - Success: `FEATURE_FLAG_<NAME>` environment variables are read once per
+    process and resolved over compiled defaults (`true` enables, any other
+    value disables), names outside the compiled flag set are ignored, and
+    compiled defaults apply to flags without environment overrides. Verified
+    by the resolution unit tests in `src/channels/web/handlers/features.rs`
+    (run with `make test`).
+- [x] 4.5.2. Add the `FeatureFlagRegistry` struct and `GatewayState`
       integration. Requires 4.5.1.
   - See
     [RFC 0009 §Data shape](./rfcs/0009-feature-flags-frontend.md#2-data-shape)
@@ -1121,45 +1123,68 @@ out behind flags.
     supports runtime re-resolution when deployment-scoped operator overrides
     change, resolves flags per deployment while ignoring user-scoped
     `feature_flag:` rows, and applies subsystem availability defaults during
-    initialization based on `GatewayState` field presence.
-- [ ] 4.5.3. Extend the settings handler to detect `feature_flag:` keys and
+    initialization based on `GatewayState` field presence (disable-only, per the
+    RFC 0009 implementation notes). Verified by the registry unit tests in
+    `src/channels/web/handlers/feature_registry.rs` and the subsystem tests in
+    `src/channels/web/handlers/features.rs` (`make test`).
+- [x] 4.5.3. Extend the settings handler to detect `feature_flag:` keys and
       apply runtime overrides to the registry. Requires 4.5.2.
   - See
     [RFC 0009 §Configuration inputs](./rfcs/0009-feature-flags-frontend.md#1-configuration-inputs).
-  - Success: `PUT /api/settings/feature_flag:<name>` requires a deployment
-    identifier, persists to the database as a deployment-scoped `settings`
-    entry, rejects writes that lack a deployment identifier, and immediately
-    updates the `FeatureFlagRegistry` for that deployment so subsequent
-    `GET /api/features` requests reflect the updated flag state without a
-    gateway restart.
-- [ ] 4.5.4. Implement the `GET /api/features` endpoint. Requires 4.5.2.
+  - Success: `PUT /api/settings/feature_flag:<name>` requires a valid
+    `X-Deployment-Id` header (trimmed, 1 to 64 characters of `[a-z0-9_]`),
+    returns 400 when it is missing or invalid, persists the override in the
+    `feature_flag_overrides` table keyed `(deployment_id, flag_name)`, and
+    updates the cached registry for that deployment so a subsequent
+    `GET /api/features` reflects it without a restart. Verified by
+    `src/channels/web/handlers/settings/tests.rs`
+    (`malformed_feature_flag_requests_return_400`,
+    `put_feature_flag_then_get_reflects_override_without_restart`) via
+    `make test`.
+- [x] 4.5.4. Implement the `GET /api/features` endpoint. Requires 4.5.2.
   - See
     [RFC 0009 §API endpoint](./rfcs/0009-feature-flags-frontend.md#4-api-endpoint).
-  - Success: the endpoint returns a JSON object mapping flag names to booleans
-    (e.g. `{ "experimental_chat_ui": true, "dark_mode": false }`) by serializing
-    the resolved registry state from `GatewayState` for the requested
-    deployment, requires a deployment identifier in the request, and performs no
-    database query on the hot path.
-- [ ] 4.5.5. Add front-end `loadFeatureFlags()` integration in `app.js`.
-      Requires 4.5.4.
+  - Success: the endpoint returns a JSON object mapping flag names to booleans,
+    takes an optional `X-Deployment-Id` header that defaults to `"default"`
+    when absent or blank and returns 400 when malformed, sets an
+    `X-Axinite-Version` response header, and reads from a cached registry that
+    is hydrated lazily on the first read per deployment (no per-request
+    database query after hydration). Verified by the tests in
+    `src/channels/web/handlers/features.rs`,
+    `src/channels/web/handlers/feature_registry.rs`, and
+    `src/channels/web/handlers/settings/tests.rs`
+    (`features_get_without_header_uses_default_deployment`) via `make test`.
+- [x] 4.5.5. Add front-end feature-flag consumption. Requires 4.5.4.
   - See
     [RFC 0009 §Front-end consumption](./rfcs/0009-feature-flags-frontend.md#5-front-end-consumption).
-  - Success: the browser fetches `GET /api/features` after authentication,
-    includes the deployment identifier required by the 4.5.4 API contract,
-    stores the result in a plain `featureFlags` object, and uses
-    `featureFlags.experimental_chat_ui` checks for gating UI rendering and
-    behaviour.
-- [ ] 4.5.6. Add integration tests for per-flag resolution, operator overrides,
+  - Success: the SolidJS app in `web-src/axinite/src/lib/feature-flags/`
+    fetches `GET /api/features` and resolves each flag with a local debug
+    override (localStorage) taking precedence over the server value, and the
+    server value over the registry default. Verified by
+    `web-src/axinite/tests/feature-flags.test.ts` via `make frontend-test`.
+- [x] 4.5.6. Add integration tests for per-flag resolution, operator overrides,
       subsystem defaults, mutability, and endpoint contract. Requires 4.5.3,
       4.5.4, and 4.5.5.
   - See
     [RFC 0009 §Requirements](./rfcs/0009-feature-flags-frontend.md#requirements).
-  - Success: tests cover per-flag environment variable parsing (including
-    `FEATURE_FLAG_<NAME>` pattern matching), operator override persistence and
-    immediate registry updates, subsystem/default fallback behaviour, concurrent
-    access to the mutable registry, endpoint response shape (boolean map), and
-    no hot-path database hits, and prove that invalid flag names are discarded
-    with warnings.
+  - Success: tests cover per-flag environment variable resolution, operator
+    override persistence and immediate registry updates, subsystem/default
+    fallback behaviour, additive hydration under concurrent writes, deployment
+    header validation, and the endpoint contract. They live in
+    `src/channels/web/handlers/features.rs`, `feature_registry.rs`, and
+    `settings/tests.rs` (run with `make test`) and in
+    `web-src/axinite/tests/feature-flags.test.ts` (run with
+    `make frontend-test`).
+- [ ] 4.5.7. Emit a `feature_flags_changed` Server-Sent Events (SSE) event
+      when a deployment-scoped override changes. Requires 4.5.3.
+  - See
+    [RFC 0009 §Open questions](./rfcs/0009-feature-flags-frontend.md#open-questions).
+  - Success: applying a `feature_flag:` override through the settings API
+    broadcasts a `feature_flags_changed` event (carrying the deployment
+    identifier) on the chat SSE stream, the SolidJS front end invalidates its
+    cached flag map and re-fetches `GET /api/features` on receipt, connected
+    browsers reflect the new flag state without a page reload, and the mock
+    backend mirrors the event for stub-driven tests.
 
 ## 5. Add model, reasoning, and citation control
 
