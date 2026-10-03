@@ -70,8 +70,20 @@ PROBE_COMMANDS: dict[str, tuple[str, ...]] = {
         "nixie --help",
         "merman-cli --version",
     ),
-    "Probe Whitaker": ("command -v whitaker", "whitaker --version"),
+    "Probe Whitaker": (
+        "command -v whitaker",
+        "whitaker --version",
+        ".whitaker-installer-version",
+    ),
 }
+
+#: The installer version the Whitaker step pins, and the shared-actions
+#: revision it pins the action at. The action refuses an installer below 0.2.9,
+#: and the revision is shared-actions #546, which leaves `install-whitaker`
+#: content-identical to the revision concordat's QG-002 rule reviewed.
+WHITAKER_INSTALLER_VERSION = "0.2.9"
+WHITAKER_ACTION_SHA = "6cec89bac47a21cf756d68d638a9a510998e57f8"
+
 
 
 def _ids(candidates: tuple[Job, ...]) -> list[str]:
@@ -262,3 +274,35 @@ def test_shared_action_references_are_pinned_to_a_commit() -> None:
                 "commit SHA, never a branch or tag"
             )
     assert references > 0, "the estate should still consume shared actions"
+
+
+def test_whitaker_pins_the_approved_version_and_revision_and_probes_it() -> None:
+    """Hold the Whitaker values, and make the probe check the installed version.
+
+    Scenario: the step is repinned or its version input edited without the
+    probe following. Invariant: the action is pinned at the approved revision,
+    the `installer-version` input is the approved version, and the probe
+    compares the installed version marker the action writes with that same
+    version, so a wrong input or a stale restored binary fails the job.
+    """
+    (job, step), *rest = [
+        (job, step)
+        for job in ALL_JOBS
+        for step in job.steps
+        if step.get("name") == "Install Whitaker"
+    ]
+    assert not rest, "expected exactly one Install Whitaker step"
+    uses = str(step.get("uses", ""))
+    assert uses.endswith(f"@{WHITAKER_ACTION_SHA}"), (
+        f"{job} must pin install-whitaker at {WHITAKER_ACTION_SHA}, got {uses!r}"
+    )
+    inputs = step.get("with")
+    assert isinstance(inputs, dict), f"{job} Install Whitaker must declare inputs"
+    assert inputs.get("installer-version") == WHITAKER_INSTALLER_VERSION, (
+        f"{job} must pin installer-version {WHITAKER_INSTALLER_VERSION}"
+    )
+    names = [str(candidate.get("name", "")) for candidate in job.steps]
+    probe = step_text(job.steps[names.index("Probe Whitaker")])
+    assert f'test "${{installed}}" = "{WHITAKER_INSTALLER_VERSION}"' in probe, (
+        "the probe must compare the installed installer with the pinned version"
+    )
