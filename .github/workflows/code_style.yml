@@ -256,6 +256,12 @@ jobs:
           set -euo pipefail
           command -v whitaker >/dev/null
           whitaker --version
+          # The action records the installer version it installed in a marker
+          # beside the binary. Read that rather than running the installer, so
+          # a stale or wrong installer fails here instead of somewhere far from
+          # the cause, and the workflow still never invokes it by hand.
+          read -r installed _ < "${HOME}/.cargo/bin/.whitaker-installer-version"
+          test "${installed}" = "0.2.9"
       - name: Whitaker Dylint suite
         if: matrix.whitaker
         run: make lint-whitaker
