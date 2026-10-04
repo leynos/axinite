@@ -544,8 +544,12 @@ after its toolchain and `mold` steps.
    `cache-backend` output, `ubicloud`, `github` or `local`, because
    `Cache location` reads `ghac` for the proxy and GitHub's own service alike.
 
-Each call passes four inputs besides the pin, and each is load-bearing:
+Each call passes five inputs besides the pin, and each is load-bearing:
 
+- `toolchain: stable`, which `setup-rust` needs to select a toolchain. It
+  installs nothing here that `dtolnay/rust-toolchain` has not already put in
+  place: that step still installs the toolchain, its `wasm32-wasip2` target and
+  its components, and `setup-rust` runs after it.
 - `rustflags: ''`, because the action otherwise exports
   `RUSTFLAGS=-D warnings`, and `RUSTFLAGS` displaces the
   `CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_RUSTFLAGS` that carries the `mold`
@@ -564,7 +568,7 @@ The toolchain, its `wasm32-wasip2` target and its components stay with
 
 `tests/workflow_contracts/sccache_test.py` holds every compiling Ubicloud job
 to this. It requires one pinned `setup-rust` call with sccache on, the id
-`setup-rust`, those four inputs and `CARGO_INCREMENTAL: "0"`; that the call
+`setup-rust`, those five inputs and `CARGO_INCREMENTAL: "0"`; that the call
 precedes the first build; that none of the retired pieces survives (a job-level
 `RUSTC_WRAPPER` or backend switch, the export, install or reset steps, or a
 script starting the server); and that the report names the backend. Fixtures

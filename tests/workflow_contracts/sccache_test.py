@@ -20,6 +20,8 @@ Run via ``make test-workflow-contracts``.
 from __future__ import annotations
 
 import re
+import types
+import typing as typ
 from collections import abc
 
 import pytest
@@ -33,6 +35,7 @@ SETUP_ID = "setup-rust"
 REPORT_STEP = "Report sccache statistics"
 
 #: The shared action that owns sccache, pinned to a full commit.
+SETUP_RUST_ACTION = re.compile(r"^leynos/shared-actions/\.github/actions/setup-rust@")
 SETUP_RUST = re.compile(
     r"^leynos/shared-actions/\.github/actions/setup-rust@[0-9a-f]{40}$"
 )
@@ -188,7 +191,7 @@ def _retired_in_step(index: int, step: dict[str, object]) -> list[str]:
         findings.append(f"step {index} republishes the cache endpoint itself")
     if SERVER_COMMAND.search(str(step.get("run", ""))):
         findings.append(f"step {index} starts or zeroes the sccache server")
-    if "ACTIONS_CACHE_SERVICE_V2" in str(step.get("with", "")):
+    if "ACTIONS_CACHE_SERVICE_V2" in f"{step.get('with', '')} {step.get('run', '')}":
         findings.append(f"step {index} rewrites the cache-service flag itself")
     return findings
 
@@ -229,9 +232,18 @@ WRAPPED = _compiling_ubicloud_jobs()
 
 
 def _setup(job: Job) -> dict[str, object]:
-    """Return a job's one `Setup Rust` step."""
-    calls = [step for step in job.steps if step.get("name") == SETUP_STEP]
-    assert len(calls) == 1, f"{job} must run exactly one {SETUP_STEP!r} step"
+    """Return a job's one `setup-rust` call, named `Setup Rust`.
+
+    Calls are counted by action reference, so a second call under another
+    name is still a second call; the display name is checked separately.
+    """
+    calls = [
+        step for step in job.steps if SETUP_RUST_ACTION.match(str(step.get("uses", "")))
+    ]
+    assert len(calls) == 1, f"{job} must call setup-rust exactly once"
+    assert calls[0].get("name") == SETUP_STEP, (
+        f"{job} must name its setup-rust call {SETUP_STEP!r}"
+    )
     return calls[0]
 
 
@@ -342,7 +354,11 @@ def test_statistics_are_reported_even_when_the_build_fails(job: Job) -> None:
     # `Cache location` reads `ghac` for the proxy and GitHub's own service
     # alike, so the report must name the backend setup-rust chose.
     backend = f"steps.{SETUP_ID}.outputs.cache-backend"
-    assert backend in str(report.get("env", {})), f"{job} must report {backend}"
+    report_env = report.get("env")
+    assert isinstance(report_env, dict), f"{job} must give its report step an env"
+    assert report_env.get("SCCACHE_BACKEND") == f"${{{{ {backend} }}}}", (
+        f"{job} must bind SCCACHE_BACKEND to {backend}"
+    )
     assert "printf -- '- backend: %s\\n\\n' \"${SCCACHE_BACKEND:-none}\"" in body, (
         f"{job} must print the selected backend to the job summary"
     )
@@ -390,6 +406,17 @@ def test_github_hosted_jobs_demand_no_proxy() -> None:
             id="clear-hides-nothing-else",
         ),
         pytest.param({}, [{"name": "Install sccache"}], 1, id="install"),
+        pytest.param(
+            {},
+            [
+                {
+                    "name": "Tweak",
+                    "run": 'echo ACTIONS_CACHE_SERVICE_V2=false >> "$GITHUB_ENV"',
+                }
+            ],
+            1,
+            id="renamed-shell-flag-rewrite",
+        ),
         pytest.param(
             {},
             [
@@ -560,3 +587,26 @@ def test_the_test_run_clears_the_wrapper_after_a_wrapped_build(job: Job) -> None
     assert "RUSTC_WRAPPER" not in (job.steps[build_at].get("env") or {}), (
         f"{job} must leave the wrapper on for the build step"
     )
+
+
+def _job_with_calls(*names: str) -> Job:
+    """Return a stub job whose steps are `setup-rust` calls under `names`."""
+    uses = f"leynos/shared-actions/.github/actions/setup-rust@{'a' * 40}"
+    steps = [{"name": name, "uses": uses} for name in names]
+    return typ.cast("Job", types.SimpleNamespace(steps=steps))
+
+
+@pytest.mark.parametrize(
+    ("names", "fragment"),
+    [
+        pytest.param((SETUP_STEP, "Cache"), "exactly once", id="second-call-renamed"),
+        pytest.param(("Cache",), "must name", id="only-call-renamed"),
+        pytest.param((), "exactly once", id="no-call"),
+    ],
+)
+def test_the_setup_reader_counts_calls_by_action_not_by_name(
+    names: tuple[str, ...], fragment: str
+) -> None:
+    """A renamed or extra `setup-rust` call is a finding, not an exemption."""
+    with pytest.raises(AssertionError, match=fragment):
+        _setup(_job_with_calls(*names))
