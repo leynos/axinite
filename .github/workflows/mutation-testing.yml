@@ -102,6 +102,10 @@ jobs:
   # that a merge is blocked.
   tests:
     name: Test Suite
+    # test.yml pins its own token to `contents: read`; a reusable workflow
+    # cannot exceed what its caller grants, and this file defaults to none.
+    permissions:
+      contents: read
     uses: ./.github/workflows/test.yml
 
   e2e:

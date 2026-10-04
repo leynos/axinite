@@ -13,6 +13,15 @@ name: Run Tests
     branches:
       - main
 
+# Without a workflow-level `permissions` block every job inherits the
+# repository default `GITHUB_TOKEN` scopes, which here are write-capable, and
+# the `cargo binstall` steps below hand that token to a network client. Nothing
+# in this file uses it for more than the checkout and the GitHub release API,
+# so it is pinned to read. A caller reaching this file with `uses:` must grant
+# at least this much, because a reusable workflow cannot raise the token.
+permissions:
+  contents: read
+
 # A push to a pull request supersedes the run already in flight, and there is
 # nothing left to learn from the superseded one. Cancellation is conditioned
 # on the event so a push to `main`, a schedule, or a dispatch, none of which
