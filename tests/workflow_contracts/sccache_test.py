@@ -319,8 +319,10 @@ def test_no_retired_piece_survives(job: Job) -> None:
 @pytest.mark.parametrize("job", WRAPPED, ids=_ids(WRAPPED))
 def test_setup_rust_precedes_every_build(job: Job) -> None:
     """A build before `setup-rust` starts the server bypasses the cache."""
-    names = [str(step.get("name", step.get("uses", ""))) for step in job.steps]
-    setup_at = names.index(SETUP_STEP)
+    # Position the action itself, not whichever step carries its display name:
+    # an unrelated step called `Setup Rust` must not satisfy the ordering.
+    setup = _setup(job)
+    setup_at = next(i for i, step in enumerate(job.steps) if step is setup)
     first_build = next(
         (
             index
