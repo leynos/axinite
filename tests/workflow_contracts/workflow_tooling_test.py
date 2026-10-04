@@ -13,7 +13,9 @@ Run via ``make test-workflow-contracts``.
 from __future__ import annotations
 
 import re
+import subprocess
 import typing as typ
+from pathlib import Path
 
 import pytest
 from _workflow_files import declared_jobs, jobs, workflow_paths
@@ -83,7 +85,6 @@ PROBE_COMMANDS: dict[str, tuple[str, ...]] = {
 #: content-identical to the revision concordat's QG-002 rule reviewed.
 WHITAKER_INSTALLER_VERSION = "0.2.9"
 WHITAKER_ACTION_SHA = "6cec89bac47a21cf756d68d638a9a510998e57f8"
-
 
 
 def _ids(candidates: tuple[Job, ...]) -> list[str]:
@@ -306,3 +307,76 @@ def test_whitaker_pins_the_approved_version_and_revision_and_probes_it() -> None
     assert f'test "${{installed}}" = "{WHITAKER_INSTALLER_VERSION}"' in probe, (
         "the probe must compare the installed installer with the pinned version"
     )
+
+
+def _probe_script() -> str:
+    """Return the Probe Whitaker step's shell body as the job would run it."""
+    probes = [
+        step
+        for job in ALL_JOBS
+        for step in job.steps
+        if step.get("name") == "Probe Whitaker"
+    ]
+    assert len(probes) == 1, f"expected one Probe Whitaker step, found {len(probes)}"
+    return str(probes[0]["run"])
+
+
+def _run_probe(tmp_path: Path, marker: str | None) -> subprocess.CompletedProcess[str]:
+    """Run the extracted probe against a stub whitaker and an optional marker.
+
+    A temporary HOME holds the version marker the action would write, and a
+    stub `whitaker` stands in for the real binary, so only the probe's own
+    logic decides the outcome.
+    """
+    home = tmp_path / "home"
+    (home / ".cargo" / "bin").mkdir(parents=True)
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    stub = bin_dir / "whitaker"
+    stub.write_text("#!/bin/sh\necho whitaker 0.0.0\n", encoding="utf-8")
+    stub.chmod(0o755)
+    if marker is not None:
+        (home / ".cargo" / "bin" / ".whitaker-installer-version").write_text(
+            marker, encoding="utf-8"
+        )
+    env = {"HOME": str(home), "PATH": f"{bin_dir}:/usr/bin:/bin"}
+    return subprocess.run(
+        [
+            "/bin/bash",
+            "--noprofile",
+            "--norc",
+            "-e",
+            "-o",
+            "pipefail",
+            "-c",
+            _probe_script(),
+        ],
+        env=env,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+
+@pytest.mark.parametrize(
+    ("marker", "should_pass"),
+    [
+        pytest.param("0.2.9\n", True, id="the-pinned-version-passes"),
+        pytest.param("0.2.9 cargo-binstall\n", True, id="extra-fields-are-ignored"),
+        pytest.param("0.2.8\n", False, id="an-older-installer-fails"),
+        pytest.param("0.2.99\n", False, id="a-longer-version-fails"),
+        pytest.param(None, False, id="a-missing-marker-fails"),
+    ],
+)
+def test_the_probe_reads_the_installed_version_from_the_marker(
+    tmp_path: Path, marker: str | None, should_pass: bool
+) -> None:
+    """Run the probe: only the pinned version in the marker lets it pass.
+
+    Scenario: the probe is edited to a hard-coded version, or to ignore the
+    marker. Invariant: a wrong, longer or missing marker fails the step, so the
+    job cannot pass on a stale installer.
+    """
+    result = _run_probe(tmp_path, marker)
+
+    assert (result.returncode == 0) is should_pass, result
