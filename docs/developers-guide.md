@@ -521,9 +521,12 @@ sccache on the host cannot see it.
 
 The wiring has three parts, and omitting any one of them is silent. The build
 still succeeds; it just recompiles everything. The shared `setup-rust` action
-now provides all three, pinned to `4fb8eb7ad52454678a0662865d81d3cd17aa6e0e`
+now provides all three, pinned to `6cec89bac47a21cf756d68d638a9a510998e57f8`
 (leynos/shared-actions#523; ADR 0005 there), and each job calls it straight
-after its toolchain and `mold` steps.
+after its toolchain and `mold` steps. `6cec89ba` is the floor: it is the first
+commit whose sccache server start-up has a 60 s timeout and fails open
+(shared-actions#546), where the earlier pin hard-fails the job at `Setup Rust`,
+and the contract rejects any older pin.
 
 1. **The wrapper.** `setup-rust` installs sccache, starts the server with its
    counters zeroed, and exports `RUSTC_WRAPPER` as the absolute path of the

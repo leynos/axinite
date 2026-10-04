@@ -35,6 +35,11 @@ SETUP_ID = "setup-rust"
 REPORT_STEP = "Report sccache statistics"
 
 #: The shared action that owns sccache, pinned to a full commit.
+#: The `setup-rust` commit every call must pin. `6cec89ba` is the first to give
+#: the sccache server a 60 s start-up timeout and let it fail open
+#: (shared-actions #546); an older pin hard-fails the job at `Setup Rust` when
+#: the cache probe is slow. Raise it deliberately, never by a stray repin.
+SETUP_RUST_PIN = "6cec89bac47a21cf756d68d638a9a510998e57f8"
 SETUP_RUST_ACTION = re.compile(r"^leynos/shared-actions/\.github/actions/setup-rust@")
 SETUP_RUST = re.compile(
     r"^leynos/shared-actions/\.github/actions/setup-rust@[0-9a-f]{40}$"
@@ -231,6 +236,13 @@ def retired_findings(env: object, steps: abc.Sequence[dict[str, object]]) -> lis
 WRAPPED = _compiling_ubicloud_jobs()
 
 
+def _pins_setup_rust(uses: str) -> bool:
+    """Report whether a `uses` value pins `setup-rust` to `SETUP_RUST_PIN`."""
+    return uses.endswith(f"/setup-rust@{SETUP_RUST_PIN}") and bool(
+        SETUP_RUST_ACTION.match(uses)
+    )
+
+
 def _setup(job: Job) -> dict[str, object]:
     """Return a job's one `setup-rust` call, named `Setup Rust`.
 
@@ -258,6 +270,10 @@ def test_the_wrapped_set_is_not_empty() -> None:
 def test_setup_rust_owns_the_compiler_cache(job: Job) -> None:
     """One pinned call, sccache on, an id, and inputs that keep the job's own."""
     step = _setup(job)
+    assert _pins_setup_rust(str(step.get("uses", ""))), (
+        f"{job} must pin setup-rust to {SETUP_RUST_PIN}, the first commit whose "
+        "sccache start-up fails open"
+    )
     assert SETUP_RUST.match(str(step.get("uses", ""))), (
         f"{job} must pin leynos/shared-actions setup-rust to a full commit SHA"
     )
@@ -610,3 +626,35 @@ def test_the_setup_reader_counts_calls_by_action_not_by_name(
     """A renamed or extra `setup-rust` call is a finding, not an exemption."""
     with pytest.raises(AssertionError, match=fragment):
         _setup(_job_with_calls(*names))
+
+
+@pytest.mark.parametrize(
+    ("uses", "expected"),
+    [
+        pytest.param(
+            f"leynos/shared-actions/.github/actions/setup-rust@{SETUP_RUST_PIN}",
+            True,
+            id="the-pinned-commit",
+        ),
+        pytest.param(
+            f"leynos/shared-actions/.github/actions/setup-rust@{'4fb8eb7a' + 'a' * 32}",
+            False,
+            id="an-older-commit",
+        ),
+        pytest.param(
+            f"leynos/shared-actions/.github/actions/setup-rust@{SETUP_RUST_PIN[:8]}",
+            False,
+            id="an-abbreviated-pin",
+        ),
+        pytest.param(
+            f"other/shared-actions/.github/actions/setup-rust@{SETUP_RUST_PIN}",
+            False,
+            id="another-owner",
+        ),
+    ],
+)
+def test_only_the_pinned_setup_rust_commit_is_accepted(
+    uses: str, expected: bool
+) -> None:
+    """An older, abbreviated or foreign pin must not satisfy the pin contract."""
+    assert _pins_setup_rust(uses) is expected
