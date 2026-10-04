@@ -217,21 +217,7 @@ jobs:
       # `make test-workspace`, not `make test`: the latter also runs the
       # GitHub tool crate's own suite, which is out of the workspace and
       # would run once per leg. It has its own lane below.
-      # Compile the workspace first, through sccache, so the run step below
-      # compiles only what trybuild builds itself.
-      - name: Build tests
-        run: >-
-          cargo build --workspace --tests --examples
-          ${{ matrix.flags }} --features test-helpers
-      # trybuild's nested Cargo builds inherit the `RUSTC_WRAPPER` that
-      # setup-rust exports, and routing every fixture through the sccache
-      # server made the compile-contract tests several times slower (the
-      # `schema_helpers_ui` session timed out at its 900 s allowance). Their
-      # fixtures are cheap to compile and are not worth caching, so this one
-      # step clears the wrapper; the build step above kept it.
       - name: Run Tests
-        env:
-          RUSTC_WRAPPER: ""
         run: >-
           make test-workspace
           NEXTEST_PROFILE=ci

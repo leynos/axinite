@@ -578,15 +578,6 @@ script starting the server); and that the report names the backend. Fixtures
 prove the retired-piece reader both catches each form and leaves the report
 alone. GitHub-hosted jobs may not demand the proxy.
 
-`setup-rust` exports `RUSTC_WRAPPER` to every later step, so trybuild's nested
-Cargo builds inherit it. Routing each fixture build through the sccache server
-made the compile-contract sessions slow enough to hit their 900 s allowance, so
-`test.yml`'s `tests` job builds the workspace in a `Build tests` step, through
-the wrapper, and runs the suite in a step that sets `RUSTC_WRAPPER: ""`. An
-empty value counts as unset to Cargo, and the contract reads it as a step
-opting out, not as a retired wrapper. Remove the override once shared-actions
-offers an input that withholds the export from a caller's later steps.
-
 `e2e.yml`'s `build` job is the one lane with a low hit rate, and it is left
 that way deliberately. It compiles
 `cargo build --no-default-features --features libsql` only on path-filtered
