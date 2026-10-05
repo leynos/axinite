@@ -135,6 +135,13 @@ def test_the_caller_of_test_yml_grants_what_it_needs() -> None:
     assert callers, "mutation-testing.yml must still call test.yml"
     for job_id, job in callers.items():
         granted = job.get("permissions") or {}
+        if granted in ("read-all", "write-all"):
+            # GitHub's scalar forms; both include `contents: read`.
+            continue
+        assert isinstance(granted, dict), (
+            f"mutation-testing.yml:{job_id} has unsupported permissions "
+            f"{granted!r}; use a mapping or read-all/write-all"
+        )
         assert granted.get("contents") in ("read", "write"), (
             f"mutation-testing.yml:{job_id} calls test.yml but grants "
             f"{granted!r}; test.yml needs contents: read"
