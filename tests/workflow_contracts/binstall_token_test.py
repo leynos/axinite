@@ -138,10 +138,14 @@ def test_the_caller_of_test_yml_grants_what_it_needs() -> None:
         if granted in ("read-all", "write-all"):
             # GitHub's scalar forms; both include `contents: read`.
             continue
-        assert isinstance(granted, dict), (
-            f"mutation-testing.yml:{job_id} has unsupported permissions "
-            f"{granted!r}; use a mapping or read-all/write-all"
-        )
+        match granted:
+            case dict():
+                pass
+            case _:
+                pytest.fail(
+                    f"mutation-testing.yml:{job_id} has unsupported permissions "
+                    f"{granted!r}; use a mapping or read-all/write-all"
+                )
         assert granted.get("contents") in ("read", "write"), (
             f"mutation-testing.yml:{job_id} calls test.yml but grants "
             f"{granted!r}; test.yml needs contents: read"
