@@ -519,46 +519,75 @@ rustc wraps the compiler with it. `code_style.yml` `format` does not, because
 `docker-build` does not, because compilation happens inside the image where
 sccache on the host cannot see it.
 
-The wiring has three halves, and omitting any one of them is silent. The build
-still succeeds; it just recompiles everything.
+The wiring has three parts, and omitting any one of them is silent. The build
+still succeeds; it just recompiles everything. The shared `setup-rust` action
+now provides all three, pinned to `6cec89bac47a21cf756d68d638a9a510998e57f8`
+(leynos/shared-actions#523; ADR 0005 there), and each job calls it straight
+after its toolchain and `mold` steps. `6cec89ba` is the floor: it is the first
+commit whose sccache server start-up has a 60 s timeout and fails open
+(shared-actions#546), where the earlier pin hard-fails the job at `Setup Rust`,
+and the contract rejects any older pin.
 
-1. **The wrapper.** `RUSTC_WRAPPER: sccache` at job level is what actually
-   routes compilation through the cache. Installing sccache without exporting
-   this changes nothing at all. `SCCACHE_GHA_ENABLED` selects the GitHub
-   Actions storage backend, and `CARGO_INCREMENTAL: "0"` is required because
-   sccache cannot cache incremental compilation.
+1. **The wrapper.** `setup-rust` installs sccache, starts the server with its
+   counters zeroed, and exports `RUSTC_WRAPPER` as the absolute path of the
+   binary it installed. `CARGO_INCREMENTAL: "0"` stays in each job's
+   environment, because sccache cannot cache incremental compilation.
 2. **The endpoint.** Ubicloud's transparent cache proxy serves the Actions
-   cache from a local address, and the runner holds that address in
-   `ACTIONS_CACHE_URL`, or `CUSTOM_ACTIONS_CACHE_URL` on some images, together
-   with `ACTIONS_RUNTIME_TOKEN`. A `run:` step does not inherit those, so a
-   pinned `actions/github-script` step re-exports them into `GITHUB_ENV` and
-   clears `ACTIONS_CACHE_SERVICE_V2`, which keeps sccache on the v1 protocol
-   the proxy serves. Exporting `ACTIONS_RESULTS_URL` instead does not work.
-3. **The evidence.** Confirm the backend from the statistics header, which
-   must read `Cache location  ghac, ...` and not `Local disk`. The failure mode
-   this ordering avoids has been measured elsewhere in the estate: the
-   `mozilla/sccache-action` used by the shared `setup-rust` action ends by
-   writing `ACTIONS_CACHE_SERVICE_V2=on`, GitHub's own results URL, and
-   GitHub's token to `GITHUB_ENV`, which clobbers the credentials export for
-   every step after it. The sccache server then binds GitHub's v2 service
-   instead of Ubicloud's proxy and its writes fail silently. `run:` steps do
-   see the export; the action overwriting it afterwards is the problem. Axinite
-   avoids this by construction: it never runs that action, and the server
-   starts from a `run:` step after the export. Keep it that way.
+   cache from a private address that the runner hands to action steps only.
+   `setup-rust` republishes that address and the runtime token through
+   `GITHUB_ENV`, clears `ACTIONS_CACHE_SERVICE_V2` so sccache stays on the v1
+   protocol the proxy serves, and carries the cleared value past
+   `mozilla-actions/sccache-action`, which sets it again as its last act. That
+   clobber is why this repository once ran its own `actions/github-script`
+   export and never called the action; the action now undoes it itself.
+3. **The evidence.** Each job's `Report sccache statistics` step runs
+   `sccache --show-stats` with `if: always()`, so a failing run still reports,
+   and prints the statistics to the log as well as the job summary, because the
+   summary is not readable through the REST API. It also prints the action's
+   `cache-backend` output, `ubicloud`, `github` or `local`, because
+   `Cache location` reads `ghac` for the proxy and GitHub's own service alike.
 
-   `sccache --zero-stats` runs before the build and `sccache --show-stats`
-   reports afterwards with `if: always()`, so a failing run still reports. The
-   statistics go to the log as well as the job summary, because the summary is
-   not readable through the REST API and the log copy is what lets anyone
-   confirm a hit rate, or a read or write error, after the fact. The export
-   step also reports whether it found an endpoint and a token, never their
-   values. Without all of this, a wrapper that is quietly doing nothing looks
-   exactly like a cold cache.
+Each call passes five inputs besides the pin, and each is load-bearing:
 
-`tests/workflow_contracts/sccache_test.py` asserts all three halves together,
-including that no build step precedes the reset, and that GitHub-hosted jobs
-carry none of this: the endpoint export points at a proxy that exists only on
-an Ubicloud VM.
+- `toolchain: stable`, which `setup-rust` needs to select a toolchain. It
+  installs nothing here that `dtolnay/rust-toolchain` has not already put in
+  place: that step still installs the toolchain, its `wasm32-wasip2` target and
+  its components, and `setup-rust` runs after it.
+- `rustflags: ''`, because the action otherwise exports
+  `RUSTFLAGS=-D warnings`, and `RUSTFLAGS` displaces the
+  `CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_RUSTFLAGS` that carries the `mold`
+  linker flag.
+- `cache-provider: external`, because each job owns its Cargo registry cache.
+- `install-binstall: 'false'`, because the jobs that need `cargo-binstall`
+  install their pinned release through `taiki-e/install-action`.
+- `expect-cache`, from the job's placement. A job that can land on a
+  GitHub-hosted runner, through a schedule arm or a fork fallback, passes
+  `any`, and there the action picks local disk. A job that runs only on
+  Ubicloud passes `ubicloud`, so a missing proxy fails it rather than letting
+  it compile unnoticed against local disk.
+
+The toolchain, its `wasm32-wasip2` target and its components stay with
+`dtolnay/rust-toolchain`, because `setup-rust` has no input for a target.
+
+`tests/workflow_contracts/sccache_test.py` holds every compiling Ubicloud job
+to this. It requires one pinned `setup-rust` call with sccache on, the id
+`setup-rust`, those five inputs and `CARGO_INCREMENTAL: "0"`; that the call
+precedes the first build; that none of the retired pieces survives (a job-level
+`RUSTC_WRAPPER` or backend switch, the export, install or reset steps, or a
+script starting the server); and that the report names the backend. Fixtures
+prove the retired-piece reader both catches each form and leaves the report
+alone. GitHub-hosted jobs may not demand the proxy.
+
+`e2e.yml`'s `build` job is the one lane with a low hit rate, and it is left
+that way deliberately. It compiles
+`cargo build --no-default-features --features libsql` only on path-filtered
+pull requests and dispatches, and its weekly schedule runs on a GitHub-hosted
+runner, so nothing on `main` compiles that shape and each fresh branch starts
+cold: about 7 % hits and 10 to 11 minutes on `ubicloud-standard-8`. Its 117 to
+134 write errors occur only on misses and are consistent with concurrent cold
+writers racing for the same keys. At about three runs a week the cold build
+costs about 20 minutes a week, less than an unfiltered trunk writer would
+spend, so no trunk writer compiles it (ruling of 2026-09-25).
 
 ### One suite, one run per trigger
 
