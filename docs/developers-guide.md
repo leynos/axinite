@@ -3368,6 +3368,28 @@ inheriting their group and timeout policy. Contracts also check default-profile
 inheritance, CI override precedence, and that ordinary tests stay outside the
 compile-contract group.
 
+### The cold-cache allowance for `schema_helpers_ui`
+
+`schema_helpers_ui` builds trybuild's generated project, dependency tree
+included, inside the test. With a warm compiler cache that takes 253 to 811
+seconds (eleven sampled pull-request jobs). On a branch's first run the cache
+is cold: the nested build alone took 695 seconds in job 113555153360 and the
+fixtures then needed more than the 205 seconds the 900 second allowance had
+left, so 12 of 23 sampled `Tests (default)` jobs between 30 September and 8
+October were terminated, every one with 1,000 or more cache misses. It is
+slowness, not a hang: the log shows the nested `cargo` finishing and the first
+fixture starting. `main` never runs the test, because its push runs skip the
+test matrix, so it never seeds a warm cache for the branches.
+
+The test therefore has its own 1,500 second allowance, an override that selects
+`schema_helpers_ui` alone and comes first in each profile, because nextest
+applies the first override that sets a field. The shared override beneath it
+still supplies the serial test group and the 900 second allowance for
+`trybuild`. 1,500 seconds is an estimate with about half again the measured
+cold requirement, not a measurement of a cold pass; it sits five minutes below
+the 30 minute whole-run budget. `nextest_values_test.py` pins the override
+count, the order, the filter and the value.
+
 ### The values are pinned, not merely ordered
 
 Everything above compares one figure with another, and every one of those

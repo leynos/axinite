@@ -63,13 +63,29 @@ global-timeout = "30m"
 # inherits the ci override and filters both binaries out. The timeout is per
 # nextest test (one trybuild session after fixture batching), not per fixture
 # or per binary.
+#
+# `schema_helpers_ui` has its own, longer allowance, declared first because
+# nextest applies the first override that sets a field. On a cold compiler
+# cache it builds the whole dependency tree inside the test (695s in job
+# 113555153360) and then runs its fixtures, so 900s ended 12 of 23 sampled
+# pull-request jobs; warm runs take 253-811s. 1500s leaves the 30m
+# whole-run budget room for the test's start offset and the grace period.
+# The shared override below still supplies its test group.
 [test-groups.compile-contracts]
 max-threads = 1
+
+[[profile.default.overrides]]
+filter = 'binary(schema_helpers_ui)'
+slow-timeout = { period = "1500s", terminate-after = 1, grace-period = "5s" }
 
 [[profile.default.overrides]]
 filter = 'binary(trybuild) | binary(schema_helpers_ui)'
 test-group = 'compile-contracts'
 slow-timeout = { period = "900s", terminate-after = 1, grace-period = "5s" }
+
+[[profile.ci.overrides]]
+filter = 'binary(schema_helpers_ui)'
+slow-timeout = { period = "1500s", terminate-after = 1, grace-period = "5s" }
 
 [[profile.ci.overrides]]
 filter = 'binary(trybuild) | binary(schema_helpers_ui)'
