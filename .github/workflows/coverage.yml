@@ -97,7 +97,7 @@ jobs:
         uses: rui314/setup-mold@v1
 
       - name: Install cargo-nextest
-        uses: taiki-e/install-action@c7eb1735f09259a5035e8e5d44b1406b1cddc0fb # v2.83.0
+        uses: taiki-e/install-action@83ac0ad63c0167e6f06796fab0fce28db1bf3db0 # v2.87.22
         with:
           tool: cargo-nextest@${{ env.CARGO_NEXTEST_VERSION }}
           fallback: none
@@ -219,19 +219,19 @@ jobs:
             cargo-v1-${{ runner.os }}-${{ runner.arch }}-${{ runner.environment }}-
 
       - name: Install cargo-llvm-cov
-        uses: taiki-e/install-action@c7eb1735f09259a5035e8e5d44b1406b1cddc0fb  # v2.83.0
+        uses: taiki-e/install-action@83ac0ad63c0167e6f06796fab0fce28db1bf3db0  # v2.87.22
         with:
           tool: cargo-llvm-cov@${{ env.CARGO_LLVM_COV_VERSION }}
           fallback: none
 
       - name: Install cargo-nextest
-        uses: taiki-e/install-action@c7eb1735f09259a5035e8e5d44b1406b1cddc0fb  # v2.83.0
+        uses: taiki-e/install-action@83ac0ad63c0167e6f06796fab0fce28db1bf3db0  # v2.87.22
         with:
           tool: cargo-nextest@${{ env.CARGO_NEXTEST_VERSION }}
           fallback: none
 
       - name: Install cargo-binstall
-        uses: taiki-e/install-action@c7eb1735f09259a5035e8e5d44b1406b1cddc0fb  # v2.83.0
+        uses: taiki-e/install-action@83ac0ad63c0167e6f06796fab0fce28db1bf3db0  # v2.87.22
         with:
           tool: cargo-binstall@1.20.1
           fallback: none
@@ -496,13 +496,13 @@ jobs:
             cargo-v1-${{ runner.os }}-${{ runner.arch }}-${{ runner.environment }}-
 
       - name: Install cargo-llvm-cov
-        uses: taiki-e/install-action@c7eb1735f09259a5035e8e5d44b1406b1cddc0fb  # v2.83.0
+        uses: taiki-e/install-action@83ac0ad63c0167e6f06796fab0fce28db1bf3db0  # v2.87.22
         with:
           tool: cargo-llvm-cov@${{ env.CARGO_LLVM_COV_VERSION }}
           fallback: none
 
       - name: Install cargo-binstall
-        uses: taiki-e/install-action@c7eb1735f09259a5035e8e5d44b1406b1cddc0fb  # v2.83.0
+        uses: taiki-e/install-action@83ac0ad63c0167e6f06796fab0fce28db1bf3db0  # v2.87.22
         with:
           tool: cargo-binstall@1.20.1
           fallback: none
