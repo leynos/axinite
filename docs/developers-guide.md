@@ -3392,10 +3392,10 @@ still supplies the serial test group and the 900 second allowance for
 cold requirement, not a measurement of a cold pass; it sits five minutes below
 the 30 minute whole-run budget. `nextest_values_test.py` pins the override
 count, the order, the filter and the value, and `nextest_boundary_test.py` asks
-nextest itself: with the periods scaled to seconds, a in the five-second
-sleeping test in the fixture's `schema_helpers_ui` binary stays within its 20
-second period under `default` and `ci`, while the same test in `trybuild`
-exceeds the shared 2 second period and is terminated under `ci`.
+nextest itself: with the periods scaled to seconds, a five-second sleeping test
+in the fixture's `schema_helpers_ui` binary stays within its 20 second period
+under `default` and `ci`, while the same test in `trybuild` exceeds the shared
+2 second period and is terminated under `ci`.
 
 ### The values are pinned, not merely ordered
 
