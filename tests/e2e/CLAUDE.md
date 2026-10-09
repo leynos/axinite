@@ -93,9 +93,9 @@ automatically (it is one level above `scenarios/`).
 
 ### Function-scoped fixtures
 
-| Fixture | What it does                                                                                                                                                                                                             |
-| ------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `page`  | Creates a fresh browser **context** (viewport 1280×720) and **page** per test, navigates to `/?token=e2e-test-token`, and waits for `#auth-screen` to become hidden before yielding. Closes the context after each test. |
+| Fixture | What it does                                                                                                                                                                                                                                                                                                             |
+| ------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `page`  | Creates a fresh browser **context** (viewport 1280×720) and **page** per test, navigates to `/?token=e2e-test-token`, waits for `#auth-screen` to become hidden, then (15 s timeout) for the page's `EventSource` to be open, before yielding. Closes the context after each test, including when either wait times out. |
 
 The function-scoped `page` fixture means **each test gets a clean browser
 context** (cookies, storage, etc.) but reuses the same axinite server and
@@ -202,8 +202,10 @@ async def test_my_ui_feature(page):
   share one event loop. Do not use `asyncio.run()` inside fixtures; use `await`
   directly.
 - **The `page` fixture navigates with `/?token=e2e-test-token` and waits for
-  `#auth-screen` to be hidden.** Tests receive a page that is already past the
-  auth screen and has SSE connected.
+  `#auth-screen` to be hidden.** The fixture then waits (15 s) for the page's
+  `EventSource` to report `OPEN`, because the "Connected" label is in the
+  static HTML before the stream opens. Tests receive a page that is already
+  past the auth screen and has SSE connected.
 - **`test_skills.py` makes real network calls to ClawHub.** Tests skip (not
   fail) if the registry is unreachable via `pytest.skip()`.
 - **`test_html_injection.py` and `test_tool_approval.py` inject state via
