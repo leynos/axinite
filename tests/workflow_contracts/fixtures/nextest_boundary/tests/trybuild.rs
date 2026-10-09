@@ -15,3 +15,8 @@ fn shared_preparation_contract_b() {
     nextest_boundary_fixture::detect_test_process_overlap()
         .expect("trybuild fixture overlapped another compile-contract process");
 }
+
+#[test]
+fn bounded_sleep() {
+    nextest_boundary_fixture::sleep_for_requested_seconds();
+}

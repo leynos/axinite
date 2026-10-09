@@ -10,6 +10,7 @@ use std::time::Duration;
 
 const OVERLAP_MARKER_ENV: &str = "AXINITE_NEXTEST_OVERLAP_MARKER";
 const OVERLAP_WINDOW: Duration = Duration::from_millis(350);
+const SLEEP_SECONDS_ENV: &str = "AXINITE_NEXTEST_SLEEP_SECONDS";
 
 struct MarkerGuard(PathBuf);
 
@@ -49,4 +50,20 @@ pub fn detect_test_process_overlap() -> io::Result<()> {
     let _guard = MarkerGuard(marker_path);
     std::thread::sleep(OVERLAP_WINDOW);
     Ok(())
+}
+
+/// Sleep for the number of seconds the workflow contract asks for, if any.
+///
+/// The contract scales the real configuration's per-binary allowances down to
+/// seconds and sleeps between them, so which allowance nextest applies to
+/// which binary is observed as a pass or a `TIMEOUT` rather than read from
+/// the file. Without the variable this returns at once.
+pub fn sleep_for_requested_seconds() {
+    let Some(seconds) = std::env::var(SLEEP_SECONDS_ENV)
+        .ok()
+        .and_then(|value| value.parse::<u64>().ok())
+    else {
+        return;
+    };
+    std::thread::sleep(Duration::from_secs(seconds));
 }
