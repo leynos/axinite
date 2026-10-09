@@ -3712,4 +3712,24 @@ Whitespace is collapsed before comparison, so refolding a long condition is not
 a change; dropping a clause is. The lane coordinates are compared both ways, so
 a lane appearing without an entry fails too.
 
+## 39. Front-end workspace
+
+The browser UI is a SolidJS app in `web-src/`, built with Bun (the workspace
+declares `bun >= 1.1.41` in `web-src/package.json`), so Bun is required for
+front-end work. The gateway embeds the built output. See
+`docs/solidjs-frontend.md` for the architecture, the stub runtime, and the
+serving contract. The Make targets are:
+
+| Target             | Effect                                                               |
+| ------------------ | -------------------------------------------------------------------- |
+| `frontend-install` | Install dependencies with `bun install --frozen-lockfile`.           |
+| `frontend-build`   | Build the app and refresh the embedded copy the gateway serves.      |
+| `frontend-verify`  | Run `frontend-build`, then fail if the embedded assets are stale.    |
+| `frontend-check`   | Run formatting, lint, type, and semantic checks.                     |
+| `frontend-test`    | Run `frontend-check`, then the unit and a11y suites and Fluent lint. |
+| `frontend-full`    | Run the full verification chain, including Playwright.               |
+| `frontend-stub`    | Start the daemon-free mock API and preview server on port 2020.      |
+
+*Table: front-end Make targets.*
+
 [shared-actions-coverage]: https://github.com/leynos/shared-actions/blob/main/.github/actions/generate-coverage/README.md

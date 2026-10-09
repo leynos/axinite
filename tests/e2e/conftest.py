@@ -97,6 +97,12 @@ async def axinite_server(axinite_binary, mock_llm_server):
         "EMBEDDING_ENABLED": "false",
         # Prevent onboarding wizard from triggering
         "ONBOARD_COMPLETED": "true",
+        # SANDBOX_ENABLED/ROUTINES_ENABLED above leave the jobs and routines
+        # runtimes unwired, so the subsystem-availability layer would hide
+        # their routes. Force the route flags on (precedence layer 1) so the
+        # scenarios can still walk every nav entry.
+        "FEATURE_FLAG_ROUTE_JOBS": "true",
+        "FEATURE_FLAG_ROUTE_ROUTINES": "true",
     }
     # Forward LLVM coverage instrumentation env vars when present
     # (allows cargo-llvm-cov to collect profraw data from E2E runs).
@@ -166,7 +172,11 @@ async def page(axinite_server, browser):
     context = await browser.new_context(viewport={"width": 1280, "height": 720})
     pg = await context.new_page()
     await pg.goto(f"{axinite_server}/?token={AUTH_TOKEN}")
-    # Wait for the app to initialize (auth screen hidden, SSE connected)
+    # Wait for the SolidJS AuthGate to unlock: `#auth-screen` is present only
+    # while checking/locked and is removed once unlocked (state="hidden"
+    # matches absence). Then wait for the app shell (role=navigation) so the
+    # test starts against a mounted UI rather than a blank frame.
     await pg.wait_for_selector("#auth-screen", state="hidden", timeout=15000)
+    await pg.get_by_role("navigation").wait_for(state="visible", timeout=15000)
     yield pg
     await context.close()

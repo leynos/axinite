@@ -29,6 +29,7 @@ pub(super) async fn start_test_server() -> (
     let (agent_tx, agent_rx) = mpsc::channel(64);
 
     let state = Arc::new(GatewayState {
+        feature_flags: std::sync::Arc::new(tokio::sync::RwLock::new(Default::default())),
         msg_tx: tokio::sync::RwLock::new(Some(agent_tx)),
         sse: SseManager::new(),
         workspace: None,

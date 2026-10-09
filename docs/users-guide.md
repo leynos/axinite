@@ -217,3 +217,17 @@ axinite status
 Both commands report whether indexed or brute-force vector retrieval is
 currently in use. See `docs/database-integrations.md` for backend trade-offs
 and performance considerations.
+
+## Browser UI
+
+The gateway serves the SolidJS UI by default. To fall back to the previous
+shell as a rollback path, set `AXINITE_WEB_UI=legacy` before starting the
+gateway; the setting is read at startup.
+
+The UI reads its feature flags from `GET /api/features`. Set
+`FEATURE_FLAG_<NAME>` in the gateway's environment to `true` to enable a flag;
+any other value disables it. Operators can persist per-deployment overrides
+without a restart with `PUT /api/settings/feature_flag:<name>` and an
+`X-Deployment-Id` header. Environment variables take precedence over overrides.
+
+See `docs/solidjs-frontend.md` for details.
