@@ -9,7 +9,8 @@
 # It is the only compile-contract binary this filter excludes. The other,
 # `schema_helpers_ui`, runs in the default and ci profiles and checks accepted
 # schema helper call-site types. The matching overrides below assign both
-# binaries to the shared serial group and give each test a 900s timeout;
+# binaries to the shared serial group and give each test a 900s timeout,
+# except `schema_helpers_ui`, which has its own longer allowance (see below);
 # `compile_contract_budget_test.py` pins discovery and profile selection.
 #
 # The ci profile below runs both. The coverage profile excludes both because

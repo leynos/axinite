@@ -94,7 +94,7 @@ extend-ignore-re = [
     "(?:^|[;{]\\s*)color\\s*:",
     "(?m)^\\s*\"\"\"Return whether shell words start with a recognised suite command\\.\"\"\"$",
     "(?s)```.*?```",
-    "--[a-zA-Z0-9-]*color[a-zA-Z0-9*-]*",
+    "--[A-Za-z0-9_-]*color(?:ed|s|ing|ize[ds]?|izing)?(?:\\b|_)",
     "--color\\b",
     "-PassThru\\b",
     "Azure\\s+Architecture\\s+Center\\s*\\|\\s*Microsoft\\s+Learn\\b",

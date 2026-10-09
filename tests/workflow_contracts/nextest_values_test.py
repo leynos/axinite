@@ -186,8 +186,9 @@ def test_each_profile_pins_its_compile_contract_override(
     above the 30 m whole-run budget for every test it matched, so the
     run would end before the allowance could be used.
 
-    Default and ci each declare one override, naming both binaries and
-    allowing exactly 900 s. Coverage declares none; it inherits the ci
+    Default and ci each declare two overrides: first one naming only
+    `schema_helpers_ui` and allowing exactly 1,500 s, then the shared one
+    naming both binaries and allowing exactly 900 s. Coverage declares none; it inherits the ci
     override and filters the binaries out. The counts are pinned because a
     second matching override would change the value in force by file order.
     """
