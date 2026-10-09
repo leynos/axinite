@@ -160,6 +160,8 @@ jobs:
               tests/e2e/scenarios/test_chat.py
               tests/e2e/scenarios/test_sse_reconnect.py
               tests/e2e/scenarios/test_html_injection.py
+              tests/e2e/test_server_log.py
+              tests/e2e/test_page_fixture.py
           - group: features
             files: >-
               tests/e2e/scenarios/test_skills.py

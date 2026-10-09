@@ -2020,6 +2020,21 @@ slices out from that artefact. That is the closest existing example of the
 faster compile-once, fan-out pattern the compile-time reduction effort should
 reuse elsewhere.
 
+The browser suite's `axinite_server` fixture writes the server's combined
+stdout and stderr to `axinite-server.log` in the run's temporary directory, not
+to a pipe, because nothing reads a pipe after start-up and a full one would
+block the server's logging. `conftest.py` keeps the last 16 KiB of it, with the
+test auth token redacted, for two uses: the start-up failure message and an
+"axinite server log (tail)" section on the report of any failed test phase,
+setup included. A log that cannot be read is reported as unavailable rather
+than as empty. `tests/e2e/test_server_log.py` covers that behaviour, and
+`tests/e2e/test_page_fixture.py` covers the fixture's ordering and cleanup,
+both without a server or browser; the `core` group in `e2e.yml` runs them. The
+`page` fixture also waits for the page's `EventSource` to be open before
+yielding, because the connection label reads "Connected" in the static HTML
+before the stream opens, and it closes its browser context even when that wait
+times out.
+
 ## 24. Trace and channel test helpers
 
 Three test-support helpers were added in PR `#161` to make replay-based and
