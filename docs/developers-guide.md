@@ -415,12 +415,13 @@ makes the job's duration depend on an unrelated crate's build time.
 - Every step that runs `cargo binstall` passes
   `GITHUB_TOKEN: ${{ github.token }}` in its own step-level `env:`. Anonymous
   requests to api.github.com share a per-runner-IP rate limit, and an unlucky
-  run gets a 403, waits and then compiles from source. Keep the token at step
-  scope only: a workflow- or job-level `GITHUB_TOKEN` would also reach every
-  third-party action. The workflow contract
-  `tests/workflow_contracts/binstall_token_test.py` fails when such a step
-  loses the token or when the token moves to job or workflow scope, and when
-  `test.yml` or its `mutation-testing.yml` caller lacks `contents: read`.
+  run gets a 403 on the binary download. These installs exclude the `compile`
+  strategy, so that failure fails the install and the job rather than starting
+  a source build. Keep the token at step scope only: a workflow- or job-level
+  `GITHUB_TOKEN` would also reach every third-party action. The workflow
+  contract `tests/workflow_contracts/binstall_token_test.py` fails when such a
+  step loses the token or when the token moves to job or workflow scope, and
+  when `test.yml` or its `mutation-testing.yml` caller lacks `contents: read`.
 
 Every installer is followed by a probe step that runs the command, so a warm
 cache that restored an unusable binary fails at the probe rather than midway

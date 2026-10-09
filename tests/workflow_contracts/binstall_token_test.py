@@ -75,8 +75,8 @@ def test_every_binstall_step_carries_the_workflow_token(name: str) -> None:
         assert env.get(TOKEN_KEY) == TOKEN_VALUE, (
             f"{name}:{job_id}: step {step.get('name')!r} runs cargo binstall "
             f"with {TOKEN_KEY}={env.get(TOKEN_KEY)!r}; it must be "
-            f"{TOKEN_VALUE!r}, or an unlucky run waits 120 s on a 403 and "
-            "compiles from source"
+            f"{TOKEN_VALUE!r}, or an unlucky run gets a 403 on the binary "
+            "download and the install fails"
         )
 
 
