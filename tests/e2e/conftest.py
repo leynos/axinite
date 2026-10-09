@@ -23,6 +23,37 @@ ROOT = Path(__file__).resolve().parent.parent.parent
 # Temp directory for the libSQL database file (cleaned up automatically)
 _DB_TMPDIR = tempfile.TemporaryDirectory(prefix="axinite-e2e-")
 
+# The server's combined stdout and stderr. A file rather than a pipe: nothing
+# reads a pipe after start-up, so a run chatty enough to fill it (64 KiB on
+# Linux) would block the server's logging mid-test, and a failing test would
+# have no server output to explain it.
+_SERVER_LOG = Path(_DB_TMPDIR.name) / "axinite-server.log"
+_SERVER_LOG_TAIL_BYTES = 16384
+
+
+def _server_log_tail() -> str:
+    """Return the end of the server log, or an empty string if there is none."""
+    try:
+        data = _SERVER_LOG.read_bytes()
+    except OSError:
+        return ""
+    return data[-_SERVER_LOG_TAIL_BYTES:].decode("utf-8", errors="replace")
+
+
+@pytest.hookimpl(hookwrapper=True)
+def pytest_runtest_makereport(item, call):
+    """Attach the server log tail to a failing test's report.
+
+    A browser test that times out says only that something did not appear.
+    The server's own log is what shows whether it received the request.
+    """
+    outcome = yield
+    report = outcome.get_result()
+    if report.failed and call.when == "call":
+        tail = _server_log_tail()
+        if tail:
+            report.sections.append(("axinite server log (tail)", tail))
+
 
 def _find_free_port() -> int:
     """Bind to port 0 and return the OS-assigned port."""
@@ -106,31 +137,26 @@ async def axinite_server(axinite_binary, mock_llm_server):
     for key, val in os.environ.items():
         if key.startswith(COV_ENV_PREFIXES) or key in COV_ENV_EXTRAS:
             env[key] = val
-    proc = await asyncio.create_subprocess_exec(
-        axinite_binary, "--no-onboard",
-        stdin=asyncio.subprocess.DEVNULL,
-        stdout=asyncio.subprocess.PIPE,
-        stderr=asyncio.subprocess.PIPE,
-        env=env,
-    )
+    with _SERVER_LOG.open("wb") as server_log:
+        proc = await asyncio.create_subprocess_exec(
+            axinite_binary, "--no-onboard",
+            stdin=asyncio.subprocess.DEVNULL,
+            stdout=server_log,
+            stderr=asyncio.subprocess.STDOUT,
+            env=env,
+        )
     base_url = f"http://127.0.0.1:{gateway_port}"
     try:
         await wait_for_ready(f"{base_url}/api/health", timeout=60)
         yield base_url
     except TimeoutError:
-        # Dump stderr so CI logs show why the server failed to start
+        # Dump the server log so CI logs show why the server failed to start
         returncode = proc.returncode
-        stderr_bytes = b""
-        if proc.stderr:
-            try:
-                stderr_bytes = await asyncio.wait_for(proc.stderr.read(8192), timeout=2)
-            except (asyncio.TimeoutError, Exception):
-                pass
-        stderr_text = stderr_bytes.decode("utf-8", errors="replace")
+        stderr_text = _server_log_tail()
         proc.kill()
         pytest.fail(
             f"axinite server failed to start on port {gateway_port} "
-            f"(returncode={returncode}).\nstderr:\n{stderr_text}"
+            f"(returncode={returncode}).\nserver log:\n{stderr_text}"
         )
     finally:
         if proc.returncode is None:
@@ -168,5 +194,14 @@ async def page(axinite_server, browser):
     await pg.goto(f"{axinite_server}/?token={AUTH_TOKEN}")
     # Wait for the app to initialize (auth screen hidden, SSE connected)
     await pg.wait_for_selector("#auth-screen", state="hidden", timeout=15000)
+    # The status label reads "Connected" in the static HTML before the stream
+    # opens, so it cannot gate the first message. A response broadcast before
+    # the EventSource is open is not replayed to it, and the test then waits
+    # for a message that was never delivered. `eventSource` is a top-level
+    # `let` in app.js, so it is visible by name but is not a `window` property.
+    await pg.wait_for_function(
+        "() => eventSource !== null && eventSource.readyState === EventSource.OPEN",
+        timeout=15000,
+    )
     yield pg
     await context.close()
