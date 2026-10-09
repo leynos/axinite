@@ -11,6 +11,7 @@ import socket
 import subprocess
 import sys
 import tempfile
+from collections.abc import Generator
 from pathlib import Path
 
 import pytest
@@ -32,27 +33,38 @@ _SERVER_LOG_TAIL_BYTES = 16384
 
 
 def _server_log_tail() -> str:
-    """Return the end of the server log, or an empty string if there is none."""
+    """Return the end of the server log, with the auth token redacted.
+
+    Reads at most ``_SERVER_LOG_TAIL_BYTES`` from the end of the file, so a
+    chatty server does not make every failed test read the whole log. A log
+    that cannot be read is reported as such rather than as an empty one: an
+    empty tail would read as "the server said nothing".
+    """
     try:
-        data = _SERVER_LOG.read_bytes()
-    except OSError:
-        return ""
-    return data[-_SERVER_LOG_TAIL_BYTES:].decode("utf-8", errors="replace")
+        with _SERVER_LOG.open("rb") as log:
+            size = log.seek(0, os.SEEK_END)
+            log.seek(max(0, size - _SERVER_LOG_TAIL_BYTES))
+            data = log.read(_SERVER_LOG_TAIL_BYTES)
+    except OSError as error:
+        return f"(server log unavailable: {error})"
+    return data.decode("utf-8", errors="replace").replace(AUTH_TOKEN, "***")
 
 
 @pytest.hookimpl(hookwrapper=True)
-def pytest_runtest_makereport(item, call):
-    """Attach the server log tail to a failing test's report.
+def pytest_runtest_makereport(
+    item: pytest.Item, call: pytest.CallInfo[None]
+) -> Generator[None, object, None]:
+    """Attach the server log tail to a report for any failed phase.
 
     A browser test that times out says only that something did not appear.
-    The server's own log is what shows whether it received the request.
+    The server's own log is what shows whether it received the request. The
+    ``page`` fixture can fail in setup, so every phase is covered, not only
+    the test call.
     """
     outcome = yield
-    report = outcome.get_result()
-    if report.failed and call.when == "call":
-        tail = _server_log_tail()
-        if tail:
-            report.sections.append(("axinite server log (tail)", tail))
+    report = outcome.get_result()  # type: ignore[attr-defined]
+    if report.failed:
+        report.sections.append(("axinite server log (tail)", _server_log_tail()))
 
 
 def _find_free_port() -> int:
@@ -190,18 +202,22 @@ async def browser(axinite_server):
 async def page(axinite_server, browser):
     """Fresh Playwright browser context + page, navigated to the gateway with auth."""
     context = await browser.new_context(viewport={"width": 1280, "height": 720})
-    pg = await context.new_page()
-    await pg.goto(f"{axinite_server}/?token={AUTH_TOKEN}")
-    # Wait for the app to initialize (auth screen hidden, SSE connected)
-    await pg.wait_for_selector("#auth-screen", state="hidden", timeout=15000)
-    # The status label reads "Connected" in the static HTML before the stream
-    # opens, so it cannot gate the first message. A response broadcast before
-    # the EventSource is open is not replayed to it, and the test then waits
-    # for a message that was never delivered. `eventSource` is a top-level
-    # `let` in app.js, so it is visible by name but is not a `window` property.
-    await pg.wait_for_function(
-        "() => eventSource !== null && eventSource.readyState === EventSource.OPEN",
-        timeout=15000,
-    )
-    yield pg
-    await context.close()
+    try:
+        pg = await context.new_page()
+        await pg.goto(f"{axinite_server}/?token={AUTH_TOKEN}")
+        # Wait for the app to initialize (auth screen hidden, SSE connected)
+        await pg.wait_for_selector("#auth-screen", state="hidden", timeout=15000)
+        # The status label reads "Connected" in the static HTML before the
+        # stream opens, so it cannot gate the first message. A response
+        # broadcast before the EventSource is open is not replayed to it, and
+        # the test then waits for a message that was never delivered.
+        # `eventSource` is a top-level `let` in app.js, so it is visible by
+        # name but is not a `window` property.
+        await pg.wait_for_function(
+            "() => eventSource !== null"
+            " && eventSource.readyState === EventSource.OPEN",
+            timeout=15000,
+        )
+        yield pg
+    finally:
+        await context.close()
