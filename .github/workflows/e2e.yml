@@ -52,7 +52,7 @@ jobs:
       CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_RUSTFLAGS: >-
         -C link-arg=-fuse-ld=mold
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
 
       # Right-sizing needs the peak memory and the low-water disk mark, and
       # neither is visible in a job's own output. The sampler runs alongside
@@ -167,7 +167,7 @@ jobs:
           - group: extensions
             files: "tests/e2e/scenarios/test_extensions.py"
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
 
       # Right-sizing needs the peak memory and the low-water disk mark, and
       # neither is visible in a job's own output. The sampler runs alongside
