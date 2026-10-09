@@ -238,6 +238,7 @@ jobs:
 
       - name: Install cargo-component
         env:
+          GITHUB_TOKEN: ${{ github.token }}
           CARGO_COMPONENT_PIN: ${{ env.CARGO_COMPONENT_VERSION }}
         run: >-
           cargo binstall --no-confirm
@@ -509,6 +510,7 @@ jobs:
 
       - name: Install cargo-component
         env:
+          GITHUB_TOKEN: ${{ github.token }}
           CARGO_COMPONENT_PIN: ${{ env.CARGO_COMPONENT_VERSION }}
         run: >-
           cargo binstall --no-confirm
