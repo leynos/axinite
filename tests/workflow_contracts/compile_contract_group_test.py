@@ -67,12 +67,26 @@ def _group_section(output: str, group: str) -> str:
 
 
 def _ci_override(config_text: str) -> tuple[str, str, str]:
-    """Split the file at its one CI compile-contract override."""
+    """Split the file at its one shared CI compile-contract override.
+
+    ``ci`` declares a ``schema_helpers_ui``-only timeout override ahead of the
+    shared one, so the marker occurs twice. The shared override is the one that
+    assigns the serial group, and exactly one of them must.
+    """
     marker = "[[profile.ci.overrides]]"
-    assert config_text.count(marker) == 1, (
-        "the runner contract expects one compile-contract override in ci"
+    assignment = f"test-group = '{COMPILE_CONTRACT_GROUP}'\n"
+    sections = config_text.split(marker)
+    owners = [
+        index
+        for index, section in enumerate(sections[1:], start=1)
+        if assignment in section
+    ]
+    assert len(owners) == 1, (
+        "the runner contract expects exactly one ci override to assign the "
+        "compile-contract group"
     )
-    before, block = config_text.split(marker, maxsplit=1)
+    before = marker.join(sections[: owners[0]])
+    block = marker.join(sections[owners[0] :])
     return before, marker, block
 
 

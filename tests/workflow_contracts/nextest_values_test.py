@@ -67,6 +67,18 @@ REQUIRED_OVERRIDE_SLOW_TIMEOUT: typ.Final[dict[str, str]] = {
     "grace-period": "5s",
 }
 
+#: The allowance `schema_helpers_ui` is given on its own, field by field.
+#: A cold compiler cache makes the test compile the whole dependency tree
+#: itself (695 s in job 113555153360) before running the fixtures, and
+#: 900 s killed 12 of 23 sampled pull-request jobs. It stays below the
+#: 30 m whole-run budget with room for the test's start offset and the
+#: grace period.
+REQUIRED_SCHEMA_HELPERS_UI_SLOW_TIMEOUT: typ.Final[dict[str, str]] = {
+    "period": "1500s",
+    "terminate-after": "1",
+    "grace-period": "5s",
+}
+
 #: The binaries the overrides must name. The default profile runs
 #: ``schema_helpers_ui`` and ``ci`` also runs ``trybuild``. Coverage
 #: inherits the ci override but filters both binaries out.
@@ -174,31 +186,49 @@ def test_each_profile_pins_its_compile_contract_override(
     above the 30 m whole-run budget for every test it matched, so the
     run would end before the allowance could be used.
 
-    Default and ci each declare one override, naming both binaries and
-    allowing exactly 900 s. Coverage declares none; it inherits the ci
+    Default and ci each declare two overrides: first one naming only
+    `schema_helpers_ui` and allowing exactly 1,500 s, then the shared one
+    naming both binaries and allowing exactly 900 s. Coverage declares none; it inherits the ci
     override and filters the binaries out. The counts are pinned because a
     second matching override would change the value in force by file order.
     """
     own = nextest_profiles[profile].overrides
-    expected_count = 0 if profile == "coverage" else 1
+    expected_count = 0 if profile == "coverage" else 2
     assert len(own) == expected_count, (
         f"[profile.{profile}] declares {len(own)} overrides; this contract "
-        f"pins {expected_count}, because a second matching the same binaries "
-        f"would decide the allowance in force by file order"
+        f"pins {expected_count}: the `schema_helpers_ui` allowance first, "
+        f"then the shared compile-contract override. nextest applies the "
+        f"first override that sets a field, so order decides the allowance "
+        f"in force"
     )
     if not own:
         return
-    override = own[0]
-    selected = binaries_selected(override.get("filter"))
-    assert selected == REQUIRED_OVERRIDE_BINARIES, (
-        f"[profile.{profile}]'s override selects binaries {sorted(selected)}, "
-        f"not {sorted(REQUIRED_OVERRIDE_BINARIES)}; a binary dropped from the "
-        f"filterset, or negated inside it, falls back to the base allowance "
-        f"sized for the ordinary tests"
+    specific, shared = own
+    assert binaries_selected(specific.get("filter")) == frozenset(
+        {"schema_helpers_ui"}
+    ), (
+        f"[profile.{profile}]'s first override must select only "
+        f"`schema_helpers_ui`, got {specific.get('filter')!r}; a broader "
+        f"filter would hand `trybuild` the longer allowance too"
     )
-    fields = _fields(override.get("slow-timeout"))
+    specific_fields = _fields(specific.get("slow-timeout"))
+    assert specific_fields == REQUIRED_SCHEMA_HELPERS_UI_SLOW_TIMEOUT, (
+        f"[profile.{profile}]'s `schema_helpers_ui` slow-timeout is "
+        f"{specific_fields}, not {REQUIRED_SCHEMA_HELPERS_UI_SLOW_TIMEOUT}; "
+        f"a cold namespace needs more than 900 s, and anything at or above "
+        f"the whole-run budget could never be used"
+    )
+    selected = binaries_selected(shared.get("filter"))
+    assert selected == REQUIRED_OVERRIDE_BINARIES, (
+        f"[profile.{profile}]'s shared override selects binaries "
+        f"{sorted(selected)}, not {sorted(REQUIRED_OVERRIDE_BINARIES)}; a "
+        f"binary dropped from the filterset, or negated inside it, falls "
+        f"back to the base allowance sized for the ordinary tests"
+    )
+    fields = _fields(shared.get("slow-timeout"))
     assert fields == REQUIRED_OVERRIDE_SLOW_TIMEOUT, (
-        f"[profile.{profile}]'s override slow-timeout is {fields}, not "
-        f"{REQUIRED_OVERRIDE_SLOW_TIMEOUT}; the guide records 900 s, and a "
-        f"larger one would sit above the whole-run budget that contains it"
+        f"[profile.{profile}]'s shared override slow-timeout is {fields}, "
+        f"not {REQUIRED_OVERRIDE_SLOW_TIMEOUT}; the guide records 900 s for "
+        f"`trybuild`, and a larger one would sit above the whole-run budget "
+        f"that contains it"
     )
