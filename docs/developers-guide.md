@@ -3172,6 +3172,14 @@ The gate refreshes the untracked `.typos-oxendict-base.toml` cache only when
 the authority is newer than the local copy; `.typos-oxendict-base.json` records
 refresh metadata. A valid cache remains usable when the network is unavailable.
 
+`.markdownlint-cli2.jsonc` sets `"gitignore": true`, so `markdownlint-cli2`
+(and its `--fix`) skips files that `.gitignore` matches, as `mdtablefix --git`
+already does. The tracked agent documents under `.claude/commands/` and
+`.claude/rules/` stay in the lint set because `.gitignore` ignores `.claude/*`
+and re-includes those two directories; keep any other local `.claude/` content
+untracked and ignored. Check the effect with
+`git ls-files -ci --exclude-standard`, which must list no Markdown file.
+
 Keep repository exceptions narrow: preserve external APIs, formal names, wire
 values and immutable fixtures without adding ordinary bare-word exceptions.
 
