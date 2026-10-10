@@ -38,6 +38,8 @@ Install these tools before running the standard repository commands:
 8. `jq`.
 9. `make`.
 10. Git.
+11. Node.js for `make test-workflow-contracts`; `mdtablefix` requires Node.js
+    when the suite runs with its restricted `PATH`.
 
 The root crate declares `rust-version = "1.95"` in `Cargo.toml`. The repository
 also includes standalone WebAssembly (WASM) tool and channel crates, so WASM
@@ -465,6 +467,16 @@ makes the job's duration depend on an unrelated crate's build time.
   sees it, which is the shape that makes a `run:` body injectable.
 - Where a workflow hands shell to a reusable workflow, `cargo binstall` must
   carry `--strategies crate-meta-data,quick-install` for the same reason.
+- Every step that runs `cargo binstall` passes
+  `GITHUB_TOKEN: ${{ github.token }}` in its own step-level `env:`. Anonymous
+  requests to api.github.com share a per-runner-IP rate limit, and an unlucky
+  run gets a 403 on the binary download. These installs exclude the `compile`
+  strategy, so that failure fails the install and the job rather than starting
+  a source build. Keep the token at step scope only: a workflow- or job-level
+  `GITHUB_TOKEN` would also reach every third-party action. The workflow
+  contract `tests/workflow_contracts/binstall_token_test.py` fails when such a
+  step loses the token or when the token moves to job or workflow scope, and
+  when `test.yml` or its `mutation-testing.yml` caller lacks `contents: read`.
 
 Every installer is followed by a probe step that runs the command, so a warm
 cache that restored an unusable binary fails at the probe rather than midway
@@ -570,46 +582,75 @@ rustc wraps the compiler with it. `code_style.yml` `format` does not, because
 `docker-build` does not, because compilation happens inside the image where
 sccache on the host cannot see it.
 
-The wiring has three halves, and omitting any one of them is silent. The build
-still succeeds; it just recompiles everything.
+The wiring has three parts, and omitting any one of them is silent. The build
+still succeeds; it just recompiles everything. The shared `setup-rust` action
+now provides all three, pinned to `6cec89bac47a21cf756d68d638a9a510998e57f8`
+(leynos/shared-actions#523; ADR 0005 there), and each job calls it straight
+after its toolchain and `mold` steps. `6cec89ba` is the floor: it is the first
+commit whose sccache server start-up has a 60 s timeout and fails open
+(shared-actions#546), where the earlier pin hard-fails the job at `Setup Rust`,
+and the contract rejects any older pin.
 
-1. **The wrapper.** `RUSTC_WRAPPER: sccache` at job level is what actually
-   routes compilation through the cache. Installing sccache without exporting
-   this changes nothing at all. `SCCACHE_GHA_ENABLED` selects the GitHub
-   Actions storage backend, and `CARGO_INCREMENTAL: "0"` is required because
-   sccache cannot cache incremental compilation.
+1. **The wrapper.** `setup-rust` installs sccache, starts the server with its
+   counters zeroed, and exports `RUSTC_WRAPPER` as the absolute path of the
+   binary it installed. `CARGO_INCREMENTAL: "0"` stays in each job's
+   environment, because sccache cannot cache incremental compilation.
 2. **The endpoint.** Ubicloud's transparent cache proxy serves the Actions
-   cache from a local address, and the runner holds that address in
-   `ACTIONS_CACHE_URL`, or `CUSTOM_ACTIONS_CACHE_URL` on some images, together
-   with `ACTIONS_RUNTIME_TOKEN`. A `run:` step does not inherit those, so a
-   pinned `actions/github-script` step re-exports them into `GITHUB_ENV` and
-   clears `ACTIONS_CACHE_SERVICE_V2`, which keeps sccache on the v1 protocol
-   the proxy serves. Exporting `ACTIONS_RESULTS_URL` instead does not work.
-3. **The evidence.** Confirm the backend from the statistics header, which
-   must read `Cache location  ghac, ...` and not `Local disk`. The failure mode
-   this ordering avoids has been measured elsewhere in the estate: the
-   `mozilla/sccache-action` used by the shared `setup-rust` action ends by
-   writing `ACTIONS_CACHE_SERVICE_V2=on`, GitHub's own results URL, and
-   GitHub's token to `GITHUB_ENV`, which clobbers the credentials export for
-   every step after it. The sccache server then binds GitHub's v2 service
-   instead of Ubicloud's proxy and its writes fail silently. `run:` steps do
-   see the export; the action overwriting it afterwards is the problem. Axinite
-   avoids this by construction: it never runs that action, and the server
-   starts from a `run:` step after the export. Keep it that way.
+   cache from a private address that the runner hands to action steps only.
+   `setup-rust` republishes that address and the runtime token through
+   `GITHUB_ENV`, clears `ACTIONS_CACHE_SERVICE_V2` so sccache stays on the v1
+   protocol the proxy serves, and carries the cleared value past
+   `mozilla-actions/sccache-action`, which sets it again as its last act. That
+   clobber is why this repository once ran its own `actions/github-script`
+   export and never called the action; the action now undoes it itself.
+3. **The evidence.** Each job's `Report sccache statistics` step runs
+   `sccache --show-stats` with `if: always()`, so a failing run still reports,
+   and prints the statistics to the log as well as the job summary, because the
+   summary is not readable through the REST API. It also prints the action's
+   `cache-backend` output, `ubicloud`, `github` or `local`, because
+   `Cache location` reads `ghac` for the proxy and GitHub's own service alike.
 
-   `sccache --zero-stats` runs before the build and `sccache --show-stats`
-   reports afterwards with `if: always()`, so a failing run still reports. The
-   statistics go to the log as well as the job summary, because the summary is
-   not readable through the REST API and the log copy is what lets anyone
-   confirm a hit rate, or a read or write error, after the fact. The export
-   step also reports whether it found an endpoint and a token, never their
-   values. Without all of this, a wrapper that is quietly doing nothing looks
-   exactly like a cold cache.
+Each call passes five inputs besides the pin, and each is load-bearing:
 
-`tests/workflow_contracts/sccache_test.py` asserts all three halves together,
-including that no build step precedes the reset, and that GitHub-hosted jobs
-carry none of this: the endpoint export points at a proxy that exists only on
-an Ubicloud VM.
+- `toolchain: stable`, which `setup-rust` needs to select a toolchain. It
+  installs nothing here that `dtolnay/rust-toolchain` has not already put in
+  place: that step still installs the toolchain, its `wasm32-wasip2` target and
+  its components, and `setup-rust` runs after it.
+- `rustflags: ''`, because the action otherwise exports
+  `RUSTFLAGS=-D warnings`, and `RUSTFLAGS` displaces the
+  `CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_RUSTFLAGS` that carries the `mold`
+  linker flag.
+- `cache-provider: external`, because each job owns its Cargo registry cache.
+- `install-binstall: 'false'`, because the jobs that need `cargo-binstall`
+  install their pinned release through `taiki-e/install-action`.
+- `expect-cache`, from the job's placement. A job that can land on a
+  GitHub-hosted runner, through a schedule arm or a fork fallback, passes
+  `any`, and there the action picks local disk. A job that runs only on
+  Ubicloud passes `ubicloud`, so a missing proxy fails it rather than letting
+  it compile unnoticed against local disk.
+
+The toolchain, its `wasm32-wasip2` target and its components stay with
+`dtolnay/rust-toolchain`, because `setup-rust` has no input for a target.
+
+`tests/workflow_contracts/sccache_test.py` holds every compiling Ubicloud job
+to this. It requires one pinned `setup-rust` call with sccache on, the id
+`setup-rust`, those five inputs and `CARGO_INCREMENTAL: "0"`; that the call
+precedes the first build; that none of the retired pieces survives (a job-level
+`RUSTC_WRAPPER` or backend switch, the export, install or reset steps, or a
+script starting the server); and that the report names the backend. Fixtures
+prove the retired-piece reader both catches each form and leaves the report
+alone. GitHub-hosted jobs may not demand the proxy.
+
+`e2e.yml`'s `build` job is the one lane with a low hit rate, and it is left
+that way deliberately. It compiles
+`cargo build --no-default-features --features libsql` only on path-filtered
+pull requests and dispatches, and its weekly schedule runs on a GitHub-hosted
+runner, so nothing on `main` compiles that shape and each fresh branch starts
+cold: about 7 % hits and 10 to 11 minutes on `ubicloud-standard-8`. Its 117 to
+134 write errors occur only on misses and are consistent with concurrent cold
+writers racing for the same keys. At about three runs a week the cold build
+costs about 20 minutes a week, less than an unfiltered trunk writer would
+spend, so no trunk writer compiles it (ruling of 2026-09-25).
 
 ### One suite, one run per trigger
 
@@ -796,6 +837,10 @@ Every contract in `tests/workflow_contracts/` reads one parsed view of
 `.github/workflows`, provided by `_workflow_files.py` and `_estate.py`. A
 module with no `_test` suffix is imported as a helper rather than collected.
 Run the suite with `make test-workflow-contracts`.
+
+The suite requires Node.js: some Make command-contract tests run
+`make check-fmt` with a restricted `PATH`, and `mdtablefix` invokes `node` via
+`/usr/bin/env`.
 
 The helpers divide by question, and a contract should reach for the narrowest
 one that answers its own:
@@ -1167,19 +1212,19 @@ version before running the complete lint gate. When `cargo-binstall` is
 available, use:
 
 ```bash
-cargo binstall --no-confirm --locked whitaker-installer@0.2.7
+cargo binstall --no-confirm --locked whitaker-installer@0.2.9
 ```
 
 Otherwise, install the same release from crates.io:
 
 ```bash
-cargo install --locked whitaker-installer --version 0.2.7
+cargo install --locked whitaker-installer --version 0.2.9
 ```
 
 Run `whitaker-installer` once after installation to provision the suite, then
-run `make lint` or `make lint-whitaker`. CI pins `whitaker-installer` to version
-`0.2.7` so the lint suite and its tool behaviour remain reproducible across
-workflow runs.
+run `make lint` or `make lint-whitaker`. CI installs Whitaker through the shared
+`install-whitaker` action and passes `installer-version: '0.2.9'`, so the
+tool's behaviour remains reproducible across workflow runs.
 
 ## 10. Integration test fixture wiring
 
@@ -2027,6 +2072,21 @@ The CI E2E workflow currently builds the binary once, uploads it, and fans test
 slices out from that artefact. That is the closest existing example of the
 faster compile-once, fan-out pattern the compile-time reduction effort should
 reuse elsewhere.
+
+The browser suite's `axinite_server` fixture writes the server's combined
+stdout and stderr to `axinite-server.log` in the run's temporary directory, not
+to a pipe, because nothing reads a pipe after start-up and a full one would
+block the server's logging. `conftest.py` keeps the last 16 KiB of it, with the
+test auth token redacted, for two uses: the start-up failure message and an
+"axinite server log (tail)" section on the report of any failed test phase,
+setup included. A log that cannot be read is reported as unavailable rather
+than as empty. `tests/e2e/test_server_log.py` covers that behaviour, and
+`tests/e2e/test_page_fixture.py` covers the fixture's ordering and cleanup,
+both without a server or browser; the `core` group in `e2e.yml` runs them. The
+`page` fixture also waits for the page's `EventSource` to be open before
+yielding, because the connection label reads "Connected" in the static HTML
+before the stream opens, and it closes its browser context even when that wait
+times out.
 
 ## 24. Trace and channel test helpers
 
@@ -3190,6 +3250,14 @@ The gate refreshes the untracked `.typos-oxendict-base.toml` cache only when
 the authority is newer than the local copy; `.typos-oxendict-base.json` records
 refresh metadata. A valid cache remains usable when the network is unavailable.
 
+`.markdownlint-cli2.jsonc` sets `"gitignore": true`, so `markdownlint-cli2`
+(and its `--fix`) skips files that `.gitignore` matches, as `mdtablefix --git`
+already does. The tracked agent documents under `.claude/commands/` and
+`.claude/rules/` stay in the lint set because `.gitignore` ignores `.claude/*`
+and re-includes those two directories; keep any other local `.claude/` content
+untracked and ignored. Check the effect with
+`git ls-files -ci --exclude-standard`, which must list no Markdown file.
+
 Keep repository exceptions narrow: preserve external APIs, formal names, wire
 values and immutable fixtures without adding ordinary bare-word exceptions.
 
@@ -3203,12 +3271,12 @@ Markdown in three stages:
 
 1. **readability-js** extracts the main article, discarding navigation and
    other boilerplate.
-2. **kuchiki** strips embedded-media placeholders from the extracted article
-   content, then, once that content is converted to Markdown, parses the
-   *original* raw HTML once more and shares that single `NodeRef` between two
-   restoration passes: restoring an intro heading that extraction demoted out
-   of the article body, and restoring figure captions that would otherwise be
-   dropped.
+2. **kuchikikiki** strips embedded-media placeholders from the extracted
+   article content, then, once that content is converted to Markdown, parses
+   the *original* raw HTML once more and shares that single `NodeRef` between
+   two restoration passes: restoring an intro heading that extraction demoted
+   out of the article body, and restoring figure captions that would otherwise
+   be dropped.
 3. **html-to-markdown-rs** renders the cleaned HTML as Markdown, between the
    media-removal and restoration passes above.
 
@@ -3217,8 +3285,8 @@ instead of each re-parsing the same HTML; see the comment above the `document`
 binding in `convert_html_to_markdown` for the rationale.
 
 The pipeline sits behind the `html-to-markdown` cargo feature, which gates
-`dep:html-to-markdown-rs`, `dep:kuchiki`, and `dep:readability-js`. It is part
-of the default feature set. When the feature is disabled,
+`dep:html-to-markdown-rs`, `dep:kuchikikiki`, and `dep:readability-js`. It is
+part of the default feature set. When the feature is disabled,
 `convert_html_to_markdown` is a passthrough that returns the input unchanged.
 
 Golden tests live in `tests/html_to_markdown.rs`, which loads fixtures from
@@ -3289,12 +3357,12 @@ they must be ordered lives in the `generate-coverage` README in
 cargo watchdog only on the two lanes that use that action, and two of the four
 were unset until this was written.
 
-| Tier                     | What it bounds                     | Where it is set                      | Current value                                        |
-| ------------------------ | ---------------------------------- | ------------------------------------ | ---------------------------------------------------- |
-| Per-test `slow-timeout`  | one test process                   | `.config/nextest.toml`, all profiles | 300 s, 900 s per compile-contract session, 5 s grace |
-| nextest `global-timeout` | the whole test run                 | `.config/nextest.toml`, all profiles | 30 m                                                 |
-| Cargo watchdog           | one `cargo` invocation, wall clock | `cargo-wait-timeout` on action steps | 4,200 s on the two action lanes, absent elsewhere    |
-| Job `timeout-minutes`    | the whole job                      | job level                            | 90 m for the coverage lanes                          |
+| Tier                     | What it bounds                     | Where it is set                      | Current value                                                                   |
+| ------------------------ | ---------------------------------- | ------------------------------------ | ------------------------------------------------------------------------------- |
+| Per-test `slow-timeout`  | one test process                   | `.config/nextest.toml`, all profiles | 300 s; 900 s per `trybuild` session, 1,500 s for `schema_helpers_ui`; 5 s grace |
+| nextest `global-timeout` | the whole test run                 | `.config/nextest.toml`, all profiles | 30 m                                                                            |
+| Cargo watchdog           | one `cargo` invocation, wall clock | `cargo-wait-timeout` on action steps | 4,200 s on the two action lanes, absent elsewhere                               |
+| Job `timeout-minutes`    | the whole job                      | job level                            | 90 m for the coverage lanes                                                     |
 
 *Table: the timers that can end a run, innermost first.*
 
@@ -3329,7 +3397,9 @@ beside the profile a reader selects rather than one section away.
 
 All three therefore set a 300 second base allowance and a 30 minute whole-run
 budget. The default and ci profiles each declare a 900 second override for the
-compile-contract binaries; coverage inherits the ci override.
+compile-contract binaries, preceded by a 1,500 second override for
+`schema_helpers_ui` alone (see "The cold-cache allowance for
+`schema_helpers_ui`" below); coverage inherits the ci overrides.
 
 ### The compile-contract binaries are not ordinary tests
 
@@ -3359,12 +3429,13 @@ limited to non-Unix targets. The Windows `default` build lane executes
 `startup_compile_contracts` so that platform-specific fixture is compiled there.
 `schema_helpers_ui` continues to run its pass fixtures in one session.
 
-The 900 second `slow-timeout` bounds one nextest test process, including all
-fixtures queued in that process's `TestCases` session. It is not a budget per
-fixture or for the entire binary. The two `trybuild` sessions therefore have
-separate allowances; `schema_helpers_ui` has one for its own session. The 30
-minute `global-timeout` covers the nextest run, not the instrumented build that
-precedes nextest in a coverage command.
+The `slow-timeout` (900 seconds for `trybuild`, 1,500 for `schema_helpers_ui`)
+bounds one nextest test process, including all fixtures queued in that process's
+`TestCases` session. It is not a budget per fixture or for the entire binary.
+The two `trybuild` sessions therefore have separate allowances;
+`schema_helpers_ui` has one for its own session. The 30 minute `global-timeout`
+covers the nextest run, not the instrumented build that precedes nextest in a
+coverage command.
 
 The binaries are discovered from calls to `trybuild::TestCases` rather than
 listed, so a new compile-contract target must inherit both group and timeout.
@@ -3377,6 +3448,32 @@ represented. The default profile excludes `trybuild` but runs
 inheriting their group and timeout policy. Contracts also check default-profile
 inheritance, CI override precedence, and that ordinary tests stay outside the
 compile-contract group.
+
+### The cold-cache allowance for `schema_helpers_ui`
+
+`schema_helpers_ui` builds trybuild's generated project, dependency tree
+included, inside the test. With a warm compiler cache that takes 253 to 811
+seconds (eleven sampled pull-request jobs). On a branch's first run the cache
+is cold: the nested build alone took 695 seconds in job 113555153360 and the
+fixtures then needed more than the 205 seconds the 900 second allowance had
+left, so 12 of 23 sampled `Tests (default)` jobs between 30 September and 8
+October were terminated, every one with 1,000 or more cache misses. It is
+slowness, not a hang: the log shows the nested `cargo` finishing and the first
+fixture starting. `main` never runs the test, because its push runs skip the
+test matrix, so it never seeds a warm cache for the branches.
+
+The test therefore has its own 1,500 second allowance, an override that selects
+`schema_helpers_ui` alone and comes first in each profile, because nextest
+applies the first override that sets a field. The shared override beneath it
+still supplies the serial test group and the 900 second allowance for
+`trybuild`. 1,500 seconds is an estimate with about half again the measured
+cold requirement, not a measurement of a cold pass; it sits five minutes below
+the 30 minute whole-run budget. `nextest_values_test.py` pins the override
+count, the order, the filter and the value, and `nextest_boundary_test.py` asks
+nextest itself: with the periods scaled to seconds, a five-second sleeping test
+in the fixture's `schema_helpers_ui` binary stays within its 20 second period
+under `default` and `ci`, while the same test in `trybuild` exceeds the shared
+2 second period and is terminated under `ci`.
 
 ### The values are pinned, not merely ordered
 
@@ -3511,8 +3608,8 @@ one run per leg.
 ### What the values are sized against
 
 The 30 minute whole-run budget is a bound rather than a measurement. It has to
-exceed each 900 second compile-contract session allowance, and it does so with
-fifteen minutes to spare.
+exceed the largest per-test allowance, the 1,500 second `schema_helpers_ui`
+session, and it does so with five minutes to spare.
 
 The contract also refuses a step that names a suite command without plainly
 running one. `if false; then cargo nextest run; fi` keeps the text and runs

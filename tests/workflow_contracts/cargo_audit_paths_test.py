@@ -20,8 +20,8 @@ def write_lockfile(
     unrelated_dependency: str | None = None,
     additional_packages: str = "",
 ) -> None:
-    """Write the minimum lock graph containing the two documented audit paths."""
-    root_dependencies = ' "rust_decimal", "libsql",'
+    """Write the minimum lock graph containing the three documented audit paths."""
+    root_dependencies = ' "rust_decimal", "libsql", "pdf-extract",'
     if unrelated_dependency is not None:
         root_dependencies += f' "{unrelated_dependency}",'
 
@@ -51,6 +51,20 @@ dependencies = ["h2"]
 [[package]]
 name = "h2"
 version = "0.3.27"
+
+[[package]]
+name = "pdf-extract"
+version = "0.12.0"
+dependencies = ["lopdf"]
+
+[[package]]
+name = "lopdf"
+version = "0.42.0"
+dependencies = ["ttf-parser"]
+
+[[package]]
+name = "ttf-parser"
+version = "0.25.1"
 {additional_packages}
 """
     )
@@ -67,7 +81,7 @@ def verify(lockfile: Path) -> subprocess.CompletedProcess[str]:
 
 
 def test_audit_ignores_accept_documented_dependency_paths(tmp_path: Path) -> None:
-    """Permit the documented rust_decimal and libSQL dependency paths."""
+    """Permit the documented rust_decimal, libSQL and pdf-extract dependency paths."""
     lockfile = tmp_path / "Cargo.lock"
     write_lockfile(lockfile)
 
@@ -90,7 +104,7 @@ version = "1.0.0"
     assert verify(lockfile).returncode == 0
 
 
-@pytest.mark.parametrize("unrelated_dependency", ("rkyv", "h2"))
+@pytest.mark.parametrize("unrelated_dependency", ["rkyv", "h2", "ttf-parser"])
 def test_audit_ignores_reject_unrelated_dependency_paths(
     tmp_path: Path,
     unrelated_dependency: str,

@@ -67,27 +67,26 @@ def _group_section(output: str, group: str) -> str:
 
 
 def _ci_override(config_text: str) -> tuple[str, str, str]:
-    """Split the file at its one CI compile-contract override.
+    """Split the file at its one shared CI compile-contract override.
 
-    CI declares a second override for the Postgres tests, so the marker alone
-    no longer names the compile-contract one; it is the entry whose own table
-    assigns the compile-contract group.
+    ``ci`` declares a ``schema_helpers_ui``-only timeout override ahead of the
+    shared one, so the marker occurs twice. The shared override is the one that
+    assigns the serial group, and exactly one of them must.
     """
     marker = "[[profile.ci.overrides]]"
     assignment = f"test-group = '{COMPILE_CONTRACT_GROUP}'\n"
-    starts = []
-    offset = 0
-    while (index := config_text.find(marker, offset)) != -1:
-        entry_end = config_text.find("\n[", index + len(marker))
-        entry = config_text[index : entry_end if entry_end != -1 else None]
-        if assignment in entry:
-            starts.append(index)
-        offset = index + len(marker)
-    assert len(starts) == 1, (
-        "the runner contract expects one compile-contract override in ci"
+    sections = config_text.split(marker)
+    owners = [
+        index
+        for index, section in enumerate(sections[1:], start=1)
+        if assignment in section
+    ]
+    assert len(owners) == 1, (
+        "the runner contract expects exactly one ci override to assign the "
+        "compile-contract group"
     )
-    before = config_text[: starts[0]]
-    block = config_text[starts[0] + len(marker) :]
+    before = marker.join(sections[: owners[0]])
+    block = marker.join(sections[owners[0] :])
     return before, marker, block
 
 

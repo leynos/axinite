@@ -64,6 +64,11 @@ GITHUB_TOOL_WASM_TARGET := wasm32-wasip2
 # RUSTSEC-2026-0258: h2 0.3.27 is required by libsql 0.9's remote-replica
 # client stack. Remote replicas are supported, so remove when libsql no longer
 # requires h2 <0.4.16.
+# RUSTSEC-2026-0192: ttf-parser 0.25.1 is unmaintained, via pdf-extract 0.12
+# -> lopdf 0.42. pdf-extract 0.12.1 still requires lopdf ^0.42, and only lopdf
+# 0.45 moves to skrifa, so no fixed path exists; remove when pdf-extract
+# depends on lopdf without ttf-parser. scripts/verify_audit_ignore_paths.py
+# refuses this ignore if ttf-parser gains any other dependency path.
 # kuchikikiki 0.9.2 is yanked via readabilityrs. cargo-audit exposes no
 # advisory ID to ignore for this warning; track removal in
 # https://github.com/leynos/axinite/issues/214.
@@ -80,6 +85,8 @@ RUST_DECIMAL_AUDIT_FLAGS := \
 	--ignore RUSTSEC-2026-0235
 LIBSQL_AUDIT_FLAGS := \
 	--ignore RUSTSEC-2026-0258
+PDF_EXTRACT_AUDIT_FLAGS := \
+	--ignore RUSTSEC-2026-0192
 
 .PHONY: all install install-with-overrides sync-local-wasm-overrides build-github-tool-wasm fmt check-fmt typecheck lint lint-clippy lint-whitaker markdownlint spelling nixie audit rust-audit test test-workspace test-github-tool test-cargo test-matrix test-matrix-cargo test-workflow-contracts clean
 
@@ -159,7 +166,7 @@ rust-audit:
 			printf "Auditing Rust manifest %s\n" "$$manifest"; \
 			if [ -f "$$manifest_dir/Cargo.lock" ]; then \
 				python3 scripts/verify_audit_ignore_paths.py "$$manifest_dir/Cargo.lock"; \
-				(cd "$$manifest_dir" && eval "$$audit_command" $(AUDIT_FLAGS) $(RUST_DECIMAL_AUDIT_FLAGS) $(LIBSQL_AUDIT_FLAGS)); \
+				(cd "$$manifest_dir" && eval "$$audit_command" $(AUDIT_FLAGS) $(RUST_DECIMAL_AUDIT_FLAGS) $(LIBSQL_AUDIT_FLAGS) $(PDF_EXTRACT_AUDIT_FLAGS)); \
 			else \
 				(cd "$$manifest_dir" && eval "$$audit_command" $(AUDIT_FLAGS)); \
 			fi; \
