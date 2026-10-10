@@ -39,16 +39,45 @@ const UNAVAILABLE_PATTERNS: &[&str] = &[
 ///
 /// On the embedded path the guard holds the cloned database and drops it when
 /// the test ends; on a named database there is nothing to drop, because the
-/// database belongs to whoever started it. Field order matters: `backend` is
-/// declared first so its pool closes before the guard drops the database, which
-/// fails while any connection is still attached.
+/// database belongs to whoever started it. `Drop::drop` runs before any field is
+/// dropped, so `drop` itself closes the pool before it releases the guard: the
+/// guard's `DROP DATABASE` fails while any connection is still attached, and a
+/// failure it only logs would leave the clone behind.
 pub struct TestDatabase {
     backend: PgBackend,
     #[cfg(all(feature = "embedded-postgres", target_os = "linux"))]
     guard: Option<pg_embedded_setup_unpriv::TemporaryDatabase>,
 }
 
+/// A history store that keeps the database it reads from alive.
+///
+/// A pool handle outlives the [`TestDatabase`] it came from, but the database
+/// does not: dropping the `TestDatabase` ends its connections and removes the
+/// clone, so a fixture that returned only the store would hand its test a pool
+/// onto a database that is already gone. This pairs the two, so the database is
+/// dropped when the store is, after the test has finished with it.
+pub struct TestStore {
+    store: crate::history::Store,
+    _database: TestDatabase,
+}
+
+impl std::ops::Deref for TestStore {
+    type Target = crate::history::Store;
+
+    fn deref(&self) -> &Self::Target {
+        &self.store
+    }
+}
+
 impl TestDatabase {
+    /// Pair a store on this database's pool with the database itself.
+    pub fn into_store(self) -> TestStore {
+        TestStore {
+            store: crate::history::Store::from_pool(self.backend.pool()),
+            _database: self,
+        }
+    }
+
     /// Wrap a backend whose cloned database this guard owns and will drop.
     #[cfg(all(feature = "embedded-postgres", target_os = "linux"))]
     fn owning(backend: PgBackend, database: pg_embedded_setup_unpriv::TemporaryDatabase) -> Self {
@@ -89,10 +118,18 @@ impl Drop for TestDatabase {
         let Some(guard) = self.guard.take() else {
             return;
         };
-        // A panic here would mask the test's own result, so a failure to drop
-        // is reported and swallowed; the cluster is reaped at process exit.
-        if let Err(error) = std::thread::spawn(move || drop(guard)).join() {
-            eprintln!("failed to drop the test database: {error:?}");
+        // The pool must be closed here, not left to the field's own drop, which
+        // comes after this function returns.
+        self.backend.pool().close();
+        // The ordinary drop issues a plain `DROP DATABASE` and only logs a
+        // failure, and closing the pool does not end a connection at once, so
+        // `force_drop` ends whatever is still attached before dropping. A
+        // failure is reported and swallowed, because a panic here would mask
+        // the test's own result; the cluster is reaped at process exit.
+        match std::thread::spawn(move || guard.force_drop()).join() {
+            Ok(Ok(())) => {}
+            Ok(Err(error)) => eprintln!("failed to drop the test database: {error:?}"),
+            Err(panic) => eprintln!("dropping the test database panicked: {panic:?}"),
         }
     }
 }

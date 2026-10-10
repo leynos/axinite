@@ -228,6 +228,10 @@ jobs:
       # GitHub tool crate's own suite, which is out of the workspace and
       # would run once per leg. It has its own lane below.
       - name: Run Tests
+        env:
+          # A leg that carries the embedded cluster is a PostgreSQL leg, and a
+          # PostgreSQL leg must not skip: an empty value is not a promise.
+          AXINITE_REQUIRE_POSTGRES: ${{ contains(matrix.flags, 'embedded-postgres') && '1' || '' }}
         run: >-
           make test-workspace
           NEXTEST_PROFILE=ci

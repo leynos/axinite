@@ -13,7 +13,7 @@ use crate::agent::routine::{
     NotifyConfig, Routine, RoutineAction, RoutineGuardrails, RoutineRun, RunStatus, Trigger,
 };
 use crate::db::RoutineRunCompletion;
-use crate::testing::postgres::try_test_pg_db;
+use crate::testing::postgres::{TestStore, try_test_pg_db};
 
 fn sample_routine() -> Routine {
     let now = Utc::now();
@@ -86,19 +86,21 @@ async fn cleanup(store: &Store, routine_id: Uuid) -> anyhow::Result<()> {
 }
 
 #[fixture]
-async fn store() -> anyhow::Result<Option<Store>> {
+async fn store() -> anyhow::Result<Option<TestStore>> {
     let Some(backend) = try_test_pg_db()
         .await
         .context("unexpected Postgres test setup error")?
     else {
         return Ok(None);
     };
-    Ok(Some(Store::from_pool(backend.pool())))
+    Ok(Some(backend.into_store()))
 }
 
 #[rstest]
 #[tokio::test]
-async fn routine_crud_and_run_history_round_trip(#[future] store: anyhow::Result<Option<Store>>) {
+async fn routine_crud_and_run_history_round_trip(
+    #[future] store: anyhow::Result<Option<TestStore>>,
+) {
     let store = store.await.expect("unexpected Postgres test setup error");
     let Some(store) = store else { return };
     let mut routine = sample_routine();
@@ -172,7 +174,7 @@ async fn routine_crud_and_run_history_round_trip(#[future] store: anyhow::Result
 #[rstest]
 #[tokio::test]
 async fn list_due_cron_routines_claims_and_defers_next_fire_at(
-    #[future] store: anyhow::Result<Option<Store>>,
+    #[future] store: anyhow::Result<Option<TestStore>>,
 ) {
     let store = store.await.expect("unexpected Postgres test setup error");
     let Some(store) = store else { return };

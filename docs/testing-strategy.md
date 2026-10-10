@@ -272,8 +272,10 @@ PostgreSQL instance with `pgvector`.
 
 - Rust coverage uses `cargo-llvm-cov` across all-features, default, and
   libSQL-only configurations.
-- PostgreSQL-backed coverage jobs start a `pgvector/pgvector:pg16` service and
-  run migrations before test execution.
+- PostgreSQL-backed coverage legs run their database tests against the
+  embedded cluster each test process owns (`pg-embed-setup-unpriv`, the
+  `embedded-postgres` feature); no database service is started and no migration
+  step runs, because the fixture migrates its own template.
 - E2E coverage builds an instrumented libSQL-only binary, runs the browser
   suite, and uploads a separate `e2e` coverage report.
 - Coverage is uploaded to Codecov with separate flags for the feature-matrix

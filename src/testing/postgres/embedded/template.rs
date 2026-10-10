@@ -155,11 +155,17 @@ async fn wait_for_template(
 const READY_MARKER: &str = "axinite-template-ready";
 
 /// Reports whether the template carries the marker its builder writes last.
+///
+/// # Errors
+///
+/// Returns the connection or query error; `Ok(false)` means the query ran and
+/// the marker is absent.
 async fn template_is_ready(url: &str) -> Result<bool, DatabaseError> {
     let config = test_database_config(url, TEST_POOL_SIZE);
-    let Ok(backend) = crate::db::postgres::PgBackend::new(&config).await else {
-        return Ok(false);
-    };
+    // Building the backend opens a connection, so a failure here is an
+    // authentication, TLS, pool or connection error and is reported with its
+    // cause, not folded into "not ready" and then into a generic timeout.
+    let backend = crate::db::postgres::PgBackend::new(&config).await?;
     // `PgBackend::store` is private outside its own module tree, so the store
     // is rebuilt from the pool the backend exposes.
     let store = crate::history::Store::from_pool(backend.pool());
@@ -335,5 +341,28 @@ mod tests {
             .expect("marker task")
             .expect("write the marker");
         discard(cluster, name).await.expect("drop");
+    }
+
+    /// A failure to connect keeps its cause, not "not ready".
+    ///
+    /// A database that does not exist cannot be connected to, which is the
+    /// same class of failure as a refused login or a broken pool. Folding it
+    /// into `Ok(false)` would turn it into a two-minute wait and a generic
+    /// timeout that names none of it.
+    #[tokio::test]
+    async fn a_connection_failure_keeps_its_cause() {
+        let cluster = cluster().await.expect("embedded cluster");
+        let url = cluster
+            .connection()
+            .database_url("axinite_template_probe_absent");
+
+        let error = template_is_ready(&url)
+            .await
+            .expect_err("an absent database cannot be asked");
+
+        assert!(
+            format!("{error:?}").contains("does not exist"),
+            "the error must carry the connection's cause, got: {error:?}"
+        );
     }
 }

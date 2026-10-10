@@ -104,9 +104,9 @@ slow-timeout = { period = "900s", terminate-after = 1, grace-period = "5s" }
 max-threads = 16
 
 [[profile.default.overrides]]
-filter = 'test(/^db::postgres::/) or test(/^history::store::/)'
+filter = 'test(/^db::postgres::/) or test(/^history::store::/) or test(/^testing::postgres::embedded::/)'
 test-group = 'pg-embed'
 
 [[profile.ci.overrides]]
-filter = 'test(/^db::postgres::/) or test(/^history::store::/)'
+filter = 'test(/^db::postgres::/) or test(/^history::store::/) or test(/^testing::postgres::embedded::/)'
 test-group = 'pg-embed'

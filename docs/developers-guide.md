@@ -405,10 +405,10 @@ The `embedded-postgres` feature is separate from `test-helpers` so that the
 libSQL-only legs, which enable `test-helpers`, do not build the library's
 dependency graph for a fixture they never compile. The Makefile's
 `TEST_FEATURES` and the PostgreSQL legs of CI (`test.yml`'s default leg,
-`coverage.yml`'s default leg and the mutation run) enable it; the libSQL-only
-legs and `libsql-test-helpers` do not. A PostgreSQL leg that omits it has no
-database source, so its PostgreSQL tests skip, or fail where the lane promised
-a database (`AXINITE_REQUIRE_POSTGRES`).
+`coverage.yml`'s default and all-features legs and the mutation run) enable it;
+the libSQL-only legs and `libsql-test-helpers` do not. A PostgreSQL leg that
+omits it has no database source, so its PostgreSQL tests skip, or fail where
+the lane promised a database (`AXINITE_REQUIRE_POSTGRES`).
 
 Isolation is the point. The tests used to share one database and keep out of
 each other's way by convention, with fresh UUIDs and targeted `DELETE`
@@ -1848,21 +1848,26 @@ start.
 failure onto the same `None` as an absent variable, which hands the skip back
 to the lane that asked for it to be gone, and says nothing.
 
-**The requirement and the database URL ship in one step.** `coverage.yml`
-exports `TEST_DATABASE_URL`, `DATABASE_URL` and `AXINITE_REQUIRE_POSTGRES` from
-the same step, guarded by `matrix.has_postgres`. Splitting them is the failure
-this guards against in both directions: a leg with the URL and no requirement
-keeps the skip, and a leg with the requirement and no URL fails on the
-passwordless fallback, which is issue #350 again. The `libsql-only` leg runs
-neither and keeps its skip.
+**The coverage job runs on the embedded cluster and promises it.**
+`coverage.yml` starts no database service and exports no database URL: a named
+`TEST_DATABASE_URL` would take precedence over the cluster. Its default leg
+passes `--features embedded-postgres` and its all-features leg has the feature
+through `--all-features`. A step guarded by `matrix.has_postgres` appends
+`AXINITE_REQUIRE_POSTGRES` to `$GITHUB_ENV`, so a leg whose cluster cannot be
+had fails instead of reporting coverage for tests that never ran. The
+`libsql-only` leg runs neither and keeps its skip. `test.yml`'s `Run Tests`
+step derives the same promise from its leg's flags.
 
-`tests/workflow_contracts/coverage_database_test.py` holds the contract. It
-asserts that each matrix leg's `has_postgres` matches whether its flags
-actually compile the `postgres` feature, resolved against the root manifest's
-`default` list, because `postgres` is a default feature and a leg gets it
-unless it passes `--no-default-features`; that the step exporting the URL also
-appends the requirement to `$GITHUB_ENV`; and that exactly one step exports it,
-guarded by `matrix.has_postgres`.
+`tests/workflow_contracts/coverage_database_test.py` and
+`tests/workflow_contracts/embedded_postgres_legs_test.py` hold the contracts.
+They assert that each coverage leg's `has_postgres` matches whether its flags
+compile the `postgres` feature, resolved against the root manifest's `default`
+list, because `postgres` is a default feature and a leg gets it unless it passes
+`--no-default-features`; that a Postgres-bearing leg enables
+`embedded-postgres` and a libSQL-only one does not, in `coverage.yml` and in
+`test.yml`'s `tests` job on every event; that the coverage job declares no
+`services` and exports no database URL; and that the promise is appended to
+`$GITHUB_ENV` by a step guarded by `matrix.has_postgres`.
 
 The Rust side is tested in three layers, because the first two are each
 satisfied by a defect the third catches. `src/testing/postgres/tests.rs` holds

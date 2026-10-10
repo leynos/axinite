@@ -46,17 +46,17 @@ mod tests {
     use uuid::Uuid;
 
     use super::*;
-    use crate::testing::postgres::try_test_pg_db;
+    use crate::testing::postgres::{TestStore, try_test_pg_db};
 
     #[fixture]
-    async fn store() -> anyhow::Result<Option<Store>> {
+    async fn store() -> anyhow::Result<Option<TestStore>> {
         let Some(backend) = try_test_pg_db()
             .await
             .context("unexpected Postgres test setup error")?
         else {
             return Ok(None);
         };
-        Ok(Some(Store::from_pool(backend.pool())))
+        Ok(Some(backend.into_store()))
     }
 
     async fn seed_conversation(store: &Store) -> Result<Uuid, DatabaseError> {
@@ -78,7 +78,7 @@ mod tests {
 
     #[rstest]
     #[tokio::test]
-    async fn conversation_metadata_round_trips(#[future] store: anyhow::Result<Option<Store>>) {
+    async fn conversation_metadata_round_trips(#[future] store: anyhow::Result<Option<TestStore>>) {
         let Some(store) = store.await.expect("store fixture should initialize") else {
             return;
         };

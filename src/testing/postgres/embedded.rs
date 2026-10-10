@@ -189,4 +189,7 @@ pub(super) fn test_database_config(url: &str, pool_size: usize) -> crate::config
 
 mod template;
 
+#[cfg(test)]
+mod provision_tests;
+
 use template::ensure_template;

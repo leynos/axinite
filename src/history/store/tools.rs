@@ -125,14 +125,14 @@ mod tests {
 
     use super::Store;
     use crate::error::DatabaseError;
-    use crate::testing::postgres::try_test_pg_db;
+    use crate::testing::postgres::{TestStore, try_test_pg_db};
 
     #[fixture]
-    async fn store() -> Result<Option<Store>, DatabaseError> {
+    async fn store() -> Result<Option<TestStore>, DatabaseError> {
         let Some(backend) = try_test_pg_db().await? else {
             return Ok(None);
         };
-        Ok(Some(Store::from_pool(backend.pool())))
+        Ok(Some(backend.into_store()))
     }
 
     async fn cleanup_tool(store: &Store, tool_name: &str) -> Result<(), DatabaseError> {
@@ -148,7 +148,7 @@ mod tests {
     #[rstest]
     #[tokio::test]
     async fn record_tool_failure_inserts_and_upserts(
-        #[future] store: Result<Option<Store>, DatabaseError>,
+        #[future] store: Result<Option<TestStore>, DatabaseError>,
     ) {
         let Some(store) = store.await.expect("unexpected Postgres test setup error") else {
             return;
@@ -188,7 +188,7 @@ mod tests {
     #[rstest]
     #[tokio::test]
     async fn get_broken_tools_filters_by_threshold_and_repaired_at(
-        #[future] store: Result<Option<Store>, DatabaseError>,
+        #[future] store: Result<Option<TestStore>, DatabaseError>,
     ) {
         let Some(store) = store.await.expect("unexpected Postgres test setup error") else {
             return;
@@ -242,7 +242,7 @@ mod tests {
     #[rstest]
     #[tokio::test]
     async fn mark_tool_repaired_sets_repaired_at_and_resets_error_count(
-        #[future] store: Result<Option<Store>, DatabaseError>,
+        #[future] store: Result<Option<TestStore>, DatabaseError>,
     ) {
         let Some(store) = store.await.expect("unexpected Postgres test setup error") else {
             return;
@@ -281,7 +281,7 @@ mod tests {
     #[rstest]
     #[tokio::test]
     async fn increment_repair_attempts_increments_by_one(
-        #[future] store: Result<Option<Store>, DatabaseError>,
+        #[future] store: Result<Option<TestStore>, DatabaseError>,
     ) {
         let Some(store) = store.await.expect("unexpected Postgres test setup error") else {
             return;

@@ -31,7 +31,9 @@
 #
 # Requirements:
 # - Uses cargo-llvm-cov for coverage instrumentation
-# - Requires PostgreSQL for integration tests (pgvector/pgvector:pg16)
+# - PostgreSQL integration tests run against an embedded cluster each test
+#   process owns (pg-embed-setup-unpriv, the `embedded-postgres` feature); no
+#   database service is started
 # - E2E tests require Python 3.12 and Playwright
 
 name: Code Coverage
@@ -85,7 +87,7 @@ jobs:
           - name: all-features
             flags: "--all-features"
           - name: default
-            flags: "--features test-helpers,embedded-postgres"
+            flags: "--features test-helpers"
           - name: libsql-only
             flags: "--no-default-features --features libsql,test-helpers"
     steps:
@@ -133,25 +135,11 @@ jobs:
             flags: "--all-features"
             has_postgres: true
           - name: default
-            flags: ""
+            flags: "--features embedded-postgres"
             has_postgres: true
           - name: libsql-only
             flags: "--no-default-features --features libsql"
             has_postgres: false
-    services:
-      postgres:
-        image: pgvector/pgvector:pg16
-        env:
-          POSTGRES_USER: postgres
-          POSTGRES_PASSWORD: postgres
-          POSTGRES_DB: axinite_test
-        ports:
-          - 5432:5432
-        options: >-
-          --health-cmd "pg_isready -U postgres"
-          --health-interval 10s
-          --health-timeout 5s
-          --health-retries 5
     steps:
       - name: Free disk space
         uses: jlumbroso/free-disk-space@54081f138730dfa15788a46383842cd2f914a1be
@@ -258,51 +246,20 @@ jobs:
       - name: Build WASM channels (for integration tests)
         run: ./scripts/build-wasm-extensions.sh --channels
 
-      - name: Run database migrations
-        if: matrix.has_postgres
-        run: |
-          set -euo pipefail
-          readarray -t migration_files < <(
-            printf '%s\n' migrations/V*.sql | sort -V
-          )
-          for f in "${migration_files[@]}"; do
-            echo "Applying $f..."
-            psql -v ON_ERROR_STOP=1 -f "$f"
-          done
-        env:
-          PGHOST: localhost
-          PGUSER: postgres
-          PGPASSWORD: postgres
-          PGDATABASE: axinite_test
-
-      # TEST_DATABASE_URL, not DATABASE_URL: `src/testing/postgres.rs` reads
-      # the former and falls back to `postgresql://localhost/axinite_test`,
-      # which carries no user and no password, so the pool fails with
-      # `kind: Config, cause: "password missing"`. That fallback is not
-      # skipped: `is_database_unavailable` deliberately excludes
-      # authentication and configuration errors so a misconfigured job fails
-      # loudly instead of quietly reporting coverage for tests that never
-      # ran. Dropping this export in #243 is what turned every push to `main`
-      # red from 2026-07-14 onwards; see issue #350.
+      # The Postgres-bearing legs run their database tests against the
+      # embedded cluster the `embedded-postgres` feature builds (the
+      # all-features leg has it through `--all-features`), so no service
+      # container is started and no URL is exported: a named
+      # `TEST_DATABASE_URL` would take precedence over the cluster.
       #
-      # DATABASE_URL is exported alongside it because the runtime reads that
-      # name, so anything invoked here that goes through the normal
-      # configuration path sees the same database.
-      #
-      # AXINITE_REQUIRE_POSTGRES is exported from this same step on purpose.
-      # `try_test_pg_db` skips when the database is unreachable, which is what
-      # a developer without a local Postgres needs; on a leg that starts a
-      # Postgres service and points the tests at it, the same skip reports
-      # success for tests that never connected. Setting it here means the URL
-      # and the promise arrive together or not at all, so the step's own
-      # absence cannot leave a leg that believes Postgres is optional.
-      - name: Set the test database URL for postgres configs
+      # AXINITE_REQUIRE_POSTGRES is exported on purpose. `try_test_pg_db` skips
+      # when no database can be had, which is what a developer without one
+      # needs; on a leg that is meant to run the database tests the same skip
+      # reports success for tests that never ran.
+      # `tests/workflow_contracts/coverage_database_test.py` binds it.
+      - name: Require the database tests to run
         if: matrix.has_postgres
-        run: |
-          database_url="postgres://postgres:postgres@localhost/axinite_test"
-          echo "TEST_DATABASE_URL=${database_url}" >> "$GITHUB_ENV"
-          echo "DATABASE_URL=${database_url}" >> "$GITHUB_ENV"
-          echo "AXINITE_REQUIRE_POSTGRES=1" >> "$GITHUB_ENV"
+        run: echo "AXINITE_REQUIRE_POSTGRES=1" >> "$GITHUB_ENV"
 
       # Instrument with nextest, not plain `cargo test`: the startup
       # boot-screen snapshot test captures stdout at file-descriptor
@@ -363,7 +320,7 @@ jobs:
       # from ONE leg so CodeScene receives a single report per commit: the
       # libsql-only leg, whose report is the one the ratchet also reads. It
       # is chosen because one leg has to be and it is the cheapest, compiling
-      # the narrowest feature set with no Postgres service, not because the
+      # the narrowest feature set with no embedded cluster, not because the
       # other legs fail: dispatch 34991999565 on 3301e095e is green on all
       # three.
       # Three guards, and none may be widened with `||`: the leg, the token's
