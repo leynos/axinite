@@ -174,21 +174,27 @@ def test_each_profile_pins_its_compile_contract_override(
     above the 30 m whole-run budget for every test it matched, so the
     run would end before the allowance could be used.
 
-    Default and ci each declare one override, naming both binaries and
-    allowing exactly 900 s. Coverage declares none; it inherits the ci
+    Default and ci each declare one override naming the compile-contract
+    binaries, allowing exactly 900 s. They also carry the Postgres group's
+    override, which names no binary and sets no allowance (pinned by
+    ``test_each_profile_pins_its_postgres_group_override``). Coverage declares none; it inherits the ci
     override and filters the binaries out. The counts are pinned because a
     second matching override would change the value in force by file order.
     """
     own = nextest_profiles[profile].overrides
+    contract_overrides = [
+        entry for entry in own if binaries_selected(entry.get("filter"))
+    ]
     expected_count = 0 if profile == "coverage" else 1
-    assert len(own) == expected_count, (
-        f"[profile.{profile}] declares {len(own)} overrides; this contract "
-        f"pins {expected_count}, because a second matching the same binaries "
+    assert len(contract_overrides) == expected_count, (
+        f"[profile.{profile}] declares {len(contract_overrides)} overrides "
+        f"selecting compile-contract binaries; this contract pins "
+        f"{expected_count}, because a second matching the same binaries "
         f"would decide the allowance in force by file order"
     )
-    if not own:
+    if not contract_overrides:
         return
-    override = own[0]
+    override = contract_overrides[0]
     selected = binaries_selected(override.get("filter"))
     assert selected == REQUIRED_OVERRIDE_BINARIES, (
         f"[profile.{profile}]'s override selects binaries {sorted(selected)}, "
@@ -201,4 +207,36 @@ def test_each_profile_pins_its_compile_contract_override(
         f"[profile.{profile}]'s override slow-timeout is {fields}, not "
         f"{REQUIRED_OVERRIDE_SLOW_TIMEOUT}; the guide records 900 s, and a "
         f"larger one would sit above the whole-run budget that contains it"
+    )
+
+
+@pytest.mark.parametrize("profile", ["default", "ci"], ids=str)
+def test_each_profile_pins_its_postgres_group_override(
+    nextest_profiles: dict[str, Profile], profile: str
+) -> None:
+    """Pin the Postgres override to a group assignment and nothing else.
+
+    Default and ci each carry one override that puts the Postgres-backed tests
+    in the ``pg-embed`` group, which bounds how many clusters' databases run at
+    once. It must select by test name, not by binary, and set no
+    ``slow-timeout``: either would let it decide the allowance a compile
+    contract runs under, which the other override pins.
+    """
+    others = [
+        entry
+        for entry in nextest_profiles[profile].overrides
+        if not binaries_selected(entry.get("filter"))
+    ]
+    assert len(others) == 1, (
+        f"[profile.{profile}] declares {len(others)} overrides that select "
+        "no compile-contract binary; this contract pins the one Postgres group"
+    )
+    (override,) = others
+    assert override.get("test-group") == "pg-embed", (
+        f"[profile.{profile}]'s other override assigns "
+        f"{override.get('test-group')!r}, not the pg-embed group"
+    )
+    assert "slow-timeout" not in override, (
+        f"[profile.{profile}]'s Postgres override sets a slow-timeout, which "
+        "would compete with the compile-contract allowance"
     )

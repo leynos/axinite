@@ -67,12 +67,27 @@ def _group_section(output: str, group: str) -> str:
 
 
 def _ci_override(config_text: str) -> tuple[str, str, str]:
-    """Split the file at its one CI compile-contract override."""
+    """Split the file at its one CI compile-contract override.
+
+    CI declares a second override for the Postgres tests, so the marker alone
+    no longer names the compile-contract one; it is the entry whose own table
+    assigns the compile-contract group.
+    """
     marker = "[[profile.ci.overrides]]"
-    assert config_text.count(marker) == 1, (
+    assignment = f"test-group = '{COMPILE_CONTRACT_GROUP}'\n"
+    starts = []
+    offset = 0
+    while (index := config_text.find(marker, offset)) != -1:
+        entry_end = config_text.find("\n[", index + len(marker))
+        entry = config_text[index : entry_end if entry_end != -1 else None]
+        if assignment in entry:
+            starts.append(index)
+        offset = index + len(marker)
+    assert len(starts) == 1, (
         "the runner contract expects one compile-contract override in ci"
     )
-    before, block = config_text.split(marker, maxsplit=1)
+    before = config_text[: starts[0]]
+    block = config_text[starts[0] + len(marker) :]
     return before, marker, block
 
 

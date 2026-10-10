@@ -22,22 +22,9 @@ use std::sync::OnceLock;
 
 use pg_embedded_setup_unpriv::ClusterHandle;
 
-use super::TestDatabase;
+use super::{TEST_POOL_SIZE, TestDatabase};
 
 use crate::error::DatabaseError;
-
-/// Connections each test's pool may open.
-///
-/// The production default is five, which suits a server handling concurrent
-/// requests. A test owns its own database and drives it from one task, so it
-/// needs one connection and a little slack for the pool's own bookkeeping.
-///
-/// The budget that matters is `TEST_POOL_SIZE` times the `pg-embed` nextest
-/// group's `max-threads`, which must stay under the cluster's
-/// `PG_MAX_CONNECTIONS` with room for the template connection and the
-/// administrative connection that creates and drops each clone. At two per test
-/// and sixteen threads that is thirty-two of sixty-four.
-pub const TEST_POOL_SIZE: usize = 2;
 
 /// Extension the schema requires.
 ///

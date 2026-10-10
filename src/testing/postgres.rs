@@ -142,12 +142,28 @@ fn no_database_source() -> DatabaseError {
     )
 }
 
+/// Connections each test's pool may open.
+///
+/// The production default is five, which suits a server handling concurrent
+/// requests. A test owns its own database and drives it from one task, so it
+/// needs one connection and a little slack for the pool's own bookkeeping.
+///
+/// The budget that matters is `TEST_POOL_SIZE` times the `pg-embed` nextest
+/// group's `max-threads`, which must stay under the cluster's
+/// `PG_MAX_CONNECTIONS` with room for the template connection and the
+/// administrative connection that creates and drops each clone. At two per test
+/// and sixteen threads that is thirty-two of sixty-four.
+///
+/// The external-database path (`TEST_DATABASE_URL`) takes the same size, so a
+/// developer's or CI's server sees the same per-test connection budget.
+pub(crate) const TEST_POOL_SIZE: usize = 2;
+
 /// Build the test backend configuration for `url`.
 fn test_pg_config(url: String) -> DatabaseConfig {
     DatabaseConfig {
         backend: DatabaseBackend::Postgres,
         url: SecretString::from(url),
-        pool_size: 5,
+        pool_size: TEST_POOL_SIZE,
         ssl_mode: SslMode::Prefer,
         libsql_path: None,
         libsql_url: None,
