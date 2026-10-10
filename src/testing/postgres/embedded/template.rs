@@ -188,16 +188,39 @@ mod tests {
     //! reports rather than about this module's own state.
 
     use super::{ClusterHandle, create_template, mark_ready, template_is_ready};
-    use crate::testing::postgres::embedded::cluster;
+    use crate::{
+        error::DatabaseError,
+        testing::postgres::embedded::{blocking, cluster},
+    };
 
     /// Create a uniquely named scratch database and return its name and URL.
-    async fn scratch(cluster: &'static ClusterHandle, tag: &str) -> (String, String) {
+    ///
+    /// The cluster's own calls block on a runtime of their own, so from an
+    /// async test they run on the blocking pool, as the fixture does.
+    async fn scratch(
+        cluster: &'static ClusterHandle,
+        tag: &str,
+    ) -> Result<(String, String), DatabaseError> {
         let name = format!("axinite_template_probe_{tag}_{}", std::process::id());
-        cluster
-            .create_database(name.as_str())
-            .expect("create the scratch database");
+        let owned = name.clone();
+        blocking(move || {
+            cluster
+                .create_database(owned.as_str())
+                .map_err(|error| DatabaseError::Pool(format!("scratch create: {error:?}")))
+        })
+        .await?;
         let url = cluster.connection().database_url(&name);
-        (name, url)
+        Ok((name, url))
+    }
+
+    /// Drop a scratch database created by [`scratch`].
+    async fn discard(cluster: &'static ClusterHandle, name: String) -> Result<(), DatabaseError> {
+        blocking(move || {
+            cluster
+                .drop_database(name.as_str())
+                .map_err(|error| DatabaseError::Pool(format!("scratch drop: {error:?}")))
+        })
+        .await
     }
 
     /// A database whose refinery history table exists is not ready.
@@ -208,7 +231,9 @@ mod tests {
     #[tokio::test]
     async fn a_history_table_without_the_marker_is_not_ready() {
         let cluster = cluster().await.expect("embedded cluster");
-        let (name, url) = scratch(cluster, "history").await;
+        let (name, url) = scratch(cluster, "history")
+            .await
+            .expect("create the scratch database");
         let config = crate::testing::postgres::embedded::test_database_config(&url, 1);
         let backend = crate::db::postgres::PgBackend::new(&config)
             .await
@@ -223,19 +248,21 @@ mod tests {
 
         assert!(!template_is_ready(&url).await.expect("readiness query"));
         drop(backend);
-        cluster.drop_database(name.as_str()).expect("drop");
+        discard(cluster, name).await.expect("drop");
     }
 
     /// Writing the marker is what makes a database ready.
     #[tokio::test]
     async fn marking_a_database_makes_it_ready() {
         let cluster = cluster().await.expect("embedded cluster");
-        let (name, url) = scratch(cluster, "marked").await;
+        let (name, url) = scratch(cluster, "marked")
+            .await
+            .expect("create the scratch database");
 
         mark_ready(&url).await.expect("write the marker");
 
         assert!(template_is_ready(&url).await.expect("readiness query"));
-        cluster.drop_database(name.as_str()).expect("drop");
+        discard(cluster, name).await.expect("drop");
     }
 
     /// Losing the create race is `Ok(false)`; any other failure is an error.
@@ -245,10 +272,20 @@ mod tests {
     #[tokio::test]
     async fn only_a_lost_race_is_reported_as_one() {
         let cluster = cluster().await.expect("embedded cluster");
-        let (name, _url) = scratch(cluster, "race").await;
+        let (name, _url) = scratch(cluster, "race")
+            .await
+            .expect("create the scratch database");
+        let owned = name.clone();
 
-        assert!(!create_template(cluster, &name).expect("a lost race is not an error"));
-        assert!(create_template(cluster, "").is_err());
-        cluster.drop_database(name.as_str()).expect("drop");
+        let lost = blocking(move || create_template(cluster, &owned))
+            .await
+            .expect("a lost race is not an error");
+        let empty = blocking(move || Ok(create_template(cluster, "").is_err()))
+            .await
+            .expect("blocking task");
+
+        assert!(!lost);
+        assert!(empty);
+        discard(cluster, name).await.expect("drop");
     }
 }
