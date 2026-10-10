@@ -393,13 +393,22 @@ service container and never a host PostgreSQL. `src/testing/postgres.rs` is the
 one door: `try_test_pg_db` returns a `TestDatabase` that derefs to `PgBackend`.
 With `TEST_DATABASE_URL` set it uses that database, skipping only when nothing
 answers and the lane did not promise one (`AXINITE_REQUIRE_POSTGRES`).
-Otherwise, on Linux with `test-helpers`, `src/testing/postgres/embedded.rs`
-bootstraps PostgreSQL 17.11 through `pg-embed-setup-unpriv` 0.6, migrates one
-template database named after a hash of `migrations/`, and clones a fresh
-database per test that is dropped when the test ends. A bootstrap failure is a
-test failure, never a skip: it means the harness is broken, not that nobody
-provided a database. There is no fallback to `localhost` (user ruling,
-2026-09-23).
+Otherwise, on Linux with `embedded-postgres`,
+`src/testing/postgres/embedded.rs` bootstraps PostgreSQL 17.11 through
+`pg-embed-setup-unpriv` 0.6, migrates one template database named after a hash
+of `migrations/`, and clones a fresh database per test that is dropped when the
+test ends. A bootstrap failure is a test failure, never a skip: it means the
+harness is broken, not that nobody provided a database. There is no fallback to
+`localhost` (user ruling, 2026-09-23).
+
+The `embedded-postgres` feature is separate from `test-helpers` so that the
+libSQL-only legs, which enable `test-helpers`, do not build the library's
+dependency graph for a fixture they never compile. The Makefile's
+`TEST_FEATURES` and the PostgreSQL legs of CI (`test.yml`'s default leg,
+`coverage.yml`'s default leg and the mutation run) enable it; the libSQL-only
+legs and `libsql-test-helpers` do not. A PostgreSQL leg that omits it has no
+database source, so its PostgreSQL tests skip, or fail where the lane promised
+a database (`AXINITE_REQUIRE_POSTGRES`).
 
 Isolation is the point. The tests used to share one database and keep out of
 each other's way by convention, with fresh UUIDs and targeted `DELETE`

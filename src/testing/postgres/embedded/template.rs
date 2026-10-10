@@ -8,10 +8,24 @@
 use pg_embedded_setup_unpriv::ClusterHandle;
 
 use super::{
-    CLONE_ATTEMPTS, CLONE_RETRY_DELAY, TEMPLATE, TEMPLATE_PREFIX, TEST_POOL_SIZE, blocking,
-    test_database_config,
+    CLONE_RETRY_DELAY, TEMPLATE, TEMPLATE_PREFIX, TEST_POOL_SIZE, blocking, test_database_config,
 };
 use crate::error::DatabaseError;
+
+/// Polls allowed while waiting for another builder to finish the template.
+///
+/// Migrating takes seconds, not the fraction of a second a clone does, so this
+/// is a migration-sized budget (two minutes at [`CLONE_RETRY_DELAY`]) and not
+/// the clone's. A loser that gave up early would cache its error in `TEMPLATE`
+/// and fail every later test in the process.
+const TEMPLATE_WAIT_ATTEMPTS: usize = 600;
+
+/// Lets one task per process build the template while the others wait for it.
+///
+/// Without it every concurrent test in a binary would run the build, and all
+/// but the winner would spend the wait loop on a database the winner is still
+/// migrating.
+static BUILD: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
 
 /// Names the template after the migrations it contains.
 ///
@@ -43,6 +57,13 @@ pub(super) async fn ensure_template(
     cluster: &'static ClusterHandle,
 ) -> Result<String, DatabaseError> {
     let name = template_name()?;
+    if let Some(cached) = TEMPLATE.get() {
+        return cached
+            .clone()
+            .map_err(|error| DatabaseError::Pool(format!("template: {error}")));
+    }
+
+    let _building = BUILD.lock().await;
     if let Some(cached) = TEMPLATE.get() {
         return cached
             .clone()
@@ -118,7 +139,7 @@ async fn wait_for_template(
     name: &str,
 ) -> Result<(), DatabaseError> {
     let url = cluster.connection().database_url(name);
-    for _ in 0..CLONE_ATTEMPTS {
+    for _ in 0..TEMPLATE_WAIT_ATTEMPTS {
         if template_is_ready(&url).await? {
             return Ok(());
         }
@@ -187,7 +208,7 @@ mod tests {
     //! embedded cluster, because both are statements about what PostgreSQL
     //! reports rather than about this module's own state.
 
-    use super::{ClusterHandle, create_template, mark_ready, template_is_ready};
+    use super::{ClusterHandle, create_template, mark_ready, template_is_ready, wait_for_template};
     use crate::{
         error::DatabaseError,
         testing::postgres::embedded::{blocking, cluster},
@@ -286,6 +307,33 @@ mod tests {
 
         assert!(!lost);
         assert!(empty);
+        discard(cluster, name).await.expect("drop");
+    }
+
+    /// Waiting for a template that finishes late succeeds.
+    ///
+    /// The clone's retry budget is about a second; a migration can take longer,
+    /// and a waiter that gave up at the clone's budget would fail here.
+    #[tokio::test]
+    async fn the_wait_outlasts_the_clone_budget() {
+        let cluster = cluster().await.expect("embedded cluster");
+        let (name, url) = scratch(cluster, "late")
+            .await
+            .expect("create the scratch database");
+        let late_url = url.clone();
+        let marker = tokio::spawn(async move {
+            tokio::time::sleep(std::time::Duration::from_secs(3)).await;
+            mark_ready(&late_url).await
+        });
+
+        wait_for_template(cluster, &name)
+            .await
+            .expect("the template becomes ready");
+
+        marker
+            .await
+            .expect("marker task")
+            .expect("write the marker");
         discard(cluster, name).await.expect("drop");
     }
 }

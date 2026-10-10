@@ -15,7 +15,7 @@ if typ.TYPE_CHECKING:  # pragma: no cover - typing only
 
 BASELINE_FLAGS = {
     "all-features": "--all-features",
-    "default": "--features test-helpers",
+    "default": "--features test-helpers,embedded-postgres",
     "libsql-only": "--no-default-features --features libsql,test-helpers",
 }
 

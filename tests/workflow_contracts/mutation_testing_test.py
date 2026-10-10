@@ -201,14 +201,15 @@ def test_with_block_carries_the_caller_configuration() -> None:
         SCAFFOLDING_EXCLUDES
     ), f"with.exclude-globs must cover exactly {SCAFFOLDING_EXCLUDES}, got {excludes!r}"
     assert with_block.get("extra-args") == (
-        "--workspace --features test-helpers --test-workspace=true "
+        "--workspace --features test-helpers,embedded-postgres "
+        "--test-workspace=true "
         '--test-tool=nextest -- -E "not binary(schema_helpers_ui)"'
     ), (
         "with.extra-args must select every workspace package (the root "
         "manifest is itself a package, so cargo-mutants otherwise mutates "
         "the root package only and crates/ambient-fs is never mutated), "
         "mirror the CI default test leg "
-        "(--features test-helpers), run workspace tests against each "
+        "(--features test-helpers,embedded-postgres), run workspace tests against each "
         "mutant, use nextest as the test tool (the boot-screen snapshot "
         "test needs process-per-test isolation, issue #237), and drop "
         "the slow schema_helpers_ui trybuild binary from per-mutant "

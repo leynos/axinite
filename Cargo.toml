@@ -244,8 +244,14 @@ integration = []
 html-to-markdown = ["dep:html-to-markdown-rs", "dep:kuchikikiki", "dep:readability-js"]
 bedrock = ["dep:aws-config", "dep:aws-sdk-bedrockruntime", "dep:aws-smithy-types"]
 import = ["dep:rusqlite", "dep:json5"]
-test-helpers = [
-    "dep:tempfile",
+test-helpers = ["dep:tempfile"]
+# The embedded cluster the PostgreSQL tests run against. A feature of its own,
+# not part of `test-helpers`, so the libSQL-only legs, which turn
+# `test-helpers` on, do not build the library's large dependency graph for a
+# fixture they never compile.
+embedded-postgres = [
+    "postgres",
+    "test-helpers",
     "dep:pg_embedded_setup_unpriv",
 ]
 docker = ["dep:bollard"]

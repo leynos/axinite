@@ -2,14 +2,14 @@
 //!
 //! Every PostgreSQL-backed test reaches its database through
 //! [`try_test_pg_db`]. A lane that names a database in `TEST_DATABASE_URL`
-//! gets that database. Otherwise, on Linux with `test-helpers`, the test gets a
+//! gets that database. Otherwise, on Linux with `embedded-postgres`, the test gets a
 //! fresh database cloned from a migrated template on an embedded cluster the
 //! test process owns (see `embedded`). No test reaches a PostgreSQL the harness
 //! did not provision or the lane did not name: the old fallback to a local
 //! instance is gone, because on a host whose PostgreSQL rejects the local user
 //! it turned every PostgreSQL-backed test into a failure.
 
-#[cfg(all(feature = "test-helpers", target_os = "linux"))]
+#[cfg(all(feature = "embedded-postgres", target_os = "linux"))]
 pub mod embedded;
 
 use crate::config::{DatabaseBackend, DatabaseConfig, SslMode};
@@ -44,13 +44,13 @@ const UNAVAILABLE_PATTERNS: &[&str] = &[
 /// fails while any connection is still attached.
 pub struct TestDatabase {
     backend: PgBackend,
-    #[cfg(all(feature = "test-helpers", target_os = "linux"))]
+    #[cfg(all(feature = "embedded-postgres", target_os = "linux"))]
     guard: Option<pg_embedded_setup_unpriv::TemporaryDatabase>,
 }
 
 impl TestDatabase {
     /// Wrap a backend whose cloned database this guard owns and will drop.
-    #[cfg(all(feature = "test-helpers", target_os = "linux"))]
+    #[cfg(all(feature = "embedded-postgres", target_os = "linux"))]
     fn owning(backend: PgBackend, database: pg_embedded_setup_unpriv::TemporaryDatabase) -> Self {
         Self {
             backend,
@@ -62,7 +62,7 @@ impl TestDatabase {
     fn borrowed(backend: PgBackend) -> Self {
         Self {
             backend,
-            #[cfg(all(feature = "test-helpers", target_os = "linux"))]
+            #[cfg(all(feature = "embedded-postgres", target_os = "linux"))]
             guard: None,
         }
     }
@@ -76,7 +76,7 @@ impl std::ops::Deref for TestDatabase {
     }
 }
 
-#[cfg(all(feature = "test-helpers", target_os = "linux"))]
+#[cfg(all(feature = "embedded-postgres", target_os = "linux"))]
 impl Drop for TestDatabase {
     /// Drop the cloned database from a thread that is allowed to block.
     ///
@@ -100,7 +100,7 @@ impl Drop for TestDatabase {
 /// Create a PostgreSQL-backed test database, failing if none can be had.
 ///
 /// Uses the database `TEST_DATABASE_URL` names, or else an embedded cluster
-/// where one is available (Linux, with `test-helpers`).
+/// where one is available (Linux, with `embedded-postgres`).
 ///
 /// # Errors
 ///
@@ -137,7 +137,7 @@ fn configured_database_url() -> Option<String> {
 fn no_database_source() -> DatabaseError {
     DatabaseError::Pool(
         "could not connect to server: TEST_DATABASE_URL is unset and the \
-         embedded cluster needs Linux and the test-helpers feature"
+         embedded cluster needs Linux and the embedded-postgres feature"
             .to_string(),
     )
 }
@@ -265,7 +265,7 @@ async fn try_test_pg_db_with(
 }
 
 /// Provision the embedded cluster's database for a run that names none.
-#[cfg(all(feature = "test-helpers", target_os = "linux"))]
+#[cfg(all(feature = "embedded-postgres", target_os = "linux"))]
 async fn provision_without_url(
     _requirement: PostgresRequirement,
 ) -> Result<Option<TestDatabase>, DatabaseError> {
@@ -273,7 +273,7 @@ async fn provision_without_url(
 }
 
 /// Without an embedded cluster, a run that names no database has none.
-#[cfg(not(all(feature = "test-helpers", target_os = "linux")))]
+#[cfg(not(all(feature = "embedded-postgres", target_os = "linux")))]
 async fn provision_without_url(
     requirement: PostgresRequirement,
 ) -> Result<Option<TestDatabase>, DatabaseError> {

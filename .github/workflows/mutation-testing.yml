@@ -73,7 +73,8 @@ jobs:
       # crates/ambient-fs/src/fns.rs` prints nothing without the flag
       # and 20 mutants with it.
       extra-args: >-
-        --workspace --features test-helpers --test-workspace=true
+        --workspace --features test-helpers,embedded-postgres
+        --test-workspace=true
         --test-tool=nextest --
         -E "not binary(schema_helpers_ui)"
       # Heavy crate (~760 source files atop wasmtime/libsql); eight

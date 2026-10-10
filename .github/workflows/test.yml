@@ -128,9 +128,9 @@ jobs:
       matrix:
         include: >-
           ${{ github.event_name == 'pull_request' && fromJSON('[
-          {"name": "default", "flags": ""}
+          {"name": "default", "flags": "--features embedded-postgres"}
           ]') || fromJSON('[
-          {"name": "default", "flags": ""},
+          {"name": "default", "flags": "--features embedded-postgres"},
           {"name": "libsql-only",
           "flags": "--no-default-features --features libsql"}
           ]') }}

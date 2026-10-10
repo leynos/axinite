@@ -85,7 +85,7 @@ jobs:
           - name: all-features
             flags: "--all-features"
           - name: default
-            flags: "--features test-helpers"
+            flags: "--features test-helpers,embedded-postgres"
           - name: libsql-only
             flags: "--no-default-features --features libsql,test-helpers"
     steps:

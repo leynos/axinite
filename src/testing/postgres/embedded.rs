@@ -145,8 +145,21 @@ pub async fn provision() -> Result<TestDatabase, DatabaseError> {
         match cloned {
             Ok(database) => {
                 let config = test_database_config(database.url(), TEST_POOL_SIZE);
-                let backend = crate::db::postgres::PgBackend::new(&config).await?;
-                return Ok(TestDatabase::owning(backend, database));
+                return match crate::db::postgres::PgBackend::new(&config).await {
+                    Ok(backend) => Ok(TestDatabase::owning(backend, database)),
+                    Err(error) => {
+                        // The guard's destructor does synchronous cluster work
+                        // on a runtime of its own, which panics on an async
+                        // worker and would mask this error, so it is dropped
+                        // on the blocking pool.
+                        let _dropped = blocking(move || {
+                            drop(database);
+                            Ok(())
+                        })
+                        .await;
+                        Err(error)
+                    }
+                };
             }
             Err(error) => last = Some(error.to_string()),
         }
