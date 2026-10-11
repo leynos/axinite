@@ -78,6 +78,10 @@ SEL = {
     "ext_configure_empty": ".catalogue-panel__empty",
     # Remove confirmation: Kobalte AlertDialog (portalled to <body>).
     "ext_remove_dialog": ".extensions-remove-dialog",
+    # The Kobalte AlertDialog.CloseButton carries a component-set accessible
+    # name (not "Cancel"), so it is targeted by its danger-ghost class,
+    # scoped to the remove dialog.
+    "ext_remove_cancel": ".extensions-remove-dialog .dashboard-detail__ghost--danger",
     "ext_remove_overlay": ".dialog-overlay",
     # WASM registry table (imperatively rendered rows).
     "ext_registry_search": "#extensions-registry-search",
