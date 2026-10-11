@@ -59,7 +59,7 @@ jobs:
     timeout-minutes: 20
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
       - name: Install cargo-audit
@@ -146,7 +146,7 @@ jobs:
           docker-images: false
           swap-storage: false
       - name: Checkout repository
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
       # Right-sizing needs the peak memory and the low-water disk mark, and
       # neither is visible in a job's own output. The sampler runs alongside
       # the build and reports both at the end, with `if: always()` so a job
@@ -288,7 +288,7 @@ jobs:
         -C link-arg=-fuse-ld=mold
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
       # Right-sizing needs the peak memory and the low-water disk mark, and
       # neither is visible in a job's own output. The sampler runs alongside
       # the build and reports both at the end, with `if: always()` so a job
@@ -391,7 +391,7 @@ jobs:
         -C link-arg=-fuse-ld=mold
     steps:
       - name: Checkout repository
-        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803  # v6.1.0
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
         # Nothing in this job performs an authenticated Git operation, so the
         # token is not left in the checkout's Git configuration for the
         # repository code that runs after it.
@@ -486,7 +486,7 @@ jobs:
             flags: "--no-default-features --features libsql"
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
       - name: Restore Cargo registry and index
@@ -554,7 +554,7 @@ jobs:
         -C link-arg=-fuse-ld=mold
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
       # Right-sizing needs the peak memory and the low-water disk mark, and
       # neither is visible in a job's own output. The sampler runs alongside
       # the build and reports both at the end, with `if: always()` so a job
@@ -663,7 +663,7 @@ jobs:
     timeout-minutes: 45
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
       # Right-sizing needs the peak memory and the low-water disk mark, and
       # neither is visible in a job's own output. The sampler runs alongside
       # the build and reports both at the end, with `if: always()` so a job
@@ -686,7 +686,7 @@ jobs:
     if: github.event_name == 'pull_request'
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
         with:
           fetch-depth: 0
       - name: Check version bumps for changed extensions

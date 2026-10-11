@@ -37,7 +37,7 @@ jobs:
     env:
       CARGO_NEXTEST_VERSION: '0.9.140'
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
 
       - uses: dtolnay/rust-toolchain@stable
 
@@ -92,7 +92,7 @@ jobs:
           docker-images: false
           swap-storage: false
 
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
 
       # Right-sizing needs the peak memory and the low-water disk mark, and
       # neither is visible in a job's own output. The sampler runs alongside
