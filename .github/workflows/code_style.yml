@@ -67,7 +67,7 @@ jobs:
       - name: Install mdtablefix
         # `make check-fmt` needs `--check` and `--git` (available since 0.6.0).
         # Version 0.6.1 preserves escaped ordered-list text in Markdown files.
-        uses: leynos/shared-actions/.github/actions/install-mdtablefix@c5a54701c8603a0fa756a6b34c49bc2af75a6c11
+        uses: leynos/shared-actions/.github/actions/install-mdtablefix@2f47859bcf82ae8b5bc10b457683fbd589ca2e41
         with:
           version: "0.6.1"
       - name: Check formatting
@@ -90,7 +90,7 @@ jobs:
       # archive. This replaces the previous `cargo install merman-cli`
       # source build and its bespoke ~/.cargo/bin/merman-cli cache.
       - name: Install Nixie and Merman CLI
-        uses: leynos/shared-actions/.github/actions/install-nixie@6b5cdc2d4c0bb72cafd5a66d24d248ac25827db9
+        uses: leynos/shared-actions/.github/actions/install-nixie@2f47859bcf82ae8b5bc10b457683fbd589ca2e41
         with:
           nixie-version: '1.1.0'
           merman-version: '0.7.0'
@@ -186,7 +186,7 @@ jobs:
       # installs no second cargo-binstall.
       - name: Setup Rust
         id: setup-rust
-        uses: leynos/shared-actions/.github/actions/setup-rust@6cec89bac47a21cf756d68d638a9a510998e57f8
+        uses: leynos/shared-actions/.github/actions/setup-rust@2f47859bcf82ae8b5bc10b457683fbd589ca2e41
         with:
           toolchain: stable
           rustflags: ''
@@ -216,7 +216,7 @@ jobs:
       # attempt with a `cargo install` source-build fallback.
       - name: Install Whitaker
         if: matrix.whitaker
-        uses: leynos/shared-actions/.github/actions/install-whitaker@6cec89bac47a21cf756d68d638a9a510998e57f8
+        uses: leynos/shared-actions/.github/actions/install-whitaker@2f47859bcf82ae8b5bc10b457683fbd589ca2e41
         with:
           installer-version: '0.2.9'
           cache-provider: github

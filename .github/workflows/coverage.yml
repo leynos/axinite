@@ -184,7 +184,7 @@ jobs:
       # installs no second cargo-binstall.
       - name: Setup Rust
         id: setup-rust
-        uses: leynos/shared-actions/.github/actions/setup-rust@6cec89bac47a21cf756d68d638a9a510998e57f8
+        uses: leynos/shared-actions/.github/actions/setup-rust@2f47859bcf82ae8b5bc10b457683fbd589ca2e41
         with:
           toolchain: stable
           rustflags: ''
@@ -289,7 +289,7 @@ jobs:
         # reads the variable, and a composite action's steps inherit its env.
         env:
           NEXTEST_PROFILE: coverage
-        uses: leynos/shared-actions/.github/actions/generate-coverage@dbe2e22ceaf498d85512679ccded38be9dbe7777
+        uses: leynos/shared-actions/.github/actions/generate-coverage@2f47859bcf82ae8b5bc10b457683fbd589ca2e41
         with:
           features: libsql,test-helpers
           with-default-features: 'false'
@@ -335,7 +335,7 @@ jobs:
           matrix.name == 'libsql-only' &&
           steps.codescene-token.outputs.available == 'true' &&
           github.ref == 'refs/heads/main'
-        uses: leynos/shared-actions/.github/actions/upload-codescene-coverage@dbe2e22ceaf498d85512679ccded38be9dbe7777
+        uses: leynos/shared-actions/.github/actions/upload-codescene-coverage@2f47859bcf82ae8b5bc10b457683fbd589ca2e41
         with:
           format: lcov
           mode: upload
@@ -432,7 +432,7 @@ jobs:
       # installs no second cargo-binstall.
       - name: Setup Rust
         id: setup-rust
-        uses: leynos/shared-actions/.github/actions/setup-rust@6cec89bac47a21cf756d68d638a9a510998e57f8
+        uses: leynos/shared-actions/.github/actions/setup-rust@2f47859bcf82ae8b5bc10b457683fbd589ca2e41
         with:
           toolchain: stable
           rustflags: ''
