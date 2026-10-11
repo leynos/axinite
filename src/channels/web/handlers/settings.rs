@@ -146,7 +146,10 @@ async fn set_feature_flag(
     value: &serde_json::Value,
 ) -> Result<Response, (StatusCode, String)> {
     let deployment_id = deployment_id_from_headers(headers)
-        .map_err(|error| (StatusCode::BAD_REQUEST, error.to_string()))?
+        .map_err(|error| {
+            tracing::warn!(%error, "Rejected feature-flag write: malformed X-Deployment-Id");
+            (StatusCode::BAD_REQUEST, error.to_string())
+        })?
         .ok_or((
             StatusCode::BAD_REQUEST,
             "feature_flag writes require a non-empty X-Deployment-Id header".to_string(),
