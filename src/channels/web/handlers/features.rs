@@ -26,7 +26,7 @@ use std::sync::{Arc, OnceLock};
 use axum::{
     Json, Router,
     extract::State,
-    http::{HeaderMap, StatusCode},
+    http::{HeaderMap, HeaderValue, StatusCode},
     response::IntoResponse,
     routing::get,
 };
@@ -56,6 +56,7 @@ const FLAG_DEFAULTS: &[(&str, bool)] = &[
     ("surface_tee_attestation", false),
 ];
 
+/// Routes serving the deployment feature-flag map (`GET /api/features`).
 pub fn routes() -> Router<Arc<GatewayState>> {
     Router::new().route("/api/features", get(features_handler))
 }
@@ -65,27 +66,43 @@ pub fn routes() -> Router<Arc<GatewayState>> {
 /// RFC 0009 body shape.
 pub const VERSION_HEADER: &str = "x-axinite-version";
 
+/// Response header set to `true` when the persisted overrides for the
+/// requested deployment could not be loaded, so the body was resolved from the
+/// environment and compiled defaults only. Absent on a normal response.
+pub const DEGRADED_HEADER: &str = "x-axinite-flags-degraded";
+
 /// Serve the resolved flag map for the requesting deployment.
 ///
 /// An absent `X-Deployment-Id` header selects [`DEFAULT_DEPLOYMENT_ID`]; a
 /// present but malformed one is rejected with `400 Bad Request` rather than
 /// silently resolving another deployment's flags.
+///
+/// A read still answers when the store is unavailable, so the SPA can boot:
+/// the response is then resolved from the environment and compiled defaults
+/// and carries [`DEGRADED_HEADER`] so callers can tell it is incomplete.
 pub async fn features_handler(
     State(state): State<Arc<GatewayState>>,
     headers: HeaderMap,
 ) -> Result<impl IntoResponse, (StatusCode, String)> {
     let deployment_id = deployment_id_from_headers(&headers)
-        .map_err(|error| (StatusCode::BAD_REQUEST, error.to_string()))?
+        .map_err(|error| {
+            tracing::warn!(%error, "Rejected feature-flag read: malformed X-Deployment-Id");
+            (StatusCode::BAD_REQUEST, error.to_string())
+        })?
         .unwrap_or_else(|| DEFAULT_DEPLOYMENT_ID.to_string());
 
-    // A read still answers when the store is unavailable: the unhydrated
-    // deployment resolves from the environment and compiled defaults.
+    let mut response_headers = HeaderMap::new();
+    response_headers.insert(
+        VERSION_HEADER,
+        HeaderValue::from_static(env!("CARGO_PKG_VERSION")),
+    );
     if let Err(error) = ensure_deployment_hydrated(&state, &deployment_id).await {
         tracing::error!(
             deployment_id,
             %error,
-            "Failed to load deployment feature-flag overrides"
+            "Failed to load deployment feature-flag overrides; serving environment and default flags"
         );
+        response_headers.insert(DEGRADED_HEADER, HeaderValue::from_static("true"));
     }
 
     let overrides = state
@@ -96,9 +113,9 @@ pub async fn features_handler(
     let unavailable = unavailable_subsystem_flags(&state).await;
 
     Ok((
-        [(VERSION_HEADER, env!("CARGO_PKG_VERSION"))],
+        response_headers,
         Json(resolve_flags(
-            |variable| env_flag_overlay().get(variable).cloned(),
+            |name| env_flag_overlay().get(name).copied(),
             &overrides,
             &unavailable,
         )),
@@ -110,20 +127,29 @@ fn flag_env_var(name: &str) -> String {
     format!("FEATURE_FLAG_{}", name.to_ascii_uppercase())
 }
 
-/// The `FEATURE_FLAG_*` environment layer, read once per process.
+/// Interpret a raw `FEATURE_FLAG_*` value: `true` (case-insensitively) enables
+/// the flag; any other value disables it.
+fn parse_env_flag(raw: &str) -> bool {
+    raw.eq_ignore_ascii_case("true")
+}
+
+/// The environment layer, keyed by flag name and read once per process.
 ///
-/// A running process's environment cannot be changed from outside, so
-/// re-reading it on every `GET /api/features` only repeats work; the overlay
-/// is captured on first use and reused for the process lifetime. Only the
-/// variables for known flags are captured.
-pub(super) fn env_flag_overlay() -> &'static HashMap<String, String> {
-    static OVERLAY: OnceLock<HashMap<String, String>> = OnceLock::new();
+/// The `FEATURE_FLAG_<NAME>` variable naming and the string-to-bool reading
+/// live here, so [`resolve_flags`] sees only parsed values. A running
+/// process's environment cannot be changed from outside, so re-reading it on
+/// every `GET /api/features` only repeats work; the overlay is captured on
+/// first use and reused for the process lifetime. Only variables that are set
+/// for known flags are captured.
+pub(super) fn env_flag_overlay() -> &'static HashMap<&'static str, bool> {
+    static OVERLAY: OnceLock<HashMap<&'static str, bool>> = OnceLock::new();
     OVERLAY.get_or_init(|| {
         FLAG_DEFAULTS
             .iter()
             .filter_map(|(name, _)| {
-                let variable = flag_env_var(name);
-                std::env::var(&variable).ok().map(|value| (variable, value))
+                std::env::var(flag_env_var(name))
+                    .ok()
+                    .map(|raw| (*name, parse_env_flag(&raw)))
             })
             .collect()
     })
@@ -186,6 +212,11 @@ async fn ensure_deployment_hydrated(
     };
 
     let overrides = store.list_deployment_flags(deployment_id).await?;
+    tracing::debug!(
+        deployment_id,
+        count = overrides.len(),
+        "Hydrated deployment feature-flag overrides"
+    );
     state
         .feature_flags
         .write()
@@ -197,29 +228,29 @@ async fn ensure_deployment_hydrated(
 /// Resolve every known flag through the precedence chain: environment variable
 /// > deployment override > subsystem-availability default > compiled default.
 ///
-/// `unavailable` lists flags whose backing subsystem is absent; they resolve
-/// to `false` unless an environment variable or operator override says
-/// otherwise. Only names in [`FLAG_DEFAULTS`] are emitted; unknown override
-/// names are ignored, matching RFC 0009's flag-name validation posture.
+/// `env` returns the already-parsed environment value for a flag name (see
+/// [`env_flag_overlay`]). `unavailable` lists flags whose backing subsystem is
+/// absent; they resolve to `false` unless an environment variable or operator
+/// override says otherwise. Only names in [`FLAG_DEFAULTS`] are emitted;
+/// unknown override names are ignored, matching RFC 0009's flag-name
+/// validation posture.
 fn resolve_flags(
-    env: impl Fn(&str) -> Option<String>,
+    env: impl Fn(&str) -> Option<bool>,
     overrides: &HashMap<String, bool>,
     unavailable: &[&str],
 ) -> BTreeMap<String, bool> {
     FLAG_DEFAULTS
         .iter()
         .map(|(name, default)| {
-            let variable = flag_env_var(name);
-            let value = match env(&variable) {
-                Some(raw) => raw.eq_ignore_ascii_case("true"),
-                None => overrides.get(*name).copied().unwrap_or_else(|| {
+            let value = env(name).unwrap_or_else(|| {
+                overrides.get(*name).copied().unwrap_or_else(|| {
                     if unavailable.contains(name) {
                         false
                     } else {
                         *default
                     }
-                }),
-            };
+                })
+            });
             ((*name).to_string(), value)
         })
         .collect()
@@ -255,6 +286,12 @@ pub(crate) async fn apply_flag_override(
         deployment_id.to_string(),
         flag_name.to_string(),
         enabled,
+    );
+    tracing::info!(
+        deployment_id,
+        flag_name,
+        enabled,
+        "Feature-flag override set"
     );
 
     Ok(())
