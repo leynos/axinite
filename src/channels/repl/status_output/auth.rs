@@ -29,21 +29,39 @@ pub(super) fn render_auth_required_lines(info: &AuthRequiredInfo<'_>) -> Vec<Str
     let sanitized_ext_name = sanitize_for_terminal(info.extension_name);
     let mut lines = vec![
         String::new(),
-        format!("\x1b[33m  Authentication required for {sanitized_ext_name}\x1b[0m"),
+        format!(
+            "{ansi_yellow}{status_indent}Authentication required for {sanitized_ext_name}{ansi_reset}",
+            ansi_yellow = super::ANSI_YELLOW,
+            status_indent = super::STATUS_INDENT,
+            ansi_reset = super::ANSI_RESET,
+        ),
     ];
     if let Some(instr) = info.instructions {
         let sanitized_instr = sanitize_for_terminal(instr);
-        lines.push(format!("  {sanitized_instr}"));
+        lines.push(format!(
+            "{status_indent}{sanitized_instr}",
+            status_indent = super::STATUS_INDENT,
+        ));
     }
     if let Some(url) = info.auth_url {
         let sanitized_url = sanitize_for_terminal(url);
-        lines.push(format!("  \x1b[4m{sanitized_url}\x1b[0m"));
+        lines.push(format!(
+            "{status_indent}{ansi_underline}{sanitized_url}{ansi_reset}",
+            status_indent = super::STATUS_INDENT,
+            ansi_underline = super::ANSI_UNDERLINE,
+            ansi_reset = super::ANSI_RESET,
+        ));
     }
     if let Some(url) = info.setup_url
         && Some(url) != info.auth_url
     {
         let sanitized_url = sanitize_for_terminal(url);
-        lines.push(format!("  \x1b[4m{sanitized_url}\x1b[0m"));
+        lines.push(format!(
+            "{status_indent}{ansi_underline}{sanitized_url}{ansi_reset}",
+            status_indent = super::STATUS_INDENT,
+            ansi_underline = super::ANSI_UNDERLINE,
+            ansi_reset = super::ANSI_RESET,
+        ));
     }
     lines.push(String::new());
     lines
@@ -63,9 +81,19 @@ pub(super) fn render_auth_completed(info: &AuthCompletedInfo<'_>) -> String {
     let sanitized_ext_name = sanitize_for_terminal(info.extension_name);
     let sanitized_message = sanitize_for_terminal(info.message);
     if info.success {
-        format!("\x1b[32m  {sanitized_ext_name}: {sanitized_message}\x1b[0m")
+        format!(
+            "{ansi_green}{status_indent}{sanitized_ext_name}: {sanitized_message}{ansi_reset}",
+            ansi_green = super::ANSI_GREEN,
+            status_indent = super::STATUS_INDENT,
+            ansi_reset = super::ANSI_RESET,
+        )
     } else {
-        format!("\x1b[31m  {sanitized_ext_name}: {sanitized_message}\x1b[0m")
+        format!(
+            "{ansi_red}{status_indent}{sanitized_ext_name}: {sanitized_message}{ansi_reset}",
+            ansi_red = super::ANSI_RED,
+            status_indent = super::STATUS_INDENT,
+            ansi_reset = super::ANSI_RESET,
+        )
     }
 }
 
@@ -75,34 +103,4 @@ pub(super) fn render_auth_completed(info: &AuthCompletedInfo<'_>) -> String {
 /// or red (failure) styling based on the authentication result.
 pub(super) fn print_auth_completed(info: &AuthCompletedInfo<'_>) {
     eprintln!("{}", render_auth_completed(info));
-}
-
-/// Build an [`AuthRequiredInfo`] from destructured [`StatusUpdate::AuthRequired`]
-/// fields and delegate to [`print_auth_required`].
-///
-/// [`StatusUpdate::AuthRequired`]: crate::channels::StatusUpdate::AuthRequired
-pub(super) fn handle_auth_required(
-    extension_name: &str,
-    instructions: Option<&str>,
-    setup_url: Option<&str>,
-    auth_url: Option<&str>,
-) {
-    print_auth_required(&AuthRequiredInfo {
-        extension_name,
-        instructions,
-        setup_url,
-        auth_url,
-    });
-}
-
-/// Build an [`AuthCompletedInfo`] from destructured [`StatusUpdate::AuthCompleted`]
-/// fields and delegate to [`print_auth_completed`].
-///
-/// [`StatusUpdate::AuthCompleted`]: crate::channels::StatusUpdate::AuthCompleted
-pub(super) fn handle_auth_completed(extension_name: &str, success: bool, message: &str) {
-    print_auth_completed(&AuthCompletedInfo {
-        extension_name,
-        success,
-        message,
-    });
 }
