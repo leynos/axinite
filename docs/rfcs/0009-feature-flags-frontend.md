@@ -553,6 +553,11 @@ follows this RFC with the following deliberate deviations:
 - **Gateway version correlation** (open question 1) is provided as an
   `X-Axinite-Version` response header on `GET /api/features`, preserving the
   flat boolean-map body.
+- **Degraded reads.** If the persisted overrides cannot be loaded, the read
+  still succeeds from the environment and compiled defaults and sets an
+  `X-Axinite-Flags-Degraded: true` response header (absent otherwise); the
+  deployment stays un-hydrated, so the next read retries. A write fails instead
+  (500) rather than caching an override that would hide the rest.
 - **Flag-change SSE event** (open question 2) remains deferred; it is
   tracked as roadmap task 4.5.7.
 - **Front-end consumption** (§5) is realized in the SolidJS workspace

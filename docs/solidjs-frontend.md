@@ -175,7 +175,10 @@ via `PUT /api/settings/feature_flag:<name>` with an `X-Deployment-Id` header),
 then a subsystem-availability default (flags whose backing runtime is absent
 resolve off), then the compiled default
 (`src/channels/web/handlers/features.rs`). The response carries an
-`X-Axinite-Version` header; see RFC 0009's implementation notes for the full
+`X-Axinite-Version` header. When the stored overrides for the deployment cannot
+be loaded, the gateway still answers (so the SPA boots) from the environment
+and compiled defaults and adds `X-Axinite-Flags-Degraded: true`; the next
+request retries the load. See RFC 0009's implementation notes for the full
 contract and deviations.
 
 The `X-Deployment-Id` value is trimmed and must be 1 to 64 characters of
@@ -196,7 +199,7 @@ headers).
 
 - No authentication, no rate limiting, no persistence.
 - Chat responses are canned fixtures on fixed timers, not model output.
-- Only the routes listed above exist; settings, pairing, OAuth, project
+- Only the routes listed above exist; settings, OAuth, project
   file browsing, WebSocket, and the OpenAI-compatible surface are absent.
 - Job/routine/extension/skill mutations mutate in-memory state only.
 

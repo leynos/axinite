@@ -149,11 +149,13 @@ SolidJS UI.
   behaviour — all needed before the SPA parity work can be exercised. Evidence:
   recon of `web-src/mock-backend/src/server.ts`, `state.ts`. Impact: F3 lands
   before F4–F6.
-- Observation: `tests/e2e/test_extensions.py` mocks every API via
-  `page.route()` interception and never touches the real daemon; the skills
-  scenario deliberately hits the live ClawHub registry with self-skips. Impact:
-  extension scenarios can be migrated purely against the SolidJS DOM; skills
-  keeps its skip guards.
+- Observation: `tests/e2e/test_extensions.py` (since split into
+  `tests/e2e/scenarios/test_extensions_{catalogue,configure,channels}.py`; the
+  `.github/workflows/e2e.yml` extensions matrix now lists the three modules,
+  2026-10-11) mocks every API via `page.route()` interception and never touches
+  the real daemon; the skills scenario deliberately hits the live ClawHub
+  registry with self-skips. Impact: extension scenarios can be migrated purely
+  against the SolidJS DOM; skills keeps its skip guards.
 
 ## Decision log
 
@@ -179,6 +181,13 @@ SolidJS UI.
   compiled default, per RFC 0009 §Precedence (subsystem-availability defaults
   are not implemented — no current flag needs one). Date/Author: 2026-07-19,
   Claude.
+  - Note (2026-10-11): superseded in part. The gateway now implements a
+    disable-only subsystem-availability layer, so precedence is environment
+    variable > deployment override > subsystem availability (disable-only) >
+    compiled default. A flag whose backing subsystem is not running resolves to
+    `false` unless an environment variable or override says otherwise; the
+    layer never enables a flag. See `unavailable_subsystem_flags` and
+    `resolve_flags` in `src/channels/web/handlers/features.rs`.
 - Decision: expose a minimal `window.__axinite` test-hook object from the
   SPA (chat stream close/reconnect, `emitChatEvent`, ready marker) instead of
   recreating the legacy globals the Python e2e suite pokes. Rationale: the
@@ -351,5 +360,6 @@ surface instead.
 
 Remaining follow-up (unchanged in scope): RFC 0018 Stage 5 — removing the
 legacy shell, its assets, and `tests/web_static_app.test.mjs` once the rollback
-window closes — plus the RFC 0009 open questions (subsystem defaults,
-flag-change SSE events).
+window closes — plus the RFC 0009 open question on flag-change SSE events
+(roadmap 4.5.7). The subsystem-availability defaults question has since been
+resolved (see the 2026-10-11 decision note).
