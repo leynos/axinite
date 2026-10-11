@@ -1,6 +1,7 @@
 //! Unit tests for feature-flag resolution and override persistence.
 
 use super::*;
+use crate::test_support::ExpectValid;
 
 fn no_overrides() -> HashMap<String, bool> {
     HashMap::new()
@@ -197,10 +198,10 @@ async fn get_features(state: Arc<GatewayState>) -> axum::response::Response {
             Request::builder()
                 .uri("/api/features")
                 .body(Body::empty())
-                .expect("build features request"),
+                .expect_valid("build features request"),
         )
         .await
-        .expect("route features request")
+        .expect_valid("route features request")
 }
 
 #[tokio::test]
