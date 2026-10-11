@@ -1,5 +1,5 @@
 /**
- * Pairing API wrapper for `/api/pairing/{channel}`: list pending requests
+ * @file Pairing API wrapper for `/api/pairing/{channel}`: list pending requests
  * and approve one by code. Used by the extension pairing queue on the
  * `/extensions` surface.
  */
@@ -11,6 +11,7 @@ import type {
   PairingListResponse,
 } from "@/lib/api/contracts";
 
+/** GET /api/pairing/{channel}: list pending pairing requests for a channel. */
 export function fetchPairingRequests(
   channel: string
 ): Promise<PairingListResponse> {
@@ -19,6 +20,7 @@ export function fetchPairingRequests(
   );
 }
 
+/** POST /api/pairing/{channel}/approve: approve a pairing request by code. */
 export function approvePairing(
   channel: string,
   code: string

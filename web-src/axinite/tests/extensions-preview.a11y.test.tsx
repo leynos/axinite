@@ -1,3 +1,8 @@
+/**
+ * @file Accessibility test (jest-axe) for the extensions route, with the
+ * extensions API mocked. Run by the separate `vitest.a11y.config.ts` project.
+ */
+
 import { render, screen } from "@solidjs/testing-library";
 import userEvent from "@testing-library/user-event";
 import { axe } from "jest-axe";

@@ -1,3 +1,8 @@
+/**
+ * @file Tests for the restart controller state machine in `lib/restart`, driven
+ * by a fake harness for the send, stream and reachability dependencies.
+ */
+
 import { describe, expect, it } from "vitest";
 
 import type { ChatSseEvent } from "@/lib/api/contracts";

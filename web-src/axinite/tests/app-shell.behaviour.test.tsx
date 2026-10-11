@@ -1,3 +1,8 @@
+/**
+ * @file Behaviour tests for the app shell chrome: navigation and the locale
+ * picker, which must offer only locales with complete site coverage.
+ */
+
 import { render, screen, waitFor } from "@solidjs/testing-library";
 import userEvent from "@testing-library/user-event";
 import { beforeAll, beforeEach, describe, expect, it } from "vitest";

@@ -1,5 +1,5 @@
 /**
- * Boot-time bearer-token gate wrapped around the router. It probes the
+ * @file Boot-time bearer-token gate wrapped around the router. It probes the
  * gateway once and either renders its children or prompts for a token, which
  * is kept in session storage via `lib/auth/token`.
  */

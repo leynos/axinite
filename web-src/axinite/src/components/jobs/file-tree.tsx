@@ -1,5 +1,5 @@
 /**
- * File browser for a job's project files on the `/jobs` surface. It turns the
+ * @file File browser for a job's project files on the `/jobs` surface. It turns the
  * flat `files/list` payload into a nested tree and renders it with
  * expandable directories.
  */

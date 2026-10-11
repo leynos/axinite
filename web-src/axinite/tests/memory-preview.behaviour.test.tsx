@@ -1,3 +1,9 @@
+/**
+ * @file Behaviour tests for the memory route (`MemoryPreview`), with the memory
+ * API module mocked so tree, read, search and write flows run without a
+ * gateway.
+ */
+
 import { render, screen, waitFor } from "@solidjs/testing-library";
 import userEvent from "@testing-library/user-event";
 import { beforeAll, beforeEach, describe, expect, it, vi } from "vitest";

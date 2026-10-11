@@ -1,3 +1,9 @@
+/**
+ * @file Tests for the TEE attestation client in `lib/tee`: API host derivation
+ * from the browser location, and status and report fetching with caching. The
+ * location is overridden per test.
+ */
+
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import {

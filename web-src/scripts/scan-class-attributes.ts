@@ -1,5 +1,5 @@
 /**
- * Shared scanner for the class-attribute lint scripts
+ * @file Shared scanner for the class-attribute lint scripts
  * (`check-classlist-length.ts`, `find-near-duplicate-classes.ts`).
  *
  * Both checks must see exactly the same attributes, so the file walk and the
@@ -14,9 +14,11 @@ export const CLASS_SCAN_PATTERN = "axinite/src/**/*.tsx";
 
 /**
  * Matches a static `class="..."` attribute, tolerating whitespace around `=`,
- * values that span lines, and empty values.
+ * values that span lines, and empty values. The lookbehind requires an
+ * attribute-name boundary so `data-class="..."` or `subclass="..."` is not
+ * mistaken for a class list.
  */
-const CLASS_ATTRIBUTE = /class\s*=\s*"([^"]*)"/gu;
+const CLASS_ATTRIBUTE = /(?<![\w-])class\s*=\s*"([^"]*)"/gu;
 
 export type ClassAttribute = {
   /** Source file, relative to the workspace root. */

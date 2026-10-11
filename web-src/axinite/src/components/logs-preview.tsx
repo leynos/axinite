@@ -1,5 +1,5 @@
 /**
- * The `/logs` surface: a live tail of `/api/logs/events` with client-side
+ * @file The `/logs` surface: a live tail of `/api/logs/events` with client-side
  * level and target filters, pause, clear, and auto-scroll, plus control of
  * the gateway's runtime log level. Retained entries are capped in memory.
  */

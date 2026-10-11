@@ -1,5 +1,5 @@
 /**
- * Language selector shown in the app shell. It lists the locales that
+ * @file Language selector shown in the app shell. It lists the locales that
  * `supported-locales` marks as complete and switches language through the
  * i18n provider.
  */

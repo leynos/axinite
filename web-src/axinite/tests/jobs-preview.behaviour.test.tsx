@@ -1,3 +1,9 @@
+/**
+ * @file Behaviour tests for the jobs route (`JobsPreview` and `JobDetail`),
+ * with the jobs API module mocked so list, detail, event and file flows run
+ * without a gateway.
+ */
+
 import { render, screen, waitFor } from "@solidjs/testing-library";
 import userEvent from "@testing-library/user-event";
 import { createSignal } from "solid-js";

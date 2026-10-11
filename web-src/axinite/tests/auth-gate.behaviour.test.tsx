@@ -1,3 +1,9 @@
+/**
+ * @file Behaviour tests for `AuthGate`: how it probes the gateway with a stubbed
+ * `fetch` and either renders its children or asks for a token, including
+ * `?token=` boot handling.
+ */
+
 import { render, screen, waitFor } from "@solidjs/testing-library";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";

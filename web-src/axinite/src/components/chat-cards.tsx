@@ -1,5 +1,5 @@
 /**
- * Inline cards rendered in the chat transcript for gateway events that need
+ * @file Inline cards rendered in the chat transcript for gateway events that need
  * more than text: generated images, job-start notices, and auth-token
  * prompts. Also holds the http(s) URL guard applied before any external link
  * is opened.
@@ -40,7 +40,7 @@ export function openExternalUrl(value: string): boolean {
 
 export const GeneratedImageCard = (props: {
   dataUrl: string;
-  path?: string;
+  path?: string | undefined;
 }) => {
   const { t } = useI18n();
   return (
@@ -66,7 +66,7 @@ export const GeneratedImageCard = (props: {
 export const JobStartCard = (props: {
   jobId: string;
   title: string;
-  browseUrl?: string;
+  browseUrl?: string | undefined;
 }) => {
   const { t } = useI18n();
   const basePath = import.meta.env.BASE_URL as string | undefined;
@@ -112,9 +112,9 @@ export const JobStartCard = (props: {
 
 export const AuthCard = (props: {
   extensionName: string;
-  instructions?: string;
-  authUrl?: string;
-  setupUrl?: string;
+  instructions?: string | undefined;
+  authUrl?: string | undefined;
+  setupUrl?: string | undefined;
   onSubmit: (token: string) => Promise<boolean>;
   onCancel: () => void;
 }) => {

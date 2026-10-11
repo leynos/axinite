@@ -1,5 +1,5 @@
 /**
- * Restart button and confirmation dialog for the app shell. The gateway has
+ * @file Restart button and confirmation dialog for the app shell. The gateway has
  * no restart endpoint, so this wires `lib/restart` to the chat API (sending
  * `/restart`), the chat event stream, and gateway status polling.
  */

@@ -1,5 +1,5 @@
 /**
- * Gateway-level API wrapper: `/api/gateway/status` for the shell's status
+ * @file Gateway-level API wrapper: `/api/gateway/status` for the shell's status
  * pill and restart polling, and `/api/features` for runtime feature flags.
  * Both degrade to a fallback value instead of throwing when unreachable.
  */
@@ -38,10 +38,12 @@ export function deriveGatewayStatus(
   };
 }
 
+/** GET /api/gateway/status: fetch the topbar status pill, with a fallback. */
 export async function fetchGatewayStatus(): Promise<GatewayStatus> {
   return deriveGatewayStatus(await fetchGatewayStatusRaw());
 }
 
+/** GET /api/features: fetch runtime feature flags, or `{}` when unreachable. */
 export async function fetchRuntimeFeatureFlags(): Promise<
   Record<string, boolean>
 > {
@@ -54,9 +56,9 @@ export async function fetchRuntimeFeatureFlags(): Promise<
       typeof payload === "object" &&
       payload !== null &&
       "flags" in payload &&
-      typeof payload.flags === "object" &&
-      payload.flags !== null
-        ? payload.flags
+      typeof payload["flags"] === "object" &&
+      payload["flags"] !== null
+        ? payload["flags"]
         : payload;
 
     return Object.entries(source).reduce<Record<string, boolean>>(

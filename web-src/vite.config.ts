@@ -1,3 +1,9 @@
+/**
+ * @file Vite build and dev-server configuration for the SolidJS SPA. The build
+ * output in `dist` is embedded into the gateway binary, so asset names are
+ * fixed.
+ */
+
 import { resolve } from "node:path";
 
 import tailwindcss from "@tailwindcss/vite";

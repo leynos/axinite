@@ -1,3 +1,8 @@
+/**
+ * @file Behaviour tests for `RestartControl`: whether it is shown, and how it
+ * reflects the restart phases reported by the injected restart dependencies.
+ */
+
 import { render, screen, waitFor } from "@solidjs/testing-library";
 import userEvent from "@testing-library/user-event";
 import { beforeAll, beforeEach, describe, expect, it, vi } from "vitest";

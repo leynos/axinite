@@ -1,5 +1,5 @@
 /**
- * Small string-case helpers. They turn gateway snake_case identifiers, such
+ * @file Small string-case helpers. They turn gateway snake_case identifiers, such
  * as job kinds and extension statuses, into labels and translation-key
  * segments.
  */

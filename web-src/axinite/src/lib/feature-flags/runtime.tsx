@@ -1,5 +1,5 @@
 /**
- * Feature-flag context provider and hook. It resolves each flag from the
+ * @file Feature-flag context provider and hook. It resolves each flag from the
  * registry defaults, the gateway's `/api/features` response, and local
  * overrides kept in `localStorage`, and exposes route-visibility and debug
  * helpers to components.
@@ -61,6 +61,10 @@ function writeOverrides(overrides: OverrideMap): void {
   window.localStorage.setItem(OVERRIDE_STORAGE_KEY, JSON.stringify(overrides));
 }
 
+/**
+ * Resolve every flag: a local override wins over a server value, which wins
+ * over the registry default. Unknown keys are ignored.
+ */
 export function resolveFeatureFlags(
   serverFlags: Record<string, boolean>,
   overrides: OverrideMap
@@ -102,6 +106,10 @@ function shouldReportFlagError(error: unknown): boolean {
 
 const FeatureFlagContext = createContext<FeatureFlagContextValue>();
 
+/**
+ * Provide the feature-flag context: runtime flags from the gateway merged
+ * with local overrides, which are persisted in `localStorage`.
+ */
 export const FeatureFlagProvider: ParentComponent = (props) => {
   const [overrides, setOverrides] = createSignal<OverrideMap>(readOverrides());
 
@@ -159,6 +167,7 @@ export const FeatureFlagProvider: ParentComponent = (props) => {
   );
 };
 
+/** Read the feature-flag context; throws when `FeatureFlagProvider` is missing. */
 export function useFeatureFlags(): FeatureFlagContextValue {
   const context = useContext(FeatureFlagContext);
 

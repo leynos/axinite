@@ -1,3 +1,8 @@
+/**
+ * @file Tests for gateway bearer-token storage and how the typed client sends
+ * it: an `Authorization` header for requests, a query parameter for SSE.
+ */
+
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createEventStream, requestJson } from "@/lib/api/client";
 import {

@@ -1,5 +1,5 @@
 /**
- * Solid context bridging the i18next runtime to components. It exposes a
+ * @file Solid context bridging the i18next runtime to components. It exposes a
  * reactive `t`, the current language, the available locales, and
  * `changeLanguage`, so translated text updates when the language changes.
  */
@@ -25,6 +25,7 @@ type I18nContextValue = {
 
 const I18nContext = createContext<I18nContextValue>();
 
+/** Provide the i18n context, tracking the active language reactively. */
 export const I18nProvider: ParentComponent = (props) => {
   const [language, setLanguage] = createSignal<string>(DEFAULT_LOCALE);
 
@@ -50,7 +51,9 @@ export const I18nProvider: ParentComponent = (props) => {
 
   const t = (key: string, options?: TranslationOptions) => {
     language();
-    return i18n.t(key, options) as string;
+    return (
+      options === undefined ? i18n.t(key) : i18n.t(key, options)
+    ) as string;
   };
 
   return (
@@ -69,6 +72,7 @@ export const I18nProvider: ParentComponent = (props) => {
   );
 };
 
+/** Read the i18n context; throws when `I18nProvider` is missing. */
 export function useI18n(): I18nContextValue {
   const context = useContext(I18nContext);
 

@@ -1,3 +1,8 @@
+/**
+ * @file Tests for the mock backend's `buildSseResponse`: subscription, heartbeat
+ * and teardown of a stream, driven with fake timers.
+ */
+
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { buildSseResponse } from "../../mock-backend/src/server";

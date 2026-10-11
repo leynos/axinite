@@ -1,6 +1,6 @@
 #!/usr/bin/env bun
 /**
- * Lint script: fails when a `class` attribute in the SPA sources has more
+ * @file Lint script: fails when a `class` attribute in the SPA sources has more
  * than 12 tokens, which usually signals that styles belong in a semantic
  * class. It shares its scanner with `find-near-duplicate-classes.ts`.
  */

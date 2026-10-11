@@ -1,3 +1,8 @@
+/**
+ * @file Tests for the supported-locale metadata: fallback to the default,
+ * text direction, and that only complete locales are exposed to the picker.
+ */
+
 import { describe, expect, it } from "vitest";
 
 import {

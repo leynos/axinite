@@ -1,5 +1,5 @@
 /**
- * Route identifiers, navigation order, and per-route details. Each route
+ * @file Route identifiers, navigation order, and per-route details. Each route
  * names the feature flag that controls its visibility, which the shell
  * navigation and route page consult.
  */

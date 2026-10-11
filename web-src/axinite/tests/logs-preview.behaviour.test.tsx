@@ -1,3 +1,8 @@
+/**
+ * @file Behaviour tests for the logs route (`LogsPreview`), with the logs API
+ * mocked so log-level changes and streamed entries can be driven directly.
+ */
+
 import { render, screen, waitFor } from "@solidjs/testing-library";
 import userEvent from "@testing-library/user-event";
 import { beforeAll, beforeEach, describe, expect, it, vi } from "vitest";

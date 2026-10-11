@@ -1,5 +1,5 @@
 /**
- * Three-step activation stepper for WASM channel extensions on the
+ * @file Three-step activation stepper for WASM channel extensions on the
  * `/extensions` surface. `computeStepperModel` maps an extension's
  * activation status to per-step states, following the legacy UI's heuristic.
  */
@@ -57,9 +57,9 @@ export function computeStepperModel(activationStatus?: string): StepperModel {
   return { reachedIdx, states, awaitingPairing: status === "pairing" };
 }
 
-export const WasmChannelStepper: Component<{ activationStatus?: string }> = (
-  props
-) => {
+export const WasmChannelStepper: Component<{
+  activationStatus?: string | undefined;
+}> = (props) => {
   const { t } = useI18n();
   const model = () => computeStepperModel(props.activationStatus);
   const stepLabel = (index: number) => {

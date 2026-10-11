@@ -1,5 +1,5 @@
 /**
- * Port configuration shared by the stub runtime's processes (the mock API,
+ * @file Port configuration shared by the stub runtime's processes (the mock API,
  * the preview server, and the `scripts/dev.ts` supervisor).
  */
 

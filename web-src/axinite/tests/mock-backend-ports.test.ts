@@ -1,3 +1,8 @@
+/**
+ * @file Tests for the mock backend's `parsePort`, which validates the port
+ * environment variables read by the dev runner.
+ */
+
 import { describe, expect, it } from "vitest";
 
 import { parsePort } from "../../mock-backend/src/ports";

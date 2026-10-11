@@ -1,5 +1,5 @@
 /**
- * Mock gateway HTTP server. It answers the `/api/*` routes the SPA calls,
+ * @file Mock gateway HTTP server. It answers the `/api/*` routes the SPA calls,
  * including the chat and log SSE streams, from in-memory `MockBackendState`
  * so the frontend can be developed and tested without the Rust daemon.
  * `MOCK_FAILURES` forces HTTP 500 on chosen paths.
@@ -27,7 +27,7 @@ import { MockBackendState, PairingRateLimitedError } from "./state";
 
 export const DEFAULT_API_PORT = parsePort(
   "MOCK_API_PORT",
-  process.env.MOCK_API_PORT,
+  process.env["MOCK_API_PORT"],
   8787
 );
 
@@ -44,7 +44,7 @@ export function parseFailureRoutes(raw: string | undefined): Set<string> {
   );
 }
 
-const failureRoutes = parseFailureRoutes(process.env.MOCK_FAILURES);
+const failureRoutes = parseFailureRoutes(process.env["MOCK_FAILURES"]);
 
 function jsonResponse(payload: unknown, init?: ResponseInit): Response {
   return new Response(JSON.stringify(payload), {
@@ -165,6 +165,16 @@ interface RouteContext {
   match: RegExpMatchArray | null;
 }
 
+// Regex routes always capture a first group, so a missing one means the
+// route table itself is wrong rather than the request.
+function firstCapture(match: RegExpMatchArray | null): string {
+  const value = match?.[1];
+  if (value === undefined) {
+    throw new Error("Route pattern did not capture a path parameter");
+  }
+  return value;
+}
+
 type RouteHandler = (ctx: RouteContext) => Response | Promise<Response>;
 
 interface Route {
@@ -247,7 +257,7 @@ const routes: readonly Route[] = [
     handler: async ({ state, request, match }) => {
       const body = await parseJson<PairingApproveRequest>(request);
       try {
-        return jsonResponse(state.pairingApprove(match![1], body.code));
+        return jsonResponse(state.pairingApprove(firstCapture(match), body.code));
       } catch (error) {
         if (error instanceof PairingRateLimitedError) {
           return new Response(error.message, {
@@ -262,7 +272,7 @@ const routes: readonly Route[] = [
   {
     method: "GET",
     pattern: /^\/api\/pairing\/([^/]+)$/,
-    handler: ({ state, match }) => jsonResponse(state.pairingList(match![1])),
+    handler: ({ state, match }) => jsonResponse(state.pairingList(firstCapture(match))),
   },
   {
     method: "GET",
@@ -322,17 +332,17 @@ const routes: readonly Route[] = [
   {
     method: "GET",
     pattern: /^\/api\/jobs\/([^/]+)$/,
-    handler: ({ state, match }) => jsonResponse(state.getJob(match![1])),
+    handler: ({ state, match }) => jsonResponse(state.getJob(firstCapture(match))),
   },
   {
     method: "GET",
     pattern: /^\/api\/jobs\/([^/]+)\/events$/,
-    handler: ({ state, match }) => jsonResponse(state.getJobEvents(match![1])),
+    handler: ({ state, match }) => jsonResponse(state.getJobEvents(firstCapture(match))),
   },
   {
     method: "GET",
     pattern: /^\/api\/jobs\/([^/]+)\/files\/list$/,
-    handler: ({ state, match }) => jsonResponse(state.listJobFiles(match![1])),
+    handler: ({ state, match }) => jsonResponse(state.listJobFiles(firstCapture(match))),
   },
   {
     method: "GET",
@@ -342,25 +352,25 @@ const routes: readonly Route[] = [
       if (!path) {
         return errorResponse(400, "Missing path query parameter.");
       }
-      return jsonResponse(state.readJobFile(match![1], path));
+      return jsonResponse(state.readJobFile(firstCapture(match), path));
     },
   },
   {
     method: "POST",
     pattern: /^\/api\/jobs\/([^/]+)\/restart$/,
-    handler: ({ state, match }) => jsonResponse(state.restartJob(match![1])),
+    handler: ({ state, match }) => jsonResponse(state.restartJob(firstCapture(match))),
   },
   {
     method: "POST",
     pattern: /^\/api\/jobs\/([^/]+)\/cancel$/,
-    handler: ({ state, match }) => jsonResponse(state.cancelJob(match![1])),
+    handler: ({ state, match }) => jsonResponse(state.cancelJob(firstCapture(match))),
   },
   {
     method: "POST",
     pattern: /^\/api\/jobs\/([^/]+)\/prompt$/,
     handler: async ({ state, request, match }) => {
       const body = await parseJson<JobPromptRequest>(request);
-      return jsonResponse(state.promptJob(match![1], body));
+      return jsonResponse(state.promptJob(firstCapture(match), body));
     },
   },
   {
@@ -376,19 +386,19 @@ const routes: readonly Route[] = [
   {
     method: "GET",
     pattern: /^\/api\/routines\/([^/]+)$/,
-    handler: ({ state, match }) => jsonResponse(state.getRoutine(match![1])),
+    handler: ({ state, match }) => jsonResponse(state.getRoutine(firstCapture(match))),
   },
   {
     method: "GET",
     pattern: /^\/api\/routines\/([^/]+)\/runs$/,
     handler: ({ state, match }) =>
-      jsonResponse(state.getRoutineRuns(match![1])),
+      jsonResponse(state.getRoutineRuns(firstCapture(match))),
   },
   {
     method: "POST",
     pattern: /^\/api\/routines\/([^/]+)\/trigger$/,
     handler: ({ state, match }) =>
-      jsonResponse(state.triggerRoutine(match![1])),
+      jsonResponse(state.triggerRoutine(firstCapture(match))),
   },
   {
     method: "POST",
@@ -401,13 +411,13 @@ const routes: readonly Route[] = [
               .clone()
               .json()
               .catch(() => undefined as ToggleRequest | undefined);
-      return jsonResponse(state.toggleRoutine(match![1], body));
+      return jsonResponse(state.toggleRoutine(firstCapture(match), body));
     },
   },
   {
     method: "DELETE",
     pattern: /^\/api\/routines\/([^/]+)$/,
-    handler: ({ state, match }) => jsonResponse(state.deleteRoutine(match![1])),
+    handler: ({ state, match }) => jsonResponse(state.deleteRoutine(firstCapture(match))),
   },
   {
     method: "GET",
@@ -442,26 +452,26 @@ const routes: readonly Route[] = [
     method: "POST",
     pattern: /^\/api\/extensions\/([^/]+)\/activate$/,
     handler: ({ state, match }) =>
-      jsonResponse(state.activateExtension(match![1])),
+      jsonResponse(state.activateExtension(firstCapture(match))),
   },
   {
     method: "POST",
     pattern: /^\/api\/extensions\/([^/]+)\/remove$/,
     handler: ({ state, match }) =>
-      jsonResponse(state.removeExtension(match![1])),
+      jsonResponse(state.removeExtension(firstCapture(match))),
   },
   {
     method: "GET",
     pattern: /^\/api\/extensions\/([^/]+)\/setup$/,
     handler: ({ state, match }) =>
-      jsonResponse(state.getExtensionSetup(match![1])),
+      jsonResponse(state.getExtensionSetup(firstCapture(match))),
   },
   {
     method: "POST",
     pattern: /^\/api\/extensions\/([^/]+)\/setup$/,
     handler: async ({ state, request, match }) => {
       const body = await parseJson<ExtensionSetupRequest>(request);
-      return jsonResponse(state.submitExtensionSetup(match![1], body.secrets));
+      return jsonResponse(state.submitExtensionSetup(firstCapture(match), body.secrets));
     },
   },
   {
@@ -488,7 +498,7 @@ const routes: readonly Route[] = [
   {
     method: "DELETE",
     pattern: /^\/api\/skills\/([^/]+)$/,
-    handler: ({ state, match }) => jsonResponse(state.removeSkill(match![1])),
+    handler: ({ state, match }) => jsonResponse(state.removeSkill(firstCapture(match))),
   },
   {
     method: "GET",

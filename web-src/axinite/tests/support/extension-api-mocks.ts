@@ -1,5 +1,5 @@
 /**
- * Shared stand-ins for `@/lib/api/extensions` used by the extensions specs.
+ * @file Shared stand-ins for `@/lib/api/extensions` used by the extensions specs.
  *
  * Each spec registers the mocks with
  * `vi.mock("@/lib/api/extensions", async () => (await import(...)).extensionApiMocks)`

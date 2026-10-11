@@ -1,3 +1,8 @@
+/**
+ * @file Tests for the jobs route's pure formatting helper that resolves which
+ * project file is active as the file listing changes.
+ */
+
 import { describe, expect, it } from "vitest";
 
 import { resolveActiveFilePath } from "@/components/jobs/format";

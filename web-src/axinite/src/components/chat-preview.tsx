@@ -1,5 +1,5 @@
 /**
- * The `/chat` surface: thread list, history, message composer with image
+ * @file The `/chat` surface: thread list, history, message composer with image
  * staging, tool-approval prompts, and the `/api/chat/events` SSE stream. It
  * reports stream state to `connection-status` and registers the e2e test
  * hooks from `lib/test-hooks` while mounted.
@@ -74,21 +74,21 @@ type SendInput = {
 type GeneratedImage = {
   id: string;
   dataUrl: string;
-  path?: string;
+  path?: string | undefined;
 };
 
 type JobCard = {
   id: string;
   jobId: string;
   title: string;
-  browseUrl?: string;
+  browseUrl?: string | undefined;
 };
 
 type AuthCardState = {
   extensionName: string;
-  instructions?: string;
-  authUrl?: string;
-  setupUrl?: string;
+  instructions?: string | undefined;
+  authUrl?: string | undefined;
+  setupUrl?: string | undefined;
 };
 
 /**
@@ -111,7 +111,8 @@ function readImageFile(
         reject(new Error("Malformed data URL"));
         return;
       }
-      resolve({ mediaType: match[1], data: match[2], dataUrl: result });
+      const [, mediaType = "", data = ""] = match;
+      resolve({ mediaType, data, dataUrl: result });
     };
     reader.onerror = () =>
       reject(reader.error ?? new Error("Image read error"));

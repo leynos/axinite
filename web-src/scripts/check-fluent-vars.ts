@@ -1,6 +1,6 @@
 #!/usr/bin/env bun
 /**
- * Lint script: compares the Fluent placeables (`{ $var }`) of each message
+ * @file Lint script: compares the Fluent placeables (`{ $var }`) of each message
  * in every locale with the base locale (`FTL_BASE_LOCALE`, default `en-GB`)
  * and reports mismatches. A `vars: ignore-mismatch` marker exempts a message.
  */
@@ -16,7 +16,7 @@ type PlaceholderReport = {
   ignore: boolean;
 };
 
-const BASE_LOCALE = process.env.FTL_BASE_LOCALE ?? "en-GB";
+const BASE_LOCALE = process.env["FTL_BASE_LOCALE"] ?? "en-GB";
 const LOCALES_DIR = path.resolve(process.cwd(), "axinite/public/locales");
 const IGNORE_MARKER = "vars: ignore-mismatch";
 

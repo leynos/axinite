@@ -1,5 +1,5 @@
 /**
- * i18next setup for the SPA. It loads Fluent (`.ftl`) catalogues from
+ * @file i18next setup for the SPA. It loads Fluent (`.ftl`) catalogues from
  * `locales/{lng}/common.ftl` under the deployment base path, detects the
  * language, and keeps the document `lang` and `dir` in step with it. Exports
  * `i18nReady` for the bootstrap in `main.tsx`.
@@ -41,8 +41,11 @@ function fetchAjax(
   const request: RequestInit = {
     credentials: options.withCredentials ? "include" : "same-origin",
     method: options.method ?? "GET",
-    headers: options.headers,
   };
+
+  if (options.headers !== undefined) {
+    request.headers = options.headers;
+  }
 
   if (options.body != null) {
     request.body = options.body;
@@ -78,10 +81,12 @@ function fetchAjax(
     });
 }
 
+/** Build the i18next load path for `.ftl` files under the deploy base. */
 export function buildFluentLoadPath(rawBase: string | undefined): string {
   return `${normalizeBasePath(rawBase)}locales/{{lng}}/{{ns}}.ftl`;
 }
 
+/** Set the document's `lang` and text direction for `language`. */
 export function applyDocumentLocale(language: string | undefined): void {
   if (typeof document === "undefined") {
     return;
@@ -91,9 +96,9 @@ export function applyDocumentLocale(language: string | undefined): void {
   const direction = getLocaleDirection(locale.code);
   document.documentElement.lang = locale.code;
   document.documentElement.dir = direction;
-  document.documentElement.dataset.direction = direction;
+  document.documentElement.dataset["direction"] = direction;
   if (document.body) {
-    document.body.dataset.direction = direction;
+    document.body.dataset["direction"] = direction;
   }
 }
 

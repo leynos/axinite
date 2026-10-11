@@ -1,5 +1,5 @@
 /**
- * In-memory state for the mock backend. `MockBackendState` holds the seeded
+ * @file In-memory state for the mock backend. `MockBackendState` holds the seeded
  * threads, jobs, routines, extensions, skills, memory, and logs, applies the
  * mutations the SPA makes, and fans out chat and log events to SSE
  * subscribers. Its feature flags mirror the gateway defaults.
@@ -109,6 +109,11 @@ type EventSubscriber<T> = {
   send: (payload: T) => void;
   close: () => void;
 };
+
+// Indexed lookups on a secrets map yield `undefined` for absent keys.
+function isNonBlankString(value: string | undefined): boolean {
+  return typeof value === "string" && value.trim().length > 0;
+}
 
 export class MockBackendState {
   private readonly bootTime = Date.now();
@@ -311,8 +316,12 @@ export class MockBackendState {
       thread_id: thread.info.id,
       turns: thread.turns,
       has_more: false,
-      oldest_timestamp: thread.turns[0]?.started_at,
-      pending_approval: thread.pendingApproval,
+      ...(thread.turns[0]?.started_at !== undefined && {
+        oldest_timestamp: thread.turns[0].started_at,
+      }),
+      ...(thread.pendingApproval !== undefined && {
+        pending_approval: thread.pendingApproval,
+      }),
     };
   }
 
@@ -391,7 +400,7 @@ export class MockBackendState {
       action,
       toolName: pending.tool_name,
     });
-    thread.pendingApproval = undefined;
+    delete thread.pendingApproval;
     thread.info = {
       ...thread.info,
       state: "Idle",
@@ -482,6 +491,9 @@ export class MockBackendState {
       });
     }
     const [approved] = pending.splice(index, 1);
+    if (approved === undefined) {
+      throw new Error("Pairing request vanished during approval");
+    }
     this.pairingRequests.set(channel, pending);
     this.pushLog(
       `Approved pairing request ${code} for ${channel}.`,
@@ -539,7 +551,7 @@ export class MockBackendState {
       return;
     }
 
-    const [segment, ...rest] = remainder.split("/");
+    const [segment = "", ...rest] = remainder.split("/");
     const entryPath = parentPath.length > 0 ? `${parentPath}/${segment}` : segment;
     const isDirectory = rest.length > 0;
 
@@ -796,14 +808,14 @@ export class MockBackendState {
         name: detail.name,
         description: detail.description,
         enabled: detail.enabled,
-        trigger_type: String(detail.trigger.type ?? "manual"),
+        trigger_type: String(detail.trigger["type"] ?? "manual"),
         trigger_summary:
-          typeof detail.trigger.schedule === "string"
-            ? `cron: ${detail.trigger.schedule}`
-            : typeof detail.trigger.pattern === "string"
-              ? `on ${detail.trigger.pattern}`
+          typeof detail.trigger["schedule"] === "string"
+            ? `cron: ${detail.trigger["schedule"]}`
+            : typeof detail.trigger["pattern"] === "string"
+              ? `on ${detail.trigger["pattern"]}`
               : "manual only",
-        action_type: String(detail.action.type ?? "lightweight"),
+        action_type: String(detail.action["type"] ?? "lightweight"),
         last_run_at: detail.last_run_at,
         next_fire_at: detail.next_fire_at,
         run_count: detail.run_count,
@@ -966,7 +978,9 @@ export class MockBackendState {
           needs_setup: true,
           has_auth: registryEntry.name === "slack",
           activation_status: "installed",
-          version: registryEntry.version,
+          ...(registryEntry.version !== undefined && {
+            version: registryEntry.version,
+          }),
         },
         setupSecrets: [
           {
@@ -999,6 +1013,9 @@ export class MockBackendState {
       const authUrl = isOAuthFixture
         ? "https://oauth.example.invalid/consent"
         : undefined;
+      // Omit the key entirely for non-OAuth extensions so the payload keeps
+      // `auth_url` genuinely absent rather than present-but-undefined.
+      const authUrlField = authUrl === undefined ? {} : { auth_url: authUrl };
       const setupUrl = isOAuthFixture
         ? "https://example.invalid/token-help"
         : `/api/extensions/${name}/setup`;
@@ -1010,7 +1027,7 @@ export class MockBackendState {
         type: "auth_required",
         extension_name: name,
         instructions,
-        auth_url: authUrl,
+        ...authUrlField,
         setup_url: setupUrl,
       });
       this.pushLog(
@@ -1022,7 +1039,7 @@ export class MockBackendState {
         awaiting_token: true,
         instructions,
         activated: false,
-        auth_url: authUrl,
+        ...authUrlField,
       });
     }
     extension.info = {
@@ -1077,8 +1094,7 @@ export class MockBackendState {
       ...field,
       provided:
         field.provided ||
-        (typeof secrets[field.name] === "string" &&
-          secrets[field.name].trim().length > 0),
+        isNonBlankString(secrets[field.name]),
     }));
     extension.info = {
       ...extension.info,
