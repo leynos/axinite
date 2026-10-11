@@ -8,7 +8,7 @@ use crate::context::{ContextManager, JobRecoveryError};
 use crate::db::Database;
 use crate::error::RepairError;
 use crate::tools::SoftwareBuilder;
-#[cfg(any(test, feature = "self_repair_extras"))]
+#[cfg(test)]
 use crate::tools::ToolRegistry;
 
 use super::repair_claim::RepairClaims;
@@ -32,7 +32,7 @@ pub struct DefaultSelfRepair {
     store: Option<Arc<dyn Database>>,
     builder: Option<Arc<dyn SoftwareBuilder>>,
     repair_claims: RepairClaims,
-    #[cfg(any(test, feature = "self_repair_extras"))]
+    #[cfg(test)]
     tools: Option<Arc<ToolRegistry>>,
     /// When set, repair tasks await this barrier immediately before
     /// `claim_tool` so concurrent callers overlap on the claim window.
@@ -54,7 +54,7 @@ impl DefaultSelfRepair {
             store: None,
             builder: None,
             repair_claims: RepairClaims::default(),
-            #[cfg(any(test, feature = "self_repair_extras"))]
+            #[cfg(test)]
             tools: None,
             #[cfg(test)]
             claim_overlap_barrier: None,
@@ -121,15 +121,14 @@ impl DefaultSelfRepair {
     }
 }
 
-#[cfg(any(test, feature = "self_repair_extras"))]
+#[cfg(test)]
 mod extras {
-    //! Feature-gated builder helpers for automatic tool repair.
+    //! Test-only builder helpers for automatic tool repair.
 
     use super::*;
 
     impl DefaultSelfRepair {
         /// Add a Builder and ToolRegistry for automatic tool repair.
-        #[allow(dead_code)]
         pub(crate) fn with_builder(
             mut self,
             builder: Arc<dyn SoftwareBuilder>,
