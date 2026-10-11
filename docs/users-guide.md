@@ -234,10 +234,54 @@ The gateway serves the SolidJS UI by default. To fall back to the previous
 shell as a rollback path, set `AXINITE_WEB_UI=legacy` before starting the
 gateway; the setting is read at startup.
 
-The UI reads its feature flags from `GET /api/features`. Set
-`FEATURE_FLAG_<NAME>` in the gateway's environment to `true` to enable a flag;
-any other value disables it. Operators can persist per-deployment overrides
-without a restart with `PUT /api/settings/feature_flag:<name>` and an
-`X-Deployment-Id` header. Environment variables take precedence over overrides.
+### Signing in
 
-See `docs/solidjs-frontend.md` for details.
+On first visit the UI asks for the gateway access token (the value of
+`GATEWAY_AUTH_TOKEN`) and keeps it for the browser session only. A link of the
+form `/chat?token=<token>` signs in without the prompt; the UI stores the token
+and removes the `token` parameter from the address bar. A token that the
+gateway rejects is discarded and the prompt reappears.
+
+### Routes and controls
+
+The UI has chat, memory, jobs, routines, extensions, skills, and logs routes.
+Each can be hidden with the flags `route_chat`, `route_memory`, `route_jobs`,
+`route_routines`, `route_extensions`, `route_skills`, and `route_logs`; the log
+panel is hidden separately by `panel_logs`.
+
+- Restart control: a button in the header, with a confirmation dialog, that
+  sends `/restart` to the agent and waits for the gateway to go down and come
+  back. It is not feature-flagged; it appears only when the gateway reports
+  restart support, which requires `AXINITE_IN_DOCKER=true` in its environment.
+- TEE attestation: a header indicator whose popover fetches the full
+  attestation report and copies it to the clipboard. It requires the
+  `surface_tee_attestation` flag and a non-local hostname (the report is served
+  from `api.<domain>`), so it stays hidden on `localhost` and IP addresses.
+- Extension pairing and activation: on the extensions route, a three-step
+  stepper shows the activation progress of WebAssembly (WASM) channels, and
+  pending pairing requests for a channel can be approved. Neither has its own
+  flag; both follow `route_extensions`.
+
+### Feature flags
+
+The UI reads its flags from `GET /api/features`. Each flag resolves in this
+order, highest first:
+
+1. The `FEATURE_FLAG_<NAME>` environment variable. `true` (in any case)
+   enables the flag; any other value disables it.
+2. A deployment override, set without a restart through
+   `PUT /api/settings/feature_flag:<name>`.
+3. Subsystem availability: a flag whose backing subsystem is not running (for
+   example `route_jobs` without a jobs runtime) is switched off. This layer can
+   only disable a flag, never enable one.
+4. The compiled default.
+
+Reads of `GET /api/features` take an optional `X-Deployment-Id` header that
+defaults to `default`. Writes require it. The value must be 1 to 64 lowercase
+letters, digits, or underscores; anything else is rejected with 400.
+
+### Trying the UI without the daemon
+
+`make frontend-stub` serves the UI against a stubbed backend, with no daemon
+needed. See `docs/solidjs-frontend.md` for developer details, including the
+stub's limitations.
