@@ -131,9 +131,8 @@ async def test_remove_confirmed(page):
     )
     await dialog.get_by_role("button", name="Remove extension").click()
 
-    await page.wait_for_function(
-        "() => document.querySelectorAll('.extensions-card').length === 0",
-        timeout=8000,
+    await page.locator(SEL["ext_card"]).first.wait_for(
+        state="detached", timeout=8000
     )
     assert len(remove_posts) >= 1, "Remove API was not called"
 
@@ -148,8 +147,6 @@ async def test_remove_cancelled_keeps_card(page):
 
     dialog = page.locator(SEL["ext_remove_dialog"])
     await dialog.wait_for(state="visible", timeout=5000)
-    # The Kobalte AlertDialog.CloseButton carries a component-set accessible
-    # name (not "Cancel"), so target it by its danger-ghost class instead.
-    await dialog.locator(".dashboard-detail__ghost--danger").click()
+    await page.locator(SEL["ext_remove_cancel"]).click()
     await dialog.wait_for(state="hidden", timeout=3000)
     assert await page.locator(SEL["ext_card"]).count() >= 1
