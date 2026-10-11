@@ -35,7 +35,7 @@ fn environment_variables_override_defaults() {
 #[rstest::rstest]
 #[case::lowercase("true", true)]
 #[case::uppercase("TRUE", true)]
-#[case::mixed_case("TrUe", true)]
+#[case::mixed_case("tRUE", true)]
 #[case::false_word("false", false)]
 #[case::one("1", false)]
 #[case::yes("yes", false)]
