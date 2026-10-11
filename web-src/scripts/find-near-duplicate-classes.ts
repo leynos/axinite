@@ -1,6 +1,6 @@
 #!/usr/bin/env bun
 /**
- * Lint script: fails when a `class` attribute in the SPA sources repeats a
+ * @file Lint script: fails when a `class` attribute in the SPA sources repeats a
  * token. It shares its scanner with `check-classlist-length.ts`.
  */
 

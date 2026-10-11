@@ -1,5 +1,5 @@
 /**
- * Shared HTTP layer for the `lib/api/*` modules. It adds JSON helpers, the
+ * @file Shared HTTP layer for the `lib/api/*` modules. It adds JSON helpers, the
  * bearer token, a request timeout, and EventSource creation with the token
  * passed as a query parameter. Non-2xx responses throw with the body text.
  */
@@ -68,10 +68,12 @@ function request<T>(url: string, options: RequestOptions = {}): Promise<T> {
   });
 }
 
+/** GET `url` with the bearer token and decode the JSON response. */
 export function requestJson<T>(url: string): Promise<T> {
   return request<T>(url);
 }
 
+/** POST an optional JSON `body` to `url` and decode the JSON response. */
 export function postJson<T>(
   url: string,
   body?: unknown,
@@ -87,6 +89,7 @@ export function postJson<T>(
   });
 }
 
+/** PUT an optional JSON `body` to `url` and decode the JSON response. */
 export function putJson<T>(
   url: string,
   body?: unknown,
@@ -102,12 +105,17 @@ export function putJson<T>(
   });
 }
 
+/** DELETE `url` and decode the JSON response. */
 export function deleteJson<T>(url: string): Promise<T> {
   return request<T>(url, {
     method: "DELETE",
   });
 }
 
+/**
+ * Open an EventSource for `url` with the token appended as a query parameter.
+ * Outside a browser it returns an inert stub.
+ */
 export function createEventStream(url: string): EventSource {
   const streamUrl = appendTokenToUrl(url);
   if (typeof EventSource === "undefined") {

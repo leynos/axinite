@@ -1,6 +1,6 @@
 #!/usr/bin/env bun
 /**
- * Lint script: checks that every locale listed as complete in
+ * @file Lint script: checks that every locale listed as complete in
  * `supported-locales` has a `common.ftl` defining every message key of the
  * default locale, and exits non-zero on any gap.
  */

@@ -1,5 +1,5 @@
 /**
- * Module-level signal for the chat stream's connection state. The chat
+ * @file Module-level signal for the chat stream's connection state. The chat
  * surface writes it and the app shell reads it; the e2e suite depends on the
  * resulting `data-state` values.
  */
@@ -35,18 +35,22 @@ const [connectionState, setConnectionStateSignal] =
 
 export { connectionState };
 
+/** Set the chat-stream connection state to `state`. */
 export function setConnectionState(state: ConnectionState): void {
   setConnectionStateSignal(state);
 }
 
+/** Mark the chat stream as `connecting`. */
 export function markConnecting(): void {
   setConnectionStateSignal("connecting");
 }
 
+/** Mark the chat stream as `connected`. */
 export function markConnected(): void {
   setConnectionStateSignal("connected");
 }
 
+/** Mark the chat stream as `disconnected`. */
 export function markDisconnected(): void {
   setConnectionStateSignal("disconnected");
 }

@@ -1,5 +1,5 @@
 /**
- * Application chrome shared by every route: topbar, flag-gated navigation,
+ * @file Application chrome shared by every route: topbar, flag-gated navigation,
  * gateway status pill, connection indicator, locale picker, restart control,
  * and TEE attestation. Status is polled from `/api/gateway/status`.
  */

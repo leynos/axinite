@@ -1,3 +1,8 @@
+/**
+ * @file Behaviour tests for channel pairing on the extensions route
+ * (`ExtensionsPreview`), with the extensions and pairing API modules mocked.
+ */
+
 import { render, screen, waitFor, within } from "@solidjs/testing-library";
 import userEvent from "@testing-library/user-event";
 import { beforeAll, beforeEach, describe, expect, it, vi } from "vitest";

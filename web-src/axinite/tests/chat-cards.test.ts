@@ -1,3 +1,8 @@
+/**
+ * @file Tests for the chat cards' URL safety helpers: only http(s) URLs may be
+ * opened, and always in a `noopener` tab.
+ */
+
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { isHttpUrl, openExternalUrl } from "@/components/chat-cards";

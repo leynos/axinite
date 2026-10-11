@@ -1,3 +1,9 @@
+/**
+ * @file Playwright browser test that walks the SPA's routes through the shell
+ * navigation and checks that only complete locales are offered. Run via
+ * `playwright.config.ts`, which serves the app and mock backend with `dev`.
+ */
+
 import { expect, test } from "@playwright/test";
 
 const DEPLOY_BASE = "";

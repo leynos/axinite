@@ -1,3 +1,8 @@
+/**
+ * @file Tests for `computeStepperModel`, which maps a WASM channel's status to
+ * the install, configure and pair step states shown in the stepper.
+ */
+
 import { describe, expect, it } from "vitest";
 
 import { computeStepperModel } from "@/components/wasm-channel-stepper";

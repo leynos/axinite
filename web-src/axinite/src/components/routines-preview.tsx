@@ -1,5 +1,5 @@
 /**
- * The `/routines` surface: routine summary, list, and detail with run
+ * @file The `/routines` surface: routine summary, list, and detail with run
  * history, plus trigger, toggle, and delete actions. Data comes from
  * `lib/api/routines` (`/api/routines/*`).
  */
@@ -228,11 +228,11 @@ const RoutineDetailPanel = (props: {
         <div class="dashboard-detail__pills">
           <span
             class={
-              TRIGGER_CLASS[String(props.routine().trigger.type)] ??
+              TRIGGER_CLASS[String(props.routine().trigger["type"])] ??
               "pill pill--neutral"
             }
           >
-            {String(props.routine().trigger.type ?? "manual")}
+            {String(props.routine().trigger["type"] ?? "manual")}
           </span>
           <span
             class={

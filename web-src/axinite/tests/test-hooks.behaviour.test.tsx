@@ -1,3 +1,9 @@
+/**
+ * @file Behaviour tests for the `installTestHooks` hooks in `lib/test-hooks`,
+ * exercised against the app shell and chat route with a fake event source and
+ * a mocked chat API.
+ */
+
 import { render, screen, waitFor } from "@solidjs/testing-library";
 import { beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 

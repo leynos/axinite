@@ -1,5 +1,5 @@
 /**
- * Locale catalogue for the SPA: supported locales with display labels and
+ * @file Locale catalogue for the SPA: supported locales with display labels and
  * text direction, and the subset whose Fluent files are complete. The locale
  * picker, the i18n runtime, and `scripts/check-fluent-coverage.ts` all read
  * from here.
@@ -78,6 +78,7 @@ const fallbackLocale = (() => {
   return locale;
 })();
 
+/** Look up locale metadata by code, falling back to the default locale. */
 export function getLocaleMetadata(code: string | undefined): SupportedLocale {
   if (!code) {
     return fallbackLocale;
@@ -92,6 +93,7 @@ export function getLocaleMetadata(code: string | undefined): SupportedLocale {
   );
 }
 
+/** Return the text direction for a locale code, defaulting to `ltr`. */
 export function getLocaleDirection(code: string | undefined): TextDirection {
   return getLocaleMetadata(code).direction ?? "ltr";
 }

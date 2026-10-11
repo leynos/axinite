@@ -1,5 +1,5 @@
 /**
- * Pure helpers split out of `MockBackendState`: response builders, routine
+ * @file Pure helpers split out of `MockBackendState`: response builders, routine
  * status derivation, skill matching, approval handling, and the scheduled
  * SSE emission timeline for a simulated chat turn.
  */

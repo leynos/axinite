@@ -1,11 +1,12 @@
 /**
- * Logs API wrapper: the runtime log level at `/api/logs/level` and the
+ * @file Logs API wrapper: the runtime log level at `/api/logs/level` and the
  * `/api/logs/events` SSE tail. Used by the `/logs` surface.
  */
 
 import { createEventStream, putJson, requestJson } from "@/lib/api/client";
 import type { LogEntry, LogLevelResponse } from "@/lib/api/contracts";
 
+/** GET /api/logs/level: fetch the gateway's current runtime log level. */
 export function fetchLogLevel(): Promise<LogLevelResponse> {
   return requestJson<LogLevelResponse>("/api/logs/level");
 }
@@ -18,6 +19,10 @@ export function setLogLevel(level: string): Promise<LogLevelResponse> {
   return putJson<LogLevelResponse>("/api/logs/level", { level });
 }
 
+/**
+ * GET /api/logs/events: open the log SSE stream and pass each `log` entry to
+ * `listener`; malformed frames and stream errors are reported to `onError`.
+ */
 export function connectLogEvents(
   listener: (entry: LogEntry) => void,
   onError?: () => void

@@ -1,3 +1,9 @@
+/**
+ * @file Behaviour tests for the `TeeAttestation` component. The browser location
+ * is overridden to simulate hosted domains, since attestation is inert on
+ * localhost and other hosts without a sibling API host.
+ */
+
 import { render, screen, waitFor } from "@solidjs/testing-library";
 import userEvent from "@testing-library/user-event";
 import {
@@ -154,7 +160,7 @@ describe("TEE attestation surface", () => {
     await waitFor(() => {
       expect(writeText).toHaveBeenCalledTimes(1);
     });
-    const payload = writeText.mock.calls[0][0] as string;
+    const payload = writeText.mock.calls[0]?.[0] as string;
     expect(payload).toContain("sha256:cafef00d");
     expect(payload).toContain("AA:BB:CC:DD");
   });

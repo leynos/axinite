@@ -1,3 +1,9 @@
+/**
+ * @file Behaviour tests for the chat route (`ChatPreview`). The chat API module
+ * is mocked so tests can drive threads, history, approvals, auth cards and SSE
+ * events without a gateway.
+ */
+
 import { render, screen, waitFor } from "@solidjs/testing-library";
 import userEvent from "@testing-library/user-event";
 import { beforeAll, beforeEach, describe, expect, it, vi } from "vitest";

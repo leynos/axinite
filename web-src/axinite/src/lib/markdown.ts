@@ -1,5 +1,5 @@
 /**
- * Lightweight markdown-to-HTML converter for chat responses.
+ * @file Lightweight markdown-to-HTML converter for chat responses.
  *
  * Covers the subset used by the mock backend and typical Axinite assistant
  * output: headings, bold/italic/code, lists, tables, and paragraphs.
@@ -119,8 +119,9 @@ export function renderMarkdown(source: string): string {
     if (headingMatch) {
       flushParagraph();
       closeBlock();
-      const level = headingMatch[1].length;
-      html.push(`<h${level}>${inlineMarkup(headingMatch[2])}</h${level}>`);
+      const [, hashes = "", title = ""] = headingMatch;
+      const level = hashes.length;
+      html.push(`<h${level}>${inlineMarkup(title)}</h${level}>`);
       continue;
     }
 
@@ -137,7 +138,7 @@ export function renderMarkdown(source: string): string {
     if (olMatch) {
       flushParagraph();
       ensureList("ol");
-      html.push(`<li>${inlineMarkup(olMatch[1])}</li>`);
+      html.push(`<li>${inlineMarkup(olMatch[1] ?? "")}</li>`);
       continue;
     }
 

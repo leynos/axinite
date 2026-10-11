@@ -1,5 +1,5 @@
 /**
- * Detail pane for the job selected on the `/jobs` surface. It has tabs for
+ * @file Detail pane for the job selected on the `/jobs` surface. It has tabs for
  * overview, activity, and files, merges live job events from the chat SSE
  * stream into the activity feed, and offers restart, cancel, and prompt
  * actions when the feature flags allow them.

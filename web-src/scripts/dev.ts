@@ -1,5 +1,5 @@
 /**
- * Local development runner. It starts the mock API server, a watching Vite
+ * @file Local development runner. It starts the mock API server, a watching Vite
  * build, and the static preview server together, prefixes their output,
  * picks a free preview port, and stops all three on a signal or if one exits.
  */
@@ -8,13 +8,13 @@ import net from "node:net";
 
 import { parsePort } from "../mock-backend/src/ports";
 
-const apiPort = parsePort("MOCK_API_PORT", process.env.MOCK_API_PORT, 8787);
+const apiPort = parsePort("MOCK_API_PORT", process.env["MOCK_API_PORT"], 8787);
 const defaultPreviewPort = parsePort(
   "PREVIEW_PORT",
-  process.env.PREVIEW_PORT,
+  process.env["PREVIEW_PORT"],
   2020
 );
-const previewPortWasExplicit = process.env.PREVIEW_PORT !== undefined;
+const previewPortWasExplicit = process.env["PREVIEW_PORT"] !== undefined;
 
 type ManagedProcess = {
   label: string;

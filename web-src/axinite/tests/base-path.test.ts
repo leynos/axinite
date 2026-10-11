@@ -1,3 +1,8 @@
+/**
+ * @file Tests for the deploy base-path helpers that route and locale-asset
+ * URLs are built from, so the SPA works under the gateway's mount point.
+ */
+
 import { describe, expect, it } from "vitest";
 import {
   buildAppPath,

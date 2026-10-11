@@ -9,6 +9,12 @@
     "enabled": true,
     "rules": {
       "recommended": true,
+      // Conflicts with tsconfig `noPropertyAccessFromIndexSignature`, which
+      // requires bracket access for index-signature members such as
+      // `process.env["X"]`.
+      "complexity": {
+        "useLiteralKeys": "off"
+      },
       "suspicious": {
         "noConsole": "off"
       },

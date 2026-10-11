@@ -1,3 +1,9 @@
+/**
+ * @file Accessibility test (jest-axe) for the app shell chrome and its
+ * navigation. Run by the separate `vitest.a11y.config.ts` project, not the
+ * default unit and behaviour suite.
+ */
+
 import { render, screen } from "@solidjs/testing-library";
 import { axe } from "jest-axe";
 import { beforeAll, describe, expect, it } from "vitest";

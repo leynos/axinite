@@ -1,5 +1,5 @@
 /**
- * Registry of the long-lived SSE API paths. The mock API server and the
+ * @file Registry of the long-lived SSE API paths. The mock API server and the
  * preview proxy use it to disable the request idle timeout for these routes.
  */
 

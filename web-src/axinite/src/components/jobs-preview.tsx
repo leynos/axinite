@@ -1,5 +1,5 @@
 /**
- * The `/jobs` surface: job summary counts and list, with the selected job
+ * @file The `/jobs` surface: job summary counts and list, with the selected job
  * shown by `JobDetail`. Data comes from `lib/api/jobs`, which wraps the
  * gateway's `/api/jobs` endpoints.
  */

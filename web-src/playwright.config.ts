@@ -1,8 +1,14 @@
+/**
+ * @file Playwright configuration for the browser tests in `axinite/tests/e2e`.
+ * It starts the local `dev` runner (mock backend plus preview) unless a server
+ * is already listening at `PLAYWRIGHT_BASE_URL`, and tests Chromium only.
+ */
+
 import { defineConfig, devices } from "@playwright/test";
 
-process.env.PLAYWRIGHT_BROWSERS_PATH ??= "0";
+process.env["PLAYWRIGHT_BROWSERS_PATH"] ??= "0";
 
-const baseURL = process.env.PLAYWRIGHT_BASE_URL ?? "http://127.0.0.1:2020";
+const baseURL = process.env["PLAYWRIGHT_BASE_URL"] ?? "http://127.0.0.1:2020";
 
 export default defineConfig({
   testDir: "./axinite/tests/e2e",

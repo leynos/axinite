@@ -1,5 +1,5 @@
 /**
- * TanStack Router tree for the SPA. Each of the seven surfaces (chat, memory,
+ * @file TanStack Router tree for the SPA. Each of the seven surfaces (chat, memory,
  * jobs, routines, extensions, skills, logs) maps to a `RoutePage` inside the
  * `AppShell`; `/` and unmatched paths redirect to `/chat`. The base path comes
  * from the Vite `BASE_URL` so the SPA can be served under a prefix.

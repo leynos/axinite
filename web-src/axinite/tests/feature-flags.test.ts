@@ -1,3 +1,8 @@
+/**
+ * @file Tests for feature-flag resolution: local overrides win over server
+ * values, which win over registry defaults, and unknown keys are ignored.
+ */
+
 import { describe, expect, it } from "vitest";
 import { getFeatureFlagDefaults } from "@/lib/feature-flags/registry";
 import { resolveFeatureFlags } from "@/lib/feature-flags/runtime";
@@ -24,7 +29,7 @@ describe("feature flag resolution", () => {
   it("ignores unknown server and override keys", () => {
     const overrides = {} as Parameters<typeof resolveFeatureFlags>[1] &
       Record<string, boolean>;
-    overrides.unknown_flag = false;
+    overrides["unknown_flag"] = false;
 
     const resolved = resolveFeatureFlags(
       { route_jobs: false, unknown_flag: true },
@@ -38,8 +43,8 @@ describe("feature flag resolution", () => {
   it("falls back to the server or default value when override values are nullish", () => {
     const overrides = {
       route_jobs: undefined,
-      panel_logs: null as unknown as boolean,
-    } as Parameters<typeof resolveFeatureFlags>[1];
+      panel_logs: null,
+    } as unknown as Parameters<typeof resolveFeatureFlags>[1];
 
     const resolved = resolveFeatureFlags({ route_jobs: false }, overrides);
 

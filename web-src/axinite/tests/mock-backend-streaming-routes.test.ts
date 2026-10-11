@@ -1,3 +1,8 @@
+/**
+ * @file Tests for the mock backend's `isStreamingApiPath`, which tells the
+ * long-lived SSE endpoints apart from ordinary JSON routes.
+ */
+
 import { describe, expect, it } from "vitest";
 
 import { isStreamingApiPath } from "../../mock-backend/src/streaming-routes";

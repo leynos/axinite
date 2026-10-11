@@ -1,3 +1,8 @@
+/**
+ * @file Provider wrapper for behaviour tests that need TanStack Query, i18n and
+ * feature flags, with a fresh `QueryClient` per instance.
+ */
+
 import { QueryClient, QueryClientProvider } from "@tanstack/solid-query";
 import type { ParentComponent } from "solid-js";
 

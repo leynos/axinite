@@ -1,5 +1,5 @@
 /**
- * Gateway restart state machine, kept free of Solid and browser globals so
+ * @file Gateway restart state machine, kept free of Solid and browser globals so
  * it can be tested with injected dependencies. `restart-control.tsx` supplies
  * the live wiring to the chat API, chat event stream, and status polling.
  */

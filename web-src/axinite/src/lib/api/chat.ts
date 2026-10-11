@@ -1,5 +1,5 @@
 /**
- * Chat API wrapper for the gateway's `/api/chat/*` endpoints: threads,
+ * @file Chat API wrapper for the gateway's `/api/chat/*` endpoints: threads,
  * history, sending messages, approvals, and auth tokens, plus the
  * `/api/chat/events` SSE subscription. Used by the `/chat` surface.
  */
@@ -18,14 +18,17 @@ import type {
   ThreadListResponse,
 } from "@/lib/api/contracts";
 
+/** GET /api/chat/threads: list chat threads. */
 export function fetchThreads(): Promise<ThreadListResponse> {
   return requestJson<ThreadListResponse>("/api/chat/threads");
 }
 
+/** POST /api/chat/thread/new: create a new chat thread. */
 export function createThread(): Promise<ThreadInfo> {
   return postJson<ThreadInfo>("/api/chat/thread/new");
 }
 
+/** GET /api/chat/history: fetch a thread's history (`thread_id` optional). */
 export function fetchHistory(
   threadId?: string | null
 ): Promise<HistoryResponse> {
@@ -36,30 +39,38 @@ export function fetchHistory(
   return requestJson<HistoryResponse>(`${url.pathname}${url.search}`);
 }
 
+/** POST /api/chat/send: send a chat message. */
 export function sendMessage(
   request: SendMessageRequest
 ): Promise<SendMessageResponse> {
   return postJson<SendMessageResponse>("/api/chat/send", request);
 }
 
+/** POST /api/chat/approval: answer a tool approval request. */
 export function submitApproval(
   request: ApprovalRequest
 ): Promise<ActionResponse> {
   return postJson<ActionResponse>("/api/chat/approval", request);
 }
 
+/** POST /api/chat/auth-token: submit a token for a pending extension auth. */
 export function submitAuthToken(
   request: AuthTokenRequest
 ): Promise<ActionResponse> {
   return postJson<ActionResponse>("/api/chat/auth-token", request);
 }
 
+/** POST /api/chat/auth-cancel: cancel a pending extension auth. */
 export function cancelAuth(
   request: AuthCancelRequest
 ): Promise<ActionResponse> {
   return postJson<ActionResponse>("/api/chat/auth-cancel", request);
 }
 
+/**
+ * GET /api/chat/events: open the chat SSE stream and pass each gateway event
+ * to `listener`; malformed frames and stream errors are reported to `onError`.
+ */
 export function connectChatEvents(
   listener: (event: ChatSseEvent) => void,
   onError?: () => void

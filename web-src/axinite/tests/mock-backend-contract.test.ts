@@ -1,3 +1,8 @@
+/**
+ * @file Contract tests for the daemon-free mock backend request handler and
+ * state, exercised in-process through `handleMockRequest` rather than a socket.
+ */
+
 import { afterEach, describe, expect, it } from "vitest";
 
 import {
@@ -77,7 +82,7 @@ async function collectSse(
 }
 
 afterEach(() => {
-  delete process.env.FEATURE_FLAG_PANEL_LOGS;
+  delete process.env["FEATURE_FLAG_PANEL_LOGS"];
 });
 
 describe("stub HTTP contract", () => {
@@ -87,21 +92,21 @@ describe("stub HTTP contract", () => {
       "/api/features"
     )) as Record<string, unknown>;
 
-    expect(flags.route_chat).toBe(true);
-    expect(flags.panel_logs).toBe(true);
-    expect(flags.action_memory_edit).toBe(false);
+    expect(flags["route_chat"]).toBe(true);
+    expect(flags["panel_logs"]).toBe(true);
+    expect(flags["action_memory_edit"]).toBe(false);
     for (const value of Object.values(flags)) {
       expect(typeof value).toBe("boolean");
     }
   });
 
   it("honours FEATURE_FLAG environment overrides", async () => {
-    process.env.FEATURE_FLAG_PANEL_LOGS = "false";
+    process.env["FEATURE_FLAG_PANEL_LOGS"] = "false";
     const flags = (await getJson(
       new MockBackendState(),
       "/api/features"
     )) as Record<string, unknown>;
-    expect(flags.panel_logs).toBe(false);
+    expect(flags["panel_logs"]).toBe(false);
   });
 
   it("serves gateway status with the operational telemetry fields", async () => {
@@ -267,7 +272,9 @@ describe("stub SSE contract", () => {
       if (event !== "tool_completed") {
         return false;
       }
-      const payload = JSON.parse(frames[index].data) as { name: string };
+      const payload = JSON.parse(frames[index]?.data ?? "null") as {
+        name: string;
+      };
       return payload.name === "restart";
     });
     const responseIndex = order.indexOf("response");
@@ -275,12 +282,12 @@ describe("stub SSE contract", () => {
     expect(responseIndex).toBeGreaterThan(toolCompletedIndex);
 
     const toolStartedFrame = frames[order.indexOf("tool_started")];
-    expect(JSON.parse(toolStartedFrame.data)).toMatchObject({
+    expect(JSON.parse(toolStartedFrame?.data ?? "null")).toMatchObject({
       name: "restart",
     });
 
     const responseFrame = frames[responseIndex];
-    expect(JSON.parse(responseFrame.data)).toMatchObject({
+    expect(JSON.parse(responseFrame?.data ?? "null")).toMatchObject({
       content: expect.stringContaining("Restart initiated"),
     });
   });

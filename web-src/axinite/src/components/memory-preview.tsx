@@ -1,5 +1,5 @@
 /**
- * The `/memory` surface: workspace file tree, search, and a document viewer
+ * @file The `/memory` surface: workspace file tree, search, and a document viewer
  * with an editor, backed by `lib/api/memory` (`/api/memory/*`).
  */
 
@@ -287,7 +287,10 @@ export const MemoryPreview = () => {
     const byGroup = new Map<string, string[]>();
     for (const path of filePaths()) {
       const parts = path.split("/");
-      const group = parts.length > 2 ? parts[parts.length - 2] : "workspace";
+      const group =
+        parts.length > 2
+          ? (parts[parts.length - 2] ?? "workspace")
+          : "workspace";
       const current = byGroup.get(group) ?? [];
       current.push(path);
       byGroup.set(group, current);

@@ -1,5 +1,5 @@
 /**
- * The `/extensions` surface: installed extensions, registry search, install,
+ * @file The `/extensions` surface: installed extensions, registry search, install,
  * activate, remove, and secret setup, backed by `lib/api/extensions`. WASM
  * channels also get the activation stepper and pairing queue.
  */
@@ -187,8 +187,8 @@ function InstalledExtensionCard(props: InstalledExtensionCardProps) {
           <span
             class={
               props.extension.active
-                ? STATUS_CLASS.active
-                : STATUS_CLASS.inactive
+                ? STATUS_CLASS["active"]
+                : STATUS_CLASS["inactive"]
             }
           />
         </div>

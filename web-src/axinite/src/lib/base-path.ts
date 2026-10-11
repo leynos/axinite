@@ -1,5 +1,5 @@
 /**
- * Helpers for the deployment base path (Vite `BASE_URL`). They normalize it
+ * @file Helpers for the deployment base path (Vite `BASE_URL`). They normalize it
  * to a leading and trailing slash so the router, locale loader, and shell
  * links resolve correctly when the SPA is served under a prefix.
  */

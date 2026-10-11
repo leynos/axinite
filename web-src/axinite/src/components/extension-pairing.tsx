@@ -1,5 +1,5 @@
 /**
- * Pending pairing requests for one extension channel, with an approve action.
+ * @file Pending pairing requests for one extension channel, with an approve action.
  * It polls `/api/pairing/{channel}` and renders nothing when the queue is
  * empty; used within the `/extensions` surface.
  */

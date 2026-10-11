@@ -1,5 +1,5 @@
 /**
- * SPA entry point. It installs the e2e test hooks, waits for the i18n
+ * @file SPA entry point. It installs the e2e test hooks, waits for the i18n
  * runtime, then mounts `AppProviders`, `AuthGate`, and `AppRouter` into the
  * `#app` element.
  */

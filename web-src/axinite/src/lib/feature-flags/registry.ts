@@ -1,5 +1,5 @@
 /**
- * Static registry of the SPA's feature flags: route visibility, action
+ * @file Static registry of the SPA's feature flags: route visibility, action
  * gates, and optional surfaces. Each entry records its default, owning UI
  * area, and backend contract. `feature-flags/runtime` resolves these against
  * gateway values and local overrides.
@@ -115,6 +115,7 @@ export const FEATURE_FLAGS: FeatureFlagDefinition[] = [
   },
 ];
 
+/** Build a map of every registered flag to its default value. */
 export function getFeatureFlagDefaults(): Record<FeatureFlagName, boolean> {
   return FEATURE_FLAGS.reduce(
     (accumulator, flag) => {

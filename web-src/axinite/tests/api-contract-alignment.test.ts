@@ -1,3 +1,9 @@
+/**
+ * @file Contract tests that pin the mock backend and the typed API client to
+ * the gateway's real payload shapes (log entries, job, extension, routine and
+ * skill requests), so the stub and the SPA cannot drift from the daemon.
+ */
+
 import { describe, expect, it, vi } from "vitest";
 import { activateExtension, installExtension } from "@/lib/api/extensions";
 import { fetchJobDetail, promptJob } from "@/lib/api/jobs";

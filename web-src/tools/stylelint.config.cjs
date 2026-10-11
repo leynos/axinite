@@ -1,3 +1,8 @@
+/**
+ * @file Stylelint configuration for the SPA's hand-authored CSS; generated
+ * output is ignored (see `ignoreFiles` below).
+ */
+
 module.exports = {
   // Lint only hand-authored styles (axinite/src/styles). Globs resolve from
   // this file's directory: skip the Vite build output and the copy embedded

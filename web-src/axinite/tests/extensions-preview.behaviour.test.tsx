@@ -1,3 +1,9 @@
+/**
+ * @file Behaviour tests for the extensions route (`ExtensionsPreview`): the
+ * installed list, registry, setup and activation flows, with the extensions
+ * API replaced by shared mocks from `support/extension-api-mocks`.
+ */
+
 import { render, screen, waitFor, within } from "@solidjs/testing-library";
 import userEvent from "@testing-library/user-event";
 import { beforeAll, beforeEach, describe, expect, it, vi } from "vitest";

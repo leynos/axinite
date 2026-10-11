@@ -1,9 +1,11 @@
-// TEE (trusted execution environment) attestation client.
-//
-// Attestation is served by a sibling host derived from the browser location
-// (`https://api.<domain>`), mirroring the legacy contract in `app.js`. It is
-// inert on localhost, loopback, bare IP, and single-label hosts, where no such
-// sibling host exists.
+/**
+ * @file TEE (trusted execution environment) attestation client.
+ *
+ * Attestation is served by a sibling host derived from the browser location
+ * (`https://api.<domain>`), mirroring the legacy contract in `app.js`. It is
+ * inert on localhost, loopback, bare IP, and single-label hosts, where no such
+ * sibling host exists.
+ */
 
 import { withRequestTimeout } from "@/lib/api/client";
 
@@ -70,7 +72,7 @@ export function teeApiBase(
 
 /** The instance name is the first label of the hostname. */
 export function teeInstanceName(hostname: string = currentHostname()): string {
-  return hostname.split(".")[0];
+  return hostname.split(".")[0] ?? "";
 }
 
 function fetchJson<T>(url: string): Promise<T> {

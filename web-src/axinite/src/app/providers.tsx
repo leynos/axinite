@@ -1,5 +1,5 @@
 /**
- * Root provider stack for the SPA: TanStack Query cache, i18n, and feature
+ * @file Root provider stack for the SPA: TanStack Query cache, i18n, and feature
  * flags. `main.tsx` wraps the auth gate and router in `AppProviders`, so every
  * route can rely on those contexts being present.
  */
