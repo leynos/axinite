@@ -1,20 +1,17 @@
-"""Contracts binding the coverage job's database URL to the name tests read.
+"""Contracts binding the coverage job's Postgres legs to the embedded cluster.
 
-`src/testing/postgres.rs` reads `TEST_DATABASE_URL`, and falls back to
-`postgresql://localhost/axinite_test` when it is absent. That fallback carries
-no user and no password, so the pool fails with
-`kind: Config, cause: "password missing"`.
+`src/testing/postgres.rs` takes its database from `TEST_DATABASE_URL` when one
+is named, and otherwise, with the `embedded-postgres` feature on Linux, from an
+embedded cluster the test process owns. The coverage job used to start a
+Postgres service container and name it through `TEST_DATABASE_URL`; it now runs
+every Postgres-bearing leg on the embedded cluster, so the contracts here are
+the reverse of the old ones.
 
-The failure is loud by design rather than by accident: `is_database_unavailable`
-lists only transport and name-resolution failures, deliberately excluding
-authentication and configuration errors, so a misconfigured job fails instead
-of quietly reporting coverage for tests that never ran.
-
-That is what makes the export worth a contract. It was renamed to
-`DATABASE_URL` in #243 on 2026-07-14, which nothing on the test path reads, and
-every push to `main` failed from two days later until this was fixed. Nothing
-caught it, because the workflow still exported something plausible and the
-`libsql-only` leg, which needs no database, stayed green. See issue #350.
+The failure to keep out is quiet. A leg that compiles `postgres` but not
+`embedded-postgres`, and exports no URL, has no database source, and its
+Postgres tests skip, so the leg reports coverage for tests that never ran. A
+leg that still exports a URL would bypass the cluster. See issue #350 for the
+history of this job's database wiring.
 
 Run via ``make test-workflow-contracts``.
 """
@@ -23,12 +20,10 @@ from __future__ import annotations
 
 import re
 import shlex
-import tomllib
 import typing as typ
-from urllib.parse import urlsplit
 
 import pytest
-
+import tomllib
 from _workflow_files import load
 from _workflow_policy import REPOSITORY_ROOT, WORKFLOW_DIR, step_text
 
@@ -41,30 +36,6 @@ TEST_URL_VARIABLE: typ.Final[str] = "TEST_DATABASE_URL"
 
 #: The job that runs the Postgres-bearing coverage legs.
 JOB: typ.Final[str] = "coverage"
-
-#: Matches the shell assignment of a URL to a variable, so the value tied to
-#: `TEST_DATABASE_URL` can be checked rather than any credentialed URL that
-#: happens to appear in the same script. A passwordless `TEST_DATABASE_URL`
-#: beside a credentialed `DATABASE_URL` reproduces the original failure exactly,
-#: and a contract that searched the joined script would pass it.
-ASSIGNMENT_RE: typ.Final[re.Pattern[str]] = re.compile(
-    r"^\s*(?P<name>[A-Za-z_][A-Za-z0-9_]*)=\"?(?P<value>[^\"\n]+?)\"?\s*$",
-    re.MULTILINE,
-)
-
-#: Matches `echo "NAME=${shell_var}" >> "$GITHUB_ENV"`, which is how a value
-#: reaches later steps. The exported name and the shell variable holding the
-#: value are both captured, so the two halves can be joined.
-#:
-#: The redirection target is part of the pattern on purpose. A line redirecting
-#: to an ordinary file looks identical up to the `>>`, and would satisfy every
-#: assertion here while later steps received nothing and the helper fell back to
-#: the unauthenticated URL.
-EXPORT_RE: typ.Final[re.Pattern[str]] = re.compile(
-    r"echo\s+\"(?P<name>[A-Za-z_][A-Za-z0-9_]*)=\$\{(?P<source>[A-Za-z_]"
-    r"[A-Za-z0-9_]*)\}\"\s*>>\s*\"?\$(?:\{)?GITHUB_ENV(?:\})?\"?",
-)
-
 
 def _postgres_job() -> dict[str, object]:
     """Return the coverage job, failing loudly if it is renamed away."""
@@ -82,114 +53,59 @@ def _steps(job: dict[str, object]) -> list[dict[str, object]]:
     return [step for step in steps if isinstance(step, dict)]
 
 
-def _service_env() -> dict[str, object]:
-    """Return the Postgres service container's environment."""
-    services = _postgres_job().get("services")
-    assert isinstance(services, dict), f"{JOB} must declare a services mapping"
-    postgres = services.get("postgres")
-    assert isinstance(postgres, dict), f"{JOB} must declare a postgres service"
-    env = postgres.get("env")
-    assert isinstance(env, dict), "the postgres service must declare env"
-    return env
+def test_the_coverage_job_starts_no_database_service() -> None:
+    """The coverage job provisions its database through pg-embed, not a service.
 
-
-def _exporting_step() -> dict[str, object]:
-    """Return the single step that exports the test database URL."""
-    matches = [
-        step
-        for step in _steps(_postgres_job())
-        if f"{TEST_URL_VARIABLE}=" in step_text(step)
-    ]
-    assert len(matches) == 1, (
-        f"expected exactly one step exporting {TEST_URL_VARIABLE}, found {len(matches)}"
-    )
-    return matches[0]
-
-
-def _exported_test_url() -> str:
-    """Return the URL value the step exports as `TEST_DATABASE_URL`."""
-    # The script assigns the URL to a shell variable and then exports that
-    # variable, so both halves are resolved rather than assumed. Following the
-    # indirection is the point: it is what ties the credentials being asserted
-    # to the name the tests read.
-    script = step_text(_exporting_step())
-    exports = {m["name"]: m["source"] for m in EXPORT_RE.finditer(script)}
-    source = exports.get(TEST_URL_VARIABLE)
-    assert source is not None, (
-        f"the step must export {TEST_URL_VARIABLE} from a shell variable, as "
-        f'echo "{TEST_URL_VARIABLE}=${{...}}" >> "$GITHUB_ENV"'
-    )
-    assignments = {
-        m["name"]: m["value"]
-        for m in ASSIGNMENT_RE.finditer(script)
-        if not m.group(0).lstrip().startswith("echo")
-    }
-    value = assignments.get(source)
-    assert value is not None, (
-        f"{TEST_URL_VARIABLE} is exported from ${source}, which the step never assigns"
-    )
-    return value
-
-
-def test_the_coverage_job_exports_the_variable_the_tests_read() -> None:
-    """Export the name the code reads, not one that merely looks right.
-
-    A plausible but unread name is worse than no export at all: the job still
-    runs, the tests still fail, and the workflow reports a database problem
-    rather than a configuration one.
+    A service container is a second source of truth for the database and the
+    reason this job needed a migration step and a credentialed URL. Neither
+    exists any more, and a service that crept back would start for every leg,
+    `libsql-only` included.
     """
-    script = step_text(_exporting_step())
-    assert f"{TEST_URL_VARIABLE}=" in script, (
-        f"{JOB} must export {TEST_URL_VARIABLE}, which "
-        "src/testing/postgres.rs reads. Without it the helper falls back to a "
-        "URL with no credentials and every Postgres test fails on "
-        "'password missing'."
+    assert "services" not in _postgres_job(), (
+        f"{JOB} must not declare a services mapping: its Postgres legs run on "
+        "the embedded cluster"
     )
 
 
-def test_the_exported_test_url_matches_the_service_container() -> None:
-    """Check the URL bound to `TEST_DATABASE_URL`, not any URL nearby.
+def test_the_coverage_job_names_no_database() -> None:
+    """No step may export a database URL, which would take precedence.
 
-    Searching the whole script would pass a passwordless `TEST_DATABASE_URL`
-    sitting beside a credentialed `DATABASE_URL`, which reproduces the original
-    failure exactly while every other assertion here holds. The expected values
-    come from the service container rather than being written out again, so the
-    two cannot drift apart.
+    A named `TEST_DATABASE_URL` is used before the embedded cluster, so a leg
+    that exported one would silently skip the cluster it is meant to run on.
+    `DATABASE_URL` is the runtime's own name for the same thing and is held to
+    the same rule.
     """
-    env = _service_env()
-    parsed = urlsplit(_exported_test_url())
-    assert parsed.username == env.get("POSTGRES_USER"), (
-        f"the {TEST_URL_VARIABLE} value must carry the service's "
-        f"POSTGRES_USER, got {parsed.username!r}"
-    )
-    assert parsed.password == env.get("POSTGRES_PASSWORD"), (
-        f"the {TEST_URL_VARIABLE} value must carry the service's "
-        "POSTGRES_PASSWORD. Without a password the pool fails with "
-        '`kind: Config, cause: "password missing"`, which is the failure '
-        "this contract exists to prevent."
-    )
-    assert parsed.path.lstrip("/") == env.get("POSTGRES_DB"), (
-        f"the {TEST_URL_VARIABLE} value must name the service's POSTGRES_DB, "
-        f"got {parsed.path!r}"
-    )
-    assert parsed.hostname == "localhost", (
-        f"the service container is published on localhost; got {parsed.hostname!r}"
-    )
+    for step in _steps(_postgres_job()):
+        script = step_text(step)
+        for variable in (TEST_URL_VARIABLE, "DATABASE_URL"):
+            assert f"{variable}=" not in script, (
+                f"the step {step.get('name')!r} exports {variable}; the "
+                "Postgres legs must use the embedded cluster"
+            )
 
 
-def test_the_export_is_guarded_to_the_postgres_legs() -> None:
-    """Only the legs with a database configured may advertise one.
+def test_every_postgres_bearing_leg_enables_the_embedded_cluster() -> None:
+    """A leg compiles `embedded-postgres` exactly when it bears Postgres.
 
-    `services` is declared at job level, so the container starts for every
-    matrix leg including `libsql-only`. That leg is built with
-    `--no-default-features --features libsql` and must not be pointed at a
-    database it does not use, which is what `has_postgres` expresses.
+    `--all-features` carries it implicitly. The narrow direction keeps the
+    libSQL-only leg light: the feature implies `postgres`, so naming it there
+    would give that leg Postgres after all.
     """
-    assert _exporting_step().get("if") == "matrix.has_postgres", (
-        f"the {TEST_URL_VARIABLE} export must be guarded on "
-        "matrix.has_postgres, so the libsql-only leg is not handed a database "
-        "URL its feature set does not use"
-    )
+    for leg in _legs():
+        flags = str(leg.get("flags", ""))
+        tokens = shlex.split(flags, comments=False, posix=True)
+        named: set[str] = set()
+        for index, token in enumerate(tokens):
+            following = tokens[index + 1] if index + 1 < len(tokens) else None
+            named |= _features_named_by(token, following)
+        embedded = "--all-features" in tokens or EMBEDDED_FEATURE in named
+        declared = bool(leg.get("has_postgres"))
+        assert embedded == declared, (
+            f"the {leg.get('name')!r} leg declares has_postgres={declared} but "
+            f"its flags {flags!r} resolve to {EMBEDDED_FEATURE}={embedded}; a "
+            "Postgres-bearing leg without the embedded cluster skips its "
+            "database tests"
+        )
 
 
 #: The variable a lane sets to say that Postgres is not optional on this run.
@@ -198,6 +114,9 @@ def test_the_export_is_guarded_to_the_postgres_legs() -> None:
 #: starts a Postgres service and points the tests at it, the same skip reports
 #: success for tests that never connected.
 REQUIRE_VARIABLE: typ.Final[str] = "AXINITE_REQUIRE_POSTGRES"
+
+#: The feature that gives a leg its embedded cluster.
+EMBEDDED_FEATURE: typ.Final[str] = "embedded-postgres"
 
 #: The feature whose presence makes a leg Postgres-bearing.
 POSTGRES_FEATURE: typ.Final[str] = "postgres"
@@ -354,23 +273,20 @@ def test_every_postgres_bearing_leg_declares_it() -> None:
         )
 
 
-def test_the_leg_that_provides_postgres_tells_the_tests_it_is_not_optional() -> None:
-    """The database URL and the promise of a database ship in one step.
+def test_the_postgres_legs_tell_the_tests_the_database_is_not_optional() -> None:
+    """The promise of a database reaches the step that runs the tests.
 
-    Separating them is the failure this guards. A lane that exports the URL
-    without the promise leaves the skip available, so a Postgres service that
-    failed to start reports success for every test that needed it; a lane that
-    exports the promise without the URL fails on the passwordless fallback,
-    which is issue #350 again.
+    Without it a leg whose cluster cannot be had reports success for every test
+    that needed it. It is appended to `$GITHUB_ENV`: setting it in the step's
+    own shell reaches nothing that runs the tests.
     """
-    step = _exporting_step()
-    script = step_text(step)
-    assert f"{REQUIRE_VARIABLE}=" in script, (
-        f"the step exporting {TEST_URL_VARIABLE} must also export "
-        f"{REQUIRE_VARIABLE}, so a leg cannot receive the database without "
-        "also being told that the database is not optional"
-    )
-    assert REQUIRE_APPEND_RE.search(script), (
+    steps = [
+        step
+        for step in _steps(_postgres_job())
+        if f"{REQUIRE_VARIABLE}=" in step_text(step)
+    ]
+    assert steps, f"{JOB} must export {REQUIRE_VARIABLE} for its Postgres legs"
+    assert REQUIRE_APPEND_RE.search(step_text(steps[0])), (
         f"{REQUIRE_VARIABLE} must be appended to $GITHUB_ENV; setting it in "
         "the step's own shell reaches nothing that runs the tests"
     )

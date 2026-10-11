@@ -128,9 +128,9 @@ jobs:
       matrix:
         include: >-
           ${{ github.event_name == 'pull_request' && fromJSON('[
-          {"name": "default", "flags": ""}
+          {"name": "default", "flags": "--features embedded-postgres"}
           ]') || fromJSON('[
-          {"name": "default", "flags": ""},
+          {"name": "default", "flags": "--features embedded-postgres"},
           {"name": "libsql-only",
           "flags": "--no-default-features --features libsql"}
           ]') }}
@@ -228,6 +228,10 @@ jobs:
       # GitHub tool crate's own suite, which is out of the workspace and
       # would run once per leg. It has its own lane below.
       - name: Run Tests
+        env:
+          # A leg that carries the embedded cluster is a PostgreSQL leg, and a
+          # PostgreSQL leg must not skip: an empty value is not a promise.
+          AXINITE_REQUIRE_POSTGRES: ${{ contains(matrix.flags, 'embedded-postgres') && '1' || '' }}
         run: >-
           make test-workspace
           NEXTEST_PROFILE=ci

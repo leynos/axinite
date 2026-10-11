@@ -386,6 +386,68 @@ of a `runs-on` list: GitHub evaluates it, but the reader never splits a list
 item, so any expression there is refused as unreadable. The readings live in
 `_fork_lanes.py`, and `fork_lanes_test.py` states each shape they refuse.
 
+### Postgres tests and the embedded cluster
+
+The Postgres-backed tests run against a cluster the test process owns, not a
+service container and never a host PostgreSQL. `src/testing/postgres.rs` is the
+one door: `try_test_pg_db` returns a `TestDatabase` that derefs to `PgBackend`.
+With `TEST_DATABASE_URL` set it uses that database, skipping only when nothing
+answers and the lane did not promise one (`AXINITE_REQUIRE_POSTGRES`).
+Otherwise, on Linux with `embedded-postgres`,
+`src/testing/postgres/embedded.rs` bootstraps PostgreSQL 17.11 through
+`pg-embed-setup-unpriv` 0.6, migrates one template database named after a hash
+of `migrations/`, and clones a fresh database per test that is dropped when the
+test ends. A bootstrap failure is a test failure, never a skip: it means the
+harness is broken, not that nobody provided a database. There is no fallback to
+`localhost` (user ruling, 2026-09-23).
+
+The `embedded-postgres` feature is separate from `test-helpers` so that the
+libSQL-only legs, which enable `test-helpers`, do not build the library's
+dependency graph for a fixture they never compile. The Makefile's
+`TEST_FEATURES` and the PostgreSQL legs of CI (`test.yml`'s default leg,
+`coverage.yml`'s default and all-features legs and the mutation run) enable it;
+the libSQL-only legs and `libsql-test-helpers` do not. A PostgreSQL leg that
+omits it has no database source, so its PostgreSQL tests skip, or fail where
+the lane promised a database (`AXINITE_REQUIRE_POSTGRES`).
+
+Isolation is the point. The tests used to share one database and keep out of
+each other's way by convention, with fresh UUIDs and targeted `DELETE`
+statements; one clean-up deletes by user id, which is safe only while no two
+tests choose the same user. A database per test removes the question.
+
+#### Configuration lives in `.cargo/config.toml`
+
+The library reads its configuration from the environment during bootstrap, and
+a test process must not set its own environment once threads exist. nextest's
+configuration has no `env` key, so the values are in `.cargo/config.toml`'s
+`[env]`, which Cargo applies to every process it runs, and which a value
+already in the environment overrides:
+
+| Variable                                                  | Value                                    | Why                                                                                           |
+| --------------------------------------------------------- | ---------------------------------------- | --------------------------------------------------------------------------------------------- |
+| `PG_VERSION_REQ`                                          | `=17.11.0`                               | The extension hook matches archives on major and minor together; CI's former service ran pg16 |
+| `PG_EXTENSIONS`                                           | `vector`                                 | `migrations/V1__initial.sql` runs `CREATE EXTENSION vector`                                   |
+| `PG_EXTENSIONS_MANIFEST`, `PG_EXTENSIONS_MANIFEST_SHA256` | df12-pg-extensions v1.0.0 and its digest | The pinned manifest pins every archive it lists                                               |
+| `PG_MAX_CONNECTIONS`                                      | `64`                                     | Sixteen concurrent tests at two connections each, with headroom                               |
+| `PG_EMBED_ROOT`                                           | `target/pg-embed`                        | A per-checkout install root, so no other project's cluster can break this one                 |
+
+*Table: the embedded cluster's configuration.*
+
+The `pg-embed` nextest group caps the PostgreSQL modules at sixteen threads to
+fit that connection budget; every other test runs at full parallelism. A
+process that is not started by Cargo does not get these values, and the fixture
+then fails with a message saying so rather than letting the first migration
+fail on a missing `vector` control file.
+
+**Every synchronous cluster call runs on a blocking worker.** The handle's
+methods each build and tear down a Tokio runtime internally, and dropping a
+runtime inside a `#[tokio::test]` panics with "Cannot drop a runtime in a
+context where blocking is not allowed". The same applies to the guard that
+drops the cloned database, which is moved onto a plain thread and joined.
+
+The first run downloads PostgreSQL and the pgvector archive; later runs reuse
+them from the install root and the extension cache.
+
 ### Tool installation
 
 CI must not compile a tool it could download. Compiling `whitaker-installer` or
@@ -1786,21 +1848,26 @@ start.
 failure onto the same `None` as an absent variable, which hands the skip back
 to the lane that asked for it to be gone, and says nothing.
 
-**The requirement and the database URL ship in one step.** `coverage.yml`
-exports `TEST_DATABASE_URL`, `DATABASE_URL` and `AXINITE_REQUIRE_POSTGRES` from
-the same step, guarded by `matrix.has_postgres`. Splitting them is the failure
-this guards against in both directions: a leg with the URL and no requirement
-keeps the skip, and a leg with the requirement and no URL fails on the
-passwordless fallback, which is issue #350 again. The `libsql-only` leg runs
-neither and keeps its skip.
+**The coverage job runs on the embedded cluster and promises it.**
+`coverage.yml` starts no database service and exports no database URL: a named
+`TEST_DATABASE_URL` would take precedence over the cluster. Its default leg
+passes `--features embedded-postgres` and its all-features leg has the feature
+through `--all-features`. A step guarded by `matrix.has_postgres` appends
+`AXINITE_REQUIRE_POSTGRES` to `$GITHUB_ENV`, so a leg whose cluster cannot be
+had fails instead of reporting coverage for tests that never ran. The
+`libsql-only` leg runs neither and keeps its skip. `test.yml`'s `Run Tests`
+step derives the same promise from its leg's flags.
 
-`tests/workflow_contracts/coverage_database_test.py` holds the contract. It
-asserts that each matrix leg's `has_postgres` matches whether its flags
-actually compile the `postgres` feature, resolved against the root manifest's
-`default` list, because `postgres` is a default feature and a leg gets it
-unless it passes `--no-default-features`; that the step exporting the URL also
-appends the requirement to `$GITHUB_ENV`; and that exactly one step exports it,
-guarded by `matrix.has_postgres`.
+`tests/workflow_contracts/coverage_database_test.py` and
+`tests/workflow_contracts/embedded_postgres_legs_test.py` hold the contracts.
+They assert that each coverage leg's `has_postgres` matches whether its flags
+compile the `postgres` feature, resolved against the root manifest's `default`
+list, because `postgres` is a default feature and a leg gets it unless it passes
+`--no-default-features`; that a Postgres-bearing leg enables
+`embedded-postgres` and a libSQL-only one does not, in `coverage.yml` and in
+`test.yml`'s `tests` job on every event; that the coverage job declares no
+`services` and exports no database URL; and that the promise is appended to
+`$GITHUB_ENV` by a step guarded by `matrix.has_postgres`.
 
 The Rust side is tested in three layers, because the first two are each
 satisfied by a defect the third catches. `src/testing/postgres/tests.rs` holds

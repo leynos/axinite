@@ -69,19 +69,19 @@ mod tests {
     use rstest::{fixture, rstest};
 
     use super::{LlmCallRecord, Store};
-    use crate::testing::postgres::try_test_pg_db;
+    use crate::testing::postgres::{TestStore, try_test_pg_db};
     use rust_decimal::Decimal;
     use uuid::Uuid;
 
     #[fixture]
-    async fn store() -> anyhow::Result<Option<Store>> {
+    async fn store() -> anyhow::Result<Option<TestStore>> {
         let Some(backend) = try_test_pg_db()
             .await
             .context("unexpected Postgres test setup error")?
         else {
             return Ok(None);
         };
-        Ok(Some(Store::from_pool(backend.pool())))
+        Ok(Some(backend.into_store()))
     }
 
     /// Insert the parent rows an attached LLM call needs.
@@ -217,7 +217,7 @@ mod tests {
     #[rstest]
     #[tokio::test]
     async fn record_llm_call_persists_a_call_attached_to_a_job(
-        #[future] store: anyhow::Result<Option<Store>>,
+        #[future] store: anyhow::Result<Option<TestStore>>,
     ) {
         let Some(store) = store.await.expect("store fixture should initialize") else {
             return;
@@ -263,7 +263,7 @@ mod tests {
     #[rstest]
     #[tokio::test]
     async fn record_llm_call_persists_a_call_with_no_job(
-        #[future] store: anyhow::Result<Option<Store>>,
+        #[future] store: anyhow::Result<Option<TestStore>>,
     ) {
         let Some(store) = store.await.expect("store fixture should initialize") else {
             return;

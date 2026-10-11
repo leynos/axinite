@@ -77,7 +77,7 @@ def test_test_target_uses_expected_nextest_command(
     expected_command = expected_nextest.format(cargo=shell_quote(str(path_cargo)))
     emitted_commands = result.stdout.splitlines()
     assert (
-        f"{expected_command} run --workspace --features test-helpers --profile default"
+        f"{expected_command} run --workspace --features test-helpers,embedded-postgres --profile default"
         in emitted_commands
     ), (
         f"NEXTEST override {nextest_override!r} emitted unexpected commands: "
@@ -107,23 +107,24 @@ def test_test_target_uses_expected_nextest_command(
         (
             "typecheck",
             (
-                "check --all --benches --tests --examples --features test-helpers",
+                "check --all --benches --tests --examples "
+                "--features test-helpers,embedded-postgres",
                 "check --all --benches --tests --examples --no-default-features "
                 "--features libsql-test-helpers",
                 "check --all --benches --tests --examples --all-features "
-                "--features test-helpers",
+                "--features test-helpers,embedded-postgres",
                 "check --manifest-path tools-src/github/Cargo.toml --tests",
             ),
         ),
         (
             "lint-clippy",
             (
-                "clippy --all --benches --tests --examples --features test-helpers "
-                "-- -D warnings",
+                "clippy --all --benches --tests --examples "
+                "--features test-helpers,embedded-postgres -- -D warnings",
                 "clippy --all --benches --tests --examples --no-default-features "
                 "--features libsql-test-helpers -- -D warnings",
                 "clippy --all --benches --tests --examples --all-features "
-                "--features test-helpers -- -D warnings",
+                "--features test-helpers,embedded-postgres -- -D warnings",
                 "clippy --manifest-path tools-src/github/Cargo.toml --tests "
                 "-- -D warnings",
             ),
@@ -141,7 +142,7 @@ def test_test_target_uses_expected_nextest_command(
             (
                 "build --manifest-path tools-src/github/Cargo.toml --release "
                 "--target wasm32-wasip2",
-                "test --features test-helpers",
+                "test --features test-helpers,embedded-postgres",
                 "test --manifest-path tools-src/github/Cargo.toml",
             ),
         ),
@@ -158,9 +159,10 @@ def test_test_target_uses_expected_nextest_command(
             (
                 "build --manifest-path tools-src/github/Cargo.toml --release "
                 "--target wasm32-wasip2",
-                "test --features test-helpers -- --nocapture",
+                "test --features test-helpers,embedded-postgres -- --nocapture",
                 "test --no-default-features --features libsql-test-helpers -- --nocapture",
-                "test --features postgres,libsql-test-helpers,html-to-markdown -- --nocapture",
+                "test --features postgres,libsql-test-helpers,html-to-markdown,"
+                "embedded-postgres -- --nocapture",
                 "test --manifest-path tools-src/github/Cargo.toml -- --nocapture",
             ),
         ),

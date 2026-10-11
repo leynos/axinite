@@ -92,3 +92,21 @@ slow-timeout = { period = "1500s", terminate-after = 1, grace-period = "5s" }
 filter = 'binary(trybuild) | binary(schema_helpers_ui)'
 test-group = 'compile-contracts'
 slow-timeout = { period = "900s", terminate-after = 1, grace-period = "5s" }
+
+# Bound the Postgres tests, not because they interfere with each other (each
+# gets its own database), but because they share one cluster's connection
+# limit. The cluster allows 64 (`PG_MAX_CONNECTIONS` in `.cargo/config.toml`)
+# and each test's pool takes 2 (`TEST_POOL_SIZE`), so 16 concurrent tests use
+# 32 and leave headroom for the template connection, the administrative
+# connection that creates and drops each clone, and pools that have not yet
+# released. Every other test runs at full parallelism.
+[test-groups.pg-embed]
+max-threads = 16
+
+[[profile.default.overrides]]
+filter = 'test(/^db::postgres::/) or test(/^history::store::/) or test(/^testing::postgres::embedded::/)'
+test-group = 'pg-embed'
+
+[[profile.ci.overrides]]
+filter = 'test(/^db::postgres::/) or test(/^history::store::/) or test(/^testing::postgres::embedded::/)'
+test-group = 'pg-embed'

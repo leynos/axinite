@@ -26,9 +26,12 @@ change to that table.
 Run via ``make test-workflow-contracts``.
 """
 
+import re
 import typing as typ
 
 import pytest
+import tomllib
+from _workflow_policy import REPOSITORY_ROOT
 from nextest_config import Profile, binaries_selected
 from timeout_budgets import base_slow_timeout, global_timeout
 
@@ -188,22 +191,29 @@ def test_each_profile_pins_its_compile_contract_override(
 
     Default and ci each declare two overrides: first one naming only
     `schema_helpers_ui` and allowing exactly 1,500 s, then the shared one
-    naming both binaries and allowing exactly 900 s. Coverage declares none; it inherits the ci
+    naming both binaries and allowing exactly 900 s. They also carry the
+    Postgres group override (pinned by
+    ``test_each_profile_pins_its_postgres_group_override``). Coverage declares
+    none; it inherits the ci
     override and filters the binaries out. The counts are pinned because a
     second matching override would change the value in force by file order.
     """
     own = nextest_profiles[profile].overrides
+    contract_overrides = [
+        entry for entry in own if binaries_selected(entry.get("filter"))
+    ]
     expected_count = 0 if profile == "coverage" else 2
-    assert len(own) == expected_count, (
-        f"[profile.{profile}] declares {len(own)} overrides; this contract "
+    assert len(contract_overrides) == expected_count, (
+        f"[profile.{profile}] declares {len(contract_overrides)} overrides "
+        f"selecting compile-contract binaries; this contract "
         f"pins {expected_count}: the `schema_helpers_ui` allowance first, "
         f"then the shared compile-contract override. nextest applies the "
         f"first override that sets a field, so order decides the allowance "
         f"in force"
     )
-    if not own:
+    if not contract_overrides:
         return
-    specific, shared = own
+    specific, shared = contract_overrides
     assert binaries_selected(specific.get("filter")) == frozenset(
         {"schema_helpers_ui"}
     ), (
@@ -231,4 +241,97 @@ def test_each_profile_pins_its_compile_contract_override(
         f"not {REQUIRED_OVERRIDE_SLOW_TIMEOUT}; the guide records 900 s for "
         f"`trybuild`, and a larger one would sit above the whole-run budget "
         f"that contains it"
+    )
+
+
+@pytest.mark.parametrize("profile", ["default", "ci"], ids=str)
+def test_each_profile_pins_its_postgres_group_override(
+    nextest_profiles: dict[str, Profile], profile: str
+) -> None:
+    """Pin the Postgres override to a group assignment and nothing else.
+
+    Default and ci each carry one override that puts the Postgres-backed tests
+    in the ``pg-embed`` group, which bounds how many clusters' databases run at
+    once. It must select by test name, not by binary, and set no
+    ``slow-timeout``: either would let it decide the allowance a compile
+    contract runs under, which the other override pins.
+    """
+    others = [
+        entry
+        for entry in nextest_profiles[profile].overrides
+        if not binaries_selected(entry.get("filter"))
+    ]
+    assert len(others) == 1, (
+        f"[profile.{profile}] declares {len(others)} overrides that select "
+        "no compile-contract binary; this contract pins the one Postgres group"
+    )
+    (override,) = others
+    assert override.get("test-group") == "pg-embed", (
+        f"[profile.{profile}]'s other override assigns "
+        f"{override.get('test-group')!r}, not the pg-embed group"
+    )
+    assert "slow-timeout" not in override, (
+        f"[profile.{profile}]'s Postgres override sets a slow-timeout, which "
+        "would compete with the compile-contract allowance"
+    )
+
+
+#: The test-name patterns the Postgres group must select: the backend's own
+#: tests, the history store's, and the embedded fixture's. A fixture test left
+#: out of the group runs at full parallelism and spends connections the budget
+#: below does not count.
+PG_EMBED_SELECTED: typ.Final[tuple[str, ...]] = (
+    "^db::postgres::",
+    "^history::store::",
+    "^testing::postgres::embedded::",
+)
+
+#: Connections the template build and the administrative create-and-drop use
+#: beside the tests' own pools.
+PG_EMBED_OVERHEAD: typ.Final[int] = 2
+
+
+@pytest.mark.parametrize("profile", ["default", "ci"], ids=str)
+def test_the_postgres_group_selects_every_database_test(
+    nextest_profiles: dict[str, Profile], profile: str
+) -> None:
+    """Pin the group's filter to the three test families that use the cluster."""
+    (override,) = [
+        entry
+        for entry in nextest_profiles[profile].overrides
+        if entry.get("test-group") == "pg-embed"
+    ]
+    selected = set(re.findall(r"test\(/([^/]+)/\)", str(override.get("filter"))))
+    assert selected == set(PG_EMBED_SELECTED), (
+        f"[profile.{profile}]'s pg-embed filter selects {sorted(selected)}, "
+        f"not {sorted(PG_EMBED_SELECTED)}"
+    )
+
+
+def test_the_postgres_group_fits_the_clusters_connection_budget() -> None:
+    """Threads times a test's pool, plus the overhead, must fit the cluster.
+
+    The cluster allows `PG_MAX_CONNECTIONS` and each test's pool takes
+    `TEST_POOL_SIZE`, so the group's `max-threads` is only safe while the
+    product stays under the limit. Reading all three means raising one without
+    the others fails here, not as a connection error in the middle of a run.
+    """
+    nextest = tomllib.loads(
+        (REPOSITORY_ROOT / ".config" / "nextest.toml").read_text(encoding="utf-8")
+    )
+    threads = int(nextest["test-groups"]["pg-embed"]["max-threads"])
+    cargo = tomllib.loads(
+        (REPOSITORY_ROOT / ".cargo" / "config.toml").read_text(encoding="utf-8")
+    )
+    limit = int(cargo["env"]["PG_MAX_CONNECTIONS"])
+    source = (REPOSITORY_ROOT / "src" / "testing" / "postgres.rs").read_text(
+        encoding="utf-8"
+    )
+    match = re.search(r"pub\(crate\) const TEST_POOL_SIZE: usize = (\d+);", source)
+    assert match, "src/testing/postgres.rs must declare TEST_POOL_SIZE"
+    pool = int(match[1])
+    needed = threads * pool + PG_EMBED_OVERHEAD
+    assert needed <= limit, (
+        f"{threads} threads x {pool} connections + {PG_EMBED_OVERHEAD} = "
+        f"{needed}, over the cluster's PG_MAX_CONNECTIONS of {limit}"
     )

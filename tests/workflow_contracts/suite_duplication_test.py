@@ -142,19 +142,19 @@ def test_the_make_targets_still_run_what_this_module_reads_them_as() -> None:
 #: features that are already members of `default` and no
 #: `--no-default-features`, so it resolved to the default leg exactly.
 REVIEWED_TEST_LEGS: dict[str, tuple[tuple[str, str], ...]] = {
-    "pull_request": (("default", ""),),
+    "pull_request": (("default", "--features embedded-postgres"),),
     "push": (
-        ("default", ""),
+        ("default", "--features embedded-postgres"),
         ("libsql-only", "--no-default-features --features libsql"),
     ),
     "schedule": (
-        ("default", ""),
+        ("default", "--features embedded-postgres"),
         ("libsql-only", "--no-default-features --features libsql"),
     ),
     # A manual dispatch is a full run: it takes the same arm a push does, and
     # the job's own guard is an inequality on `push`, so it dispatches.
     "workflow_dispatch": (
-        ("default", ""),
+        ("default", "--features embedded-postgres"),
         ("libsql-only", "--no-default-features --features libsql"),
     ),
 }

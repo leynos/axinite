@@ -235,10 +235,16 @@ attention.
 The default local path is self-contained, but some work benefits from a local
 PostgreSQL instance with `pgvector`.
 
-- PostgreSQL-backed work uses `DATABASE_URL`.
-- The developer guide documents the expected local setup for `createdb` and
-  `CREATE EXTENSION IF NOT EXISTS vector;`.
-- Coverage jobs and some all-features validation paths depend on PostgreSQL.
+- Application PostgreSQL configuration uses `DATABASE_URL`. The developer guide
+  documents the expected local setup for `createdb` and
+  `CREATE EXTENSION IF NOT EXISTS vector;` for running the application itself.
+- Test execution does not use that database. On Linux, the `embedded-postgres`
+  feature runs the PostgreSQL-backed tests against an embedded cluster each
+  test process owns; no local PostgreSQL is needed.
+- Setting `TEST_DATABASE_URL` runs the test fixture against an external
+  database instead, and takes precedence over the embedded cluster.
+- Coverage jobs and the all-features validation paths enable the embedded
+  cluster; none of them starts a database service.
 
 ## 4. Continuous integration strategy
 
@@ -257,8 +263,10 @@ PostgreSQL instance with `pgvector`.
 
 `.github/workflows/test.yml` is the main automated test workflow.
 
-- Linux host tests run via `cargo nextest run --workspace` across three
-  configurations: default, libSQL-only, and explicit all-features.
+- Linux host tests run via `cargo nextest run --workspace`. Pull requests run
+  the default configuration only, with the embedded PostgreSQL cluster; other
+  events add the libSQL-only configuration. There is no all-features leg in
+  this workflow; `coverage.yml` runs it.
 - The workflow builds the GitHub WASM tool before tests that depend on its
   metadata and schema.
 - The workflow also rebuilds WASM channels for integration coverage.
@@ -272,8 +280,10 @@ PostgreSQL instance with `pgvector`.
 
 - Rust coverage uses `cargo-llvm-cov` across all-features, default, and
   libSQL-only configurations.
-- PostgreSQL-backed coverage jobs start a `pgvector/pgvector:pg16` service and
-  run migrations before test execution.
+- PostgreSQL-backed coverage legs run their database tests against the
+  embedded cluster each test process owns (`pg-embed-setup-unpriv`, the
+  `embedded-postgres` feature); no database service is started and no migration
+  step runs, because the fixture migrates its own template.
 - E2E coverage builds an instrumented libSQL-only binary, runs the browser
   suite, and uploads a separate `e2e` coverage report.
 - Coverage is uploaded to Codecov with separate flags for the feature-matrix

@@ -1,4 +1,16 @@
 //! Postgres-specific test helpers.
+//!
+//! Every PostgreSQL-backed test reaches its database through
+//! [`try_test_pg_db`]. A lane that names a database in `TEST_DATABASE_URL`
+//! gets that database. Otherwise, on Linux with `embedded-postgres`, the test gets a
+//! fresh database cloned from a migrated template on an embedded cluster the
+//! test process owns (see `embedded`). No test reaches a PostgreSQL the harness
+//! did not provision or the lane did not name: the old fallback to a local
+//! instance is gone, because on a host whose PostgreSQL rejects the local user
+//! it turned every PostgreSQL-backed test into a failure.
+
+#[cfg(all(feature = "embedded-postgres", target_os = "linux"))]
+pub mod embedded;
 
 use crate::config::{DatabaseBackend, DatabaseConfig, SslMode};
 use crate::db::postgres::PgBackend;
@@ -20,12 +32,117 @@ const UNAVAILABLE_PATTERNS: &[&str] = &[
     "could not connect to server",
 ];
 
-/// Create a PostgreSQL-backed test database.
+/// A test's database, together with whatever owns it.
 ///
-/// Reads the test database URL from the `TEST_DATABASE_URL` environment
-/// variable, or falls back to a default local Postgres instance.
-/// Returns the `PgBackend` instance for testing, propagating any
-/// connection or pool errors to the caller.
+/// Derefs to [`PgBackend`], so a test uses it exactly as it used the backend
+/// before and most call sites need no change.
+///
+/// On the embedded path the guard holds the cloned database and drops it when
+/// the test ends; on a named database there is nothing to drop, because the
+/// database belongs to whoever started it. `Drop::drop` runs before any field is
+/// dropped, so `drop` itself closes the pool before it releases the guard: the
+/// guard's `DROP DATABASE` fails while any connection is still attached, and a
+/// failure it only logs would leave the clone behind.
+pub struct TestDatabase {
+    backend: PgBackend,
+    #[cfg(all(feature = "embedded-postgres", target_os = "linux"))]
+    guard: Option<pg_embedded_setup_unpriv::TemporaryDatabase>,
+}
+
+/// A history store that keeps the database it reads from alive.
+///
+/// A pool handle outlives the [`TestDatabase`] it came from, but the database
+/// does not: dropping the `TestDatabase` ends its connections and removes the
+/// clone, so a fixture that returned only the store would hand its test a pool
+/// onto a database that is already gone. This pairs the two, so the database is
+/// dropped when the store is, after the test has finished with it.
+pub struct TestStore {
+    store: crate::history::Store,
+    _database: TestDatabase,
+}
+
+impl std::ops::Deref for TestStore {
+    type Target = crate::history::Store;
+
+    fn deref(&self) -> &Self::Target {
+        &self.store
+    }
+}
+
+impl TestDatabase {
+    /// Pair a store on this database's pool with the database itself.
+    pub fn into_store(self) -> TestStore {
+        TestStore {
+            store: crate::history::Store::from_pool(self.backend.pool()),
+            _database: self,
+        }
+    }
+
+    /// Wrap a backend whose cloned database this guard owns and will drop.
+    #[cfg(all(feature = "embedded-postgres", target_os = "linux"))]
+    fn owning(backend: PgBackend, database: pg_embedded_setup_unpriv::TemporaryDatabase) -> Self {
+        Self {
+            backend,
+            guard: Some(database),
+        }
+    }
+
+    /// Wrap a backend for a database this guard does not own.
+    fn borrowed(backend: PgBackend) -> Self {
+        Self {
+            backend,
+            #[cfg(all(feature = "embedded-postgres", target_os = "linux"))]
+            guard: None,
+        }
+    }
+}
+
+impl std::ops::Deref for TestDatabase {
+    type Target = PgBackend;
+
+    fn deref(&self) -> &Self::Target {
+        &self.backend
+    }
+}
+
+#[cfg(all(feature = "embedded-postgres", target_os = "linux"))]
+impl Drop for TestDatabase {
+    /// Drop the cloned database from a thread that is allowed to block.
+    ///
+    /// The guard's own drop issues `DROP DATABASE` synchronously and builds a
+    /// Tokio runtime to do it. Doing that inside a `#[tokio::test]` panics
+    /// with "Cannot drop a runtime in a context where blocking is not
+    /// allowed", so the guard moves onto a plain thread, which is joined so
+    /// the database is gone before the process exits.
+    fn drop(&mut self) {
+        let Some(guard) = self.guard.take() else {
+            return;
+        };
+        // The pool must be closed here, not left to the field's own drop, which
+        // comes after this function returns.
+        self.backend.pool().close();
+        // The ordinary drop issues a plain `DROP DATABASE` and only logs a
+        // failure, and closing the pool does not end a connection at once, so
+        // `force_drop` ends whatever is still attached before dropping. A
+        // failure is reported and swallowed, because a panic here would mask
+        // the test's own result; the cluster is reaped at process exit.
+        match std::thread::spawn(move || guard.force_drop()).join() {
+            Ok(Ok(())) => {}
+            Ok(Err(error)) => eprintln!("failed to drop the test database: {error:?}"),
+            Err(panic) => eprintln!("dropping the test database panicked: {panic:?}"),
+        }
+    }
+}
+
+/// Create a PostgreSQL-backed test database, failing if none can be had.
+///
+/// Uses the database `TEST_DATABASE_URL` names, or else an embedded cluster
+/// where one is available (Linux, with `embedded-postgres`).
+///
+/// # Errors
+///
+/// Returns the connection, pool or bootstrap error, or an unavailability error
+/// when no URL is named and no embedded cluster exists on this platform.
 ///
 /// # Examples
 ///
@@ -38,25 +155,52 @@ const UNAVAILABLE_PATTERNS: &[&str] = &[
 ///     Ok(())
 /// }
 /// ```
-pub async fn test_pg_db() -> Result<PgBackend, DatabaseError> {
-    PgBackend::new(&test_pg_config(test_database_url())).await
+pub async fn test_pg_db() -> Result<TestDatabase, DatabaseError> {
+    try_test_pg_db_with(PostgresRequirement::Required)
+        .await?
+        .ok_or_else(no_database_source)
 }
 
-/// Read the URL a test database is reached at.
-///
-/// A lane that provides Postgres names it in `TEST_DATABASE_URL`; a checkout
-/// that does not falls back to a local instance that may well be absent.
-fn test_database_url() -> String {
-    std::env::var("TEST_DATABASE_URL")
-        .unwrap_or_else(|_| "postgresql://localhost/axinite_test".to_string())
+/// Read the URL a lane names for its test database, if it names one.
+fn configured_database_url() -> Option<String> {
+    std::env::var("TEST_DATABASE_URL").ok()
 }
+
+/// The error for a run with no named database and no embedded cluster.
+///
+/// Worded with "could not connect to server", one of the transport failures
+/// [`UNAVAILABLE_PATTERNS`] lists, so the skip decision reads it as an absent
+/// database and not as a misconfiguration.
+fn no_database_source() -> DatabaseError {
+    DatabaseError::Pool(
+        "could not connect to server: TEST_DATABASE_URL is unset and the \
+         embedded cluster needs Linux and the embedded-postgres feature"
+            .to_string(),
+    )
+}
+
+/// Connections each test's pool may open.
+///
+/// The production default is five, which suits a server handling concurrent
+/// requests. A test owns its own database and drives it from one task, so it
+/// needs one connection and a little slack for the pool's own bookkeeping.
+///
+/// The budget that matters is `TEST_POOL_SIZE` times the `pg-embed` nextest
+/// group's `max-threads`, which must stay under the cluster's
+/// `PG_MAX_CONNECTIONS` with room for the template connection and the
+/// administrative connection that creates and drops each clone. At two per test
+/// and sixteen threads that is thirty-two of sixty-four.
+///
+/// The external-database path (`TEST_DATABASE_URL`) takes the same size, so a
+/// developer's or CI's server sees the same per-test connection budget.
+pub(crate) const TEST_POOL_SIZE: usize = 2;
 
 /// Build the test backend configuration for `url`.
 fn test_pg_config(url: String) -> DatabaseConfig {
     DatabaseConfig {
         backend: DatabaseBackend::Postgres,
         url: SecretString::from(url),
-        pool_size: 5,
+        pool_size: TEST_POOL_SIZE,
         ssl_mode: SslMode::Prefer,
         libsql_path: None,
         libsql_url: None,
@@ -137,8 +281,45 @@ fn skip_is_allowed(error: &DatabaseError, requirement: PostgresRequirement) -> b
 /// authentication mistakes. A lane that sets `AXINITE_REQUIRE_POSTGRES` gets no
 /// skip at all: an unreachable database fails there rather than reporting
 /// success for tests that never ran.
-pub async fn try_test_pg_db() -> Result<Option<PgBackend>, DatabaseError> {
-    try_pg_db_at(test_database_url(), PostgresRequirement::from_env()).await
+pub async fn try_test_pg_db() -> Result<Option<TestDatabase>, DatabaseError> {
+    try_test_pg_db_with(PostgresRequirement::from_env()).await
+}
+
+/// Choose the database source and apply `requirement` to its absence.
+///
+/// A named database is tried as before, skipping only where the requirement
+/// allows. Without one, the embedded cluster is provisioned; a failure to
+/// bootstrap it is an error, never a skip, because it means the harness is
+/// broken rather than that nobody provided a database.
+async fn try_test_pg_db_with(
+    requirement: PostgresRequirement,
+) -> Result<Option<TestDatabase>, DatabaseError> {
+    if let Some(url) = configured_database_url() {
+        let backend = try_pg_db_at(url, requirement).await?;
+        return Ok(backend.map(TestDatabase::borrowed));
+    }
+    provision_without_url(requirement).await
+}
+
+/// Provision the embedded cluster's database for a run that names none.
+#[cfg(all(feature = "embedded-postgres", target_os = "linux"))]
+async fn provision_without_url(
+    _requirement: PostgresRequirement,
+) -> Result<Option<TestDatabase>, DatabaseError> {
+    embedded::provision().await.map(Some)
+}
+
+/// Without an embedded cluster, a run that names no database has none.
+#[cfg(not(all(feature = "embedded-postgres", target_os = "linux")))]
+async fn provision_without_url(
+    requirement: PostgresRequirement,
+) -> Result<Option<TestDatabase>, DatabaseError> {
+    let error = no_database_source();
+    if skip_is_allowed(&error, requirement) {
+        eprintln!("Skipping Postgres test (database unavailable): {error}");
+        return Ok(None);
+    }
+    Err(error)
 }
 
 /// Connect at `url`, skipping only where `requirement` leaves a skip available.
@@ -147,7 +328,7 @@ pub async fn try_test_pg_db() -> Result<Option<PgBackend>, DatabaseError> {
 /// unreachable endpoint without setting an environment variable, which would
 /// have to be serialized against every other test in the process. What is left
 /// in the caller is the composition of two readings that are each tested on
-/// their own: `test_database_url` and `PostgresRequirement::from_env`.
+/// their own: `configured_database_url` and `PostgresRequirement::from_env`.
 async fn try_pg_db_at(
     url: String,
     requirement: PostgresRequirement,

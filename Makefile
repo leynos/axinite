@@ -10,7 +10,7 @@ shell_quote = '$(subst ','"'"',$(1))'
 CARGO_COMMAND := $(call shell_quote,$(value CARGO))
 NEXTEST ?= $(CARGO_COMMAND) nextest
 BUNX ?= $(shell command -v bunx 2>/dev/null || printf '%s' "$$HOME/.bun/bin/bunx")
-TEST_FEATURES ?= --features test-helpers
+TEST_FEATURES ?= --features test-helpers,embedded-postgres
 NEXTEST_PROFILE ?= default
 MARKDOWNLINT_BASE ?= origin/main
 CARGO_AUDIT_SUBCOMMAND ?= audit
@@ -199,14 +199,14 @@ test-matrix:
 	$(MAKE) build-github-tool-wasm
 	$(NEXTEST) run --workspace $(TEST_FEATURES) --profile $(NEXTEST_PROFILE)
 	$(NEXTEST) run --workspace --no-default-features --features libsql-test-helpers --profile $(NEXTEST_PROFILE)
-	$(NEXTEST) run --workspace --features postgres,libsql-test-helpers,html-to-markdown --profile $(NEXTEST_PROFILE)
+	$(NEXTEST) run --workspace --features postgres,libsql-test-helpers,html-to-markdown,embedded-postgres --profile $(NEXTEST_PROFILE)
 	$(CARGO_COMMAND) test --manifest-path $(GITHUB_TOOL_MANIFEST) -- --nocapture
 
 test-matrix-cargo:
 	$(MAKE) build-github-tool-wasm
 	$(CARGO_COMMAND) test $(TEST_FEATURES) -- --nocapture
 	$(CARGO_COMMAND) test --no-default-features --features libsql-test-helpers -- --nocapture
-	$(CARGO_COMMAND) test --features postgres,libsql-test-helpers,html-to-markdown -- --nocapture
+	$(CARGO_COMMAND) test --features postgres,libsql-test-helpers,html-to-markdown,embedded-postgres -- --nocapture
 	$(CARGO_COMMAND) test --manifest-path $(GITHUB_TOOL_MANIFEST) -- --nocapture
 
 # Validate the mutation-testing caller workflow contract.

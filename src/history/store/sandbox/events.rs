@@ -144,14 +144,14 @@ mod tests {
     use super::*;
     use crate::db::SandboxEventType;
     use crate::history::SandboxJobRecord;
-    use crate::testing::postgres::try_test_pg_db;
+    use crate::testing::postgres::{TestStore, try_test_pg_db};
 
     #[fixture]
-    async fn store() -> Result<Option<Store>, DatabaseError> {
+    async fn store() -> Result<Option<TestStore>, DatabaseError> {
         let Some(backend) = try_test_pg_db().await? else {
             return Ok(None);
         };
-        Ok(Some(Store::from_pool(backend.pool())))
+        Ok(Some(backend.into_store()))
     }
 
     async fn seed_sandbox_job(store: &Store, job_id: Uuid) -> Result<(), DatabaseError> {
@@ -186,7 +186,7 @@ mod tests {
     #[case(Some(-1), "list_job_events limit must be greater than 0")]
     #[tokio::test]
     async fn list_job_events_with_non_positive_limit_errors(
-        #[future] store: Result<Option<Store>, DatabaseError>,
+        #[future] store: Result<Option<TestStore>, DatabaseError>,
         #[case] limit: Option<i64>,
         #[case] expected: &str,
     ) {
@@ -205,7 +205,7 @@ mod tests {
     #[case(Some(-1), "list_job_events before_id must be greater than 0")]
     #[tokio::test]
     async fn list_job_events_with_non_positive_before_id_errors(
-        #[future] store: Result<Option<Store>, DatabaseError>,
+        #[future] store: Result<Option<TestStore>, DatabaseError>,
         #[case] before_id: Option<i64>,
         #[case] expected: &str,
     ) {
@@ -222,7 +222,7 @@ mod tests {
     #[rstest]
     #[tokio::test]
     async fn list_job_events_with_valid_inputs_succeeds(
-        #[future] store: Result<Option<Store>, DatabaseError>,
+        #[future] store: Result<Option<TestStore>, DatabaseError>,
     ) {
         let Some(store) = store.await.expect("unexpected Postgres test setup error") else {
             return;

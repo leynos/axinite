@@ -124,13 +124,11 @@ mod tests {
     use uuid::Uuid;
 
     use super::*;
-    use crate::testing::postgres::try_test_pg_db;
+    use crate::testing::postgres::{TestDatabase, TestStore, try_test_pg_db};
 
     #[fixture]
-    async fn store() -> Result<Option<Store>, DatabaseError> {
-        Ok(try_test_pg_db()
-            .await?
-            .map(|backend| Store::from_pool(backend.pool())))
+    async fn store() -> Result<Option<TestStore>, DatabaseError> {
+        Ok(try_test_pg_db().await?.map(TestDatabase::into_store))
     }
 
     async fn cleanup_user(store: &Store, user_id: &str) -> Result<(), DatabaseError> {
@@ -143,7 +141,7 @@ mod tests {
     #[rstest]
     #[tokio::test]
     async fn routine_singleton_is_idempotent(
-        #[future] store: Result<Option<Store>, DatabaseError>,
+        #[future] store: Result<Option<TestStore>, DatabaseError>,
     ) {
         let Some(store) = store.await.expect("unexpected Postgres test setup error") else {
             return;
@@ -179,7 +177,7 @@ mod tests {
     #[rstest]
     #[tokio::test]
     async fn assistant_singleton_is_idempotent_per_channel(
-        #[future] store: Result<Option<Store>, DatabaseError>,
+        #[future] store: Result<Option<TestStore>, DatabaseError>,
     ) {
         let Some(store) = store.await.expect("unexpected Postgres test setup error") else {
             return;
@@ -210,7 +208,7 @@ mod tests {
     #[rstest]
     #[tokio::test]
     async fn heartbeat_singleton_is_idempotent(
-        #[future] store: Result<Option<Store>, DatabaseError>,
+        #[future] store: Result<Option<TestStore>, DatabaseError>,
     ) {
         let Some(store) = store.await.expect("unexpected Postgres test setup error") else {
             return;

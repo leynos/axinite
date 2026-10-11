@@ -10,17 +10,17 @@ use uuid::Uuid;
 
 use super::{ActionRecord, DatabaseError, Store};
 use crate::context::JobContext;
-use crate::testing::postgres::try_test_pg_db;
+use crate::testing::postgres::{TestStore, try_test_pg_db};
 
 #[fixture]
-async fn seeded_store() -> anyhow::Result<Option<(Store, Uuid)>> {
+async fn seeded_store() -> anyhow::Result<Option<(TestStore, Uuid)>> {
     let Some(backend) = try_test_pg_db()
         .await
         .context("unexpected Postgres test setup error")?
     else {
         return Ok(None);
     };
-    let store = Store::from_pool(backend.pool());
+    let store = backend.into_store();
     let ctx = JobContext::with_user(
         format!("actions-test-{}", Uuid::new_v4()),
         "job action fixture",
@@ -65,7 +65,7 @@ fn sample_action() -> ActionRecord {
 #[rstest]
 #[tokio::test]
 async fn save_action_round_trips_via_get_job_actions(
-    #[future] seeded_store: anyhow::Result<Option<(Store, Uuid)>>,
+    #[future] seeded_store: anyhow::Result<Option<(TestStore, Uuid)>>,
 ) {
     let Some((store, job_id)) = seeded_store
         .await
@@ -113,7 +113,7 @@ async fn save_action_round_trips_via_get_job_actions(
 #[rstest]
 #[tokio::test]
 async fn save_action_rejects_duration_that_exceeds_i32_millis(
-    #[future] seeded_store: anyhow::Result<Option<(Store, Uuid)>>,
+    #[future] seeded_store: anyhow::Result<Option<(TestStore, Uuid)>>,
 ) {
     let Some((store, job_id)) = seeded_store
         .await
@@ -140,7 +140,7 @@ async fn save_action_rejects_duration_that_exceeds_i32_millis(
 #[rstest]
 #[tokio::test]
 async fn save_action_rejects_sequence_that_exceeds_i32(
-    #[future] seeded_store: anyhow::Result<Option<(Store, Uuid)>>,
+    #[future] seeded_store: anyhow::Result<Option<(TestStore, Uuid)>>,
 ) {
     let Some((store, job_id)) = seeded_store
         .await
@@ -167,7 +167,7 @@ async fn save_action_rejects_sequence_that_exceeds_i32(
 #[rstest]
 #[tokio::test]
 async fn get_job_actions_rejects_negative_duration(
-    #[future] seeded_store: anyhow::Result<Option<(Store, Uuid)>>,
+    #[future] seeded_store: anyhow::Result<Option<(TestStore, Uuid)>>,
 ) {
     let Some((store, job_id)) = seeded_store
         .await
@@ -223,7 +223,7 @@ async fn get_job_actions_rejects_negative_duration(
 #[rstest]
 #[tokio::test]
 async fn get_job_actions_rejects_negative_sequence_num(
-    #[future] seeded_store: anyhow::Result<Option<(Store, Uuid)>>,
+    #[future] seeded_store: anyhow::Result<Option<(TestStore, Uuid)>>,
 ) {
     let Some((store, job_id)) = seeded_store
         .await
@@ -279,7 +279,7 @@ async fn get_job_actions_rejects_negative_sequence_num(
 #[rstest]
 #[tokio::test]
 async fn get_job_actions_treats_null_warnings_as_empty_vec(
-    #[future] seeded_store: anyhow::Result<Option<(Store, Uuid)>>,
+    #[future] seeded_store: anyhow::Result<Option<(TestStore, Uuid)>>,
 ) {
     let Some((store, job_id)) = seeded_store
         .await
@@ -334,7 +334,7 @@ async fn get_job_actions_treats_null_warnings_as_empty_vec(
 #[rstest]
 #[tokio::test]
 async fn get_job_actions_rejects_invalid_warning_payload_shape(
-    #[future] seeded_store: anyhow::Result<Option<(Store, Uuid)>>,
+    #[future] seeded_store: anyhow::Result<Option<(TestStore, Uuid)>>,
 ) {
     let Some((store, job_id)) = seeded_store
         .await
