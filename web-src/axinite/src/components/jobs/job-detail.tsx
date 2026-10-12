@@ -362,6 +362,11 @@ export type JobDetailProps = {
   connectLive?: ConnectLiveEvents;
 };
 
+/**
+ * Renders a job's details and activity, with file selection and available
+ * restart, cancel and prompt actions. `connectLive` can supply its live event
+ * source.
+ */
 export const JobDetail = (props: JobDetailProps) => {
   const { t } = useI18n();
   const flags = useFeatureFlags();

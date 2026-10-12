@@ -77,6 +77,7 @@ async def _install_routes(page, phase, approval_posts):
 
 
 async def _boot_chat(page, axinite_server, phase, approval_posts):
+    """Install approval API stubs, then load authenticated chat at the server."""
     await _install_routes(page, phase, approval_posts)
     # Reload so ChatPreview remounts and fetches threads/history through the
     # interception; the token persists in sessionStorage across the reload.
@@ -86,6 +87,7 @@ async def _boot_chat(page, axinite_server, phase, approval_posts):
 
 
 async def _inject_approval(page):
+    """Emit the fixed pending-approval event used by the scenario tests."""
     await page.evaluate(
         """() => window.__axinite.emitChatEvent({
             type: 'approval_needed',

@@ -187,6 +187,11 @@ export class MockBackendState {
     return value;
   }
 
+  /**
+   * Returns mock gateway status with chat SSE counts, clock-based uptime
+   * and fixed usage fixtures; WebSocket count is zero and restart is
+   * disabled.
+   */
   getGatewayStatus(): GatewayStatusResponse {
     const sse_connections = this.chatSubscribers.size;
     const ws_connections = 0;
@@ -216,9 +221,11 @@ export class MockBackendState {
     };
   }
 
-  // Flags resolve like the real gateway: a FEATURE_FLAG_<UPPER_SNAKE_NAME>
-  // environment variable overrides the default (`true` enables, any other
-  // set value disables), so stub runs can exercise flag combinations.
+  /**
+   * Returns a copy of compiled defaults with
+   * FEATURE_FLAG_<UPPER_SNAKE_NAME> overrides. Case-insensitive true
+   * enables a flag; any other set value disables it.
+   */
   getFeatureFlags(): FeatureFlagsResponse {
     const resolved: FeatureFlagsResponse = { ...this.featureFlags };
     for (const name of Object.keys(resolved)) {
@@ -230,6 +237,10 @@ export class MockBackendState {
     return resolved;
   }
 
+  /**
+   * Adds a live chat subscriber and returns an unsubscribe function.
+   * Existing events are not replayed.
+   */
   subscribeToChat(subscriber: EventSubscriber<ChatSseEvent>): () => void {
     this.chatSubscribers.add(subscriber);
     return () => {
@@ -237,6 +248,10 @@ export class MockBackendState {
     };
   }
 
+  /**
+   * Adds a live log subscriber, replays up to 25 recent entries oldest
+   * first, then returns an unsubscribe function.
+   */
   subscribeToLogs(subscriber: EventSubscriber<LogEntry>): () => void {
     this.logSubscribers.add(subscriber);
     // Replay the newest 25 entries oldest-to-newest, as a live tail would
@@ -276,6 +291,10 @@ export class MockBackendState {
     return entry;
   }
 
+  /**
+   * Returns the assistant thread separately, other threads newest-updated
+   * first and the active thread ID.
+   */
   listThreads(): ThreadListResponse {
     const assistant_thread = this.threads.get("thread-assistant")?.info ?? null;
     const threads = [...this.threads.values()]
@@ -292,6 +311,10 @@ export class MockBackendState {
     };
   }
 
+  /**
+   * Creates and selects an empty idle thread with deterministic ID and
+   * injected-clock timestamps, then records a chat log.
+   */
   createThread(): ThreadInfo {
     const id = this.nextId("thread");
     const threadInfo: ThreadInfo = {
@@ -313,6 +336,11 @@ export class MockBackendState {
     return threadInfo;
   }
 
+  /**
+   * Selects the requested or active thread and returns its turns, optional
+   * oldest timestamp and pending approval. Throws when the thread is
+   * unknown.
+   */
   getHistory(threadId?: string | null): HistoryResponse {
     const fallbackThreadId =
       threadId ?? this.activeThreadId ?? this.threads.keys().next().value;
@@ -334,6 +362,11 @@ export class MockBackendState {
     };
   }
 
+  /**
+   * Appends a processing turn to the known requested thread or active
+   * thread, publishes thinking and schedules mock SSE events. Returns an
+   * accepted message ID; throws if the target is missing.
+   */
   sendMessage(request: SendMessageRequest): SendMessageResponse {
     const requestedThreadId =
       request.thread_id && this.threads.has(request.thread_id)
@@ -393,6 +426,11 @@ export class MockBackendState {
     };
   }
 
+  /**
+   * Resolves a pending approval, updates its thread and latest turn,
+   * publishes the outcome and records a log. Throws when the request ID is
+   * not pending.
+   */
   submitApproval(request: ApprovalRequest): ActionResponse {
     const thread = [...this.threads.values()].find(
       (candidate) => candidate.pendingApproval?.request_id === request.request_id
@@ -433,10 +471,11 @@ export class MockBackendState {
     return createActionResponse(outcome.response);
   }
 
-  // Submit an extension auth token, bypassing the message pipeline, mirroring
-  // POST /api/chat/auth-token. Deterministic acceptance rule: the literal
-  // token "valid-token", or any token of length >= 8, succeeds; anything
-  // shorter fails.
+  /**
+   * Submits the mock chat auth token without entering the message pipeline.
+   * The literal valid-token or any token of at least eight characters
+   * succeeds; shorter tokens fail. Both outcomes are logged.
+   */
   chatAuthToken(request: AuthTokenRequest): ActionResponse {
     const accepted =
       request.token === "valid-token" || request.token.length >= 8;
@@ -465,6 +504,10 @@ export class MockBackendState {
     );
   }
 
+  /**
+   * Records cancellation of the named extension auth flow and returns an
+   * Auth cancelled response; no pending-auth registry is changed.
+   */
   chatAuthCancel(request: AuthCancelRequest): ActionResponse {
     this.pushLog(
       `Cancelled auth flow for ${request.extension_name}.`,
@@ -474,8 +517,10 @@ export class MockBackendState {
     return createActionResponse("Auth cancelled.");
   }
 
-  // Mirrors GET /api/pairing/{channel}: unknown channels answer with an
-  // empty pending-request list rather than a 404.
+  /**
+   * Returns pending requests for the channel; an unknown channel has an
+   * empty list rather than a 404.
+   */
   pairingList(channel: string): PairingListResponse {
     return {
       channel,
@@ -483,9 +528,11 @@ export class MockBackendState {
     };
   }
 
-  // Mirrors POST /api/pairing/{channel}/approve. Submitting the code
-  // "rate-limited" throws PairingRateLimitedError so the transport layer can
-  // answer with the daemon's plain-text 429 fixture.
+  /**
+   * Approves and removes a matching pending code. The rate-limited fixture
+   * throws PairingRateLimitedError; unknown or expired codes return a
+   * failed action.
+   */
   pairingApprove(channel: string, code: string): ActionResponse {
     if (code === "rate-limited") {
       throw new PairingRateLimitedError(
@@ -513,6 +560,10 @@ export class MockBackendState {
     );
   }
 
+  /**
+   * Builds sorted file and directory entries from seeded document paths,
+   * optionally limiting entries to the requested path depth.
+   */
   getMemoryTree(depth?: number): MemoryTreeResponse {
     const seenDirectories = new Set<string>();
     const entries = [...this.memoryDocuments.keys()]
@@ -584,6 +635,10 @@ export class MockBackendState {
     });
   }
 
+  /**
+   * Returns sorted immediate children of a parent path, using null update
+   * times for directories and document timestamps for files.
+   */
   listMemory(path = ""): MemoryListResponse {
     const entries = new Map<string, MemoryListingEntry>();
 
@@ -599,6 +654,10 @@ export class MockBackendState {
     };
   }
 
+  /**
+   * Returns a document path, content and update time; throws when the path
+   * is unknown.
+   */
   readMemory(path: string): MemoryReadResponse {
     const document = this.memoryDocuments.get(path);
     if (!document) {
@@ -611,6 +670,10 @@ export class MockBackendState {
     };
   }
 
+  /**
+   * Creates or replaces a document with the injected-clock timestamp, logs
+   * the path and returns written status.
+   */
   writeMemory(request: MemoryWriteRequest): MemoryWriteResponse {
     this.memoryDocuments.set(request.path, {
       content: request.content,
@@ -623,6 +686,11 @@ export class MockBackendState {
     };
   }
 
+  /**
+   * Searches lowercased path and content by substring. Empty queries return
+   * no hits; matches are scored by position, sorted by score and limited to
+   * ten by default.
+   */
   searchMemory(request: MemorySearchRequest): MemorySearchResponse {
     const query = request.query.trim().toLowerCase();
     if (query.length === 0) {
@@ -651,6 +719,9 @@ export class MockBackendState {
     };
   }
 
+  /**
+   * Returns job summary fields without event or file payloads.
+   */
   listJobs(): JobListResponse {
     return {
       jobs: [...this.jobs.values()].map(({ detail }) => ({
@@ -664,6 +735,9 @@ export class MockBackendState {
     };
   }
 
+  /**
+   * Counts current jobs by total and supported state.
+   */
   summarizeJobs(): JobSummaryResponse {
     const jobs = [...this.jobs.values()].map((job) => job.detail);
     return {
@@ -676,6 +750,9 @@ export class MockBackendState {
     };
   }
 
+  /**
+   * Returns job details or throws when the job ID is unknown.
+   */
   getJob(id: string): JobDetailResponse {
     const job = this.jobs.get(id);
     if (!job) {
@@ -684,6 +761,9 @@ export class MockBackendState {
     return job.detail;
   }
 
+  /**
+   * Returns a job event list or throws when the job ID is unknown.
+   */
   getJobEvents(id: string): JobEventsResponse {
     const job = this.jobs.get(id);
     if (!job) {
@@ -694,6 +774,10 @@ export class MockBackendState {
     };
   }
 
+  /**
+   * Returns leaf entries for a job’s file paths; throws when the job ID is
+   * unknown.
+   */
   listJobFiles(id: string): ProjectFilesResponse {
     const job = this.jobs.get(id);
     if (!job) {
@@ -708,6 +792,10 @@ export class MockBackendState {
     };
   }
 
+  /**
+   * Returns the requested file path and content; throws separately when the
+   * job or file is missing.
+   */
   readJobFile(id: string, path: string): ProjectFileReadResponse {
     const job = this.jobs.get(id);
     if (!job) {
@@ -720,6 +808,11 @@ export class MockBackendState {
     return { path, content };
   }
 
+  /**
+   * Moves a known job to in-progress with fresh timestamps and restart
+   * capabilities, appends its transition and event, and logs the change.
+   * Throws for an unknown ID.
+   */
   restartJob(id: string): ActionResponse {
     const job = this.jobs.get(id);
     if (!job) {
@@ -757,6 +850,10 @@ export class MockBackendState {
     return createActionResponse("Job restarted.");
   }
 
+  /**
+   * Marks a known job failed, records completion and transition, appends an
+   * event and warning log. Throws for an unknown ID.
+   */
   cancelJob(id: string): ActionResponse {
     const job = this.jobs.get(id);
     if (!job) {
@@ -792,6 +889,10 @@ export class MockBackendState {
     return createActionResponse("Job cancelled.");
   }
 
+  /**
+   * Records the follow-up prompt as a job event and log, then returns an
+   * acknowledgement. Throws for an unknown ID.
+   */
   promptJob(id: string, request: JobPromptRequest): ActionResponse {
     const job = this.jobs.get(id);
     if (!job) {
@@ -810,6 +911,10 @@ export class MockBackendState {
     return createActionResponse("Prompt submitted to the job.");
   }
 
+  /**
+   * Returns routine list fields with trigger and action labels and status
+   * derived from each detail.
+   */
   listRoutines(): RoutineListResponse {
     return {
       routines: [...this.routines.values()].map(({ detail }) => ({
@@ -834,6 +939,10 @@ export class MockBackendState {
     };
   }
 
+  /**
+   * Counts total, enabled, disabled and failing routines, plus routines
+   * whose latest run starts on the injected current date.
+   */
   summarizeRoutines(): RoutineSummaryResponse {
     const routines = [...this.routines.values()].map((routine) => routine.detail);
     const total = routines.length;
@@ -855,6 +964,9 @@ export class MockBackendState {
     };
   }
 
+  /**
+   * Returns routine details or throws when the routine ID is unknown.
+   */
   getRoutine(id: string): RoutineDetailResponse {
     const routine = this.routines.get(id);
     if (!routine) {
@@ -863,6 +975,9 @@ export class MockBackendState {
     return routine.detail;
   }
 
+  /**
+   * Returns recent runs or throws when the routine ID is unknown.
+   */
   getRoutineRuns(id: string): RoutineRunsResponse {
     const routine = this.routines.get(id);
     if (!routine) {
@@ -873,6 +988,11 @@ export class MockBackendState {
     };
   }
 
+  /**
+   * Records a completed manual run with injected-clock timestamps,
+   * increments the count and retains at most ten recent runs. Throws for an
+   * unknown ID.
+   */
   triggerRoutine(id: string): ActionResponse {
     const routine = this.routines.get(id);
     if (!routine) {
@@ -898,6 +1018,11 @@ export class MockBackendState {
     return createActionResponse("Routine triggered.");
   }
 
+  /**
+   * Sets the requested enabled state, or toggles the current state when
+   * omitted, then logs and returns the matching response. Throws for an
+   * unknown ID.
+   */
   toggleRoutine(id: string, request?: ToggleRequest): ActionResponse {
     const routine = this.routines.get(id);
     if (!routine) {
@@ -916,6 +1041,10 @@ export class MockBackendState {
     return createActionResponse(enabled ? "Routine enabled." : "Routine disabled.");
   }
 
+  /**
+   * Deletes a known routine, records a warning log and returns success;
+   * throws when the ID is unknown.
+   */
   deleteRoutine(id: string): ActionResponse {
     if (!this.routines.has(id)) {
       throw new Error("Routine not found");
@@ -925,12 +1054,19 @@ export class MockBackendState {
     return createActionResponse("Routine deleted.");
   }
 
+  /**
+   * Returns the current extension metadata values.
+   */
   listExtensions(): { extensions: ExtensionInfo[] } {
     return {
       extensions: [...this.extensions.values()].map((extension) => extension.info),
     };
   }
 
+  /**
+   * Returns the fixed preview tools and tools contributed by installed
+   * extension metadata.
+   */
   listExtensionTools(): ToolListResponse {
     const tools: ToolInfo[] = [
       {
@@ -951,6 +1087,11 @@ export class MockBackendState {
     return { tools };
   }
 
+  /**
+   * Returns every registry entry for an empty query; otherwise matches
+   * case-insensitively against names, display names, descriptions and
+   * keywords.
+   */
   searchExtensionRegistry(query?: string | null): RegistrySearchResponse {
     const needle = query?.trim().toLowerCase() ?? "";
     return {
@@ -968,6 +1109,10 @@ export class MockBackendState {
     };
   }
 
+  /**
+   * Marks a registry entry installed and creates a configured but inactive
+   * extension when needed. Throws when the registry entry is missing.
+   */
   installExtension(name: string): ActionResponse {
     const registryEntry = this.registryEntries.get(name);
     if (!registryEntry) {
@@ -1008,6 +1153,10 @@ export class MockBackendState {
     );
   }
 
+  /**
+   * Activates a known extension and publishes status, or requests manual
+   * authentication when required. Throws when the extension is missing.
+   */
   activateExtension(name: string): ActionResponse {
     const extension = this.extensions.get(name);
     if (!extension) {
@@ -1053,6 +1202,10 @@ export class MockBackendState {
     });
   }
 
+  /**
+   * Removes a known extension, clears its registry installed bit when
+   * present and logs the change. Throws when the extension is missing.
+   */
   removeExtension(name: string): ActionResponse {
     if (!this.extensions.has(name)) {
       throw new Error("Extension not found");
@@ -1066,6 +1219,10 @@ export class MockBackendState {
     return createActionResponse("Extension removed.");
   }
 
+  /**
+   * Returns setup fields for a known extension or throws when it is
+   * missing.
+   */
   getExtensionSetup(name: string): ExtensionSetupResponse {
     const extension = this.extensions.get(name);
     if (!extension) {
@@ -1078,6 +1235,10 @@ export class MockBackendState {
     };
   }
 
+  /**
+   * Marks non-blank submitted secrets as provided, activates the extension
+   * and publishes auth completion. Throws when the extension is missing.
+   */
   submitExtensionSetup(
     name: string,
     secrets: Record<string, string>
@@ -1108,6 +1269,9 @@ export class MockBackendState {
     return createActionResponse("Extension setup saved.", { activated: true });
   }
 
+  /**
+   * Returns installed skill entries and their count.
+   */
   listSkills(): SkillListResponse {
     const skills = [...this.skills.values()];
     return {
@@ -1116,6 +1280,11 @@ export class MockBackendState {
     };
   }
 
+  /**
+   * Filters installed and catalogue skills case-insensitively by name,
+   * description or keyword; an empty query returns both lists unfiltered,
+   * with the fixed preview registry URL.
+   */
   searchSkills(request: SkillSearchRequest): SkillSearchResponse {
     const query = request.query.trim().toLowerCase();
     const installed = [...this.skills.values()].filter((skill) => {
@@ -1145,6 +1314,11 @@ export class MockBackendState {
     };
   }
 
+  /**
+   * Installs a catalogue match when available; otherwise creates an ad hoc
+   * skill with preview trust and source derived from the supplied URL or
+   * content.
+   */
   installSkill(request: SkillInstallRequest): ActionResponse {
     const catalogueMatch = matchCatalogueSkill(
       [...this.catalogueSkills.values()],
@@ -1165,6 +1339,10 @@ export class MockBackendState {
     return createActionResponse(`Skill ${name} installed.`);
   }
 
+  /**
+   * Removes an installed skill and records a warning log; throws when the
+   * skill is unknown.
+   */
   removeSkill(name: string): ActionResponse {
     if (!this.skills.has(name)) {
       throw new Error("Skill not found");
@@ -1174,12 +1352,19 @@ export class MockBackendState {
     return createActionResponse(`Skill ${name} removed.`);
   }
 
+  /**
+   * Returns the current in-memory log level.
+   */
   getLogLevel(): LogLevelResponse {
     return {
       level: this.logLevel,
     };
   }
 
+  /**
+   * Stores the supplied log-level string without validation, logs the
+   * change and returns it.
+   */
   setLogLevel(level: string): LogLevelResponse {
     this.logLevel = level;
     this.pushLog(`Log level changed to ${level}.`, "logs");

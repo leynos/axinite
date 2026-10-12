@@ -6,12 +6,17 @@
 
 export const DEPLOY_BASE_PATH = "/";
 
+/**
+ * Adds leading and trailing slashes to a base path, defaulting empty input to
+ * `/`. Other path segments are left unchanged.
+ */
 export function normalizeBasePath(rawBase: string | undefined): string {
   const candidate = rawBase && rawBase.length > 0 ? rawBase : "/";
   const withLeading = candidate.startsWith("/") ? candidate : `/${candidate}`;
   return withLeading.endsWith("/") ? withLeading : `${withLeading}/`;
 }
 
+/** Joins a normalized base path to a path with any leading slashes removed. */
 export function buildAppPath(
   rawBase: string | undefined,
   path: string

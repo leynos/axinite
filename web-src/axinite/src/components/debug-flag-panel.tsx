@@ -11,6 +11,7 @@ import { FEATURE_FLAGS } from "@/lib/feature-flags/registry";
 import { useFeatureFlags } from "@/lib/feature-flags/runtime";
 import { useI18n } from "@/lib/i18n/provider";
 
+/** Renders per-flag controls backed by the feature-flag context. */
 export const DebugFlagPanel = () => {
   const flags = useFeatureFlags();
   const { t } = useI18n();

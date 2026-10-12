@@ -12,6 +12,7 @@ from helpers import SEL, send_chat_message
 
 
 async def _wait_state(page, state: str, *, timeout: int = 10000):
+    """Wait until the SSE status marker visibly reports `state`."""
     await page.locator(f"{SEL['sse_status']}[data-state='{state}']").wait_for(
         state="visible", timeout=timeout
     )

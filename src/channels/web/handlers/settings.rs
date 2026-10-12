@@ -68,6 +68,11 @@ pub async fn settings_list_handler(
     Ok(Json(SettingsListResponse { settings }))
 }
 
+/// Read a setting belonging to the configured gateway user.
+///
+/// Feature-flag keys are rejected with `400`; callers read those values from
+/// `GET /api/features`. A missing setting returns `404`, an unavailable store
+/// returns `503`, and a storage failure returns `500`.
 pub async fn settings_get_handler(
     State(state): State<Arc<GatewayState>>,
     Path(key): Path<String>,
@@ -99,6 +104,13 @@ pub async fn settings_get_handler(
     }))
 }
 
+/// Store a user setting, or write a deployment-scoped feature-flag override.
+///
+/// Ordinary settings return `204` on success. `feature_flag:` keys require a
+/// valid `X-Deployment-Id`, flag name, and JSON boolean or `"true"`/`"false"`
+/// string; successful flag writes return a setting-shaped JSON response. Invalid
+/// flag input returns `400`. An unavailable ordinary-settings store returns
+/// `503`; persistence failures return `500`.
 pub async fn settings_set_handler(
     State(state): State<Arc<GatewayState>>,
     Path(key): Path<String>,
@@ -193,6 +205,11 @@ fn coerce_flag_value(value: &serde_json::Value) -> Option<bool> {
     }
 }
 
+/// Delete a setting belonging to the configured gateway user.
+///
+/// Feature-flag keys are rejected with `400`; this route only deletes
+/// user-scoped settings. Success returns `204`; an unavailable store returns
+/// `503`, and a storage failure returns `500`.
 pub async fn settings_delete_handler(
     State(state): State<Arc<GatewayState>>,
     Path(key): Path<String>,

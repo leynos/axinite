@@ -19,6 +19,10 @@ const queryClient = new QueryClient({
   },
 });
 
+/**
+ * Supplies the query, localization and feature-flag contexts required by the
+ * application tree.
+ */
 export const AppProviders: ParentComponent = (props) => {
   return (
     <QueryClientProvider client={queryClient}>

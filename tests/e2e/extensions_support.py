@@ -108,6 +108,7 @@ SAMPLE_TOOLS = [
 
 
 async def fulfil(route, payload):
+    """Fulfil a Playwright route with a JSON payload and HTTP 200."""
     await route.fulfill(
         status=200, content_type="application/json", body=json.dumps(payload)
     )
@@ -137,16 +138,20 @@ async def mock_ext_apis(page, *, installed=None, tools=None, registry=None):
 
 
 async def go_to_extensions(page):
+    """Navigate the page to the Extensions route and wait for it to load."""
     await goto_route(page, "Extensions", "extensions", timeout=8000)
 
 
 def registry_panel(page):
+    """Return the catalogue panel containing the registry search field."""
     return page.locator(".catalogue-panel", has=page.locator("#extensions-registry-search"))
 
 
 def mcp_panel(page):
+    """Return the catalogue panel containing the MCP server form."""
     return page.locator(".catalogue-panel", has=page.locator("#mcp-server-name"))
 
 
 def tools_tbody(page):
+    """Return the table body listing extension tools."""
     return page.locator(".catalogue-section--bare .catalogue-list--extensions tbody")

@@ -90,6 +90,10 @@ const SEED_LOGS: LogEntry[] = [
     },
 ];
 
+/**
+ * Returns an isolated copy of the four seeded logs, whose timestamps are
+ * relative to the fixed preview start time.
+ */
 export function createSeedLogs(): LogEntry[] {
   return structuredClone(SEED_LOGS);
 }
@@ -311,6 +315,10 @@ const SEED_THREADS: [string, MockThread][] = [
     ],
 ];
 
+/**
+ * Returns a fresh map containing deep copies of seeded threads and turns,
+ * ready for per-instance mutation.
+ */
 export function createSeedThreads(): Map<string, MockThread> {
   return new Map(structuredClone(SEED_THREADS));
 }
@@ -360,6 +368,10 @@ const SEED_MEMORY_DOCUMENTS: [string, MemoryDocument][] = [
     ],
 ];
 
+/**
+ * Returns a fresh map of seeded memory documents with fixed preview
+ * timestamps.
+ */
 export function createSeedMemoryDocuments(): Map<string, MemoryDocument> {
   return new Map(structuredClone(SEED_MEMORY_DOCUMENTS));
 }
@@ -588,6 +600,10 @@ const SEED_JOBS: [string, MockJob][] = [
     ],
 ];
 
+/**
+ * Returns a fresh map of seeded job details, events and files for this mock
+ * state.
+ */
 export function createSeedJobs(): Map<string, MockJob> {
   return new Map(structuredClone(SEED_JOBS));
 }
@@ -760,6 +776,9 @@ const SEED_ROUTINES: [string, MockRoutine][] = [
     ],
 ];
 
+/**
+ * Returns a fresh map of seeded routine details and run histories.
+ */
 export function createSeedRoutines(): Map<string, MockRoutine> {
   return new Map(structuredClone(SEED_ROUTINES));
 }
@@ -924,6 +943,9 @@ const SEED_EXTENSIONS: [string, MockExtension][] = [
     ],
 ];
 
+/**
+ * Returns a fresh map of seeded extension metadata and setup fields.
+ */
 export function createSeedExtensions(): Map<string, MockExtension> {
   return new Map(structuredClone(SEED_EXTENSIONS));
 }
@@ -941,6 +963,10 @@ const SEED_PAIRING_REQUESTS: [string, PairingRequestInfo[]][] = [
     ],
 ];
 
+/**
+ * Returns a fresh map of seeded pairing requests, including the approvable
+ * WhatsApp fixture.
+ */
 export function createSeedPairingRequests(): Map<string, PairingRequestInfo[]> {
   return new Map(structuredClone(SEED_PAIRING_REQUESTS));
 }
@@ -985,6 +1011,10 @@ const SEED_REGISTRY_ENTRIES: [string, RegistryEntryInfo][] = [
     ],
 ];
 
+/**
+ * Returns a fresh registry map with seeded installation states and
+ * metadata.
+ */
 export function createSeedRegistryEntries(): Map<string, RegistryEntryInfo> {
   return new Map(structuredClone(SEED_REGISTRY_ENTRIES));
 }
@@ -1040,6 +1070,10 @@ const SEED_SKILLS: [string, SkillInfo][] = [
     ],
 ];
 
+/**
+ * Returns a fresh map of installed skill fixtures, preserving their trust
+ * and source fields.
+ */
 export function createSeedSkills(): Map<string, SkillInfo> {
   return new Map(structuredClone(SEED_SKILLS));
 }
@@ -1095,6 +1129,10 @@ const SEED_CATALOGUE_SKILLS: [string, MockCatalogueSkill][] = [
     ],
 ];
 
+/**
+ * Returns a fresh catalogue map with stable fixture scores, usage,
+ * ownership and timestamps.
+ */
 export function createSeedCatalogueSkills(): Map<string, MockCatalogueSkill> {
   return new Map(structuredClone(SEED_CATALOGUE_SKILLS));
 }

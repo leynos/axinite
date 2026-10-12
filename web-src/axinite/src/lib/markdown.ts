@@ -24,6 +24,11 @@ function escapeHtml(text: string): string {
 
 type BlockKind = "none" | "ul" | "ol" | "table";
 
+/**
+ * Renders the supported Markdown subset to HTML after escaping source HTML.
+ * The result contains only the formatter's generated tags and has no
+ * attributes, making this the escape-first boundary for rendered chat text.
+ */
 export function renderMarkdown(source: string): string {
   const escaped = escapeHtml(source);
   const lines = escaped.split("\n");

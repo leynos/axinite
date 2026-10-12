@@ -155,6 +155,20 @@ SolidJS UI.
   attribute. Mark configuration, Jaccard comparisons, repetition analysis,
   concept hints, and scoring as unimplemented proposals. Source inspection
   confirms these boundaries; no checker or runtime behaviour changes.
+- [x] (2026-10-12) Verify the focused documentation inventory against source:
+  12 Rust handlers, 33 frontend exports, and 71 mock-backend declarations need
+  attached contract documentation. Fourteen reusable Python helpers also need
+  short docstrings; 21 local callbacks and test-double entries do not warrant
+  filler. The reported coverage percentage remains inconclusive because its
+  revision, denominator, and skipped-symbol inventory cannot be reproduced.
+- [x] (2026-10-12) Document the verified contracts and reusable Python helpers.
+  Sequential `make all`, `make typecheck`, frontend checks and tests, asset
+  freshness, tracked Python checks, and Markdown gates pass: 4,367 workspace
+  tests passed with nine skipped, five GitHub tool tests passed, and 191
+  frontend tests plus two accessibility tests passed. Asset-handler Rustdoc
+  preserves the contracts within the 400-line limit. The frontend rebuild adds
+  one 36-byte `lowercase` utility; no existing CSS rule changes. The generated
+  stylesheet is refreshed and included in the passing code-gate candidate.
 - [ ] (2026-10-12) Reconcile current-head hosted checks, ExecPlan assessment,
   review findings, and approval before merge.
 

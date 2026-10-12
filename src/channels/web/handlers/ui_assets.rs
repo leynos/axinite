@@ -114,6 +114,8 @@ pub fn routes_for(variant: UiVariant) -> Router<Arc<GatewayState>> {
     }
 }
 
+/// Serve the embedded SolidJS shell as UTF-8 HTML for app routes.
+/// Uses `Cache-Control: no-cache` to avoid retaining an old shell.
 pub async fn solid_index_handler() -> impl IntoResponse {
     (
         [
@@ -124,6 +126,8 @@ pub async fn solid_index_handler() -> impl IntoResponse {
     )
 }
 
+/// Serve embedded SolidJS JavaScript as `application/javascript`.
+/// Uses `Cache-Control: no-cache` to avoid retaining an old bundle.
 pub async fn solid_js_handler() -> impl IntoResponse {
     (
         [
@@ -134,6 +138,8 @@ pub async fn solid_js_handler() -> impl IntoResponse {
     )
 }
 
+/// Serve the embedded SolidJS stylesheet as `text/css`.
+/// Uses `Cache-Control: no-cache` to avoid retaining old styles.
 pub async fn solid_css_handler() -> impl IntoResponse {
     (
         [
@@ -144,6 +150,8 @@ pub async fn solid_css_handler() -> impl IntoResponse {
     )
 }
 
+/// Serve the embedded SolidJS favicon as `image/x-icon`.
+/// The icon may be cached for one day.
 pub async fn solid_icon_handler() -> impl IntoResponse {
     (
         [
@@ -154,6 +162,8 @@ pub async fn solid_icon_handler() -> impl IntoResponse {
     )
 }
 
+/// Serve a case-insensitive Fluent locale as UTF-8 `text/plain`.
+/// Known bundles use `Cache-Control: no-cache`; unknown locales return `404`.
 pub async fn solid_locale_handler(Path(locale): Path<String>) -> axum::response::Response {
     match SOLID_LOCALES
         .iter()
@@ -171,6 +181,8 @@ pub async fn solid_locale_handler(Path(locale): Path<String>) -> axum::response:
     }
 }
 
+/// Serve the embedded legacy UI shell as UTF-8 HTML.
+/// Uses `Cache-Control: no-cache` to avoid retaining an old shell.
 pub async fn index_handler() -> impl IntoResponse {
     (
         [
@@ -181,6 +193,8 @@ pub async fn index_handler() -> impl IntoResponse {
     )
 }
 
+/// Serve the embedded legacy stylesheet as `text/css`.
+/// Uses `Cache-Control: no-cache` to avoid retaining old styles.
 pub async fn css_handler() -> impl IntoResponse {
     (
         [
@@ -191,6 +205,8 @@ pub async fn css_handler() -> impl IntoResponse {
     )
 }
 
+/// Serve embedded legacy JavaScript as `application/javascript`.
+/// Uses `Cache-Control: no-cache` to avoid retaining an old bundle.
 pub async fn js_handler() -> impl IntoResponse {
     (
         [
@@ -201,6 +217,8 @@ pub async fn js_handler() -> impl IntoResponse {
     )
 }
 
+/// Serve the embedded legacy favicon as `image/x-icon`.
+/// The icon may be cached for one day.
 pub async fn favicon_handler() -> impl IntoResponse {
     (
         [

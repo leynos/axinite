@@ -38,6 +38,7 @@ export function openExternalUrl(value: string): boolean {
   return true;
 }
 
+/** Displays a generated image from its data URL, with an optional file path. */
 export const GeneratedImageCard = (props: {
   dataUrl: string;
   path?: string | undefined;
@@ -63,6 +64,10 @@ export const GeneratedImageCard = (props: {
   );
 };
 
+/**
+ * Summarizes a started job and links to the jobs route. The optional browse
+ * link is shown only for an absolute HTTP(S) URL.
+ */
 export const JobStartCard = (props: {
   jobId: string;
   title: string;
@@ -110,6 +115,11 @@ export const JobStartCard = (props: {
   );
 };
 
+/**
+ * Collects a manual token and delegates submission or cancellation to the
+ * caller. When no OAuth URL is supplied, the card remains in token-only mode;
+ * optional external links are validated before navigation.
+ */
 export const AuthCard = (props: {
   extensionName: string;
   instructions?: string | undefined;

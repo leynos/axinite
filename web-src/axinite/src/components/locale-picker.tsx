@@ -8,6 +8,7 @@ import { For } from "solid-js";
 
 import { useI18n } from "@/lib/i18n/provider";
 
+/** Lets the user choose from the locales exposed by the i18n provider. */
 export const LocalePicker = () => {
   const { changeLanguage, language, locales, t } = useI18n();
 

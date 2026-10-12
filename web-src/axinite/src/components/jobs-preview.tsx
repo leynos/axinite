@@ -40,6 +40,9 @@ import {
 } from "@/lib/api/jobs";
 import { useI18n } from "@/lib/i18n/provider";
 
+/**
+ * Loads job summaries and coordinates the selected job, file and mutations.
+ */
 export const JobsPreview = () => {
   const { t } = useI18n();
   const queryClient = useQueryClient();

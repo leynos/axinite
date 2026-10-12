@@ -33,6 +33,7 @@ export const SOURCE_CLASS: Record<string, string> = {
  */
 export const CLAUDE_CODE_JOB_KIND = "sandbox";
 
+/** Converts a Pascal-like segment to lowercase hyphenated text. */
 export function toKebabSegment(value: string): string {
   return pascalCase(value)
     .replace(/([A-Z])/g, "-$1")
@@ -40,6 +41,11 @@ export function toKebabSegment(value: string): string {
     .replace(/^-/, "");
 }
 
+/**
+ * Formats a timestamp with the en-GB day, month, hour and minute fields.
+ * Empty input returns `fallback`; invalid non-empty dates are passed to the
+ * platform formatter.
+ */
 export function formatTimestamp(
   value: string | null | undefined,
   fallback: string
@@ -55,6 +61,7 @@ export function formatTimestamp(
   }).format(new Date(value));
 }
 
+/** Returns `job_kind`, then `job_mode`, or `direct` if neither is a string. */
 export function sourceName(
   job: JobDetailResponse | JobInfo | { job_kind?: string; job_mode?: string }
 ): string {

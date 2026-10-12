@@ -43,6 +43,11 @@ function defaultDeps(onPhase: (phase: RestartPhase) => void): RestartDeps {
   };
 }
 
+/**
+ * Confirms and runs the gateway restart controller, then disposes it on
+ * replacement or component cleanup. `makeDeps` permits injecting its
+ * dependencies.
+ */
 export const RestartControl: Component<RestartControlProps> = (props) => {
   const { t } = useI18n();
   const [dialogOpen, setDialogOpen] = createSignal(false);

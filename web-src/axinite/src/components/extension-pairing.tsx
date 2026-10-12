@@ -19,6 +19,11 @@ type ExtensionPairingProps = {
   onApproved: () => void;
 };
 
+/**
+ * Polls pairing requests for one channel and approves a selected request.
+ * Calls `onApproved` after approval so the parent can refresh its extension
+ * data.
+ */
 export const ExtensionPairing: Component<ExtensionPairingProps> = (props) => {
   const { t } = useI18n();
   const [errors, setErrors] = createSignal<Record<string, string>>({});
