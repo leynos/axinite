@@ -143,10 +143,13 @@ SolidJS UI.
   daemon passes 48 Python e2e tests; two live ClawHub scenarios skip without
   detailed reasons in this run. Pyflakes passes all 16 tracked e2e Python
   files. The two repaired CodeScene methods score 10.0 without findings.
-- [ ] (2026-10-12) Publish the repairs, simplify the remaining stub port-parser
-  conditional in a separate code-health commit, and reconcile current-head
-  hosted checks, ExecPlan assessment, review findings, and approval before
-  merge.
+- [x] (2026-10-12) Publish the functional review repairs as `7ecab69b`.
+- [x] (2026-10-12) Extract the stub TCP-port validity predicate in a separate
+  code-health follow-up. Integer and range validation, fallback values, and
+  malformed-input errors retain their existing semantics; no suppression is
+  introduced. Its local validation and publication are pending.
+- [ ] (2026-10-12) Reconcile current-head hosted checks, ExecPlan assessment,
+  review findings, and approval before merge.
 
 ## Surprises & discoveries
 
