@@ -3,6 +3,13 @@
  * the preview server, and the `scripts/dev.ts` supervisor).
  */
 
+function isValidTcpPort(port: number): boolean {
+  if (!Number.isInteger(port)) {
+    return false;
+  }
+  return port >= 1 && port <= 65_535;
+}
+
 /**
  * Read a TCP port from an environment variable, falling back to `fallback`
  * when it is unset. Rejects anything but an integer in 1–65535 with an error
@@ -18,7 +25,7 @@ export function parsePort(
     return fallback;
   }
   const port = Number(raw.trim());
-  if (!Number.isInteger(port) || port < 1 || port > 65_535) {
+  if (!isValidTcpPort(port)) {
     throw new Error(
       `${name} must be an integer TCP port between 1 and 65535, got "${raw}"`
     );
