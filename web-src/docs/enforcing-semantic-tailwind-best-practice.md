@@ -664,18 +664,26 @@ styles; the few semantic classes added remain minimal and intentionally reused.
 prototypes, and tiny adjustments local to a component. Once the same chunk
 appears twice, prefer extracting it.
 
-**Q: How strict are thresholds?**  
-A: A sensible starting point is `repeatMinClasses=4`, `repeatMinOccurrences=2`.
-The thresholds can be tightened as the design system matures.
+**Q: What limits do the current class checkers enforce?**
+
+A: The class-list check fails above 12 whitespace-separated tokens. The
+duplicate-token check flags repeats within one static class attribute. Neither
+check has configurable thresholds.
 
 ______________________________________________________________________
 
-## 15) Ready-to-run checklist
+## 15) Current tooling and proposed work
 
-1. Add files: `tools/grit/*.grit`, `tools/semantic-lint.config.json`,
-   `tools/stylelint.config.cjs`, `tools/semgrep-semantic.yml`.
-2. Wire **Biome** plugin or wrapper to execute Grit rules (paths above).
-3. Add **`semantic.css`** and begin extracting repeated patterns with `@apply`.
-4. Add **`semantic:lint`** as the primary script and the CI workflow.
-5. Iterate on thresholds, allowlist prefixes, and rule messages as the team
-   gains patterns.
+### Existing checks to maintain
+
+`bun run semantic` in `web-src/package.json` runs Biome, both class-attribute
+checks, Semgrep, and Stylelint. Semgrep and Stylelint use
+`web-src/tools/semgrep-semantic.yml` and `web-src/tools/stylelint.config.cjs`.
+The shared scanner is under `web-src/scripts/`; semantic styles already live in
+`web-src/axinite/src/styles/semantic.css`.
+
+### Proposed extensions
+
+1. Add Grit rules and wire them through a Biome plugin or wrapper.
+2. Add policy configuration only if future checks need configurable thresholds
+   or allowlists. The current class checks have no tuning options.
