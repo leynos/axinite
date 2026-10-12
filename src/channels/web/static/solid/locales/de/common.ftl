@@ -518,3 +518,5 @@ jobs-activity-kind-result = Ergebnis
 jobs-files-empty = Noch keine Dateien erstellt.
 jobs-file-tree-label = Auftragsdateien
 jobs-prompt-done-label = Als erledigt markieren
+
+routines-action-error = Die Routine-Aktion ist fehlgeschlagen. Versuchen Sie es erneut.

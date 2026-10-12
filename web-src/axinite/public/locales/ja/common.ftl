@@ -506,3 +506,5 @@ jobs-activity-kind-result = 結果
 jobs-files-empty = ファイルはまだ生成されていません。
 jobs-file-tree-label = ジョブファイル
 jobs-prompt-done-label = 完了としてマーク
+
+routines-action-error = ルーチンの操作に失敗しました。もう一度お試しください。

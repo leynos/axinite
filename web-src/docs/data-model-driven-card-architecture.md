@@ -4,12 +4,13 @@ Last updated: 12 March 2026
 
 ## Purpose
 
-Every card in the Axinite SolidJS front end (`web-src/axinite/`) should render
-from a concrete entity data model that already contains its localized strings
-and SI-based measurements. Locale bundles should keep only UI chrome and
-formatting scaffolding. This document defines the schemas, localization rules,
-and migration steps for that model. The Axinite surfaces are chat, memory,
-jobs, routines, extensions, skills, and logs.
+This document preserves a data-model proposal from the shared v2a mockup work;
+it is not the current Axinite front-end architecture. Its card inventory,
+schemas, and folder layout below are illustrative migration targets. The
+shipped Axinite UI lives under `web-src/axinite/src/`, consumes typed gateway
+contracts from `src/lib/api/`, and loads Fluent bundles from
+`web-src/axinite/public/locales/`. See `docs/solidjs-frontend.md` for the
+current application structure and route contracts.
 
 The card model originated in the shared v2a mockup work, so the card inventory
 and entity schemas below are illustrative examples from that origin rather than

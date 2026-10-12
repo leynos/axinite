@@ -5,6 +5,7 @@
  * gateway values and local overrides.
  */
 
+/** UI gates understood by this build; unrecognized server keys are ignored. */
 export type FeatureFlagName =
   | "route_chat"
   | "route_memory"
@@ -21,6 +22,7 @@ export type FeatureFlagName =
   | "action_skill_install"
   | "surface_tee_attestation";
 
+/** Default and ownership information for one route, action, or optional surface. */
 export type FeatureFlagDefinition = {
   name: FeatureFlagName;
   defaultValue: boolean;
@@ -28,6 +30,7 @@ export type FeatureFlagDefinition = {
   backendContract: string;
 };
 
+/** Compiled fallback catalogue, kept aligned with the Rust feature-flag policy. */
 export const FEATURE_FLAGS: FeatureFlagDefinition[] = [
   {
     name: "route_chat",

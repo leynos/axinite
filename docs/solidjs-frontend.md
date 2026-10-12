@@ -71,6 +71,9 @@ gate.
 
 The mock backend is a contract harness, not a second daemon: it holds
 deterministic in-memory fixtures, ignores authentication, and persists nothing.
+Its fixture clock is fixed at `2026-03-26T11:30:00Z` by default, so timestamps
+and gateway uptime are reproducible between runs. Tests can inject another
+clock when they need to advance time.
 
 ### 3.1 Stubbed HTTP routes
 
@@ -172,14 +175,22 @@ file list stays fixed; everything is served with `Cache-Control: no-cache`.
 `GET /api/features` on the gateway resolves, per flag: `FEATURE_FLAG_<NAME>`
 environment variable, then the deployment-scoped operator override (persisted
 via `PUT /api/settings/feature_flag:<name>` with an `X-Deployment-Id` header),
-then a subsystem-availability default (flags whose backing runtime is absent
-resolve off), then the compiled default
-(`src/channels/web/handlers/features.rs`). The response carries an
-`X-Axinite-Version` header. When the stored overrides for the deployment cannot
-be loaded, the gateway still answers (so the SPA boots) from the environment
-and compiled defaults and adds `X-Axinite-Flags-Degraded: true`; the next
-request retries the load. See RFC 0009's implementation notes for the full
-contract and deviations.
+then subsystem availability (an unavailable backing runtime disables the flag),
+then the compiled default. The gateway returns 503 if it cannot load stored
+overrides; the SPA then uses browser-local overrides and compiled defaults and
+logs a generic error. Successful responses include `X-Axinite-Version`. See RFC
+0009's implementation notes for the full contract and deviations.
+
+Framework-independent flag names, validation, precedence,
+subsystem-availability policy, registry, and hydration/write commands live in
+`src/feature_flags/`. The web gateway adapts those commands to HTTP and
+implements the persistence port with its settings store. The SPA has its own
+typed registry and client-side policy in
+`web-src/axinite/src/lib/feature-flags/`; local browser overrides take
+precedence over the gateway response, which takes precedence over SPA defaults.
+Gateway flag operations record success, error, and invalid-request outcomes
+with fixed `operation` and `outcome` labels; deployment IDs and flag names are
+not used as metric labels.
 
 The `X-Deployment-Id` value is trimmed and must be 1 to 64 characters of
 `[a-z0-9_]`. On `GET /api/features` an absent or blank header selects

@@ -1,0 +1,11 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "skipLibCheck": false,
+    "types": []
+  },
+  "include": [
+    "axinite/src/global.d.ts",
+    "axinite/tests/fluent-backend.types.ts"
+  ]
+}

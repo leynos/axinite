@@ -511,3 +511,5 @@ jobs-activity-kind-result = Wynik
 jobs-files-empty = Nie utworzono jeszcze żadnych plików.
 jobs-file-tree-label = Pliki zadania
 jobs-prompt-done-label = Oznacz jako ukończone
+
+routines-action-error = Działanie procedury nie powiodło się. Spróbuj ponownie.

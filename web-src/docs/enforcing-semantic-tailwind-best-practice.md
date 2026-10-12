@@ -18,7 +18,8 @@ ______________________________________________________________________
 ## 0) Scope & Philosophy
 
 - **Files:** `.tsx`, `.html`, `.css` (Tailwind v4 + DaisyUI v5).
-- **Primary tool:** **BiomeJS** linter with **GritQL** rules (diagnostics only).
+- **Primary tool:** **BiomeJS** linter. GritQL rules below remain a design
+  target and are not part of the current gate.
 - **Fallbacks:**
   - **Stylelint** — design‑token enforcement, CSS `@apply` hygiene,
     units/specificity.
@@ -45,7 +46,7 @@ web-src/
 ├─ axinite/src/
 │  ├─ app/...                 # TSX
 │  └─ styles/
-│     ├─ app.css             # @import "tailwindcss" + @plugin "daisyui"
+│     ├─ index.css           # @import "tailwindcss" + @plugin "daisyui"
 │     ├─ tokens.css          # (generated or hand-written tokens)
 │     ├─ semantic.css        # project semantic classes using @apply
 │     └─ utilities.css       # optional @utility shorthands (Tailwind v4)
@@ -66,14 +67,16 @@ web-src/
 └─ .github/workflows/semantic-lint.yml
 ```
 
-`semantic.css` stores reusable classes via `@apply`. Use Tailwind v4 CSS‑first
-configuration in `app.css`.
+The current application entry point is `axinite/src/styles/index.css`, which
+imports `semantic.css` and Tailwind v4. The rest of the tree above is a
+proposed layout, not a list of checked-in files. `semantic.css` stores reusable
+classes via `@apply`.
 
 ______________________________________________________________________
 
 ## 2) Tailwind v4 + DaisyUI v5 baseline (CSS‑first)
 
-**`src/styles/app.css`**
+**`src/styles/index.css`**
 
 ```css
 @import "tailwindcss";
@@ -530,9 +533,9 @@ ______________________________________________________________________
 ```
 <!-- markdownlint-enable MD013 -->
 
-- **Local dev:** `bun semantic` runs Biome + Grit, class length,
-  near-duplicate + loop/sibling/concept checks, Semgrep, and Stylelint.
-- **Pre-commit (optional):** wire a Husky hook to `bun semantic`.
+- **Local dev:** `bun run semantic` runs Biome, the class-length and
+  near-duplicate checkers, Semgrep, and Stylelint.
+- **Pre-commit (optional):** wire a Husky hook to `bun run semantic`.
 - **CI:** `bun run semantic` is part of the frontend gate; see
   `.github/workflows/frontend.yml` and `make frontend-full`.
 

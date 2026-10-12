@@ -367,9 +367,8 @@ export const RoutinesPreview = () => {
     placeholderData: keepPreviousData,
   }));
 
-  const refresh = () => {
-    void queryClient.invalidateQueries({ queryKey: ["routines"] });
-  };
+  const refresh = () =>
+    queryClient.invalidateQueries({ queryKey: ["routines"] });
 
   const triggerMutation = createMutation(() => ({
     mutationFn: () => triggerRoutine(activeRoutineId() ?? ""),
@@ -386,8 +385,10 @@ export const RoutinesPreview = () => {
 
   const deleteMutation = createMutation(() => ({
     mutationFn: () => deleteRoutine(activeRoutineId() ?? ""),
-    onSuccess: () => {
-      refresh();
+    onSuccess: async () => {
+      // Refresh before clearing selection so the old list cannot reselect a
+      // routine that the gateway has just deleted.
+      await refresh();
       setActiveRoutineId(undefined);
     },
   }));
@@ -419,13 +420,25 @@ export const RoutinesPreview = () => {
 
         <SummaryCards cards={summaryCards} />
 
+        <Show
+          when={
+            triggerMutation.isError ||
+            toggleMutation.isError ||
+            deleteMutation.isError
+          }
+        >
+          <p class="route-page__notice" role="alert">
+            {t("routines-action-error")}
+          </p>
+        </Show>
+
         <RoutinesTable
           routines={() => routines.data?.routines ?? []}
           activeRoutineId={activeRoutineId}
           onSelect={(id) => setActiveRoutineId(id)}
         />
 
-        <Show when={activeRoutine.data}>
+        <Show when={activeRoutineId() ? activeRoutine.data : undefined}>
           {(routine) => (
             <RoutineDetailPanel
               routine={routine}

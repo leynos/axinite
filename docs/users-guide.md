@@ -257,8 +257,9 @@ panel is hidden separately by `panel_logs`.
 The UI reads its flags from `GET /api/features`. Each flag resolves in this
 order, highest first:
 
-1. The `FEATURE_FLAG_<NAME>` environment variable. `true` (in any case)
-   enables the flag; any other value disables it.
+1. The `FEATURE_FLAG_<NAME>` environment variable, read when the process first
+   resolves flags. `true` (in any case) enables the flag; any other set value
+   disables it. Set it before starting the gateway.
 2. A deployment override, set without a restart through
    `PUT /api/settings/feature_flag:<name>`.
 3. Subsystem availability: a flag whose backing subsystem is not running (for
@@ -269,6 +270,31 @@ order, highest first:
 Reads of `GET /api/features` take an optional `X-Deployment-Id` header that
 defaults to `default`. Writes require it. The value must be 1 to 64 lowercase
 letters, digits, or underscores; anything else is rejected with 400.
+
+The gateway requires `Authorization: Bearer <GATEWAY_AUTH_TOKEN>` for API
+requests. The SPA currently reads the `default` deployment; API clients can
+select another deployment by sending the same `X-Deployment-Id` header on both
+reads and writes. For example, this disables the logs route for the SPA's
+default deployment:
+
+```sh
+curl -X PUT http://127.0.0.1:3000/api/settings/feature_flag:route_logs \
+  -H "Authorization: Bearer $GATEWAY_AUTH_TOKEN" \
+  -H "X-Deployment-Id: default" \
+  -H "Content-Type: application/json" \
+  -d '{"value": false}'
+```
+
+The value must be a JSON boolean or the string `"true"` or `"false"`
+(case-insensitive). Flag names use lowercase letters, digits, and underscores.
+The gateway stores overrides per deployment and applies them without a restart.
+Environment variables take precedence over stored values; to remove an
+override, delete its row from `feature_flag_overrides`.
+
+If the gateway cannot load persisted overrides, `GET /api/features` returns
+`503 Service Unavailable`. The SPA continues with browser-local overrides and
+compiled defaults, and records a generic failure in the browser console. Check
+gateway logs and database availability before relying on those displayed flags.
 
 ### Trying the UI without the daemon
 

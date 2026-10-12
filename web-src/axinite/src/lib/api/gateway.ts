@@ -1,7 +1,7 @@
 /**
  * @file Gateway-level API wrapper: `/api/gateway/status` for the shell's status
  * pill and restart polling, and `/api/features` for runtime feature flags.
- * Both degrade to a fallback value instead of throwing when unreachable.
+ * Status polling falls back when unreachable; flag requests remain fallible.
  */
 
 import { requestJson } from "@/lib/api/client";
@@ -43,34 +43,30 @@ export async function fetchGatewayStatus(): Promise<GatewayStatus> {
   return deriveGatewayStatus(await fetchGatewayStatusRaw());
 }
 
-/** GET /api/features: fetch runtime feature flags, or `{}` when unreachable. */
+/** GET /api/features: fetch runtime feature flags; transport errors propagate. */
 export async function fetchRuntimeFeatureFlags(): Promise<
   Record<string, boolean>
 > {
-  try {
-    const payload = await requestJson<
-      FeatureFlagsResponse | Record<string, boolean>
-    >("/api/features");
+  const payload = await requestJson<
+    FeatureFlagsResponse | Record<string, boolean>
+  >("/api/features");
 
-    const source =
-      typeof payload === "object" &&
-      payload !== null &&
-      "flags" in payload &&
-      typeof payload["flags"] === "object" &&
-      payload["flags"] !== null
-        ? payload["flags"]
-        : payload;
+  const source =
+    typeof payload === "object" &&
+    payload !== null &&
+    "flags" in payload &&
+    typeof payload["flags"] === "object" &&
+    payload["flags"] !== null
+      ? payload["flags"]
+      : payload;
 
-    return Object.entries(source).reduce<Record<string, boolean>>(
-      (flags, [name, value]) => {
-        if (typeof value === "boolean") {
-          flags[name] = value;
-        }
-        return flags;
-      },
-      {}
-    );
-  } catch {
-    return {};
-  }
+  return Object.entries(source).reduce<Record<string, boolean>>(
+    (flags, [name, value]) => {
+      if (typeof value === "boolean") {
+        flags[name] = value;
+      }
+      return flags;
+    },
+    {}
+  );
 }

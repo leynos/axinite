@@ -25,6 +25,7 @@ export type ModelUsageEntry = {
   cost: string;
 };
 
+/** Flat resolved gateway map; consumers select the flags their build understands. */
 export type FeatureFlagsResponse = Record<string, boolean>;
 
 export type GatewayStatus = {

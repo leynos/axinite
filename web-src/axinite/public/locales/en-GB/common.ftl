@@ -518,3 +518,5 @@ jobs-activity-kind-result = Result
 jobs-files-empty = No files produced yet.
 jobs-file-tree-label = Job files
 jobs-prompt-done-label = Mark as done
+
+routines-action-error = The routine action failed. Try again.
