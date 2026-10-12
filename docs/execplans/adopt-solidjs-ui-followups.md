@@ -217,6 +217,11 @@ SolidJS UI.
   control at 1280 x 720; the initial CLI captures were too early. Owned browser
   and non-watch stub sessions were closed. `FEATURE_PARITY.md` retains its
   existing implemented UI status; these repairs need no change.
+- [x] (2026-10-12) Validate the comment-only gateway UI, feature-flag, and
+  Bun stub index additions in `.env.example`. Sequential `make all`,
+  `make typecheck`, Markdown, spelling, staged Markdown, and diff checks
+  passed. The active example bindings and runtime source remain unchanged;
+  current-head hosted acceptance and review reconciliation remain pending.
 - [ ] (2026-10-12) Reconcile current-head hosted checks, ExecPlan assessment,
   review findings, and approval before merge.
 
