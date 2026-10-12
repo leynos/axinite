@@ -63,6 +63,8 @@ import type {
   TurnInfo,
 } from "../../axinite/src/lib/api/contracts";
 import type { MemoryDocument } from "./fixtures";
+import { RestartFixture } from "./restart-fixture";
+
 import {
   createSeedCatalogueSkills,
   createSeedExtensions,
@@ -118,11 +120,52 @@ function isNonBlankString(value: string | undefined): boolean {
   return typeof value === "string" && value.trim().length > 0;
 }
 
+/** Only a successful restart tool completion schedules simulated downtime. */
+function isSuccessfulRestartToolCompletion(event: ChatSseEvent): boolean {
+  return (
+    event.type === "tool_completed" &&
+    event.name === "restart" &&
+    event.success
+  );
+}
+
 export class MockBackendState {
   private readonly bootTime: number;
 
-  constructor(private readonly clock: Clock = fixedPreviewClock) {
+  private readonly restartFixture: RestartFixture;
+
+  /** Creates isolated fixtures; restart simulation must be explicitly enabled. */
+  constructor(
+    private readonly clock: Clock = fixedPreviewClock,
+    options: { restartFixture?: boolean } = {}
+  ) {
     this.bootTime = clock();
+    this.restartFixture = new RestartFixture(
+      options.restartFixture ?? false,
+      () => this.closeStreams()
+    );
+  }
+
+  /** Whether the opt-in fixture currently simulates an API outage. */
+  get isGatewayUnavailable(): boolean {
+    return this.restartFixture.isUnavailable;
+  }
+
+  /** Cancels fixture-owned timers and closes all live SSE streams. */
+  dispose(): void {
+    this.restartFixture.dispose();
+    this.closeStreams();
+  }
+
+  private closeStreams(): void {
+    for (const subscriber of [
+      ...this.chatSubscribers,
+      ...this.logSubscribers,
+    ]) {
+      subscriber.close();
+    }
+    this.chatSubscribers.clear();
+    this.logSubscribers.clear();
   }
 
   private readonly now = (): string => nowIso(this.clock);
@@ -201,7 +244,7 @@ export class MockBackendState {
       ws_connections,
       total_connections: sse_connections + ws_connections,
       uptime_secs: Math.floor((this.clock() - this.bootTime) / 1_000),
-      restart_enabled: false,
+      restart_enabled: this.restartFixture.enabled,
       daily_cost: "2.3140",
       actions_this_hour: 18,
       model_usage: [
@@ -265,6 +308,9 @@ export class MockBackendState {
   }
 
   private publishChatEvent(event: ChatSseEvent): void {
+    if (isSuccessfulRestartToolCompletion(event)) {
+      this.restartFixture.acknowledge();
+    }
     for (const subscriber of this.chatSubscribers) {
       subscriber.send(event);
     }

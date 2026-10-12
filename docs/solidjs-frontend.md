@@ -142,7 +142,26 @@ MOCK_FAILURES=/api/jobs make frontend-stub
 The jobs route renders a visible, localized error notice in this state; use the
 same mechanism to exercise other error paths.
 
-### 3.4 Feature flags in the stub
+### 3.4 Restart acceptance fixture
+
+The restart fixture is disabled by default. Enable it when running the stub:
+
+```sh
+MOCK_RESTART_FIXTURE=1 make frontend-stub
+```
+
+Using the UI's Restart control and confirming the action sends the normal
+`/restart` chat command. After its successful tool acknowledgement, the fixture
+waits 650 ms, closes the chat and log SSE streams, and returns
+`503 Service Unavailable` for API requests for five seconds. The API then
+becomes available again. This is synthetic downtime: it does not restart or
+stop a process. The fixture owns its timers and disposes them when the mock
+server stops.
+
+The default remains disabled, so an ordinary `make frontend-stub` does not
+simulate an outage.
+
+### 3.5 Feature flags in the stub
 
 The stub serves `GET /api/features` as a flat `{"flag_name": bool}` map (RFC
 0009 shape) with the same compiled defaults as the gateway. Overrides, in
