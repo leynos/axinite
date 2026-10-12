@@ -178,6 +178,23 @@ SolidJS UI.
   gateway processes. The settings DELETE route rejects deployment-scoped flag
   keys, so remove the database row and restart each process caching that
   deployment. This is documentation-only; no runtime change was made.
+- CodeRabbit's ExecPlan assessment (`6117382916`) of `dadbe80c` identified
+  a same-deployment race between persisting an override and publishing it to
+  the in-memory cache. It also found that the restart stub lacks acceptance
+  coverage for outage, API `503`, SSE close, and recovery through the UI. The
+  feature-flag removal guidance was corrected and published in `9f5135c0`; the
+  reported docstring-coverage percentage remains inconclusive, with its 80%
+  threshold unchanged.
+- [x] (2026-10-12) Implement per-deployment ordering for flag persistence
+  and cache publication with an owned mutex. The source includes four
+  controlled concurrency and failure cases. Initial validation identified a
+  three-branch test-double condition; it now uses a named predicate without a
+  suppression. Sequential `make all` and `make typecheck` passed: 4,371
+  workspace tests and five GitHub tool tests passed, with nine existing skips.
+  Markdown, spelling, and diff checks passed; all three touched Rust files
+  scored 10.0 in CodeScene, and the staged delta found no issues.
+- [ ] Add an opt-in deterministic restart outage/`503`/SSE-close/recovery
+  fixture and Playwright coverage using the actual restart control.
 - [ ] (2026-10-12) Reconcile current-head hosted checks, ExecPlan assessment,
   review findings, and approval before merge.
 

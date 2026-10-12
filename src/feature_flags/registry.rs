@@ -1,6 +1,11 @@
 //! Deployment-scoped override cache; it never stores resolved policy values.
 
 use std::collections::{HashMap, HashSet};
+use std::sync::Arc;
+
+use tokio::sync::Mutex;
+
+use super::DeploymentId;
 
 /// A mutable registry of deployment-scoped feature-flag overrides.
 ///
@@ -12,9 +17,23 @@ pub struct FeatureFlagRegistry {
     flags: HashMap<String, HashMap<String, bool>>,
     hydrated: HashSet<String>,
     failed: HashSet<String>,
+    /// Admission gates share the deployment hydration unit, not individual flags.
+    operation_gates: HashMap<DeploymentId, Arc<Mutex<()>>>,
 }
 
 impl FeatureFlagRegistry {
+    /// Share one operation gate for a deployment without retaining a cache lock.
+    ///
+    /// The service owns admission across hydration, persistence, and publication;
+    /// another deployment receives a separate gate and can progress independently.
+    pub(super) fn operation_gate(&mut self, deployment: &DeploymentId) -> Arc<Mutex<()>> {
+        Arc::clone(
+            self.operation_gates
+                .entry(deployment.clone())
+                .or_insert_with(|| Arc::new(Mutex::new(()))),
+        )
+    }
+
     /// Create an empty registry.
     pub fn new() -> Self {
         Self::default()

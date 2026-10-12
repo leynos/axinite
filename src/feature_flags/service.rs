@@ -1,7 +1,11 @@
 //! Hydration and override commands depend only on the feature-flag store port.
+//!
+//! Deployment admission preserves the order of persistence and cache publication.
+//! Its owned guard covers the operation, while the registry lock covers only cache
+//! access; slow storage never holds that shared registry lock.
 
 use std::future::Future;
-use tokio::sync::RwLock;
+use tokio::sync::{OwnedMutexGuard, RwLock};
 
 use super::{DeploymentId, FlagName, registry::FeatureFlagRegistry};
 
@@ -26,7 +30,27 @@ pub trait FlagStore: Send + Sync {
 }
 
 /// Load once on success; failed loads leave the deployment eligible for retry.
+/// Concurrent hydration and override commands share deployment admission.
 pub async fn hydrate<S: FlagStore>(
+    registry: &RwLock<FeatureFlagRegistry>,
+    store: &S,
+    deployment: &DeploymentId,
+) -> Result<(), S::Error> {
+    let _operation = admit_deployment(registry, deployment).await;
+    hydrate_admitted(registry, store, deployment).await
+}
+
+/// Acquire only the operation gate across I/O; release the registry lock first.
+async fn admit_deployment(
+    registry: &RwLock<FeatureFlagRegistry>,
+    deployment: &DeploymentId,
+) -> OwnedMutexGuard<()> {
+    let gate = registry.write().await.operation_gate(deployment);
+    gate.lock_owned().await
+}
+
+/// The caller already owns admission, avoiding recursive acquisition on writes.
+async fn hydrate_admitted<S: FlagStore>(
     registry: &RwLock<FeatureFlagRegistry>,
     store: &S,
     deployment: &DeploymentId,
@@ -61,12 +85,18 @@ pub struct FlagOverride<'a> {
 
 /// Hydrate before writing so a write never hides existing persisted overrides.
 /// Cache updates follow successful persistence only.
+///
+/// Admission is retained until cache publication, so a later command cannot
+/// persist and publish its value before an earlier command finishes publishing.
+/// Dropping a command releases admission; cancellation after durable persistence
+/// remains a separate store/cache consistency boundary.
 pub async fn set_override<S: FlagStore>(
     registry: &RwLock<FeatureFlagRegistry>,
     store: &S,
     command: FlagOverride<'_>,
 ) -> Result<(), S::Error> {
-    hydrate(registry, store, command.deployment).await?;
+    let _operation = admit_deployment(registry, command.deployment).await;
+    hydrate_admitted(registry, store, command.deployment).await?;
     store
         .save(command.deployment, command.flag, command.enabled)
         .await?;
@@ -80,3 +110,6 @@ pub async fn set_override<S: FlagStore>(
 
 #[cfg(test)]
 mod tests;
+
+#[cfg(test)]
+mod concurrency_tests;
