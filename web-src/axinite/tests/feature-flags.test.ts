@@ -4,8 +4,8 @@
  */
 
 import { describe, expect, it } from "vitest";
+import { resolveFeatureFlags } from "@/lib/feature-flags/policy";
 import { getFeatureFlagDefaults } from "@/lib/feature-flags/registry";
-import { resolveFeatureFlags } from "@/lib/feature-flags/runtime";
 
 describe("feature flag resolution", () => {
   it("applies server values before defaults", () => {

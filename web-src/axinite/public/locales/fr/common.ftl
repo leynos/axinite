@@ -518,3 +518,5 @@ jobs-activity-kind-result = Résultat
 jobs-files-empty = Aucun fichier produit pour l’instant.
 jobs-file-tree-label = Fichiers de la tâche
 jobs-prompt-done-label = Marquer comme terminé
+
+routines-action-error = L’action de la routine a échoué. Réessayez.

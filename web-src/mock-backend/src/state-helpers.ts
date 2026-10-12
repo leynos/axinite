@@ -21,8 +21,15 @@ import type { MockCatalogueSkill, MockThread } from "./fixtures";
 const TOOL_RESULT_PREVIEW =
   "Collected current route state, mock transport health, and feature-flag visibility.";
 
-export function nowIso(): string {
-  return new Date().toISOString();
+/** Inject the fixture timeline as milliseconds since the Unix epoch. */
+export type Clock = () => number;
+
+/** The seed timeline stays reproducible across stub runs. */
+export const fixedPreviewClock: Clock = () => Date.parse("2026-03-26T11:30:00.000Z");
+
+/** Encode the supplied timeline as UTC without consulting the host clock. */
+export function nowIso(clock: Clock): string {
+  return new Date(clock()).toISOString();
 }
 
 export function createActionResponse(
@@ -332,4 +339,24 @@ export function matchCatalogueSkill(
         entry.slug.endsWith(`/${request.name}`)
     ) ?? null
   );
+}
+
+/** OAuth fixtures omit auth_url entirely on the manual-token path. */
+export function extensionAuthentication(name: string): {
+  instructions: string;
+  setup_url: string;
+  auth_url?: string;
+} {
+  if (name === "google-drive") {
+    return {
+      auth_url: "https://oauth.example.invalid/consent",
+      setup_url: "https://example.invalid/token-help",
+      instructions:
+        "Sign in with Google and grant Drive access, then return to finish activation.",
+    };
+  }
+  return {
+    setup_url: `/api/extensions/${name}/setup`,
+    instructions: "Provide a token in the setup panel to complete activation.",
+  };
 }

@@ -550,14 +550,22 @@ follows this RFC with the following deliberate deviations:
   registry, log broadcaster), the flag defaults to `false`; presence of a
   subsystem falls through to the compiled default rather than enabling a flag
   early. Environment variables and operator overrides still take precedence.
+- **Domain ownership and hydration**: validated flag/deployment identifiers,
+  precedence policy, subsystem availability, the override registry, and the
+  hydration/write commands and store port live in the framework-independent
+  `src/feature_flags/` module. The gateway handler adapts HTTP input and its
+  settings store to that policy. Hydration is all-or-error: a failed read does
+  not mark the deployment hydrated or apply a partial snapshot, so the next
+  request retries.
 - **Gateway version correlation** (open question 1) is provided as an
   `X-Axinite-Version` response header on `GET /api/features`, preserving the
   flat boolean-map body.
-- **Degraded reads.** If the persisted overrides cannot be loaded, the read
-  still succeeds from the environment and compiled defaults and sets an
-  `X-Axinite-Flags-Degraded: true` response header (absent otherwise); the
-  deployment stays un-hydrated, so the next read retries. A write fails instead
-  (500) rather than caching an override that would hide the rest.
+- **Override-store failures.** If persisted overrides cannot be loaded,
+  `GET /api/features` returns 503 instead of a partial flag map. The deployment
+  stays un-hydrated, so the next read retries. The SPA's API provider remains
+  fallible; after a read error it logs a generic diagnostic and resolves flags
+  from browser-local overrides and compiled defaults. A failed write returns an
+  error and does not update the in-memory registry.
 - **Flag-change SSE event** (open question 2) remains deferred; it is
   tracked as roadmap task 4.5.7.
 - **Front-end consumption** (§5) is realized in the SolidJS workspace

@@ -6,6 +6,11 @@ and `Outcomes & Retrospective` must be kept up to date as work proceeds.
 
 Status: IMPLEMENTED
 
+Historical note: the progress entries and initial-state observations below
+record the mock-backend implementation as it evolved. For current commands,
+routes, fixture behaviour, and source paths, use the repository guide at
+`docs/solidjs-frontend.md` and the code under `web-src/mock-backend/`.
+
 ## Purpose / big picture
 
 After this change, `bun run dev` starts a local demonstration stack that is

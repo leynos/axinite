@@ -26,6 +26,7 @@ use crate::channels::web::handlers::features::apply_flag_override;
 use crate::channels::web::server::GatewayState;
 use crate::channels::web::types::*;
 use crate::db::{SettingKey, UserId};
+use crate::feature_flags::FlagName;
 
 /// Settings key prefix marking a deployment-scoped feature-flag override.
 const FEATURE_FLAG_PREFIX: &str = "feature_flag:";
@@ -155,26 +156,18 @@ async fn set_feature_flag(
             "feature_flag writes require a non-empty X-Deployment-Id header".to_string(),
         ))?;
 
-    if !is_valid_flag_name(flag_name) {
-        return Err((
-            StatusCode::BAD_REQUEST,
-            format!("invalid feature flag name '{flag_name}': expected [a-z0-9_]+"),
-        ));
-    }
+    let flag =
+        FlagName::parse(flag_name).map_err(|error| (StatusCode::BAD_REQUEST, error.to_string()))?;
 
     let enabled = coerce_flag_value(value).ok_or((
         StatusCode::BAD_REQUEST,
         "feature flag value must be a JSON boolean or \"true\"/\"false\"".to_string(),
     ))?;
 
-    apply_flag_override(state, &deployment_id, flag_name, enabled)
+    apply_flag_override(state, &deployment_id, &flag, enabled)
         .await
         .map_err(|e| {
-            tracing::error!(
-                deployment_id,
-                flag_name,
-                "Failed to persist feature flag override: {e}"
-            );
+            tracing::error!("Failed to persist feature flag override: {e}");
             (
                 StatusCode::INTERNAL_SERVER_ERROR,
                 "failed to persist feature flag override".to_string(),
@@ -187,14 +180,6 @@ async fn set_feature_flag(
         updated_at: chrono::Utc::now().to_rfc3339(),
     })
     .into_response())
-}
-
-/// Flag names are lowercase ASCII letters, digits, and underscores (RFC 0009).
-fn is_valid_flag_name(name: &str) -> bool {
-    !name.is_empty()
-        && name
-            .bytes()
-            .all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'_')
 }
 
 /// Coerce a settings write value into a boolean: accept a JSON boolean, or the

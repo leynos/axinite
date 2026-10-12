@@ -506,3 +506,5 @@ jobs-activity-kind-result = 结果
 jobs-files-empty = 尚未生成任何文件。
 jobs-file-tree-label = 任务文件
 jobs-prompt-done-label = 标记为完成
+
+routines-action-error = 例行任务操作失败。请重试。

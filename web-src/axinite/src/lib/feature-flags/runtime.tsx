@@ -18,14 +18,12 @@ import {
 
 import { fetchRuntimeFeatureFlags } from "@/lib/api/gateway";
 import {
-  FEATURE_FLAGS,
-  type FeatureFlagName,
-  getFeatureFlagDefaults,
-} from "@/lib/feature-flags/registry";
+  type OverrideMap,
+  resolveFeatureFlags,
+} from "@/lib/feature-flags/policy";
+import type { FeatureFlagName } from "@/lib/feature-flags/registry";
 
 const OVERRIDE_STORAGE_KEY = "axinite.feature-flag-overrides";
-
-type OverrideMap = Partial<Record<FeatureFlagName, boolean>>;
 
 type FeatureFlagContextValue = {
   overrides: Accessor<OverrideMap>;
@@ -41,14 +39,16 @@ function readOverrides(): OverrideMap {
     return {};
   }
 
-  const raw = window.localStorage.getItem(OVERRIDE_STORAGE_KEY);
-  if (!raw) {
-    return {};
-  }
-
   try {
+    const raw = window.localStorage.getItem(OVERRIDE_STORAGE_KEY);
+    if (!raw) {
+      return {};
+    }
     return JSON.parse(raw) as OverrideMap;
   } catch {
+    console.error(
+      "[feature-flags] Failed to hydrate local overrides; using defaults."
+    );
     return {};
   }
 }
@@ -58,34 +58,16 @@ function writeOverrides(overrides: OverrideMap): void {
     return;
   }
 
-  window.localStorage.setItem(OVERRIDE_STORAGE_KEY, JSON.stringify(overrides));
-}
-
-/**
- * Resolve every flag: a local override wins over a server value, which wins
- * over the registry default. Unknown keys are ignored.
- */
-export function resolveFeatureFlags(
-  serverFlags: Record<string, boolean>,
-  overrides: OverrideMap
-): Record<FeatureFlagName, boolean> {
-  const defaults = getFeatureFlagDefaults();
-
-  for (const flag of FEATURE_FLAGS) {
-    const serverValue = serverFlags[flag.name];
-    const overrideValue = overrides[flag.name];
-
-    if (typeof overrideValue === "boolean") {
-      defaults[flag.name] = overrideValue;
-      continue;
-    }
-
-    if (typeof serverValue === "boolean") {
-      defaults[flag.name] = serverValue;
-    }
+  try {
+    window.localStorage.setItem(
+      OVERRIDE_STORAGE_KEY,
+      JSON.stringify(overrides)
+    );
+  } catch {
+    console.error(
+      "[feature-flags] Failed to persist local overrides; changes apply only to this page."
+    );
   }
-
-  return defaults;
 }
 
 // Debug flag surfacing is enabled in dev builds or when the `debug-flags=1`
@@ -97,11 +79,6 @@ function isDebugFlagsEnabled(): boolean {
 
   const searchParams = new URLSearchParams(window.location.search);
   return import.meta.env.DEV || searchParams.get("debug-flags") === "1";
-}
-
-// Runtime-flag load failures are only worth logging when debugging is active.
-function shouldReportFlagError(error: unknown): boolean {
-  return Boolean(error) && (import.meta.env.DEV || isDebugFlagsEnabled());
 }
 
 const FeatureFlagContext = createContext<FeatureFlagContextValue>();
@@ -119,10 +96,9 @@ export const FeatureFlagProvider: ParentComponent = (props) => {
   }));
 
   createEffect(() => {
-    if (shouldReportFlagError(runtimeFlags.error)) {
+    if (runtimeFlags.error) {
       console.error(
-        "[feature-flags] Failed to load runtime flags",
-        runtimeFlags.error
+        "[feature-flags] Failed to load runtime flags; using local overrides and defaults."
       );
     }
   });

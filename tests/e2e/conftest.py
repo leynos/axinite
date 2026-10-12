@@ -16,7 +16,7 @@ from pathlib import Path
 
 import pytest
 
-from helpers import AUTH_TOKEN, wait_for_port_line, wait_for_ready
+from helpers import AUTH_TOKEN, SEL, wait_for_port_line, wait_for_ready
 
 # Project root (two levels up from tests/e2e/)
 ROOT = Path(__file__).resolve().parent.parent.parent
@@ -211,25 +211,16 @@ async def page(axinite_server, browser):
     try:
         pg = await context.new_page()
         await pg.goto(f"{axinite_server}/?token={AUTH_TOKEN}")
-        # Wait for the app to initialize (auth screen hidden, SSE connected)
-        await pg.wait_for_selector("#auth-screen", state="hidden", timeout=15000)
-        # The status label reads "Connected" in the static HTML before the
-        # stream opens, so it cannot gate the first message. A response
-        # broadcast before the EventSource is open is not replayed to it, and
-        # the test then waits for a message that was never delivered.
-        # `eventSource` is a top-level `let` in app.js, so it is visible by
-        # name but is not a `window` property.
-        await pg.wait_for_function(
-            "() => eventSource !== null"
-            " && eventSource.readyState === EventSource.OPEN",
+        await pg.wait_for_selector(SEL["auth_screen"], state="hidden", timeout=15000)
+        await pg.get_by_role("navigation").wait_for(state="visible", timeout=15000)
+        # SolidJS exposes the stream state through its testability contract.
+        # Wait for the open event before sending a message: broadcasts sent
+        # before connection are not replayed to this browser.
+        await pg.wait_for_selector(
+            f'{SEL["sse_status"]}[data-state="connected"]',
+            state="visible",
             timeout=15000,
         )
         yield pg
     finally:
         await context.close()
-    # Wait for the SolidJS AuthGate to unlock: `#auth-screen` is present only
-    # while checking/locked and is removed once unlocked (state="hidden"
-    # matches absence). Then wait for the app shell (role=navigation) so the
-    # test starts against a mounted UI rather than a blank frame.
-    await pg.wait_for_selector("#auth-screen", state="hidden", timeout=15000)
-    await pg.get_by_role("navigation").wait_for(state="visible", timeout=15000)

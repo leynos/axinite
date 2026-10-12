@@ -28,6 +28,7 @@ declare module "i18next-fluent-backend" {
 
   class FluentBackend implements BackendModule<FluentBackendOptions> {
     static type: "backend";
+    type: "backend";
     constructor(services?: Services, options?: FluentBackendOptions);
     init(
       services: Services,

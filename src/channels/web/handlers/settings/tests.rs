@@ -13,12 +13,12 @@ use crate::test_support::ExpectValid;
 
 #[test]
 fn valid_flag_name_accepts_lowercase_digits_underscore() {
-    assert!(is_valid_flag_name("panel_logs"));
-    assert!(is_valid_flag_name("route_chat2"));
-    assert!(!is_valid_flag_name(""));
-    assert!(!is_valid_flag_name("Panel_Logs"));
-    assert!(!is_valid_flag_name("panel-logs"));
-    assert!(!is_valid_flag_name("panel logs"));
+    assert!(FlagName::parse("panel_logs").is_ok());
+    assert!(FlagName::parse("route_chat2").is_ok());
+    assert!(FlagName::parse("").is_err());
+    assert!(FlagName::parse("Panel_Logs").is_err());
+    assert!(FlagName::parse("panel-logs").is_err());
+    assert!(FlagName::parse("panel logs").is_err());
 }
 
 #[test]
@@ -44,77 +44,43 @@ async fn body_string(response: axum::response::Response) -> String {
     String::from_utf8_lossy(&bytes).into_owned()
 }
 
-/// Every malformed `feature_flag:` request and malformed deployment header is
-/// rejected with 400 before it reaches the store or the registry.
+/// One malformed request fixture keeps the case's transport inputs cohesive.
+struct MalformedFlagRequest {
+    method: &'static str,
+    uri: &'static str,
+    deployment_id: Option<&'static str>,
+    body: &'static str,
+    with_store: bool,
+}
+
+/// Reject malformed requests before they reach persistence or the cache.
 #[rstest]
-#[case::put_without_deployment_header(
-    "PUT",
-    "/api/settings/feature_flag:route_memory",
-    None,
-    r#"{"value":"false"}"#,
-    false
-)]
-#[case::put_with_invalid_deployment_header(
-    "PUT",
-    "/api/settings/feature_flag:route_memory",
-    Some("Production!"),
-    r#"{"value":"false"}"#,
-    false
-)]
-#[case::put_with_overlong_deployment_header(
-    "PUT",
-    "/api/settings/feature_flag:route_memory",
-    Some(OVERLONG_DEPLOYMENT_ID),
-    r#"{"value":"false"}"#,
-    false
-)]
-#[case::put_with_invalid_flag_name(
-    "PUT",
-    "/api/settings/feature_flag:Bad-Name",
-    Some("production"),
-    r#"{"value":true}"#,
-    false
-)]
+#[case::put_without_deployment_header(MalformedFlagRequest { method: "PUT", uri: "/api/settings/feature_flag:route_memory", deployment_id: None, body: r#"{"value":"false"}"#, with_store: false })]
+#[case::put_with_invalid_deployment_header(MalformedFlagRequest { method: "PUT", uri: "/api/settings/feature_flag:route_memory", deployment_id: Some("Production!"), body: r#"{"value":"false"}"#, with_store: false })]
+#[case::put_with_overlong_deployment_header(MalformedFlagRequest { method: "PUT", uri: "/api/settings/feature_flag:route_memory", deployment_id: Some(OVERLONG_DEPLOYMENT_ID), body: r#"{"value":"false"}"#, with_store: false })]
+#[case::put_with_invalid_flag_name(MalformedFlagRequest { method: "PUT", uri: "/api/settings/feature_flag:Bad-Name", deployment_id: Some("production"), body: r#"{"value":true}"#, with_store: false })]
 // Store present so the failure is attributable to value coercion, not a
 // missing store.
-#[case::put_with_uncoercible_value(
-    "PUT",
-    "/api/settings/feature_flag:route_memory",
-    Some("production"),
-    r#"{"value":"maybe"}"#,
-    true
-)]
-#[case::get_flag_key_via_settings(
-    "GET",
-    "/api/settings/feature_flag:route_memory",
-    None,
-    "",
-    false
-)]
-#[case::features_with_invalid_deployment_header("GET", "/api/features", Some("a/b"), "", false)]
+#[case::put_with_uncoercible_value(MalformedFlagRequest { method: "PUT", uri: "/api/settings/feature_flag:route_memory", deployment_id: Some("production"), body: r#"{"value":"maybe"}"#, with_store: true })]
+#[case::get_flag_key_via_settings(MalformedFlagRequest { method: "GET", uri: "/api/settings/feature_flag:route_memory", deployment_id: None, body: "", with_store: false })]
+#[case::features_with_invalid_deployment_header(MalformedFlagRequest { method: "GET", uri: "/api/features", deployment_id: Some("a/b"), body: "", with_store: false })]
 #[tokio::test]
-async fn malformed_feature_flag_requests_return_400(
-    #[case] method: &str,
-    #[case] uri: &str,
-    #[case] deployment_id: Option<&str>,
-    #[case] body: &'static str,
-    #[case] with_store: bool,
-) {
+async fn malformed_feature_flag_requests_return_400(#[case] case: MalformedFlagRequest) {
     let mut builder = TestGatewayBuilder::new();
-    if with_store {
+    if case.with_store {
         builder = builder.store(new_test_store().await);
     }
-    let mut request = Request::builder().method(method).uri(uri);
-    if !body.is_empty() {
+    let mut request = Request::builder().method(case.method).uri(case.uri);
+    if !case.body.is_empty() {
         request = request.header("content-type", "application/json");
     }
-    if let Some(deployment_id) = deployment_id {
+    if let Some(deployment_id) = case.deployment_id {
         request = request.header("x-deployment-id", deployment_id);
     }
     let response = app(builder.build())
         .oneshot(
             request
-                .body(Body::from(body))
+                .body(Body::from(case.body))
                 .expect("build feature-flag request"),
         )
         .await
@@ -130,7 +96,7 @@ const OVERLONG_DEPLOYMENT_ID: &str =
 fn overlong_deployment_fixture_exceeds_the_bound() {
     assert_eq!(
         OVERLONG_DEPLOYMENT_ID.len(),
-        crate::channels::web::handlers::feature_registry::MAX_DEPLOYMENT_ID_LEN + 1
+        crate::feature_flags::MAX_DEPLOYMENT_ID_LEN + 1
     );
 }
 
@@ -194,7 +160,7 @@ async fn put_feature_flag_then_get_reflects_override_without_restart() {
     // only meaningful when the process was started without it. Nothing in the
     // suite sets it; check rather than mutate the shared process environment.
     assert!(
-        !features::env_flag_overlay().contains_key("FEATURE_FLAG_ROUTE_MEMORY"),
+        !features::env_flag_overlay().contains_key("route_memory"),
         "FEATURE_FLAG_ROUTE_MEMORY must be unset for this test"
     );
 

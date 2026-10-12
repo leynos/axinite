@@ -130,6 +130,23 @@ SolidJS UI.
   migrated Python suite passes 35 with one skip and the extensions scenario
   re-passed after the rename. CodeRabbit reviewed the 189-file diff against
   main: zero findings, no rate limiting.
+- [x] (2026-10-12) Review follow-up: isolate flag policy and persistence ports,
+  expose storage failures and telemetry, restore deterministic mock timing,
+  strengthen routine behaviour coverage, and correct operator, migration, and
+  inherited front-end documentation. Repair the Python page fixture to await
+  SolidJS authentication, navigation, and SSE readiness before yielding.
+- [x] (2026-10-12) Validate the functional review repairs locally. `make all`
+  and `make typecheck` pass: 4,367 workspace tests (9 skipped) and five GitHub
+  tool tests. Markdown, Mermaid, audit, 1,451 workflow-contract tests (11
+  skipped), frontend checks, and embedded-asset freshness pass. The full
+  frontend chain includes a passing Playwright shell test. A fresh libSQL
+  daemon passes 48 Python e2e tests; two live ClawHub scenarios skip without
+  detailed reasons in this run. Pyflakes passes all 16 tracked e2e Python
+  files. The two repaired CodeScene methods score 10.0 without findings.
+- [ ] (2026-10-12) Publish the repairs, simplify the remaining stub port-parser
+  conditional in a separate code-health commit, and reconcile current-head
+  hosted checks, ExecPlan assessment, review findings, and approval before
+  merge.
 
 ## Surprises & discoveries
 
@@ -178,16 +195,12 @@ SolidJS UI.
   the strict write path preserves the RFC's persistence semantics. Date/Author:
   2026-07-19, Claude.
 - Decision: precedence is environment variable > deployment override >
-  compiled default, per RFC 0009 §Precedence (subsystem-availability defaults
-  are not implemented — no current flag needs one). Date/Author: 2026-07-19,
-  Claude.
-  - Note (2026-10-11): superseded in part. The gateway now implements a
-    disable-only subsystem-availability layer, so precedence is environment
-    variable > deployment override > subsystem availability (disable-only) >
-    compiled default. A flag whose backing subsystem is not running resolves to
-    `false` unless an environment variable or override says otherwise; the
-    layer never enables a flag. See `unavailable_subsystem_flags` and
-    `resolve_flags` in `src/channels/web/handlers/features.rs`.
+  subsystem availability (disable-only) > compiled default. If a backing
+  subsystem is absent, its flag resolves to `false` unless an environment
+  variable or deployment override says otherwise; subsystem availability never
+  enables a flag. The framework-independent policy lives in
+  `src/feature_flags/`; the gateway adapts it to HTTP and storage. Date/Author:
+  2026-07-19, Claude; updated 2026-10-12 after review.
 - Decision: expose a minimal `window.__axinite` test-hook object from the
   SPA (chat stream close/reconnect, `emitChatEvent`, ready marker) instead of
   recreating the legacy globals the Python e2e suite pokes. Rationale: the
@@ -361,5 +374,5 @@ surface instead.
 Remaining follow-up (unchanged in scope): RFC 0018 Stage 5 — removing the
 legacy shell, its assets, and `tests/web_static_app.test.mjs` once the rollback
 window closes — plus the RFC 0009 open question on flag-change SSE events
-(roadmap 4.5.7). The subsystem-availability defaults question has since been
-resolved (see the 2026-10-11 decision note).
+(roadmap 4.5.7). Local gates and browser checks for the review repairs pass;
+current-head hosted checks and review reconciliation remain pending.

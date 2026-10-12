@@ -509,3 +509,5 @@ jobs-activity-kind-result = परिणाम
 jobs-files-empty = अभी तक कोई फ़ाइल नहीं बनी।
 jobs-file-tree-label = कार्य फ़ाइलें
 jobs-prompt-done-label = पूर्ण के रूप में चिह्नित करें
+
+routines-action-error = रूटीन की कार्रवाई विफल हुई। फिर से प्रयास करें।

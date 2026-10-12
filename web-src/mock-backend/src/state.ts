@@ -83,6 +83,9 @@ import {
   emitChatTurnSequence,
   matchCatalogueSkill,
   nowIso,
+  type Clock,
+  fixedPreviewClock,
+  extensionAuthentication,
   resolveSkillSource,
   statusFromRoutine,
 } from "./state-helpers";
@@ -116,7 +119,13 @@ function isNonBlankString(value: string | undefined): boolean {
 }
 
 export class MockBackendState {
-  private readonly bootTime = Date.now();
+  private readonly bootTime: number;
+
+  constructor(private readonly clock: Clock = fixedPreviewClock) {
+    this.bootTime = clock();
+  }
+
+  private readonly now = (): string => nowIso(this.clock);
 
   private nextCounter = 1;
 
@@ -186,7 +195,7 @@ export class MockBackendState {
       sse_connections,
       ws_connections,
       total_connections: sse_connections + ws_connections,
-      uptime_secs: Math.floor((Date.now() - this.bootTime) / 1_000),
+      uptime_secs: Math.floor((this.clock() - this.bootTime) / 1_000),
       restart_enabled: false,
       daily_cost: "2.3140",
       actions_this_hour: 18,
@@ -253,7 +262,7 @@ export class MockBackendState {
   ): LogEntry {
     const entry: LogEntry = {
       level,
-      timestamp: nowIso(),
+      timestamp: this.now(),
       message,
       target,
     };
@@ -289,8 +298,8 @@ export class MockBackendState {
       id,
       state: "Idle",
       turn_count: 0,
-      created_at: nowIso(),
-      updated_at: nowIso(),
+      created_at: this.now(),
+      updated_at: this.now(),
       title: "New planning thread",
       thread_type: "thread",
       channel: "gateway",
@@ -335,7 +344,7 @@ export class MockBackendState {
       throw new Error("Thread not found");
     }
 
-    const started_at = nowIso();
+    const started_at = this.now();
     const turn: TurnInfo = {
       turn_number: targetThread.turns.length + 1,
       user_input: request.content,
@@ -375,7 +384,7 @@ export class MockBackendState {
       imageDataUrl: MOCK_GENERATED_IMAGE_DATA_URL,
       publish: (event) => this.publishChatEvent(event),
       pushLog: (message, target, level) => this.pushLog(message, target, level),
-      now: nowIso,
+      now: this.now,
     });
 
     return {
@@ -404,10 +413,10 @@ export class MockBackendState {
     thread.info = {
       ...thread.info,
       state: "Idle",
-      updated_at: nowIso(),
+      updated_at: this.now(),
     };
 
-    applyApprovalToLatestTurn({ thread, isDeny, now: nowIso });
+    applyApprovalToLatestTurn({ thread, isDeny, now: this.now });
 
     this.publishChatEvent({
       type: outcome.eventType,
@@ -605,7 +614,7 @@ export class MockBackendState {
   writeMemory(request: MemoryWriteRequest): MemoryWriteResponse {
     this.memoryDocuments.set(request.path, {
       content: request.content,
-      updated_at: nowIso(),
+      updated_at: this.now(),
     });
     this.pushLog(`Memory document updated: ${request.path}.`, "memory");
     return {
@@ -720,7 +729,7 @@ export class MockBackendState {
     job.detail = {
       ...job.detail,
       state: "in_progress",
-      started_at: nowIso(),
+      started_at: this.now(),
       completed_at: null,
       elapsed_secs: 0,
       can_restart: false,
@@ -730,7 +739,7 @@ export class MockBackendState {
         {
           from,
           to: "in_progress",
-          timestamp: nowIso(),
+          timestamp: this.now(),
           reason: "Restarted from the mock preview UI.",
         },
       ],
@@ -740,7 +749,7 @@ export class MockBackendState {
         id: this.nextId("job-event"),
         level: "info",
         message: "Job restarted from the preview detail panel.",
-        timestamp: nowIso(),
+        timestamp: this.now(),
       },
       ...job.events,
     ];
@@ -757,7 +766,7 @@ export class MockBackendState {
     job.detail = {
       ...job.detail,
       state: "failed",
-      completed_at: nowIso(),
+      completed_at: this.now(),
       can_restart: true,
       can_prompt: false,
       transitions: [
@@ -765,7 +774,7 @@ export class MockBackendState {
         {
           from,
           to: "failed",
-          timestamp: nowIso(),
+          timestamp: this.now(),
           reason: "Cancelled from the mock preview UI.",
         },
       ],
@@ -775,7 +784,7 @@ export class MockBackendState {
         id: this.nextId("job-event"),
         level: "warn",
         message: "Job cancelled from the preview detail panel.",
-        timestamp: nowIso(),
+        timestamp: this.now(),
       },
       ...job.events,
     ];
@@ -793,7 +802,7 @@ export class MockBackendState {
         id: this.nextId("job-event"),
         level: "info",
         message: `Follow-up prompt submitted: ${request.content}`,
-        timestamp: nowIso(),
+        timestamp: this.now(),
       },
       ...job.events,
     ];
@@ -833,7 +842,7 @@ export class MockBackendState {
     const failing = routines.filter(
       (routine) => routine.consecutive_failures > 0
     ).length;
-    const todayPrefix = nowIso().slice(0, 10);
+    const todayPrefix = this.now().slice(0, 10);
     const runs_today = routines.filter((routine) =>
       routine.last_run_at?.startsWith(todayPrefix)
     ).length;
@@ -872,8 +881,8 @@ export class MockBackendState {
     const run = {
       id: this.nextId("routine-run"),
       trigger_type: "manual",
-      started_at: nowIso(),
-      completed_at: nowIso(),
+      started_at: this.now(),
+      completed_at: this.now(),
       status: "completed",
       result_summary: "Manual trigger completed in the preview shell.",
       tokens_used: 142,
@@ -1005,42 +1014,7 @@ export class MockBackendState {
       throw new Error("Extension not found");
     }
     if (extension.info.has_auth && !extension.info.authenticated) {
-      // The "google-drive" fixture exercises the OAuth auth-card dispatch
-      // path (an `auth_url` to open in a new tab); every other has_auth
-      // extension keeps the existing configure-modal (`setup_url` only)
-      // path.
-      const isOAuthFixture = name === "google-drive";
-      const authUrl = isOAuthFixture
-        ? "https://oauth.example.invalid/consent"
-        : undefined;
-      // Omit the key entirely for non-OAuth extensions so the payload keeps
-      // `auth_url` genuinely absent rather than present-but-undefined.
-      const authUrlField = authUrl === undefined ? {} : { auth_url: authUrl };
-      const setupUrl = isOAuthFixture
-        ? "https://example.invalid/token-help"
-        : `/api/extensions/${name}/setup`;
-      const instructions = isOAuthFixture
-        ? "Sign in with Google and grant Drive access, then return to finish activation."
-        : "Provide a token in the setup panel to complete activation.";
-
-      this.publishChatEvent({
-        type: "auth_required",
-        extension_name: name,
-        instructions,
-        ...authUrlField,
-        setup_url: setupUrl,
-      });
-      this.pushLog(
-        `Activation for ${name} is waiting for a manual token.`,
-        "extensions",
-        "warn"
-      );
-      return createActionResponse("Manual token required before activation.", {
-        awaiting_token: true,
-        instructions,
-        activated: false,
-        ...authUrlField,
-      });
+      return this.requestExtensionAuthentication(name);
     }
     extension.info = {
       ...extension.info,
@@ -1055,6 +1029,28 @@ export class MockBackendState {
     });
     this.pushLog(`Activated extension ${name}.`, "extensions");
     return createActionResponse("Extension activated.", { activated: true });
+  }
+
+  private requestExtensionAuthentication(name: string): ActionResponse {
+    const { instructions, setup_url, ...authUrlField } = extensionAuthentication(name);
+    this.publishChatEvent({
+      type: "auth_required",
+      extension_name: name,
+      instructions,
+      ...authUrlField,
+      setup_url,
+    });
+    this.pushLog(
+      `Activation for ${name} is waiting for a manual token.`,
+      "extensions",
+      "warn"
+    );
+    return createActionResponse("Manual token required before activation.", {
+      awaiting_token: true,
+      instructions,
+      activated: false,
+      ...authUrlField,
+    });
   }
 
   removeExtension(name: string): ActionResponse {

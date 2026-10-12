@@ -1171,7 +1171,8 @@ out behind flags.
     override persistence and immediate registry updates, subsystem/default
     fallback behaviour, additive hydration under concurrent writes, deployment
     header validation, and the endpoint contract. They live in
-    `src/channels/web/handlers/features.rs`, `feature_registry.rs`, and
+    `src/feature_flags/tests.rs`, `src/feature_flags/service/tests.rs`,
+    `src/channels/web/handlers/features/tests.rs`, `feature_registry.rs`, and
     `settings/tests.rs` (run with `make test`) and in
     `web-src/axinite/tests/feature-flags.test.ts` (run with
     `make frontend-test`).
