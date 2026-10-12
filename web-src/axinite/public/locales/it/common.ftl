@@ -520,3 +520,6 @@ jobs-file-tree-label = File del lavoro
 jobs-prompt-done-label = Segna come completato
 
 routines-action-error = L’azione della routine non è riuscita. Riprova.
+
+restart-failed = La richiesta di riavvio non è riuscita. Riprova.
+restart-retry = Riprova il riavvio

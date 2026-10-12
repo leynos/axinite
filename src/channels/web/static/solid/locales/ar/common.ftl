@@ -515,3 +515,6 @@ jobs-file-tree-label = ملفات المهمة
 jobs-prompt-done-label = وضع علامة كمكتمل
 
 routines-action-error = فشل إجراء الروتين. حاول مرة أخرى.
+
+restart-failed = فشل طلب إعادة التشغيل. حاول مرة أخرى.
+restart-retry = إعادة محاولة التشغيل

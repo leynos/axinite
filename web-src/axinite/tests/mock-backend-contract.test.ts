@@ -81,9 +81,7 @@ async function collectSse(
   return parseSseFrames(buffer);
 }
 
-afterEach(() => {
-  delete process.env["FEATURE_FLAG_PANEL_LOGS"];
-});
+afterEach(() => {});
 
 describe("stub HTTP contract", () => {
   it("serves the feature-flag map as flag names to booleans", async () => {
@@ -100,10 +98,11 @@ describe("stub HTTP contract", () => {
     }
   });
 
-  it("honours FEATURE_FLAG environment overrides", async () => {
-    process.env["FEATURE_FLAG_PANEL_LOGS"] = "false";
+  it("honours injected feature-flag overrides", async () => {
     const flags = (await getJson(
-      new MockBackendState(),
+      new MockBackendState(undefined, {
+        featureFlagOverrides: { panel_logs: false },
+      }),
       "/api/features"
     )) as Record<string, unknown>;
     expect(flags["panel_logs"]).toBe(false);

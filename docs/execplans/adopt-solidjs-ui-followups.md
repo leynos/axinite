@@ -231,15 +231,40 @@ SolidJS UI.
   matrix passed for PostgreSQL (4,376/9), libSQL (4,257/4), and both features
   (4,376/9); `AXINITE_REQUIRE_POSTGRES=1` confirmed both new PostgreSQL tests.
   Markdown, spelling, and Nixie passed. CodeScene confirmed the new upsert
-  duplication is removed; C candidate validation remains pending.
+  duplication is removed; C candidate validation is recorded below.
 - [x] (2026-10-12) Address the full review's Fluent coverage and explicit
   TypeScript override findings, and preserve generated-module documentation.
   Commit `e0fecbdf` passed `make all`, standalone type checking, and frontend
   verification (200 unit/behaviour, two accessibility, and two Playwright
   tests). The refreshed review also identified PostgreSQL coverage, query
   purity, state-model testing, and operational telemetry requirements; those
-  repairs are in progress. Builtin documentation coverage remains inconclusive
-  because the runner does not expose its counted-symbol inventory.
+  repairs are covered by the B and C checkpoints. Builtin documentation
+  coverage remains inconclusive because the runner does not expose its
+  counted-symbol inventory.
+- [x] (2026-10-12) Complete C restart, SSE, mock-query, and port validation.
+  The SSE adapter distinguishes named application-error `MessageEvent`s, which
+  carry `data`, from transport errors, which do not. The focused stream (27)
+  and restart-control (10) tests pass. Chromium confirmed that an HTTP 500
+  leaves a retryable alert and a normal Retry click reopens confirmation;
+  Firefox css-view confirmed visible retry geometry. The HappyDOM fixture sets
+  `animation-name: none` on Kobalte dialog surfaces because its empty computed
+  value otherwise leaves close waiting for a nonexistent animation event; the
+  fixture removes this rule after the suite. Playwright's PID-derived port pair
+  now uses 20,000–29,999, below the observed 32,768–60,999 ephemeral range.
+  Mock-query tests cover detached responses, injected flags, and explicit
+  create/send thread selection. The bounded observation-led model explores at
+  most 100 commands over 200 generated histories; this is regression coverage,
+  not proof. The full frontend gate passed 534 unit tests, two accessibility
+  tests, and both Playwright cases; embedded assets are current. CodeScene
+  found no new issues. A private mutant without the active-attempt identity
+  guard failed the stale-callback phase assertion, confirming that the
+  regression exercises the guard. Sequential `make all` passed 4,376 workspace
+  tests (nine skipped) and five GitHub tool tests; all standalone type-check
+  combinations passed. Markdown, spelling, Nixie, staged Markdown, and diff
+  checks passed. The final Chromium check exercised HTTP failure, normal retry,
+  and successful outage/recovery, with the alert cleared and control enabled.
+  The spelling-safe `TRUE` fixture retains case-insensitive parsing coverage;
+  its 30-test suite and the complete aggregate gate passed after correction.
 - [ ] (2026-10-12) Reconcile current-head hosted checks, ExecPlan assessment,
   review findings, and approval before merge.
 

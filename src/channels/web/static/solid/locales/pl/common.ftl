@@ -513,3 +513,6 @@ jobs-file-tree-label = Pliki zadania
 jobs-prompt-done-label = Oznacz jako ukończone
 
 routines-action-error = Działanie procedury nie powiodło się. Spróbuj ponownie.
+
+restart-failed = Żądanie ponownego uruchomienia nie powiodło się. Spróbuj ponownie.
+restart-retry = Ponów uruchomienie

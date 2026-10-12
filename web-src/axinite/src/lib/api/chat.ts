@@ -4,7 +4,12 @@
  * `/api/chat/events` SSE subscription. Used by the `/chat` surface.
  */
 
-import { createEventStream, postJson, requestJson } from "@/lib/api/client";
+import {
+  createEventStream,
+  postJson,
+  requestJson,
+  setStreamConnectionErrorHandler,
+} from "@/lib/api/client";
 import type {
   ActionResponse,
   ApprovalRequest,
@@ -121,7 +126,7 @@ export function connectChatEvents(
   }
 
   if (onError) {
-    source.onerror = () => onError();
+    setStreamConnectionErrorHandler(source, onError);
   }
 
   return source;

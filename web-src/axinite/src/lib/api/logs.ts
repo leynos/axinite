@@ -3,7 +3,12 @@
  * `/api/logs/events` SSE tail. Used by the `/logs` surface.
  */
 
-import { createEventStream, putJson, requestJson } from "@/lib/api/client";
+import {
+  createEventStream,
+  putJson,
+  requestJson,
+  setStreamConnectionErrorHandler,
+} from "@/lib/api/client";
 import type { LogEntry, LogLevelResponse } from "@/lib/api/contracts";
 
 /** GET /api/logs/level: fetch the gateway's current runtime log level. */
@@ -43,7 +48,7 @@ export function connectLogEvents(
     listener(entry);
   });
   if (onError) {
-    source.onerror = () => onError();
+    setStreamConnectionErrorHandler(source, onError);
   }
   return source;
 }

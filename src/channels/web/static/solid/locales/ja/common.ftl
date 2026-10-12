@@ -508,3 +508,6 @@ jobs-file-tree-label = ジョブファイル
 jobs-prompt-done-label = 完了としてマーク
 
 routines-action-error = ルーチンの操作に失敗しました。もう一度お試しください。
+
+restart-failed = 再起動のリクエストに失敗しました。もう一度お試しください。
+restart-retry = 再起動を再試行

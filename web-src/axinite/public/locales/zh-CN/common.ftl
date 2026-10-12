@@ -508,3 +508,6 @@ jobs-file-tree-label = 任务文件
 jobs-prompt-done-label = 标记为完成
 
 routines-action-error = 例行任务操作失败。请重试。
+
+restart-failed = 重启请求失败。请重试。
+restart-retry = 重试重启

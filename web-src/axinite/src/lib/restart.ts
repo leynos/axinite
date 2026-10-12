@@ -6,7 +6,19 @@
 
 import type { ChatSseEvent } from "@/lib/api/contracts";
 
-export type RestartPhase = "idle" | "restarting" | "restarted";
+export type RestartPhase = "idle" | "restarting" | "restarted" | "failed";
+
+/** Bounded operational categories; no response bodies or URLs cross this port. */
+export type RestartFailureCategory = "timeout" | "transport" | "http";
+
+/** A browser adapter's sanitized restart-command failure. */
+export class RestartCommandError extends Error {
+  /** Retains only the operational category for the domain failure callback. */
+  constructor(readonly category: RestartFailureCategory) {
+    super("Restart command failed");
+    this.name = "RestartCommandError";
+  }
+}
 
 /** A successful completion of the `restart` tool call. */
 function isRestartToolCompleted(event: ChatSseEvent): boolean {
@@ -53,6 +65,8 @@ export type RestartDeps = {
   scheduleStatusPolls: (tick: () => void) => () => void;
   /** Report phase transitions to the host component. */
   onPhase: (phase: RestartPhase) => void;
+  /** Reports a retryable command failure without leaking transport details. */
+  onFailure?: (category: RestartFailureCategory) => void;
 };
 
 export type RestartController = {
@@ -60,109 +74,138 @@ export type RestartController = {
   dispose: () => void;
 };
 
+type RestartAttempt = {
+  initiated: boolean;
+  wentDown: boolean;
+  handle: RestartStreamHandle | undefined;
+  cancelPolls: (() => void) | undefined;
+};
+
+// Attempt identity fences callbacks from closed streams and outstanding promises.
+// Retiring an attempt happens before adapter cleanup, which can itself deliver
+// callbacks synchronously.
+class RestartLifecycle {
+  private active: RestartAttempt | undefined;
+  private isClosed = false;
+
+  constructor(private readonly deps: RestartDeps) {}
+
+  private isCurrent(attempt: RestartAttempt): boolean {
+    return !this.isClosed && this.active === attempt;
+  }
+
+  private retire(attempt: RestartAttempt): void {
+    this.active = undefined;
+    attempt.cancelPolls?.();
+    attempt.cancelPolls = undefined;
+    attempt.handle?.close();
+    attempt.handle = undefined;
+  }
+
+  private complete(attempt: RestartAttempt): void {
+    if (!this.isCurrent(attempt)) return;
+    this.isClosed = true;
+    this.retire(attempt);
+    this.deps.onPhase("restarted");
+  }
+
+  private fail(attempt: RestartAttempt, error: unknown): void {
+    if (!this.isCurrent(attempt)) return;
+    this.retire(attempt);
+    const category =
+      error instanceof RestartCommandError ? error.category : "transport";
+    this.deps.onPhase("failed");
+    this.deps.onFailure?.(category);
+  }
+
+  private async poll(attempt: RestartAttempt): Promise<void> {
+    if (!this.isCurrent(attempt)) return;
+    try {
+      const reachable = await this.deps.checkStatus();
+      if (!this.isCurrent(attempt)) return;
+      if (!reachable) {
+        attempt.wentDown = true;
+      } else if (attempt.wentDown) {
+        this.complete(attempt);
+      }
+    } catch {
+      if (this.isCurrent(attempt)) attempt.wentDown = true;
+    }
+  }
+
+  private beginPolling(attempt: RestartAttempt): void {
+    if (attempt.cancelPolls) return;
+    attempt.cancelPolls = this.deps.scheduleStatusPolls(() => {
+      void this.poll(attempt);
+    });
+  }
+
+  private acknowledge(attempt: RestartAttempt, event: ChatSseEvent): void {
+    if (!this.isCurrent(attempt) || attempt.initiated) return;
+    if (isRestartInitiated(event)) {
+      attempt.initiated = true;
+      this.beginPolling(attempt);
+    }
+  }
+
+  private observeStreamError(attempt: RestartAttempt): void {
+    if (this.isCurrent(attempt) && attempt.initiated) attempt.wentDown = true;
+  }
+
+  private observeStreamOpen(attempt: RestartAttempt): void {
+    if (!this.isCurrent(attempt) || !attempt.initiated) return;
+    if (attempt.wentDown) this.complete(attempt);
+  }
+
+  private openStream(attempt: RestartAttempt): void {
+    const handle = this.deps.openStream({
+      onEvent: (event) => this.acknowledge(attempt, event),
+      onError: () => this.observeStreamError(attempt),
+      onOpen: () => this.observeStreamOpen(attempt),
+    });
+    if (this.isCurrent(attempt)) {
+      attempt.handle = handle;
+    } else {
+      handle.close();
+    }
+  }
+
+  start(): void {
+    if (this.active || this.isClosed) return;
+    const attempt: RestartAttempt = {
+      initiated: false,
+      wentDown: false,
+      handle: undefined,
+      cancelPolls: undefined,
+    };
+    this.active = attempt;
+    this.deps.onPhase("restarting");
+    if (!this.isCurrent(attempt)) return;
+    try {
+      this.openStream(attempt);
+      if (this.isCurrent(attempt)) {
+        void this.deps
+          .sendRestart()
+          .catch((error: unknown) => this.fail(attempt, error));
+      }
+    } catch (error) {
+      this.fail(attempt, error);
+    }
+  }
+
+  dispose(): void {
+    this.isClosed = true;
+    if (this.active) this.retire(this.active);
+  }
+}
+
 /**
- * State machine for the gateway restart affordance.
- *
- * The gateway has no restart endpoint; the legacy UI sends `/restart` through
- * chat and treats stream reconnection (or a recovered status poll) as
- * completion. Completion only fires once the gateway is observed to have gone
- * down (a stream error or a failed status poll) and then come back, avoiding a
- * premature "restarted" while the old process is still answering.
+ * Runs a restart attempt until an acknowledged command is followed by an
+ * observed outage and recovery. Failed sends expose a retryable failed phase.
+ * Repeated starts share the active attempt; stale callbacks after failure,
+ * completion or disposal cannot publish phases or schedule more work.
  */
 export function createRestartController(deps: RestartDeps): RestartController {
-  let initiated = false;
-  let wentDown = false;
-  let finished = false;
-  let handle: RestartStreamHandle | undefined;
-  let cancelPolls: (() => void) | undefined;
-
-  const complete = () => {
-    if (finished) {
-      return;
-    }
-    finished = true;
-    cancelPolls?.();
-    cancelPolls = undefined;
-    handle?.close();
-    handle = undefined;
-    deps.onPhase("restarted");
-  };
-
-  const beginPolling = () => {
-    if (cancelPolls) {
-      return;
-    }
-    cancelPolls = deps.scheduleStatusPolls(() => {
-      if (finished || !initiated) {
-        return;
-      }
-      void deps
-        .checkStatus()
-        .then((reachable) => {
-          if (finished) {
-            return;
-          }
-          if (!reachable) {
-            wentDown = true;
-          } else if (wentDown) {
-            complete();
-          }
-        })
-        .catch(() => {
-          wentDown = true;
-        });
-    });
-  };
-
-  const onEvent = (event: ChatSseEvent) => {
-    if (!initiated && isRestartInitiated(event)) {
-      initiated = true;
-      beginPolling();
-    }
-  };
-
-  const onError = () => {
-    if (initiated) {
-      wentDown = true;
-    }
-  };
-
-  const onOpen = () => {
-    if (initiated && wentDown) {
-      complete();
-    }
-  };
-
-  const start = () => {
-    if (handle || finished) {
-      return;
-    }
-    deps.onPhase("restarting");
-    handle = deps.openStream({ onEvent, onOpen, onError });
-    void deps.sendRestart().catch(() => {
-      if (finished) {
-        // Disposed while the command was in flight; nothing to report.
-        return;
-      }
-      // A failed send aborts this attempt only: reset to idle so the button
-      // re-enables and a later start() can retry.
-      cancelPolls?.();
-      cancelPolls = undefined;
-      handle?.close();
-      handle = undefined;
-      initiated = false;
-      wentDown = false;
-      deps.onPhase("idle");
-    });
-  };
-
-  const dispose = () => {
-    finished = true;
-    cancelPolls?.();
-    cancelPolls = undefined;
-    handle?.close();
-    handle = undefined;
-  };
-
-  return { start, dispose };
+  const lifecycle = new RestartLifecycle(deps);
+  return { start: () => lifecycle.start(), dispose: () => lifecycle.dispose() };
 }
