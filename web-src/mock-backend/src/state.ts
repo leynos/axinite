@@ -228,8 +228,8 @@ export class MockBackendState {
 
   /**
    * Returns mock gateway status with chat SSE counts, clock-based uptime
-   * and fixed usage fixtures; WebSocket count is zero and restart is
-   * disabled.
+   * and fixed usage fixtures. WebSocket count is zero. Restart is disabled
+   * by default and enabled by the opt-in restart fixture.
    */
   getGatewayStatus(): GatewayStatusResponse {
     const sse_connections = this.chatSubscribers.size;
