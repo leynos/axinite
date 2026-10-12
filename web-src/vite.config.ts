@@ -22,7 +22,22 @@ export default defineConfig({
   base: DEPLOY_BASE_PATH,
   root: projectRoot,
   publicDir: resolve(projectRoot, "public"),
-  plugins: [solid(), tailwindcss()],
+  plugins: [
+    solid(),
+    tailwindcss(),
+    {
+      name: "document-embedded-ui",
+      // Vite minifies renderChunk output, including Rollup's normal banner.
+      // Document each emitted module after that step, without changing code.
+      generateBundle(_options, bundle) {
+        for (const output of Object.values(bundle)) {
+          if (output.type === "chunk") {
+            output.code = `/** @file Embedded Axinite SolidJS gateway UI; generated from web-src/axinite. */\n${output.code}`;
+          }
+        }
+      },
+    },
+  ],
   build: {
     outDir: resolve(__dirname, "dist"),
     emptyOutDir: true,

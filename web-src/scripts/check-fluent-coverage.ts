@@ -8,25 +8,17 @@
 import fs from "node:fs";
 import path from "node:path";
 import process from "node:process";
-
-import { parse } from "@fluent/syntax";
-
 import {
   COMPLETE_LOCALE_CODES,
   DEFAULT_LOCALE,
 } from "../axinite/src/lib/i18n/supported-locales";
+import { fluentCoverageKeys } from "./fluent-coverage";
 
 const LOCALES_DIR = path.resolve(process.cwd(), "axinite/public/locales");
 
 function readMessageKeys(locale: string): Set<string> {
   const filePath = path.join(LOCALES_DIR, locale, "common.ftl");
-  const resource = parse(fs.readFileSync(filePath, "utf8"), {});
-
-  return new Set(
-    resource.body
-      .filter((entry) => entry.type === "Message" || entry.type === "Term")
-      .map((entry) => entry.id.name)
-  );
+  return fluentCoverageKeys(fs.readFileSync(filePath, "utf8"));
 }
 
 function main(): void {
