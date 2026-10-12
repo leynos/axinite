@@ -204,6 +204,14 @@ daemon-free stub runtime, and a minimal environment-variable subset of RFC 0009
   404 would silently mask integration risk (gap G2). The env-var layer is the
   top of RFC 0009's precedence chain, so this is forward-compatible.
   Date/Author: 2026-07-19, Claude.
+- Clarification (2026-10-12): the Python e2e and environment-only flag
+  decisions above describe the initial rollout. Follow-up work supersedes them:
+  Python e2e now exercises the default SolidJS UI without a legacy UI pin, and
+  flag overrides persist per deployment. `GET /api/features` uses `"default"`
+  when `X-Deployment-Id` is absent or blank and rejects malformed values;
+  feature-flag writes require a present, valid deployment header. See
+  `docs/execplans/adopt-solidjs-ui-followups.md` and RFC 0009's implementation
+  notes.
 
 ## Outcomes & retrospective
 

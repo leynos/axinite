@@ -121,7 +121,7 @@ async fn get_features(state: Arc<GatewayState>) -> axum::response::Response {
 }
 
 #[tokio::test]
-async fn features_returns_503_on_hydration_failure_and_retries_next_request() {
+async fn features_returns_503_on_snapshot_failure_and_retries_next_request() {
     use crate::testing::null_db::CapturingStore;
     let store = Arc::new(CapturingStore::failing_list_deployment_flags_once(
         crate::error::DatabaseError::Query("store unavailable".to_string()),
@@ -134,11 +134,15 @@ async fn features_returns_503_on_hydration_failure_and_retries_next_request() {
     assert!(!state.feature_flags.read().await.is_hydrated("default"));
     let retry = get_features(state.clone()).await;
     assert_eq!(retry.status(), StatusCode::OK);
-    assert!(state.feature_flags.read().await.is_hydrated("default"));
+    assert!(!state.feature_flags.read().await.is_hydrated("default"));
+    assert_eq!(
+        state.feature_flags.read().await.resources(),
+        Default::default()
+    );
 }
 
 #[tokio::test]
-async fn features_response_carries_version_when_hydration_succeeds() {
+async fn features_response_carries_version_when_snapshot_load_succeeds() {
     use crate::testing::null_db::CapturingStore;
 
     let state = crate::channels::web::test_helpers::TestGatewayBuilder::new()
@@ -159,4 +163,19 @@ async fn features_response_succeeds_without_a_store() {
 
     assert_eq!(response.status(), StatusCode::OK);
     assert!(response.headers().contains_key(VERSION_HEADER));
+}
+
+#[tokio::test]
+async fn repeated_features_get_does_not_publish_cache_admission_or_retry_entries() {
+    use crate::testing::null_db::CapturingStore;
+    let state = crate::channels::web::test_helpers::TestGatewayBuilder::new()
+        .store(Arc::new(CapturingStore::new()))
+        .build();
+    let before = state.feature_flags.read().await.resources();
+    for _ in 0..2 {
+        assert_eq!(get_features(state.clone()).await.status(), StatusCode::OK);
+        assert_eq!(state.feature_flags.read().await.resources(), before);
+        assert!(!state.feature_flags.read().await.is_hydrated("default"));
+        assert!(!state.feature_flags.read().await.is_retry("default"));
+    }
 }

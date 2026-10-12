@@ -1,5 +1,8 @@
 //! Settings persistence helpers.
 
+#[cfg(all(test, feature = "postgres"))]
+mod feature_flags_tests;
+
 use chrono::{DateTime, Utc};
 
 #[cfg(feature = "postgres")]
@@ -9,6 +12,24 @@ use crate::db::SettingKey;
 use crate::db::UserId;
 #[cfg(feature = "postgres")]
 use crate::error::DatabaseError;
+
+#[cfg(feature = "postgres")]
+const UPSERT_SETTING: &str = r#"
+    INSERT INTO settings (user_id, key, value, updated_at)
+    VALUES ($1, $2, $3, NOW())
+    ON CONFLICT (user_id, key) DO UPDATE SET
+        value = EXCLUDED.value,
+        updated_at = NOW()
+"#;
+
+#[cfg(feature = "postgres")]
+const UPSERT_DEPLOYMENT_FLAG: &str = r#"
+    INSERT INTO feature_flag_overrides (deployment_id, flag_name, enabled, updated_at)
+    VALUES ($1, $2, $3, NOW())
+    ON CONFLICT (deployment_id, flag_name) DO UPDATE SET
+        enabled = EXCLUDED.enabled,
+        updated_at = NOW()
+"#;
 
 /// A single setting row from the database.
 #[derive(Debug, Clone)]
@@ -23,6 +44,18 @@ pub struct SettingRow {
 
 #[cfg(feature = "postgres")]
 impl Store {
+    // Single-row commands share connection acquisition and error propagation;
+    // bulk settings writes retain their transaction and reuse the same SQL.
+    async fn execute_settings_command(
+        &self,
+        sql: &'static str,
+        params: &[&(dyn tokio_postgres::types::ToSql + Sync)],
+    ) -> Result<(), DatabaseError> {
+        let conn = self.conn().await?;
+        conn.execute(sql, params).await?;
+        Ok(())
+    }
+
     /// Get a single setting by key.
     pub async fn get_setting(
         &self,
@@ -66,19 +99,8 @@ impl Store {
         key: SettingKey,
         value: &serde_json::Value,
     ) -> Result<(), DatabaseError> {
-        let conn = self.conn().await?;
-        conn.execute(
-            r#"
-            INSERT INTO settings (user_id, key, value, updated_at)
-            VALUES ($1, $2, $3, NOW())
-            ON CONFLICT (user_id, key) DO UPDATE SET
-                value = EXCLUDED.value,
-                updated_at = NOW()
-            "#,
-            &[&user_id.as_str(), &key.as_str(), value],
-        )
-        .await?;
-        Ok(())
+        self.execute_settings_command(UPSERT_SETTING, &[&user_id.as_str(), &key.as_str(), value])
+            .await
     }
 
     /// Delete a single setting (reset to default).
@@ -163,17 +185,8 @@ impl Store {
         }
 
         for (key, value) in settings {
-            tx.execute(
-                r#"
-                INSERT INTO settings (user_id, key, value, updated_at)
-                VALUES ($1, $2, $3, NOW())
-                ON CONFLICT (user_id, key) DO UPDATE SET
-                    value = EXCLUDED.value,
-                    updated_at = NOW()
-                "#,
-                &[&user_id.as_str(), &key.as_str(), value],
-            )
-            .await?;
+            tx.execute(UPSERT_SETTING, &[&user_id.as_str(), &key.as_str(), value])
+                .await?;
         }
 
         tx.commit().await?;
@@ -214,19 +227,11 @@ impl Store {
         flag_name: &str,
         enabled: bool,
     ) -> Result<(), DatabaseError> {
-        let conn = self.conn().await?;
-        conn.execute(
-            r#"
-            INSERT INTO feature_flag_overrides (deployment_id, flag_name, enabled, updated_at)
-            VALUES ($1, $2, $3, NOW())
-            ON CONFLICT (deployment_id, flag_name) DO UPDATE SET
-                enabled = EXCLUDED.enabled,
-                updated_at = NOW()
-            "#,
+        self.execute_settings_command(
+            UPSERT_DEPLOYMENT_FLAG,
             &[&deployment_id, &flag_name, &enabled],
         )
-        .await?;
-        Ok(())
+        .await
     }
 
     /// Check if the settings table has any rows for a user.

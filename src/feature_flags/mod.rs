@@ -1,10 +1,10 @@
-//! Framework-independent deployment feature-flag policy and persistence ports.
+//! Pure feature-flag identities, snapshots, and resolution policy; all I/O belongs to adapters.
 
-use std::collections::{BTreeMap, HashMap};
+use std::collections::BTreeMap;
 
 pub mod availability;
-pub mod registry;
-pub mod service;
+mod snapshot;
+pub use snapshot::{FlagOverrideCommand, FlagSnapshot};
 mod types;
 pub use types::{
     DeploymentId, FlagName, InvalidDeploymentId, InvalidFlagName, MAX_DEPLOYMENT_ID_LEN,
@@ -33,21 +33,22 @@ pub const FLAG_DEFAULTS: &[(&str, bool)] = &[
 /// Resolve every known flag through the precedence chain: environment variable
 /// > deployment override > subsystem-availability default > compiled default.
 ///
-/// `env` supplies already-parsed environment values from the driving adapter. `unavailable` lists flags whose backing subsystem is
+/// `env` supplies already-parsed environment values from the driving adapter.
+/// `unavailable` lists flags whose backing subsystem is
 /// absent; they resolve to `false` unless an environment variable or operator
 /// override says otherwise. Only names in [`FLAG_DEFAULTS`] are emitted;
 /// unknown override names are ignored, matching RFC 0009's flag-name
 /// validation posture.
 pub fn resolve_flags(
     env: impl Fn(&str) -> Option<bool>,
-    overrides: &HashMap<String, bool>,
+    overrides: &FlagSnapshot,
     unavailable: &[&str],
 ) -> BTreeMap<String, bool> {
     FLAG_DEFAULTS
         .iter()
         .map(|(name, default)| {
             let value = env(name).unwrap_or_else(|| {
-                overrides.get(*name).copied().unwrap_or_else(|| {
+                overrides.get(name).unwrap_or_else(|| {
                     if unavailable.contains(name) {
                         false
                     } else {

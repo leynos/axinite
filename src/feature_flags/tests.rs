@@ -2,8 +2,8 @@
 
 use super::*;
 
-fn no_overrides() -> HashMap<String, bool> {
-    HashMap::new()
+fn no_overrides() -> FlagSnapshot {
+    FlagSnapshot::default()
 }
 
 #[test]
@@ -34,9 +34,12 @@ fn environment_variables_override_defaults() {
 
 #[test]
 fn deployment_override_beats_compiled_default() {
-    let mut overrides = HashMap::new();
-    overrides.insert("panel_logs".to_string(), false);
-    overrides.insert("action_job_restart".to_string(), true);
+    let mut overrides = FlagSnapshot::default();
+    overrides.set(FlagName::parse("panel_logs").expect("valid flag"), false);
+    overrides.set(
+        FlagName::parse("action_job_restart").expect("valid flag"),
+        true,
+    );
     let flags = resolve_flags(|_| None, &overrides, &[]);
     assert_eq!(flags.get("panel_logs"), Some(&false));
     assert_eq!(flags.get("action_job_restart"), Some(&true));
@@ -46,8 +49,8 @@ fn deployment_override_beats_compiled_default() {
 
 #[test]
 fn environment_variable_beats_deployment_override() {
-    let mut overrides = HashMap::new();
-    overrides.insert("route_chat".to_string(), false);
+    let mut overrides = FlagSnapshot::default();
+    overrides.set(FlagName::parse("route_chat").expect("valid flag"), false);
     let flags = resolve_flags(
         |name| (name == "route_chat").then_some(true),
         &overrides,
@@ -59,8 +62,11 @@ fn environment_variable_beats_deployment_override() {
 
 #[test]
 fn unknown_override_names_are_ignored() {
-    let mut overrides = HashMap::new();
-    overrides.insert("not_a_real_flag".to_string(), true);
+    let mut overrides = FlagSnapshot::default();
+    overrides.set(
+        FlagName::parse("not_a_real_flag").expect("valid flag"),
+        true,
+    );
     let flags = resolve_flags(|_| None, &overrides, &[]);
     assert!(!flags.contains_key("not_a_real_flag"));
     assert_eq!(flags.len(), FLAG_DEFAULTS.len());
@@ -76,7 +82,8 @@ fn unavailable_subsystem_forces_a_flag_off() {
 
 #[test]
 fn override_beats_subsystem_unavailability() {
-    let overrides = HashMap::from([("route_routines".to_string(), true)]);
+    let overrides =
+        FlagSnapshot::from_values([(FlagName::parse("route_routines").expect("valid flag"), true)]);
     let flags = resolve_flags(|_| None, &overrides, &["route_routines"]);
     assert_eq!(flags.get("route_routines"), Some(&true));
 }
@@ -136,4 +143,17 @@ fn unavailable_subsystems_hide_both_routes_and_actions_without_enabling_defaults
         assert_eq!(flags.get(name), Some(&false), "{name}");
     }
     assert_eq!(flags.get("route_chat"), Some(&true));
+}
+
+#[test]
+fn snapshots_are_detached_and_override_transitions_keep_other_flags() {
+    let memory = FlagName::parse("route_memory").expect("valid memory flag");
+    let logs = FlagName::parse("panel_logs").expect("valid logs flag");
+    let original = FlagSnapshot::from_values([(memory.clone(), false), (logs, false)]);
+    let mut changed = original.clone();
+    changed.set(memory, true);
+    assert_eq!(original.get("route_memory"), Some(false));
+    assert_eq!(changed.get("route_memory"), Some(true));
+    assert_eq!(changed.get("panel_logs"), Some(false));
+    assert_eq!(changed.len(), 2);
 }

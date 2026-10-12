@@ -538,9 +538,13 @@ follows this RFC with the following deliberate deviations:
   1 to 64 characters of `[a-z0-9_]`. On `GET /api/features` a present but
   invalid header returns 400; on `PUT /api/settings/feature_flag:<name>` a
   missing or invalid header returns 400.
-- **Registry hydration and environment layer**: the registry is hydrated from
-  the store additively (an override cached by a concurrent write is kept), and
-  the `FEATURE_FLAG_<NAME>` environment layer is read once per process.
+- **Read and write cache semantics**: the gateway returns a detached snapshot
+  from its per-deployment cache when available. Otherwise, `GET /api/features`
+  loads a query-local snapshot from the store; reads do not publish cache,
+  hydration, or retry state. Each uncached read therefore consults the store.
+  Override writes are serialized per deployment: the command hydrates when
+  needed, persists the value, then publishes it to the cache. The
+  `FEATURE_FLAG_<NAME>` environment layer is read once per process.
 - **Settings API access to flag keys**: `GET` and `DELETE` of
   `feature_flag:` keys through `/api/settings` return 400, directing callers to
   `GET /api/features`; flag rows never enter the user-scoped settings table.
@@ -550,22 +554,24 @@ follows this RFC with the following deliberate deviations:
   registry, log broadcaster), the flag defaults to `false`; presence of a
   subsystem falls through to the compiled default rather than enabling a flag
   early. Environment variables and operator overrides still take precedence.
-- **Domain ownership and hydration**: validated flag/deployment identifiers,
-  precedence policy, subsystem availability, the override registry, and the
-  hydration/write commands and store port live in the framework-independent
-  `src/feature_flags/` module. The gateway handler adapts HTTP input and its
-  settings store to that policy. Hydration is all-or-error: a failed read does
-  not mark the deployment hydrated or apply a partial snapshot, so the next
-  request retries.
+- **Domain and gateway ownership**: typed flag/deployment identifiers,
+  snapshots, precedence policy, and subsystem availability live in the
+  framework-independent `src/feature_flags/` module. The web gateway owns the
+  per-deployment cache, repository port, query and write commands, and write
+  admission. Queries return a detached cached snapshot or load a local snapshot
+  from storage; they do not publish hydration or retry state. Writes hydrate
+  when needed, persist, and then publish the complete override value.
 - **Gateway version correlation** (open question 1) is provided as an
   `X-Axinite-Version` response header on `GET /api/features`, preserving the
   flat boolean-map body.
-- **Override-store failures.** If persisted overrides cannot be loaded,
-  `GET /api/features` returns 503 instead of a partial flag map. The deployment
-  stays un-hydrated, so the next read retries. The SPA's API provider remains
-  fallible; after a read error it logs a generic diagnostic and resolves flags
-  from browser-local overrides and compiled defaults. A failed write returns an
-  error and does not update the in-memory registry.
+- **Override-store failures.** An uncached `GET /api/features` with a
+  configured store returns 503 if loading persisted overrides fails; it never
+  returns a partial map. The next uncached read loads from the store again. If
+  no store is configured, the gateway resolves with no operator overrides. The
+  SPA's API provider remains fallible; after a read error it logs a generic
+  diagnostic and resolves flags from browser-local overrides and compiled
+  defaults. A failed write returns an error and does not publish its value to
+  the in-memory registry.
 - **Flag-change SSE event** (open question 2) remains deferred; it is
   tracked as roadmap task 4.5.7.
 - **Front-end consumption** (§5) is realized in the SolidJS workspace

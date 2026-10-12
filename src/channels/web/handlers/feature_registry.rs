@@ -1,17 +1,23 @@
-//! HTTP deployment parsing and the existing settings-store feature-flag adapter.
+//! HTTP deployment parsing and the settings-store adapter for gateway flag services.
 
 use crate::db::SettingsStore;
-use crate::error::DatabaseError;
-pub use crate::feature_flags::registry::FeatureFlagRegistry;
-use crate::feature_flags::{DeploymentId, FlagName, InvalidDeploymentId, service::FlagStore};
+use crate::feature_flags::{
+    DeploymentId, FlagName, FlagOverrideCommand, FlagSnapshot, InvalidDeploymentId,
+};
+use application::{FlagStore, FlagStoreError};
 use axum::http::HeaderMap;
+
+mod registry;
+pub use registry::FeatureFlagRegistry;
+pub(super) mod application;
+pub(super) mod telemetry;
 
 /// Header identifying the deployment; required on writes and optional on reads.
 pub const DEPLOYMENT_ID_HEADER: &str = "x-deployment-id";
 /// Deployment selected for reads without a header.
 pub const DEFAULT_DEPLOYMENT_ID: &str = "default";
 
-/// Normalize the optional HTTP header, then validate through the domain type.
+/// Normalize the optional HTTP header, then validate through the pure domain type.
 pub fn deployment_id_from_headers(
     headers: &HeaderMap,
 ) -> Result<Option<DeploymentId>, InvalidDeploymentId> {
@@ -25,49 +31,58 @@ pub fn deployment_id_from_headers(
     DeploymentId::parse(value).map(Some)
 }
 
-/// Translate the existing settings-store surface into the narrow domain port.
+/// Hide settings-store rows and database failures behind the typed repository port.
 pub(super) struct SettingsFlagStore<'a> {
     pub store: &'a dyn SettingsStore,
-    pub registry: &'a tokio::sync::RwLock<FeatureFlagRegistry>,
 }
 
 impl FlagStore for SettingsFlagStore<'_> {
-    type Error = DatabaseError;
-
-    #[tracing::instrument(name = "feature_flags.hydrate", skip_all)]
-    async fn load(&self, deployment: &DeploymentId) -> Result<Vec<(String, bool)>, DatabaseError> {
-        telemetry::count("cache", "miss");
-        if self.registry.read().await.is_retry(deployment.as_str()) {
-            telemetry::count("hydration", "retry");
-        }
+    #[tracing::instrument(name = "feature_flags.snapshot_load", skip_all)]
+    async fn load(&self, deployment: &DeploymentId) -> Result<FlagSnapshot, FlagStoreError> {
         let started = std::time::Instant::now();
-        let result = self.store.list_deployment_flags(deployment.as_str()).await;
+        let result = self.load_snapshot(deployment).await;
         telemetry::store_result("load", started, result.is_ok());
-        telemetry::count(
-            "hydration",
-            if result.is_ok() { "success" } else { "error" },
-        );
         result
     }
 
     #[tracing::instrument(name = "feature_flags.write", skip_all)]
-    async fn save(
-        &self,
-        deployment: &DeploymentId,
-        flag: &FlagName,
-        enabled: bool,
-    ) -> Result<(), DatabaseError> {
+    async fn save(&self, command: &FlagOverrideCommand) -> Result<(), FlagStoreError> {
         let started = std::time::Instant::now();
         let result = self
             .store
-            .set_deployment_flag(deployment.as_str(), flag.as_str(), enabled)
-            .await;
+            .set_deployment_flag(
+                command.deployment.as_str(),
+                command.flag.as_str(),
+                command.enabled,
+            )
+            .await
+            .map_err(|_| FlagStoreError::Save);
         telemetry::store_result("save", started, result.is_ok());
         result
     }
 }
 
-pub(super) mod telemetry;
+impl SettingsFlagStore<'_> {
+    async fn load_snapshot(
+        &self,
+        deployment: &DeploymentId,
+    ) -> Result<FlagSnapshot, FlagStoreError> {
+        let rows = self
+            .store
+            .list_deployment_flags(deployment.as_str())
+            .await
+            .map_err(|_| FlagStoreError::Load)?;
+        let values = rows
+            .into_iter()
+            .map(|(name, enabled)| {
+                FlagName::parse(&name)
+                    .map(|flag| (flag, enabled))
+                    .map_err(|_| FlagStoreError::InvalidSnapshot)
+            })
+            .collect::<Result<Vec<_>, _>>()?;
+        Ok(FlagSnapshot::from_values(values))
+    }
+}
 
 #[cfg(test)]
 mod tests {
