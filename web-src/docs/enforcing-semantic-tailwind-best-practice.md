@@ -175,7 +175,10 @@ pnpm add -D @biomejs/biome
 > not natively load GritQL, use a small Node wrapper that executes Grit rules
 > and prints Biome‑style diagnostics. Maintain the same paths and thresholds.
 
-**`tools/semantic-lint.config.json`** (thresholds & policy)
+**Proposed `tools/semantic-lint.config.json` schema**
+
+This is an unimplemented design example. The current checkers do not read this
+file; their limits and behaviour are defined in their TypeScript sources.
 
 ```json
 {
@@ -286,36 +289,25 @@ restricts repositories to one pattern per file.
 - `scripts/check-classlist-length.ts`
 - `scripts/find-near-duplicate-classes.ts`
 
-Lightweight TypeScript checkers (run as part of `bun run semantic`) flag class
-strings that exceed the configured threshold **and** warn about near-duplicate
-utility sets. The scripts read thresholds from
-`tools/semantic-lint.config.json`, normalize whitespace, and report literals
-that violate the agreed limits.
+Both TypeScript checks share `scripts/scan-class-attributes.ts`. The scanner
+reads static `class="..."` attributes in `axinite/src/**/*.tsx`.
 
-> Adjust `maxClasslistLength` **and** the `nearDuplicateClasses` block and
-> re-run `bun run semantic` to enforce different ceilings.
+- `check-classlist-length.ts` fails when an attribute contains more than 12
+  whitespace-separated class tokens.
+- `find-near-duplicate-classes.ts` fails when a single attribute repeats the
+  same token. It does not compare separate attributes or measure similarity.
 
-### E) Near duplicate detection
+The 12-token limit is a constant in the length checker. Neither checker reads
+`tools/semantic-lint.config.json`; changing the limit requires changing the
+source. `bun run semantic` runs both checks along with the other semantic lint
+steps.
 
-The near-duplicate checker tokenizes each literal, deduplicates utilities, and
-compares token sets using Jaccard similarity. Any pair (or group) whose
-similarity exceeds the configured threshold produces a single diagnostic
-summarizing the overlap and paths. Suggested defaults are bundled in
-`tools/semantic-lint.config.json`:
+### E) Duplicate tokens within one class attribute
 
-```jsonc
-"nearDuplicateClasses": {
-  "minTokenCount": 4,
-  "maxJaccardDistance": 0.25,
-  "minOccurrences": 2,
-  "tokenIndexSample": 5,
-  "suppressPrefixes": ["prose-", "wysiwyg-"]
-}
-```
-
-Adjust these knobs to tune the signal. When the checker fires, extract a
-semantic `@apply` class (for example inside `semantic.css`) and reuse it
-instead of cloning similar utility lists.
+The duplicate-token checker catches repeated tokens such as `class="flex flex"`
+in one static attribute. It does not identify similar class lists across
+different elements. Extracting a shared semantic class remains a useful manual
+refactoring when repeated patterns are found.
 
 ______________________________________________________________________
 
@@ -545,55 +537,41 @@ ______________________________________________________________________
 
 ______________________________________________________________________
 
-## 8) Companion semantic checker signals
+## 8) Proposed companion semantic checks
 
-The `scripts/find-near-duplicate-classes.ts` analyser now emits several
-actionable diagnostics beyond near-duplicate detection:
+The ideas in this section are future work. The current TypeScript checkers only
+apply the fixed length limit and detect duplicate tokens within one static
+class attribute. They do not implement these analyses:
 
-- **Near-duplicate class strings:** still groups similar utility stacks via
-  token Jaccard similarity. Use it to extract shared semantic classes.
-- **Loop / sibling repetition:** flags identical class strings produced inside a
-  `.map()` or rendered as repeated siblings. Suggestion: extract a named slot
-  (for example `.card-grid__item`) or move layout utilities to the container.
-- **Concept dictionary hints:** matches well-known Tailwind/DaisyUI patterns
-  (button-like, chip, card surface, toolbar, tabs trigger, nav link) and
-  proposes semantic class names with `@apply`.
-- **Utility-vs-semantics score:** highlights heavy utility stacks on elements
-  lacking semantic signals (role, aria, state attributes, semantic tags). Use
-  it to name the element, add landmarks, or move styling into `semantic.css`.
-
-Each diagnostic surfaces the paths, representative utilities, and a concrete
-next action. All heuristics are configurable via
-`tools/semantic-lint.config.json`.
+- **Cross-attribute similarity:** compare separate class attributes, potentially
+  using token-set similarity such as Jaccard distance.
+- **Loop and sibling repetition:** find repeated classes in `.map()` output or
+  sibling elements and suggest a shared class.
+- **Concept hints:** recognize button, chip, card, toolbar, tab, or navigation
+  patterns and suggest semantic class names.
+- **Utility-to-semantics scoring:** identify long utility lists without semantic
+  signals such as roles, state attributes, or semantic elements.
+- **Configurable thresholds and allowlists:** read policies from a checked-in
+  configuration file and report actionable diagnostics.
 
 ______________________________________________________________________
 
-## 9) Tuning thresholds and suppressing diagnostics
+## 9) Proposed configuration and tuning ideas
 
-- **Near duplicates:** tweak `nearDuplicateClasses` thresholds. To exempt whole
-  families (for example prose content), add prefixes to `suppressPrefixes`.
-  Setting `failOnViolation` to `true` escalates the check to a hard failure.
-- **Loop/sibling warnings:** raise `loopMinOccurrences` or
-  `siblingMinOccurrences` if a component intentionally repeats short utility
-  bursts (for example icon strips).
-- **Concept hints:** add a concept `id` to `conceptHints.disabled` to silence
-  that pattern across the project.
-- **Utility scoring:** adjust `minUtilityTokens`, `scoreThreshold`, or
-  `semanticWeight` to match the team’s tolerance for inline utilities.
-- **Project-specific allowlists:** keep semantic class prefixes in
-  `allowProjectPrefixes`. When adding a new family, extend this array (this
-  unblocks class-length and repetition rules).
-
-Prefer addressing the underlying markup first, then reach for configuration.
-Inline suppression comments are intentionally not supported yet to encourage
-semantic fixes over ad hoc opt-outs.
+No configuration file is currently consumed by these checkers. The class-list
+limit is fixed at 12 tokens, and duplicate-token detection has no tuning
+options. If the proposed cross-attribute, loop, sibling, concept, or scoring
+checks are implemented, a configuration file could define their thresholds,
+allowlists, and narrowly scoped suppressions. Until then, those settings are
+examples of future work, not operator controls.
 
 ______________________________________________________________________
 
 ## 10) How to refactor into `@apply` (+ cascades)
 
-1. **Spot repetition:** linter warns that a class chunk is repeated (e.g.,
-   `inline-flex items-center gap-2 text-sm font-medium text-base-content`).
+1. **Spot repetition:** during review, identify a class chunk that appears in
+   multiple attributes. The current checker does not detect cross-attribute
+   repetition.
 2. **Name the concept:** choose a **semantic** name that reflects purpose, not
    appearance: e.g., `.nav__link`.
 3. **Define once:** in `src/styles/semantic.css`:

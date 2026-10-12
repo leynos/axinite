@@ -147,7 +147,14 @@ SolidJS UI.
 - [x] (2026-10-12) Extract the stub TCP-port validity predicate in a separate
   code-health follow-up. Integer and range validation, fallback values, and
   malformed-input errors retain their existing semantics; no suppression is
-  introduced. Its local validation and publication are pending.
+  introduced. CodeScene reports 10.0 with no findings, and the prior
+  conditional warning is absent from the delta. Required code, frontend, and
+  documentation gates passed before publication as `0a3e591c`.
+- [x] (2026-10-12) Correct the semantic-linting guide after focused review:
+  describe the fixed 12-token limit and duplicate tokens within one static
+  attribute. Mark configuration, Jaccard comparisons, repetition analysis,
+  concept hints, and scoring as unimplemented proposals. Source inspection
+  confirms these boundaries; no checker or runtime behaviour changes.
 - [ ] (2026-10-12) Reconcile current-head hosted checks, ExecPlan assessment,
   review findings, and approval before merge.
 
