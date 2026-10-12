@@ -169,6 +169,10 @@ SolidJS UI.
   preserves the contracts within the 400-line limit. The frontend rebuild adds
   one 36-byte `lowercase` utility; no existing CSS rule changes. The generated
   stylesheet is refreshed and included in the passing code-gate candidate.
+- [x] (2026-10-12) Clarify the mock installation contract after focused review:
+  a new extension remains inactive with setup required and its token field
+  unprovided. Existing extension instances are preserved. No runtime change is
+  needed for this wording correction.
 - [ ] (2026-10-12) Reconcile current-head hosted checks, ExecPlan assessment,
   review findings, and approval before merge.
 
