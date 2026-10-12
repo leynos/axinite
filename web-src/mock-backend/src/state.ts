@@ -1110,8 +1110,9 @@ export class MockBackendState {
   }
 
   /**
-   * Marks a registry entry installed and creates a configured but inactive
-   * extension when needed. Throws when the registry entry is missing.
+   * Marks the registry entry installed. If no extension exists yet, adds an
+   * inactive extension with setup required and its token field unprovided.
+   * Throws when the registry entry is missing.
    */
   installExtension(name: string): ActionResponse {
     const registryEntry = this.registryEntries.get(name);
