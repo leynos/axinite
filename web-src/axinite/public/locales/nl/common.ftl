@@ -511,3 +511,6 @@ jobs-file-tree-label = Taakbestanden
 jobs-prompt-done-label = Markeren als voltooid
 
 routines-action-error = De routineactie is mislukt. Probeer het opnieuw.
+
+restart-failed = Het herstartverzoek is mislukt. Probeer het opnieuw.
+restart-retry = Herstart opnieuw proberen

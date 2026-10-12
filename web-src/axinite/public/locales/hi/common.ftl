@@ -511,3 +511,6 @@ jobs-file-tree-label = कार्य फ़ाइलें
 jobs-prompt-done-label = पूर्ण के रूप में चिह्नित करें
 
 routines-action-error = रूटीन की कार्रवाई विफल हुई। फिर से प्रयास करें।
+
+restart-failed = पुनः शुरू करने का अनुरोध विफल हुआ। फिर से प्रयास करें।
+restart-retry = पुनः शुरू करने का प्रयास करें

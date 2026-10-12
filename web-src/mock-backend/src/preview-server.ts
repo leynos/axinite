@@ -1,41 +1,39 @@
 /**
- * @file Static preview server for the built SPA. It serves `dist/` with SPA
- * fallback to `index.html` and proxies `/api/*` to the mock API server,
- * disabling the idle timeout on SSE paths. `scripts/dev.ts` starts it.
+ * @file Static preview transport for the built SPA. Handler dependencies are
+ * injectable; only direct execution starts Bun and reads runtime configuration.
  */
-
 import { existsSync, statSync } from "node:fs";
 import path from "node:path";
-
 import { parsePort } from "./ports";
 import { isStreamingApiPath } from "./streaming-routes";
 
-const previewPort = parsePort("PREVIEW_PORT", process.env["PREVIEW_PORT"], 2020);
-const apiPort = parsePort("MOCK_API_PORT", process.env["MOCK_API_PORT"], 8787);
-const distDir = path.join(process.cwd(), "dist");
+/** Filesystem and upstream HTTP operations needed by the preview transport. */
+export type PreviewDependencies = {
+  isFile: (filePath: string) => boolean;
+  readFile: (filePath: string) => BodyInit;
+  fetchUpstream: (url: URL, init: RequestInit) => Promise<Response>;
+};
 
+/** Request deadline capability supplied by Bun, or a test adapter. */
+export type PreviewDeadline = {
+  timeout: (request: Request, seconds: number) => void;
+};
+
+/** Reports missing paths as false and permits only regular files. */
 function fileExists(filePath: string): boolean {
-  if (!existsSync(filePath)) {
-    return false;
-  }
-
-  return statSync(filePath).isFile();
+  return existsSync(filePath) && statSync(filePath).isFile();
 }
 
-// Ordered list of on-disk paths a request may resolve to. Extension-less routes
-// additionally try a sibling `.html` file, the directory index, and finally the
-// single-page-app shell (for example /chat), matching the gateway's serving
-// behaviour. Building the full list here keeps `resolveStaticPath` free of
-// nested control flow.
-function candidatePaths(pathname: string): string[] {
+// Preserve gateway-style precedence: exact file, directory index, optional
+// extension-less sibling HTML, then SPA shell. Assets with extensions never
+// fall back to HTML, so a missing script fails visibly instead of parsing HTML.
+function candidatePaths(distDir: string, pathname: string): string[] {
   const cleanPath = pathname === "/" ? "/index.html" : pathname;
   const relative = cleanPath.replace(/^\/+/, "");
-  const hasExtension = Boolean(path.extname(cleanPath));
-
   return [
     path.join(distDir, relative),
     path.join(distDir, relative, "index.html"),
-    ...(hasExtension
+    ...(path.extname(cleanPath)
       ? []
       : [
           path.join(distDir, `${relative}.html`),
@@ -44,14 +42,17 @@ function candidatePaths(pathname: string): string[] {
   ];
 }
 
-function resolveStaticPath(pathname: string): string | null {
-  return candidatePaths(pathname).find(fileExists) ?? null;
-}
-
-async function proxyRequest(request: Request): Promise<Response> {
+async function proxyRequest(
+  request: Request,
+  apiPort: number,
+  deps: PreviewDependencies
+): Promise<Response> {
   const url = new URL(request.url);
-  const upstream = new URL(url.pathname + url.search, `http://127.0.0.1:${apiPort}`);
-  const response = await fetch(upstream, {
+  const upstream = new URL(
+    url.pathname + url.search,
+    `http://127.0.0.1:${apiPort}`
+  );
+  const response = await deps.fetchUpstream(upstream, {
     method: request.method,
     headers: request.headers,
     body:
@@ -59,7 +60,6 @@ async function proxyRequest(request: Request): Promise<Response> {
         ? null
         : request.body,
   });
-
   return new Response(response.body, {
     headers: response.headers,
     status: response.status,
@@ -67,29 +67,50 @@ async function proxyRequest(request: Request): Promise<Response> {
   });
 }
 
-function serveStatic(pathname: string): Response {
-  const resolvedPath = resolveStaticPath(pathname);
-  if (!resolvedPath) {
-    return new Response("Not found", { status: 404 });
-  }
-  return new Response(Bun.file(resolvedPath));
+/**
+ * Creates an import-safe preview handler. Static routes use ordered SPA
+ * fallbacks; API routes preserve query, method, headers, body and upstream
+ * response metadata. Only SSE routes disable the supplied request deadline.
+ */
+export function createPreviewHandler(
+  options: { distDir: string; apiPort: number },
+  deps: PreviewDependencies
+): (request: Request, server: PreviewDeadline) => Promise<Response> {
+  return async (request, server) => {
+    const pathname = new URL(request.url).pathname;
+    if (isStreamingApiPath(pathname)) server.timeout(request, 0);
+    if (pathname.startsWith("/api/"))
+      return proxyRequest(request, options.apiPort, deps);
+    const resolved = candidatePaths(options.distDir, pathname).find(
+      deps.isFile
+    );
+    return resolved
+      ? new Response(deps.readFile(resolved))
+      : new Response("Not found", { status: 404 });
+  };
 }
 
-const server = Bun.serve({
-  port: previewPort,
-  async fetch(request, server) {
-    const url = new URL(request.url);
-    if (isStreamingApiPath(url.pathname)) {
-      server.timeout(request, 0);
+if (import.meta.main) {
+  const previewPort = parsePort(
+    "PREVIEW_PORT",
+    process.env["PREVIEW_PORT"],
+    2020
+  );
+  const apiPort = parsePort(
+    "MOCK_API_PORT",
+    process.env["MOCK_API_PORT"],
+    8787
+  );
+  const handler = createPreviewHandler(
+    { distDir: path.join(process.cwd(), "dist"), apiPort },
+    {
+      isFile: fileExists,
+      readFile: (filePath) => Bun.file(filePath),
+      fetchUpstream: (url, init) => fetch(url, init),
     }
-    if (url.pathname.startsWith("/api/")) {
-      return proxyRequest(request);
-    }
-
-    return serveStatic(url.pathname);
-  },
-});
-
-console.log(
-  `[preview] serving dist on http://localhost:${server.port ?? previewPort} with API proxy http://localhost:${apiPort}`
-);
+  );
+  const server = Bun.serve({ port: previewPort, fetch: handler });
+  console.log(
+    `[preview] serving dist on http://localhost:${server.port ?? previewPort} with API proxy http://localhost:${apiPort}`
+  );
+}

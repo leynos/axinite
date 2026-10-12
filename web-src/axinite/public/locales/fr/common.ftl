@@ -520,3 +520,6 @@ jobs-file-tree-label = Fichiers de la tâche
 jobs-prompt-done-label = Marquer comme terminé
 
 routines-action-error = L’action de la routine a échoué. Réessayez.
+
+restart-failed = La demande de redémarrage a échoué. Réessayez.
+restart-retry = Réessayer le redémarrage

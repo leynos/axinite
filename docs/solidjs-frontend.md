@@ -73,7 +73,11 @@ The mock backend is a contract harness, not a second daemon: it holds
 deterministic in-memory fixtures, ignores authentication, and persists nothing.
 Its fixture clock is fixed at `2026-03-26T11:30:00Z` by default, so timestamps
 and gateway uptime are reproducible between runs. Tests can inject another
-clock when they need to advance time.
+clock when they need to advance time. The default server composition parses
+`FEATURE_FLAG_*` values once and injects recognized overrides into mock state;
+direct state tests inject the same override map. Feature-flag and chat-history
+reads return detached data. Reading history does not select a thread; explicit
+create and send operations do.
 
 ### 3.1 Stubbed HTTP routes
 
@@ -160,6 +164,19 @@ server stops.
 
 The default remains disabled, so an ordinary `make frontend-stub` does not
 simulate an outage.
+
+To exercise a failed restart command, make its chat-send request return HTTP
+500:
+
+```sh
+MOCK_RESTART_FIXTURE=1 MOCK_FAILURES=/api/chat/send make frontend-stub
+```
+
+Confirm the restart in the UI to see the retryable alert and Retry button. The
+browser console reports only `restart_failed` and the bounded category; it does
+not include the response body or URL. Each retry starts a fresh attempt. Late
+callbacks from an earlier attempt cannot change the current phase after
+failure, retry, completion, or disposal.
 
 ### 3.5 Feature flags in the stub
 

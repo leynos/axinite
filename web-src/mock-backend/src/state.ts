@@ -10,7 +10,6 @@ import type {
   ApprovalRequest,
   AuthCancelRequest,
   AuthTokenRequest,
-  CatalogueSkillEntry,
   ChatSseEvent,
   ExtensionInfo,
   ExtensionSetupResponse,
@@ -18,9 +17,7 @@ import type {
   GatewayStatusResponse,
   HistoryResponse,
   JobDetailResponse,
-  JobEventInfo,
   JobEventsResponse,
-  JobInfo,
   JobListResponse,
   JobPromptRequest,
   JobSummaryResponse,
@@ -34,22 +31,16 @@ import type {
   MemoryWriteRequest,
   MemoryWriteResponse,
   PairingListResponse,
-  PairingRequestInfo,
-  PendingApprovalInfo,
   ProjectFileReadResponse,
   ProjectFilesResponse,
-  RegistryEntryInfo,
   RegistrySearchResponse,
   RoutineDetailResponse,
-  RoutineInfo,
   RoutineListResponse,
   RoutineRunsResponse,
   RoutineSummaryResponse,
   SearchHit,
-  SecretFieldInfo,
   SendMessageRequest,
   SendMessageResponse,
-  SkillInfo,
   SkillInstallRequest,
   SkillListResponse,
   SkillSearchRequest,
@@ -59,12 +50,9 @@ import type {
   ToggleRequest,
   ToolInfo,
   ToolListResponse,
-  TransitionInfo,
   TurnInfo,
 } from "../../axinite/src/lib/api/contracts";
 import type { MemoryDocument } from "./fixtures";
-import { RestartFixture } from "./restart-fixture";
-
 import {
   createSeedCatalogueSkills,
   createSeedExtensions,
@@ -77,17 +65,18 @@ import {
   createSeedSkills,
   createSeedThreads,
 } from "./fixtures";
+import { RestartFixture } from "./restart-fixture";
 import {
   applyApprovalToLatestTurn,
   approvalActionLabel,
   buildApprovalOutcome,
+  type Clock,
   createActionResponse,
   emitChatTurnSequence,
+  extensionAuthentication,
+  fixedPreviewClock,
   matchCatalogueSkill,
   nowIso,
-  type Clock,
-  fixedPreviewClock,
-  extensionAuthentication,
   resolveSkillSource,
   statusFromRoutine,
 } from "./state-helpers";
@@ -123,9 +112,7 @@ function isNonBlankString(value: string | undefined): boolean {
 /** Only a successful restart tool completion schedules simulated downtime. */
 function isSuccessfulRestartToolCompletion(event: ChatSseEvent): boolean {
   return (
-    event.type === "tool_completed" &&
-    event.name === "restart" &&
-    event.success
+    event.type === "tool_completed" && event.name === "restart" && event.success
   );
 }
 
@@ -134,12 +121,21 @@ export class MockBackendState {
 
   private readonly restartFixture: RestartFixture;
 
-  /** Creates isolated fixtures; restart simulation must be explicitly enabled. */
+  /** Creates isolated fixtures and copies injected flags; restart is opt-in. */
   constructor(
     private readonly clock: Clock = fixedPreviewClock,
-    options: { restartFixture?: boolean } = {}
+    options: {
+      restartFixture?: boolean;
+      featureFlagOverrides?: Readonly<Record<string, boolean>>;
+    } = {}
   ) {
     this.bootTime = clock();
+    for (const name of Object.keys(this.featureFlags)) {
+      const value = options.featureFlagOverrides?.[name];
+      if (typeof value === "boolean") {
+        this.featureFlags[name] = value;
+      }
+    }
     this.restartFixture = new RestartFixture(
       options.restartFixture ?? false,
       () => this.closeStreams()
@@ -265,19 +261,11 @@ export class MockBackendState {
   }
 
   /**
-   * Returns a copy of compiled defaults with
-   * FEATURE_FLAG_<UPPER_SNAKE_NAME> overrides. Case-insensitive true
-   * enables a flag; any other set value disables it.
+   * Returns detached compiled defaults plus the constructor's injected
+   * overrides. Queries do not read process configuration or publish state.
    */
   getFeatureFlags(): FeatureFlagsResponse {
-    const resolved: FeatureFlagsResponse = { ...this.featureFlags };
-    for (const name of Object.keys(resolved)) {
-      const raw = process.env[`FEATURE_FLAG_${name.toUpperCase()}`];
-      if (typeof raw === "string") {
-        resolved[name] = raw.toLowerCase() === "true";
-      }
-    }
-    return resolved;
+    return { ...this.featureFlags };
   }
 
   /**
@@ -350,11 +338,11 @@ export class MockBackendState {
       )
       .map((thread) => thread.info);
 
-    return {
+    return structuredClone({
       assistant_thread,
       threads,
       active_thread: this.activeThreadId,
-    };
+    });
   }
 
   /**
@@ -379,11 +367,11 @@ export class MockBackendState {
     });
     this.activeThreadId = id;
     this.pushLog(`Created thread ${id}.`, "chat");
-    return threadInfo;
+    return structuredClone(threadInfo);
   }
 
   /**
-   * Selects the requested or active thread and returns its turns, optional
+   * Reads the requested or active thread without selecting it and returns detached turns, optional
    * oldest timestamp and pending approval. Throws when the thread is
    * unknown.
    */
@@ -394,8 +382,7 @@ export class MockBackendState {
     if (!thread) {
       throw new Error("Thread not found");
     }
-    this.activeThreadId = thread.info.id;
-    return {
+    return structuredClone({
       thread_id: thread.info.id,
       turns: thread.turns,
       has_more: false,
@@ -405,7 +392,7 @@ export class MockBackendState {
       ...(thread.pendingApproval !== undefined && {
         pending_approval: thread.pendingApproval,
       }),
-    };
+    });
   }
 
   /**
@@ -479,7 +466,8 @@ export class MockBackendState {
    */
   submitApproval(request: ApprovalRequest): ActionResponse {
     const thread = [...this.threads.values()].find(
-      (candidate) => candidate.pendingApproval?.request_id === request.request_id
+      (candidate) =>
+        candidate.pendingApproval?.request_id === request.request_id
     );
     if (!thread?.pendingApproval) {
       throw new Error("Pending approval not found");
@@ -544,10 +532,9 @@ export class MockBackendState {
       "extensions",
       "warn"
     );
-    return createActionResponse(
-      "Invalid or missing authentication token.",
-      { success: false }
-    );
+    return createActionResponse("Invalid or missing authentication token.", {
+      success: false,
+    });
   }
 
   /**
@@ -568,10 +555,10 @@ export class MockBackendState {
    * empty list rather than a 404.
    */
   pairingList(channel: string): PairingListResponse {
-    return {
+    return structuredClone({
       channel,
       requests: this.pairingRequests.get(channel) ?? [],
-    };
+    });
   }
 
   /**
@@ -627,9 +614,7 @@ export class MockBackendState {
         return results;
       })
       .filter((entry) =>
-        typeof depth === "number"
-          ? entry.path.split("/").length <= depth
-          : true
+        typeof depth === "number" ? entry.path.split("/").length <= depth : true
       )
       .sort((left, right) => left.path.localeCompare(right.path));
 
@@ -658,7 +643,8 @@ export class MockBackendState {
     }
 
     const [segment = "", ...rest] = remainder.split("/");
-    const entryPath = parentPath.length > 0 ? `${parentPath}/${segment}` : segment;
+    const entryPath =
+      parentPath.length > 0 ? `${parentPath}/${segment}` : segment;
     const isDirectory = rest.length > 0;
 
     if (isDirectory) {
@@ -804,7 +790,7 @@ export class MockBackendState {
     if (!job) {
       throw new Error("Job not found");
     }
-    return job.detail;
+    return structuredClone(job.detail);
   }
 
   /**
@@ -815,9 +801,9 @@ export class MockBackendState {
     if (!job) {
       throw new Error("Job not found");
     }
-    return {
+    return structuredClone({
       events: job.events,
-    };
+    });
   }
 
   /**
@@ -990,7 +976,9 @@ export class MockBackendState {
    * whose latest run starts on the injected current date.
    */
   summarizeRoutines(): RoutineSummaryResponse {
-    const routines = [...this.routines.values()].map((routine) => routine.detail);
+    const routines = [...this.routines.values()].map(
+      (routine) => routine.detail
+    );
     const total = routines.length;
     const enabled = routines.filter((routine) => routine.enabled).length;
     const disabled = total - enabled;
@@ -1018,7 +1006,7 @@ export class MockBackendState {
     if (!routine) {
       throw new Error("Routine not found");
     }
-    return routine.detail;
+    return structuredClone(routine.detail);
   }
 
   /**
@@ -1029,9 +1017,9 @@ export class MockBackendState {
     if (!routine) {
       throw new Error("Routine not found");
     }
-    return {
+    return structuredClone({
       runs: routine.detail.recent_runs,
-    };
+    });
   }
 
   /**
@@ -1084,7 +1072,9 @@ export class MockBackendState {
       "routines",
       enabled ? "info" : "warn"
     );
-    return createActionResponse(enabled ? "Routine enabled." : "Routine disabled.");
+    return createActionResponse(
+      enabled ? "Routine enabled." : "Routine disabled."
+    );
   }
 
   /**
@@ -1104,9 +1094,11 @@ export class MockBackendState {
    * Returns the current extension metadata values.
    */
   listExtensions(): { extensions: ExtensionInfo[] } {
-    return {
-      extensions: [...this.extensions.values()].map((extension) => extension.info),
-    };
+    return structuredClone({
+      extensions: [...this.extensions.values()].map(
+        (extension) => extension.info
+      ),
+    });
   }
 
   /**
@@ -1140,7 +1132,7 @@ export class MockBackendState {
    */
   searchExtensionRegistry(query?: string | null): RegistrySearchResponse {
     const needle = query?.trim().toLowerCase() ?? "";
-    return {
+    return structuredClone({
       entries: [...this.registryEntries.values()].filter((entry) => {
         if (needle.length === 0) {
           return true;
@@ -1149,10 +1141,12 @@ export class MockBackendState {
           entry.name.toLowerCase().includes(needle) ||
           entry.display_name.toLowerCase().includes(needle) ||
           entry.description.toLowerCase().includes(needle) ||
-          entry.keywords.some((keyword) => keyword.toLowerCase().includes(needle))
+          entry.keywords.some((keyword) =>
+            keyword.toLowerCase().includes(needle)
+          )
         );
       }),
-    };
+    });
   }
 
   /**
@@ -1228,7 +1222,8 @@ export class MockBackendState {
   }
 
   private requestExtensionAuthentication(name: string): ActionResponse {
-    const { instructions, setup_url, ...authUrlField } = extensionAuthentication(name);
+    const { instructions, setup_url, ...authUrlField } =
+      extensionAuthentication(name);
     this.publishChatEvent({
       type: "auth_required",
       extension_name: name,
@@ -1275,11 +1270,11 @@ export class MockBackendState {
     if (!extension) {
       throw new Error("Extension not found");
     }
-    return {
+    return structuredClone({
       name: extension.info.name,
       kind: extension.info.kind,
       secrets: extension.setupSecrets,
-    };
+    });
   }
 
   /**
@@ -1296,13 +1291,13 @@ export class MockBackendState {
     }
     extension.setupSecrets = extension.setupSecrets.map((field) => ({
       ...field,
-      provided:
-        field.provided ||
-        isNonBlankString(secrets[field.name]),
+      provided: field.provided || isNonBlankString(secrets[field.name]),
     }));
     extension.info = {
       ...extension.info,
-      authenticated: extension.info.has_auth ? true : extension.info.authenticated,
+      authenticated: extension.info.has_auth
+        ? true
+        : extension.info.authenticated,
       active: true,
       activation_status: "active",
     };
@@ -1321,10 +1316,10 @@ export class MockBackendState {
    */
   listSkills(): SkillListResponse {
     const skills = [...this.skills.values()];
-    return {
+    return structuredClone({
       skills,
       count: skills.length,
-    };
+    });
   }
 
   /**
@@ -1354,11 +1349,11 @@ export class MockBackendState {
         entry.keywords.some((keyword) => keyword.toLowerCase().includes(query))
       );
     });
-    return {
+    return structuredClone({
       catalog: catalogue,
       installed,
       registry_url: "https://clawhub.example.invalid",
-    };
+    });
   }
 
   /**

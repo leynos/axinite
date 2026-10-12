@@ -7,12 +7,16 @@
 import { AlertDialog } from "@kobalte/core/alert-dialog";
 import type { Component } from "solid-js";
 import { createSignal, onCleanup, Show } from "solid-js";
-
 import { connectChatEvents, sendMessage } from "@/lib/api/chat";
+import {
+  RequestError,
+  setStreamConnectionErrorHandler,
+} from "@/lib/api/client";
 import { fetchGatewayStatusRaw } from "@/lib/api/gateway";
 import { useI18n } from "@/lib/i18n/provider";
 import {
   createRestartController,
+  RestartCommandError,
   type RestartController,
   type RestartDeps,
   type RestartPhase,
@@ -28,9 +32,19 @@ type RestartControlProps = {
 
 function defaultDeps(onPhase: (phase: RestartPhase) => void): RestartDeps {
   return {
-    sendRestart: () => sendMessage({ content: "/restart", images: [] }),
+    sendRestart: async () => {
+      try {
+        return await sendMessage({ content: "/restart", images: [] });
+      } catch (error) {
+        throw new RestartCommandError(
+          error instanceof RequestError ? error.category : "transport"
+        );
+      }
+    },
     openStream: (handlers) => {
-      const source = connectChatEvents(handlers.onEvent, handlers.onError);
+      // A malformed frame is not evidence that the gateway went down.
+      const source = connectChatEvents(handlers.onEvent);
+      setStreamConnectionErrorHandler(source, handlers.onError);
       source.onopen = () => handlers.onOpen();
       return { close: () => source.close() };
     },
@@ -58,7 +72,17 @@ export const RestartControl: Component<RestartControlProps> = (props) => {
     setDialogOpen(false);
     controller?.dispose();
     const build = props.makeDeps ?? defaultDeps;
-    controller = createRestartController(build(setPhase));
+    const deps = build(setPhase);
+    controller = createRestartController({
+      ...deps,
+      onFailure: (category) => {
+        console.error("[gateway-restart]", {
+          event: "restart_failed",
+          category,
+        });
+        deps.onFailure?.(category);
+      },
+    });
     controller.start();
   };
 
@@ -81,7 +105,7 @@ export const RestartControl: Component<RestartControlProps> = (props) => {
                 : "shell-restart__icon"
             }
           />
-          {t("restart-action")}
+          {t(phase() === "failed" ? "restart-retry" : "restart-action")}
         </button>
         <Show when={phase() === "restarting"}>
           <span class="shell-restart__status" role="status">
@@ -94,6 +118,12 @@ export const RestartControl: Component<RestartControlProps> = (props) => {
             role="status"
           >
             {t("restart-complete")}
+          </span>
+        </Show>
+
+        <Show when={phase() === "failed"}>
+          <span class="shell-restart__status" role="alert">
+            {t("restart-failed")}
           </span>
         </Show>
 

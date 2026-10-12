@@ -150,12 +150,12 @@ describe("createRestartController", () => {
     expect(h.phases).toEqual(["restarting"]);
   });
 
-  it("returns to idle when the restart command fails to send", async () => {
+  it("reports a retryable failure when the restart command fails to send", async () => {
     const h = makeHarness({ failSend: true });
     h.controller.start();
     await flush();
 
-    expect(h.phases).toEqual(["restarting", "idle"]);
+    expect(h.phases).toEqual(["restarting", "failed"]);
     expect(h.closed).toBe(true);
   });
 
@@ -166,6 +166,6 @@ describe("createRestartController", () => {
     h.controller.start();
     await flush();
 
-    expect(h.phases).toEqual(["restarting", "idle", "restarting", "idle"]);
+    expect(h.phases).toEqual(["restarting", "failed", "restarting", "failed"]);
   });
 });

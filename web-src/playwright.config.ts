@@ -12,7 +12,9 @@ process.env["PLAYWRIGHT_BROWSERS_PATH"] ??= "0";
 // The coordinator chooses its owned server pair once. Workers inherit these
 // values when Playwright reloads this config, rather than choosing ports from
 // their own PIDs. Busy ports fail startup without reusing another server.
-const candidateApiPort = 42_000 + (process.pid % 5_000) * 2;
+// Keep defaults below the host's ephemeral range: outgoing connections can
+// occupy high ports even when no listening server appears in a port check.
+const candidateApiPort = 20_000 + (process.pid % 5_000) * 2;
 const apiPort = parsePort(
   "MOCK_API_PORT",
   process.env["MOCK_API_PORT"],

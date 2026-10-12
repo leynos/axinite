@@ -253,6 +253,10 @@ panel is hidden separately by `panel_logs`.
   sends `/restart` to the agent and waits for the gateway to go down and come
   back. It is not feature-flagged; it appears only when the gateway reports
   restart support, which requires `AXINITE_IN_DOCKER=true` in its environment.
+  If the command fails, the UI shows a retryable alert and changes the button
+  to Retry restart. The browser console records only `restart_failed` and its
+  bounded category (`timeout`, `transport`, or `http`); it does not log
+  response bodies or URLs.
 - TEE attestation: a header indicator whose popover fetches the full
   attestation report and copies it to the clipboard. It requires the
   `surface_tee_attestation` flag and a non-local hostname (the report is served

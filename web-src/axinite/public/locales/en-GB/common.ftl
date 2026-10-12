@@ -520,3 +520,6 @@ jobs-file-tree-label = Job files
 jobs-prompt-done-label = Mark as done
 
 routines-action-error = The routine action failed. Try again.
+
+restart-failed = The restart request failed. Try again.
+restart-retry = Retry restart

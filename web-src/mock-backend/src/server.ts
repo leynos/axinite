@@ -22,9 +22,10 @@ import type {
   SkillSearchRequest,
   ToggleRequest,
 } from "../../axinite/src/lib/api/contracts";
+import { parseMockFeatureFlagEnvironment } from "./flag-environment";
 import { parsePort } from "./ports";
-import { isStreamingApiPath } from "./streaming-routes";
 import { MockBackendState, PairingRateLimitedError } from "./state";
+import { isStreamingApiPath } from "./streaming-routes";
 
 export const DEFAULT_API_PORT = parsePort(
   "MOCK_API_PORT",
@@ -263,7 +264,9 @@ const routes: readonly Route[] = [
     handler: async ({ state, request, match }) => {
       const body = await parseJson<PairingApproveRequest>(request);
       try {
-        return jsonResponse(state.pairingApprove(firstCapture(match), body.code));
+        return jsonResponse(
+          state.pairingApprove(firstCapture(match), body.code)
+        );
       } catch (error) {
         if (error instanceof PairingRateLimitedError) {
           return new Response(error.message, {
@@ -278,7 +281,8 @@ const routes: readonly Route[] = [
   {
     method: "GET",
     pattern: /^\/api\/pairing\/([^/]+)$/,
-    handler: ({ state, match }) => jsonResponse(state.pairingList(firstCapture(match))),
+    handler: ({ state, match }) =>
+      jsonResponse(state.pairingList(firstCapture(match))),
   },
   {
     method: "GET",
@@ -338,17 +342,20 @@ const routes: readonly Route[] = [
   {
     method: "GET",
     pattern: /^\/api\/jobs\/([^/]+)$/,
-    handler: ({ state, match }) => jsonResponse(state.getJob(firstCapture(match))),
+    handler: ({ state, match }) =>
+      jsonResponse(state.getJob(firstCapture(match))),
   },
   {
     method: "GET",
     pattern: /^\/api\/jobs\/([^/]+)\/events$/,
-    handler: ({ state, match }) => jsonResponse(state.getJobEvents(firstCapture(match))),
+    handler: ({ state, match }) =>
+      jsonResponse(state.getJobEvents(firstCapture(match))),
   },
   {
     method: "GET",
     pattern: /^\/api\/jobs\/([^/]+)\/files\/list$/,
-    handler: ({ state, match }) => jsonResponse(state.listJobFiles(firstCapture(match))),
+    handler: ({ state, match }) =>
+      jsonResponse(state.listJobFiles(firstCapture(match))),
   },
   {
     method: "GET",
@@ -364,12 +371,14 @@ const routes: readonly Route[] = [
   {
     method: "POST",
     pattern: /^\/api\/jobs\/([^/]+)\/restart$/,
-    handler: ({ state, match }) => jsonResponse(state.restartJob(firstCapture(match))),
+    handler: ({ state, match }) =>
+      jsonResponse(state.restartJob(firstCapture(match))),
   },
   {
     method: "POST",
     pattern: /^\/api\/jobs\/([^/]+)\/cancel$/,
-    handler: ({ state, match }) => jsonResponse(state.cancelJob(firstCapture(match))),
+    handler: ({ state, match }) =>
+      jsonResponse(state.cancelJob(firstCapture(match))),
   },
   {
     method: "POST",
@@ -392,7 +401,8 @@ const routes: readonly Route[] = [
   {
     method: "GET",
     pattern: /^\/api\/routines\/([^/]+)$/,
-    handler: ({ state, match }) => jsonResponse(state.getRoutine(firstCapture(match))),
+    handler: ({ state, match }) =>
+      jsonResponse(state.getRoutine(firstCapture(match))),
   },
   {
     method: "GET",
@@ -423,7 +433,8 @@ const routes: readonly Route[] = [
   {
     method: "DELETE",
     pattern: /^\/api\/routines\/([^/]+)$/,
-    handler: ({ state, match }) => jsonResponse(state.deleteRoutine(firstCapture(match))),
+    handler: ({ state, match }) =>
+      jsonResponse(state.deleteRoutine(firstCapture(match))),
   },
   {
     method: "GET",
@@ -439,7 +450,9 @@ const routes: readonly Route[] = [
     method: "GET",
     pattern: "/api/extensions/registry",
     handler: ({ state, url }) =>
-      jsonResponse(state.searchExtensionRegistry(url.searchParams.get("query"))),
+      jsonResponse(
+        state.searchExtensionRegistry(url.searchParams.get("query"))
+      ),
   },
   {
     method: "POST",
@@ -477,7 +490,9 @@ const routes: readonly Route[] = [
     pattern: /^\/api\/extensions\/([^/]+)\/setup$/,
     handler: async ({ state, request, match }) => {
       const body = await parseJson<ExtensionSetupRequest>(request);
-      return jsonResponse(state.submitExtensionSetup(firstCapture(match), body.secrets));
+      return jsonResponse(
+        state.submitExtensionSetup(firstCapture(match), body.secrets)
+      );
     },
   },
   {
@@ -504,7 +519,8 @@ const routes: readonly Route[] = [
   {
     method: "DELETE",
     pattern: /^\/api\/skills\/([^/]+)$/,
-    handler: ({ state, match }) => jsonResponse(state.removeSkill(firstCapture(match))),
+    handler: ({ state, match }) =>
+      jsonResponse(state.removeSkill(firstCapture(match))),
   },
   {
     method: "GET",
@@ -598,6 +614,7 @@ export function createMockBackendServer(
   port = DEFAULT_API_PORT,
   state = new MockBackendState(undefined, {
     restartFixture: process.env["MOCK_RESTART_FIXTURE"] === "1",
+    featureFlagOverrides: parseMockFeatureFlagEnvironment(process.env),
   })
 ): {
   port: number;
