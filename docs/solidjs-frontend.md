@@ -104,7 +104,7 @@ The mock implements the routes the SPA consumes, with gateway-shaped payloads
   `GET/POST /api/extensions/{name}/setup`
 - Skills: `GET /api/skills`, `POST /api/skills/search`,
   `POST /api/skills/install`, `DELETE /api/skills/{name}`
-- Logs: `GET /api/logs/level`, `POST /api/logs/level`
+- Logs: `GET /api/logs/level`, `PUT /api/logs/level`
 
 Unknown routes return 404 with a JSON error body.
 
@@ -195,21 +195,26 @@ file list stays fixed; everything is served with `Cache-Control: no-cache`.
 environment variable, then the deployment-scoped operator override (persisted
 via `PUT /api/settings/feature_flag:<name>` with an `X-Deployment-Id` header),
 then subsystem availability (an unavailable backing runtime disables the flag),
-then the compiled default. The gateway returns 503 if it cannot load stored
-overrides; the SPA then uses browser-local overrides and compiled defaults and
-logs a generic error. Successful responses include `X-Axinite-Version`. See RFC
-0009's implementation notes for the full contract and deviations.
+then the compiled default. A cached snapshot is returned when available;
+otherwise, the gateway loads a query-local snapshot from the store. An uncached
+read returns 503 if a configured store cannot load overrides. With no store,
+there are no persisted overrides to apply. The SPA then uses browser-local
+overrides and compiled defaults after a read error and logs a generic
+diagnostic. Successful responses include `X-Axinite-Version`. See RFC 0009's
+implementation notes for the full contract and deviations.
 
-Framework-independent flag names, validation, precedence,
-subsystem-availability policy, registry, and hydration/write commands live in
-`src/feature_flags/`. The web gateway adapts those commands to HTTP and
-implements the persistence port with its settings store. The SPA has its own
-typed registry and client-side policy in
+Framework-independent flag identifiers, snapshots, precedence, and
+subsystem-availability policy live in `src/feature_flags/`. The web gateway
+owns its per-deployment cache, persistence port, and query/write commands.
+Reads return a detached cached snapshot or load from storage without changing
+cache state; uncached reads consult the store on each request. Writes serialize
+per deployment, hydrate when needed, persist the override, and then publish it
+to the cache. The SPA has its own typed registry and client-side policy in
 `web-src/axinite/src/lib/feature-flags/`; local browser overrides take
 precedence over the gateway response, which takes precedence over SPA defaults.
-Gateway flag operations record success, error, and invalid-request outcomes
-with fixed `operation` and `outcome` labels; deployment IDs and flag names are
-not used as metric labels.
+Gateway cache and request metrics use fixed operation and outcome labels,
+including the no-store default; aggregate gauges omit deployment IDs and flag
+names.
 
 The `X-Deployment-Id` value is trimmed and must be 1 to 64 characters of
 `[a-z0-9_]`. On `GET /api/features` an absent or blank header selects

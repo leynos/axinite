@@ -7,10 +7,7 @@ use std::task::Poll;
 use tokio::sync::{Mutex, Notify};
 
 use super::*;
-
-#[derive(Debug, PartialEq, Eq, thiserror::Error)]
-#[error("injected store failure")]
-struct StoreFailure;
+use crate::feature_flags::FlagName;
 
 #[derive(Default)]
 struct ControlledStore {
@@ -23,30 +20,31 @@ struct ControlledStore {
 }
 
 impl FlagStore for ControlledStore {
-    type Error = StoreFailure;
-
-    async fn load(&self, deployment: &DeploymentId) -> Result<Vec<(String, bool)>, Self::Error> {
+    async fn load(&self, deployment: &DeploymentId) -> Result<FlagSnapshot, FlagStoreError> {
         if self.fail_next_load.swap(false, Ordering::Relaxed) {
-            return Err(StoreFailure);
+            return Err(FlagStoreError::Load);
         }
-        Ok(self
+        let values = self
             .durable
             .lock()
             .await
             .iter()
             .filter(|((id, _), _)| id == deployment.as_str())
-            .map(|((_, flag), enabled)| (flag.clone(), *enabled))
-            .collect())
+            .map(|((_, name), enabled)| {
+                FlagName::parse(name)
+                    .map(|flag| (flag, *enabled))
+                    .map_err(|_| FlagStoreError::InvalidSnapshot)
+            })
+            .collect::<Result<Vec<_>, _>>()?;
+        Ok(FlagSnapshot::from_values(values))
     }
 
-    async fn save(
-        &self,
-        deployment: &DeploymentId,
-        flag: &FlagName,
-        enabled: bool,
-    ) -> Result<(), Self::Error> {
+    async fn save(&self, command: &FlagOverrideCommand) -> Result<(), FlagStoreError> {
+        let deployment = &command.deployment;
+        let flag = &command.flag;
+        let enabled = command.enabled;
         if self.fail_next_save.swap(false, Ordering::Relaxed) {
-            return Err(StoreFailure);
+            return Err(FlagStoreError::Save);
         }
         self.durable.lock().await.insert(
             (deployment.as_str().to_owned(), flag.as_str().to_owned()),
@@ -65,14 +63,14 @@ fn is_production_disable(deployment: &DeploymentId, enabled: bool) -> bool {
     deployment.as_str() == "production" && !enabled
 }
 
-fn override_command<'a>(
-    deployment: &'a DeploymentId,
-    flag: &'a FlagName,
+fn override_command(
+    deployment: &DeploymentId,
+    flag: &FlagName,
     enabled: bool,
-) -> FlagOverride<'a> {
-    FlagOverride {
-        deployment,
-        flag,
+) -> FlagOverrideCommand {
+    FlagOverrideCommand {
+        deployment: deployment.clone(),
+        flag: flag.clone(),
         enabled,
     }
 }
@@ -166,6 +164,7 @@ async fn another_deployment_progresses_while_a_write_is_waiting_on_storage() {
     );
 }
 
+#[derive(Clone, Copy)]
 enum FailurePoint {
     Hydration,
     Persistence,
@@ -190,7 +189,13 @@ async fn failed_commands_release_deployment_admission(#[case] failure: FailurePo
         override_command(&deployment, &flag, false),
     )
     .await;
-    assert_eq!(result, Err(StoreFailure));
+    assert_eq!(
+        result,
+        Err(match failure {
+            FailurePoint::Hydration => FlagStoreError::Load,
+            FailurePoint::Persistence => FlagStoreError::Save,
+        })
+    );
     assert_eq!(store.writes.load(Ordering::Relaxed), 0);
     let mut retry = Box::pin(set_override(
         &registry,

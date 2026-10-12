@@ -222,6 +222,24 @@ SolidJS UI.
   `make typecheck`, Markdown, spelling, staged Markdown, and diff checks
   passed. The active example bindings and runtime source remain unchanged;
   current-head hosted acceptance and review reconciliation remain pending.
+- [x] (2026-10-12) Correct the feature-flag query/write cache boundaries and
+  validate the B candidate. Queries return detached cached snapshots or load
+  local snapshots without publishing query state; writes serialize, persist,
+  then publish. Sequential `make all` passed (4,376 workspace tests, nine
+  skipped, and five GitHub tool tests); every `make typecheck` leg passed again
+  after sharing upsert execution without changing SQL. The earlier database
+  matrix passed for PostgreSQL (4,376/9), libSQL (4,257/4), and both features
+  (4,376/9); `AXINITE_REQUIRE_POSTGRES=1` confirmed both new PostgreSQL tests.
+  Markdown, spelling, and Nixie passed. CodeScene confirmed the new upsert
+  duplication is removed; C candidate validation remains pending.
+- [x] (2026-10-12) Address the full review's Fluent coverage and explicit
+  TypeScript override findings, and preserve generated-module documentation.
+  Commit `e0fecbdf` passed `make all`, standalone type checking, and frontend
+  verification (200 unit/behaviour, two accessibility, and two Playwright
+  tests). The refreshed review also identified PostgreSQL coverage, query
+  purity, state-model testing, and operational telemetry requirements; those
+  repairs are in progress. Builtin documentation coverage remains inconclusive
+  because the runner does not expose its counted-symbol inventory.
 - [ ] (2026-10-12) Reconcile current-head hosted checks, ExecPlan assessment,
   review findings, and approval before merge.
 
@@ -278,6 +296,14 @@ SolidJS UI.
   enables a flag. The framework-independent policy lives in
   `src/feature_flags/`; the gateway adapts it to HTTP and storage. Date/Author:
   2026-07-19, Claude; updated 2026-10-12 after review.
+- Decision (2026-10-12): `GET /api/features` returns a detached cached
+  snapshot when one exists; otherwise it loads a query-local snapshot from the
+  store without changing cache, hydration, or retry state. Uncached reads
+  consult the store each time. Writes serialize per deployment, hydrate if
+  needed, persist, and only then publish to the cache. Deleting a persisted row
+  is visible to uncached readers; a gateway with a cached snapshot retains it
+  until restart. This supersedes any earlier implication that reads hydrate or
+  publish registry state. Candidate validation remains pending.
 - Decision: expose a minimal `window.__axinite` test-hook object from the
   SPA (chat stream close/reconnect, `emitChatEvent`, ready marker) instead of
   recreating the legacy globals the Python e2e suite pokes. Rationale: the

@@ -1,11 +1,8 @@
 //! Command tests use an in-process port double with no database or HTTP state.
 
 use super::*;
+use crate::feature_flags::FlagName;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
-
-#[derive(Debug, thiserror::Error)]
-#[error("store unavailable")]
-struct StoreUnavailable;
 
 #[derive(Default)]
 struct RecordingStore {
@@ -16,36 +13,43 @@ struct RecordingStore {
 }
 
 impl FlagStore for RecordingStore {
-    type Error = StoreUnavailable;
-
-    async fn load(&self, _: &DeploymentId) -> Result<Vec<(String, bool)>, Self::Error> {
+    async fn load(&self, _: &DeploymentId) -> Result<FlagSnapshot, FlagStoreError> {
         self.loads.fetch_add(1, Ordering::Relaxed);
         if self.fail_next_load.swap(false, Ordering::Relaxed) {
-            return Err(StoreUnavailable);
+            return Err(FlagStoreError::Load);
         }
-        Ok(vec![("route_memory".to_owned(), false)])
+        Ok(FlagSnapshot::from_values([(
+            FlagName::parse("route_memory").map_err(|_| FlagStoreError::InvalidSnapshot)?,
+            false,
+        )]))
     }
 
-    async fn save(&self, _: &DeploymentId, _: &FlagName, _: bool) -> Result<(), Self::Error> {
+    async fn save(&self, _: &FlagOverrideCommand) -> Result<(), FlagStoreError> {
         self.writes.fetch_add(1, Ordering::Relaxed);
         if self.fail_write.load(Ordering::Relaxed) {
-            return Err(StoreUnavailable);
+            return Err(FlagStoreError::Save);
         }
         Ok(())
     }
 }
 
 #[tokio::test]
-async fn successful_hydration_queries_the_store_only_once() {
+async fn successive_commands_load_a_complete_snapshot_only_once() {
     let deployment = DeploymentId::parse("production").expect("valid deployment");
+    let flag = FlagName::parse("panel_logs").expect("valid flag");
     let registry = RwLock::new(FeatureFlagRegistry::new());
     let store = RecordingStore::default();
-    hydrate(&registry, &store, &deployment)
+    let command = FlagOverrideCommand {
+        deployment,
+        flag,
+        enabled: false,
+    };
+    set_override(&registry, &store, command.clone())
         .await
-        .expect("first load");
-    hydrate(&registry, &store, &deployment)
+        .expect("initial command");
+    set_override(&registry, &store, command)
         .await
-        .expect("cached load");
+        .expect("cached command");
     assert_eq!(store.loads.load(Ordering::Relaxed), 1);
     assert_eq!(
         registry.read().await.get("production", "route_memory"),
@@ -64,9 +68,9 @@ async fn failed_hydration_prevents_write_and_retries_without_marking_loaded() {
         set_override(
             &registry,
             &store,
-            FlagOverride {
-                deployment: &deployment,
-                flag: &flag,
+            FlagOverrideCommand {
+                deployment: deployment.clone(),
+                flag: flag.clone(),
                 enabled: true
             }
         )
@@ -79,9 +83,9 @@ async fn failed_hydration_prevents_write_and_retries_without_marking_loaded() {
     set_override(
         &registry,
         &store,
-        FlagOverride {
-            deployment: &deployment,
-            flag: &flag,
+        FlagOverrideCommand {
+            deployment: deployment.clone(),
+            flag: flag.clone(),
             enabled: true,
         },
     )
@@ -104,9 +108,9 @@ async fn failed_persistence_keeps_the_last_cached_override() {
     set_override(
         &registry,
         &store,
-        FlagOverride {
-            deployment: &deployment,
-            flag: &flag,
+        FlagOverrideCommand {
+            deployment: deployment.clone(),
+            flag: flag.clone(),
             enabled: false,
         },
     )
@@ -117,9 +121,9 @@ async fn failed_persistence_keeps_the_last_cached_override() {
         set_override(
             &registry,
             &store,
-            FlagOverride {
-                deployment: &deployment,
-                flag: &flag,
+            FlagOverrideCommand {
+                deployment: deployment.clone(),
+                flag: flag.clone(),
                 enabled: true
             }
         )

@@ -8,8 +8,7 @@ pub const MAX_DEPLOYMENT_ID_LEN: usize = 64;
 pub struct DeploymentId(String);
 
 /// An identifier is empty, overlong, or outside the deployment alphabet.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]
-#[error("deployment ID must be 1-64 characters of [a-z0-9_]")]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct InvalidDeploymentId;
 
 impl DeploymentId {
@@ -28,12 +27,11 @@ impl DeploymentId {
 }
 
 /// A validated flag name; unknown but syntactically valid names remain accepted.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct FlagName(String);
 
 /// A flag name is empty or outside the RFC 0009 identifier alphabet.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]
-#[error("flag name must contain only [a-z0-9_]+")]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct InvalidFlagName;
 
 impl FlagName {
@@ -56,4 +54,33 @@ fn has_identifier_alphabet(value: &str) -> bool {
         && value
             .bytes()
             .all(|b| matches!(b, b'a'..=b'z' | b'0'..=b'9' | b'_'))
+}
+
+impl std::fmt::Display for InvalidDeploymentId {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            formatter,
+            "deployment ID must be 1-64 characters of [a-z0-9_]"
+        )
+    }
+}
+impl std::error::Error for InvalidDeploymentId {}
+
+impl std::fmt::Display for InvalidFlagName {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(formatter, "flag name must contain only [a-z0-9_]+")
+    }
+}
+impl std::error::Error for InvalidFlagName {}
+
+impl std::borrow::Borrow<str> for DeploymentId {
+    fn borrow(&self) -> &str {
+        self.as_str()
+    }
+}
+
+impl std::borrow::Borrow<str> for FlagName {
+    fn borrow(&self) -> &str {
+        self.as_str()
+    }
 }

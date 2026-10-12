@@ -18,7 +18,8 @@
 //! existing SPA boot fetch keeps working; writes (in the settings handler)
 //! require the header. Overrides are cached in the
 //! [`FeatureFlagRegistry`](super::feature_registry::FeatureFlagRegistry), which
-//! is hydrated lazily from the store on the first read for a deployment.
+//! is hydrated only by explicit override commands. Uncached reads load a local
+//! snapshot without publishing cache, admission or retry state.
 
 use std::collections::HashMap;
 use std::sync::{Arc, OnceLock};
@@ -36,8 +37,11 @@ use crate::channels::web::handlers::feature_registry::{
 };
 use crate::channels::web::server::GatewayState;
 
+use crate::channels::web::handlers::feature_registry::application;
 use crate::channels::web::handlers::feature_registry::{SettingsFlagStore, telemetry};
-use crate::feature_flags::{DeploymentId, FLAG_DEFAULTS, FlagName, resolve_flags, service};
+use crate::feature_flags::{
+    DeploymentId, FLAG_DEFAULTS, FlagName, FlagOverrideCommand, FlagSnapshot, resolve_flags,
+};
 
 /// Routes serving the deployment feature-flag map (`GET /api/features`).
 pub fn routes() -> Router<Arc<GatewayState>> {
@@ -71,22 +75,16 @@ pub async fn features_handler(
         VERSION_HEADER,
         HeaderValue::from_static(env!("CARGO_PKG_VERSION")),
     );
-    ensure_deployment_hydrated(&state, &deployment_id)
+    let overrides = query_deployment_snapshot(&state, &deployment_id)
         .await
         .map_err(|error| {
             telemetry::count("read_request", "error");
-            tracing::error!(%error, "Failed to hydrate deployment feature flags");
+            tracing::error!(%error, "Failed to load deployment feature flags");
             (
                 StatusCode::SERVICE_UNAVAILABLE,
                 "failed to load feature flag overrides".to_string(),
             )
         })?;
-
-    let overrides = state
-        .feature_flags
-        .read()
-        .await
-        .overrides_for(deployment_id.as_str());
     let unavailable = unavailable_subsystem_flags(&state).await;
 
     telemetry::count("read_request", "success");
@@ -154,31 +152,29 @@ async fn unavailable_subsystem_flags(state: &GatewayState) -> Vec<&'static str> 
     .unavailable_flags()
 }
 
-/// Adapt gateway state into the framework-independent hydration command.
-async fn ensure_deployment_hydrated(
+/// Return a detached response snapshot; observations do not publish registry state.
+async fn query_deployment_snapshot(
     state: &GatewayState,
     deployment: &DeploymentId,
-) -> Result<(), crate::error::DatabaseError> {
-    if state
-        .feature_flags
-        .read()
-        .await
-        .is_hydrated(deployment.as_str())
-    {
+) -> Result<FlagSnapshot, application::FlagStoreError> {
+    let resources = state.feature_flags.read().await.resources();
+    telemetry::cache_resources(resources);
+    let cached = state.feature_flags.read().await.snapshot(deployment);
+    if let Some(snapshot) = cached {
         telemetry::count("cache", "hit");
-        return Ok(());
+        return Ok(snapshot);
     }
     let Some(store) = state.store.as_ref() else {
-        return Ok(());
+        telemetry::count("read_snapshot", "no_store_defaults");
+        return Ok(FlagSnapshot::default());
     };
     let adapter = SettingsFlagStore {
         store: store.as_ref(),
-        registry: &state.feature_flags,
     };
-    service::hydrate(&state.feature_flags, &adapter, deployment).await
+    application::query(&state.feature_flags, &adapter, deployment).await
 }
 
-/// Persist through the domain command; a failed hydration or save never updates the cache.
+/// Persist through the gateway command; failed writes never publish their new value.
 pub(crate) async fn apply_flag_override(
     state: &GatewayState,
     deployment: &DeploymentId,
@@ -189,28 +185,20 @@ pub(crate) async fn apply_flag_override(
         .store
         .as_ref()
         .ok_or_else(|| crate::error::DatabaseError::Query("no store configured".to_string()))?;
-    if state
-        .feature_flags
-        .read()
-        .await
-        .is_hydrated(deployment.as_str())
-    {
-        telemetry::count("cache", "hit");
-    }
     let adapter = SettingsFlagStore {
         store: store.as_ref(),
-        registry: &state.feature_flags,
     };
-    service::set_override(
+    application::set_override(
         &state.feature_flags,
         &adapter,
-        service::FlagOverride {
-            deployment,
-            flag,
+        FlagOverrideCommand {
+            deployment: deployment.clone(),
+            flag: flag.clone(),
             enabled,
         },
     )
     .await
+    .map_err(|error| crate::error::DatabaseError::Query(error.to_string()))
 }
 
 #[cfg(test)]
