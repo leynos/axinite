@@ -173,6 +173,11 @@ SolidJS UI.
   a new extension remains inactive with setup required and its token field
   unprovided. Existing extension instances are preserved. No runtime change is
   needed for this wording correction.
+- [x] (2026-10-12) Correct feature-flag removal guidance after review:
+  deleting a persisted override does not clear the cached value in running
+  gateway processes. The settings DELETE route rejects deployment-scoped flag
+  keys, so remove the database row and restart each process caching that
+  deployment. This is documentation-only; no runtime change was made.
 - [ ] (2026-10-12) Reconcile current-head hosted checks, ExecPlan assessment,
   review findings, and approval before merge.
 
