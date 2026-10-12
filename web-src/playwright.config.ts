@@ -1,14 +1,31 @@
 /**
  * @file Playwright configuration for the browser tests in `axinite/tests/e2e`.
- * It starts the local `dev` runner (mock backend plus preview) unless a server
- * is already listening at `PLAYWRIGHT_BASE_URL`, and tests Chromium only.
+ * It starts the local `dev` runner (mock backend plus preview)
+ * on its owned ports, enables the restart fixture, and tests Chromium only.
  */
 
 import { defineConfig, devices } from "@playwright/test";
+import { parsePort } from "./mock-backend/src/ports";
 
 process.env["PLAYWRIGHT_BROWSERS_PATH"] ??= "0";
 
-const baseURL = process.env["PLAYWRIGHT_BASE_URL"] ?? "http://127.0.0.1:2020";
+// The coordinator chooses its owned server pair once. Workers inherit these
+// values when Playwright reloads this config, rather than choosing ports from
+// their own PIDs. Busy ports fail startup without reusing another server.
+const candidateApiPort = 42_000 + (process.pid % 5_000) * 2;
+const apiPort = parsePort(
+  "MOCK_API_PORT",
+  process.env["MOCK_API_PORT"],
+  candidateApiPort
+);
+const baseURL =
+  process.env["PLAYWRIGHT_BASE_URL"] ??
+  `http://127.0.0.1:${candidateApiPort + 1}`;
+process.env["MOCK_API_PORT"] = String(apiPort);
+process.env["PLAYWRIGHT_BASE_URL"] = baseURL;
+const previewURL = new URL(baseURL);
+const previewPort =
+  previewURL.port || (previewURL.protocol === "https:" ? "443" : "80");
 
 export default defineConfig({
   testDir: "./axinite/tests/e2e",
@@ -33,7 +50,12 @@ export default defineConfig({
   webServer: {
     command: "bun run dev",
     url: baseURL,
-    reuseExistingServer: true,
+    reuseExistingServer: false,
+    env: {
+      MOCK_API_PORT: String(apiPort),
+      PREVIEW_PORT: previewPort,
+      MOCK_RESTART_FIXTURE: "1",
+    },
     stdout: "pipe",
     stderr: "pipe",
     timeout: 180_000,

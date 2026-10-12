@@ -193,8 +193,30 @@ SolidJS UI.
   workspace tests and five GitHub tool tests passed, with nine existing skips.
   Markdown, spelling, and diff checks passed; all three touched Rust files
   scored 10.0 in CodeScene, and the staged delta found no issues.
-- [ ] Add an opt-in deterministic restart outage/`503`/SSE-close/recovery
-  fixture and Playwright coverage using the actual restart control.
+- [x] (2026-10-12) Implement the opt-in mock restart acceptance fixture.
+  `MOCK_RESTART_FIXTURE=1` enables it; a successful `/restart` tool
+  acknowledgement is followed after 650 ms by a synthetic five-second outage.
+  The fixture returns API `503` responses, closes chat and log SSE streams,
+  then recovers. Fake-timer transport cases cover the disabled default, timing,
+  recovery, and cleanup; the serial Playwright spec exercises the actual
+  control with PID-derived ports and server reuse disabled. Initial TypeScript
+  validation required explicit empty `images` arrays in the new chat-command
+  fixtures; those requests now match the shared contract. Browser validation
+  then exposed worker-local PID port selection; the coordinator now passes its
+  selected endpoints through the inherited environment. CodeScene identified
+  the compound restart-event branch; it now calls a named predicate without a
+  suppression. Renewed sequential validation passed: 197 frontend unit and
+  behaviour tests, two accessibility tests, both Playwright cases, frontend
+  formatting and asset freshness, `make all` (4,371 workspace tests and five
+  GitHub tool tests, nine existing skips), `make typecheck`, Markdown,
+  spelling, and diff checks. The state module regained CodeScene 10.0 with no
+  findings; the other four scoped files remain unchanged from their 10.0
+  reviews. A rendered `agent-browser` check observed the disabled control,
+  restarting status, HTTP `200 -> 503 -> 200`, and completed recovery with no
+  page errors. A readiness-aware `css-view` walker capture confirmed the loaded
+  control at 1280 x 720; the initial CLI captures were too early. Owned browser
+  and non-watch stub sessions were closed. `FEATURE_PARITY.md` retains its
+  existing implemented UI status; these repairs need no change.
 - [ ] (2026-10-12) Reconcile current-head hosted checks, ExecPlan assessment,
   review findings, and approval before merge.
 

@@ -8,6 +8,8 @@ import { expect, test } from "@playwright/test";
 
 const DEPLOY_BASE = "";
 
+test.describe.configure({ mode: "serial" });
+
 test("navigates routes and only exposes complete locales", async ({ page }) => {
   await page.goto(`${DEPLOY_BASE}/chat?debug-flags=1`);
 
@@ -57,4 +59,39 @@ test("navigates routes and only exposes complete locales", async ({ page }) => {
   await expect(
     page.getByRole("heading", { name: "Compétences", level: 2 })
   ).toBeVisible();
+});
+
+// Both cases live in one file and run serially against the same owned stub.
+test("restarts through an observed gateway outage and recovery", async ({
+  page,
+}) => {
+  await page.goto(`${DEPLOY_BASE}/chat`);
+  const restart = page.getByRole("button", {
+    name: "Restart gateway",
+    exact: true,
+  });
+  await expect(restart).toBeVisible();
+  await restart.click();
+  const dialog = page.getByRole("alertdialog");
+  await expect(dialog).toBeVisible();
+  const outage = page.waitForResponse(
+    (response) =>
+      new URL(response.url()).pathname === "/api/gateway/status" &&
+      response.status() === 503
+  );
+  await dialog.getByRole("button", { name: "Restart", exact: true }).click();
+  await expect(
+    page.getByText("Restarting the gateway…", { exact: true })
+  ).toBeVisible();
+  await expect(restart).toBeDisabled();
+  await outage;
+  await expect(
+    page.getByText("Gateway restarted.", { exact: true })
+  ).not.toBeVisible();
+  await expect(
+    page.getByText("Gateway restarted.", { exact: true })
+  ).toBeVisible();
+  await expect(restart).toBeEnabled();
+  const status = await page.request.get("/api/gateway/status");
+  expect(status.status()).toBe(200);
 });

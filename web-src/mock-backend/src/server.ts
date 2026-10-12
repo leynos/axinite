@@ -2,7 +2,8 @@
  * @file Mock gateway HTTP server. It answers the `/api/*` routes the SPA calls,
  * including the chat and log SSE streams, from in-memory `MockBackendState`
  * so the frontend can be developed and tested without the Rust daemon.
- * `MOCK_FAILURES` forces HTTP 500 on chosen paths.
+ * `MOCK_FAILURES` forces HTTP 500 on chosen paths; `MOCK_RESTART_FIXTURE=1`
+ * enables synthetic downtime without restarting any process.
  */
 
 import type {
@@ -559,6 +560,10 @@ export async function handleMockRequest(
   const pathname = url.pathname;
   const method = request.method.toUpperCase();
 
+  if (state.isGatewayUnavailable && pathname.startsWith("/api/")) {
+    return errorResponse(503, "Simulated gateway restart in progress.");
+  }
+
   if (failures.has(pathname)) {
     return errorResponse(500, `Simulated failure for ${pathname}.`);
   }
@@ -586,15 +591,20 @@ export async function handleMockRequest(
 /**
  * Starts the Bun mock API on the requested port with the supplied state,
  * disables request timeouts for streaming routes and returns the bound
- * port, server and state.
+ * port, server, state and an owned stop hook. The default state enables
+ * synthetic restart downtime only when MOCK_RESTART_FIXTURE=1.
  */
 export function createMockBackendServer(
   port = DEFAULT_API_PORT,
-  state = new MockBackendState()
+  state = new MockBackendState(undefined, {
+    restartFixture: process.env["MOCK_RESTART_FIXTURE"] === "1",
+  })
 ): {
   port: number;
   server: ReturnType<typeof Bun.serve>;
   state: MockBackendState;
+  /** Stops this owned server and disposes its restart fixture timers. */
+  stop: () => void;
 } {
   const server = Bun.serve({
     port,
@@ -606,10 +616,22 @@ export function createMockBackendServer(
       return handleMockRequest(request, state);
     },
   });
-  return { port: server.port ?? port, server, state };
+  const stop = () => {
+    state.dispose();
+    server.stop(true);
+  };
+  return { port: server.port ?? port, server, state, stop };
 }
 
 if (import.meta.main) {
-  const { port } = createMockBackendServer();
+  const { port, stop } = createMockBackendServer();
+  process.once("SIGINT", () => {
+    stop();
+    process.exit(0);
+  });
+  process.once("SIGTERM", () => {
+    stop();
+    process.exit(0);
+  });
   console.log(`[mock-api] listening on http://localhost:${port}`);
 }
