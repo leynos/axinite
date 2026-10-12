@@ -17,6 +17,7 @@ from helpers import SEL, goto_route, wait_until
 
 
 async def _open_skills(page):
+    """Open the Skills route and return its visible search field."""
     await goto_route(page, "Skills", "skills", timeout=8000)
     search = page.locator(SEL["skill_search_input"])
     await search.wait_for(state="visible", timeout=5000)

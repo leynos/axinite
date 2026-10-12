@@ -563,6 +563,10 @@ function RemoveExtensionDialog(props: RemoveExtensionDialogProps) {
   );
 }
 
+/**
+ * Manages extension and MCP discovery, installation, configuration, pairing
+ * and removal.
+ */
 export const ExtensionsPreview = () => {
   const { t } = useI18n();
   const queryClient = useQueryClient();

@@ -99,6 +99,7 @@ async def models(_request: web.Request) -> web.Response:
 
 
 def main():
+    """Run the loopback mock LLM server on the requested or an ephemeral port."""
     parser = argparse.ArgumentParser()
     parser.add_argument("--port", type=int, default=0)
     args = parser.parse_args()

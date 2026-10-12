@@ -222,6 +222,10 @@ const MemoryDocument = (props: MemoryDocumentProps) => (
   </main>
 );
 
+/**
+ * Coordinates memory browsing and search; successful edits refresh the
+ * relevant queries.
+ */
 export const MemoryPreview = () => {
   const { t } = useI18n();
   const queryClient = useQueryClient();

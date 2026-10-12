@@ -111,4 +111,5 @@ declare module "@tanstack/solid-router" {
   }
 }
 
+/** Mounts the route tree registered by this module. */
 export const AppRouter = () => <RouterProvider router={router} />;

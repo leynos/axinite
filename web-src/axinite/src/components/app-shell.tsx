@@ -25,6 +25,10 @@ type ShellChromeProps = {
   usePlainLinks?: boolean;
 };
 
+/**
+ * Renders shared navigation and gateway status around route content. The
+ * caller provides the active path; link mode can be selected for previews.
+ */
 export const ShellChrome: ParentComponent<ShellChromeProps> = (props) => {
   const { t } = useI18n();
   const flags = useFeatureFlags();
@@ -129,6 +133,7 @@ export const ShellChrome: ParentComponent<ShellChromeProps> = (props) => {
   );
 };
 
+/** Wraps route content in shell chrome using the current router pathname. */
 export const AppShell: ParentComponent = (props) => {
   const routerState = useRouterState();
   const activePath = createMemo(() => routerState().location.pathname);

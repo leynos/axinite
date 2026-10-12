@@ -331,6 +331,10 @@ const RoutineDetailPanel = (props: {
   );
 };
 
+/**
+ * Coordinates routine selection and run history with trigger, toggle and
+ * delete actions.
+ */
 export const RoutinesPreview = () => {
   const { t } = useI18n();
   const queryClient = useQueryClient();

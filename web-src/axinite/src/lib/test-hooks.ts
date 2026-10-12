@@ -38,10 +38,12 @@ export type AxiniteTestHooks = {
 
 let registered: ChatStreamHooks | null = null;
 
+/** Makes these stream controls the current `window.__axinite` hook target. */
 export function registerChatStreamHooks(hooks: ChatStreamHooks): void {
   registered = hooks;
 }
 
+/** Clears this registration only while it still owns the current slot. */
 export function unregisterChatStreamHooks(hooks: ChatStreamHooks): void {
   // Only clear the slot if the caller still owns it; a remount may have already
   // installed a fresh set of controls.

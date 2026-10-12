@@ -140,6 +140,9 @@ const TeeReportPanel: Component<{
   );
 };
 
+/**
+ * Loads an attestation report when its route flag and TEE API are available.
+ */
 export const TeeAttestation = () => {
   const { t } = useI18n();
   const flags = useFeatureFlags();

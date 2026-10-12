@@ -4,6 +4,7 @@
  * segments.
  */
 
+/** Uppercases the first UTF-16 code unit and leaves the remainder unchanged. */
 export function capitalize(value: string): string {
   if (value.length === 0) {
     return value;
@@ -12,6 +13,9 @@ export function capitalize(value: string): string {
   return `${value[0]?.toUpperCase() ?? ""}${value.slice(1)}`;
 }
 
+/**
+ * Capitalizes underscore-separated segments and joins them without separators.
+ */
 export function pascalCase(value: string): string {
   return value
     .split("_")

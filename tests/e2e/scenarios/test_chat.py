@@ -21,6 +21,10 @@ from helpers import SEL, send_chat_message
 
 
 async def _assistant_markdown_contains(page, needle: str, *, timeout: int = 60000):
+    """Wait for assistant Markdown to contain `needle`, or report visible text.
+
+    Raises `AssertionError` when the configurable Playwright wait expires.
+    """
     # Generous timeout: the daemon's first LLM round-trip after startup is cold
     # (thread setup, pipeline warmup) and can take tens of seconds.
     # Inline the needle (JSON-escaped) rather than passing `arg=`; the latter is
@@ -102,6 +106,7 @@ async def test_empty_message_not_sent(page):
 
 
 async def _emit(page, event: dict):
+    """Dispatch a chat event through the frontend test hook."""
     await page.evaluate(
         "(event) => window.__axinite.emitChatEvent(event)", event
     )

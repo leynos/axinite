@@ -73,6 +73,10 @@ type FileTreeProps = {
   label: string;
 };
 
+/**
+ * Renders flat file entries as an accessible tree. Directory expansion is
+ * local; selecting a file delegates its path to `onSelect`.
+ */
 export const FileTree = (props: FileTreeProps) => {
   return (
     <ul aria-label={props.label} class="jobs-file-tree">

@@ -208,6 +208,11 @@ type ChatEventHandlers = {
   ) => void;
 };
 
+/**
+ * Owns the chat composer, thread selection and SSE-driven message lifecycle.
+ * Registers the current stream controls for the window test hooks while
+ * mounted.
+ */
 export const ChatPreview = () => {
   const { t } = useI18n();
   const queryClient = useQueryClient();

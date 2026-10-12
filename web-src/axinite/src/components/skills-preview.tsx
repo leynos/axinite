@@ -272,6 +272,10 @@ const SkillsDetailSection = (props: SkillsDetailSectionProps) => {
   );
 };
 
+/**
+ * Coordinates installed skills and registry search with installation and
+ * removal actions.
+ */
 export const SkillsPreview = () => {
   const { t } = useI18n();
   const queryClient = useQueryClient();

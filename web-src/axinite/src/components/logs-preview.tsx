@@ -273,6 +273,7 @@ const LogsStream = () => {
   );
 };
 
+/** Loads and filters gateway logs while the logs route is enabled. */
 export const LogsPreview = () => {
   const { t } = useI18n();
   const flags = useFeatureFlags();

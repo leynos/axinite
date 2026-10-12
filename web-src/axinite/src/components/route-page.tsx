@@ -23,6 +23,10 @@ type RoutePageProps = {
   routeId: RouteId;
 };
 
+/**
+ * Renders the requested route surface or an unavailable notice when its flag
+ * is disabled.
+ */
 export const RoutePage = (props: RoutePageProps) => {
   const flags = useFeatureFlags();
   const { t } = useI18n();

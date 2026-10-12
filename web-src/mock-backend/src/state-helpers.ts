@@ -27,11 +27,17 @@ export type Clock = () => number;
 /** The seed timeline stays reproducible across stub runs. */
 export const fixedPreviewClock: Clock = () => Date.parse("2026-03-26T11:30:00.000Z");
 
-/** Encode the supplied timeline as UTC without consulting the host clock. */
+/**
+ * Encode the supplied timeline as UTC without consulting the host clock.
+ */
 export function nowIso(clock: Clock): string {
   return new Date(clock()).toISOString();
 }
 
+/**
+ * Builds a successful action response; supplied fields override its
+ * defaults.
+ */
 export function createActionResponse(
   message: string,
   overrides: Partial<ActionResponse> = {}
@@ -43,6 +49,10 @@ export function createActionResponse(
   };
 }
 
+/**
+ * Derives routine status, checking disabled state before consecutive
+ * failures.
+ */
 export function statusFromRoutine(detail: RoutineDetailResponse): string {
   if (!detail.enabled) {
     return "disabled";
@@ -232,9 +242,12 @@ function planChatTurn(ctx: ChatEmitContext): ChatTurnPlan {
   };
 }
 
-// Schedule the full trigger-specific emission timeline for one chat turn. The
-// setTimeout delays and payloads are byte-identical to the previous inline
-// implementation so the mock-backend contract ordering stays pinned.
+/**
+ * Schedules the deterministic chat SSE timeline, including trigger-specific
+ * job or image events, tool lifecycle, response chunks and completion.
+ * Scheduled callbacks mutate the supplied turn and thread; no cancellation
+ * handle is returned.
+ */
 export function emitChatTurnSequence(ctx: ChatEmitContext): void {
   const plan = planChatTurn(ctx);
 
@@ -269,6 +282,10 @@ export type ApprovalDecision = {
 
 // Collapse the deny/approve branching for one approval decision into a single
 // value so the caller needs no per-field conditionals.
+/**
+ * Maps an approval decision to its SSE event, log level, message and
+ * recorded turn response.
+ */
 export function buildApprovalOutcome(
   decision: ApprovalDecision
 ): ApprovalOutcome {
@@ -288,6 +305,9 @@ export function buildApprovalOutcome(
   };
 }
 
+/**
+ * Returns the display label for an approval action.
+ */
 export function approvalActionLabel(action: ApprovalRequest["action"]): string {
   if (action === "always") {
     return "always approve";
@@ -298,9 +318,11 @@ export function approvalActionLabel(action: ApprovalRequest["action"]): string {
   return "approve";
 }
 
-// Record the approval decision on the most recent turn of the thread. A denied
-// action fails the turn; any other action completes it. Absent turns are a
-// no-op, matching the previous inline guard.
+/**
+ * Records the decision on the latest turn using the supplied clock. A
+ * denied action fails the turn, an approval completes it, and a thread with
+ * no turns is unchanged.
+ */
 export function applyApprovalToLatestTurn(params: {
   thread: MockThread;
   isDeny: boolean;
@@ -317,6 +339,10 @@ export function applyApprovalToLatestTurn(params: {
     : "Approval received. Proceeding with the approved mock backend implementation slice.";
 }
 
+/**
+ * Chooses the skill source in URL, supplied content, then catalogue
+ * precedence.
+ */
 export function resolveSkillSource(request: SkillInstallRequest): string {
   if (request.url) {
     return "url";
@@ -327,6 +353,10 @@ export function resolveSkillSource(request: SkillInstallRequest): string {
   return "catalog";
 }
 
+/**
+ * Returns the first catalogue entry matching exact name, exact slug or name
+ * suffix; returns null when none matches.
+ */
 export function matchCatalogueSkill(
   entries: MockCatalogueSkill[],
   request: SkillInstallRequest
@@ -341,7 +371,9 @@ export function matchCatalogueSkill(
   );
 }
 
-/** OAuth fixtures omit auth_url entirely on the manual-token path. */
+/**
+ * OAuth fixtures omit auth_url entirely on the manual-token path.
+ */
 export function extensionAuthentication(name: string): {
   instructions: string;
   setup_url: string;

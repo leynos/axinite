@@ -35,6 +35,10 @@ export const DEFAULT_API_PORT = parsePort(
 // request paths that should return HTTP 500 so error-handling UI states can
 // be exercised without the real daemon (for example
 // MOCK_FAILURES=/api/jobs,/api/skills).
+/**
+ * Parses comma-separated paths for deterministic HTTP 500 fixtures; blank
+ * entries are discarded.
+ */
 export function parseFailureRoutes(raw: string | undefined): Set<string> {
   return new Set(
     (raw ?? "")
@@ -81,10 +85,11 @@ type SseStreamSetup = {
   heartbeatFrame: string;
 };
 
-// Build an SSE response whose teardown runs exactly once, whichever side ends
-// the stream first: the state closing its subscriber, or the client cancelling.
-// Frames sent after teardown are dropped rather than enqueued on a closed
-// controller, which would throw.
+/**
+ * Creates an SSE response with a 15-second heartbeat. State closure and
+ * client cancellation share exactly-once teardown, and frames after
+ * teardown are dropped to avoid enqueueing on a closed controller.
+ */
 export function buildSseResponse({
   subscribe,
   heartbeatFrame,
@@ -540,6 +545,11 @@ function matchRoute(
   return pathname.match(route.pattern) ?? undefined;
 }
 
+/**
+ * Dispatches by uppercased method and URL path. Injected failure paths
+ * return 500, handler errors are logged and returned as 400, and unmatched
+ * routes return 404.
+ */
 export async function handleMockRequest(
   request: Request,
   state: MockBackendState,
@@ -573,6 +583,11 @@ export async function handleMockRequest(
   return errorResponse(404, `No mock route for ${method} ${pathname}.`);
 }
 
+/**
+ * Starts the Bun mock API on the requested port with the supplied state,
+ * disables request timeouts for streaming routes and returns the bound
+ * port, server and state.
+ */
 export function createMockBackendServer(
   port = DEFAULT_API_PORT,
   state = new MockBackendState()

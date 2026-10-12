@@ -49,6 +49,11 @@ type AuthGateProps = {
   children: JSX.Element;
 };
 
+/**
+ * Probes gateway access before rendering children. A non-empty `?token=` is
+ * stored and removed from the browser URL before probing; rejected tokens are
+ * cleared, and failed probes leave the user at the authentication prompt.
+ */
 export const AuthGate = (props: AuthGateProps) => {
   const { t } = useI18n();
   const [state, setState] = createSignal<GateState>("checking");

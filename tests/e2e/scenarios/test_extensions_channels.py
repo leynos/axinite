@@ -19,6 +19,7 @@ from helpers import SEL, wait_until
 
 
 async def _load_channel(page, activation_status):
+    """Load an extension card fixture with the requested activation status."""
     ext = {**WASM_CHANNEL, "activation_status": activation_status}
     await mock_ext_apis(page, installed=[ext])
     await go_to_extensions(page)
