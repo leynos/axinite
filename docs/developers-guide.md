@@ -6,6 +6,26 @@ reproducing the build and test workflows on this branch.
 For the current system architecture and subsystem boundaries, see
 [`docs/axinite-architecture-overview.md`](axinite-architecture-overview.md).
 
+Feature flags use authenticated `GET /api/features` and
+`PUT /api/settings/feature_flag:<name>` endpoints. Their headers, persistence,
+and error behaviour are documented in
+[RFC 0009](rfcs/0009-feature-flags-frontend.md). The framework-independent flag
+identifiers and resolution policy live in `src/feature_flags/`, while gateway
+commands and queries live in
+`src/channels/web/handlers/feature_registry/application.rs`. The HTTP header
+and settings-store adapter is its sibling,
+`src/channels/web/handlers/feature_registry.rs`. See the
+[boundary map](axinite-architecture-overview.md#46-dependency-and-boundary-map)
+for the current subsystem boundaries.
+
+Flag queries and their storage adapter emit no telemetry. HTTP delivery records
+read observations; explicit override commands record admission wait and total
+latency. With the `metrics` feature enabled, histograms include
+`axinite.feature_flags.admission_wait_seconds` and
+`axinite.feature_flags.command_latency_seconds`. Availability metrics use fixed
+subsystem and surface labels. Tracing carries random request or operation IDs,
+without exposing deployment identifiers, flag names, or database contents.
+
 ## 1. Purpose
 
 Linux continuous integration (CI) on this branch now uses `mold` to reduce

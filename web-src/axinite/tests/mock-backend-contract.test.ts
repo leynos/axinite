@@ -3,7 +3,7 @@
  * state, exercised in-process through `handleMockRequest` rather than a socket.
  */
 
-import { afterEach, describe, expect, it } from "vitest";
+import { describe, expect, it } from "vitest";
 
 import {
   handleMockRequest,
@@ -80,8 +80,6 @@ async function collectSse(
   }
   return parseSseFrames(buffer);
 }
-
-afterEach(() => {});
 
 describe("stub HTTP contract", () => {
   it("serves the feature-flag map as flag names to booleans", async () => {

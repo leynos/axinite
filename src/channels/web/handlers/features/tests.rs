@@ -179,3 +179,153 @@ async fn repeated_features_get_does_not_publish_cache_admission_or_retry_entries
         assert!(!state.feature_flags.read().await.is_retry("default"));
     }
 }
+
+#[rstest::rstest]
+#[case::without_store(false)]
+#[case::failing_store(true)]
+#[tokio::test]
+async fn cached_features_queries_return_detached_values_before_storage_fallback(
+    #[case] with_store: bool,
+) {
+    use crate::testing::null_db::CapturingStore;
+    let builder = crate::channels::web::test_helpers::TestGatewayBuilder::new();
+    let state = if with_store {
+        builder
+            .store(Arc::new(
+                CapturingStore::failing_list_deployment_flags_once(
+                    crate::error::DatabaseError::Query("store unavailable".to_string()),
+                ),
+            ))
+            .build()
+    } else {
+        builder.build()
+    };
+    let deployment = DeploymentId::parse("default").expect("valid deployment");
+    let flag = FlagName::parse("panel_logs").expect("valid flag");
+    let setup_store = CapturingStore::new();
+    let adapter = SettingsFlagStore {
+        store: &setup_store,
+    };
+    application::set_override(
+        &state.feature_flags,
+        &adapter,
+        FlagOverrideCommand {
+            deployment: deployment.clone(),
+            flag: flag.clone(),
+            enabled: false,
+        },
+    )
+    .await
+    .expect("prepare cached value through the owning command");
+    let before = state.feature_flags.read().await.resources();
+    let cached = state.feature_flags.read().await.snapshot(&deployment);
+    let mut snapshot = query_deployment_snapshot(&state, cached, &deployment)
+        .await
+        .expect("cached value bypasses storage");
+    assert_eq!(snapshot.get("panel_logs"), Some(false));
+    snapshot.set(flag, true);
+    assert_eq!(state.feature_flags.read().await.resources(), before);
+    assert_eq!(
+        state
+            .feature_flags
+            .read()
+            .await
+            .get("default", "panel_logs"),
+        Some(false)
+    );
+    if with_store {
+        let uncached = DeploymentId::parse("preview").expect("valid deployment");
+        assert_eq!(
+            query_deployment_snapshot(&state, None, &uncached).await,
+            Err(application::FlagStoreError::Load)
+        );
+    }
+}
+
+#[tokio::test]
+async fn read_failures_have_safe_request_correlation_and_bounded_category() {
+    use super::telemetry::test_support::RecordingObserver;
+    use crate::testing::null_db::CapturingStore;
+    use tracing::instrument::WithSubscriber;
+
+    let observer = RecordingObserver::default();
+    let state = crate::channels::web::test_helpers::TestGatewayBuilder::new()
+        .store(Arc::new(
+            CapturingStore::failing_list_deployment_flags_once(crate::error::DatabaseError::Query(
+                "private database contents".to_string(),
+            )),
+        ))
+        .build();
+    let mut headers = HeaderMap::new();
+    headers.insert(
+        "x-deployment-id",
+        HeaderValue::from_static("private_deployment"),
+    );
+    let result = features_handler(State(state), headers)
+        .with_subscriber(observer.clone().subscriber())
+        .await;
+    assert!(matches!(result, Err((StatusCode::SERVICE_UNAVAILABLE, _))));
+    let records = observer.observations();
+    let failures = records
+        .iter()
+        .filter(|record| record.0["message"] == "feature_flags.failure")
+        .collect::<Vec<_>>();
+    assert_eq!(failures.len(), 1);
+    assert_eq!(failures[0].0["operation"], "read_request");
+    assert_eq!(failures[0].0["category"], "load");
+    assert!(uuid::Uuid::parse_str(&failures[0].0["operation_id"]).is_ok());
+    assert_eq!(
+        records
+            .iter()
+            .filter(|record| record.0["message"] == "feature_flags.store_latency")
+            .count(),
+        1
+    );
+    assert!(records.iter().all(|record| {
+        !record.0.values().any(|value| {
+            value.contains("private_deployment") || value.contains("private database contents")
+        })
+    }));
+}
+
+#[rstest::rstest]
+#[case::healthy_store(false)]
+#[case::failing_store(true)]
+#[tokio::test]
+async fn snapshot_query_with_settings_adapter_emits_no_observations(#[case] fails: bool) {
+    use super::telemetry::test_support::RecordingObserver;
+    use crate::testing::null_db::CapturingStore;
+    use tracing::instrument::WithSubscriber;
+
+    let observer = RecordingObserver::default();
+    let store = if fails {
+        CapturingStore::failing_list_deployment_flags_once(crate::error::DatabaseError::Query(
+            "private store failure".to_string(),
+        ))
+    } else {
+        CapturingStore::new()
+    };
+    let state = crate::channels::web::test_helpers::TestGatewayBuilder::new()
+        .store(Arc::new(store))
+        .build();
+    let deployment = DeploymentId::parse("production").expect("valid deployment");
+    let result = query_deployment_snapshot(&state, None, &deployment)
+        .with_subscriber(observer.clone().subscriber())
+        .await;
+    assert_eq!(
+        result,
+        if fails {
+            Err(application::FlagStoreError::Load)
+        } else {
+            Ok(FlagSnapshot::default())
+        }
+    );
+    assert!(
+        observer.observations().is_empty(),
+        "the real adapter query must remain silent"
+    );
+    assert_eq!(
+        state.feature_flags.read().await.resources(),
+        Default::default()
+    );
+}

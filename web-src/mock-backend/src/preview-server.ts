@@ -42,6 +42,12 @@ function candidatePaths(distDir: string, pathname: string): string[] {
   ];
 }
 
+/**
+ * Forward an API request to the mock server on loopback, preserving its path,
+ * query, method, and headers. GET and HEAD carry no body; other methods pass
+ * through the incoming body. The response body, headers, status, and status
+ * text are returned unchanged, while upstream fetch failures propagate.
+ */
 async function proxyRequest(
   request: Request,
   apiPort: number,

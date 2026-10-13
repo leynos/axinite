@@ -57,6 +57,13 @@ export async function withRequestTimeout<T>(
   }
 }
 
+/**
+ * Send a gateway request with JSON defaults and the session bearer token.
+ * Explicit `Accept` and `Authorization` headers take precedence. Timeouts,
+ * fetch failures, and non-2xx responses become categorized `RequestError`s;
+ * HTTP errors retain the status and response text. A successful 204 resolves
+ * to `undefined`; other successful responses are parsed as JSON.
+ */
 function request<T>(url: string, options: RequestOptions = {}): Promise<T> {
   return withRequestTimeout(async (signal) => {
     const token = getGatewayToken();

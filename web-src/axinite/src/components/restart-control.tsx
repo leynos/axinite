@@ -30,6 +30,12 @@ type RestartControlProps = {
   makeDeps?: (onPhase: (phase: RestartPhase) => void) => RestartDeps;
 };
 
+/**
+ * Bind controller ports to the live chat, event-stream, status, and timer APIs.
+ * Restart command failures retain only their bounded category; the stream
+ * handle and poll cancel function own cleanup of their browser resources.
+ * Only connection failures reach the controller's stream outage handler.
+ */
 function defaultDeps(onPhase: (phase: RestartPhase) => void): RestartDeps {
   return {
     sendRestart: async () => {

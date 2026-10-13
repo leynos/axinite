@@ -37,12 +37,12 @@ async fn repeated_uncached_queries_return_persisted_values_without_registry_publ
         fail_next_load: AtomicBool::new(false),
     };
     let before = registry.read().await.resources();
-    let mut first = query(&registry, &store, &deployment)
+    let mut first = query(None, Some(&store), &deployment)
         .await
         .expect("healthy query");
     assert_eq!(first.get("route_memory"), Some(false));
     first.set(flag, true);
-    let second = query(&registry, &store, &deployment)
+    let second = query(None, Some(&store), &deployment)
         .await
         .expect("repeated query");
     assert_eq!(second.get("route_memory"), Some(false));
@@ -67,13 +67,13 @@ async fn failed_query_retries_storage_without_recording_command_hydration_failur
     };
     let before = registry.read().await.resources();
     assert_eq!(
-        query(&registry, &store, &deployment).await,
+        query(None, Some(&store), &deployment).await,
         Err(FlagStoreError::Load)
     );
     assert_eq!(registry.read().await.resources(), before);
     assert!(!registry.read().await.is_retry("production"));
     assert_eq!(
-        query(&registry, &store, &deployment).await,
+        query(None, Some(&store), &deployment).await,
         Ok(FlagSnapshot::default())
     );
     assert_eq!(registry.read().await.resources(), before);
@@ -99,7 +99,8 @@ async fn cached_queries_return_defensive_snapshots_without_mutating_failure_entr
         fail_next_load: AtomicBool::new(true),
     };
     let before = registry.read().await.resources();
-    let mut returned = query(&registry, &store, &deployment)
+    let cached = registry.read().await.snapshot(&deployment);
+    let mut returned = query(cached, Some(&store), &deployment)
         .await
         .expect("cached query");
     returned.set(flag, true);
@@ -110,5 +111,47 @@ async fn cached_queries_return_defensive_snapshots_without_mutating_failure_entr
     );
     assert!(registry.read().await.is_retry("staging"));
     assert_eq!(store.loads.load(Ordering::Relaxed), 0);
+    assert_eq!(store.saves.load(Ordering::Relaxed), 0);
+}
+
+#[tokio::test]
+async fn detached_queries_emit_no_observer_events_for_cache_defaults_load_or_failure() {
+    use super::super::telemetry::test_support::RecordingObserver;
+    use tracing::instrument::WithSubscriber;
+
+    let observer = RecordingObserver::default();
+    let deployment = DeploymentId::parse("production").expect("valid deployment");
+    let store = SnapshotStore {
+        snapshot: FlagSnapshot::default(),
+        loads: AtomicUsize::new(0),
+        saves: AtomicUsize::new(0),
+        fail_next_load: AtomicBool::new(false),
+    };
+    async {
+        assert_eq!(
+            query(Some(FlagSnapshot::default()), Some(&store), &deployment).await,
+            Ok(FlagSnapshot::default())
+        );
+        assert_eq!(
+            query::<SnapshotStore>(None, None, &deployment).await,
+            Ok(FlagSnapshot::default())
+        );
+        assert_eq!(
+            query(None, Some(&store), &deployment).await,
+            Ok(FlagSnapshot::default())
+        );
+        store.fail_next_load.store(true, Ordering::Relaxed);
+        assert_eq!(
+            query(None, Some(&store), &deployment).await,
+            Err(FlagStoreError::Load)
+        );
+    }
+    .with_subscriber(observer.clone().subscriber())
+    .await;
+    assert!(
+        observer.observations().is_empty(),
+        "queries must not write telemetry"
+    );
+    assert_eq!(store.loads.load(Ordering::Relaxed), 2);
     assert_eq!(store.saves.load(Ordering::Relaxed), 0);
 }

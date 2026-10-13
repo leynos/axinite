@@ -544,8 +544,13 @@ const routes: readonly Route[] = [
   },
 ];
 
-// Attempt to match a single route. Returns the captured groups (null for an
-// exact-string match) when both method and path match, otherwise undefined.
+/**
+ * Match a route's allowed method and pathname. Exact-string matches return
+ * `null`; regex matches return the `RegExpMatchArray` (full match at index 0,
+ * capture groups from index 1). `undefined` means either method or path did
+ * not match, so dispatch can distinguish a successful exact match from no
+ * route. Parameter handlers use `firstCapture` for the captured path value.
+ */
 function matchRoute(
   route: Route,
   method: string,

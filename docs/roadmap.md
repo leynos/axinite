@@ -1171,9 +1171,13 @@ out behind flags.
     override persistence and immediate registry updates, subsystem/default
     fallback behaviour, additive hydration under concurrent writes, deployment
     header validation, and the endpoint contract. They live in
-    `src/feature_flags/tests.rs`, `src/feature_flags/service/tests.rs`,
-    `src/channels/web/handlers/features/tests.rs`, `feature_registry.rs`, and
-    `settings/tests.rs` (run with `make test`) and in
+    `src/feature_flags/tests.rs`,
+    `src/channels/web/handlers/feature_registry/application/tests.rs`,
+    `src/channels/web/handlers/feature_registry/application/model_tests.rs`,
+    `src/channels/web/handlers/feature_registry/application/query_tests.rs`,
+    `src/channels/web/handlers/feature_registry/registry.rs`,
+    `src/channels/web/handlers/features/tests.rs`, and
+    `src/channels/web/handlers/settings/tests.rs` (run with `make test`) and in
     `web-src/axinite/tests/feature-flags.test.ts` (run with
     `make frontend-test`).
 - [ ] 4.5.7. Emit a `feature_flags_changed` Server-Sent Events (SSE) event

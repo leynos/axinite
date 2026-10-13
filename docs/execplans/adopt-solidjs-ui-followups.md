@@ -267,23 +267,77 @@ SolidJS UI.
   `TRUE` fixture retains case-insensitive parsing coverage; its 30-test suite
   and the complete aggregate gate passed after correction.
 - [x] (2026-10-12) All 36 hosted checks for `1490b464` reached terminal
-      outcomes:
-  33 passed and three were intentionally skipped. Both candidate-bound
-  assessments accepted the runtime repairs and identified one remaining JSDoc
-  correction: mock restart is disabled by default, with an opt-in fixture. The
-  comment and restart model bounds are corrected. Renewed sequential `make all`
-  and `make typecheck` passed: 4,376 workspace tests, nine skips, and five
-  GitHub tool tests. The full frontend gate passed 534 unit tests, two
-  accessibility tests, and both Playwright cases; embedded assets are current.
-  Command-scoped two-worker Rayon and watcher polling settings addressed host
-  resource exhaustion without changing checks or assertions. Publication and
-  affected assessment confirmation remain pending. The flag model has three
-  deployments, three flags, and 1–24 generated steps; a paired-write step can
-  execute two commands. Neither model establishes arbitrary schedules,
-  cross-process synchronization, or post-durable-write cancellation. The
-  historical Docstring Coverage result is non-blocking indeterminate, not a
-  pass; its inventory investigation and the LanguageTool character-budget
-  limitation remain explicit.
+  outcomes: 33 passed and three were intentionally skipped. Both
+  candidate-bound assessments accepted the runtime repairs and identified one
+  remaining JSDoc correction: mock restart is disabled by default, with an
+  opt-in fixture. The comment and restart model bounds are corrected. Renewed
+  sequential `make all` and `make typecheck` passed: 4,376 workspace tests,
+  nine skips, and five GitHub tool tests. The full frontend gate passed 534
+  unit tests, two accessibility tests, and both Playwright cases; embedded
+  assets are current. Command-scoped two-worker Rayon and watcher polling
+  settings addressed host resource exhaustion without changing checks or
+  assertions. Publication and affected assessment confirmation completed on
+  `6980c54a`. The flag model has three deployments, three flags, and 1–24
+  generated steps; a paired-write step can execute two commands. Neither model
+  establishes arbitrary schedules, cross-process synchronization, or
+  post-durable-write cancellation. The historical Docstring Coverage result is
+  non-blocking indeterminate, not a pass; its inventory investigation and the
+  LanguageTool character-budget limitation remain explicit.
+- [x] (2026-10-12) Address the incremental review on `6980c54a`: acquire
+  one registry guard for resource counts and the detached query snapshot, then
+  resolve that value without another registry lookup. Storage I/O never holds
+  the registry guard. Cached reads retain precedence over missing or failing
+  storage, covered by two gateway regression cases and the existing bounded
+  query model. Remove the empty mock-contract teardown and the stale decision
+  status, and normalize the progress paragraph indentation. Renew sequential
+  validation before publishing the repair. The expanded pre-merge report adds
+  query-observer separation, availability and admission telemetry, and stale
+  developer-reference findings; these repairs are also in scope. The new 21.62%
+  documentation result is a measured below-threshold warning, not the earlier
+  historical indeterminate result. Its 1,124-function, 88-file inventory and 27
+  unsupported entries are unavailable. The focused reply identified five useful
+  attached-documentation gaps; repair those contracts without claiming they
+  satisfy the undisclosed denominator or changing the 80% threshold. These
+  source repairs are staged. The renewed aggregate passed formatting, all
+  Clippy and Whitaker legs, and the GitHub WASM build. Workspace tests reported
+  4,390 passed, nine skipped, and one failed: `schema_helpers_ui::ui` could not
+  create Cargo's jobserver helper thread (`EAGAIN`). Every standalone typecheck
+  leg passed. Frontend lint and both TypeScript checks passed, but Vitest
+  startup aborted even with one worker. Asset verification then failed because
+  esbuild could not create an OS thread (`errno=11`). The shared Lody service
+  reached its 8,192-task limit; compiler admission remains healthy. Single-job
+  Cargo, two-worker Rayon, in-process Clang, and bounded Vitest workers have
+  not restored dependable task headroom. At that checkpoint, host-owner
+  capacity recovery was needed before the failed gates could be rerun;
+  publication and merge were blocked.
+- [x] (2026-10-13 13:59Z) The host owner raised the Lody task ceiling to
+  16,384. Resumed sequential native, frontend, documentation, and CodeScene
+  validation on the staged review repairs. Successful receipts below supersede
+  the previous resource failures for the repaired source.
+- [x] (2026-10-13) The first aggregate after capacity recovery passed
+  formatting, all four Clippy configurations, both Whitaker suites, and the
+  GitHub tool WASM build. Workspace tests reported 4,390 passes, nine skips,
+  and one timeout: `schema_helpers_ui::ui` exceeded 1,500 seconds while its
+  nested Trybuild project compiled dependencies. No fixture assertion failure
+  was reported. That build inherited the emergency single-job Cargo limit. The
+  renewal used four command-scoped Cargo jobs after verifying host task
+  headroom, retaining compiler admission, the shared cache, and all test
+  budgets. The sequential gates subsequently passed, as recorded below.
+- [x] (2026-10-13) Validate the incremental review repairs after restoring
+  bounded Cargo concurrency. `make all` passed on the refactored telemetry:
+  formatting, all four Clippy configurations, both Whitaker suites, the GitHub
+  tool WASM build, 4,391 workspace tests (nine skipped), and all five GitHub
+  tool tests. All four standalone typecheck legs passed. The unchanged frontend
+  passed 534 unit and behavioural tests, two accessibility tests, and both
+  Playwright scenarios, including restart, outage, and recovery. Embedded
+  assets rebuilt byte-identically. Markdown, spelling, Nixie, and
+  staged/working diff checks passed. Availability selection and observation
+  were separated to remove the introduced CodeScene nesting finding without
+  changing precedence, event order, fixed labels, or test budgets. CodeScene
+  reviewed all 17 edited source files; telemetry scored 10.0 and the full
+  branch delta reported no introduced findings. Publication and current-head
+  review reconciliation remain pending; the native documentation warning has no
+  invented percentage or threshold pass.
 - [ ] (2026-10-12) Reconcile current-head hosted checks, ExecPlan assessment,
   review findings, and approval before merge.
 
@@ -347,7 +401,7 @@ SolidJS UI.
   needed, persist, and only then publish to the cache. Deleting a persisted row
   is visible to uncached readers; a gateway with a cached snapshot retains it
   until restart. This supersedes any earlier implication that reads hydrate or
-  publish registry state. Candidate validation remains pending.
+  publish registry state.
 - Decision: expose a minimal `window.__axinite` test-hook object from the
   SPA (chat stream close/reconnect, `emitChatEvent`, ready marker) instead of
   recreating the legacy globals the Python e2e suite pokes. Rationale: the
