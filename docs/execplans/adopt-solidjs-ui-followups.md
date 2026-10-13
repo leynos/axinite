@@ -338,6 +338,19 @@ SolidJS UI.
   branch delta reported no introduced findings. Publication and current-head
   review reconciliation remain pending; the native documentation warning has no
   invented percentage or threshold pass.
+- [x] (2026-10-13) Clear the hosted dependency-audit failure locally.
+  CI on `4811205d` found `quinn-proto` 0.11.14 affected by `RUSTSEC-2026-0338`,
+  `RUSTSEC-2026-0339`, `RUSTSEC-2026-0340`, and `RUSTSEC-2026-0342`. The local
+  audit also found the tracked fuzz lockfile using 0.11.16, affected by those
+  advisories and `RUSTSEC-2026-0341`. Both lockfiles now use the fixed 0.11.18
+  release, including its required `rand_pcg` 0.10.2 dependency and existing RNG
+  dependencies. All other audited lockfiles were inspected and contain no
+  `quinn-proto` package. The published crate requires Rust 1.85, below this
+  project's Rust 1.95 minimum. `make audit`, `make all`, all four standalone
+  typecheck legs, Markdown, spelling, Nixie, staged Markdown, and diff checks
+  passed. Workspace tests passed 4,391 cases with nine skipped; all five GitHub
+  tool tests passed. Existing permitted audit warnings remain unchanged. Hosted
+  verification and current-head review reconciliation remain pending.
 - [ ] (2026-10-12) Reconcile current-head hosted checks, ExecPlan assessment,
   review findings, and approval before merge.
 
