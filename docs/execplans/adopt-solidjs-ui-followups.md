@@ -351,6 +351,12 @@ SolidJS UI.
   passed. Workspace tests passed 4,391 cases with nine skipped; all five GitHub
   tool tests passed. Existing permitted audit warnings remain unchanged. Hosted
   verification and current-head review reconciliation remain pending.
+- [x] (2026-10-14) Align roadmap tasks 4.5.2 and 4.5.4 with the shipped
+  query contract after the scoped review reconciliation. Availability is a
+  disable-only request-resolution layer. Reads use detached cached snapshots or
+  load query-local snapshots without registry hydration; explicit override
+  commands own hydration and publication. Source and verification requirements
+  are unchanged.
 - [ ] (2026-10-12) Reconcile current-head hosted checks, ExecPlan assessment,
   review findings, and approval before merge.
 

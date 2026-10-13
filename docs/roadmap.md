@@ -1122,9 +1122,9 @@ out behind flags.
   - Success: `GatewayState` holds an `Arc<RwLock<FeatureFlagRegistry>>` that
     supports runtime re-resolution when deployment-scoped operator overrides
     change, resolves flags per deployment while ignoring user-scoped
-    `feature_flag:` rows, and applies subsystem availability defaults during
-    initialization based on `GatewayState` field presence (disable-only, per the
-    RFC 0009 implementation notes). Verified by the registry unit tests in
+    `feature_flag:` rows. Request resolution applies subsystem availability as a
+    disable-only layer based on `GatewayState` field presence, per the RFC 0009
+    implementation notes. Verified by the registry unit tests in
     `src/channels/web/handlers/feature_registry.rs` and the subsystem tests in
     `src/channels/web/handlers/features.rs` (`make test`).
 - [x] 4.5.3. Extend the settings handler to detect `feature_flag:` keys and
@@ -1147,9 +1147,10 @@ out behind flags.
   - Success: the endpoint returns a JSON object mapping flag names to booleans,
     takes an optional `X-Deployment-Id` header that defaults to `"default"`
     when absent or blank and returns 400 when malformed, sets an
-    `X-Axinite-Version` response header, and reads from a cached registry that
-    is hydrated lazily on the first read per deployment (no per-request
-    database query after hydration). Verified by the tests in
+    `X-Axinite-Version` response header, and uses a detached cached snapshot
+    when available. Each uncached request loads a query-local snapshot from
+    storage without hydrating the registry. Explicit override commands own
+    hydration and cache publication. Verified by the tests in
     `src/channels/web/handlers/features.rs`,
     `src/channels/web/handlers/feature_registry.rs`, and
     `src/channels/web/handlers/settings/tests.rs`
