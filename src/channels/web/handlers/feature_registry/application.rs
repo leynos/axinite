@@ -37,18 +37,18 @@ pub(crate) trait FlagStore: Send + Sync {
     ) -> impl Future<Output = Result<(), FlagStoreError>> + Send;
 }
 
-/// Obtain a query-local snapshot; reads do not publish cache or retry state.
+/// Resolve a detached cached value or load locally without registry access.
 pub(crate) async fn query<S: FlagStore>(
-    registry: &RwLock<FeatureFlagRegistry>,
-    store: &S,
+    cached: Option<FlagSnapshot>,
+    store: Option<&S>,
     deployment: &DeploymentId,
 ) -> Result<FlagSnapshot, FlagStoreError> {
-    let cached = registry.read().await.snapshot(deployment);
     if let Some(snapshot) = cached {
-        telemetry::count("cache", "hit");
         return Ok(snapshot);
     }
-    telemetry::count("cache", "miss");
+    let Some(store) = store else {
+        return Ok(FlagSnapshot::default());
+    };
     store.load(deployment).await
 }
 
@@ -57,8 +57,11 @@ async fn admit_deployment(
     registry: &RwLock<FeatureFlagRegistry>,
     deployment: &DeploymentId,
 ) -> OwnedMutexGuard<()> {
+    let started = std::time::Instant::now();
     let gate = registry.write().await.operation_gate(deployment);
-    gate.lock_owned().await
+    let guard = gate.lock_owned().await;
+    telemetry::admission_wait(started);
+    guard
 }
 
 /// Explicit command hydration; queries never invoke this mutating path.
@@ -82,7 +85,10 @@ async fn hydrate_admitted<S: FlagStore>(
     if is_retry {
         telemetry::count("hydration", "retry");
     }
-    match store.load(deployment).await {
+    let started = std::time::Instant::now();
+    let loaded = store.load(deployment).await;
+    telemetry::store_result("load", started, loaded.is_ok());
+    match loaded {
         Ok(snapshot) => {
             registry.write().await.hydrate(deployment.clone(), snapshot);
             telemetry::count("hydration", "success");
@@ -99,18 +105,25 @@ async fn hydrate_admitted<S: FlagStore>(
 /// Hydrate, persist, and publish under one deployment's owned admission guard.
 /// No registry lock spans storage I/O, and errors release admission for retries.
 /// Cancellation after durable persistence remains a separate consistency boundary.
+#[tracing::instrument(name = "feature_flags.override_command", skip_all,
+    fields(operation_id = %uuid::Uuid::new_v4()))]
 pub(crate) async fn set_override<S: FlagStore>(
     registry: &RwLock<FeatureFlagRegistry>,
     store: &S,
     command: FlagOverrideCommand,
 ) -> Result<(), FlagStoreError> {
+    let started = std::time::Instant::now();
     let _operation = admit_deployment(registry, &command.deployment).await;
     let result = apply_admitted(registry, store, &command).await;
     let resources = registry.read().await.resources();
     telemetry::cache_resources(resources);
+    telemetry::command_result(started, result.as_ref().err().copied());
     result
 }
 
+/// Apply under caller-owned deployment admission: hydrate before saving, then
+/// publish only a successful durable save. Propagate failures without publishing
+/// the command value; cancellation after a durable save has no stronger guarantee.
 async fn apply_admitted<S: FlagStore>(
     registry: &RwLock<FeatureFlagRegistry>,
     store: &S,

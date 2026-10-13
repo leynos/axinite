@@ -54,7 +54,8 @@ pub fn routes() -> Router<Arc<GatewayState>> {
 pub const VERSION_HEADER: &str = "x-axinite-version";
 
 /// Serve resolved flags; persisted-override read failures are explicit 503 errors.
-#[tracing::instrument(name = "feature_flags.read_request", skip_all)]
+#[tracing::instrument(name = "feature_flags.read_request", skip_all,
+    fields(operation_id = %uuid::Uuid::new_v4()))]
 pub async fn features_handler(
     State(state): State<Arc<GatewayState>>,
     headers: HeaderMap,
@@ -75,18 +76,30 @@ pub async fn features_handler(
         VERSION_HEADER,
         HeaderValue::from_static(env!("CARGO_PKG_VERSION")),
     );
-    let overrides = query_deployment_snapshot(&state, &deployment_id)
-        .await
-        .map_err(|error| {
-            telemetry::count("read_request", "error");
-            tracing::error!(%error, "Failed to load deployment feature flags");
-            (
-                StatusCode::SERVICE_UNAVAILABLE,
-                "failed to load feature flag overrides".to_string(),
-            )
-        })?;
+    let (resources, cached) = {
+        let registry = state.feature_flags.read().await;
+        (registry.resources(), registry.snapshot(&deployment_id))
+    };
+    // Observations belong to HTTP delivery, outside the snapshot query unit.
+    telemetry::cache_resources(resources);
+    telemetry::read_source(cached.is_some(), state.store.is_some());
+    let loads_store = cached.is_none() && state.store.is_some();
+    let started = std::time::Instant::now();
+    let loaded = query_deployment_snapshot(&state, cached, &deployment_id).await;
+    if loads_store {
+        telemetry::store_result("load", started, loaded.is_ok());
+    }
+    let overrides = loaded.map_err(|error| {
+        telemetry::count("read_request", "error");
+        telemetry::failure("read_request", error);
+        (
+            StatusCode::SERVICE_UNAVAILABLE,
+            "failed to load feature flag overrides".to_string(),
+        )
+    })?;
     let unavailable = unavailable_subsystem_flags(&state).await;
 
+    telemetry::availability_decisions(&unavailable, env_flag_overlay(), &overrides);
     telemetry::count("read_request", "success");
     Ok((
         response_headers,
@@ -152,26 +165,16 @@ async fn unavailable_subsystem_flags(state: &GatewayState) -> Vec<&'static str> 
     .unavailable_flags()
 }
 
-/// Return a detached response snapshot; observations do not publish registry state.
+/// Return a detached response snapshot without emitting query observations.
 async fn query_deployment_snapshot(
     state: &GatewayState,
+    cached: Option<FlagSnapshot>,
     deployment: &DeploymentId,
 ) -> Result<FlagSnapshot, application::FlagStoreError> {
-    let resources = state.feature_flags.read().await.resources();
-    telemetry::cache_resources(resources);
-    let cached = state.feature_flags.read().await.snapshot(deployment);
-    if let Some(snapshot) = cached {
-        telemetry::count("cache", "hit");
-        return Ok(snapshot);
-    }
-    let Some(store) = state.store.as_ref() else {
-        telemetry::count("read_snapshot", "no_store_defaults");
-        return Ok(FlagSnapshot::default());
-    };
-    let adapter = SettingsFlagStore {
+    let adapter = state.store.as_ref().map(|store| SettingsFlagStore {
         store: store.as_ref(),
-    };
-    application::query(&state.feature_flags, &adapter, deployment).await
+    });
+    application::query(cached, adapter.as_ref(), deployment).await
 }
 
 /// Persist through the gateway command; failed writes never publish their new value.

@@ -37,12 +37,9 @@ pub(super) struct SettingsFlagStore<'a> {
 }
 
 impl FlagStore for SettingsFlagStore<'_> {
-    #[tracing::instrument(name = "feature_flags.snapshot_load", skip_all)]
+    // Read observations belong to the HTTP or command caller, never this query adapter.
     async fn load(&self, deployment: &DeploymentId) -> Result<FlagSnapshot, FlagStoreError> {
-        let started = std::time::Instant::now();
-        let result = self.load_snapshot(deployment).await;
-        telemetry::store_result("load", started, result.is_ok());
-        result
+        self.load_snapshot(deployment).await
     }
 
     #[tracing::instrument(name = "feature_flags.write", skip_all)]

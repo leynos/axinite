@@ -16,6 +16,7 @@ struct ControlledStore {
     pause_production_disable: bool,
     release_first_write: Notify,
     fail_next_load: AtomicBool,
+    invalid_snapshot: bool,
     fail_next_save: AtomicBool,
 }
 
@@ -23,6 +24,9 @@ impl FlagStore for ControlledStore {
     async fn load(&self, deployment: &DeploymentId) -> Result<FlagSnapshot, FlagStoreError> {
         if self.fail_next_load.swap(false, Ordering::Relaxed) {
             return Err(FlagStoreError::Load);
+        }
+        if self.invalid_snapshot {
+            return Err(FlagStoreError::InvalidSnapshot);
         }
         let values = self
             .durable
@@ -213,3 +217,5 @@ async fn failed_commands_release_deployment_admission(#[case] failure: FailurePo
         Some(true)
     );
 }
+
+mod telemetry_tests;

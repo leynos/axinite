@@ -51,10 +51,13 @@ async fn run_query(
     model: &Reference,
     command: &FlagOverrideCommand,
 ) -> TestCaseResult {
-    let before = registry.read().await.resources();
+    let (before, cached) = {
+        let cache = registry.read().await;
+        (cache.resources(), cache.snapshot(&command.deployment))
+    };
     let failure = store.failure.load(Ordering::Relaxed);
     let expected = model.queried(command.deployment.as_str(), failure);
-    let actual = query(registry, store, &command.deployment)
+    let actual = query(cached, Some(store), &command.deployment)
         .await
         .map(|snapshot| values(&snapshot));
     prop_assert_eq!(actual, expected);

@@ -152,6 +152,8 @@ pub async fn settings_set_handler(
 /// a value that is a JSON boolean or the string `"true"`/`"false"`
 /// (case-insensitively). Returns a `SettingResponse`-shaped success body on the
 /// happy path.
+#[tracing::instrument(name = "feature_flags.write_request", skip_all,
+    fields(request_id = %uuid::Uuid::new_v4()))]
 async fn set_feature_flag(
     state: &GatewayState,
     flag_name: &str,
@@ -178,8 +180,13 @@ async fn set_feature_flag(
 
     apply_flag_override(state, &deployment_id, &flag, enabled)
         .await
-        .map_err(|e| {
-            tracing::error!("Failed to persist feature flag override: {e}");
+        .map_err(|_| {
+            let category = if state.store.is_some() {
+                "override_failed"
+            } else {
+                "no_store"
+            };
+            tracing::error!(category, "feature_flags.write_request_failure");
             (
                 StatusCode::INTERNAL_SERVER_ERROR,
                 "failed to persist feature flag override".to_string(),
@@ -277,3 +284,71 @@ pub async fn settings_import_handler(
 
 #[cfg(test)]
 mod tests;
+
+#[cfg(test)]
+mod request_observability_tests {
+    //! HTTP failure events share safe request correlation with nested commands.
+
+    use super::*;
+    use crate::channels::web::handlers::feature_registry::telemetry::test_support::RecordingObserver;
+    use crate::testing::null_db::CapturingStore;
+    use tracing::instrument::WithSubscriber;
+
+    #[rstest::rstest]
+    #[case::missing_store(false, "no_store")]
+    #[case::failed_command(true, "override_failed")]
+    #[tokio::test]
+    async fn write_failures_preserve_request_correlation_without_database_contents(
+        #[case] has_store: bool,
+        #[case] category: &str,
+    ) {
+        let observer = RecordingObserver::default();
+        let builder = crate::channels::web::test_helpers::TestGatewayBuilder::new();
+        let state = if has_store {
+            builder
+                .store(Arc::new(
+                    CapturingStore::failing_list_deployment_flags_once(
+                        crate::error::DatabaseError::Query("private database contents".to_string()),
+                    ),
+                ))
+                .build()
+        } else {
+            builder.build()
+        };
+        let mut headers = HeaderMap::new();
+        headers.insert(
+            "x-deployment-id",
+            axum::http::HeaderValue::from_static("private_deployment"),
+        );
+        let value = serde_json::Value::Bool(true);
+        let result = set_feature_flag(&state, "panel_logs", &headers, &value)
+            .with_subscriber(observer.clone().subscriber())
+            .await;
+        assert!(matches!(
+            result,
+            Err((StatusCode::INTERNAL_SERVER_ERROR, _))
+        ));
+        let records = observer.observations();
+        let failures = records
+            .iter()
+            .filter(|record| record.0["message"] == "feature_flags.write_request_failure")
+            .collect::<Vec<_>>();
+        assert_eq!(failures.len(), 1);
+        assert_eq!(failures[0].0["category"], category);
+        let correlation = &failures[0].0["request_id"];
+        assert!(uuid::Uuid::parse_str(correlation).is_ok());
+        if has_store {
+            let command_failure = records
+                .iter()
+                .find(|record| record.0["message"] == "feature_flags.failure")
+                .expect("nested command failure");
+            assert_eq!(command_failure.0["request_id"], *correlation);
+            assert!(uuid::Uuid::parse_str(&command_failure.0["operation_id"]).is_ok());
+        }
+        assert!(records.iter().all(|record| {
+            !record.0.values().any(|value| {
+                value.contains("private_deployment") || value.contains("private database contents")
+            })
+        }));
+    }
+}

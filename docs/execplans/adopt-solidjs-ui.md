@@ -281,6 +281,11 @@ Key current-state facts (verified by code inspection):
   preview server (port 2020) proxying `/api/*`; `scripts/dev.ts` orchestrates
   mock API + `vite build --watch` + preview; vitest unit + a11y suites;
   Playwright e2e (`axinite/tests/e2e/app-shell.pw.ts`).
+- Current workspace: the imported application and mock backend live under
+  `web-src/`. The frontend registry has 14 flags in
+  `web-src/axinite/src/lib/feature-flags/registry.ts`; the mock API and preview
+  server are `web-src/mock-backend/src/server.ts` and
+  `web-src/mock-backend/src/preview-server.ts` (ports 8787 and 2020).
 - Known contract breaks to fix (gap analysis): missing auth (G1),
   `/api/features` absent from gateway (G2), `LogEntry.source` vs daemon
   `target` (G3), job prompt `{prompt}` vs `{content, done?}` (G4), extension
@@ -324,8 +329,12 @@ reachable only when `AXINITE_WEB_UI=legacy` is set at startup. Add a freshness
 check (`make frontend-verify`) comparing a rebuild with the committed dist.
 Update `src/channels/web/CLAUDE.md`, `docs/front-end-architecture.md`.
 
+Implementation note (2026-10-12): UI asset routes and variant selection are
+implemented in `src/channels/web/handlers/ui_assets.rs`; `static_files.rs`
+retains health, logs, gateway-status, and project-file handlers.
+
 M6 — `GET /api/features` in the gateway: env-var-driven map, compiled defaults
-for the 13 SPA flags, unit tests. Wire into `protected_routes()`.
+for the 14 SPA flags, unit tests. Wire into `protected_routes()`.
 
 M7 — Stub runtime. `make frontend-stub` at repo root runs the Bun dev
 orchestration (mock API + build watch + preview proxy on a documented port).
@@ -389,16 +398,18 @@ cleanup removes it (RFC 0018 Stage 5 completion).
 
 ## Interfaces and dependencies
 
-- `web-src/axinite/src/lib/api/client.ts`: gains
-  `setGatewayToken(token: string)`, bearer-header injection, and
-  `createEventStream(url)` token-query support.
-- `src/channels/web/handlers/static_files.rs`: serves SolidJS artefacts by
-  default; exposes `fn ui_variant() -> UiVariant` (Legacy | Solid) resolved from
-  `AXINITE_WEB_UI` once at startup.
-- `src/channels/web/handlers/features.rs` (new):
-  `GET /api/features -> JSON object {flag_name: bool}` resolving
-  `FEATURE_FLAG_<UPPER_SNAKE_NAME>` env vars over compiled defaults.
-- `mock-backend/src/state.ts`: flag defaults overridable via
-  `FEATURE_FLAG_<NAME>` env vars at stub start.
+- `web-src/axinite/src/lib/auth/token.ts`: stores the gateway token for the
+  browser session and exports `setGatewayToken(token: string)`.
+- `web-src/axinite/src/lib/api/client.ts`: injects bearer headers and creates
+  token-bearing event streams with `createEventStream(url)`.
+- `src/channels/web/handlers/ui_assets.rs`: serves SolidJS artefacts by
+  default; exposes `pub fn ui_variant() -> UiVariant` (Legacy | Solid),
+  resolved from `AXINITE_WEB_UI` once at startup.
+- `src/channels/web/handlers/features.rs`: implements
+  `GET /api/features -> JSON object {flag_name: bool}` using the feature-flag
+  application and environment-resolved defaults.
+- `web-src/mock-backend/src/state.ts`: supplies the mock state;
+  `FEATURE_FLAG_<NAME>` environment overrides are parsed by
+  `web-src/mock-backend/src/flag-environment.ts`.
 
 No new Rust dependencies. No new JS dependencies beyond the mockup's own.
