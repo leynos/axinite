@@ -1,15 +1,18 @@
 # Axinite Front‑End Semantic Linting — Implementation Guide
 
-**Audience:** Implementers working on the `web-src/axinite` SolidJS workspace.  
+**Audience:** Implementers working on the `web-src/axinite` SolidJS workspace.
+
 **Goal:** Enforce semantic, accessible HTML with clean, token‑driven
 Tailwind/DaisyUI usage. The implemented gate combines **Biome**, **Stylelint**
 (`web-src/tools/stylelint.config.cjs`), **Semgrep**
 (`web-src/tools/semgrep-semantic.yml`), and two TypeScript checkers
 (`web-src/scripts/check-classlist-length.ts` and
 `web-src/scripts/find-near-duplicate-classes.ts`). GritQL rules are a design
-target described below; no `tools/grit/` rules are checked in yet.  
+target described below; no `tools/grit/` rules are checked in yet.
+
 **Outcome:** Readable, queryable markup; reusable semantic classes via
-`@apply`; consistent DaisyUI/Kobalte-aligned naming; one CLI for local and CI.  
+`@apply`; consistent DaisyUI/Kobalte-aligned naming; one CLI for local and CI.
+
 **Verify:** run `bun run semantic` from `web-src/`, or `make frontend-full`
 from the repository root.
 
@@ -656,7 +659,8 @@ ______________________________________________________________________
 
 ## 14) FAQ
 
-**Q: Will `@apply` bloat CSS?**  
+**Q: Will `@apply` bloat CSS?**
+
 A: Only repeated patterns are extracted. Tailwind still tree‑shakes class‑based
 styles; the few semantic classes added remain minimal and intentionally reused.
 
