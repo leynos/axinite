@@ -360,6 +360,19 @@ SolidJS UI.
 - [ ] (2026-10-12) Reconcile current-head hosted checks, ExecPlan assessment,
   review findings, and approval before merge.
 
+- [x] (2026-10-14) Isolated the Quinn lockfile update in prerequisite
+  [PR #434](https://github.com/leynos/axinite/pull/434) on `main`, then removed
+  its obsolete audit exception with a negative workflow-contract assertion.
+  Lower candidate `69afcedd` passes `make audit`, `make all`, `make typecheck`
+  and workflow contracts: 4,288 workspace tests (9 skipped), 5 GitHub-tool
+  tests and 1,437 workflow contracts (11 skipped) pass. CodeScene reports no
+  new findings. Replayed all 71 UI commits above that repair with identical
+  range-diff entries and restored the staged frontend whitespace corrections.
+  The earlier UI candidate passed lints and 4,390 tests but timed out in
+  `schema_helpers_ui::ui` after 1,500 seconds while nested Cargo builds queued.
+  That failed receipt remains separate from the prerequisite's passing run.
+  Fresh UI validation, publication, review and merge remain pending.
+
 ## Surprises & discoveries
 
 - Observation: gateway restart is not an HTTP endpoint — the legacy UI

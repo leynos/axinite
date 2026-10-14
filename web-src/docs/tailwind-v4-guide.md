@@ -1845,7 +1845,7 @@ npx @tailwindcss/upgrade
 <div class="@container group">
   <article
     class="
-    bg-white dark:bg-gray-900 
+    bg-white dark:bg-gray-900
     rounded-xl shadow-sm border border-gray-200 dark:border-gray-800
     overflow-hidden transition-all duration-200
     hover:shadow-md hover:-translate-y-0.5
@@ -1879,7 +1879,7 @@ npx @tailwindcss/upgrade
 <button
   class="
   relative px-6 py-3 bg-blue-600 text-white font-medium rounded-lg
-  transform-3d perspective-1000 
+  transform-3d perspective-1000
   transition-all duration-200
   hover:rotate-x-12 hover:scale-105 hover:shadow-xl
   active:scale-95 active:rotate-x-6
