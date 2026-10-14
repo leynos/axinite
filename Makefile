@@ -34,8 +34,6 @@ GITHUB_TOOL_MANIFEST := tools-src/github/Cargo.toml
 GITHUB_TOOL_WASM_TARGET := wasm32-wasip2
 # Keep audit ignores centralized and remove each one as soon as the triggering
 # transitive dependency is upgraded.
-# RUSTSEC-2026-0185: retain the existing Quinn exception until the stacked
-# issue #210 repair removes it and checks emitted audit commands.
 # RUSTSEC-2025-0141: bincode 1.3.3 is unmaintained via libsql. Track removal
 # in https://github.com/leynos/axinite/issues/211.
 # RUSTSEC-2024-0370: proc-macro-error 1.0.4 is unmaintained via
@@ -56,7 +54,6 @@ GITHUB_TOOL_WASM_TARGET := wasm32-wasip2
 # advisory ID to ignore for this warning; track removal in
 # https://github.com/leynos/axinite/issues/214.
 AUDIT_FLAGS ?= \
-	--ignore RUSTSEC-2026-0185 \
 	--ignore RUSTSEC-2025-0141 \
 	--ignore RUSTSEC-2024-0370
 RUST_DECIMAL_AUDIT_FLAGS := \
