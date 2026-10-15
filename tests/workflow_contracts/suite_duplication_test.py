@@ -129,7 +129,18 @@ def test_the_make_targets_still_run_what_this_module_reads_them_as() -> None:
         "--locked --package hyper-rustls@0.25.0 "
         "--all-features "
         "--lib --examples",
-    ), "the TLS feature-matrix leg must execute all library and example contracts"
+        "$(CARGO_COMMAND) test --target-dir "
+        "$(call shell_quote,$(LIBSQL_TRANSPORT_TARGET_DIR)) "
+        "--locked --package hyper-rustls@0.25.0 --all-features --doc",
+        "$(CARGO_COMMAND) test --target-dir "
+        "$(call shell_quote,$(LIBSQL_TRANSPORT_TARGET_DIR)) "
+        "--locked --package hyper-rustls@0.25.0 --doc",
+        "$(CARGO_COMMAND) test --target-dir "
+        "$(call shell_quote,$(LIBSQL_TRANSPORT_TARGET_DIR)) "
+        "--locked --package hyper-rustls@0.25.0 "
+        "--no-default-features "
+        "--features rustls-native-certs,tokio-runtime,http1 --doc",
+    ), "the TLS lane must run library/examples and all, default, and reduced doctests"
     assert MAKEFILE_PROFILE_DEFAULT in makefile, (
         f"the Makefile no longer falls back to the {DEFAULT_PROFILE!r} nextest "
         "profile, so a step that names no profile does not run the tests this "

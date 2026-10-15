@@ -17,15 +17,20 @@ use crate::config::ConfigBuilderExt;
 ///
 /// # Examples
 ///
+/// Select Ring explicitly so other dependencies can enable additional providers.
+///
 /// ```
 /// use hyper_rustls::HttpsConnectorBuilder;
 ///
-/// # #[cfg(all(feature = "webpki-roots", feature = "tokio-runtime", feature = "http1"))]
+/// # fn main() -> Result<(), rustls::Error> {
+/// # #[cfg(all(feature = "ring", feature = "webpki-roots", feature = "tokio-runtime", feature = "http1"))]
 /// let https = HttpsConnectorBuilder::new()
-///     .with_webpki_roots()
+///     .with_provider_and_webpki_roots(rustls::crypto::ring::default_provider())?
 ///     .https_only()
 ///     .enable_http1()
 ///     .build();
+/// # Ok(())
+/// # }
 /// ```
 pub struct ConnectorBuilder<State>(State);
 

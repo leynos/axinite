@@ -146,6 +146,13 @@ def test_test_target_uses_expected_nextest_command(
                 "test --target-dir 'target' --locked --package hyper-rustls@0.25.0 "
                 "--all-features "
                 "--lib --examples",
+                "test --target-dir 'target' --locked --package hyper-rustls@0.25.0 "
+                "--all-features --doc",
+                "test --target-dir 'target' --locked --package hyper-rustls@0.25.0 "
+                "--doc",
+                "test --target-dir 'target' --locked --package hyper-rustls@0.25.0 "
+                "--no-default-features "
+                "--features rustls-native-certs,tokio-runtime,http1 --doc",
             ),
         ),
         (
