@@ -70,9 +70,9 @@ def test_the_scan_finds_the_suite_at_all(
 
 
 def test_make_test_is_the_separate_ci_suites_and_nothing_else() -> None:
-    """`make test` must cover the workspace, GitHub tool and SDK patch lanes.
+    """`make test` must cover the workspace, GitHub tool and TLS patch lanes.
 
-    A developer runs one target; CI runs the halves on different lanes and
+    A developer runs one target; CI runs the suites on different lanes and
     different triggers. If the whole stopped being the sum of the parts, the
     local command and the gate would test different things, and this module
     would still read `make test` as covering both.
@@ -126,10 +126,10 @@ def test_the_make_targets_still_run_what_this_module_reads_them_as() -> None:
     assert transport == (
         "$(CARGO_COMMAND) test --target-dir "
         "$(call shell_quote,$(LIBSQL_TRANSPORT_TARGET_DIR)) "
-        "--locked --manifest-path crates/libsql/Cargo.toml "
-        "--no-default-features --features core,remote,replication,tls "
-        "--lib transport::tests",
-    ), "the excluded SDK patch must execute its TLS contracts"
+        "--locked --package hyper-rustls@0.25.0 "
+        "--all-features "
+        "--lib",
+    ), "the TLS feature-matrix leg must execute all library contracts"
     assert MAKEFILE_PROFILE_DEFAULT in makefile, (
         f"the Makefile no longer falls back to the {DEFAULT_PROFILE!r} nextest "
         "profile, so a step that names no profile does not run the tests this "
@@ -203,9 +203,9 @@ def test_the_tests_matrix_resolves_to_the_reviewed_legs(
 #: suite is the point, and nobody is waiting on it.
 FULL_RUN_EVENTS: tuple[str, ...] = (*PAID_EVENTS, "workflow_dispatch")
 
-#: Every suite this repository has, and the scope each covers. The workspace
-#: leaves two crates out, and `--workspace` cannot reach either, so each needs
-#: a lane of its own or it is not tested at all.
+#: Every suite this repository has, and the scope each covers. The two
+#: out-of-workspace crates need their own lanes. The TLS member additionally
+#: has an all-features matrix leg alongside its default workspace coverage.
 EXPECTED_SCOPES: frozenset[str] = frozenset(
     {
         WORKSPACE,

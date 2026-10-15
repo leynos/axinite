@@ -1898,12 +1898,16 @@ tests should not leave artefacts behind on disk.
 Do **not** use `new_local()` in unit tests; reserve it for integration tests or
 tests that specifically require filesystem-path behaviour.
 
-The libSQL SDK's TLS transport has loopback contract tests in its excluded
-source-patched crate. Run them with `make test-libsql-transport`; `make test`
-also includes that target, and CI runs it once per trigger. The standalone SDK
-test lockfile is included in `make audit`. See
-[`crates/libsql/UPSTREAM.md`](../crates/libsql/UPSTREAM.md) for the patch's
-provenance and maintenance boundary.
+The libSQL connector uses the narrowly patched `hyper-rustls` crate in
+`crates/hyper-rustls/`; the libSQL SDK itself remains the unchanged published
+crate. The patched crate is a non-publishable root-workspace member and shares
+the root lockfile, so it does not add an audited dependency graph. Run its
+loopback contract tests with `make test-libsql-transport`; `make test` includes
+that target. Workspace nextest includes its default HTTP/1 TLS tests; the
+dedicated target exercises all features, including HTTP/2, once per CI trigger
+alongside `make lint-libsql-transport`. See
+[`crates/hyper-rustls/UPSTREAM.md`](../crates/hyper-rustls/UPSTREAM.md) for
+source provenance and the patch's maintenance boundary.
 
 ### LibSqlDatabase shared handles
 

@@ -471,8 +471,8 @@ jobs:
         run: ./scripts/ci-resource-sampler.sh report
   libsql-transport-tests:
     name: libSQL TLS Transport Tests
-    # The SDK source patch is excluded from the workspace. Its loopback
-    # TLS contracts run once per trigger, including pushes to main.
+    # The SDK exercises the workspace transport with its HTTP/1 defaults.
+    # This small member-specific matrix leg also exercises HTTP/2 policy.
     runs-on: >-
       ${{ github.event_name == 'schedule' && 'ubuntu-latest'
       || github.event.pull_request.head.repo.fork && 'ubuntu-latest'
@@ -540,6 +540,8 @@ jobs:
             }}-${{ hashFiles('**/Cargo.lock') }}
           restore-keys: |
             cargo-v1-${{ runner.os }}-${{ runner.arch }}-${{ runner.environment }}-
+      - name: Lint the TLS integration source patch
+        run: make lint-libsql-transport
       - name: Run libSQL TLS Transport Tests
         run: make test-libsql-transport
       # Report the hit rate so a wrapper that is silently doing nothing shows

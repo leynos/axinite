@@ -146,8 +146,6 @@ extend-ignore-re = [
     "\\.github/labeler\\.yml",
     "\\b(?:ArtifactSpec|BehaviorVersion|CatalogEntry|CatalogSearchOutcome|ColorChoice|EmbeddedCatalogRaw|HostedToolCatalogSource|ImageAnalyzeTool|MissedTickBehavior|RegistryCatalog|RemoteToolCatalogResponse|ResetColor|SetForegroundColor|SkillCatalog)\\b",
     "\\b(?:EMBEDDED_CATALOG|MAX_REMOTE_TOOL_CATALOG_BYTES|REMOTE_TOOL_CATALOG_PATH|REMOTE_TOOL_CATALOG_ROUTE)\\b",
-    "\\b(?:SQLITE_ANALYZE|Analyze|wal_flavor)\\b",
-    "\\b(?:TransactionBehavior|DropBehavior|transaction_with_behavior|drop_behavior|set_drop_behavior)\\b",
     "\\b(?:backgroundColor|currentColor|foregroundColor|opaqueColor)\\b",
     "\\b(?:background|foreground|text)_color\\b",
     "\\b(?:background|theme)_color\\b",

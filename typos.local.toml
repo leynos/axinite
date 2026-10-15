@@ -10,9 +10,6 @@ accepted = []
 
 [patterns]
 ignore = [
-  # Immutable upstream libSQL API and SQLite/protocol field spellings.
-  '\b(?:TransactionBehavior|DropBehavior|transaction_with_behavior|drop_behavior|set_drop_behavior)\b',
-  '\b(?:SQLITE_ANALYZE|Analyze|wal_flavor)\b',
   '\bCENTER_INSIDE\b',
   '\b[0-9A-F]{6}\b',
   '"caf%C3%A9"',

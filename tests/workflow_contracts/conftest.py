@@ -27,7 +27,6 @@ fixture fails that test with the error, naming the file.
 from __future__ import annotations
 
 import shutil
-import subprocess
 import sys
 import tempfile
 import typing as typ
@@ -297,16 +296,10 @@ def utility_bin(tmp_path: Path) -> Path:
     """
     utility_bin = tmp_path / "utilities"
     utility_bin.mkdir()
-    for name in ("dirname", "find", "git", "make", "mdtablefix", "node", "rustfmt", "sh"):
+    for name in ("dirname", "find", "git", "make", "mdtablefix", "node", "sh"):
         executable = shutil.which(name)
         if executable is None:
             pytest.fail(f"{name} must be available to run workflow contracts")
-        if name == "rustfmt" and Path(executable).resolve().name == "rustup":
-            # Cargo path tests replace HOME; use the selected formatter directly.
-            executable = subprocess.run(
-                [str(Path(executable).resolve()), "which", "rustfmt"],
-                check=True, capture_output=True, text=True,
-            ).stdout.strip()
         (utility_bin / name).symlink_to(executable)
     python_executable = Path(sys.base_prefix) / "bin" / "python3"
     if not python_executable.is_file():

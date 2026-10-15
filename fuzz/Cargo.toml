@@ -42,4 +42,4 @@ path = "fuzz_targets/fuzz_config_env.rs"
 doc = false
 
 [patch.crates-io]
-libsql = { path = "../crates/libsql" }
+hyper-rustls = { path = "../crates/hyper-rustls" }

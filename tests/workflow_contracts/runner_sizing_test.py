@@ -197,8 +197,8 @@ REVIEWED_SHAPES: dict[tuple[str, str], tuple[str, str]] = {
     ),
     ("test.yml", "libsql-transport-tests"): (
         "ubicloud-standard-2",
-        "the SDK library and ten loopback TLS cases, without the workspace "
-        "or WASM runtime; provisional until its first resource peak is recorded",
+        "the TLS transport all-features matrix without the application or WASM "
+        "runtime; provisional until its first resource peak is recorded",
     ),
     ("test.yml", "telegram-tests"): (
         "ubicloud-standard-2",

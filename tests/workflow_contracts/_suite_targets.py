@@ -22,12 +22,12 @@ if typ.TYPE_CHECKING:  # pragma: no cover - typing only
     from pathlib import Path
 
 #: The scope a run covers. Two runs only collide when they cover the same
-#: scope: the workspace suite and an out-of-workspace crate's suite share a
-#: command shape and nothing else.
+#: scope. The transport member also has an explicit all-features matrix leg;
+#: its default-feature tests remain part of the workspace suite.
 WORKSPACE = "workspace"
 GITHUB_TOOL_MANIFEST = "tools-src/github/Cargo.toml"
 GITHUB_TOOL_SCOPE = f"crate:{GITHUB_TOOL_MANIFEST}"
-LIBSQL_TRANSPORT_SCOPE = "crate:crates/libsql/Cargo.toml"
+LIBSQL_TRANSPORT_SCOPE = "crate:crates/hyper-rustls/Cargo.toml"
 #: What each Make target runs, and whether the features it runs under come
 #: from the step's `TEST_FEATURES`. A workflow step says `make test-workspace`
 #: and only the Makefile says what that is; the mapping is asserted against it
@@ -82,11 +82,9 @@ ALL_FEATURES = ":all-features"
 NO_DEFAULT_FEATURES = ":no-default-features"
 #: The manifest whose `default` feature list every command inherits unless it
 #: passes `--no-default-features`.
-# The SDK lane has a fixed feature selection independent of TEST_FEATURES.
+# The transport matrix leg has a fixed feature selection independent of TEST_FEATURES.
 FIXED_FEATURES = {
-    LIBSQL_TRANSPORT_SCOPE: frozenset(
-        {NO_DEFAULT_FEATURES, "core", "remote", "replication", "tls"}
-    )
+    LIBSQL_TRANSPORT_SCOPE: frozenset({ALL_FEATURES})
 }
 ROOT_MANIFEST = REPOSITORY_ROOT / "Cargo.toml"
 #: The Makefile that says what each target above actually runs.

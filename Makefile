@@ -66,7 +66,7 @@ LIBSQL_AUDIT_FLAGS := \
 PDF_EXTRACT_AUDIT_FLAGS := \
 	--ignore RUSTSEC-2026-0192
 
-.PHONY: all install install-with-overrides sync-local-wasm-overrides build-github-tool-wasm fmt check-fmt typecheck lint lint-clippy lint-whitaker markdownlint spelling nixie audit rust-audit test test-workspace test-github-tool test-libsql-transport test-cargo test-matrix test-matrix-cargo test-workflow-contracts clean
+.PHONY: all install install-with-overrides sync-local-wasm-overrides build-github-tool-wasm fmt check-fmt typecheck lint lint-clippy lint-whitaker markdownlint spelling nixie audit rust-audit test test-workspace test-github-tool test-libsql-transport lint-libsql-transport test-cargo test-matrix test-matrix-cargo test-workflow-contracts clean
 
 # `make fmt` and `make check-fmt` call mdtablefix directly. `--git` selects the
 # Markdown files Git tracks and `--include-untracked` adds the untracked files
@@ -96,14 +96,12 @@ build-github-tool-wasm:
 fmt:
 	$(CARGO_COMMAND) fmt --all
 	$(CARGO_COMMAND) fmt --manifest-path $(GITHUB_TOOL_MANIFEST) --all
-	rustfmt --edition 2021 crates/libsql/src/transport.rs
 	$(MDTABLEFIX) --in-place $(MDTABLEFIX_SELECT) $(MDTABLEFIX_RULES)
 	$(MDLINT) --fix "**/*.md"
 
 check-fmt:
 	$(CARGO_COMMAND) fmt --all -- --check
 	$(CARGO_COMMAND) fmt --manifest-path $(GITHUB_TOOL_MANIFEST) --all -- --check
-	rustfmt --edition 2021 --check crates/libsql/src/transport.rs
 	$(MDTABLEFIX) --check $(MDTABLEFIX_SELECT) $(MDTABLEFIX_RULES)
 
 typecheck:
@@ -120,6 +118,10 @@ lint-clippy:
 	$(CARGO_COMMAND) clippy --all --benches --tests --examples --all-features $(TEST_FEATURES) -- -D warnings
 	$(CARGO_COMMAND) clippy --manifest-path $(GITHUB_TOOL_MANIFEST) --tests -- -D warnings
 
+# Cover the TLS member's additional feature configuration with strict lints.
+lint-libsql-transport:
+	$(CARGO_COMMAND) clippy --target-dir $(call shell_quote,$(LIBSQL_TRANSPORT_TARGET_DIR)) --locked --package hyper-rustls@0.25.0 --all-targets --all-features -- -D warnings
+
 lint-whitaker:
 	RUSTFLAGS="-D warnings" $(WHITAKER) --all -- --all-targets --all-features
 	RUSTFLAGS="-D warnings" $(WHITAKER) --all --manifest-path $(GITHUB_TOOL_MANIFEST) -- --tests
@@ -135,11 +137,10 @@ nixie:
 
 audit: rust-audit
 
-# Workspace members share the root lockfile. The excluded libSQL source
-# patch also has a standalone transport-test graph, so audit it separately.
+# Workspace members, including the TLS integration patch, share the root lockfile.
 rust-audit:
 	find . \
-		\( -path '*/target/*' -o -path '*/node_modules/*' -o -path '*/.venv/*' -o \( -path './crates/*' ! -path './crates/libsql' ! -path './crates/libsql/*' \) \) -prune -o \
+		\( -path '*/target/*' -o -path '*/node_modules/*' -o -path '*/.venv/*' -o -path './crates/*' \) -prune -o \
 		-name Cargo.toml -exec sh -c 'set -e; audit_command=$$1; shift; for manifest do \
 			manifest_dir=$$(dirname "$$manifest"); \
 			printf "Auditing Rust manifest %s\n" "$$manifest"; \
@@ -197,6 +198,6 @@ clean:
 	$(CARGO_COMMAND) clean --manifest-path $(GITHUB_TOOL_MANIFEST)
 	rm -rf $(WASM_SHARED_TARGET_DIR)
 
-# The SDK patch is excluded from the workspace; run its TLS contracts once.
+# Exercise the TLS member with HTTP/2 enabled as well as the SDK default HTTP/1 path.
 test-libsql-transport:
-	$(CARGO_COMMAND) test --target-dir $(call shell_quote,$(LIBSQL_TRANSPORT_TARGET_DIR)) --locked --manifest-path crates/libsql/Cargo.toml --no-default-features --features core,remote,replication,tls --lib transport::tests
+	$(CARGO_COMMAND) test --target-dir $(call shell_quote,$(LIBSQL_TRANSPORT_TARGET_DIR)) --locked --package hyper-rustls@0.25.0 --all-features --lib

@@ -131,14 +131,21 @@ def test_test_target_uses_expected_nextest_command(
             ),
         ),
         (
+            "lint-libsql-transport",
+            (
+                "clippy --target-dir 'target' --locked --package "
+                "hyper-rustls@0.25.0 --all-targets --all-features -- -D warnings",
+            ),
+        ),
+        (
             "test",
             (
                 "build --manifest-path tools-src/github/Cargo.toml --release "
                 "--target wasm32-wasip2",
                 "test --manifest-path tools-src/github/Cargo.toml",
-                "test --target-dir 'target' --locked --manifest-path crates/libsql/Cargo.toml "
-                "--no-default-features --features core,remote,replication,tls "
-                "--lib transport::tests",
+                "test --target-dir 'target' --locked --package hyper-rustls@0.25.0 "
+                "--all-features "
+                "--lib",
             ),
         ),
         (
@@ -179,6 +186,7 @@ def test_test_target_uses_expected_nextest_command(
         "check-fmt",
         "typecheck",
         "lint-clippy",
+        "lint-libsql-transport",
         "test",
         "test-cargo",
         "test-matrix",

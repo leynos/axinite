@@ -211,7 +211,7 @@ def test_audit_executes_multiword_command_override(
     )
     (locked_manifest_dir / "Cargo.toml").write_text(manifest)
     (unlocked_manifest_dir / "Cargo.toml").write_text(manifest)
-    sdk_dir = audit_root / "crates/libsql"
+    sdk_dir = audit_root / "crates/hyper-rustls"
     workspace_dir = audit_root / "crates/workspace-member"
     sdk_dir.mkdir(parents=True)
     workspace_dir.mkdir()
@@ -283,8 +283,8 @@ def test_audit_executes_multiword_command_override(
     observed_manifest_dirs = {
         Path(manifest_dir).resolve() for manifest_dir, _ in commands
     }
-    assert sdk_dir.resolve() in observed_manifest_dirs, (
-        "the excluded SDK transport graph must be audited"
+    assert sdk_dir.resolve() not in observed_manifest_dirs, (
+        "the workspace TLS patch must share the root audit graph"
     )
     assert workspace_dir.resolve() not in observed_manifest_dirs, (
         "workspace members share the root audit graph"

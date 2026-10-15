@@ -1,5 +1,5 @@
 [workspace]
-members = [".", "crates/ambient-fs"]
+members = [".", "crates/ambient-fs", "crates/hyper-rustls"]
 exclude = [
     "channels-src/discord",
     "channels-src/telegram",
@@ -15,7 +15,6 @@ exclude = [
     "tools-src/slack",
     "tools-src/telegram",
     "fuzz",
-    "crates/libsql",
 ]
 
 [package]
@@ -323,5 +322,5 @@ x86_64-apple-darwin = "macos-15-intel"
 aarch64-apple-darwin = "macos-14"
 
 [patch.crates-io]
-# Published libSQL 0.9.30 with only its TLS transport updated; see UPSTREAM.md.
-libsql = { path = "crates/libsql" }
+# Update the SDK transport without forking libSQL; see the patch UPSTREAM.md.
+hyper-rustls = { path = "crates/hyper-rustls" }
