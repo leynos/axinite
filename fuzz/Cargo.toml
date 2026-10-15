@@ -40,3 +40,6 @@ doc = false
 name = "fuzz_config_env"
 path = "fuzz_targets/fuzz_config_env.rs"
 doc = false
+
+[patch.crates-io]
+libsql = { path = "../crates/libsql" }

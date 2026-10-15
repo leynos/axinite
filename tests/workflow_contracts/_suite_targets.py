@@ -27,6 +27,7 @@ if typ.TYPE_CHECKING:  # pragma: no cover - typing only
 WORKSPACE = "workspace"
 GITHUB_TOOL_MANIFEST = "tools-src/github/Cargo.toml"
 GITHUB_TOOL_SCOPE = f"crate:{GITHUB_TOOL_MANIFEST}"
+LIBSQL_TRANSPORT_SCOPE = "crate:crates/libsql/Cargo.toml"
 #: What each Make target runs, and whether the features it runs under come
 #: from the step's `TEST_FEATURES`. A workflow step says `make test-workspace`
 #: and only the Makefile says what that is; the mapping is asserted against it
@@ -34,9 +35,14 @@ GITHUB_TOOL_SCOPE = f"crate:{GITHUB_TOOL_MANIFEST}"
 #: `tests` legs used to call, and a contract that could not read it would have
 #: reported the duplication it caused as nothing at all.
 MAKE_TARGETS: dict[str, tuple[tuple[str, bool], ...]] = {
-    "test": ((WORKSPACE, True), (GITHUB_TOOL_SCOPE, False)),
+    "test": (
+        (WORKSPACE, True),
+        (GITHUB_TOOL_SCOPE, False),
+        (LIBSQL_TRANSPORT_SCOPE, False),
+    ),
     "test-workspace": ((WORKSPACE, True),),
     "test-github-tool": ((GITHUB_TOOL_SCOPE, False),),
+    "test-libsql-transport": ((LIBSQL_TRANSPORT_SCOPE, False),),
 }
 #: The build `test-workspace` has to perform before its suite. The metadata
 #: and schema tests load the artefact it produces, so a recipe that runs the
@@ -76,6 +82,12 @@ ALL_FEATURES = ":all-features"
 NO_DEFAULT_FEATURES = ":no-default-features"
 #: The manifest whose `default` feature list every command inherits unless it
 #: passes `--no-default-features`.
+# The SDK lane has a fixed feature selection independent of TEST_FEATURES.
+FIXED_FEATURES = {
+    LIBSQL_TRANSPORT_SCOPE: frozenset(
+        {NO_DEFAULT_FEATURES, "core", "remote", "replication", "tls"}
+    )
+}
 ROOT_MANIFEST = REPOSITORY_ROOT / "Cargo.toml"
 #: The Makefile that says what each target above actually runs.
 MAKEFILE = REPOSITORY_ROOT / "Makefile"

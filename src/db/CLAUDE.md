@@ -49,6 +49,20 @@ cargo check --all-features                            # both
 | `libsql_migrations.rs`    | Consolidated libSQL schema (CREATE IF NOT EXISTS, no ALTER TABLE)                                                                                 |
 | `tls.rs`                  | TLS connector factory for PostgreSQL (`rustls` + system root certs)                                                                               |
 
+## Remote libSQL TLS transport
+
+The application uses the published `libsql` SDK with a narrow source patch in
+`crates/libsql/`. The patch keeps the SDK's public builders and database
+behaviour while replacing its private TLS connector dependencies with rustls
+0.23.46 or later and Tokio TLS. The connector retains native roots, certificate
+and hostname validation, HTTP and HTTPS routing, the original empty ALPN
+configuration and TCP_NODELAY. See `crates/libsql/UPSTREAM.md` for archive
+provenance and patch removal conditions.
+
+Run `make test-libsql-transport` to exercise the SDK transport's loopback
+contracts. The target is included once in `make test`; its standalone test
+dependency graph is also checked by `make audit`.
+
 PostgreSQL schema: `migrations/V1__initial.sql` through
 `V9__flexible_embedding_dimension.sql` (managed by `refinery`). V1 is the base
 schema; later migrations add tables, columns, and rename `claude_code_events` →

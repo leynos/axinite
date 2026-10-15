@@ -39,6 +39,7 @@ from _suite_targets import (
     GITHUB_TOOL_MANIFEST,
     GITHUB_TOOL_RECIPE,
     GITHUB_TOOL_SCOPE,
+    LIBSQL_TRANSPORT_SCOPE,
     MAKEFILE_PROFILE_DEFAULT,
     WORKSPACE,
     WORKSPACE_RECIPE_LINES,
@@ -68,8 +69,8 @@ def test_the_scan_finds_the_suite_at_all(
         )
 
 
-def test_make_test_is_both_halves_and_nothing_else() -> None:
-    """`make test` must remain exactly the two lanes CI runs separately.
+def test_make_test_is_the_separate_ci_suites_and_nothing_else() -> None:
+    """`make test` must cover the workspace, GitHub tool and SDK patch lanes.
 
     A developer runs one target; CI runs the halves on different lanes and
     different triggers. If the whole stopped being the sum of the parts, the
@@ -78,8 +79,8 @@ def test_make_test_is_both_halves_and_nothing_else() -> None:
     """
     makefile = read_makefile()
     prerequisites, recipe = make_rule_in(makefile, "test")
-    assert set(prerequisites) == {"test-workspace", "test-github-tool"}, (
-        f"`make test` builds {prerequisites}, which is no longer the two "
+    assert set(prerequisites) == {"test-workspace", "test-github-tool", "test-libsql-transport"}, (
+        f"`make test` builds {prerequisites}, which is no longer the separate "
         "lanes CI runs; a developer and the gate would test different things"
     )
     assert not recipe, (
@@ -121,6 +122,14 @@ def test_the_make_targets_still_run_what_this_module_reads_them_as() -> None:
         "the scope and the empty feature set this module gives it both come "
         "from that one command"
     )
+    _, transport = make_rule_in(makefile, "test-libsql-transport")
+    assert transport == (
+        "$(CARGO_COMMAND) test --target-dir "
+        "$(call shell_quote,$(LIBSQL_TRANSPORT_TARGET_DIR)) "
+        "--locked --manifest-path crates/libsql/Cargo.toml "
+        "--no-default-features --features core,remote,replication,tls "
+        "--lib transport::tests",
+    ), "the excluded SDK patch must execute its TLS contracts"
     assert MAKEFILE_PROFILE_DEFAULT in makefile, (
         f"the Makefile no longer falls back to the {DEFAULT_PROFILE!r} nextest "
         "profile, so a step that names no profile does not run the tests this "
@@ -198,7 +207,12 @@ FULL_RUN_EVENTS: tuple[str, ...] = (*PAID_EVENTS, "workflow_dispatch")
 #: leaves two crates out, and `--workspace` cannot reach either, so each needs
 #: a lane of its own or it is not tested at all.
 EXPECTED_SCOPES: frozenset[str] = frozenset(
-    {WORKSPACE, GITHUB_TOOL_SCOPE, "crate:channels-src/telegram/Cargo.toml"}
+    {
+        WORKSPACE,
+        GITHUB_TOOL_SCOPE,
+        LIBSQL_TRANSPORT_SCOPE,
+        "crate:channels-src/telegram/Cargo.toml",
+    }
 )
 
 

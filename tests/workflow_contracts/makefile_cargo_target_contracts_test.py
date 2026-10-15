@@ -58,6 +58,7 @@ def test_test_target_uses_expected_nextest_command(
             "PATH": os.pathsep.join((str(fake_bin), str(utility_bin))),
         }
     )
+    environment.pop("CARGO_TARGET_DIR", None)
     environment.pop("CARGO_AUDIT", None)
     environment.pop("CARGO_AUDIT_SUBCOMMAND", None)
     if nextest_override is None:
@@ -135,6 +136,9 @@ def test_test_target_uses_expected_nextest_command(
                 "build --manifest-path tools-src/github/Cargo.toml --release "
                 "--target wasm32-wasip2",
                 "test --manifest-path tools-src/github/Cargo.toml",
+                "test --target-dir 'target' --locked --manifest-path crates/libsql/Cargo.toml "
+                "--no-default-features --features core,remote,replication,tls "
+                "--lib transport::tests",
             ),
         ),
         (
@@ -219,6 +223,7 @@ def test_targets_use_resolved_quoted_cargo_command(
             "PATH": str(utility_bin),
         }
     )
+    environment.pop("CARGO_TARGET_DIR", None)
     environment.pop("CARGO_AUDIT", None)
     environment.pop("CARGO_AUDIT_SUBCOMMAND", None)
     result = subprocess.run(
@@ -286,6 +291,7 @@ def test_targets_escape_resolved_cargo_paths(
 
     environment = os.environ.copy()
     environment.pop("NEXTEST", None)
+    environment.pop("CARGO_TARGET_DIR", None)
     environment.pop("CARGO_AUDIT", None)
     environment.pop("CARGO_AUDIT_SUBCOMMAND", None)
     environment.update(
