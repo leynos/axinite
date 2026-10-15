@@ -145,7 +145,7 @@ def test_test_target_uses_expected_nextest_command(
                 "test --manifest-path tools-src/github/Cargo.toml",
                 "test --target-dir 'target' --locked --package hyper-rustls@0.25.0 "
                 "--all-features "
-                "--lib",
+                "--lib --examples",
             ),
         ),
         (

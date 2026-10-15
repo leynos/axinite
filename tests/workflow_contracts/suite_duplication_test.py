@@ -128,8 +128,8 @@ def test_the_make_targets_still_run_what_this_module_reads_them_as() -> None:
         "$(call shell_quote,$(LIBSQL_TRANSPORT_TARGET_DIR)) "
         "--locked --package hyper-rustls@0.25.0 "
         "--all-features "
-        "--lib",
-    ), "the TLS feature-matrix leg must execute all library contracts"
+        "--lib --examples",
+    ), "the TLS feature-matrix leg must execute all library and example contracts"
     assert MAKEFILE_PROFILE_DEFAULT in makefile, (
         f"the Makefile no longer falls back to the {DEFAULT_PROFILE!r} nextest "
         "profile, so a step that names no profile does not run the tests this "

@@ -98,8 +98,10 @@ version = "0.23.46"
 features = ["tls12"]
 default-features = false
 
-[dev-dependencies.rustls-pemfile]
-version = "2"
+[dev-dependencies.pki-types]
+version = "1.14.1"
+features = ["std"]
+package = "rustls-pki-types"
 
 [dev-dependencies.tokio]
 version = "1.0"

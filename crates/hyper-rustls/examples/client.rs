@@ -1,16 +1,15 @@
 //! Fetch one URL over HTTP or HTTPS with an optional PEM trust store.
 
-use std::{
-    env,
-    error::Error,
-    io::{self, BufReader},
-    sync::Arc,
-};
+use std::{env, error::Error, io, sync::Arc};
 
 use cap_std::fs::File;
 use hyper::{body::to_bytes, client, Body, Uri};
 use hyper_rustls::ConfigBuilderExt;
 use rustls::{crypto::ring, ClientConfig, RootCertStore};
+
+mod support;
+
+use support::read_certificates;
 
 fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
     let runtime = tokio::runtime::Builder::new_current_thread()
@@ -57,8 +56,7 @@ fn client_config(
         // The user selected this PEM path; ambient access preserves its usual
         // absolute or working-directory-relative command-line meaning.
         let file = File::open_ambient(path, cap_std::ambient_authority())?;
-        let mut reader = BufReader::new(file);
-        let certificates = rustls_pemfile::certs(&mut reader).collect::<Result<Vec<_>, _>>()?;
+        let certificates = read_certificates(file)?;
         let mut roots = RootCertStore::empty();
         let (valid, _) = roots.add_parsable_certificates(certificates);
         if valid == 0 {
@@ -77,4 +75,53 @@ fn client_config(
     };
 
     Ok(config)
+}
+
+#[cfg(test)]
+mod tests {
+    //! Verify PEM trust-store parsing without making a network request.
+
+    use std::io;
+
+    use super::client_config;
+
+    #[test]
+    fn sample_pem_trust_store_loads() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+        client_config(Some(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/examples/sample.pem"
+        )))?;
+        Ok(())
+    }
+
+    #[rstest::rstest]
+    #[case::private_key("examples/sample.rsa")]
+    #[case::empty("examples/support/empty.pem")]
+    fn unusable_pem_trust_store_is_rejected(#[case] relative_path: &str) {
+        let path = format!("{}/{relative_path}", env!("CARGO_MANIFEST_DIR"));
+        let error = client_config(Some(&path))
+            .expect_err("PEM input without certificates cannot supply trust anchors");
+
+        assert_eq!(
+            error
+                .downcast_ref::<io::Error>()
+                .map(io::Error::kind),
+            Some(io::ErrorKind::Other)
+        );
+    }
+
+    #[test]
+    fn malformed_pem_retains_the_io_error_type() {
+        let error = client_config(Some(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/examples/support/malformed-certificate.pem"
+        )))
+        .expect_err("malformed PEM must fail before a request is made");
+        assert_eq!(
+            error
+                .downcast_ref::<io::Error>()
+                .map(io::Error::kind),
+            Some(io::ErrorKind::InvalidData)
+        );
+    }
 }

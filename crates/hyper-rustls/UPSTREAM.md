@@ -42,12 +42,17 @@ loopback connections and generated certificates for HTTP routing, TLS
 verification, host names, ALPN/HTTP versions, and isolated provider selection;
 it requires neither public network access nor an external command-line client.
 
+The examples parse PEM inputs through the maintained `rustls-pki-types` API,
+preserving explicit caller-selected file access and underlying I/O errors. The
+unmaintained `rustls-pemfile` helper is no longer required.
+
 Run `make test-libsql-transport` for the all-features loopback transport tests,
-including HTTP/2. Workspace nextest also includes the crate's default HTTP/1
-TLS tests. The dedicated target runs once in its own CI lane.
-`make lint-libsql-transport` covers its all-targets/all-features Clippy lane;
-the workspace lint lanes also cover the member. `make audit` continues to check
-the existing 18 lockfile graphs, including root and fuzz resolutions.
+including HTTP/2, and the PEM example tests. Workspace nextest also includes
+the crate's default HTTP/1 TLS tests. The dedicated target runs once in its own
+CI lane. `make lint-libsql-transport` covers its all-targets/all-features
+Clippy lane; the workspace lint lanes also cover the member. `make audit`
+continues to check the existing 18 lockfile graphs, including root and fuzz
+resolutions.
 
 Remove this source patch and both manifest overrides when the upstream libSQL
 SDK updates its TLS dependencies to advisory-clean versions. Keep any future
