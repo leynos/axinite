@@ -4,6 +4,8 @@
 
 use std::time::Duration;
 
+/// Surface an unreachable replica as a sync error without installing a global
+/// provider.
 #[tokio::test]
 async fn replica_failures_propagate_without_installing_a_global_crypto_provider()
 -> anyhow::Result<()> {

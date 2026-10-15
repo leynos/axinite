@@ -11,6 +11,7 @@ mod support;
 
 use support::read_certificates;
 
+/// Start the current-thread runtime used by the HTTP client example.
 fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
     let runtime = tokio::runtime::Builder::new_current_thread()
         .enable_all()
@@ -18,6 +19,7 @@ fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
     runtime.block_on(run_client())
 }
 
+/// Parse the URL and optional CA path, then print the response from one request.
 async fn run_client() -> Result<(), Box<dyn Error + Send + Sync>> {
     let mut arguments = env::args().skip(1);
     let url = arguments.next().ok_or_else(|| {
@@ -45,6 +47,8 @@ async fn run_client() -> Result<(), Box<dyn Error + Send + Sync>> {
     Ok(())
 }
 
+/// Build client trust from the selected PEM file or the platform's native
+/// roots.
 fn client_config(
     custom_ca_store: Option<&str>,
 ) -> Result<ClientConfig, Box<dyn Error + Send + Sync>> {
@@ -85,6 +89,7 @@ mod tests {
 
     use super::client_config;
 
+    /// A PEM trust store containing a certificate can configure the client.
     #[test]
     fn sample_pem_trust_store_loads() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         client_config(Some(concat!(
@@ -94,6 +99,7 @@ mod tests {
         Ok(())
     }
 
+    /// Reject selected PEM files that contain no usable certificate anchors.
     #[rstest::rstest]
     #[case::private_key("examples/sample.rsa")]
     #[case::empty("examples/support/empty.pem")]
@@ -110,6 +116,7 @@ mod tests {
         );
     }
 
+    /// Preserve malformed-certificate PEM as an `InvalidData` I/O error.
     #[test]
     fn malformed_pem_retains_the_io_error_type() {
         let error = client_config(Some(concat!(

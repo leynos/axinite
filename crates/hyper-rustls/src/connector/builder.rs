@@ -205,6 +205,7 @@ pub struct WantsProtocols1 {
 }
 
 impl WantsProtocols1 {
+    /// Attach the configured TLS and scheme policy to a low-level connector.
     fn wrap_connector<H>(self, conn: H) -> HttpsConnector<H> {
         HttpsConnector {
             force_https: self.https_only,
@@ -214,6 +215,8 @@ impl WantsProtocols1 {
         }
     }
 
+    /// Build Hyper's default connector and let `HttpsConnector` enforce the
+    /// configured scheme policy.
     #[cfg(feature = "tokio-runtime")]
     fn build(self) -> HttpsConnector<HttpConnector> {
         let mut http = HttpConnector::new();

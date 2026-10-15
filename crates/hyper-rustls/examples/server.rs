@@ -15,6 +15,7 @@ mod support;
 
 use support::{pem_read_error, read_certificates};
 
+/// Start the current-thread runtime used by the TLS server example.
 fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let runtime = tokio::runtime::Builder::new_current_thread()
         .enable_all()
@@ -22,6 +23,7 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     runtime.block_on(run_server())
 }
 
+/// Load the sample PEM identity and serve the echo endpoint on loopback.
 async fn run_server() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let port = env::args()
         .nth(1)
@@ -44,6 +46,7 @@ async fn run_server() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     Ok(())
 }
 
+/// Return a greeting for `GET /`, echo the body for `POST /echo`, or a 404.
 async fn echo(request: Request<Body>) -> Result<Response<Body>, hyper::Error> {
     let mut response = Response::new(Body::empty());
     match (request.method(), request.uri().path()) {
@@ -54,6 +57,7 @@ async fn echo(request: Request<Body>) -> Result<Response<Body>, hyper::Error> {
     Ok(response)
 }
 
+/// Read certificates from a caller-relative PEM path, rejecting an empty store.
 fn load_certificates(path: &str) -> io::Result<Vec<CertificateDer<'static>>> {
     // Resolve the sample PEM path from the caller's working directory.
     let file = File::open_ambient(path, cap_std::ambient_authority())?;
@@ -67,6 +71,7 @@ fn load_certificates(path: &str) -> io::Result<Vec<CertificateDer<'static>>> {
     Ok(certificates)
 }
 
+/// Read one private key while retaining I/O errors and classifying bad PEM.
 fn load_private_key(path: &str) -> io::Result<PrivateKeyDer<'static>> {
     // Resolve the sample PEM path from the caller's working directory.
     let file = File::open_ambient(path, cap_std::ambient_authority())?;
@@ -85,6 +90,7 @@ mod tests {
     const PRIVATE_KEY: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/examples/sample.rsa");
     const EMPTY: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/examples/support/empty.pem");
 
+    /// Load the maintained certificate and private-key sample files.
     #[test]
     fn sample_pem_material_loads() -> io::Result<()> {
         assert!(!load_certificates(CERTIFICATE)?.is_empty());
@@ -92,6 +98,7 @@ mod tests {
         Ok(())
     }
 
+    /// Classify PEM inputs without the requested material as invalid data.
     #[rstest::rstest]
     #[case::mismatched(CERTIFICATE, PRIVATE_KEY)]
     #[case::empty(EMPTY, EMPTY)]
@@ -113,6 +120,7 @@ mod tests {
         );
     }
 
+    /// Keep a reader's original I/O error kind when certificate parsing fails.
     #[test]
     fn pem_io_error_kind_is_preserved() {
         struct Unreadable;

@@ -78,6 +78,7 @@ pub struct TlsStream<C = AddrStream> {
 }
 
 impl<C: AsyncRead + AsyncWrite + Unpin> TlsStream<C> {
+    /// Store an accept operation so the TLS handshake starts on the first I/O.
     fn new(stream: C, config: Arc<ServerConfig>) -> Self {
         let accept = tokio_rustls::TlsAcceptor::from(config).accept(stream);
         Self {

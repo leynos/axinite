@@ -34,6 +34,9 @@ fn connection_server(
     }
 }
 
+/// Select the override or URI host and normalize bracketed IPv6 literals.
+///
+/// Invalid TLS names are returned as `InvalidInput` errors.
 fn tls_server_name(uri: &Uri, override_name: Option<&str>) -> io::Result<ServerName<'static>> {
     let hostname = override_name.unwrap_or_else(|| uri.host().unwrap_or_default());
     // URI authorities wrap IPv6 literals in brackets; certificate names do not.
