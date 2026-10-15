@@ -1,10 +1,30 @@
-//! Compile-time contracts for the schema helper's accepted call-site types.
-//!
-//! This session shares trybuild's generated project with `tests/trybuild.rs`,
-//! so `.config/nextest.toml` schedules both binaries in one group.
+//! Accepted schema-helper call sites compile with this integration target.
 
+mod param_name_call {
+    //! Compile and execute the accepted `ParamName` call-site fixture.
+
+    include!("pass/param_name_call.rs");
+
+    /// Run the accepted `ParamName` call-site fixture.
+    pub(super) fn run() {
+        main();
+    }
+}
+
+mod str_call {
+    //! Compile and execute the accepted `&str` call-site fixture.
+
+    include!("pass/str_call.rs");
+
+    /// Run the accepted `&str` call-site fixture.
+    pub(super) fn run() {
+        main();
+    }
+}
+
+/// Execute every accepted schema-helper call-site fixture.
 #[test]
 fn ui() {
-    let t = trybuild::TestCases::new();
-    t.pass("tests/schema_helpers_ui/pass/*.rs");
+    param_name_call::run();
+    str_call::run();
 }

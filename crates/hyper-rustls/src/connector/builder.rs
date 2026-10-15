@@ -13,7 +13,37 @@ use crate::config::ConfigBuilderExt;
 /// A builder for an [`HttpsConnector`]
 ///
 /// This makes configuration flexible and explicit and ensures connector
-/// features match crate features
+/// features match crate features.
+///
+/// TLS configuration must precede scheme selection:
+///
+/// ```compile_fail
+/// use hyper_rustls::HttpsConnectorBuilder;
+/// let _ = HttpsConnectorBuilder::new().https_only();
+/// ```
+///
+/// Scheme policy must precede connector construction:
+///
+/// ```compile_fail
+/// use hyper_rustls::HttpsConnectorBuilder;
+/// fn without_scheme(config: rustls::ClientConfig) {
+///     let _ = HttpsConnectorBuilder::new()
+///         .with_tls_config(config)
+///         .wrap_connector(());
+/// }
+/// ```
+///
+/// A connector cannot be built before an HTTP protocol is selected:
+///
+/// ```compile_fail
+/// use hyper_rustls::HttpsConnectorBuilder;
+/// fn without_protocol(config: rustls::ClientConfig) {
+///     let _ = HttpsConnectorBuilder::new()
+///         .with_tls_config(config)
+///         .https_only()
+///         .wrap_connector(());
+/// }
+/// ```
 ///
 /// # Examples
 ///
@@ -90,7 +120,16 @@ impl ConnectorBuilder<WantsTlsConfig> {
     /// Shorthand for using rustls' default crypto provider and its
     /// safe defaults.
     ///
-    /// See [`ConfigBuilderExt::with_webpki_roots`]
+    /// See [`ConfigBuilderExt::with_webpki_roots`]. To select a provider
+    /// explicitly and handle incompatible protocol versions, use
+    /// [`Self::with_provider_and_webpki_roots`] instead.
+    ///
+    /// # Panics
+    ///
+    /// Panics if rustls cannot resolve a process-default provider, including
+    /// when both `ring` and `aws-lc-rs` are enabled without an installed default.
+    /// Also panics if the provider is incompatible with the default protocol
+    /// versions.
     #[cfg(all(feature = "ring", feature = "webpki-roots"))]
     pub fn with_webpki_roots(self) -> ConnectorBuilder<WantsSchemes> {
         self.with_tls_config(
@@ -199,10 +238,7 @@ impl ConnectorBuilder<WantsProtocols1> {
     #[cfg(feature = "http2")]
     pub fn enable_http2(mut self) -> ConnectorBuilder<WantsProtocols3> {
         self.0.tls_config.alpn_protocols = vec![b"h2".to_vec()];
-        ConnectorBuilder(WantsProtocols3 {
-            inner: self.0,
-            enable_http1: false,
-        })
+        ConnectorBuilder(WantsProtocols3 { inner: self.0 })
     }
 
     /// Enable all HTTP versions built into this library (enabled with Cargo features)
@@ -217,10 +253,7 @@ impl ConnectorBuilder<WantsProtocols1> {
         let alpn_protocols = vec![b"h2".to_vec()];
 
         self.0.tls_config.alpn_protocols = alpn_protocols;
-        ConnectorBuilder(WantsProtocols3 {
-            inner: self.0,
-            enable_http1: cfg!(feature = "http1"),
-        })
+        ConnectorBuilder(WantsProtocols3 { inner: self.0 })
     }
 
     /// Override server name for the TLS stack
@@ -257,7 +290,6 @@ impl ConnectorBuilder<WantsProtocols2> {
         self.0.inner.tls_config.alpn_protocols = vec![b"h2".to_vec(), b"http/1.1".to_vec()];
         ConnectorBuilder(WantsProtocols3 {
             inner: self.0.inner,
-            enable_http1: true,
         })
     }
 
@@ -285,9 +317,6 @@ impl ConnectorBuilder<WantsProtocols2> {
 #[cfg(feature = "http2")]
 pub struct WantsProtocols3 {
     inner: WantsProtocols1,
-    // ALPN is built piecemeal without the need to read back this field
-    #[allow(dead_code)]
-    enable_http1: bool,
 }
 
 #[cfg(feature = "http2")]
@@ -300,9 +329,6 @@ impl ConnectorBuilder<WantsProtocols3> {
 
     /// This wraps an arbitrary low-level connector into an [`HttpsConnector`]
     pub fn wrap_connector<H>(self, conn: H) -> HttpsConnector<H> {
-        // If HTTP1 is disabled, we can set http2_only
-        // on the Client (a higher-level object that uses the connector)
-        // client.http2_only(!self.0.enable_http1);
         self.0.inner.wrap_connector(conn)
     }
 }

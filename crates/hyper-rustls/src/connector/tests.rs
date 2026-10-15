@@ -15,6 +15,7 @@ use super::connection_server;
 use crate::config::{loaded_native_roots, native_root_store};
 use crate::{HttpsConnector, HttpsConnectorBuilder, MaybeHttpsStream};
 
+/// Build a Ring-backed connector using only the supplied trust anchors.
 fn connector_with_roots(
     roots: rustls::RootCertStore,
 ) -> Result<HttpsConnector<hyper::client::HttpConnector>> {
@@ -40,6 +41,7 @@ struct TlsMaterial {
     server: Arc<rustls::ServerConfig>,
 }
 
+/// Create a localhost certificate and trust store for loopback tests.
 #[fixture]
 fn tls_material() -> Result<TlsMaterial> {
     let rcgen::CertifiedKey { cert, signing_key } =
@@ -68,6 +70,7 @@ struct PeerRoute {
     override_name: Option<&'static str>,
 }
 
+/// Verify HTTPS accepts trusted names and rejects untrusted or mismatched peers.
 #[rstest]
 #[case(PeerRoute { host: "localhost", override_name: None }, true, true)]
 #[case(PeerRoute { host: "localhost", override_name: None }, false, false)]
@@ -134,6 +137,7 @@ async fn https_verifies_the_chain_and_hostname(
     Ok(())
 }
 
+/// Verify HTTP stays plaintext and carries TCP_NODELAY on the socket.
 #[tokio::test]
 async fn http_preserves_plaintext_loopback_transport() -> Result<()> {
     let mut connector = connector_with_roots(rustls::RootCertStore::empty())?;
@@ -166,6 +170,7 @@ async fn http_preserves_plaintext_loopback_transport() -> Result<()> {
     Ok(())
 }
 
+/// Accept DNS, IPv4 and bracketed IPv6 URI hosts as TLS server names.
 #[rstest]
 #[case("https://localhost/", "localhost")]
 #[case("https://127.0.0.1/", "127.0.0.1")]
@@ -179,6 +184,7 @@ fn https_names_accept_dns_and_ip_literals(#[case] uri: &str, #[case] host: &str)
     Ok(())
 }
 
+/// Reject non-HTTP schemes and URIs without a scheme.
 #[rstest]
 #[case("ftp://localhost/")]
 #[case("localhost:443")]
@@ -189,6 +195,7 @@ fn unsupported_schemes_are_rejected(#[case] uri: &str) -> Result<()> {
     Ok(())
 }
 
+/// Retain valid root certificates when other entries are malformed.
 #[rstest]
 #[case(false)]
 #[case(true)]
@@ -207,6 +214,7 @@ fn native_roots_keep_usable_certificates(
     Ok(())
 }
 
+/// Return NotFound when native trust input contains no usable certificate.
 #[rstest]
 #[case(false)]
 #[case(true)]
@@ -220,6 +228,7 @@ fn native_roots_reject_stores_without_usable_certificates(#[case] has_invalid_en
     assert_eq!(error.kind(), std::io::ErrorKind::NotFound);
 }
 
+/// Reject HTTP before dialling the underlying socket in either HTTPS-only mode.
 #[rstest]
 #[case(false)]
 #[case(true)]
@@ -252,6 +261,7 @@ async fn https_only_rejects_http_before_opening_a_socket(#[case] use_builder: bo
     Ok(())
 }
 
+/// Use the explicit TLS peer name instead of the URI host.
 #[test]
 fn explicit_peer_name_overrides_the_uri_host() -> Result<()> {
     let server = connection_server(&"https://127.0.0.1/".parse()?, true, Some("localhost"))?;
@@ -262,6 +272,7 @@ fn explicit_peer_name_overrides_the_uri_host() -> Result<()> {
     Ok(())
 }
 
+/// Retain valid roots alongside loader errors and reject error-only stores.
 #[rstest]
 #[case(true)]
 #[case(false)]

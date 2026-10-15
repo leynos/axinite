@@ -8,7 +8,25 @@ use rustls::ServerConfig;
 
 use super::TlsAcceptor;
 
-/// Builder for [`TlsAcceptor`]
+/// Builder for [`TlsAcceptor`].
+///
+/// TLS configuration must precede socket selection:
+///
+/// ```compile_fail
+/// use hyper_rustls::TlsAcceptor;
+/// let _ = TlsAcceptor::builder().with_acceptor(());
+/// ```
+///
+/// ALPN policy must also be selected before attaching an acceptor:
+///
+/// ```compile_fail
+/// use hyper_rustls::TlsAcceptor;
+/// fn without_alpn(config: rustls::ServerConfig) {
+///     let _ = TlsAcceptor::builder()
+///         .with_tls_config(config)
+///         .with_acceptor(());
+/// }
+/// ```
 pub struct AcceptorBuilder<State>(State);
 
 /// State of a builder that needs a TLS client config next

@@ -7,6 +7,20 @@ verified against the original lockfile. The archive's VCS revision is
 MIT license files are retained.
 
 The root and fuzz manifests select this source through `[patch.crates-io]`.
+Cargo registry archives do not propagate these overrides to consumers. Axinite
+therefore supports complete source checkouts (including
+`cargo install --path .`) and source-built GitHub release binaries, with
+registry publication disabled in its root manifest. The root's package-level
+`dist = true` preserves binary release selection. Builds with libSQL enabled
+retain the transport patch; a registry archive is not a substitute for the
+complete checkout. Any future registry release must first preserve the patched
+dependency graph without a consumer-supplied override.
+
+Validate binary selection with the pinned cargo-dist 0.30.3 `dist plan`
+command. Regenerate the WiX template with `dist generate --mode=msi` when
+package metadata changes; retain its generated text and the existing upgrade
+and PATH GUIDs.
+
 This non-publishable crate is a member of the root workspace and shares its
 `Cargo.lock`; it adds no standalone audited graph. The patch updates TLS
 dependencies to rustls 0.23.46 or later, tokio-rustls 0.26.4 or later, and
@@ -48,11 +62,15 @@ unmaintained `rustls-pemfile` helper is no longer required.
 
 Run `make test-libsql-transport` for the all-features loopback transport tests,
 including HTTP/2, the PEM example tests, and doctests with default, all, and
-reduced native-root features. Workspace nextest also includes the crate's
-default HTTP/1 TLS tests. The dedicated target runs once in its own CI lane.
-`make lint-libsql-transport` covers its all-targets/all-features Clippy lane;
-the workspace lint lanes also cover the member. `make audit` continues to check
-the existing 18 lockfile graphs, including root and fuzz resolutions.
+reduced native-root features. Compile-fail doctests reject connector and
+acceptor construction that skips required TLS, protocol or ALPN policy. A
+bounded property test checks that mixed, repeated and reordered native roots
+retain every usable certificate and reject stores with none. Workspace nextest
+also includes the crate's default HTTP/1 TLS tests. The dedicated target runs
+once in its own CI lane. `make lint-libsql-transport` covers its
+all-targets/all-features Clippy lane; the workspace lint lanes also cover the
+member. `make audit` continues to check the existing 18 lockfile graphs,
+including root and fuzz resolutions.
 
 Remove this source patch and both manifest overrides when the upstream libSQL
 SDK updates its TLS dependencies to advisory-clean versions. Keep any future

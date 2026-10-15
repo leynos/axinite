@@ -11,13 +11,12 @@ compile-contract overrides set five seconds, and ``termination_allowance``
 reads whatever it finds, falling back to nextest's ten-second default. So
 deleting every ``grace-period`` in the file *raises* the computed
 requirement and leaves the ordering assertions passing, while the wait
-between `SIGTERM` and `SIGKILL` silently doubles. The override's 900 s
-is the next: ``binaries_short_of_allowance`` accepts anything at or
+between `SIGTERM` and `SIGKILL` silently doubles. The nested trybuild
+override's 900 s is the next: the budget assertion accepts anything at or
 above the allowance, so an override raised to an hour would pass while
-sitting above the 30 m whole-run budget for every test it matched. And
-the whole-run budget itself is only ever compared with the largest
-per-test allowance, so the documented thirty minutes could become forty
-without a failure.
+sitting above the 30 m whole-run budget for its tests. And the whole-run
+budget itself is only ever compared with the largest per-test allowance,
+so the documented thirty minutes could become forty without a failure.
 
 Pinned by value, therefore, not by relation: these are the figures
 ``docs/developers-guide.md`` records, and a change to any of them is a
@@ -32,6 +31,7 @@ import typing as typ
 import pytest
 import tomllib
 from _workflow_policy import REPOSITORY_ROOT
+from compile_contract_inventory import REQUIRED_COMPILE_CONTRACT_BINARIES
 from nextest_config import Profile, binaries_selected
 from timeout_budgets import base_slow_timeout, global_timeout
 
@@ -70,14 +70,11 @@ REQUIRED_OVERRIDE_SLOW_TIMEOUT: typ.Final[dict[str, str]] = {
     "grace-period": "5s",
 }
 
-#: The allowance `schema_helpers_ui` is given on its own, field by field.
-#: A cold compiler cache makes the test compile the whole dependency tree
-#: itself (695 s in job 113555153360) before running the fixtures, and
-#: 900 s killed 12 of 23 sampled pull-request jobs. It stays below the
-#: 30 m whole-run budget with room for the test's start offset and the
-#: grace period.
+#: `schema_helpers_ui` is compiled with its integration target before
+#: nextest starts its timer, so its fixture execution keeps the ordinary
+#: five-minute allowance.
 REQUIRED_SCHEMA_HELPERS_UI_SLOW_TIMEOUT: typ.Final[dict[str, str]] = {
-    "period": "1500s",
+    "period": "300s",
     "terminate-after": "1",
     "grace-period": "5s",
 }
@@ -85,8 +82,8 @@ REQUIRED_SCHEMA_HELPERS_UI_SLOW_TIMEOUT: typ.Final[dict[str, str]] = {
 #: The binaries the overrides must name. The default profile runs
 #: ``schema_helpers_ui`` and ``ci`` also runs ``trybuild``. Coverage
 #: inherits the ci override but filters both binaries out.
-REQUIRED_OVERRIDE_BINARIES: typ.Final[frozenset[str]] = frozenset(
-    {"trybuild", "schema_helpers_ui"}
+REQUIRED_OVERRIDE_BINARIES: typ.Final[frozenset[str]] = (
+    REQUIRED_COMPILE_CONTRACT_BINARIES
 )
 
 
@@ -190,8 +187,9 @@ def test_each_profile_pins_its_compile_contract_override(
     run would end before the allowance could be used.
 
     Default and ci each declare two overrides: first one naming only
-    `schema_helpers_ui` and allowing exactly 1,500 s, then the shared one
-    naming both binaries and allowing exactly 900 s. They also carry the
+    `schema_helpers_ui` and preserving its exact 300 s ordinary bound, then
+    the shared one naming both required targets and allowing trybuild 900 s.
+    They also carry the
     Postgres group override (pinned by
     ``test_each_profile_pins_its_postgres_group_override``). Coverage declares
     none; it inherits the ci
@@ -225,8 +223,8 @@ def test_each_profile_pins_its_compile_contract_override(
     assert specific_fields == REQUIRED_SCHEMA_HELPERS_UI_SLOW_TIMEOUT, (
         f"[profile.{profile}]'s `schema_helpers_ui` slow-timeout is "
         f"{specific_fields}, not {REQUIRED_SCHEMA_HELPERS_UI_SLOW_TIMEOUT}; "
-        f"a cold namespace needs more than 900 s, and anything at or above "
-        f"the whole-run budget could never be used"
+        f"schema fixture code now compiles with its integration target and "
+        f"must retain the ordinary 300 s test bound"
     )
     selected = binaries_selected(shared.get("filter"))
     assert selected == REQUIRED_OVERRIDE_BINARIES, (

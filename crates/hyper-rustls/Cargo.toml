@@ -162,3 +162,6 @@ default-features = false
 
 [dev-dependencies.cap-std]
 version = "4.0.3"
+
+[dev-dependencies.proptest]
+version = "1.6.0"

@@ -12,7 +12,7 @@ import typing as typ
 from pathlib import Path
 
 from _workflow_policy import REPOSITORY_ROOT
-from contract_sources import matching_entries, read_source
+from contract_sources import read_source
 from nextest_config import (
     NextestConfigurationError,
     Profile,
@@ -256,81 +256,14 @@ def required_ceiling(parsed: dict[str, Profile], invocations: int = 1) -> float:
     )
 
 
-#: What one compile-contract test process must be allowed, in seconds.
-#: Each `TestCases` session batches related fixtures over trybuild's shared
-#: generated project; its timeout covers the entire session.
-COMPILE_CONTRACT_ALLOWANCE_SECONDS: typ.Final[float] = 900.0
-
-#: The call that makes a test target a compile-contract binary.
-_COMPILE_CONTRACT_MARKER: typ.Final[str] = "trybuild::TestCases"
-
-
-def compile_contract_binaries(tests_directory: Path) -> frozenset[str]:
-    """Return the names of the test binaries that drive `rustc`.
-
-    Discovered from the sources rather than listed here, because the
-    failure this guards against is a new one appearing: `trybuild` was
-    named in the configuration and `schema_helpers_ui` was not, and the
-    second ran under the allowance sized for ordinary tests until a
-    slower runner ended it at 300 s.
-
-    Cargo names a test target after ``tests/<name>.rs`` or after the
-    directory in ``tests/<name>/main.rs``, and both forms are read.
-
-    This is an acquisition function, not a query: it searches the
-    directory and reads every source it finds. It is named here rather
-    than left for a reader to discover from the body, because a
-    query-shaped signature that touches the filesystem is the thing that
-    misleads.
-
-    Parameters
-    ----------
-    tests_directory
-        The crate's ``tests`` directory.
-
-    Returns
-    -------
-    frozenset of str
-        One name per compile-contract test binary.
-
-    Raises
-    ------
-    SourceReadError
-        If the tests directory cannot be searched, or a source in it
-        cannot be read.
-    """
-    flat = {
-        source.stem
-        for source in matching_entries(tests_directory, "*.rs")
-        if _drives_the_compiler(source)
-    }
-    nested = {
-        source.parent.name
-        for source in matching_entries(tests_directory, "*/main.rs")
-        if _drives_the_compiler(source)
-    }
-    return frozenset(flat | nested)
-
-
-def _drives_the_compiler(source: Path) -> bool:
-    """Return whether one test source builds cases with `rustc`.
-
-    Parameters
-    ----------
-    source
-        A test target's root source file.
-
-    Returns
-    -------
-    bool
-        True when the source constructs ``trybuild::TestCases``.
-
-    Raises
-    ------
-    SourceReadError
-        If the source cannot be read.
-    """
-    return _COMPILE_CONTRACT_MARKER in read_source(source)
+#: What one nested trybuild session must be allowed, in seconds. Its timeout
+#: covers dependency preparation, fixture compilation and fixture execution.
+NESTED_COMPILER_ALLOWANCE_SECONDS: typ.Final[float] = 900.0
+#: Compatibility name used by the filterset-reading contracts; this value
+#: now applies only to targets that invoke nested trybuild Cargo.
+COMPILE_CONTRACT_ALLOWANCE_SECONDS: typ.Final[float] = (
+    NESTED_COMPILER_ALLOWANCE_SECONDS
+)
 
 
 def allowance_for_binary(profile: Profile, binary: str) -> float | None:
@@ -417,7 +350,7 @@ def excluded_from(profile: Profile, binary: str) -> bool:
 def binaries_short_of_allowance(
     profile: Profile, binaries: frozenset[str]
 ) -> dict[str, float | None]:
-    """Return the binaries a profile runs under too small an allowance.
+    """Return nested-compiler binaries a profile runs under too small a bound.
 
     A binary the profile excludes outright is not reported, since one
     that never runs needs no allowance.
@@ -441,6 +374,6 @@ def binaries_short_of_allowance(
         if excluded_from(profile, binary):
             continue
         allowance = allowance_for_binary(profile, binary)
-        if allowance is None or allowance < COMPILE_CONTRACT_ALLOWANCE_SECONDS:
+        if allowance is None or allowance < NESTED_COMPILER_ALLOWANCE_SECONDS:
             short[binary] = allowance
     return short

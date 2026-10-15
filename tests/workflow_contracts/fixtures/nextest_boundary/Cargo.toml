@@ -5,9 +5,9 @@
 # binary. The compile-contract binaries also contain a cross-process overlap
 # detector used to prove that the configured test group serialises them.
 #
-# The two names are not arbitrary: they are the compile-contract binaries
+# The two names are not arbitrary: they are the required contract binaries
 # selected by the real overrides, so nextest resolves the same filtersets.
-# `compile_contract_budget_test` keeps this pair tied to source discovery.
+# `timeout_budgets.py` pins this pair for profile and workflow checks.
 #
 # `[workspace]` makes this its own workspace root, so the repository's
 # workspace neither builds it nor lints it.

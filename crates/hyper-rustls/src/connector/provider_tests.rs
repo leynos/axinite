@@ -8,6 +8,7 @@ use rustls::ClientConfig;
 use super::builder::ConnectorBuilder;
 use crate::config::ConfigBuilderExt;
 
+/// Run one ignored provider scenario in a child process so rustls globals start clean.
 fn run_isolated(test_name: &str) {
     let output = Command::new(std::env::current_exe().expect("test executable is available"))
         .args(["--exact", test_name, "--ignored", "--nocapture"])
@@ -25,6 +26,7 @@ fn run_isolated(test_name: &str) {
     );
 }
 
+/// Compare the active key provider with the expected provider.
 fn assert_uses_provider(config: &ClientConfig, expected: &CryptoProvider) {
     assert!(std::ptr::eq(
         config.crypto_provider().key_provider,
@@ -32,6 +34,7 @@ fn assert_uses_provider(config: &ClientConfig, expected: &CryptoProvider) {
     ));
 }
 
+/// Build with an explicit provider and confirm no process default is installed.
 fn explicit_provider_contract(provider: CryptoProvider) -> Result<(), rustls::Error> {
     assert!(CryptoProvider::get_default().is_none());
     let expected = provider.clone();
@@ -45,6 +48,7 @@ fn explicit_provider_contract(provider: CryptoProvider) -> Result<(), rustls::Er
     Ok(())
 }
 
+/// Build the library's native-root connector with its explicit Ring policy.
 fn native_connector() -> super::HttpsConnector<hyper::client::HttpConnector> {
     ConnectorBuilder::new()
         .with_native_roots()
@@ -54,33 +58,39 @@ fn native_connector() -> super::HttpsConnector<hyper::client::HttpConnector> {
         .build()
 }
 
+/// Verify native-root shorthand selects Ring without installing a process default.
 #[test]
 fn native_roots_keep_the_ring_policy_without_a_global_default() {
     run_isolated("connector::provider_tests::native_ring_policy_child");
 }
 
+/// Verify explicit Ring works with WebPKI roots without a process default.
 #[test]
 fn explicit_ring_webpki_provider_does_not_need_a_global_default() {
     run_isolated("connector::provider_tests::explicit_ring_provider_child");
 }
 
+/// Verify WebPKI shorthand uses the installed AWS-LC default provider.
 #[cfg(feature = "aws-lc-rs")]
 #[test]
 fn webpki_shorthand_uses_the_installed_process_default() {
     run_isolated("connector::provider_tests::installed_default_provider_child");
 }
 
+/// Verify explicit AWS-LC works without installing a process default.
 #[cfg(feature = "aws-lc-rs")]
 #[test]
 fn explicit_aws_lc_provider_does_not_need_a_global_default() {
     run_isolated("connector::provider_tests::explicit_aws_lc_provider_child");
 }
 
+/// Verify WebPKI shorthand honours an installed Ring process default.
 #[test]
 fn webpki_shorthand_uses_an_installed_ring_default() {
     run_isolated("connector::provider_tests::ring_default_provider_child");
 }
 
+/// Check native-root construction keeps Ring selected without a process default.
 #[test]
 #[ignore = "invoked by a parent test in its own process"]
 fn native_ring_policy_child() {
@@ -99,12 +109,14 @@ fn native_ring_policy_child() {
     ));
 }
 
+/// Check explicit Ring construction leaves the process default unset.
 #[test]
 #[ignore = "invoked by a parent test in its own process"]
 fn explicit_ring_provider_child() -> Result<(), rustls::Error> {
     explicit_provider_contract(rustls::crypto::ring::default_provider())
 }
 
+/// Check WebPKI shorthand uses the installed provider while native roots keep Ring.
 fn installed_provider_contract(expected: CryptoProvider) {
     assert!(CryptoProvider::get_default().is_none());
     CryptoProvider::install_default(expected.clone())
@@ -137,6 +149,7 @@ fn installed_provider_contract(expected: CryptoProvider) {
     ));
 }
 
+/// Check WebPKI shorthand uses an installed AWS-LC process default.
 #[cfg(feature = "aws-lc-rs")]
 #[test]
 #[ignore = "invoked by a parent test in its own process"]
@@ -144,6 +157,7 @@ fn installed_default_provider_child() {
     installed_provider_contract(rustls::crypto::aws_lc_rs::default_provider());
 }
 
+/// Check explicit AWS-LC construction leaves the process default unset.
 #[cfg(feature = "aws-lc-rs")]
 #[test]
 #[ignore = "invoked by a parent test in its own process"]
@@ -151,6 +165,7 @@ fn explicit_aws_lc_provider_child() -> Result<(), rustls::Error> {
     explicit_provider_contract(rustls::crypto::aws_lc_rs::default_provider())
 }
 
+/// Check WebPKI shorthand uses an installed Ring process default.
 #[test]
 #[ignore = "invoked by a parent test in its own process"]
 fn ring_default_provider_child() {

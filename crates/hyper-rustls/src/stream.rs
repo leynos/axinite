@@ -13,7 +13,10 @@ use tokio_rustls::client::TlsStream;
 use tokio_util::either::Either;
 
 /// A stream that might be protected with TLS.
-#[allow(clippy::large_enum_variant)]
+#[allow(
+    clippy::large_enum_variant,
+    reason = "Retain the public inline TLS variant without adding a heap allocation"
+)]
 pub enum MaybeHttpsStream<T> {
     /// A stream over plain text.
     Http(T),

@@ -3816,6 +3816,7 @@ dependencies = [
  "http 0.2.12",
  "hyper 0.14.32",
  "log",
+ "proptest",
  "rcgen",
  "rstest 0.26.1",
  "rustls",

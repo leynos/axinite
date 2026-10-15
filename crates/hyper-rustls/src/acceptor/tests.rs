@@ -27,6 +27,7 @@ struct TlsMaterial {
     private_key: rustls::pki_types::PrivateKeyDer<'static>,
 }
 
+/// Create a self-signed localhost certificate for loopback TLS tests.
 #[fixture]
 fn tls_material() -> Result<TlsMaterial> {
     let rcgen::CertifiedKey { cert, signing_key } =
@@ -45,6 +46,7 @@ enum HttpProtocol {
 }
 
 impl HttpProtocol {
+    /// Return the ALPN protocol advertised by the test server.
     fn server_alpn(self) -> Option<&'static [u8]> {
         match self {
             Self::Http1 => None,
@@ -53,6 +55,7 @@ impl HttpProtocol {
         }
     }
 
+    /// Report whether the selected protocol should negotiate HTTP/2.
     fn expects_h2(self) -> bool {
         self.server_alpn() == Some(b"h2")
     }
@@ -64,6 +67,7 @@ enum HandshakeDriver {
     Write,
 }
 
+/// Build a lazy TLS acceptor configured for the selected protocol.
 fn server_acceptor(
     material: TlsMaterial,
     listener: TcpListener,
@@ -80,6 +84,7 @@ fn server_acceptor(
     Ok(builder.with_incoming(incoming))
 }
 
+/// Create a client config that trusts the test certificate when requested.
 fn client_config(material: &TlsMaterial, trust_server: bool) -> Result<ClientConfig> {
     let mut roots = RootCertStore::empty();
     if trust_server {
@@ -93,6 +98,7 @@ fn client_config(material: &TlsMaterial, trust_server: bool) -> Result<ClientCon
     )
 }
 
+/// Build a connector with the requested peer name and ALPN mode.
 fn client_connector(
     config: ClientConfig,
     server_name: Option<&str>,
@@ -112,6 +118,7 @@ fn client_connector(
     }
 }
 
+/// Accept one loopback socket while bounding the accept wait.
 async fn accepted_stream(mut acceptor: TlsAcceptor) -> Result<super::TlsStream> {
     let accepted = tokio::time::timeout(
         IO_TIMEOUT,
@@ -123,6 +130,7 @@ async fn accepted_stream(mut acceptor: TlsAcceptor) -> Result<super::TlsStream> 
     Ok(accepted)
 }
 
+/// Drive TLS from the acceptor side and verify ALPN and the byte exchange.
 async fn acceptor_io_exchange(
     acceptor: TlsAcceptor,
     driver: HandshakeDriver,
@@ -178,6 +186,7 @@ async fn acceptor_io_exchange(
     Ok(())
 }
 
+/// Connect to the loopback acceptor and verify TLS selection and connection metadata.
 async fn connector_io_exchange(
     connector: &mut HttpsConnector<HttpConnector>,
     port: u16,
@@ -219,6 +228,7 @@ async fn connector_io_exchange(
     Ok(())
 }
 
+/// Run a bidirectional TLS exchange for one handshake driver and protocol.
 async fn exercise_acceptor(
     material: TlsMaterial,
     driver: HandshakeDriver,
@@ -242,6 +252,7 @@ async fn exercise_acceptor(
     Ok(())
 }
 
+/// Verify read- and write-driven I/O complete the lazy HTTP/1 handshake.
 #[rstest]
 #[case::read_drives_handshake(HandshakeDriver::Read)]
 #[case::write_drives_handshake(HandshakeDriver::Write)]
@@ -253,6 +264,7 @@ async fn public_acceptor_completes_lazy_http1_handshake(
     exercise_acceptor(tls_material?, driver, HttpProtocol::Http1).await
 }
 
+/// Verify an HTTP/2 handshake is reflected in connector metadata.
 #[cfg(feature = "http2")]
 #[rstest]
 #[tokio::test]
@@ -262,6 +274,7 @@ async fn public_connector_reports_negotiated_http2_metadata(
     exercise_acceptor(tls_material?, HandshakeDriver::Read, HttpProtocol::Http2).await
 }
 
+/// Confirm a rejected handshake never exposes a completed TLS connection.
 async fn acceptor_reports_rejected_peer(acceptor: TlsAcceptor) -> Result<()> {
     let mut stream = accepted_stream(acceptor).await?;
     ensure!(
@@ -282,6 +295,7 @@ async fn acceptor_reports_rejected_peer(acceptor: TlsAcceptor) -> Result<()> {
     Ok(())
 }
 
+/// Ensure client trust and hostname failures surface as acceptor I/O errors.
 #[rstest]
 #[case::untrusted_certificate(false, Some("localhost"))]
 #[case::hostname_mismatch(true, None)]

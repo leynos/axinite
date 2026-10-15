@@ -72,3 +72,6 @@ pub(crate) fn loaded_native_roots(
         )
     })
 }
+
+#[cfg(all(test, feature = "rustls-native-certs"))]
+mod tests;

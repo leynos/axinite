@@ -1,6 +1,6 @@
 //! Regression contracts for connector builder policy and protocol selection.
 
-// Typical usage
+/// Build an HTTPS-only connector with explicit Ring and WebPKI roots.
 #[test]
 #[cfg(all(feature = "webpki-roots", feature = "http1", feature = "ring"))]
 fn test_builder() {
@@ -12,6 +12,7 @@ fn test_builder() {
         .build();
 }
 
+/// Reject a TLS config whose ALPN protocols are already set.
 #[test]
 #[cfg(all(feature = "http1", feature = "ring"))]
 #[should_panic(expected = "ALPN protocols should not be pre-defined")]
@@ -32,6 +33,7 @@ fn test_reject_predefined_alpn() {
         .build();
 }
 
+/// Select empty, h2, or h2 plus HTTP/1 ALPN from builder protocol choices.
 #[test]
 #[cfg(all(feature = "http1", feature = "http2", feature = "ring"))]
 fn test_alpn() {
@@ -79,6 +81,7 @@ fn test_alpn() {
     );
 }
 
+/// Select h2 ALPN when HTTP/1 support is disabled.
 #[test]
 #[cfg(all(not(feature = "http1"), feature = "http2", feature = "ring"))]
 fn test_alpn_http2() {

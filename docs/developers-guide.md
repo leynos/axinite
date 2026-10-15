@@ -713,17 +713,17 @@ Three mechanisms carry that, and each is worth knowing before changing a lane:
 
 The profile is part of that, and it is the half most easily missed. The default
 profile excludes the `trybuild` compile-contract binary, while `ci` runs both
-compile-contract binaries. Each `trybuild::TestCases` session shares a
+required contract binaries. Each `trybuild::TestCases` session shares a
 generated Cargo project and lock while it prepares dependencies, compiles
-fixtures, and runs them; it does not necessarily rebuild the full dependency
-graph for every fixture. The `test.yml` legs use `NEXTEST_PROFILE=ci`. Coverage
+fixtures, and runs them. `schema_helpers_ui` includes its accepted call-site
+fixtures in the ordinary integration target, which compiles before nextest
+starts its test timer. The `test.yml` legs use `NEXTEST_PROFILE=ci`. Coverage
 uses a separate `coverage` profile: the main workflow runs the contracts in an
 uninstrumented matrix job for default, libSQL-only and all-features, and the PR
 ratchet runs them in an uninstrumented libSQL-only job. Both coverage actions
-use `NEXTEST_PROFILE=coverage`, which excludes the two compile-contract
-binaries from instrumented fixture compilation. This keeps those required
-checks while avoiding the hosted 900 second timeout observed when
-`schema_helpers_ui` compiled its fixtures under llvm-cov instrumentation.
+use `NEXTEST_PROFILE=coverage`, which excludes the two contract binaries from
+the instrumented test run while the separate required jobs retain their full
+feature selections.
 
 `tools-src/github` and `channels-src/telegram` are excluded from the workspace,
 so `--workspace` cannot reach either however wide the feature set. Each
@@ -3382,12 +3382,12 @@ they must be ordered lives in the `generate-coverage` README in
 cargo watchdog only on the two lanes that use that action, and two of the four
 were unset until this was written.
 
-| Tier                     | What it bounds                     | Where it is set                      | Current value                                                                   |
-| ------------------------ | ---------------------------------- | ------------------------------------ | ------------------------------------------------------------------------------- |
-| Per-test `slow-timeout`  | one test process                   | `.config/nextest.toml`, all profiles | 300 s; 900 s per `trybuild` session, 1,500 s for `schema_helpers_ui`; 5 s grace |
-| nextest `global-timeout` | the whole test run                 | `.config/nextest.toml`, all profiles | 30 m                                                                            |
-| Cargo watchdog           | one `cargo` invocation, wall clock | `cargo-wait-timeout` on action steps | 4,200 s on the two action lanes, absent elsewhere                               |
-| Job `timeout-minutes`    | the whole job                      | job level                            | 90 m for the coverage lanes                                                     |
+| Tier                     | What it bounds                     | Where it is set                      | Current value                                                                          |
+| ------------------------ | ---------------------------------- | ------------------------------------ | -------------------------------------------------------------------------------------- |
+| Per-test `slow-timeout`  | one test process                   | `.config/nextest.toml`, all profiles | 300 s ordinary and schema-helper tests; 900 s per nested `trybuild` session; 5 s grace |
+| nextest `global-timeout` | the whole test run                 | `.config/nextest.toml`, all profiles | 30 m                                                                                   |
+| Cargo watchdog           | one `cargo` invocation, wall clock | `cargo-wait-timeout` on action steps | 4,200 s on the two action lanes, absent elsewhere                                      |
+| Job `timeout-minutes`    | the whole job                      | job level                            | 90 m for the coverage lanes                                                            |
 
 *Table: the timers that can end a run, innermost first.*
 
@@ -3414,17 +3414,17 @@ the selected profile's own scalar setting. So a `ci` profile that declared no
 budgets at all would not be unbounded; it would run under the default profile's.
 
 The reason to repeat them is that `ci` is the profile that *includes* the
-trybuild compile-contract binaries the default profile excludes. The `coverage`
-profile inherits from `ci` but excludes both compile-contract binaries from
+trybuild compile-contract binary the default profile excludes. The `coverage`
+profile inherits from `ci` but excludes both required contract binaries from
 instrumented runs; separate required jobs run them with the same feature
 selections and the `ci` profile. The budgets that govern each workflow belong
 beside the profile a reader selects rather than one section away.
 
 All three therefore set a 300 second base allowance and a 30 minute whole-run
-budget. The default and ci profiles each declare a 900 second override for the
-compile-contract binaries, preceded by a 1,500 second override for
-`schema_helpers_ui` alone (see "The cold-cache allowance for
-`schema_helpers_ui`" below); coverage inherits the ci overrides.
+budget. The default and ci profiles each declare an explicit 300 second
+override for `schema_helpers_ui`, followed by the shared serial-group override
+that allows nested `trybuild` sessions 900 seconds. Coverage inherits the ci
+overrides.
 
 ### The compile-contract binaries are not ordinary tests
 
@@ -3432,18 +3432,23 @@ A trybuild session uses a shared generated project and `.lock` while it
 prepares dependencies, compiles the selected fixtures, and runs them. Separate
 nextest processes that enter preparation together wait on this shared resource,
 and concurrent waiters can spend most of their timeout queued behind one
-another. The two binaries are `tests/trybuild.rs` and
+another. The required binaries are `tests/trybuild.rs` and
 `tests/schema_helpers_ui/main.rs`, named `trybuild` and `schema_helpers_ui`.
+Only `trybuild` invokes Cargo from inside a test. The schema-helper target
+includes each accepted public call-site fixture as a module and calls both
+fixture entry points from its `ui` test; Cargo compiles those bodies with the
+integration target before nextest starts the test process.
 
 The `compile-contracts` test group sets `max-threads = 1`. The `default` and
-`ci` compile-contract overrides assign the two binaries to this group, and
-`coverage` inherits the `ci` override. Nextest queues their tests before they
-contend for trybuild's lock. Ordinary tests stay in nextest's global group and
-retain the configured parallelism. The workflow contract checks effective
-membership with the pinned nextest runner and uses a shared marker across the
-two fixture binaries: the real configuration passes with four nextest slots,
-while removing serialization produces an overlap failure. It also checks that
-the coverage profile omits these binaries while keeping ordinary tests selected.
+`ci` overrides assign both required binaries to this group, and `coverage`
+inherits the `ci` override. The serial group keeps contract processes from
+overlapping; only the nested `trybuild` sessions need the shared project lock.
+Ordinary tests stay in nextest's global group and retain the configured
+parallelism. Workflow contracts check effective membership with the pinned
+nextest runner and use a shared marker across the two fixture binaries: the
+real configuration passes with four nextest slots, while removing serialization
+produces an overlap failure. They also check that coverage omits both binaries
+while keeping ordinary tests selected.
 
 Fixtures are explicitly batched by purpose. Database surface fixtures share one
 `TestCases` session; support and infrastructure fixtures share another. This
@@ -3451,54 +3456,33 @@ reduces repeated preparation while preserving per-fixture diagnostics. The
 database and support sessions retain separate timeout budgets. PostgreSQL and
 libSQL fixtures retain their feature gates, and the startup fixture remains
 limited to non-Unix targets. The Windows `default` build lane executes
-`startup_compile_contracts` so that platform-specific fixture is compiled there.
-`schema_helpers_ui` continues to run its pass fixtures in one session.
+`startup_compile_contracts` so that platform-specific fixture is compiled
+there. The schema-helper fixture bodies compile with `schema_helpers_ui`, and
+both run from its one `ui` test.
 
-The `slow-timeout` (900 seconds for `trybuild`, 1,500 for `schema_helpers_ui`)
-bounds one nextest test process, including all fixtures queued in that process's
-`TestCases` session. It is not a budget per fixture or for the entire binary.
-The two `trybuild` sessions therefore have separate allowances;
-`schema_helpers_ui` has one for its own session. The 30 minute `global-timeout`
-covers the nextest run, not the instrumented build that precedes nextest in a
-coverage command.
+The per-test timeout applies to the test process. For `trybuild`, nested Cargo
+preparation, fixture compilation and execution all happen inside that process
+and count towards its 900 second allowance. For `schema_helpers_ui`, the
+integration target compiles before nextest starts the test timer; its `ui` test
+has the ordinary 300 second execution bound. Nextest's 30 minute global timer
+also starts with the test run. It does not bound the Cargo build that precedes
+nextest, including a coverage build; the configured Cargo watchdog and job
+limits remain the outer bounds where those are present.
 
-The binaries are discovered from calls to `trybuild::TestCases` rather than
-listed, so a new compile-contract target must inherit both group and timeout.
-Workflow contracts require every discovered binary in the PR and baseline
-compile-contract commands, and require the baseline matrix to cover default,
-libSQL-only and all-features selections. The discovered set is pinned by name,
-and both Cargo target forms, `tests/<name>.rs` and `tests/<name>/main.rs`, are
-represented. The default profile excludes `trybuild` but runs
-`schema_helpers_ui`; `ci` runs both, and `coverage` excludes both while
-inheriting their group and timeout policy. Contracts also check default-profile
-inheritance, CI override precedence, and that ordinary tests stay outside the
-compile-contract group.
-
-### The cold-cache allowance for `schema_helpers_ui`
-
-`schema_helpers_ui` builds trybuild's generated project, dependency tree
-included, inside the test. With a warm compiler cache that takes 253 to 811
-seconds (eleven sampled pull-request jobs). On a branch's first run the cache
-is cold: the nested build alone took 695 seconds in job 113555153360 and the
-fixtures then needed more than the 205 seconds the 900 second allowance had
-left, so 12 of 23 sampled `Tests (default)` jobs between 30 September and 8
-October were terminated, every one with 1,000 or more cache misses. It is
-slowness, not a hang: the log shows the nested `cargo` finishing and the first
-fixture starting. `main` never runs the test, because its push runs skip the
-test matrix, so it never seeds a warm cache for the branches.
-
-The test therefore has its own 1,500 second allowance, an override that selects
-`schema_helpers_ui` alone and comes first in each profile, because nextest
-applies the first override that sets a field. The shared override beneath it
-still supplies the serial test group and the 900 second allowance for
-`trybuild`. 1,500 seconds is an estimate with about half again the measured
-cold requirement, not a measurement of a cold pass; it sits five minutes below
-the 30 minute whole-run budget. `nextest_values_test.py` pins the override
-count, the order, the filter and the value, and `nextest_boundary_test.py` asks
-nextest itself: with the periods scaled to seconds, a five-second sleeping test
-in the fixture's `schema_helpers_ui` binary stays within its 20 second period
-under `default` and `ci`, while the same test in `trybuild` exceeds the shared
-2 second period and is terminated under `ci`.
+The source-discovered nested-compiler inventory uses calls to
+`trybuild::TestCases` and must remain exactly `trybuild`. A separate pinned
+required-contract inventory contains both `trybuild` and `schema_helpers_ui`;
+workflow commands, profile exclusions and serial-group checks use that set so
+the schema target remains covered after it stops invoking trybuild. Workflow
+contracts require both binaries in the PR and baseline commands, and require
+the baseline matrix to cover default, libSQL-only and all-features selections.
+The default profile excludes `trybuild` but runs `schema_helpers_ui`; `ci` runs
+both, and `coverage` excludes both while inheriting their group policy.
+Contracts also check default-profile inheritance, CI override precedence, and
+that ordinary tests stay outside the compile-contract group. The timeout probe
+scales the periods down and verifies that schema-helper execution is terminated
+at its ordinary 300 second bound while a `trybuild` test survives its 900
+second allowance.
 
 ### The values are pinned, not merely ordered
 
@@ -3633,8 +3617,8 @@ one run per leg.
 ### What the values are sized against
 
 The 30 minute whole-run budget is a bound rather than a measurement. It has to
-exceed the largest per-test allowance, the 1,500 second `schema_helpers_ui`
-session, and it does so with five minutes to spare.
+exceed the largest per-test allowance, the 900 second nested `trybuild`
+session, and it does so with fifteen minutes to spare.
 
 The contract also refuses a step that names a suite command without plainly
 running one. `if false; then cargo nextest run; fi` keeps the text and runs
@@ -3708,7 +3692,7 @@ value over every job that runs the suite, in both the `.yml` and `.yaml`
 extensions. It enumerates jobs that declare no ceiling, so a missing
 `timeout-minutes` reads as a lane with no budget rather than as no lane at all,
 and it holds every lane to the largest declared profile budget. The coverage
-profile inherits the ci budgets and excludes the slow compile-contract binaries.
+profile inherits the ci budgets and excludes both compile-contract binaries.
 
 The per-test allowance it compares against is `period` multiplied by
 `terminate-after`, not `period` alone, so an override that raised the
