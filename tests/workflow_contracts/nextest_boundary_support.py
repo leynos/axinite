@@ -1,16 +1,19 @@
-"""Shared fixture and subprocess helpers for nextest boundary contracts."""
+"""Prepare the shared Nextest fixture and scale its timeout probes."""
 
-import os
+from __future__ import annotations
+
+import json
 import shutil
-import subprocess
 import typing as typ
-from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
+from uuid import uuid4
 
 import pytest
 from _workflow_policy import REPOSITORY_ROOT
 from contract_sources import read_source
+from nextest_fixture import Fixture, prepare_fixture, run_nextest_probe as _run
+from nextest_process import ProcessResult
 from timeout_budgets import NEXTEST_CONFIG
 
 FIXTURE_CRATE = (
@@ -20,7 +23,6 @@ FIXTURE_CRATE = (
     / "fixtures"
     / "nextest_boundary"
 )
-SUBPROCESS_TIMEOUT_SECONDS = 600.0
 
 #: Test duration and scaled equivalents of schema's 300 s and trybuild's 900 s.
 ALLOWANCE_SLEEP_SECONDS: typ.Final[int] = 5
@@ -49,54 +51,53 @@ NESTED_COMPILER_POLICY: typ.Final[TimeoutScalePolicy] = TimeoutScalePolicy(
 )
 
 
-class Fixture(typ.NamedTuple):
-    """Where a copied nextest fixture crate lives and where it builds."""
-
-    crate: Path
-    target: Path
-
-
-def _tool_is_present(command: str) -> bool:
-    """Return whether a command resolves on `PATH`."""
-    return shutil.which(command) is not None
-
-
-def _run(
-    arguments: Sequence[str],
-    crate: Path,
-    target: Path,
-    environment_overrides: dict[str, str] | None = None,
-) -> subprocess.CompletedProcess[str]:
-    """Run a Cargo command in the copied crate and capture its output.
-
-    The fixture source is copied outside the repository because Cargo finds
-    `.cargo/config.toml` in parent directories. Its build artefacts stay in
-    the repository's ignored `target` directory and use the shared Cargo
-    package cache.
-    """
-    environment = dict(os.environ)
-    environment["CARGO_TARGET_DIR"] = str(target)
-    environment["CARGO_BUILD_BUILD_DIR"] = str(target / "build")
-    environment.update(environment_overrides or {})
-    return subprocess.run(  # noqa: S603 - fixed argument vector, no shell
-        list(arguments),
-        cwd=crate,
-        env=environment,
-        capture_output=True,
-        text=True,
-        timeout=SUBPROCESS_TIMEOUT_SECONDS,
-        check=False,
+def _require_the_toolchain() -> None:
+    """Fail before fixture preparation when Cargo or Nextest is unavailable."""
+    missing = [
+        tool for tool in ("cargo", "cargo-nextest") if shutil.which(tool) is None
+    ]
+    assert not missing, (
+        f"this contract runs nextest itself and needs {missing} on PATH; "
+        "`make test` requires them too"
     )
 
 
-@pytest.fixture(scope="module")
-def fixture_crate(tmp_path_factory: pytest.TempPathFactory) -> Fixture:
-    """Return the fixture crate copied outside the repository tree."""
+def prepare_fixture_crate(tmp_path_factory: pytest.TempPathFactory) -> Fixture:
+    """Copy the fixture and prepare its Cargo metadata exactly once per run.
+
+    The shared conftest fixture owns this call. Keeping preparation in an
+    ordinary function lets pytest register one session fixture for every
+    consuming contract module.
+    """
+    _require_the_toolchain()
     root = tmp_path_factory.mktemp("nextest-boundary")
     crate = root / "crate"
     shutil.copytree(FIXTURE_CRATE, crate)
-    target = REPOSITORY_ROOT / "target" / "workflow-contracts" / "nextest-boundary"
-    return Fixture(crate=crate, target=target)
+    target = (
+        REPOSITORY_ROOT / "target" / "workflow-contracts" / "nextest-boundary"
+    ).resolve()
+    fixture = prepare_fixture(root, crate, target)
+    receipt_directory = target / "preparation-receipts"
+    receipt_directory.mkdir(parents=True, exist_ok=True)
+    receipt = receipt_directory / f"{uuid4().hex}.jsonl"
+    receipt.write_text(
+        "".join(
+            json.dumps(
+                {
+                    "copy": str(root.resolve()),
+                    "phase": record.phase,
+                    "command": record.command,
+                    "elapsed_seconds": record.elapsed_seconds,
+                    "status": record.returncode,
+                },
+                sort_keys=True,
+            )
+            + "\n"
+            for record in fixture.preparation_records
+        ),
+        encoding="utf-8",
+    )
+    return fixture
 
 
 def _scaled_per_binary_periods() -> str:
@@ -156,8 +157,8 @@ def _scale_override_period(
 
 
 def _run_bounded_sleep(
-    fixture_crate: Fixture, configuration: Path, profile: str, binary: str
-) -> subprocess.CompletedProcess[str]:
+    fixture: Fixture, configuration: Path, profile: str, binary: str
+) -> ProcessResult:
     """Run one fixture binary's sleeping test with scaled timeouts."""
     return _run(
         (
@@ -171,19 +172,6 @@ def _run_bounded_sleep(
             "-E",
             f"binary({binary}) & test(bounded_sleep)",
         ),
-        fixture_crate.crate,
-        fixture_crate.target,
+        fixture,
         {"AXINITE_NEXTEST_SLEEP_SECONDS": str(ALLOWANCE_SLEEP_SECONDS)},
-    )
-
-
-@pytest.fixture(scope="module", autouse=True)
-def _require_the_toolchain() -> None:
-    """Fail rather than skip when the required Cargo tools are missing."""
-    missing = [
-        tool for tool in ("cargo", "cargo-nextest") if not _tool_is_present(tool)
-    ]
-    assert not missing, (
-        f"this contract runs nextest itself and needs {missing} on PATH; "
-        "`make test` requires them too"
     )

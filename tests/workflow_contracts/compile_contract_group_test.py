@@ -1,17 +1,12 @@
 """Contracts for serial scheduling of tests that share trybuild preparation."""
 
-import subprocess
 from pathlib import Path
 
 import pytest
 from compile_contract_inventory import REQUIRED_COMPILE_CONTRACT_BINARIES
 from contract_sources import read_source
-from nextest_boundary_support import (
-    Fixture,
-    _require_the_toolchain,
-    _run,
-    fixture_crate,
-)
+from nextest_boundary_support import Fixture, _run
+from nextest_process import ProcessResult
 from timeout_budgets import NEXTEST_CONFIG
 
 COMPILE_CONTRACT_GROUP = "compile-contracts"
@@ -20,7 +15,7 @@ OVERLAP_MARKER_ENV = "AXINITE_NEXTEST_OVERLAP_MARKER"
 
 def _run_show_groups(
     fixture_crate: Fixture, profile: str, config: Path = NEXTEST_CONFIG
-) -> subprocess.CompletedProcess[str]:
+) -> ProcessResult:
     """Ask nextest for effective group membership under one profile."""
     return _run(
         (
@@ -37,8 +32,7 @@ def _run_show_groups(
             "--color",
             "never",
         ),
-        fixture_crate.crate,
-        fixture_crate.target,
+        fixture_crate,
     )
 
 
@@ -123,7 +117,7 @@ def _without_any_compile_contract_group(config_text: str) -> str:
 
 def _run_overlap_fixture(
     fixture_crate: Fixture, config: Path, marker: Path
-) -> subprocess.CompletedProcess[str]:
+) -> ProcessResult:
     """Run both fixture binaries with four nextest test slots."""
     return _run(
         (
@@ -139,8 +133,7 @@ def _run_overlap_fixture(
             "-E",
             "binary(trybuild) | binary(schema_helpers_ui)",
         ),
-        fixture_crate.crate,
-        fixture_crate.target,
+        fixture_crate,
         {OVERLAP_MARKER_ENV: str(marker)},
     )
 
@@ -194,8 +187,7 @@ def test_coverage_profile_excludes_compile_contracts_but_keeps_ordinary_tests(
             "--color",
             "never",
         ),
-        fixture_crate.crate,
-        fixture_crate.target,
+        fixture_crate,
     )
     assert done.returncode == 0, (
         f"nextest could not list the coverage profile:\n{done.stderr}"

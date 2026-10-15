@@ -48,15 +48,13 @@ from pathlib import Path
 
 import pytest
 from contract_sources import read_source
-from nextest_versions import UNDECLARED, installed_versions_in, read_workflow_texts
 from nextest_boundary_support import (
     Fixture,
-    _require_the_toolchain,
     _run,
     _run_bounded_sleep,
     _scaled_per_binary_periods,
-    fixture_crate,
 )
+from nextest_versions import UNDECLARED, installed_versions_in, read_workflow_texts
 from timeout_budgets import NEXTEST_CONFIG
 
 #: What nextest prints, and does not fail on, when a key is not one it
@@ -129,8 +127,7 @@ def test_nextest_loads_the_real_configuration(
             "--profile",
             profile,
         ),
-        fixture_crate.crate,
-        fixture_crate.target,
+        fixture_crate,
     )
     assert done.returncode == 0, (
         f"nextest refused {NEXTEST_CONFIG} under --profile {profile}; every "
@@ -162,8 +159,7 @@ def test_nextest_ignores_no_key_in_the_real_configuration(
             "--profile",
             profile,
         ),
-        fixture_crate.crate,
-        fixture_crate.target,
+        fixture_crate,
     )
     assert IGNORED_KEYS_WARNING not in done.stderr, (
         f"nextest is ignoring keys in {NEXTEST_CONFIG} under --profile "
@@ -202,8 +198,7 @@ def test_the_ignored_key_reading_would_report_a_misspelling(
             "--profile",
             "ci",
         ),
-        fixture_crate.crate,
-        fixture_crate.target,
+        fixture_crate,
     )
     assert done.returncode == 0, (
         f"nextest refused the misspelled copy outright, so the warning is no "
@@ -295,8 +290,7 @@ def test_nextest_terminates_a_test_under_these_fields(
             "-E",
             "binary(slow)",
         ),
-        fixture_crate.crate,
-        fixture_crate.target,
+        fixture_crate,
     )
     assert done.returncode != 0, (
         f"nextest completed a thirty-second test under a one-second "

@@ -3561,6 +3561,22 @@ configuration. Built from a copy outside the tree there is no such file to
 find: measured at five `-fuse-ld=mold` invocations in place and none from the
 copy.
 
+That copy has one session-scoped preparation boundary. The suite runs
+`cargo metadata --format-version 1` once, then prepares the complete fixture
+binary inventory with
+`cargo nextest list --list-type binaries-only --message-format json`. One
+1,200-second budget covers both commands, including their wait for the shared
+Cargo package cache. Their JSON outputs live beneath that unique fixture copy;
+every later probe passes both files, so it does not repeat Cargo metadata or
+binary discovery. Each probe still supplies its own configuration file, so
+mutated and inherited configurations are loaded afresh. The 600-second probe
+watchdog terminates only that command's process group and reaps its leader. A
+successful preparation leaves its two bounded phase records in the fixture
+target's `preparation-receipts` directory for gate diagnostics. The existing
+30-minute Formatting job cap still bounds the aggregate suite; the separate
+preparation and per-probe limits do not claim that all probe maxima fit inside
+that cap.
+
 The ordinary `slow` binary sleeps for thirty seconds, and it is what makes one
 assertion behavioural rather than another reading. nextest runs it under a
 `slow-timeout` built from the real configuration's own `terminate-after` and
