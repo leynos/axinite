@@ -124,7 +124,6 @@ jobs:
         id: setup-rust
         uses: leynos/shared-actions/.github/actions/setup-rust@6cec89bac47a21cf756d68d638a9a510998e57f8
         with:
-          toolchain: stable
           rustflags: ''
           cache-provider: external
           install-binstall: 'false'
