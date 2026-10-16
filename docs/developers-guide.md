@@ -3420,8 +3420,8 @@ instrumented runs; separate required jobs run them with the same feature
 selections and the `ci` profile. The budgets that govern each workflow belong
 beside the profile a reader selects rather than one section away.
 
-All three therefore set a 300 second base allowance and a 30 minute whole-run
-budget. The default and ci profiles each declare an explicit 300 second
+All three therefore set a 300-second base allowance and a 30-minute whole-run
+budget. The default and ci profiles each declare an explicit 300-second
 override for `schema_helpers_ui`, followed by the shared serial-group override
 that allows nested `trybuild` sessions 900 seconds. Coverage inherits the ci
 overrides.
@@ -3462,9 +3462,9 @@ both run from its one `ui` test.
 
 The per-test timeout applies to the test process. For `trybuild`, nested Cargo
 preparation, fixture compilation and execution all happen inside that process
-and count towards its 900 second allowance. For `schema_helpers_ui`, the
+and count towards its 900-second allowance. For `schema_helpers_ui`, the
 integration target compiles before nextest starts the test timer; its `ui` test
-has the ordinary 300 second execution bound. Nextest's 30 minute global timer
+has the ordinary 300-second execution bound. Nextest's 30-minute global timer
 also starts with the test run. It does not bound the Cargo build that precedes
 nextest, including a coverage build; the configured Cargo watchdog and job
 limits remain the outer bounds where those are present.
@@ -3481,8 +3481,8 @@ both, and `coverage` excludes both while inheriting their group policy.
 Contracts also check default-profile inheritance, CI override precedence, and
 that ordinary tests stay outside the compile-contract group. The timeout probe
 scales the periods down and verifies that schema-helper execution is terminated
-at its ordinary 300 second bound while a `trybuild` test survives its 900
-second allowance.
+at its ordinary 300-second bound while a `trybuild` test survives its
+900-second allowance.
 
 ### The values are pinned, not merely ordered
 
@@ -3501,10 +3501,10 @@ ten-second default when it finds none. Deleting every `grace-period` in the
 file therefore *raises* the computed requirement, leaves every assertion
 passing, and doubles the wait a terminated test actually gets.
 
-The 900 second override is the next. The compile-contract contract asks whether
+The 900-second override is the next. The compile-contract contract asks whether
 each binary is allowed *at least* that much, which is the right shape for its
 own question and says nothing about the value, so an override raised to an hour
-would satisfy it while sitting above the 30 minute whole-run budget that
+would satisfy it while sitting above the 30-minute whole-run budget that
 contains it: the run would end before the allowance could be used. The number
 of overrides is pinned with it, because a second one matching the same binaries
 would decide the allowance in force by file order. And the whole-run budget is
@@ -3568,14 +3568,13 @@ binary inventory with
 1,200-second budget covers both commands, including their wait for the shared
 Cargo package cache. Their JSON outputs live beneath that unique fixture copy;
 every later probe passes both files, so it does not repeat Cargo metadata or
-binary discovery. Each probe still supplies its own configuration file, so
-mutated and inherited configurations are loaded afresh. The 600-second probe
-watchdog terminates only that command's process group and reaps its leader. A
-successful preparation leaves its two bounded phase records in the fixture
-target's `preparation-receipts` directory for gate diagnostics. The existing
-30-minute Formatting job cap still bounds the aggregate suite; the separate
-preparation and per-probe limits do not claim that all probe maxima fit inside
-that cap.
+binary discovery. Each probe still supplies a configuration file, so mutated
+and inherited configurations are loaded afresh. The 600-second probe watchdog
+terminates only that command's process group and reaps its leader. A successful
+preparation leaves its two bounded phase records in the fixture target's
+`preparation-receipts` directory for gate diagnostics. The existing 30-minute
+Formatting job cap still bounds the aggregate suite; the separate preparation
+and per-probe limits do not claim that all probe maxima fit inside that cap.
 
 The ordinary `slow` binary sleeps for thirty seconds, and it is what makes one
 assertion behavioural rather than another reading. nextest runs it under a

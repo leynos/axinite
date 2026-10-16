@@ -2,6 +2,16 @@
 
 This guide captures operator-visible behaviour for the current Axinite runtime.
 
+## Installation and distribution
+
+A complete source checkout is needed to build Axinite with libSQL enabled,
+because the build uses a workspace-local TLS dependency patch. Source-built
+binaries distributed through GitHub Releases are supported. Cargo registry
+publication and installation are unsupported because registry archives do not
+carry the workspace's patch overrides. See the
+[transport patch notes](../crates/hyper-rustls/UPSTREAM.md) for the dependency
+rationale.
+
 ## Skill bundle installs
 
 Axinite now validates passive multi-file skill bundles when a skill is

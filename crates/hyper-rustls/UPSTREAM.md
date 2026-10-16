@@ -40,7 +40,10 @@ direct Hyper dependency to the application. Connector builder types such as
 
 The patch centralizes lazy server handshakes and uses Tokio's `Either` I/O
 adapter from `tokio-util` for stream forwarding. Public stream variants and
-connection metadata are retained; the adapter adds no heap allocation.
+connection metadata are retained; the adapter adds no heap allocation. Unlike
+upstream, `flush` and `shutdown` also drive a pending handshake before
+forwarding the operation. This exposes handshake errors and lets `shutdown`
+send TLS `close_notify` when it is the first server-side I/O.
 
 The existing h2 audit exception remains owned by the libSQL dependency path;
 the audit path guard and its lockfile graph set are unchanged.
@@ -53,8 +56,16 @@ The upstream `tests/tests.rs` is not carried forward. It launches prebuilt
 example binaries, contacts Google, reserves fixed ports, and invokes `curl`
 with certificate verification disabled. The replacement coverage uses local
 loopback connections and generated certificates for HTTP routing, TLS
-verification, host names, ALPN/HTTP versions, and isolated provider selection;
-it requires neither public network access nor an external command-line client.
+verification, host names, ALPN/HTTP versions, first-I/O flush and shutdown
+behaviour, and isolated provider selection; it requires neither public network
+access nor an external command-line client.
+
+The SDK boundary test in `tests/libsql_tls_connector.rs` covers lazy
+remote-replica construction, a bounded error from `sync` for an unreachable
+HTTP endpoint, and the process-default provider boundary. It does not
+demonstrate successful HTTPS replication or live Turso protocol behaviour. TLS
+verification is covered separately by the patched transport and HTTPS example
+loopback tests.
 
 The examples parse PEM inputs through the maintained `rustls-pki-types` API,
 preserving explicit caller-selected file access and underlying I/O errors. The

@@ -18,3 +18,6 @@ pub(super) fn pem_read_error(error: pem::Error) -> io::Error {
         error => io::Error::new(io::ErrorKind::InvalidData, error),
     }
 }
+
+#[cfg(test)]
+pub(crate) mod tls_test;

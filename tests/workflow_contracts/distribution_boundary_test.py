@@ -54,7 +54,9 @@ def test_binary_selection_regressions_are_rejected(dist: object) -> None:
 def test_private_workspace_crates_remain_non_publishable(crate: str) -> None:
     """Private filesystem and transport patches stay in the source workspace."""
     manifest = read_toml(REPOSITORY_ROOT / "crates" / crate / "Cargo.toml")
-    assert manifest["package"].get("publish") is False
+    assert manifest["package"].get("publish") is False, (
+        "private workspace crates must not be published to a registry"
+    )
 
 
 def test_windows_installer_matches_package_authors_and_upgrade_identity() -> None:
@@ -70,9 +72,17 @@ def test_windows_installer_matches_package_authors_and_upgrade_identity() -> Non
     assert product is not None, "MSI template must declare the product"
     installer = product.find(f"{namespace}Package")
     assert installer is not None, "MSI template must declare the installer package"
-    assert product.get("Manufacturer") == manufacturer
-    assert installer.get("Manufacturer") == manufacturer
-    assert product.get("UpgradeCode") == wix["upgrade-guid"]
+    assert product.get("Manufacturer") == manufacturer, (
+        "MSI product branding must match the Cargo package authors"
+    )
+    assert installer.get("Manufacturer") == manufacturer, (
+        "MSI installer branding must match the Cargo package authors"
+    )
+    assert product.get("UpgradeCode") == wix["upgrade-guid"], (
+        "the MSI product must retain Cargo-dist's upgrade identity"
+    )
     path = product.find(f".//{namespace}Component[@Id='Path']")
     assert path is not None, "MSI template must retain the PATH component"
-    assert path.get("Guid") == wix["path-guid"]
+    assert path.get("Guid") == wix["path-guid"], (
+        "the MSI PATH component must retain its Cargo-dist identity"
+    )

@@ -1,4 +1,7 @@
-//! Ensure the registry SDK uses the patched built-in TLS connector.
+//! Verify lazy SDK construction and unreachable HTTP replica error propagation.
+//!
+//! This boundary uses plaintext HTTP: it checks connector selection without a
+//! global provider, not successful HTTPS replication or the replication protocol.
 
 #![cfg(feature = "libsql")]
 
@@ -7,8 +10,7 @@ use std::time::Duration;
 /// Surface an unreachable replica as a sync error without installing a global
 /// provider.
 #[tokio::test]
-async fn replica_failures_propagate_without_installing_a_global_crypto_provider()
--> anyhow::Result<()> {
+async fn unreachable_http_replica_fails_without_a_global_crypto_provider() -> anyhow::Result<()> {
     #[cfg(feature = "postgres")]
     assert!(rustls::crypto::CryptoProvider::get_default().is_none());
     let directory = tempfile::tempdir()?;
@@ -23,7 +25,7 @@ async fn replica_failures_propagate_without_installing_a_global_crypto_provider(
     let result = tokio::time::timeout(Duration::from_secs(5), database.sync()).await?;
     assert!(
         result.is_err(),
-        "unreachable replicas must return connection errors"
+        "unreachable HTTP replicas must return connection errors: {result:?}"
     );
     #[cfg(feature = "postgres")]
     assert!(rustls::crypto::CryptoProvider::get_default().is_none());

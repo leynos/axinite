@@ -50,15 +50,25 @@ def test_supported_probe_forms_reuse_both_saved_metadata(
     fixture = fixture_with_saved_metadata(tmp_path)
     prepared = _nextest_probe_arguments(command, fixture)
     if subcommand == "test-groups":
-        assert prepared[2:4] == ("show-config", "test-groups")
+        assert prepared[2:4] == ("show-config", "test-groups"), (
+            "show-config metadata flags must follow the subcommand pair"
+        )
     else:
-        assert prepared[2] == subcommand
-    assert prepared.count("--cargo-metadata") == 1
-    assert prepared.count("--binaries-metadata") == 1
+        assert prepared[2] == subcommand, "the supported Nextest subcommand must be retained"
+    assert prepared.count("--cargo-metadata") == 1, (
+        "a probe must receive Cargo metadata exactly once"
+    )
+    assert prepared.count("--binaries-metadata") == 1, (
+        "a probe must receive binary metadata exactly once"
+    )
     cargo_index = prepared.index("--cargo-metadata")
     binaries_index = prepared.index("--binaries-metadata")
-    assert Path(prepared[cargo_index + 1]) == fixture.cargo_metadata
-    assert Path(prepared[binaries_index + 1]) == fixture.binaries_metadata
+    assert Path(prepared[cargo_index + 1]) == fixture.cargo_metadata, (
+        "a probe must reuse the prepared Cargo metadata path"
+    )
+    assert Path(prepared[binaries_index + 1]) == fixture.binaries_metadata, (
+        "a probe must reuse the prepared binary inventory path"
+    )
 
 
 def test_fixture_preparation_receipt_records_two_ordered_phases(
@@ -78,7 +88,9 @@ def test_fixture_preparation_receipt_records_two_ordered_phases(
 
     def prepare(root: Path, crate: Path, target: Path) -> Fixture:
         events.append("prepare")
-        assert crate.is_dir() and crate.parent == root
+        assert crate.is_dir() and crate.parent == root, (
+            "the fixture source must be copied beneath its unique run root"
+        )
         records = (
             synthetic_process_result(
                 "cargo metadata preparation",
@@ -101,10 +113,12 @@ def test_fixture_preparation_receipt_records_two_ordered_phases(
 
     monkeypatch.setattr(support, "prepare_fixture", prepare)
     fixture = support.prepare_fixture_crate(tmp_path_factory)
-    assert events == ["toolcheck", "prepare"]
+    assert events == ["toolcheck", "prepare"], (
+        "tool availability must be checked before fixture preparation"
+    )
     receipt_dir = fixture.target / "preparation-receipts"
     receipts = list(receipt_dir.glob("*.jsonl"))
-    assert len(receipts) == 1
+    assert len(receipts) == 1, "one fixture preparation must leave one receipt"
     receipt = receipts[0]
     rows = [
         json.loads(line)
@@ -113,16 +127,18 @@ def test_fixture_preparation_receipt_records_two_ordered_phases(
     assert [row["phase"] for row in rows] == [
         "cargo metadata preparation",
         "Nextest binary inventory preparation",
-    ]
+    ], "the receipt must retain both preparation phases in order"
     assert [(row["elapsed_seconds"], row["status"]) for row in rows] == [
         (2, 0),
         (3, 0),
-    ]
+    ], "the receipt must retain successful elapsed times and statuses"
     assert [row["command"] for row in rows] == [
         ["cargo", "metadata"],
         ["cargo", "nextest", "list"],
-    ]
-    assert rows[0]["copy"] == rows[1]["copy"] == str(fixture.crate.parent)
+    ], "the receipt must identify the exact preparation commands"
+    assert rows[0]["copy"] == rows[1]["copy"] == str(fixture.crate.parent), (
+        "both preparation records must point to the same fixture copy"
+    )
 
 
 @pytest.mark.parametrize(

@@ -30,8 +30,10 @@ async fn run_server() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         .map_or(Ok(1337), |value| value.parse::<u16>())?;
     let address = SocketAddr::from(([127, 0, 0, 1], port));
 
-    let certificates = load_certificates("examples/sample.pem")?;
-    let private_key = load_private_key("examples/sample.rsa")?;
+    let certificates =
+        load_certificates(concat!(env!("CARGO_MANIFEST_DIR"), "/examples/sample.pem"))?;
+    let private_key =
+        load_private_key(concat!(env!("CARGO_MANIFEST_DIR"), "/examples/sample.rsa"))?;
     let incoming = AddrIncoming::bind(&address)?;
     let acceptor = TlsAcceptor::builder()
         .with_single_cert(certificates, private_key)?
@@ -59,7 +61,7 @@ async fn echo(request: Request<Body>) -> Result<Response<Body>, hyper::Error> {
 
 /// Read certificates from a caller-relative PEM path, rejecting an empty store.
 fn load_certificates(path: &str) -> io::Result<Vec<CertificateDer<'static>>> {
-    // Resolve the sample PEM path from the caller's working directory.
+    // Resolve the path as selected by the caller.
     let file = File::open_ambient(path, cap_std::ambient_authority())?;
     let certificates = read_certificates(file)?;
     if certificates.is_empty() {
@@ -73,7 +75,7 @@ fn load_certificates(path: &str) -> io::Result<Vec<CertificateDer<'static>>> {
 
 /// Read one private key while retaining I/O errors and classifying bad PEM.
 fn load_private_key(path: &str) -> io::Result<PrivateKeyDer<'static>> {
-    // Resolve the sample PEM path from the caller's working directory.
+    // Resolve the path as selected by the caller.
     let file = File::open_ambient(path, cap_std::ambient_authority())?;
     PrivateKeyDer::from_pem_reader(file).map_err(pem_read_error)
 }
@@ -139,3 +141,7 @@ mod tests {
         assert_eq!(error.kind(), io::ErrorKind::PermissionDenied);
     }
 }
+
+#[cfg(test)]
+#[path = "server/behaviour_tests.rs"]
+mod behaviour_tests;

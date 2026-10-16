@@ -16,19 +16,25 @@ def test_schema_helper_ui_registers_and_executes_every_pass_fixture() -> None:
     """Both existing public call-site fixtures remain ordinary UI test code."""
     inventory = read_fixture_inventory(REPOSITORY_ROOT / "tests/schema_helpers_ui")
 
-    assert inventory.discovered == frozenset(EXPECTED_FIXTURE_MODULES.values())
-    assert dict(inventory.registrations) == EXPECTED_FIXTURE_MODULES
-    assert frozenset(inventory.invocations) == frozenset(EXPECTED_FIXTURE_MODULES)
-    assert not inventory.unregistered
-    assert not inventory.missing_files
-    assert not inventory.not_executed
-    assert not inventory.duplicate_registrations
-    assert not inventory.duplicate_invocations
-    assert not inventory.unknown_invocations
-    assert not inventory.invalid_modules
-    assert not inventory.outside_includes
-    assert inventory.has_ui_test
-    assert not inventory.uses_trybuild
+    assert inventory.discovered == frozenset(EXPECTED_FIXTURE_MODULES.values()), (
+        "pass fixtures must match the accepted schema-helper inventory"
+    )
+    assert dict(inventory.registrations) == EXPECTED_FIXTURE_MODULES, (
+        "each accepted fixture must be registered under its expected module"
+    )
+    assert frozenset(inventory.invocations) == frozenset(EXPECTED_FIXTURE_MODULES), (
+        "the ui test must invoke every accepted fixture wrapper"
+    )
+    assert not inventory.unregistered, "every discovered pass fixture must be registered"
+    assert not inventory.missing_files, "every registered fixture file must exist"
+    assert not inventory.not_executed, "every registered wrapper must run from ui"
+    assert not inventory.duplicate_registrations, "fixture modules must register once"
+    assert not inventory.duplicate_invocations, "each fixture wrapper must run once"
+    assert not inventory.unknown_invocations, "ui must not call unknown fixture wrappers"
+    assert not inventory.invalid_modules, "fixture modules must use valid wrappers"
+    assert not inventory.outside_includes, "fixture includes must stay in pass"
+    assert inventory.has_ui_test, "the schema-helper harness must retain its ui test"
+    assert not inventory.uses_trybuild, "schema-helper fixtures must remain ordinary tests"
 
 
 def _write_harness(directory: Path, ui_calls: tuple[str, ...]) -> None:

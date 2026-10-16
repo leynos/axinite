@@ -70,6 +70,9 @@ where
 }
 
 /// A TLS stream constructed by a [`TlsAcceptor`].
+///
+/// Read, write, flush, and shutdown operations complete the lazy handshake on
+/// first use. A first-use shutdown also sends TLS `close_notify`.
 // tokio_rustls::server::TlsStream doesn't expose constructor methods,
 // so we have to TlsAcceptor::accept and handshake to have access to it
 // TlsStream implements AsyncRead/AsyncWrite by handshaking with tokio_rustls::Accept first
@@ -147,18 +150,16 @@ impl<C: AsyncRead + AsyncWrite + Unpin> AsyncWrite for TlsStream<C> {
             .poll_io(cx, |stream, cx| stream.poll_write(cx, buf))
     }
 
-    fn poll_flush(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<io::Result<()>> {
-        match &mut self.state {
-            State::Handshaking(_) => Poll::Ready(Ok(())),
-            State::Streaming(stream) => Pin::new(stream).poll_flush(cx),
-        }
+    /// Complete the lazy handshake before flushing buffered TLS output.
+    fn poll_flush(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<io::Result<()>> {
+        self.get_mut()
+            .poll_io(cx, |stream, cx| stream.poll_flush(cx))
     }
 
-    fn poll_shutdown(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<io::Result<()>> {
-        match &mut self.state {
-            State::Handshaking(_) => Poll::Ready(Ok(())),
-            State::Streaming(stream) => Pin::new(stream).poll_shutdown(cx),
-        }
+    /// Complete the lazy handshake before sending TLS close_notify on shutdown.
+    fn poll_shutdown(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<io::Result<()>> {
+        self.get_mut()
+            .poll_io(cx, |stream, cx| stream.poll_shutdown(cx))
     }
 }
 

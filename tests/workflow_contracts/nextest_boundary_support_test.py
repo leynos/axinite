@@ -65,11 +65,19 @@ def test_preparation_uses_one_deadline_and_probes_keep_their_600_second_cap(
     prepared_fixture = fixture_support.prepare_fixture(
         root, crate, target, clock=lambda: now[0]
     )
-    assert [timeout for _, timeout in calls] == [1200.0, 350.0]
-    assert len(prepared_fixture.preparation_records) == 2
-    assert prepared_fixture.preparation_records[0].phase == "cargo metadata preparation"
+    assert [timeout for _, timeout in calls] == [1200.0, 350.0], (
+        "metadata preparation must share the remaining 1200-second budget"
+    )
+    assert len(prepared_fixture.preparation_records) == 2, (
+        "both bounded preparation commands must be recorded"
+    )
+    assert prepared_fixture.preparation_records[0].phase == "cargo metadata preparation", (
+        "the first preparation record must describe Cargo metadata"
+    )
     inventory_phase = prepared_fixture.preparation_records[1].phase
-    assert inventory_phase == "Nextest binary inventory preparation"
+    assert inventory_phase == "Nextest binary inventory preparation", (
+        "the second preparation record must describe binary discovery"
+    )
 
     probe_calls: list[tuple[str, ...]] = []
 
@@ -81,15 +89,21 @@ def test_preparation_uses_one_deadline_and_probes_keep_their_600_second_cap(
         context: ProcessContext,
     ) -> ProcessResult:
         del context
-        assert timeout_seconds == fixture_support.SUBPROCESS_TIMEOUT_SECONDS
+        assert timeout_seconds == fixture_support.SUBPROCESS_TIMEOUT_SECONDS, (
+            "each Nextest probe must retain its 600-second watchdog"
+        )
         probe_calls.append(tuple(command))
         return synthetic_process_result(phase, command)
 
     monkeypatch.setattr(fixture_support, "run_process", fake_probe)
     fixture_support.run_nextest_probe(("cargo", "nextest", "list"), prepared_fixture)
-    assert len(probe_calls) == 1
-    assert "--cargo-metadata" in probe_calls[0]
-    assert "--binaries-metadata" in probe_calls[0]
+    assert len(probe_calls) == 1, "one request must launch one Nextest probe"
+    assert "--cargo-metadata" in probe_calls[0], (
+        "the probe must reuse the prepared Cargo metadata"
+    )
+    assert "--binaries-metadata" in probe_calls[0], (
+        "the probe must reuse the prepared binary inventory"
+    )
 
 
 @pytest.mark.parametrize("failure", ["nonzero", "malformed"], ids=str)
@@ -126,9 +140,11 @@ def test_preparation_stops_before_binary_listing_on_bad_cargo_metadata(
         fixture_support.prepare_fixture(
             root, crate, tmp_path / "target", clock=lambda: 1.0
         )
-    assert len(calls) == 1
-    assert calls[0][1:2] == ("metadata",)
-    assert not (root / "binaries-metadata.json").exists()
+    assert len(calls) == 1, "bad Cargo metadata must stop before binary discovery"
+    assert calls[0][1:2] == ("metadata",), "the sole command must be cargo metadata"
+    assert not (root / "binaries-metadata.json").exists(), (
+        "failed Cargo metadata must not publish a binary inventory"
+    )
 
 
 def test_binary_inventory_failure_is_recorded_without_publishing_fixture(
@@ -163,12 +179,18 @@ def test_binary_inventory_failure_is_recorded_without_publishing_fixture(
         fixture_support.prepare_fixture(
             root, crate, tmp_path / "target", clock=lambda: 1.0
         )
-    assert error.value.record is not None
-    assert error.value.record.phase == "Nextest binary inventory preparation"
-    assert len(commands) == 2
-    assert "--list-type" in commands[1]
-    assert commands[1][-2:] == ("--message-format", "json")
-    assert not (root / "binaries-metadata.json").exists()
+    assert error.value.record is not None, "invalid inventory must retain command evidence"
+    assert error.value.record.phase == "Nextest binary inventory preparation", (
+        "the failure record must identify binary inventory preparation"
+    )
+    assert len(commands) == 2, "Cargo metadata and one inventory command must run"
+    assert "--list-type" in commands[1], "Nextest must request binary-only output"
+    assert commands[1][-2:] == ("--message-format", "json"), (
+        "Nextest inventory preparation must emit JSON"
+    )
+    assert not (root / "binaries-metadata.json").exists(), (
+        "invalid binary metadata must not become a reusable fixture"
+    )
 
 
 def test_preparation_refuses_existing_metadata_instead_of_reusing_it(
@@ -198,7 +220,7 @@ def test_preparation_refuses_existing_metadata_instead_of_reusing_it(
         fixture_support.prepare_fixture(
             root, crate, tmp_path / "target", clock=lambda: 1.0
         )
-    assert calls == []
+    assert calls == [], "stale metadata must be rejected before launching Cargo"
 
 
 @pytest.mark.parametrize(
@@ -257,9 +279,11 @@ def test_probe_fails_closed_when_saved_metadata_is_unusable(
         fixture_support.run_nextest_probe(
             ("cargo", "nextest", "show-config", "test-groups"), fixture
         )
-    assert calls == []
+    assert calls == [], "unusable saved metadata must fail before a probe starts"
     if condition == "undecodable":
-        assert "not valid UTF-8" in str(error.value)
+        assert "not valid UTF-8" in str(error.value), (
+            "undecodable metadata must report its encoding failure"
+        )
 
 
 def test_timeout_preserves_output_and_terminates_its_descendant(
@@ -300,12 +324,22 @@ def test_timeout_preserves_output_and_terminates_its_descendant(
             context=ProcessContext(tmp_path, dict(os.environ)),
         )
 
-    assert isinstance(timeout.value, subprocess.TimeoutExpired)
-    assert timeout.value.record.returncode is not None
-    assert timeout.value.record.phase == "watchdog regression"
-    assert "parent-started" in timeout.value.record.stdout
-    assert "parent-error" in timeout.value.record.stderr
-    assert child_ready.exists()
+    assert isinstance(timeout.value, subprocess.TimeoutExpired), (
+        "the process watchdog must preserve TimeoutExpired semantics"
+    )
+    assert timeout.value.record.returncode is not None, (
+        "the watchdog record must include the reaped process status"
+    )
+    assert timeout.value.record.phase == "watchdog regression", (
+        "the timeout record must retain its contract phase"
+    )
+    assert "parent-started" in timeout.value.record.stdout, (
+        "timeout cleanup must preserve captured standard output"
+    )
+    assert "parent-error" in timeout.value.record.stderr, (
+        "timeout cleanup must preserve captured standard error"
+    )
+    assert child_ready.exists(), "the descendant must start before the timeout"
     descendant_pid = int(child_pid.read_text(encoding="utf-8"))
     deadline = time.monotonic() + 2
     while time.monotonic() < deadline:
@@ -320,4 +354,4 @@ def test_timeout_preserves_output_and_terminates_its_descendant(
         time.sleep(0.02)
     else:
         pytest.fail("the timed-out command's descendant remained live")
-    assert not child_late.exists()
+    assert not child_late.exists(), "the terminated descendant must not finish later"

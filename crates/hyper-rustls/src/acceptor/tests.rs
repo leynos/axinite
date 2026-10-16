@@ -323,3 +323,5 @@ async fn public_acceptor_io_propagates_client_verification_failures(
         .map_err(|error| anyhow!("acceptor rejection timed out: {error}"))???;
     Ok(())
 }
+
+mod terminal;
