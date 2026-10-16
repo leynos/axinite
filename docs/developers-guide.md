@@ -3502,15 +3502,15 @@ file therefore *raises* the computed requirement, leaves every assertion
 passing, and doubles the wait a terminated test actually gets.
 
 The 900-second override is the next. The compile-contract contract asks whether
-each binary is allowed *at least* that much, which is the right shape for its
-own question and says nothing about the value, so an override raised to an hour
-would satisfy it while sitting above the 30-minute whole-run budget that
-contains it: the run would end before the allowance could be used. The number
-of overrides is pinned with it, because a second one matching the same binaries
-would decide the allowance in force by file order. And the whole-run budget is
-only ever compared with the largest per-test allowance, so the documented
-thirty minutes could drift to forty with nothing failing and this table left
-describing a value the runner does not use.
+the `trybuild` binary is allowed *at least* that much, which is the right shape
+for its own question and says nothing about the value, so an override raised to
+an hour would satisfy it while sitting above the 30-minute whole-run budget
+that contains it: the run would end before the allowance could be used. The
+number of overrides is pinned with it, because a second one matching the same
+binaries would decide the allowance in force by file order. And the whole-run
+budget is only ever compared with the largest per-test allowance, so the
+documented thirty minutes could drift to forty with nothing failing and this
+table left describing a value the runner does not use.
 
 The set of profiles is pinned too. Every assertion in this suite is
 parametrized over `default`, `ci` and `coverage`, so a profile carrying looser

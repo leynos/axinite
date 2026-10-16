@@ -9,6 +9,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Final, Literal, TypeAlias
 
+from contract_sources import matching_entries, read_source
+
 _MODULE = re.compile(r"(?ms)^mod (?P<name>[A-Za-z_]\w*)\s*\{(?P<body>.*?)^\}")
 _INCLUDE = re.compile(r'\binclude!\s*\(\s*"(?P<path>[^"]+)"\s*\)\s*;')
 _RUN_WRAPPER = re.compile(
@@ -274,10 +276,17 @@ def read_fixture_inventory(tests_directory: Path) -> FixtureInventory:
     that fixture's ``main``; the ``ui`` test calls each wrapper once. Line and
     block comments are removed, and ordinary strings are masked when checking
     code so prose cannot register or execute a fixture.
+
+    Raises
+    ------
+    SourceReadError
+        If the pass directory cannot be listed or ``main.rs`` cannot be read.
     """
     pass_directory = tests_directory / "pass"
-    discovered = frozenset(path.name for path in pass_directory.glob("*.rs"))
-    source = (tests_directory / "main.rs").read_text(encoding="utf-8")
+    discovered = frozenset(
+        path.name for path in matching_entries(pass_directory, "*.rs")
+    )
+    source = read_source(tests_directory / "main.rs")
     comment_free, code_only = _rust_source_views(source)
     module_inventory = _collect_module_registrations(comment_free, code_only)
     ui_test = _UI_TEST.search(code_only)
