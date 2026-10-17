@@ -58,6 +58,8 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
+      - name: Start CI telemetry
+        uses: leynos/shared-actions/.github/actions/ci-telemetry-start@81374b6f183e59f0570ad36217ded90d3240fda6
       - name: Checkout repository
         uses: actions/checkout@v6
       - name: Install Rust
@@ -71,6 +73,9 @@ jobs:
         run: cargo audit --version
       - name: Audit dependencies
         run: make audit
+      - name: Report CI telemetry
+        if: always()
+        uses: leynos/shared-actions/.github/actions/ci-telemetry-finish@81374b6f183e59f0570ad36217ded90d3240fda6
 
   tests:
     name: Tests (${{ matrix.name }})
@@ -147,12 +152,12 @@ jobs:
           swap-storage: false
       - name: Checkout repository
         uses: actions/checkout@v6
-      # Right-sizing needs the peak memory and the low-water disk mark, and
-      # neither is visible in a job's own output. The sampler runs alongside
-      # the build and reports both at the end, with `if: always()` so a job
-      # that fails on resources still says so.
-      - name: Start resource sampler
-        run: ./scripts/ci-resource-sampler.sh start
+      # Right-sizing needs the busy cores, the peak memory and the low-water
+      # disk mark, and none is visible in a job's own output. The telemetry
+      # sampler runs alongside the build and prints one record at the end,
+      # with `if: always()` so a job that fails on resources still says so.
+      - name: Start CI telemetry
+        uses: leynos/shared-actions/.github/actions/ci-telemetry-start@81374b6f183e59f0570ad36217ded90d3240fda6
 
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
@@ -239,28 +244,17 @@ jobs:
       # Report the hit rate so a wrapper that is silently doing nothing shows
       # up in the job summary rather than only in the duration.
       - name: Report sccache statistics
+        id: sccache
         if: always()
-        env:
-          SCCACHE_BACKEND: ${{ steps.setup-rust.outputs.cache-backend }}
-        run: |
-          set -euo pipefail
-          # Print to the log as well as the job summary. The summary is not
-          # readable through the REST API, so the log copy is what lets anyone
-          # confirm the hit rate, or a read or write error, after the fact.
-          stats="$(sccache --show-stats)"
-          printf '%s\n' "$stats"
-          {
-            printf '### sccache statistics (%s)\n\n' "${GITHUB_JOB}"
-            # `Cache location` reads `ghac` for the proxy and GitHub alike, so
-            # name the backend setup-rust chose.
-            printf -- '- backend: %s\n\n' "${SCCACHE_BACKEND:-none}"
-            printf '```text\n'
-            printf '%s\n' "$stats"
-            printf '```\n'
-          } >> "${GITHUB_STEP_SUMMARY}"
-      - name: Report resource peaks
+        uses: leynos/shared-actions/.github/actions/sccache-report@81374b6f183e59f0570ad36217ded90d3240fda6
+        with:
+          status: ${{ steps.setup-rust.outputs.sccache-status }}
+          backend: ${{ steps.setup-rust.outputs.cache-backend }}
+      - name: Report CI telemetry
         if: always()
-        run: ./scripts/ci-resource-sampler.sh report
+        uses: leynos/shared-actions/.github/actions/ci-telemetry-finish@81374b6f183e59f0570ad36217ded90d3240fda6
+        with:
+          sccache-status: ${{ steps.setup-rust.outputs.sccache-status }}
 
   telegram-tests:
     name: Telegram Channel Tests
@@ -289,12 +283,12 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v6
-      # Right-sizing needs the peak memory and the low-water disk mark, and
-      # neither is visible in a job's own output. The sampler runs alongside
-      # the build and reports both at the end, with `if: always()` so a job
-      # that fails on resources still says so.
-      - name: Start resource sampler
-        run: ./scripts/ci-resource-sampler.sh start
+      # Right-sizing needs the busy cores, the peak memory and the low-water
+      # disk mark, and none is visible in a job's own output. The telemetry
+      # sampler runs alongside the build and prints one record at the end,
+      # with `if: always()` so a job that fails on resources still says so.
+      - name: Start CI telemetry
+        uses: leynos/shared-actions/.github/actions/ci-telemetry-start@81374b6f183e59f0570ad36217ded90d3240fda6
 
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
@@ -337,28 +331,17 @@ jobs:
       # Report the hit rate so a wrapper that is silently doing nothing shows
       # up in the job summary rather than only in the duration.
       - name: Report sccache statistics
+        id: sccache
         if: always()
-        env:
-          SCCACHE_BACKEND: ${{ steps.setup-rust.outputs.cache-backend }}
-        run: |
-          set -euo pipefail
-          # Print to the log as well as the job summary. The summary is not
-          # readable through the REST API, so the log copy is what lets anyone
-          # confirm the hit rate, or a read or write error, after the fact.
-          stats="$(sccache --show-stats)"
-          printf '%s\n' "$stats"
-          {
-            printf '### sccache statistics (%s)\n\n' "${GITHUB_JOB}"
-            # `Cache location` reads `ghac` for the proxy and GitHub alike, so
-            # name the backend setup-rust chose.
-            printf -- '- backend: %s\n\n' "${SCCACHE_BACKEND:-none}"
-            printf '```text\n'
-            printf '%s\n' "$stats"
-            printf '```\n'
-          } >> "${GITHUB_STEP_SUMMARY}"
-      - name: Report resource peaks
+        uses: leynos/shared-actions/.github/actions/sccache-report@81374b6f183e59f0570ad36217ded90d3240fda6
+        with:
+          status: ${{ steps.setup-rust.outputs.sccache-status }}
+          backend: ${{ steps.setup-rust.outputs.cache-backend }}
+      - name: Report CI telemetry
         if: always()
-        run: ./scripts/ci-resource-sampler.sh report
+        uses: leynos/shared-actions/.github/actions/ci-telemetry-finish@81374b6f183e59f0570ad36217ded90d3240fda6
+        with:
+          sccache-status: ${{ steps.setup-rust.outputs.sccache-status }}
   github-tool-tests:
     name: GitHub Tool Tests
     # `tools-src/github` is excluded from the workspace, so neither the
@@ -397,12 +380,12 @@ jobs:
         # repository code that runs after it.
         with:
           persist-credentials: false
-      # Right-sizing needs the peak memory and the low-water disk mark, and
-      # neither is visible in a job's own output. The sampler runs alongside
-      # the build and reports both at the end, with `if: always()` so a job
-      # that fails on resources still says so.
-      - name: Start resource sampler
-        run: ./scripts/ci-resource-sampler.sh start
+      # Right-sizing needs the busy cores, the peak memory and the low-water
+      # disk mark, and none is visible in a job's own output. The telemetry
+      # sampler runs alongside the build and prints one record at the end,
+      # with `if: always()` so a job that fails on resources still says so.
+      - name: Start CI telemetry
+        uses: leynos/shared-actions/.github/actions/ci-telemetry-start@81374b6f183e59f0570ad36217ded90d3240fda6
 
       - name: Install Rust
         uses: dtolnay/rust-toolchain@6bed0761d98439e5a578e2877258200ad565ba87  # stable
@@ -447,28 +430,17 @@ jobs:
       # Report the hit rate so a wrapper that is silently doing nothing shows
       # up in the job summary rather than only in the duration.
       - name: Report sccache statistics
+        id: sccache
         if: always()
-        env:
-          SCCACHE_BACKEND: ${{ steps.setup-rust.outputs.cache-backend }}
-        run: |
-          set -euo pipefail
-          # Print to the log as well as the job summary. The summary is not
-          # readable through the REST API, so the log copy is what lets anyone
-          # confirm the hit rate, or a read or write error, after the fact.
-          stats="$(sccache --show-stats)"
-          printf '%s\n' "$stats"
-          {
-            printf '### sccache statistics (%s)\n\n' "${GITHUB_JOB}"
-            # `Cache location` reads `ghac` for the proxy and GitHub alike, so
-            # name the backend setup-rust chose.
-            printf -- '- backend: %s\n\n' "${SCCACHE_BACKEND:-none}"
-            printf '```text\n'
-            printf '%s\n' "$stats"
-            printf '```\n'
-          } >> "${GITHUB_STEP_SUMMARY}"
-      - name: Report resource peaks
+        uses: leynos/shared-actions/.github/actions/sccache-report@81374b6f183e59f0570ad36217ded90d3240fda6
+        with:
+          status: ${{ steps.setup-rust.outputs.sccache-status }}
+          backend: ${{ steps.setup-rust.outputs.cache-backend }}
+      - name: Report CI telemetry
         if: always()
-        run: ./scripts/ci-resource-sampler.sh report
+        uses: leynos/shared-actions/.github/actions/ci-telemetry-finish@81374b6f183e59f0570ad36217ded90d3240fda6
+        with:
+          sccache-status: ${{ steps.setup-rust.outputs.sccache-status }}
   libsql-transport-tests:
     name: libSQL TLS Transport Tests
     # The SDK exercises the workspace transport with its HTTP/1 defaults.
@@ -499,8 +471,8 @@ jobs:
       # neither is visible in a job's own output. The sampler runs alongside
       # the build and reports both at the end, with `if: always()` so a job
       # that fails on resources still says so.
-      - name: Start resource sampler
-        run: ./scripts/ci-resource-sampler.sh start
+      - name: Start CI telemetry
+        uses: leynos/shared-actions/.github/actions/ci-telemetry-start@81374b6f183e59f0570ad36217ded90d3240fda6
 
       - name: Install Rust
         uses: dtolnay/rust-toolchain@6bed0761d98439e5a578e2877258200ad565ba87  # stable
@@ -547,28 +519,18 @@ jobs:
       # Report the hit rate so a wrapper that is silently doing nothing shows
       # up in the job summary rather than only in the duration.
       - name: Report sccache statistics
+        id: sccache
         if: always()
-        env:
-          SCCACHE_BACKEND: ${{ steps.setup-rust.outputs.cache-backend }}
-        run: |
-          set -euo pipefail
-          # Print to the log as well as the job summary. The summary is not
-          # readable through the REST API, so the log copy is what lets anyone
-          # confirm the hit rate, or a read or write error, after the fact.
-          stats="$(sccache --show-stats)"
-          printf '%s\n' "$stats"
-          {
-            printf '### sccache statistics (%s)\n\n' "${GITHUB_JOB}"
-            # `Cache location` reads `ghac` for the proxy and GitHub alike, so
-            # name the backend setup-rust chose.
-            printf -- '- backend: %s\n\n' "${SCCACHE_BACKEND:-none}"
-            printf '```text\n'
-            printf '%s\n' "$stats"
-            printf '```\n'
-          } >> "${GITHUB_STEP_SUMMARY}"
-      - name: Report resource peaks
+        uses: leynos/shared-actions/.github/actions/sccache-report@81374b6f183e59f0570ad36217ded90d3240fda6
+        with:
+          status: ${{ steps.setup-rust.outputs.sccache-status }}
+          backend: ${{ steps.setup-rust.outputs.cache-backend }}
+      - name: Report CI telemetry
         if: always()
-        run: ./scripts/ci-resource-sampler.sh report
+        uses: leynos/shared-actions/.github/actions/ci-telemetry-finish@81374b6f183e59f0570ad36217ded90d3240fda6
+        with:
+          sccache-status: ${{ steps.setup-rust.outputs.sccache-status }}
+
   windows-build:
     name: Windows Build (${{ matrix.name }})
     # Windows lanes stay on GitHub-hosted runners: Ubicloud offers Linux only.
@@ -585,6 +547,8 @@ jobs:
           - name: libsql-only
             flags: "--no-default-features --features libsql"
     steps:
+      - name: Start CI telemetry
+        uses: leynos/shared-actions/.github/actions/ci-telemetry-start@81374b6f183e59f0570ad36217ded90d3240fda6
       - name: Checkout repository
         uses: actions/checkout@v6
       - name: Install Rust
@@ -627,6 +591,9 @@ jobs:
           key: >-
             cargo-v1-${{ runner.os }}-${{ runner.arch }}-${{ runner.environment
             }}-${{ hashFiles('**/Cargo.lock') }}
+      - name: Report CI telemetry
+        if: always()
+        uses: leynos/shared-actions/.github/actions/ci-telemetry-finish@81374b6f183e59f0570ad36217ded90d3240fda6
 
   wasm-wit-compat:
     name: WASM WIT Compatibility
@@ -655,12 +622,12 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v6
-      # Right-sizing needs the peak memory and the low-water disk mark, and
-      # neither is visible in a job's own output. The sampler runs alongside
-      # the build and reports both at the end, with `if: always()` so a job
-      # that fails on resources still says so.
-      - name: Start resource sampler
-        run: ./scripts/ci-resource-sampler.sh start
+      # Right-sizing needs the busy cores, the peak memory and the low-water
+      # disk mark, and none is visible in a job's own output. The telemetry
+      # sampler runs alongside the build and prints one record at the end,
+      # with `if: always()` so a job that fails on resources still says so.
+      - name: Start CI telemetry
+        uses: leynos/shared-actions/.github/actions/ci-telemetry-start@81374b6f183e59f0570ad36217ded90d3240fda6
 
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
@@ -721,28 +688,17 @@ jobs:
       # Report the hit rate so a wrapper that is silently doing nothing shows
       # up in the job summary rather than only in the duration.
       - name: Report sccache statistics
+        id: sccache
         if: always()
-        env:
-          SCCACHE_BACKEND: ${{ steps.setup-rust.outputs.cache-backend }}
-        run: |
-          set -euo pipefail
-          # Print to the log as well as the job summary. The summary is not
-          # readable through the REST API, so the log copy is what lets anyone
-          # confirm the hit rate, or a read or write error, after the fact.
-          stats="$(sccache --show-stats)"
-          printf '%s\n' "$stats"
-          {
-            printf '### sccache statistics (%s)\n\n' "${GITHUB_JOB}"
-            # `Cache location` reads `ghac` for the proxy and GitHub alike, so
-            # name the backend setup-rust chose.
-            printf -- '- backend: %s\n\n' "${SCCACHE_BACKEND:-none}"
-            printf '```text\n'
-            printf '%s\n' "$stats"
-            printf '```\n'
-          } >> "${GITHUB_STEP_SUMMARY}"
-      - name: Report resource peaks
+        uses: leynos/shared-actions/.github/actions/sccache-report@81374b6f183e59f0570ad36217ded90d3240fda6
+        with:
+          status: ${{ steps.setup-rust.outputs.sccache-status }}
+          backend: ${{ steps.setup-rust.outputs.cache-backend }}
+      - name: Report CI telemetry
         if: always()
-        run: ./scripts/ci-resource-sampler.sh report
+        uses: leynos/shared-actions/.github/actions/ci-telemetry-finish@81374b6f183e59f0570ad36217ded90d3240fda6
+        with:
+          sccache-status: ${{ steps.setup-rust.outputs.sccache-status }}
   docker-build:
     name: Docker Build
     # Stays on its current label. Moving a privileged, daemon-dependent job
@@ -764,18 +720,18 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v6
-      # Right-sizing needs the peak memory and the low-water disk mark, and
-      # neither is visible in a job's own output. The sampler runs alongside
-      # the build and reports both at the end, with `if: always()` so a job
-      # that fails on resources still says so.
-      - name: Start resource sampler
-        run: ./scripts/ci-resource-sampler.sh start
+      # Right-sizing needs the busy cores, the peak memory and the low-water
+      # disk mark, and none is visible in a job's own output. The telemetry
+      # sampler runs alongside the build and prints one record at the end,
+      # with `if: always()` so a job that fails on resources still says so.
+      - name: Start CI telemetry
+        uses: leynos/shared-actions/.github/actions/ci-telemetry-start@81374b6f183e59f0570ad36217ded90d3240fda6
 
       - name: Build Docker image
         run: docker build -t axinite-test:ci .
-      - name: Report resource peaks
+      - name: Report CI telemetry
         if: always()
-        run: ./scripts/ci-resource-sampler.sh report
+        uses: leynos/shared-actions/.github/actions/ci-telemetry-finish@81374b6f183e59f0570ad36217ded90d3240fda6
 
   version-check:
     name: Version Bump Check
@@ -785,6 +741,8 @@ jobs:
     timeout-minutes: 10
     if: github.event_name == 'pull_request'
     steps:
+      - name: Start CI telemetry
+        uses: leynos/shared-actions/.github/actions/ci-telemetry-start@81374b6f183e59f0570ad36217ded90d3240fda6
       - name: Checkout repository
         uses: actions/checkout@v6
         with:
@@ -793,6 +751,9 @@ jobs:
         env:
           PR_LABELS: ${{ join(github.event.pull_request.labels.*.name, ',') }}
         run: ./scripts/check-version-bumps.sh
+      - name: Report CI telemetry
+        if: always()
+        uses: leynos/shared-actions/.github/actions/ci-telemetry-finish@81374b6f183e59f0570ad36217ded90d3240fda6
 
   # Roll-up job for branch protection. Compares upstream results only.
   run-tests:

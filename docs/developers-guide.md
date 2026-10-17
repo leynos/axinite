@@ -158,16 +158,15 @@ and waited up to 1,495, 2,098 and 734 seconds to start. The scheduled
 `audit.yml` `audit` waited one or two seconds, so it stays hosted.
 `tests/workflow_contracts/_utility_jobs.py` names the moved jobs with their
 measurements, and `runner_placement_test.py` requires each to hold its smallest
-shape and to build nothing. They are exempt from the resource sampler below,
-which exists to decide a resize, because a job already on the smallest shape
-has none to make. `regression-test` runs on `pull_request`, so it takes the
-fork fallback; the labelling jobs run on `pull_request_target`, which runs in
-this repository's context for a fork too. `classify` checks out the base
-branch, never the fork's code, and `scope` checks out nothing, since
-`actions/labeler` reads the changed paths through the API. Each utility job
-states its token's `permissions` rather than inheriting the repository default,
-and no checkout in one keeps its credentials; `runner_placement_test.py`
-asserts both.
+shape and to build nothing. They are exempt from the telemetry below, which
+exists to decide a resize, because a job already on the smallest shape has none
+to make. `regression-test` runs on `pull_request`, so it takes the fork
+fallback; the labelling jobs run on `pull_request_target`, which runs in this
+repository's context for a fork too. `classify` checks out the base branch,
+never the fork's code, and `scope` checks out nothing, since `actions/labeler`
+reads the changed paths through the API. Each utility job states its token's
+`permissions` rather than inheriting the repository default, and no checkout in
+one keeps its credentials; `runner_placement_test.py` asserts both.
 
 `code_style.yml` `format` is the one deliberate exception, and the contract
 encodes it by counting `cargo fmt` as qualifying. The job compiles nothing:
@@ -193,7 +192,7 @@ privilege preflight before it moves anywhere.
 Its build matrix keeps the cache wiring dist emits, runs only on a tag push,
 and never uses an Ubicloud runner, so it sits outside these contracts.
 
-#### Runner shape, and the sampler that justifies it
+#### Runner shape, and the telemetry that justifies it
 
 Placement decides whether a job runs on a paid runner. Shape decides how much
 that minute costs, and the two are separate decisions. Every Linux job used to
@@ -241,10 +240,22 @@ the compiler" sizes both wrongly. Changing a shape means changing a reviewed
 line in the same pull request, and the contract fails in both directions if the
 table and the workflows disagree.
 
-Every job on a paid runner carries `scripts/ci-resource-sampler.sh`, started
-after the checkout and reported with `if: always()`. It records the peak memory
-in use and the low-water free disk mark, prints both to the log and writes them
-to the job summary. Two rules make it necessary rather than decorative:
+Every job in `code_style.yml`, `coverage.yml`, `codescene-coverage.yml`,
+`e2e.yml` and `test.yml` carries the shared `ci-telemetry-start` and
+`ci-telemetry-finish` actions from leynos/shared-actions, pinned to one commit.
+Start runs after the checkout (and the disk clean-up), and finish runs last with
+`if: always()`. Together they record the busy cores (average, 95th percentile
+and maximum), the peak memory in use and the low-water free disk mark, and
+print one `DF12_CI_TELEMETRY` line that the central CI observability collector
+reads from the job log; the same numbers appear in the job summary. The only
+jobs without the pair are the four roll-ups that run one step over `needs`
+(`ROLL_UPS` in `tests/workflow_contracts/ci_telemetry_test.py`), which the
+collector excuses by name. A job added later without the pair is not excused:
+the collector reads it as a missing record. A job with `setup-rust` also passes
+its `sccache-status` to finish and reports the statistics through
+`sccache-report`, so the record carries the hit ratio and a fallback never
+reads as a healthy cache. `ci_telemetry_test.py` holds all of this, including
+the pin. Two rules make the measurement necessary rather than decorative:
 
 - **Peaks belong to the shape, not the workload.** Cargo scales parallelism with
   the processor count, so a peak measured on one shape does not transfer to
@@ -259,9 +270,9 @@ success-only report loses it. Timeouts are raised before a shape shrinks, never
 after; a smaller shape compiles for longer, and the budget is a hang detector
 sized at roughly three times the measured cold cost, not a target.
 
-Do not run the sampler on a job whose output is a timing. It wakes every ten
-seconds and shells out, which is negligible against a compile and is
-interference in a benchmark.
+Do not run the telemetry on a job whose output is a timing. The sampler wakes
+every ten seconds, which is negligible against a compile and is interference in
+a benchmark.
 
 #### Scheduled work never uses a paid runner
 

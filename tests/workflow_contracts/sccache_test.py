@@ -40,6 +40,9 @@ REPORT_STEP = "Report sccache statistics"
 #: (shared-actions #546); an older pin hard-fails the job at `Setup Rust` when
 #: the cache probe is slow. Raise it deliberately, never by a stray repin.
 SETUP_RUST_PIN = "6cec89bac47a21cf756d68d638a9a510998e57f8"
+SCCACHE_REPORT = re.compile(
+    r"^leynos/shared-actions/\.github/actions/sccache-report@[0-9a-f]{40}$"
+)
 SETUP_RUST_ACTION = re.compile(r"^leynos/shared-actions/\.github/actions/setup-rust@")
 SETUP_RUST = re.compile(
     r"^leynos/shared-actions/\.github/actions/setup-rust@[0-9a-f]{40}$"
@@ -346,28 +349,24 @@ def test_statistics_are_reported_even_when_the_build_fails(job: Job) -> None:
         f"{job} must report sccache statistics with `if: always()`; a wrapper "
         "doing nothing is most visible on the run that fails"
     )
-    body = str(report.get("run", ""))
-    assert "--show-stats" in body, f"{job} must run sccache --show-stats"
-    assert "GITHUB_STEP_SUMMARY" in body, (
-        f"{job} must write the statistics to the job summary"
+    # The statistics are printed, summarized and written by the shared
+    # `sccache-report` action, which also stands down on a fallback instead of
+    # publishing a table of zeros. The step must call it with setup-rust's
+    # status, and name the backend it chose: `Cache location` reads `ghac` for
+    # the proxy and GitHub's own service alike.
+    uses = str(report.get("uses", ""))
+    assert SCCACHE_REPORT.match(uses), (
+        f"{job} must report sccache through the sccache-report action, pinned "
+        f"to a full commit, not {uses!r}"
     )
-    # The job summary is not readable through the REST API, so the statistics
-    # must also reach the log, where anyone can confirm the hit rate or a read
-    # or write error after the run.
-    assert "printf '%s\\n' \"$stats\"" in body, (
-        f"{job} must print the statistics to the log as well as the summary"
-    )
-    # `Cache location` reads `ghac` for the proxy and GitHub's own service
-    # alike, so the report must name the backend setup-rust chose.
+    inputs = report.get("with")
+    assert isinstance(inputs, dict), f"{job} must give sccache-report its inputs"
+    assert inputs.get("status") == f"${{{{ steps.{SETUP_ID}.outputs.sccache-status }}}}"
     backend = f"steps.{SETUP_ID}.outputs.cache-backend"
-    report_env = report.get("env")
-    assert isinstance(report_env, dict), f"{job} must give its report step an env"
-    assert report_env.get("SCCACHE_BACKEND") == f"${{{{ {backend} }}}}", (
-        f"{job} must bind SCCACHE_BACKEND to {backend}"
+    assert inputs.get("backend") == f"${{{{ {backend} }}}}", (
+        f"{job} must bind the report's backend to {backend}"
     )
-    assert "printf -- '- backend: %s\\n\\n' \"${SCCACHE_BACKEND:-none}\"" in body, (
-        f"{job} must print the selected backend to the job summary"
-    )
+    assert "run" not in report, f"{job} still reads sccache by hand"
 
 
 def _demands_the_proxy(step: dict[str, object]) -> bool:
