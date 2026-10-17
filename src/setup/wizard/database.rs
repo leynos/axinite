@@ -17,10 +17,7 @@ impl SetupWizard {
         #[cfg(all(feature = "postgres", feature = "libsql"))]
         {
             // Check if a backend is already pinned via env var
-            if let Ok(backend) = {
-                #[expect(clippy::disallowed_methods, reason = "transitional #333: EnvContext")]
-                std::env::var("DATABASE_BACKEND")
-            } {
+            if let Some(backend) = self.env_context.get_owned("DATABASE_BACKEND") {
                 return self.step_database_from_env(&backend).await;
             }
 
@@ -113,12 +110,10 @@ impl SetupWizard {
     /// Returns `true` when the existing URL was accepted and verified.
     #[cfg(feature = "postgres")]
     async fn try_reuse_existing_postgres_url(&mut self) -> Result<bool, SetupError> {
-        let existing_url = {
-            #[expect(clippy::disallowed_methods, reason = "transitional #333: EnvContext")]
-            std::env::var("DATABASE_URL")
-        }
-        .ok()
-        .or_else(|| self.settings.database_url.clone());
+        let existing_url = self
+            .env_context
+            .get_owned("DATABASE_URL")
+            .or_else(|| self.settings.database_url.clone());
 
         let Some(url) = existing_url else {
             return Ok(false);
@@ -226,12 +221,10 @@ impl SetupWizard {
     /// Returns `true` when the existing configuration was accepted and verified.
     #[cfg(feature = "libsql")]
     async fn try_reuse_existing_libsql_path(&mut self) -> Result<bool, SetupError> {
-        let existing_path = {
-            #[expect(clippy::disallowed_methods, reason = "transitional #333: EnvContext")]
-            std::env::var("LIBSQL_PATH")
-        }
-        .ok()
-        .or_else(|| self.settings.libsql_path.clone());
+        let existing_path = self
+            .env_context
+            .get_owned("LIBSQL_PATH")
+            .or_else(|| self.settings.libsql_path.clone());
 
         let Some(path) = existing_path else {
             return Ok(false);
@@ -242,17 +235,11 @@ impl SetupWizard {
             return Ok(false);
         }
 
-        let turso_url = {
-            #[expect(clippy::disallowed_methods, reason = "transitional #333: EnvContext")]
-            std::env::var("LIBSQL_URL")
-        }
-        .ok()
-        .or_else(|| self.settings.libsql_url.clone());
-        let turso_token = {
-            #[expect(clippy::disallowed_methods, reason = "transitional #333: EnvContext")]
-            std::env::var("LIBSQL_AUTH_TOKEN")
-        }
-        .ok();
+        let turso_url = self
+            .env_context
+            .get_owned("LIBSQL_URL")
+            .or_else(|| self.settings.libsql_url.clone());
+        let turso_token = self.env_context.get_owned("LIBSQL_AUTH_TOKEN");
 
         match self
             .test_database_connection_libsql(LibsqlConnParams {
