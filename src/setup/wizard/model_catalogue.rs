@@ -23,7 +23,10 @@ pub(super) enum AnthropicAuth {
     OAuth(String),
 }
 
-pub(super) fn resolve_anthropic_auth(cached_credential: Option<&str>) -> Option<AnthropicAuth> {
+pub(super) fn resolve_anthropic_auth(
+    env_context: &EnvContext,
+    cached_credential: Option<&str>,
+) -> Option<AnthropicAuth> {
     if let Some(credential) = cached_credential.filter(|credential| {
         !credential.is_empty() && *credential != crate::config::OAUTH_PLACEHOLDER
     }) {
@@ -34,18 +37,15 @@ pub(super) fn resolve_anthropic_auth(cached_credential: Option<&str>) -> Option<
         };
     }
 
-    let api_key =
-        crate::config::helpers::optional_env(crate::config::helpers::EnvKey("ANTHROPIC_API_KEY"))
-            .ok()
-            .flatten()
-            .filter(|key| !key.is_empty() && key != crate::config::OAUTH_PLACEHOLDER);
+    let api_key = env_context
+        .get_owned("ANTHROPIC_API_KEY")
+        .filter(|key| key != crate::config::OAUTH_PLACEHOLDER);
     if let Some(api_key) = api_key {
         return Some(AnthropicAuth::ApiKey(api_key));
     }
 
-    crate::config::helpers::optional_env(crate::config::helpers::EnvKey("ANTHROPIC_OAUTH_TOKEN"))
-        .ok()
-        .flatten()
+    env_context
+        .get_owned("ANTHROPIC_OAUTH_TOKEN")
         .filter(|token| !token.is_empty())
         .map(AnthropicAuth::OAuth)
 }
@@ -104,9 +104,12 @@ fn anthropic_static_defaults() -> Vec<(String, String)> {
     ]
 }
 
-pub(super) async fn fetch_anthropic_models(cached_key: Option<&str>) -> Vec<(String, String)> {
+pub(super) async fn fetch_anthropic_models(
+    env_context: &EnvContext,
+    cached_key: Option<&str>,
+) -> Vec<(String, String)> {
     let defaults = anthropic_static_defaults();
-    let Some(auth) = resolve_anthropic_auth(cached_key) else {
+    let Some(auth) = resolve_anthropic_auth(env_context, cached_key) else {
         return defaults;
     };
     let client = reqwest::Client::new();
@@ -124,7 +127,10 @@ pub(super) async fn fetch_anthropic_models(cached_key: Option<&str>) -> Vec<(Str
 /// Fetch models from the OpenAI API.
 ///
 /// Returns `(model_id, display_label)` pairs. Falls back to static defaults on error.
-pub(super) async fn fetch_openai_models(cached_key: Option<&str>) -> Vec<(String, String)> {
+pub(super) async fn fetch_openai_models(
+    env_context: &EnvContext,
+    cached_key: Option<&str>,
+) -> Vec<(String, String)> {
     let static_defaults = vec![
         (
             "gpt-5.3-codex".into(),
@@ -144,16 +150,7 @@ pub(super) async fn fetch_openai_models(cached_key: Option<&str>) -> Vec<(String
         ("o3".into(), "o3 (reasoning)".into()),
     ];
 
-    let api_key = cached_key
-        .map(String::from)
-        .or_else(|| {
-            {
-                #[expect(clippy::disallowed_methods, reason = "transitional #333: EnvContext")]
-                std::env::var("OPENAI_API_KEY")
-            }
-            .ok()
-        })
-        .filter(|k| !k.is_empty());
+    let api_key = openai_api_key(env_context, cached_key);
 
     let api_key = match api_key {
         Some(k) => k,
@@ -200,6 +197,13 @@ pub(super) async fn fetch_openai_models(cached_key: Option<&str>) -> Vec<(String
         }
         Err(_) => static_defaults,
     }
+}
+
+pub(super) fn openai_api_key(env_context: &EnvContext, cached_key: Option<&str>) -> Option<String> {
+    cached_key
+        .map(String::from)
+        .or_else(|| env_context.get_owned("OPENAI_API_KEY"))
+        .filter(|key| !key.is_empty())
 }
 
 /// Prefixes identifying OpenAI chat-capable model families.
