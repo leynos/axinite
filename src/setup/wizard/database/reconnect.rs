@@ -11,11 +11,10 @@ impl SetupWizard {
     pub(in crate::setup::wizard) async fn reconnect_existing_db(
         &mut self,
     ) -> Result<(), SetupError> {
-        let backend = {
-            #[expect(clippy::disallowed_methods, reason = "transitional #333: EnvContext")]
-            std::env::var("DATABASE_BACKEND")
-        }
-        .unwrap_or_else(|_| "postgres".to_string());
+        let backend = self
+            .env_context
+            .get_owned("DATABASE_BACKEND")
+            .unwrap_or_else(|| "postgres".to_string());
 
         #[cfg(feature = "libsql")]
         if is_libsql_backend(&backend) {
@@ -28,7 +27,7 @@ impl SetupWizard {
             return self.reconnect_postgres().await;
         }
 
-        #[allow(unreachable_code)]
+        #[cfg(not(feature = "postgres"))]
         Err(SetupError::Database(
             "No database configured. Run full setup first (axinite onboard).".to_string(),
         ))
@@ -36,11 +35,7 @@ impl SetupWizard {
 
     #[cfg(feature = "postgres")]
     async fn reconnect_postgres(&mut self) -> Result<(), SetupError> {
-        let url = {
-            #[expect(clippy::disallowed_methods, reason = "transitional #333: EnvContext")]
-            std::env::var("DATABASE_URL")
-        }
-        .map_err(|_| {
+        let url = self.env_context.get_owned("DATABASE_URL").ok_or_else(|| {
             SetupError::Database(
                 "DATABASE_URL not set. Run full setup first (axinite onboard).".to_string(),
             )
@@ -65,25 +60,16 @@ impl SetupWizard {
 
     #[cfg(feature = "libsql")]
     async fn reconnect_libsql(&mut self) -> Result<(), SetupError> {
-        let path = {
-            #[expect(clippy::disallowed_methods, reason = "transitional #333: EnvContext")]
-            std::env::var("LIBSQL_PATH")
-        }
-        .unwrap_or_else(|_| {
-            crate::config::default_libsql_path()
-                .to_string_lossy()
-                .to_string()
-        });
-        let turso_url = {
-            #[expect(clippy::disallowed_methods, reason = "transitional #333: EnvContext")]
-            std::env::var("LIBSQL_URL")
-        }
-        .ok();
-        let turso_token = {
-            #[expect(clippy::disallowed_methods, reason = "transitional #333: EnvContext")]
-            std::env::var("LIBSQL_AUTH_TOKEN")
-        }
-        .ok();
+        let path = self
+            .env_context
+            .get_owned("LIBSQL_PATH")
+            .unwrap_or_else(|| {
+                crate::config::default_libsql_path()
+                    .to_string_lossy()
+                    .to_string()
+            });
+        let turso_url = self.env_context.get_owned("LIBSQL_URL");
+        let turso_token = self.env_context.get_owned("LIBSQL_AUTH_TOKEN");
         self.test_database_connection_libsql(LibsqlConnParams {
             path: std::path::Path::new(&path),
             turso_url: turso_url.as_deref(),

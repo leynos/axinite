@@ -15,6 +15,7 @@ struct LoadedConfigContextSnapshot {
     session: Arc<axinite::llm::session::SessionManager>,
     log_broadcaster: Arc<LogBroadcaster>,
     log_level_handle: Arc<axinite::channels::web::log_layer::LogLevelHandle>,
+    _database_dir: tempfile::TempDir,
 }
 
 fn cli_no_db() -> Cli {
@@ -28,22 +29,26 @@ fn cli_no_db() -> Cli {
     }
 }
 
-fn phase_context() -> axinite::config::EnvContext {
+fn phase_context(libsql_path: &std::path::Path) -> axinite::config::EnvContext {
     axinite::config::EnvContext::default()
         .with_env("DATABASE_BACKEND", "libsql")
-        .with_env("LIBSQL_PATH", "/tmp/axinite-phase-smoke.db")
+        .with_env("LIBSQL_PATH", libsql_path.display().to_string())
 }
 
 async fn loaded_context() -> anyhow::Result<LoadedConfigContext> {
     let snapshot = LOADED_CONTEXT
         .get_or_try_init(|| async {
-            let loaded = phase_load_config_and_tracing_from(&cli_no_db(), &phase_context()).await?;
+            let database_dir = tempfile::tempdir()?;
+            let database_path = database_dir.path().join("axinite-phase-smoke.db");
+            let env = phase_context(&database_path);
+            let loaded = phase_load_config_and_tracing_from(&cli_no_db(), &env).await?;
             anyhow::Ok(LoadedConfigContextSnapshot {
                 config: loaded.config,
                 toml_path: loaded.toml_path,
                 session: loaded.session,
                 log_broadcaster: loaded.log_broadcaster,
                 log_level_handle: loaded.log_level_handle,
+                _database_dir: database_dir,
             })
         })
         .await?;
