@@ -361,7 +361,10 @@ def test_statistics_are_reported_even_when_the_build_fails(job: Job) -> None:
     )
     inputs = report.get("with")
     assert isinstance(inputs, dict), f"{job} must give sccache-report its inputs"
-    assert inputs.get("status") == f"${{{{ steps.{SETUP_ID}.outputs.sccache-status }}}}"
+    status = f"${{{{ steps.{SETUP_ID}.outputs.sccache-status }}}}"
+    assert inputs.get("status") == status, (
+        f"{job} must bind sccache-report's status to {status}"
+    )
     backend = f"steps.{SETUP_ID}.outputs.cache-backend"
     assert inputs.get("backend") == f"${{{{ {backend} }}}}", (
         f"{job} must bind the report's backend to {backend}"

@@ -24,6 +24,7 @@ Run via ``make test-workflow-contracts``.
 from __future__ import annotations
 
 import pytest
+from _telemetry import INSTRUMENTED_WORKFLOWS
 from _utility_jobs import SMALLEST_ARM, is_utility_job
 from _workflow_files import jobs
 from _workflow_policy import Job
@@ -60,6 +61,20 @@ def _sized_jobs() -> tuple[Job, ...]:
 def _ids(candidates: tuple[Job, ...]) -> list[str]:
     """Return readable parameter identifiers for a job sequence."""
     return [str(job) for job in candidates]
+
+
+@pytest.mark.parametrize("job", _sized_jobs(), ids=_ids(_sized_jobs()))
+def test_every_sized_job_is_in_a_workflow_that_carries_telemetry(job: Job) -> None:
+    """Link the sizing decision to the measurement that justifies it.
+
+    `ci_telemetry_test.py` checks the jobs of `INSTRUMENTED_WORKFLOWS`. A paid
+    shape in any other workflow would escape it, so the workflow must be listed.
+    """
+    assert job.workflow in INSTRUMENTED_WORKFLOWS, (
+        f"{job} sits on a paid shape in {job.workflow}, which is not in "
+        "INSTRUMENTED_WORKFLOWS, so no contract requires its telemetry. Add the "
+        "workflow to the list in _telemetry.py and to the collector's list."
+    )
 
 
 def test_some_job_uses_ubicloud() -> None:

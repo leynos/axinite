@@ -243,19 +243,22 @@ table and the workflows disagree.
 Every job in `code_style.yml`, `coverage.yml`, `codescene-coverage.yml`,
 `e2e.yml` and `test.yml` carries the shared `ci-telemetry-start` and
 `ci-telemetry-finish` actions from leynos/shared-actions, pinned to one commit.
-Start runs after the checkout (and the disk clean-up), and finish runs last with
-`if: always()`. Together they record the busy cores (average, 95th percentile
-and maximum), the peak memory in use and the low-water free disk mark, and
-print one `DF12_CI_TELEMETRY` line that the central CI observability collector
-reads from the job log; the same numbers appear in the job summary. The only
-jobs without the pair are the four roll-ups that run one step over `needs`
-(`ROLL_UPS` in `tests/workflow_contracts/ci_telemetry_test.py`), which the
-collector excuses by name. A job added later without the pair is not excused:
-the collector reads it as a missing record. A job with `setup-rust` also passes
-its `sccache-status` to finish and reports the statistics through
-`sccache-report`, so the record carries the hit ratio and a fallback never
-reads as a healthy cache. `ci_telemetry_test.py` holds all of this, including
-the pin. Two rules make the measurement necessary rather than decorative:
+Start runs early: after the checkout and the disk clean-up where the job has
+them, and as the first step in the small jobs that need neither (the Windows
+and lint jobs, `audit` and `version-check`). Finish runs after the job's work
+with `if: always()`, and only a cache save may follow it. Together they record
+the busy cores (average, 95th percentile and maximum), the peak memory in use
+and the low-water free disk mark, and print one `DF12_CI_TELEMETRY` line that
+the central CI observability collector reads from the job log; the same numbers
+appear in the job summary. The only jobs without the pair are the four roll-ups
+that run one step over `needs` (`ROLL_UPS` in
+`tests/workflow_contracts/_telemetry.py`), which the collector excuses by name.
+A job added later without the pair is not excused: the collector reads it as a
+missing record. A job with `setup-rust` also passes its `sccache-status` to
+finish and reports the statistics through `sccache-report`, so the record
+carries the hit ratio and a fallback never reads as a healthy cache.
+`ci_telemetry_test.py` holds all of this, including the pin. Two rules make the
+measurement necessary rather than decorative:
 
 - **Peaks belong to the shape, not the workload.** Cargo scales parallelism with
   the processor count, so a peak measured on one shape does not transfer to
