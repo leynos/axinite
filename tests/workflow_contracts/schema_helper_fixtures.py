@@ -277,6 +277,16 @@ def read_fixture_inventory(tests_directory: Path) -> FixtureInventory:
     block comments are removed, and ordinary strings are masked when checking
     code so prose cannot register or execute a fixture.
 
+    Parameters
+    ----------
+    tests_directory : Path
+        Directory containing ``main.rs`` and ``pass/``.
+
+    Returns
+    -------
+    FixtureInventory
+        Inventory of discovered fixtures, registrations, and test invocations.
+
     Raises
     ------
     SourceReadError

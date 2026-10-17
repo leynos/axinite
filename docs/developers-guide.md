@@ -675,11 +675,12 @@ along inside `make test`, so it ran once per leg, three times a trigger.
 The rule is now one lane per suite per trigger, and which lane it is depends on
 the trigger:
 
-| Trigger                                     | Workspace suite                                                                            | GitHub tool crate              | Telegram channel crate      |
-| ------------------------------------------- | ------------------------------------------------------------------------------------------ | ------------------------------ | --------------------------- |
-| `pull_request`                              | `test.yml` `tests`, default leg; `codescene-coverage.yml` `coverage-check` for libsql-only | `test.yml` `github-tool-tests` | `test.yml` `telegram-tests` |
-| `push` to `main`                            | `coverage.yml` `coverage`, all three legs                                                  | `test.yml` `github-tool-tests` | `test.yml` `telegram-tests` |
-| `schedule` (through `mutation-testing.yml`) | `test.yml` `tests`, default and libsql-only legs                                           | `test.yml` `github-tool-tests` | `test.yml` `telegram-tests` |
+| Trigger                                     | Workspace suite                                                                            | GitHub tool crate              | libSQL TLS transport                | Telegram channel crate      |
+| ------------------------------------------- | ------------------------------------------------------------------------------------------ | ------------------------------ | ----------------------------------- | --------------------------- |
+| `pull_request`                              | `test.yml` `tests`, default leg; `codescene-coverage.yml` `coverage-check` for libsql-only | `test.yml` `github-tool-tests` | `test.yml` `libsql-transport-tests` | `test.yml` `telegram-tests` |
+| `push` to `main`                            | `coverage.yml` `coverage`, all three legs                                                  | `test.yml` `github-tool-tests` | `test.yml` `libsql-transport-tests` | `test.yml` `telegram-tests` |
+| `workflow_dispatch`                         | `test.yml` `tests`, default and libsql-only legs                                           | `test.yml` `github-tool-tests` | `test.yml` `libsql-transport-tests` | `test.yml` `telegram-tests` |
+| `schedule` (through `mutation-testing.yml`) | `test.yml` `tests`, default and libsql-only legs                                           | `test.yml` `github-tool-tests` | `test.yml` `libsql-transport-tests` | `test.yml` `telegram-tests` |
 
 Three mechanisms carry that, and each is worth knowing before changing a lane:
 
@@ -693,15 +694,16 @@ Three mechanisms carry that, and each is worth knowing before changing a lane:
 - **The roll-up asserts the result it expects rather than tolerating a skip.**
   `run-tests` computes `EXPECTED_TESTS_RESULT` from the event, `skipped` on a
   push and `success` everywhere else, so a leg that vanishes for any other
-  reason is still a failure. `tests/workflow_contracts/run_tests_gate_test.py`
-  holds that expectation to both arms, and holds the roll-up's dependency list,
-  the jobs its loop walks and the names its `case` can answer for equal in both
-  directions. A job missing from `needs` reports `skipped` forever; one missing
-  from the loop is never looked at; and one missing from the `case` leaves
-  `result` holding the previous iteration's value, so the roll-up reports
-  another job's outcome under this one's name. The same file asserts
-  `if: always()`, without which the roll-up stands down exactly when an
-  upstream job does.
+  reason is still a failure. The roll-up also requires `libsql-transport-tests`
+  to succeed on every trigger.
+  `tests/workflow_contracts/run_tests_gate_test.py` holds that expectation to
+  both arms, and holds the roll-up's dependency list, the jobs its loop walks
+  and the names its `case` can answer for equal in both directions. A job
+  missing from `needs` reports `skipped` forever; one missing from the loop is
+  never looked at; and one missing from the `case` leaves `result` holding the
+  previous iteration's value, so the roll-up reports another job's outcome
+  under this one's name. The same file asserts `if: always()`, without which
+  the roll-up stands down exactly when an upstream job does.
 - **A leg is what it runs, not what it is called.** `tests` had a leg named
   `all-features` which passed `--features postgres,libsql,html-to-markdown` and
   no `--no-default-features`. All three are members of `default`, so Cargo
@@ -726,11 +728,10 @@ the instrumented test run while the separate required jobs retain their full
 feature selections.
 
 `tools-src/github` and `channels-src/telegram` are excluded from the workspace,
-so `--workspace` cannot reach either however wide the feature set. Each
-therefore needs a lane of its own or it is not tested at all, which is why
-`make test` is now exactly `test-workspace` plus `test-github-tool`: a
-developer runs both, CI runs them on different lanes, and the local run is the
-sum of those two lanes by construction rather than by memory.
+so `--workspace` cannot reach either however wide the feature set. The private
+libSQL TLS transport also has a dedicated lane so its feature-specific tests
+run once per CI trigger. `make test` runs `test-workspace`, `test-github-tool`,
+and `test-libsql-transport`; CI runs those suites on separate lanes.
 
 `make test` does not run the Telegram channel's tests. They run on CI's
 `telegram-tests` lane alone, so after changing `channels-src/telegram`, run
@@ -1190,11 +1191,19 @@ make lint
 make test
 ```
 
+The aggregate `make test` runs the workspace, GitHub tool, and libSQL TLS
+transport suites. `make lint` covers the workspace and GitHub tool; the TLS
+transport has a separate strict lint target, `make lint-libsql-transport`,
+which also runs in its CI lane.
+
 The current `Makefile` also includes:
 
 - `make build-github-tool-wasm` to build the GitHub WASM tool used by
   schema and metadata tests.
 - `make test-matrix` to run the broader host test combinations.
+- `make test-libsql-transport` to run the private TLS transport's unit,
+  example, and doctest suites. Its doctests run with all features, default
+  features, and the reduced native-certificate feature set.
 - `make test-cargo` and `make test-matrix-cargo` to keep the old
   `cargo test` path available when a harness comparison is needed for the root
   crate.
@@ -3084,6 +3093,14 @@ the same shared test archive writer as bundle install fixtures and return ZIP
 failures to the caller. Integration tests can import them through the
 `test-helpers` feature when they need byte-identical archive construction
 across harness boundaries.
+
+These archive builders are available only to unit tests or with the
+`test-helpers` feature, and their `zip::result::ZipError` return type follows
+the ZIP major version. Integration-test consumers that name or match this error
+type must use a ZIP 9-compatible type and dependency requirement. This
+compatibility boundary is limited to the feature-gated test helpers: normal
+production APIs do not expose ZIP errors; bundle validation stores errors as
+strings, and Office text extraction returns `Result<String, String>`.
 
 ##### Scoped skill file reads (roadmap 1.3.4)
 

@@ -152,9 +152,8 @@ rust-audit:
 			fi; \
 		done' sh $(call shell_quote,$(value CARGO_AUDIT_COMMAND)) {} +
 
-# The whole suite, for a developer. CI splits it: the workspace suite and the
-# GitHub tool's own suite run on different lanes and different triggers, so
-# each half has to be runnable on its own.
+# The whole suite, for a developer. CI runs the workspace, GitHub tool, and
+# libSQL TLS suites on separate lanes; this target runs all three locally.
 test: test-workspace test-github-tool test-libsql-transport
 
 # The workspace suite alone. `tools-src/github` is excluded from the workspace,

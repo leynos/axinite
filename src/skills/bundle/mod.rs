@@ -143,7 +143,12 @@ pub(crate) fn validate_skill_archive(
                 .map_err(|error| SkillBundleError::InvalidArchive {
                     reason: error.to_string(),
                 })?;
-        let raw_name = file.name().to_string();
+        let raw_name = file
+            .name()
+            .map_err(|error| SkillBundleError::InvalidArchive {
+                reason: format!("failed to decode archive entry {index} name: {error}"),
+            })?
+            .into_owned();
         let entry = ParsedBundlePath::parse(&raw_name)?;
 
         resolve_root_name(&mut root_name, &entry)?;
