@@ -163,6 +163,19 @@ async fn test_run_provider_setup_no_setup_hint() {
     );
 }
 
+#[tokio::test]
+async fn test_auto_setup_security_uses_injected_env_context() {
+    let env = EnvContext::default().with_env("SECRETS_MASTER_KEY", "test-master-key");
+    let mut wizard = SetupWizard::with_env_context(env);
+
+    wizard
+        .auto_setup_security()
+        .await
+        .expect("injected master key should configure security without keychain access");
+
+    assert_eq!(wizard.settings.secrets_master_key_source, KeySource::Env);
+}
+
 /// Regression test for #666: env-var security option must initialize
 /// secrets_crypto so subsequent steps can encrypt API keys.
 #[test]
