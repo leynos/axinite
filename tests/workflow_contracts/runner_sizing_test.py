@@ -50,7 +50,7 @@ def _sized_jobs() -> tuple[Job, ...]:
     """Return the Ubicloud jobs whose shape is a sizing decision.
 
     The named utility jobs are left out: each is pinned to the smallest shape
-    by `runner_placement_test.py`, so there is no resize for the sampler to
+    by `runner_placement_test.py`, so there is no resize for the telemetry to
     inform and no reviewed shape to choose.
     """
     return tuple(

@@ -192,8 +192,8 @@ def test_the_telemetry_check_refuses_each_wrong_arrangement(change: str) -> None
 
 def test_the_sound_arrangement_has_no_problems() -> None:
     """The reference arrangement the mutations start from is itself accepted."""
-    assert telemetry_problems(_good()) == []
-    assert sccache_problems(_good()) == []
+    assert telemetry_problems(_good()) == [], "the reference telemetry is sound"
+    assert sccache_problems(_good()) == [], "the reference sccache wiring is sound"
 
 
 @pytest.mark.parametrize("change", sorted(SCCACHE_FAULTS))
@@ -206,7 +206,7 @@ def test_the_sccache_check_refuses_each_wrong_arrangement(change: str) -> None:
 
 def test_a_job_without_setup_rust_has_no_sccache_requirements() -> None:
     """No `setup-rust` call, nothing to report."""
-    assert sccache_problems([{"run": "make"}]) == []
+    assert sccache_problems([{"run": "make"}]) == [], "nothing to report"
 
 
 @pytest.mark.parametrize(
@@ -234,10 +234,10 @@ def test_the_roll_up_check_refuses_a_job_that_is_not_a_roll_up(
     body: dict[str, object],
 ) -> None:
     """An exemption cannot hide a real job or a job that carries telemetry."""
-    assert roll_up_problems(body) != []
+    assert roll_up_problems(body) != [], f"{body} was accepted as a roll-up"
 
 
 def test_a_real_roll_up_is_accepted() -> None:
     """One `run` step over `needs` is the exemption's shape."""
     body = {"needs": ["a"], "steps": [{"run": "echo ${{ needs.a.result }}"}]}
-    assert roll_up_problems(body) == []
+    assert roll_up_problems(body) == [], "one run over needs is a roll-up"
