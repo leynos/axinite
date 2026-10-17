@@ -152,7 +152,7 @@ impl NativeTool for ShellTool {
 
         let start = std::time::Instant::now();
         let (output, exit_code) = self
-            .execute_command(command, workdir, timeout, &ctx.extra_env, &self.env)
+            .execute_command(command, workdir, timeout, &ctx.extra_env)
             .await?;
         let duration = start.elapsed();
 

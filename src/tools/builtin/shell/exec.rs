@@ -10,7 +10,6 @@ use std::time::Duration;
 use tokio::io::AsyncReadExt;
 use tokio::process::Command;
 
-use crate::config::EnvContext;
 use crate::sandbox::SandboxManager;
 use crate::tools::tool::ToolError;
 
@@ -61,7 +60,6 @@ impl ShellTool {
         &self,
         spec: &CommandSpec<'_>,
         extra_env: &HashMap<String, String>,
-        env: &EnvContext,
     ) -> Result<(String, i32), ToolError> {
         // Build command
         let mut command = if cfg!(target_os = "windows") {
@@ -79,7 +77,7 @@ impl ShellTool {
         // session tokens, credentials) is stripped from child processes.
         command.env_clear();
         for var in SAFE_ENV_VARS {
-            if let Some(val) = env.get(var) {
+            if let Some(val) = self.env.get(var) {
                 command.env(var, val);
             }
         }
@@ -176,7 +174,6 @@ impl ShellTool {
         workdir: Option<&str>,
         timeout: Option<u64>,
         extra_env: &HashMap<String, String>,
-        env: &EnvContext,
     ) -> Result<(String, i64), ToolError> {
         // Check for blocked commands
         if let Some(reason) = self.is_blocked(cmd) {
@@ -224,7 +221,7 @@ impl ShellTool {
         }
 
         // Only execute directly when no sandbox was configured at all.
-        let (output, code) = self.execute_direct(&spec, extra_env, env).await?;
+        let (output, code) = self.execute_direct(&spec, extra_env).await?;
         Ok((output, code as i64))
     }
 }

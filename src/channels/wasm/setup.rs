@@ -3,14 +3,15 @@
 //! Encapsulates the logic for loading WASM channels, registering their
 //! webhook routes, and injecting credentials from the secrets store.
 
-use std::collections::HashSet;
+use std::collections::HashMap;
 use std::sync::Arc;
 
+pub use super::credentials::{inject_channel_credentials, inject_channel_credentials_from_context};
 use crate::channels::wasm::{
-    LoadedChannel, RegisteredEndpoint, SharedWasmChannel, WasmChannel, WasmChannelLoader,
-    WasmChannelRouter, WasmChannelRuntime, WasmChannelRuntimeConfig, create_wasm_channel_router,
+    LoadedChannel, RegisteredEndpoint, SharedWasmChannel, WasmChannelLoader, WasmChannelRouter,
+    WasmChannelRuntime, WasmChannelRuntimeConfig, create_wasm_channel_router,
 };
-use crate::config::Config;
+use crate::config::{Config, EnvContext};
 use crate::db::Database;
 use crate::extensions::ExtensionManager;
 use crate::pairing::PairingStore;
@@ -26,6 +27,14 @@ pub struct WasmChannelSetup {
     pub pairing_store: Arc<PairingStore>,
     pub wasm_channel_router: Arc<WasmChannelRouter>,
 }
+/// Inputs for loading WASM channels with an explicit environment snapshot.
+pub struct WasmChannelSetupRequest<'a> {
+    pub config: &'a Config,
+    pub secrets_store: &'a Option<Arc<dyn SecretsStore + Send + Sync>>,
+    pub extension_manager: Option<&'a Arc<ExtensionManager>>,
+    pub database: Option<&'a Arc<dyn Database>>,
+    pub env_context: &'a EnvContext,
+}
 
 /// Load WASM channels and register their webhook routes.
 pub async fn setup_wasm_channels(
@@ -33,6 +42,22 @@ pub async fn setup_wasm_channels(
     secrets_store: &Option<Arc<dyn SecretsStore + Send + Sync>>,
     extension_manager: Option<&Arc<ExtensionManager>>,
     database: Option<&Arc<dyn Database>>,
+) -> Option<WasmChannelSetup> {
+    let env_context = EnvContext::capture_ambient();
+    setup_wasm_channels_from_context(WasmChannelSetupRequest {
+        config,
+        secrets_store,
+        extension_manager,
+        database,
+        env_context: &env_context,
+    })
+    .await
+}
+
+/// Load WASM channels using the supplied environment snapshot for credential
+/// fallback.
+pub async fn setup_wasm_channels_from_context(
+    request: WasmChannelSetupRequest<'_>,
 ) -> Option<WasmChannelSetup> {
     let runtime = match WasmChannelRuntime::new(WasmChannelRuntimeConfig::default()) {
         Ok(r) => Arc::new(r),
@@ -43,19 +68,20 @@ pub async fn setup_wasm_channels(
     };
 
     let pairing_store = Arc::new(PairingStore::new());
-    let settings_store: Option<Arc<dyn crate::db::SettingsStore>> =
-        database.map(|db| Arc::clone(db) as Arc<dyn crate::db::SettingsStore>);
+    let settings_store: Option<Arc<dyn crate::db::SettingsStore>> = request
+        .database
+        .map(|db| Arc::clone(db) as Arc<dyn crate::db::SettingsStore>);
     let mut loader = WasmChannelLoader::new(
         Arc::clone(&runtime),
         Arc::clone(&pairing_store),
         settings_store,
     );
-    if let Some(secrets) = secrets_store {
+    if let Some(secrets) = request.secrets_store {
         loader = loader.with_secrets_store(Arc::clone(secrets));
     }
 
     let results = match loader
-        .load_from_dir(&config.channels.wasm_channels_dir)
+        .load_from_dir(&request.config.channels.wasm_channels_dir)
         .await
     {
         Ok(r) => r,
@@ -70,7 +96,7 @@ pub async fn setup_wasm_channels(
     let mut channel_names: Vec<String> = Vec::new();
 
     for loaded in results.loaded {
-        let (name, channel) = register_channel(loaded, config, secrets_store, &wasm_router).await;
+        let (name, channel) = register_channel(loaded, &request, &wasm_router).await;
         channel_names.push(name.clone());
         channels.push((name, channel));
     }
@@ -84,7 +110,7 @@ pub async fn setup_wasm_channels(
     let webhook_routes = {
         Some(create_wasm_channel_router(
             Arc::clone(&wasm_router),
-            extension_manager.map(Arc::clone),
+            request.extension_manager.map(Arc::clone),
         ))
     };
 
@@ -102,8 +128,7 @@ pub async fn setup_wasm_channels(
 /// register with the router, and set up signing keys and credentials.
 async fn register_channel(
     loaded: LoadedChannel,
-    config: &Config,
-    secrets_store: &Option<Arc<dyn SecretsStore + Send + Sync>>,
+    request: &WasmChannelSetupRequest<'_>,
     wasm_router: &Arc<WasmChannelRouter>,
 ) -> (String, Box<dyn crate::channels::Channel>) {
     let channel_name = loaded.name().to_string();
@@ -113,7 +138,7 @@ async fn register_channel(
     let sig_key_secret_name = loaded.signature_key_secret_name();
     let hmac_secret_name = loaded.hmac_secret_name();
 
-    let webhook_secret = if let Some(secrets) = secrets_store {
+    let webhook_secret = if let Some(secrets) = request.secrets_store {
         secrets
             .get_decrypted("default", &secret_name)
             .await
@@ -135,41 +160,16 @@ async fn register_channel(
 
     let channel_arc = Arc::new(loaded.channel);
 
-    // Inject runtime config (tunnel URL, webhook secret, owner_id).
-    {
-        let mut config_updates = std::collections::HashMap::new();
-
-        if let Some(ref tunnel_url) = config.tunnel.public_url {
-            config_updates.insert(
-                "tunnel_url".to_string(),
-                serde_json::Value::String(tunnel_url.clone()),
-            );
-        }
-
-        if let Some(ref secret) = webhook_secret {
-            config_updates.insert(
-                "webhook_secret".to_string(),
-                serde_json::Value::String(secret.clone()),
-            );
-        }
-
-        if let Some(&owner_id) = config
-            .channels
-            .wasm_channel_owner_ids
-            .get(channel_name.as_str())
-        {
-            config_updates.insert("owner_id".to_string(), serde_json::json!(owner_id));
-        }
-
-        if !config_updates.is_empty() {
-            channel_arc.update_config(config_updates).await;
-            tracing::info!(
-                channel = %channel_name,
-                has_tunnel = config.tunnel.public_url.is_some(),
-                has_webhook_secret = webhook_secret.is_some(),
-                "Injected runtime config into channel"
-            );
-        }
+    let config_updates =
+        runtime_config_updates(request.config, &channel_name, webhook_secret.as_deref());
+    if !config_updates.is_empty() {
+        channel_arc.update_config(config_updates).await;
+        tracing::info!(
+            channel = %channel_name,
+            has_tunnel = request.config.tunnel.public_url.is_some(),
+            has_webhook_secret = webhook_secret.is_some(),
+            "Injected runtime config into channel"
+        );
     }
 
     tracing::info!(
@@ -192,7 +192,7 @@ async fn register_channel(
 
     // Register Ed25519 signature key if declared in capabilities.
     if let Some(key_secret) =
-        resolve_declared_secret(secrets_store, sig_key_secret_name.as_deref()).await
+        resolve_declared_secret(request.secrets_store, sig_key_secret_name.as_deref()).await
     {
         match wasm_router
             .register_signature_key(&channel_name, key_secret.expose())
@@ -208,7 +208,8 @@ async fn register_channel(
     }
 
     // Register HMAC signing secret if declared in capabilities.
-    if let Some(secret) = resolve_declared_secret(secrets_store, hmac_secret_name.as_deref()).await
+    if let Some(secret) =
+        resolve_declared_secret(request.secrets_store, hmac_secret_name.as_deref()).await
     {
         wasm_router
             .register_hmac_secret(&channel_name, secret.expose())
@@ -217,12 +218,14 @@ async fn register_channel(
     }
 
     // Inject credentials from secrets store / environment.
-    match inject_channel_credentials(
+    match inject_channel_credentials_from_context(
         &channel_arc,
-        secrets_store
+        request
+            .secrets_store
             .as_ref()
             .map(|s| s.as_ref() as &dyn SecretsStore),
         &channel_name,
+        request.env_context,
     )
     .await
     {
@@ -247,6 +250,35 @@ async fn register_channel(
     (channel_name, Box::new(SharedWasmChannel::new(channel_arc)))
 }
 
+fn runtime_config_updates(
+    config: &Config,
+    channel_name: &str,
+    webhook_secret: Option<&str>,
+) -> HashMap<String, serde_json::Value> {
+    [
+        config
+            .tunnel
+            .public_url
+            .as_ref()
+            .map(|url| ("tunnel_url", serde_json::Value::String(url.clone()))),
+        webhook_secret.map(|secret| {
+            (
+                "webhook_secret",
+                serde_json::Value::String(secret.to_string()),
+            )
+        }),
+        config
+            .channels
+            .wasm_channel_owner_ids
+            .get(channel_name)
+            .map(|owner_id| ("owner_id", serde_json::json!(owner_id))),
+    ]
+    .into_iter()
+    .flatten()
+    .map(|(key, value)| (key.to_string(), value))
+    .collect()
+}
+
 /// Fetch a decrypted secret when both a secret name and a store are available.
 ///
 /// Returns `None` when the channel declares no secret, no store is configured,
@@ -258,107 +290,4 @@ async fn resolve_declared_secret(
     let name = secret_name?;
     let secrets = secrets_store.as_ref()?;
     secrets.get_decrypted("default", name).await.ok()
-}
-
-/// Inject credentials for a channel based on naming convention.
-///
-/// Looks for secrets matching the pattern `{channel_name}_*` and injects them
-/// as credential placeholders (e.g., `telegram_bot_token` -> `{TELEGRAM_BOT_TOKEN}`).
-///
-/// Falls back to environment variables starting with the uppercase channel name
-/// prefix (e.g., `TELEGRAM_` for channel `telegram`) for missing credentials.
-///
-/// Returns the number of credentials injected.
-pub async fn inject_channel_credentials(
-    channel: &Arc<WasmChannel>,
-    secrets: Option<&dyn SecretsStore>,
-    channel_name: &str,
-) -> anyhow::Result<usize> {
-    if channel_name.trim().is_empty() {
-        return Ok(0);
-    }
-
-    let mut count = 0;
-    let mut injected_placeholders = HashSet::new();
-
-    // 1. Try injecting from persistent secrets store if available
-    if let Some(secrets) = secrets {
-        let all_secrets = secrets
-            .list("default")
-            .await
-            .map_err(|e| anyhow::anyhow!("Failed to list secrets: {}", e))?;
-
-        let prefix = format!("{}_", channel_name.to_ascii_lowercase());
-
-        for secret_meta in all_secrets {
-            if !secret_meta.name.to_ascii_lowercase().starts_with(&prefix) {
-                continue;
-            }
-
-            let decrypted = match secrets.get_decrypted("default", &secret_meta.name).await {
-                Ok(d) => d,
-                Err(e) => {
-                    tracing::warn!(
-                        secret = %secret_meta.name,
-                        error = %e,
-                        "Failed to decrypt secret for channel credential injection"
-                    );
-                    continue;
-                }
-            };
-
-            let placeholder = secret_meta.name.to_uppercase();
-
-            tracing::debug!(
-                channel = %channel_name,
-                secret = %secret_meta.name,
-                placeholder = %placeholder,
-                "Injecting credential"
-            );
-
-            channel
-                .set_credential(&placeholder, decrypted.expose().to_string())
-                .await;
-            injected_placeholders.insert(placeholder);
-            count += 1;
-        }
-    }
-
-    // 2. Fall back to environment variables for credentials not in the secrets store.
-    // Only env vars starting with the channel's uppercase prefix are allowed
-    // (e.g., TELEGRAM_ for channel "telegram") to prevent reading unrelated host
-    // credentials like AWS_SECRET_ACCESS_KEY.
-    let prefix = format!("{}_", channel_name.to_ascii_uppercase());
-    let caps = channel.capabilities();
-    if let Some(ref http_cap) = caps.tool_capabilities.http {
-        for cred_mapping in http_cap.credentials.values() {
-            let placeholder = cred_mapping.secret_name.to_uppercase();
-            if injected_placeholders.contains(&placeholder) {
-                continue;
-            }
-            if !placeholder.starts_with(&prefix) {
-                tracing::warn!(
-                    channel = %channel_name,
-                    placeholder = %placeholder,
-                    "Ignoring non-prefixed credential placeholder in environment fallback"
-                );
-                continue;
-            }
-            if let Ok(env_value) = {
-                #[expect(clippy::disallowed_methods, reason = "transitional #333: EnvContext")]
-                std::env::var(&placeholder)
-            } && !env_value.is_empty()
-            {
-                tracing::debug!(
-                    channel = %channel_name,
-                    placeholder = %placeholder,
-                    "Injecting credential from environment variable"
-                );
-                channel.set_credential(&placeholder, env_value).await;
-                count += 1;
-            }
-        }
-    }
-
-    Ok(count)
 }

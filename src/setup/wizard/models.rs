@@ -151,8 +151,8 @@ impl SetupWizard {
             .map(|k| k.expose_secret().to_string());
 
         match backend {
-            "anthropic" => fetch_anthropic_models(cached_key.as_deref()).await,
-            "openai" => fetch_openai_models(cached_key.as_deref()).await,
+            "anthropic" => fetch_anthropic_models(&self.env_context, cached_key.as_deref()).await,
+            "openai" => fetch_openai_models(&self.env_context, cached_key.as_deref()).await,
             "ollama" => {
                 let base_url = self
                     .settings
@@ -284,12 +284,7 @@ impl SetupWizard {
     /// Report whether an OpenAI API key is available for embeddings, either
     /// from the environment or cached from the OpenAI provider setup.
     fn has_openai_embeddings_key(&self, backend: &str) -> bool {
-        if {
-            #[expect(clippy::disallowed_methods, reason = "transitional #333: EnvContext")]
-            std::env::var("OPENAI_API_KEY")
-        }
-        .is_ok()
-        {
+        if self.env_context.get("OPENAI_API_KEY").is_some() {
             return true;
         }
         backend == "openai" && self.llm_api_key.is_some()

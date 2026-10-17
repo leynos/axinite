@@ -180,20 +180,13 @@ impl SetupWizard {
     pub(super) async fn auto_setup_database(&mut self) -> Result<(), SetupError> {
         // If DATABASE_URL or LIBSQL_PATH already set, respect existing config
         #[cfg(feature = "postgres")]
-        let env_backend = {
-            #[expect(clippy::disallowed_methods, reason = "transitional #333: EnvContext")]
-            std::env::var("DATABASE_BACKEND")
-        }
-        .ok();
+        let env_backend = self.env_context.get_owned("DATABASE_BACKEND");
 
         #[cfg(feature = "postgres")]
         if let Some(ref backend) = env_backend
             && is_postgres_backend(backend)
         {
-            if let Ok(url) = {
-                #[expect(clippy::disallowed_methods, reason = "transitional #333: EnvContext")]
-                std::env::var("DATABASE_URL")
-            } {
+            if let Some(url) = self.env_context.get_owned("DATABASE_URL") {
                 print_info("Using existing PostgreSQL configuration");
                 self.test_database_connection_postgres(&url).await?;
                 self.run_migrations_postgres().await?;
@@ -206,10 +199,7 @@ impl SetupWizard {
         }
 
         #[cfg(feature = "postgres")]
-        if let Ok(url) = {
-            #[expect(clippy::disallowed_methods, reason = "transitional #333: EnvContext")]
-            std::env::var("DATABASE_URL")
-        } {
+        if let Some(url) = self.env_context.get_owned("DATABASE_URL") {
             print_info("Using existing PostgreSQL configuration");
             self.test_database_connection_postgres(&url).await?;
             self.run_migrations_postgres().await?;
@@ -223,12 +213,10 @@ impl SetupWizard {
         {
             self.settings.database_backend = Some("libsql".to_string());
 
-            let existing_path = {
-                #[expect(clippy::disallowed_methods, reason = "transitional #333: EnvContext")]
-                std::env::var("LIBSQL_PATH")
-            }
-            .ok()
-            .or_else(|| self.settings.libsql_path.clone());
+            let existing_path = self
+                .env_context
+                .get_owned("LIBSQL_PATH")
+                .or_else(|| self.settings.libsql_path.clone());
 
             let db_path = existing_path.unwrap_or_else(|| {
                 crate::config::default_libsql_path()
@@ -236,16 +224,8 @@ impl SetupWizard {
                     .to_string()
             });
 
-            let turso_url = {
-                #[expect(clippy::disallowed_methods, reason = "transitional #333: EnvContext")]
-                std::env::var("LIBSQL_URL")
-            }
-            .ok();
-            let turso_token = {
-                #[expect(clippy::disallowed_methods, reason = "transitional #333: EnvContext")]
-                std::env::var("LIBSQL_AUTH_TOKEN")
-            }
-            .ok();
+            let turso_url = self.env_context.get_owned("LIBSQL_URL");
+            let turso_token = self.env_context.get_owned("LIBSQL_AUTH_TOKEN");
 
             self.test_database_connection_libsql(LibsqlConnParams {
                 path: std::path::Path::new(&db_path),
