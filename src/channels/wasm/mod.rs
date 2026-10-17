@@ -80,6 +80,7 @@
 
 mod bundled;
 mod capabilities;
+mod credentials;
 mod error;
 mod host;
 mod loader;
@@ -108,5 +109,8 @@ pub use runtime::{PreparedChannelModule, WasmChannelRuntime, WasmChannelRuntimeC
 pub use schema::{
     ChannelCapabilitiesFile, ChannelConfig, SecretSetupSchema, SetupSchema, WebhookSchema,
 };
-pub use setup::{WasmChannelSetup, inject_channel_credentials, setup_wasm_channels};
+pub use setup::{
+    WasmChannelSetup, WasmChannelSetupRequest, inject_channel_credentials,
+    inject_channel_credentials_from_context, setup_wasm_channels, setup_wasm_channels_from_context,
+};
 pub use wrapper::{HttpResponse, RespondInvocation, SharedWasmChannel, WasmChannel};
