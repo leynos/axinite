@@ -22,7 +22,7 @@ use crate::bootstrap::axinite_base_dir;
 use crate::channels::wasm::{
     ChannelCapabilitiesFile, available_channel_names, install_bundled_channel,
 };
-use crate::config::OAUTH_PLACEHOLDER;
+use crate::config::{EnvContext, OAUTH_PLACEHOLDER};
 use crate::llm::{SessionConfig, SessionManager};
 use crate::secrets::{SecretsCrypto, SecretsStore};
 use crate::settings::{KeySource, Settings};
@@ -84,6 +84,7 @@ pub struct SetupConfig {
 /// Interactive setup wizard for Axinite.
 pub struct SetupWizard {
     config: SetupConfig,
+    env_context: EnvContext,
     settings: Settings,
     session_manager: Option<Arc<SessionManager>>,
     /// Database pool (created during setup, postgres only).
