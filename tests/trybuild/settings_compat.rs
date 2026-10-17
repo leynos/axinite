@@ -74,6 +74,22 @@ impl NativeSettingsStore for DummySettingsStore {
     async fn has_settings(&self, _user_id: UserId) -> Result<bool, DatabaseError> {
         Ok(false)
     }
+
+    async fn list_deployment_flags(
+        &self,
+        _deployment_id: &str,
+    ) -> Result<Vec<(String, bool)>, DatabaseError> {
+        Ok(Vec::new())
+    }
+
+    async fn set_deployment_flag(
+        &self,
+        _deployment_id: &str,
+        _flag_name: &str,
+        _enabled: bool,
+    ) -> Result<(), DatabaseError> {
+        Ok(())
+    }
 }
 
 fn assert_compat_path<T: SettingsStore>(store: &T) {

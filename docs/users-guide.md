@@ -227,3 +227,94 @@ axinite status
 Both commands report whether indexed or brute-force vector retrieval is
 currently in use. See `docs/database-integrations.md` for backend trade-offs
 and performance considerations.
+
+## Browser UI
+
+The gateway serves the SolidJS UI by default. To fall back to the previous
+shell as a rollback path, set `AXINITE_WEB_UI=legacy` before starting the
+gateway; the setting is read at startup.
+
+### Signing in
+
+On first visit the UI asks for the gateway access token (the value of
+`GATEWAY_AUTH_TOKEN`) and keeps it for the browser session only. A link of the
+form `/chat?token=<token>` signs in without the prompt; the UI stores the token
+and removes the `token` parameter from the address bar. A token that the
+gateway rejects is discarded and the prompt reappears.
+
+### Routes and controls
+
+The UI has chat, memory, jobs, routines, extensions, skills, and logs routes.
+Each can be hidden with the flags `route_chat`, `route_memory`, `route_jobs`,
+`route_routines`, `route_extensions`, `route_skills`, and `route_logs`; the log
+panel is hidden separately by `panel_logs`.
+
+- Restart control: a button in the header, with a confirmation dialog, that
+  sends `/restart` to the agent and waits for the gateway to go down and come
+  back. It is not feature-flagged; it appears only when the gateway reports
+  restart support, which requires `AXINITE_IN_DOCKER=true` in its environment.
+  If the command fails, the UI shows a retryable alert and changes the button
+  to Retry restart. The browser console records only `restart_failed` and its
+  bounded category (`timeout`, `transport`, or `http`); it does not log
+  response bodies or URLs.
+- TEE attestation: a header indicator whose popover fetches the full
+  attestation report and copies it to the clipboard. It requires the
+  `surface_tee_attestation` flag and a non-local hostname (the report is served
+  from `api.<domain>`), so it stays hidden on `localhost` and IP addresses.
+- Extension pairing and activation: on the extensions route, a three-step
+  stepper shows the activation progress of WebAssembly (WASM) channels, and
+  pending pairing requests for a channel can be approved. Neither has its own
+  flag; both follow `route_extensions`.
+
+### Feature flags
+
+The UI reads its flags from `GET /api/features`. Each flag resolves in this
+order, highest first:
+
+1. The `FEATURE_FLAG_<NAME>` environment variable, read when the process first
+   resolves flags. `true` (in any case) enables the flag; any other set value
+   disables it. Set it before starting the gateway.
+2. A deployment override, set without a restart through
+   `PUT /api/settings/feature_flag:<name>`.
+3. Subsystem availability: a flag whose backing subsystem is not running (for
+   example `route_jobs` without a jobs runtime) is switched off. This layer can
+   only disable a flag, never enable one.
+4. The compiled default.
+
+Reads of `GET /api/features` take an optional `X-Deployment-Id` header that
+defaults to `default`. Writes require it. The value must be 1 to 64 lowercase
+letters, digits, or underscores; anything else is rejected with 400.
+
+The gateway requires `Authorization: Bearer <GATEWAY_AUTH_TOKEN>` for API
+requests. The SPA currently reads the `default` deployment; API clients can
+select another deployment by sending the same `X-Deployment-Id` header on both
+reads and writes. For example, this disables the logs route for the SPA's
+default deployment:
+
+```sh
+curl -X PUT http://127.0.0.1:3000/api/settings/feature_flag:route_logs \
+  -H "Authorization: Bearer $GATEWAY_AUTH_TOKEN" \
+  -H "X-Deployment-Id: default" \
+  -H "Content-Type: application/json" \
+  -d '{"value": false}'
+```
+
+The value must be a JSON boolean or the string `"true"` or `"false"`
+(case-insensitive). Flag names use lowercase letters, digits, and underscores.
+The gateway stores overrides per deployment and applies writes without a
+restart. Environment variables take precedence over stored values. To remove a
+persisted override, delete its row from `feature_flag_overrides`, then restart
+each gateway process that has cached that deployment. Deleting the row alone
+does not clear its in-memory override. The settings `DELETE` route rejects
+`feature_flag:` keys with `400 Bad Request`.
+
+If the gateway cannot load persisted overrides, `GET /api/features` returns
+`503 Service Unavailable`. The SPA continues with browser-local overrides and
+compiled defaults, and records a generic failure in the browser console. Check
+gateway logs and database availability before relying on those displayed flags.
+
+### Trying the UI without the daemon
+
+`make frontend-stub` serves the UI against a stubbed backend, with no daemon
+needed. See `docs/solidjs-frontend.md` for developer details, including the
+stub's limitations.

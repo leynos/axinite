@@ -1,5 +1,8 @@
 //! Settings persistence helpers.
 
+#[cfg(all(test, feature = "postgres"))]
+mod feature_flags_tests;
+
 use chrono::{DateTime, Utc};
 
 #[cfg(feature = "postgres")]
@@ -9,6 +12,24 @@ use crate::db::SettingKey;
 use crate::db::UserId;
 #[cfg(feature = "postgres")]
 use crate::error::DatabaseError;
+
+#[cfg(feature = "postgres")]
+const UPSERT_SETTING: &str = r#"
+    INSERT INTO settings (user_id, key, value, updated_at)
+    VALUES ($1, $2, $3, NOW())
+    ON CONFLICT (user_id, key) DO UPDATE SET
+        value = EXCLUDED.value,
+        updated_at = NOW()
+"#;
+
+#[cfg(feature = "postgres")]
+const UPSERT_DEPLOYMENT_FLAG: &str = r#"
+    INSERT INTO feature_flag_overrides (deployment_id, flag_name, enabled, updated_at)
+    VALUES ($1, $2, $3, NOW())
+    ON CONFLICT (deployment_id, flag_name) DO UPDATE SET
+        enabled = EXCLUDED.enabled,
+        updated_at = NOW()
+"#;
 
 /// A single setting row from the database.
 #[derive(Debug, Clone)]
@@ -23,6 +44,18 @@ pub struct SettingRow {
 
 #[cfg(feature = "postgres")]
 impl Store {
+    // Single-row commands share connection acquisition and error propagation;
+    // bulk settings writes retain their transaction and reuse the same SQL.
+    async fn execute_settings_command(
+        &self,
+        sql: &'static str,
+        params: &[&(dyn tokio_postgres::types::ToSql + Sync)],
+    ) -> Result<(), DatabaseError> {
+        let conn = self.conn().await?;
+        conn.execute(sql, params).await?;
+        Ok(())
+    }
+
     /// Get a single setting by key.
     pub async fn get_setting(
         &self,
@@ -66,19 +99,8 @@ impl Store {
         key: SettingKey,
         value: &serde_json::Value,
     ) -> Result<(), DatabaseError> {
-        let conn = self.conn().await?;
-        conn.execute(
-            r#"
-            INSERT INTO settings (user_id, key, value, updated_at)
-            VALUES ($1, $2, $3, NOW())
-            ON CONFLICT (user_id, key) DO UPDATE SET
-                value = EXCLUDED.value,
-                updated_at = NOW()
-            "#,
-            &[&user_id.as_str(), &key.as_str(), value],
-        )
-        .await?;
-        Ok(())
+        self.execute_settings_command(UPSERT_SETTING, &[&user_id.as_str(), &key.as_str(), value])
+            .await
     }
 
     /// Delete a single setting (reset to default).
@@ -163,21 +185,53 @@ impl Store {
         }
 
         for (key, value) in settings {
-            tx.execute(
-                r#"
-                INSERT INTO settings (user_id, key, value, updated_at)
-                VALUES ($1, $2, $3, NOW())
-                ON CONFLICT (user_id, key) DO UPDATE SET
-                    value = EXCLUDED.value,
-                    updated_at = NOW()
-                "#,
-                &[&user_id.as_str(), &key.as_str(), value],
-            )
-            .await?;
+            tx.execute(UPSERT_SETTING, &[&user_id.as_str(), &key.as_str(), value])
+                .await?;
         }
 
         tx.commit().await?;
         Ok(())
+    }
+
+    /// List deployment-scoped feature-flag overrides for a deployment.
+    ///
+    /// Feature flags (RFC 0009) are deployment-scoped, stored in the dedicated
+    /// `feature_flag_overrides` table rather than the user-scoped `settings`
+    /// table.
+    pub async fn list_deployment_flags(
+        &self,
+        deployment_id: &str,
+    ) -> Result<Vec<(String, bool)>, DatabaseError> {
+        let conn = self.conn().await?;
+        let rows = conn
+            .query(
+                "SELECT flag_name, enabled FROM feature_flag_overrides \
+                 WHERE deployment_id = $1 ORDER BY flag_name",
+                &[&deployment_id],
+            )
+            .await?;
+        Ok(rows
+            .iter()
+            .map(|r| {
+                let name: String = r.get("flag_name");
+                let enabled: bool = r.get("enabled");
+                (name, enabled)
+            })
+            .collect())
+    }
+
+    /// Insert or replace one deployment-scoped feature-flag override (upsert).
+    pub async fn set_deployment_flag(
+        &self,
+        deployment_id: &str,
+        flag_name: &str,
+        enabled: bool,
+    ) -> Result<(), DatabaseError> {
+        self.execute_settings_command(
+            UPSERT_DEPLOYMENT_FLAG,
+            &[&deployment_id, &flag_name, &enabled],
+        )
+        .await
     }
 
     /// Check if the settings table has any rows for a user.

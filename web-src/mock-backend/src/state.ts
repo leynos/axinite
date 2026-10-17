@@ -1,0 +1,1417 @@
+/**
+ * @file In-memory state for the mock backend. `MockBackendState` holds the seeded
+ * threads, jobs, routines, extensions, skills, memory, and logs, applies the
+ * mutations the SPA makes, and fans out chat and log events to SSE
+ * subscribers. Its feature flags mirror the gateway defaults.
+ */
+
+import type {
+  ActionResponse,
+  ApprovalRequest,
+  AuthCancelRequest,
+  AuthTokenRequest,
+  ChatSseEvent,
+  ExtensionInfo,
+  ExtensionSetupResponse,
+  FeatureFlagsResponse,
+  GatewayStatusResponse,
+  HistoryResponse,
+  JobDetailResponse,
+  JobEventsResponse,
+  JobListResponse,
+  JobPromptRequest,
+  JobSummaryResponse,
+  LogEntry,
+  LogLevelResponse,
+  MemoryListResponse,
+  MemoryReadResponse,
+  MemorySearchRequest,
+  MemorySearchResponse,
+  MemoryTreeResponse,
+  MemoryWriteRequest,
+  MemoryWriteResponse,
+  PairingListResponse,
+  ProjectFileReadResponse,
+  ProjectFilesResponse,
+  RegistrySearchResponse,
+  RoutineDetailResponse,
+  RoutineListResponse,
+  RoutineRunsResponse,
+  RoutineSummaryResponse,
+  SearchHit,
+  SendMessageRequest,
+  SendMessageResponse,
+  SkillInstallRequest,
+  SkillListResponse,
+  SkillSearchRequest,
+  SkillSearchResponse,
+  ThreadInfo,
+  ThreadListResponse,
+  ToggleRequest,
+  ToolInfo,
+  ToolListResponse,
+  TurnInfo,
+} from "../../axinite/src/lib/api/contracts";
+import type { MemoryDocument } from "./fixtures";
+import {
+  createSeedCatalogueSkills,
+  createSeedExtensions,
+  createSeedJobs,
+  createSeedLogs,
+  createSeedMemoryDocuments,
+  createSeedPairingRequests,
+  createSeedRegistryEntries,
+  createSeedRoutines,
+  createSeedSkills,
+  createSeedThreads,
+} from "./fixtures";
+import { RestartFixture } from "./restart-fixture";
+import {
+  applyApprovalToLatestTurn,
+  approvalActionLabel,
+  buildApprovalOutcome,
+  type Clock,
+  createActionResponse,
+  emitChatTurnSequence,
+  extensionAuthentication,
+  fixedPreviewClock,
+  matchCatalogueSkill,
+  nowIso,
+  resolveSkillSource,
+  statusFromRoutine,
+} from "./state-helpers";
+
+// A deterministic 1x1 transparent PNG used for the `image_generated`
+// SSE fixture emitted when a chat prompt contains "image".
+export const MOCK_GENERATED_IMAGE_DATA_URL =
+  "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=";
+
+// Thrown by pairing approval when the deterministic rate-limit fixture code
+// is submitted, so the transport layer can answer with a plain-text 429
+// response matching the daemon's `PairingStoreError::ApproveRateLimited`
+// shape (a bare `(StatusCode, String)` body, not JSON).
+export class PairingRateLimitedError extends Error {}
+
+type MemoryListingEntry = {
+  name: string;
+  path: string;
+  is_dir: boolean;
+  updated_at: string | null;
+};
+
+type EventSubscriber<T> = {
+  send: (payload: T) => void;
+  close: () => void;
+};
+
+// Indexed lookups on a secrets map yield `undefined` for absent keys.
+function isNonBlankString(value: string | undefined): boolean {
+  return typeof value === "string" && value.trim().length > 0;
+}
+
+/** Only a successful restart tool completion schedules simulated downtime. */
+function isSuccessfulRestartToolCompletion(event: ChatSseEvent): boolean {
+  return (
+    event.type === "tool_completed" && event.name === "restart" && event.success
+  );
+}
+
+export class MockBackendState {
+  private readonly bootTime: number;
+
+  private readonly restartFixture: RestartFixture;
+
+  /** Creates isolated fixtures and copies injected flags; restart is opt-in. */
+  constructor(
+    private readonly clock: Clock = fixedPreviewClock,
+    options: {
+      restartFixture?: boolean;
+      featureFlagOverrides?: Readonly<Record<string, boolean>>;
+    } = {}
+  ) {
+    this.bootTime = clock();
+    for (const name of Object.keys(this.featureFlags)) {
+      const value = options.featureFlagOverrides?.[name];
+      if (typeof value === "boolean") {
+        this.featureFlags[name] = value;
+      }
+    }
+    this.restartFixture = new RestartFixture(
+      options.restartFixture ?? false,
+      () => this.closeStreams()
+    );
+  }
+
+  /** Whether the opt-in fixture currently simulates an API outage. */
+  get isGatewayUnavailable(): boolean {
+    return this.restartFixture.isUnavailable;
+  }
+
+  /** Cancels fixture-owned timers and closes all live SSE streams. */
+  dispose(): void {
+    this.restartFixture.dispose();
+    this.closeStreams();
+  }
+
+  private closeStreams(): void {
+    for (const subscriber of [
+      ...this.chatSubscribers,
+      ...this.logSubscribers,
+    ]) {
+      subscriber.close();
+    }
+    this.chatSubscribers.clear();
+    this.logSubscribers.clear();
+  }
+
+  private readonly now = (): string => nowIso(this.clock);
+
+  private nextCounter = 1;
+
+  // Mirrors the compiled defaults in the gateway's
+  // src/channels/web/handlers/features.rs and the registry in
+  // axinite/src/lib/feature-flags/registry.ts.
+  private readonly featureFlags: FeatureFlagsResponse = {
+    route_chat: true,
+    route_memory: true,
+    route_jobs: true,
+    route_routines: true,
+    route_extensions: true,
+    route_skills: true,
+    route_logs: true,
+    panel_logs: true,
+    action_memory_edit: false,
+    action_job_restart: false,
+    action_routine_trigger: false,
+    action_extension_install: false,
+    action_skill_install: false,
+    surface_tee_attestation: false,
+  };
+
+  private logLevel = "info";
+
+  private readonly chatSubscribers = new Set<EventSubscriber<ChatSseEvent>>();
+
+  private readonly logSubscribers = new Set<EventSubscriber<LogEntry>>();
+
+  // Newest first: pushLog() unshifts, so the chronological seed is reversed.
+  private readonly logs: LogEntry[] = createSeedLogs().reverse();
+
+  private activeThreadId = "thread-review";
+
+  private readonly threads = createSeedThreads();
+
+  private readonly memoryDocuments = createSeedMemoryDocuments();
+
+  private readonly jobs = createSeedJobs();
+
+  private readonly routines = createSeedRoutines();
+
+  private readonly extensions = createSeedExtensions();
+
+  // Deterministic pending pairing request fixture for the "whatsapp" WASM
+  // channel, so the extensions pairing stepper has an approvable row without
+  // needing a real pairing handshake.
+  private readonly pairingRequests = createSeedPairingRequests();
+
+  private readonly registryEntries = createSeedRegistryEntries();
+
+  private readonly skills = createSeedSkills();
+
+  private readonly catalogueSkills = createSeedCatalogueSkills();
+
+  private nextId(prefix: string): string {
+    const value = `${prefix}-${this.nextCounter}`;
+    this.nextCounter += 1;
+    return value;
+  }
+
+  /**
+   * Returns mock gateway status with chat SSE counts, clock-based uptime
+   * and fixed usage fixtures. WebSocket count is zero. Restart is disabled
+   * by default and enabled by the opt-in restart fixture.
+   */
+  getGatewayStatus(): GatewayStatusResponse {
+    const sse_connections = this.chatSubscribers.size;
+    const ws_connections = 0;
+    return {
+      version: "0.0.0-mock",
+      sse_connections,
+      ws_connections,
+      total_connections: sse_connections + ws_connections,
+      uptime_secs: Math.floor((this.clock() - this.bootTime) / 1_000),
+      restart_enabled: this.restartFixture.enabled,
+      daily_cost: "2.3140",
+      actions_this_hour: 18,
+      model_usage: [
+        {
+          model: "gpt-5.4",
+          input_tokens: 28_450,
+          output_tokens: 4_208,
+          cost: "1.201400",
+        },
+        {
+          model: "gpt-5.4-mini",
+          input_tokens: 12_004,
+          output_tokens: 7_102,
+          cost: "1.112600",
+        },
+      ],
+    };
+  }
+
+  /**
+   * Returns detached compiled defaults plus the constructor's injected
+   * overrides. Queries do not read process configuration or publish state.
+   */
+  getFeatureFlags(): FeatureFlagsResponse {
+    return { ...this.featureFlags };
+  }
+
+  /**
+   * Adds a live chat subscriber and returns an unsubscribe function.
+   * Existing events are not replayed.
+   */
+  subscribeToChat(subscriber: EventSubscriber<ChatSseEvent>): () => void {
+    this.chatSubscribers.add(subscriber);
+    return () => {
+      this.chatSubscribers.delete(subscriber);
+    };
+  }
+
+  /**
+   * Adds a live log subscriber, replays up to 25 recent entries oldest
+   * first, then returns an unsubscribe function.
+   */
+  subscribeToLogs(subscriber: EventSubscriber<LogEntry>): () => void {
+    this.logSubscribers.add(subscriber);
+    // Replay the newest 25 entries oldest-to-newest, as a live tail would
+    // have delivered them.
+    for (const entry of this.logs.slice(0, 25).reverse()) {
+      subscriber.send(entry);
+    }
+    return () => {
+      this.logSubscribers.delete(subscriber);
+    };
+  }
+
+  private publishChatEvent(event: ChatSseEvent): void {
+    if (isSuccessfulRestartToolCompletion(event)) {
+      this.restartFixture.acknowledge();
+    }
+    for (const subscriber of this.chatSubscribers) {
+      subscriber.send(event);
+    }
+  }
+
+  private pushLog(
+    message: string,
+    target: string,
+    level: LogEntry["level"] = "info"
+  ): LogEntry {
+    const entry: LogEntry = {
+      level,
+      timestamp: this.now(),
+      message,
+      target,
+    };
+    this.logs.unshift(entry);
+    while (this.logs.length > 100) {
+      this.logs.pop();
+    }
+    for (const subscriber of this.logSubscribers) {
+      subscriber.send(entry);
+    }
+    return entry;
+  }
+
+  /**
+   * Returns the assistant thread separately, other threads newest-updated
+   * first and the active thread ID.
+   */
+  listThreads(): ThreadListResponse {
+    const assistant_thread = this.threads.get("thread-assistant")?.info ?? null;
+    const threads = [...this.threads.values()]
+      .filter((thread) => thread.info.id !== "thread-assistant")
+      .sort((left, right) =>
+        right.info.updated_at.localeCompare(left.info.updated_at)
+      )
+      .map((thread) => thread.info);
+
+    return structuredClone({
+      assistant_thread,
+      threads,
+      active_thread: this.activeThreadId,
+    });
+  }
+
+  /**
+   * Creates and selects an empty idle thread with deterministic ID and
+   * injected-clock timestamps, then records a chat log.
+   */
+  createThread(): ThreadInfo {
+    const id = this.nextId("thread");
+    const threadInfo: ThreadInfo = {
+      id,
+      state: "Idle",
+      turn_count: 0,
+      created_at: this.now(),
+      updated_at: this.now(),
+      title: "New planning thread",
+      thread_type: "thread",
+      channel: "gateway",
+    };
+    this.threads.set(id, {
+      info: threadInfo,
+      turns: [],
+    });
+    this.activeThreadId = id;
+    this.pushLog(`Created thread ${id}.`, "chat");
+    return structuredClone(threadInfo);
+  }
+
+  /**
+   * Reads the requested or active thread without selecting it and returns detached turns, optional
+   * oldest timestamp and pending approval. Throws when the thread is
+   * unknown.
+   */
+  getHistory(threadId?: string | null): HistoryResponse {
+    const fallbackThreadId =
+      threadId ?? this.activeThreadId ?? this.threads.keys().next().value;
+    const thread = this.threads.get(fallbackThreadId);
+    if (!thread) {
+      throw new Error("Thread not found");
+    }
+    return structuredClone({
+      thread_id: thread.info.id,
+      turns: thread.turns,
+      has_more: false,
+      ...(thread.turns[0]?.started_at !== undefined && {
+        oldest_timestamp: thread.turns[0].started_at,
+      }),
+      ...(thread.pendingApproval !== undefined && {
+        pending_approval: thread.pendingApproval,
+      }),
+    });
+  }
+
+  /**
+   * Appends a processing turn to the known requested thread or active
+   * thread, publishes thinking and schedules mock SSE events. Returns an
+   * accepted message ID; throws if the target is missing.
+   */
+  sendMessage(request: SendMessageRequest): SendMessageResponse {
+    const requestedThreadId =
+      request.thread_id && this.threads.has(request.thread_id)
+        ? request.thread_id
+        : this.activeThreadId;
+    const targetThread = this.threads.get(requestedThreadId);
+    if (!targetThread) {
+      throw new Error("Thread not found");
+    }
+
+    const started_at = this.now();
+    const turn: TurnInfo = {
+      turn_number: targetThread.turns.length + 1,
+      user_input: request.content,
+      response: null,
+      state: "Processing",
+      started_at,
+      completed_at: null,
+      tool_calls: [],
+    };
+
+    targetThread.turns = [...targetThread.turns, turn];
+    targetThread.info = {
+      ...targetThread.info,
+      turn_count: targetThread.turns.length,
+      updated_at: started_at,
+      state: "Processing",
+    };
+    this.threads.set(targetThread.info.id, targetThread);
+    this.activeThreadId = targetThread.info.id;
+
+    const message_id = this.nextId("message");
+    this.pushLog(
+      `Accepted chat turn ${message_id} for ${targetThread.info.id}.`,
+      "chat"
+    );
+
+    this.publishChatEvent({
+      type: "thinking",
+      message: "Planning the next assistant response.",
+      thread_id: targetThread.info.id,
+    });
+
+    emitChatTurnSequence({
+      request,
+      thread: targetThread,
+      turn,
+      imageDataUrl: MOCK_GENERATED_IMAGE_DATA_URL,
+      publish: (event) => this.publishChatEvent(event),
+      pushLog: (message, target, level) => this.pushLog(message, target, level),
+      now: this.now,
+    });
+
+    return {
+      message_id,
+      status: "accepted",
+    };
+  }
+
+  /**
+   * Resolves a pending approval, updates its thread and latest turn,
+   * publishes the outcome and records a log. Throws when the request ID is
+   * not pending.
+   */
+  submitApproval(request: ApprovalRequest): ActionResponse {
+    const thread = [...this.threads.values()].find(
+      (candidate) =>
+        candidate.pendingApproval?.request_id === request.request_id
+    );
+    if (!thread?.pendingApproval) {
+      throw new Error("Pending approval not found");
+    }
+
+    const isDeny = request.action === "deny";
+    const action = approvalActionLabel(request.action);
+    const pending = thread.pendingApproval;
+    const outcome = buildApprovalOutcome({
+      isDeny,
+      action,
+      toolName: pending.tool_name,
+    });
+    delete thread.pendingApproval;
+    thread.info = {
+      ...thread.info,
+      state: "Idle",
+      updated_at: this.now(),
+    };
+
+    applyApprovalToLatestTurn({ thread, isDeny, now: this.now });
+
+    this.publishChatEvent({
+      type: outcome.eventType,
+      message: outcome.message,
+      thread_id: thread.info.id,
+    });
+
+    this.pushLog(
+      `${action} recorded for ${pending.tool_name} in ${thread.info.id}.`,
+      "chat",
+      outcome.logLevel
+    );
+
+    return createActionResponse(outcome.response);
+  }
+
+  /**
+   * Submits the mock chat auth token without entering the message pipeline.
+   * The literal valid-token or any token of at least eight characters
+   * succeeds; shorter tokens fail. Both outcomes are logged.
+   */
+  chatAuthToken(request: AuthTokenRequest): ActionResponse {
+    const accepted =
+      request.token === "valid-token" || request.token.length >= 8;
+    if (accepted) {
+      const message = "Authentication completed.";
+      this.publishChatEvent({
+        type: "auth_completed",
+        extension_name: request.extension_name,
+        success: true,
+        message,
+      });
+      this.pushLog(
+        `Authenticated ${request.extension_name} via chat auth-token.`,
+        "extensions"
+      );
+      return createActionResponse(message, { activated: true });
+    }
+    this.pushLog(
+      `Rejected auth token for ${request.extension_name}.`,
+      "extensions",
+      "warn"
+    );
+    return createActionResponse("Invalid or missing authentication token.", {
+      success: false,
+    });
+  }
+
+  /**
+   * Records cancellation of the named extension auth flow and returns an
+   * Auth cancelled response; no pending-auth registry is changed.
+   */
+  chatAuthCancel(request: AuthCancelRequest): ActionResponse {
+    this.pushLog(
+      `Cancelled auth flow for ${request.extension_name}.`,
+      "extensions",
+      "warn"
+    );
+    return createActionResponse("Auth cancelled.");
+  }
+
+  /**
+   * Returns pending requests for the channel; an unknown channel has an
+   * empty list rather than a 404.
+   */
+  pairingList(channel: string): PairingListResponse {
+    return structuredClone({
+      channel,
+      requests: this.pairingRequests.get(channel) ?? [],
+    });
+  }
+
+  /**
+   * Approves and removes a matching pending code. The rate-limited fixture
+   * throws PairingRateLimitedError; unknown or expired codes return a
+   * failed action.
+   */
+  pairingApprove(channel: string, code: string): ActionResponse {
+    if (code === "rate-limited") {
+      throw new PairingRateLimitedError(
+        "Too many failed approve attempts; try again later"
+      );
+    }
+    const pending = this.pairingRequests.get(channel) ?? [];
+    const index = pending.findIndex((request) => request.code === code);
+    if (index === -1) {
+      return createActionResponse("Invalid or expired pairing code", {
+        success: false,
+      });
+    }
+    const [approved] = pending.splice(index, 1);
+    if (approved === undefined) {
+      throw new Error("Pairing request vanished during approval");
+    }
+    this.pairingRequests.set(channel, pending);
+    this.pushLog(
+      `Approved pairing request ${code} for ${channel}.`,
+      "extensions"
+    );
+    return createActionResponse(
+      `Pairing approved for sender '${approved.sender_id}'`
+    );
+  }
+
+  /**
+   * Builds sorted file and directory entries from seeded document paths,
+   * optionally limiting entries to the requested path depth.
+   */
+  getMemoryTree(depth?: number): MemoryTreeResponse {
+    const seenDirectories = new Set<string>();
+    const entries = [...this.memoryDocuments.keys()]
+      .flatMap((path) => {
+        const parts = path.split("/");
+        const results: { path: string; is_dir: boolean }[] = [];
+        for (let index = 0; index < parts.length - 1; index += 1) {
+          const dirPath = parts.slice(0, index + 1).join("/");
+          if (!seenDirectories.has(dirPath)) {
+            seenDirectories.add(dirPath);
+            results.push({ path: dirPath, is_dir: true });
+          }
+        }
+        results.push({ path, is_dir: false });
+        return results;
+      })
+      .filter((entry) =>
+        typeof depth === "number" ? entry.path.split("/").length <= depth : true
+      )
+      .sort((left, right) => left.path.localeCompare(right.path));
+
+    return { entries };
+  }
+
+  // Fold a single stored document into the listing for `parentPath`. Returns
+  // early when the document lies outside the requested directory; otherwise
+  // records the immediate child as either a directory placeholder or a leaf
+  // file. A leaf always overwrites a placeholder, but a placeholder never
+  // displaces an already-recorded leaf.
+  private addMemoryListingEntry(
+    entries: Map<string, MemoryListingEntry>,
+    parentPath: string,
+    documentPath: string,
+    document: MemoryDocument
+  ): void {
+    const prefix = parentPath.length > 0 ? `${parentPath}/` : "";
+    if (!documentPath.startsWith(prefix)) {
+      return;
+    }
+
+    const remainder = documentPath.slice(prefix.length);
+    if (remainder.length === 0) {
+      return;
+    }
+
+    const [segment = "", ...rest] = remainder.split("/");
+    const entryPath =
+      parentPath.length > 0 ? `${parentPath}/${segment}` : segment;
+    const isDirectory = rest.length > 0;
+
+    if (isDirectory) {
+      if (!entries.has(entryPath)) {
+        entries.set(entryPath, {
+          name: segment,
+          path: entryPath,
+          is_dir: true,
+          updated_at: null,
+        });
+      }
+      return;
+    }
+
+    entries.set(entryPath, {
+      name: segment,
+      path: entryPath,
+      is_dir: false,
+      updated_at: document.updated_at,
+    });
+  }
+
+  /**
+   * Returns sorted immediate children of a parent path, using null update
+   * times for directories and document timestamps for files.
+   */
+  listMemory(path = ""): MemoryListResponse {
+    const entries = new Map<string, MemoryListingEntry>();
+
+    for (const [documentPath, document] of this.memoryDocuments.entries()) {
+      this.addMemoryListingEntry(entries, path, documentPath, document);
+    }
+
+    return {
+      path,
+      entries: [...entries.values()].sort((left, right) =>
+        left.path.localeCompare(right.path)
+      ),
+    };
+  }
+
+  /**
+   * Returns a document path, content and update time; throws when the path
+   * is unknown.
+   */
+  readMemory(path: string): MemoryReadResponse {
+    const document = this.memoryDocuments.get(path);
+    if (!document) {
+      throw new Error("Document not found");
+    }
+    return {
+      path,
+      content: document.content,
+      updated_at: document.updated_at,
+    };
+  }
+
+  /**
+   * Creates or replaces a document with the injected-clock timestamp, logs
+   * the path and returns written status.
+   */
+  writeMemory(request: MemoryWriteRequest): MemoryWriteResponse {
+    this.memoryDocuments.set(request.path, {
+      content: request.content,
+      updated_at: this.now(),
+    });
+    this.pushLog(`Memory document updated: ${request.path}.`, "memory");
+    return {
+      path: request.path,
+      status: "written",
+    };
+  }
+
+  /**
+   * Searches lowercased path and content by substring. Empty queries return
+   * no hits; matches are scored by position, sorted by score and limited to
+   * ten by default.
+   */
+  searchMemory(request: MemorySearchRequest): MemorySearchResponse {
+    const query = request.query.trim().toLowerCase();
+    if (query.length === 0) {
+      return { results: [] };
+    }
+
+    const results: SearchHit[] = [];
+    for (const [path, document] of this.memoryDocuments.entries()) {
+      const haystack = `${path}\n${document.content}`.toLowerCase();
+      const score = haystack.includes(query)
+        ? 1 / Math.max(1, haystack.indexOf(query) + 1)
+        : 0;
+      if (score > 0) {
+        results.push({
+          path,
+          content: document.content.slice(0, 180),
+          score,
+        });
+      }
+    }
+
+    return {
+      results: results
+        .sort((left, right) => right.score - left.score)
+        .slice(0, request.limit ?? 10),
+    };
+  }
+
+  /**
+   * Returns job summary fields without event or file payloads.
+   */
+  listJobs(): JobListResponse {
+    return {
+      jobs: [...this.jobs.values()].map(({ detail }) => ({
+        id: detail.id,
+        title: detail.title,
+        state: detail.state,
+        user_id: detail.user_id,
+        created_at: detail.created_at,
+        started_at: detail.started_at,
+      })),
+    };
+  }
+
+  /**
+   * Counts current jobs by total and supported state.
+   */
+  summarizeJobs(): JobSummaryResponse {
+    const jobs = [...this.jobs.values()].map((job) => job.detail);
+    return {
+      total: jobs.length,
+      pending: jobs.filter((job) => job.state === "pending").length,
+      in_progress: jobs.filter((job) => job.state === "in_progress").length,
+      completed: jobs.filter((job) => job.state === "completed").length,
+      failed: jobs.filter((job) => job.state === "failed").length,
+      stuck: jobs.filter((job) => job.state === "stuck").length,
+    };
+  }
+
+  /**
+   * Returns job details or throws when the job ID is unknown.
+   */
+  getJob(id: string): JobDetailResponse {
+    const job = this.jobs.get(id);
+    if (!job) {
+      throw new Error("Job not found");
+    }
+    return structuredClone(job.detail);
+  }
+
+  /**
+   * Returns a job event list or throws when the job ID is unknown.
+   */
+  getJobEvents(id: string): JobEventsResponse {
+    const job = this.jobs.get(id);
+    if (!job) {
+      throw new Error("Job not found");
+    }
+    return structuredClone({
+      events: job.events,
+    });
+  }
+
+  /**
+   * Returns leaf entries for a job’s file paths; throws when the job ID is
+   * unknown.
+   */
+  listJobFiles(id: string): ProjectFilesResponse {
+    const job = this.jobs.get(id);
+    if (!job) {
+      throw new Error("Job not found");
+    }
+    return {
+      entries: Object.keys(job.files).map((path) => ({
+        name: path.split("/").at(-1) ?? path,
+        path,
+        is_dir: false,
+      })),
+    };
+  }
+
+  /**
+   * Returns the requested file path and content; throws separately when the
+   * job or file is missing.
+   */
+  readJobFile(id: string, path: string): ProjectFileReadResponse {
+    const job = this.jobs.get(id);
+    if (!job) {
+      throw new Error("Job not found");
+    }
+    const content = job.files[path];
+    if (typeof content !== "string") {
+      throw new Error("File not found");
+    }
+    return { path, content };
+  }
+
+  /**
+   * Moves a known job to in-progress with fresh timestamps and restart
+   * capabilities, appends its transition and event, and logs the change.
+   * Throws for an unknown ID.
+   */
+  restartJob(id: string): ActionResponse {
+    const job = this.jobs.get(id);
+    if (!job) {
+      throw new Error("Job not found");
+    }
+    const from = job.detail.state;
+    job.detail = {
+      ...job.detail,
+      state: "in_progress",
+      started_at: this.now(),
+      completed_at: null,
+      elapsed_secs: 0,
+      can_restart: false,
+      can_prompt: true,
+      transitions: [
+        ...job.detail.transitions,
+        {
+          from,
+          to: "in_progress",
+          timestamp: this.now(),
+          reason: "Restarted from the mock preview UI.",
+        },
+      ],
+    };
+    job.events = [
+      {
+        id: this.nextId("job-event"),
+        level: "info",
+        message: "Job restarted from the preview detail panel.",
+        timestamp: this.now(),
+      },
+      ...job.events,
+    ];
+    this.pushLog(`Restarted job ${id}.`, "jobs");
+    return createActionResponse("Job restarted.");
+  }
+
+  /**
+   * Marks a known job failed, records completion and transition, appends an
+   * event and warning log. Throws for an unknown ID.
+   */
+  cancelJob(id: string): ActionResponse {
+    const job = this.jobs.get(id);
+    if (!job) {
+      throw new Error("Job not found");
+    }
+    const from = job.detail.state;
+    job.detail = {
+      ...job.detail,
+      state: "failed",
+      completed_at: this.now(),
+      can_restart: true,
+      can_prompt: false,
+      transitions: [
+        ...job.detail.transitions,
+        {
+          from,
+          to: "failed",
+          timestamp: this.now(),
+          reason: "Cancelled from the mock preview UI.",
+        },
+      ],
+    };
+    job.events = [
+      {
+        id: this.nextId("job-event"),
+        level: "warn",
+        message: "Job cancelled from the preview detail panel.",
+        timestamp: this.now(),
+      },
+      ...job.events,
+    ];
+    this.pushLog(`Cancelled job ${id}.`, "jobs", "warn");
+    return createActionResponse("Job cancelled.");
+  }
+
+  /**
+   * Records the follow-up prompt as a job event and log, then returns an
+   * acknowledgement. Throws for an unknown ID.
+   */
+  promptJob(id: string, request: JobPromptRequest): ActionResponse {
+    const job = this.jobs.get(id);
+    if (!job) {
+      throw new Error("Job not found");
+    }
+    job.events = [
+      {
+        id: this.nextId("job-event"),
+        level: "info",
+        message: `Follow-up prompt submitted: ${request.content}`,
+        timestamp: this.now(),
+      },
+      ...job.events,
+    ];
+    this.pushLog(`Submitted follow-up prompt for ${id}.`, "jobs");
+    return createActionResponse("Prompt submitted to the job.");
+  }
+
+  /**
+   * Returns routine list fields with trigger and action labels and status
+   * derived from each detail.
+   */
+  listRoutines(): RoutineListResponse {
+    return {
+      routines: [...this.routines.values()].map(({ detail }) => ({
+        id: detail.id,
+        name: detail.name,
+        description: detail.description,
+        enabled: detail.enabled,
+        trigger_type: String(detail.trigger["type"] ?? "manual"),
+        trigger_summary:
+          typeof detail.trigger["schedule"] === "string"
+            ? `cron: ${detail.trigger["schedule"]}`
+            : typeof detail.trigger["pattern"] === "string"
+              ? `on ${detail.trigger["pattern"]}`
+              : "manual only",
+        action_type: String(detail.action["type"] ?? "lightweight"),
+        last_run_at: detail.last_run_at,
+        next_fire_at: detail.next_fire_at,
+        run_count: detail.run_count,
+        consecutive_failures: detail.consecutive_failures,
+        status: statusFromRoutine(detail),
+      })),
+    };
+  }
+
+  /**
+   * Counts total, enabled, disabled and failing routines, plus routines
+   * whose latest run starts on the injected current date.
+   */
+  summarizeRoutines(): RoutineSummaryResponse {
+    const routines = [...this.routines.values()].map(
+      (routine) => routine.detail
+    );
+    const total = routines.length;
+    const enabled = routines.filter((routine) => routine.enabled).length;
+    const disabled = total - enabled;
+    const failing = routines.filter(
+      (routine) => routine.consecutive_failures > 0
+    ).length;
+    const todayPrefix = this.now().slice(0, 10);
+    const runs_today = routines.filter((routine) =>
+      routine.last_run_at?.startsWith(todayPrefix)
+    ).length;
+    return {
+      total,
+      enabled,
+      disabled,
+      failing,
+      runs_today,
+    };
+  }
+
+  /**
+   * Returns routine details or throws when the routine ID is unknown.
+   */
+  getRoutine(id: string): RoutineDetailResponse {
+    const routine = this.routines.get(id);
+    if (!routine) {
+      throw new Error("Routine not found");
+    }
+    return structuredClone(routine.detail);
+  }
+
+  /**
+   * Returns recent runs or throws when the routine ID is unknown.
+   */
+  getRoutineRuns(id: string): RoutineRunsResponse {
+    const routine = this.routines.get(id);
+    if (!routine) {
+      throw new Error("Routine not found");
+    }
+    return structuredClone({
+      runs: routine.detail.recent_runs,
+    });
+  }
+
+  /**
+   * Records a completed manual run with injected-clock timestamps,
+   * increments the count and retains at most ten recent runs. Throws for an
+   * unknown ID.
+   */
+  triggerRoutine(id: string): ActionResponse {
+    const routine = this.routines.get(id);
+    if (!routine) {
+      throw new Error("Routine not found");
+    }
+    const run = {
+      id: this.nextId("routine-run"),
+      trigger_type: "manual",
+      started_at: this.now(),
+      completed_at: this.now(),
+      status: "completed",
+      result_summary: "Manual trigger completed in the preview shell.",
+      tokens_used: 142,
+      job_id: null,
+    };
+    routine.detail = {
+      ...routine.detail,
+      last_run_at: run.started_at,
+      run_count: routine.detail.run_count + 1,
+      recent_runs: [run, ...routine.detail.recent_runs].slice(0, 10),
+    };
+    this.pushLog(`Triggered routine ${id}.`, "routines");
+    return createActionResponse("Routine triggered.");
+  }
+
+  /**
+   * Sets the requested enabled state, or toggles the current state when
+   * omitted, then logs and returns the matching response. Throws for an
+   * unknown ID.
+   */
+  toggleRoutine(id: string, request?: ToggleRequest): ActionResponse {
+    const routine = this.routines.get(id);
+    if (!routine) {
+      throw new Error("Routine not found");
+    }
+    const enabled = request?.enabled ?? !routine.detail.enabled;
+    routine.detail = {
+      ...routine.detail,
+      enabled,
+    };
+    this.pushLog(
+      `${enabled ? "Enabled" : "Disabled"} routine ${id}.`,
+      "routines",
+      enabled ? "info" : "warn"
+    );
+    return createActionResponse(
+      enabled ? "Routine enabled." : "Routine disabled."
+    );
+  }
+
+  /**
+   * Deletes a known routine, records a warning log and returns success;
+   * throws when the ID is unknown.
+   */
+  deleteRoutine(id: string): ActionResponse {
+    if (!this.routines.has(id)) {
+      throw new Error("Routine not found");
+    }
+    this.routines.delete(id);
+    this.pushLog(`Deleted routine ${id}.`, "routines", "warn");
+    return createActionResponse("Routine deleted.");
+  }
+
+  /**
+   * Returns the current extension metadata values.
+   */
+  listExtensions(): { extensions: ExtensionInfo[] } {
+    return structuredClone({
+      extensions: [...this.extensions.values()].map(
+        (extension) => extension.info
+      ),
+    });
+  }
+
+  /**
+   * Returns the fixed preview tools and tools contributed by installed
+   * extension metadata.
+   */
+  listExtensionTools(): ToolListResponse {
+    const tools: ToolInfo[] = [
+      {
+        name: "create_job",
+        description: "Create a preview job from the current screen context.",
+      },
+      {
+        name: "extension_info",
+        description: "Inspect the registered extension metadata.",
+      },
+      ...[...this.extensions.values()].flatMap((extension) =>
+        extension.info.tools.map((toolName) => ({
+          name: toolName,
+          description: `${extension.info.display_name ?? extension.info.name} tool`,
+        }))
+      ),
+    ];
+    return { tools };
+  }
+
+  /**
+   * Returns every registry entry for an empty query; otherwise matches
+   * case-insensitively against names, display names, descriptions and
+   * keywords.
+   */
+  searchExtensionRegistry(query?: string | null): RegistrySearchResponse {
+    const needle = query?.trim().toLowerCase() ?? "";
+    return structuredClone({
+      entries: [...this.registryEntries.values()].filter((entry) => {
+        if (needle.length === 0) {
+          return true;
+        }
+        return (
+          entry.name.toLowerCase().includes(needle) ||
+          entry.display_name.toLowerCase().includes(needle) ||
+          entry.description.toLowerCase().includes(needle) ||
+          entry.keywords.some((keyword) =>
+            keyword.toLowerCase().includes(needle)
+          )
+        );
+      }),
+    });
+  }
+
+  /**
+   * Marks the registry entry installed. If no extension exists yet, adds an
+   * inactive extension with setup required and its token field unprovided.
+   * Throws when the registry entry is missing.
+   */
+  installExtension(name: string): ActionResponse {
+    const registryEntry = this.registryEntries.get(name);
+    if (!registryEntry) {
+      throw new Error("Registry entry not found");
+    }
+    registryEntry.installed = true;
+    if (!this.extensions.has(name)) {
+      this.extensions.set(name, {
+        info: {
+          name: registryEntry.name,
+          display_name: registryEntry.display_name,
+          kind: registryEntry.kind,
+          description: registryEntry.description,
+          authenticated: false,
+          active: false,
+          tools: [],
+          needs_setup: true,
+          has_auth: registryEntry.name === "slack",
+          activation_status: "installed",
+          ...(registryEntry.version !== undefined && {
+            version: registryEntry.version,
+          }),
+        },
+        setupSecrets: [
+          {
+            name: "token",
+            prompt: `${registryEntry.display_name} token`,
+            optional: false,
+            provided: false,
+            auto_generate: false,
+          },
+        ],
+      });
+    }
+    this.pushLog(`Installed extension ${name}.`, "extensions");
+    return createActionResponse(
+      `${registryEntry.display_name} installed into the mock preview.`
+    );
+  }
+
+  /**
+   * Activates a known extension and publishes status, or requests manual
+   * authentication when required. Throws when the extension is missing.
+   */
+  activateExtension(name: string): ActionResponse {
+    const extension = this.extensions.get(name);
+    if (!extension) {
+      throw new Error("Extension not found");
+    }
+    if (extension.info.has_auth && !extension.info.authenticated) {
+      return this.requestExtensionAuthentication(name);
+    }
+    extension.info = {
+      ...extension.info,
+      active: true,
+      activation_status: "active",
+    };
+    this.publishChatEvent({
+      type: "extension_status",
+      extension_name: name,
+      status: "active",
+      message: `${extension.info.display_name ?? name} is now active.`,
+    });
+    this.pushLog(`Activated extension ${name}.`, "extensions");
+    return createActionResponse("Extension activated.", { activated: true });
+  }
+
+  private requestExtensionAuthentication(name: string): ActionResponse {
+    const { instructions, setup_url, ...authUrlField } =
+      extensionAuthentication(name);
+    this.publishChatEvent({
+      type: "auth_required",
+      extension_name: name,
+      instructions,
+      ...authUrlField,
+      setup_url,
+    });
+    this.pushLog(
+      `Activation for ${name} is waiting for a manual token.`,
+      "extensions",
+      "warn"
+    );
+    return createActionResponse("Manual token required before activation.", {
+      awaiting_token: true,
+      instructions,
+      activated: false,
+      ...authUrlField,
+    });
+  }
+
+  /**
+   * Removes a known extension, clears its registry installed bit when
+   * present and logs the change. Throws when the extension is missing.
+   */
+  removeExtension(name: string): ActionResponse {
+    if (!this.extensions.has(name)) {
+      throw new Error("Extension not found");
+    }
+    this.extensions.delete(name);
+    const registryEntry = this.registryEntries.get(name);
+    if (registryEntry) {
+      registryEntry.installed = false;
+    }
+    this.pushLog(`Removed extension ${name}.`, "extensions", "warn");
+    return createActionResponse("Extension removed.");
+  }
+
+  /**
+   * Returns setup fields for a known extension or throws when it is
+   * missing.
+   */
+  getExtensionSetup(name: string): ExtensionSetupResponse {
+    const extension = this.extensions.get(name);
+    if (!extension) {
+      throw new Error("Extension not found");
+    }
+    return structuredClone({
+      name: extension.info.name,
+      kind: extension.info.kind,
+      secrets: extension.setupSecrets,
+    });
+  }
+
+  /**
+   * Marks non-blank submitted secrets as provided, activates the extension
+   * and publishes auth completion. Throws when the extension is missing.
+   */
+  submitExtensionSetup(
+    name: string,
+    secrets: Record<string, string>
+  ): ActionResponse {
+    const extension = this.extensions.get(name);
+    if (!extension) {
+      throw new Error("Extension not found");
+    }
+    extension.setupSecrets = extension.setupSecrets.map((field) => ({
+      ...field,
+      provided: field.provided || isNonBlankString(secrets[field.name]),
+    }));
+    extension.info = {
+      ...extension.info,
+      authenticated: extension.info.has_auth
+        ? true
+        : extension.info.authenticated,
+      active: true,
+      activation_status: "active",
+    };
+    this.publishChatEvent({
+      type: "auth_completed",
+      extension_name: name,
+      success: true,
+      message: `${extension.info.display_name ?? name} is ready to use.`,
+    });
+    this.pushLog(`Stored setup values for ${name}.`, "extensions");
+    return createActionResponse("Extension setup saved.", { activated: true });
+  }
+
+  /**
+   * Returns installed skill entries and their count.
+   */
+  listSkills(): SkillListResponse {
+    const skills = [...this.skills.values()];
+    return structuredClone({
+      skills,
+      count: skills.length,
+    });
+  }
+
+  /**
+   * Filters installed and catalogue skills case-insensitively by name,
+   * description or keyword; an empty query returns both lists unfiltered,
+   * with the fixed preview registry URL.
+   */
+  searchSkills(request: SkillSearchRequest): SkillSearchResponse {
+    const query = request.query.trim().toLowerCase();
+    const installed = [...this.skills.values()].filter((skill) => {
+      if (query.length === 0) {
+        return true;
+      }
+      return (
+        skill.name.toLowerCase().includes(query) ||
+        skill.description.toLowerCase().includes(query) ||
+        skill.keywords.some((keyword) => keyword.toLowerCase().includes(query))
+      );
+    });
+    const catalogue = [...this.catalogueSkills.values()].filter((entry) => {
+      if (query.length === 0) {
+        return true;
+      }
+      return (
+        entry.name.toLowerCase().includes(query) ||
+        entry.description.toLowerCase().includes(query) ||
+        entry.keywords.some((keyword) => keyword.toLowerCase().includes(query))
+      );
+    });
+    return structuredClone({
+      catalog: catalogue,
+      installed,
+      registry_url: "https://clawhub.example.invalid",
+    });
+  }
+
+  /**
+   * Installs a catalogue match when available; otherwise creates an ad hoc
+   * skill with preview trust and source derived from the supplied URL or
+   * content.
+   */
+  installSkill(request: SkillInstallRequest): ActionResponse {
+    const catalogueMatch = matchCatalogueSkill(
+      [...this.catalogueSkills.values()],
+      request
+    );
+    const name = catalogueMatch?.name ?? request.name;
+    this.skills.set(name, {
+      name,
+      description:
+        catalogueMatch?.description ??
+        "Installed ad hoc into the mock preview for UI validation.",
+      version: catalogueMatch?.version ?? "1.0.0",
+      trust: "preview",
+      source: resolveSkillSource(request),
+      keywords: catalogueMatch?.keywords ?? ["mock", "preview"],
+    });
+    this.pushLog(`Installed skill ${name}.`, "skills");
+    return createActionResponse(`Skill ${name} installed.`);
+  }
+
+  /**
+   * Removes an installed skill and records a warning log; throws when the
+   * skill is unknown.
+   */
+  removeSkill(name: string): ActionResponse {
+    if (!this.skills.has(name)) {
+      throw new Error("Skill not found");
+    }
+    this.skills.delete(name);
+    this.pushLog(`Removed skill ${name}.`, "skills", "warn");
+    return createActionResponse(`Skill ${name} removed.`);
+  }
+
+  /**
+   * Returns the current in-memory log level.
+   */
+  getLogLevel(): LogLevelResponse {
+    return {
+      level: this.logLevel,
+    };
+  }
+
+  /**
+   * Stores the supplied log-level string without validation, logs the
+   * change and returns it.
+   */
+  setLogLevel(level: string): LogLevelResponse {
+    this.logLevel = level;
+    this.pushLog(`Log level changed to ${level}.`, "logs");
+    return {
+      level,
+    };
+  }
+}

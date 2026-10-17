@@ -95,6 +95,9 @@ impl GatewayChannel {
             cost_guard: None,
             routine_engine: Arc::new(tokio::sync::RwLock::new(None)),
             startup_time: std::time::Instant::now(),
+            feature_flags: Arc::new(tokio::sync::RwLock::new(
+                handlers::feature_registry::FeatureFlagRegistry::new(),
+            )),
         });
 
         Self {
@@ -132,6 +135,9 @@ impl GatewayChannel {
             cost_guard: self.state.cost_guard.clone(),
             routine_engine: Arc::clone(&self.state.routine_engine),
             startup_time: self.state.startup_time,
+            // Preserve the registry Arc so overrides written before wiring a
+            // subsystem survive state rebuilds.
+            feature_flags: Arc::clone(&self.state.feature_flags),
         };
         mutate(&mut new_state);
         self.state = Arc::new(new_state);

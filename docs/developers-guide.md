@@ -6,6 +6,26 @@ reproducing the build and test workflows on this branch.
 For the current system architecture and subsystem boundaries, see
 [`docs/axinite-architecture-overview.md`](axinite-architecture-overview.md).
 
+Feature flags use authenticated `GET /api/features` and
+`PUT /api/settings/feature_flag:<name>` endpoints. Their headers, persistence,
+and error behaviour are documented in
+[RFC 0009](rfcs/0009-feature-flags-frontend.md). The framework-independent flag
+identifiers and resolution policy live in `src/feature_flags/`, while gateway
+commands and queries live in
+`src/channels/web/handlers/feature_registry/application.rs`. The HTTP header
+and settings-store adapter is its sibling,
+`src/channels/web/handlers/feature_registry.rs`. See the
+[boundary map](axinite-architecture-overview.md#46-dependency-and-boundary-map)
+for the current subsystem boundaries.
+
+Flag queries and their storage adapter emit no telemetry. HTTP delivery records
+read observations; explicit override commands record admission wait and total
+latency. With the `metrics` feature enabled, histograms include
+`axinite.feature_flags.admission_wait_seconds` and
+`axinite.feature_flags.command_latency_seconds`. Availability metrics use fixed
+subsystem and surface labels. Tracing carries random request or operation IDs,
+without exposing deployment identifiers, flag names, or database contents.
+
 ## 1. Purpose
 
 Linux continuous integration (CI) on this branch now uses `mold` to reduce
@@ -3849,5 +3869,25 @@ pull requests and on manual dispatch, because `coverage.yml` covers the trunk.
 Whitespace is collapsed before comparison, so refolding a long condition is not
 a change; dropping a clause is. The lane coordinates are compared both ways, so
 a lane appearing without an entry fails too.
+
+## 39. Front-end workspace
+
+The browser UI is a SolidJS app in `web-src/`, built with Bun (the workspace
+declares `bun >= 1.1.41` in `web-src/package.json`), so Bun is required for
+front-end work. The gateway embeds the built output. See
+`docs/solidjs-frontend.md` for the architecture, the stub runtime, and the
+serving contract. The Make targets are:
+
+| Target             | Effect                                                               |
+| ------------------ | -------------------------------------------------------------------- |
+| `frontend-install` | Install dependencies with `bun install --frozen-lockfile`.           |
+| `frontend-build`   | Build the app and refresh the embedded copy the gateway serves.      |
+| `frontend-verify`  | Run `frontend-build`, then fail if the embedded assets are stale.    |
+| `frontend-check`   | Run formatting, lint, type, and semantic checks.                     |
+| `frontend-test`    | Run `frontend-check`, then the unit and a11y suites and Fluent lint. |
+| `frontend-full`    | Run the full verification chain, including Playwright.               |
+| `frontend-stub`    | Start the daemon-free mock API and preview server on port 2020.      |
+
+*Table: front-end Make targets.*
 
 [shared-actions-coverage]: https://github.com/leynos/shared-actions/blob/main/.github/actions/generate-coverage/README.md
