@@ -199,8 +199,16 @@ impl ExtensionManager {
             .clone()
             .or_else(|| relay_config.callback_url.clone())
             .unwrap_or_else(|| {
-                let host = std::env::var("GATEWAY_HOST").unwrap_or_else(|_| "127.0.0.1".into());
-                let port = std::env::var("GATEWAY_PORT").unwrap_or_else(|_| "3001".into());
+                let host = {
+                    #[expect(clippy::disallowed_methods, reason = "transitional #333: EnvContext")]
+                    std::env::var("GATEWAY_HOST")
+                }
+                .unwrap_or_else(|_| "127.0.0.1".into());
+                let port = {
+                    #[expect(clippy::disallowed_methods, reason = "transitional #333: EnvContext")]
+                    std::env::var("GATEWAY_PORT")
+                }
+                .unwrap_or_else(|_| "3001".into());
                 format!("http://{}:{}", host, port)
             })
     }

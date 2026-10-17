@@ -6,6 +6,8 @@ use std::sync::Arc;
 use clap::Subcommand;
 
 #[cfg(feature = "import")]
+use crate::config::EnvContext;
+#[cfg(feature = "import")]
 use crate::import::ImportOptions;
 #[cfg(feature = "import")]
 use crate::import::openclaw::OpenClawImporter;
@@ -40,36 +42,52 @@ pub async fn run_import_command(
     cmd: &ImportCommand,
     config: &crate::config::Config,
 ) -> anyhow::Result<()> {
+    let env_context = EnvContext::capture_ambient();
     match cmd {
         ImportCommand::Openclaw {
             path,
             dry_run,
             re_embed,
             user_id,
-        } => run_import_openclaw(config, path.clone(), *dry_run, *re_embed, user_id.clone()).await,
+        } => {
+            run_import_openclaw(
+                config,
+                OpenClawImportRequest {
+                    path: path.clone(),
+                    dry_run: *dry_run,
+                    re_embed: *re_embed,
+                    user_id: user_id.clone(),
+                    env_context: &env_context,
+                },
+            )
+            .await
+        }
     }
 }
 
 /// Run the OpenClaw import.
 #[cfg(feature = "import")]
-async fn run_import_openclaw(
-    config: &crate::config::Config,
-    openclaw_path: Option<PathBuf>,
+struct OpenClawImportRequest<'a> {
+    path: Option<PathBuf>,
     dry_run: bool,
     re_embed: bool,
     user_id: Option<String>,
-) -> anyhow::Result<()> {
-    use secrecy::SecretString;
+    env_context: &'a EnvContext,
+}
 
-    // Determine OpenClaw path
-    let openclaw_path = if let Some(path) = openclaw_path {
-        path
-    } else if let Some(path) = OpenClawImporter::detect() {
-        path
-    } else {
-        let home = std::env::var("HOME").unwrap_or_else(|_| ".".to_string());
-        PathBuf::from(home).join(".openclaw")
-    };
+#[cfg(feature = "import")]
+async fn run_import_openclaw(
+    config: &crate::config::Config,
+    request: OpenClawImportRequest<'_>,
+) -> anyhow::Result<()> {
+    let OpenClawImportRequest {
+        path,
+        dry_run,
+        re_embed,
+        user_id,
+        env_context,
+    } = request;
+    let openclaw_path = resolve_openclaw_path(path, env_context);
 
     let user_id = user_id.unwrap_or_else(|| "default".to_string());
 
@@ -87,27 +105,7 @@ async fn run_import_openclaw(
         .map_err(|e| anyhow::anyhow!("Failed to initialize database: {}", e))?;
 
     // Initialize secrets store with master key from env or keychain
-    let secrets_crypto = if let Ok(master_key_hex) = std::env::var("SECRETS_MASTER_KEY") {
-        Arc::new(
-            crate::secrets::SecretsCrypto::new(SecretString::from(master_key_hex))
-                .map_err(|e| anyhow::anyhow!("Failed to initialize secrets: {}", e))?,
-        )
-    } else {
-        match crate::secrets::keychain::get_master_key().await {
-            Ok(key_bytes) => {
-                let key_hex: String = key_bytes.iter().map(|b| format!("{:02x}", b)).collect();
-                Arc::new(
-                    crate::secrets::SecretsCrypto::new(SecretString::from(key_hex))
-                        .map_err(|e| anyhow::anyhow!("Failed to initialize secrets: {}", e))?,
-                )
-            }
-            Err(_) => {
-                return Err(anyhow::anyhow!(
-                    "No secrets master key found. Set SECRETS_MASTER_KEY env var or run 'axinite onboard' first."
-                ));
-            }
-        }
-    };
+    let secrets_crypto = load_import_secrets_crypto(env_context).await?;
 
     let secrets: Arc<dyn crate::secrets::SecretsStore> = Arc::new(
         crate::secrets::InMemorySecretsStore::new(secrets_crypto.clone()),
@@ -151,6 +149,34 @@ async fn run_import_openclaw(
     }
 
     Ok(())
+}
+
+#[cfg(feature = "import")]
+fn resolve_openclaw_path(path: Option<PathBuf>, env_context: &EnvContext) -> PathBuf {
+    path.or_else(OpenClawImporter::detect)
+        .unwrap_or_else(|| PathBuf::from(env_context.get("HOME").unwrap_or(".")).join(".openclaw"))
+}
+
+#[cfg(feature = "import")]
+async fn load_import_secrets_crypto(
+    env_context: &EnvContext,
+) -> anyhow::Result<Arc<crate::secrets::SecretsCrypto>> {
+    use secrecy::SecretString;
+
+    let key_hex = match env_context.get_owned("SECRETS_MASTER_KEY") {
+        Some(key) => key,
+        None => crate::secrets::keychain::get_master_key()
+            .await
+            .map(|bytes| bytes.iter().map(|byte| format!("{byte:02x}")).collect())
+            .map_err(|_| {
+                anyhow::anyhow!(
+                    "No secrets master key found. Set SECRETS_MASTER_KEY env var or run 'axinite onboard' first."
+                )
+            })?,
+    };
+    let crypto = crate::secrets::SecretsCrypto::new(SecretString::from(key_hex))
+        .map_err(|e| anyhow::anyhow!("Failed to initialize secrets: {}", e))?;
+    Ok(Arc::new(crypto))
 }
 
 #[cfg(not(feature = "import"))]

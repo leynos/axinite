@@ -6,8 +6,12 @@
 use std::collections::HashSet;
 use std::path::Path;
 
+use crate::cli::oauth_defaults;
+use crate::config::EnvContext;
 use crate::secrets::SecretsStore;
 use crate::tools::wasm::{AuthCapabilitySchema, CapabilitiesFile, OAuthConfigSchema};
+
+use super::AuthToolContext;
 
 pub(super) async fn combine_provider_scopes(
     tools_dir: &Path,
@@ -54,54 +58,14 @@ async fn matching_oauth_scopes(path: &Path, secret_name: &str) -> Option<Vec<Str
     }
     Some(auth.oauth?.scopes)
 }
-
 pub(super) async fn auth_tool_oauth(
     store: &(dyn SecretsStore + Send + Sync),
-    user_id: &str,
-    auth: &AuthCapabilitySchema,
+    context: &AuthToolContext<'_>,
     oauth: &OAuthConfigSchema,
 ) -> anyhow::Result<()> {
-    use crate::cli::oauth_defaults;
-
-    let display_name = auth.display_name.as_deref().unwrap_or(&auth.secret_name);
-    let builtin = oauth_defaults::builtin_credentials(&auth.secret_name);
-
-    let client_id = oauth
-        .client_id
-        .clone()
-        .or_else(|| {
-            oauth
-                .client_id_env
-                .as_ref()
-                .and_then(|env| std::env::var(env).ok())
-        })
-        .or_else(|| {
-            builtin
-                .as_ref()
-                .map(|credentials| credentials.client_id.to_string())
-        })
-        .ok_or_else(|| {
-            anyhow::anyhow!(
-                "OAuth client_id not configured.\n\
-                 Set {} env var, or build with AXINITE_GOOGLE_CLIENT_ID.",
-                oauth.client_id_env.as_deref().unwrap_or("the client_id")
-            )
-        })?;
-
-    let client_secret = oauth
-        .client_secret
-        .clone()
-        .or_else(|| {
-            oauth
-                .client_secret_env
-                .as_ref()
-                .and_then(|env| std::env::var(env).ok())
-        })
-        .or_else(|| {
-            builtin
-                .as_ref()
-                .map(|credentials| credentials.client_secret.to_string())
-        });
+    let display_name = context.display_name;
+    let (client_id, client_secret) =
+        resolve_oauth_client_credentials(context.auth, oauth, context.env_context)?;
 
     println!("  Starting OAuth authentication...");
     println!();
@@ -155,9 +119,9 @@ pub(super) async fn auth_tool_oauth(
 
     oauth_defaults::store_oauth_tokens(
         store,
-        user_id,
-        &auth.secret_name,
-        auth.provider.as_deref(),
+        context.user_id,
+        &context.auth.secret_name,
+        context.auth.provider.as_deref(),
         &token_response.access_token,
         token_response.refresh_token.as_deref(),
         token_response.expires_in,
@@ -167,4 +131,50 @@ pub(super) async fn auth_tool_oauth(
 
     super::print_success(display_name);
     Ok(())
+}
+
+fn resolve_oauth_client_credentials(
+    auth: &AuthCapabilitySchema,
+    oauth: &OAuthConfigSchema,
+    env_context: &EnvContext,
+) -> anyhow::Result<(String, Option<String>)> {
+    let builtin = oauth_defaults::builtin_credentials(&auth.secret_name);
+    let client_id = oauth
+        .client_id
+        .clone()
+        .or_else(|| {
+            oauth
+                .client_id_env
+                .as_deref()
+                .and_then(|name| env_context.get_owned(name))
+        })
+        .or_else(|| {
+            builtin
+                .as_ref()
+                .map(|credentials| credentials.client_id.to_string())
+        })
+        .ok_or_else(|| {
+            anyhow::anyhow!(
+                "OAuth client_id not configured.\n\
+                 Set {} env var, or build with AXINITE_GOOGLE_CLIENT_ID.",
+                oauth.client_id_env.as_deref().unwrap_or("the client_id")
+            )
+        })?;
+
+    let client_secret = oauth
+        .client_secret
+        .clone()
+        .or_else(|| {
+            oauth
+                .client_secret_env
+                .as_deref()
+                .and_then(|name| env_context.get_owned(name))
+        })
+        .or_else(|| {
+            builtin
+                .as_ref()
+                .map(|credentials| credentials.client_secret.to_string())
+        });
+
+    Ok((client_id, client_secret))
 }

@@ -5,8 +5,18 @@ use super::*;
 impl SetupWizard {
     /// Create a new setup wizard.
     pub fn new() -> Self {
+        Self::with_config_and_env(SetupConfig::default(), EnvContext::capture_ambient())
+    }
+
+    /// Create a wizard with an explicit environment snapshot.
+    pub fn with_env_context(env_context: EnvContext) -> Self {
+        Self::with_config_and_env(SetupConfig::default(), env_context)
+    }
+
+    fn with_config_and_env(config: SetupConfig, env_context: EnvContext) -> Self {
         Self {
-            config: SetupConfig::default(),
+            config,
+            env_context,
             settings: Settings::default(),
             session_manager: None,
             #[cfg(feature = "postgres")]
@@ -20,17 +30,7 @@ impl SetupWizard {
 
     /// Create a wizard with custom configuration.
     pub fn with_config(config: SetupConfig) -> Self {
-        Self {
-            config,
-            settings: Settings::default(),
-            session_manager: None,
-            #[cfg(feature = "postgres")]
-            db_pool: None,
-            #[cfg(feature = "libsql")]
-            db_backend: None,
-            secrets_crypto: None,
-            llm_api_key: None,
-        }
+        Self::with_config_and_env(config, EnvContext::capture_ambient())
     }
 
     /// Set the session manager (for reusing existing auth).

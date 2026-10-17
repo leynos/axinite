@@ -52,6 +52,7 @@ use tokio::sync::{Mutex, broadcast};
 use uuid::Uuid;
 
 use crate::channels::web::types::SseEvent;
+use crate::config::EnvContext;
 use crate::db::Database;
 use crate::llm::LlmProvider;
 use crate::secrets::SecretsStore;
@@ -113,7 +114,7 @@ pub async fn setup_orchestrator(
             memory_limit_mb: config.sandbox.memory_limit_mb,
             cpu_shares: config.sandbox.cpu_shares,
             orchestrator_port: 50051,
-            claude_code_api_key: std::env::var("ANTHROPIC_API_KEY").ok(),
+            claude_code_api_key: EnvContext::capture_ambient().get_owned("ANTHROPIC_API_KEY"),
             claude_code_oauth_token: crate::config::ClaudeCodeConfig::extract_oauth_token(),
             claude_code_model: config.claude_code.model.clone(),
             claude_code_max_turns: config.claude_code.max_turns,

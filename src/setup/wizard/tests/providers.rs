@@ -2,7 +2,7 @@
 //! dispatch, and NEAR AI model-fetch configuration.
 
 use super::super::*;
-use super::helpers::{EnvBatchGuard, EnvGuard};
+use crate::config::EnvContext;
 use crate::setup::nearai;
 
 fn select_backend(settings: &mut Settings, backend: &str) {
@@ -163,6 +163,19 @@ async fn test_run_provider_setup_no_setup_hint() {
     );
 }
 
+#[tokio::test]
+async fn test_auto_setup_security_uses_injected_env_context() {
+    let env = EnvContext::default().with_env("SECRETS_MASTER_KEY", "test-master-key");
+    let mut wizard = SetupWizard::with_env_context(env);
+
+    wizard
+        .auto_setup_security()
+        .await
+        .expect("injected master key should configure security without keychain access");
+
+    assert_eq!(wizard.settings.secrets_master_key_source, KeySource::Env);
+}
+
 /// Regression test for #666: env-var security option must initialize
 /// secrets_crypto so subsequent steps can encrypt API keys.
 #[test]
@@ -196,14 +209,10 @@ fn test_env_var_security_initializes_crypto() {
 fn test_build_nearai_model_fetch_config_picks_up_api_key_env() {
     use secrecy::ExposeSecret;
 
-    let _guard = EnvBatchGuard::new(&[
-        ("NEARAI_API_KEY", Some("test-cloud-api-key-12345")),
-        ("NEARAI_BASE_URL", None),
-    ]);
-
-    let config = nearai::build_nearai_model_fetch_config(Some(secrecy::SecretString::from(
-        "test-cloud-api-key-12345",
-    )));
+    let config = nearai::build_nearai_model_fetch_config_from(
+        Some(secrecy::SecretString::from("test-cloud-api-key-12345")),
+        &EnvContext::default(),
+    );
     assert!(
         config.nearai.api_key.is_some(),
         "config should include the supplied API key"
@@ -223,9 +232,7 @@ fn test_build_nearai_model_fetch_config_picks_up_api_key_env() {
 /// the config should have `api_key: None` (session token path).
 #[test]
 fn test_build_nearai_model_fetch_config_none_when_no_api_key() {
-    let _guard = EnvGuard::clear("NEARAI_BASE_URL");
-
-    let config = nearai::build_nearai_model_fetch_config(None);
+    let config = nearai::build_nearai_model_fetch_config_from(None, &EnvContext::default());
     assert!(
         config.nearai.api_key.is_none(),
         "config should have no api_key when none is supplied"
@@ -240,7 +247,10 @@ fn test_build_nearai_model_fetch_config_none_when_no_api_key() {
 /// Regression test for #799: empty API keys should be treated as absent.
 #[test]
 fn test_build_nearai_model_fetch_config_none_when_empty_api_key() {
-    let config = nearai::build_nearai_model_fetch_config(Some(secrecy::SecretString::from("")));
+    let config = nearai::build_nearai_model_fetch_config_from(
+        Some(secrecy::SecretString::from("")),
+        &EnvContext::default(),
+    );
     assert!(
         config.nearai.api_key.is_none(),
         "config should have no api_key when the supplied key is empty"

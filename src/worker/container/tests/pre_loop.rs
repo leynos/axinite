@@ -8,8 +8,8 @@ use rstest::rstest;
 use uuid::Uuid;
 
 use super::test_support::{RuntimeTestState, setup_runtime_test};
+use crate::config::EnvContext;
 use crate::error::{ConfigMismatchField, Error, ToolError};
-use crate::testing::test_utils::EnvVarsGuard;
 use crate::worker::api::{WorkerHttpClient, WorkerState};
 use crate::worker::container::{WorkerConfig, WorkerError, WorkerExecutionResult, WorkerRuntime};
 
@@ -270,21 +270,23 @@ async fn worker_runtime_sanitizes_failure_messages(
 }
 
 #[test]
-fn worker_runtime_from_env_reads_worker_token() {
-    let mut env = EnvVarsGuard::new(&["AXINITE_WORKER_TOKEN"]);
-    env.set("AXINITE_WORKER_TOKEN", "token-from-env");
+fn worker_runtime_from_context_reads_worker_token() {
+    let env = EnvContext::default().with_env("AXINITE_WORKER_TOKEN", "token-from-env");
 
-    let runtime = WorkerRuntime::from_env(WorkerConfig {
-        job_id: Uuid::new_v4(),
-        orchestrator_url: "http://localhost:50051/".to_string(),
-        ..WorkerConfig::default()
-    })
-    .expect_valid("from_env should succeed when the worker token is present");
+    let runtime = WorkerRuntime::from_context(
+        WorkerConfig {
+            job_id: Uuid::new_v4(),
+            orchestrator_url: "http://localhost:50051/".to_string(),
+            ..WorkerConfig::default()
+        },
+        &env,
+    )
+    .expect_valid("from_context should succeed when the worker token is present");
 
     assert_eq!(
         runtime.client.orchestrator_url(),
         "http://localhost:50051",
-        "from_env should preserve the client URL normalization rules"
+        "from_context should preserve the client URL normalization rules"
     );
     assert_eq!(
         runtime.config.max_iterations,
@@ -294,15 +296,15 @@ fn worker_runtime_from_env_reads_worker_token() {
 }
 
 #[test]
-fn worker_runtime_from_env_returns_missing_token_without_worker_env() {
-    let mut env = EnvVarsGuard::new(&["AXINITE_WORKER_TOKEN"]);
-    env.remove("AXINITE_WORKER_TOKEN");
-
-    let result = WorkerRuntime::from_env(WorkerConfig {
-        job_id: Uuid::new_v4(),
-        orchestrator_url: "http://localhost:50051".to_string(),
-        ..WorkerConfig::default()
-    });
+fn worker_runtime_from_context_returns_missing_token_without_worker_env() {
+    let result = WorkerRuntime::from_context(
+        WorkerConfig {
+            job_id: Uuid::new_v4(),
+            orchestrator_url: "http://localhost:50051".to_string(),
+            ..WorkerConfig::default()
+        },
+        &EnvContext::default(),
+    );
 
     assert!(
         matches!(result, Err(WorkerError::MissingToken)),

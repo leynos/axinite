@@ -11,6 +11,8 @@ use std::time::Duration;
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::net::{TcpListener, TcpStream};
 
+use crate::config::EnvContext;
+
 mod oauth_landing;
 
 pub use oauth_landing::landing_html;
@@ -43,10 +45,14 @@ pub enum OAuthCallbackError {
 /// deployments where `127.0.0.1` is unreachable from the user's browser),
 /// then falls back to `http://{callback_host()}:{OAUTH_CALLBACK_PORT}`.
 pub fn callback_url() -> String {
-    std::env::var("AXINITE_OAUTH_CALLBACK_URL")
-        .ok()
-        .filter(|v| !v.is_empty())
-        .unwrap_or_else(|| format!("http://{}:{}", callback_host(), OAUTH_CALLBACK_PORT))
+    callback_url_from(&EnvContext::capture_ambient())
+}
+
+/// Resolve the callback URL from an explicit environment snapshot.
+pub fn callback_url_from(ctx: &EnvContext) -> String {
+    ctx.get("AXINITE_OAUTH_CALLBACK_URL")
+        .map(str::to_string)
+        .unwrap_or_else(|| format!("http://{}:{}", callback_host_from(ctx), OAUTH_CALLBACK_PORT))
 }
 
 /// Returns the hostname used in OAuth callback URLs.
@@ -61,7 +67,14 @@ pub fn callback_url() -> String {
 /// Note: this transmits the session token over plain HTTP — prefer SSH port
 /// forwarding (`ssh -L 9876:127.0.0.1:9876 user@host`) when possible.
 pub fn callback_host() -> String {
-    std::env::var("OAUTH_CALLBACK_HOST").unwrap_or_else(|_| "127.0.0.1".to_string())
+    callback_host_from(&EnvContext::capture_ambient())
+}
+
+/// Resolve the callback host from an explicit environment snapshot.
+pub fn callback_host_from(ctx: &EnvContext) -> String {
+    ctx.get("OAUTH_CALLBACK_HOST")
+        .unwrap_or("127.0.0.1")
+        .to_string()
 }
 
 /// Returns `true` if `host` is a loopback address that only accepts local connections.
