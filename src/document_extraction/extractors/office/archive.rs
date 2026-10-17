@@ -2,34 +2,46 @@
 
 use std::io::{Read, Seek};
 
-/// Collect archive entry names matching `prefix`/`suffix`, sorted so slide and
-/// sheet ordering is deterministic. Unreadable entries and names are skipped.
-pub(super) fn collect_entry_names<R: Read + Seek>(
+/// An archive entry paired with its decoded name for sorting and its stable
+/// archive index for reading.
+pub(super) struct ArchiveEntry {
+    name: String,
+    index: usize,
+}
+
+/// Collect archive entries matching `prefix`/`suffix`, sorted by decoded name
+/// so slide and sheet ordering is deterministic. Unreadable entries and names
+/// are skipped.
+pub(super) fn collect_entries<R: Read + Seek>(
     archive: &mut zip::ZipArchive<R>,
     prefix: &str,
     suffix: &str,
-) -> Vec<String> {
-    let mut names: Vec<String> = Vec::new();
+) -> Vec<ArchiveEntry> {
+    let mut entries = Vec::new();
     for i in 0..archive.len() {
         let Ok(file) = archive.by_index(i) else {
             continue;
         };
         let Ok(name) = file.name() else {
+            // Retain usable Office text when another entry cannot be decoded.
             continue;
         };
         if name.starts_with(prefix) && name.ends_with(suffix) {
-            names.push(name.into_owned());
+            entries.push(ArchiveEntry {
+                name: name.into_owned(),
+                index: i,
+            });
         }
     }
-    names.sort();
-    names
+    entries.sort_by(|left, right| left.name.cmp(&right.name));
+    entries
 }
 
-/// Read each named entry to a string, apply `f`, and collect the non-empty
-/// results. Unreadable entries are skipped.
+/// Read each entry to a string, apply `f`, and collect the non-empty results.
+/// Unreadable entries are skipped.
 pub(super) fn read_entry_texts<R, F>(
     archive: &mut zip::ZipArchive<R>,
-    names: &[String],
+    entries: &[ArchiveEntry],
     mut f: F,
 ) -> Vec<String>
 where
@@ -37,8 +49,8 @@ where
     F: FnMut(&str) -> String,
 {
     let mut out = Vec::new();
-    for name in names {
-        let Ok(mut file) = archive.by_name(name) else {
+    for entry in entries {
+        let Ok(mut file) = archive.by_index(entry.index) else {
             continue;
         };
         let mut xml = String::new();
