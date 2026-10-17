@@ -5,8 +5,8 @@ paths:
 ---
 # Testing Rules
 
-Direct process-environment mutation is forbidden. Use `EnvContext` snapshots
-as described in `docs/reliable-testing-in-rust-via-dependency-injection.md`.
+Direct process-environment mutation is forbidden. Use `EnvContext` snapshots as
+described in `docs/reliable-testing-in-rust-via-dependency-injection.md`.
 
 ## Test Tiers
 

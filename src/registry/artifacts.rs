@@ -109,23 +109,28 @@ pub fn find_wasm_artifact_from(
 ) -> Option<PathBuf> {
     let snake_name = crate_name.replace('-', "_");
 
-    for target_base in candidate_target_dirs_from(crate_dir, ctx) {
-        // Try exact name match in each target triple directory
-        for triple in WASM_TRIPLES {
-            let dir = target_base.join(triple).join(profile);
-            let candidates = [
-                dir.join(format!("{}.wasm", crate_name)),
-                dir.join(format!("{}.wasm", snake_name)),
-            ];
-            for candidate in &candidates {
-                if candidate.exists() {
-                    return Some(candidate.clone());
-                }
-            }
-        }
-    }
+    candidate_target_dirs_from(crate_dir, ctx)
+        .iter()
+        .find_map(|target_base| {
+            find_named_wasm_in_target(target_base, crate_name, &snake_name, profile)
+        })
+}
 
-    None
+fn find_named_wasm_in_target(
+    target_base: &Path,
+    crate_name: &str,
+    snake_name: &str,
+    profile: &str,
+) -> Option<PathBuf> {
+    WASM_TRIPLES.iter().find_map(|triple| {
+        let dir = target_base.join(triple).join(profile);
+        [
+            dir.join(format!("{crate_name}.wasm")),
+            dir.join(format!("{snake_name}.wasm")),
+        ]
+        .into_iter()
+        .find(|candidate| candidate.exists())
+    })
 }
 
 /// Find any `.wasm` file in the target dirs (fallback when crate name is unknown).
@@ -141,24 +146,27 @@ pub fn find_any_wasm_artifact_from(
     profile: &str,
     ctx: &EnvContext,
 ) -> Option<PathBuf> {
-    for target_base in candidate_target_dirs_from(crate_dir, ctx) {
-        for triple in WASM_TRIPLES {
-            let dir = target_base.join(triple).join(profile);
-            if !dir.is_dir() {
-                continue;
-            }
-            if let Ok(entries) = ambient_fs::read_dir(&dir) {
-                for entry in entries.flatten() {
-                    let path = entry.path();
-                    if path.extension().map(|ext| ext == "wasm").unwrap_or(false) {
-                        return Some(path);
-                    }
-                }
-            }
-        }
-    }
+    candidate_target_dirs_from(crate_dir, ctx)
+        .iter()
+        .find_map(|target_base| find_any_wasm_in_target(target_base, profile))
+}
 
-    None
+fn find_any_wasm_in_target(target_base: &Path, profile: &str) -> Option<PathBuf> {
+    WASM_TRIPLES
+        .iter()
+        .find_map(|triple| first_wasm_in_dir(&target_base.join(triple).join(profile)))
+}
+
+fn first_wasm_in_dir(dir: &Path) -> Option<PathBuf> {
+    if !dir.is_dir() {
+        return None;
+    }
+    let entries = ambient_fs::read_dir(dir).ok()?;
+    entries.flatten().map(|entry| entry.path()).find(|path| {
+        path.extension()
+            .map(|extension| extension == "wasm")
+            .unwrap_or(false)
+    })
 }
 
 /// Build a WASM component using `cargo-component` (async).
