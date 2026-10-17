@@ -1,18 +1,13 @@
 """Contracts for serial scheduling of tests that share trybuild preparation."""
 
-import subprocess
 from pathlib import Path
 
 import pytest
-from _workflow_policy import REPOSITORY_ROOT
+from compile_contract_inventory import REQUIRED_COMPILE_CONTRACT_BINARIES
 from contract_sources import read_source
-from nextest_boundary_support import (
-    Fixture,
-    _require_the_toolchain,
-    _run,
-    fixture_crate,
-)
-from timeout_budgets import NEXTEST_CONFIG, compile_contract_binaries
+from nextest_boundary_support import Fixture, _run
+from nextest_process import ProcessResult
+from timeout_budgets import NEXTEST_CONFIG
 
 COMPILE_CONTRACT_GROUP = "compile-contracts"
 OVERLAP_MARKER_ENV = "AXINITE_NEXTEST_OVERLAP_MARKER"
@@ -20,7 +15,7 @@ OVERLAP_MARKER_ENV = "AXINITE_NEXTEST_OVERLAP_MARKER"
 
 def _run_show_groups(
     fixture_crate: Fixture, profile: str, config: Path = NEXTEST_CONFIG
-) -> subprocess.CompletedProcess[str]:
+) -> ProcessResult:
     """Ask nextest for effective group membership under one profile."""
     return _run(
         (
@@ -37,8 +32,7 @@ def _run_show_groups(
             "--color",
             "never",
         ),
-        fixture_crate.crate,
-        fixture_crate.target,
+        fixture_crate,
     )
 
 
@@ -123,7 +117,7 @@ def _without_any_compile_contract_group(config_text: str) -> str:
 
 def _run_overlap_fixture(
     fixture_crate: Fixture, config: Path, marker: Path
-) -> subprocess.CompletedProcess[str]:
+) -> ProcessResult:
     """Run both fixture binaries with four nextest test slots."""
     return _run(
         (
@@ -139,8 +133,7 @@ def _run_overlap_fixture(
             "-E",
             "binary(trybuild) | binary(schema_helpers_ui)",
         ),
-        fixture_crate.crate,
-        fixture_crate.target,
+        fixture_crate,
         {OVERLAP_MARKER_ENV: str(marker)},
     )
 
@@ -159,13 +152,13 @@ def test_nextest_assigns_compile_contracts_to_the_serial_group(
         f"nextest does not report a one-thread compile-contract group under "
         f"{profile}:\n{done.stdout}"
     )
-    discovered = compile_contract_binaries(REPOSITORY_ROOT / "tests")
+    required = REQUIRED_COMPILE_CONTRACT_BINARIES
     if profile == "default":
-        expected = discovered - {"trybuild"}
+        expected = required - {"trybuild"}
     elif profile == "coverage":
         expected = frozenset()
     else:
-        expected = discovered
+        expected = required
     missing = {binary for binary in expected if f"::{binary}:" not in group}
     assert not missing, (
         f"nextest leaves compile-contract binaries outside the serial group "
@@ -194,18 +187,17 @@ def test_coverage_profile_excludes_compile_contracts_but_keeps_ordinary_tests(
             "--color",
             "never",
         ),
-        fixture_crate.crate,
-        fixture_crate.target,
+        fixture_crate,
     )
     assert done.returncode == 0, (
         f"nextest could not list the coverage profile:\n{done.stderr}"
     )
-    discovered = compile_contract_binaries(REPOSITORY_ROOT / "tests")
+    required = REQUIRED_COMPILE_CONTRACT_BINARIES
     listed = done.stdout
-    leaked = {binary for binary in discovered if f"{binary}::" in listed}
+    leaked = {binary for binary in required if f"{binary}::" in listed}
     assert not leaked, (
-        "coverage profile selects compile-contract fixtures for instrumented "
-        f"compilation: {sorted(leaked)}\n{listed}"
+        "coverage profile selects compile-contract tests for instrumented "
+        f"execution: {sorted(leaked)}\n{listed}"
     )
     assert "::slow " in listed, (
         "coverage profile must retain ordinary tests while excluding only "
@@ -223,8 +215,8 @@ def test_ci_inherits_default_compile_contract_group(
     done = _run_show_groups(fixture_crate, "ci", inherited)
     assert done.returncode == 0, f"nextest refused inherited config:\n{done.stderr}"
     group = _group_section(done.stdout, COMPILE_CONTRACT_GROUP)
-    discovered = compile_contract_binaries(REPOSITORY_ROOT / "tests")
-    missing = {binary for binary in discovered if f"::{binary}:" not in group}
+    required = REQUIRED_COMPILE_CONTRACT_BINARIES
+    missing = {binary for binary in required if f"::{binary}:" not in group}
     assert not missing, (
         "CI must inherit the default profile's group assignment when its own "
         f"override omits it; missing {sorted(missing)}:\n{done.stdout}"
@@ -245,10 +237,10 @@ def test_ci_compile_contract_group_override_takes_precedence(
     assert done.returncode == 0, f"nextest refused override config:\n{done.stderr}"
     selected = _group_section(done.stdout, probe_group)
     inherited = _group_section(done.stdout, COMPILE_CONTRACT_GROUP)
-    discovered = compile_contract_binaries(REPOSITORY_ROOT / "tests")
-    missing = {binary for binary in discovered if f"::{binary}:" not in selected}
+    required = REQUIRED_COMPILE_CONTRACT_BINARIES
+    missing = {binary for binary in required if f"::{binary}:" not in selected}
     inherited_members = {
-        binary for binary in discovered if f"::{binary}:" in inherited
+        binary for binary in required if f"::{binary}:" in inherited
     }
     assert not missing and not inherited_members, (
         "CI's explicit group must replace the inherited default assignment; "

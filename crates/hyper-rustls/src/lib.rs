@@ -1,0 +1,122 @@
+//! # hyper-rustls
+//!
+//! A pure-Rust HTTPS connector for [hyper](https://hyper.rs), based on
+//! [Rustls](https://github.com/rustls/rustls).
+//!
+//! ## Example client
+//!
+//! ```no_run
+//! # #[cfg(all(feature = "ring", feature = "rustls-native-certs", feature = "tokio-runtime", feature = "http1"))]
+//! # fn main() {
+//! use hyper::{Body, Client, StatusCode, Uri};
+//!
+//! let mut rt = tokio::runtime::Runtime::new().unwrap();
+//! let url = ("https://hyper.rs").parse().unwrap();
+//! let https = hyper_rustls::HttpsConnectorBuilder::new()
+//!     .with_native_roots()
+//!     .expect("no native root CA certificates found")
+//!     .https_only()
+//!     .enable_http1()
+//!     .build();
+//!
+//! let client: Client<_, hyper::Body> = Client::builder().build(https);
+//!
+//! let res = rt.block_on(client.get(url)).unwrap();
+//! assert_eq!(res.status(), StatusCode::OK);
+//! # }
+//! # #[cfg(not(all(feature = "ring", feature = "rustls-native-certs", feature = "tokio-runtime", feature = "http1")))]
+//! # fn main() {}
+//! ```
+//!
+//! ## Example server
+//!
+//! ```no_run
+//! # #[cfg(all(feature = "rustls-native-certs", feature = "tokio-runtime", feature = "http1", feature = "acceptor"))]
+//! # fn main() {
+//! use std::io;
+//! use std::fs::File;
+//!
+//! use hyper::server::conn::AddrIncoming;
+//! use hyper::service::{make_service_fn, service_fn};
+//! use hyper::{Body, Method, Request, Response, Server, StatusCode};
+//! use hyper_rustls::TlsAcceptor;
+//! use pki_types::{pem::PemObject, CertificateDer, PrivateKeyDer};
+//!
+//! let mut rt = tokio::runtime::Runtime::new().unwrap();
+//! let addr = "127.0.0.1:1337".parse().unwrap();
+//!
+//! // Load public certificate.
+//! let certfile = File::open("examples/sample.pem").unwrap();
+//!
+//! // Load and return certificate.
+//! let certs = CertificateDer::pem_reader_iter(certfile).collect::<Result<Vec<_>, _>>().unwrap();
+//!
+//! // Load private key. (see `examples/server.rs`)
+//! let keyfile = File::open("examples/sample.rsa").unwrap();
+//!
+//! // Load and return a single private key.
+//! let key = PrivateKeyDer::from_pem_reader(keyfile).unwrap();
+//! let https = hyper_rustls::HttpsConnectorBuilder::new()
+//!     .with_native_roots()
+//!     .expect("no native root CA certificates found")
+//!     .https_only()
+//!     .enable_http1()
+//!     .build();
+//!
+//! let incoming = AddrIncoming::bind(&addr).unwrap();
+//! let acceptor = TlsAcceptor::builder()
+//!     .with_single_cert(certs, key).unwrap()
+//!     .with_all_versions_alpn()
+//!     .with_incoming(incoming);
+//! let service = make_service_fn(|_| async { Ok::<_, io::Error>(service_fn(|_req|async {Ok::<_, io::Error>(Response::new(Body::empty()))})) });
+//! let server = Server::builder(acceptor).serve(service);
+//! // server.await.unwrap();
+//! # }
+//! # #[cfg(not(all(feature = "rustls-native-certs", feature = "tokio-runtime", feature = "http1", feature = "acceptor")))]
+//! # fn main() {}
+//! ```
+
+#![warn(missing_docs, unreachable_pub, clippy::use_self)]
+#![cfg_attr(docsrs, feature(doc_cfg, doc_auto_cfg))]
+
+#[cfg(feature = "acceptor")]
+/// TLS acceptor implementing hyper's `Accept` trait.
+pub mod acceptor;
+mod config;
+mod connector;
+mod stream;
+
+#[cfg(feature = "logging")]
+mod log {
+    //! Route TLS diagnostics through the optional logging facade.
+
+    #[cfg(any(feature = "rustls-native-certs", feature = "webpki-roots"))]
+    pub(crate) use log::debug;
+}
+
+#[cfg(not(feature = "logging"))]
+mod log {
+    //! Keep diagnostics optional when the logging facade is disabled.
+
+    #[cfg(any(feature = "rustls-native-certs", feature = "webpki-roots"))]
+    macro_rules! debug    ( ($($tt:tt)*) => {{}} );
+    #[cfg(any(feature = "rustls-native-certs", feature = "webpki-roots"))]
+    pub(crate) use debug;
+}
+
+#[cfg(feature = "acceptor")]
+pub use crate::acceptor::{AcceptorBuilder, TlsAcceptor};
+pub use crate::config::ConfigBuilderExt;
+pub use crate::connector::builder::ConnectorBuilder as HttpsConnectorBuilder;
+pub use crate::connector::HttpsConnector;
+pub use crate::stream::MaybeHttpsStream;
+
+pub mod builderstates {
+    //! Expose connector typestates for callers that name intermediate builders.
+
+    #[cfg(feature = "http2")]
+    pub use crate::connector::builder::WantsProtocols3;
+    pub use crate::connector::builder::{
+        WantsProtocols1, WantsProtocols2, WantsSchemes, WantsTlsConfig,
+    };
+}

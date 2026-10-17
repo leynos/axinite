@@ -23,11 +23,11 @@ from pathlib import Path
 
 import pytest
 from _workflow_files import declared_jobs, jobs_in, load, workflow_paths
+from compile_contract_inventory import compile_contract_binaries
 from contract_sources import SourceReadError, matching_entries, read_source
 from nextest_config import profiles_of
 from nextest_versions import read_workflow_texts
 from suite_lanes import suite_lanes_of
-from timeout_budgets import compile_contract_binaries
 
 if typ.TYPE_CHECKING:  # pragma: no cover - typing only
     import collections.abc as cabc

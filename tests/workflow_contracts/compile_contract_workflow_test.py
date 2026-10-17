@@ -7,8 +7,8 @@ import typing as typ
 import pytest
 from _strict_workflows import Workflows, jobs, read_workflows, steps
 from _workflow_policy import REPOSITORY_ROOT, WORKFLOW_DIR
+from compile_contract_inventory import REQUIRED_COMPILE_CONTRACT_BINARIES
 from contract_sources import read_source
-from timeout_budgets import compile_contract_binaries
 
 if typ.TYPE_CHECKING:  # pragma: no cover - typing only
     from collections.abc import Mapping
@@ -67,16 +67,15 @@ def _needs(job: Mapping[object, object]) -> set[str]:
 
 
 def _assert_binary_selection(command: str) -> None:
-    """Require every discovered compile-contract binary in the nextest filter."""
-    binaries = compile_contract_binaries(WORKFLOW_DIR.parent.parent / "tests")
-    assert binaries, "source discovery found no compile-contract binaries"
+    """Require both pinned contract binaries in the nextest filter."""
+    binaries = REQUIRED_COMPILE_CONTRACT_BINARIES
     assert "cargo nextest run" in command and "--profile ci" in command, (
         "compile contracts must run uninstrumented through nextest's full ci "
         f"profile; found {command!r}"
     )
     missing = {binary for binary in binaries if f"binary({binary})" not in command}
     assert not missing, (
-        f"the nextest filter omits discovered compile-contract binaries "
+        f"the nextest filter omits required compile-contract binaries "
         f"{sorted(missing)}: {command!r}"
     )
 

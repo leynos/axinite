@@ -1,4 +1,4 @@
-"""Contract for what the compile-contract binaries are allowed.
+"""Contract for nested Cargo budgets and required contract targets.
 
 Separate from ``timeout_ordering_test``, whose subject is the ordering
 of the four tiers. This one is about which tests a per-test allowance
@@ -11,25 +11,21 @@ Run via ``make test-workflow-contracts``.
 
 import pytest
 from _workflow_policy import REPOSITORY_ROOT
+from compile_contract_inventory import (
+    REQUIRED_COMPILE_CONTRACT_BINARIES,
+    REQUIRED_NESTED_COMPILER_BINARIES,
+    compile_contract_binaries,
+)
 from nextest_config import Profile, binaries_selected
 from timeout_budgets import (
-    COMPILE_CONTRACT_ALLOWANCE_SECONDS,
+    NESTED_COMPILER_ALLOWANCE_SECONDS,
     binaries_short_of_allowance,
-    compile_contract_binaries,
     excluded_from,
 )
 
-#: Every compile-contract binary in the tree, pinned by name. The
-#: assertion above reads this set from the sources, and a reading that
-#: stopped recognizing one would leave that assertion passing over a
-#: smaller set, which is indistinguishable from the tree having fewer.
-#: `trybuild` is `tests/trybuild.rs` and `schema_helpers_ui` is
-#: `tests/schema_helpers_ui/main.rs`, so the two Cargo target forms are
-#: both represented and neither can be dropped unnoticed.
-REQUIRED_COMPILE_CONTRACT_BINARIES = frozenset({"trybuild", "schema_helpers_ui"})
 REQUIRED_COMPILE_CONTRACT_GROUP = "compile-contracts"
 
-#: Which profile excludes which of them outright, as
+#: Which profile excludes each required contract binary, as
 #: ``default-filter`` says. A reading that reported everything as
 #: excluded would satisfy the allowance assertion vacuously, and a
 #: reading that reported nothing as excluded would demand an allowance
@@ -45,22 +41,18 @@ REQUIRED_EXCLUSIONS: dict[tuple[str, str], bool] = {
 
 
 @pytest.mark.parametrize("profile", ["default", "ci", "coverage"], ids=str)
-def test_every_compile_contract_binary_is_allowed_the_longer_budget(
+def test_every_nested_compiler_binary_is_allowed_the_longer_budget(
     nextest_profiles: dict[str, Profile], profile: str
 ) -> None:
-    """A compile-contract session does not fit the base allowance.
+    """Only a test that invokes nested Cargo needs the longer allowance.
 
-    Each `TestCases` session prepares trybuild's generated project and
-    compiles its selected fixtures. The base allowance is sized for
-    ordinary tests, so the session needs its own longer budget.
+    `trybuild` prepares its generated project, compiles fixtures and runs
+    them inside the test process. `schema_helpers_ui` now compiles as an
+    ordinary integration target before nextest starts, then only executes
+    its accepted call sites under the base allowance.
 
-    The binaries are discovered from the sources rather than listed
-    here, because a new one appearing is exactly the failure this
-    guards against. `trybuild` was named in the configuration and
-    `schema_helpers_ui` was not, and the second therefore ran under the
-    300 s base allowance. The contract then read as satisfied because
-    every value it compared was in the right order; nothing said which
-    tests the base allowance was sized for.
+    The nested-compiler inventory is source-discovered and pinned so a
+    new trybuild harness cannot run under the ordinary allowance unnoticed.
 
     A profile that excludes the binary outright satisfies this too,
     since a binary that never runs needs no allowance. `default`
@@ -68,17 +60,15 @@ def test_every_compile_contract_binary_is_allowed_the_longer_budget(
     """
     parsed = nextest_profiles[profile]
     binaries = compile_contract_binaries(REPOSITORY_ROOT / "tests")
-    assert binaries, (
-        "no test source calls trybuild::TestCases; either the compile "
-        "contracts moved or this reading stopped recognizing them, and "
-        "either way the assertion below would pass over nothing"
+    assert binaries == REQUIRED_NESTED_COMPILER_BINARIES, (
+        "nested-compiler discovery must contain exactly the pinned "
+        f"trybuild targets, got {sorted(binaries)}"
     )
     unbounded = binaries_short_of_allowance(parsed, binaries)
     assert not unbounded, (
-        f"[profile.{profile}] runs these compile-contract binaries without "
-        f"an override allowing them {COMPILE_CONTRACT_ALLOWANCE_SECONDS:.0f}s, "
-        f"so each is bounded by the base allowance sized for the ordinary "
-        f"tests: {unbounded}"
+        f"[profile.{profile}] runs these nested-compiler binaries without "
+        f"an override allowing them {NESTED_COMPILER_ALLOWANCE_SECONDS:.0f}s: "
+        f"{unbounded}"
     )
 
 
@@ -86,12 +76,13 @@ def test_every_compile_contract_binary_is_allowed_the_longer_budget(
 def test_every_compile_contract_binary_uses_the_serial_group(
     nextest_profiles: dict[str, Profile], profile: str
 ) -> None:
-    """The timeout override also queues every discovered compile contract.
+    """The serial group retains both required contract binaries.
 
-    The source-derived set is reused here so a new trybuild target cannot
-    inherit the timeout while escaping the shared preparation group.
+    This inventory includes the schema-helper integration target even though
+    it no longer invokes nested Cargo, so the scheduling contract stays fixed
+    when compiler discovery changes.
     """
-    binaries = compile_contract_binaries(REPOSITORY_ROOT / "tests")
+    binaries = REQUIRED_COMPILE_CONTRACT_BINARIES
     selected_profile = nextest_profiles[profile]
     overrides = (
         *selected_profile.overrides,
@@ -104,7 +95,7 @@ def test_every_compile_contract_binary_uses_the_serial_group(
     ]
     assert matching, (
         f"[profile.{profile}] must inherit an override selecting every "
-        f"discovered compile-contract binary {sorted(binaries)}"
+        f"required compile-contract binary {sorted(binaries)}"
     )
     misplaced = [
         override.get("test-group")
@@ -112,28 +103,48 @@ def test_every_compile_contract_binary_uses_the_serial_group(
         if override.get("test-group") != REQUIRED_COMPILE_CONTRACT_GROUP
     ]
     assert not misplaced, (
-        f"[profile.{profile}] assigns discovered compile-contract binaries to "
+        f"[profile.{profile}] assigns required compile-contract binaries to "
         f"groups {misplaced}, not the serial group "
         f"{REQUIRED_COMPILE_CONTRACT_GROUP!r}"
     )
 
 
-def test_both_compile_contract_binaries_are_found() -> None:
-    """The discovery must not quietly shrink.
+def test_nested_compiler_discovery_contains_only_trybuild() -> None:
+    """The long-timeout inventory must not absorb ordinary test targets.
 
-    The assertion above is a sweep over whatever this reading returns,
-    so a reading that stopped recognizing a binary would pass over the
-    remainder and the loss would look exactly like success. Cargo names
-    a test target after `tests/<name>.rs` or after the directory in
-    `tests/<name>/main.rs`, and the tree has one of each, so pinning the
-    set holds both forms.
+    Both required binaries remain in the separate contract inventory, but
+    only ``trybuild`` constructs ``trybuild::TestCases`` and drives nested
+    Cargo from the test process.
     """
     assert compile_contract_binaries(REPOSITORY_ROOT / "tests") == (
-        REQUIRED_COMPILE_CONTRACT_BINARIES
+        REQUIRED_NESTED_COMPILER_BINARIES
     ), (
-        "the compile-contract binaries are not the ones this contract pins; "
-        "a new one needs an entry here and an override allowing it the "
-        "longer budget, and a removed one needs both taken out"
+        "source discovery must find only the pinned nested-compiler target; "
+        "the schema-helper contract is compiled with its ordinary target"
+    )
+
+
+def test_required_contract_inventory_keeps_both_targets() -> None:
+    """Schema-helper execution stays required after leaving nested Cargo."""
+    assert REQUIRED_COMPILE_CONTRACT_BINARIES == frozenset(
+        {"trybuild", "schema_helpers_ui"}
+    ), (
+        "the required contract inventory must retain both binaries even though "
+        "only trybuild invokes nested Cargo"
+    )
+
+
+def test_profile_exclusion_policy_covers_every_required_contract_binary() -> None:
+    """Pin profile decisions for both required targets, including coverage."""
+    profiles = {"default", "ci", "coverage"}
+    expected = {
+        (profile, binary)
+        for profile in profiles
+        for binary in REQUIRED_COMPILE_CONTRACT_BINARIES
+    }
+    assert set(REQUIRED_EXCLUSIONS) == expected, (
+        "profile exclusion expectations must cover every required contract "
+        "binary in default, ci and coverage"
     )
 
 

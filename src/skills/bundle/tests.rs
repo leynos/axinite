@@ -38,6 +38,7 @@ fn validates_bundle_with_references_and_assets() {
             b"# Usage\nUse the documented process.\n",
         ),
         file_entry("deploy-docs/assets/logo.png", &[0x89, b'P', b'N', b'G']),
+        file_entry("deploy-docs/assets/café.txt", b"unicode asset name"),
     ])
     .expect("test bundle archive should build");
 
@@ -54,7 +55,8 @@ fn validates_bundle_with_references_and_assets() {
         vec![
             "SKILL.md".to_string(),
             "references/usage.md".to_string(),
-            "assets/logo.png".to_string()
+            "assets/logo.png".to_string(),
+            "assets/café.txt".to_string()
         ]
     );
 }

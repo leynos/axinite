@@ -58,6 +58,7 @@ def test_test_target_uses_expected_nextest_command(
             "PATH": os.pathsep.join((str(fake_bin), str(utility_bin))),
         }
     )
+    environment.pop("CARGO_TARGET_DIR", None)
     environment.pop("CARGO_AUDIT", None)
     environment.pop("CARGO_AUDIT_SUBCOMMAND", None)
     if nextest_override is None:
@@ -130,11 +131,28 @@ def test_test_target_uses_expected_nextest_command(
             ),
         ),
         (
+            "lint-libsql-transport",
+            (
+                "clippy --target-dir 'target' --locked --package "
+                "hyper-rustls@0.25.0 --all-targets --all-features -- -D warnings",
+            ),
+        ),
+        (
             "test",
             (
                 "build --manifest-path tools-src/github/Cargo.toml --release "
                 "--target wasm32-wasip2",
                 "test --manifest-path tools-src/github/Cargo.toml",
+                "test --target-dir 'target' --locked --package hyper-rustls@0.25.0 "
+                "--all-features "
+                "--lib --examples",
+                "test --target-dir 'target' --locked --package hyper-rustls@0.25.0 "
+                "--all-features --doc",
+                "test --target-dir 'target' --locked --package hyper-rustls@0.25.0 "
+                "--doc",
+                "test --target-dir 'target' --locked --package hyper-rustls@0.25.0 "
+                "--no-default-features "
+                "--features rustls-native-certs,tokio-runtime,http1 --doc",
             ),
         ),
         (
@@ -175,6 +193,7 @@ def test_test_target_uses_expected_nextest_command(
         "check-fmt",
         "typecheck",
         "lint-clippy",
+        "lint-libsql-transport",
         "test",
         "test-cargo",
         "test-matrix",
@@ -219,6 +238,7 @@ def test_targets_use_resolved_quoted_cargo_command(
             "PATH": str(utility_bin),
         }
     )
+    environment.pop("CARGO_TARGET_DIR", None)
     environment.pop("CARGO_AUDIT", None)
     environment.pop("CARGO_AUDIT_SUBCOMMAND", None)
     result = subprocess.run(
@@ -286,6 +306,7 @@ def test_targets_escape_resolved_cargo_paths(
 
     environment = os.environ.copy()
     environment.pop("NEXTEST", None)
+    environment.pop("CARGO_TARGET_DIR", None)
     environment.pop("CARGO_AUDIT", None)
     environment.pop("CARGO_AUDIT_SUBCOMMAND", None)
     environment.update(

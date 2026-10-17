@@ -212,8 +212,9 @@ def test_with_block_carries_the_caller_configuration() -> None:
         "(--features test-helpers,embedded-postgres), run workspace tests against each "
         "mutant, use nextest as the test tool (the boot-screen snapshot "
         "test needs process-per-test isolation, issue #237), and drop "
-        "the slow schema_helpers_ui trybuild binary from per-mutant "
-        f"runs, got {with_block.get('extra-args')!r}"
+        "the schema_helpers_ui compile-contract binary, which has its own "
+        "required workflow run, from per-mutant behavioural runs, got "
+        f"{with_block.get('extra-args')!r}"
     )
     assert with_block.get("shard-count") == 8, (
         f"with.shard-count must be 8 (heavy wasmtime/libsql build; keep "

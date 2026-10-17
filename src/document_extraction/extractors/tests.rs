@@ -3,6 +3,24 @@
 use super::office::{parse_xlsx_shared_strings, strip_xml_tags};
 use super::*;
 
+#[rstest::rstest]
+#[case::slides("ppt/slides/slideé.xml", office::extract_pptx)]
+#[case::sheets("xl/worksheets/sheeté.xml", office::extract_xlsx)]
+fn office_archives_preserve_unicode_entry_names(
+    #[case] entry_name: &str,
+    #[case] extract: fn(&[u8]) -> Result<String, String>,
+) -> Result<(), Box<dyn std::error::Error>> {
+    use std::io::Write as _;
+
+    let mut writer = zip::ZipWriter::new(std::io::Cursor::new(Vec::new()));
+    writer.start_file(entry_name, zip::write::SimpleFileOptions::default())?;
+    writer.write_all(b"<row><c><v>Unicode document</v></c></row>")?;
+    let archive = writer.finish()?.into_inner();
+
+    assert_eq!(extract(&archive)?, "Unicode document");
+    Ok(())
+}
+
 #[test]
 fn strip_xml_basic() {
     let xml = "<root><p>Hello</p><p>World</p></root>";

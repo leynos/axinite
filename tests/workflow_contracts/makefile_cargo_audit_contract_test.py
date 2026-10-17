@@ -4,87 +4,19 @@ from __future__ import annotations
 
 import os
 import subprocess
-from dataclasses import dataclass
 from pathlib import Path
 
 import pytest
 
+from _cargo_audit_support import CargoAuditCase, selected_cargo_manifests
 from _makefile_test_support import shell_quote
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[2]
 AUDIT_FLAGS = (
-    "--ignore RUSTSEC-2026-0049",
-    "--ignore RUSTSEC-2026-0098",
-    "--ignore RUSTSEC-2026-0099",
-    "--ignore RUSTSEC-2026-0104",
     "--ignore RUSTSEC-2026-0185",
     "--ignore RUSTSEC-2025-0141",
     "--ignore RUSTSEC-2024-0370",
-    "--ignore RUSTSEC-2025-0134",
 )
-
-
-def _selected_cargo_manifests(
-    utility_bin: Path,
-    repository_root: Path = REPOSITORY_ROOT,
-) -> list[str]:
-    """Return Cargo.toml paths selected by the Makefile audit find expression."""
-    result = subprocess.run(
-        [
-            str(utility_bin / "find"),
-            ".",
-            "(",
-            "-path",
-            "*/target/*",
-            "-o",
-            "-path",
-            "*/node_modules/*",
-            "-o",
-            "-path",
-            "*/.venv/*",
-            "-o",
-            "-path",
-            "./crates/*",
-            ")",
-            "-prune",
-            "-o",
-            "-name",
-            "Cargo.toml",
-            "-print",
-        ],
-        cwd=repository_root,
-        check=True,
-        capture_output=True,
-        text=True,
-    )
-    return result.stdout.splitlines()
-
-
-@dataclass(frozen=True)
-class CargoAuditCase:
-    """Immutable inputs and expected executable for one audit case.
-
-    Parameters
-    ----------
-    cargo_override : str or None
-        Optional value supplied through the ``CARGO`` environment variable.
-    has_path_cargo : bool
-        Whether the test provides Cargo on ``PATH``.
-    has_home_cargo : bool
-        Whether the test provides Cargo under ``$HOME/.cargo/bin``.
-    expected_location : str
-        Expected source of the executable: ``path``, ``home``, or ``override``.
-
-    Returns
-    -------
-    CargoAuditCase
-        Immutable case describing the environment and expected resolution.
-    """
-
-    cargo_override: str | None
-    has_path_cargo: bool
-    has_home_cargo: bool
-    expected_location: str
 
 
 @pytest.mark.parametrize(
@@ -264,11 +196,6 @@ def test_audit_executes_multiword_command_override(
     utility_bin : Path
         Directory containing audit utilities and no Cargo executable.
 
-    Returns
-    -------
-    None
-        Asserts that the fake Cargo tool receives the toolchain and audit words,
-        and that the ttf-parser ignore follows the manifest lockfile.
     """
     audit_root = tmp_path / "audit-root"
     locked_manifest_dir = audit_root / "locked"
@@ -284,6 +211,12 @@ def test_audit_executes_multiword_command_override(
     )
     (locked_manifest_dir / "Cargo.toml").write_text(manifest)
     (unlocked_manifest_dir / "Cargo.toml").write_text(manifest)
+    sdk_dir = audit_root / "crates/hyper-rustls"
+    workspace_dir = audit_root / "crates/workspace-member"
+    sdk_dir.mkdir(parents=True)
+    workspace_dir.mkdir()
+    (sdk_dir / "Cargo.toml").write_text(manifest)
+    (workspace_dir / "Cargo.toml").write_text(manifest)
     (locked_manifest_dir / "Cargo.lock").write_bytes(
         (REPOSITORY_ROOT / "Cargo.lock").read_bytes()
     )
@@ -337,7 +270,7 @@ def test_audit_executes_multiword_command_override(
     ), (
         f"multiword CARGO_AUDIT override emitted unexpected arguments: {commands!r}"
     )
-    selected_manifests = _selected_cargo_manifests(utility_bin, audit_root)
+    selected_manifests = selected_cargo_manifests(utility_bin, audit_root)
     assert len(commands) == len(selected_manifests), (
         f"CARGO_AUDIT='cargo +stable audit' logged {len(commands)} calls for "
         f"{len(selected_manifests)} selected Cargo.toml manifests: {commands!r}"
@@ -350,6 +283,12 @@ def test_audit_executes_multiword_command_override(
     observed_manifest_dirs = {
         Path(manifest_dir).resolve() for manifest_dir, _ in commands
     }
+    assert sdk_dir.resolve() not in observed_manifest_dirs, (
+        "the workspace TLS patch must share the root audit graph"
+    )
+    assert workspace_dir.resolve() not in observed_manifest_dirs, (
+        "workspace members share the root audit graph"
+    )
     assert observed_manifest_dirs == expected_manifest_dirs, (
         "audit subprocesses ran from unexpected manifest directories: "
         f"{observed_manifest_dirs!r} != {expected_manifest_dirs!r}"
@@ -433,11 +372,24 @@ def test_audit_uses_custom_subcommand_without_full_command_override(
     commands = argument_log.read_text().splitlines()
     assert commands, "audit should invoke the fake Cargo executable"
     assert all(
+        advisory not in command
+        for command in commands
+        for advisory in (
+            "RUSTSEC-2026-0049",
+            "RUSTSEC-2026-0098",
+            "RUSTSEC-2026-0099",
+            "RUSTSEC-2026-0104",
+            "RUSTSEC-2025-0134",
+        )
+    ), (
+        "patched TLS graphs must not retain obsolete advisory exceptions"
+    )
+    assert all(
         command.startswith("audit-contract --ignore ")
         and all(flag in command for flag in AUDIT_FLAGS)
         for command in commands
     ), f"custom CARGO_AUDIT_SUBCOMMAND emitted unexpected arguments: {commands!r}"
-    selected_manifests = _selected_cargo_manifests(utility_bin)
+    selected_manifests = selected_cargo_manifests(utility_bin, REPOSITORY_ROOT)
     assert len(commands) == len(selected_manifests), (
         f"custom CARGO_AUDIT_SUBCOMMAND logged {len(commands)} calls for "
         f"{len(selected_manifests)} selected Cargo.toml manifests: {commands!r}"
