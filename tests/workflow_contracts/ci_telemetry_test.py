@@ -23,6 +23,7 @@ Run via ``make test-workflow-contracts``.
 from __future__ import annotations
 
 import copy
+import typing as typ
 
 import pytest
 from _telemetry import (
@@ -153,38 +154,40 @@ def _good() -> list[dict[str, object]]:
     ]
 
 
-def _mutated(change: str) -> list[dict[str, object]]:
-    """Return the sound job with one deliberate fault."""
-    steps = copy.deepcopy(_good())
-    if change == "no-finish":
-        del steps[5]
-    elif change == "finish-not-always":
-        del steps[5]["if"]
-    elif change == "report-before-start":
-        steps[1], steps[5] = steps[5], steps[1]
-    elif change == "work-before-start":
-        steps.insert(1, {"name": "Build early", "run": "make"})
-    elif change == "work-after-report":
-        steps.append({"name": "Test", "run": "make test"})
-    elif change == "double-start":
-        steps.insert(2, {"name": "Start again", "uses": START})
-    return steps
+def _swap_start_and_finish(steps: list[dict[str, object]]) -> None:
+    """Report before starting."""
+    steps[1], steps[5] = steps[5], steps[1]
 
 
-@pytest.mark.parametrize(
-    "change",
-    [
-        "no-finish",
-        "finish-not-always",
-        "report-before-start",
-        "work-before-start",
-        "work-after-report",
-        "double-start",
-    ],
-)
+TELEMETRY_FAULTS: dict[str, typ.Callable[[list[dict[str, object]]], object]] = {
+    "no-finish": lambda steps: steps.pop(5),
+    "finish-not-always": lambda steps: steps[5].pop("if"),
+    "report-before-start": _swap_start_and_finish,
+    "work-before-start": lambda steps: steps.insert(1, {"name": "B", "run": "make"}),
+    "work-after-report": lambda steps: steps.append({"name": "T", "run": "make test"}),
+    "double-start": lambda steps: steps.insert(2, {"name": "S", "uses": START}),
+}
+
+SCCACHE_FAULTS: dict[str, typ.Callable[[list[dict[str, object]]], object]] = {
+    "report-before-setup": lambda steps: steps.insert(2, steps.pop(4)),
+    "report-moved-before-build": lambda steps: steps.insert(3, steps.pop(4)),
+    "no-status": lambda steps: steps[5].pop("with"),
+    "wrong-status": lambda steps: steps[5].update(
+        {"with": {"sccache-status": "fallback"}}
+    ),
+    "report-not-always": lambda steps: steps[4].pop("if"),
+    "report-wrong-id": lambda steps: steps[4].update(id="other"),
+    "setup-wrong-id": lambda steps: steps[2].update(id="rust"),
+    "by-hand": lambda steps: steps.insert(3, {"run": "sccache --show-stats"}),
+}
+
+
+@pytest.mark.parametrize("change", sorted(TELEMETRY_FAULTS))
 def test_the_telemetry_check_refuses_each_wrong_arrangement(change: str) -> None:
     """Each deliberate fault is reported, so the contract cannot pass vacuously."""
-    assert telemetry_problems(_mutated(change)) != [], change
+    steps = copy.deepcopy(_good())
+    TELEMETRY_FAULTS[change](steps)
+    assert telemetry_problems(steps) != [], change
 
 
 def test_the_sound_arrangement_has_no_problems() -> None:
@@ -193,38 +196,11 @@ def test_the_sound_arrangement_has_no_problems() -> None:
     assert sccache_problems(_good()) == []
 
 
-@pytest.mark.parametrize(
-    "change",
-    [
-        "report-before-setup",
-        "report-moved-before-build",
-        "no-status",
-        "wrong-status",
-        "report-not-always",
-        "report-wrong-id",
-        "setup-wrong-id",
-        "by-hand",
-    ],
-)
+@pytest.mark.parametrize("change", sorted(SCCACHE_FAULTS))
 def test_the_sccache_check_refuses_each_wrong_arrangement(change: str) -> None:
-    """Moving the report, wiring wrongly the status or reading by hand is refused."""
+    """Moving the report, wiring the status wrongly or reading by hand is refused."""
     steps = copy.deepcopy(_good())
-    if change == "report-before-setup":
-        steps.insert(2, steps.pop(4))
-    elif change == "report-moved-before-build":
-        steps.insert(3, steps.pop(4))
-    elif change == "no-status":
-        del steps[5]["with"]
-    elif change == "wrong-status":
-        steps[5]["with"] = {"sccache-status": "fallback"}
-    elif change == "report-not-always":
-        del steps[4]["if"]
-    elif change == "report-wrong-id":
-        steps[4]["id"] = "other"
-    elif change == "setup-wrong-id":
-        steps[2]["id"] = "rust"
-    elif change == "by-hand":
-        steps.insert(3, {"run": "sccache --show-stats"})
+    SCCACHE_FAULTS[change](steps)
     assert sccache_problems(steps) != [], change
 
 

@@ -59,73 +59,125 @@ def is_telemetry_action(step: Step) -> bool:
     return "/ci-telemetry-" in reference or "/sccache-report@" in reference
 
 
+def _positions(steps: list[Step], reference: str) -> list[int]:
+    """Return the indexes of the steps that call exactly `reference`."""
+    return [i for i, step in enumerate(steps) if uses(step) == reference]
+
+
+def _may_precede_start(step: Step) -> bool:
+    """Report whether a step may come before the telemetry start."""
+    return (
+        uses(step).startswith("actions/checkout@")
+        or step.get("name") in BEFORE_START_NAMES
+    )
+
+
+def _before_start_problems(steps: list[Step], start: int) -> list[str]:
+    """Return the steps that do work before the start."""
+    return [
+        f"does work before the start: {step.get('name')!r}"
+        for step in steps[:start]
+        if not _may_precede_start(step)
+    ]
+
+
+def _after_report_problems(steps: list[Step], finish: int) -> list[str]:
+    """Return the steps that do work after the report, bar a cache save."""
+    return [
+        f"does work after the report: {step.get('name')!r}"
+        for step in steps[finish + 1 :]
+        if not uses(step).startswith("actions/cache/save@")
+    ]
+
+
 def telemetry_problems(steps: list[Step]) -> list[str]:
     """Return what is wrong with a carrying job's telemetry steps; empty if sound."""
-    refs = [uses(s) for s in steps]
-    starts = [i for i, u in enumerate(refs) if u == START]
-    finishes = [i for i, u in enumerate(refs) if u == FINISH]
+    starts = _positions(steps, START)
+    finishes = _positions(steps, FINISH)
     if len(starts) != 1 or len(finishes) != 1:
         return [f"needs one start and one finish, has {len(starts)} and {len(finishes)}"]
     start, finish = starts[0], finishes[0]
-    problems: list[str] = []
+    problems = [
+        *_before_start_problems(steps, start),
+        *_after_report_problems(steps, finish),
+    ]
     if start > finish:
         problems.append("reports telemetry before starting it")
-    for step in steps[:start]:
-        if not (
-            uses(step).startswith("actions/checkout@")
-            or step.get("name") in BEFORE_START_NAMES
-        ):
-            problems.append(f"does work before the start: {step.get('name')!r}")
     if steps[finish].get("if") != "always()":
         problems.append("reports only on success")
-    for step in steps[finish + 1 :]:
-        if not uses(step).startswith("actions/cache/save@"):
-            problems.append(f"does work after the report: {step.get('name')!r}")
+    return problems
+
+
+def _setup_problems(steps: list[Step]) -> list[str]:
+    """Return what is wrong with how `setup-rust` is called."""
+    setups = [s for s in steps if uses(s).startswith(SETUP_RUST_PREFIX)]
+    if len(setups) == 1 and setups[0].get("id") == "setup-rust":
+        return []
+    return ["setup-rust must be called once, with the id `setup-rust`"]
+
+
+def _status_problems(finish: Step) -> list[str]:
+    """Return what is wrong with the status the finish step is given."""
+    inputs = finish.get("with")
+    status = inputs.get("sccache-status") if isinstance(inputs, dict) else None
+    return [] if status == STATUS else ["finish does not take setup-rust's status"]
+
+
+def _report_problems(report: Step) -> list[str]:
+    """Return what is wrong with the `sccache-report` step itself."""
+    sound = report.get("if") == "always()" and report.get("id") == "sccache"
+    return [] if sound else ["sccache-report must run under always(), id `sccache`"]
+
+
+def _placement_problems(steps: list[Step], report: int, finish: int) -> list[str]:
+    """Return what is wrong with where the report sits."""
+    setup_at = next(
+        (i for i, s in enumerate(steps) if uses(s).startswith(SETUP_RUST_PREFIX)), 0
+    )
+    problems = []
+    if report + 1 != finish:
+        problems.append("sccache-report must run directly before the telemetry finish")
+    if report < setup_at:
+        problems.append("sccache-report runs before setup-rust")
     return problems
 
 
 def sccache_problems(steps: list[Step]) -> list[str]:
     """Return what is wrong with a `setup-rust` job's sccache reporting."""
-    setups = [s for s in steps if uses(s).startswith(SETUP_RUST_PREFIX)]
-    if not setups:
+    if not any(uses(s).startswith(SETUP_RUST_PREFIX) for s in steps):
         return []
-    problems: list[str] = []
-    if len(setups) != 1 or setups[0].get("id") != "setup-rust":
-        problems.append("setup-rust must be called once, with the id `setup-rust`")
-    finishes = [i for i, s in enumerate(steps) if uses(s) == FINISH]
-    reports = [i for i, s in enumerate(steps) if uses(s) == REPORT]
+    finishes = _positions(steps, FINISH)
+    reports = _positions(steps, REPORT)
     if len(finishes) != 1 or len(reports) != 1:
-        return [*problems, "needs one sccache-report and one telemetry finish"]
-    inputs = steps[finishes[0]].get("with")
-    status = inputs.get("sccache-status") if isinstance(inputs, dict) else None
-    if status != STATUS:
-        problems.append("finish does not take setup-rust's sccache-status")
-    report = steps[reports[0]]
-    if report.get("if") != "always()" or report.get("id") != "sccache":
-        problems.append("sccache-report must run under always() with the id `sccache`")
-    if reports[0] + 1 != finishes[0]:
-        problems.append("sccache-report must run directly before the telemetry finish")
-    setup_at = next(i for i, s in enumerate(steps) if uses(s).startswith(SETUP_RUST_PREFIX))
-    if reports[0] < setup_at:
-        problems.append("sccache-report runs before setup-rust")
+        return [*_setup_problems(steps), "needs one sccache-report and one finish"]
+    report, finish = reports[0], finishes[0]
+    problems = [
+        *_setup_problems(steps),
+        *_status_problems(steps[finish]),
+        *_report_problems(steps[report]),
+        *_placement_problems(steps, report, finish),
+    ]
     if "--show-stats" in repr(steps):
         problems.append("still reads sccache statistics by hand")
     return problems
 
 
-def roll_up_problems(body: dict[str, object]) -> list[str]:
-    """Return what is wrong with a roll-up exemption; empty if it is a roll-up."""
-    steps = body.get("steps")
-    problems: list[str] = []
-    if not body.get("needs"):
-        problems.append("has no needs")
-    if not isinstance(steps, list) or len(steps) != 1:
-        return [*problems, "must run exactly one step"]
-    step = steps[0]
+def _step_problems(step: object) -> list[str]:
+    """Return what is wrong with a roll-up's one step."""
     if not isinstance(step, dict) or "uses" in step:
-        return [*problems, "its one step must be a `run`, not an action"]
+        return ["its one step must be a `run`, not an action"]
+    problems = []
     if is_telemetry_action(step) or "ci-resource-sampler" in repr(step):
         problems.append("carries telemetry")
     if "needs." not in str(step.get("run", "")):
         problems.append("its step does not aggregate `needs`")
     return problems
+
+
+def roll_up_problems(body: dict[str, object]) -> list[str]:
+    """Return what is wrong with a roll-up exemption; empty if it is a roll-up."""
+    problems = [] if body.get("needs") else ["has no needs"]
+    steps = body.get("steps")
+    if not isinstance(steps, list) or len(steps) != 1:
+        return [*problems, "must run exactly one step"]
+    return [*problems, *_step_problems(steps[0])]
