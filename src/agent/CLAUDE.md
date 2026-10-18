@@ -171,9 +171,8 @@ input order.
    repair remains unwired in production, where repair returns `ManualRequired`
    when no builder is configured.
 
-Note: the `stuck_threshold` duration is stored but currently unused (marked
-`#[allow(dead_code)]`). Stuck detection relies on `JobState::Stuck` being set
-by the state machine, not wall-clock time comparison.
+Note: `detect_stuck_jobs` only reports jobs already in `JobState::Stuck`, and
+only once they have been stuck for at least `stuck_threshold`.
 
 Repair results: `Success`, `Retry`, `Failed`, `ManualRequired`. `Retry` does
 NOT notify the user (to avoid spam).
