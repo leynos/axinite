@@ -3102,6 +3102,40 @@ compatibility boundary is limited to the feature-gated test helpers: normal
 production APIs do not expose ZIP errors; bundle validation stores errors as
 strings, and Office text extraction returns `Result<String, String>`.
 
+##### Office archive entry selection
+
+`src/document_extraction/extractors/office/archive.rs` is a private helper
+shared by the PPTX and XLSX extractors. Its `ArchiveEntry` type pairs each
+selected entry's decoded name with the entry's archive index. The two fields
+have distinct roles and must not be conflated:
+
+- The decoded name determines ordering. `collect_entries` sorts the selected
+  entries by decoded name, so slide and sheet text is deterministic even when
+  the archive stores entries in another order. Entries whose decoded names are
+  equal keep their archive order because the sort is stable.
+- The archive index identifies the entry when reading. `read_entry_texts`
+  reopens each selected entry with `by_index`, never with `by_name`. ZIP 9.0.4
+  decodes a name that is not valid UTF-8 through CP437, while `by_name` looks
+  the decoded name's UTF-8 bytes up against the raw archive-name bytes. A
+  decoded CP437 name can therefore fail a `by_name` lookup even though the
+  entry exists, which would silently drop readable text; the retained index
+  avoids that mismatch.
+
+Selection is best effort. Both helpers skip entries whose header cannot be
+read, whose name cannot be decoded, or whose content cannot be read as UTF-8,
+so one damaged slide or sheet does not discard usable text from the others.
+Empty extracted text is filtered out, and only a result with no text at all
+raises the existing no-text error. Archive-open failures and the XLSX
+shared-strings path keep their own error handling; they are not part of this
+best-effort selection.
+
+The regression tests in `src/document_extraction/extractors/tests.rs` exercise
+both extractors at their public boundary. They build archives containing a raw
+CP437 name, a valid UTF-8 sibling, and an entry whose text is invalid UTF-8,
+then assert the exact combined output in decoded-name order. A CP437 fixture
+must be patched into the raw header bytes; passing a Unicode string to
+`ZipWriter::start_file` writes valid UTF-8 and does not exercise the decoder.
+
 ##### Scoped skill file reads (roadmap 1.3.4)
 
 `src/skills/file_read.rs` owns the domain contract for `skill_read_file`.
