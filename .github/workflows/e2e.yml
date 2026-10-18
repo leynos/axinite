@@ -107,7 +107,6 @@ jobs:
           path: target/debug/axinite
           retention-days: 1
 
-  # ── Step 2: run test slices in parallel ───────────────────────────────────
       # Report the hit rate so a wrapper that is silently doing nothing shows
       # up in the job summary rather than only in the duration.
       - name: Report sccache statistics
@@ -122,6 +121,7 @@ jobs:
         uses: leynos/shared-actions/.github/actions/ci-telemetry-finish@81374b6f183e59f0570ad36217ded90d3240fda6
         with:
           sccache-status: ${{ steps.setup-rust.outputs.sccache-status }}
+  # ── Step 2: run test slices in parallel ───────────────────────────────────
   test:
     name: E2E (${{ matrix.group }})
     needs: build
@@ -197,11 +197,12 @@ jobs:
           path: tests/e2e/screenshots/
           if-no-files-found: ignore
 
-  # ── Roll-up for branch protection ────────────────────────────────────────
-  # Roll-up for branch protection. Compares upstream results only.
       - name: Report CI telemetry
         if: always()
         uses: leynos/shared-actions/.github/actions/ci-telemetry-finish@81374b6f183e59f0570ad36217ded90d3240fda6
+
+  # ── Roll-up for branch protection ────────────────────────────────────────
+  # Compares upstream results only.
   e2e:
     name: E2E Tests
     runs-on: ubuntu-latest

@@ -543,7 +543,6 @@ jobs:
           path: tests/e2e/screenshots/
           if-no-files-found: ignore
 
-  # Roll-up for branch protection. Compares upstream results only.
       # Report the hit rate so a wrapper that is silently doing nothing shows
       # up in the job summary rather than only in the duration.
       - name: Report sccache statistics
@@ -558,6 +557,7 @@ jobs:
         uses: leynos/shared-actions/.github/actions/ci-telemetry-finish@81374b6f183e59f0570ad36217ded90d3240fda6
         with:
           sccache-status: ${{ steps.setup-rust.outputs.sccache-status }}
+  # Roll-up for branch protection. Compares upstream results only.
   coverage-gate:
     name: Coverage
     runs-on: ubuntu-latest

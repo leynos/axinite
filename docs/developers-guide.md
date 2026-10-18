@@ -244,7 +244,7 @@ Every job in `code_style.yml`, `coverage.yml`, `codescene-coverage.yml`,
 `e2e.yml` and `test.yml` carries the shared `ci-telemetry-start` and
 `ci-telemetry-finish` actions from leynos/shared-actions, pinned to one commit.
 Start runs before the job's ordinary work. The checkout and the disk clean-up
-may precede it, and in the small jobs (the Windows and lint jobs, `audit`,
+may precede it, and in the small jobs (the Windows jobs, `audit`,
 `version-check` and the compile-contract jobs) it is the first step and the
 checkout follows. Finish runs after the job's work with `if: always()`, and
 only a cache save may follow it. Together they record the busy cores (average,
