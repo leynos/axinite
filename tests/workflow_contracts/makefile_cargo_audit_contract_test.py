@@ -13,7 +13,6 @@ from _makefile_test_support import shell_quote
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[2]
 AUDIT_FLAGS = (
-    "--ignore RUSTSEC-2026-0185",
     "--ignore RUSTSEC-2025-0141",
     "--ignore RUSTSEC-2024-0370",
 )
@@ -375,6 +374,7 @@ def test_audit_uses_custom_subcommand_without_full_command_override(
         advisory not in command
         for command in commands
         for advisory in (
+            "RUSTSEC-2026-0185",
             "RUSTSEC-2026-0049",
             "RUSTSEC-2026-0098",
             "RUSTSEC-2026-0099",
@@ -382,7 +382,7 @@ def test_audit_uses_custom_subcommand_without_full_command_override(
             "RUSTSEC-2025-0134",
         )
     ), (
-        "patched TLS graphs must not retain obsolete advisory exceptions"
+        "patched graphs must not retain obsolete advisory exceptions"
     )
     assert all(
         command.startswith("audit-contract --ignore ")
