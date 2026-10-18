@@ -2,28 +2,25 @@
 # https://nexte.st/docs/configuration/
 
 [profile.default]
-# Exclude `trybuild` from the local default run. It compiles the explicit
-# fixtures through trybuild's shared generated project, so preparation and
-# fixture compilation take substantially longer than ordinary tests.
+# Exclude `trybuild` from the local default run. Its tests invoke Cargo to
+# prepare the generated project, compile fixtures and execute them.
 #
-# It is the only compile-contract binary this filter excludes. The other,
-# `schema_helpers_ui`, runs in the default and ci profiles and checks accepted
-# schema helper call-site types. The matching overrides below assign both
-# binaries to the shared serial group and give each test a 900s timeout,
-# except `schema_helpers_ui`, which has its own longer allowance (see below);
-# `compile_contract_budget_test.py` pins discovery and profile selection.
+# It is the only required contract binary this filter excludes. The other,
+# `schema_helpers_ui`, runs in default and ci and executes accepted public API
+# call sites compiled with its integration target before the test timer starts.
+# The matching overrides keep both required contracts in the serial group;
+# only nested trybuild sessions need 900s.
 #
-# The ci profile below runs both. The coverage profile excludes both because
-# fixture compilation under instrumentation exceeded the hosted test budget;
-# separate CI jobs run the contracts without instrumentation.
+# The ci profile below runs both. Coverage excludes both from its test
+# selection; separate required jobs run the contracts with the baseline
+# feature matrix.
 default-filter = 'not binary(trybuild)'
 # Kill a test that has run for five minutes rather than reporting it slow
 # for ever. Nothing else here bounds a single test, so without this the
 # only timer that ends a hang is the job's own, which cancels the run and
 # discards the log that would have named the test. Five minutes is a bound
-# rather than a measurement: no single test in this profile approaches it,
-# and the whole instrumented run, compilation included, has never exceeded
-# 900 s.
+# rather than a measurement: ordinary tests stay below it, while nested
+# trybuild sessions have an explicit override.
 slow-timeout = { period = "300s", terminate-after = 1, grace-period = "5s" }
 # The whole run's budget. Above the largest per-test allowance in either
 # profile, and twice the longest instrumented run measured.
@@ -37,47 +34,43 @@ default-filter = 'all()'
 # A custom profile inherits `[profile.default]`, and nextest also consults
 # `[[profile.default.overrides]]` when this profile is selected, so these
 # lines are not required for the run to be bounded. They are repository
-# policy: this is the profile that includes the trybuild binaries, and
-# stating its own budgets here keeps the values that govern CI where a
-# reader of this profile will find them, rather than one section away.
+# policy: this profile includes both required contract targets. Stating its
+# own budgets here keeps the values that govern CI beside the profile a reader
+# selects, rather than one section away.
 slow-timeout = { period = "300s", terminate-after = 1, grace-period = "5s" }
 global-timeout = "30m"
 
-# Coverage instrumentation recompiles dependencies and fixtures with extra
-# rustc flags. Keep the compile-contract binaries in the separate, ordinary
-# nextest job so this profile measures runtime coverage without compiling UI
-# fixtures under instrumentation.
+# Coverage instrumentation uses extra rustc flags. Keep the compile-contract
+# tests in the separate required nextest job so their contracts run without
+# coverage instrumentation.
 [profile.coverage]
 inherits = "ci"
 default-filter = 'not binary(trybuild) and not binary(schema_helpers_ui)'
 slow-timeout = { period = "300s", terminate-after = 1, grace-period = "5s" }
 global-timeout = "30m"
 
-# `trybuild` and `schema_helpers_ui` share trybuild's generated project and
-# lock while preparing dependencies, compiling fixtures, and running them.
-# Keep those tests in one nextest group so separate test processes queue
-# instead of contending for preparation. Ordinary tests stay in nextest's
-# default group and retain the configured parallelism.
+# `trybuild` uses a shared generated project and lock while preparing
+# dependencies, compiling fixtures and running them. Keep both required
+# contract targets in one nextest group so their test processes run serially.
+# `schema_helpers_ui` no longer invokes nested Cargo; its fixture source is
+# compiled with the integration target before the test timer starts. Ordinary
+# tests stay in nextest's default group and retain the configured parallelism.
 #
 # The default and ci profiles carry this override because default runs
-# `schema_helpers_ui`, while ci runs both compile-contract binaries. Coverage
-# inherits the ci override and filters both binaries out. The timeout is per
-# nextest test (one trybuild session after fixture batching), not per fixture
-# or per binary.
+# `schema_helpers_ui`, while ci runs both required contract targets. Coverage
+# inherits the ci override and filters both binaries out. The 900s timeout is
+# per nested trybuild test session, not per fixture or per binary.
 #
-# `schema_helpers_ui` has its own, longer allowance, declared first because
-# nextest applies the first override that sets a field. On a cold compiler
-# cache it builds the whole dependency tree inside the test (695s in job
-# 113555153360) and then runs its fixtures, so 900s ended 12 of 23 sampled
-# pull-request jobs; warm runs take 253-811s. 1500s leaves the 30m
-# whole-run budget room for the test's start offset and the grace period.
-# The shared override below still supplies its test group.
+# The schema-helper test has an explicit ordinary 300s runtime bound, declared
+# first because nextest applies the first matching value for a field. Its Rust
+# source compiles before the test process starts; the shared override below
+# supplies its serial group while retaining 900s for nested trybuild sessions.
 [test-groups.compile-contracts]
 max-threads = 1
 
 [[profile.default.overrides]]
 filter = 'binary(schema_helpers_ui)'
-slow-timeout = { period = "1500s", terminate-after = 1, grace-period = "5s" }
+slow-timeout = { period = "300s", terminate-after = 1, grace-period = "5s" }
 
 [[profile.default.overrides]]
 filter = 'binary(trybuild) | binary(schema_helpers_ui)'
@@ -86,7 +79,7 @@ slow-timeout = { period = "900s", terminate-after = 1, grace-period = "5s" }
 
 [[profile.ci.overrides]]
 filter = 'binary(schema_helpers_ui)'
-slow-timeout = { period = "1500s", terminate-after = 1, grace-period = "5s" }
+slow-timeout = { period = "300s", terminate-after = 1, grace-period = "5s" }
 
 [[profile.ci.overrides]]
 filter = 'binary(trybuild) | binary(schema_helpers_ui)'

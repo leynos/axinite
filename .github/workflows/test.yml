@@ -469,6 +469,106 @@ jobs:
       - name: Report resource peaks
         if: always()
         run: ./scripts/ci-resource-sampler.sh report
+  libsql-transport-tests:
+    name: libSQL TLS Transport Tests
+    # The SDK exercises the workspace transport with its HTTP/1 defaults.
+    # This small member-specific matrix leg also exercises HTTP/2 policy.
+    runs-on: >-
+      ${{ github.event_name == 'schedule' && 'ubuntu-latest'
+      || github.event.pull_request.head.repo.fork && 'ubuntu-latest'
+      || 'ubicloud-standard-2' }}
+    timeout-minutes: 30
+    env:
+      # sccache is the sole owner of compiler output: no cache step archives a
+      # target tree. `setup-rust` names the wrapper, starts the server and
+      # selects the backend from the runner (shared-actions ADR 0005).
+      # sccache cannot cache incremental compilation.
+      CARGO_INCREMENTAL: "0"
+      CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_LINKER: clang
+      CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_RUSTFLAGS: >-
+        -C link-arg=-fuse-ld=mold
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803  # v6.1.0
+        # Nothing in this job performs an authenticated Git operation, so the
+        # token is not left in the checkout's Git configuration for the
+        # repository code that runs after it.
+        with:
+          persist-credentials: false
+      # Right-sizing needs the peak memory and the low-water disk mark, and
+      # neither is visible in a job's own output. The sampler runs alongside
+      # the build and reports both at the end, with `if: always()` so a job
+      # that fails on resources still says so.
+      - name: Start resource sampler
+        run: ./scripts/ci-resource-sampler.sh start
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@6bed0761d98439e5a578e2877258200ad565ba87  # stable
+        # Pinned to a commit, the action can no longer read the toolchain
+        # from its ref, so the channel the `@stable` ref implied is named.
+        with:
+          toolchain: stable
+      - name: Install mold
+        uses: rui314/setup-mold@10ca16bf91dc22e05ebdc935cad9c75ea248f621  # v1
+      # sccache belongs to setup-rust: it exports Ubicloud's cache-proxy
+      # credentials, clears the v2 cache-service flag the proxy does not
+      # serve, installs and starts sccache and names it as the wrapper.
+      # The toolchain, its targets and components stay with the step
+      # above, so this passes an empty `rustflags` (the mold flags live
+      # in CARGO_TARGET_*_RUSTFLAGS, which RUSTFLAGS would displace),
+      # leaves the Cargo registry to this job's own cache step, and
+      # installs no second cargo-binstall.
+      - name: Setup Rust
+        id: setup-rust
+        uses: leynos/shared-actions/.github/actions/setup-rust@6cec89bac47a21cf756d68d638a9a510998e57f8
+        with:
+          toolchain: stable
+          rustflags: ''
+          cache-provider: external
+          install-binstall: 'false'
+          # `any`: the schedule or fork arm lands on a GitHub-hosted
+          # runner, where setup-rust keeps sccache on local disk.
+          expect-cache: any
+      - name: Restore Cargo registry and index
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9  # v6.1.0
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+          key: >-
+            cargo-v1-${{ runner.os }}-${{ runner.arch }}-${{ runner.environment
+            }}-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            cargo-v1-${{ runner.os }}-${{ runner.arch }}-${{ runner.environment }}-
+      - name: Lint the TLS integration source patch
+        run: make lint-libsql-transport
+      - name: Run libSQL TLS Transport Tests
+        run: make test-libsql-transport
+      # Report the hit rate so a wrapper that is silently doing nothing shows
+      # up in the job summary rather than only in the duration.
+      - name: Report sccache statistics
+        if: always()
+        env:
+          SCCACHE_BACKEND: ${{ steps.setup-rust.outputs.cache-backend }}
+        run: |
+          set -euo pipefail
+          # Print to the log as well as the job summary. The summary is not
+          # readable through the REST API, so the log copy is what lets anyone
+          # confirm the hit rate, or a read or write error, after the fact.
+          stats="$(sccache --show-stats)"
+          printf '%s\n' "$stats"
+          {
+            printf '### sccache statistics (%s)\n\n' "${GITHUB_JOB}"
+            # `Cache location` reads `ghac` for the proxy and GitHub alike, so
+            # name the backend setup-rust chose.
+            printf -- '- backend: %s\n\n' "${SCCACHE_BACKEND:-none}"
+            printf '```text\n'
+            printf '%s\n' "$stats"
+            printf '```\n'
+          } >> "${GITHUB_STEP_SUMMARY}"
+      - name: Report resource peaks
+        if: always()
+        run: ./scripts/ci-resource-sampler.sh report
   windows-build:
     name: Windows Build (${{ matrix.name }})
     # Windows lanes stay on GitHub-hosted runners: Ubicloud offers Linux only.
@@ -711,6 +811,7 @@ jobs:
       - audit
       - tests
       - github-tool-tests
+      - libsql-transport-tests
       - telegram-tests
       - wasm-wit-compat
       - docker-build
@@ -724,14 +825,19 @@ jobs:
             echo "Unit tests must be $EXPECTED_TESTS_RESULT here"
             exit 1
           fi
+          if [[ "${{ needs.libsql-transport-tests.result }}" != "success" ]]; then
+            echo "libSQL TLS transport tests must succeed on every trigger"
+            exit 1
+          fi
           # Gated jobs must pass on promotion PRs and push events.
           # On developer PRs they may be skipped.
           for job in \
-            audit github-tool-tests telegram-tests wasm-wit-compat \
+            audit github-tool-tests libsql-transport-tests telegram-tests wasm-wit-compat \
             docker-build windows-build version-check; do
             case "$job" in
               audit) result="${{ needs.audit.result }}" ;;
               github-tool-tests) result="${{ needs.github-tool-tests.result }}" ;;
+              libsql-transport-tests) result="${{ needs.libsql-transport-tests.result }}" ;;
               telegram-tests) result="${{ needs.telegram-tests.result }}" ;;
               wasm-wit-compat) result="${{ needs.wasm-wit-compat.result }}" ;;
               docker-build) result="${{ needs.docker-build.result }}" ;;

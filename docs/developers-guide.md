@@ -675,11 +675,12 @@ along inside `make test`, so it ran once per leg, three times a trigger.
 The rule is now one lane per suite per trigger, and which lane it is depends on
 the trigger:
 
-| Trigger                                     | Workspace suite                                                                            | GitHub tool crate              | Telegram channel crate      |
-| ------------------------------------------- | ------------------------------------------------------------------------------------------ | ------------------------------ | --------------------------- |
-| `pull_request`                              | `test.yml` `tests`, default leg; `codescene-coverage.yml` `coverage-check` for libsql-only | `test.yml` `github-tool-tests` | `test.yml` `telegram-tests` |
-| `push` to `main`                            | `coverage.yml` `coverage`, all three legs                                                  | `test.yml` `github-tool-tests` | `test.yml` `telegram-tests` |
-| `schedule` (through `mutation-testing.yml`) | `test.yml` `tests`, default and libsql-only legs                                           | `test.yml` `github-tool-tests` | `test.yml` `telegram-tests` |
+| Trigger                                     | Workspace suite                                                                            | GitHub tool crate              | libSQL TLS transport                | Telegram channel crate      |
+| ------------------------------------------- | ------------------------------------------------------------------------------------------ | ------------------------------ | ----------------------------------- | --------------------------- |
+| `pull_request`                              | `test.yml` `tests`, default leg; `codescene-coverage.yml` `coverage-check` for libsql-only | `test.yml` `github-tool-tests` | `test.yml` `libsql-transport-tests` | `test.yml` `telegram-tests` |
+| `push` to `main`                            | `coverage.yml` `coverage`, all three legs                                                  | `test.yml` `github-tool-tests` | `test.yml` `libsql-transport-tests` | `test.yml` `telegram-tests` |
+| `workflow_dispatch`                         | `test.yml` `tests`, default and libsql-only legs                                           | `test.yml` `github-tool-tests` | `test.yml` `libsql-transport-tests` | `test.yml` `telegram-tests` |
+| `schedule` (through `mutation-testing.yml`) | `test.yml` `tests`, default and libsql-only legs                                           | `test.yml` `github-tool-tests` | `test.yml` `libsql-transport-tests` | `test.yml` `telegram-tests` |
 
 Three mechanisms carry that, and each is worth knowing before changing a lane:
 
@@ -693,15 +694,16 @@ Three mechanisms carry that, and each is worth knowing before changing a lane:
 - **The roll-up asserts the result it expects rather than tolerating a skip.**
   `run-tests` computes `EXPECTED_TESTS_RESULT` from the event, `skipped` on a
   push and `success` everywhere else, so a leg that vanishes for any other
-  reason is still a failure. `tests/workflow_contracts/run_tests_gate_test.py`
-  holds that expectation to both arms, and holds the roll-up's dependency list,
-  the jobs its loop walks and the names its `case` can answer for equal in both
-  directions. A job missing from `needs` reports `skipped` forever; one missing
-  from the loop is never looked at; and one missing from the `case` leaves
-  `result` holding the previous iteration's value, so the roll-up reports
-  another job's outcome under this one's name. The same file asserts
-  `if: always()`, without which the roll-up stands down exactly when an
-  upstream job does.
+  reason is still a failure. The roll-up also requires `libsql-transport-tests`
+  to succeed on every trigger.
+  `tests/workflow_contracts/run_tests_gate_test.py` holds that expectation to
+  both arms, and holds the roll-up's dependency list, the jobs its loop walks
+  and the names its `case` can answer for equal in both directions. A job
+  missing from `needs` reports `skipped` forever; one missing from the loop is
+  never looked at; and one missing from the `case` leaves `result` holding the
+  previous iteration's value, so the roll-up reports another job's outcome
+  under this one's name. The same file asserts `if: always()`, without which
+  the roll-up stands down exactly when an upstream job does.
 - **A leg is what it runs, not what it is called.** `tests` had a leg named
   `all-features` which passed `--features postgres,libsql,html-to-markdown` and
   no `--no-default-features`. All three are members of `default`, so Cargo
@@ -713,24 +715,23 @@ Three mechanisms carry that, and each is worth knowing before changing a lane:
 
 The profile is part of that, and it is the half most easily missed. The default
 profile excludes the `trybuild` compile-contract binary, while `ci` runs both
-compile-contract binaries. Each `trybuild::TestCases` session shares a
+required contract binaries. Each `trybuild::TestCases` session shares a
 generated Cargo project and lock while it prepares dependencies, compiles
-fixtures, and runs them; it does not necessarily rebuild the full dependency
-graph for every fixture. The `test.yml` legs use `NEXTEST_PROFILE=ci`. Coverage
+fixtures, and runs them. `schema_helpers_ui` includes its accepted call-site
+fixtures in the ordinary integration target, which compiles before nextest
+starts its test timer. The `test.yml` legs use `NEXTEST_PROFILE=ci`. Coverage
 uses a separate `coverage` profile: the main workflow runs the contracts in an
 uninstrumented matrix job for default, libSQL-only and all-features, and the PR
 ratchet runs them in an uninstrumented libSQL-only job. Both coverage actions
-use `NEXTEST_PROFILE=coverage`, which excludes the two compile-contract
-binaries from instrumented fixture compilation. This keeps those required
-checks while avoiding the hosted 900 second timeout observed when
-`schema_helpers_ui` compiled its fixtures under llvm-cov instrumentation.
+use `NEXTEST_PROFILE=coverage`, which excludes the two contract binaries from
+the instrumented test run while the separate required jobs retain their full
+feature selections.
 
 `tools-src/github` and `channels-src/telegram` are excluded from the workspace,
-so `--workspace` cannot reach either however wide the feature set. Each
-therefore needs a lane of its own or it is not tested at all, which is why
-`make test` is now exactly `test-workspace` plus `test-github-tool`: a
-developer runs both, CI runs them on different lanes, and the local run is the
-sum of those two lanes by construction rather than by memory.
+so `--workspace` cannot reach either however wide the feature set. The private
+libSQL TLS transport also has a dedicated lane so its feature-specific tests
+run once per CI trigger. `make test` runs `test-workspace`, `test-github-tool`,
+and `test-libsql-transport`; CI runs those suites on separate lanes.
 
 `make test` does not run the Telegram channel's tests. They run on CI's
 `telegram-tests` lane alone, so after changing `channels-src/telegram`, run
@@ -1190,11 +1191,19 @@ make lint
 make test
 ```
 
+The aggregate `make test` runs the workspace, GitHub tool, and libSQL TLS
+transport suites. `make lint` covers the workspace and GitHub tool; the TLS
+transport has a separate strict lint target, `make lint-libsql-transport`,
+which also runs in its CI lane.
+
 The current `Makefile` also includes:
 
 - `make build-github-tool-wasm` to build the GitHub WASM tool used by
   schema and metadata tests.
 - `make test-matrix` to run the broader host test combinations.
+- `make test-libsql-transport` to run the private TLS transport's unit,
+  example, and doctest suites. Its doctests run with all features, default
+  features, and the reduced native-certificate feature set.
 - `make test-cargo` and `make test-matrix-cargo` to keep the old
   `cargo test` path available when a harness comparison is needed for the root
   crate.
@@ -1897,6 +1906,17 @@ tests should not leave artefacts behind on disk.
 
 Do **not** use `new_local()` in unit tests; reserve it for integration tests or
 tests that specifically require filesystem-path behaviour.
+
+The libSQL connector uses the narrowly patched `hyper-rustls` crate in
+`crates/hyper-rustls/`; the libSQL SDK itself remains the unchanged published
+crate. The patched crate is a non-publishable root-workspace member and shares
+the root lockfile, so it does not add an audited dependency graph. Run its
+loopback contract tests with `make test-libsql-transport`; `make test` includes
+that target. Workspace nextest includes its default HTTP/1 TLS tests; the
+dedicated target exercises all features, including HTTP/2, once per CI trigger
+alongside `make lint-libsql-transport`. See
+[`crates/hyper-rustls/UPSTREAM.md`](../crates/hyper-rustls/UPSTREAM.md) for
+source provenance and the patch's maintenance boundary.
 
 ### LibSqlDatabase shared handles
 
@@ -3074,6 +3094,48 @@ failures to the caller. Integration tests can import them through the
 `test-helpers` feature when they need byte-identical archive construction
 across harness boundaries.
 
+These archive builders are available only to unit tests or with the
+`test-helpers` feature, and their `zip::result::ZipError` return type follows
+the ZIP major version. Integration-test consumers that name or match this error
+type must use a ZIP 9-compatible type and dependency requirement. This
+compatibility boundary is limited to the feature-gated test helpers: normal
+production APIs do not expose ZIP errors; bundle validation stores errors as
+strings, and Office text extraction returns `Result<String, String>`.
+
+##### Office archive entry selection
+
+`src/document_extraction/extractors/office/archive.rs` is a private helper
+shared by the PPTX and XLSX extractors. Its `ArchiveEntry` type pairs each
+selected entry's decoded name with the entry's archive index. The two fields
+have distinct roles and must not be conflated:
+
+- The decoded name determines ordering. `collect_entries` sorts the selected
+  entries by decoded name, so slide and sheet text is deterministic even when
+  the archive stores entries in another order. Entries whose decoded names are
+  equal keep their archive order because the sort is stable.
+- The archive index identifies the entry when reading. `read_entry_texts`
+  reopens each selected entry with `by_index`, never with `by_name`. ZIP 9.0.4
+  decodes a name that is not valid UTF-8 through CP437, while `by_name` looks
+  the decoded name's UTF-8 bytes up against the raw archive-name bytes. A
+  decoded CP437 name can therefore fail a `by_name` lookup even though the
+  entry exists, which would silently drop readable text; the retained index
+  avoids that mismatch.
+
+Selection is best effort. Both helpers skip entries whose header cannot be
+read, whose name cannot be decoded, or whose content cannot be read as UTF-8,
+so one damaged slide or sheet does not discard usable text from the others.
+Empty extracted text is filtered out, and only a result with no text at all
+raises the existing no-text error. Archive-open failures and the XLSX
+shared-strings path keep their own error handling; they are not part of this
+best-effort selection.
+
+The regression tests in `src/document_extraction/extractors/tests.rs` exercise
+both extractors at their public boundary. They build archives containing a raw
+CP437 name, a valid UTF-8 sibling, and an entry whose text is invalid UTF-8,
+then assert the exact combined output in decoded-name order. A CP437 fixture
+must be patched into the raw header bytes; passing a Unicode string to
+`ZipWriter::start_file` writes valid UTF-8 and does not exercise the decoder.
+
 ##### Scoped skill file reads (roadmap 1.3.4)
 
 `src/skills/file_read.rs` owns the domain contract for `skill_read_file`.
@@ -3371,12 +3433,12 @@ they must be ordered lives in the `generate-coverage` README in
 cargo watchdog only on the two lanes that use that action, and two of the four
 were unset until this was written.
 
-| Tier                     | What it bounds                     | Where it is set                      | Current value                                                                   |
-| ------------------------ | ---------------------------------- | ------------------------------------ | ------------------------------------------------------------------------------- |
-| Per-test `slow-timeout`  | one test process                   | `.config/nextest.toml`, all profiles | 300 s; 900 s per `trybuild` session, 1,500 s for `schema_helpers_ui`; 5 s grace |
-| nextest `global-timeout` | the whole test run                 | `.config/nextest.toml`, all profiles | 30 m                                                                            |
-| Cargo watchdog           | one `cargo` invocation, wall clock | `cargo-wait-timeout` on action steps | 4,200 s on the two action lanes, absent elsewhere                               |
-| Job `timeout-minutes`    | the whole job                      | job level                            | 90 m for the coverage lanes                                                     |
+| Tier                     | What it bounds                     | Where it is set                      | Current value                                                                          |
+| ------------------------ | ---------------------------------- | ------------------------------------ | -------------------------------------------------------------------------------------- |
+| Per-test `slow-timeout`  | one test process                   | `.config/nextest.toml`, all profiles | 300 s ordinary and schema-helper tests; 900 s per nested `trybuild` session; 5 s grace |
+| nextest `global-timeout` | the whole test run                 | `.config/nextest.toml`, all profiles | 30 m                                                                                   |
+| Cargo watchdog           | one `cargo` invocation, wall clock | `cargo-wait-timeout` on action steps | 4,200 s on the two action lanes, absent elsewhere                                      |
+| Job `timeout-minutes`    | the whole job                      | job level                            | 90 m for the coverage lanes                                                            |
 
 *Table: the timers that can end a run, innermost first.*
 
@@ -3403,17 +3465,17 @@ the selected profile's own scalar setting. So a `ci` profile that declared no
 budgets at all would not be unbounded; it would run under the default profile's.
 
 The reason to repeat them is that `ci` is the profile that *includes* the
-trybuild compile-contract binaries the default profile excludes. The `coverage`
-profile inherits from `ci` but excludes both compile-contract binaries from
+trybuild compile-contract binary the default profile excludes. The `coverage`
+profile inherits from `ci` but excludes both required contract binaries from
 instrumented runs; separate required jobs run them with the same feature
 selections and the `ci` profile. The budgets that govern each workflow belong
 beside the profile a reader selects rather than one section away.
 
-All three therefore set a 300 second base allowance and a 30 minute whole-run
-budget. The default and ci profiles each declare a 900 second override for the
-compile-contract binaries, preceded by a 1,500 second override for
-`schema_helpers_ui` alone (see "The cold-cache allowance for
-`schema_helpers_ui`" below); coverage inherits the ci overrides.
+All three therefore set a 300-second base allowance and a 30-minute whole-run
+budget. The default and ci profiles each declare an explicit 300-second
+override for `schema_helpers_ui`, followed by the shared serial-group override
+that allows nested `trybuild` sessions 900 seconds. Coverage inherits the ci
+overrides.
 
 ### The compile-contract binaries are not ordinary tests
 
@@ -3421,18 +3483,23 @@ A trybuild session uses a shared generated project and `.lock` while it
 prepares dependencies, compiles the selected fixtures, and runs them. Separate
 nextest processes that enter preparation together wait on this shared resource,
 and concurrent waiters can spend most of their timeout queued behind one
-another. The two binaries are `tests/trybuild.rs` and
+another. The required binaries are `tests/trybuild.rs` and
 `tests/schema_helpers_ui/main.rs`, named `trybuild` and `schema_helpers_ui`.
+Only `trybuild` invokes Cargo from inside a test. The schema-helper target
+includes each accepted public call-site fixture as a module and calls both
+fixture entry points from its `ui` test; Cargo compiles those bodies with the
+integration target before nextest starts the test process.
 
 The `compile-contracts` test group sets `max-threads = 1`. The `default` and
-`ci` compile-contract overrides assign the two binaries to this group, and
-`coverage` inherits the `ci` override. Nextest queues their tests before they
-contend for trybuild's lock. Ordinary tests stay in nextest's global group and
-retain the configured parallelism. The workflow contract checks effective
-membership with the pinned nextest runner and uses a shared marker across the
-two fixture binaries: the real configuration passes with four nextest slots,
-while removing serialization produces an overlap failure. It also checks that
-the coverage profile omits these binaries while keeping ordinary tests selected.
+`ci` overrides assign both required binaries to this group, and `coverage`
+inherits the `ci` override. The serial group keeps contract processes from
+overlapping; only the nested `trybuild` sessions need the shared project lock.
+Ordinary tests stay in nextest's global group and retain the configured
+parallelism. Workflow contracts check effective membership with the pinned
+nextest runner and use a shared marker across the two fixture binaries: the
+real configuration passes with four nextest slots, while removing serialization
+produces an overlap failure. They also check that coverage omits both binaries
+while keeping ordinary tests selected.
 
 Fixtures are explicitly batched by purpose. Database surface fixtures share one
 `TestCases` session; support and infrastructure fixtures share another. This
@@ -3440,54 +3507,33 @@ reduces repeated preparation while preserving per-fixture diagnostics. The
 database and support sessions retain separate timeout budgets. PostgreSQL and
 libSQL fixtures retain their feature gates, and the startup fixture remains
 limited to non-Unix targets. The Windows `default` build lane executes
-`startup_compile_contracts` so that platform-specific fixture is compiled there.
-`schema_helpers_ui` continues to run its pass fixtures in one session.
+`startup_compile_contracts` so that platform-specific fixture is compiled
+there. The schema-helper fixture bodies compile with `schema_helpers_ui`, and
+both run from its one `ui` test.
 
-The `slow-timeout` (900 seconds for `trybuild`, 1,500 for `schema_helpers_ui`)
-bounds one nextest test process, including all fixtures queued in that process's
-`TestCases` session. It is not a budget per fixture or for the entire binary.
-The two `trybuild` sessions therefore have separate allowances;
-`schema_helpers_ui` has one for its own session. The 30 minute `global-timeout`
-covers the nextest run, not the instrumented build that precedes nextest in a
-coverage command.
+The per-test timeout applies to the test process. For `trybuild`, nested Cargo
+preparation, fixture compilation and execution all happen inside that process
+and count towards its 900-second allowance. For `schema_helpers_ui`, the
+integration target compiles before nextest starts the test timer; its `ui` test
+has the ordinary 300-second execution bound. Nextest's 30-minute global timer
+also starts with the test run. It does not bound the Cargo build that precedes
+nextest, including a coverage build; the configured Cargo watchdog and job
+limits remain the outer bounds where those are present.
 
-The binaries are discovered from calls to `trybuild::TestCases` rather than
-listed, so a new compile-contract target must inherit both group and timeout.
-Workflow contracts require every discovered binary in the PR and baseline
-compile-contract commands, and require the baseline matrix to cover default,
-libSQL-only and all-features selections. The discovered set is pinned by name,
-and both Cargo target forms, `tests/<name>.rs` and `tests/<name>/main.rs`, are
-represented. The default profile excludes `trybuild` but runs
-`schema_helpers_ui`; `ci` runs both, and `coverage` excludes both while
-inheriting their group and timeout policy. Contracts also check default-profile
-inheritance, CI override precedence, and that ordinary tests stay outside the
-compile-contract group.
-
-### The cold-cache allowance for `schema_helpers_ui`
-
-`schema_helpers_ui` builds trybuild's generated project, dependency tree
-included, inside the test. With a warm compiler cache that takes 253 to 811
-seconds (eleven sampled pull-request jobs). On a branch's first run the cache
-is cold: the nested build alone took 695 seconds in job 113555153360 and the
-fixtures then needed more than the 205 seconds the 900 second allowance had
-left, so 12 of 23 sampled `Tests (default)` jobs between 30 September and 8
-October were terminated, every one with 1,000 or more cache misses. It is
-slowness, not a hang: the log shows the nested `cargo` finishing and the first
-fixture starting. `main` never runs the test, because its push runs skip the
-test matrix, so it never seeds a warm cache for the branches.
-
-The test therefore has its own 1,500 second allowance, an override that selects
-`schema_helpers_ui` alone and comes first in each profile, because nextest
-applies the first override that sets a field. The shared override beneath it
-still supplies the serial test group and the 900 second allowance for
-`trybuild`. 1,500 seconds is an estimate with about half again the measured
-cold requirement, not a measurement of a cold pass; it sits five minutes below
-the 30 minute whole-run budget. `nextest_values_test.py` pins the override
-count, the order, the filter and the value, and `nextest_boundary_test.py` asks
-nextest itself: with the periods scaled to seconds, a five-second sleeping test
-in the fixture's `schema_helpers_ui` binary stays within its 20 second period
-under `default` and `ci`, while the same test in `trybuild` exceeds the shared
-2 second period and is terminated under `ci`.
+The source-discovered nested-compiler inventory uses calls to
+`trybuild::TestCases` and must remain exactly `trybuild`. A separate pinned
+required-contract inventory contains both `trybuild` and `schema_helpers_ui`;
+workflow commands, profile exclusions and serial-group checks use that set so
+the schema target remains covered after it stops invoking trybuild. Workflow
+contracts require both binaries in the PR and baseline commands, and require
+the baseline matrix to cover default, libSQL-only and all-features selections.
+The default profile excludes `trybuild` but runs `schema_helpers_ui`; `ci` runs
+both, and `coverage` excludes both while inheriting their group policy.
+Contracts also check default-profile inheritance, CI override precedence, and
+that ordinary tests stay outside the compile-contract group. The timeout probe
+scales the periods down and verifies that schema-helper execution is terminated
+at its ordinary 300-second bound while a `trybuild` test survives its
+900-second allowance.
 
 ### The values are pinned, not merely ordered
 
@@ -3506,16 +3552,16 @@ ten-second default when it finds none. Deleting every `grace-period` in the
 file therefore *raises* the computed requirement, leaves every assertion
 passing, and doubles the wait a terminated test actually gets.
 
-The 900 second override is the next. The compile-contract contract asks whether
-each binary is allowed *at least* that much, which is the right shape for its
-own question and says nothing about the value, so an override raised to an hour
-would satisfy it while sitting above the 30 minute whole-run budget that
-contains it: the run would end before the allowance could be used. The number
-of overrides is pinned with it, because a second one matching the same binaries
-would decide the allowance in force by file order. And the whole-run budget is
-only ever compared with the largest per-test allowance, so the documented
-thirty minutes could drift to forty with nothing failing and this table left
-describing a value the runner does not use.
+The 900-second override is the next. The compile-contract contract asks whether
+the `trybuild` binary is allowed *at least* that much, which is the right shape
+for its own question and says nothing about the value, so an override raised to
+an hour would satisfy it while sitting above the 30-minute whole-run budget
+that contains it: the run would end before the allowance could be used. The
+number of overrides is pinned with it, because a second one matching the same
+binaries would decide the allowance in force by file order. And the whole-run
+budget is only ever compared with the largest per-test allowance, so the
+documented thirty minutes could drift to forty with nothing failing and this
+table left describing a value the runner does not use.
 
 The set of profiles is pinned too. Every assertion in this suite is
 parametrized over `default`, `ci` and `coverage`, so a profile carrying looser
@@ -3565,6 +3611,21 @@ failed to link the fixture and the failure read as nextest refusing the
 configuration. Built from a copy outside the tree there is no such file to
 find: measured at five `-fuse-ld=mold` invocations in place and none from the
 copy.
+
+That copy has one session-scoped preparation boundary. The suite runs
+`cargo metadata --format-version 1` once, then prepares the complete fixture
+binary inventory with
+`cargo nextest list --list-type binaries-only --message-format json`. One
+1,200-second budget covers both commands, including their wait for the shared
+Cargo package cache. Their JSON outputs live beneath that unique fixture copy;
+every later probe passes both files, so it does not repeat Cargo metadata or
+binary discovery. Each probe still supplies a configuration file, so mutated
+and inherited configurations are loaded afresh. The 600-second probe watchdog
+terminates only that command's process group and reaps its leader. A successful
+preparation leaves its two bounded phase records in the fixture target's
+`preparation-receipts` directory for gate diagnostics. The existing 30-minute
+Formatting job cap still bounds the aggregate suite; the separate preparation
+and per-probe limits do not claim that all probe maxima fit inside that cap.
 
 The ordinary `slow` binary sleeps for thirty seconds, and it is what makes one
 assertion behavioural rather than another reading. nextest runs it under a
@@ -3622,8 +3683,8 @@ one run per leg.
 ### What the values are sized against
 
 The 30 minute whole-run budget is a bound rather than a measurement. It has to
-exceed the largest per-test allowance, the 1,500 second `schema_helpers_ui`
-session, and it does so with five minutes to spare.
+exceed the largest per-test allowance, the 900 second nested `trybuild`
+session, and it does so with fifteen minutes to spare.
 
 The contract also refuses a step that names a suite command without plainly
 running one. `if false; then cargo nextest run; fi` keeps the text and runs
@@ -3697,7 +3758,7 @@ value over every job that runs the suite, in both the `.yml` and `.yaml`
 extensions. It enumerates jobs that declare no ceiling, so a missing
 `timeout-minutes` reads as a lane with no budget rather than as no lane at all,
 and it holds every lane to the largest declared profile budget. The coverage
-profile inherits the ci budgets and excludes the slow compile-contract binaries.
+profile inherits the ci budgets and excludes both compile-contract binaries.
 
 The per-test allowance it compares against is `period` multiplied by
 `terminate-after`, not `period` alone, so an override that raised the

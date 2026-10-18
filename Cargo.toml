@@ -1,5 +1,5 @@
 [workspace]
-members = [".", "crates/ambient-fs"]
+members = [".", "crates/ambient-fs", "crates/hyper-rustls"]
 exclude = [
     "channels-src/discord",
     "channels-src/telegram",
@@ -22,11 +22,17 @@ name = "axinite"
 version = "0.18.0"
 edition = "2024"
 rust-version = "1.95"
+# Source builds retain the private workspace security patches.
+publish = false
 description = "Secure personal AI assistant that protects your data and expands its capabilities on the fly"
 authors = ["Payton McIntosh <pmcintosh@df12.net>", "NEAR AI <support@near.ai>"]
 license = "MIT OR Apache-2.0"
 homepage = "https://github.com/leynos/axinite"
 repository = "https://github.com/leynos/axinite"
+
+[package.metadata.dist]
+# Keep binary releases enabled despite disabling registry publication.
+dist = true
 
 [package.metadata.wix]
 upgrade-guid = "D0156E61-BA37-451E-8AB9-1A2ECCCFA48F"
@@ -53,7 +59,7 @@ tokio-postgres = { version = "0.7", features = ["with-uuid-1", "with-chrono-0_4"
 postgres-types = { version = "0.2", features = ["with-serde_json-1"], optional = true }
 refinery = { version = "0.8", features = ["tokio-postgres"], optional = true }
 tokio-postgres-rustls = { version = "0.14", optional = true }
-rustls = { version = "0.23", optional = true, default-features = false, features = ["ring"] }
+rustls = { version = "0.23.46", optional = true, default-features = false, features = ["ring"] }
 rustls-native-certs = { version = "0.8", optional = true }
 
 # Database - libSQL/Turso (optional embedded database)
@@ -130,8 +136,8 @@ open = "5"
 pgvector = { version = "0.4", features = ["postgres"], optional = true }
 
 # WASM sandbox for untrusted tool execution
-wasmtime = { version = "48.0.3", features = ["cache", "component-model"] }
-wasmtime-wasi = "48.0.3"  # WASI support for component model
+wasmtime = { version = "48.0.6", features = ["cache", "component-model"] }
+wasmtime-wasi = "48.0.6"  # WASI support for component model
 wasmparser = "0.220"  # WASM binary parsing for validation
 
 # Cryptography for secrets management
@@ -163,7 +169,7 @@ tar = "0.4"
 
 # Document text extraction
 pdf-extract = "0.12"
-zip = { version = "8", default-features = false, features = ["deflate"] }
+zip = { version = "9.0.4", default-features = false, features = ["deflate"] }
 
 # HTTP proxy for sandboxed network access
 hyper = { version = "1.5", features = ["server", "http1", "http2"] }
@@ -320,3 +326,7 @@ x86_64-unknown-linux-gnu = "ubuntu-22.04"
 x86_64-pc-windows-msvc = "windows-2022"
 x86_64-apple-darwin = "macos-15-intel"
 aarch64-apple-darwin = "macos-14"
+
+[patch.crates-io]
+# Update the SDK transport without forking libSQL; see the patch UPSTREAM.md.
+hyper-rustls = { path = "crates/hyper-rustls" }

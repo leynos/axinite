@@ -195,6 +195,11 @@ REVIEWED_SHAPES: dict[tuple[str, str], tuple[str, str]] = {
         "telegram-tests; the shape is provisional until the first run on it "
         "reports a peak",
     ),
+    ("test.yml", "libsql-transport-tests"): (
+        "ubicloud-standard-2",
+        "the TLS transport all-features matrix without the application or WASM "
+        "runtime; provisional until its first resource peak is recorded",
+    ),
     ("test.yml", "telegram-tests"): (
         "ubicloud-standard-2",
         "one small out-of-workspace crate, 33 s",

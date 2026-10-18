@@ -37,6 +37,7 @@ from _estate import isolated, read_estate
 from _makefile_test_support import _MakeTestContext
 from _sources import SourceError
 from _suite_targets import read_default_features
+from nextest_boundary_support import Fixture, prepare_fixture_crate
 from nextest_config import profiles_of
 from timeout_budgets import NEXTEST_CONFIG
 
@@ -259,6 +260,12 @@ def nextest_profiles() -> dict[str, Profile]:
         Profile name to its table and overrides.
     """
     return profiles_of(NEXTEST_CONFIG)
+
+
+@pytest.fixture(scope="session")
+def fixture_crate(tmp_path_factory: pytest.TempPathFactory) -> Fixture:
+    """Prepare Nextest inputs once for every boundary contract module."""
+    return prepare_fixture_crate(tmp_path_factory)
 
 
 @pytest.fixture(scope="session")

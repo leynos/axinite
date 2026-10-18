@@ -37,7 +37,10 @@ ______________________________________________________________________
 ### Installation
 
 Axinite is the fork name, and the crate, binary, and setup command are all
-called `axinite`.
+called `axinite`. Build from the complete repository checkout, or install a
+source-built binary from GitHub Releases. Cargo registry installation and
+publication are unsupported: registry archives do not carry the workspace's
+local dependency security patches.
 
 ```bash
 cargo build

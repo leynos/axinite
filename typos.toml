@@ -92,6 +92,7 @@ extend-ignore-re = [
     "#\\[command\\(color = ColorChoice::Auto\\)\\]",
     "(?:::|\\.)analyze\\b",
     "(?:^|[;{]\\s*)color\\s*:",
+    "(?m)^  CargoTargetDir    = The path to the directory for the build artifacts, i\\.e\\.\\r?$",
     "(?m)^\\s*\"\"\"Return whether shell words start with a recognised suite command\\.\"\"\"$",
     "(?s)```.*?```",
     "--[A-Za-z0-9_-]*color(?:ed|s|ing|ize[ds]?|izing)?(?:\\b|_)",

@@ -10,6 +10,8 @@ accepted = []
 
 [patterns]
 ignore = [
+  # cargo-dist verifies this generated WiX template comment byte for byte.
+  '(?m)^  CargoTargetDir    = The path to the directory for the build artifacts, i\.e\.\r?$',
   '\bCENTER_INSIDE\b',
   '\b[0-9A-F]{6}\b',
   '"caf%C3%A9"',

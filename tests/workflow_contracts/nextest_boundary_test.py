@@ -42,20 +42,19 @@ Requires `cargo` and `cargo-nextest`, which ``make test`` already
 requires. Run via ``make test-workflow-contracts``.
 """
 
-import subprocess
 import tomllib
 import typing as typ
 from pathlib import Path
 
 import pytest
 from contract_sources import read_source
-from nextest_versions import UNDECLARED, installed_versions_in, read_workflow_texts
 from nextest_boundary_support import (
     Fixture,
-    _require_the_toolchain,
     _run,
-    fixture_crate,
+    _run_bounded_sleep,
+    _scaled_per_binary_periods,
 )
+from nextest_versions import UNDECLARED, installed_versions_in, read_workflow_texts
 from timeout_budgets import NEXTEST_CONFIG
 
 #: What nextest prints, and does not fail on, when a key is not one it
@@ -128,8 +127,7 @@ def test_nextest_loads_the_real_configuration(
             "--profile",
             profile,
         ),
-        fixture_crate.crate,
-        fixture_crate.target,
+        fixture_crate,
     )
     assert done.returncode == 0, (
         f"nextest refused {NEXTEST_CONFIG} under --profile {profile}; every "
@@ -161,8 +159,7 @@ def test_nextest_ignores_no_key_in_the_real_configuration(
             "--profile",
             profile,
         ),
-        fixture_crate.crate,
-        fixture_crate.target,
+        fixture_crate,
     )
     assert IGNORED_KEYS_WARNING not in done.stderr, (
         f"nextest is ignoring keys in {NEXTEST_CONFIG} under --profile "
@@ -201,8 +198,7 @@ def test_the_ignored_key_reading_would_report_a_misspelling(
             "--profile",
             "ci",
         ),
-        fixture_crate.crate,
-        fixture_crate.target,
+        fixture_crate,
     )
     assert done.returncode == 0, (
         f"nextest refused the misspelled copy outright, so the warning is no "
@@ -294,8 +290,7 @@ def test_nextest_terminates_a_test_under_these_fields(
             "-E",
             "binary(slow)",
         ),
-        fixture_crate.crate,
-        fixture_crate.target,
+        fixture_crate,
     )
     assert done.returncode != 0, (
         f"nextest completed a thirty-second test under a one-second "
@@ -308,88 +303,29 @@ def test_nextest_terminates_a_test_under_these_fields(
     )
 
 
-#: Seconds the per-binary allowance test sleeps for, and the scaled periods
-#: it substitutes for the real 1,500 s and 900 s ones. The sleep falls between
-#: them, so a binary given the short period is terminated and one given the
-#: long period completes.
-ALLOWANCE_SLEEP_SECONDS: typ.Final[int] = 5
-SCALED_SCHEMA_HELPERS_UI_PERIOD: typ.Final[str] = "20s"
-SCALED_COMPILE_CONTRACT_PERIOD: typ.Final[str] = "2s"
-
-
-def _scaled_per_binary_periods() -> str:
-    """Return the real configuration with its two override periods scaled down.
-
-    Only the override periods change, so the filters, their order and the
-    other fields are the real file's. Nextest then decides which period
-    governs which binary, which is what the run below observes.
-
-    Raises
-    ------
-    AssertionError
-        If the real configuration no longer carries the 1,500 s and 900 s
-        periods in both profiles, which would leave the scaling a no-op.
-    SourceReadError
-        If the configuration cannot be read or is not UTF-8.
-    """
-    original = read_source(NEXTEST_CONFIG)
-    for period in ('period = "1500s"', 'period = "900s"'):
-        assert original.count(period) == 2, (
-            f"the real configuration carries {period} {original.count(period)} "
-            f"times, not once in each of default and ci; this scaling would "
-            f"no longer reproduce the allowances it stands in for"
-        )
-    return original.replace(
-        'period = "1500s"', f'period = "{SCALED_SCHEMA_HELPERS_UI_PERIOD}"'
-    ).replace('period = "900s"', f'period = "{SCALED_COMPILE_CONTRACT_PERIOD}"')
-
-
-def _run_bounded_sleep(
-    fixture_crate: Fixture, configuration: Path, profile: str, binary: str
-) -> subprocess.CompletedProcess[str]:
-    """Run one fixture binary's sleeping test under a scaled configuration."""
-    return _run(
-        (
-            "cargo",
-            "nextest",
-            "run",
-            "--config-file",
-            str(configuration),
-            "--profile",
-            profile,
-            "-E",
-            f"binary({binary}) & test(bounded_sleep)",
-        ),
-        fixture_crate.crate,
-        fixture_crate.target,
-        {"AXINITE_NEXTEST_SLEEP_SECONDS": str(ALLOWANCE_SLEEP_SECONDS)},
-    )
-
-
 @pytest.mark.parametrize("profile", ["default", "ci"], ids=str)
-def test_nextest_gives_schema_helpers_ui_the_longer_allowance(
+def test_nextest_gives_schema_helpers_ui_the_ordinary_allowance(
     fixture_crate: Fixture, tmp_path: Path, profile: str
 ) -> None:
-    """The runner applies the longer allowance to `schema_helpers_ui` only.
+    """Schema execution keeps 300 s while nested trybuild retains 900 s.
 
-    Reading the file shows that the override exists and comes first. This
-    asks nextest: with the periods scaled to seconds, a five-second test in
-    `schema_helpers_ui` survives its longer period, and under `ci`, which runs
-    it, the same test in `trybuild` is terminated by the shared override.
+    Reading the file shows the explicit schema override before the shared
+    group assignment. With periods scaled to seconds, a five-second test in
+    `schema_helpers_ui` is terminated by its 300 s bound. Under `ci`, the
+    same test in `trybuild` completes under its 900 s allowance.
     """
     configuration = tmp_path / f"scaled-{profile}.toml"
     configuration.write_text(_scaled_per_binary_periods(), encoding="utf-8")
 
     ui = _run_bounded_sleep(fixture_crate, configuration, profile, "schema_helpers_ui")
-    assert ui.returncode == 0 and "TIMEOUT" not in ui.stderr, (
-        f"under --profile {profile} nextest terminated `schema_helpers_ui` "
-        f"inside its longer allowance:\n{ui.stderr}"
+    assert ui.returncode != 0 and "TIMEOUT" in ui.stderr, (
+        f"under --profile {profile} nextest let `schema_helpers_ui` outlast "
+        f"its scaled ordinary allowance:\n{ui.stderr}"
     )
     if profile == "default":
         return
     shared = _run_bounded_sleep(fixture_crate, configuration, profile, "trybuild")
-    assert shared.returncode != 0 and "TIMEOUT" in shared.stderr, (
-        f"under --profile {profile} nextest let `trybuild` outlast the shared "
-        f"override's shorter allowance, so the longer one is not confined to "
-        f"`schema_helpers_ui`:\n{shared.stderr}"
+    assert shared.returncode == 0 and "TIMEOUT" not in shared.stderr, (
+        f"under --profile {profile} nextest terminated nested `trybuild` "
+        f"inside its longer scaled allowance:\n{shared.stderr}"
     )

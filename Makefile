@@ -29,35 +29,18 @@ TYPOS_CONFIG_BUILDER = $(UV_ENV) $(UV) tool run --python 3.14 --from \
 	"git+https://github.com/leynos/typos-config-builder.git@$(TYPOS_CONFIG_BUILDER_REVISION)" \
 	typos-config-builder
 WASM_SHARED_TARGET_DIR ?= $(if $(CARGO_TARGET_DIR),$(CARGO_TARGET_DIR),target/wasm-extensions)
+LIBSQL_TRANSPORT_TARGET_DIR := $(if $(CARGO_TARGET_DIR),$(CARGO_TARGET_DIR),target)
 GITHUB_TOOL_MANIFEST := tools-src/github/Cargo.toml
 GITHUB_TOOL_WASM_TARGET := wasm32-wasip2
 # Keep audit ignores centralized and remove each one as soon as the triggering
 # transitive dependency is upgraded.
-# RUSTSEC-2026-0049: affected crate rustls-webpki 0.102.8, via libsql
-# 0.9.30 -> hyper-rustls 0.25 -> rustls 0.22. CRL distribution point matching
-# is not used directly; remove when libsql no longer pulls rustls-webpki
-# <0.103.10.
-# RUSTSEC-2026-0098: affected crate rustls-webpki 0.102.8, via the same
-# libsql TLS chain. URI name-constraint handling is accepted only for this
-# transitive dependency; remove when libsql no longer pulls rustls-webpki
-# <0.103.12.
-# RUSTSEC-2026-0099: affected crate rustls-webpki 0.102.8, via the same
-# libsql TLS chain. Wildcard/name-constraint handling is accepted only for
-# this transitive dependency; remove when libsql no longer pulls rustls-webpki
-# <0.103.12.
-# RUSTSEC-2026-0104: affected crate rustls-webpki 0.102.8, via the same
-# libsql TLS chain. axinite does not parse CRLs directly; remove when libsql
-# no longer pulls rustls-webpki <0.103.13.
-# RUSTSEC-2026-0185: quinn-proto 0.11.14 remote memory exhaustion in
-# out-of-order stream reassembly. Track removal in
-# https://github.com/leynos/axinite/issues/210.
+# RUSTSEC-2026-0185: retain the existing Quinn exception until the stacked
+# issue #210 repair removes it and checks emitted audit commands.
 # RUSTSEC-2025-0141: bincode 1.3.3 is unmaintained via libsql. Track removal
 # in https://github.com/leynos/axinite/issues/211.
 # RUSTSEC-2024-0370: proc-macro-error 1.0.4 is unmaintained via
 # rstest-bdd-macros. Track removal in
 # https://github.com/leynos/axinite/issues/212.
-# RUSTSEC-2025-0134: rustls-pemfile 2.2.0 is unmaintained via the libsql TLS
-# chain. Track removal in https://github.com/leynos/axinite/issues/213.
 # RUSTSEC-2026-0235: rkyv 0.7.46 is an optional rust_decimal dependency. No
 # Axinite feature enables rust_decimal's rkyv feature; remove when rust_decimal
 # no longer records rkyv <0.8.17 in its published dependency metadata.
@@ -73,14 +56,9 @@ GITHUB_TOOL_WASM_TARGET := wasm32-wasip2
 # advisory ID to ignore for this warning; track removal in
 # https://github.com/leynos/axinite/issues/214.
 AUDIT_FLAGS ?= \
-	--ignore RUSTSEC-2026-0049 \
-	--ignore RUSTSEC-2026-0098 \
-	--ignore RUSTSEC-2026-0099 \
-	--ignore RUSTSEC-2026-0104 \
 	--ignore RUSTSEC-2026-0185 \
 	--ignore RUSTSEC-2025-0141 \
-	--ignore RUSTSEC-2024-0370 \
-	--ignore RUSTSEC-2025-0134
+	--ignore RUSTSEC-2024-0370
 RUST_DECIMAL_AUDIT_FLAGS := \
 	--ignore RUSTSEC-2026-0235
 LIBSQL_AUDIT_FLAGS := \
@@ -88,7 +66,7 @@ LIBSQL_AUDIT_FLAGS := \
 PDF_EXTRACT_AUDIT_FLAGS := \
 	--ignore RUSTSEC-2026-0192
 
-.PHONY: all install install-with-overrides sync-local-wasm-overrides build-github-tool-wasm fmt check-fmt typecheck lint lint-clippy lint-whitaker markdownlint spelling nixie audit rust-audit test test-workspace test-github-tool test-cargo test-matrix test-matrix-cargo test-workflow-contracts clean
+.PHONY: all install install-with-overrides sync-local-wasm-overrides build-github-tool-wasm fmt check-fmt typecheck lint lint-clippy lint-whitaker markdownlint spelling nixie audit rust-audit test test-workspace test-github-tool test-libsql-transport lint-libsql-transport test-cargo test-matrix test-matrix-cargo test-workflow-contracts clean
 
 # `make fmt` and `make check-fmt` call mdtablefix directly. `--git` selects the
 # Markdown files Git tracks and `--include-untracked` adds the untracked files
@@ -140,6 +118,10 @@ lint-clippy:
 	$(CARGO_COMMAND) clippy --all --benches --tests --examples --all-features $(TEST_FEATURES) -- -D warnings
 	$(CARGO_COMMAND) clippy --manifest-path $(GITHUB_TOOL_MANIFEST) --tests -- -D warnings
 
+# Cover the TLS member's additional feature configuration with strict lints.
+lint-libsql-transport:
+	$(CARGO_COMMAND) clippy --target-dir $(call shell_quote,$(LIBSQL_TRANSPORT_TARGET_DIR)) --locked --package hyper-rustls@0.25.0 --all-targets --all-features -- -D warnings
+
 lint-whitaker:
 	RUSTFLAGS="-D warnings" $(WHITAKER) --all -- --all-targets --all-features
 	RUSTFLAGS="-D warnings" $(WHITAKER) --all --manifest-path $(GITHUB_TOOL_MANIFEST) -- --tests
@@ -155,9 +137,7 @@ nixie:
 
 audit: rust-audit
 
-# crates/ holds root-workspace members; they share the root Cargo.lock and
-# are audited through the root manifest, so the per-directory sweep skips
-# them (cargo-audit needs a lockfile beside the manifest it audits).
+# Workspace members, including the TLS integration patch, share the root lockfile.
 rust-audit:
 	find . \
 		\( -path '*/target/*' -o -path '*/node_modules/*' -o -path '*/.venv/*' -o -path './crates/*' \) -prune -o \
@@ -172,10 +152,9 @@ rust-audit:
 			fi; \
 		done' sh $(call shell_quote,$(value CARGO_AUDIT_COMMAND)) {} +
 
-# The whole suite, for a developer. CI splits it: the workspace suite and the
-# GitHub tool's own suite run on different lanes and different triggers, so
-# each half has to be runnable on its own.
-test: test-workspace test-github-tool
+# The whole suite, for a developer. CI runs the workspace, GitHub tool, and
+# libSQL TLS suites on separate lanes; this target runs all three locally.
+test: test-workspace test-github-tool test-libsql-transport
 
 # The workspace suite alone. `tools-src/github` is excluded from the workspace,
 # so `--workspace` does not reach it; the WASM build is still needed here
@@ -217,3 +196,10 @@ clean:
 	$(CARGO_COMMAND) clean
 	$(CARGO_COMMAND) clean --manifest-path $(GITHUB_TOOL_MANIFEST)
 	rm -rf $(WASM_SHARED_TARGET_DIR)
+
+# Exercise the TLS member with HTTP/2 enabled as well as the SDK default HTTP/1 path.
+test-libsql-transport:
+	$(CARGO_COMMAND) test --target-dir $(call shell_quote,$(LIBSQL_TRANSPORT_TARGET_DIR)) --locked --package hyper-rustls@0.25.0 --all-features --lib --examples
+	$(CARGO_COMMAND) test --target-dir $(call shell_quote,$(LIBSQL_TRANSPORT_TARGET_DIR)) --locked --package hyper-rustls@0.25.0 --all-features --doc
+	$(CARGO_COMMAND) test --target-dir $(call shell_quote,$(LIBSQL_TRANSPORT_TARGET_DIR)) --locked --package hyper-rustls@0.25.0 --doc
+	$(CARGO_COMMAND) test --target-dir $(call shell_quote,$(LIBSQL_TRANSPORT_TARGET_DIR)) --locked --package hyper-rustls@0.25.0 --no-default-features --features rustls-native-certs,tokio-runtime,http1 --doc

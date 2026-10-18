@@ -22,6 +22,7 @@ from _shell import split_commands
 from _suite_keys import cargo_options, feature_key, profile_of
 from _suite_targets import (
     DEFAULT_PROFILE,
+    FIXED_FEATURES,
     MAKE_COMMAND,
     MAKE_TARGETS,
     PROFILE_VARIABLE,
@@ -216,7 +217,7 @@ def make_runs(
                     feature_key(match["args"], defaults),
                 )
             else:
-                yield scope, DEFAULT_PROFILE, frozenset()
+                yield scope, DEFAULT_PROFILE, FIXED_FEATURES.get(scope, frozenset())
 
 
 def _action_arguments(inputs: dict[object, object]) -> str:

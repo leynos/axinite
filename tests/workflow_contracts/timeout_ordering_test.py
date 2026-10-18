@@ -27,7 +27,7 @@ repository policy rather than a nextest requirement: a custom profile
 inherits ``[profile.default]``, and nextest consults
 ``[[profile.default.overrides]]`` for it too, so a profile declaring
 nothing would still be bounded. ``ci`` is the profile that includes the
-trybuild binaries the default profile excludes, and the budgets that
+trybuild binary the default profile excludes, and the budgets that
 govern CI belong where a reader of that profile will find them.
 
 See "Test timeouts: the tiers this repository sets" in
@@ -99,7 +99,7 @@ def test_every_profile_bounds_a_single_test(
     Each profile must declare its own base allowance. nextest would fall
     back to ``[profile.default]`` for a profile that declared none, so
     this is repository policy rather than a nextest requirement: `ci` is
-    the profile that includes the trybuild binaries the default profile
+    the profile that includes the trybuild binary the default profile
     excludes, and the budgets that govern CI belong where a reader of
     that profile will find them.
 

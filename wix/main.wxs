@@ -35,7 +35,7 @@
                       variable value and "<CARGO_PROFILE>" is replaced with the
                       value from the "CargoProfile" variable. This can also
                       be overridden manually with the "target-bin-dir" flag.
-  CargoTargetDir    = The path to the directory for the build artefacts, i.e.
+  CargoTargetDir    = The path to the directory for the build artifacts, i.e.
                       "target".
   CargoProfile      = The cargo profile used to build the binaries
                       (usually "debug" or "release").
@@ -62,7 +62,7 @@
         Id='*'
         Name='axinite'
         UpgradeCode='D0156E61-BA37-451E-8AB9-1A2ECCCFA48F'
-        Manufacturer='NEAR AI'
+        Manufacturer='Payton McIntosh; NEAR AI'
         Language='1033'
         Codepage='1252'
         Version='$(var.Version)'>
@@ -70,7 +70,7 @@
         <Package Id='*'
             Keywords='Installer'
             Description='Secure personal AI assistant that protects your data and expands its capabilities on the fly'
-            Manufacturer='NEAR AI'
+            Manufacturer='Payton McIntosh; NEAR AI'
             InstallerVersion='450'
             Languages='1033'
             Compressed='yes'
