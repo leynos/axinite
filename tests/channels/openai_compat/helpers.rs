@@ -186,6 +186,7 @@ pub(super) async fn start_test_server_with_provider(
     llm_provider: Arc<dyn LlmProvider>,
 ) -> (SocketAddr, Arc<GatewayState>) {
     let state = Arc::new(GatewayState {
+        feature_flags: std::sync::Arc::new(tokio::sync::RwLock::new(Default::default())),
         msg_tx: tokio::sync::RwLock::new(None),
         sse: SseManager::new(),
         workspace: None,

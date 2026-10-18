@@ -10,6 +10,11 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
+- Serve the SolidJS gateway UI by default, retaining the legacy shell as a
+  startup-selected rollback path
+  ([#275](https://github.com/leynos/axinite/pull/275))
+- Add deployment-scoped feature-flag overrides to the gateway API
+  ([#275](https://github.com/leynos/axinite/pull/275))
 - rename the project, crate, and binary from ironclaw to axinite, retaining
   IronClaw provenance; the project remains a fork of
   [nearai/ironclaw](https://github.com/nearai/ironclaw)

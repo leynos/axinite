@@ -24,6 +24,7 @@ pub struct TestGatewayBuilder {
     llm_provider: Option<Arc<dyn crate::llm::LlmProvider>>,
     skill_registry: Option<Arc<std::sync::RwLock<crate::skills::SkillRegistry>>>,
     skill_catalog: Option<Arc<crate::skills::catalog::SkillCatalog>>,
+    store: Option<Arc<dyn crate::db::Database>>,
     user_id: String,
 }
 
@@ -34,6 +35,7 @@ impl Default for TestGatewayBuilder {
             llm_provider: None,
             skill_registry: None,
             skill_catalog: None,
+            store: None,
             user_id: "test-user".to_string(),
         }
     }
@@ -73,6 +75,12 @@ impl TestGatewayBuilder {
         self
     }
 
+    /// Set the database store (needed for settings and feature-flag tests).
+    pub fn store(mut self, store: Arc<dyn crate::db::Database>) -> Self {
+        self.store = Some(store);
+        self
+    }
+
     /// Override the user ID (default: `"test-user"`).
     pub fn user_id(mut self, id: impl Into<String>) -> Self {
         self.user_id = id.into();
@@ -90,7 +98,7 @@ impl TestGatewayBuilder {
             log_level_handle: None,
             extension_manager: None,
             tool_registry: None,
-            store: None,
+            store: self.store,
             job_manager: None,
             prompt_queue: None,
             user_id: self.user_id,
@@ -106,6 +114,9 @@ impl TestGatewayBuilder {
             cost_guard: None,
             routine_engine: Arc::new(tokio::sync::RwLock::new(None)),
             startup_time: std::time::Instant::now(),
+            feature_flags: Arc::new(tokio::sync::RwLock::new(
+                crate::channels::web::handlers::feature_registry::FeatureFlagRegistry::new(),
+            )),
         })
     }
 

@@ -414,19 +414,19 @@ ______________________________________________________________________
 
 ## 13. Web Interface
 
-| Feature                 | OpenClaw | IronClaw | Priority | Notes                                                 |
-| ----------------------- | -------- | -------- | -------- | ----------------------------------------------------- |
-| Control UI Dashboard    | ✅       | ✅       | -        | Web gateway with chat, memory, jobs, logs, extensions |
-| Channel status view     | ✅       | 🚧       | P2       | Gateway status widget, full channel view pending      |
-| Agent management        | ✅       | ❌       | P3       |                                                       |
-| Model selection         | ✅       | ✅       | -        | TUI only                                              |
-| Config editing          | ✅       | ❌       | P3       |                                                       |
-| Debug/logs viewer       | ✅       | ✅       | -        | Real-time log streaming with level/target filters     |
-| WebChat interface       | ✅       | ✅       | -        | Web gateway chat with SSE/WebSocket                   |
-| Canvas system (A2UI)    | ✅       | ❌       | P3       | Agent-driven UI, improved asset resolution            |
-| Control UI i18n         | ✅       | ❌       | P3       | English, Chinese, Portuguese                          |
-| WebChat theme sync      | ✅       | ❌       | P3       | Sync with system dark/light mode                      |
-| Partial output on abort | ✅       | ❌       | P2       | Preserve partial output when aborting                 |
+| Feature                 | OpenClaw | IronClaw | Priority | Notes                                                                 |
+| ----------------------- | -------- | -------- | -------- | --------------------------------------------------------------------- |
+| Control UI Dashboard    | ✅       | ✅       | -        | Web gateway with chat, memory, jobs, logs, extensions                 |
+| Channel status view     | ✅       | 🚧       | P2       | Gateway status widget, full channel view pending                      |
+| Agent management        | ✅       | ❌       | P3       |                                                                       |
+| Model selection         | ✅       | ✅       | -        | TUI only                                                              |
+| Config editing          | ✅       | ❌       | P3       |                                                                       |
+| Debug/logs viewer       | ✅       | ✅       | -        | Real-time log streaming with level/target filters                     |
+| WebChat interface       | ✅       | ✅       | -        | Web gateway chat with SSE/WebSocket                                   |
+| Canvas system (A2UI)    | ✅       | ❌       | P3       | Agent-driven UI, improved asset resolution                            |
+| Control UI i18n         | ✅       | 🚧       | P3       | 10 complete Fluent locales; detection and RTL; Portuguese unsupported |
+| WebChat theme sync      | ✅       | ❌       | P3       | Sync with system dark/light mode                                      |
+| Partial output on abort | ✅       | ❌       | P2       | Preserve partial output when aborting                                 |
 
 ### Owner: _Unassigned_
 
@@ -589,7 +589,8 @@ ______________________________________________________________________
 - ❌ Plugin registry
 - ❌ Streaming (block/tool/Z.AI tool_stream)
 - ❌ Memory: temporal decay, MMR re-ranking, query expansion
-- ❌ Control UI i18n
+- 🚧 Control UI i18n (10 complete Fluent locales; language detection and RTL
+  direction are wired; Portuguese remains unsupported)
 - ❌ Stuck loop detection
 
 <!-- markdownlint-enable MD013 MD022 MD032 -->

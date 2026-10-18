@@ -167,7 +167,10 @@ jobs:
               tests/e2e/scenarios/test_skills.py
               tests/e2e/scenarios/test_tool_approval.py
           - group: extensions
-            files: "tests/e2e/scenarios/test_extensions.py"
+            files: >-
+              tests/e2e/scenarios/test_extensions_catalogue.py
+              tests/e2e/scenarios/test_extensions_configure.py
+              tests/e2e/scenarios/test_extensions_channels.py
     steps:
       - uses: actions/checkout@v6
 

@@ -14,6 +14,8 @@
   hoc validation.
 - [User's guide](users-guide.md) explains current operator-visible behaviour and
   day-to-day usage expectations for the shipped runtime.
+- [Migration notes for 0.19.0](migrations/0.19.0.md) describe the gateway UI
+  change and feature-flag settings for operators upgrading from 0.18.0.
 - [Repository layout](repository-layout.md) maps the repository structure and
   shows where major subsystems, assets, and support files live.
 - [Documentation style guide](documentation-style-guide.md) defines the
