@@ -55,7 +55,28 @@ updates:
     open-pull-requests-limit: 5
     labels:
       - "dependencies"
-      - "python"
+      - "pip"
+    schedule:
+      interval: "daily"
+    cooldown:
+      default-days: 7
+      semver-major-days: 14
+
+  # web-src is the SolidJS gateway front-end; Dependabot reads its text-based
+  # bun.lock (supported from Bun 1.1.39).
+  - package-ecosystem: "bun"
+    directory: "/web-src"
+    groups:
+      minor-and-patch:
+        patterns:
+          - "*"
+        update-types:
+          - "minor"
+          - "patch"
+    open-pull-requests-limit: 5
+    labels:
+      - "dependencies"
+      - "bun"
     schedule:
       interval: "daily"
     cooldown:
