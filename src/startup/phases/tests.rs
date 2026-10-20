@@ -73,6 +73,20 @@ async fn load_config_and_tracing_smoke() {
     assert!(Arc::strong_count(&loaded.session) >= 1);
 }
 
+#[test]
+fn settings_are_loaded_from_the_context_base_directory() -> anyhow::Result<()> {
+    let base_dir = tempfile::tempdir()?;
+    let settings_path = base_dir.path().join("settings.json");
+    ambient_fs::write(&settings_path, r#"{"llm_backend":"ollama"}"#)?;
+    let env = axinite::config::EnvContext::default()
+        .with_env("AXINITE_BASE_DIR", base_dir.path().display().to_string());
+
+    let settings = load_settings_from_context(&env);
+
+    assert_eq!(settings.llm_backend.as_deref(), Some("ollama"));
+    Ok(())
+}
+
 #[tokio::test]
 async fn build_components_smoke() {
     let cli = cli_no_db();

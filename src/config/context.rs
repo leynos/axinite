@@ -102,9 +102,18 @@ impl EnvContext {
         self.secrets.insert(key.into(), value.into());
     }
 
+    /// Remove one injected secret without changing process-global state.
+    pub fn remove_secret(&mut self, key: &str) {
+        self.secrets.remove(key);
+    }
+
     /// Merge multiple secret overlay values without mutating global state.
     pub fn merge_secrets(&mut self, secrets: HashMap<String, String>) {
         self.secrets.extend(secrets);
+    }
+
+    pub(crate) fn secret_values(&self) -> HashMap<String, String> {
+        self.secrets.clone()
     }
 
     /// Resolve the effective Axinite base directory from the snapshot.

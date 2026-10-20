@@ -4,6 +4,7 @@ use std::future::Future;
 use std::pin::Pin;
 use std::sync::Arc;
 
+use crate::config::EnvContext;
 use crate::db::UserId;
 use crate::secrets::{SecretError, SecretsStore};
 
@@ -13,29 +14,29 @@ const SECRETS_STORE_KEY: &str = "http_webhook_secret";
 /// Boxed future used at the dyn secret-injector boundary.
 pub type SecretInjectorFuture<'a> = Pin<Box<dyn Future<Output = ()> + Send + 'a>>;
 
-/// Trait for injecting secrets into the environment overlay.
+/// Trait for injecting secrets into an explicit environment snapshot.
 ///
-/// Implementations fetch secrets from storage and inject them
-/// into the thread-safe overlay used by config loading.
+/// Implementations fetch secrets from storage and update the snapshot used by
+/// the reload's config loader.
 pub trait SecretInjector: Send + Sync {
-    /// Inject secrets into the environment overlay.
+    /// Inject secrets into the supplied snapshot.
     ///
     /// Errors are logged internally and do not fail the reload.
-    fn inject<'a>(&'a self) -> SecretInjectorFuture<'a>;
+    fn inject<'a>(&'a self, ctx: &'a mut EnvContext) -> SecretInjectorFuture<'a>;
 }
 
 /// Native async sibling trait for concrete secret-injector implementations.
 pub trait NativeSecretInjector: Send + Sync {
     /// See [`SecretInjector::inject`].
-    fn inject(&self) -> impl Future<Output = ()> + Send + '_;
+    fn inject<'a>(&'a self, ctx: &'a mut EnvContext) -> impl Future<Output = ()> + Send + 'a;
 }
 
 impl<T> SecretInjector for T
 where
     T: NativeSecretInjector + Send + Sync,
 {
-    fn inject<'a>(&'a self) -> SecretInjectorFuture<'a> {
-        Box::pin(NativeSecretInjector::inject(self))
+    fn inject<'a>(&'a self, ctx: &'a mut EnvContext) -> SecretInjectorFuture<'a> {
+        Box::pin(NativeSecretInjector::inject(self, ctx))
     }
 }
 
@@ -61,17 +62,17 @@ impl DbSecretInjector {
 }
 
 impl NativeSecretInjector for DbSecretInjector {
-    async fn inject(&self) {
-        self.inject_webhook_secret().await;
+    async fn inject<'a>(&'a self, ctx: &'a mut EnvContext) {
+        self.inject_webhook_secret(ctx).await;
     }
 }
 
 impl DbSecretInjector {
     /// Inject HTTP webhook secret from encrypted store.
     ///
-    /// If the secret does not exist, logs and clears the overlay entry — absence is not an error.
+    /// If the secret does not exist, logs and clears the snapshot entry — absence is not an error.
     /// Other errors are logged but do not fail the reload.
-    async fn inject_webhook_secret(&self) {
+    async fn inject_webhook_secret(&self, ctx: &mut EnvContext) {
         let webhook_secret = match self
             .secrets_store
             .get_decrypted(self.user_id.as_str(), SECRETS_STORE_KEY)
@@ -79,9 +80,9 @@ impl DbSecretInjector {
         {
             Ok(s) => s,
             Err(SecretError::NotFound(_)) => {
-                crate::config::remove_single_var(HTTP_WEBHOOK_SECRET_KEY);
+                ctx.remove_secret(HTTP_WEBHOOK_SECRET_KEY);
                 tracing::debug!(
-                    "{HTTP_WEBHOOK_SECRET_KEY} not found in secrets store; cleared overlay entry"
+                    "{HTTP_WEBHOOK_SECRET_KEY} not found in secrets store; cleared snapshot entry"
                 );
                 return;
             }
@@ -91,9 +92,7 @@ impl DbSecretInjector {
             }
         };
 
-        // Thread-safe: Uses INJECTED_VARS mutex instead of unsafe std::env::set_var.
-        // Config::from_env() will read from the overlay via optional_env().
-        crate::config::inject_single_var(HTTP_WEBHOOK_SECRET_KEY, webhook_secret.expose());
+        ctx.inject_secret(HTTP_WEBHOOK_SECRET_KEY, webhook_secret.expose());
         tracing::debug!("Injected {HTTP_WEBHOOK_SECRET_KEY} from secrets store");
     }
 }
@@ -101,7 +100,7 @@ impl DbSecretInjector {
 #[cfg(test)]
 mod tests {
     //! Unit tests for secret injection from the secrets store into the
-    //! environment overlay.
+    //! explicit environment snapshots.
 
     use std::sync::Arc;
 
@@ -109,20 +108,11 @@ mod tests {
     use secrecy::SecretString;
 
     use super::*;
-    use crate::config::helpers::{EnvKey, optional_env};
     use crate::secrets::{
         CreateSecretParams, DecryptedSecret, InMemorySecretsStore, NativeSecretsStore, Secret,
         SecretError, SecretRef, SecretsCrypto, SecretsStore,
     };
     use crate::testing::credentials::TEST_CRYPTO_KEY;
-
-    struct OverlayResetGuard(&'static str);
-
-    impl Drop for OverlayResetGuard {
-        fn drop(&mut self) {
-            crate::config::remove_single_var(self.0);
-        }
-    }
 
     /// Synchronous mirror of `NativeSecretsStore` for mockall compatibility.
     ///
@@ -237,9 +227,6 @@ mod tests {
 
     #[tokio::test]
     async fn db_secret_injector_injects_and_clears_webhook_secret() {
-        let _overlay_guard = OverlayResetGuard(HTTP_WEBHOOK_SECRET_KEY);
-        crate::config::remove_single_var(HTTP_WEBHOOK_SECRET_KEY);
-
         let crypto = Arc::new(
             SecretsCrypto::new(SecretString::from(TEST_CRYPTO_KEY.to_string()))
                 .expect("test crypto should initialize"),
@@ -255,42 +242,40 @@ mod tests {
             .expect("secret should be created");
 
         let injector = DbSecretInjector::new(Arc::clone(&store), UserId::from("test_user"));
+        let mut ctx = EnvContext::default();
 
-        NativeSecretInjector::inject(&injector).await;
+        NativeSecretInjector::inject(&injector, &mut ctx).await;
         assert_eq!(
-            optional_env(EnvKey(HTTP_WEBHOOK_SECRET_KEY)).expect("overlay lookup should succeed"),
-            Some("super-secret-value".to_string()),
-            "inject() should populate the overlay from the secrets store"
+            ctx.get(HTTP_WEBHOOK_SECRET_KEY),
+            Some("super-secret-value"),
+            "inject() should populate the supplied snapshot from the secrets store"
         );
 
         store
             .delete("test_user", SECRETS_STORE_KEY)
             .await
             .expect("secret should be deleted");
-        NativeSecretInjector::inject(&injector).await;
+        NativeSecretInjector::inject(&injector, &mut ctx).await;
 
         assert_eq!(
-            optional_env(EnvKey(HTTP_WEBHOOK_SECRET_KEY)).expect("overlay lookup should succeed"),
+            ctx.get(HTTP_WEBHOOK_SECRET_KEY),
             None,
-            "inject() should clear the overlay when the secret is removed"
+            "inject() should clear the snapshot when the secret is removed"
         );
     }
 
     #[tokio::test]
-    async fn db_secret_injector_preserves_overlay_on_store_error() {
-        let _overlay_guard = OverlayResetGuard(HTTP_WEBHOOK_SECRET_KEY);
-        crate::config::remove_single_var(HTTP_WEBHOOK_SECRET_KEY);
-        crate::config::inject_single_var(HTTP_WEBHOOK_SECRET_KEY, "existing-overlay");
-
+    async fn db_secret_injector_preserves_snapshot_on_store_error() {
         let store: Arc<dyn SecretsStore + Send + Sync> = make_error_store();
         let injector = DbSecretInjector::new(store, UserId::from("test_user"));
+        let mut ctx = EnvContext::default().with_secret(HTTP_WEBHOOK_SECRET_KEY, "existing-secret");
 
-        NativeSecretInjector::inject(&injector).await;
+        NativeSecretInjector::inject(&injector, &mut ctx).await;
 
         assert_eq!(
-            optional_env(EnvKey(HTTP_WEBHOOK_SECRET_KEY)).expect("overlay lookup should succeed"),
-            Some("existing-overlay".to_string()),
-            "inject() should preserve the existing overlay when the store returns a non-NotFound error"
+            ctx.get(HTTP_WEBHOOK_SECRET_KEY),
+            Some("existing-secret"),
+            "inject() should preserve the existing snapshot when the store returns a non-NotFound error"
         );
     }
 }
