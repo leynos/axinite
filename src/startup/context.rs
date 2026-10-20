@@ -5,7 +5,7 @@ use std::sync::Arc;
 use axinite::{
     app::{AppComponents, RuntimeSideEffects},
     channels::{ChannelManager, web::log_layer::LogBroadcaster},
-    config::Config,
+    config::{Config, EnvContext},
 };
 
 use crate::startup::wasm::WasmChannelRuntimeState;
@@ -24,6 +24,7 @@ use crate::startup::wasm::WasmChannelRuntimeState;
 /// level changes keep working once the gateway starts.
 pub(crate) struct LoadedConfigContext {
     pub(in crate::startup) config: Config,
+    pub(in crate::startup) env_context: EnvContext,
     pub(in crate::startup) toml_path: Option<std::path::PathBuf>,
     pub(in crate::startup) session: Arc<axinite::llm::session::SessionManager>,
     pub(in crate::startup) log_broadcaster: Arc<LogBroadcaster>,
@@ -45,6 +46,7 @@ pub(crate) struct LoadedConfigContext {
 /// agent phases.
 pub(crate) struct BuiltComponentsContext {
     pub(in crate::startup) components: AppComponents,
+    pub(in crate::startup) env_context: EnvContext,
     pub(in crate::startup) side_effects: RuntimeSideEffects,
     pub(in crate::startup) log_broadcaster: Arc<LogBroadcaster>,
     pub(in crate::startup) log_level_handle: Arc<axinite::channels::web::log_layer::LogLevelHandle>,
@@ -101,6 +103,7 @@ pub(crate) struct OrchestratorContext {
 /// continue to function.
 pub(crate) struct CoreAgentContext {
     pub(in crate::startup) config: Config,
+    pub(in crate::startup) env_context: EnvContext,
     pub(in crate::startup) components: AppComponents,
     pub(in crate::startup) side_effects: RuntimeSideEffects,
     pub(in crate::startup) active_tunnel: Option<Box<dyn axinite::tunnel::Tunnel>>,

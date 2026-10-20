@@ -24,6 +24,7 @@ impl TestGatewayStateFactory {
             msg_tx: tokio::sync::RwLock::new(None),
             sse: SseManager::new(),
             workspace,
+            env_flag_overlay: Default::default(),
             session_manager: None,
             log_broadcaster: None,
             log_level_handle: None,

@@ -72,6 +72,7 @@ pub(crate) async fn phase_load_config_and_tracing_from(
 
     Ok(LoadedConfigContext {
         config,
+        env_context: env.clone(),
         toml_path,
         session,
         log_broadcaster,
@@ -104,6 +105,7 @@ pub(crate) async fn phase_build_components(
 
     Ok(BuiltComponentsContext {
         components,
+        env_context: loaded.env_context,
         side_effects,
         log_broadcaster: loaded.log_broadcaster,
         log_level_handle: loaded.log_level_handle,
@@ -130,6 +132,7 @@ pub(crate) async fn phase_tunnel_and_orchestrator(
     AgentRunContext {
         core: CoreAgentContext {
             config,
+            env_context: built.env_context,
             components,
             side_effects: built.side_effects,
             active_tunnel,
@@ -267,6 +270,7 @@ pub(crate) async fn phase_setup_gateway(ctx: &mut GatewayPhaseContext) {
         &ctx.core.config,
         &ctx.core.components,
         &mut GatewayContext {
+            env_context: &ctx.core.env_context,
             container_job_manager: &ctx.core.container_job_manager,
             session_manager: &ctx.session_manager,
             log_broadcaster: &ctx.core.log_broadcaster,

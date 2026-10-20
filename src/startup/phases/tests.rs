@@ -11,6 +11,7 @@ static LOADED_CONTEXT: OnceCell<LoadedConfigContextSnapshot> = OnceCell::const_n
 
 struct LoadedConfigContextSnapshot {
     config: Config,
+    env_context: axinite::config::EnvContext,
     toml_path: Option<std::path::PathBuf>,
     session: Arc<axinite::llm::session::SessionManager>,
     log_broadcaster: Arc<LogBroadcaster>,
@@ -44,6 +45,7 @@ async fn loaded_context() -> anyhow::Result<LoadedConfigContext> {
             let loaded = phase_load_config_and_tracing_from(&cli_no_db(), &env).await?;
             anyhow::Ok(LoadedConfigContextSnapshot {
                 config: loaded.config,
+                env_context: loaded.env_context,
                 toml_path: loaded.toml_path,
                 session: loaded.session,
                 log_broadcaster: loaded.log_broadcaster,
@@ -55,6 +57,7 @@ async fn loaded_context() -> anyhow::Result<LoadedConfigContext> {
 
     Ok(LoadedConfigContext {
         config: snapshot.config.clone(),
+        env_context: snapshot.env_context.clone(),
         toml_path: snapshot.toml_path.clone(),
         session: Arc::clone(&snapshot.session),
         log_broadcaster: Arc::clone(&snapshot.log_broadcaster),
