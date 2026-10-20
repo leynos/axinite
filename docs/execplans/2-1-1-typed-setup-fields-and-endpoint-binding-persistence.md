@@ -607,7 +607,7 @@ The largest risks are accidental raw-value logging, OAuth-token deletion from
 reusing the old save path, and overstating offline validation. Typed safe
 results, an endpoint-only mutation branch, and explicit status semantics
 address these. Multi-store partial failure is deliberately visible rather than
-hidden behind an unrealizable transaction. Concurrent last-commit-wins updates
+hidden behind an unrealisable transaction. Concurrent last-commit-wins updates
 can overwrite another administrator's edit; document that limitation.
 
 Encryption protects database contents, not a compromised host, user-entered
