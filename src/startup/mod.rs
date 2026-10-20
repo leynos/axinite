@@ -12,6 +12,8 @@ pub(crate) mod boot;
 pub(crate) mod channels;
 /// Startup context structs shared across phase functions.
 pub(crate) mod context;
+/// Startup wiring for container orchestration.
+pub(crate) mod orchestrator;
 /// Ordered startup phase functions and associated context types.
 pub(crate) mod phases;
 /// Agent run loop and coordinated shutdown sequence.

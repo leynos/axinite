@@ -11,7 +11,7 @@ use secrecy::ExposeSecret;
 use tokio::sync::Mutex;
 
 use crate::channels::ChannelSecretUpdater;
-use crate::config::Config;
+use crate::config::{Config, EnvContext};
 use crate::error::{ChannelError, ConfigError};
 use crate::reload::config_loader::NativeConfigLoader;
 use crate::reload::listener_controller::NativeListenerController;
@@ -20,6 +20,7 @@ use crate::reload::secret_injector::NativeSecretInjector;
 /// Stub config loader that returns a pre-configured result.
 pub struct StubConfigLoader {
     result: Result<Config, Arc<ConfigError>>,
+    loaded_context: Arc<Mutex<Option<EnvContext>>>,
 }
 
 impl StubConfigLoader {
@@ -29,7 +30,10 @@ impl StubConfigLoader {
     /// stub across reload attempts. Returns a `StubConfigLoader` configured for
     /// successful loads.
     pub fn new_success(config: Config) -> Self {
-        Self { result: Ok(config) }
+        Self {
+            result: Ok(config),
+            loaded_context: Arc::new(Mutex::new(None)),
+        }
     }
 
     /// Construct a stub loader that always returns `error`.
@@ -40,12 +44,19 @@ impl StubConfigLoader {
     pub fn new_error(error: ConfigError) -> Self {
         Self {
             result: Err(Arc::new(error)),
+            loaded_context: Arc::new(Mutex::new(None)),
         }
+    }
+
+    /// Return the most recent snapshot supplied to `load`, if any.
+    pub async fn loaded_context(&self) -> Option<EnvContext> {
+        self.loaded_context.lock().await.clone()
     }
 }
 
 impl NativeConfigLoader for StubConfigLoader {
-    async fn load(&self) -> Result<Config, ConfigError> {
+    async fn load(&self, ctx: EnvContext) -> Result<Config, ConfigError> {
+        *self.loaded_context.lock().await = Some(ctx);
         self.result.clone().map_err(|error| error.as_ref().clone())
     }
 }
@@ -155,6 +166,7 @@ impl NativeListenerController for StubListenerController {
 pub struct StubSecretInjector {
     called: Arc<Mutex<bool>>,
     should_fail: bool,
+    secret: Option<(String, String)>,
 }
 
 impl StubSecretInjector {
@@ -165,6 +177,7 @@ impl StubSecretInjector {
         Self {
             called: Arc::new(Mutex::new(false)),
             should_fail: false,
+            secret: None,
         }
     }
 
@@ -176,12 +189,19 @@ impl StubSecretInjector {
         Self {
             called: Arc::new(Mutex::new(false)),
             should_fail: true,
+            secret: None,
         }
     }
 
     /// Returns true if inject() was called.
     pub async fn was_called(&self) -> bool {
         *self.called.lock().await
+    }
+
+    /// Configure the stub to inject `value` under `key` during reload.
+    pub fn with_secret(mut self, key: impl Into<String>, value: impl Into<String>) -> Self {
+        self.secret = Some((key.into(), value.into()));
+        self
     }
 }
 
@@ -192,10 +212,12 @@ impl Default for StubSecretInjector {
 }
 
 impl NativeSecretInjector for StubSecretInjector {
-    async fn inject(&self) {
+    async fn inject<'a>(&'a self, ctx: &'a mut EnvContext) {
         *self.called.lock().await = true;
         if self.should_fail {
             tracing::error!("Simulated secret injector failure");
+        } else if let Some((key, value)) = &self.secret {
+            ctx.inject_secret(key.clone(), value.clone());
         }
     }
 }
