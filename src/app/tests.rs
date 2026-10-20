@@ -9,7 +9,7 @@ use std::{
 
 use crate::{
     channels::web::log_layer::LogBroadcaster,
-    config::Config,
+    config::{Config, EnvContext},
     db::{Database, SettingKey, UserId},
     llm::{LlmProvider, SessionConfig, SessionManager},
     testing::StubLlm,
@@ -63,16 +63,19 @@ async fn two_phase_fixture() -> anyhow::Result<(AppBuilder, PathBuf, tempfile::T
     let log_broadcaster = Arc::new(LogBroadcaster::new());
     let llm: Arc<dyn LlmProvider> = Arc::new(StubLlm::new("ok"));
 
-    let mut builder = AppBuilder::new(AppBuilderParams {
-        config,
-        flags: AppBuilderFlags {
-            workspace_import_dir: Some(workspace_import_dir.clone()),
-            ..AppBuilderFlags::default()
+    let mut builder = AppBuilder::new_with_context(
+        AppBuilderParams {
+            config,
+            flags: AppBuilderFlags {
+                workspace_import_dir: Some(workspace_import_dir.clone()),
+                ..AppBuilderFlags::default()
+            },
+            toml_path: None,
+            session,
+            log_broadcaster,
         },
-        toml_path: None,
-        session,
-        log_broadcaster,
-    });
+        EnvContext::default().with_secret("ANTHROPIC_API_KEY", "overlay-only-key"),
+    );
     builder.with_database(db);
     builder.with_llm(llm);
 
@@ -190,7 +193,11 @@ async fn build_components_returns_without_activating_side_effects(
     #[future] two_phase_fixture: anyhow::Result<(AppBuilder, PathBuf, tempfile::TempDir)>,
 ) -> anyhow::Result<()> {
     let (builder, workspace_import_dir, _temp_dir) = two_phase_fixture.await?;
-    let (components, side_effects) = builder.build_components().await?;
+    let (components, side_effects, env_context) = builder.build_components_with_context().await?;
+    assert_eq!(
+        env_context.get("ANTHROPIC_API_KEY"),
+        Some("overlay-only-key")
+    );
     assert!(components.tools.count() > 0);
     let workspace = components
         .workspace

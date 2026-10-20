@@ -46,7 +46,8 @@ pub use self::relay::RelayConfig;
 pub use self::routines::RoutineConfig;
 pub use self::runtime_support::{
     inject_llm_keys_from_secrets, inject_llm_keys_into_context, inject_os_credentials,
-    inject_os_credentials_into_context, inject_single_var, remove_single_var,
+    inject_os_credentials_into_context, inject_single_var,
+    merge_context_secrets_into_legacy_overlay, remove_single_var,
 };
 pub use self::safety::SafetyConfig;
 pub use self::sandbox::{ClaudeCodeConfig, SandboxModeConfig};
@@ -218,6 +219,15 @@ impl Config {
         Self::from_context(&ctx, &merged).await
     }
 
+    /// Build config from saved settings and an explicit environment snapshot.
+    ///
+    /// Use this at reload boundaries that already own a current [`EnvContext`].
+    pub async fn from_env_from_context(ctx: &EnvContext) -> Result<Self, ConfigError> {
+        let settings = Settings::load();
+        let merged = runtime_support::merged_settings_with_toml(&settings, None)?;
+        Self::from_context(ctx, &merged).await
+    }
+
     /// Build config from an explicit environment snapshot and settings.
     ///
     /// Prefer this over `from_env*` and `from_db*` when the caller already has
@@ -310,6 +320,18 @@ impl Config {
         user_id: &str,
         toml_path: Option<&std::path::Path>,
     ) -> Result<(), ConfigError> {
+        self.re_resolve_llm_with_context(&EnvContext::capture_ambient(), store, user_id, toml_path)
+            .await
+    }
+
+    /// Re-resolve only the LLM config from an explicit environment snapshot.
+    pub async fn re_resolve_llm_with_context(
+        &mut self,
+        ctx: &EnvContext,
+        store: Option<&(dyn crate::db::SettingsStore + Sync)>,
+        user_id: &str,
+        toml_path: Option<&std::path::Path>,
+    ) -> Result<(), ConfigError> {
         let settings = if let Some(store) = store {
             let mut s = match store
                 .get_all_settings(crate::db::UserId::from(user_id))
@@ -323,7 +345,7 @@ impl Config {
         } else {
             Settings::default()
         };
-        self.llm = LlmConfig::resolve(&settings)?;
+        self.llm = LlmConfig::resolve_from(ctx, &settings)?;
         Ok(())
     }
 

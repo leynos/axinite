@@ -6,6 +6,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use crate::channels::ChannelSecretUpdater;
+use crate::config::EnvContext;
 use crate::reload::{ConfigLoader, ListenerController, ReloadError, SecretInjector};
 
 const DNS_LOOKUP_TIMEOUT: Duration = Duration::from_secs(15);
@@ -16,6 +17,7 @@ const DNS_LOOKUP_TIMEOUT: Duration = Duration::from_secs(15);
 /// channel secret updates. Each boundary is testable
 /// via hand-rolled stubs.
 pub struct HotReloadManager {
+    env_context: EnvContext,
     config_loader: Arc<dyn ConfigLoader>,
     listener_controller: Option<Arc<dyn ListenerController>>,
     secret_injector: Option<Arc<dyn SecretInjector>>,
@@ -28,7 +30,7 @@ impl HotReloadManager {
     ///
     /// - `config_loader`: Required — loads config from DB or environment
     /// - `listener_controller`: Optional — restarts HTTP listeners
-    /// - `secret_injector`: Optional — injects secrets into environment overlay
+    /// - `secret_injector`: Optional — injects secrets into the reload snapshot
     /// - `secret_updaters`: Channel instances that support secret swapping
     pub fn new(
         config_loader: Arc<dyn ConfigLoader>,
@@ -36,7 +38,25 @@ impl HotReloadManager {
         secret_injector: Option<Arc<dyn SecretInjector>>,
         secret_updaters: Vec<Arc<dyn ChannelSecretUpdater>>,
     ) -> Self {
+        Self::new_with_context(
+            EnvContext::capture_ambient(),
+            config_loader,
+            listener_controller,
+            secret_injector,
+            secret_updaters,
+        )
+    }
+
+    /// Create a hot-reload manager with an explicit environment snapshot.
+    pub fn new_with_context(
+        env_context: EnvContext,
+        config_loader: Arc<dyn ConfigLoader>,
+        listener_controller: Option<Arc<dyn ListenerController>>,
+        secret_injector: Option<Arc<dyn SecretInjector>>,
+        secret_updaters: Vec<Arc<dyn ChannelSecretUpdater>>,
+    ) -> Self {
         Self {
+            env_context,
             config_loader,
             listener_controller,
             secret_injector,
@@ -60,14 +80,16 @@ impl HotReloadManager {
     pub async fn perform_reload(&self) -> Result<(), ReloadError> {
         let _reload_guard = self.reload_lock.lock().await;
 
-        // Step 1: Inject secrets into the environment overlay
+        let mut env_context = self.env_context.clone();
+
+        // Step 1: Inject secrets into this reload's configuration snapshot.
         // Errors are logged internally by the injector; we continue regardless.
         if let Some(ref injector) = self.secret_injector {
-            injector.inject().await;
+            injector.inject(&mut env_context).await;
         }
 
-        // Step 2: Load new configuration
-        let new_config = self.config_loader.load().await.map_err(|e| {
+        // Step 2: Load new configuration from this cycle's immutable snapshot.
+        let new_config = self.config_loader.load(env_context).await.map_err(|e| {
             tracing::error!("Config reload failed: {}", e);
             ReloadError::from(e)
         })?;

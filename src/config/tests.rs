@@ -124,3 +124,35 @@ async fn re_resolve_llm_from_rebuilds_llm_against_updated_snapshot() {
         .expect("updated context should re-resolve");
     assert_eq!(config.llm.nearai.model, "model-b");
 }
+
+#[tokio::test]
+async fn re_resolve_llm_with_context_uses_overlay_only_credentials() {
+    use secrecy::ExposeSecret;
+
+    let dir = tempfile::tempdir().expect("create tempdir");
+    let base_dir = dir.path().join("axinite-home");
+    let settings = Settings::default();
+    let initial_context = base_context(&base_dir)
+        .with_env("LLM_BACKEND", "anthropic")
+        .with_env("ANTHROPIC_API_KEY", "initial-key");
+    let updated_context = base_context(&base_dir)
+        .with_env("LLM_BACKEND", "anthropic")
+        .with_secret("ANTHROPIC_API_KEY", "overlay-only-key");
+
+    let mut config = Config::from_context(&initial_context, &settings)
+        .await
+        .expect("initial context should resolve");
+
+    config
+        .re_resolve_llm_with_context(&updated_context, None, "default", None)
+        .await
+        .expect("updated environment snapshot should resolve");
+
+    let api_key = config
+        .llm
+        .provider
+        .as_ref()
+        .and_then(|provider| provider.api_key.as_ref())
+        .map(ExposeSecret::expose_secret);
+    assert_eq!(api_key, Some("overlay-only-key"));
+}

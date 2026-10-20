@@ -65,7 +65,7 @@ pub async fn run_import_command(
     }
 }
 
-/// Run the OpenClaw import.
+/// Inputs for one OpenClaw import run.
 #[cfg(feature = "import")]
 struct OpenClawImportRequest<'a> {
     path: Option<PathBuf>,
@@ -75,6 +75,7 @@ struct OpenClawImportRequest<'a> {
     env_context: &'a EnvContext,
 }
 
+/// Run the OpenClaw import.
 #[cfg(feature = "import")]
 async fn run_import_openclaw(
     config: &crate::config::Config,

@@ -12,6 +12,7 @@ use rstest::rstest;
 use super::super::*;
 use super::common::{AddrTestCase, http_config, test_config_with_http};
 use crate::channels::ChannelSecretUpdater;
+use crate::config::EnvContext;
 use crate::reload::test_stubs::{
     SpySecretUpdater, StubConfigLoader, StubListenerController, StubSecretInjector,
 };
@@ -54,7 +55,8 @@ async fn successful_reload_invokes_all_dependencies(
     let spy = Arc::new(SpySecretUpdater::new());
     let spy_clone = Arc::clone(&spy);
 
-    let manager = HotReloadManager::new(
+    let manager = HotReloadManager::new_with_context(
+        EnvContext::default(),
         loader as Arc<dyn ConfigLoader>,
         Some(controller as Arc<dyn ListenerController>),
         Some(injector as Arc<dyn SecretInjector>),
@@ -131,7 +133,8 @@ async fn address_unchanged_skips_listener_restart(
     let spy = Arc::new(SpySecretUpdater::new());
     let spy_clone = Arc::clone(&spy);
 
-    let manager = HotReloadManager::new(
+    let manager = HotReloadManager::new_with_context(
+        EnvContext::default(),
         loader as Arc<dyn ConfigLoader>,
         Some(controller as Arc<dyn ListenerController>),
         Some(injector as Arc<dyn SecretInjector>),
@@ -174,7 +177,8 @@ async fn listener_restart_failure_prevents_secret_update(
     let spy = Arc::new(SpySecretUpdater::new());
     let spy_clone = Arc::clone(&spy);
 
-    let manager = HotReloadManager::new(
+    let manager = HotReloadManager::new_with_context(
+        EnvContext::default(),
         loader as Arc<dyn ConfigLoader>,
         Some(controller as Arc<dyn ListenerController>),
         Some(injector as Arc<dyn SecretInjector>),
@@ -205,7 +209,8 @@ async fn readding_same_listener_address_restarts_after_shutdown()
 
     let (_remove_temp_dir, remove_config) = test_config_with_http(None).await?;
     let remove_loader = Arc::new(StubConfigLoader::new_success(remove_config));
-    let remove_manager = HotReloadManager::new(
+    let remove_manager = HotReloadManager::new_with_context(
+        EnvContext::default(),
         remove_loader as Arc<dyn ConfigLoader>,
         Some(Arc::clone(&controller) as Arc<dyn ListenerController>),
         Some(Arc::clone(&injector) as Arc<dyn SecretInjector>),
@@ -225,7 +230,8 @@ async fn readding_same_listener_address_restarts_after_shutdown()
     )))
     .await?;
     let readd_loader = Arc::new(StubConfigLoader::new_success(readd_config));
-    let readd_manager = HotReloadManager::new(
+    let readd_manager = HotReloadManager::new_with_context(
+        EnvContext::default(),
         readd_loader as Arc<dyn ConfigLoader>,
         Some(controller as Arc<dyn ListenerController>),
         Some(injector as Arc<dyn SecretInjector>),
@@ -259,7 +265,8 @@ async fn maybe_restart_listener_skips_restart_when_current_addr_matches_non_firs
     let (_temp_dir, config) = test_config_with_http(None).await?;
     let loader = Arc::new(StubConfigLoader::new_success(config));
 
-    let manager = HotReloadManager::new(
+    let manager = HotReloadManager::new_with_context(
+        EnvContext::default(),
         loader as Arc<dyn ConfigLoader>,
         Some(controller as Arc<dyn ListenerController>),
         None,
@@ -293,7 +300,8 @@ async fn maybe_restart_listener_skips_restart_for_ephemeral_bind_on_same_host()
     let (_temp_dir, config) = test_config_with_http(None).await?;
     let loader = Arc::new(StubConfigLoader::new_success(config));
 
-    let manager = HotReloadManager::new(
+    let manager = HotReloadManager::new_with_context(
+        EnvContext::default(),
         loader as Arc<dyn ConfigLoader>,
         Some(controller as Arc<dyn ListenerController>),
         None,

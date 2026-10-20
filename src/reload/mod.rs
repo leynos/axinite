@@ -3,7 +3,7 @@
 //! Separates reload policy from I/O by defining four trait boundaries:
 //! - [`ConfigLoader`] — load configuration from DB or environment
 //! - [`ListenerController`] — restart HTTP listeners
-//! - [`SecretInjector`] — inject secrets into the environment overlay
+//! - [`SecretInjector`] — inject secrets into an explicit `EnvContext`
 //! - [`crate::channels::ChannelSecretUpdater`] — hot-swap rotated or cleared
 //!   channel secrets
 //!
@@ -29,6 +29,7 @@ use std::sync::Arc;
 use tokio::sync::Mutex;
 
 use crate::channels::{ChannelSecretUpdater, WebhookServer};
+use crate::config::EnvContext;
 use crate::db::{SettingsStore, UserId};
 use crate::secrets::SecretsStore;
 
@@ -57,6 +58,23 @@ pub fn create_hot_reload_manager(
     secrets_store: Option<Arc<dyn SecretsStore + Send + Sync>>,
     secret_updaters: Vec<Arc<dyn ChannelSecretUpdater>>,
 ) -> HotReloadManager {
+    create_hot_reload_manager_from_context(
+        EnvContext::capture_ambient(),
+        settings_store,
+        webhook_server,
+        secrets_store,
+        secret_updaters,
+    )
+}
+
+/// Create a hot-reload manager using the resolved startup environment snapshot.
+pub fn create_hot_reload_manager_from_context(
+    env_context: EnvContext,
+    settings_store: Option<Arc<dyn SettingsStore>>,
+    webhook_server: Option<Arc<Mutex<WebhookServer>>>,
+    secrets_store: Option<Arc<dyn SecretsStore + Send + Sync>>,
+    secret_updaters: Vec<Arc<dyn ChannelSecretUpdater>>,
+) -> HotReloadManager {
     let default_user_id = default_user_id();
 
     // Instantiate config loader based on whether settings store is present
@@ -74,7 +92,8 @@ pub fn create_hot_reload_manager(
         Arc::new(DbSecretInjector::new(ss, default_user_id.clone())) as Arc<dyn SecretInjector>
     });
 
-    HotReloadManager::new(
+    HotReloadManager::new_with_context(
+        env_context,
         config_loader,
         listener_controller,
         secret_injector,

@@ -11,12 +11,6 @@ use super::print_info;
 use crate::config::EnvContext;
 use crate::llm::{SessionConfig, SessionManager, create_llm_provider};
 
-pub(super) async fn fetch_nearai_models(
-    session_manager: Option<&Arc<SessionManager>>,
-) -> Vec<String> {
-    fetch_nearai_models_from(session_manager, &EnvContext::capture_ambient()).await
-}
-
 /// Fetch NEAR AI models using an explicit configuration snapshot.
 pub(super) async fn fetch_nearai_models_from(
     session_manager: Option<&Arc<SessionManager>>,

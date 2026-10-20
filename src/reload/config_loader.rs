@@ -17,22 +17,25 @@ pub type ConfigLoaderFuture<'a> =
 /// Implementations may read from the database, environment variables,
 /// or other config sources.
 pub trait ConfigLoader: Send + Sync {
-    /// Load configuration.
-    fn load<'a>(&'a self) -> ConfigLoaderFuture<'a>;
+    /// Load configuration from an explicit environment snapshot.
+    fn load<'a>(&'a self, ctx: EnvContext) -> ConfigLoaderFuture<'a>;
 }
 
 /// Native async sibling trait for concrete config-loader implementations.
 pub trait NativeConfigLoader: Send + Sync {
     /// See [`ConfigLoader::load`].
-    fn load(&self) -> impl Future<Output = Result<Config, ConfigError>> + Send + '_;
+    fn load(
+        &self,
+        ctx: EnvContext,
+    ) -> impl Future<Output = Result<Config, ConfigError>> + Send + '_;
 }
 
 impl<T> ConfigLoader for T
 where
     T: NativeConfigLoader + Send + Sync,
 {
-    fn load<'a>(&'a self) -> ConfigLoaderFuture<'a> {
-        Box::pin(NativeConfigLoader::load(self))
+    fn load<'a>(&'a self, ctx: EnvContext) -> ConfigLoaderFuture<'a> {
+        Box::pin(NativeConfigLoader::load(self, ctx))
     }
 }
 
@@ -40,7 +43,6 @@ where
 pub struct DbConfigLoader {
     settings_store: Arc<dyn SettingsStore>,
     user_id: UserId,
-    env: EnvContext,
 }
 
 impl DbConfigLoader {
@@ -50,31 +52,17 @@ impl DbConfigLoader {
     /// underlying store must live for the lifetime of the loader.
     /// `user_id` — identifier of the user whose configuration will be loaded.
     pub fn new(settings_store: Arc<dyn SettingsStore>, user_id: UserId) -> Self {
-        Self::from_context(settings_store, user_id, EnvContext::capture_ambient())
-    }
-
-    /// Create a database-backed loader with an explicit environment snapshot.
-    pub fn from_context(
-        settings_store: Arc<dyn SettingsStore>,
-        user_id: UserId,
-        env: EnvContext,
-    ) -> Self {
         Self {
             settings_store,
             user_id,
-            env,
         }
     }
 }
 
 impl NativeConfigLoader for DbConfigLoader {
-    async fn load(&self) -> Result<Config, ConfigError> {
-        Config::from_db_from_context(
-            self.settings_store.as_ref(),
-            self.user_id.as_str(),
-            &self.env,
-        )
-        .await
+    async fn load(&self, ctx: EnvContext) -> Result<Config, ConfigError> {
+        Config::from_db_from_context(self.settings_store.as_ref(), self.user_id.as_str(), &ctx)
+            .await
     }
 }
 
@@ -98,8 +86,8 @@ impl Default for EnvConfigLoader {
 }
 
 impl NativeConfigLoader for EnvConfigLoader {
-    async fn load(&self) -> Result<Config, ConfigError> {
-        Config::from_env().await
+    async fn load(&self, ctx: EnvContext) -> Result<Config, ConfigError> {
+        Config::from_env_from_context(&ctx).await
     }
 }
 
@@ -278,20 +266,70 @@ mod tests {
             .returning(move |_| Ok(settings.clone()));
 
         let store = Arc::new(MockSettingsStore::new(inner));
-        let loader = DbConfigLoader::from_context(
-            store,
-            UserId::from("test_user"),
-            EnvContext::default().with_env("DATABASE_URL", "postgres://localhost/axinite_test"),
-        );
+        let loader = DbConfigLoader::new(store, UserId::from("test_user"));
 
-        // Call load() and verify it returns a valid Config
-        let config = NativeConfigLoader::load(&loader)
-            .await
-            .expect("load should succeed");
+        // Supply an isolated snapshot and verify it returns a valid Config.
+        let config = NativeConfigLoader::load(
+            &loader,
+            EnvContext::default().with_env("DATABASE_URL", "postgres://localhost/axinite_test"),
+        )
+        .await
+        .expect("load should succeed");
 
         assert_eq!(
             config.agent.name, "db-loader-agent",
             "DbConfigLoader should preserve the seeded agent.name setting"
+        );
+    }
+
+    #[tokio::test]
+    async fn db_config_loader_uses_the_latest_explicit_environment_snapshot() {
+        use secrecy::ExposeSecret;
+
+        let mut settings = HashMap::new();
+        settings.insert("channels.http_enabled".to_string(), serde_json::json!(true));
+
+        let mut inner = MockNativeSettingsStoreMock::new();
+        inner
+            .expect_get_all_settings()
+            .times(2)
+            .returning(move |_| Ok(settings.clone()));
+
+        let store = Arc::new(MockSettingsStore::new(inner));
+        let loader = DbConfigLoader::new(store, UserId::from("test_user"));
+        let base_context =
+            || EnvContext::default().with_env("DATABASE_URL", "postgres://localhost/axinite_test");
+
+        let first = NativeConfigLoader::load(
+            &loader,
+            base_context().with_secret("HTTP_WEBHOOK_SECRET", "first-secret"),
+        )
+        .await
+        .expect("first load should succeed");
+        let second = NativeConfigLoader::load(
+            &loader,
+            base_context().with_secret("HTTP_WEBHOOK_SECRET", "rotated-secret"),
+        )
+        .await
+        .expect("second load should succeed");
+
+        assert_eq!(
+            first
+                .channels
+                .http
+                .as_ref()
+                .and_then(|http| http.webhook_secret.as_ref())
+                .map(|secret| secret.expose_secret()),
+            Some("first-secret")
+        );
+        assert_eq!(
+            second
+                .channels
+                .http
+                .as_ref()
+                .and_then(|http| http.webhook_secret.as_ref())
+                .map(|secret| secret.expose_secret()),
+            Some("rotated-secret")
         );
     }
 }

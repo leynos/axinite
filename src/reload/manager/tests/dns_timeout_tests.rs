@@ -12,6 +12,7 @@ use tokio::time::advance;
 
 use super::super::*;
 use super::common::{http_config, test_config_with_http};
+use crate::config::EnvContext;
 use crate::error::ConfigError;
 use crate::reload::test_stubs::{StubConfigLoader, StubListenerController, StubSecretInjector};
 
@@ -76,7 +77,8 @@ async fn perform_reload_returns_timeout_error_when_dns_resolution_stalls()
     .await?;
     let loader = Arc::new(StubConfigLoader::new_success(config));
 
-    let manager = HotReloadManager::new(
+    let manager = HotReloadManager::new_with_context(
+        EnvContext::default(),
         loader as Arc<dyn ConfigLoader>,
         Some(controller as Arc<dyn ListenerController>),
         Some(injector as Arc<dyn SecretInjector>),
@@ -112,7 +114,8 @@ async fn reload_lock_is_released_after_dns_timeout() -> Result<(), Box<dyn std::
         test_config_with_http(Some(http_config("slow.example.test", 8081, None))).await?;
     let loader = Arc::new(StubConfigLoader::new_success(config));
 
-    let manager = Arc::new(HotReloadManager::new(
+    let manager = Arc::new(HotReloadManager::new_with_context(
+        EnvContext::default(),
         loader as Arc<dyn ConfigLoader>,
         Some(controller as Arc<dyn ListenerController>),
         Some(injector as Arc<dyn SecretInjector>),

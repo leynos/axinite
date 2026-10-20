@@ -6,6 +6,8 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::Duration;
 
+use tempfile::TempDir;
+
 use crate::config::EnvContext;
 use crate::context::JobContext;
 use crate::sandbox::SandboxPolicy;
@@ -14,10 +16,12 @@ use crate::tools::tool::{NativeTool, ToolError};
 use super::super::ShellTool;
 use super::super::policy::MAX_OUTPUT_SIZE;
 
-fn shell_context() -> EnvContext {
-    EnvContext::default()
+fn shell_context() -> (TempDir, EnvContext) {
+    let home_dir = tempfile::tempdir().expect("temporary HOME should be created");
+    let context = EnvContext::default()
         .with_env("PATH", "/usr/local/bin:/usr/bin:/bin")
-        .with_env("HOME", "/tmp/axinite-shell-test-home")
+        .with_env("HOME", home_dir.path().to_string_lossy());
+    (home_dir, context)
 }
 
 #[tokio::test]
@@ -62,8 +66,8 @@ fn test_sandbox_policy_builder() {
 #[tokio::test]
 async fn test_env_scrubbing_hides_secrets() {
     let secret_var = "AXINITE_TEST_SECRET_KEY";
-    let tool =
-        ShellTool::from_context(shell_context().with_env(secret_var, "super_secret_value_12345"));
+    let (_home_dir, env) = shell_context();
+    let tool = ShellTool::from_context(env.with_env(secret_var, "super_secret_value_12345"));
     let ctx = JobContext::default();
 
     // Run `env` (or `printenv`) and check the output
@@ -93,7 +97,8 @@ async fn test_env_scrubbing_hides_secrets() {
 
 #[tokio::test]
 async fn test_env_scrubbing_forwards_safe_vars() {
-    let tool = ShellTool::from_context(shell_context());
+    let (_home_dir, env) = shell_context();
+    let tool = ShellTool::from_context(env);
     let ctx = JobContext::default();
 
     // HOME should be forwarded
@@ -117,7 +122,8 @@ async fn test_env_scrubbing_forwards_safe_vars() {
 
 #[tokio::test]
 async fn test_env_scrubbing_forwards_explicit_extra_env() {
-    let tool = ShellTool::from_context(shell_context());
+    let (_home_dir, env) = shell_context();
+    let tool = ShellTool::from_context(env);
     let extra_env = HashMap::from([(
         "AXINITE_INJECTED_TEST_VALUE".to_string(),
         "allowed".to_string(),
@@ -147,9 +153,10 @@ async fn test_env_scrubbing_common_secret_patterns() {
         ("DATABASE_URL", "postgres://user:pass@localhost/db"),
     ];
 
-    let env = secrets.iter().fold(shell_context(), |ctx, (name, value)| {
-        ctx.with_env(*name, *value)
-    });
+    let (_home_dir, env) = shell_context();
+    let env = secrets
+        .iter()
+        .fold(env, |ctx, (name, value)| ctx.with_env(*name, *value));
     let tool = ShellTool::from_context(env);
     let ctx = JobContext::default();
 
@@ -271,9 +278,8 @@ async fn test_injection_blocked_with_object_args() {
 #[tokio::test]
 async fn test_env_scrubbing_custom_var_hidden() {
     // Verify that arbitrary values in the input snapshot are not forwarded.
-    let tool = ShellTool::from_context(
-        shell_context().with_env("AXINITE_QA_TEST_SECRET", "supersecret123"),
-    );
+    let (_home_dir, env) = shell_context();
+    let tool = ShellTool::from_context(env.with_env("AXINITE_QA_TEST_SECRET", "supersecret123"));
     let ctx = JobContext::default();
 
     let result = tool
@@ -295,7 +301,8 @@ async fn test_env_scrubbing_custom_var_hidden() {
 #[tokio::test]
 async fn test_env_scrubbing_path_preserved() {
     // PATH must be preserved for commands to resolve
-    let tool = ShellTool::from_context(shell_context());
+    let (_home_dir, env) = shell_context();
+    let tool = ShellTool::from_context(env);
     let ctx = JobContext::default();
 
     let result = tool

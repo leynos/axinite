@@ -12,6 +12,7 @@ use rstest::rstest;
 use super::super::*;
 use super::common::{http_config, test_config_with_http};
 use crate::channels::ChannelSecretUpdater;
+use crate::config::EnvContext;
 use crate::error::ConfigError;
 use crate::reload::test_stubs::{
     SpySecretUpdater, StubConfigLoader, StubListenerController, StubSecretInjector,
@@ -37,7 +38,8 @@ impl LifecycleFixture {
         let spy = Arc::new(SpySecretUpdater::new());
         let spy_clone = Arc::clone(&spy);
 
-        let manager = HotReloadManager::new(
+        let manager = HotReloadManager::new_with_context(
+            EnvContext::default(),
             loader,
             Some(controller as Arc<dyn ListenerController>),
             Some(injector as Arc<dyn SecretInjector>),
@@ -51,6 +53,32 @@ impl LifecycleFixture {
             spy_clone,
         }
     }
+}
+
+#[tokio::test]
+async fn reload_uses_startup_context_and_injected_secrets() -> Result<(), Box<dyn std::error::Error>>
+{
+    let (_temp_dir, config) = test_config_with_http(None).await?;
+    let loader = Arc::new(StubConfigLoader::new_success(config));
+    let injector =
+        Arc::new(StubSecretInjector::new().with_secret("HTTP_WEBHOOK_SECRET", "reloaded-secret"));
+    let manager = HotReloadManager::new_with_context(
+        EnvContext::default().with_secret("ANTHROPIC_API_KEY", "startup-key"),
+        loader.clone(),
+        None,
+        Some(injector),
+        Vec::new(),
+    );
+
+    manager.perform_reload().await?;
+
+    let loaded = loader
+        .loaded_context()
+        .await
+        .expect("reload should pass a snapshot to the config loader");
+    assert_eq!(loaded.get("ANTHROPIC_API_KEY"), Some("startup-key"));
+    assert_eq!(loaded.get("HTTP_WEBHOOK_SECRET"), Some("reloaded-secret"));
+    Ok(())
 }
 
 /// Factory for creating a config loader, or None if loader is configured in test body.

@@ -75,6 +75,19 @@ pub async fn setup_orchestrator(
     db: Option<&Arc<dyn Database>>,
     secrets_store: Option<&Arc<dyn SecretsStore + Send + Sync>>,
 ) -> OrchestratorSetup {
+    let env_context = EnvContext::capture_ambient();
+    setup_orchestrator_from_context(config, &env_context, llm, tools, db, secrets_store).await
+}
+
+/// Set up the orchestrator from the environment snapshot resolved at startup.
+pub async fn setup_orchestrator_from_context(
+    config: &crate::config::Config,
+    env_context: &EnvContext,
+    llm: &Arc<dyn LlmProvider>,
+    tools: &Arc<ToolRegistry>,
+    db: Option<&Arc<dyn Database>>,
+    secrets_store: Option<&Arc<dyn SecretsStore + Send + Sync>>,
+) -> OrchestratorSetup {
     let prompt_queue = Arc::new(Mutex::new(
         HashMap::<Uuid, VecDeque<api::PendingPrompt>>::new(),
     ));
@@ -109,18 +122,11 @@ pub async fn setup_orchestrator(
         let job_event_tx = Some(tx);
 
         let token_store = TokenStore::new();
-        let job_config = ContainerJobConfig {
-            image: config.sandbox.image.clone(),
-            memory_limit_mb: config.sandbox.memory_limit_mb,
-            cpu_shares: config.sandbox.cpu_shares,
-            orchestrator_port: 50051,
-            claude_code_api_key: EnvContext::capture_ambient().get_owned("ANTHROPIC_API_KEY"),
-            claude_code_oauth_token: crate::config::ClaudeCodeConfig::extract_oauth_token(),
-            claude_code_model: config.claude_code.model.clone(),
-            claude_code_max_turns: config.claude_code.max_turns,
-            claude_code_memory_limit_mb: config.claude_code.memory_limit_mb,
-            claude_code_allowed_tools: config.claude_code.allowed_tools.clone(),
-        };
+        let job_config = container_job_config(
+            config,
+            env_context,
+            crate::config::ClaudeCodeConfig::extract_oauth_token,
+        );
         let jm = Arc::new(ContainerJobManager::new(job_config, token_store.clone()));
 
         let orchestrator_state = api::OrchestratorState {
@@ -160,3 +166,27 @@ pub async fn setup_orchestrator(
         docker_status,
     }
 }
+
+fn container_job_config(
+    config: &crate::config::Config,
+    env_context: &EnvContext,
+    credential_store_oauth_token: impl FnOnce() -> Option<String>,
+) -> ContainerJobConfig {
+    ContainerJobConfig {
+        image: config.sandbox.image.clone(),
+        memory_limit_mb: config.sandbox.memory_limit_mb,
+        cpu_shares: config.sandbox.cpu_shares,
+        orchestrator_port: 50051,
+        claude_code_api_key: env_context.get_owned("ANTHROPIC_API_KEY"),
+        claude_code_oauth_token: env_context
+            .get_owned("ANTHROPIC_OAUTH_TOKEN")
+            .or_else(credential_store_oauth_token),
+        claude_code_model: config.claude_code.model.clone(),
+        claude_code_max_turns: config.claude_code.max_turns,
+        claude_code_memory_limit_mb: config.claude_code.memory_limit_mb,
+        claude_code_allowed_tools: config.claude_code.allowed_tools.clone(),
+    }
+}
+
+#[cfg(test)]
+mod tests;
