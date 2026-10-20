@@ -240,7 +240,11 @@ impl SetupWizard {
     }
 
     async fn fetch_nearai_models(&self) -> Vec<String> {
-        crate::setup::nearai::fetch_nearai_models(self.session_manager.as_ref()).await
+        crate::setup::nearai::fetch_nearai_models_from(
+            self.session_manager.as_ref(),
+            &self.env_context,
+        )
+        .await
     }
 
     /// Step 5: Embeddings configuration.

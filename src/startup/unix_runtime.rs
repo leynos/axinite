@@ -16,6 +16,7 @@ use axinite::{
 #[cfg(unix)]
 pub(crate) fn setup_runtime_management_unix(
     components: &AppComponents,
+    env_context: &axinite::config::EnvContext,
     webhook_server: &Option<Arc<tokio::sync::Mutex<WebhookServer>>>,
     http_channel_state: &Option<Arc<HttpChannelState>>,
     shutdown_tx: &tokio::sync::broadcast::Sender<()>,
@@ -39,6 +40,7 @@ pub(crate) fn setup_runtime_management_unix(
 
     setup_sighup_reload(
         settings_store,
+        env_context,
         &webhook_server,
         secrets_store,
         &secret_updaters,
@@ -78,12 +80,14 @@ struct ReloadManagerArgs {
 #[cfg(unix)]
 fn setup_sighup_reload(
     sighup_settings_store: Option<Arc<dyn axinite::db::SettingsStore>>,
+    env_context: &axinite::config::EnvContext,
     webhook_server: &Option<Arc<tokio::sync::Mutex<WebhookServer>>>,
     secrets_store: Option<Arc<dyn SecretsStore + Send + Sync>>,
     secret_updaters: &[Arc<dyn ChannelSecretUpdater>],
     shutdown_tx: &tokio::sync::broadcast::Sender<()>,
 ) {
-    let reload_manager = Arc::new(axinite::reload::create_hot_reload_manager(
+    let reload_manager = Arc::new(axinite::reload::create_hot_reload_manager_from_context(
+        env_context.clone(),
         sighup_settings_store.clone(),
         webhook_server.clone(),
         secrets_store,

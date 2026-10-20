@@ -216,6 +216,15 @@ pub async fn inject_llm_keys_into_context(
     Ok(())
 }
 
+/// Merge a startup snapshot's secrets into the legacy ambient lookup overlay.
+///
+/// This compatibility bridge keeps callers of ambient configuration helpers
+/// working while they migrate to `EnvContext`. New code should use the
+/// snapshot directly.
+pub fn merge_context_secrets_into_legacy_overlay(ctx: &EnvContext) {
+    merge_injected_vars(ctx.secret_values());
+}
+
 /// Load tokens from OS credential stores (no DB required).
 ///
 /// Called unconditionally during startup, even when the encrypted secrets DB
