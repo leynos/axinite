@@ -26,6 +26,36 @@ fn environment_variable_names_are_the_upper_snake_flag_name() {
     );
 }
 
+#[test]
+fn environment_overlay_uses_the_supplied_snapshot() {
+    let env = crate::config::EnvContext::default()
+        .with_env("FEATURE_FLAG_ROUTE_MEMORY", "false")
+        .with_env("FEATURE_FLAG_ROUTE_CHAT", "TRUE");
+
+    let overlay = env_flag_overlay(&env);
+
+    assert_eq!(overlay.get("route_memory"), Some(&false));
+    assert_eq!(overlay.get("route_chat"), Some(&true));
+}
+
+#[tokio::test]
+async fn features_handler_uses_its_environment_snapshot() {
+    let state = crate::channels::web::test_helpers::TestGatewayBuilder::new()
+        .env_context(
+            crate::config::EnvContext::default().with_env("FEATURE_FLAG_ROUTE_MEMORY", "false"),
+        )
+        .build();
+
+    let response = get_features(state).await;
+    let body = axum::body::to_bytes(response.into_body(), usize::MAX)
+        .await
+        .expect_valid("read feature response");
+    let values: std::collections::BTreeMap<String, bool> =
+        serde_json::from_slice(&body).expect_valid("decode feature response");
+
+    assert_eq!(values.get("route_memory"), Some(&false));
+}
+
 #[tokio::test]
 async fn apply_flag_override_fails_without_writing_when_hydration_fails() {
     use crate::testing::null_db::CapturingStore;
