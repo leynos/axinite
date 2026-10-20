@@ -116,6 +116,8 @@ impl RateLimiter {
 
 /// Shared state for all gateway handlers.
 pub struct GatewayState {
+    /// Feature-flag environment values resolved from the startup snapshot.
+    pub env_flag_overlay: std::collections::HashMap<&'static str, bool>,
     /// Channel to send messages to the agent loop.
     pub msg_tx: tokio::sync::RwLock<Option<mpsc::Sender<IncomingMessage>>>,
     /// SSE broadcast manager.

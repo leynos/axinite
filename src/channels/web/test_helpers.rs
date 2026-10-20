@@ -13,6 +13,7 @@ use crate::channels::IncomingMessage;
 use crate::channels::web::server::{GatewayState, RateLimiter, start_server};
 use crate::channels::web::sse::SseManager;
 use crate::channels::web::ws::WsConnectionTracker;
+use crate::config::EnvContext;
 
 /// Builder for constructing a [`GatewayState`] with sensible test defaults.
 ///
@@ -25,6 +26,7 @@ pub struct TestGatewayBuilder {
     skill_registry: Option<Arc<std::sync::RwLock<crate::skills::SkillRegistry>>>,
     skill_catalog: Option<Arc<crate::skills::catalog::SkillCatalog>>,
     store: Option<Arc<dyn crate::db::Database>>,
+    env_context: EnvContext,
     user_id: String,
 }
 
@@ -36,6 +38,7 @@ impl Default for TestGatewayBuilder {
             skill_registry: None,
             skill_catalog: None,
             store: None,
+            env_context: EnvContext::default(),
             user_id: "test-user".to_string(),
         }
     }
@@ -81,6 +84,12 @@ impl TestGatewayBuilder {
         self
     }
 
+    /// Set the environment snapshot used by gateway handlers.
+    pub fn env_context(mut self, env_context: EnvContext) -> Self {
+        self.env_context = env_context;
+        self
+    }
+
     /// Override the user ID (default: `"test-user"`).
     pub fn user_id(mut self, id: impl Into<String>) -> Self {
         self.user_id = id.into();
@@ -90,6 +99,9 @@ impl TestGatewayBuilder {
     /// Build the `Arc<GatewayState>` without starting a server.
     pub fn build(self) -> Arc<GatewayState> {
         Arc::new(GatewayState {
+            env_flag_overlay: crate::channels::web::handlers::features::env_flag_overlay(
+                &self.env_context,
+            ),
             msg_tx: tokio::sync::RwLock::new(self.msg_tx),
             sse: SseManager::new(),
             workspace: None,
