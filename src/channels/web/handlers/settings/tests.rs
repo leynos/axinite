@@ -156,16 +156,17 @@ async fn new_test_store() -> Arc<dyn crate::db::Database> {
 #[cfg(feature = "libsql")]
 #[tokio::test]
 async fn put_feature_flag_then_get_reflects_override_without_restart() {
-    // The environment layer outranks deployment overrides, so this test is
-    // only meaningful when the process was started without it. Nothing in the
-    // suite sets it; check rather than mutate the shared process environment.
+    let env_context = crate::config::EnvContext::default();
     assert!(
-        !features::env_flag_overlay().contains_key("route_memory"),
+        !features::env_flag_overlay(&env_context).contains_key("route_memory"),
         "FEATURE_FLAG_ROUTE_MEMORY must be unset for this test"
     );
 
     let backend = new_test_store().await;
-    let state = TestGatewayBuilder::new().store(backend).build();
+    let state = TestGatewayBuilder::new()
+        .env_context(env_context)
+        .store(backend)
+        .build();
 
     // Override route_memory=false for the "production" deployment
     // (route_memory has no subsystem gate, so the compiled default applies

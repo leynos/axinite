@@ -22,7 +22,7 @@
 //! snapshot without publishing cache, admission or retry state.
 
 use std::collections::HashMap;
-use std::sync::{Arc, OnceLock};
+use std::sync::Arc;
 
 use axum::{
     Json, Router,
@@ -36,6 +36,7 @@ use crate::channels::web::handlers::feature_registry::{
     DEFAULT_DEPLOYMENT_ID, deployment_id_from_headers,
 };
 use crate::channels::web::server::GatewayState;
+use crate::config::EnvContext;
 
 use crate::channels::web::handlers::feature_registry::application;
 use crate::channels::web::handlers::feature_registry::{SettingsFlagStore, telemetry};
@@ -99,12 +100,13 @@ pub async fn features_handler(
     })?;
     let unavailable = unavailable_subsystem_flags(&state).await;
 
-    telemetry::availability_decisions(&unavailable, env_flag_overlay(), &overrides);
+    let environment = &state.env_flag_overlay;
+    telemetry::availability_decisions(&unavailable, environment, &overrides);
     telemetry::count("read_request", "success");
     Ok((
         response_headers,
         Json(resolve_flags(
-            |name| env_flag_overlay().get(name).copied(),
+            |name| environment.get(name).copied(),
             &overrides,
             &unavailable,
         )),
@@ -122,26 +124,19 @@ fn parse_env_flag(raw: &str) -> bool {
     raw.eq_ignore_ascii_case("true")
 }
 
-/// The environment layer, keyed by flag name and read once per process.
+/// Resolve the environment layer from the gateway's immutable snapshot.
 ///
 /// The `FEATURE_FLAG_<NAME>` variable naming and the string-to-bool reading
-/// live here, so [`resolve_flags`] sees only parsed values. A running
-/// process's environment cannot be changed from outside, so re-reading it on
-/// every `GET /api/features` only repeats work; the overlay is captured on
-/// first use and reused for the process lifetime. Only variables that are set
-/// for known flags are captured.
-pub(super) fn env_flag_overlay() -> &'static HashMap<&'static str, bool> {
-    static OVERLAY: OnceLock<HashMap<&'static str, bool>> = OnceLock::new();
-    OVERLAY.get_or_init(|| {
-        FLAG_DEFAULTS
-            .iter()
-            .filter_map(|(name, _)| {
-                std::env::var(flag_env_var(name))
-                    .ok()
-                    .map(|raw| (*name, parse_env_flag(&raw)))
-            })
-            .collect()
-    })
+/// live here, so [`resolve_flags`] sees only parsed values. Only variables set
+/// for known flags are included.
+pub(crate) fn env_flag_overlay(env: &EnvContext) -> HashMap<&'static str, bool> {
+    FLAG_DEFAULTS
+        .iter()
+        .filter_map(|(name, _)| {
+            env.get(&flag_env_var(name))
+                .map(|raw| (*name, parse_env_flag(raw)))
+        })
+        .collect()
 }
 
 /// Flags whose backing subsystem is absent from `GatewayState`, per the
