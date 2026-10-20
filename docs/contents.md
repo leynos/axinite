@@ -167,6 +167,9 @@
     completed roadmap item `1.3.3` with stable loaded-skill root and
     entrypoint metadata, active-skill injection updates, proportional test
     coverage, and synchronized documentation.
+  - [Add a Monty helper subprocess and expose `exec_code`](execplans/2-2-1-helper-subprocess-wrapper-for-monty.md)
+    plans roadmap item `2.2.1` for isolated code execution, per-run tool
+    capabilities, mediated callbacks, and verification before implementation.
 
 ## RFCs
 
