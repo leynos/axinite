@@ -581,7 +581,7 @@ approval rather than claim the shipped code is formally proved.
   platforms. Record platforms and any skip explicitly. Do not claim Verus
   proves child process isolation.
 
-External assumptions are limited to the selected Monty Rust API honoring its
+External assumptions are limited to the selected Monty Rust API honouring its
 documented `start`/progress/resume contracts, the operating system delivering
 child exit and pipe EOF, and Tokio process cancellation/kill behaviour. The
 project verifies its owned protocol, projection, lifecycle, and policy
