@@ -122,6 +122,8 @@
     work to reduce build times and related tooling overhead.
 - [ExecPlans directory](execplans/) collects approval-gated execution plans
   written in the Codex ExecPlan format for roadmap-scoped work.
+  - [Typed setup fields and endpoint binding persistence](execplans/2-1-1-typed-setup-fields-and-endpoint-binding-persistence.md)
+    plans roadmap 2.1.1; implementation awaits explicit approval.
   - [Migrate from async-trait to native async traits](execplans/migrate-async-trait.md)
     records the completed staged migration away from `async-trait`, including
     the ADR 006 pilot results, the broad rollout across all dyn-backed
@@ -263,3 +265,5 @@
 - [ADR 013: Place CI jobs by rule](adr-013-place-ci-jobs-by-rule.md) records
   the rule-based runner placement, including the utility-job rule that moves
   short jobs off the hosted pool only when it makes them wait.
+- [ADR 014: Confidential endpoint setup](adr-014-confidential-endpoint-setup.md)
+  proposes the scope, encryption, and failure semantics for roadmap 2.1.1.
